@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { join } from "node:path";
 import {
   AttachmentError, attachmentFile, attachmentType, cleanFileName, FILES_NOTE, IMAGES_NOTE, isAttachmentName, localizeAttachments,
-  MAX_ATTACHMENT_BYTES, opensInline, referencedAttachments, saveAttachment, uploadExt,
+  MAX_ATTACHMENT_BYTES, opensInline, referencedAttachments, saveAttachment, uploadExt, withoutAttachmentNote,
 } from "../src/server/attachments";
 import { tempDir } from "./helpers";
 
@@ -129,4 +129,15 @@ test("cleanFileName keeps the name safe inside a markdown link", () => {
 test("referencedAttachments finds URLs and local paths", () => {
   expect(referencedAttachments(`![a](/api/attachments/${NAME})`, `/home/x/.claude-kanban/attachments/${NAME.replace(".png", ".jpg")}`, "none"))
     .toEqual([NAME, NAME.replace(".png", ".jpg")]);
+});
+
+test("withoutAttachmentNote drops the note localizeAttachments adds, whichever it is", () => {
+  const dir = "/data/attachments";
+  const pdf = NAME.replace(".png", ".pdf");
+  const image = localizeAttachments(`look ![image](/api/attachments/${NAME})`, dir);
+  expect(withoutAttachmentNote(image)).toBe(`look ![image](${dir}/${NAME})`);
+  const file = localizeAttachments(`read [a.pdf](/api/attachments/${pdf})`, dir);
+  expect(withoutAttachmentNote(file)).toBe(`read [a.pdf](${dir}/${pdf})`);
+  expect(withoutAttachmentNote("no note here")).toBe("no note here");
+  expect(withoutAttachmentNote(`${IMAGES_NOTE} is quoted mid-message, then more`)).toBe(`${IMAGES_NOTE} is quoted mid-message, then more`);
 });

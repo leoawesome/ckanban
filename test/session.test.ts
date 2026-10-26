@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { FILES_NOTE, IMAGES_NOTE } from "../src/server/attachments";
 import { Bus, type BusEvent } from "../src/server/events";
 import { SessionCache, findSessionFile, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessions } from "../src/server/session";
 import { Store } from "../src/server/store";
@@ -448,4 +449,13 @@ test("proposed tickets: important, or a ⭐ before the title, marks them Importa
     ]);
   expect(parseProposal({ title: "⭐ Fix login", description: "d" })).toEqual({ title: "Fix login", description: "d", important: true });
   expect(parseProposal({ title: "Fix login", description: "d" })).toEqual({ title: "Fix login", description: "d" });
+});
+
+test("parseSession shows a message with attachments as typed, without the note for Claude", () => {
+  const path = "/Users/me/.claude-kanban/attachments/0123456789abcdef0123456789abcdef.png";
+  const raw = [
+    user(`what is this? ![image](${path})\n\n${IMAGES_NOTE}`, "2026-09-29T03:00:00Z"),
+    user(`read this [a.pdf](/x/a.pdf)\n\n${FILES_NOTE}`, "2026-09-29T03:00:01Z"),
+  ].join("\n");
+  expect(parseSession(raw).entries.map((e) => e.text)).toEqual([`what is this? ![image](${path})`, "read this [a.pdf](/x/a.pdf)"]);
 });

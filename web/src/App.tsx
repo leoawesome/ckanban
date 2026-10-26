@@ -824,8 +824,12 @@ export function App() {
           <button className={`btn ghost icon-label${shownItem === "team" ? " on" : ""}`} onClick={() => (learnedNew && shownItem !== "team" ? openDockOn("team", { action: "learned" }) : toggleDock("team"))}
             aria-pressed={shownItem === "team"} title={`Teammates, templates and huddles (T)${liveHuddles ? `. ${liveHuddles} ${liveHuddles === 1 ? "huddle" : "huddles"} live.` : ""}${learnedNew ? `. ${learnedNew} ${learnedNew === 1 ? "lesson" : "lessons"} saved.` : ""}`} aria-label="Team">
             <TeamIcon /><span className="label">Team</span>
-            {liveHuddles > 0 && <span className="tab-count ok">{liveHuddles} live</span>}
-            {learnedNew > 0 && <span className="tab-count">{learnedNew} new</span>}
+            {(liveHuddles > 0 || learnedNew > 0) && (
+              <span className="tab-counts">
+                {liveHuddles > 0 && <span className="tab-count ok">{liveHuddles} live</span>}
+                {learnedNew > 0 && <span className="tab-count">{learnedNew} new</span>}
+              </span>
+            )}
             <KeyHint keys="T" />
           </button>
         )}

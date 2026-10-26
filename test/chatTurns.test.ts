@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dividerLabel, layoutTurns, stepsSummary } from "../web/src/chatTurns";
+import { dividerLabel, layoutTurns, shortStep, stepsSummary } from "../web/src/chatTurns";
 
 const at = (min: number) => new Date(Date.UTC(2026, 9, 25, 6, 0) + min * 60_000).toISOString();
 const NOW = Date.UTC(2026, 9, 25, 8, 0);
@@ -48,4 +48,14 @@ test("stepsSummary: running, done and failed steps", () => {
   expect(stepsSummary(items, true)).toEqual({ text: "Step 3 · Edit: b.ts", failed: 1 });
   expect(stepsSummary(items, false)).toEqual({ text: "Did 3 steps · Edit: b.ts", failed: 1 });
   expect(stepsSummary([{ text: "Read: a.ts" }], false).text).toBe("Did 1 step · Read: a.ts");
+});
+
+test("shortStep: a file tool's path becomes its file name; other steps stay as they are", () => {
+  expect(shortStep("Read: /Users/leo/.claude-kanban/attachments/a8418c183597423b947f9bfe86c6a56c.png")).toBe("Read: a8418c183597423b947f9bfe86c6a56c.png");
+  expect(shortStep("Edit: ~/dev/app/src/api.ts")).toBe("Edit: api.ts");
+  expect(shortStep("Write: /tmp/out.md")).toBe("Write: out.md");
+  expect(shortStep("Bash: ls /Users/leo/dev")).toBe("Bash: ls /Users/leo/dev");
+  expect(shortStep("Grep: /api/attachments/")).toBe("Grep: /api/attachments/");
+  expect(shortStep("Read: notes.md")).toBe("Read: notes.md");
+  expect(stepsSummary([{ text: "Bash: ls" }, { text: "Read: /a/b/c.png" }], false).text).toBe("Did 2 steps · Read: c.png");
 });

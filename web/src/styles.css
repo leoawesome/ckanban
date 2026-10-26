@@ -922,6 +922,9 @@ body > .output-view.reader { position: fixed; }
 .save-state { flex: none; min-width: 0; }
 .saved { display: inline-flex; align-items: center; gap: 3px; color: var(--ok); font-weight: 560; }
 .tab-count { margin-left: 6px; font-size: 11px; padding: 0 6px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
+/* Top bar counts sit on the button's corner: a count showing up after load doesn't widen it and move the buttons beside it. */
+.topbar .icon-label .tab-counts { position: absolute; top: -7px; right: -6px; display: flex; gap: 3px; pointer-events: none; }
+.topbar .icon-label .tab-count { margin: 0; font-size: 10px; line-height: 15px; box-shadow: 0 0 0 1.5px var(--surface); }
 /* ticket "⋯" menu: session + ticket actions */
 .ticket-menu-wrap { position: relative; flex: none; }
 .more-btn.on { background: var(--surface-2); color: var(--text); }
@@ -993,7 +996,8 @@ body > .output-view.reader { position: fixed; }
 .hdg-wrap > .conv-msg { max-width: none; }
 
 /* ============ chat turns (ConvTurn.tsx): avatar + name line, then the replies under it ============ */
-.turn { align-self: stretch; display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; }
+/* relative: the turn holds its screen-reader name (.sr-only), which would otherwise stretch the page below the panel. */
+.turn { position: relative; align-self: stretch; display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; }
 .turn.start { margin-top: 6px; }
 /* Rows that continue a turn sit closer to the row above. */
 .chat-log > .turn:not(.start) { margin-top: -4px; }
@@ -2378,8 +2382,9 @@ button.hd-mode:disabled { cursor: default; }
 .qc-row:hover { background: var(--surface-2); }
 .qc-row.cur { background: var(--accent-soft); }
 .qc-new { flex-direction: row; align-items: center; gap: 6px; color: var(--accent); font-weight: 600; }
-.qc-row-title { display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 560; }
+.qc-row-title { display: flex; gap: 6px; align-items: center; min-width: 0; font-weight: 560; }
 .qc-row-title .spinner { flex: none; }
+.qc-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qc-row-meta { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--muted); }
 .qc-tag { font-size: 10.5px; font-weight: 600; color: var(--ok); background: var(--ok-soft); padding: 0 6px; border-radius: 99px; }
 .qc-tag.err { color: var(--err); background: var(--err-soft); }

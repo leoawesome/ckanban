@@ -37,6 +37,12 @@ export const FILES_NOTE = "Files attached to this message are local files. Open 
   + "(for example unzip the file and read its XML, textutil on macOS, python or pandoc); don't ask the user to install anything. "
   + "If you can't read a file, tell the user which one.";
 
+/** `text` without the note localizeAttachments adds after a message with no context block: chats show what the user typed. */
+export function withoutAttachmentNote(text: string): string {
+  const note = [IMAGES_NOTE, FILES_NOTE].find((n) => text.endsWith(n));
+  return note ? text.slice(0, -note.length).trimEnd() : text;
+}
+
 export function isAttachmentName(name: string): boolean {
   return NAME_RE.test(name);
 }

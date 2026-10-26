@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import { withoutAttachmentNote } from "./attachments";
 import { commandText, localCommandOutput, TERMINAL_COMMANDS } from "./commands";
 import type { Bus } from "./events";
 import { proposedBudget, rosterError, type RosterEntry } from "./huddle-roster";
@@ -364,7 +365,7 @@ function userText(content: unknown): { kind: "text" | "board"; text: string; hud
     const note = content.slice(ctx).match(/note="([^"]*)"/)?.[1];
     return { kind: "board", text: note || "Board sent instructions to Claude", ...extra };
   }
-  const t = content.trim();
+  const t = withoutAttachmentNote(content.trim());
   // A slash command the user ran: Claude Code stores it as tags; show it as typed.
   const cmd = commandText(t);
   if (cmd) return terminalOnly(cmd) ? null : { kind: "text", text: cmd, command: cmd.slice(1).split(" ")[0] };

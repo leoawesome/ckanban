@@ -48,8 +48,14 @@ export function dividerLabel(iso: string, now = Date.now()): string {
 }
 
 /** The steps line under a reply: running "Step 4 · Reading api.ts", done "Did 6 steps · ran the tests"; failed: how many errored. */
+/** File tools whose step label is "<Tool>: <path>" (src/server/subagents.ts toolLabel). */
+const FILE_STEP = /^(Read|Write|Edit|MultiEdit|NotebookEdit): ((?:~|\/)\S*\/([^/\s]+))$/;
+
+/** A step label for one line: a file tool's full path becomes its file name ("Read: /a/b/c.png" is "Read: c.png"). */
+export const shortStep = (label: string) => label.replace(FILE_STEP, "$1: $3");
+
 export function stepsSummary(items: { text: string; error?: true }[], running: boolean): { text: string; failed: number } {
-  const last = items.at(-1)?.text ?? "";
+  const last = shortStep(items.at(-1)?.text ?? "");
   const failed = items.filter((t) => t.error).length;
   const n = items.length;
   return { text: running ? `Step ${n} · ${last}` : `Did ${n} step${n === 1 ? "" : "s"} · ${last}`, failed };

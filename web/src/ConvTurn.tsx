@@ -108,7 +108,7 @@ export function StepsLine({ items, running, old, children }: {
     <details className={`steps-line${old ? " inherited" : ""}`}>
       <summary>
         {running ? <span className="spinner" /> : <CheckIcon size={13} className="icon steps-ok" />}
-        <span className="steps-text">{s.text}</span>
+        <span className="steps-text" title={items.at(-1)?.text}>{s.text}</span>
         {s.failed > 0 && <span className="steps-failed">· {s.failed} failed</span>}
       </summary>
       {children}
