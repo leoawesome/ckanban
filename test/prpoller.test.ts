@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
+import type { HostHuddle } from "../src/server/attention";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
 import { checkPr } from "../src/server/prpoller";
@@ -95,4 +96,18 @@ test("injected wait check decides", async () => {
   expect(store.getTicket("p", id)!.status).toBe("review");
   await checkPr(board, store, "p", id, async () => "MERGED", () => false);
   expect(store.getTicket("p", id)!.status).toBe("done");
+});
+
+test("merged PR keeps a ticket hosting an open huddle in review, then moves it once the huddle closes", async () => {
+  let open = true;
+  // Its helpers are at work, so the huddle asks nothing of the user.
+  const busy: HostHuddle = { working: 2, queued: false, tagged: 0, learnings: 0, closeRequest: false, since: null };
+  board.onHostHuddles(() => new Map(open ? [[id, busy]] : []));
+  await checkPr(board, store, "p", id, async () => "MERGED");
+  expect(store.getTicket("p", id)!.status).toBe("review");
+  expect(merged()).toBe(1);
+  open = false;
+  await checkPr(board, store, "p", id, async () => "MERGED");
+  expect(store.getTicket("p", id)!.status).toBe("done");
+  expect(merged()).toBe(1);
 });

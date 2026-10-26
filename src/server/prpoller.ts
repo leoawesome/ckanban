@@ -16,10 +16,13 @@ export async function ghState(url: string): Promise<PrState> {
   return s === "OPEN" || s === "MERGED" || s === "CLOSED" ? s : null;
 }
 
-/** waits: the card still needs the user, so a merged PR keeps it in Review until that is dealt with. */
+/**
+ * waits: the card still needs the user, so a merged PR keeps it in Review until that is dealt with. An open huddle
+ * holds it too: Done would close the huddle.
+ */
 export async function checkPr(
   board: Board, store: Store, slug: string, id: string, gh: (url: string) => Promise<PrState> = ghState,
-  waits: (slug: string, id: string) => boolean = (s, i) => board.waitsOnUser(s, i),
+  waits: (slug: string, id: string) => boolean = (s, i) => board.waitsOnUser(s, i) || board.hostHuddles(s).has(i),
 ): Promise<PrState> {
   const t = store.getTicket(slug, id);
   if (!t?.prUrl || t.status !== "review") return null;
