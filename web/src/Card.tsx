@@ -3,6 +3,7 @@ import { newestArtifact, safeHref, waitsForSlot, type Job, type SessionMessage, 
 import { type CardHuddleBadge, digestPreview } from "./huddleText";
 import { ClockIcon, ExternalIcon } from "./icons";
 import type { AddOnLinks } from "./addOn";
+import type { CardFamily } from "./family";
 import { FollowUpChip } from "./FollowUpChip";
 import { JobChip } from "./Jobs";
 import { jobChip } from "./jobText";
@@ -105,7 +106,7 @@ function HuddleBadge({ badge, onOpen }: { badge: CardHuddleBadge; onOpen?: (tick
  * limit: the board's slug and error toast, for the usage-limit buttons ("Continue now", auto-continue) and a stalled
  * run's Stop / Keep waiting / Restart.
  */
-export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHuddle, limit, onTag, jobs, onOpenJobs, addOn, onOpenTicket }: {
+export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHuddle, limit, onTag, jobs, onOpenJobs, addOn, family, onOpenTicket }: {
   ticket: Ticket; onClick?: () => void; dragging?: boolean; queued?: number; held?: boolean;
   huddle?: CardHuddleBadge | null; onOpenHuddle?: (ticketId: string) => void;
   limit?: { slug: string; onError: (msg: string) => void };
@@ -114,8 +115,10 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
   /** The board's one-time jobs: "⏰ N scheduled" when this ticket scheduled some; onOpenJobs opens them. */
   jobs?: Job[];
   onOpenJobs?: (ticketId: string) => void;
-  /** The ticket it is an add-on to and its own add-ons; their chips open the linked ticket with onOpenTicket. */
+  /** The ticket it is an add-on to; its chip opens that ticket with onOpenTicket. */
   addOn?: AddOnLinks;
+  /** The ticket it is part of and its linked tickets (family.ts); their chips open with onOpenTicket. */
+  family?: CardFamily;
   onOpenTicket?: (id: string) => void;
 }) {
   const working = (ticket.status === "in_progress" && !waitsForSlot(ticket) && !autoHuddleIdle(ticket)) || !!ticket.running;
@@ -136,7 +139,7 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
   const artifact = newestArtifact(ticket);
   const artifactHref = safeHref(artifact?.url);
   const hasJobs = !!jobs && !!jobChip(jobs, ticket.id);
-  const addOns = addOn?.addOns ?? [];
+  const linked = family?.children ?? [];
   const openLinked = (id: string) => (e: MouseEvent) => {
     e.stopPropagation();
     if (!dragging) onOpenTicket?.(id);
@@ -144,11 +147,19 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
   const addOnChip = ticket.addOnOf ? (addOn?.of
     ? <button className="badge add-on" title={`Add-on to “${addOn.of.title}”`} onClick={openLinked(addOn.of.id)}>↳ add-on to “{addOn.of.title}”</button>
     : <span className="badge add-on" title="Original ticket was deleted">↳ add-on</span>) : null;
-  // One add-on opens it; several open this ticket, whose panel lists them.
-  const addOnsChip = addOns.length > 0 && (
-    <button className="badge add-on" title={addOns.map((f) => f.title).join("\n")}
-      onClick={openLinked(addOns.length === 1 ? addOns[0].id : ticket.id)}>
-      {addOns.length} add-on{addOns.length === 1 ? "" : "s"}
+  const partOfChip = ticket.partOf ? (family?.partOf
+    ? <button className="badge add-on" title={`Part of “${family.partOf.title}”`} onClick={openLinked(family.partOf.id)}>↳ part of “{family.partOf.title}”</button>
+    : null) : null;
+  // Opens this ticket: its panel shows the whole family.
+  const linkedChip = linked.length > 0 && (
+    <button className="badge add-on" title={linked.map((f) => f.title).join("\n")} onClick={openLinked(ticket.id)}>
+      {linked.length} linked
+    </button>
+  );
+  // The board suggests a parent: the panel shows it with Link / Not related.
+  const suggestChip = ticket.parentSuggestion && !ticket.partOf && !ticket.addOnOf && !ticket.parentId && (
+    <button className="badge link-suggest" title="The board suggests a ticket this one is part of: open it to link or dismiss" onClick={openLinked(ticket.id)}>
+      Link? 1 suggestion
     </button>
   );
   return (
@@ -172,7 +183,7 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
           {plainPreview(last.from === "huddle" ? digestPreview(last.text) : last.text)}
         </div>
       )}
-      {(badge || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || addOnsChip || ticket.followUp || ticket.followUpStopped) && (
+      {(badge || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp || ticket.followUpStopped) && (
         <div className="card-meta">
           {ticket.plan && ticket.plan.state !== "done" && (
             <span className={`badge plan ${ticket.plan.state}`} title="This ticket runs a plan of child tickets">
@@ -190,8 +201,10 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
               {ticket.source.provider} <ExternalIcon size={11} />
             </a>
           )}
+          {partOfChip}
           {addOnChip}
-          {addOnsChip}
+          {linkedChip}
+          {suggestChip}
           {ticket.needs?.map((n) => <ResourceChip key={n} name={n} held={!!ticket.resources?.holding} />)}
           {badge}
           {ticket.autoHuddle && working && autoHuddleChip(ticket.autoHuddle)}

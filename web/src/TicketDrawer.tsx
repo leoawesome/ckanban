@@ -42,6 +42,7 @@ import { usePhone } from "./usePhone";
 import { useShrinkHeader } from "./useShrinkHeader";
 import { toast } from "./toast";
 import { FollowUpChip } from "./FollowUpChip";
+import { FamilyTree, PartOfField } from "./FamilyPanel";
 import { FileLinksProvider } from "./FileViewer";
 
 // v2: widths saved under the old 80% default are dropped once so the new default shows.
@@ -673,6 +674,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
             </span>
           </div>
         )}
+        <PartOfField slug={slug} ticket={ticket} tickets={tickets} onOpenTicket={onOpenTicket} onError={onError} />
         {deps.length > 0 && (
           <div className="field-row">
             <span className="field-key" title="A running plan starts this ticket once these are done">Waits for</span>
@@ -688,6 +690,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
         {!!ticket.needs?.length && <NeedsField slug={slug} ticket={ticket} onError={onError} />}
 
         {children.length > 0 && <PlanSummary ticket={ticket} children={children} onOpen={() => setTab("plan")} />}
+        <FamilyTree ticket={ticket} tickets={tickets} onOpenTicket={onOpenTicket} />
 
         {(!!links.length || outputCount > 0 || (hasUsage && !usageInline)) && (
           <div className="result-chips" aria-label="Results">

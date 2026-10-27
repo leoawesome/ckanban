@@ -2,7 +2,7 @@
 // Hand-rolled instead of @modelcontextprotocol/sdk: we only need initialize, tools/list and tools/call.
 import {
   assertCanChange, BoardClient, bugReportText, ClientError, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
-  ticketLine, ticketText, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
+  familyLine, ticketLine, ticketText, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
 } from "./client";
 import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./server/huddle-presets";
 import { HUDDLE_AGENT_ENV, huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "./server/huddle-roster";
@@ -135,7 +135,7 @@ interface Tool {
 
 export interface ToolContext {
   client: Pick<BoardClient,
-    | "listProfiles" | "listTickets" | "getTicket" | "createTicket" | "updateTicket" | "deleteTicket" | "chat" | "stop" | "listComments"
+    | "listProfiles" | "listTickets" | "getTicket" | "getFamily" | "createTicket" | "updateTicket" | "deleteTicket" | "chat" | "stop" | "listComments"
     | "comment" | "reportBug" | "setFollowUp" | "cancelFollowUp" | "notifyUser" | "listSchedules" | "createSchedule" | "updateSchedule" | "deleteSchedule" | "runSchedule"
     | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "adopt" | "planAction" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
     | "huddleStatus" | "huddleCloseRequest" | "startAutoHuddle" | "huddleHandIn" | "huddleReviewHandIn" | "huddleAllowChanges"
@@ -1502,6 +1502,22 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "get_family",
+    description:
+      "Show a ticket's whole family: the tickets of one piece of work (a project or flight), linked as part of, add-on to or planned by each other. " +
+      "Lists every ticket from the top one down with its column, how it is linked, its Claude session and its last result. " +
+      "Use it to summarise or learn from all the work on something, instead of searching tickets by words.",
+    inputSchema: { type: "object", properties: { profile: PROFILE, id: ID }, required: ["id"] },
+    annotations: { readOnlyHint: true },
+    changes: false,
+    async run(args, ctx) {
+      const slug = await slugFor(args, ctx);
+      const rows = await ctx.client.getFamily(slug, str(args, "id")!);
+      if (rows.length <= 1) return `${rows[0]?.id ?? str(args, "id")} has no linked tickets yet: it is not part of a family.`;
+      return [`Family of ${rows.length} tickets on board ${slug}, from the top ticket down:`, "", ...rows.map(familyLine)].join("\n");
+    },
+  },
+  {
     name: "create_ticket",
     description:
       "Create a ticket on the board. Check list_tickets first so you don't add a duplicate. " +
@@ -1520,6 +1536,11 @@ export const TOOLS: Tool[] = [
         dependsOn: DEPENDS_ON,
         needs: NEEDS,
         tags: TAGS,
+        partOfThisTicket: {
+          type: "boolean",
+          description: "Inside a board run or ticket chat: true links the new ticket as part of your ticket (same piece of work: a next step, " +
+            "a follow-up, a fix or a part of it), so both show in one family. Leave it out when the user asks for a ticket unrelated to your ticket's work.",
+        },
       },
       required: ["title"],
     },
@@ -1539,8 +1560,10 @@ export const TOOLS: Tool[] = [
         ...(deps ? { dependsOn: deps } : {}),
         ...(needs?.length ? { needs } : {}),
         ...(tags?.length ? { tags } : {}),
+        // Only the run's own board: a guest chat on another board has no ticket here to be part of.
+        ...(args?.partOfThisTicket === true && runTicketId(ctx) && ctx.env[RUN_ENV]?.split("/")[0] === slug ? { partOf: runTicketId(ctx)! } : {}),
       }, ctx.env[RUN_ENV]);
-      return `Created ${t.id} on board ${slug} in ${t.status} (${t.mode} mode): ${t.title}`;
+      return `Created ${t.id} on board ${slug} in ${t.status} (${t.mode} mode)${t.partOf ? `, part of ${t.partOf}` : ""}: ${t.title}`;
     },
   },
   {

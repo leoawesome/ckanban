@@ -271,6 +271,11 @@ export interface Ticket {
   branchPoint?: { at: string; sourceTitle: string } | null;
   /** Ticket this one is an add-on to (a new requirement on a ticket that already ran). */
   addOnOf?: string | null;
+  /** Ticket this one is part of (its family's parent, see family.ts); "chat": that ticket's chat created it. */
+  partOf?: string | null;
+  partOfVia?: "chat" | null;
+  /** A parent the board suggests for this ticket; the panel offers Link / Not related. */
+  parentSuggestion?: { id: string; reason: string } | null;
   /** Claude comes back to this ticket at dueAt (follow_up); missedAt: it came due while the board was off, the user decides. */
   followUp?: FollowUp | null;
   /** Follow-ups set, woken, cancelled and replied to, oldest first. */
@@ -1327,6 +1332,13 @@ export const api = {
   updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort">> & { expectedBody?: string }) =>
     req<Ticket>("PATCH", t(slug, id), patch),
   deleteTicket: (slug: string, id: string) => req<void>("DELETE", t(slug, id)),
+  /** Part of parent's family (null unlinks). */
+  setPartOf: (slug: string, id: string, parent: string | null) => req<Ticket>("PATCH", t(slug, id), { partOf: parent }),
+  /** Not related: the board doesn't suggest a parent for this ticket again. */
+  dismissParentSuggestion: (slug: string, id: string) => req<Ticket>("PATCH", t(slug, id), { parentSuggestion: null }),
+  /** Find links: Claude's suggested parents for tickets without one (nothing changes until each is set). */
+  findLinks: (slug: string) =>
+    req<{ links: { id: string; parent: string; reason: string }[]; checked: number }>("POST", `/api/profiles/${encodeURIComponent(slug)}/find-links`, {}),
   /** Inbox Snooze: hide what the ticket waits for now for a day (or until its state changes). */
   followUpNow: (slug: string, id: string) => req<Ticket>("POST", `${t(slug, id)}/follow-up/now`, {}),
   stopFollowUp: (slug: string, id: string) => req<Ticket>("DELETE", `${t(slug, id)}/follow-up`, {}),

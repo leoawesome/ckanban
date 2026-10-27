@@ -2940,3 +2940,46 @@ button.tag-chip:hover { border-color: currentColor; }
   .conn-tabs button { flex: 1; }
   .conn-paste-row input { font-size: 16px; }
 }
+
+/* Families (FamilyPanel.tsx): "Part of" row, the board's parent suggestion, the ticket picker and the family tree. */
+.mini-link { border: 0; background: none; padding: 0; margin-left: 8px; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; text-decoration: underline; }
+.mini-link:hover:not(:disabled) { color: var(--text); }
+.field-row > .mini-link:first-of-type { margin-left: 0; }
+.part-of-row > .field-key { flex: none; white-space: nowrap; }
+.part-of-value { display: inline-flex; align-items: baseline; min-width: 0; max-width: 100%; }
+.badge.link-suggest { background: var(--info-soft); color: var(--info); border: 1px dashed var(--info); font-family: inherit; cursor: pointer; }
+.parent-suggest { border: 1px dashed var(--info); background: var(--info-soft); color: var(--info); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; }
+.parent-suggest b { color: var(--text); font-weight: 600; }
+.parent-suggest-why { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.parent-suggest-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.parent-picker { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.parent-picker input { width: 100%; box-sizing: border-box; }
+.parent-options { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; }
+.parent-option { display: flex; align-items: center; gap: 8px; border: 0; background: none; padding: 5px 6px; border-radius: 6px; cursor: pointer; text-align: left; font: inherit; font-size: 13px; color: var(--text); }
+.parent-option:hover, .parent-option:focus-visible { background: var(--surface-2); }
+.parent-picker > .mini-link { align-self: flex-start; margin-left: 0; }
+.family-head { display: flex; align-items: center; justify-content: space-between; }
+.family-tree { margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 4px 0; }
+.family-row { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 4px 10px; cursor: pointer; text-align: left; font: inherit; font-size: 13px; color: var(--text); }
+.family-row:hover { background: var(--surface-2); }
+.family-row.me { background: var(--info-soft); cursor: default; }
+.family-row.me .fam-title { font-weight: 600; }
+.fam-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fam-how { flex: none; font-size: 10.5px; color: var(--muted); }
+.fam-status { flex: none; font-size: 11px; font-weight: 560; padding: 1px 7px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
+.fam-status.st-review { background: var(--warn-soft); color: var(--warn); }
+.fam-status.st-done { background: var(--ok-soft); color: var(--ok); }
+.fam-status.st-planning, .fam-status.st-in_progress, .fam-status.st-ready { background: var(--info-soft); color: var(--info); }
+/* Find links (FindLinksDialog.tsx): suggestions grouped by the ticket they are part of. */
+.modal.find-links { width: 640px; max-width: calc(100vw - 24px); padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 48px); }
+.modal.find-links h3 { margin: 0; font-size: 16px; }
+.modal.find-links p { margin: 0; }
+.find-links-list { overflow-y: auto; min-height: 0; }
+.find-links-group { border-top: 1px solid var(--border); padding: 10px 0; }
+.find-links-parent { font-weight: 600; margin-bottom: 4px; }
+.find-links-item { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0 3px 14px; cursor: pointer; }
+.find-links-item input { width: auto; flex: none; margin-top: 3px; }
+.find-links-item > span { flex: 1; min-width: 0; }
+.find-links-why { display: block; color: var(--muted); font-size: 11.5px; }
+.find-links-foot { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 12px; }
+.find-links-foot .btn { margin-left: 6px; }

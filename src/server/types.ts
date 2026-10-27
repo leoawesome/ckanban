@@ -181,6 +181,17 @@ export interface Ticket {
   branchPoint?: BranchPoint | null;
   /** Ticket this one follows up (a new requirement on a ticket that already ran). Not a plan parent. */
   addOnOf?: string | null;
+  /**
+   * Ticket this one is part of (its family's parent, see web/src/family.ts): a plain link, set by the user or by the
+   * chat that created it. Unlike addOnOf it changes nothing about how work runs and is no correction to learn from.
+   */
+  partOf?: string | null;
+  /** "chat": the ticket's chat created this one as part of it (create_ticket's partOfThisTicket). */
+  partOfVia?: "chat" | null;
+  /** A parent the board suggests for a ticket the user created (see linker.ts); the panel offers Link / Not related. */
+  parentSuggestion?: { id: string; reason: string } | null;
+  /** The board already looked for a parent (or the user said Not related): it doesn't suggest one again. */
+  parentChecked?: boolean;
   /** Branch the first worktree starts from instead of the base branch (an add-on to a ticket still in Review). */
   startFrom?: string | null;
   /** When the ticket last moved into Done (the store sets it): its huddles from before then close. */

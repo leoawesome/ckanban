@@ -13,6 +13,7 @@ import { macBanner } from "./notify";
 import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
 import type { SessionSummary } from "./session";
 import { recallBlock } from "./recall";
+import { wouldLoop } from "../../web/src/family";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
 import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake } from "./prompts";
@@ -1526,7 +1527,7 @@ export class Board {
     slug: string,
     input: {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
-      needs?: string[]; tags?: string[]; important?: boolean;
+      needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
     },
   ): Promise<Ticket> {
     const status = input.status === "in_progress" ? "ready" : input.status;
@@ -2043,6 +2044,11 @@ export class Board {
     if (t) deleteAttachments(this.store.attachmentsDir, this.attachmentsOf(slug, t));
     this.store.deleteTicket(slug, id);
     this.bus.emit({ type: "ticket.deleted", profile: slug, id });
+    // Its family stays, unlinked from it; a suggestion to link under it goes too.
+    for (const o of this.store.listTickets(slug)) {
+      if (o.partOf === id) this.patch(slug, o.id, { partOf: null, partOfVia: null });
+      if (o.parentSuggestion?.id === id) this.patch(slug, o.id, { parentSuggestion: null });
+    }
   }
 
   /** Images pasted into the ticket: its description, comments and chat (the Claude session transcript). */
@@ -2166,6 +2172,38 @@ export class Board {
       this.patch(slug, id, { outcome: src.reopenedFrom.outcome });
     }
     return input.start ? this.updateTicket(slug, t.id, { status: "ready" }) : this.store.getTicket(slug, t.id)!;
+  }
+
+  // ---- Families: "part of" links (see web/src/family.ts) ----
+
+  /**
+   * Makes id part of parent's family (null unlinks). via "chat": the parent's chat created it. A missing parent or a
+   * loop (a ticket under its own descendant) is refused. Any parent suggestion is settled by it.
+   */
+  setPartOf(slug: string, id: string, parent: string | null, via: "chat" | null = null): Ticket {
+    const t = this.store.getTicket(slug, id);
+    if (!t) throw new Error(`ticket ${id} not found`);
+    if (parent !== null) {
+      if (!this.store.getTicket(slug, parent)) throw new Error(`ticket ${parent} not found`);
+      if (wouldLoop(this.store.listTickets(slug), id, parent)) {
+        throw new Error(parent === id ? "a ticket can't be part of itself" : `${parent} is already part of ${id}'s family below it; linking would make a loop`);
+      }
+    }
+    return this.patch(slug, id, { partOf: parent, partOfVia: parent ? via : null, parentSuggestion: null, parentChecked: true });
+  }
+
+  /** Not related: the suggestion goes and the board doesn't suggest a parent for this ticket again. */
+  dismissParentSuggestion(slug: string, id: string): Ticket {
+    if (!this.store.getTicket(slug, id)) throw new Error(`ticket ${id} not found`);
+    return this.patch(slug, id, { parentSuggestion: null, parentChecked: true });
+  }
+
+  /** The board's parent suggestion (linker.ts), unless the ticket got a parent or was settled meanwhile. */
+  suggestParent(slug: string, id: string, suggestion: { id: string; reason: string } | null): Ticket | null {
+    const t = this.store.getTicket(slug, id);
+    if (!t || t.parentChecked || t.partOf || t.addOnOf || t.parentId) return null;
+    if (suggestion && !this.store.getTicket(slug, suggestion.id)) suggestion = null;
+    return this.patch(slug, id, { parentSuggestion: suggestion, parentChecked: true });
   }
 
   // ---- One-click recovery from a lost or busy session ----

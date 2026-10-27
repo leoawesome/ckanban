@@ -342,7 +342,8 @@ export function shiftNotes(current: HuddleNote[], from: string | null, to: strin
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
-function jsonObject(text: string): Record<string, unknown> | null {
+/** The JSON object in a side call's answer (the first { to the last }), or null. */
+export function jsonObject(text: string): Record<string, unknown> | null {
   const from = text.indexOf("{");
   const to = text.lastIndexOf("}");
   if (from < 0 || to < from) return null;

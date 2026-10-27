@@ -70,6 +70,9 @@ export interface TicketInfo {
   jobId?: string | null;
   /** Planner ticket whose plan runs this one. */
   parentId?: string | null;
+  /** Ticket this one is part of (its family's parent) and the one it is an add-on to. */
+  partOf?: string | null;
+  addOnOf?: string | null;
   planKey?: string | null;
   dependsOn?: string[];
   /** Exclusive resources (e.g. emulator): tickets needing the same one never run at the same time. */
@@ -90,6 +93,23 @@ export interface TicketInfo {
   createdAt: string;
   updatedAt: string;
   attention?: { kind: string } | null;
+}
+
+/** One ticket of a family (GET .../family), from the top ticket down. */
+export interface FamilyRowInfo {
+  id: string;
+  title: string;
+  status: Status;
+  depth: number;
+  /** How it hangs on its parent: "linked", "from chat", "add-on" or "plan"; null for the top ticket. */
+  how: string | null;
+  parent: string | null;
+  sessionId: string | null;
+  resumeCommand: string | null;
+  prUrl: string | null;
+  updatedAt: string;
+  /** Claude's last result on it. */
+  result: string | null;
 }
 
 export interface ScheduleInfo {
@@ -318,10 +338,11 @@ export class BoardClient {
   listProfiles = () => this.req<ProfileInfo[]>("GET", "/api/profiles");
   listTickets = (slug: string) => this.req<TicketInfo[]>("GET", this.t(slug));
   getTicket = (slug: string, id: string) => this.req<TicketInfo>("GET", this.t(slug, id));
+  getFamily = (slug: string, id: string) => this.req<FamilyRowInfo[]>("GET", `${this.t(slug, id)}/family`);
   // `run` (a board run's CKANBAN_TICKET): the daemon only lets a running plan's planner change its own children.
   createTicket = (
     slug: string,
-    input: { title: string; body?: string; status?: Status; mode?: TicketMode; planKey?: string; dependsOn?: string[]; needs?: string[]; tags?: string[] },
+    input: { title: string; body?: string; status?: Status; mode?: TicketMode; planKey?: string; dependsOn?: string[]; needs?: string[]; tags?: string[]; partOf?: string },
     run?: string | null,
   ) => this.req<TicketInfo>("POST", this.t(slug), input, this.by(run));
   // From a run, only the planner's own plan, and only with planner rights (see Board.plannerRights).
@@ -565,6 +586,8 @@ export function ticketText(t: TicketInfo, comments: CommentInfo[] = []): string 
   if (t.jobId) lines.push(`job: ${t.jobId} (created by this one-time job; see list_jobs)`);
   if (t.scheduleId) lines.push(`schedule: ${t.scheduleId} (created by this schedule; see list_schedules)`);
   if (t.parentId) lines.push(`plan: child of ${t.parentId}${t.planKey ? ` (key ${t.planKey})` : ""}`);
+  if (t.partOf) lines.push(`part of: ${t.partOf} (get_family lists its whole family)`);
+  if (t.addOnOf) lines.push(`add-on to: ${t.addOnOf} (get_family lists its whole family)`);
   if (t.dependsOn?.length) lines.push(`depends on: ${t.dependsOn.join(", ")}`);
   if (t.needs?.length) {
     const r = t.resources;
@@ -584,6 +607,23 @@ export function ticketText(t: TicketInfo, comments: CommentInfo[] = []): string 
     for (const c of comments) lines.push(`- ${c.author} (${c.at}): ${c.text}`);
   }
   return lines.join("\n");
+}
+
+/** Claude's last result on a family member is cut to this many characters (get_ticket has it whole). */
+const FAMILY_RESULT_CHARS = 400;
+
+/** One get_family row: indented under its parent, with column, how it is linked, session and last result. */
+export function familyLine(r: FamilyRowInfo): string {
+  const pad = "  ".repeat(r.depth);
+  const result = (r.result ?? "").replace(/\s+/g, " ").trim();
+  const cut = result.length > FAMILY_RESULT_CHARS ? `${result.slice(0, FAMILY_RESULT_CHARS).trimEnd()}…` : result;
+  const bits = [
+    `${pad}- ${r.id} [${r.status}]${r.how ? ` (${r.how})` : " (top)"} ${r.title}`,
+    r.sessionId ? `${pad}  session: ${r.sessionId}` : null,
+    r.prUrl ? `${pad}  pr: ${r.prUrl}` : null,
+    cut ? `${pad}  last result: ${cut}` : null,
+  ];
+  return bits.filter(Boolean).join("\n");
 }
 
 /** What a bug report did, for the CLI and MCP: the issue URL, or the browser link to finish it. */

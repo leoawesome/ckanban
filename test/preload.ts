@@ -6,6 +6,9 @@ import { join } from "node:path";
 // Tests run inside board and huddle runs too; their identity vars would leak into the code under test
 // (and into fake claude children), so every test file starts without them.
 for (const k of ["CKANBAN_TICKET", "CKANBAN_HUDDLE_AGENT", "CKANBAN_OUTPUT_DIR"]) delete process.env[k];
+// Code that falls back to the real `claude` (side calls such as parent suggestions) gets a stand-in that fails at
+// once: tests never spend money or wait on the user's own Claude. Tests that need a fake claude pass their own.
+process.env.CKANBAN_CLAUDE_BIN = "/bin/false";
 
 // Git in tests ignores the user's own git config: no commit signing (slow, may prompt), hooks or
 // aliases from their setup. Commits get a fixed test identity.

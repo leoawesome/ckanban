@@ -49,6 +49,8 @@ import { Simplifier, SimplifyError } from "./simplify";
 import { changesPrompt, HELP_KINDS, Helper, HelpError, newId, recapAvailable, recapPrompt, type HelpKind } from "./explain";
 import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, UsageCache, windowsNeeded } from "./ticket-usage";
 import { fetchUsage, type UsageResult } from "./usage";
+import { Linker } from "./linker";
+import { familyOf, LINK_WORDS, parentLink } from "../../web/src/family";
 import type { Store } from "./store";
 import { runCapFor, SELF_MOVES, STATUSES, type Profile, type SelfMove, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
 import { nowIso, slugify } from "./util";
@@ -112,6 +114,8 @@ export interface ServerDeps {
   notifier?: Notifier;
   /** Phone push devices (push.ts), shared with the notifier. */
   push?: PushService;
+  /** Parent suggestions and Find links (linker.ts); tests pass one on a fake side call. */
+  linker?: Pick<Linker, "suggest" | "find">;
 }
 
 /** A Share menu publish in progress, or the error of the last one, per output file. Not persisted. */
@@ -278,6 +282,11 @@ export function createServer(deps: ServerDeps) {
     if (!(await isUserBrowser(peer))) throw new HttpError(403, refusal);
   };  const simplifier = new Simplifier(store, sideCall);
   const helper = new Helper(store, sideCall);
+  const linker = deps.linker ?? new Linker(store, board, sideCall);
+  /** Looks for a parent for a ticket the user made, in the background (it never holds up saving). */
+  const suggestParent = (slug: string, id: string) => {
+    linker.suggest(slug, id).catch((e) => console.error(`suggesting a parent for ${slug}/${id}: ${(e as Error).message}`));
+  };
   const claudeLogs = deps.claudeLogs ?? new ClaudeLogIndex();
   const publishArtifact = deps.publishArtifact ?? ((job: ArtifactJob) => runArtifactJob(job));
   // No listener (not bound): 0, so `on` refuses instead of pointing serve at whatever holds the port.
@@ -1025,6 +1034,7 @@ export function createServer(deps: ServerDeps) {
       if (parts.length === 5 && parts[4] === "ticket" && m === "POST") {
         await userAsks();
         const r = await quickChats.makeTicket(slug, cid);
+        suggestParent(slug, r.ticket.id);
         return json({ ticket: view(profile, store.getTicket(slug, r.ticket.id) ?? r.ticket), chat: r.chat }, 201);
       }
       // The conversation, newest last, paged like a ticket's (see the ticket conversation route).
@@ -1086,6 +1096,17 @@ export function createServer(deps: ServerDeps) {
         return json({ entry, schedule: scheduler.view(slug, scheduler.get(slug, sid)) });
       }
       throw new HttpError(404, "not found");
+    }
+
+    // POST /profiles/:p/find-links — Find links: Claude suggests parents for tickets without one. Nothing changes here;
+    // the user's Link selected sets each one (PATCH partOf).
+    if (parts[2] === "find-links" && parts.length === 3 && m === "POST") {
+      await userOnly(req, "Finding links");
+      try {
+        return json(await linker.find(slug));
+      } catch (e) {
+        throw new HttpError(502, `Couldn't find links: ${(e as Error).message}`);
+      }
     }
 
     // POST /profiles/:p/automation-setup — Automations → Set up with Claude: a Planning ticket whose chat sets one up.
@@ -1260,16 +1281,26 @@ export function createServer(deps: ServerDeps) {
           if (running) mode = "auto";
         }
         if (parentId && !store.getTicket(slug, parentId)) throw new HttpError(400, `parent ticket ${parentId} not found`);
+        // Part of another ticket's family: a run's own ticket (create_ticket's partOfThisTicket, shown as "from chat") or,
+        // for the user, any ticket of this board.
+        const partOf = typeof b.partOf === "string" && b.partOf ? b.partOf : undefined;
+        const fromRun = req.headers.get(RUN_HEADER)?.split("/");
+        const partOfVia = partOf && fromRun?.[0] === slug && fromRun[1] === partOf ? "chat" as const : undefined;
+        if (partOf && !store.getTicket(slug, partOf)) throw new HttpError(400, `ticket ${partOf} not found (partOf)`);
+        if (partOf && fromRun && !partOfVia) throw new HttpError(403, "from a board run, partOf can only be the run's own ticket (use partOfThisTicket)");
         const startedBy = runner && startsRun(status) ? runStart(slug, runner) : guest && startsRun(status) ? guestStart(guest) : null;
         let t = await board.createTicket(slug, {
           title, body: String(b.body ?? ""), status: b.sessionId && !planner ? "backlog" : status, mode, parentId, planKey, dependsOn, needs, tags,
-          important: b.important === true,
+          important: b.important === true, ...(partOf ? { partOf, ...(partOfVia ? { partOfVia } : {}) } : {}),
         });
         if (planner) store.addComment(slug, t.id, "ai", `Created by the planner of plan ${planner.id}.`);
         if (requester) store.addComment(slug, t.id, "ai", `Created ${byRequest(requester)}.`);
         if (runner) store.addComment(slug, t.id, "ai", `Created ${byRun(runner)}.`);
         if (guest) store.addComment(slug, t.id, "ai", `Created ${byGuest(guest)}.`);
+        if (partOfVia) store.addComment(slug, t.id, "ai", `Linked as part of ${partOf} ("${store.getTicket(slug, partOf!)?.title ?? ""}"), the ticket whose chat created it.`);
         if (startedBy) board.markStartedBy(slug, t.id, startedBy);
+        // A ticket the user made (not a run, plan or linked one) gets a parent suggestion in its panel.
+        if (!fromRun && !parentId && !partOf) suggestParent(slug, t.id);
         if (b.sessionId && !planner) {
           try {
             await board.linkSession(slug, t.id, String(b.sessionId));
@@ -1312,6 +1343,10 @@ export function createServer(deps: ServerDeps) {
         if (suggested) patch.suggestedTags = suggested;
         if (b.parentId === null) patch.parentId = null;
         else if (b.parentId !== undefined) throw new HttpError(400, "parentId can only be cleared (null); use adopt to add a ticket to a plan");
+        // Family: partOf a ticket id links it (null unlinks); parentSuggestion null is Not related.
+        if (b.partOf !== undefined && b.partOf !== null && (typeof b.partOf !== "string" || !b.partOf)) throw new HttpError(400, "partOf must be a ticket id or null");
+        if (b.parentSuggestion !== undefined && b.parentSuggestion !== null) throw new HttpError(400, "parentSuggestion can only be cleared (null)");
+        const linkOnly = Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "partOf" || k === "parentSuggestion");
         if (b.mode === "auto" || b.mode === "interview") patch.mode = b.mode;
         if (typeof b.expectedBody === "string") patch.expectedBody = b.expectedBody;
         if (typeof b.title === "string") patch.title = b.title;
@@ -1375,9 +1410,11 @@ export function createServer(deps: ServerDeps) {
             }
           }
         }
-        let t: Ticket;
+        let t: Ticket = target;
         try {
-          t = await board.updateTicket(slug, id, patch);
+          if (b.partOf !== undefined) t = board.setPartOf(slug, id, b.partOf);
+          else if (b.parentSuggestion === null) t = board.dismissParentSuggestion(slug, id);
+          if (!linkOnly) t = await board.updateTicket(slug, id, patch);
         } catch (e) {
           if (e instanceof ConflictError) throw e;
           throw new HttpError(400, (e as Error).message);
@@ -1389,6 +1426,9 @@ export function createServer(deps: ServerDeps) {
           const what = Object.entries(patch)
             .map(([k, v]) => (k === "status" ? `moved it to ${v}` : k === "parentId" ? `released it from plan ${target.parentId}` : k === "important" ? (v ? "marked it ⭐ Important" : "cleared ⭐ Important") : `changed ${k}`)).join(", ");
           const by = planner ? "" : requester ? byRequest(requester) : runner ? byRun(runner) : byGuest(guest!);
+          const linked = b.partOf === undefined || b.partOf === target.partOf ? ""
+            : b.partOf ? `linked it as part of ${b.partOf}` : `unlinked it from ${target.partOf}`;
+          if (linked) store.addComment(slug, id, "ai", planner ? `Planner ${linked}.` : `${linked[0].toUpperCase()}${linked.slice(1)} ${by}.`);
           if (what) store.addComment(slug, id, "ai", planner ? `Planner ${what}.` : `${what[0].toUpperCase()}${what.slice(1)} ${by}.`);
         }
         return json(view(profile, startedBy === undefined ? t : store.getTicket(slug, id)!));
@@ -1403,6 +1443,14 @@ export function createServer(deps: ServerDeps) {
 
     const action = parts[4];
     if (action === "activity" && m === "GET") return json(store.readActivity(slug, id));
+    // The ticket's whole family from the top ticket down (web/src/family.ts), with each one's session and last result.
+    if (action === "family" && m === "GET") {
+      return json(familyOf(store.listTickets(slug), id).map(({ ticket: t, depth, how }) => ({
+        id: t.id, title: t.title, status: t.status, depth, how: how && LINK_WORDS[how], parent: depth ? parentLink(t)?.id ?? null : null,
+        sessionId: t.sessionId, resumeCommand: t.sessionId ? resumeCommand(t.workdir ?? t.worktree ?? profile.path, t.sessionId) : null,
+        prUrl: t.prUrl, updatedAt: t.updatedAt, result: store.lastAiComment(slug, t.id),
+      })));
+    }
     // Inbox Snooze: hide what the ticket waits for now (1 day, or { hours }); DELETE unsnoozes.
     if (action === "snooze" && (m === "POST" || m === "DELETE")) {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "snoozing is the user's, not a board run's");

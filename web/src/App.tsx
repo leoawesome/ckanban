@@ -7,7 +7,7 @@ import { ConnectionsDialog } from "./ConnectionsDialog";
 import { HeaderMenu, type MenuItem } from "./HeaderMenu";
 import { boardTags, hasTags, parseSearch, tagStyle } from "./tagText";
 import { TagFilter } from "./Tags";
-import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, FolderIcon, GearIcon, KeyboardIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
+import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, FolderIcon, GearIcon, KeyboardIcon, LinkIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
 import { Inbox } from "./Inbox";
 import { NowView } from "./NowView";
 import { NotificationsDialog } from "./NotificationsDialog";
@@ -26,6 +26,7 @@ import { NewTicketDialog } from "./NewTicketDialog";
 import { ProfileDialog } from "./ProfileDialog";
 import { SchedulesDialog } from "./SchedulesDialog";
 import { SnippetsDialog } from "./SnippetsDialog";
+import { FindLinksDialog } from "./FindLinksDialog";
 import { Select } from "./Select";
 import { BoardSwitcher, ShortcutsDialog } from "./Shortcuts";
 import { CommandBar, type CommandAction } from "./CommandBar";
@@ -205,6 +206,7 @@ export function App() {
     setSchedulesOpen(true);
   }, []);
   const [snippetsOpen, setSnippetsOpen] = useState(false);
+  const [findLinksOpen, setFindLinksOpen] = useState(false);
   // Automations (this board) and the board's passes in Connections: they fetch for themselves and refetch when this
   // counter moves (the server says an automation or a pass changed).
   const [automationsOpen, setAutomationsOpen] = useState(false);
@@ -664,6 +666,9 @@ export function App() {
           }, {
             label: "Snippets", icon: <AtIcon />, onSelect: () => setSnippetsOpen(true),
             title: "Reusable prompt text: type @name in a ticket or the chat to insert it",
+          }, {
+            label: "Find links", icon: <LinkIcon />, onSelect: () => setFindLinksOpen(true),
+            title: "Claude suggests which tickets belong together (part of one piece of work); you pick the links to make",
           }] : []),
           {
             label: "Connections", icon: <PlugIcon />, onSelect: () => setConnections(true), separator: true,
@@ -995,6 +1000,7 @@ export function App() {
           onOpenConnections={() => { setAutomationsOpen(false); setConnections(true); }} />
       )}
       {snippetsOpen && profile && <SnippetsDialog profile={profile} onClose={() => setSnippetsOpen(false)} />}
+      {findLinksOpen && profile && <FindLinksDialog slug={profile.slug} tickets={tickets} onClose={() => setFindLinksOpen(false)} />}
       {open && profile && <TicketDrawer key={open.id} profile={profile} ticket={open} tickets={tickets} onOpenTicket={openTicket} onClose={closeTicket}
         jobs={jobs ?? []} onOpenJobs={openSchedules}
         nav={{ prev: prevId, next: nextId, go: stepTicket }} slideIn={!stepped.current}
