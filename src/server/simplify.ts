@@ -32,18 +32,24 @@ Rules:
 - Plain everyday words. Say what a technical term means instead of using it ("a saved copy of the project" rather than "a commit"; "the copy of the folder Claude works in" rather than "a worktree").
 - No file paths, file names, code, commands, version numbers or hashes, unless the reader must type, open or act on one themselves.
 - Leave out how the work was done and checked (test counts, builds, merges, restarts) unless something went wrong or the reader must wait or act; "it was checked and works" is enough.
-- Full sentences. No arrows, no symbols standing in for words, no abbreviations, no filler, no hype.
+- Whole sentences, also in list items. No arrows, no symbols standing in for words, no abbreviations, no filler, no hype.
+- Light formatting (Markdown) where it makes the message easier to scan: short paragraphs with a blank line between them; **bold** for the one key point, or for what the reader must do or answer; a bullet list when there are three or more items of the same kind (options, steps, results). If the message is a list of items, the rewrite can stay a list. No headings, tables or code blocks.
 - If the message asks the reader something or needs them to act, say that clearly, at the end.
 - Short: usually two to four sentences, or a short list. Much shorter than the original.
 - Write in the same language as the message.
-- Answer with the rewritten message only: no introduction, no heading, no note about what you changed.`;
+- Answer with the rewritten message only: no introduction, no title, no note about what you changed.`;
 
 export function simplifyPrompt(title: string, text: string): string {
   return `The message is about the task "${title}".\n\n<message>\n${text}\n</message>`;
 }
 
+/** Bump when SIMPLIFY_SYSTEM changes what a rewrite looks like: rewrites saved with another version are made again. */
+export const SIMPLIFY_VERSION = 2;
+
 interface Saved {
   text: string;
+  /** SIMPLIFY_VERSION it was made with; missing on rewrites from before formatting (version 1). */
+  version?: number;
   /** Hash of the reply it was made from: a reply whose text changed gets a fresh rewrite. */
   source: string;
   at: string;
@@ -52,6 +58,9 @@ interface Saved {
 }
 
 const hash = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 16);
+
+/** A saved rewrite still good for a reply with this source hash. */
+const fresh = (s: Saved | undefined, source: string) => s?.source === source && s.version === SIMPLIFY_VERSION;
 
 function readSaved(file: string): Record<string, Saved> {
   try {
@@ -85,7 +94,7 @@ export class Simplifier {
     const out: Record<string, string> = {};
     for (const e of entries) {
       const s = saved[e.uuid];
-      if (s && s.source === hash(replyText(e.text))) out[e.uuid] = s.text;
+      if (s && fresh(s, hash(replyText(e.text)))) out[e.uuid] = s.text;
     }
     return out;
   }
@@ -102,7 +111,7 @@ export class Simplifier {
     const original = replyText(entry.text);
     const source = hash(original);
     const hit = readSaved(file)[entry.uuid];
-    if (hit?.source === source) return { text: hit.text, cached: true };
+    if (fresh(hit, source)) return { text: hit.text, cached: true };
     const key = `${file}|${entry.uuid}`;
     let p = this.running.get(key);
     if (!p) {
@@ -112,7 +121,7 @@ export class Simplifier {
         addSideSpend(at.spend, "simplify", r.costUsd);
         // Read again: other messages may have been saved meanwhile.
         const saved = readSaved(file);
-        saved[entry.uuid] = { text: r.text, source, at: new Date().toISOString(), costUsd: r.costUsd, model: r.model };
+        saved[entry.uuid] = { text: r.text, version: SIMPLIFY_VERSION, source, at: new Date().toISOString(), costUsd: r.costUsd, model: r.model };
         atomicWrite(file, JSON.stringify(saved, null, 2) + "\n");
         return r.text;
       })().finally(() => this.running.delete(key));

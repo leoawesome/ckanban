@@ -9,7 +9,7 @@ import { makeSideCaller, parseSideResult, sideCallArgs, type SideCallInput, type
 import { SpendIndex } from "../src/server/spend";
 import { Store } from "../src/server/store";
 import { simplifiable as webSimplifiable } from "../web/src/simplifyText";
-import { simplifiable } from "../src/server/simplify";
+import { SIMPLIFY_SYSTEM, SIMPLIFY_VERSION, simplifiable } from "../src/server/simplify";
 import { tempDir } from "./helpers";
 
 const L = (o: unknown) => JSON.stringify(o);
@@ -151,6 +151,31 @@ test("simplify: short replies, unknown messages and failed calls", async () => {
   } finally {
     next = prev;
   }
+});
+
+test("simplify: rewrites saved with an older version (or none) are made again; current ones are reused", async () => {
+  const id = ticket();
+  await simplify(id, "a1");
+  const file = store.simplifiedPath("p", id);
+  const current = JSON.parse(readFileSync(file, "utf8"));
+  expect(current.a1.version).toBe(SIMPLIFY_VERSION);
+  calls.length = 0;
+  for (const version of [undefined, SIMPLIFY_VERSION - 1]) {
+    writeFileSync(file, JSON.stringify({ a1: { ...current.a1, text: "Old plain rewrite.", version } }));
+    expect(await saved(id)).toEqual({});
+    expect(await (await simplify(id, "a1")).json()).toEqual({ text: "The login page now has a Forgot password link.", cached: false });
+    expect(JSON.parse(readFileSync(file, "utf8")).a1.version).toBe(SIMPLIFY_VERSION);
+  }
+  expect(calls).toHaveLength(2);
+  expect(await (await simplify(id, "a1")).json()).toMatchObject({ cached: true });
+  expect(calls).toHaveLength(2);
+});
+
+test("simplify: the rewrite may use bold and bullet lists, stays short, no headings", () => {
+  expect(SIMPLIFY_SYSTEM).toContain("**bold**");
+  expect(SIMPLIFY_SYSTEM).toContain("a bullet list");
+  expect(SIMPLIFY_SYSTEM).toContain("No headings, tables or code blocks");
+  expect(SIMPLIFY_SYSTEM).toContain("Much shorter than the original");
 });
 
 test("simplifiable: same rule on the server and in the chat", () => {
