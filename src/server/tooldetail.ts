@@ -31,7 +31,8 @@ export function findToolDetail(raw: string, toolUseId: string): ToolDetail | nul
     const content = ev.message?.content;
     if (!Array.isArray(content)) continue;
     for (const b of content) {
-      if (b?.type === "tool_use" && b.id === toolUseId) {
+      // Only the first copy: newer transcripts repeat earlier tool_use blocks (api-request-blob lines) after the result.
+      if (b?.type === "tool_use" && b.id === toolUseId && !detail) {
         const input = b.input && typeof b.input === "object" ? b.input : {};
         detail = { id: toolUseId, name: String(b.name ?? "tool"), input, output: null, isError: false, truncated: false };
       } else if (b?.type === "tool_result" && b.tool_use_id === toolUseId && detail) {

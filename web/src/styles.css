@@ -2548,6 +2548,9 @@ button.hd-mode:disabled { cursor: default; }
   .panel-head > :not(.head-spacer) { flex-shrink: 0; }
   .phone-back { width: 36px; height: 36px; }
   .phone-move .select-trigger { padding: 5px 10px; font-weight: 600; background: var(--surface-2); border-color: transparent; min-width: 0; }
+  /* Room for every button: the scheduled chip keeps its clock and count, a long column name is cut short. */
+  .panel-head .job-chip .job-chip-word { display: none; }
+  .panel-head > .phone-move { flex-shrink: 1; min-width: 0; }
   .panel-body.details-closed { grid-template-rows: minmax(0, 1fr); }
   /* Ticket tab (phones): the details sidebar as one full-height page that scrolls as a whole */
   .panel-ticket { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
@@ -2800,6 +2803,7 @@ button.tag-chip:hover { border-color: currentColor; }
 .push-device-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .push-device-title { font-weight: 600; }
 .push-device .pill.ok { background: var(--ok); color: #fff; }
+.push-dropped { border-left: 3px solid var(--warn); padding: 4px 8px; background: var(--warn-soft); border-radius: 4px; }
 .push-steps { margin: 0; padding-left: 18px; }
 .push-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .push-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

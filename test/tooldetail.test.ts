@@ -43,6 +43,16 @@ test("findToolDetail: full input, output, error and truncation", () => {
   expect(findToolDetail(RAW, "nope")).toBeNull();
 });
 
+test("findToolDetail: a tool_use repeated after its result (api-request-blob lines) keeps the output", () => {
+  const raw = [
+    asst([{ type: "tool_use", id: "r1", name: "Bash", input: { command: "ls" } }], "2026-10-28T01:00:01Z"),
+    user([{ type: "tool_result", tool_use_id: "r1", content: "a.txt" }], "2026-10-28T01:00:02Z"),
+    // Newer Claude Code transcripts repeat the request's earlier content after the result.
+    L({ type: "api-request-blob", message: { role: "assistant", content: [{ type: "tool_use", id: "r1", name: "Bash", input: { command: "ls" } }] } }),
+  ].join("\n");
+  expect(findToolDetail(raw, "r1")).toMatchObject({ input: { command: "ls" }, output: "a.txt", isError: false });
+});
+
 test("tool endpoint returns one call in full; 404 for unknown ids", async () => {
   const configDir = tempDir();
   const dir = join(configDir, "projects", "-proj");

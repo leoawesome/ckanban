@@ -1041,6 +1041,13 @@ export interface PushDevice {
   createdAt: string;
 }
 
+/** A device the board removed because it stopped accepting notifications (until it is turned on again). */
+export interface DroppedPushDevice {
+  id: string;
+  label: string;
+  at: string;
+}
+
 /** "Needs you" notifications (src/server/notify.ts): webhook (ntfy or JSON), macOS banner, per-kind toggles. */
 export type NotifyKind = "stalled" | "questions" | "proposal" | "review" | "failed" | "limit" | "blocked" | "huddle" | "reply" | "message";
 export interface NotifyState {
@@ -1189,8 +1196,9 @@ export const api = {
   setNotify: (patch: Partial<Pick<NotifyState, "webhookUrl" | "format" | "mac">> & { kinds?: Partial<Record<NotifyKind, boolean>> }) => req<NotifyState>("POST", "/api/notify", patch),
   testNotify: (profile: string | null) =>
     req<{ ok: boolean; error: string | null; webhook: boolean; devices: number; state: NotifyState }>("POST", "/api/notify/test", profile ? { profile } : {}),
-  push: () => req<{ publicKey: string; devices: PushDevice[] }>("GET", "/api/push"),
-  pushSubscribe: (subscription: PushSubscriptionJSON, label: string) => req<PushDevice>("POST", "/api/push/subscribe", { subscription, label }),
+  push: () => req<{ publicKey: string; devices: PushDevice[]; dropped: DroppedPushDevice[] }>("GET", "/api/push"),
+  pushSubscribe: (subscription: PushSubscriptionJSON, label: string, replaces?: string) =>
+    req<PushDevice>("POST", "/api/push/subscribe", replaces ? { subscription, label, replaces } : { subscription, label }),
   pushRemove: (key: { id: string } | { endpoint: string }) => req<{ removed: boolean; devices: PushDevice[] }>("POST", "/api/push/remove", key),
   pushTest: (id: string, profile: string | null) => req<{ ok: boolean; error: string | null }>("POST", "/api/push/test", profile ? { id, profile } : { id }),
   pushVisible: (endpoint: string, visible: boolean) => req<{ ok: boolean }>("POST", "/api/push/visible", { endpoint, visible }),

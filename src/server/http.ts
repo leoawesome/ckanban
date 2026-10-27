@@ -595,13 +595,13 @@ export function createServer(deps: ServerDeps) {
     // Phone push (push.ts): this device turns notifications on/off; the page's heartbeat says when its board is on screen.
     if (parts[0] === "push") {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "board runs can't use notification settings");
-      if (parts.length === 1 && m === "GET") return json({ publicKey: push.publicKey(), devices: push.devices() });
+      if (parts.length === 1 && m === "GET") return json({ publicKey: push.publicKey(), devices: push.devices(), dropped: push.dropped() });
       const b = m === "POST" ? await body(req) : null;
       const endpoint = typeof b?.endpoint === "string" ? b.endpoint : "";
       if (parts[1] === "subscribe" && m === "POST") {
         try {
           // On the board's own port: a browser on this Mac (phone access comes in on the remote listener).
-          const d = push.subscribe(b?.subscription, b?.label, listenerOf(req) === "local");
+          const d = push.subscribe(b?.subscription, b?.label, listenerOf(req) === "local", typeof b?.replaces === "string" ? b.replaces : undefined);
           return json({ id: d.id, label: d.label, createdAt: d.createdAt });
         } catch (e) {
           throw new HttpError(400, (e as Error).message);

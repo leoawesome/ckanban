@@ -254,6 +254,22 @@ export class Notifier {
     this.fetch = o.fetch ?? ((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(10_000) }));
     this.banner = o.banner ?? macBanner;
     this.now = o.now ?? Date.now;
+    o.push?.onDropped((d) => this.dropped(d.label));
+  }
+
+  /**
+   * A device stopped accepting notifications and the board removed it: log it and tell the user on this Mac (its
+   * browser, or the banner), since that device won't hear about it. The Notifications dialog shows it too.
+   */
+  private dropped(label: string): void {
+    console.warn(`notify: ${label} no longer accepts notifications (its push service said it is gone), so the board removed it`);
+    if (!this.settings().mac) return;
+    const title = `Notifications stopped on ${label}`;
+    const body = "Open the board there and turn notifications on again.";
+    if (!this.macBrowser()) return this.banner(title, body);
+    const url = `${this.o.baseUrl()}/`;
+    void this.o.push!.send({ title, body, url, tag: "push-dropped" }, { thisMac: true, skipVisible: false })
+      .then((r) => r.error && console.warn(`notify: ${r.error}`));
   }
 
   settings(): NotifySettings {

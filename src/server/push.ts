@@ -15,9 +15,17 @@ export interface PushDevice extends PushTarget {
   thisMac?: boolean;
 }
 
+/** A device the board removed because its push service said it is gone; shown until it is turned on again. */
+export interface DroppedDevice {
+  id: string;
+  label: string;
+  at: string;
+}
+
 interface PushFile {
   vapid: VapidKeys;
   devices: PushDevice[];
+  dropped?: DroppedDevice[];
 }
 
 /** What the page sends in a notification. The service worker shows title/body and opens url's ticket on tap. */
@@ -40,14 +48,28 @@ export interface PushResult {
 /** How long a "board on screen" heartbeat counts; the page sends one every 15 s while visible. */
 export const VISIBLE_MS = 40_000;
 
+/** A send that timed out or hit a network error is tried once more after this long. */
+export const RETRY_MS = 3000;
+
+/** The newest dropped devices kept for the Notifications dialog. */
+const DROPPED_MAX = 5;
+
 export class PushService {
   private visibleUntil = new Map<string, number>();
   private fetch: (url: string, init: RequestInit) => Promise<Response>;
   private now: () => number;
+  private retryMs: number;
+  private droppedListeners: ((d: DroppedDevice) => void)[] = [];
 
-  constructor(private root: string, o: { fetch?: (url: string, init: RequestInit) => Promise<Response>; now?: () => number } = {}) {
+  constructor(private root: string, o: { fetch?: (url: string, init: RequestInit) => Promise<Response>; now?: () => number; retryMs?: number } = {}) {
     this.fetch = o.fetch ?? ((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(10_000) }));
     this.now = o.now ?? Date.now;
+    this.retryMs = o.retryMs ?? RETRY_MS;
+  }
+
+  /** Called for each device removed because its push service said it is gone (Notifier tells the user). */
+  onDropped(fn: (d: DroppedDevice) => void): void {
+    this.droppedListeners.push(fn);
   }
 
   private get file() {
@@ -58,7 +80,9 @@ export class PushService {
     if (existsSync(this.file)) {
       try {
         const f = JSON.parse(readFileSync(this.file, "utf8"));
-        if (f?.vapid?.publicKey && f?.vapid?.privateKey) return { vapid: f.vapid, devices: Array.isArray(f.devices) ? f.devices : [] };
+        if (f?.vapid?.publicKey && f?.vapid?.privateKey) {
+          return { vapid: f.vapid, devices: Array.isArray(f.devices) ? f.devices : [], ...(Array.isArray(f.dropped) ? { dropped: f.dropped } : {}) };
+        }
       } catch {}
     }
     const fresh = { vapid: generateVapidKeys(), devices: [] };
@@ -80,13 +104,21 @@ export class PushService {
     return this.read().devices.map(({ id, label, createdAt }) => ({ id, label, createdAt }));
   }
 
+  /** Devices the board removed because they stopped accepting notifications, newest last. */
+  dropped(): DroppedDevice[] {
+    return this.read().dropped ?? [];
+  }
+
   /** Whether a browser on this Mac gets notifications (they open the ticket when clicked, unlike the macOS banner). */
   hasThisMac(): boolean {
     return this.read().devices.some((d) => d.thisMac);
   }
 
-  /** Add (or refresh) a device. Throws on input that isn't a browser push subscription. */
-  subscribe(raw: any, label: unknown, thisMac = false): PushDevice {
+  /**
+   * Add (or refresh) a device. Throws on input that isn't a browser push subscription. Clears the dropped notice for
+   * `replaces` (the id it had before the board dropped it) and for devices with the same label.
+   */
+  subscribe(raw: any, label: unknown, thisMac = false, replaces?: string): PushDevice {
     const endpoint = typeof raw?.endpoint === "string" ? raw.endpoint : "";
     let u: URL;
     try {
@@ -108,6 +140,7 @@ export class PushService {
       ...(thisMac ? { thisMac: true } : {}),
     };
     f.devices = [...f.devices.filter((d) => d.id !== id), device];
+    if (f.dropped) f.dropped = f.dropped.filter((d) => d.id !== id && d.id !== replaces && d.label !== device.label);
     this.write(f);
     return device;
   }
@@ -121,6 +154,21 @@ export class PushService {
     this.write(f);
     this.visibleUntil.delete(idOrEndpoint);
     return true;
+  }
+
+  /** Remove devices whose push service said they're gone, and remember them so the user is told. */
+  private drop(ids: string[]): void {
+    const f = this.read();
+    const at = nowIso();
+    const dropped = f.devices.filter((d) => ids.includes(d.id)).map(({ id, label }) => ({ id, label, at }));
+    if (!dropped.length) return;
+    f.devices = f.devices.filter((d) => !ids.includes(d.id));
+    f.dropped = [...(f.dropped ?? []).filter((d) => !ids.includes(d.id)), ...dropped].slice(-DROPPED_MAX);
+    this.write(f);
+    for (const d of dropped) {
+      this.visibleUntil.delete(d.id);
+      for (const fn of this.droppedListeners) fn(d);
+    }
   }
 
   /** A known device was seen in a browser on this Mac (devices turned on before `thisMac` existed); true when it changed. */
@@ -156,10 +204,19 @@ export class PushService {
     const errors: string[] = [];
     const gone: string[] = [];
     let sent = 0;
+    // A timeout or network error gets one more try (phones on a weak network often miss the first).
+    const post = async (d: PushDevice) => {
+      const { url, init } = pushRequest(d, JSON.stringify(p), f.vapid);
+      try {
+        return await this.fetch(url, init);
+      } catch {
+        await new Promise((r) => setTimeout(r, this.retryMs));
+        return this.fetch(url, init);
+      }
+    };
     await Promise.all(targets.map(async (d) => {
       try {
-        const { url, init } = pushRequest(d, JSON.stringify(p), f.vapid);
-        const r = await this.fetch(url, init);
+        const r = await post(d);
         if (r.status === 404 || r.status === 410) gone.push(d.id);
         else if (!r.ok) errors.push(`push to ${d.label} answered ${r.status} ${r.statusText}`.trim());
         else sent++;
@@ -167,7 +224,7 @@ export class PushService {
         errors.push(`push to ${d.label} failed: ${(e as Error).message}`);
       }
     }));
-    for (const id of gone) this.remove(id);
+    if (gone.length) this.drop(gone);
     return { sent, removed: gone.length, onScreen: wanted.length - targets.length, error: errors[0] ?? null };
   }
 }

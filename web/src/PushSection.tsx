@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type PushDevice } from "./api";
+import { api, type DroppedPushDevice, type PushDevice } from "./api";
 import { PUSH_HINT_KEY, pushState, turnOff, turnOn, type PushStatus } from "./push";
 import { timeAgo } from "./time";
 import { toast } from "./toast";
@@ -11,11 +11,12 @@ export function PushSection({ profile }: { profile: string | null }) {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [myId, setMyId] = useState<string | null>(null);
   const [devices, setDevices] = useState<PushDevice[]>([]);
+  const [dropped, setDropped] = useState<DroppedPushDevice[]>([]);
   const [busy, setBusy] = useState<"on" | "off" | "test" | null>(null);
   const [manage, setManage] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = () => pushState().then((s) => { setStatus(s.status); setMyId(s.myId); setDevices(s.devices); }).catch((e) => setError(e.message));
+  const load = () => pushState().then((s) => { setStatus(s.status); setMyId(s.myId); setDevices(s.devices); setDropped(s.dropped); }).catch((e) => setError(e.message));
   useEffect(() => { void load(); }, []);
 
   const act = async (kind: "on" | "off" | "test", fn: () => Promise<void>) => {
@@ -58,6 +59,13 @@ export function PushSection({ profile }: { profile: string | null }) {
         <span className="push-device-title">{name}</span>
         {status === "on" && <span className="pill ok">On</span>}
       </div>
+      {dropped.map((d) => (
+        <span key={d.id} className="small push-dropped" role="status">
+          {d.id === myId
+            ? <>The board stopped reaching this {phone ? "phone" : "device"} {timeAgo(d.at)}: it no longer accepted notifications. Turn them on again below.</>
+            : <>{d.label} stopped getting notifications {timeAgo(d.at)}. Open the board there and turn them on again.</>}
+        </span>
+      ))}
       {status === "off" && (
         <>
           <span className="muted small">Get a notification on this {phone ? "phone" : "device"} when a ticket needs you. Nothing comes while the board is open on screen.</span>

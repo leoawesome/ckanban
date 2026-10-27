@@ -165,9 +165,10 @@ export function JobChip({ jobs, ticketId, onOpen }: { jobs: Job[]; ticketId: str
   const chip = jobChip(jobs, ticketId);
   if (!chip) return null;
   return (
-    <button type="button" className="badge job-chip" title={`${chip.title}. Click to see them.`}
+    <button type="button" className="badge job-chip" title={`${chip.title}. Click to see them.`} aria-label={`${chip.label}. ${chip.title}`}
       onClick={(e) => { e.stopPropagation(); onOpen?.(ticketId); }} onKeyDown={(e) => e.stopPropagation()}>
-      <span aria-hidden>⏰</span> {chip.label}
+      {/* On a phone's ticket header only the clock and the count show ("⏰ 1"). */}
+      <span aria-hidden>⏰</span> {chip.label.replace(/ .*/, "")}<span className="job-chip-word">{chip.label.replace(/^\S+/, "")}</span>
     </button>
   );
 }

@@ -102,6 +102,46 @@ describe("push devices", () => {
     expect(push.devices()).toEqual([]);
   });
 
+  test("a dropped device is remembered until it turns on again, and listeners hear about it", async () => {
+    const { push } = setup(410);
+    const heard: string[] = [];
+    push.onDropped((d) => heard.push(d.label));
+    const phone = browser();
+    const d = push.subscribe(phone.sub, "Android");
+    await push.send({ title: "t", body: "b", url: "u" });
+    expect(heard).toEqual(["Android"]);
+    expect(push.dropped()).toMatchObject([{ id: d.id, label: "Android" }]);
+    // Removing a device by hand is not "dropped".
+    push.subscribe(browser().sub, "iPad");
+    push.remove(push.devices()[0].id);
+    expect(push.dropped()).toHaveLength(1);
+    // Signing up again with a new subscription clears it.
+    push.subscribe(browser().sub, "Android", false, d.id);
+    expect(push.dropped()).toEqual([]);
+  });
+
+  test("a send that times out is tried once more", async () => {
+    const root = tempDir("ck-push-");
+    let calls = 0;
+    const push = new PushService(root, {
+      retryMs: 1,
+      fetch: async () => {
+        if (++calls === 1) throw new Error("The operation timed out.");
+        return new Response("", { status: 201 });
+      },
+    });
+    push.subscribe(browser().sub, "Android");
+    expect(await push.send({ title: "t", body: "b", url: "u" })).toMatchObject({ sent: 1, error: null });
+    expect(calls).toBe(2);
+    // Failing twice: reported, device kept.
+    const failing = new PushService(tempDir("ck-push-"), { retryMs: 1, fetch: async () => { calls++; throw new Error("The operation timed out."); } });
+    failing.subscribe(browser().sub, "Android");
+    calls = 0;
+    expect((await failing.send({ title: "t", body: "b", url: "u" })).error).toBe("push to Android failed: The operation timed out.");
+    expect(calls).toBe(2);
+    expect(failing.devices()).toHaveLength(1);
+  });
+
   test("other failures are reported and the device kept", async () => {
     const { push } = setup(500);
     push.subscribe(browser().sub, "Android");
@@ -273,6 +313,46 @@ describe("Notifier with phone push", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(bodies).toHaveLength(0);
     stop();
+  });
+
+  test("a dropped phone is logged and the user told on this Mac (banner, or this Mac's browser)", async () => {
+    const store = new Store(tempDir("ck-home-"));
+    let gone = "";
+    const sent: string[] = [];
+    const push = new PushService(store.root, {
+      fetch: async (url) => (sent.push(url), new Response("", { status: url === gone ? 410 : 201 })),
+    });
+    const banners: string[] = [];
+    const notifier = new Notifier(store, new Bus(), {
+      root: store.root, push, sessionSummary: () => null, isRunning: () => false, hostHuddles: () => new Map(),
+      baseUrl: () => "http://localhost:7777", banner: (t) => banners.push(t),
+    });
+    const warn = console.warn;
+    const logged: string[] = [];
+    console.warn = (m: string) => logged.push(m);
+    try {
+      const phone = browser();
+      push.subscribe(phone.sub, "Android · Chrome (Home Screen)");
+      gone = phone.sub.endpoint;
+      await notifier.testDevice(push.devices()[0].id);
+      expect(banners).toEqual(["Notifications stopped on Android · Chrome (Home Screen)"]);
+      expect(logged.some((l) => l.includes("Android · Chrome (Home Screen) no longer accepts notifications"))).toBe(true);
+
+      // With a browser on this Mac, the notice goes there instead of the banner.
+      const mac = browser(), tablet = browser();
+      push.subscribe(mac.sub, "Mac · Chrome", true);
+      push.subscribe(tablet.sub, "iPad");
+      gone = tablet.sub.endpoint;
+      banners.length = 0;
+      sent.length = 0;
+      await notifier.testDevice(push.devices().find((d) => d.label === "iPad")!.id);
+      await new Promise((r) => setTimeout(r, 10));
+      expect(banners).toEqual([]);
+      expect(sent).toEqual([tablet.sub.endpoint, mac.sub.endpoint]);
+      expect(push.dropped().map((d) => d.label)).toEqual(["Android · Chrome (Home Screen)", "iPad"]);
+    } finally {
+      console.warn = warn;
+    }
   });
 
   test("a device turned on before this Mac was told apart is marked by its heartbeat from this Mac", () => {
