@@ -598,6 +598,7 @@ export function questionsError(args: any): string | null {
 /** Checks propose_ticket input; returns what's wrong, or null when it's fine. */
 export function proposalError(args: any): string | null {
   if (args?.important !== undefined && typeof args.important !== "boolean") return "important must be true or false";
+  if (args?.partOf !== undefined && args.partOf !== null && !isText(args.partOf)) return 'partOf must be a ticket id, or "none" to take the ticket out of its family';
   return titleError(args?.title, "") ?? (isText(args?.description) ? null : "description is required");
 }
 
@@ -712,7 +713,14 @@ const PLANNING_TOOLS: Tool[] = [
       "Claude works on it later without this chat. Nothing is created or changed by the call.",
     inputSchema: {
       type: "object",
-      properties: { title: TITLE, description: { type: "string", description: "Markdown description." }, important: PROPOSED_IMPORTANT },
+      properties: {
+        title: TITLE, description: { type: "string", description: "Markdown description." }, important: PROPOSED_IMPORTANT,
+        partOf: {
+          type: "string",
+          description: "Only when the ticket belongs in another family (get_family shows its current one), e.g. the user says it hangs under the wrong ticket: " +
+            "the id of the ticket it is part of, or \"none\" to take it out of its family (this also ends a wrong plan or add-on link). Apply then moves it. Leave out to keep its links.",
+        },
+      },
       required: ["title", "description"],
     },
     annotations: { readOnlyHint: true },

@@ -232,11 +232,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   const [panelError, setPanelError] = useState<string | null>(null);
   const onError = (msg: string) => setPanelError(msg);
   const slug = profile.slug;
-  const parent = ticket.parentId ? tickets.find((t) => t.id === ticket.parentId) : undefined;
   const children = tickets.filter((t) => t.parentId === ticket.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const branchedFrom = ticket.branchedFrom ? tickets.find((t) => t.id === ticket.branchedFrom) : undefined;
   const branches = tickets.filter((t) => t.branchedFrom === ticket.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const addOnOf = ticket.addOnOf ? tickets.find((t) => t.id === ticket.addOnOf) : undefined;
   const addOns = tickets.filter((t) => t.addOnOf === ticket.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const siblings = ticket.parentId ? tickets.filter((t) => t.parentId === ticket.parentId && t.id !== ticket.id) : [];
   const deps = (ticket.dependsOn ?? []).map((ref) => siblings.find((s) => s.id === ref || s.planKey === ref) ?? ref);
@@ -619,16 +617,6 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
         </div>
         {ticket.prUrl && ticket.status === "review" && <PrBox profile={profile} ticket={ticket as Ticket & { prUrl: string }} onError={onError} />}
 
-        {ticket.parentId && (
-          <div className="field-row">
-            <span className="field-key" title="The planner ticket whose plan runs this one (it proposed or adopted it)">From</span>
-            {parent ? (
-              <button className="link-btn ticket-link" onClick={() => onOpenTicket(parent.id)}>{parent.title}</button>
-            ) : (
-              <span className="muted small">Planner ticket was deleted</span>
-            )}
-          </div>
-        )}
         {ticket.branchedFrom && (
           <div className="field-row">
             <span className="field-key" title="This ticket started as a copy of that one's conversation and code">Branched from</span>
@@ -651,19 +639,6 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
           <div className="field-row">
             <span className="field-key" title="Claude comes back to this ticket by itself at that time">Follow-up</span>
             <span><FollowUpChip slug={slug} ticket={ticket} onError={onError} /></span>
-          </div>
-        )}
-        {ticket.addOnOf && (
-          <div className="field-row">
-            <span className="field-key" title="This ticket is a new requirement on that one, which keeps its own title and description">Add-on to</span>
-            {addOnOf ? (
-              <span>
-                <button className="link-btn ticket-link" onClick={() => onOpenTicket(addOnOf.id)}>{addOnOf.title}</button>
-                <span className="muted small"> ({COLUMNS.find((c) => c.id === addOnOf.status)?.label ?? addOnOf.status})</span>
-              </span>
-            ) : (
-              <span className="muted small">Original ticket was deleted</span>
-            )}
           </div>
         )}
         {addOns.length > 0 && (

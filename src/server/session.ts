@@ -36,6 +36,8 @@ export interface TicketProposal {
   description: string;
   /** ⭐ Important: the proposal asked for it (important: true, or a ⭐ before the title, which is left out of title). */
   important?: true;
+  /** Move the ticket in its family on Apply: the ticket it is part of, or null to take it out (propose_ticket's partOf, "none"). */
+  partOf?: string | null;
 }
 
 /** A ticket a planner's chat proposed creating; key/dependsOn order the plan. */
@@ -174,7 +176,10 @@ export function parseProposal(v: any): TicketProposal | null {
   const star = starredTitle(typeof v?.title === "string" ? v.title.trim() : "");
   const description = typeof v?.description === "string" ? v.description.trim() : "";
   const title = star.title.trim();
-  return title || description ? { title, description, ...(star.important || v?.important === true ? { important: true } : {}) } : null;
+  const partOf = typeof v?.partOf === "string" && v.partOf.trim() ? (/^none$/i.test(v.partOf.trim()) ? null : v.partOf.trim()) : v?.partOf === null ? null : undefined;
+  return title || description ? {
+    title, description, ...(star.important || v?.important === true ? { important: true } : {}), ...(partOf !== undefined ? { partOf } : {}),
+  } : null;
 }
 
 export function parseNewTickets(v: any): NewTicketDraft[] | null {

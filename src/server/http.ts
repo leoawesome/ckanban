@@ -1412,7 +1412,7 @@ export function createServer(deps: ServerDeps) {
         }
         let t: Ticket = target;
         try {
-          if (b.partOf !== undefined) t = board.setPartOf(slug, id, b.partOf);
+          if (b.partOf !== undefined) t = await board.setPartOf(slug, id, b.partOf);
           else if (b.parentSuggestion === null) t = board.dismissParentSuggestion(slug, id);
           if (!linkOnly) t = await board.updateTicket(slug, id, patch);
         } catch (e) {
@@ -1426,8 +1426,9 @@ export function createServer(deps: ServerDeps) {
           const what = Object.entries(patch)
             .map(([k, v]) => (k === "status" ? `moved it to ${v}` : k === "parentId" ? `released it from plan ${target.parentId}` : k === "important" ? (v ? "marked it ⭐ Important" : "cleared ⭐ Important") : `changed ${k}`)).join(", ");
           const by = planner ? "" : requester ? byRequest(requester) : runner ? byRun(runner) : byGuest(guest!);
-          const linked = b.partOf === undefined || b.partOf === target.partOf ? ""
-            : b.partOf ? `linked it as part of ${b.partOf}` : `unlinked it from ${target.partOf}`;
+          const was = parentLink(target)?.id ?? null;
+          const linked = b.partOf === undefined || b.partOf === was ? ""
+            : b.partOf ? `linked it as part of ${b.partOf}` : `unlinked it from ${was}`;
           if (linked) store.addComment(slug, id, "ai", planner ? `Planner ${linked}.` : `${linked[0].toUpperCase()}${linked.slice(1)} ${by}.`);
           if (what) store.addComment(slug, id, "ai", planner ? `Planner ${what}.` : `${what[0].toUpperCase()}${what.slice(1)} ${by}.`);
         }

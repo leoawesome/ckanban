@@ -2179,17 +2179,26 @@ export class Board {
   /**
    * Makes id part of parent's family (null unlinks). via "chat": the parent's chat created it. A missing parent or a
    * loop (a ticket under its own descendant) is refused. Any parent suggestion is settled by it.
+   * Moving it somewhere else also undoes the link that put it where it was: a plan ticket leaves its plan (refused
+   * while siblings depend on it), an add-on stops being one (and stops building on that ticket's work if it hasn't
+   * started), so the family shows where the user put it.
    */
-  setPartOf(slug: string, id: string, parent: string | null, via: "chat" | null = null): Ticket {
-    const t = this.store.getTicket(slug, id);
+  async setPartOf(slug: string, id: string, parent: string | null, via: "chat" | null = null): Promise<Ticket> {
+    let t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
     if (parent !== null) {
       if (!this.store.getTicket(slug, parent)) throw new Error(`ticket ${parent} not found`);
-      if (wouldLoop(this.store.listTickets(slug), id, parent)) {
+      const without = this.store.listTickets(slug).map((o) => (o.id === id ? { ...o, parentId: null, addOnOf: null } : o));
+      if (wouldLoop(without, id, parent)) {
         throw new Error(parent === id ? "a ticket can't be part of itself" : `${parent} is already part of ${id}'s family below it; linking would make a loop`);
       }
     }
-    return this.patch(slug, id, { partOf: parent, partOfVia: parent ? via : null, parentSuggestion: null, parentChecked: true });
+    if (t.parentId && t.parentId !== parent) t = await this.updateTicket(slug, id, { parentId: null });
+    const patch: Partial<Ticket> = { partOf: parent, partOfVia: parent ? via : null, parentSuggestion: null, parentChecked: true };
+    if (t.addOnOf && t.addOnOf !== parent) Object.assign(patch, { addOnOf: null }, t.startFrom && !t.worktree ? { startFrom: null } : {});
+    // Still in the same plan or an add-on of the same ticket: that link already says it.
+    if (parent && (t.parentId === parent || t.addOnOf === parent)) Object.assign(patch, { partOf: null, partOfVia: null });
+    return this.patch(slug, id, patch);
   }
 
   /** Not related: the suggestion goes and the board doesn't suggest a parent for this ticket again. */

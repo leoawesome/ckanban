@@ -1,12 +1,13 @@
 // Ticket families: "part of" links, parent suggestions, the family tree and get_family.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { BoardClient } from "../src/client";
-import { callTool, type ToolContext } from "../src/mcp-server";
+import { callTool, proposalError, type ToolContext } from "../src/mcp-server";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
 import { createServer } from "../src/server/http";
 import { candidates, Linker, parseFound, parseSuggestion } from "../src/server/linker";
 import { RUN_HEADER } from "../src/server/scheduler";
+import { parseProposal } from "../src/server/session";
 import type { SideCallInput, SideCallResult } from "../src/server/side-call";
 import { Store } from "../src/server/store";
 import type { Ticket } from "../src/server/types";
@@ -229,4 +230,35 @@ test("Find links is for the user only and returns suggestions without changing t
   const r = await linker.find("f");
   expect(r.links).toEqual([{ id: ids[1], parent: ids[0], reason: "same work" }]);
   expect(store.getTicket("f", ids[1])!.partOf ?? null).toBeNull();
+});
+
+test("moving a plan ticket or an add-on in its family ends the wrong link; a plan sibling that depends on it blocks the move", async () => {
+  const planner = store.createTicket("f", { title: "Hotfix: create call permission templates", body: "", status: "review" });
+  const outbound = store.createTicket("f", { title: "AI outreach: outbound calls", body: "", status: "review" });
+  const kid = store.createTicket("f", { title: "AI Agent: send templates that have variables", body: "", status: "planning", parentId: planner.id, planKey: "vars" });
+  let moved = (await (await patch(kid.id, { partOf: outbound.id })).json()) as Ticket;
+  expect(moved).toMatchObject({ partOf: outbound.id, parentId: null, planKey: null });
+  expect(familyOf(store.listTickets("f"), kid.id).map((r) => r.ticket.id)).toEqual([outbound.id, kid.id]);
+
+  const src = store.createTicket("f", { title: "Original", body: "", status: "done" });
+  const addOn = store.createTicket("f", { title: "Add-on", body: "", status: "backlog" });
+  store.updateTicket("f", addOn.id, { addOnOf: src.id, startFrom: "ck/original" });
+  moved = (await (await patch(addOn.id, { partOf: null })).json()) as Ticket;
+  expect(moved).toMatchObject({ addOnOf: null, startFrom: null, partOf: null });
+
+  const a = store.createTicket("f", { title: "Plan step a", body: "", status: "backlog", parentId: planner.id, planKey: "a" });
+  store.createTicket("f", { title: "Plan step b", body: "", status: "backlog", parentId: planner.id, planKey: "b", dependsOn: ["a"] });
+  const r = await patch(a.id, { partOf: outbound.id });
+  expect(r.status).toBe(400);
+  expect(((await r.json()) as any).error).toContain("depends on this ticket");
+  expect(store.getTicket("f", a.id)).toMatchObject({ parentId: planner.id });
+  expect(store.getTicket("f", a.id)!.partOf ?? null).toBeNull();
+});
+
+test("propose_ticket can carry a family move: a ticket id, or none to take it out", () => {
+  expect(parseProposal({ title: "T", description: "D", partOf: "t_abc" })).toMatchObject({ partOf: "t_abc" });
+  expect(parseProposal({ title: "T", description: "D", partOf: "none" })).toMatchObject({ partOf: null });
+  expect(parseProposal({ title: "T", description: "D" })!.partOf).toBeUndefined();
+  expect(proposalError({ title: "T", description: "D", partOf: 5 })).toContain("partOf");
+  expect(proposalError({ title: "T", description: "D", partOf: "t_abc" })).toBeNull();
 });

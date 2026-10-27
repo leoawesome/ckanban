@@ -2983,3 +2983,4 @@ button.tag-chip:hover { border-color: currentColor; }
 .find-links-why { display: block; color: var(--muted); font-size: 11.5px; }
 .find-links-foot { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 12px; }
 .find-links-foot .btn { margin-left: 6px; }
+.proposal-family { margin-top: 6px; }

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  api, NotStarted, subscribe, type Huddle, type Level, type NewTicketDraft, type OutputFile, type QueuedMessage, type SessionEntry, type TeammateProposal, type Ticket,
+  api, NotStarted, subscribe, type Huddle, type Level, type NewTicketDraft, type OutputFile, type Proposal, type QueuedMessage, type SessionEntry, type TeammateProposal, type Ticket,
 } from "./api";
 import { HuddleCard } from "./HuddleCard";
 import { HuddleDigest } from "./HuddleDigest";
@@ -21,6 +21,7 @@ import { ImagePickButton } from "./ImagePickButton";
 import { NewTicketsCard } from "./NewTicketsCard";
 import { KeyHint } from "./KeyHint";
 import { addOnFor, addOnState } from "./addOn";
+import { parentLink } from "./family";
 import { ProposalCard, type AddOn } from "./ProposalCard";
 import { QuestionsForm } from "./QuestionsForm";
 import { RecoveryBanner } from "./RecoveryBanner";
@@ -453,8 +454,16 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   // A reply still on its way to the session file counts too, so the form doesn't offer "Send answers" again.
   const replying = pending.some((p) => !p.steer);
   const answeredAfter = (index: number) => replying || entries.slice(index + 1).some((e) => e.role === "user" && e.kind === "text" && !e.huddleId);
-  const isApplied = (p: { title: string; description: string; important?: true }) =>
-    (!p.title || p.title === ticket.title) && (!p.description || p.description.trim() === ticket.body.trim()) && (!p.important || !!ticket.important);
+  const isApplied = (p: Proposal) =>
+    (!p.title || p.title === ticket.title) && (!p.description || p.description.trim() === ticket.body.trim()) && (!p.important || !!ticket.important) &&
+    (p.partOf === undefined || (parentLink(ticket)?.id ?? null) === p.partOf);
+  /** What Apply does to the ticket's family, for the card; undefined when the proposal leaves it as it is. */
+  const familyNote = (p: Proposal) => {
+    if (p.partOf === undefined || (parentLink(ticket)?.id ?? null) === p.partOf) return undefined;
+    if (p.partOf === null) return "Apply also takes this ticket out of its family.";
+    const to = tickets.find((t) => t.id === p.partOf);
+    return to ? `Apply also moves this ticket under “${to.title}” in its family.` : undefined;
+  };
 
   const empty = page !== null && !loadError && entries.length === 0 && !pending.length && !queued.length && !running;
 
@@ -475,9 +484,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   // Proposals applied with "Apply & start work" here, so their card says the ticket moved on.
   const [startedProposals, setStartedProposals] = useState<ReadonlySet<string>>(new Set());
   const canStart = canStartFromProposal({ status: ticket.status, working: ticket.status === "in_progress" || running });
-  const applyProposal = async (p: { title: string; description: string; important?: true }, start?: { uuid: string }) => {
+  const applyProposal = async (p: Proposal, start?: { uuid: string }) => {
     const before = { title: ticket.title, body: ticket.body, important: !!ticket.important };
     try {
+      // The family move first: when it can't be made (a plan sibling depends on it), nothing changes.
+      if (familyNote(p)) await api.setPartOf(slug, ticket.id, p.partOf!);
       // One update, so the ticket never sits in Ready with the old text.
       await api.updateTicket(slug, ticket.id, {
         ...(p.title ? { title: p.title } : {}),
@@ -521,7 +532,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
 
   // A ticket that already ran: proposals become linked add-on tickets, so this one keeps its title and description.
   const onState = addOnState(ticket);
-  const createAddOn = async (p: { title: string; description: string; important?: true }, start: boolean) => {
+  const createAddOn = async (p: Proposal, start: boolean) => {
     try {
       const f = await api.addOnTicket(slug, ticket.id, { title: p.title, body: p.description, start, ...(p.important ? { important: true } : {}) });
       toast(start ? "Add-on ticket created and moved to Ready" : "Add-on ticket created in Backlog", {
@@ -531,7 +542,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
       onError(err.message);
     }
   };
-  const addOnOf = (p: { title: string; description: string; important?: true }): AddOn | undefined => onState === undefined ? undefined : {
+  const addOnOf = (p: Proposal): AddOn | undefined => onState === undefined ? undefined : {
     state: onState, created: addOnFor(tickets, ticket.id, p.title), onCreate: (start) => createAddOn(p, start), onOpen: onOpenTicket,
   };
 
@@ -621,7 +632,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
                 <ProposalCard proposal={e.proposal} applied={isApplied(e.proposal)} started={startedProposals.has(e.uuid)}
                   onApply={() => applyProposal(e.proposal!)}
                   onApplyStart={canStart ? () => applyProposal(e.proposal!, { uuid: e.uuid }) : undefined}
-                  keyHint={e === pendingProposal} addOn={addOnOf(e.proposal)} />
+                  keyHint={e === pendingProposal} addOn={addOnOf(e.proposal)} family={familyNote(e.proposal)} />
               )}
               {e.newTickets && (
                 <NewTicketsCard drafts={e.newTickets} created={childFor} onCreate={createChild} onOpen={onOpenTicket} />

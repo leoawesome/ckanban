@@ -468,7 +468,7 @@ export interface SessionEntry {
   error?: true;
   agent?: AgentInfo;
   questions?: Question[];
-  proposal?: { title: string; description: string; important?: true };
+  proposal?: Proposal;
   newTickets?: NewTicketDraft[];
   /** Claude offered to branch this ticket (Branch button). */
   branch?: { reason: string };
@@ -1161,6 +1161,14 @@ const chatsUrl = (slug: string, id?: string) =>
   `/api/profiles/${encodeURIComponent(slug)}/chats${id ? `/${encodeURIComponent(id)}` : ""}`;
 
 const sizes = new Map<string, Promise<number | null>>();
+
+/** A proposed title and description from propose_ticket; partOf: move it in its family on Apply (null: out of it). */
+export interface Proposal {
+  title: string;
+  description: string;
+  important?: true;
+  partOf?: string | null;
+}
 
 export const api = {
   claudeProjects: () => req<ClaudeProject[]>("GET", "/api/claude/projects"),

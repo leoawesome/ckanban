@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { Proposal } from "./api";
 import { KeyHint } from "./KeyHint";
 import { MOD } from "./Shortcuts";
 import { ImportantStar } from "./StarToggle";
@@ -17,8 +18,8 @@ export interface AddOn {
 }
 
 /** Claude's proposed title/description; Apply replaces the ticket's fields, Apply & start work also moves it to Ready. */
-export function ProposalCard({ proposal, applied, started, onApply, onApplyStart, keyHint, addOn }: {
-  proposal: { title: string; description: string; important?: true };
+export function ProposalCard({ proposal, applied, started, onApply, onApplyStart, keyHint, addOn, family }: {
+  proposal: Proposal;
   applied: boolean;
   /** Applied with "Apply & start work" in this session. */
   started?: boolean;
@@ -29,6 +30,8 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
   keyHint?: boolean;
   /** Set on a ticket that already ran: the card offers an add-on ticket first (see AddOn). */
   addOn?: AddOn;
+  /** What Apply does to the ticket's family (proposal.partOf), e.g. Moves it under “Outbound calls”. */
+  family?: string;
 }) {
   const [busy, setBusy] = useState<"apply" | "start" | null>(null);
   const [open, setOpen] = useState(true);
@@ -46,6 +49,7 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
       </div>
       {proposal.title && <div className="proposal-title">{proposal.important && <ImportantStar />}{proposal.title}</div>}
       {open && proposal.description && <div className="proposal-body"><Markdown text={proposal.description} /></div>}
+      {family && <div className="proposal-family muted small">{family}</div>}
       <div className="proposal-actions">
         {applied ? (
           <span className="badge ok">{started ? "Applied · moved to Ready" : "Applied to ticket"}</span>
@@ -78,7 +82,7 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
 }
 
 function AddOnCard({ proposal, addOn, open, setOpen, busy, run, onApply, keyHint, hint }: {
-  proposal: { title: string; description: string; important?: true }; addOn: AddOn; open: boolean; setOpen: (f: (o: boolean) => boolean) => void;
+  proposal: Proposal; addOn: AddOn; open: boolean; setOpen: (f: (o: boolean) => boolean) => void;
   busy: "apply" | "start" | null; run: (kind: "apply" | "start", fn: () => Promise<void>) => () => Promise<void>;
   onApply: () => Promise<void>; keyHint?: boolean; hint: string | null;
 }) {

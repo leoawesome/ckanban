@@ -30,6 +30,7 @@ Only if the ckanban tools aren't available: put the same JSON array in ONE <ckan
 /** How Claude proposes an improved ticket so the board can show an Apply button. */
 export const TICKET_FORMAT = `To propose an improved ticket, call the \`propose_ticket\` tool ${TOOL_NOTE} with title (short, specific, under 80 characters) and description (markdown: ## Goal, ## Context, ## Scope with **In:** / **Out:**, ## Requirements, ## Acceptance criteria, ## Open questions).
 The board shows it as a card; the user clicks Apply to replace the ticket's title and description (on a ticket that already ran, Create add-on ticket makes a new ticket linked to it instead). If the tool returns an error, fix the input and call it again.
+When the ticket hangs under the wrong ticket in its family (get_family shows it), add partOf: the id of the ticket it belongs under, or "none"; Apply then moves it too.
 Only if the ckanban tools aren't available: put {"title":"...","description":"..."} in ONE <ckanban-ticket>{...}</ckanban-ticket> block in your message instead. ${BLOCK_RULE}`;
 
 /** How a planner ticket's chat proposes splitting the work into new tickets; the user creates them by clicking. */
