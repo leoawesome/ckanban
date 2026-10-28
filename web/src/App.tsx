@@ -41,6 +41,7 @@ import type { HuddleSeed, TeamRequest } from "./Team";
 import { useBoardHuddles } from "./huddle";
 import { hasOpenPr, runCounts } from "./boardStats";
 import { ParallelConfirm } from "./ParallelConfirm";
+import { closeSteps, openDepth } from "./ticketHistory";
 
 // xterm.js and highlight.js only load once the panel is opened. After an upgrade the old chunk is gone:
 // reload once to get the new build instead of blanking the whole page.
@@ -141,10 +142,8 @@ export function App() {
     }
   });
   const [openId, setOpenId] = useState<string | null>(parseHash().ticket);
-  // True when the open ticket was pushed onto browser history by us, so closing can go Back.
-  const pushedOpen = useRef(false);
-  // Board shown before that push: going Back to a different board would leave the ticket's board.
-  const pushedFrom = useRef<string | null>(null);
+  // Close went Back over the tickets opened in a row: if it lands on a ticket we didn't open (a pasted link), show the board instead.
+  const closing = useRef(false);
   // The open ticket was reached with prev/next: the drawer stays put instead of sliding in again.
   const stepped = useRef(false);
   // Column and ticket order prev/next follow, frozen when the drawer opens (see below).
@@ -283,10 +282,21 @@ export function App() {
       if (h.slug) setSlug(h.slug);
       setOpenId(h.ticket);
       stepped.current = false;
-      if (!h.ticket) pushedOpen.current = false;
+    };
+    const onPop = () => {
+      if (!closing.current) return;
+      closing.current = false;
+      const h = parseHash();
+      if (!h.ticket) return;
+      history.replaceState(null, "", hashFor(h.slug));
+      setOpenId(null);
     };
     window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      window.removeEventListener("popstate", onPop);
+    };
   }, []);
 
   // Keep the URL in step with the board shown (replace, so switching boards doesn't pile up history).
@@ -296,15 +306,17 @@ export function App() {
 
   const openTicket = useCallback((id: string, board = slug) => {
     if (!board) return;
-    pushedOpen.current = true;
-    pushedFrom.current = slug;
-    location.hash = hashFor(board, id);
+    const target = hashFor(board, id);
+    if (location.hash === target) return;
+    const ckDepth = openDepth(history.state, parseHash().slug, board);
+    location.hash = target;
+    history.replaceState({ ckDepth, ckBoard: board }, "", target);
   }, [slug]);
 
   // Prev/next in the drawer: replace the history entry, so one Close or Back still returns to the board.
   const stepTicket = useCallback((id: string) => {
     stepped.current = true;
-    history.replaceState(null, "", hashFor(slug, id));
+    history.replaceState(history.state, "", hashFor(slug, id));
     setOpenId(id);
   }, [slug]);
 
@@ -318,10 +330,13 @@ export function App() {
   // The Team tab's Start huddle: the drawer's ticket (or a new one) opens on its Huddle tab with this roster filled in.
   const [huddleSeed, setHuddleSeed] = useState<{ id: string; seed: HuddleSeed; n: number } | null>(null);
 
+  // Close always shows the board: Back over every ticket opened in a row (browser Back still steps through them).
   const closeTicket = useCallback(() => {
-    if (pushedOpen.current && pushedFrom.current === slug) history.back();
-    else {
-      pushedOpen.current = false;
+    const steps = closeSteps(history.state, slug);
+    if (steps > 0) {
+      closing.current = true;
+      history.go(-steps);
+    } else {
       history.replaceState(null, "", hashFor(slug));
       setOpenId(null);
     }
@@ -376,7 +391,6 @@ export function App() {
   // Board switching (B picker, [ ] prev/next, 1…9) leaves the open ticket: it belongs to the old board.
   const switchBoard = useCallback((to: string) => {
     if (to === slugRef.current) return;
-    pushedOpen.current = false;
     setOpenId(null);
     setSlug(to);
   }, []);
