@@ -131,7 +131,10 @@ export interface Ticket {
   branch: string | null;
   /** HEAD of the board's folder when the ticket first ran there in place (the Changes tab's base without a worktree). */
   baseSha?: string | null;
+  /** The main PR (prs.ts mainPr): the newest open one, else the newest. The Merge button and the PR box work on it. */
   prUrl: string | null;
+  /** Every PR the ticket's runs reported, oldest first (prs.ts). Missing on old tickets: prUrl is their only PR. */
+  prs?: TicketPr[] | null;
   /** Last fetched state of prUrl's PR (checks, conflicts, reviews); stale once pr.url differs from prUrl. */
   pr?: PrStatus | null;
   outcome: Outcome;
@@ -309,6 +312,13 @@ export interface PrCheck {
   at: string | null;
 }
 
+/** One of a ticket's PRs, with its last known state (null: not fetched yet) and target branch. */
+export interface TicketPr {
+  url: string;
+  state: "OPEN" | "MERGED" | "CLOSED" | null;
+  base?: string | null;
+}
+
 /** A ticket's pull request as `gh pr view` last reported it (see prstatus.ts). */
 export interface PrStatus {
   url: string;
@@ -320,6 +330,8 @@ export interface PrStatus {
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
   conflicts: boolean;
   mergeStateStatus: string | null;
+  /** The branch it merges into; missing on statuses cached before the board read it. */
+  base?: string | null;
   /** APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED or null when no review is required. */
   reviewDecision: string | null;
   comments: number;

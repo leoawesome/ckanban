@@ -1,8 +1,9 @@
 import type { Board } from "./board";
 import { run } from "./git";
 import { conflictMessage, failureMessage, ghFailedLog, ghMerge, ghPrStatus, mergeBlock } from "./prstatus";
+import { prFinal, ticketPrs, updatePrs } from "./prs";
 import type { Store } from "./store";
-import type { PrCheck, PrStatus, Ticket } from "./types";
+import type { PrCheck, PrStatus, Ticket, TicketPr } from "./types";
 
 export type PrState = "OPEN" | "MERGED" | "CLOSED" | null;
 
@@ -17,6 +18,9 @@ export async function ghState(url: string): Promise<PrState> {
 }
 
 /**
+ * Check the ticket's PRs that are still open (or not fetched yet) and record their states. Once every PR is merged or
+ * closed and one was merged, the card moves to Done; when all were closed without merge, it says so and stays.
+ * Returns the main PR's state.
  * waits: the card still needs the user, so a merged PR keeps it in Review until that is dealt with. An open huddle
  * holds it too: Done would close the huddle.
  */
@@ -26,19 +30,33 @@ export async function checkPr(
 ): Promise<PrState> {
   const t = store.getTicket(slug, id);
   if (!t?.prUrl || t.status !== "review") return null;
-  const state = await gh(t.prUrl);
+  const before = ticketPrs(t);
+  const seen = new Map<string, { state: PrState }>();
+  for (const p of before) if (!prFinal(p.state) || p.url === t.prUrl) seen.set(p.url, { state: await gh(p.url) });
   // The user may have moved the card while gh was in flight.
   const now = store.getTicket(slug, id);
-  if (now?.status !== "review" || now.prUrl !== t.prUrl) return state;
-  if (state === "MERGED") {
-    // The poller sees the merge on every tick while the card waits; say it once.
-    if (!store.listComments(slug, id).some((c) => c.author === "ai" && c.text === MERGED_MSG)) store.addComment(slug, id, "ai", MERGED_MSG);
-    if (!waits(slug, id)) await board.updateTicket(slug, id, { status: "done" });
-  } else if (state === "CLOSED") {
-    const last = store.listComments(slug, id).filter((c) => c.author === "ai").at(-1);
-    if (last?.text !== CLOSED_MSG) store.addComment(slug, id, "ai", CLOSED_MSG);
+  if (now?.status !== "review" || now.prUrl !== t.prUrl) return seen.get(t.prUrl)?.state ?? null;
+  const known = new Map([...seen].filter(([, v]) => v.state !== null));
+  const next = updatePrs(now, known);
+  if (before.length > 1 || now.prs?.length) {
+    if (!sameJson(next.prs, now.prs) || next.prUrl !== now.prUrl) board.patchPrs(slug, id, next);
   }
-  return state;
+  const prs = next.prs!;
+  if (prs.every((p) => prFinal(p.state))) {
+    if (prs.some((p) => p.state === "MERGED")) {
+      // The poller sees the merge on every tick while the card waits; say it once.
+      if (!store.listComments(slug, id).some((c) => c.author === "ai" && c.text === MERGED_MSG)) store.addComment(slug, id, "ai", MERGED_MSG);
+      if (!waits(slug, id)) await board.updateTicket(slug, id, { status: "done" });
+    } else {
+      const last = store.listComments(slug, id).filter((c) => c.author === "ai").at(-1);
+      if (last?.text !== CLOSED_MSG) store.addComment(slug, id, "ai", CLOSED_MSG);
+    }
+  }
+  return seen.get(t.prUrl)?.state ?? null;
+}
+
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
 export interface PrDeps {
@@ -61,11 +79,26 @@ export async function refreshPr(
   if (!t?.prUrl || t.status !== "review") return null;
   const cached = t.pr?.url === t.prUrl ? t.pr : null;
   if (cached && deps.maxAgeMs && Date.now() - Date.parse(cached.fetchedAt) < deps.maxAgeMs) return cached;
-  const pr = await (deps.status ?? ghPrStatus)(t.prUrl);
+  const status = deps.status ?? ghPrStatus;
+  const pr = await status(t.prUrl);
   const now = store.getTicket(slug, id);
   if (now?.prUrl !== t.prUrl) return pr;
   board.setPr(slug, id, pr);
-  await checkPr(board, store, slug, id, async () => pr.state);
+  // The ticket's other open PRs: their state and target branch (a failed fetch leaves the PR as it was).
+  const others = new Map<string, PrStatus>();
+  for (const p of ticketPrs(now)) {
+    if (p.url === t.prUrl || prFinal(p.state)) continue;
+    const s = await status(p.url).catch(() => null);
+    if (s) others.set(p.url, s);
+  }
+  const fresh = store.getTicket(slug, id);
+  if (fresh?.prs?.length) {
+    const seen = new Map<string, Pick<TicketPr, "state" | "base">>();
+    for (const [url, s] of [[t.prUrl, pr] as const, ...others]) if (s.state) seen.set(url, { state: s.state, base: s.base ?? null });
+    const next = updatePrs(fresh, seen);
+    board.patchPrs(slug, id, next);
+  }
+  await checkPr(board, store, slug, id, async (url) => (url === t.prUrl ? pr.state : others.get(url)?.state ?? null));
   return pr;
 }
 
@@ -99,6 +132,11 @@ export async function mergePr(board: Board, store: Store, slug: string, id: stri
   const r = await (deps.merge ?? ghMerge)(t.prUrl);
   if (!r.ok) throw new PrError(502, r.error);
   board.setPr(slug, id, { ...pr, state: "MERGED", fetchedAt: new Date().toISOString() });
+  // With more PRs, the next open one becomes the main PR and the card stays in Review until they are merged or closed.
+  const after = store.getTicket(slug, id)!;
+  const next = updatePrs(after, new Map([[t.prUrl, { state: "MERGED" as const }]]));
+  if (after.prs?.length) board.patchPrs(slug, id, next);
+  if (next.prs!.some((p) => !prFinal(p.state))) return store.getTicket(slug, id)!;
   if (!store.listComments(slug, id).some((c) => c.author === "ai" && c.text === MERGED_MSG)) store.addComment(slug, id, "ai", MERGED_MSG);
   if (store.getTicket(slug, id)?.status === "review") await board.updateTicket(slug, id, { status: "done" });
   return store.getTicket(slug, id)!;

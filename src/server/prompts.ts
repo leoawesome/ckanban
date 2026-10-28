@@ -14,7 +14,8 @@ const RESULT_RULE = `When you finish this run, end your final message with exact
 CKANBAN_RESULT: {"status":"done"|"blocked"|"questions","prUrl":<string or null>,"summary":"<1-3 sentence summary for the user>"}
 - "questions": you are waiting for the user's answers (ask them with the ask_questions tool in this final turn).
 - "blocked": you cannot continue without something from the user (explain what in summary).
-- "done": the task is complete.`;
+- "done": the task is complete.
+- "prUrl": the pull request this run opened or updated. If the work has several (for example one per repo), add "prUrls":[...] with all of them, so the board shows and watches each one.`;
 
 /** Keeps fallback blocks readable: the board parses the JSON right after the opening tag. */
 const BLOCK_RULE = "End the block with its own closing tag exactly as shown, and never write a board tag (like the closing tag) inside the JSON text.";

@@ -64,6 +64,7 @@ export function PrBox({ profile, ticket, onError }: { profile: Profile; ticket: 
     <div className="pr-box" aria-label="Pull request">
       <div className="pr-line pr-head">
         <span className="pr-label">Pull request</span>
+        {pr?.base && <span className="muted small pr-base" title={`Merges into ${pr.base}`}>into {pr.base}</span>}
         <span className="pr-sp" />
         <button className="icon-btn pr-refresh" onClick={() => refresh(true)} disabled={loading}
           title={pr ? `Checked ${timeAgo(pr.fetchedAt)} (${fullTime(pr.fetchedAt)}). Check again` : "Check again"} aria-label="Refresh PR status">

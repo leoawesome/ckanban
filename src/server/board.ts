@@ -22,6 +22,7 @@ import {
   resolveDeps, wakeupCap,
 } from "./plan";
 import { run as runCmd } from "./git";
+import { addPrs } from "./prs";
 import { parseResult } from "./result";
 import { FOLLOW_UP_LATE_MS, FOLLOW_UP_NOTE_MAX, FOLLOW_UP_REASON_MAX, FollowUpError, followUpTime, logFollowUp } from "./followup";
 import { formatAt } from "./jobs";
@@ -297,6 +298,11 @@ export class Board {
   /** Cache the ticket's PR status (prpoller.ts) and tell the UI. */
   setPr(slug: string, id: string, pr: PrStatus): Ticket {
     return this.patch(slug, id, { pr });
+  }
+
+  /** Record the ticket's PR list and main PR (prs.ts) and tell the UI. */
+  patchPrs(slug: string, id: string, prs: Pick<Ticket, "prs" | "prUrl">): Ticket {
+    return this.patch(slug, id, prs);
   }
 
   // ---- Exclusive resources (Ticket.needs): one ticket per resource at a time, across every board ----
@@ -980,11 +986,24 @@ export class Board {
       this.patch(slug, id, { ...base, outcome: "failed", error: shown });
       return;
     }
+    const body = finalText.replace(/^.*CKANBAN_RESULT:.*$/gm, "").replace(MOVE_TO_PLANNING_RE, "").trim();
+    // A reply to the ticket's huddle can land the work and report it: keep its PRs, summary and outcome. The card
+    // stays where it is, and a ticket waiting for its auto huddle keeps waiting.
+    if (quiet && result && !refine) {
+      const current = this.store.getTicket(slug, id)!;
+      this.store.addComment(slug, id, "ai", (result.status === "questions" ? body : result.summary) || body || "(no output)");
+      this.patch(slug, id, {
+        ...base, lastActivity: null, error: null,
+        ...(current.autoHuddle ? {} : { outcome: result.status === "questions" ? "needs_input" : result.status, ...(result.status === "questions" ? { interviewed: true } : {}) }),
+        // A planner's PRs are its own work only when its own run reports them (see below).
+        ...(current.plan ? {} : addPrs(current, result.prUrls)),
+      });
+      return;
+    }
     if (refine || quiet) {
       this.patch(slug, id, { ...base, lastActivity: null, error: null });
       return;
     }
-    const body = finalText.replace(/^.*CKANBAN_RESULT:.*$/gm, "").replace(MOVE_TO_PLANNING_RE, "").trim();
     // A Review/Done message that only asked for planning: show the ticket where it really is.
     if (run.chat?.mode === "act" && !run.targetStatus && result?.status !== "blocked" && MOVE_TO_PLANNING_RE.test(finalText)) {
       this.store.addComment(slug, id, "ai", result?.summary || body || "(no output)");
@@ -1011,7 +1030,7 @@ export class Board {
     if (auto && !run.targetStatus && result?.status !== "blocked" && result?.status !== "questions") {
       this.patch(slug, id, {
         ...base, status: "in_progress", outcome: null, error: null, lastActivity: autoHuddleActivity(auto),
-        prUrl: result?.prUrl ?? current.prUrl,
+        ...addPrs(current, result?.prUrls ?? []),
       });
       return;
     }
@@ -1023,7 +1042,7 @@ export class Board {
       outcome: result?.status === "questions" ? "needs_input" : result?.status ?? "done",
       ...(result?.status === "questions" ? { interviewed: true } : {}),
       // A planner wake-up reports its children's PRs; the planner keeps its own.
-      prUrl: run.chat?.raw && !run.chat.hostWake ? current.prUrl : result?.prUrl ?? current.prUrl,
+      ...(run.chat?.raw && !run.chat.hostWake ? {} : addPrs(current, result?.prUrls ?? [])),
       error: null,
     });
   }

@@ -86,6 +86,22 @@ export function familyOf<T extends FamilyTicket>(tickets: T[], id: string): Fami
   return out;
 }
 
+/** The rows near id in its family (familyOf order): its parents up to the top ticket, itself and its own children. */
+export function familyNearby<T extends FamilyTicket>(rows: FamilyRow<T>[], id: string): FamilyRow<T>[] {
+  const at = rows.findIndex((r) => r.ticket.id === id);
+  if (at < 0) return rows;
+  const me = rows[at];
+  // Depth first: the last row seen at each shallower depth is an ancestor.
+  const path: FamilyRow<T>[] = [];
+  for (const r of rows.slice(0, at)) path[r.depth] = r;
+  const kids: FamilyRow<T>[] = [];
+  for (const r of rows.slice(at + 1)) {
+    if (r.depth <= me.depth) break;
+    if (r.depth === me.depth + 1) kids.push(r);
+  }
+  return [...path.slice(0, me.depth), me, ...kids];
+}
+
 /** Linking id under parent would make a ticket its own ancestor. */
 export function wouldLoop(tickets: FamilyTicket[], id: string, parent: string): boolean {
   const byId = new Map(tickets.map((t) => [t.id, t]));

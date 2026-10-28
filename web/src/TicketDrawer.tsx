@@ -23,6 +23,7 @@ import { MOD } from "./Shortcuts";
 import { complete, PlanFinished, planFinished, PlanPanel, PlanSummary } from "./PlanPanel";
 import { Outputs } from "./Outputs";
 import { PrBox } from "./PrBox";
+import { PrList } from "./PrList";
 import { Select } from "./Select";
 import { useShareNotices } from "./share";
 import { SessionPicker, sessionLabel } from "./SessionPicker";
@@ -136,6 +137,82 @@ function useSidebarWidth(bodyRef: React.RefObject<HTMLDivElement | null>) {
     }
   };
   return { width, pref, dragging, handle: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onDoubleClick: reset, onKeyDown } };
+}
+
+const SPLIT_KEY = "ckanban.detailsSplit";
+/** Room each side of the details' drag bar keeps: a few rows on top, the Description heading and some text below. */
+const PINNED_MIN = 56;
+const DESC_MIN = 96;
+
+/** The top part's height in px for a saved share of the sidebar's height, kept inside both minimums. */
+export function splitHeight(share: number, total: number): number {
+  return Math.round(Math.max(PINNED_MIN, Math.min(share * total, total - DESC_MIN)));
+}
+
+/**
+ * Drag the bar between the details' top part (status, PRs, family) and the description; double-click resets to the
+ * natural layout (the top part as tall as its content, up to 65%). The height persists per browser as a share of the
+ * sidebar's height.
+ */
+function useDetailsSplit(detailsRef: React.RefObject<HTMLDivElement | null>, pinnedRef: React.RefObject<HTMLDivElement | null>, enabled: boolean) {
+  const [share, setShare] = useState<number | null>(() => {
+    try {
+      const v = Number(localStorage.getItem(SPLIT_KEY));
+      return v > 0 && v < 1 ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  const [total, setTotal] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const shareRef = useRef(share);
+  shareRef.current = share;
+  useEffect(() => {
+    const el = detailsRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setTotal(el.clientHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  const persist = (v: number | null) => {
+    try {
+      if (v === null) localStorage.removeItem(SPLIT_KEY);
+      else localStorage.setItem(SPLIT_KEY, String(v));
+    } catch {}
+  };
+  const setPx = (px: number) => {
+    const h = detailsRef.current?.clientHeight ?? total;
+    if (!h) return null;
+    const v = splitHeight(px / h, h) / h;
+    setShare(v);
+    return v;
+  };
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setDragging(true);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (dragging) setPx(e.clientY - (detailsRef.current?.getBoundingClientRect().top ?? 0));
+  };
+  const onPointerUp = () => {
+    if (!dragging) return;
+    setDragging(false);
+    persist(shareRef.current);
+  };
+  const reset = () => {
+    setShare(null);
+    persist(null);
+  };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const step = e.shiftKey ? 96 : 24;
+    const now = pinnedRef.current?.offsetHeight ?? 0;
+    persist(setPx(now + (e.key === "ArrowDown" ? step : -step)));
+  };
+  const height = enabled && share !== null && total ? splitHeight(share, total) : null;
+  return { height, dragging, handle: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onDoubleClick: reset, onKeyDown } };
 }
 
 /** The width the user dragged to, or null when they never resized (or reset). */
@@ -358,6 +435,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   const { stopping, stop } = useStop(slug, ticket, working, (m) => setPanelError(m));
   const bodyRef = useRef<HTMLDivElement>(null);
   const side = useSidebarWidth(bodyRef);
+  const detailsRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef<HTMLDivElement>(null);
+  const split = useDetailsSplit(detailsRef, pinnedRef, !phone);
   // Scrolling the chat or huddle feed down shrinks the header to one line; scrolling up brings it back.
   const slim = useShrinkHeader(bodyRef, tab === "chat" || tab === "huddle", tab);
   // Opens fitted to the sidebar plus the chat's reading column; dragging can make it wider.
@@ -572,8 +652,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   const usageInline = phone && !!col && hasUsage && !links.length && outputCount === 0;
   // Status, actions, links and the description: a sidebar on wider screens, the Ticket tab on phones.
   const details = (
-    <div className="panel-details">
-      <div className="details-pinned">
+    <div ref={detailsRef} className={`panel-details ${split.height !== null ? "split-set" : ""} ${split.dragging ? "splitting" : ""}`}>
+      <div ref={pinnedRef} className="details-pinned" style={split.height !== null ? { height: split.height } : undefined}>
         {/* Phones move the ticket with the header's picker, which shows the column. */}
         {!phone && (
           <div className="field-row">
@@ -588,6 +668,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
             {usageInline && <> · <button className="link-btn usage-inline" onClick={() => setTab("usage")} title={usageTitle}>{usageChipText(usage!)}</button></>}
           </p>
         )}
+
+        <PrList ticket={ticket} review={ticket.status === "review"} />
+        {ticket.prUrl && ticket.status === "review" && <PrBox profile={profile} ticket={ticket as Ticket & { prUrl: string }} onError={onError} />}
 
         <div className="action-stack">
           {working && <button className="btn danger" disabled={stopping} onClick={stop} title={`Stop Claude (${MOD}.)`}>{stopping ? "Stopping…" : "Stop Claude"}<KeyHint keys="⌘." /></button>}
@@ -611,11 +694,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
               Open in {ticket.source.provider} <ExternalIcon size={12} />
             </a>
           )}
-          {ticket.prUrl && ticket.status !== "review" && (
-            <a className="btn icon-label" href={safeHref(ticket.prUrl)} target="_blank" rel="noreferrer">Open PR #{ticket.prUrl.split("/").pop()} <ExternalIcon size={12} /></a>
-          )}
         </div>
-        {ticket.prUrl && ticket.status === "review" && <PrBox profile={profile} ticket={ticket as Ticket & { prUrl: string }} onError={onError} />}
 
         {ticket.branchedFrom && (
           <div className="field-row">
@@ -692,6 +771,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
         )}
       </div>
 
+      {!phone && (
+        <div className="details-split" role="separator" aria-orientation="horizontal" aria-label="Resize the description"
+          aria-valuenow={split.height ?? undefined} tabIndex={0} title="Drag to resize · double-click to reset" {...split.handle} />
+      )}
       <section className={`details-desc ${descScrolled && !editing ? "scrolled" : ""}`}>
         <div className="section-head">
           <h4>Description</h4>

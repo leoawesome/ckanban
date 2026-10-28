@@ -11,7 +11,7 @@ import { parseProposal } from "../src/server/session";
 import type { SideCallInput, SideCallResult } from "../src/server/side-call";
 import { Store } from "../src/server/store";
 import type { Ticket } from "../src/server/types";
-import { cardFamilies, familyOf, parentLink, wouldLoop, type FamilyTicket } from "../web/src/family";
+import { cardFamilies, familyNearby, familyOf, parentLink, wouldLoop, type FamilyTicket } from "../web/src/family";
 import { tempDir, until } from "./helpers";
 
 const at = (n: number) => `2026-10-${String(n).padStart(2, "0")}T00:00:00.000Z`;
@@ -48,6 +48,15 @@ test("familyOf: a deleted parent leaves its children at the top; a loop in old d
   expect(familyOf([tk("a", 1, { partOf: "deleted" }), tk("b", 2, { partOf: "a" })], "b").map((r) => r.ticket.id)).toEqual(["a", "b"]);
   const loop = [tk("a", 1, { partOf: "b" }), tk("b", 2, { partOf: "a" })];
   expect(familyOf(loop, "a").length).toBeLessThanOrEqual(2);
+});
+
+test("familyNearby: parents up to the top, the ticket and its own children", () => {
+  const tickets = [
+    tk("top", 1), tk("a", 2, { partOf: "top" }), tk("a1", 3, { partOf: "a" }), tk("b", 4, { partOf: "top" }),
+    tk("me", 5, { partOf: "b" }), tk("k1", 6, { partOf: "me" }), tk("g1", 7, { partOf: "k1" }), tk("k2", 8, { partOf: "me" }), tk("c", 9, { partOf: "top" }),
+  ];
+  expect(familyNearby(familyOf(tickets, "me"), "me").map((r) => r.ticket.id)).toEqual(["top", "b", "me", "k1", "k2"]);
+  expect(familyNearby(familyOf(tickets, "top"), "top").map((r) => r.ticket.id)).toEqual(["top", "a", "b", "c"]);
 });
 
 test("wouldLoop: a ticket can't go under itself or anything below it", () => {

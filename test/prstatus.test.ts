@@ -212,3 +212,20 @@ test("card chips and the UI's merge guard match the server", async () => {
   expect(chips({ state: "MERGED" })).toEqual([]);
   expect(web.currentPr({ prUrl: "https://github.com/x/y/pull/8", pr: green() })).toBeNull();
 });
+
+test("the panel's PR list: old tickets, repo, number, summary, and the same main PR as the server", async () => {
+  const web = await import("../web/src/prText");
+  const { ticketPrs, mainPr } = await import("../src/server/prs");
+  expect(web.ticketPrs({ prUrl: URL, pr: parsePrStatus(URL, raw({ baseRefName: "dev" })) })).toEqual([{ url: URL, state: "OPEN", base: "dev" }]);
+  expect(web.ticketPrs({ prUrl: null })).toEqual([]);
+  expect(web.prRepo("https://github.com/respond-io/respond-io-voice/pull/392")).toBe("respond-io-voice");
+  expect(web.prNumber("https://github.com/respond-io/respond-io/pull/37601")).toBe("#37601");
+  const prs = [
+    { url: "https://github.com/a/b/pull/1", state: "MERGED" as const }, { url: "https://github.com/a/b/pull/2", state: "OPEN" as const },
+    { url: "https://github.com/a/c/pull/3", state: null }, { url: "https://github.com/a/b/pull/4", state: "CLOSED" as const },
+  ];
+  expect(web.prSummary(prs)).toBe("4 · 2 open");
+  expect(mainPr(prs)).toBe("https://github.com/a/c/pull/3");
+  expect(ticketPrs({ prUrl: null, prs })).toBe(prs);
+  expect(parsePrStatus(URL, raw({ baseRefName: "main" })).base).toBe("main");
+});

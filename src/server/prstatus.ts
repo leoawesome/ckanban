@@ -3,7 +3,7 @@ import { run } from "./git";
 import type { PrCheck, PrStatus } from "./types";
 
 /** Fields of `gh pr view --json` the board reads. */
-export const PR_FIELDS = "number,state,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision,comments";
+export const PR_FIELDS = "number,state,baseRefName,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision,comments";
 
 const FAILED = new Set(["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"]);
 const SKIPPED = new Set(["SKIPPED", "NEUTRAL", "STALE"]);
@@ -41,6 +41,7 @@ export function parsePrStatus(url: string, raw: any, now = new Date().toISOStrin
     mergeable,
     conflicts: mergeable === "CONFLICTING" || raw?.mergeStateStatus === "DIRTY",
     mergeStateStatus: typeof raw?.mergeStateStatus === "string" ? raw.mergeStateStatus : null,
+    base: typeof raw?.baseRefName === "string" && raw.baseRefName ? raw.baseRefName : null,
     reviewDecision: typeof raw?.reviewDecision === "string" && raw.reviewDecision ? raw.reviewDecision : null,
     comments,
     fetchedAt: now,

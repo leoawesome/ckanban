@@ -16,11 +16,50 @@ export interface PrStatus {
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
   conflicts: boolean;
   mergeStateStatus: string | null;
+  /** The branch it merges into; missing on statuses cached before the board read it. */
+  base?: string | null;
   reviewDecision: string | null;
   comments: number;
   fetchedAt: string;
 }
 
+
+/** One of a ticket's PRs (Ticket.prs), with its last known state and target branch. */
+export interface TicketPr {
+  url: string;
+  state: "OPEN" | "MERGED" | "CLOSED" | null;
+  base?: string | null;
+}
+
+/** The ticket's PRs, oldest first; an old ticket's prUrl is its only one. Same rule as ticketPrs in src/server/prs.ts. */
+export function ticketPrs(t: { prs?: TicketPr[] | null; prUrl: string | null; pr?: PrStatus | null }): TicketPr[] {
+  if (t.prs?.length) return t.prs;
+  if (!t.prUrl) return [];
+  const cached = currentPr(t);
+  return [{ url: t.prUrl, state: cached?.state ?? null, base: cached?.base ?? null }];
+}
+
+/** "#37601" from a PR's URL. */
+export function prNumber(url: string): string {
+  return `#${url.replace(/\/+$/, "").split("/").pop()}`;
+}
+
+/** The repo name of a GitHub (or GitLab-style) PR URL: "respond-io" from github.com/respond-io/respond-io/pull/1. */
+export function prRepo(url: string): string {
+  const m = url.match(/^https?:\/\/[^/]+\/[^/]+\/([^/]+)\//);
+  return m ? m[1] : "";
+}
+
+/** The state as the panel says it, or null when it isn't known yet. */
+export function prStateWord(state: TicketPr["state"]): string | null {
+  return state === "OPEN" ? "Open" : state === "MERGED" ? "Merged" : state === "CLOSED" ? "Closed" : null;
+}
+
+/** The PR list's folded line: "5 · 2 open". PRs not checked yet count as open. */
+export function prSummary(prs: TicketPr[]): string {
+  const open = prs.filter((p) => p.state !== "MERGED" && p.state !== "CLOSED").length;
+  return `${prs.length} · ${open} open`;
+}
 
 /** The ticket's cached PR status, if it belongs to its current PR. */
 export function currentPr(t: { pr?: PrStatus | null; prUrl: string | null }): PrStatus | null {

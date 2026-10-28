@@ -8,11 +8,11 @@ const ticket = { id: "t_1", title: "Add dark mode", body: "Use CSS vars." } as T
 
 test("parseResult last line wins", () => {
   const text = `work\nCKANBAN_RESULT: {"status":"blocked","prUrl":null,"summary":"a"}\nmore\nCKANBAN_RESULT: {"status":"done","prUrl":"https://github.com/x/y/pull/1","summary":"ok"}`;
-  expect(parseResult(text)).toEqual({ status: "done", prUrl: "https://github.com/x/y/pull/1", summary: "ok" });
+  expect(parseResult(text)).toEqual({ status: "done", prUrl: "https://github.com/x/y/pull/1", prUrls: ["https://github.com/x/y/pull/1"], summary: "ok" });
 });
 
 test("parseResult tolerates markdown backticks", () => {
-  expect(parseResult('`CKANBAN_RESULT: {"status":"done","summary":"s"}`')).toEqual({ status: "done", prUrl: null, summary: "s" });
+  expect(parseResult('`CKANBAN_RESULT: {"status":"done","summary":"s"}`')).toEqual({ status: "done", prUrl: null, prUrls: [], summary: "s" });
 });
 
 test("parseResult missing or invalid", () => {

@@ -2,8 +2,8 @@ import { isImageFile } from "./attachText";
 import type { SlashCommand } from "./slashText";
 import type { TicketUsage, UsageResult } from "./usage";
 import type { Status } from "./columns";
-import type { PrStatus } from "./prText";
-export type { PrCheck, PrStatus } from "./prText";
+import type { PrStatus, TicketPr } from "./prText";
+export type { PrCheck, PrStatus, TicketPr } from "./prText";
 export type { Status } from "./columns";
 /** limit: the run hit the Claude usage/spend limit (see Ticket.limit). */
 export type Outcome = null | "done" | "blocked" | "failed" | "stopped" | "needs_input" | "limit";
@@ -239,7 +239,10 @@ export interface Ticket {
   branch: string | null;
   /** HEAD of the board's folder at the ticket's first run there (its Changes base without a worktree). */
   baseSha?: string | null;
+  /** The main PR: the newest open one, else the newest. Merge & done and the PR box work on it. */
   prUrl: string | null;
+  /** Every PR the ticket's runs reported, oldest first. Missing on old tickets: prUrl is their only PR. */
+  prs?: TicketPr[] | null;
   /** Last fetched PR status; stale when pr.url differs from prUrl. */
   pr?: PrStatus | null;
   outcome: Outcome;

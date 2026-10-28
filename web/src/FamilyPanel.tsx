@@ -2,7 +2,7 @@
 // whole family from its top ticket down (family.ts).
 import { useMemo, useState } from "react";
 import { api, COLUMNS, type Ticket } from "./api";
-import { familyOf, LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
+import { familyNearby, familyOf, LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
 import { copyText } from "./share";
 import { ImportantStar } from "./StarToggle";
 
@@ -134,27 +134,61 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
   );
 }
 
-/** The whole family from its top ticket down, this ticket highlighted; each row opens its ticket. Hidden when alone. */
+/** A bigger family first shows only the rows near this ticket (familyNearby) until "Show all". */
+const FAMILY_ROWS = 8;
+const FAMILY_FOLD_KEY = "ckanban.familyFolded";
+
+/**
+ * The whole family from its top ticket down, this ticket highlighted; each row opens its ticket. Hidden when alone.
+ * The heading folds it (remembered per browser); a big family shows the rows near this ticket until "Show all".
+ */
 export function FamilyTree({ ticket, tickets, onOpenTicket }: { ticket: Ticket; tickets: Ticket[]; onOpenTicket: (id: string) => void }) {
   const rows = useMemo(() => familyOf(tickets, ticket.id), [tickets, ticket.id]);
+  const near = useMemo(() => familyNearby(rows, ticket.id), [rows, ticket.id]);
+  const [folded, setFolded] = useState(() => {
+    try {
+      return localStorage.getItem(FAMILY_FOLD_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [all, setAll] = useState(false);
   if (rows.length < 2) return null;
+  const toggle = () => {
+    setFolded((f) => {
+      try {
+        localStorage.setItem(FAMILY_FOLD_KEY, f ? "0" : "1");
+      } catch {}
+      return !f;
+    });
+  };
+  const trimmed = rows.length > FAMILY_ROWS && near.length < rows.length;
+  const shown = trimmed && !all ? near : rows;
   return (
-    <section className="family" aria-label="Family">
+    <section className={`family ${folded ? "folded" : ""}`} aria-label="Family">
       <div className="family-head">
-        <span className="field-key">Family · {rows.length} tickets</span>
+        <button className="fold-head" onClick={toggle} aria-expanded={!folded} title={folded ? "Show the family" : "Hide the family"}>
+          <span className="fold-chev" aria-hidden>▾</span>
+          <span className="field-key">Family · {rows.length} tickets</span>
+        </button>
         <button className="mini-link" onClick={() => copyText(familyText(rows), "Family list copied")}
           title="Copy the family as a list, for example to ask Claude to summarise this piece of work">Copy list</button>
       </div>
-      <div className="family-tree">
-        {rows.map((r) => (
-          <button key={r.ticket.id} className={`family-row ${r.ticket.id === ticket.id ? "me" : ""}`} style={{ paddingLeft: 10 + r.depth * 18 }}
-            aria-current={r.ticket.id === ticket.id ? "true" : undefined} onClick={() => r.ticket.id !== ticket.id && onOpenTicket(r.ticket.id)}>
-            <span className="fam-title">{r.ticket.important && <ImportantStar />}{r.ticket.title}</span>
-            {r.how && <span className="fam-how">{LINK_WORDS[r.how]}</span>}
-            <span className={`fam-status st-${r.ticket.status}`}>{columnLabel(r.ticket.status)}</span>
-          </button>
-        ))}
-      </div>
+      {!folded && (
+        <div className="family-tree">
+          {shown.map((r) => (
+            <button key={r.ticket.id} className={`family-row ${r.ticket.id === ticket.id ? "me" : ""}`} style={{ paddingLeft: 10 + r.depth * 18 }}
+              aria-current={r.ticket.id === ticket.id ? "true" : undefined} onClick={() => r.ticket.id !== ticket.id && onOpenTicket(r.ticket.id)}>
+              <span className="fam-title">{r.ticket.important && <ImportantStar />}{r.ticket.title}</span>
+              {r.how && <span className="fam-how">{LINK_WORDS[r.how]}</span>}
+              <span className={`fam-status st-${r.ticket.status}`}>{columnLabel(r.ticket.status)}</span>
+            </button>
+          ))}
+          {trimmed && (
+            <button className="mini-link family-more" onClick={() => setAll((v) => !v)}>{all ? "Show only nearby" : `Show all ${rows.length}`}</button>
+          )}
+        </div>
+      )}
     </section>
   );
 }

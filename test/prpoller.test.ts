@@ -2,7 +2,8 @@ import { beforeEach, expect, test } from "bun:test";
 import type { HostHuddle } from "../src/server/attention";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
-import { checkPr } from "../src/server/prpoller";
+import { checkPr, mergePr, refreshPr, type PrState } from "../src/server/prpoller";
+import { parsePrStatus } from "../src/server/prstatus";
 import type { SessionSummary } from "../src/server/session";
 import { Store } from "../src/server/store";
 import { tempDir } from "./helpers";
@@ -110,4 +111,64 @@ test("merged PR keeps a ticket hosting an open huddle in review, then moves it o
   await checkPr(board, store, "p", id, async () => "MERGED");
   expect(store.getTicket("p", id)!.status).toBe("done");
   expect(merged()).toBe(1);
+});
+
+const A = "https://github.com/x/y/pull/1";
+const B = "https://github.com/x/voice/pull/2";
+const states = (m: Record<string, PrState>) => async (url: string) => m[url] ?? null;
+
+test("with two PRs, the card moves to Done only once both are merged or closed", async () => {
+  store.updateTicket("p", id, { prs: [{ url: A, state: null }, { url: B, state: null }], prUrl: B });
+  await checkPr(board, store, "p", id, states({ [A]: "MERGED", [B]: "OPEN" }));
+  let t = store.getTicket("p", id)!;
+  expect(t.status).toBe("review");
+  expect(t.prs).toEqual([{ url: A, state: "MERGED" }, { url: B, state: "OPEN" }]);
+  expect(merged()).toBe(0);
+  // A merged PR is not asked about again.
+  const asked: string[] = [];
+  await checkPr(board, store, "p", id, async (url) => {
+    asked.push(url);
+    return url === B ? "CLOSED" : "OPEN";
+  });
+  expect(asked).toEqual([B]);
+  t = store.getTicket("p", id)!;
+  expect(t.status).toBe("done");
+  expect(merged()).toBe(1);
+});
+
+test("the main PR moves to the newest one still open", async () => {
+  store.updateTicket("p", id, { prs: [{ url: A, state: null }, { url: B, state: null }], prUrl: B });
+  await checkPr(board, store, "p", id, states({ [A]: "OPEN", [B]: "MERGED" }));
+  const t = store.getTicket("p", id)!;
+  expect(t.prUrl).toBe(A);
+  expect(t.status).toBe("review");
+});
+
+test("refresh records each PR's target branch", async () => {
+  store.updateTicket("p", id, { prs: [{ url: A, state: null }, { url: B, state: null }], prUrl: B });
+  const status = async (url: string) => parsePrStatus(url, { state: "OPEN", baseRefName: url === A ? "dev" : "main" });
+  await refreshPr(board, store, "p", id, { status });
+  const t = store.getTicket("p", id)!;
+  expect(t.prs).toEqual([{ url: A, state: "OPEN", base: "dev" }, { url: B, state: "OPEN", base: "main" }]);
+  expect(t.pr?.base).toBe("main");
+});
+
+test("an old ticket with only prUrl still merges to Done and gets no PR list", async () => {
+  await checkPr(board, store, "p", id, async () => "MERGED");
+  const t = store.getTicket("p", id)!;
+  expect(t.status).toBe("done");
+  expect(t.prs ?? null).toBeNull();
+});
+
+test("Merge & done with two PRs merges the main one and waits for the other", async () => {
+  store.updateTicket("p", id, { prs: [{ url: A, state: "OPEN" }, { url: B, state: "OPEN" }], prUrl: B });
+  const ok = (url: string) => ({ ...parsePrStatus(url, { state: "OPEN", mergeable: "MERGEABLE" }) });
+  await mergePr(board, store, "p", id, { status: async (u) => ok(u), merge: async () => ({ ok: true, error: "" }) });
+  let t = store.getTicket("p", id)!;
+  expect(t.status).toBe("review");
+  expect(t.prUrl).toBe(A);
+  expect(t.prs!.find((p) => p.url === B)!.state).toBe("MERGED");
+  await mergePr(board, store, "p", id, { status: async (u) => ok(u), merge: async () => ({ ok: true, error: "" }) });
+  t = store.getTicket("p", id)!;
+  expect(t.status).toBe("done");
 });

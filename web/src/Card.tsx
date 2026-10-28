@@ -215,7 +215,7 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
           {hasJobs && <JobChip jobs={jobs!} ticketId={ticket.id} onOpen={dragging ? undefined : onOpenJobs} />}
           {ticket.prUrl && (
             <a className="badge pr" href={safeHref(ticket.prUrl)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-              PR #{ticket.prUrl.split("/").pop()}
+              PR #{ticket.prUrl.split("/").pop()}{(ticket.prs?.length ?? 0) > 1 && <span className="pr-more-count" title={`${ticket.prs!.length} pull requests: open the ticket to see them all`}> +{ticket.prs!.length - 1}</span>}
             </a>
           )}
           {artifact && artifactHref && (
