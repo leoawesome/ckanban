@@ -4,6 +4,36 @@ What changed in each ckanban release. Get the latest with `ckanban update`.
 
 ## Unreleased
 
+## [0.15.0] - 2026-10-29
+
+### Added
+- **Install with npx**: `npx ckanban` installs the Mac app (checked against the release checksums) and opens the board. Needs only Node.
+- **Website**: ckanban.dev, with an animated board, and the short install line `curl -fsSL https://ckanban.dev/install | bash`.
+- **Safety, privacy and cost FAQ**, linked from the README.
+- **Ticket families**: link related tickets ("part of"), see the whole family as a tree in the ticket panel, and get a suggested parent for new tickets. A ticket under the wrong parent can be moved.
+- **Tickets can manage other tickets**: a ticket's run can comment on, create, edit, move, message and stop other tickets on its board when its task calls for it. Every change is logged on the changed ticket. Deleting stays with you.
+- When you ask in a ticket's chat, Claude can also change tickets on another board.
+- **The board learns from your corrections**: when you correct the same thing on more than one ticket, it saves a board rule that every later run follows. Huddle notes are tidied weekly. Team, Learned shows every change, with Undo.
+- **Several pull requests per ticket**: a ticket keeps all its PRs and moves to Done once all are merged or closed. A huddle reply that opens a PR now saves it on the ticket.
+- The ticket sidebar can be resized.
+
+### Changed
+- **Friendlier chat with Claude**: avatar and name line, replies grouped into turns, tool steps folded into one line, and a live row that shows what Claude is doing.
+- "Say it simpler" keeps bold, short lists and paragraphs.
+- **Clearer first install**: when Claude Code isn't installed or isn't signed in, the board, its runs and the installer say what to do in plain words. The first screens say "a copy per ticket" and "this folder" instead of technical terms.
+- The board finds Claude Code wherever it was installed (for example with nvm), also when it was installed after the board started: reloading the page is enough.
+- On a new Mac without Apple's developer tools, the board treats git as not installed: tickets edit the folder directly, and the "install developer tools" pop-up no longer appears from the board.
+- An Apple Silicon Mac gets the native app even from a Terminal or Node running in Intel mode (Rosetta).
+
+### Fixed
+- Connections sign-in now opens the sign-in page every time, and a failed sign-in no longer looks connected.
+- A message with a picture was shown twice in the chat, and the chat could scroll the page past the panel.
+- A merged pull request moved a card to Done while its huddle was still running.
+- Phones: the ticket header fits, a phone that stopped getting notifications signs up again (and you are told), and finished tool rows show their output.
+- Closing the ticket panel always returns to the board, also after opening a ticket from inside another.
+- Opening the board no longer shows "board ... not found" when the board you used last was deleted.
+- The installer's last lines were wrong when it didn't start the background service or when `ckanban` wasn't on your PATH yet.
+
 ## [0.14.0] - 2026-10-25
 
 ### Added
@@ -281,6 +311,7 @@ First release.
 - Terminal & file explorer panel, Connections panel for MCP servers, scheduled tickets on a cron, claude.ai artifacts from runs.
 - Standalone binary, installer, `ckanban update` and a background service that starts at login.
 
+[0.15.0]: https://github.com/leoawesome/ckanban/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/leoawesome/ckanban/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/leoawesome/ckanban/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/leoawesome/ckanban/compare/v0.11.0...v0.12.0

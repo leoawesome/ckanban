@@ -1,6 +1,6 @@
 {
   "name": "ckanban",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Kanban board for Claude Code: move a ticket to Ready and Claude works on it by itself. This package installs the Mac app.",
   "type": "module",
   "bin": {
