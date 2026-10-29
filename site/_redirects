@@ -1,0 +1,2 @@
+# Short install address: curl -fsSL https://ckanban.dev/install | bash
+/install https://raw.githubusercontent.com/leoawesome/ckanban/main/install.sh 302

@@ -6,7 +6,7 @@
 
 <p align="center"><b>Kanban for Claude Code.</b> Drop a ticket into Ready and a headless Claude Code session picks it up, does the work and moves it to Review, with a GitHub PR when it changed code.</p>
 
-<p align="center"><a href="https://leoawesome.github.io/ckanban/"><b>Website</b></a> · <a href="docs/features.md">Features</a> · <a href="docs/faq.md">FAQ</a> · <a href="CHANGELOG.md">Changelog</a></p>
+<p align="center"><a href="https://ckanban.dev/"><b>Website</b></a> · <a href="docs/features.md">Features</a> · <a href="docs/faq.md">FAQ</a> · <a href="CHANGELOG.md">Changelog</a></p>
 
 <p align="center">
   <a href="https://buymeacoffee.com/leoawesome"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
@@ -40,7 +40,7 @@ All data lives in plain files under `~/.claude-kanban/`.
 You need [Claude Code](https://claude.com/claude-code) installed and logged in. `git` is optional: with it each ticket gets its own copy of the folder. For PRs, also install `gh` and run `gh auth login`.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leoawesome/ckanban/main/install.sh | bash
+curl -fsSL https://ckanban.dev/install | bash
 ```
 
 This downloads one self-contained binary to `~/.local/bin/ckanban` (no Bun/Node needed), starts it as a background service that launches at login, and opens http://localhost:7777.
