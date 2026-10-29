@@ -38,7 +38,7 @@ export interface Profile {
   keepAwake?: boolean;
   /** Spending cap per run in USD (claude --max-budget-usd) for its tickets' work runs. Missing/null: none. */
   runCapUsd?: number | null;
-  /** Runs are taught the claude.ai artifact helper (publish/read artifacts). Missing: off. */
+  /** Runs are taught the claude.ai artifact helper (publish/read artifacts). Missing: off, except for runs whose ticket or messages hold an artifact link. */
   artifacts?: boolean;
   /** Minutes without stream output before a run counts as stalled (the Inbox asks what to do). 0: off. Missing: 20. */
   stallMinutes?: number;

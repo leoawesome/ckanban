@@ -412,3 +412,16 @@ test("a self move is dropped when the user stops the reply or moves the card mea
     delete process.env.FAKE_STEP_MS;
   }
 }, 20000);
+
+test("a claude.ai artifact link in the ticket or a message teaches the artifact helper, even with the board setting off", async () => {
+  await setup();
+  const plain = await board.createTicket("p", { title: "x", body: "no links", status: "ready" });
+  await board.whenIdle();
+  expect(readArgs().at(-1)!.prompt).not.toContain("# claude.ai artifacts");
+  await board.chat("p", plain.id, "update https://claude.ai/artifact/AbC123 too");
+  await board.whenIdle();
+  expect(readArgs().at(-1)!.prompt).toContain("# claude.ai artifacts");
+  await board.createTicket("p", { title: "y", body: "Edit https://claude.ai/artifact/XyZ789", status: "ready" });
+  await board.whenIdle();
+  expect(readArgs().at(-1)!.prompt).toContain("artifact publish <file.html> --url <url>");
+}, 20000);

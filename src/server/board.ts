@@ -16,7 +16,7 @@ import { recallBlock } from "./recall";
 import { wouldLoop } from "../../web/src/family";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
-import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake } from "./prompts";
+import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake } from "./prompts";
 import {
   childrenOf, DEFAULT_MAX_CONCURRENT, findCycle, isComplete, MAX_RUN_CHAIN, MAX_RUN_STARTS, normalizeNeeds, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
@@ -808,10 +808,11 @@ export class Board {
     const outputDir = this.store.outputsDir(slug, id);
     // Start fresh session: a work run in a new session that picks up from the branch (until that session exists).
     const fresh = !!t.freshSession && !run.chat;
+    const artifacts = !!profile.artifacts || mentionsArtifact(t.body, run.chat?.text, ...newComments.map((c) => c.text));
     let prompt = resume ?? this.withSetupNote(slug, t, profile, session, refine, localizeAttachments(run.chat?.raw
       ? run.chat.text
       : run.chat
-      ? chatPrompt(t, run.chat.text, run.chat.mode, outputDir, !!profile.artifacts, session.repo, session.inPlace, refine && !session.existed ? this.recall(slug, t) : "")
+      ? chatPrompt(t, run.chat.text, run.chat.mode, outputDir, artifacts, session.repo, session.inPlace, refine && !session.existed ? this.recall(slug, t) : "")
       : fresh
       ? this.freshPrompt(slug, t, session, outputDir)
       : t.runCount === 0 || !session.existed
@@ -820,9 +821,9 @@ export class Board {
         // Notes other tickets' runs left reach even a ticket's first run: nobody else passes them on.
         comments: t.workdir || t.runCount > 0 ? newComments : newComments.filter((c) => c.from), outputDir,
         schedule: t.scheduleId ? { id: t.scheduleId, name: this.store.getSchedule(slug, t.scheduleId)?.name ?? null, board: slug } : undefined,
-        autoHuddles: autoHuddlesOn(profile), artifacts: !!profile.artifacts, recall: this.recall(slug, t),
+        autoHuddles: autoHuddlesOn(profile), artifacts, recall: this.recall(slug, t),
       })
-      : resumePrompt(t, newComments, outputDir, autoHuddlesOn(profile), !!profile.artifacts, session.repo, session.inPlace, { folder: profile.path, baseBranch: profile.baseBranch }), this.store.attachmentsDir));
+      : resumePrompt(t, newComments, outputDir, autoHuddlesOn(profile), artifacts, session.repo, session.inPlace, { folder: profile.path, baseBranch: profile.baseBranch }), this.store.attachmentsDir));
     // A slash command only runs when it is the whole message: Claude Code passes everything after the name to
     // it as arguments (the board's note too). So the command goes alone and the board's instructions go in
     // the system prompt for this run.
@@ -2258,7 +2259,7 @@ export class Board {
     const profile = this.store.getProfile(slug);
     return freshSessionPrompt(t, {
       repo: session.repo, inPlace: session.inPlace, home: profile ? { folder: profile.path, baseBranch: profile.baseBranch } : undefined, linked: !!t.workdir, baseBranch: profile?.baseBranch || "main",
-      lastResult: last?.text ?? null, comments: recent, outputDir, autoHuddles: autoHuddlesOn(profile), artifacts: !!profile?.artifacts,
+      lastResult: last?.text ?? null, comments: recent, outputDir, autoHuddles: autoHuddlesOn(profile), artifacts: !!profile?.artifacts || mentionsArtifact(t.body, last?.text, ...recent.map((c) => c.text)),
       recall: this.recall(slug, t),
     });
   }

@@ -280,7 +280,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               <span>
                 claude.ai artifacts
                 <span className="muted small">
-                  Teach Claude to publish and read claude.ai artifacts from runs and Planning chats. Off keeps every prompt shorter.
+                  Teach Claude to publish, read and update claude.ai artifacts from runs and Planning chats. When off, Claude still learns this for tickets and messages that contain an artifact link.
                 </span>
               </span>
             </label>

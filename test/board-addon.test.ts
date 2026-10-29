@@ -107,6 +107,16 @@ test("the planning prompt asks for an add-on only on a ticket that already ran",
   expect(addOnRule(ticket({ runCount: 2 }))).toContain("This ticket already ran.");
 });
 
+test("on a ticket that already ran, the planning chat starts agreed changes to its own work itself", () => {
+  const ran = chatPrompt(ticket({ runCount: 1 }), "Revert it too", "refine", "/o");
+  expect(ran).toContain("call `move_ticket` on this ticket with status ready yourself");
+  expect(ran).toContain("you move it there yourself");
+  const fresh = chatPrompt(ticket({}), "do it", "refine", "/o");
+  expect(fresh).not.toContain("with status ready yourself");
+  expect(fresh).not.toContain("you move it there yourself");
+  expect(fresh).toContain("only when the user asks for it in a message they typed");
+});
+
 test("addOnState: Done/Review (also reopened), ran before, or never ran (old tickets without the fields)", () => {
   expect(addOnState({ status: "planning", runCount: 0 })).toBeUndefined();
   expect(addOnState({ status: "backlog", runCount: 0, reopenedFrom: null })).toBeUndefined();

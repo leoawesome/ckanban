@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, COLUMNS, safeHref, startWorkTarget, subscribe, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "./api";
+import { boardColumnOf, menuPick, STATUS_MENU } from "./columns";
 import { outcomeBadge } from "./Card";
 import { JobChip } from "./Jobs";
 import { CapActions } from "./CapActions";
@@ -557,6 +558,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
     else if (!editing) onClose();
   };
   const col = COLUMNS.find((c) => c.id === ticket.status);
+  const statusOptions = STATUS_MENU.map((c) => ({ value: c.id, label: c.label, hint: c.hint }));
   const startTarget = startWorkTarget(ticket);
   const startWork = () => (startTarget === "planning" ? setStatus("planning") : setConfirmStart(true));
   // The chat's newest unapplied proposal (Chat reports it), so ⌘⇧Enter can apply it and start work in one go.
@@ -658,8 +660,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
         {!phone && (
           <div className="field-row">
             <span className="field-key">Status</span>
-            <Select className="status-select" ariaLabel="Status" value={ticket.status} onChange={(s) => setStatus(s as Status)}
-              options={COLUMNS.map((c) => ({ value: c.id, label: c.label, hint: c.hint, disabled: c.id === "in_progress" && !working }))} />
+            <Select className="status-select" ariaLabel="Status" value={boardColumnOf(ticket)} onChange={(s) => setStatus(menuPick(ticket, s as Status))}
+              options={statusOptions} />
           </div>
         )}
         {col && (
@@ -849,9 +851,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
             </span>
           )}
           {phone && (
-            <Select className="phone-move" ariaLabel="Move to column" value={ticket.status} onChange={(s) => setStatus(s as Status)} renderValue={(o) => o?.label ?? "Move"}
+            <Select className="phone-move" ariaLabel="Move to column" value={boardColumnOf(ticket)} onChange={(s) => setStatus(menuPick(ticket, s as Status))} renderValue={(o) => o?.label ?? "Move"}
               menuMaxHeight={Infinity} // all columns fit on a phone screen; only scroll when the screen is too short
-              options={COLUMNS.map((c) => ({ value: c.id, label: c.label, hint: c.hint, disabled: c.id === "in_progress" && !working }))} />
+              options={statusOptions} />
           )}
           <TicketMenu ticket={ticket} working={working} live={!!(ticket.terminalOpen || linked?.live)}
             linkedLabel={ticket.workdir && ticket.sessionId ? (linked ? sessionLabel(linked) : ticket.sessionId.slice(0, 8)) : null}

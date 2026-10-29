@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Status } from "../web/src/columns";
-import { boardColumnOf, columnNeighbours, columnOrder } from "../web/src/columns";
+import { boardColumnOf, columnNeighbours, columnOrder, menuPick, STATUS_MENU } from "../web/src/columns";
 import { opensNewTab } from "../web/src/links";
 
 const tk = (id: string, status: Status, order: number, extra: { slotWait?: { at: string } } = {}) => ({ id, status, order, ...extra });
@@ -19,6 +19,15 @@ test("columnOrder lists one board column top to bottom; In Progress includes the
 test("boardColumnOf puts queued tickets under In Progress", () => {
   expect(boardColumnOf(tk("q", "ready", 0))).toBe("in_progress");
   expect(boardColumnOf(tk("p", "planning", 0))).toBe("planning");
+});
+
+test("the status menu has no Queued entry; picking In Progress queues a ticket that isn't there yet", () => {
+  expect(STATUS_MENU.map((c) => c.label)).toEqual(["Backlog", "Planning", "In Progress", "Review", "Done"]);
+  expect(STATUS_MENU.find((c) => c.id === "in_progress")!.hint).toBe("Claude starts the work now, or as soon as a slot is free");
+  expect(menuPick(tk("b", "backlog", 0), "in_progress")).toBe("ready");
+  expect(menuPick(tk("q", "ready", 0), "in_progress")).toBe("ready");
+  expect(menuPick(tk("r", "in_progress", 0), "in_progress")).toBe("in_progress");
+  expect(menuPick(tk("r", "in_progress", 0), "review")).toBe("review");
 });
 
 test("columnNeighbours stays in the column and stops at its ends", () => {

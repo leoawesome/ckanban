@@ -56,3 +56,10 @@ export function columnNeighbours(order: string[], column: Status, openId: string
   const at = ids.indexOf(openId);
   return { prev: at > 0 ? ids[at - 1] : null, next: at >= 0 && at < ids.length - 1 ? ids[at + 1] : null };
 }
+
+/** The status menu: no Queued entry; In Progress starts the work now, or queues it until a slot is free. */
+export const STATUS_MENU = BOARD_COLUMNS.map((c) => (c.id === "in_progress" ? { ...c, hint: "Claude starts the work now, or as soon as a slot is free" } : c));
+
+/** The status a menu pick saves: In Progress on a ticket that isn't there yet queues it, since only Claude puts a ticket in progress. */
+export const menuPick = (t: Placed, picked: Status): Status =>
+  picked === boardColumnOf(t) ? t.status : picked === "in_progress" ? "ready" : picked;
