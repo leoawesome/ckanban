@@ -196,11 +196,11 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             title={noHistory ? "Turn on version history above to use this" : undefined}>
             <input type="radio" name="workspace" checked={shownWorkspace === "worktree"} disabled={noHistory} onChange={() => setWorkspace("worktree")} />
             <span>
-              <span>Worktree per ticket <span className="muted small">(default)</span></span>
+              <span>A copy per ticket <span className="muted small">(default)</span></span>
               <span className="muted small">
                 {noHistory
                   ? "Needs version history: turn it on above. Each ticket then gets its own copy of the folder, and tickets run in parallel."
-                  : "Each ticket gets its own branch and copy of the folder (a git worktree), so tickets run in parallel."}
+                  : "Each ticket gets its own copy of the folder, so tickets run in parallel."}
               </span>
             </span>
           </label>
@@ -209,7 +209,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             <span>
               <span>Work in the project folder</span>
               <span className="muted small">
-                Claude edits your folder directly, with no branches. Tickets run one at a time so they don't clash.
+                Claude edits your folder directly. Tickets run one at a time so they don't clash.
                 {profile && " Changing this affects new tickets only; tickets that already have their own copy keep it."}
               </span>
             </span>

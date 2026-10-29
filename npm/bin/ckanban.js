@@ -18,12 +18,15 @@ function run(cmdArgs) {
 }
 
 function check(cmd, hint) {
-  return spawnSync("sh", ["-c", `command -v ${cmd}`], { stdio: "ignore" }).status === 0 || (console.warn(`! ${hint}`), false);
+  return spawnSync("sh", ["-c", cmd], { stdio: "ignore" }).status === 0 || (console.warn(`! ${hint}`), false);
 }
 
 async function setup() {
   await installBinary({ version: process.env.CKANBAN_VERSION || pkg.version, dir });
-  check("claude", "Claude Code not found. Install it first: https://claude.com/claude-code");
+  check("command -v claude", "Claude Code not found. Install it and sign in: https://claude.com/claude-code");
+  // A new Mac has a /usr/bin/git placeholder that only works once Apple's developer tools are installed.
+  check('command -v git && { [ "$(command -v git)" != /usr/bin/git ] || xcode-select -p; }',
+    "git not found (optional): tickets will edit your folder directly. To get version history, run: xcode-select --install");
   if (!process.env.CKANBAN_NO_DAEMON) {
     if (run(["install"]) !== 0) process.exit(1);
     await new Promise((r) => setTimeout(r, 1000));

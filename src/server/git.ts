@@ -30,8 +30,26 @@ export async function run(cmd: string[], cwd: string, env?: Record<string, strin
   }
 }
 
+/**
+ * Whether the `git` at `bin` can run. A new Mac has /usr/bin/git, but it's only a placeholder until the Command Line
+ * Tools are installed: every call fails and pops up the "install developer tools" dialog. `xcode-select -p` tells
+ * without the dialog.
+ */
+export function gitRuns(bin: string | null, hasDeveloperTools: () => boolean, platform = process.platform): boolean {
+  if (!bin) return false;
+  return platform !== "darwin" || bin !== "/usr/bin/git" || !!process.env.DEVELOPER_DIR || hasDeveloperTools();
+}
+
+let gitWorks = false;
+
+/** gitRuns for this computer. Once git works it stays working, so only a "no" is checked again. */
+export function gitUsable(): boolean {
+  if (!gitWorks) gitWorks = gitRuns(Bun.which("git"), () => Bun.spawnSync(["xcode-select", "-p"], { stdout: "ignore", stderr: "ignore" }).exitCode === 0);
+  return gitWorks;
+}
+
 export async function isGitRepo(path: string): Promise<boolean> {
-  if (!existsSync(path)) return false;
+  if (!existsSync(path) || !gitUsable()) return false;
   const r = await run(["git", "rev-parse", "--is-inside-work-tree"], path);
   return r.code === 0 && r.stdout.trim() === "true";
 }
@@ -174,6 +192,7 @@ export async function listWorktrees(repo: string): Promise<string[]> {
 }
 
 export async function which(bin: string): Promise<boolean> {
+  if (bin === "git") return gitUsable();
   return Bun.which(bin) !== null;
 }
 

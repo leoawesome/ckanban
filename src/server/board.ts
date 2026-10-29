@@ -236,6 +236,20 @@ export function sessionMissing(error: string, events: any[]): boolean {
   return re.test(error) || events.some((e) => e?.type === "result" && Array.isArray(e.errors) && e.errors.some((m: unknown) => typeof m === "string" && re.test(m)));
 }
 
+/**
+ * A run that failed because Claude Code itself isn't ready (not installed, or not signed in): what to do, in plain
+ * words, instead of Claude's raw error. Null for any other failure.
+ */
+export function claudeSetupHint(error: string): string | null {
+  if (/failed to start .*claude|Executable not found in \$PATH: "?claude"?/i.test(error)) {
+    return "Claude Code isn't installed, or the board can't find it. Install it from https://claude.com/claude-code and sign in, then start the ticket again. If it still fails, run `ckanban install` in Terminal so the board finds Claude Code.";
+  }
+  if (/Please run \/login/i.test(error)) {
+    return "Claude Code isn't signed in. Open Terminal, type `claude`, sign in, then start the ticket again.";
+  }
+  return null;
+}
+
 export const SESSION_OPEN_MSG = "This ticket's Claude session is still open in a terminal. Exit it there (Ctrl+D or /exit), then try again.";
 
 /** Run errors the board offers a one-click fix for: Start fresh session, or Take over here. */
@@ -981,7 +995,7 @@ export class Board {
         return this.executeOnce(run, healed, RETRY_TEXT);
       }
       // Claude reports a lost session only in its result event: keep it in the error so the UI offers Start fresh session.
-      const shown = sessionMissing(error, out.events) && !sessionMissing(error, []) ? `No conversation found with session ID: ${session.sessionId}` : error;
+      const shown = sessionMissing(error, out.events) && !sessionMissing(error, []) ? `No conversation found with session ID: ${session.sessionId}` : claudeSetupHint(error) ?? error;
       this.store.addComment(slug, id, "ai", `Run failed (exit ${out.code}): ${shown.split("\n").slice(-3).join("\n")}`);
       this.patch(slug, id, { ...base, outcome: "failed", error: shown });
       return;

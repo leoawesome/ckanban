@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { defaultRoot } from "./store";
 import { join } from "node:path";
 import { findSessionFile } from "./session";
 import { ptySupported } from "./shell";
@@ -342,7 +342,7 @@ export async function runArtifactJob(job: ArtifactJob, o: RunOptions = {}): Prom
   if (!pty && !Bun.which("tmux", { PATH: baseEnv.PATH ?? "" })) {
     return { ok: false, error: ERRORS.noRuntime };
   }
-  const cwd = o.cwd ?? join(homedir(), ".claude-kanban", "artifact-helper");
+  const cwd = o.cwd ?? join(defaultRoot(), "artifact-helper");
   mkdirSync(cwd, { recursive: true });
   const sessionId = crypto.randomUUID();
   const timeoutMs = o.timeoutMs ?? 180_000;

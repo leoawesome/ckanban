@@ -1,5 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { defaultRoot } from "./store";
 import { join } from "node:path";
 import { helperEnv } from "./artifact";
 import { dayKey } from "./limit";
@@ -47,7 +47,7 @@ export function sideCallArgs(i: SideCallInput): string[] {
 
 export function makeSideCaller(o: SideCallOptions = {}): SideCaller {
   return async (i) => {
-    const cwd = i.cwd ?? o.cwd ?? join(homedir(), ".claude-kanban", "side-calls");
+    const cwd = i.cwd ?? o.cwd ?? join(defaultRoot(), "side-calls");
     mkdirSync(cwd, { recursive: true });
     let p: ReturnType<typeof Bun.spawn>;
     try {

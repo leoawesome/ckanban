@@ -1,6 +1,6 @@
 // Board: one-click session recovery and spending caps.
 import { expect, test } from "bun:test";
-import { Board, ConflictError, recoveryFor, SESSION_OPEN_MSG } from "../src/server/board";
+import { Board, claudeSetupHint, ConflictError, recoveryFor, SESSION_OPEN_MSG } from "../src/server/board";
 import { FAKE, store, bus, board, liveSessions, setBoard, setup, readArgs, useBoardEnv } from "./board-env";
 
 useBoardEnv();
@@ -12,6 +12,26 @@ test("recoveryFor: lost session and open-in-terminal errors get a fix, others do
   expect(recoveryFor(SESSION_OPEN_MSG)).toBe("session_open");
   expect(recoveryFor("claude exited with code 1")).toBeNull();
   expect(recoveryFor(null)).toBeNull();
+});
+
+// ---- Claude Code not installed or not signed in: say what to do, not Claude's raw error ----
+
+test("claudeSetupHint: missing or signed-out Claude Code gets plain steps, other errors don't", () => {
+  expect(claudeSetupHint('failed to start claude: Executable not found in $PATH: "claude"')).toContain("Claude Code isn't installed");
+  expect(claudeSetupHint("Not logged in · Please run /login")).toContain("Claude Code isn't signed in");
+  expect(claudeSetupHint("Invalid API key · Please run /login")).toContain("isn't signed in");
+  expect(claudeSetupHint("claude exited with code 1")).toBeNull();
+  expect(claudeSetupHint('failed to start codex: Executable not found in $PATH: "codex"')).toBeNull();
+});
+
+test("a run whose claude can't start fails with how to install Claude Code", async () => {
+  await setup({ git: false });
+  setBoard(new Board(store, bus, { claudeBin: "/nonexistent/claude", isSessionLive: async () => false }));
+  const t = await board.createTicket("p", { title: "x", body: "y", status: "ready", mode: "auto" });
+  await board.whenIdle();
+  const got = store.getTicket("p", t.id)!;
+  expect(got.outcome).toBe("failed");
+  expect(got.error).toContain("Install it from https://claude.com/claude-code");
 });
 
 test("a linked ticket's lost session shows Start fresh session, which runs a new session in the same folder", async () => {

@@ -3,13 +3,22 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { makeRepo } from "./helpers";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { addWorktree, detectBaseBranch, enableVersionHistory, isGitRepo, removeWorktree, repoKind, resolveBaseBranch, run, SNAPSHOT_MAX_BYTES, worktreeDir } from "../src/server/git";
+import { addWorktree, detectBaseBranch, enableVersionHistory, gitRuns, isGitRepo, removeWorktree, repoKind, resolveBaseBranch, run, SNAPSHOT_MAX_BYTES, worktreeDir } from "../src/server/git";
 import { tempDir } from "./helpers";
 
 let repo: string;
 
 beforeAll(async () => {
   repo = await makeRepo();
+});
+
+test("gitRuns: a new Mac's /usr/bin/git placeholder doesn't count until the developer tools are installed", () => {
+  const yes = () => true, no = () => false;
+  expect(gitRuns(null, yes, "darwin")).toBe(false);
+  expect(gitRuns("/usr/bin/git", no, "darwin")).toBe(false);
+  expect(gitRuns("/usr/bin/git", yes, "darwin")).toBe(true);
+  expect(gitRuns("/opt/homebrew/bin/git", no, "darwin")).toBe(true);
+  expect(gitRuns("/usr/bin/git", no, "linux")).toBe(true);
 });
 
 test("isGitRepo", async () => {

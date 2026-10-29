@@ -878,8 +878,14 @@ export function App() {
       {missing.length > 0 && !dismissed.has(pathKey) && (
         <div className={`banner ${missing.includes("claude") ? "warn" : "info"}`} role="status">
           <span>
-            {missing.includes("claude") && <><b>claude</b> not found on PATH: tickets cannot run. </>}
-            {missing.includes("git") && <><b>git</b> not found: tickets still run, directly in the board folder without per-ticket worktrees. </>}
+            {missing.includes("claude") && (
+              <>
+                <b>Claude Code</b> isn't installed, or the board can't find it, so tickets can't run. Install it from{" "}
+                <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">claude.com/claude-code</a>, sign in, then reload this page.
+                {" "}If this message stays, run <code>ckanban install</code> in Terminal.{" "}
+              </>
+            )}
+            {missing.includes("git") && <><b>git</b> isn't installed: tickets still run, editing the board folder directly instead of a copy per ticket. </>}
             {missing.includes("gh") && (
               <>
                 <b>gh</b> (GitHub CLI) is optional: tickets run without it; it is only needed to open and track pull requests.

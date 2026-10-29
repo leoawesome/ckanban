@@ -5,7 +5,7 @@ import { toast } from "./toast";
 
 /** The one sample ticket offered on a brand-new first board: read-only, so it is safe to try. */
 export const SAMPLE_TICKET = {
-  title: "Explain this repo's structure in a short report",
+  title: "Explain this folder's structure in a short report",
   body: [
     "Read this project and write a short report on how it is put together. Do not change any files: no edits, commits, branches or pull requests.",
     "",

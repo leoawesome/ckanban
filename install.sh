@@ -17,7 +17,8 @@ die() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 [ "$(uname -s)" = "Darwin" ] || die "ckanban currently supports macOS only."
 case "$(uname -m)" in
   arm64) ARCH="arm64" ;;
-  x86_64) ARCH="x64" ;;
+  # A Terminal running under Rosetta reports x86_64 on Apple Silicon: still install the native build.
+  x86_64) [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ] && ARCH="arm64" || ARCH="x64" ;;
   *) die "Unsupported CPU: $(uname -m)" ;;
 esac
 
@@ -50,9 +51,12 @@ trap - EXIT
 echo "✓ Installed $BIN_DIR/ckanban ($("$BIN_DIR/ckanban" --version))"
 
 missing=0
-command -v claude >/dev/null 2>&1 || { warn "claude CLI not found. Install Claude Code: https://claude.com/claude-code"; missing=1; }
-command -v git >/dev/null 2>&1 || { warn "git not found (xcode-select --install)"; missing=1; }
-command -v gh >/dev/null 2>&1 || warn "gh CLI not found: PR features disabled (brew install gh && gh auth login)"
+command -v claude >/dev/null 2>&1 || { warn "Claude Code not found. Install it and sign in: https://claude.com/claude-code"; missing=1; }
+# A new Mac has a /usr/bin/git placeholder that only works once Apple's developer tools are installed.
+if ! command -v git >/dev/null 2>&1 || { [ "$(command -v git)" = "/usr/bin/git" ] && ! xcode-select -p >/dev/null 2>&1; }; then
+  warn "git not found (optional): tickets will edit your folder directly. To get version history, run: xcode-select --install"
+fi
+command -v gh >/dev/null 2>&1 || warn "gh (GitHub CLI) not found (optional): only needed to open pull requests (brew install gh && gh auth login)"
 
 if [ -z "${CKANBAN_NO_DAEMON:-}" ]; then
   "$BIN_DIR/ckanban" install
@@ -60,12 +64,17 @@ if [ -z "${CKANBAN_NO_DAEMON:-}" ]; then
   open "http://localhost:7777" 2>/dev/null || true
 fi
 
+CKANBAN="ckanban"
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
-  *) warn "$BIN_DIR is not on your PATH. Add this to ~/.zshrc:  export PATH=\"$BIN_DIR:\$PATH\"" ;;
+  *) warn "$BIN_DIR is not on your PATH. Add this to ~/.zshrc:  export PATH=\"$BIN_DIR:\$PATH\""; CKANBAN="$BIN_DIR/ckanban" ;;
 esac
 
 echo
-bold "Done. Board: http://localhost:7777"
-echo "Update later with: ckanban update"
-[ "$missing" = 0 ] || warn "Install the missing tools above, then run: ckanban restart"
+if [ -n "${CKANBAN_NO_DAEMON:-}" ]; then
+  bold "Done. Start the board with: $CKANBAN install"
+else
+  bold "Done. Board: http://localhost:7777"
+fi
+echo "Update later with: $CKANBAN update"
+[ "$missing" = 0 ] || [ -n "${CKANBAN_NO_DAEMON:-}" ] || warn "Install Claude Code (above), then run: $CKANBAN restart"
