@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ckanban: a kanban board where Claude Code works the tickets</title>
+<meta name="description" content="A local kanban board for Claude Code. Plan with Claude, run many tickets side by side, let a huddle of Claude teammates check the work, then review and merge. Free, MIT, runs on your Mac.">
+<meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1917" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://leoawesome.github.io/ckanban/">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c96442'/%3E%3Cg fill='%23fff'%3E%3Crect x='6' y='6.5' width='5.5' height='5.5' rx='1.4'/%3E%3Crect x='6' y='13.25' width='5.5' height='5.5' rx='1.4'/%3E%3Crect x='6' y='20' width='5.5' height='5.5' rx='1.4'/%3E%3Crect x='13.25' y='20' width='5.5' height='5.5' rx='1.4'/%3E%3Crect x='20.5' y='14.2' width='6' height='6' rx='1.5' transform='rotate(-14 23.5 17)'/%3E%3C/g%3E%3C/svg%3E">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ckanban">
+<meta property="og:title" content="ckanban: a kanban board where Claude Code works the tickets">
+<meta property="og:description" content="Plan with Claude, run many tickets side by side, let a huddle check the work, then review and merge. Free, MIT, runs on your Mac.">
+<meta property="og:url" content="https://leoawesome.github.io/ckanban/">
+<meta property="og:image" content="https://raw.githubusercontent.com/leoawesome/ckanban/main/docs/assets/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="ckanban: Kanban for Claude Code">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@leotechlead">
+<meta name="twitter:title" content="ckanban: a kanban board where Claude Code works the tickets">
+<meta name="twitter:description" content="Plan with Claude, run many tickets side by side, let a huddle check the work, then review and merge. Free, MIT, runs on your Mac.">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/leoawesome/ckanban/main/docs/assets/social-preview.png">
+<meta name="twitter:image:alt" content="ckanban: Kanban for Claude Code">
+<style>
+/* Colors from web/src/styles.css; the *-ink and on-* shades are darker or lighter so small text passes WCAG AA contrast. */
+:root{--bg:#f6f5f1;--surface:#fff;--border:#e2dfd6;--text:#1f1e1b;--muted:#6b6862;--accent:#c96442;--accent-ink:#9a4526;--accent-strong:#b0532f;--on-accent:#fff;--accent-soft:#f6e3da;--ok:#2f7d4f;--ok-ink:#256b42;--on-ok:#fff;--ok-soft:#dff0e5;--warn-ink:#855600;--warn-soft:#fbefd5;--err-ink:#8f2a22;--err-soft:#fbe2df;--info:#2b5fb8;--shadow:0 10px 40px rgba(0,0,0,.08);--mono:ui-monospace,SFMono-Regular,Menlo,monospace;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#1a1917;--surface:#242320;--border:#3a3834;--text:#ecebe6;--muted:#a3a096;--accent:#e0805e;--accent-ink:#ee9a7a;--accent-strong:#e0805e;--on-accent:#1a1917;--accent-soft:#3d2a22;--ok:#6cc28e;--ok-ink:#7fd09f;--on-ok:#1a1917;--ok-soft:#1f3327;--warn-ink:#e2b04a;--warn-soft:#3a3020;--err-ink:#f08378;--err-soft:#3d2320;--info:#86aef0;--shadow:0 10px 40px rgba(0,0,0,.4);color-scheme:dark}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--accent-ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code{font-family:var(--mono);font-size:.92em}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.skip{position:absolute;left:12px;top:-60px;background:var(--text);color:var(--bg);padding:8px 12px;border-radius:8px;z-index:9}.skip:focus{top:12px}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+/* header */
+header nav{display:flex;gap:18px;align-items:center;padding:18px 0;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:18px;color:var(--text);text-decoration:none}.brand svg{width:28px;height:28px}
+nav .sp{flex:1}nav a.l{color:var(--muted);text-decoration:none;font-size:14.5px}nav a.l:hover{color:var(--text)}
+/* hero */
+.hero{padding:48px 0 8px}.hero h1,.hero p.lead{max-width:740px}
+.hero h1{font-size:52px;line-height:1.05;margin:0 0 18px;letter-spacing:-.02em}.hero h1 em{color:var(--accent-ink);font-style:normal}
+.hero p.lead{font-size:19px;color:var(--muted);margin:0 0 26px}
+.cmd{display:flex;align-items:center;gap:10px;max-width:100%;background:var(--text);color:var(--bg);font:14px var(--mono);padding:8px 8px 8px 16px;border-radius:10px;width:fit-content}
+.cmd code{overflow-x:auto;white-space:nowrap;font-size:14px;padding:4px 0;scrollbar-width:none}.cmd code::-webkit-scrollbar{display:none}
+.cmd button{flex:none;font:600 13px -apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);border:0;border-radius:7px;padding:6px 11px;cursor:pointer}
+.alt{font-size:14px;color:var(--muted);margin-top:12px}.alt code{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:1px 6px}
+.ph:empty{display:none}.ph{margin-top:20px}
+/* board */
+.stage{margin:44px 0 20px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.bar{display:flex;gap:6px;align-items:center;padding:8px 10px 8px 14px;border-bottom:1px solid var(--border);font-size:13px;color:var(--muted)}.bar i{width:10px;height:10px;border-radius:50%;background:var(--border)}.bar span{margin-left:10px;flex:1}
+.bar button{font:inherit;font-size:12.5px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:7px;padding:3px 10px;cursor:pointer}.bar button:hover{color:var(--text)}
+.board-scroll{overflow-x:auto;background:var(--bg)}
+.board{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px;padding:14px;min-height:330px}
+.col h3{margin:0 0 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;justify-content:space-between}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 9px;margin-bottom:8px;font-size:13px;animation:pop .45s ease both}
+.card small{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+.chip{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:99px;margin-top:5px}
+.okc{background:var(--ok-soft);color:var(--ok-ink)}.wait{background:var(--warn-soft);color:var(--warn-ink)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--info);margin-right:5px;animation:blink 1s infinite}
+.q{margin-top:6px;border-top:1px dashed var(--border);padding-top:6px;font-size:12px}.q span{display:inline-block;border:1px solid var(--accent);color:var(--accent-ink);border-radius:6px;padding:0 5px;margin:3px 3px 0 0}.q span.on{background:var(--accent-strong);border-color:var(--accent-strong);color:var(--on-accent)}
+.huddle{margin-top:6px;border-top:1px dashed var(--accent);padding-top:5px;font-size:12px}.huddle div{animation:pop .3s both}.huddle b{color:var(--accent-ink)}
+.steps{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:12px;border-top:1px solid var(--border);font-size:14px;margin:0;list-style:none}
+.steps a{display:inline-block;color:var(--muted);text-decoration:none;padding:4px 11px;border-radius:99px;transition:background .3s,color .3s}.steps a:hover{color:var(--text)}.steps a.on{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+@keyframes pop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes blink{50%{opacity:.25}}
+/* story */
+.story{display:grid;grid-template-columns:1fr 1.2fr;gap:44px;align-items:center;padding:64px 0;border-top:1px solid var(--border);scroll-margin-top:12px}
+.story.flip .txt{order:2}
+.num{font:600 13px var(--mono);color:var(--accent-ink);letter-spacing:.04em}.story h2{font-size:31px;line-height:1.15;margin:6px 0 12px;letter-spacing:-.01em}.story p{color:var(--muted);margin:0 0 10px}
+.demo{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;min-height:230px;box-shadow:var(--shadow);font-size:14px;overflow:hidden}
+.msg{background:var(--bg);border-radius:10px;padding:8px 11px;margin-bottom:8px;max-width:88%;animation:fade 9s infinite both}
+.msg.me{margin-left:auto;background:var(--accent-soft)}
+.opt{display:inline-block;border:1px solid var(--accent);color:var(--accent-ink);border-radius:7px;padding:2px 8px;margin:6px 4px 0 0;font-size:13px}.opt.pick{background:var(--accent-strong);border-color:var(--accent-strong);color:var(--on-accent)}
+.opt small{font-size:11px}
+.btn{display:inline-block;margin-top:6px;background:var(--accent-strong);color:var(--on-accent);border-radius:7px;padding:3px 10px;font-weight:600;font-size:13px}
+@keyframes fade{0%{opacity:0;transform:translateY(6px)}8%,92%{opacity:1;transform:none}100%{opacity:0}}
+.lane{display:flex;align-items:center;gap:10px;margin:11px 0}.lane b{width:118px;font-weight:500;flex:none}
+.track{flex:1;height:8px;background:var(--bg);border-radius:9px;overflow:hidden}.track i{display:block;height:100%;width:100%;background:var(--ok);border-radius:9px;animation:grow 6s infinite ease-in-out}
+.lane span{width:92px;flex:none;font-size:12.5px;color:var(--muted);text-align:right}
+@keyframes grow{0%{width:0;background:var(--info)}80%,100%{width:100%;background:var(--ok)}}
+.note{margin-top:14px;font-size:13px;color:var(--muted);border-top:1px dashed var(--border);padding-top:10px}
+.av{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;color:#fff;font-size:12px;font-weight:600;margin-right:6px;vertical-align:middle}
+.pin{display:inline-block;font:600 11px var(--mono);border-radius:5px;padding:1px 5px;margin-right:5px;background:var(--err-soft);color:var(--err-ink)}
+.diff{font:13px var(--mono);border-radius:8px;overflow:hidden;border:1px solid var(--border)}.diff div{padding:3px 10px;white-space:pre-wrap;word-break:break-word}.add{background:var(--ok-soft)}.del{background:var(--err-soft);color:var(--err-ink)}
+.cmt{margin:8px 0 0 18px;background:var(--bg);border-left:3px solid var(--accent);border-radius:6px;padding:6px 10px;font-size:13px;animation:fade 9s infinite both;animation-delay:.8s}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
+.merge{display:inline-block;background:var(--ok);color:var(--on-ok);border-radius:8px;padding:7px 14px;font-weight:600}
+/* faq, cta, footer */
+.faq{padding:60px 0;border-top:1px solid var(--border)}.faq h2,.cta h2{font-size:31px;margin:0 0 18px;letter-spacing:-.01em}
+details{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:8px}summary{cursor:pointer;font-weight:600}details p{color:var(--muted);margin:8px 0 0}
+.cta{text-align:center;padding:64px 0;border-top:1px solid var(--border)}.cta .cmd{margin:0 auto}.cta p{color:var(--muted)}
+footer{border-top:1px solid var(--border);padding:24px 0 40px;color:var(--muted);font-size:14px;display:flex;gap:16px 24px;align-items:center;flex-wrap:wrap}footer a{color:var(--muted)}footer .sp{flex:1}
+@media(max-width:800px){.story{grid-template-columns:1fr;gap:24px;padding:48px 0}.story.flip .txt{order:0}.hero{padding-top:28px}.hero h1{font-size:38px}.hero p.lead{font-size:17px}.story h2{font-size:26px}}
+@media(max-width:480px){.cmd{align-items:flex-start}.cmd code{white-space:normal;word-break:break-all;overflow:visible}header nav{gap:12px}nav .sp{flex-basis:100%;order:1;height:0}nav a.l{order:2}.lane b{width:96px}.lane span{width:74px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="wrap">
+<header><nav aria-label="Main">
+<a class="brand" href="./" aria-label="ckanban home"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#c96442"/><g fill="#fff"><rect x="6" y="6.5" width="5.5" height="5.5" rx="1.4"/><rect x="6" y="13.25" width="5.5" height="5.5" rx="1.4"/><rect x="6" y="20" width="5.5" height="5.5" rx="1.4"/><rect x="13.25" y="20" width="5.5" height="5.5" rx="1.4"/><rect x="20.5" y="20" width="5.5" height="5.5" rx="1.4" opacity=".25"/><rect x="20.5" y="14.2" width="6" height="6" rx="1.5" transform="rotate(-14 23.5 17)"/></g></svg>ckanban</a>
+<span class="sp"></span>
+<a class="l" href="#install">Install</a>
+<a class="l" href="https://github.com/leoawesome/ckanban/blob/main/docs/features.md">Docs</a>
+<a class="l" href="https://github.com/leoawesome/ckanban/blob/main/CHANGELOG.md">Changelog</a>
+<a class="l" href="https://github.com/leoawesome/ckanban">GitHub</a>
+</nav></header>
+
+<main id="main">
+<section class="hero" id="install" aria-labelledby="title">
+<h1 id="title">Your board of tickets.<br><em>Claude works them.</em></h1>
+<p class="lead">A local kanban board for Claude Code. Plan with Claude, start many tickets at once, and come back to finished work ready to review.</p>
+<div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/leoawesome/ckanban/main/install.sh | bash</code><button type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/leoawesome/ckanban/main/install.sh | bash" aria-label="Copy the install command">Copy</button></div>
+<p class="alt">Or with Node: <code>npx ckanban</code>. macOS. Free and open source (MIT). Needs <a href="https://claude.com/claude-code">Claude Code</a>.</p>
+<p class="sr-only" role="status" id="copied"></p>
+<!-- Product Hunt badge: paste the embed from producthunt.com into this div on launch day (it stays hidden while empty). -->
+<div class="ph" id="ph-badge-top"></div>
+</section>
+
+<section class="stage" aria-label="How a ticket moves across the board">
+<div class="bar"><i></i><i></i><i></i><span>shop · ckanban</span><button type="button" id="pause" aria-pressed="false">Pause</button></div>
+<div class="board-scroll" id="board-scroll" role="region" tabindex="0" aria-label="Board, scrolls sideways on small screens"><div class="board" id="board" aria-hidden="true"></div></div>
+<p class="sr-only">An animated board with the columns Backlog, Planning, In progress, Review and Done. A rough idea is planned with Claude and split into four tickets, the four run side by side, a huddle checks one of them, and each one is reviewed and merged.</p>
+<ol class="steps" id="steps">
+<li><a href="#plan">1. Plan</a></li>
+<li><a href="#run">2. Run side by side</a></li>
+<li><a href="#check">3. Huddle checks</a></li>
+<li><a href="#merge">4. Review and merge</a></li>
+</ol>
+</section>
+
+<section class="story" id="plan" aria-labelledby="plan-h"><div class="txt"><div class="num">01 PLAN</div><h2 id="plan-h">Claude asks before it builds</h2><p>Drop a rough idea in Planning. Claude asks short questions you answer with a click, and can draw a mockup for screen work. Then it writes a clear ticket, or splits a big one into a plan of smaller tickets.</p><p><b>Apply &amp; start work</b> is one click. Nothing in your folder changes while you plan.</p></div>
+<div class="demo" aria-hidden="true">
+<div class="msg me">Add Stripe checkout to the shop</div>
+<div class="msg" style="animation-delay:.6s">Which plans should people buy?<br><span class="opt pick">Monthly and yearly <small>(recommended)</small></span><span class="opt">Monthly only</span></div>
+<div class="msg" style="animation-delay:1.2s">Got it. I split it into 4 tickets: pricing page, checkout API, webhooks, emails.<br><span class="btn">Start plan</span></div>
+</div></section>
+
+<section class="story flip" id="run" aria-labelledby="run-h"><div class="txt"><div class="num">02 RUN</div><h2 id="run-h">Many tickets, side by side</h2><p>Each ticket gets its own headless Claude Code session in its own copy of the folder, up to 5 at once per board. A plan starts its tickets in the right order, a few at a time, and Claude is only woken when one needs it.</p><p>Walk away. The board tells you, also on your phone, when a ticket needs a decision.</p></div>
+<div class="demo" aria-hidden="true">
+<div class="lane"><b>Pricing page</b><div class="track"><i style="animation-duration:5s"></i></div><span>running</span></div>
+<div class="lane"><b>Checkout API</b><div class="track"><i style="animation-duration:7s"></i></div><span>running</span></div>
+<div class="lane"><b>Webhooks</b><div class="track"><i style="animation-duration:6s;animation-delay:1.5s"></i></div><span>waits its turn</span></div>
+<div class="lane"><b>Emails</b><div class="track"><i style="animation-duration:5s;animation-delay:2.5s"></i></div><span>waits its turn</span></div>
+<div class="note">No version history in your folder? Runs edit it in place, one at a time, and list what changed.</div>
+</div></section>
+
+<section class="story" id="check" aria-labelledby="check-h"><div class="txt"><div class="num">03 CHECK</div><h2 id="check-h">A huddle reviews the work</h2><p>Claude teammates such as a reviewer and a tester talk the change through in one room, tag each other and pin what they find. They stop at the budget you set.</p><p>Mark a ticket Important and Claude calls a review huddle on its own before the work lands.</p></div>
+<div class="demo" aria-hidden="true">
+<div class="msg"><span class="av" style="background:#2b5fb8">R</span><b>Reviewer:</b> <span class="pin">MUST</span>the refund path has no test</div>
+<div class="msg" style="animation-delay:.6s"><span class="av" style="background:#256b42">Q</span><b>QA:</b> added one, the tests pass now</div>
+<div class="msg" style="animation-delay:1.2s"><span class="av" style="background:#9a4526">L</span><b>Lead:</b> no MUST findings left. Ready to land.</div>
+</div></section>
+
+<section class="story flip" id="merge" aria-labelledby="merge-h"><div class="txt"><div class="num">04 MERGE</div><h2 id="merge-h">You review, then merge</h2><p>See every change, comment on a line to send it back to Claude, and watch the pull request's checks right on the card.</p><p>When it looks right, <b>Merge &amp; done</b>.</p></div>
+<div class="demo" aria-hidden="true">
+<div class="diff"><div class="del">- const total = price</div><div class="add">+ const total = price * qty</div><div class="add">+ if (total &lt;= 0) throw new Error("Empty cart")</div></div>
+<div class="cmt"><b>You:</b> also show the error on the checkout page</div>
+<div class="row"><span class="chip okc">Checks pass</span><span class="merge">Merge &amp; done</span></div>
+</div></section>
+
+<section class="faq" id="faq" aria-labelledby="faq-h"><h2 id="faq-h">Questions</h2>
+<details open><summary>Is it safe to let it run Claude on my code?</summary><p>Runs use Claude Code with <code>--permission-mode bypassPermissions</code>, so Claude can run any command in the ticket's folder without asking first. Only add folders you are happy for Claude to change. With version history (git), each ticket works in its own copy of the folder, so your main folder isn't touched until you merge.</p></details>
+<details><summary>What leaves my machine?</summary><p>Your code and prompts go to Anthropic through your own Claude Code, the same as when you use Claude Code yourself. ckanban itself only checks GitHub for updates, shows your Claude plan usage, and talks to GitHub through <code>gh</code> for your pull requests. It has no account, no server of its own and no analytics. Phone notifications, webhooks and bug reports only go out if you turn them on.</p></details>
+<details><summary>What does it cost?</summary><p>ckanban is free and open source (MIT License). Runs use your own Claude plan or API usage, nothing on top. Each card shows what its runs cost, and huddles stop at a spending limit you set.</p></details>
+<details><summary>Do I need git or GitHub?</summary><p>No. A board can be a plain folder. Without git the run works in the folder itself and lists every file it changed. <code>gh</code> is only needed for pull requests and their checks.</p></details>
+<details><summary>Can I use it from my phone?</summary><p>Yes, through <a href="https://tailscale.com/download">Tailscale</a>. Phone access is off until you turn it on with <code>ckanban remote on</code>, and then only your own Tailscale devices can reach the board.</p></details>
+<details><summary>Where is my data kept?</summary><p>In plain files on your Mac, under <code>~/.claude-kanban/</code>. The board listens on <code>127.0.0.1</code> only, so other computers on your Wi-Fi can't reach it.</p></details>
+<p><a href="https://github.com/leoawesome/ckanban/blob/main/docs/faq.md">All questions and answers</a> · <a href="https://github.com/leoawesome/ckanban/blob/main/docs/features.md">Every feature in detail</a></p>
+</section>
+
+<section class="cta" aria-labelledby="cta-h"><h2 id="cta-h">Try it on your next ticket</h2>
+<div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/leoawesome/ckanban/main/install.sh | bash</code><button type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/leoawesome/ckanban/main/install.sh | bash" aria-label="Copy the install command">Copy</button></div>
+<p>It installs one app, starts it in the background and opens the board at <code>localhost:7777</code>. Or run <code>npx ckanban</code>.</p>
+</section>
+</main>
+
+<footer>
+<a href="https://github.com/leoawesome/ckanban">GitHub</a>
+<a href="https://github.com/leoawesome/ckanban/blob/main/LICENSE">MIT License</a>
+<a href="https://github.com/leoawesome/ckanban/blob/main/CHANGELOG.md">Changelog</a>
+<a href="https://x.com/leotechlead">Made by @leotechlead</a>
+<span class="sp"></span>
+<!-- Product Hunt badge: paste the embed from producthunt.com into this div on launch day (it stays hidden while empty). -->
+<div class="ph" id="ph-badge-footer"></div>
+</footer>
+</div>
+<script>
+// Board loop: each state is the cards per column; k is the step label it lights up.
+const still=matchMedia("(prefers-reduced-motion: reduce)");
+const COLS=["Backlog","Planning","In progress","Review","Done"];
+const STATES=[
+ {k:0,f:1,c:{Backlog:[{t:"Dark mode"}],Planning:[{t:"Add Stripe checkout",s:"Claude asks a question",q:1}]}},
+ {k:0,f:1,c:{Backlog:[{t:"Dark mode"},{t:"Pricing page"},{t:"Checkout API"},{t:"Webhooks"},{t:"Emails"}],Planning:[{t:"Add Stripe checkout",s:"Plan: 4 tickets",chip:["okc","Start plan"]}]}},
+ {k:1,f:2,c:{Backlog:[{t:"Dark mode"},{t:"Webhooks",s:"Waits its turn"},{t:"Emails",s:"Waits its turn"}],"In progress":[{t:"Pricing page",r:"Writing the page"},{t:"Checkout API",r:"Running tests"}]}},
+ {k:2,f:2,c:{Backlog:[{t:"Dark mode"},{t:"Emails",s:"Waits its turn"}],"In progress":[{t:"Checkout API",r:"Huddle checking",h:1},{t:"Webhooks",r:"Reading the docs"}],Review:[{t:"Pricing page",chip:["okc","Checks pass"]}]}},
+ {k:3,f:3,c:{Backlog:[{t:"Dark mode"}],"In progress":[{t:"Emails",r:"Drafting templates"}],Review:[{t:"Checkout API",chip:["okc","Checks pass"]},{t:"Webhooks",chip:["wait","Needs you"]}],Done:[{t:"Pricing page",s:"Merged"}]}},
+ {k:3,f:4,c:{Backlog:[{t:"Dark mode"}],Done:[{t:"Pricing page",s:"Merged"},{t:"Checkout API",s:"Merged"},{t:"Webhooks",s:"Merged"},{t:"Emails",s:"Merged"}]}}];
+const board=document.getElementById("board"),scroller=document.getElementById("board-scroll"),links=[...document.querySelectorAll("#steps a")],pauseBtn=document.getElementById("pause");
+const card=(k,j)=>`<div class="card" style="animation-delay:${j*80}ms">${k.t}${k.s?`<small>${k.s}</small>`:""}${k.r?`<small><span class="dot"></span>${k.r}</small>`:""}${k.chip?`<span class="chip ${k.chip[0]}">${k.chip[1]}</span>`:""}${k.q?`<div class="q">Which plans?<br><span class="on">Monthly and yearly</span><span>Monthly only</span></div>`:""}${k.h?`<div class="huddle"><div><b>Reviewer:</b> refund path has no test</div><div style="animation-delay:.6s"><b>QA:</b> added one, tests pass</div></div>`:""}</div>`;
+function show(n){const s=STATES[n];board.innerHTML=COLS.map(c=>{const cs=s.c[c]||[];return `<div class="col"><h3>${c}<span>${cs.length}</span></h3>${cs.map(card).join("")}</div>`}).join("");links.forEach((a,i)=>{a.classList.toggle("on",i===s.k);i===s.k?a.setAttribute("aria-current","step"):a.removeAttribute("aria-current")})
+ // Narrow screens show two columns at a time: bring the busy one (f) into view.
+ if(scroller.scrollWidth>scroller.clientWidth)scroller.scrollTo({left:scroller.scrollLeft+board.children[s.f].getBoundingClientRect().left-scroller.getBoundingClientRect().left-14,behavior:still.matches?"auto":"smooth"})}
+let i=0,timer=null;
+function tick(){show(i);i=(i+1)%STATES.length}
+function play(){if(!timer){timer=setInterval(tick,2600)}pauseBtn.textContent="Pause";pauseBtn.setAttribute("aria-pressed","false")}
+function stop(){clearInterval(timer);timer=null;pauseBtn.textContent="Play";pauseBtn.setAttribute("aria-pressed","true")}
+// Reduced motion: hold the busiest frame (huddle checking); Play starts the loop, without the card animations.
+if(still.matches){show(3);i=4;stop()}else{tick();play()}
+pauseBtn.addEventListener("click",()=>timer?stop():(tick(),play()));
+document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",async()=>{
+ let msg="Copied";try{await navigator.clipboard.writeText(b.dataset.copy)}catch{msg="Couldn't copy"}
+ b.textContent=msg;document.getElementById("copied").textContent=msg==="Copied"?"Install command copied":msg;setTimeout(()=>b.textContent="Copy",1800)}));
+</script>
+</body>
+</html>
