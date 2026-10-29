@@ -493,8 +493,10 @@ export function App() {
     return next;
   });
 
+  // The remembered board may be gone (deleted, or another ckanban on this port): wait until the board list confirms it.
+  const slugKnown = !!slug && !!profiles?.some((p) => p.slug === slug);
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || !slugKnown) return;
     try {
       localStorage.setItem(LAST_PROFILE, slug);
     } catch {}
@@ -504,7 +506,7 @@ export function App() {
     api.tickets(slug).then(setTickets).catch((e) => setError(e.message));
     loadSchedules(slug);
     loadJobs(slug);
-  }, [slug, loadSchedules, loadJobs]);
+  }, [slug, slugKnown, loadSchedules, loadJobs]);
 
   useEffect(
     () =>

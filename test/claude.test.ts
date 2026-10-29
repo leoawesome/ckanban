@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { claudeDefaults, encodeProjectDir, listClaudeProjects } from "../src/server/claude";
+import { claudeDefaults, claudeInstallDirs, encodeProjectDir, findClaude, listClaudeProjects } from "../src/server/claude";
 import { tempDir } from "./helpers";
 
 function fixture() {
@@ -87,4 +87,32 @@ test("liveSessionMatch finds claude processes by id or title", () => {
   expect(liveSessionMatch(ps, { id: "aaaaaaaa-0000-0000-0000-000000000001", title: null })).toBe(true);
   expect(liveSessionMatch(ps, { id: "bbbb", title: "Other" })).toBe(false);
   expect(liveSessionMatch(["vim --resume Other"], { id: "bbbb", title: "Other" })).toBe(false);
+});
+
+// ---- findClaude: Claude Code installed where the service's PATH doesn't look ----
+
+function fakeClaudeIn(dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+  return dir;
+}
+
+test("findClaude adds Claude Code's install folder to the PATH", async () => {
+  const home = tempDir("ck-home-");
+  const dir = fakeClaudeIn(join(home, ".claude/local"));
+  const env: Record<string, string> = { PATH: "/nonexistent" };
+  expect(await findClaude({ env, home, dirs: claudeInstallDirs(home).filter((d) => d.startsWith(home)), shell: async () => "", minIntervalMs: 0 })).toBe(true);
+  expect(env.PATH).toBe(`${dir}:/nonexistent`);
+});
+
+test("findClaude asks the login shell for other places (nvm), and says no when it isn't anywhere", async () => {
+  const home = tempDir("ck-home-");
+  const dir = fakeClaudeIn(join(tempDir("ck-nvm-"), "bin"));
+  const env: Record<string, string> = { PATH: "/nonexistent" };
+  expect(await findClaude({ env, home, dirs: [], shell: async () => `some shell noise\n${dir}/claude\n`, minIntervalMs: 0 })).toBe(true);
+  expect(env.PATH.split(":")[0]).toBe(dir);
+
+  const none: Record<string, string> = { PATH: "/nonexistent" };
+  expect(await findClaude({ env: none, home, dirs: [], shell: async () => "", minIntervalMs: 0 })).toBe(false);
+  expect(none.PATH).toBe("/nonexistent");
 });

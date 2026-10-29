@@ -8,11 +8,19 @@ import { join } from "node:path";
 
 export const REPO = "leoawesome/ckanban";
 
-/** Release asset name for this Mac's chip, or null when ckanban has no build for it. */
-export function assetName(platform = process.platform, arch = process.arch) {
+/** Whether this process is an Intel program running under Rosetta on Apple Silicon. */
+function underRosetta() {
+  return spawnSync("sysctl", ["-n", "sysctl.proc_translated"], { encoding: "utf8" }).stdout?.trim() === "1";
+}
+
+/**
+ * Release asset name for this Mac's chip, or null when ckanban has no build for it. An Intel Node running under
+ * Rosetta on Apple Silicon still gets the native build.
+ */
+export function assetName(platform = process.platform, arch = process.arch, rosetta = underRosetta) {
   if (platform !== "darwin") return null;
   if (arch === "arm64") return "ckanban-darwin-arm64";
-  if (arch === "x64") return "ckanban-darwin-x64";
+  if (arch === "x64") return rosetta() ? "ckanban-darwin-arm64" : "ckanban-darwin-x64";
   return null;
 }
 

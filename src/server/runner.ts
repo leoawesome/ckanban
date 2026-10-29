@@ -1,3 +1,4 @@
+import { findClaude } from "./claude";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
 import type { BackgroundTask } from "./types";
 
@@ -263,6 +264,8 @@ export function startRun(opts: {
   };
 
   const done = (async (): Promise<RunOutput> => {
+    // Claude Code installed after the board started, or where the service's PATH doesn't look.
+    if (opts.bin === "claude") await findClaude();
     try {
       proc = Bun.spawn([opts.bin, ...opts.args], {
         cwd: opts.cwd, env: { ...inheritedEnv(), ...opts.env }, stdout: "pipe", stderr: "pipe", stdin: opts.input === undefined ? "ignore" : "pipe",

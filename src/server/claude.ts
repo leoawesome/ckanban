@@ -159,3 +159,32 @@ export async function isSessionLive(id: string, title: string | null): Promise<b
 export function sessionTitle(projectPath: string, id: string, d: Dirs = {}): string | null {
   return listSessions(projectPath, d, 500).find((s) => s.id === id)?.title ?? null;
 }
+
+/** Where Claude Code's installers put `claude`, besides the folders `ckanban install` already adds to the PATH. */
+export function claudeInstallDirs(home = homedir()): string[] {
+  return [join(home, ".local/bin"), join(home, ".claude/local"), join(home, ".npm-global/bin"), join(home, ".volta/bin"), join(home, ".bun/bin"), "/opt/homebrew/bin", "/usr/local/bin"];
+}
+
+let lastLookup = 0;
+
+/**
+ * Makes `claude` findable when Claude Code was installed after the board started, or somewhere the service's PATH
+ * doesn't cover (nvm, a custom npm folder): looks in the usual install folders, then asks the user's login shell,
+ * and adds the folder it's in to this process's PATH (runs inherit it). True when `claude` can be found.
+ */
+export async function findClaude(o: { env?: Record<string, string | undefined>; home?: string; dirs?: string[]; shell?: () => Promise<string>; minIntervalMs?: number } = {}): Promise<boolean> {
+  const env = o.env ?? process.env;
+  if (Bun.which("claude", { PATH: env.PATH ?? "" })) return true;
+  // Asking the shell takes a moment: not on every health check while Claude Code stays missing.
+  if (Date.now() - lastLookup < (o.minIntervalMs ?? 10_000)) return false;
+  lastLookup = Date.now();
+  let dir = (o.dirs ?? claudeInstallDirs(o.home)).find((d) => existsSync(join(d, "claude")));
+  if (!dir) {
+    const shell = o.shell ?? (async () => (await run([env.SHELL || "/bin/zsh", "-lic", "command -v claude"], o.home ?? homedir(), undefined, 5000)).stdout);
+    const found = (await shell()).split("\n").map((l) => l.trim()).findLast((l) => l.startsWith("/") && l.endsWith("/claude"));
+    if (found && existsSync(found)) dir = found.slice(0, -"/claude".length);
+  }
+  if (!dir) return false;
+  env.PATH = [dir, ...(env.PATH ?? "").split(":").filter((p) => p && p !== dir)].join(":");
+  return true;
+}

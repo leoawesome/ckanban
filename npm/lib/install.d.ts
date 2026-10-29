@@ -1,5 +1,5 @@
 export const REPO: string;
-export function assetName(platform?: string, arch?: string): string | null;
+export function assetName(platform?: string, arch?: string, rosetta?: () => boolean): string | null;
 export function assetUrl(asset: string, version?: string, repo?: string): string;
 export function expectedSum(sums: string, asset: string): string | null;
 export function sha256(buf: Uint8Array): string;

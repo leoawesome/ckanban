@@ -3,7 +3,8 @@ import { assetName, assetUrl, expectedSum, installBinary, sha256 } from "../npm/
 
 test("npm installer picks the release asset for each Mac chip, nothing elsewhere", () => {
   expect(assetName("darwin", "arm64")).toBe("ckanban-darwin-arm64");
-  expect(assetName("darwin", "x64")).toBe("ckanban-darwin-x64");
+  expect(assetName("darwin", "x64", () => false)).toBe("ckanban-darwin-x64");
+  expect(assetName("darwin", "x64", () => true)).toBe("ckanban-darwin-arm64");
   expect(assetName("linux", "x64")).toBeNull();
   expect(assetName("win32", "x64")).toBeNull();
 });

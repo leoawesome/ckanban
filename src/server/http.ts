@@ -3,7 +3,7 @@ import { basename, isAbsolute, join, normalize, resolve } from "node:path";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "./artifact";
 import { ConflictError, recoveryFor, type Board } from "./board";
 import { FollowUpError } from "./followup";
-import { claudeDefaults, listClaudeProjects, listSessions, liveSessionMatch, pickFolder, processCommands } from "./claude";
+import { claudeDefaults, findClaude, listClaudeProjects, listSessions, liveSessionMatch, pickFolder, processCommands } from "./claude";
 import type { Bus, BusEvent } from "./events";
 import { EFFORT_HELP, listCommands, MODEL_HELP, validEffort, validModel } from "./commands";
 import { DiffError, folderDiff, ticketDiff } from "./diff";
@@ -626,7 +626,7 @@ export function createServer(deps: ServerDeps) {
 
     if (parts[0] === "health" && m === "GET") {
       const [claude, git, gh] = await Promise.all([
-        which(process.env.CKANBAN_CLAUDE_BIN ?? "claude"), which("git"), which("gh"),
+        process.env.CKANBAN_CLAUDE_BIN ? which(process.env.CKANBAN_CLAUDE_BIN) : findClaude(), which("git"), which("gh"),
       ]);
       return json({ claude, git, gh, pty: ptySupported() });
     }
