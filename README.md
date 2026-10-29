@@ -106,6 +106,14 @@ The server binds to `127.0.0.1` only and rejects requests with a non-localhost `
 
 Phone access (`ckanban remote on`) uses `tailscale serve`, which reaches only devices on your tailnet (never Tailscale Funnel, never public). Serve points at a separate loopback port (the board port + 1) where every request is treated as coming from the tailnet: it must use the `*.ts.net` name and come from the Tailscale login that turned it on (the `Tailscale-User-Login` header `tailscale serve` sets). Phone access can only be turned on or off on the Mac, and board runs can't change it. `ckanban remote off` turns it off again.
 
+## FAQ
+
+Short answers on what runs where, what leaves your Mac, phone access, cost and uninstalling: **[docs/faq.md](docs/faq.md)**.
+
+- **Where does it listen?** Only on your Mac, at http://localhost:7777. Phone access is off until you turn it on, and then only your own Tailscale devices can reach it.
+- **What leaves my machine?** Your code goes to Anthropic through your own Claude Code. ckanban adds an update check, your plan usage and GitHub calls through `gh`; nothing else unless you turn it on.
+- **What does it cost?** Nothing. It's MIT licensed and runs on your own Claude plan; each card shows what its runs cost.
+
 ## Development
 
 Requires [Bun](https://bun.sh) ≥ 1.3.5 (the embedded terminal uses Bun's built-in PTY; on older Bun everything else works and the terminal says to upgrade).
