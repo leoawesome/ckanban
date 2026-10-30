@@ -459,3 +459,29 @@ test("parseSession shows a message with attachments as typed, without the note f
   ].join("\n");
   expect(parseSession(raw).entries.map((e) => e.text)).toEqual([`what is this? ![image](${path})`, "read this [a.pdf](/x/a.pdf)"]);
 });
+
+test("a session file missing for a while is searched for less often", () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-f");
+  mkdirSync(dir, { recursive: true });
+  const sid = "11111111-2222-3333-4444-555555555555";
+  let now = 0;
+  const cache = new SessionCache({ configDir }, () => now);
+  expect(cache.file(sid)).toBeNull();
+  // A new run's file shows up seconds later: found at once.
+  writeFileSync(join(dir, `${sid}.jsonl`), user("hi", "2026-09-29T01:00:00Z") + "\n");
+  now = 2_000;
+  expect(cache.file(sid)).toBe(join(dir, `${sid}.jsonl`));
+
+  const gone = "99999999-2222-3333-4444-555555555555";
+  now = 10_000;
+  expect(cache.file(gone)).toBeNull();
+  now += 5 * 60_000;
+  expect(cache.file(gone)).toBeNull();
+  // Missing for 5 minutes: not searched again for a minute.
+  writeFileSync(join(dir, `${gone}.jsonl`), user("back", "2026-09-29T01:00:00Z") + "\n");
+  now += 30_000;
+  expect(cache.file(gone)).toBeNull();
+  now += 30_000;
+  expect(cache.file(gone)).toBe(join(dir, `${gone}.jsonl`));
+});

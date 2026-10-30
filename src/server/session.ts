@@ -649,13 +649,19 @@ interface CacheItem {
   merged: ParsedSession;
 }
 
+/** A session file missing this long is searched for at most every MISSING_RETRY_MS. */
+const MISSING_GRACE_MS = 5 * 60_000;
+const MISSING_RETRY_MS = 60_000;
+
 /** Parses session files lazily; re-reads only when size/mtime change. */
 export class SessionCache {
   private items = new Map<string, CacheItem>();
   private files = new Map<string, string>();
   private agents = new SubagentCache();
+  /** Sessions whose file wasn't found: since when, and when it was last searched for. */
+  private missing = new Map<string, { since: number; at: number }>();
 
-  constructor(private dirs: Dirs = {}) {}
+  constructor(private dirs: Dirs = {}, private now: () => number = Date.now) {}
 
   private locate(sessionId: string): string | null {
     const known = this.files.get(sessionId);
@@ -665,8 +671,16 @@ export class SessionCache {
         return known;
       } catch {}
     }
+    // A search stats one path per projects folder (often 1000+), and old tickets' transcripts get deleted. A new run's
+    // file shows up within seconds, so only one missing for a while is searched less often.
+    const now = this.now();
+    const miss = this.missing.get(sessionId);
+    if (miss && now - miss.since >= MISSING_GRACE_MS && now - miss.at < MISSING_RETRY_MS) return null;
     const f = findSessionFile(sessionId, this.dirs);
-    if (f) this.files.set(sessionId, f);
+    if (f) {
+      this.files.set(sessionId, f);
+      this.missing.delete(sessionId);
+    } else this.missing.set(sessionId, { since: miss?.since ?? now, at: now });
     return f;
   }
 

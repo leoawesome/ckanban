@@ -127,3 +127,21 @@ test("listOutputs skips dependency and build folders, ignores symlinks and caps 
   for (let i = 0; i < MAX_OUTPUT_FILES + 5; i++) writeFileSync(join(dir, `f${i}.txt`), "");
   expect(store.listOutputs("demo", t.id).length).toBe(MAX_OUTPUT_FILES);
 });
+
+test("ticket reads reuse the parse until the file changes, and hand out copies", () => {
+  const t = store.createTicket("demo", { title: "a", body: "", status: "backlog", needs: ["db"] });
+  const got = store.getTicket("demo", t.id)!;
+  got.title = "mutated";
+  got.needs!.push("other");
+  expect(store.getTicket("demo", t.id)!.title).toBe("a");
+  expect(store.listTickets("demo")[0].needs).toEqual(["db"]);
+  store.updateTicket("demo", t.id, { title: "b" });
+  expect(store.getTicket("demo", t.id)!.title).toBe("b");
+  // Edited outside the store (same size, new mtime).
+  const file = store.ticketPath("demo", t.id);
+  writeFileSync(file, readFileSync(file, "utf8").replace("title: b", "title: c"));
+  expect(store.listTickets("demo")[0].title).toBe("c");
+  store.deleteTicket("demo", t.id);
+  expect(store.getTicket("demo", t.id)).toBeNull();
+  expect(store.listTickets("demo")).toEqual([]);
+});

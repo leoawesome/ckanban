@@ -63,6 +63,11 @@ export class Store {
   /** Parsed huddle message logs by "<slug>/<huddle>", with the byte offset read up to (see readHuddleMessages). */
   private huddleLogs = new Map<string, { offset: number; msgs: HuddleMessage[] }>();
   private aiCache = new Map<string, { key: string; comments: Comment[] }>();
+  /**
+   * Parsed ticket files by path, keyed by mtime and size: the watchers list every board's tickets every few seconds,
+   * and parsing their YAML was most of the daemon's CPU.
+   */
+  private ticketCache = new Map<string, { key: string; ticket: Ticket }>();
   constructor(public readonly root: string) {
     mkdirSync(join(root, "profiles"), { recursive: true });
   }
@@ -125,16 +130,29 @@ export class Store {
     if (!existsSync(dir)) return [];
     const out: Ticket[] = [];
     for (const id of readdirSync(dir)) {
-      if (!existsSync(this.ticketPath(slug, id))) continue;
-      out.push(this.readTicketOrCorrupt(slug, id));
+      const t = this.readTicketOrCorrupt(slug, id);
+      if (t) out.push(t);
     }
     return out.sort((a, b) => a.order - b.order);
   }
 
-  private readTicketOrCorrupt(slug: string, id: string): Ticket {
+  /** null when the ticket file doesn't exist. Parses only when the file changed (see ticketCache); callers get a copy. */
+  private readTicketOrCorrupt(slug: string, id: string): Ticket | null {
     const file = this.ticketPath(slug, id);
+    let key: string;
     try {
-      return parseTicket(readFileSync(file, "utf8"));
+      const st = statSync(file);
+      key = `${st.mtimeMs}:${st.size}`;
+    } catch {
+      this.ticketCache.delete(file);
+      return null;
+    }
+    const hit = this.ticketCache.get(file);
+    if (hit?.key === key) return structuredClone(hit.ticket);
+    try {
+      const ticket = parseTicket(readFileSync(file, "utf8"));
+      this.ticketCache.set(file, { key, ticket });
+      return structuredClone(ticket);
     } catch (e) {
       const at = nowIso();
       return {
@@ -146,7 +164,6 @@ export class Store {
   }
 
   getTicket(slug: string, id: string): Ticket | null {
-    if (!existsSync(this.ticketPath(slug, id))) return null;
     return this.readTicketOrCorrupt(slug, id);
   }
 
@@ -206,6 +223,7 @@ export class Store {
   }
 
   deleteTicket(slug: string, id: string): void {
+    this.ticketCache.delete(this.ticketPath(slug, id));
     rmSync(this.ticketDir(slug, id), { recursive: true, force: true });
   }
 
