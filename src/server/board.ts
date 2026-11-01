@@ -300,6 +300,8 @@ export class Board {
   }
 
   private patch(slug: string, id: string, patch: Partial<Ticket>): Ticket {
+    // Every new activity line is stamped, so the card can show how long ago the last step was (W7).
+    if ("lastActivity" in patch && !("lastActivityAt" in patch)) patch = { ...patch, lastActivityAt: patch.lastActivity ? nowIso() : null };
     const t = this.store.updateTicket(slug, id, patch);
     this.emitTicket(slug, t);
     return t;

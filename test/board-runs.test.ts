@@ -136,6 +136,7 @@ test("stop keeps Stopping… on the card while the process shuts down", async ()
   expect(store.getTicket("p", t.id)!.lastActivity).toBe("Stopping…");
   await board.whenIdle();
   expect(store.getTicket("p", t.id)!.lastActivity).toBeNull();
+  expect(store.getTicket("p", t.id)!.lastActivityAt).toBeNull();
 }, 15000);
 
 test("stop on an in_progress ticket with no live run clears it", async () => {
@@ -255,4 +256,22 @@ test("a run gets the shared device list and the ticket's device hint in its syst
   expect(note).toContain("- chrome-whatsapp (one ticket at a time): WhatsApp Web tab");
   expect(note).toContain("This ticket expects to use: leo-phone");
   expect(store.getTicket("p", t.id)!.outcome).toBe("done");
+});
+
+test("each new activity line is stamped with lastActivityAt, cleared with it", async () => {
+  await setup();
+  const stamps: { text: string | null; at: string | null | undefined }[] = [];
+  bus.on((e) => { if (e.type === "ticket.updated") stamps.push({ text: e.ticket.lastActivity, at: e.ticket.lastActivityAt }); });
+  const before = Date.now();
+  const t = await board.createTicket("p", { title: "Stamp", body: "", status: "ready" });
+  await board.whenIdle();
+  const withText = stamps.filter((s) => s.text);
+  expect(withText.length).toBeGreaterThan(0);
+  for (const s of withText) {
+    expect(typeof s.at).toBe("string");
+    expect(Date.parse(s.at!)).toBeGreaterThanOrEqual(before - 1000);
+  }
+  const got = store.getTicket("p", t.id)!;
+  expect(got.lastActivity).toBe("Finished");
+  expect(Date.parse(got.lastActivityAt!)).toBeGreaterThanOrEqual(before - 1000);
 });

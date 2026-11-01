@@ -267,6 +267,8 @@ export interface Ticket {
   pr?: PrStatus | null;
   outcome: Outcome;
   lastActivity: string | null;
+  /** When lastActivity last changed (the run's latest step). */
+  lastActivityAt?: string | null;
   lastRunAt: string | null;
   /** When the current run or chat reply started (live elapsed time on the card). */
   runStartedAt?: string | null;

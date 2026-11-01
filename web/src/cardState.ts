@@ -61,3 +61,18 @@ export function foldChips<T>(chips: T[], max = MAX_EXTRA_CHIPS): { shown: T[]; m
   if (chips.length <= max) return { shown: chips, more: 0 };
   return { shown: chips.slice(0, max), more: chips.length - max };
 }
+
+/** After this long without a new step, a running card says it has gone quiet (the stall watchdog takes over at 20m). */
+export const QUIET_MS = 3 * 60_000;
+
+/**
+ * How long ago the run's last step was, for the card's activity line: "4s", "2m", and quiet once 3 minutes pass.
+ * Null without a time.
+ */
+export function stepAge(lastActivityAt: string | null | undefined, now: number): { text: string; quiet: boolean } | null {
+  const at = lastActivityAt ? Date.parse(lastActivityAt) : NaN;
+  if (!Number.isFinite(at)) return null;
+  const s = Math.max(0, Math.floor((now - at) / 1000));
+  const text = s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  return { text, quiet: now - at >= QUIET_MS };
+}

@@ -21,7 +21,8 @@ import { ImportantStar } from "./StarToggle";
 import { elapsed, fullTime, plainPreview, timeAgo } from "./time";
 import { costText } from "./usage";
 import { useNow } from "./useNow";
-import { finishMark, foldChips, openedAt, shouldPulse, signInError, type FinishMark } from "./cardState";
+import { clearArrival, useArrival } from "./arrivals";
+import { finishMark, foldChips, openedAt, shouldPulse, signInError, stepAge, type FinishMark } from "./cardState";
 
 /** Live running time: ticks every second for the first minute, then every 30s. */
 function Elapsed({ since }: { since: string }) {
@@ -32,6 +33,20 @@ function Elapsed({ since }: { since: string }) {
     return () => clearInterval(timer);
   }, [fresh]);
   return <span className="badge-time" title={`Started ${fullTime(since)}`}><span className="badge-sep"> · </span>{elapsed(since, now)}</span>;
+}
+
+/** Time since a running card's last step: ticks every second for the first minute, then every 15s. */
+function useStepAge(at: string | null | undefined) {
+  const [now, setNow] = useState(Date.now);
+  const age = stepAge(at, now);
+  const fresh = !!age && now - Date.parse(at!) < 60_000;
+  useEffect(() => {
+    if (!at) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), fresh ? 1000 : 15_000);
+    return () => clearInterval(timer);
+  }, [at, fresh]);
+  return age;
 }
 
 function workingBadge(label: string, since?: string | null) {
@@ -165,11 +180,16 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
       : <span className="badge queued" title="Starts when a run slot is free">Queued · #{queued}</span>)
     : outcomeBadge(ticket);
   const showActivity = working && ticket.lastActivity && !QUIET_ACTIVITY.has(ticket.lastActivity);
+  // How long since the run's last step; amber and a slower spinner once it has been quiet for 3 minutes.
+  const step = useStepAge(working ? ticket.lastActivityAt : null);
+  const quiet = working && !!step?.quiet;
   const last = ticket.session?.lastMessage;
   const done = ticket.status === "done";
   // Claude Code's own "Not logged in" isn't Claude's last word: a red chip says what to do instead (nothing on Done).
   const signIn = !!last && last.role !== "user" && signInError(last.text);
   const finish = useFinishMark(working, ticket);
+  // Claude just moved it here: a fading ring, then a "new" dot until hovered or opened.
+  const arrival = useArrival(ticket.id);
   const now = useNow();
   const pulse = shouldPulse(att, now, openedAt(ticket.id));
   const lastAt = ticket.session ? ticket.session.lastMessage?.at || ticket.session.updatedAt : null;
@@ -223,8 +243,8 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
   const signInChip = signIn && !done && <span className="badge failed sign-in" title={last!.text}>Sign-in needed</span>;
   return (
     <article
-      className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working ? "is-running" : ""} ${att ? `needs-you att-${att.kind}` : ""}`}
-      onClick={onClick}>
+      className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working ? "is-running" : ""} ${quiet ? "is-quiet" : ""} ${att ? `needs-you att-${att.kind}` : ""}${arrival.ring ? " just-arrived" : ""}`}
+      onClick={() => { clearArrival(ticket.id); onClick?.(); }} onMouseEnter={arrival.isNew ? () => clearArrival(ticket.id) : undefined}>
       {att && (
         <div className={`your-turn att-${att.kind}`}>
           <span className={`yt-dot ${pulse ? "pulse" : ""}`} aria-hidden />
@@ -233,10 +253,16 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
         </div>
       )}
       <KeyHint inset className="card-keys" keys={ticket.status === "review" ? "↵ open · D done · Space move" : "↵ open · Space move"} />
-      <div className="card-title" title={ticket.title}>{ticket.important && <ImportantStar />}{ticket.title}</div>
+      <div className="card-title" title={ticket.title}>
+        {arrival.isNew && <span className="arrived-dot" role="img" aria-label="New here" title="Claude moved this card here" />}
+        {ticket.important && <ImportantStar />}{ticket.title}
+      </div>
       {showActivity ? (
         // Keyed on the text, so each new step fades in instead of swapping.
-        <div key={ticket.lastActivity!} className="card-activity" title={ticket.lastActivity!}>{ticket.lastActivity}</div>
+        <div key={ticket.lastActivity!} className="card-activity" title={step ? `${ticket.lastActivity!}\n${step.quiet ? "No new step" : "Last step"} ${step.text} ago` : ticket.lastActivity!}>
+          <span className="activity-text">{ticket.lastActivity}</span>
+          {step && <span className={`step-age${step.quiet ? " quiet" : ""}`}>{step.quiet ? ` · quiet for ${step.text}` : ` · ${step.text}`}</span>}
+        </div>
       ) : last && !signIn && (
         <div className="card-last" title={last.text}>
           <span className={`who ${last.role}`}>{lastWho(last)}:</span>{" "}

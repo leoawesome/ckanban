@@ -1,6 +1,6 @@
 // Card state rules (web/src/cardState.ts): which "Your turn" dots pulse, sign-in errors, finish marks, chip folding.
 import { expect, test } from "bun:test";
-import { finishMark, foldChips, shouldPulse, signInError } from "../web/src/cardState";
+import { finishMark, foldChips, shouldPulse, signInError, stepAge } from "../web/src/cardState";
 
 const now = Date.parse("2026-11-01T12:00:00Z");
 const ago = (min: number) => new Date(now - min * 60_000).toISOString();
@@ -54,4 +54,18 @@ test("at most two extra chips, the rest fold into +N", () => {
   expect(foldChips([1, 2, 3])).toEqual({ shown: [1, 2], more: 1 });
   expect(foldChips([1, 2, 3, 4, 5])).toEqual({ shown: [1, 2], more: 3 });
   expect(foldChips([])).toEqual({ shown: [], more: 0 });
+});
+
+test("a running card shows the time since its last step and goes quiet after 3 minutes", () => {
+  const sec = (s: number) => new Date(now - s * 1000).toISOString();
+  expect(stepAge(null, now)).toBeNull();
+  expect(stepAge("not a date", now)).toBeNull();
+  expect(stepAge(sec(4), now)).toEqual({ text: "4s", quiet: false });
+  expect(stepAge(sec(59), now)).toEqual({ text: "59s", quiet: false });
+  expect(stepAge(sec(150), now)).toEqual({ text: "2m", quiet: false });
+  expect(stepAge(sec(179), now)!.quiet).toBe(false);
+  expect(stepAge(sec(180), now)).toEqual({ text: "3m", quiet: true });
+  expect(stepAge(sec(3900), now)).toEqual({ text: "1h 5m", quiet: true });
+  // A clock a little ahead on the server: never a negative time.
+  expect(stepAge(sec(-2), now)).toEqual({ text: "0s", quiet: false });
 });

@@ -4,10 +4,12 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BOARD_COLUMNS, type Huddle, type Job, type Status, type Ticket } from "./api";
 import { Card } from "./Card";
-import { groupByColumn } from "./columns";
+import { boardColumnOf, groupByColumn } from "./columns";
+import { playMove } from "./arrivals";
+import { reducedMotion } from "./motion";
 import { addOnLinks, type AddOnLinks } from "./addOn";
 import { cardFamilies, type CardFamily } from "./family";
 import { cardHuddleBadge } from "./huddleText";
@@ -65,9 +67,15 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
   });
   // The quiet badge's "idle 12m" ticks.
   const now = useNow();
+  // Claude moved it here: the card travels from where it was (arrivals.ts).
+  const node = useRef<HTMLDivElement | null>(null);
+  const column = boardColumnOf(ticket);
+  useLayoutEffect(() => {
+    playMove(ticket.id, node.current?.querySelector<HTMLElement>(":scope > .card") ?? null);
+  }, [ticket.id, column]);
   return (
     <div
-      ref={setNodeRef}
+      ref={(n) => { setNodeRef(n); node.current = n; }}
       className="sortable-card"
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : 1 }}
       {...attributes}
@@ -123,7 +131,16 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   const [showAll, setShowAll] = useState(false);
   const limited = id === "done" && !showAll && tickets.length > DONE_LIMIT;
   const shown = limited ? tickets.slice(0, DONE_LIMIT) : tickets;
-  const countBadge = loading ? null : <span className={`count ${needYou > 0 ? "needs-you" : ""}`} title={countLabel} aria-label={countLabel}>{all.length}</span>;
+  // The count bumps when a card arrives.
+  const countRef = useRef<HTMLSpanElement>(null);
+  const lastCount = useRef(all.length);
+  useEffect(() => {
+    // One or two more, not a whole board loading in.
+    const grew = all.length > lastCount.current && all.length - lastCount.current <= 2;
+    lastCount.current = all.length;
+    if (grew && !reducedMotion()) countRef.current?.animate?.([{ transform: "scale(1)" }, { transform: "scale(1.15)" }, { transform: "scale(1)" }], { duration: 200, easing: "ease-out" });
+  }, [all.length]);
+  const countBadge = loading ? null : <span ref={countRef} className={`count ${needYou > 0 ? "needs-you" : ""}`} title={countLabel} aria-label={countLabel}>{all.length}</span>;
   if (collapsed) {
     // Narrow strip: still a drop target; click to expand.
     return (

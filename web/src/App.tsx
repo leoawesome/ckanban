@@ -37,6 +37,7 @@ import { boardDigit, cardDir, isTyping, stepBoard, stepCard, type CardPos } from
 import { KeyHint, useHintReveal } from "./KeyHint";
 import { TicketDrawer } from "./TicketDrawer";
 import { toast, Toaster } from "./toast";
+import { clearArrival, noteServerMove } from "./arrivals";
 import { SampleOffer } from "./SampleOffer";
 
 import type { DockTab } from "./Dock";
@@ -578,6 +579,8 @@ export function App() {
             const i = ts.findIndex((t) => t.id === e.ticket.id);
             const merged = { ...ts[i], ...e.ticket };
             if (i < 0) return [...ts, merged];
+            // Claude moved it to another column (the board's own moves already show it there): show the move.
+            if (boardColumnOf(ts[i]) !== boardColumnOf(merged)) noteServerMove(merged.id, boardColumnOf(merged));
             const next = ts.slice();
             next[i] = merged;
             return next;
@@ -599,6 +602,10 @@ export function App() {
   useEffect(() => {
     if (openId) markOpened(openId);
   }, [openId, open?.attention?.since]);
+  // The open ticket isn't "new" on the board, even when Claude moves it while you read it.
+  useEffect(() => {
+    if (openId) clearArrival(openId);
+  }, [openId, open?.status]);
 
   /** Start huddle from the Team tab: on the ticket open in the drawer, else on a new ticket in Planning. No picker. */
   const startHuddle = async (seed: HuddleSeed) => {
@@ -654,6 +661,8 @@ export function App() {
   const move = async (id: string, status: Status, order?: number, undo = true) => {
     const board = slug!;
     const before = tickets.find((t) => t.id === id);
+    // You moved it yourself: it isn't "new" where it lands.
+    clearArrival(id);
     setTickets((ts) => ts.map((t) => (t.id === id ? { ...t, status, ...(order === undefined ? {} : { order }) } : t)));
     try {
       await api.updateTicket(board, id, order === undefined ? { status } : { status, order });

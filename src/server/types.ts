@@ -139,6 +139,8 @@ export interface Ticket {
   pr?: PrStatus | null;
   outcome: Outcome;
   lastActivity: string | null;
+  /** When lastActivity last changed (the run's latest step); null with it. Missing on old tickets. */
+  lastActivityAt?: string | null;
   lastRunAt: string | null;
   /** When the current run or chat reply started; null when Claude is not working. Missing on old tickets. */
   runStartedAt?: string | null;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, COLUMNS, safeHref, startWorkTarget, subscribe, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "./api";
 import { boardColumnOf, menuPick, STATUS_MENU } from "./columns";
+import { PANEL_LEAVE_MS, reducedMotion } from "./motion";
 import { finishBadge, outcomeBadge, useFinishMark } from "./Card";
 import { JobChip } from "./Jobs";
 import { CapActions } from "./CapActions";
@@ -286,7 +287,7 @@ function usePanelWidth(fit: number) {
 }
 
 /** Ticket view: details on the left, the chat with Claude filling the right side. */
-export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, nav, slideIn = true, tabRequest, huddleSeed, onOpenTeam, jobs = [], onOpenJobs }: {
+export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: closeNow, nav, slideIn = true, tabRequest, huddleSeed, onOpenTeam, jobs = [], onOpenJobs }: {
   profile: Profile;
   ticket: Ticket;
   /** The board's tickets, for the planner/child links. */
@@ -371,6 +372,16 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   const [outputFocus, setOutputFocus] = useState<string | null>(null);
   const [titleSave, setTitleSave] = useState<"saving" | "saved" | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  // Closing slides the panel out and fades its backdrop before it goes (at once with reduced motion).
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); }, []);
+  const onClose = useCallback(() => {
+    if (leaveTimer.current) return;
+    if (reducedMotion()) return closeNow();
+    setLeaving(true);
+    leaveTimer.current = setTimeout(closeNow, PANEL_LEAVE_MS);
+  }, [closeNow]);
   const isTopLayer = useLayer(onClose, { skipInInputs: true });
   useFocusTrap(panelRef, true);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -876,8 +887,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   const barTabs = phone ? phoneTabs(tabs, tab) : { shown: tabs, more: [] as DrawerTab[] };
   return (
     <FileLinksProvider slug={slug} ticketId={ticket.id} panel={panelRef}>
-    <div className="drawer-wrap" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside ref={panelRef} className={`panel ${dragging ? "resizing" : ""} ${slideIn ? "" : "no-slide"}${slim ? " head-slim" : ""}`} role="dialog" aria-modal="true" aria-label={ticket.title} style={{ width }} tabIndex={-1}>
+    <div className={`drawer-wrap${slideIn ? "" : " no-fade"}${leaving ? " leaving" : ""}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <aside ref={panelRef} className={`panel ${dragging ? "resizing" : ""} ${slideIn ? "" : "no-slide"}${slim ? " head-slim" : ""}${leaving ? " leaving" : ""}`} role="dialog" aria-modal="true" aria-label={ticket.title} style={{ width }} tabIndex={-1}>
         <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabIndex={0}
           title="Drag to resize · double-click to reset" {...handle} />
 

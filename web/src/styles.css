@@ -226,7 +226,7 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .column-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 2px 12px; }
 .column-title { font-weight: 620; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .column-head > :not(.column-title) { flex-shrink: 0; white-space: nowrap; }
-.count { font-size: 11px; color: var(--muted); background: var(--surface); border-radius: 99px; padding: 0 7px; }
+.count { display: inline-block; font-size: 11px; color: var(--muted); background: var(--surface); border-radius: 99px; padding: 0 7px; }
 .count.needs-you { display: inline-flex; align-items: center; gap: 4px; color: var(--warn); background: var(--warn-soft); font-weight: 700; }
 .count.needs-you::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
@@ -260,6 +260,20 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 /* Stalled is running but stuck: it shows its warning colour, not motion. */
 .card.is-running.needs-you::before { display: none; }
 @keyframes run-sweep { from { background-position: 0 -100%; } to { background-position: 0 300%; } }
+/* Claude moved it here (arrivals.ts): a ring in the column's colour that fades over 1.5s, and a "new" dot. */
+.card { --arrive: var(--accent); }
+.col-in_progress .card { --arrive: var(--info); }
+.col-review .card { --arrive: var(--warn); }
+.card.just-arrived { animation: arrive-ring 1.5s ease-out forwards; }
+@keyframes arrive-ring {
+  from { box-shadow: 0 0 0 2px var(--arrive), var(--shadow); }
+  to { box-shadow: 0 0 0 2px transparent, var(--shadow); }
+}
+.arrived-dot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--arrive);
+  margin-right: 6px; vertical-align: 1px;
+}
+.card-ghost { transition: none; }
 /* Done steps back: flat and muted, title, PR and age only; the full card comes back on hover or focus. */
 .card.is-done { box-shadow: none; background: var(--surface-2); }
 .card.is-done .card-title { color: color-mix(in srgb, var(--text) 80%, var(--surface-2)); }
@@ -274,6 +288,12 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: activity-in 200ms ease-out;
 }
 @keyframes activity-in { from { opacity: 0.4; } }
+.card-activity { display: flex; }
+.activity-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Time since the run's last step; amber once it has been quiet for 3 minutes, and the spinner slows down. */
+.step-age { flex: none; white-space: pre; font-variant-numeric: tabular-nums; }
+.step-age.quiet { color: var(--warn); font-weight: 560; }
+.card.is-quiet .spinner { animation-duration: 2s; }
 .card-meta { display: flex; align-items: center; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
 .card-time { margin-left: auto; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 
@@ -368,12 +388,14 @@ button.badge.huddle.quiet { background: var(--ok-soft); color: var(--ok); }
 /* modal */
 .overlay {
   position: fixed; inset: 0; background: rgba(20, 18, 15, 0.42); display: flex; align-items: flex-start;
-  justify-content: center; padding: 8vh 16px; z-index: 50; overflow-y: auto;
+  justify-content: center; padding: 8vh 16px; z-index: 50; overflow-y: auto; animation: fade-in 140ms ease-out;
 }
 .modal {
   width: 100%; max-width: 520px; background: var(--surface); border-radius: 14px; border: 1px solid var(--border);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25); transform-origin: top center; animation: modal-in 140ms ease-out;
 }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes modal-in { from { opacity: 0; transform: scale(0.98); } }
 .modal.wide { max-width: 760px; }
 .modal-head { display: flex; align-items: center; padding: 14px 18px 4px; }
 .modal-head h3 { margin: 0; flex: 1; font-size: 16px; }
@@ -390,7 +412,12 @@ textarea { resize: vertical; font-size: 13.5px; }
 .form-error { color: var(--err); font-size: 13px; }
 
 /* drawer */
-.drawer-wrap { position: fixed; inset: 0; background: rgba(20, 18, 15, 0.28); z-index: 40; display: flex; justify-content: flex-end; }
+.drawer-wrap { position: fixed; inset: 0; background: rgba(20, 18, 15, 0.28); z-index: 40; display: flex; justify-content: flex-end; animation: fade-in 140ms ease-out; }
+.drawer-wrap.no-fade { animation: none; }
+/* Closing: the backdrop fades and the panel slides back out (PANEL_LEAVE_MS in motion.ts) before it goes. */
+.drawer-wrap.leaving { animation: fade-out 120ms ease-in forwards; pointer-events: none; }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes slide-out { to { transform: translateX(24px); opacity: 0; } }
 .drawer {
   position: relative; max-width: 100%; height: 100%; background: var(--surface); border-left: 1px solid var(--border);
   overflow-y: auto; box-shadow: -10px 0 40px rgba(0, 0, 0, 0.15); animation: slide 0.16s ease-out;
@@ -889,6 +916,7 @@ body > .output-view.reader { position: fixed; }
 }
 .panel.resizing { user-select: none; animation: none; }
 .panel.no-slide { animation: none; }
+.panel.leaving { animation: slide-out 120ms ease-in forwards; }
 .ticket-nav { display: inline-flex; gap: 2px; }
 .ticket-nav .icon-btn:disabled { opacity: 0.35; cursor: default; background: none; }
 .panel.resizing * { cursor: col-resize !important; }
@@ -1403,6 +1431,7 @@ button.your-turn.go:focus-visible { outline: 2px solid currentColor; outline-off
 .inbox-menu {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 80; width: 360px; max-height: 60vh; overflow-y: auto; padding: 6px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  animation: pop 0.1s ease-out;
 }
 .inbox-board { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 8px 8px 4px; }
 .inbox-item { display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left; border: 0; background: none; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
@@ -1752,6 +1781,16 @@ button.badge.job-chip:hover { filter: brightness(0.96); text-decoration: underli
 .toast .icon-btn { color: inherit; opacity: 0.7; width: 22px; height: 22px; }
 .toast .icon-btn:hover { opacity: 1; background: color-mix(in srgb, currentColor 15%, transparent); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } }
+/* Undo's time left: a thin bar that shrinks over the toast's life and stops while the pointer is on it (toast.tsx). */
+.toast.has-life { position: relative; overflow: hidden; }
+.toast-life {
+  position: absolute; left: 12px; right: 12px; bottom: 4px; height: 2px; border-radius: 2px; background: currentColor; opacity: 0.55; pointer-events: none;
+  transform-origin: left center; animation: toast-life var(--life, 7s) linear forwards;
+}
+.toast:hover .toast-life { animation-play-state: paused; }
+@keyframes toast-life { to { transform: scaleX(0); } }
+.toast.leaving { animation: toast-out 120ms ease-in forwards; pointer-events: none; }
+@keyframes toast-out { to { opacity: 0; transform: translateY(4px); } }
 /* Phone: a light card at the top (clear of the bottom tabs and the message box), full width, a tone stripe on the left. */
 @media (max-width: 720px) {
   .toaster { top: calc(8px + env(safe-area-inset-top)); bottom: auto; left: 10px; right: 10px; transform: none; align-items: stretch; gap: 6px; }
@@ -1828,6 +1867,10 @@ input[aria-invalid="true"] { border-color: var(--err); }
   .card.is-running::before { animation: none; background: none; }
   .yt-dot.pulse { animation: none; box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 30%, transparent); }
   .badge .live-dot, .card-activity, .badge.finish, .finish-icon { animation: none; }
+  /* No travel: the arriving card keeps a still outline until it is hovered or opened. */
+  .card.just-arrived { animation: none; box-shadow: 0 0 0 2px var(--arrive), var(--shadow); }
+  /* A still, full bar: Undo is there, with no countdown motion. */
+  .toast-life { animation: none; }
 }
 .panel:focus, .modal:focus { outline: none; }
 .dock-failed { height: 120px; align-items: center; justify-content: center; color: var(--muted); }
