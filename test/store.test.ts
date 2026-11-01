@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_OUTPUT_FILES, readJsonlPage, Store } from "../src/server/store";
+import { MAX_OUTPUT_FILES, readJsonlPage, Store, TICKET_RECHECK_MS } from "../src/server/store";
 import type { Profile } from "../src/server/types";
 
 let store: Store;
@@ -128,22 +128,42 @@ test("listOutputs skips dependency and build folders, ignores symlinks and caps 
   expect(store.listOutputs("demo", t.id).length).toBe(MAX_OUTPUT_FILES);
 });
 
-test("ticket reads reuse the parse until the file changes, and hand out copies", () => {
+test("ticket reads reuse the parse and hand out frozen tickets; listings follow Store writes at once", () => {
   const t = store.createTicket("demo", { title: "a", body: "", status: "backlog", needs: ["db"] });
   const got = store.getTicket("demo", t.id)!;
-  got.title = "mutated";
-  got.needs!.push("other");
-  expect(store.getTicket("demo", t.id)!.title).toBe("a");
-  expect(store.listTickets("demo")[0].needs).toEqual(["db"]);
+  expect(() => { got.title = "mutated"; }).toThrow();
+  expect(() => got.needs!.push("other")).toThrow();
+  expect(store.listTickets("demo")[0]).toBe(got);
+  const v = store.ticketsVersion("demo");
+  expect(store.ticketsVersion("demo")).toBe(v);
   store.updateTicket("demo", t.id, { title: "b" });
-  expect(store.getTicket("demo", t.id)!.title).toBe("b");
-  // Edited outside the store (same size, new mtime).
-  const file = store.ticketPath("demo", t.id);
-  writeFileSync(file, readFileSync(file, "utf8").replace("title: b", "title: c"));
-  expect(store.listTickets("demo")[0].title).toBe("c");
+  expect(store.listTickets("demo")[0].title).toBe("b");
+  expect(store.ticketsVersion("demo")).toBeGreaterThan(v);
+  const u = store.createTicket("demo", { title: "u", body: "", status: "backlog" });
+  expect(store.listTickets("demo").map((x) => x.id)).toEqual([u.id, t.id]);
   store.deleteTicket("demo", t.id);
   expect(store.getTicket("demo", t.id)).toBeNull();
-  expect(store.listTickets("demo")).toEqual([]);
+  expect(store.listTickets("demo").map((x) => x.id)).toEqual([u.id]);
+  // The caller's own array: sorting it doesn't touch the cache.
+  store.listTickets("demo").reverse();
+});
+
+test("a ticket.md edited outside the Store shows in the listing by the slow re-check", () => {
+  let now = 1_000_000;
+  store = new Store(store.root, { now: () => now });
+  const t = store.createTicket("demo", { title: "b", body: "", status: "backlog" });
+  expect(store.listTickets("demo")[0].title).toBe("b");
+  const v = store.ticketsVersion("demo");
+  const file = store.ticketPath("demo", t.id);
+  writeFileSync(file, readFileSync(file, "utf8").replace("title: b", "title: c"));
+  expect(store.listTickets("demo")[0].title).toBe("b");
+  now += TICKET_RECHECK_MS;
+  expect(store.listTickets("demo")[0].title).toBe("c");
+  expect(store.ticketsVersion("demo")).toBeGreaterThan(v);
+  // Reading the one ticket sees the edit at once, and so does the listing after it.
+  writeFileSync(file, readFileSync(file, "utf8").replace("title: c", "title: d"));
+  expect(store.getTicket("demo", t.id)!.title).toBe("d");
+  expect(store.listTickets("demo")[0].title).toBe("d");
 });
 
 test("activity pages: newest first page, older pages back to the first entry, a half-written last line left out", () => {

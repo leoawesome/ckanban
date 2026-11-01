@@ -16,6 +16,8 @@ import { newId, newTicketId, nowIso } from "./util";
 const SKIPPED_OUTPUT_DIRS = new Set(["node_modules", ".git", ".next", ".nuxt", ".turbo", ".cache", ".venv", "venv", "__pycache__"]);
 /** Most output files listed (newest first); the UI renders every one. */
 export const MAX_OUTPUT_FILES = 2000;
+/** How often a board's listing stats every ticket file again, to catch edits made outside the Store. */
+export const TICKET_RECHECK_MS = 30_000;
 const DEFAULT_CONFIG: Config = { port: 7777, prPollMinutes: 5 };
 
 export function defaultRoot(): string {
@@ -103,6 +105,14 @@ function parseTicket(raw: string): Ticket {
   return { ...meta, body: m[2] ?? "" } as Ticket;
 }
 
+function deepFreeze<T>(v: T): T {
+  if (v && typeof v === "object" && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    for (const x of Object.values(v)) deepFreeze(x);
+  }
+  return v;
+}
+
 function serializeTicket(t: Ticket): string {
   const { body, ...meta } = t;
   return `---\n${YAML.stringify(meta)}---\n${body}`;
@@ -120,8 +130,16 @@ export class Store {
    * and parsing their YAML was most of the daemon's CPU.
    */
   private ticketCache = new Map<string, { key: string; ticket: Ticket }>();
-  constructor(public readonly root: string) {
+  /**
+   * Each board's last ticket listing. Store writes update it in place; the files are stat'ed again only when the
+   * tickets folder changes (a ticket added or removed from outside) or every TICKET_RECHECK_MS, which catches a
+   * ticket.md edited from outside (a planning chat rewrites its body).
+   */
+  private boards = new Map<string, { dirMtime: number; checkedAt: number; ids: Set<string>; list: readonly Ticket[] | null; version: number }>();
+  private now: () => number;
+  constructor(public readonly root: string, opts: { now?: () => number } = {}) {
     mkdirSync(join(root, "profiles"), { recursive: true });
+    this.now = opts.now ?? Date.now;
   }
 
   config(): Config {
@@ -177,18 +195,51 @@ export class Store {
     return join(this.ticketDir(slug, id), "ticket.md");
   }
 
+  /**
+   * The board's tickets by order. The tickets are shared and frozen: copy one before changing it
+   * (`{ ...t }`, or structuredClone for its lists). The array is the caller's own.
+   */
   listTickets(slug: string): Ticket[] {
     const dir = join(this.profileDir(slug), "tickets");
-    if (!existsSync(dir)) return [];
-    const out: Ticket[] = [];
-    for (const id of readdirSync(dir)) {
-      const t = this.readTicketOrCorrupt(slug, id);
-      if (t) out.push(t);
+    let dirMtime: number;
+    try {
+      dirMtime = statSync(dir).mtimeMs;
+    } catch {
+      this.boards.delete(slug);
+      return [];
     }
-    return out.sort((a, b) => a.order - b.order);
+    const b = this.boards.get(slug);
+    if (b?.list && b.dirMtime === dirMtime && this.now() - b.checkedAt < TICKET_RECHECK_MS) return [...b.list];
+    const prev = b?.list;
+    const ids = new Set<string>();
+    const out: Ticket[] = [];
+    if (b && b.dirMtime === dirMtime && this.now() - b.checkedAt < TICKET_RECHECK_MS) {
+      // Only Store writes since the last listing: they keep ticketCache current, no need to stat every file.
+      for (const id of b.ids) {
+        const hit = this.ticketCache.get(this.ticketPath(slug, id))?.ticket ?? this.readTicketOrCorrupt(slug, id);
+        if (hit) (ids.add(id), out.push(hit));
+      }
+    } else {
+      for (const id of readdirSync(dir)) {
+        const t = this.readTicketOrCorrupt(slug, id);
+        if (t) (ids.add(id), out.push(t));
+      }
+    }
+    out.sort((x, y) => x.order - y.order);
+    const changed = !prev || prev.length !== out.length || out.some((t, i) => t !== prev[i]);
+    const version = (b?.version ?? 0) + (changed && b ? 1 : 0);
+    const checkedAt = b && b.dirMtime === dirMtime && this.now() - b.checkedAt < TICKET_RECHECK_MS ? b.checkedAt : this.now();
+    this.boards.set(slug, { dirMtime, checkedAt, ids, list: out, version });
+    return [...out];
   }
 
-  /** null when the ticket file doesn't exist. Parses only when the file changed (see ticketCache); callers get a copy. */
+  /** A number that changes whenever the board's ticket listing changes (Store writes at once; outside edits by the next re-check). */
+  ticketsVersion(slug: string): number {
+    this.listTickets(slug);
+    return this.boards.get(slug)?.version ?? 0;
+  }
+
+  /** null when the ticket file doesn't exist. Parses only when the file changed (see ticketCache); the ticket is shared and frozen. */
   private readTicketOrCorrupt(slug: string, id: string): Ticket | null {
     const file = this.ticketPath(slug, id);
     let key: string;
@@ -196,23 +247,51 @@ export class Store {
       const st = statSync(file);
       key = `${st.mtimeMs}:${st.size}`;
     } catch {
-      this.ticketCache.delete(file);
+      if (this.ticketCache.delete(file)) this.touchBoard(slug);
       return null;
     }
     const hit = this.ticketCache.get(file);
-    if (hit?.key === key) return structuredClone(hit.ticket);
+    if (hit?.key === key) return hit.ticket;
     try {
-      const ticket = parseTicket(readFileSync(file, "utf8"));
+      const ticket = deepFreeze(parseTicket(readFileSync(file, "utf8")));
+      // A ticket we knew changed outside the store: the board's listing must show it now, not at the next re-check.
+      if (hit) this.touchBoard(slug);
       this.ticketCache.set(file, { key, ticket });
-      return structuredClone(ticket);
+      return ticket;
     } catch (e) {
       const at = nowIso();
-      return {
+      return deepFreeze({
         id, title: id, status: "backlog", order: 0, sessionId: null, worktree: null, branch: null,
         prUrl: null, outcome: null, lastActivity: null, lastRunAt: null, runCount: 0,
         error: `corrupt ticket file: ${(e as Error).message}`, createdAt: at, updatedAt: at, body: "",
-      };
+      });
     }
+  }
+
+  /** After a Store write: cache the saved ticket (null: deleted) and mark the board's listing for a rebuild. */
+  private saved(slug: string, id: string, t: Ticket | null): void {
+    const file = this.ticketPath(slug, id);
+    const b = this.boards.get(slug);
+    if (t) {
+      const st = statSync(file);
+      this.ticketCache.set(file, { key: `${st.mtimeMs}:${st.size}`, ticket: deepFreeze(structuredClone(t)) });
+      b?.ids.add(id);
+    } else {
+      this.ticketCache.delete(file);
+      b?.ids.delete(id);
+    }
+    if (b) {
+      // Our own mkdir or rmdir changed the folder's mtime: take it, so the listing isn't fully re-read for it.
+      try {
+        b.dirMtime = statSync(join(this.profileDir(slug), "tickets")).mtimeMs;
+      } catch {}
+    }
+    this.touchBoard(slug);
+  }
+
+  private touchBoard(slug: string): void {
+    const b = this.boards.get(slug);
+    if (b) b.list = null;
   }
 
   getTicket(slug: string, id: string): Ticket | null {
@@ -258,6 +337,7 @@ export class Store {
       ...(input.partOf ? { partOf: input.partOf, ...(input.partOfVia ? { partOfVia: input.partOfVia } : {}) } : {}),
     };
     atomicWrite(this.ticketPath(slug, t.id), serializeTicket(t));
+    this.saved(slug, t.id, t);
     return t;
   }
 
@@ -271,12 +351,13 @@ export class Store {
     if (patch.body === undefined) next.body = current.body;
     if (next.status === "done" && current.status !== "done") next.doneAt = next.updatedAt;
     atomicWrite(this.ticketPath(slug, id), serializeTicket(next));
+    this.saved(slug, id, next);
     return next;
   }
 
   deleteTicket(slug: string, id: string): void {
-    this.ticketCache.delete(this.ticketPath(slug, id));
     rmSync(this.ticketDir(slug, id), { recursive: true, force: true });
+    this.saved(slug, id, null);
   }
 
   /** Folder where runs save deliverables (reports etc.) for the user to read on the board. */
