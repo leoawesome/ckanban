@@ -14,8 +14,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/board-dark.webp">
-    <img src="docs/assets/screenshots/board.webp" alt="The ckanban board: Backlog, Planning, In Progress, Review and Done columns with tickets Claude is working on">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/board-dark.gif">
+    <img src="docs/assets/board.gif" alt="The ckanban board in motion: an idea is planned with Claude and split into four tickets, they run side by side, a huddle checks one, and each is reviewed and merged">
   </picture>
 </p>
 
