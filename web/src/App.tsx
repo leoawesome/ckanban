@@ -124,6 +124,9 @@ function readDismissed(): Set<string> {
 const tildePath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
 
 /** Background load: retry once after a few seconds, then say so (quietly) instead of failing silently. */
+/** Least time between two live-update reloads of the Inbox (see refreshInboxSoon). */
+const INBOX_GAP_MS = 3000;
+
 function quiet<T>(load: () => Promise<T>, what: string, set: (v: T) => void) {
   load().then(set).catch(() => {
     setTimeout(() => load().then(set).catch(() => toast(`Couldn't load ${what}. It will retry when the connection comes back.`, { tone: "error" })), 3000);
@@ -273,13 +276,35 @@ export function App() {
     setSnoozed(list.filter((i) => i.snoozedUntil));
     setInboxLoaded(true);
   }), []);
+  // Live updates refresh the Inbox, but at most one request at a time and one every INBOX_GAP_MS: the Inbox looks at
+  // every ticket on every board, and with several runs going, ticket updates arrive many times a second (each one
+  // used to reload it, which kept the daemon busy and the whole board slow).
+  const inboxBusy = useRef(false);
+  const inboxAgain = useRef(false);
+  const inboxLast = useRef(0);
   const refreshInboxSoon = useCallback(() => {
+    if (inboxBusy.current) {
+      inboxAgain.current = true;
+      return;
+    }
     if (inboxTimer.current) return;
+    const wait = Math.max(400, inboxLast.current + INBOX_GAP_MS - Date.now());
     inboxTimer.current = setTimeout(() => {
       inboxTimer.current = null;
-      loadInbox();
-    }, 400);
-  }, [loadInbox]);
+      inboxBusy.current = true;
+      inboxAgain.current = false;
+      inboxLast.current = Date.now();
+      const done = () => {
+        inboxBusy.current = false;
+        if (inboxAgain.current) refreshInboxSoon();
+      };
+      api.inbox().then((list) => {
+        setInbox(list.filter((i) => !i.snoozedUntil));
+        setSnoozed(list.filter((i) => i.snoozedUntil));
+        setInboxLoaded(true);
+      }).catch(() => {}).finally(done);
+    }, wait);
+  }, []);
 
   useEffect(() => {
     loadProfiles().catch((e) => setError(e.message));
