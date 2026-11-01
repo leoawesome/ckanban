@@ -8,6 +8,7 @@ import { usePresets } from "./HuddleRoster";
 import type { TeamRequest } from "./Team";
 import { TeammateCard } from "./TeammateCard";
 import { AutomationCard } from "./AutomationCard";
+import { ChatCacheNote } from "./ChatCacheNote";
 import { autoGrow } from "./autoGrow";
 import { branchTicket } from "./branch";
 import { BranchCard } from "./BranchCard";
@@ -987,6 +988,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
         )}
       </div>
 
+      <ChatCacheNote slug={slug} ticket={ticket} />
       {ticket.terminalOpen && !running && (
         <div className="composer-warn">
           Also open in your terminal: type in one place at a time.{" "}

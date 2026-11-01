@@ -1,4 +1,5 @@
 import { isImageFile } from "./attachText";
+import type { ChatCacheInfo } from "./cacheNote";
 import type { SlashCommand } from "./slashText";
 import type { TicketUsage, UsageResult } from "./usage";
 import type { Status } from "./columns";
@@ -251,6 +252,8 @@ export interface Ticket {
   mode?: TicketMode;
   interviewed?: boolean;
   sessionStarted?: boolean;
+  /** The next run starts a new chat (Start a fresh chat), so the old one's size doesn't matter. */
+  freshSession?: boolean;
   refineStarted?: boolean;
   order: number;
   sessionId: string | null;
@@ -445,6 +448,8 @@ export interface SessionSummary {
   pendingProposal: { title: string; description: string } | null;
   pendingNewTickets?: { title: string; description: string }[];
   pendingTeammates?: string[];
+  /** Conversation size and cache time at Claude's last reply, for the "gone cold" note (cacheNote.ts). */
+  cache?: ChatCacheInfo | null;
 }
 
 export interface QuestionOption {

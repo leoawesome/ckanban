@@ -9,6 +9,7 @@ import { proposedBudget, rosterError, type RosterEntry } from "./huddle-roster";
 import { mockupName, stripMockups } from "./mockups";
 import { parseResult } from "./result";
 import { atomicWrite } from "./store";
+import { ChatCacheTracker, type ChatCache } from "./chat-cache";
 import { VERSION } from "./version";
 import { parseTeammateProposal, type TeammateProposal } from "./teammate-proposal";
 import { parseAutomationProposal, type AutomationProposal } from "./automation-proposal";
@@ -287,6 +288,8 @@ export interface ParsedSession {
   pendingTeammates: string[];
   /** Automation cards (entry uuids) since the user's last message; Ticket.automationCards says which were saved. */
   pendingAutomations: string[];
+  /** Conversation size and cache time at Claude's last reply (chat-cache.ts); null before any reply with usage. */
+  cache: ChatCache | null;
 }
 
 /** What the board card and ticket header need; sent over SSE. */
@@ -300,6 +303,8 @@ export interface SessionSummary {
   pendingNewTickets: TicketProposal[];
   pendingTeammates: string[];
   pendingAutomations?: string[];
+  /** See ParsedSession.cache: the ticket chat's "gone cold" note. */
+  cache?: ChatCache | null;
 }
 
 interface Dirs {
@@ -484,6 +489,7 @@ export function parseSession(raw: string): ParsedSession {
   const agents = new Map<string, AgentInfo>();
   /** The last command was terminal-only: its output (next local-command-stdout, if any) is hidden too. */
   let hideOutput = false;
+  const cache = new ChatCacheTracker();
   const notified = (text: unknown, at: string) => {
     const n = typeof text === "string" ? parseTaskNotification(text) : null;
     const a = n && agents.get(n.toolUseId);
@@ -532,6 +538,7 @@ export function parseSession(raw: string): ParsedSession {
       continue;
     }
     if ((ev.type !== "user" && ev.type !== "assistant") || ev.isSidechain) continue;
+    if (ev.type === "assistant") cache.add(ev);
     const content = ev.message?.content;
 
     if (ev.type === "user") {
@@ -630,6 +637,7 @@ export function parseSession(raw: string): ParsedSession {
       }
       : null,
     ...pendingSince(entries),
+    cache: cache.result(),
   };
 }
 
@@ -874,7 +882,7 @@ export class SessionCache {
     const s: StoredSummary = {
       title: p.title, lastMessage: p.lastMessage, artifacts: p.artifacts,
       openQuestions: p.openQuestions, pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates,
-      pendingAutomations: p.pendingAutomations,
+      pendingAutomations: p.pendingAutomations, cache: p.cache,
     };
     if (v) this.storeSummary(sessionId, v, s);
     return { ...s, updatedAt };
