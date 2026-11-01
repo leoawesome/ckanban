@@ -1,17 +1,19 @@
 import type { ReactNode } from "react";
 import type { MenuItem } from "./HeaderMenu";
-import { BoardIcon, ChatIcon, ClockIcon, MoreIcon, NowIcon } from "./icons";
+import { BoardIcon, ChatIcon, MoreIcon, NowIcon, TeamIcon } from "./icons";
 import { useLayer } from "./layers";
 
-export type PhoneTab = "now" | "board" | "ask";
+export type PhoneTab = "now" | "board" | "ask" | "team";
 
-/** Bottom tab bar on phones (≤720px): Now · Board · Ask · Schedules · More. */
-export function PhoneNav({ tab, onTab, needYou, scheduleAlert, onSchedules, onMore, moreAlert }: {
+/** Bottom tab bar on phones (≤720px): Now · Board · Ask · Team · More (Schedules is in More). */
+export function PhoneNav({ tab, onTab, needYou, liveHuddles, teamAlert, onMore, moreAlert }: {
   tab: PhoneTab;
   onTab: (t: PhoneTab) => void;
   needYou: number;
-  scheduleAlert: boolean;
-  onSchedules: () => void;
+  /** Live huddles on this board: a count on Team. */
+  liveHuddles: number;
+  /** Lessons the board saved since the user last looked: a dot on Team. */
+  teamAlert: boolean;
   onMore: () => void;
   moreAlert: boolean;
 }) {
@@ -26,7 +28,8 @@ export function PhoneNav({ tab, onTab, needYou, scheduleAlert, onSchedules, onMo
       {item("Now", <NowIcon size={20} />, tab === "now", () => onTab("now"), needYou > 0 && <span className="pn-badge">{needYou}</span>)}
       {item("Board", <BoardIcon size={20} />, tab === "board", () => onTab("board"))}
       {item("Ask", <ChatIcon size={20} />, tab === "ask", () => onTab("ask"))}
-      {item("Schedules", <ClockIcon size={20} />, false, onSchedules, scheduleAlert && <span className="pn-dot" />)}
+      {item("Team", <TeamIcon size={20} />, tab === "team", () => onTab("team"),
+        liveHuddles > 0 ? <span className="pn-badge" title={`${liveHuddles} live ${liveHuddles === 1 ? "huddle" : "huddles"}`}>{liveHuddles}</span> : teamAlert && <span className="pn-dot" />)}
       {item("More", <MoreIcon size={20} />, false, onMore, moreAlert && <span className="pn-dot" />)}
     </nav>
   );

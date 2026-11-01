@@ -47,6 +47,10 @@ import { closeSteps, openDepth } from "./ticketHistory";
 
 // xterm.js and highlight.js only load once the panel is opened. After an upgrade the old chunk is gone:
 // reload once to get the new build instead of blanking the whole page.
+// The phone's Team tab (the panel's Team on computers).
+const PhoneTeam = lazy(() => import("./Team").then((m) => ({ default: m.TeamTab }), () => ({
+  default: () => <div className="empty">Couldn't load Team. Reload the page.</div>,
+})));
 const Dock = lazy(() => import("./Dock").then((m) => {
   sessionStorage.removeItem("ckanban.chunkReload");
   return m;
@@ -218,6 +222,7 @@ export function App() {
   phoneRef.current = phone;
   // Phone home: the Now list or the board (bottom tab bar); More opens the header menu as a sheet.
   const [phoneTab, setPhoneTab] = useState<PhoneTab>("now");
+  const [phoneTeamRequest, setPhoneTeamRequest] = useState<(TeamRequest & { n: number }) | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [phoneAccess, setPhoneAccess] = useState(false);
   const [notifications, setNotifications] = useState(false);
@@ -709,8 +714,15 @@ export function App() {
     setSnoozed((l) => l.filter((x) => x !== i));
     if (i.profile === slug) return move(i.id, "done").finally(loadInbox);
     try {
+      const before = await api.ticket(i.profile, i.id).catch(() => null);
       await api.updateTicket(i.profile, i.id, { status: "done" });
-      toast(<>Moved <b>{i.title}</b> to Done</>);
+      toast(<>Moved <b>{i.title}</b> to Done</>, before && before.status !== "done" ? {
+        action: {
+          label: "Undo",
+          run: () => void api.updateTicket(i.profile, i.id, { status: before.status, order: before.order }).then(loadInbox,
+            (e: any) => setError(`Couldn't move the ticket back: ${e.message}`)),
+        },
+      } : undefined);
     } catch (e: any) {
       setError(`Couldn't move the ticket: ${e.message}`);
       loadInbox();
@@ -735,6 +747,36 @@ export function App() {
       setError(`Couldn't ${on ? "snooze" : "unsnooze"} the ticket: ${e.message}`);
       if (i.profile === slugRef.current) api.tickets(i.profile).then(setTickets).catch(() => {});
     }
+    loadInbox();
+  };
+  /** Snooze all (the Inbox's Older group): each for a day, one toast with one Undo. */
+  const inboxSnoozeAll = async (list: InboxItem[]) => {
+    if (!list.length) return;
+    const until = new Date(Date.now() + 24 * 3600_000).toISOString();
+    const keys = new Set(list.map((i) => `${i.profile}/${i.id}`));
+    const hit = (x: InboxItem) => keys.has(`${x.profile}/${x.id}`);
+    setInbox((l) => l.filter((x) => !hit(x)));
+    setSnoozed((l) => [...l.filter((x) => !hit(x)), ...list.map((i) => ({ ...i, snoozedUntil: until }))]);
+    const here = new Map(list.filter((i) => i.profile === slug).map((i) => [i.id, i]));
+    if (here.size) setTickets((ts) => ts.map((t) => {
+      const i = here.get(t.id);
+      return i ? { ...t, attention: null, snoozed: { attention: i.attention, until } } : t;
+    }));
+    const done = await Promise.allSettled(list.map((i) => api.snooze(i.profile, i.id)));
+    const ok = list.filter((_, n) => done[n].status === "fulfilled");
+    if (ok.length < list.length) setError(`Couldn't snooze ${list.length - ok.length} of ${list.length} tickets.`);
+    if (ok.length) {
+      toast(<>Snoozed {ok.length} {ok.length === 1 ? "ticket" : "tickets"} for a day</>, {
+        action: {
+          label: "Undo",
+          run: () => void Promise.allSettled(ok.map((i) => api.unsnooze(i.profile, i.id))).then(() => {
+            loadInbox();
+            if (slugRef.current) api.tickets(slugRef.current).then(setTickets).catch(() => {});
+          }),
+        },
+      });
+    }
+    if (slug) api.tickets(slug).then((ts) => { if (slugRef.current === slug) setTickets(ts); }).catch(() => {});
     loadInbox();
   };
 
@@ -827,7 +869,7 @@ export function App() {
         )}
         <div className="spacer" />
         <Inbox items={inbox} snoozed={snoozed} openRequest={inboxRequest} onPick={(i) => openFrom(i.profile, i.id)}
-          onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, on) => void inboxSnooze(i, on)} />
+          onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, on) => void inboxSnooze(i, on)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} />
         {profile && (
           <button className={`btn ghost icon-label${shownItem === "terminal" ? " on" : ""}`} onClick={() => toggleDock("terminal")}
             aria-pressed={shownItem === "terminal"} title="A terminal in this folder (Ctrl+`). Hiding it keeps the shell running." aria-label="Terminal">
@@ -925,8 +967,15 @@ export function App() {
       ) : (
         phone && phoneTab === "ask" ? (
           <QuickChatPane key={profile.slug} profile={profile} phone onOpenTicket={(id) => openTicket(id)} />
+        ) : phone && phoneTab === "team" ? (
+          <main className="phone-team">
+            <Suspense fallback={<div className="empty"><span className="spinner" /> Loading Team…</div>}>
+              <PhoneTeam key={profile.slug} slug={profile.slug} boardName={profile.name} active openTicket={null} request={phoneTeamRequest}
+                onOpenHuddle={openHuddle} onOpenTicket={(id) => openTicket(id)} onStartHuddle={(seed) => void startHuddle(seed)} huddles={huddles} />
+            </Suspense>
+          </main>
         ) : phone && phoneTab === "now" ? (
-          <NowView inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i) => void inboxSnooze(i, true)} onSwitchBoard={switchBoard} />
+          <NowView inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i) => void inboxSnooze(i, true)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} onSwitchBoard={switchBoard} />
         ) : <>
           <div className="board-bar">
             <div className={`search${tagFilter.length ? " has-tags" : ""}`}>
@@ -983,10 +1032,15 @@ export function App() {
         </>
       )}
       {phone && profile && (
-        <PhoneNav tab={phoneTab} onTab={setPhoneTab} needYou={perBoard.get(profile.slug) ?? 0} scheduleAlert={scheduleFails > 0} onSchedules={() => openSchedules()}
-          onMore={() => setMoreOpen(true)} moreAlert={mcpAttention > 0} />
+        <PhoneNav tab={phoneTab} needYou={perBoard.get(profile.slug) ?? 0} liveHuddles={liveHuddles} teamAlert={learnedNew > 0}
+          onTab={(t) => {
+            // Team opens on what is new: live huddles first, then lessons the board saved.
+            if (t === "team" && phoneTab !== "team") setPhoneTeamRequest(liveHuddles ? { action: "huddles", n: Date.now() } : learnedNew ? { action: "learned", n: Date.now() } : null);
+            setPhoneTab(t);
+          }}
+          onMore={() => setMoreOpen(true)} moreAlert={mcpAttention > 0 || scheduleFails > 0} />
       )}
-      {moreOpen && <MoreSheet items={menuItems.filter((i) => i.label !== "Schedules" && i.label !== "Keyboard shortcuts")} footer={menuFooter} onClose={() => setMoreOpen(false)}
+      {moreOpen && <MoreSheet items={menuItems.filter((i) => i.label !== "Keyboard shortcuts")} footer={menuFooter} onClose={() => setMoreOpen(false)}
         top={<UsageBox state={usage} />} bottom={<ThemePicker />} />}
       {phoneAccess && <PhoneAccessDialog onClose={() => setPhoneAccess(false)} />}
       {devicesOpen && (
