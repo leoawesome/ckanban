@@ -10,8 +10,8 @@
  *
  * "first" is the very first load (no saved session summaries), "restart" a new server on the same data with the
  * summaries saved by the first one (what a daemon restart sees), "warm" the median of 5 more loads.
- * Never starts a daemon: nothing is swept, recovered or run, and the real data is only read (the session summaries
- * file is copied to a temp folder). Port 7811 by default (7799 is the phone access port).
+ * Never starts a daemon: nothing is swept, recovered or run. The data is only read: the store refuses every write
+ * (the bench fails if anything tried one) and the session summaries file is copied to a temp folder. Port 7811 by default (7799 is the phone access port).
  */
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -124,6 +124,24 @@ function generate(root: string): { kanbanRoot: string; claudeDir: string } {
   return { kanbanRoot, claudeDir };
 }
 
+/** Every attempted write to the data, for the report (the bench must only read). */
+const writes: string[] = [];
+const WRITE = /^(save|update|create|delete|add|append|write|copy|move|set|remove|rename|clear|mark)/;
+
+/** The store with every write method refused: the bench reads the data (real or generated) and never changes it. */
+function readOnly(store: Store): Store {
+  return new Proxy(store, {
+    get(target, key, receiver) {
+      const v = Reflect.get(target, key, receiver);
+      if (typeof v !== "function" || typeof key !== "string" || !WRITE.test(key)) return typeof v === "function" ? v.bind(target) : v;
+      return (...a: unknown[]) => {
+        writes.push(`${key}(${a.slice(0, 2).map((x) => JSON.stringify(x)).join(", ")})`);
+        throw new Error(`bench store is read-only: ${key}`);
+      };
+    },
+  });
+}
+
 type Row = { name: string; first: number; restart: number; warm: number };
 
 async function timeGet(base: string, path: string): Promise<number> {
@@ -177,10 +195,14 @@ async function main() {
 
   /** One server "life": a fresh Store and SessionCache, like a daemon start. */
   const life = async (phase: "first" | "restart", warm: boolean) => {
-    const store = new Store(kanbanRoot);
+    const store = readOnly(new Store(kanbanRoot));
     const bus = new Bus();
     const sessions = new SessionCache({ configDir: claudeDir }, Date.now, summaryFile);
     const b = new Board(store, bus, { claudeBin: "/bin/false", sessionSummary: (sid) => sessions.summary(sid) });
+    // This board only answers page loads: it must never start a run or move a plan. Its first folder check calls
+    // dispatch(), which on 2026-11-01 started a Ready ticket of the real board with /bin/false. A shutting-down
+    // board starts nothing, and start() throws in case another path reaches it.
+    Object.assign(b, { shuttingDown: true, start: () => { throw new Error("bench board must not start runs"); } });
     const server = createServer({ store, bus, board: b, port, webDir: join(tmp, "web"), sessions });
     const base = `http://127.0.0.1:${server.port}`;
     const streams = new AbortController();
@@ -254,6 +276,7 @@ async function main() {
   console.log(`\nrss ${Math.round(mem.rss / 1048576)}MB heap ${Math.round(mem.heapUsed / 1048576)}MB`);
   if (!keep) rmSync(tmp, { recursive: true, force: true });
   else console.log(`kept ${tmp}`);
+  if (writes.length) fails.push(`tried to change the data ${writes.length} time(s), refused: ${[...new Set(writes)].slice(0, 5).join("; ")}`);
   if (fails.length) {
     console.error(`\nover budget:\n  ${fails.join("\n  ")}`);
     process.exit(1);

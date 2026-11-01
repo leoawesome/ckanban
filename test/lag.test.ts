@@ -47,3 +47,17 @@ test("the lag monitor names pending async work and skips gaps that look like sle
     stop();
   }
 });
+
+test("a request that does all its work before its first await is named once", async () => {
+  const lines: string[] = [];
+  const stop = startLagMonitor({ thresholdMs: 200, intervalMs: 20, log: (l) => lines.push(l) });
+  try {
+    await wait(40);
+    await track("GET /api/inbox", async () => busy(300));
+    await wait(60);
+    expect(lines.length).toBe(1);
+    expect(lines[0].match(/GET \/api\/inbox/g)?.length).toBe(1);
+  } finally {
+    stop();
+  }
+});
