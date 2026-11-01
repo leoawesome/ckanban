@@ -9,11 +9,12 @@ import { runArtifactJob } from "./server/artifact";
 import { LABEL, PLIST_PATH, plistXml } from "./server/launchd";
 import { RESTART_MAX_WAIT_MS } from "./server/board";
 import { startDaemon } from "./server/main";
-import { AgentError } from "./server/agents";
+import { AgentError, AgentRegistry } from "./server/agents";
 import { defaultRoot, Store } from "./server/store";
 import { qrTerminal, RemoteAccess, RemoteError, remoteListenPort, type RemoteStatus } from "./server/remote";
 import { latestRelease } from "./server/update";
 import { IS_BINARY, VERSION } from "./server/version";
+import { uninstallExtras } from "./uninstall-extras";
 import { mcpCommand, profilesCommand, ticketCommand, TICKET_USAGE } from "./ticket-cli";
 
 const USAGE = `ckanban — kanban board for Claude Code
@@ -24,7 +25,8 @@ Usage:
   ckanban install      Install and start the launchd background daemon (macOS)
   ckanban restart      Restart the daemon once active runs finish (after pulling or building changes)
                        --now: restart at once (cut-off replies resume after the restart)
-  ckanban uninstall    Stop and remove the launchd daemon
+  ckanban uninstall    Stop and remove the launchd daemon, turn off phone access and remove the MCP
+                       from Claude Code and Codex (your boards stay)
   ckanban open         Open the board in your browser
   ckanban update       Update to the latest release and restart the daemon
   ckanban remote on|off|status
@@ -194,9 +196,13 @@ async function update() {
 }
 
 async function uninstall() {
+  const access = new RemoteAccess(defaultRoot(), () => remoteListenPort(boardPort(), new Store(defaultRoot()).config().remotePort));
+  await uninstallExtras(access, new AgentRegistry());
   await sh(["launchctl", "bootout", `gui/${process.getuid!()}/${LABEL}`]);
   rmSync(PLIST_PATH, { force: true });
   console.log("Uninstalled ckanban daemon");
+  // A timed-out claude call may still be running; don't wait for it.
+  process.exit(0);
 }
 
 function flag(args: string[], name: string): string | undefined {

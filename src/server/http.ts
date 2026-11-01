@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, resolve } from "node:path";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "./artifact";
 import { ConflictError, recoveryFor, type Board } from "./board";
@@ -238,6 +238,22 @@ async function body(req: Request): Promise<any> {
   } catch {
     throw new HttpError(400, "invalid JSON body");
   }
+}
+
+/** A folder as the OS sees it (symlinks, trailing slash, letter case); the path as written when it doesn't exist. */
+function realFolder(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+}
+
+/** One board per folder: runs in the folder itself take turns only within a board. Boards that already share one keep working. */
+export function refuseSharedFolder(others: Profile[], path: string) {
+  const want = realFolder(path);
+  const owner = others.find((p) => realFolder(p.path) === want);
+  if (owner) throw new HttpError(400, `The board "${owner.name || owner.slug}" already uses this folder. Open that board instead.`);
 }
 
 export function createServer(deps: ServerDeps) {
@@ -911,6 +927,7 @@ export function createServer(deps: ServerDeps) {
         if (!name) throw new HttpError(400, "name is required");
         if (!path || !existsSync(path) || !statSync(path).isDirectory()) throw new HttpError(400, `path is not a directory: ${path}`);
         if (b.effort && !validEffort(String(b.effort))) throw new HttpError(400, `"${b.effort}" is not an effort level. Use ${EFFORT_HELP}.`);
+        refuseSharedFolder(store.listProfiles(), path);
         let slug = slugify(name);
         for (let i = 2; store.getProfile(slug); i++) slug = `${slugify(name)}-${i}`;
         const profile: Profile = {
@@ -968,6 +985,9 @@ export function createServer(deps: ServerDeps) {
           next.stallMinutes = n;
         }
         if (b.setupDetected !== undefined) next.setupDetected = b.setupDetected && typeof b.setupDetected === "object" ? b.setupDetected : null;
+        if (next.path !== profile.path && realFolder(next.path) !== realFolder(profile.path)) {
+          refuseSharedFolder(store.listProfiles().filter((p) => p.slug !== slug), next.path);
+        }
         if (next.path !== profile.path) shells.kill(slug);
         store.saveProfile(next);
         bus.emit({ type: "profile.updated", slug, profile: next });

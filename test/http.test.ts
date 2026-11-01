@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
@@ -59,7 +59,7 @@ test("profile + ticket flow", async () => {
   expect(p.slug).toBe("my-proj");
   expect(p.maxParallel).toBe(5);
 
-  r = await fetch(`${base}/api/profiles`, json("POST", { name: "My Proj", path }));
+  r = await fetch(`${base}/api/profiles`, json("POST", { name: "My Proj", path: tempDir("ck-plain2-") }));
   expect(((await r.json()) as any).slug).toBe("my-proj-2");
 
   r = await fetch(`${base}/api/profiles/my-proj/tickets`, json("POST", { title: "Hello", body: "b" }));
@@ -1057,7 +1057,7 @@ test("board Workspace setting: default worktree, folder or worktree only", async
   expect(((await r.json()) as any).workspace).toBe("folder");
   r = await fetch(`${base}/api/profiles/${p.slug}`, json("PATCH", { workspace: "elsewhere" }));
   expect(r.status).toBe(400);
-  r = await fetch(`${base}/api/profiles`, json("POST", { name: "Ws board 2", path, workspace: "folder" }));
+  r = await fetch(`${base}/api/profiles`, json("POST", { name: "Ws board 2", path: await makeRepo(), workspace: "folder" }));
   expect(((await r.json()) as any).workspace).toBe("folder");
 });
 
@@ -1238,4 +1238,39 @@ test("POST move sends a Backlog ticket to another board", async () => {
   expect(((await r.json()) as any).title).toBe("Wrong board");
   expect(((await (await fetch(`${base}/api/profiles/move-a/tickets`)).json()) as any[]).length).toBe(0);
   expect(((await (await fetch(`${base}/api/profiles/move-b/tickets`)).json()) as any[]).map((x) => x.title)).toEqual(["Wrong board"]);
+});
+
+test("one board per folder: same folder refused (slash, symlink, case), subfolder allowed, own folder saves", async () => {
+  const path = join(tempDir("ck-share-"), "Proj");
+  mkdirSync(join(path, "sub"), { recursive: true });
+  let r = await fetch(`${base}/api/profiles`, json("POST", { name: "First", path }));
+  expect(r.status).toBe(201);
+  const msg = `The board "First" already uses this folder. Open that board instead.`;
+  const link = join(tempDir("ck-link-"), "l");
+  symlinkSync(path, link);
+  for (const p of [path, `${path}/`, link, path.replace(/Proj$/, "proj")]) {
+    r = await fetch(`${base}/api/profiles`, json("POST", { name: "Second", path: p }));
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as any).error).toBe(msg);
+  }
+  r = await fetch(`${base}/api/profiles`, json("POST", { name: "Sub", path: join(path, "sub") }));
+  expect(r.status).toBe(201);
+  const sub = (await r.json()) as any;
+
+  // Moving a board onto another board's folder is refused; saving with its own folder works.
+  r = await fetch(`${base}/api/profiles/${sub.slug}`, json("PATCH", { path: `${path}/` }));
+  expect(r.status).toBe(400);
+  expect(((await r.json()) as any).error).toBe(msg);
+  r = await fetch(`${base}/api/profiles/${sub.slug}`, json("PATCH", { path: `${join(path, "sub")}/`, maxParallel: 2 }));
+  expect(r.status).toBe(200);
+
+  // Boards that already share a folder (made before this rule) still load and save.
+  const first = store.listProfiles().find((p) => p.name === "First")!;
+  store.saveProfile({ ...first, name: "Twin", slug: "twin" });
+  r = await fetch(`${base}/api/profiles`);
+  expect(((await r.json()) as any[]).filter((p) => p.path === path).length).toBe(2);
+  r = await fetch(`${base}/api/profiles/twin`, json("PATCH", { path, maxParallel: 3 }));
+  expect(r.status).toBe(200);
+  r = await fetch(`${base}/api/profiles/twin/tickets`);
+  expect(r.status).toBe(200);
 });

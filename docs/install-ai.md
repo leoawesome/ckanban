@@ -63,10 +63,10 @@ Tell them:
 ```bash
 ckanban update      # get the latest release; the service restarts once active runs finish
 ckanban restart     # restart the service once active runs finish (--now: at once)
-ckanban uninstall   # stop and remove the service; boards in ~/.claude-kanban are kept
+ckanban uninstall   # stop and remove the service, phone access and the Claude Code/Codex link; boards in ~/.claude-kanban are kept
 ```
 
-To remove everything: `ckanban remote off; ckanban mcp uninstall; ckanban uninstall && rm ~/.local/bin/ckanban` (and `rm -rf ~/.claude-kanban` only if the user explicitly wants their boards deleted — it cannot be undone).
+To remove everything: `ckanban uninstall && rm ~/.local/bin/ckanban` (uninstall also turns off phone access and removes ckanban from Claude Code and Codex) (and `rm -rf ~/.claude-kanban` only if the user explicitly wants their boards deleted — it cannot be undone).
 
 ## Do not
 

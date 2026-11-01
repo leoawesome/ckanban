@@ -82,7 +82,7 @@ ckanban update      # get the latest release (the board also shows a banner when
 ckanban restart     # restart the background service once active runs finish (--now: at once)
 ckanban open        # open the board
 ckanban remote on   # open the board from your phone over Tailscale (off / status too)
-ckanban uninstall   # stop and remove the service (your boards in ~/.claude-kanban stay)
+ckanban uninstall   # stop and remove the service, turn off phone access, remove ckanban from Claude Code and Codex (your boards in ~/.claude-kanban stay)
 ```
 
 `ckanban --help` lists every command, including `ckanban ticket ...` to work the board from a terminal.

@@ -44,4 +44,4 @@ Run `ckanban update` in a terminal; the board shows a banner when a new version 
 
 ### How do I uninstall?
 
-Run `ckanban uninstall` to stop the background service, then delete `~/.local/bin/ckanban`. If you added the board to Claude Code or Codex, run `ckanban mcp uninstall` first. Your boards stay in `~/.claude-kanban/`; delete that folder too to remove everything.
+Run `ckanban uninstall && rm ~/.local/bin/ckanban`. Uninstall stops the background service, turns off phone access and removes ckanban from Claude Code and Codex. Your boards stay in `~/.claude-kanban/`; delete that folder too to remove everything.
