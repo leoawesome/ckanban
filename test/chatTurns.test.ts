@@ -50,6 +50,15 @@ test("stepsSummary: running, done and failed steps", () => {
   expect(stepsSummary([{ text: "Read: a.ts" }], false).text).toBe("Did 1 step · Read a.ts");
 });
 
+test("stepsSummary: the running step counts once and uses the live activity when there is one", () => {
+  const items = [{ text: "Bash: gh workflow run release.yml" }, { text: "Bash: for i in 1 2" }, { text: "Bash: gh run view 4128 --log" }];
+  expect(stepsSummary(items, true, "Running gh").text).toBe("Step 3 · Running gh");
+  expect(stepsSummary(items, true, null).text).toBe("Step 3 · Ran a command");
+  expect(stepsSummary(items, true, "").text).toBe("Step 3 · Ran a command");
+  // Done: the plain name, never the live activity.
+  expect(stepsSummary(items, false, "Running gh").text).toBe("Did 3 steps · Ran a command");
+});
+
 test("shortStep: a file tool's path becomes its file name; other steps stay as they are", () => {
   expect(shortStep("Read: /Users/leo/.claude-kanban/attachments/a8418c183597423b947f9bfe86c6a56c.png")).toBe("Read: a8418c183597423b947f9bfe86c6a56c.png");
   expect(shortStep("Edit: ~/dev/app/src/api.ts")).toBe("Edit: api.ts");

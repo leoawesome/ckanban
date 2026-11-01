@@ -505,7 +505,7 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
                     <Fragment key={b.items[0].uuid}>
                       {divider}
                       <Turn start={l.start} at={b.items[0].at}>
-                        <StepsLine items={b.items} running={running && !live && i === blocks.length - 1}>
+                        <StepsLine items={b.items} running={running && !live && i === blocks.length - 1} activity={stopping ? "Stopping…" : activity}>
                           <ToolRows slug={slug} ticketId={`chat:${id}`} live={running} load={loadTool}
                             items={b.items.map((t) => ({ key: t.uuid, label: t.text, toolUseId: t.toolUseId ?? t.agent?.toolUseId, error: t.error }))} />
                         </StepsLine>
@@ -556,7 +556,7 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
                   <div aria-live="polite">{liveView(live).text && <div className="reply-text writing"><Markdown text={liveView(live).text} /></div>}</div>
                 </Turn>
               )}
-              {running && !live && (
+              {running && !live && blocks.at(-1)?.kind !== "tools" && (
                 <WorkingRow start={tailStart()} startedAt={replyStartedAt} activity={stopping ? "Stopping…" : activity} />
               )}
             </>

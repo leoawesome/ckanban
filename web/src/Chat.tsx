@@ -373,6 +373,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
     ...waitingHandoff.map((h) => h.text),
     entries.findLast((e) => e.role === "assistant" && e.kind === "text")?.text ?? "",
   ], [waitingHandoff, entries]);
+  // What the run is doing now ("Running gh"), for the live line; not when it only repeats reply text on screen.
+  const activity = stopping ? "Stopping…"
+    : ticket.lastActivity && ticket.lastActivity !== "Starting…" && !repeats(ticket.lastActivity, onScreen) ? ticket.lastActivity : null;
   useEffect(() => {
     if (!handingOff) return;
     const timer = setInterval(() => {
@@ -594,7 +597,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
           if (b.kind === "tools") {
             return (
               <Turn key={b.items[0].uuid} start={l.start} at={b.items[0].at} className={inherited}>
-                <StepsLine items={b.items} running={running && !old && newest && !live}>
+                <StepsLine items={b.items} running={running && !old && newest && !live} activity={activity}>
                   <ToolRows slug={slug} ticketId={ticket.id} live={running && !old}
                     items={b.items.map((t) => ({ key: t.uuid, label: t.text, toolUseId: t.toolUseId, error: t.error }))} />
                 </StepsLine>
@@ -760,9 +763,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
     return start;
   };
   const stalled = running && stallWait(ticket) ? ticket.stalled!.minutes : null;
-  // Steps Claude took since the user's last message: the working row counts on from them.
-  const lastAsk = entries.findLastIndex((e) => e.role === "user" && e.kind === "text" && !e.huddleId);
-  const steps = entries.slice(lastAsk + 1).filter((e) => e.kind === "tool" || e.kind === "agent").length;
+  // While the newest block is a group of steps, its steps line is the one live line; the working row shows only before
+  // the first step, between steps and replies, and when the run has gone quiet.
+  const stepsLive = running && !live && blocks.at(-1)?.kind === "tools";
   const divider = bp && (
     <div key={`branch-${bp.at}`} className="branch-divider" role="separator">
       <BranchIcon size={12} /> copied from {branchedFrom
@@ -859,9 +862,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
           </Turn>
         )}
         {running && !live && !!ticket.waitingOn?.length && <WaitingCard tasks={ticket.waitingOn} />}
-        {running && !live && !ticket.waitingOn?.length && (
-          <WorkingRow start={tailStart()} startedAt={ticket.runStartedAt} stalled={stalled} step={steps + 1}
-            activity={stopping ? "Stopping…" : ticket.lastActivity && ticket.lastActivity !== "Starting…" && !repeats(ticket.lastActivity, onScreen) ? ticket.lastActivity : null}>
+        {running && !live && !ticket.waitingOn?.length && (!stepsLive || stalled) && (
+          <WorkingRow start={tailStart()} startedAt={ticket.runStartedAt} stalled={stalled} activity={activity}>
             {stalled && <StallActions slug={slug} ticket={ticket} onError={onError} small />}
           </WorkingRow>
         )}

@@ -47,7 +47,8 @@ export function dividerLabel(iso: string, now = Date.now()): string {
   return d.toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-/** The steps line under a reply: running "Step 4 · Reading api.ts", done "Did 6 steps · ran the tests"; failed: how many errored. */
+/** The steps line under a reply: running "Step 4 · Reading api.ts", done "Did 6 steps · ran the tests"; failed: how many errored.
+ *  activity: the run's live description of the step it is on ("Running gh"); while running it replaces the plain name. */
 /** File tools whose step label is "<Tool>: <path>" (src/server/subagents.ts toolLabel). */
 const FILE_STEP = /^(Read|Write|Edit|MultiEdit|NotebookEdit): ((?:~|\/)\S*\/([^/\s]+))$/;
 
@@ -92,11 +93,11 @@ export function plainStep(label: string): string {
   return arg ? plain(/^(?:~|\/)/.test(arg) ? arg.replace(/\/+$/, "").split("/").pop()! : arg) : tool;
 }
 
-export function stepsSummary(items: { text: string; error?: true }[], running: boolean): { text: string; failed: number } {
-  const last = plainStep(items.at(-1)?.text ?? "");
+export function stepsSummary(items: { text: string; error?: true }[], running: boolean, activity?: string | null): { text: string; failed: number } {
+  const plain = plainStep(items.at(-1)?.text ?? "");
   const failed = items.filter((t) => t.error).length;
   const n = items.length;
-  return { text: running ? `Step ${n} · ${last}` : `Did ${n} step${n === 1 ? "" : "s"} · ${last}`, failed };
+  return { text: running ? `Step ${n} · ${activity || plain}` : `Did ${n} step${n === 1 ? "" : "s"} · ${plain}`, failed };
 }
 
 /** A message another ticket's Claude sent, as the board labels it (src/server/session.ts fromTicketText): its sender and text. */

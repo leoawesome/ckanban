@@ -94,21 +94,40 @@ export function ReplyActions({ text, simpler, newest, lastOfTurn, active }: {
   );
 }
 
-/** A run of tool calls: one line under the reply, "✓ Did 6 steps · last step" in plain words; click to see each step by its real tool name. */
-export function StepsLine({ items, running, old, children }: {
-  items: { text: string; error?: true }[];
+/** Re-renders every second while `on` (live timers). */
+function useSecondTick(on: boolean) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!on) return;
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, [on]);
+}
+
+/**
+ * A run of tool calls: one line under the reply, "✓ Did 6 steps · last step" in plain words; click to see each step by its
+ * real tool name. While the run is on its last step this is the chat's one live line: spinner, "Step 3 · Running gh"
+ * and how long that step has been going.
+ */
+export function StepsLine({ items, running, activity, old, children }: {
+  items: { text: string; error?: true; at?: string }[];
   /** The run is on this step right now: spinner and "Step 4 · …". */
   running: boolean;
+  /** The run's live description of the current step ("Running gh"); falls back to the step's plain name. */
+  activity?: string | null;
   old?: boolean;
   /** The step list (ToolRows). */
   children: ReactNode;
 }) {
-  const s = stepsSummary(items, running);
+  useSecondTick(running);
+  const s = stepsSummary(items, running, activity);
+  const since = running ? items.at(-1)?.at : undefined;
   return (
-    <details className={`steps-line${old ? " inherited" : ""}`}>
+    <details className={`steps-line${old ? " inherited" : ""}${running ? " live" : ""}`}>
       <summary>
         {running ? <span className="spinner" /> : <CheckIcon size={14} className="icon steps-ok" />}
-        <span className="steps-text">{s.text}</span>
+        <span className="steps-text" role={running ? "status" : undefined} aria-live={running ? "polite" : undefined}>{s.text}</span>
+        {since && <span className="working-time" title={`This step started ${fullTime(since)}`}>· {elapsed(since)}</span>}
         {s.failed > 0 && <span className="steps-failed">· {s.failed} failed</span>}
       </summary>
       {children}
@@ -117,11 +136,9 @@ export function StepsLine({ items, running, old, children }: {
 }
 
 /** Claude's place while it works: spinner, what it is doing and for how long; dots before the first step shows. */
-export function WorkingRow({ start, activity, step, startedAt, stalled, children }: {
+export function WorkingRow({ start, activity, startedAt, stalled, children }: {
   start: boolean;
   activity: string | null;
-  /** How many steps this turn has taken so far: "Step 4 · Reading api.ts". */
-  step?: number;
   startedAt?: string | null;
   /** No output for this many minutes: the row turns amber (children: what the user can do). */
   stalled?: number | null;
@@ -134,7 +151,7 @@ export function WorkingRow({ start, activity, step, startedAt, stalled, children
       <div className={`working-row${stalled ? " stalled" : ""}`} role="status" aria-live="polite">
         {stalled ? <span>No output for {stalled} min</span>
           : early || (!activity && !startedAt) ? <span className="typing-dots" aria-label="Claude is working"><i /><i /><i /></span>
-          : <><span className="spinner" /><span className="working-text">{step && activity ? `Step ${step} · ${activity}` : activity ?? "Working"}</span></>}
+          : <><span className="spinner" /><span className="working-text">{activity ?? "Working"}</span></>}
         {since && !stalled && <span className="working-time">· {since}</span>}
       </div>
       {children}
