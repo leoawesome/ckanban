@@ -4,6 +4,38 @@ What changed in each ckanban release. Get the latest with `ckanban update`.
 
 ## Unreleased
 
+## [0.16.0] - 2026-11-02
+
+### Added
+- **Rewind a ticket chat**: hover one of your messages and click *Rewind* to go back to before it. If the folder has version history, *Rewind chat and files* also puts the project files back; *Chat only* keeps them. Your message goes back into the chat box.
+- **Move a Backlog ticket to another board**: *Move to board…* in the ticket's menu sends it to that board's Backlog with its title, description and tags.
+- **Shared devices only while used**: tickets that share a device (a WhatsApp Web tab, a phone, an emulator) now run side by side and take turns only on the device itself. More, *Devices* lists the devices, who uses each and who waits, and lets you free one. Cards show *Using X* or *Waiting for X*.
+- **Ultracode**: a switch next to the effort level (Board settings, a chip on the ticket, or `/effort ultracode`) that lets work runs start Claude Code workflows with many helper agents. The chat shows a workflow as one live block with progress, time, cost and a row per helper, plus *Stop workflow*. A run's spending cap also counts what the helpers spend.
+- **Cold chat note**: a long ticket chat shows how long Claude keeps it ready, then says when the next message has to read the whole chat again and what that costs.
+- **Theme choice**: System, Light or Dark in the menu.
+- Product Hunt badge on ckanban.dev and in the README.
+
+### Changed
+- **Easier to read**: text and buttons are readable in light and dark mode, search and inputs show a clear focus ring, and emoji icons became line icons. Text sizes, corners and shadows follow one scale.
+- **Inbox puts what Claude waits on first**, then what is ready to check; items older than a week fold away with *Snooze all*. Clearing a row can no longer hit the next row's button by mistake, and *Mark done* on another board gets Undo.
+- **Cards read at a glance**: only new urgent items pulse, running cards are calm blue with the time since the last step (amber after 3 quiet minutes), Done cards are quiet, and cards show at most two extra chips. Cards that Claude moves glide to their new column. A finished run flashes ✓, ✕ or ! once.
+- **Your turn takes you to the task**: the main button opens the questions form, proposal or plan that needs you. A proposed ticket already on the board counts as handled, and a huddle idle for 2 hours asks if it has finished. The ticket panel shows tabs only when they have something in them.
+- **Shorter dialogs and plain words**: *New ticket* has one main start button and *Save for later*; *New board* asks only for folder and name, with the rest under *More options*. Technical words were replaced across the app.
+- The board shows grey placeholder cards while loading instead of an empty board. Run count and usage share one status pill, and the header fits at every width.
+- Phones: bigger tap targets, and *Team* replaces *Schedules* in the bottom bar (*Schedules* moved into More).
+- Keyboard and screen readers: one Tab stop per card, and screen readers hear each card's status.
+- While Claude works, the chat shows one live status line with the right step number and a timer for the current step.
+- When you agree in a Planning chat to change a ticket's own finished work, Claude starts that work itself. The status menu no longer has *Queued*; picking *In Progress* queues the work.
+- Plan reviews read the proposed tickets themselves, and a fresh helper checks proposed tickets for unclear parts before they are shown.
+
+### Fixed
+- **Much faster board**: the board loads fast again, also right after a restart (from several seconds to under one), no longer freezes after a restart, and stays responsive while several tickets run. It uses less memory and reads long chats in small pieces.
+- The usage panel said "Token expired" when an old Claude login was also saved on the Mac.
+- A folder can have only one board, and uninstalling also turns off phone access and removes the board's MCP links.
+- Rewind cleans up its saved copies when a ticket is deleted or done, stays fast on big projects, and refreshes the Changes tab.
+- *Move to board* sits with the other ticket actions.
+- The release workflow can be re-run to publish only the npm installer.
+
 ## [0.15.0] - 2026-10-29
 
 ### Added
@@ -311,6 +343,7 @@ First release.
 - Terminal & file explorer panel, Connections panel for MCP servers, scheduled tickets on a cron, claude.ai artifacts from runs.
 - Standalone binary, installer, `ckanban update` and a background service that starts at login.
 
+[0.16.0]: https://github.com/leoawesome/ckanban/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/leoawesome/ckanban/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/leoawesome/ckanban/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/leoawesome/ckanban/compare/v0.12.0...v0.13.0

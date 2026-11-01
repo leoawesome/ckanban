@@ -71,7 +71,7 @@ Then open the board switcher (top left) → **New board…**, pick a folder you'
 
 ## More features
 
-Inbox of everything waiting on you, Changes tab with line comments, per-ticket folder setup (`.env` copy, install only when needed), auto-continue after a usage limit, one-click session recovery, schedules on a cron and one-time jobs, add-on tickets, a brief of related past tickets for every run, prompt snippets, terminal and files panel, MCP connections, automations that turn new items from a service into tickets ([details](docs/automations.md)), shared devices, rewinding a ticket chat, moving a ticket to another board, several PRs per ticket, a spending cap per run, a light or dark theme, branching a ticket, and keyboard shortcuts for nearly everything.
+Inbox of everything waiting on you, Changes tab with line comments, per-ticket folder setup (`.env` copy, install only when needed), auto-continue after a usage limit, one-click session recovery, schedules on a cron and one-time jobs, add-on tickets, a brief of related past tickets for every run, prompt snippets, terminal and files panel, MCP connections, automations that turn new items from a service into tickets ([details](docs/automations.md)), shared devices, rewinding a ticket chat, ultracode with a live view of its helper agents, a note when a long chat has gone cold and what the next message costs, moving a ticket to another board, several PRs per ticket, a spending cap per run, a light or dark theme, branching a ticket, and keyboard shortcuts for nearly everything.
 
 Every feature in detail: **[docs/features.md](docs/features.md)**. What changed in each release: **[CHANGELOG.md](CHANGELOG.md)**.
 
