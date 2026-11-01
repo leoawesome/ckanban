@@ -811,7 +811,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               </button>
             )}
             {outputCount > 0 && (
-              <button className="result-chip" onClick={() => setTab("outputs")}><FileTextIcon size={13} /> {outputCount} output file{outputCount > 1 ? "s" : ""}</button>
+              <button className="result-chip" onClick={() => setTab("outputs")}><FileTextIcon size={14} /> {outputCount} output file{outputCount > 1 ? "s" : ""}</button>
             )}
             {links.slice(0, LINK_CHIPS).map((l) => (
               <a key={l.url} className="result-chip" href={safeHref(l.url)} target="_blank" rel="noreferrer"
@@ -893,7 +893,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           title="Drag to resize · double-click to reset" {...handle} />
 
         <header className="panel-head">
-          {phone && <button className="icon-btn phone-back" onClick={onClose} aria-label="Back to the board"><ChevronLeftIcon size={22} /></button>}
+          {phone && <button className="icon-btn phone-back" onClick={onClose} aria-label="Back to the board"><ChevronLeftIcon size={20} /></button>}
           {!phone && <button className={`icon-btn sidebar-toggle ${detailsShown ? "on" : ""}`} onClick={() => setDetailsOpen((v) => !v)}
             aria-label={detailsShown ? "Hide details" : "Show details"} aria-pressed={detailsShown}
             title={`${detailsShown ? "Hide" : "Show"} details (⌘\\)`}>

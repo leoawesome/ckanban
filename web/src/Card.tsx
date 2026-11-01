@@ -230,13 +230,13 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
   if (ticket.source?.url) extras.push({ key: "source", label: `From ${ticket.source.provider}`, node: (
     <a className="badge pr" href={safeHref(ticket.source.url)} target="_blank" rel="noreferrer" title={`Open ${ticket.source.label} in ${ticket.source.provider}`}
       onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-      {ticket.source.provider} <ExternalIcon size={11} />
+      {ticket.source.provider} <ExternalIcon size={12} />
     </a>
   ) });
   if (artifact && artifactHref) extras.push({ key: "artifact", label: `Artifact: ${artifact.label}`, node: (
     <a className="badge artifact" href={artifactHref} target="_blank" rel="noreferrer" title={artifact.label === "claude.ai artifact" ? "Open claude.ai artifact" : `Open ${artifact.label} (claude.ai artifact)`}
       aria-label={`Open artifact: ${artifact.label}`} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-      <ExternalIcon size={11} /> artifact
+      <ExternalIcon size={12} /> artifact
     </a>
   ) });
   for (const g of ticket.tags ?? []) extras.push({ key: `tag-${g}`, label: `Tag: ${g}`, node: <TagChip name={g} onClick={onTag && !dragging ? () => onTag(g) : undefined} /> });
@@ -280,7 +280,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
           )}
           {ticket.scheduleId && (
             <span className="badge sched" title="Created by a schedule" aria-label="Scheduled">
-              <ClockIcon size={11} strokeWidth={1.8} />
+              <ClockIcon size={12} strokeWidth={1.8} />
             </span>
           )}
           <DeviceChips ticket={ticket} />

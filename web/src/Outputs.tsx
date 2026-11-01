@@ -139,7 +139,7 @@ function Links({ links }: { links: TicketLink[] }) {
       )}
       {rest.map((l) => (
         <div key={l.url} className="link-row">
-          <span className="link-icon" aria-hidden>{isArtifactLink(l) ? "◆" : <LinkIcon size={13} />}</span>
+          <span className="link-icon" aria-hidden>{isArtifactLink(l) ? "◆" : <LinkIcon size={14} />}</span>
           <span className="link-text">
             <span className="link-label" title={l.url}>{l.label}</span>
             <span className="muted small" title={fullTime(l.at)}>{linkMeta(l)} · {timeAgo(l.at)}</span>
@@ -271,7 +271,7 @@ export function Outputs({ slug, ticket, onCount, focus }: {
         <div key={s.path} role="none">
           <button className="tree-row" style={pad(depth)} title={s.path} role="treeitem" aria-expanded={isOpen(s.path)}
             disabled={!!needle || forcedOpen.has(s.path)} onClick={() => toggle(s.path)}>
-            <span className="tree-caret" aria-hidden>{isOpen(s.path) ? <ChevronDownIcon size={10} /> : <ChevronRightIcon size={10} />}</span>
+            <span className="tree-caret" aria-hidden>{isOpen(s.path) ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}</span>
             <span className="tree-icon" aria-hidden>{isOpen(s.path) ? <FolderOpenIcon /> : <FolderIcon />}</span>
             <span className="tree-dir output-name">{s.name}</span>
             <span className="output-count muted small">{s.count}</span>

@@ -167,7 +167,7 @@ export function QuestionsForm({ questions, answered, disabled, onSubmit, storage
                 <button key={o.label} type="button" disabled={disabled}
                   className={`qopt ${on ? "on" : ""} ${q.multiSelect ? "multi" : ""}`}
                   role={q.multiSelect ? "checkbox" : "radio"} aria-checked={on} onClick={() => pick(o.label)}>
-                  <span className="qmark" aria-hidden>{q.multiSelect && on && <CheckIcon size={11} strokeWidth={2.2} />}</span>
+                  <span className="qmark" aria-hidden>{q.multiSelect && on && <CheckIcon size={12} strokeWidth={2.2} />}</span>
                   <span className="qtext">
                     <span className="qlabel">
                       {o.label}
@@ -190,7 +190,7 @@ export function QuestionsForm({ questions, answered, disabled, onSubmit, storage
             })}
             <button type="button" disabled={disabled} className={`qopt ${a.otherOn ? "on" : ""} ${q.multiSelect ? "multi" : ""}`}
               role={q.multiSelect ? "checkbox" : "radio"} aria-checked={a.otherOn} onClick={toggleOther}>
-              <span className="qmark" aria-hidden>{q.multiSelect && a.otherOn && <CheckIcon size={11} strokeWidth={2.2} />}</span>
+              <span className="qmark" aria-hidden>{q.multiSelect && a.otherOn && <CheckIcon size={12} strokeWidth={2.2} />}</span>
               <span className="qtext"><span className="qlabel">Other…</span><span className="qdesc">Type your own answer</span></span>
               <kbd className="qkey">{q.options.length + 1}</kbd>
             </button>

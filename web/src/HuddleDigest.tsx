@@ -23,7 +23,7 @@ export function HuddleDigest({ text, meta, old, pending, onOpen, children }: {
   const block = (
     <details className={`conv-msg peer in huddle-digest${old ? " inherited" : ""}${pending ? " pending" : ""}`}>
       <summary className="conv-head">
-        <b className="icon-label"><HuddleIcon size={13} /> Huddle</b>
+        <b className="icon-label"><HuddleIcon size={14} /> Huddle</b>
         <span className="muted small hdg-sum">
           · {n} message{n === 1 ? "" : "s"}{senders.length > 0 && <> · from {senders.map((s) => `@${s}`).join(", ")}</>}
         </span>

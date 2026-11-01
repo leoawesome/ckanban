@@ -37,7 +37,7 @@ export function PrList({ ticket, review }: { ticket: Ticket; review: boolean }) 
     const pr = prs[0];
     return (
       <a className={`pr-one st-${(pr.state ?? "unknown").toLowerCase()}`} href={safeHref(pr.url)} target="_blank" rel="noreferrer">
-        <span className="pr-one-title">PR {prNumber(pr.url)} <ExternalIcon size={11} /></span>
+        <span className="pr-one-title">PR {prNumber(pr.url)} <ExternalIcon size={12} /></span>
         <PrMeta pr={pr} />
       </a>
     );
@@ -65,7 +65,7 @@ export function PrList({ ticket, review }: { ticket: Ticket; review: boolean }) 
           {shown.map((p) => (
             <div key={p.url} className="pr-row">
               <div className="pr-row-main">
-                <a href={safeHref(p.url)} target="_blank" rel="noreferrer">{prRepo(p.url)} {prNumber(p.url)} <ExternalIcon size={11} /></a>
+                <a href={safeHref(p.url)} target="_blank" rel="noreferrer">{prRepo(p.url)} {prNumber(p.url)} <ExternalIcon size={12} /></a>
                 {p.url === ticket.prUrl && <span className="pr-main" title="Merge & done and the PR box work on this one">main</span>}
                 {p.base && <div className="pr-meta">into {p.base}</div>}
               </div>

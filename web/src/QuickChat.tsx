@@ -184,7 +184,7 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
   return (
     <div className="qc qc-dock">
       <aside className="qc-list" aria-label="Chats in this folder">
-        <button className={`qc-row qc-new${currentId === null ? " cur" : ""}`} onClick={() => pick(null)}><PlusIcon size={13} /> New chat</button>
+        <button className={`qc-row qc-new${currentId === null ? " cur" : ""}`} onClick={() => pick(null)}><PlusIcon size={14} /> New chat</button>
         <ChatRows chats={chats} currentId={currentId} onPick={pick} />
       </aside>
       <section className="qc-main">

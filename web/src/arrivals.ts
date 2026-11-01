@@ -75,9 +75,11 @@ export function playMove(id: string, el: HTMLElement | null) {
   });
   document.body.appendChild(ghost);
   el.style.visibility = "hidden";
+  // The lifted card wears the shared floating shadow (--shadow-pop), read as a value for the keyframe.
+  const lift = getComputedStyle(document.documentElement).getPropertyValue("--shadow-pop").trim() || "none";
   const a = ghost.animate(
     [
-      { transform: `translate(${was.left - now.left}px, ${was.top - now.top}px)`, boxShadow: "0 8px 24px rgba(0, 0, 0, 0.18)" },
+      { transform: `translate(${was.left - now.left}px, ${was.top - now.top}px)`, boxShadow: lift },
       { transform: "none" },
     ],
     { duration: TRAVEL_MS, easing: "cubic-bezier(0.2, 0, 0, 1)" },

@@ -157,7 +157,7 @@ export function FilesView({ slug, refreshSignal }: { slug: string; refreshSignal
       }}
     >
       <span className="tree-caret" aria-hidden>
-        {e.type === "dir" && !flat ? (expanded.has(e.path) ? <ChevronDownIcon size={10} /> : <ChevronRightIcon size={10} />) : null}
+        {e.type === "dir" && !flat ? (expanded.has(e.path) ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />) : null}
       </span>
       <span className="tree-icon" aria-hidden>
         {e.type === "dir" ? (expanded.has(e.path) ? <FolderOpenIcon /> : <FolderIcon />) : <FileTypeIcon name={e.name} />}

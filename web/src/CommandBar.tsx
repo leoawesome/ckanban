@@ -165,7 +165,7 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
                       <span className="profile-avatar" style={{ background: avatarColor(item.profile.slug) }} aria-hidden>{avatarLetter(item.profile.name)}</span>
                       <span className="cmdbar-title"><Marked text={SWITCH + item.profile.name} at={item.at} offset={SWITCH.length} /></span>
                       {!!needYou.get(item.profile.slug) && <span className="need-chip">{needYou.get(item.profile.slug)} need you</span>}
-                      {item.profile.slug === current && <span className="profile-check" aria-label="Current board"><CheckIcon size={13} /></span>}
+                      {item.profile.slug === current && <span className="profile-check" aria-label="Current board"><CheckIcon size={14} /></span>}
                       {item.num && <span className="cmdbar-keys"><kbd aria-label={`Key ${item.num}`}>{item.num}</kbd></span>}
                     </>
                   )}

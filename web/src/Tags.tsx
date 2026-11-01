@@ -82,15 +82,15 @@ export function TagEditor({ tags, suggested = [], known, onChange, onSuggested, 
         <span key={g} className="tag-chip" style={tagStyle(g)}>
           #{g}
           <button type="button" className="tag-x" aria-label={`Remove tag ${g}`} title="Remove" disabled={disabled}
-            onClick={() => change(list.filter((x) => x !== g))}><CloseIcon size={10} /></button>
+            onClick={() => change(list.filter((x) => x !== g))}><CloseIcon size={12} /></button>
         </span>
       ))}
       {sugg.filter((g) => !list.includes(g)).map((g) => (
         <span key={g} className="tag-chip suggested" style={tagStyle(g)} title="Claude suggested this tag">
           #{g}
-          <button type="button" className="tag-x" aria-label={`Keep tag ${g}`} title="Keep" disabled={disabled} onClick={() => add(g)}><CheckIcon size={11} /></button>
+          <button type="button" className="tag-x" aria-label={`Keep tag ${g}`} title="Keep" disabled={disabled} onClick={() => add(g)}><CheckIcon size={12} /></button>
           <button type="button" className="tag-x" aria-label={`Drop suggested tag ${g}`} title="Drop" disabled={disabled}
-            onClick={() => changeSuggested(sugg.filter((s) => s !== g))}><CloseIcon size={10} /></button>
+            onClick={() => changeSuggested(sugg.filter((s) => s !== g))}><CloseIcon size={12} /></button>
         </span>
       ))}
       {open ? (

@@ -89,7 +89,7 @@ export function ShareMenu({ slug, ticket, name, text, variant }: {
       {variant === "button" ? (
         <button ref={button} className="btn primary small share-btn" aria-haspopup="menu" aria-expanded={open}
           onClick={() => (open ? close() : setOpen(true))}>
-          Share <ChevronDownIcon size={11} />
+          Share <ChevronDownIcon size={12} />
         </button>
       ) : (
         <button ref={button} className={`icon-btn share-dots${open ? " on" : ""}`} aria-haspopup="menu" aria-expanded={open}

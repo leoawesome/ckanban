@@ -158,7 +158,7 @@ export function BoardSwitcher({ profiles, current, needYou, onPick, onClose }: {
                   <span className="profile-path" title={p.path}>{tilde(p.path)}</span>
                 </span>
                 {!!need && <span className="need-chip">{need} need you</span>}
-                {p.slug === current && <span className="profile-check" aria-label="Current board"><CheckIcon size={13} /></span>}
+                {p.slug === current && <span className="profile-check" aria-label="Current board"><CheckIcon size={14} /></span>}
                 {num && <kbd aria-label={`Key ${num}`}>{num}</kbd>}
               </div>
             );

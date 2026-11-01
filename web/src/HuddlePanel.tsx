@@ -397,7 +397,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
             ))}
           </div>
           <button className="btn ghost hd-more" onClick={() => setSheet("actions")} aria-label="Huddle actions" aria-haspopup="menu">
-            <MoreIcon size={18} />{pending.length > 0 && <span className="pn-dot" />}
+            <MoreIcon size={20} />{pending.length > 0 && <span className="pn-dot" />}
           </button>
         </div>
       ) : (
@@ -706,7 +706,7 @@ function Message({ m, p, handles, forYou }: { m: HuddleMessage; p: HuddlePartici
           {forYou && <span className="hd-for-you">· for you</span>}
         </div>
         {m.kind === "finding" ? (
-          <div className="hd-finding"><span className="hd-finding-tag"><WarnIcon size={11} /> Finding</span><Markdown text={m.text} handles={handles} /></div>
+          <div className="hd-finding"><span className="hd-finding-tag"><WarnIcon size={12} /> Finding</span><Markdown text={m.text} handles={handles} /></div>
         ) : (
           <Markdown text={m.text} handles={handles} />
         )}
@@ -1124,7 +1124,7 @@ function Roster({ slug, huddle: h, onError, viewing, onView }: {
                 )}
                 {!closed && p.status !== "stopped" && (
                   <button className="icon-btn tiny hd-p-stop" aria-label={`Stop @${p.handle}`} title={`Stop @${p.handle}`}
-                    onClick={() => api.stopHuddleParticipant(slug, h.id, p.handle).catch(fail)}><CloseIcon size={10} /></button>
+                    onClick={() => api.stopHuddleParticipant(slug, h.id, p.handle).catch(fail)}><CloseIcon size={12} /></button>
                 )}
               </div>
             )}

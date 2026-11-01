@@ -182,7 +182,7 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
                 </td>
                 <td>
                   <button className="icon-btn tiny" aria-label={`Remove ${handle}`} title="Remove" disabled={disabled}
-                    onClick={() => setDraft({ ...draft, rows: draft.rows.filter((x) => x.key !== r.key) })}><CloseIcon size={11} /></button>
+                    onClick={() => setDraft({ ...draft, rows: draft.rows.filter((x) => x.key !== r.key) })}><CloseIcon size={12} /></button>
                 </td>
               </tr>
             );
@@ -197,7 +197,7 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
                 </td>
                 <td>
                   <button className="icon-btn tiny" aria-label="Remove invite" title="Remove" disabled={disabled}
-                    onClick={() => setDraft({ ...draft, invites: draft.invites.filter((x) => x !== id) })}><CloseIcon size={11} /></button>
+                    onClick={() => setDraft({ ...draft, invites: draft.invites.filter((x) => x !== id) })}><CloseIcon size={12} /></button>
                 </td>
               </tr>
             );

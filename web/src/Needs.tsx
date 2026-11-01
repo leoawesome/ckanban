@@ -21,7 +21,7 @@ export function DeviceChip({ name, using, waiting }: { name: string; using?: str
   const title = using ? `This ticket is using ${name} now` : waiting ? `Waiting for ${name}: another ticket is using it` : `Expects to use ${name} (a hint; it doesn't hold it)`;
   return (
     <span className={`res-chip ${using ? "held" : waiting ? "wait" : ""}`} title={title}>
-      <DeviceIcon size={11} strokeWidth={1.7} /> {label}
+      <DeviceIcon size={12} strokeWidth={1.7} /> {label}
     </span>
   );
 }
@@ -70,7 +70,7 @@ export function NeedsField({ slug, ticket, onError }: { slug: string; ticket: Ti
           <span key={n} className="chip on needs-chip">
             {n}
             <button className="link-btn" aria-label={`Remove ${n}`} disabled={busy} onClick={() => save(needs.filter((x) => x !== n))}>
-              <CloseIcon size={10} />
+              <CloseIcon size={12} />
             </button>
           </span>
         ))}

@@ -149,7 +149,7 @@ export function SessionPanel({ slug, huddle: h, participant: p, onClose, onStep,
   return (
     <section className="hd-session" aria-label={`@${handle}'s steps (read-only)`}>
       <header className="hd-session-head">
-        {phone && <button className="icon-btn phone-back" onClick={onClose} aria-label="Back to the huddle"><ChevronLeftIcon size={22} /></button>}
+        {phone && <button className="icon-btn phone-back" onClick={onClose} aria-label="Back to the huddle"><ChevronLeftIcon size={20} /></button>}
         <span className="hd-av" style={{ background: handleColor(handle) }} aria-hidden>{handleInitials(handle)}</span>
         <div className="hd-session-title">
           <div><b>@{handle}</b> <span className="hd-ro">read-only</span></div>

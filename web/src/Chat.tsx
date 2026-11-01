@@ -680,7 +680,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
                 <div className="chat-mockups">
                   {e.mockups.map((m) => (
                     <button key={m} className="chat-mockup" onClick={() => onOpenOutput?.(`mockups/${m}`)} title="Preview in the Outputs tab">
-                      <FileCodeIcon size={13} /> Mockup <b>{m}</b>
+                      <FileCodeIcon size={14} /> Mockup <b>{m}</b>
                     </button>
                   ))}
                 </div>

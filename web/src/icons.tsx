@@ -75,7 +75,7 @@ export const SystemThemeIcon = (p: IconProps) => svg(<><rect x="2" y="2.8" width
 export const InfoIcon = (p: IconProps) => svg(<><circle cx="8" cy="8" r="6.2" /><path d="M8 7.3v3.7M8 5h.01" /></>, p);
 export const CollapseIcon = (p: IconProps) => svg(<path d="M9.5 3.5L5 8l4.5 4.5M13 3v10" />, p);
 export const ExpandIcon = (p: IconProps) => svg(<path d="M6.5 3.5L11 8l-4.5 4.5M3 3v10" />, p);
-export const SparkIcon = ({ size = 11, ...rest }: IconProps) => (
+export const SparkIcon = ({ size = 12, ...rest }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden focusable="false" className="icon" {...rest}>
     <path d="M8 0c.5 3.9 2.1 5.5 6 6-3.9.5-5.5 2.1-6 6-.5-3.9-2.1-5.5-6-6 3.9-.5 5.5-2.1 6-6Z" fill="currentColor" />
   </svg>

@@ -70,7 +70,7 @@ function CopyButton({ text }: { text: () => string }) {
         clearTimeout(timer.current);
         timer.current = setTimeout(() => setDone(false), 1500);
       }}>
-      {done ? <CheckIcon size={13} /> : <CopyIcon size={13} />} {done ? "Copied" : "Copy"}
+      {done ? <CheckIcon size={14} /> : <CopyIcon size={14} />} {done ? "Copied" : "Copy"}
     </button>
   );
 }
@@ -107,7 +107,7 @@ export function StepsLine({ items, running, old, children }: {
   return (
     <details className={`steps-line${old ? " inherited" : ""}`}>
       <summary>
-        {running ? <span className="spinner" /> : <CheckIcon size={13} className="icon steps-ok" />}
+        {running ? <span className="spinner" /> : <CheckIcon size={14} className="icon steps-ok" />}
         <span className="steps-text">{s.text}</span>
         {s.failed > 0 && <span className="steps-failed">· {s.failed} failed</span>}
       </summary>

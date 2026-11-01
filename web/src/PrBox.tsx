@@ -70,7 +70,7 @@ export function PrBox({ profile, ticket, onError }: { profile: Profile; ticket: 
           title={pr ? `Checked ${timeAgo(pr.fetchedAt)} (${fullTime(pr.fetchedAt)}). Check again` : "Check again"} aria-label="Refresh PR status">
           <RefreshIcon size={12} className={loading ? "icon pr-spin" : "icon"} />
         </button>
-        <a className="pr-gh" href={safeHref(ticket.prUrl)} target="_blank" rel="noreferrer">#{number} · open on GitHub <ExternalIcon size={11} /></a>
+        <a className="pr-gh" href={safeHref(ticket.prUrl)} target="_blank" rel="noreferrer">#{number} · open on GitHub <ExternalIcon size={12} /></a>
       </div>
 
       {!pr && (loadError
@@ -94,7 +94,7 @@ export function PrBox({ profile, ticket, onError }: { profile: Profile; ticket: 
                 <span className="pr-name" title={c.name}>{c.name}</span>
                 {c.at && <span className="muted small" title={fullTime(c.at)}>{m.verb} {timeAgo(c.at)}</span>}
                 <span className="pr-sp" />
-                {c.url && <a className="pr-log" href={safeHref(c.url)} target="_blank" rel="noreferrer">log <ExternalIcon size={11} /></a>}
+                {c.url && <a className="pr-log" href={safeHref(c.url)} target="_blank" rel="noreferrer">log <ExternalIcon size={12} /></a>}
               </div>
             );
           })}

@@ -897,7 +897,7 @@ export function App() {
                   </span>
                   <span className="profile-path" title={profiles.find((p) => p.slug === o.value)?.path}>{o.hint}</span>
                 </span>
-                <span className="profile-check" aria-hidden>{selected && <CheckIcon size={13} />}</span>
+                <span className="profile-check" aria-hidden>{selected && <CheckIcon size={14} />}</span>
               </>
             )}
             renderValue={() => profile?.name}
@@ -952,11 +952,11 @@ export function App() {
         {profile && (
           <button className="btn ghost phone-only topbar-icon" aria-label="Search tickets"
             onClick={() => { setPhoneTab("board"); requestAnimationFrame(() => searchRef.current?.focus()); }}>
-            <SearchIcon size={18} />
+            <SearchIcon size={20} />
           </button>
         )}
         {profile && (
-          <button className="btn primary phone-only topbar-icon" aria-label="New ticket" onClick={() => setNewTicket(true)}><PlusIcon size={18} /></button>
+          <button className="btn primary phone-only topbar-icon" aria-label="New ticket" onClick={() => setNewTicket(true)}><PlusIcon size={20} /></button>
         )}
         {profile && (
           <button className="btn primary desktop-only" onClick={() => setNewTicket(true)} title="New ticket (N)">
@@ -1030,7 +1030,7 @@ export function App() {
               {tagFilter.map((g) => (
                 <button key={g} className="tag-chip search-tag" style={tagStyle(g)} title={`Stop filtering by ${g}`} aria-label={`Remove tag filter ${g}`}
                   onClick={() => setTagFilter((f) => f.filter((x) => x !== g))}>
-                  #{g} <CloseIcon size={9} />
+                  #{g} <CloseIcon size={12} />
                 </button>
               ))}
               <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tagFilter.length ? "Search" : "Search tickets · #tag"}
