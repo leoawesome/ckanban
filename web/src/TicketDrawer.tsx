@@ -29,6 +29,7 @@ import { Outputs } from "./Outputs";
 import { PrBox } from "./PrBox";
 import { PrList } from "./PrList";
 import { Select } from "./Select";
+import { phoneStatus } from "./phoneStatus";
 import { useShareNotices } from "./share";
 import { SessionPicker, sessionLabel } from "./SessionPicker";
 import { TicketMenu } from "./TicketMenu";
@@ -459,6 +460,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const finish = useFinishMark(working, ticket);
   // Where "Your turn" leads: the header's reason and the main button both open it (goTo).
   const goal = attentionGoal(att, ticket);
+  const ps = phoneStatus(ticket, finish, att);
   const { stopping, stop } = useStop(slug, ticket, working, (m) => setPanelError(m));
   const bodyRef = useRef<HTMLDivElement>(null);
   const side = useSidebarWidth(bodyRef);
@@ -689,9 +691,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const toggleStar = () => {
     api.updateTicket(slug, ticket.id, { important: !ticket.important }).catch((e) => onError(`Important not saved: ${e.message}`));
   };
-  // M: open the Status picker (the header's Move picker on a phone with the details hidden), showing the details first if needed.
+  // M: open the Status picker (the header's status button on a phone with the details hidden), showing the details first if needed.
   const openStatusPicker = () => {
-    const sel = phone && !detailsShown ? ".phone-move" : ".status-select";
+    const sel = phone && !detailsShown ? ".phone-status" : ".status-select";
     const open = () => {
       const trigger = panelRef.current?.querySelector<HTMLButtonElement>(`${sel} .select-trigger`);
       trigger?.focus();
@@ -911,17 +913,27 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           <StarToggle on={!!ticket.important} onChange={toggleStar} keyHint="S" />
           {/* The shrunk header's one line: the title, cut short (the full one is in .panel-top). */}
           <span className="head-title" aria-hidden={!slim}>{ticket.title}</span>
-          {finish ? finishBadge(finish) : att && goal ? (
-            <button className={`your-turn inline go att-${att.kind}`} onClick={goTo} title={`${att.label}: show me where`}>
-              <span className="yt-dot" aria-hidden /><span className="yt-label">Your turn</span><span className="yt-why">{att.label}</span>
-              <ChevronRightIcon size={12} className="icon yt-go" />
-            </button>
-          ) : att && (
-            <span className={`your-turn inline att-${att.kind}`} title={att.kind === "limit" ? limitLabel(ticket) : att.label}>
-              <span className="yt-dot" aria-hidden /><span className="yt-label">Your turn</span><span className="yt-why">{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
-            </span>
-          )}
-          {!finish && !att && !ticket.huddleBusy && outcomeBadge(ticket)}
+          {phone ? (
+            // Phones: one button says the state and moves the ticket (desktop keeps the chip and its own column picker).
+            <Select className={`phone-status tone-${ps.tone}`} ariaLabel={`${ps.label}. Move to column`} value={boardColumnOf(ticket)}
+              onChange={(s) => setStatus(menuPick(ticket, s as Status))}
+              renderValue={() => <><span className={`ps-dot${ps.busy ? " busy" : ""}${ps.icon ? " mark" : ""}`} aria-hidden>{ps.icon}</span><span className="ps-label">{ps.label}</span></>}
+              menuMaxHeight={Infinity} // all columns fit on a phone screen; only scroll when the screen is too short
+              options={statusOptions}
+              footer={att && goal ? [{ label: goal.button, icon: <ChevronRightIcon size={12} />, onSelect: goTo }] : undefined} />
+          ) : <>
+            {finish ? finishBadge(finish) : att && goal ? (
+              <button className={`your-turn inline go att-${att.kind}`} onClick={goTo} title={`${att.label}: show me where`}>
+                <span className="yt-dot" aria-hidden /><span className="yt-label">Your turn</span><span className="yt-why">{att.label}</span>
+                <ChevronRightIcon size={12} className="icon yt-go" />
+              </button>
+            ) : att && (
+              <span className={`your-turn inline att-${att.kind}`} title={att.kind === "limit" ? limitLabel(ticket) : att.label}>
+                <span className="yt-dot" aria-hidden /><span className="yt-label">Your turn</span><span className="yt-why">{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
+              </span>
+            )}
+            {!finish && !att && !ticket.huddleBusy && outcomeBadge(ticket)}
+          </>}
           <span className="save-state" aria-live="polite">
             {titleSave === "saving" && <span className="muted small">Saving…</span>}
             {titleSave === "saved" && <span className="saved small"><CheckIcon size={12} /> Saved</span>}
@@ -937,11 +949,6 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
                 title={editing ? "Save or cancel the description first" : "Next ticket (↓ or J)"}><ChevronDownIcon size={16} /></button>
               <KeyHint keys="↑↓ J K" />
             </span>
-          )}
-          {phone && (
-            <Select className="phone-move" ariaLabel="Move to column" value={boardColumnOf(ticket)} onChange={(s) => setStatus(menuPick(ticket, s as Status))} renderValue={(o) => o?.label ?? "Move"}
-              menuMaxHeight={Infinity} // all columns fit on a phone screen; only scroll when the screen is too short
-              options={statusOptions} />
           )}
           <TicketMenu ticket={ticket} working={working} live={!!(ticket.terminalOpen || linked?.live)}
             linkedLabel={ticket.workdir && ticket.sessionId ? (linked ? sessionLabel(linked) : ticket.sessionId.slice(0, 8)) : null}

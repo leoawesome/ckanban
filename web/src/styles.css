@@ -2853,16 +2853,35 @@ button.hd-mode:disabled { cursor: default; }
   .panel-head .your-turn.inline, .panel-head .badge { font-size: var(--fs-xs); padding: 3px 9px; }
   .panel-head .head-spacer { flex: 1 0 0; }
   /* Shrunk: back, the title cut short, the status chip as a dot, ⋯. */
-  .panel.head-slim .panel-head .help-menu-wrap, .panel.head-slim .panel-head .job-chip, .panel.head-slim .panel-head .phone-move,
+  .panel.head-slim .panel-head .help-menu-wrap, .panel.head-slim .panel-head .job-chip,
+  .panel.head-slim .panel-head .phone-status .ps-label, .panel.head-slim .panel-head .phone-status .select-chevron,
   .panel.head-slim .panel-head .your-turn.inline .yt-label, .panel.head-slim .panel-head .your-turn.inline .yt-why, .panel.head-slim .panel-head .your-turn.inline .yt-go, .panel.head-slim .panel-head .badge-label, .panel.head-slim .panel-head .badge-short { display: none; }
   .panel.head-slim .panel-head .your-turn.inline { padding: 3px 7px; }
   .panel.head-slim .panel-head > .head-title { flex: 1 1 0; }
   .panel-head > :not(.head-spacer) { flex-shrink: 0; }
-  .phone-back { width: 36px; height: 36px; }
-  .phone-move .select-trigger { padding: 5px 10px; font-weight: 600; background: var(--surface-2); border-color: transparent; min-width: 0; }
-  /* Room for every button: the scheduled chip keeps its clock and count, a long column name is cut short. */
+  /* Every button in the row is 40px tall, borderless, like the back and ⋯ buttons. */
+  .panel-head .phone-back, .panel-head .more-btn, .panel-head .help-btn { width: 40px; height: 40px; }
+  .panel-head .help-btn { border: 0; background: transparent; color: var(--muted); border-radius: var(--r-sm); }
+  .panel-head .help-btn.on, .panel-head .help-btn:hover { background: var(--surface-2); color: var(--text); }
+  /* The status button: what the ticket waits on, in its colour; tapping it moves the ticket. */
+  .panel-head > .phone-status { flex-shrink: 1; min-width: 0; }
+  .phone-status .select-trigger { min-height: 40px; padding: 0 12px; gap: 6px; border: 0; border-radius: var(--r-pill); font-weight: 600; font-size: var(--fs-sm); background: var(--surface-2); color: var(--text); }
+  .phone-status .select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+  .phone-status .ps-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .phone-status .select-chevron { color: currentColor; opacity: 0.7; }
+  .phone-status .ps-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .phone-status .ps-dot.busy { width: 10px; height: 10px; background: none; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite; }
+  .phone-status .ps-dot.mark { width: auto; height: auto; background: none; font-weight: 700; animation: finish-pop 250ms ease-out; }
+  .phone-status.tone-neutral .select-trigger { color: var(--muted); }
+  .phone-status.tone-neutral .ps-label { color: var(--text); }
+  .phone-status.tone-ok .select-trigger { background: var(--ok-soft); color: var(--ok); }
+  .phone-status.tone-warn .select-trigger { background: var(--warn-soft); color: var(--warn); }
+  .phone-status.tone-err .select-trigger { background: var(--err-soft); color: var(--err); }
+  .phone-status.tone-info .select-trigger { background: var(--info-soft); color: var(--info); }
+  .phone-status.open .select-trigger, .phone-status .select-trigger:focus-visible { box-shadow: 0 0 0 2px currentColor; }
+  .panel.head-slim .panel-head .phone-status .select-trigger { padding: 0 14px; }
+  /* Room for every button: the scheduled chip keeps its clock and count, the status button shrinks last. */
   .panel-head .job-chip .job-chip-word { display: none; }
-  .panel-head > .phone-move { flex-shrink: 1; min-width: 0; }
   .panel-body.details-closed { grid-template-rows: minmax(0, 1fr); }
   /* Ticket tab (phones): the details sidebar as one full-height page that scrolls as a whole */
   .panel-ticket { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
