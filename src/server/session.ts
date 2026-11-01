@@ -765,6 +765,15 @@ interface CacheItem {
   merged: ParsedSession | null;
 }
 
+/**
+ * How many parsed sessions stay in memory, most recently used first. A parse holds every entry of a transcript, so
+ * keeping all of them (hundreds) took most of the daemon's memory; idle ones keep only their saved summary and are
+ * parsed again when opened. Running sessions are kept too.
+ */
+const MAX_PARSED = 30;
+/** A session whose transcript changed this recently counts as running and keeps its parse. */
+const ACTIVE_MS = 10 * 60_000;
+
 /** How much of a transcript one step of a warm-up reads (about 1 to 2ms of parsing). */
 const WARM_CHUNK = 1 << 20;
 
@@ -926,21 +935,38 @@ export class SessionCache {
     const rewritten = hit && (hit.file !== f || hit.ino !== st.ino || st.size < hit.offset || (st.size === hit.size && st.mtimeMs !== hit.mtimeMs));
     if (!hit || rewritten) {
       hit = { file: f, ino: st.ino, size: 0, mtimeMs: 0, offset: 0, parser: new SessionParser(), agentKey: "", mergedFrom: null, merged: null };
-      this.items.set(sessionId, hit);
     }
     hit.size = st.size;
     hit.mtimeMs = st.mtimeMs;
+    // Most recently used last; the oldest beyond MAX_PARSED are dropped, except sessions written to lately (running
+    // ones: their transcripts are the biggest and are read again every poll).
+    this.items.delete(sessionId);
+    this.items.set(sessionId, hit);
+    if (this.items.size > MAX_PARSED) {
+      const recent = this.now() - ACTIVE_MS;
+      for (const [k, v] of this.items) {
+        if (this.items.size <= MAX_PARSED) break;
+        if (k !== sessionId && v.mtimeMs < recent) this.items.delete(k);
+      }
+    }
     const n = Math.min(st.size - hit.offset, maxBytes);
     if (n <= 0) return hit;
     let fd: number | null = null;
     try {
       fd = openSync(f, "r");
-      const buf = Buffer.allocUnsafe(n);
-      const got = readSync(fd, buf, 0, n, hit.offset);
-      hit.parser.feed(buf.subarray(0, got));
-      hit.offset += got;
-      // The file is shorter than it said (cut while reading): look again next time.
-      if (got < n) hit.size = hit.offset;
+      // In steps of at most WARM_CHUNK: one buffer the size of a big transcript stays with the allocator afterwards.
+      const buf = Buffer.allocUnsafe(Math.min(n, WARM_CHUNK));
+      for (let left = n; left > 0; ) {
+        const got = readSync(fd, buf, 0, Math.min(left, buf.length), hit.offset);
+        hit.parser.feed(buf.subarray(0, got));
+        hit.offset += got;
+        left -= got;
+        // The file is shorter than it said (cut while reading): look again next time.
+        if (!got) {
+          hit.size = hit.offset;
+          break;
+        }
+      }
     } catch {
       this.items.delete(sessionId);
       return null;

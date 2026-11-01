@@ -78,6 +78,33 @@ test("findSessionFile + cache reparses only on change", () => {
   expect(cache.get("11111111-2222-3333-4444-555555555555")!.lastMessage!.text).toBe("hello");
 });
 
+test("cache keeps only recent and running parses; an evicted session is parsed again in full on its next get", () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-some-folder");
+  mkdirSync(dir, { recursive: true });
+  const id = (i: number) => `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`;
+  for (let i = 0; i < 40; i++) writeFileSync(join(dir, `${id(i)}.jsonl`), user(`hi ${i}`, "2026-09-29T01:00:00Z") + "\n");
+  appendFileSync(join(dir, `${id(0)}.jsonl`), asst([{ type: "text", text: "hello 0" }], "2026-09-29T01:00:01Z") + "\n");
+  // Sessions written to in the last minutes count as running and are never dropped.
+  const live = new SessionCache({ configDir });
+  const kept = live.get(id(0))!;
+  for (let i = 1; i < 40; i++) live.get(id(i));
+  expect(live.get(id(0))).toBe(kept);
+  // An hour later they're idle: past the 30 most recently used, the oldest parse is dropped.
+  const cache = new SessionCache({ configDir }, () => Date.now() + 3_600_000);
+  const first = cache.get(id(0))!;
+  expect(first.entries.length).toBe(2);
+  for (let i = 1; i < 40; i++) cache.get(id(i));
+  expect(cache.get(id(39))).toBe(cache.get(id(39)));
+  const again = cache.get(id(0))!;
+  expect(again).not.toBe(first);
+  expect(again).toEqual(first);
+  expect(again.lastMessage!.text).toBe("hello 0");
+  // Still parsed incrementally after the re-parse.
+  appendFileSync(join(dir, `${id(0)}.jsonl`), asst([{ type: "text", text: "more" }], "2026-09-29T01:00:02Z") + "\n");
+  expect(cache.get(id(0))!.entries.length).toBe(3);
+});
+
 test("pollSessions emits session.updated when a linked session file changes", () => {
   const configDir = tempDir();
   const dir = join(configDir, "projects", "-f");

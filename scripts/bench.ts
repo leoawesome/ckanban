@@ -193,6 +193,7 @@ async function main() {
     rows.set(name, r);
   };
 
+  const live: string[] = [];
   /** One server "life": a fresh Store and SessionCache, like a daemon start. */
   const life = async (phase: "first" | "restart", warm: boolean) => {
     const store = readOnly(new Store(kanbanRoot));
@@ -233,6 +234,10 @@ async function main() {
         }
         for (const [name, ms] of runs) note(name, "warm", ms.sort((a, c) => a - c)[2]);
       }
+      // What a running daemon holds after these loads (garbage collected first).
+      Bun.gc(true);
+      const m = process.memoryUsage();
+      live.push(`${phase}: rss ${Math.round(m.rss / 1048576)}MB heap ${Math.round(m.heapUsed / 1048576)}MB`);
     } finally {
       streams.abort();
       sessions.flushSummaries();
@@ -273,7 +278,7 @@ async function main() {
   }
   console.log(`\nlongest event-loop block: ${worst ? `${worst}ms` : "under 50ms"} (${lags.filter((l) => lagOf(l) > 200).length} over 200ms)`);
   const mem = process.memoryUsage();
-  console.log(`\nrss ${Math.round(mem.rss / 1048576)}MB heap ${Math.round(mem.heapUsed / 1048576)}MB`);
+  console.log(`\nlive server after its loads (garbage collected), ${live.join(", ")}; at the end: rss ${Math.round(mem.rss / 1048576)}MB heap ${Math.round(mem.heapUsed / 1048576)}MB`);
   if (!keep) rmSync(tmp, { recursive: true, force: true });
   else console.log(`kept ${tmp}`);
   if (writes.length) fails.push(`tried to change the data ${writes.length} time(s), refused: ${[...new Set(writes)].slice(0, 5).join("; ")}`);
