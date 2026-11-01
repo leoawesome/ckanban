@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fetchUsage, normalizeUsage, parseCredentials, USAGE_URL } from "../src/server/usage";
+import { fetchUsage, normalizeUsage, parseCredentials, pickCredentials, USAGE_URL } from "../src/server/usage";
 import { limitNote, resetText, shortLabel, usageTone, worstTone } from "../web/src/usage";
 
 const FULL = {
@@ -44,6 +44,32 @@ test("parseCredentials", () => {
   expect(parseCredentials('{"claudeAiOauth":{"accessToken":"t","expiresAt":5}}')).toEqual({ token: "t", expiresAt: 5 });
   expect(parseCredentials("{}")).toHaveProperty("error");
   expect(parseCredentials("garbage")).toHaveProperty("error");
+});
+
+const login = (token: string, expiresAt?: number) =>
+  JSON.stringify({ claudeAiOauth: { accessToken: token, ...(expiresAt === undefined ? {} : { expiresAt }) } });
+
+test("pickCredentials uses the newest login when a stale one comes first", () => {
+  // Stale keychain item first (as `security -s` returned it on a real Mac), current login second.
+  expect(pickCredentials([login("old", 1000), login("current", 9000)])).toEqual({ token: "current", expiresAt: 9000 });
+  expect(pickCredentials([login("current", 9000), login("old", 1000)])).toEqual({ token: "current", expiresAt: 9000 });
+});
+
+test("pickCredentials keeps an expired login when it is the only one", async () => {
+  const picked = pickCredentials([null, login("old", 1000)]);
+  expect(picked).toEqual({ token: "old", expiresAt: 1000 });
+  const never = (() => { throw new Error("fetch must not be called"); }) as unknown as typeof fetch;
+  expect(await fetchUsage({ credentials: async () => picked, fetchFn: never, now: () => 2000 }))
+    .toMatchObject({ error: expect.stringContaining("Token expired") });
+});
+
+test("pickCredentials skips items without a Claude login", () => {
+  const mcpOnly = JSON.stringify({ mcpOAuth: { x: {} } });
+  expect(pickCredentials([mcpOnly, login("current", 9000)])).toEqual({ token: "current", expiresAt: 9000 });
+  expect(pickCredentials([mcpOnly])).toEqual({ error: "Not logged in to Claude Code with a Claude plan" });
+  expect(pickCredentials([null, null])).toEqual({ error: "Not logged in to Claude Code" });
+  // A login without an expiry date counts as current.
+  expect(pickCredentials([login("dated", 9000), login("undated")])).toEqual({ token: "undated", expiresAt: null });
 });
 
 const creds = (expiresAt: number | null = null) => async () => ({ token: "secret-token", expiresAt });

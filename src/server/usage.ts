@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 
 // Claude plan usage (what `/usage` shows in Claude Code), from Anthropic's undocumented OAuth endpoint.
@@ -66,11 +66,40 @@ export function parseCredentials(raw: string): Credentials {
   return { token: o.accessToken, expiresAt: typeof o.expiresAt === "number" ? o.expiresAt : null };
 }
 
-async function readKeychain(): Promise<string | null> {
+/**
+ * Picks the login to use from every stored copy. A Mac can hold several keychain items with the same
+ * service name (one per account name, e.g. a stale "unknown" one written by a claude run without $USER),
+ * so the newest login wins: no expiry date counts as current, otherwise the latest `expiresAt`.
+ */
+export function pickCredentials(raws: (string | null)[]): Credentials {
+  let best: { token: string; expiresAt: number | null } | null = null;
+  let firstError: string | null = null;
+  for (const raw of raws) {
+    if (!raw) continue;
+    const c = parseCredentials(raw);
+    if ("error" in c) {
+      firstError ??= c.error;
+      continue;
+    }
+    const rank = (x: { expiresAt: number | null }) => x.expiresAt ?? Infinity;
+    if (!best || rank(c) > rank(best)) best = c;
+  }
+  return best ?? { error: firstError ?? "Not logged in to Claude Code" };
+}
+
+function currentUser(): string | null {
   try {
-    const p = Bun.spawn(["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"], {
-      stdin: "ignore", stdout: "pipe", stderr: "ignore",
-    });
+    return userInfo().username || process.env.USER || null;
+  } catch {
+    return process.env.USER || null;
+  }
+}
+
+async function readKeychain(account?: string): Promise<string | null> {
+  try {
+    const args = ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE];
+    if (account) args.push("-a", account);
+    const p = Bun.spawn([...args, "-w"], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
     const [out, code] = await Promise.all([new Response(p.stdout).text(), p.exited]);
     return code === 0 && out.trim() ? out.trim() : null;
   } catch {
@@ -88,9 +117,16 @@ function readCredentialsFile(): string | null {
 }
 
 export async function readCredentials(): Promise<Credentials> {
-  const raw = (process.platform === "darwin" ? await readKeychain() : null) ?? readCredentialsFile();
-  if (!raw) return { error: "Not logged in to Claude Code" };
-  return parseCredentials(raw);
+  const raws: (string | null)[] = [];
+  if (process.platform === "darwin") {
+    // Claude Code stores its login under the OS user's account name; the service-only lookup
+    // returns whichever same-named item comes first, which may be a stale one.
+    const user = currentUser();
+    if (user) raws.push(await readKeychain(user));
+    raws.push(await readKeychain());
+  }
+  raws.push(readCredentialsFile());
+  return pickCredentials(raws);
 }
 
 export interface UsageDeps {
