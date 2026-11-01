@@ -34,6 +34,12 @@ async function withIndex<T>(f: (env: Record<string, string>) => Promise<T>): Pro
 
 const GIT = ["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"];
 
+/**
+ * How long saving the folder may hold up a message. A bigger or slower folder skips the copy for that message
+ * (git is stopped, so no late copy appears), and rewinding to it then changes the chat only.
+ */
+export const SNAPSHOT_LIMIT_MS = 2000;
+
 /** The repo's top folder when `dir` has version history (a repo with at least one commit), else null. */
 async function historyTop(dir: string): Promise<string | null> {
   if (!existsSync(dir) || !(await hasCommits(dir))) return null;
@@ -42,10 +48,10 @@ async function historyTop(dir: string): Promise<string | null> {
 }
 
 /** Tree of everything in `dir` right now (new and changed files included, ignored files left out). */
-async function currentTree(dir: string, env: Record<string, string>): Promise<string | null> {
-  const add = await run([...GIT, "add", "-A", "--", "."], dir, env);
+async function currentTree(dir: string, env: Record<string, string>, timeoutMs?: () => number): Promise<string | null> {
+  const add = await run([...GIT, "add", "-A", "--", "."], dir, env, timeoutMs?.());
   if (add.code !== 0) return null;
-  const tree = await run([...GIT, "write-tree"], dir, env);
+  const tree = await run([...GIT, "write-tree"], dir, env, timeoutMs?.());
   return tree.code === 0 ? tree.stdout.trim() : null;
 }
 
@@ -53,14 +59,17 @@ async function currentTree(dir: string, env: Record<string, string>): Promise<st
  * Saves how the folder looks right now as a hidden snapshot, tied to the message about to be sent.
  * Null when there is no version history (nothing to undo later) or the snapshot failed: rewind then leaves files alone.
  */
-export async function takeSnapshot(dir: string, ticketId: string, text: string, at = Date.now()): Promise<string | null> {
+export async function takeSnapshot(dir: string, ticketId: string, text: string, at = Date.now(), limitMs = SNAPSHOT_LIMIT_MS): Promise<string | null> {
+  // Each git step gets what is left of the limit (at least 1ms, so a spent limit stops it at once).
+  const end = Date.now() + limitMs;
+  const left = () => Math.max(1, end - Date.now());
   try {
     if (!(await historyTop(dir))) return null;
     return await withIndex(async (env) => {
-      const tree = await currentTree(dir, env);
+      const tree = await currentTree(dir, env, left);
       if (!tree) return null;
-      const commit = await run([...GIT, "commit-tree", tree, "-m", `ckanban rewind snapshot for ${ticketId}`], dir, env);
-      if (commit.code !== 0) return null;
+      const commit = await run([...GIT, "commit-tree", tree, "-m", `ckanban rewind snapshot for ${ticketId}`], dir, env, left());
+      if (commit.code !== 0 || Date.now() >= end) return null;
       const ref = `${REWIND_REFS}/${ticketId}/${at}-${textKey(text)}`;
       const set = await run(["git", "update-ref", ref, commit.stdout.trim()], dir);
       return set.code === 0 ? ref : null;
@@ -157,6 +166,12 @@ export async function restoreSnapshot(dir: string, ref: string): Promise<FileCha
     }
   }
   return changes;
+}
+
+/** Drops every saved copy of one ticket (it is done or deleted). Never touches other tickets' copies. */
+export async function deleteSnapshots(dir: string, ticketId: string): Promise<void> {
+  if (!/^[\w-]+$/.test(ticketId)) return;
+  await pruneSnapshots(dir, ticketId, null);
 }
 
 /** Drops the snapshots newer than `keep` (they belonged to messages that are gone now). */

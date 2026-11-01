@@ -24,7 +24,7 @@ import {
 } from "./plan";
 import { run as runCmd } from "./git";
 import { addPrs } from "./prs";
-import { takeSnapshot } from "./rewind";
+import { deleteSnapshots, takeSnapshot } from "./rewind";
 import { parseResult } from "./result";
 import { FOLLOW_UP_LATE_MS, FOLLOW_UP_NOTE_MAX, FOLLOW_UP_REASON_MAX, FollowUpError, followUpTime, logFollowUp } from "./followup";
 import { formatAt } from "./jobs";
@@ -305,7 +305,16 @@ export class Board {
     if ("lastActivity" in patch && !("lastActivityAt" in patch)) patch = { ...patch, lastActivityAt: patch.lastActivity ? nowIso() : null };
     const t = this.store.updateTicket(slug, id, patch);
     this.emitTicket(slug, t);
+    // Done: nothing will be rewound any more, so its saved copies of the folder go (in the background).
+    if (patch.status === "done") void this.dropRewindCopies(slug, t);
     return t;
+  }
+
+  /** Deletes the ticket's saved copies for Rewind, wherever its Claude worked (the board's folder or a linked one). */
+  private async dropRewindCopies(slug: string, t: Ticket): Promise<void> {
+    const profile = this.store.getProfile(slug);
+    const dirs = new Set([profile?.path, t.workdir].filter((d): d is string => !!d && existsSync(d)));
+    for (const dir of dirs) await deleteSnapshots(dir, t.id).catch(() => {});
   }
 
   /** Cache the ticket's PR status (prpoller.ts) and tell the UI. */
@@ -435,7 +444,9 @@ export class Board {
   async chat(slug: string, id: string, text: string, opts: ChatOptions = {}): Promise<Ticket> {
     // Rewind needs the folder as it is right before this message: saved quietly, the user's own history is untouched.
     // Done first, so everything below still runs in one go (a message can't slip in between the checks and the start).
-    if (!opts.peer && !opts.hostWake && !opts.followUp && text.trim()) {
+    // Only when Claude is idle: a message sent while it works steers the run and can't be rewound to anyway, and
+    // waiting on the copy there would let the run finish or stop in between.
+    if (!opts.peer && !opts.hostWake && !opts.followUp && text.trim() && !this.runs.has(this.key(slug, id))) {
       const dir = this.rewindDir(slug, id);
       if (dir) await takeSnapshot(dir, id, text);
     }
@@ -2080,6 +2091,7 @@ export class Board {
     const t = this.store.getTicket(slug, id);
     const profile = this.store.getProfile(slug);
     if (t?.worktree && profile) await this.removeTicketWorktree(profile, t.worktree).catch(() => {});
+    if (t) await this.dropRewindCopies(slug, t);
     if (t) deleteAttachments(this.store.attachmentsDir, this.attachmentsOf(slug, t));
     this.store.deleteTicket(slug, id);
     this.bus.emit({ type: "ticket.deleted", profile: slug, id });

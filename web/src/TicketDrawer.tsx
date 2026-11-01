@@ -1053,7 +1053,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             ) : tab === "outputs" ? (
               <div className="panel-scroll panel-outputs"><Outputs slug={slug} ticket={ticket} onCount={setOutputCount} focus={outputFocus} /></div>
             ) : (
-              <Chat slug={slug} ticket={ticket} tickets={tickets} onOpenTicket={onOpenTicket} onError={onError} onPendingProposal={onPendingProposal}
+              <Chat slug={slug} ticket={ticket} tickets={tickets} onOpenTicket={onOpenTicket} onError={onError} onPendingProposal={onPendingProposal} onFilesChanged={diffState.reload}
                 huddle={huddle} onOpenHuddle={() => setTab("huddle")} onOpenTeam={onOpenTeam} help={help}
                 onOpenOutput={(name) => { setOutputFocus(name); setTab("outputs"); }} />
             )}

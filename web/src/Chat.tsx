@@ -174,7 +174,7 @@ export function useStop(slug: string, ticket: Ticket, working: boolean, onError:
 /** A queued peer message that carries huddle messages (see the server's huddleMainPrompt). */
 const HUDDLE_TAG = /<ckanban-context[^>]* huddle="/;
 
-export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help }: {
+export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help, onFilesChanged }: {
   slug: string;
   ticket: Ticket;
   /** The board's tickets, to tell which proposed new tickets already exist. */
@@ -193,6 +193,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   onOpenTeam?: (r: TeamRequest) => void;
   /** "Help me understand" answers, shown as cards in the timeline by time. */
   help?: HelpState;
+  /** A rewind put files back: the Changes tab reloads its list. */
+  onFilesChanged?: () => void;
 }) {
   const [page, setPage] = useState<{ entries: SessionEntry[]; start: number } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -643,6 +645,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
                       stickToBottom.current = true;
                       setPage(null);
                       reload();
+                      onFilesChanged?.();
                       composer.current?.focus();
                     }} />
                 )}
