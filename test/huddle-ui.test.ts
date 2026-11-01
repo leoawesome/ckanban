@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { resetTitle, scopeChip, usageText } from "../web/src/teamText";
 import {
-  applyProposedTemplate, applyTemplate, brakeLabel, brakeHeadline, budgetRaise, clause, stoppedWhenDone, cardHuddleBadge, digestPreview, digestSenders, parseDigest, draftError, draftTags, idleFor, isForYou, untaggedHint, draftSize, guestTickets, handleInitials, mentionCandidates, mentionQuery, mergeMessages, participantActivity, pickHuddle, huddleRound, huddleTitle, ticketHuddles, rosterDraft, rowHandle, shortTicketId, sortHuddles, sourceLabel, upsertHuddle, withActivity, contextText, BIG_CONTEXT_TOKENS, participantRole, clampSideWidth, SIDE_DEFAULT, handInGroups, handInStatus,
+  applyProposedTemplate, huddleIdle, IDLE_HUDDLE_MS, applyTemplate, brakeLabel, brakeHeadline, budgetRaise, clause, stoppedWhenDone, cardHuddleBadge, digestPreview, digestSenders, parseDigest, draftError, draftTags, idleFor, isForYou, untaggedHint, draftSize, guestTickets, handleInitials, mentionCandidates, mentionQuery, mergeMessages, participantActivity, pickHuddle, huddleRound, huddleTitle, ticketHuddles, rosterDraft, rowHandle, shortTicketId, sortHuddles, sourceLabel, upsertHuddle, withActivity, contextText, BIG_CONTEXT_TOKENS, participantRole, clampSideWidth, SIDE_DEFAULT, handInGroups, handInStatus,
 } from "../web/src/huddleText";
 import { mergeSteps, modelLabel, sessionMeta, sessionState, shortSession, toolIcon } from "../web/src/sessionText";
 
@@ -337,4 +337,17 @@ test("budgetRaise: +$step adds the step to the budget, or to the spend when the 
   expect(budgetRaise(5, 5, 5)).toBe(5); // budget 10
   expect(budgetRaise(39.14, 5, 5)).toBe(39.14); // budget 44.14: $5 left to spend
   expect(budgetRaise(39.14, 5, 20)).toBe(54.14);
+});
+
+test("a huddle quiet for hours looks finished, until Keep open or new activity", () => {
+  const now = Date.parse("2026-11-01T12:00:00Z");
+  const at = (ms: number) => new Date(now - ms).toISOString();
+  const h = { status: "live", quiet: true, idleSince: at(IDLE_HUDDLE_MS + 1) };
+  expect(huddleIdle(h, now)).toBe(true);
+  expect(huddleIdle({ ...h, idleSince: at(IDLE_HUDDLE_MS - 60_000) }, now)).toBe(false);
+  expect(huddleIdle({ ...h, quiet: false }, now)).toBe(false);
+  expect(huddleIdle({ ...h, status: "stopped" }, now)).toBe(false);
+  // Keep open holds while nothing new happens; new activity moves idleSince, so it can ask again later.
+  expect(huddleIdle(h, now, h.idleSince)).toBe(false);
+  expect(huddleIdle(h, now, at(IDLE_HUDDLE_MS * 3))).toBe(true);
 });

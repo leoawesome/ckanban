@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { copy, type Ticket } from "./api";
-import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, MoreIcon, RefreshIcon, TerminalIcon, TrashIcon } from "./icons";
+import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, MoreIcon, RefreshIcon, TerminalIcon, TrashIcon } from "./icons";
 import { capInputText, parseCap } from "./capText";
 import { useLayer } from "./layers";
 import { MenuSheet } from "./MenuSheet";
@@ -10,7 +10,7 @@ import { costText } from "./usage";
  * "⋯" menu in the ticket panel header: the session (resume command, branch, ID, linked session),
  * then Report a bug and Delete. ↑↓ move, Esc closes only the menu.
  */
-export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap, onBranch, onPickSession, onUnlink, onCheckPr, onReportBug, onDelete }: {
+export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap, onBranch, onPickSession, onUnlink, onCheckPr, onReportBug, onDelete, onHuddle }: {
   ticket: Ticket;
   working: boolean;
   /** The session is open in a terminal right now. */
@@ -27,6 +27,8 @@ export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap
   onUnlink: () => void;
   onCheckPr: () => void;
   onReportBug: () => void;
+  /** Open the Huddle tab (hidden until the ticket has a huddle) to start one. */
+  onHuddle?: () => void;
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -143,6 +145,13 @@ export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap
               <button role="menuitem" className="menu-item" onClick={pick(onCheckPr)}>
                 <span className="menu-icon" aria-hidden><RefreshIcon size={14} /></span>
                 <span className="menu-label">Check PR status now</span>
+              </button>
+            )}
+            {onHuddle && (
+              <button role="menuitem" className="menu-item" onClick={pick(onHuddle)}>
+                <span className="menu-icon" aria-hidden><HuddleIcon size={14} /></span>
+                <span className="menu-label">Start a huddle…</span>
+                <span className="menu-hint">helpers review or work with Claude</span>
               </button>
             )}
             <div className="menu-sep" role="separator" />

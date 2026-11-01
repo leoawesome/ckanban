@@ -41,7 +41,7 @@ import { SampleOffer } from "./SampleOffer";
 
 import type { DockTab } from "./Dock";
 import type { HuddleSeed, TeamRequest } from "./Team";
-import { useBoardHuddles } from "./huddle";
+import { liveHuddleCount, useBoardHuddles, useHuddleIdleTick } from "./huddle";
 import { hasOpenPr, runCounts } from "./boardStats";
 import { ParallelConfirm } from "./ParallelConfirm";
 import { closeSteps, openDepth } from "./ticketHistory";
@@ -672,7 +672,9 @@ export function App() {
   const missing = health ? (["claude", "git", "gh"] as const).filter((k) => !health[k]) : [];
   // Every active ticket run (chat replies and Planning too); slots: the ones holding a maxParallel slot, as the server counts them.
   const running = runCounts(tickets, huddles);
-  const liveHuddles = huddles.filter((h) => h.status === "live").length;
+  // A huddle that has sat finished-looking for hours asks "Finished?" and stops counting as live.
+  useHuddleIdleTick();
+  const liveHuddles = liveHuddleCount(huddles);
   // Lessons the board saved on its own since the user last looked (Team, Learned).
   const [learnedNew, setLearnedNew] = useState(0);
   useEffect(() => {

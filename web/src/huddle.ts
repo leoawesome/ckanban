@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, onReconnect, subscribe, type Huddle, type HuddleMessage } from "./api";
 import { AVATAR_COLORS } from "./avatar";
+import { huddleIdle } from "./huddleText";
 import { mergeMessages, pickHuddle, ticketHuddles, upsertHuddle, withActivity } from "./huddleText";
 
+export { huddleIdle, IDLE_HUDDLE_MS } from "./huddleText";
 export { BIG_CONTEXT_TOKENS, brakeLabel, cardHuddleBadge, contextText, dollars, guestTickets, huddleRound, huddleTitle, idleFor, quietLabel, roundTag, sortHuddles, type CardHuddleBadge } from "./huddleText";
 export { handleInitials, isForYou, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint } from "./huddleText";
 
@@ -162,4 +164,41 @@ export function useBoardHuddles(slug: string | null): Huddle[] {
   }), [slug]);
   useEffect(() => onReconnect(reload), [reload]);
   return list;
+}
+
+const KEEP_KEY = (id: string) => `ckanban.huddleKeep.${id}`;
+const KEEP_EVENT = "ckanban-huddle-keep";
+
+/** The idleSince the user pressed Keep open at for this huddle, or null. */
+export function keptOpenAt(id: string): string | null {
+  try {
+    return localStorage.getItem(KEEP_KEY(id));
+  } catch {
+    return null;
+  }
+}
+
+/** Keep open: the huddle stops asking "Finished?" (and counts as live again) until it has new activity. */
+export function keepHuddleOpen(h: { id: string; idleSince?: string | null }) {
+  try {
+    localStorage.setItem(KEEP_KEY(h.id), h.idleSince ?? "");
+  } catch {}
+  window.dispatchEvent(new Event(KEEP_EVENT));
+}
+
+/** Re-renders when Keep open is pressed anywhere on the page, and every few minutes so a huddle can turn idle. */
+export function useHuddleIdleTick(): number {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const bump = () => setN((v) => v + 1);
+    window.addEventListener(KEEP_EVENT, bump);
+    const timer = setInterval(bump, 5 * 60_000);
+    return () => { window.removeEventListener(KEEP_EVENT, bump); clearInterval(timer); };
+  }, []);
+  return n;
+}
+
+/** Huddles counted as live: running, not idle-and-finished-looking. */
+export function liveHuddleCount(hs: Huddle[], now = Date.now()): number {
+  return hs.filter((h) => h.status === "live" && !huddleIdle(h, now, keptOpenAt(h.id))).length;
 }

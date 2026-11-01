@@ -114,9 +114,27 @@ export function isStopKey(e: Keys): boolean {
 export type DrawerTab = "ticket" | "chat" | "plan" | "huddle" | "changes" | "outputs" | "usage";
 
 /** The ticket panel's tabs, in order. Phones get a Ticket tab first (details and description), which the sidebar shows elsewhere. */
-export function drawerTabs({ phone, plan, changes }: { phone: boolean; plan: boolean; changes: boolean }): DrawerTab[] {
-  return (["ticket", "chat", "plan", "huddle", "changes", "outputs", "usage"] as const)
-    .filter((t) => (t === "ticket" ? phone : t === "plan" ? plan : t === "changes" ? changes : true));
+/**
+ * The ticket panel's tabs, in order. Huddle and Changes only once they have something to show; Usage is reached from
+ * the cost chip, so it is a tab only while open (usage).
+ */
+export function drawerTabs({ phone, plan, changes, huddle = true, usage = true }: {
+  phone: boolean; plan: boolean; changes: boolean; huddle?: boolean; usage?: boolean;
+}): DrawerTab[] {
+  const on: Record<DrawerTab, boolean> = { ticket: phone, chat: true, plan, huddle, changes, outputs: true, usage };
+  return (["ticket", "chat", "plan", "huddle", "changes", "outputs", "usage"] as const).filter((t) => on[t]);
+}
+
+/**
+ * Tabs a phone shows in its bar: at most `max` places, More taking one of them when some don't fit. The open tab
+ * always stays in the bar (it takes the last place when it would be hidden).
+ */
+export function phoneTabs<T>(tabs: T[], current: T, max = 4): { shown: T[]; more: T[] } {
+  if (tabs.length <= max) return { shown: tabs, more: [] };
+  const shown = tabs.slice(0, max - 2);
+  const rest = tabs.slice(max - 2);
+  const last = rest.includes(current) ? current : rest[0];
+  return { shown: [...shown, last], more: rest.filter((t) => t !== last) };
 }
 
 /** [ / ] in the ticket panel: the visible tab `delta` steps away from the current one, wrapping around. */

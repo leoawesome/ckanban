@@ -136,20 +136,32 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
 
 /** A bigger family first shows only the rows near this ticket (familyNearby) until "Show all". */
 const FAMILY_ROWS = 8;
-const FAMILY_FOLD_KEY = "ckanban.familyFolded";
+/** Open or folded, remembered per browser; folded (one line) until the user opens it. */
+const FAMILY_OPEN_KEY = "ckanban.familyOpen";
+/** Rows indent per level up to this depth; deeper rows line up with it, so their titles keep room. */
+const MAX_INDENT = 3;
+
+/** The folded family's one line: "Part of <top> · 64 related", or "64 related tickets" on the top ticket itself. */
+export function familyLine(topTitle: string, isTop: boolean, related: number): string {
+  const n = `${related} related${isTop ? ` ticket${related === 1 ? "" : "s"}` : ""}`;
+  return isTop ? n : `Part of ${topTitle} · ${n}`;
+}
+
+/** Left padding of a family row: 18px per level, capped at MAX_INDENT levels. */
+export const familyIndent = (depth: number) => 10 + Math.min(depth, MAX_INDENT) * 18;
 
 /**
  * The whole family from its top ticket down, this ticket highlighted; each row opens its ticket. Hidden when alone.
- * The heading folds it (remembered per browser); a big family shows the rows near this ticket until "Show all".
+ * Folded to one line by default (remembered per browser); a big family shows the rows near this ticket until "Show all".
  */
 export function FamilyTree({ ticket, tickets, onOpenTicket }: { ticket: Ticket; tickets: Ticket[]; onOpenTicket: (id: string) => void }) {
   const rows = useMemo(() => familyOf(tickets, ticket.id), [tickets, ticket.id]);
   const near = useMemo(() => familyNearby(rows, ticket.id), [rows, ticket.id]);
   const [folded, setFolded] = useState(() => {
     try {
-      return localStorage.getItem(FAMILY_FOLD_KEY) === "1";
+      return localStorage.getItem(FAMILY_OPEN_KEY) !== "1";
     } catch {
-      return false;
+      return true;
     }
   });
   const [all, setAll] = useState(false);
@@ -157,7 +169,7 @@ export function FamilyTree({ ticket, tickets, onOpenTicket }: { ticket: Ticket; 
   const toggle = () => {
     setFolded((f) => {
       try {
-        localStorage.setItem(FAMILY_FOLD_KEY, f ? "0" : "1");
+        localStorage.setItem(FAMILY_OPEN_KEY, f ? "1" : "0");
       } catch {}
       return !f;
     });
@@ -169,7 +181,8 @@ export function FamilyTree({ ticket, tickets, onOpenTicket }: { ticket: Ticket; 
       <div className="family-head">
         <button className="fold-head" onClick={toggle} aria-expanded={!folded} title={folded ? "Show the family" : "Hide the family"}>
           <span className="fold-chev" aria-hidden>▾</span>
-          <span className="field-key">Family · {rows.length} tickets</span>
+          <span className="field-key">Family</span>
+          <span className="family-line" title={rows[0].ticket.title}>{familyLine(rows[0].ticket.title, rows[0].ticket.id === ticket.id, rows.length - 1)}</span>
         </button>
         <button className="mini-link" onClick={() => copyText(familyText(rows), "Family list copied")}
           title="Copy the family as a list, for example to ask Claude to summarise this piece of work">Copy list</button>
@@ -177,7 +190,7 @@ export function FamilyTree({ ticket, tickets, onOpenTicket }: { ticket: Ticket; 
       {!folded && (
         <div className="family-tree">
           {shown.map((r) => (
-            <button key={r.ticket.id} className={`family-row ${r.ticket.id === ticket.id ? "me" : ""}`} style={{ paddingLeft: 10 + r.depth * 18 }}
+            <button key={r.ticket.id} className={`family-row ${r.ticket.id === ticket.id ? "me" : ""}`} style={{ paddingLeft: familyIndent(r.depth) }} title={r.ticket.title}
               aria-current={r.ticket.id === ticket.id ? "true" : undefined} onClick={() => r.ticket.id !== ticket.id && onOpenTicket(r.ticket.id)}>
               <span className="fam-title">{r.ticket.important && <ImportantStar />}{r.ticket.title}</span>
               {r.how && <span className="fam-how">{LINK_WORDS[r.how]}</span>}

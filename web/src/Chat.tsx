@@ -18,7 +18,7 @@ import { ArrowDownIcon, BranchIcon, CloseIcon, FileCodeIcon, FileTextIcon } from
 import { useImagePaste } from "./imagePaste";
 import { AttachmentChips } from "./AttachmentChips";
 import { ImagePickButton } from "./ImagePickButton";
-import { NewTicketsCard } from "./NewTicketsCard";
+import { NewTicketsCard, sameTitle } from "./NewTicketsCard";
 import { KeyHint } from "./KeyHint";
 import { addOnFor, addOnState } from "./addOn";
 import { parentLink } from "./family";
@@ -393,9 +393,21 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
     if (pending.some((p) => delivered(entries, p.text))) setPending((ps) => ps.filter((p) => !delivered(entries, p.text)));
   }, [entries, pending]);
 
+  // Opening a ticket whose questions form waits shows the top of that form, not the bottom of the chat (once per ticket).
+  const landedOn = useRef<string | null>(null);
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
+    if (page && landedOn.current !== ticket.id) {
+      landedOn.current = ticket.id;
+      const form = [...el.querySelectorAll<HTMLElement>(".qcard:not(.answered)")].at(-1);
+      if (form) {
+        el.scrollTop = el.scrollHeight;
+        el.scrollTop += form.getBoundingClientRect().top - el.getBoundingClientRect().top - 12;
+        stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        return;
+      }
+    }
     if (keepOffset.current !== null) {
       el.scrollTop = el.scrollHeight - keepOffset.current;
       keepOffset.current = null;
@@ -467,7 +479,12 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
 
   const empty = page !== null && !loadError && entries.length === 0 && !pending.length && !queued.length && !running;
 
-  const childFor = (d: { title: string }) => tickets.find((t) => t.parentId === ticket.id && t.title === d.title);
+  // The ticket a proposed draft became: this ticket's child of that title, else any ticket on the board with it (made by
+  // hand or from another chat), which counts as handled too (the server's attention rule, titleKey).
+  // A questions form still waits for answers: the message box offers a note instead of a second way to answer.
+  const formWaiting = entries.some((e, i) => !!e.questions && !answeredAfter(i));
+  const childFor = (d: { title: string }) => tickets.find((t) => t.parentId === ticket.id && t.title === d.title)
+    ?? tickets.find((t) => t.id !== ticket.id && sameTitle(t.title, d.title));
   const createChild = async (d: NewTicketDraft) => {
     try {
       return await api.createTicket(slug, {
@@ -635,7 +652,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
                   keyHint={e === pendingProposal} addOn={addOnOf(e.proposal)} family={familyNote(e.proposal)} />
               )}
               {e.newTickets && (
-                <NewTicketsCard drafts={e.newTickets} created={childFor} onCreate={createChild} onOpen={onOpenTicket} />
+                <NewTicketsCard drafts={e.newTickets} created={childFor} parentId={ticket.id} onCreate={createChild} onOpen={onOpenTicket} />
               )}
               {e.branch && (
                 <BranchCard reason={e.branch.reason} here={old} running={running} onOpen={onOpenTicket}
@@ -966,7 +983,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
       )}
       <div className="composer">
         <textarea ref={composer} rows={phone ? 1 : 2} value={draft} disabled={stopping} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
-          placeholder={phone
+          placeholder={formWaiting && !running ? "Or type a note to Claude…" : phone
             ? running ? "Steer Claude…" : refine ? "Describe your idea…" : "Ask Claude…"
             : running ? "Steer Claude: it reads this at its next step, no restart…" : refine ? "Describe your idea or answer Claude…" : "Ask Claude to change or continue something…"}
           onChange={(e) => setDraft(e.target.value)}

@@ -51,7 +51,8 @@ export function lastChange(t: Ticket, s: SessionSummary | null): string {
 }
 
 /**
- * createdTitles: titles of this ticket's children, to tell which proposed new tickets still wait for a click.
+ * createdTitles: titles of the board's other tickets, to tell which proposed new tickets still wait for a click: a proposal
+ * whose title is already on the board (created from this chat, or by hand, or by another ticket) counts as handled.
  * managed: the ticket is a child of a running plan, so its planner, not the user, handles it.
  * planComplete: every child of this ticket's plan is finished, so a stuck plan no longer needs the user.
  * huddle: the ticket's own open huddle; while it works the ticket doesn't need the user unless the huddle asks.
@@ -87,7 +88,7 @@ export function attentionFor(
   if (p && !((!p.title || p.title === t.title) && (!p.description || p.description.trim() === t.body.trim()))) {
     return { kind: "proposal", label: "Review proposal", since };
   }
-  if (s?.pendingNewTickets?.some((n) => !o.createdTitles?.has(n.title))) return { kind: "proposal", label: "Review proposed tickets", since };
+  if (s?.pendingNewTickets?.some((n) => !o.createdTitles?.has(titleKey(n.title)))) return { kind: "proposal", label: "Review proposed tickets", since };
   if (s?.pendingTeammates?.some((id) => !t.teammateCards?.[id])) return { kind: "proposal", label: "Review proposed teammate", since };
   if (s?.pendingAutomations?.some((id) => !t.automationCards?.[id])) return { kind: "proposal", label: "Review proposed automation", since };
   if (t.status === "review") return { kind: "review", label: "Ready for review", since };
@@ -95,6 +96,14 @@ export function attentionFor(
   if (t.status === "planning" && s?.lastMessage?.role === "assistant" && !s.lastMessage.peerReply && !t.interrupted) return { kind: "reply", label: "Claude replied", since };
   return null;
 }
+
+/** Titles of every ticket on the board but `self`, trimmed and case-folded the way sameTitle compares them. */
+export function boardTitles(tickets: Pick<Ticket, "id" | "title">[], self: string): Set<string> {
+  return new Set(tickets.filter((c) => c.id !== self).map((c) => titleKey(c.title)));
+}
+
+/** How two ticket titles are compared to tell a proposal is already on the board: case and spacing don't count. */
+export const titleKey = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
 
 /** attentionFor with its options read from the board; the other tickets are only listed when they matter. */
 export function ticketAttention(
@@ -105,8 +114,7 @@ export function ticketAttention(
     return kids.length > 0 && kids.every(isComplete);
   };
   return attentionFor(t, s, running, {
-    createdTitles: s?.pendingNewTickets.length
-      ? new Set(store.listTickets(slug).filter((c) => c.parentId === t.id).map((c) => c.title)) : undefined,
+    createdTitles: s?.pendingNewTickets.length ? boardTitles(store.listTickets(slug), t.id) : undefined,
     managed: t.parentId ? planActive(store.getTicket(slug, t.parentId)?.plan) : false,
     planComplete: t.plan?.state === "stuck" ? planComplete() : undefined,
     huddle,
@@ -150,9 +158,10 @@ export const byWaitingAge = <T extends { attention: Pick<Attention, "since"> }>(
  */
 export function userWaitReason(t: Ticket, s: SessionSummary | null): string | null {
   if (t.status === "done") return null;
-  if (t.status === "planning") return "in Planning";
+  // Open questions first, also in Planning: the plan names what to do ("Launch kit has 5 questions").
   const q = s?.openQuestions ?? 0;
   if (q > 0) return `${q} question${q === 1 ? "" : "s"} for you`;
+  if (t.status === "planning") return "in Planning";
   if (t.outcome === "needs_input") return "has questions for you";
   const p = s?.pendingProposal;
   if (p && !((!p.title || p.title === t.title) && (!p.description || p.description.trim() === t.body.trim()))) return "proposal to apply";

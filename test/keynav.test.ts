@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boardDigit, canStartFromProposal, cardDir, drawerTabs, hintStep, isStopKey, isTyping, newTicketKey, nextStep, panelStep, stepBoard, stepCard, stepTab } from "../web/src/keynav";
+import { boardDigit, canStartFromProposal, cardDir, drawerTabs, hintStep, isStopKey, isTyping, newTicketKey, nextStep, panelStep, phoneTabs, stepBoard, stepCard, stepTab } from "../web/src/keynav";
 
 test("cardDir maps J/K/H/L and arrows, ignores other keys", () => {
   expect(cardDir("j")).toBe("down");
@@ -157,4 +157,15 @@ test("drawerTabs puts a Ticket tab first on phones only, and Plan / Changes only
   expect(drawerTabs({ phone: false, plan: false, changes: false })).toEqual(["chat", "huddle", "outputs", "usage"]);
   expect(drawerTabs({ phone: true, plan: false, changes: false })).toEqual(["ticket", "chat", "huddle", "outputs", "usage"]);
   expect(drawerTabs({ phone: true, plan: true, changes: true })).toEqual(["ticket", "chat", "plan", "huddle", "changes", "outputs", "usage"]);
+  // Huddle only once there is one; Usage only while opened from the cost chip.
+  expect(drawerTabs({ phone: false, plan: false, changes: false, huddle: false, usage: false })).toEqual(["chat", "outputs"]);
+  expect(drawerTabs({ phone: false, plan: false, changes: true, huddle: true, usage: true })).toEqual(["chat", "huddle", "changes", "outputs", "usage"]);
+});
+
+test("phoneTabs keeps at most 4 places, More taking one, and the open tab stays in the bar", () => {
+  expect(phoneTabs(["ticket", "chat", "outputs"], "chat")).toEqual({ shown: ["ticket", "chat", "outputs"], more: [] });
+  expect(phoneTabs(["ticket", "chat", "plan", "outputs"], "chat")).toEqual({ shown: ["ticket", "chat", "plan", "outputs"], more: [] });
+  const all = ["ticket", "chat", "plan", "huddle", "changes", "outputs"];
+  expect(phoneTabs(all, "chat")).toEqual({ shown: ["ticket", "chat", "plan"], more: ["huddle", "changes", "outputs"] });
+  expect(phoneTabs(all, "outputs")).toEqual({ shown: ["ticket", "chat", "outputs"], more: ["plan", "huddle", "changes"] });
 });

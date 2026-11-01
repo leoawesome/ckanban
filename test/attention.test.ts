@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { attentionFor, byWaitingAge, type HostHuddle, huddleBusy, lastChange, snoozeKey, userWaitReason, withSnooze } from "../src/server/attention";
+import { attentionFor, boardTitles, byWaitingAge, type HostHuddle, huddleBusy, lastChange, snoozeKey, ticketAttention, titleKey, userWaitReason, withSnooze } from "../src/server/attention";
+import { Store } from "../src/server/store";
+import { tempDir } from "./helpers";
 import type { SessionSummary } from "../src/server/session";
 import type { Ticket } from "../src/server/types";
 
@@ -62,8 +64,27 @@ test("done and backlog tickets never need the user", () => {
 test("proposed new tickets need attention until each one exists", () => {
   const s = S({ pendingNewTickets: [{ title: "A", description: "" }, { title: "B", description: "" }] });
   expect(attentionFor(T({}), s, false)).toMatchObject({ kind: "proposal", label: "Review proposed tickets" });
-  expect(attentionFor(T({}), s, false, { createdTitles: new Set(["A"]) })!.kind).toBe("proposal");
-  expect(attentionFor(T({}), s, false, { createdTitles: new Set(["A", "B"]) })).toBeNull();
+  expect(attentionFor(T({}), s, false, { createdTitles: new Set(["a"]) })!.kind).toBe("proposal");
+  expect(attentionFor(T({}), s, false, { createdTitles: new Set(["a", "b"]) })).toBeNull();
+});
+
+test("board titles compare without case or extra spaces, and leave out the ticket itself", () => {
+  expect(titleKey("  Launch   Kit ")).toBe("launch kit");
+  const titles = boardTitles([{ id: "me", title: "Plan" }, { id: "x", title: "Launch Kit" }], "me");
+  expect([...titles]).toEqual(["launch kit"]);
+});
+
+test("a proposed ticket already on the board, anywhere, no longer needs the user", () => {
+  const store = new Store(tempDir("ck-att-"));
+  store.saveProfile({ slug: "p", name: "p", path: tempDir("ck-att-repo-") } as any);
+  const planner = store.createTicket("p", { title: "Planner", body: "", status: "review" });
+  const s = S({ pendingNewTickets: [{ title: "Launch kit", description: "" }, { title: "Docs", description: "" }] });
+  expect(ticketAttention(store, "p", planner, s, false)).toMatchObject({ kind: "proposal" });
+  // One made by hand elsewhere on the board (not a child), the other as a child: both count as handled.
+  store.createTicket("p", { title: "launch  kit", body: "", status: "backlog" });
+  expect(ticketAttention(store, "p", planner, s, false)).toMatchObject({ kind: "proposal" });
+  store.createTicket("p", { title: "Docs", body: "", status: "done", parentId: planner.id });
+  expect(ticketAttention(store, "p", planner, s, false)).toMatchObject({ kind: "review" });
 });
 
 test("a stuck plan needs the user, unless the ticket is done or every child is finished", () => {
@@ -76,6 +97,7 @@ test("a stuck plan needs the user, unless the ticket is done or every child is f
 test("userWaitReason: plan children waiting on the user", () => {
   expect(userWaitReason(T({ status: "backlog" }), null)).toBeNull();
   expect(userWaitReason(T({ status: "planning" }), null)).toBe("in Planning");
+  expect(userWaitReason(T({ status: "planning" }), S({ openQuestions: 5 }))).toBe("5 questions for you");
   expect(userWaitReason(T({ status: "backlog" }), S({ openQuestions: 2 }))).toBe("2 questions for you");
   expect(userWaitReason(T({ status: "review", outcome: "needs_input" }), null)).toBe("has questions for you");
   expect(userWaitReason(T({ status: "backlog" }), S({ pendingProposal: { title: "New", description: "d" } }))).toBe("proposal to apply");

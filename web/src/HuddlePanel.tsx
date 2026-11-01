@@ -7,6 +7,7 @@ import { draftKey, formKey } from "./drafts";
 import {
   BIG_CONTEXT_TOKENS, contextText, dollars, handleColor, handleInitials, huddleCost, idleFor, isForYou, members, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint,
   type HuddleState,
+  huddleIdle, keepHuddleOpen, keptOpenAt, useHuddleIdleTick,
 } from "./huddle";
 import { DEFAULT_MAX, draftError, RosterEditor, rosterDraft, startFromDraft, TemplatePicker, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
 import { autoGrow } from "./autoGrow";
@@ -299,6 +300,9 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
   // Out of budget after the work was finished: Close is the next step, not more budget.
   const doneStop = stoppedWhenDone(h);
   const quiet = h.status === "live" && !!h.quiet;
+  // Quiet for hours: it asks "Finished?" (and the header stops counting it as live) until Keep open or new activity.
+  useHuddleIdleTick();
+  const idle = huddleIdle(h, now, keptOpenAt(h.id));
   // Messages that tag you (the pending learnings count in forYou too, but have their own section).
   const forYou = closed ? 0 : (h.forYou ?? 0) - (h.learningsPending ?? 0);
   const invitable = tickets.filter((t) => !h.participants.some((p) => p.ticketId === t.id));
@@ -451,11 +455,16 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
       {sheet === "rounds" && <MoreSheet label="Huddles of this ticket" items={roundItems} onClose={() => setSheet(null)}
         footer={current && current.status !== "closed" ? "Only one huddle runs at a time: close the current one to start a new round." : null} />}
       {quiet && !h.closeRequest && (
-        <div className="hd-banner quiet">
+        <div className={`hd-banner quiet${idle ? " idle" : ""}`}>
           <span aria-hidden>✓</span>
-          <span><b>All quiet:</b> nobody working, no open tags, 0 open findings. Check the result, then close.</span>
+          {idle ? (
+            <span><b>Finished?</b> Every helper has been idle for {idleFor(h.idleSince!, now)}, so it no longer counts as live. Check the result, then close it, or keep it open.</span>
+          ) : (
+            <span><b>All quiet:</b> nobody working, no open tags, 0 open findings. Check the result, then close.</span>
+          )}
           <span className="spacer" />
           <button className="btn small primary" onClick={() => setConfirm("close")}>Close huddle</button>
+          {idle && <button className="btn small" onClick={() => keepHuddleOpen(h)} title="Count it as live again until it goes quiet next time">Keep open</button>}
         </div>
       )}
       {/* The brake dock already shows the close request when the budget stopped a finished huddle. */}

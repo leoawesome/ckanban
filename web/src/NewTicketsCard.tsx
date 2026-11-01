@@ -4,11 +4,17 @@ import { ImportantStar } from "./StarToggle";
 import { TagChip } from "./Tags";
 import { Markdown } from "./Transcript";
 
+/** Two titles name the same ticket: case and spacing don't count (the server's titleKey). */
+export const sameTitle = (a: string, b: string) => norm(a) === norm(b);
+const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+
 /** Tickets a planner's chat proposed; Create adds each to Backlog, linked to the planner. */
-export function NewTicketsCard({ drafts, created, onCreate, onOpen }: {
+export function NewTicketsCard({ drafts, created, parentId, onCreate, onOpen }: {
   drafts: Draft[];
-  /** The planner's existing child for a draft (matched by title), if it was created already. */
+  /** The ticket a draft already is (matched by title): the planner's child, or any ticket on the board with that title. */
   created: (d: Draft) => Ticket | undefined;
+  /** The planner: a match that isn't its child is "Already on the board". */
+  parentId?: string;
   onCreate: (d: Draft) => Promise<Ticket | null>;
   onOpen: (id: string) => void;
 }) {
@@ -60,7 +66,11 @@ export function NewTicketsCard({ drafts, created, onCreate, onOpen }: {
                 {open.has(i) ? "▾" : "▸"} {d.important && <ImportantStar />}{d.title}
               </button>
               {t ? (
-                <button className="link-btn small" onClick={() => onOpen(t.id)}>Created → {t.title}</button>
+                t.parentId === parentId || made.get(i) === t ? (
+                  <button className="link-btn small" onClick={() => onOpen(t.id)}>Created, open</button>
+                ) : (
+                  <button className="link-btn small" onClick={() => onOpen(t.id)} title={`“${t.title}” is already a ticket on this board`}>Already on the board, open</button>
+                )
               ) : (
                 <button className="btn small" disabled={busy.has(i)} onClick={() => create(d, i)}>
                   {busy.has(i) ? "Creating…" : "Create"}
@@ -77,7 +87,9 @@ export function NewTicketsCard({ drafts, created, onCreate, onOpen }: {
         );
       })}
       <span className="muted small">
-        {missing.length ? "Each lands in Backlog, linked to this ticket. Nothing starts until you move it or start the plan." : "All created. Press Start plan in the details to run them in order, unattended."}
+        {missing.length ? "Each lands in Backlog, linked to this ticket. Nothing starts until you move it or start the plan."
+          : drafts.every((d, i) => createdAt(d, i)?.parentId === parentId) ? "All created. Press Start plan in the details to run them in order, unattended."
+          : "Nothing left to create: each one is already a ticket on the board."}
       </span>
     </div>
   );

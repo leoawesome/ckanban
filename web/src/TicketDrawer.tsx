@@ -15,10 +15,12 @@ import { HelpMenu, useHelp } from "./HelpMenu";
 import { Chat, useStop } from "./Chat";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DescriptionEditor, useDescriptionCommands } from "./DescriptionEditor";
-import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronUpIcon, CloseIcon, ExternalIcon, FileTextIcon, LinkIcon, SparkIcon } from "./icons";
+import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, FileTextIcon, LinkIcon, SparkIcon } from "./icons";
 import { useImagePaste } from "./imagePaste";
 import { useFocusTrap, useLayer } from "./layers";
-import { drawerTabs, isStopKey, isTyping, nextStep, panelStep, stepTab, type DrawerTab } from "./keynav";
+import { drawerTabs, isStopKey, isTyping, nextStep, panelStep, phoneTabs, stepTab, type DrawerTab } from "./keynav";
+import { attentionGoal } from "./attentionGoal";
+import { MoreSheet } from "./PhoneNav";
 import { KeyHint } from "./KeyHint";
 import { MOD } from "./Shortcuts";
 import { complete, PlanFinished, planFinished, PlanPanel, PlanSummary } from "./PlanPanel";
@@ -340,13 +342,19 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   }, [slug, ticket.id]);
   const huddleState = useHuddle(slug, ticket.id, huddlePick);
   const huddle = huddleState.latest;
-  // The Plan tab exists only while the ticket has children; Changes while it has a worktree, or it ran in the board's
-  // folder itself: its changes since the first run there, or (no version history) why they can't be shown.
+  // The Plan tab exists only while the ticket has children; Changes once Claude changed files (in a worktree, or in the
+  // board's folder itself); Huddle once the ticket has had a huddle (or one is being started); Usage only while open
+  // from the cost chip. A tab asked for (a card badge, Start huddle, the chip) shows while it is open.
   const inFolder = !ticket.worktree && !ticket.workdir && !ticket.branch && (ticket.runCount > 0 || !!ticket.sessionStarted || !!ticket.baseSha);
-  // The tabs shown, in order ([ and ] step through them); opening one refreshes what it shows, like a click.
-  const tabs = drawerTabs({ phone, plan: children.length > 0, changes: !!(ticket.worktree || inFolder) });
-  const tab = tabs.includes(tabPick) ? tabPick : "chat";
   const diffState = useTicketDiff(slug, ticket);
+  // The tabs shown, in order ([ and ] step through them); opening one refreshes what it shows, like a click.
+  const tabs = drawerTabs({
+    phone, plan: children.length > 0,
+    changes: !!(ticket.worktree || inFolder) && (!!diffState.diff?.files.length || tabPick === "changes"),
+    huddle: huddleState.list.length > 0 || tabPick === "huddle",
+    usage: tabPick === "usage",
+  });
+  const tab = tabs.includes(tabPick) ? tabPick : "chat";
   const help = useHelp(slug, ticket, !!diffState.diff?.files.length);
   const [outputCount, setOutputCount] = useState(0);
   const ticketUsage = useTicketUsage(slug, ticket.id);
@@ -434,6 +442,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   const working = ticket.status === "in_progress" || !!ticket.running;
   const att = working ? null : ticket.attention ?? null;
   const finish = useFinishMark(working, ticket);
+  // Where "Your turn" leads: the header's reason and the main button both open it (goTo).
+  const goal = attentionGoal(att, ticket);
   const { stopping, stop } = useStop(slug, ticket, working, (m) => setPanelError(m));
   const bodyRef = useRef<HTMLDivElement>(null);
   const side = useSidebarWidth(bodyRef);
@@ -447,6 +457,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   const { dragging, handle } = panel;
   const width = (tab === "changes" || tab === "huddle") && !panel.custom ? clampWidth(CHANGES_WIDTH) : panel.width;
   const [descScrolled, setDescScrolled] = useState(false);
+  const [tabSheet, setTabSheet] = useState(false);
   // The tab bar scrolls sideways on narrow screens: fade its right edge while tabs are hidden there,
   // and keep the open tab in view.
   const tabsRef = useRef<HTMLElement>(null);
@@ -569,6 +580,35 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
     applyProposalRef.current = apply;
     setProposalPending(!!apply);
   }, []);
+  // Opens the tab the ticket waits in, scrolls to the form, card or message to act on and highlights it for a moment.
+  // The chat may still be loading: it looks again on each frame for up to 3 seconds.
+  const goTo = () => {
+    if (!goal) return;
+    openTab(goal.tab);
+    const until = performance.now() + 3000;
+    const find = () => {
+      const main = panelRef.current?.querySelector(".panel-main");
+      for (const sel of goal.targets) {
+        const all = main?.querySelectorAll<HTMLElement>(sel);
+        if (all?.length) return all[all.length - 1];
+      }
+      return null;
+    };
+    const land = () => {
+      const el = find();
+      if (!el) {
+        if (performance.now() < until) requestAnimationFrame(land);
+        return;
+      }
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      el.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+      el.classList.remove("attn-flash");
+      void el.offsetWidth; // restart the highlight when pressed again
+      el.classList.add("attn-flash");
+      setTimeout(() => el.classList.remove("attn-flash"), 2200);
+    };
+    requestAnimationFrame(land);
+  };
   // Every child of its plan is done: Move to Done replaces Start work.
   const finished = planFinished(children);
   const addMoreTickets = () => {
@@ -668,7 +708,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
         {col && (
           <p className="field-help">
             {col.claude && <SparkIcon className="icon spark" />}{col.hint}
-            {usageInline && <> · <button className="link-btn usage-inline" onClick={() => setTab("usage")} title={usageTitle}>{usageChipText(usage!)}</button></>}
+            {usageInline && <> · <button className="link-btn usage-inline" onClick={() => openTab("usage")} title={usageTitle}>{usageChipText(usage!)}</button></>}
           </p>
         )}
 
@@ -676,10 +716,13 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
         {ticket.prUrl && ticket.status === "review" && <PrBox profile={profile} ticket={ticket as Ticket & { prUrl: string }} onError={onError} />}
 
         <div className="action-stack">
+          {goal && !working && (
+            <button className="btn primary goal-btn" onClick={goTo} title={`${att!.label}: show me where`}>{goal.button}</button>
+          )}
           {working && <button className="btn danger" disabled={stopping} onClick={stop} title={`Stop Claude (${MOD}.)`}>{stopping ? "Stopping…" : "Stop Claude"}<KeyHint keys="⌘." /></button>}
           {finished && <PlanFinished ticket={ticket} total={children.length} onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />}
           {!working && !finished && (ticket.status === "backlog" || ticket.status === "planning") && (
-            <button className={`btn ${att?.kind === "questions" || att?.kind === "proposal" ? "" : "primary"}`}
+            <button className={`btn ${goal ? "" : "primary"}`}
               onClick={startWork} title={`${startTarget === "planning" ? "Claude interviews you first" : "Claude works on its own"} (${proposalPending ? `${MOD}⇧Enter applies the proposal and starts` : `${MOD}⇧Enter`})`}>
               Start work{!proposalPending && <KeyHint keys="⌘⇧↵" />}
             </button>
@@ -690,7 +733,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
             </button>
           )}
           {ticket.status === "review" && !finished && (
-            <button className={`btn ${ticket.prUrl ? "" : "primary"}`} onClick={() => setStatus("done")} title={`Mark done (${MOD}⇧Enter)`}>Mark done{!working && <KeyHint keys={proposalPending ? "⌘⇧↵ after Apply" : "⌘⇧↵"} />}</button>
+            <button className={`btn ${ticket.prUrl || goal ? "" : "primary"}`} onClick={() => setStatus("done")} title={`Mark done (${MOD}⇧Enter)`}>Mark done{!working && <KeyHint keys={proposalPending ? "⌘⇧↵ after Apply" : "⌘⇧↵"} />}</button>
           )}
           {ticket.source?.url && (
             <a className="btn icon-label" href={safeHref(ticket.source.url)} target="_blank" rel="noreferrer" title={ticket.source.label}>
@@ -752,7 +795,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
         {(!!links.length || outputCount > 0 || (hasUsage && !usageInline)) && (
           <div className="result-chips" aria-label="Results">
             {usage && hasUsage && !usageInline && (
-              <button className="result-chip usage-chip" onClick={() => setTab("usage")} title={usageTitle}>
+              <button className="result-chip usage-chip" onClick={() => openTab("usage")} title={usageTitle}>
                 {usageChipText(usage)}
               </button>
             )}
@@ -807,6 +850,30 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
       </section>
     </div>
   );
+  // The tab bar's buttons; a phone shows at most 4 places, the rest under More.
+  const tabName: Record<DrawerTab, string> = { ticket: "Ticket", chat: "Chat", plan: "Plan", huddle: "Huddle", changes: "Changes", outputs: "Outputs", usage: "Usage" };
+  const tabLabel: Record<DrawerTab, React.ReactNode> = {
+    ticket: "Ticket",
+    chat: <>Chat {working && <span className="dot" />}</>,
+    plan: (
+      <>Plan<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : children.every(complete) ? "ok" : ""}`}>
+        {children.filter(complete).length}/{children.length}
+      </span></>
+    ),
+    huddle: (
+      <>
+        Huddle{huddle && huddle.status !== "closed" && <span className={`tab-count${huddle.status === "live" ? " ok" : ""}`}>{members(huddle).length}</span>}
+        {huddle && huddle.status !== "closed" && !!huddle.forYou && (
+          <span className="for-you-pill" title={`${huddle.forYou} ${huddle.forYou === 1 ? "message tags" : "messages tag"} you`}>{huddle.forYou}</span>
+        )}
+        {huddle?.status === "live" && huddle.participants.some((p) => p.status === "working") && <span className="dot" />}
+      </>
+    ),
+    changes: <>Changes{!!diffState.diff?.files.length && <span className="tab-count">{diffState.diff.files.length}</span>}</>,
+    outputs: <>Outputs{outputCount + links.length > 0 && <span className="tab-count">{outputCount + links.length}</span>}</>,
+    usage: <>Usage{usage && hasUsage && usage.totals.pctCurrentWindow !== null && <span className="tab-count">{approxPct(usage.totals.pctCurrentWindow).replace(" ", "")}</span>}</>,
+  };
+  const barTabs = phone ? phoneTabs(tabs, tab) : { shown: tabs, more: [] as DrawerTab[] };
   return (
     <FileLinksProvider slug={slug} ticketId={ticket.id} panel={panelRef}>
     <div className="drawer-wrap" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -829,7 +896,12 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
           <StarToggle on={!!ticket.important} onChange={toggleStar} keyHint="S" />
           {/* The shrunk header's one line: the title, cut short (the full one is in .panel-top). */}
           <span className="head-title" aria-hidden={!slim}>{ticket.title}</span>
-          {finish ? finishBadge(finish) : att && (
+          {finish ? finishBadge(finish) : att && goal ? (
+            <button className={`your-turn inline go att-${att.kind}`} onClick={goTo} title={`${att.label}: show me where`}>
+              <span className="yt-dot" aria-hidden /><span className="yt-label">Your turn</span><span className="yt-why">{att.label}</span>
+              <ChevronRightIcon size={12} className="icon yt-go" />
+            </button>
+          ) : att && (
             <span className={`your-turn inline att-${att.kind}`} title={att.kind === "limit" ? limitLabel(ticket) : att.label}>
               <span className="yt-dot" aria-hidden /><span className="yt-label">Your turn</span><span className="yt-why">{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
             </span>
@@ -865,6 +937,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
             onUnlink={() => act(() => api.linkSession(slug, ticket.id, null))}
             onCheckPr={() => act(() => api.checkPr(slug, ticket.id))}
             onReportBug={() => setReportingBug(true)}
+            onHuddle={tabs.includes("huddle") ? undefined : () => setTab("huddle")}
             onDelete={() => setConfirmDelete(true)} />
           {!phone && <button className="icon-btn" onClick={onClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>}
         </header>
@@ -917,7 +990,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
               </div>
             )}
             {capWait(ticket) && (
-              <div className="banner warn inline limit-banner" role="status">
+              <div className="banner warn inline limit-banner cap-banner" role="status">
                 <div className="limit-text">
                   <strong>{capLabel(ticket)}</strong>
                   <span>The run spent its budget before it finished. Continue it in the same session with more, or change the cap in ⋯.</span>
@@ -935,38 +1008,17 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
               </div>
             )}
             <nav ref={tabsRef} className={`tabs${tabsMore ? " more-right" : ""}`} role="tablist" aria-label="Ticket" onScroll={checkTabs}>
-              {phone && (
-                <button role="tab" aria-selected={tab === "ticket"} className={tab === "ticket" ? "active" : ""} onClick={() => setTab("ticket")}>Ticket</button>
+              {barTabs.shown.map((t) => (
+                <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => openTab(t)}>{tabLabel[t]}</button>
+              ))}
+              {barTabs.more.length > 0 && (
+                <button className="tabs-more" aria-haspopup="menu" onClick={() => setTabSheet(true)}>More</button>
               )}
-              <button role="tab" aria-selected={tab === "chat"} className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}>
-                Chat {working && <span className="dot" />}
-              </button>
-              {children.length > 0 && (
-                <button role="tab" aria-selected={tab === "plan"} className={tab === "plan" ? "active" : ""} onClick={() => setTab("plan")}>
-                  Plan<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : children.every(complete) ? "ok" : ""}`}>
-                    {children.filter(complete).length}/{children.length}
-                  </span>
-                </button>
-              )}
-              <button role="tab" aria-selected={tab === "huddle"} className={tab === "huddle" ? "active" : ""} onClick={() => setTab("huddle")}>
-                Huddle{huddle && huddle.status !== "closed" && <span className={`tab-count${huddle.status === "live" ? " ok" : ""}`}>{members(huddle).length}</span>}
-                {huddle && huddle.status !== "closed" && !!huddle.forYou && (
-                  <span className="for-you-pill" title={`${huddle.forYou} ${huddle.forYou === 1 ? "message tags" : "messages tag"} you`}>{huddle.forYou}</span>
-                )}
-                {huddle?.status === "live" && huddle.participants.some((p) => p.status === "working") && <span className="dot" />}
-              </button>
-              {(ticket.worktree || inFolder) && (
-                <button role="tab" aria-selected={tab === "changes"} className={tab === "changes" ? "active" : ""} onClick={() => openTab("changes")}>
-                  Changes{!!diffState.diff?.files.length && <span className="tab-count">{diffState.diff.files.length}</span>}
-                </button>
-              )}
-              <button role="tab" aria-selected={tab === "outputs"} className={tab === "outputs" ? "active" : ""} onClick={() => openTab("outputs")}>
-                Outputs{outputCount + links.length > 0 && <span className="tab-count">{outputCount + links.length}</span>}
-              </button>
-              <button role="tab" aria-selected={tab === "usage"} className={tab === "usage" ? "active" : ""} onClick={() => openTab("usage")}>
-                Usage{usage && hasUsage && usage.totals.pctCurrentWindow !== null && <span className="tab-count">{approxPct(usage.totals.pctCurrentWindow).replace(" ", "")}</span>}
-              </button>
             </nav>
+            {tabSheet && (
+              <MoreSheet label="More tabs" onClose={() => setTabSheet(false)}
+                items={barTabs.more.map((t) => ({ label: tabName[t], onSelect: () => { setTabSheet(false); openTab(t); } }))} />
+            )}
             {tab === "ticket" ? (
               <div className={`panel-ticket ${editing ? "editing" : ""}`}>{details}</div>
             ) : tab === "plan" ? (

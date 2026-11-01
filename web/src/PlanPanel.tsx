@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, COLUMNS, type Ticket } from "./api";
 import { DeviceChips } from "./Needs";
-import { checkInsText, complete, planFinished } from "./planText";
+import { checkInsText, complete, finishedLabel, planFinished, waitPhrase } from "./planText";
 
 export { complete, planFinished };
 
@@ -76,6 +76,8 @@ export function PlanPanel({ slug, ticket, children, onOpenTicket, onError, onMov
   const cap = live ? plan!.maxConcurrent : draftCap;
   const [label, tone] = stateOf(plan);
   const finished = planFinished(children);
+  // Children only the user can move on (questions, a proposal, Planning): what a stuck plan waits for.
+  const waiting = children.filter((c) => c.userWait && !complete(c) && !c.running && c.status !== "in_progress");
   const titleOf = (ref: string) => children.find((c) => c.id === ref || c.planKey === ref)?.title ?? ref;
   return (
     <section className="plan-panel">
@@ -88,6 +90,16 @@ export function PlanPanel({ slug, ticket, children, onOpenTicket, onError, onMov
         </span>
         <span className="muted small">{done}/{children.length} done</span>
       </div>
+      {!finished && plan?.state === "stuck" && waiting.length > 0 && (
+        <div className="plan-waiting" role="status">
+          {waiting.map((c) => (
+            <div key={c.id} className="plan-waiting-row">
+              <span>Waiting on you: <b>{c.title}</b> {waitPhrase(c.userWait!)}</span>
+              <button className="btn primary small" onClick={() => onOpenTicket(c.id)}>Open</button>
+            </div>
+          ))}
+        </div>
+      )}
       {!finished && plan?.state === "stuck" && plan.reason && <p className="field-help plan-reason">{plan.reason}</p>}
       {finished ? (
         <PlanFinished ticket={ticket} total={children.length} onMoveToDone={onMoveToDone} onAddMore={onAddMore} />
@@ -136,7 +148,7 @@ export function PlanPanel({ slug, ticket, children, onOpenTicket, onError, onMov
                 <span className="badge wait" title={c.userWait}>Needs you</span>
               ) : (
                 <span className={`badge ${complete(c) ? "ok" : c.outcome === "failed" ? "failed" : c.outcome === "blocked" || c.outcome === "needs_input" ? "blocked" : ""}`}>
-                  {complete(c) ? "Done" : COLUMNS.find((x) => x.id === c.status)?.label ?? c.status}
+                  {complete(c) ? finishedLabel(c) : COLUMNS.find((x) => x.id === c.status)?.label ?? c.status}
                 </span>
               )}
             </li>

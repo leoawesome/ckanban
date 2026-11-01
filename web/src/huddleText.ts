@@ -450,3 +450,19 @@ export function handInStatus(x: HandInLike): string {
   const n = x.conflicts?.length ?? 0;
   return `Not brought in: the ticket's folder also changed ${n === 1 ? "this file" : `these ${n} files`} (${(x.conflicts ?? []).join(", ")}). Nothing was changed; the helper redoes it on a fresh copy.`;
 }
+
+/** How long a quiet huddle (nobody working, no open tag or finding) sits before the board asks "Finished?". */
+export const IDLE_HUDDLE_MS = 2 * 3600_000;
+
+/**
+ * A live huddle that looks finished: quiet for IDLE_HUDDLE_MS. It then asks "Finished? Close huddle / Keep open" and
+ * stops counting as live in the header. keptAt: the idleSince the user pressed Keep open at; new activity moves
+ * idleSince on, so the question comes back once it goes quiet again.
+ */
+export function huddleIdle(
+  h: { status: string; quiet?: boolean; idleSince?: string | null }, now = Date.now(), keptAt?: string | null,
+): boolean {
+  if (h.status !== "live" || !h.quiet || !h.idleSince) return false;
+  if (keptAt && keptAt === h.idleSince) return false;
+  return now - Date.parse(h.idleSince) >= IDLE_HUDDLE_MS;
+}
