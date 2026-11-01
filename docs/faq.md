@@ -16,7 +16,7 @@ The board runs at http://localhost:7777 and listens on `127.0.0.1` only, so othe
 
 ### How does phone access work, and who else can get in?
 
-Phone access is off until you turn it on with `ckanban remote on` (or **⋯ → Phone access**) on the Mac. It uses `tailscale serve`, which only devices signed in to your own Tailscale network can reach (never Tailscale Funnel, never the public internet), and the board only accepts the Tailscale login that turned it on. `ckanban remote off` turns it off again, and board runs can't change it.
+Phone access is off until you turn it on with `ckanban remote on` (or **⋯ → Phone access**) on the Mac. It uses `tailscale serve`, which only devices signed in to your own Tailscale network can reach (never Tailscale Funnel, never the public internet), and the board only accepts the Tailscale login that turned it on. `ckanban remote off` turns it off again. The board's button refuses Claude's runs, but runs can run any command on your Mac, so they could turn it on from the terminal; even then only your own Tailscale login gets in.
 
 ### Where is my data kept?
 

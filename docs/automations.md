@@ -14,7 +14,7 @@ A board pass is one of:
 
 claude.ai connectors (Gmail, Google Docs…) keep their sign-in at claude.ai, so the board can't use it. For such a service, add it for automations with its own sign-in or a key.
 
-Sign-ins and keys are kept in `~/.claude-kanban/automation-passes.json`, readable by you only, and are never shown in the board. They are not given to board runs, but any program running as you on this Mac could read that file, so prefer keys that can only read.
+Sign-ins and keys are kept in `~/.claude-kanban/automation-passes.json`, readable by you only, and are never shown in the board. Board runs don't get them directly, but a run can test a check script, which runs with the board's connections and keys, and any program running as you on this Mac could read that file. So prefer keys that can only read.
 
 ## Set one up with Claude
 
@@ -40,7 +40,7 @@ Open **⋯ → Automations** and press **Set up with Claude**. A Planning chat o
 - Checks run only while ckanban runs. After a failed check it waits 2, 4, 8 ... minutes (at most 30); a rate limit is waited out. **Check now** checks at once.
 - **Last check found** shows what the last check saw and what became a ticket.
 - The script is pinned when you save: if its file changes afterwards, it doesn't run and the automation says *Script changed, review it*. Save it again to run the new version.
-- The first check after a save also notes which tools the script called; from then on it may only call those. Save again to allow more.
+- The first check after a save also notes which tools the script called; from then on it may only call those. To allow more, change the script and save it.
 - A check runs with a 60 second limit, at most 1 MB of output and 500 items, and only the keys its own connections give it. It runs on this Mac in the board's folder and can run any command you could, so read a script before you save it.
 - Only you save, change or delete automations and connections, from the board in your browser: a board run, a check script, the board's terminal or any other program can't, with or without its run header (the board checks that the request comes from a web browser it didn't start, not run headless or remote-controlled, with the board's own page as its origin). This stops runs and scripts from saving by themselves; it isn't a wall against code running as you, which could also change the board's data folder directly.
 - One check makes at most 20 tickets; more new items come with the next checks. A check whose pipe fails (for example a failed `ckanban call | jq`) fails, instead of reading as "nothing found".

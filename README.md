@@ -109,7 +109,7 @@ Runs use `--permission-mode bypassPermissions`: Claude can execute any command i
 
 The server binds to `127.0.0.1` only and rejects requests with a non-localhost `Host` or cross-site `Origin`, so other websites cannot drive it.
 
-Phone access (`ckanban remote on`) uses `tailscale serve`, which reaches only devices on your tailnet (never Tailscale Funnel, never public). Serve points at a separate loopback port (the board port + 1) where every request is treated as coming from the tailnet: it must use the `*.ts.net` name and come from the Tailscale login that turned it on (the `Tailscale-User-Login` header `tailscale serve` sets). Phone access can only be turned on or off on the Mac, and board runs can't change it. `ckanban remote off` turns it off again.
+Phone access (`ckanban remote on`) uses `tailscale serve`, which reaches only devices on your tailnet (never Tailscale Funnel, never public). Serve points at a separate loopback port (the board port + 1) where every request is treated as coming from the tailnet: it must use the `*.ts.net` name and come from the Tailscale login that turned it on (the `Tailscale-User-Login` header `tailscale serve` sets). Phone access can only be turned on or off on the Mac; the board's *Phone access* button refuses board runs, but runs have full access to your Mac, so they could still run `ckanban remote on`. Even then, only your own Tailscale login gets in. `ckanban remote off` turns it off again.
 
 ## FAQ
 
@@ -128,7 +128,7 @@ bun install && (cd web && bun install)
 bun run test           # server tests, files in parallel (use a fake claude binary)
 bun run build:web      # build the UI into web/dist
 bun run dev            # API + UI on :7777 from source
-cd web && bun run dev  # Vite dev server with /api proxy
+cd web && bun run dev  # Vite dev server with /api proxy (view only: changes need :7777)
 bun run build:bin      # standalone binaries in dist/ (UI embedded)
 ```
 
