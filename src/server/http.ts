@@ -259,6 +259,7 @@ export function createServer(deps: ServerDeps) {
   });
   const huddles = deps.huddles ?? new Huddles(store, board, bus, {
     claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude", learn: (slug, h, p, role, lessons) => void learner.addHuddleLessons(slug, h, p, role, lessons),
+    entries: (t) => (t.sessionId ? sessions.get(t.sessionId)?.entries : null) ?? [],
   });
   const quickChats = deps.quickChats ?? new QuickChats(store, bus, board, { claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude" });
   const snippets = new Snippets(store, bus);

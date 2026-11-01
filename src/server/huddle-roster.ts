@@ -27,6 +27,8 @@ export const RESERVED_HANDLES = new Set([MAIN_HANDLE, USER_HANDLE, "all", "syste
 export const NO_EDIT_TOOLS = "Edit,Write,NotebookEdit";
 /** Where a huddle's summary goes, relative to the host ticket's outputs folder: one per huddle, so rounds don't overwrite each other. */
 export const summaryFile = (hid: string) => `huddles/${hid}/summary.md`;
+/** The plan a plan review checks, written by the board when the huddle starts (see Huddles.create), same folder. */
+export const proposalFile = (hid: string) => `huddles/${hid}/proposal.md`;
 /** The single summary file older huddles wrote; still read for closed huddles that have no summary of their own. */
 export const LEGACY_SUMMARY_FILE = "huddle-summary.md";
 const MAX_COUNT = 8;

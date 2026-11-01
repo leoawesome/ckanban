@@ -47,12 +47,14 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, wr
 import { basename, dirname, join } from "node:path";
 import { summarizeEvent } from "./activity";
 import { mcpConfig } from "./agents";
-import { claudeSessionExists, type Board } from "./board";
+import { claudeSessionExists, claudeSessionFile, type Board } from "./board";
+import { planProposal } from "./plan-proposal";
+import { parseSession, type SessionEntry } from "./session";
 import type { Bus } from "./events";
 import { addWorktree, branchExists, hasCommits, NO_HOOKS, removeWorktree, run as git, worktreeDir } from "./git";
 import {
   activeHost, DEFAULT_MAX_PARTICIPANTS, handleBase, HUDDLE_AGENT_ENV, LEGACY_SUMMARY_FILE, MAIN_HANDLE, NO_EDIT_TOOLS, parseMentions, RESERVED_HANDLES,
-  REVIEW_HUDDLE_HEADING, reviewHuddleRequest, rosterEntryError, rosterError, summaryFile, USER_HANDLE, type RosterEntry,
+  proposalFile, REVIEW_HUDDLE_HEADING, reviewHuddleRequest, rosterEntryError, rosterError, summaryFile, USER_HANDLE, type RosterEntry,
 } from "./huddle-roster";
 import {
   BUILTIN_PRESETS, deletePreset, type HuddlePreset, type HuddlePresetView, MAIN_PRESET, mergePresets, presetName, savePreset,
@@ -242,6 +244,14 @@ export interface HuddleOptions {
    * lessons (learner.ts), not to the user, and are saved once they come back. Without it they are dropped.
    */
   learn?: (slug: string, h: Huddle, p: HuddleParticipant, role: string, lessons: LessonInput[]) => void;
+  /** The ticket's chat, for the plan a plan review checks (default: its session file, parsed). */
+  entries?: (t: Ticket) => SessionEntry[];
+}
+
+/** A ticket's chat entries read straight from its session file; [] when it has none. */
+function sessionEntries(t: Ticket): SessionEntry[] {
+  const f = t.sessionId ? claudeSessionFile(t.sessionId) : null;
+  return f ? parseSession(readFileSync(f, "utf8")).entries : [];
 }
 
 interface AgentRun {
@@ -1062,10 +1072,29 @@ export class Huddles {
     // Templates and auto huddles run with a host by default: their first lead.
     if (!h.host && (tpl || opts.auto || opts.byUser)) h.host = agents.find((p) => p.lead)?.handle ?? null;
     this.save(slug, h);
+    if (host.status === "planning") this.writeProposal(slug, h.id, host);
     this.bus.emit({ type: "huddle.updated", profile: slug, huddle: this.view(slug, h) });
     this.system(slug, h.id, `${opts.auto ? "Auto huddle" : "Huddle"} started on ticket ${hostId} "${host.title}"${opts.auto ? ` by its own run (${opts.auto.trigger ? `${opts.auto.trigger}: ` : ""}${opts.auto.reason})` : opts.byUser ? ` by its own session because the user asked in the chat (${opts.byUser.reason})` : ""}${tpl ? ` from template ${tpl.label}` : ""} with ${agents.map((p) => `@${p.handle} (${p.role})`).join(", ")}. ${h.host ? `@${h.host} hosts: it hands out the tasks, accepts the hand-ins and sends @main the final report.` : "@main coordinates."} Budget ${money(maxCostUsd)}${budgetNote}.`);
     for (const p of agents) this.kickoff(slug, h.id, p.handle);
     return this.get(slug, h.id);
+  }
+
+  /**
+   * A plan review reads the plan from a file, not the chat (see PLAN_REVIEW_READ): the latest proposed ticket and
+   * child tickets, or the ticket's own description. A failure to read the chat falls back to the description.
+   */
+  private writeProposal(slug: string, hid: string, host: Ticket): void {
+    let entries: SessionEntry[] = [];
+    try {
+      entries = (this.opts.entries ?? sessionEntries)(host);
+    } catch {}
+    try {
+      const file = join(this.store.outputsDir(slug, host.id), proposalFile(hid));
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, planProposal(host, entries));
+    } catch (e) {
+      console.error(`huddle ${hid}: couldn't write the plan for review:`, e);
+    }
   }
 
   // ---- Auto huddles: an unattended run reviews its own work before landing it (start_huddle) ----
@@ -2023,7 +2052,8 @@ export class Huddles {
     if (!p.sessionId) this.updateP(slug, hid, handle, { sessionId });
     const outputDir = this.store.huddleOutputsDir(slug, h.hostTicket, handle);
     const summary = join(this.store.outputsDir(slug, h.hostTicket), summaryFile(hid));
-    const system = huddleAgentSystemPrompt(h, p, host as Ticket, outputDir, dir, profile.baseBranch, this.lessonsFor(slug, p.preset), summary);
+    const plan = join(this.store.outputsDir(slug, h.hostTicket), proposalFile(hid));
+    const system = huddleAgentSystemPrompt(h, p, host as Ticket, outputDir, dir, profile.baseBranch, this.lessonsFor(slug, p.preset), summary, existsSync(plan) ? plan : undefined);
     const args = buildArgs(sessionId, resume, p.model ?? profile.model, p.canEdit ? [] : NO_EDIT_TOOLS.split(","), mcpConfig(), system);
     let lastWrite = 0;
     let started = resume;

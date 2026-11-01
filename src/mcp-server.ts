@@ -6,7 +6,7 @@ import {
 } from "./client";
 import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./server/huddle-presets";
 import { HUDDLE_AGENT_ENV, huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "./server/huddle-roster";
-import { BUILTIN_TEMPLATES, PLAN_REVIEW, templateLine } from "./server/huddle-templates";
+import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, PLAN_REVIEW, templateLine } from "./server/huddle-templates";
 import { CLAUDE_MESSAGE_GAP_MS, CLAUDE_MESSAGE_MAX, type MessageResult } from "./server/notify";
 import { normalizeTags } from "./server/tags";
 import { teammateProposal } from "./server/teammate-proposal";
@@ -935,7 +935,7 @@ const PLANNING_TOOLS: Tool[] = [
       "needs lists shared devices a ticket expects to use (e.g. [\"chrome-whatsapp\"]), as a hint: its run takes them only while it uses them, so don't chain dependsOn for them. " +
       "tags (e.g. [\"post\"]) label the tickets so the user can filter the board by them; give the tags the user uses for this kind of work. " +
       "important: true marks a ticket ⭐ Important (reviewed in an auto huddle before landing); use it, not a ⭐ in the title. " +
-      "Nothing is created by the call.",
+      `Nothing is created by the call. ${FRESH_HELPER_CHECK}`,
     inputSchema: {
       type: "object",
       properties: {

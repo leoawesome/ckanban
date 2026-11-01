@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BoardClient } from "../src/client";
 import { callTool, type ToolContext } from "../src/mcp-server";
@@ -7,7 +7,7 @@ import { Board, type ChatOptions } from "../src/server/board";
 import { Bus } from "../src/server/events";
 import { createServer } from "../src/server/http";
 import { AUTO_MAX_COST_USD, Huddles, summaryFile } from "../src/server/huddle";
-import { reviewHuddleRequest } from "../src/server/huddle-roster";
+import { proposalFile, reviewHuddleRequest } from "../src/server/huddle-roster";
 import { chatPrompt, firstRunPrompt, freshSessionPrompt, huddleMainPrompt, planningPrompt, resumePrompt } from "../src/server/prompts";
 import { Store } from "../src/server/store";
 import { autoHuddlesOn, type Profile, type Ticket } from "../src/server/types";
@@ -485,6 +485,42 @@ test("a huddle on a Planning ticket only reads, and its findings ask @main for a
   expect(prompt).toContain("Nobody edits the project here");
   expect(prompt).toContain("propose_ticket");
   expect(prompt).not.toContain("You may edit the code");
+});
+
+test("a plan review starts with the proposal file: latest proposed tickets, no chat text; else the description", async () => {
+  const t = await board.createTicket("p", { title: "Settings", body: "Plain description", status: "backlog" });
+  const sid = crypto.randomUUID();
+  store.updateTicket("p", t.id, { status: "planning", sessionId: sid });
+  const L = (o: unknown) => JSON.stringify(o);
+  const dir = join(process.env.CLAUDE_CONFIG_DIR!, "projects", "x");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${sid}.jsonl`), [
+    L({ type: "user", uuid: "u1", timestamp: "2026-11-01T00:00:00Z", message: { role: "user", content: "secret chat words" } }),
+    L({ type: "assistant", uuid: "a1", timestamp: "2026-11-01T00:00:01Z", message: { role: "assistant", content: [
+      { type: "text", text: "chatty reply" },
+      { type: "tool_use", id: "tu1", name: "mcp__ckanban__propose_tickets", input: { tickets: [
+        { key: "a", title: "Ticket A", description: "do A" }, { key: "b", title: "Ticket B: improve the settings", description: "improve", dependsOn: ["a"] },
+      ] } },
+      { type: "tool_use", id: "tu2", name: "mcp__ckanban__propose_tickets", input: { tickets: [{ key: "bad", title: "Failed call", description: "x" }] } },
+    ] } }),
+    L({ type: "user", uuid: "u2", timestamp: "2026-11-01T00:00:02Z", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu2", is_error: true, content: "nope" }] } }),
+  ].join("\n"));
+  const h = huddles.create("p", t.id, [], { template: "plan-review" });
+  const md = readFileSync(join(store.outputsDir("p", t.id), proposalFile(h.id)), "utf8");
+  expect(md).toContain("## Child ticket b: Ticket B: improve the settings");
+  expect(md).toContain("Depends on: a");
+  expect(md).not.toContain("Failed call");
+  expect(md).not.toContain("secret chat words");
+  expect(md).not.toContain("chatty reply");
+  huddles.close("p", h.id);
+
+  // No proposal in the chat: the ticket's own title and description.
+  const u = await board.createTicket("p", { title: "Bare", body: "Only the description", status: "backlog" });
+  store.updateTicket("p", u.id, { status: "planning" });
+  const h2 = huddles.create("p", u.id, [], { template: "plan-review" });
+  const md2 = readFileSync(join(store.outputsDir("p", u.id), proposalFile(h2.id)), "utf8");
+  expect(md2).toContain("## Ticket: Bare");
+  expect(md2).toContain("Only the description");
 });
 
 test("the UI asks before a run and the user's huddle work the same ticket at once", async () => {

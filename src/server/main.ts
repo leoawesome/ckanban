@@ -77,6 +77,7 @@ export async function startDaemon(): Promise<void> {
   });
   const huddles = new Huddles(store, board, bus, {
     claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude", learn: (slug, h, p, role, lessons) => void learner.addHuddleLessons(slug, h, p, role, lessons),
+    entries: (t) => (t.sessionId ? sessions.get(t.sessionId)?.entries : null) ?? [],
   });
   const quickChats = new QuickChats(store, bus, board, { claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude" });
   // launchd (KeepAlive) starts the daemon again once it exits.
