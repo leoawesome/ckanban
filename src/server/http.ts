@@ -958,6 +958,7 @@ export function createServer(deps: ServerDeps) {
           maxParallel: Math.max(1, Number(b.maxParallel) || DEFAULT_MAX_PARALLEL),
           model: b.model || null,
           ...(b.effort ? { effort: String(b.effort) } : {}),
+          ...(b.ultracode === true ? { ultracode: true } : {}),
           createdAt: nowIso(),
           ...(b.workspace !== undefined ? { workspace: workspaceValue(b.workspace) } : {}),
         };
@@ -985,6 +986,12 @@ export function createServer(deps: ServerDeps) {
         if (b.effort !== undefined) {
           if (b.effort && !validEffort(String(b.effort))) throw new HttpError(400, `"${b.effort}" is not an effort level. Use ${EFFORT_HELP}.`);
           next.effort = b.effort || null;
+        }
+        if (b.ultracode !== undefined) {
+          if (typeof b.ultracode !== "boolean") throw new HttpError(400, "ultracode must be true or false");
+          next.ultracode = b.ultracode;
+          // The first version saved ultracode as the effort level: switching it separately keeps that level (xhigh).
+          if (next.effort === "ultracode") next.effort = "xhigh";
         }
         if (b.copyFiles !== undefined) {
           if (!Array.isArray(b.copyFiles)) throw new HttpError(400, "copyFiles must be a list of paths");
@@ -1453,8 +1460,14 @@ export function createServer(deps: ServerDeps) {
           patch.runCapUsd = capValue(b.runCapUsd, true);
         }
         // Model and effort for this ticket's runs: a name, or null for the board's. Only the user sets them.
-        if (b.model !== undefined || b.effort !== undefined) {
+        if (b.model !== undefined || b.effort !== undefined || b.ultracode !== undefined) {
           if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "only the user can change a ticket's model or effort");
+        }
+        // Ultracode for this ticket's runs: on, off, or null for the board's.
+        if (b.ultracode !== undefined) {
+          if (b.ultracode !== null && typeof b.ultracode !== "boolean") throw new HttpError(400, "ultracode must be true, false or null");
+          patch.ultracode = b.ultracode;
+          if (target.effort === "ultracode" && b.effort === undefined) patch.effort = "xhigh";
         }
         if (b.model !== undefined) {
           if (b.model !== null && !(typeof b.model === "string" && validModel(b.model))) throw new HttpError(400, `"${b.model}" is not a model name. Use ${MODEL_HELP}.`);

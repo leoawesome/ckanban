@@ -1,10 +1,10 @@
-// Workflows (the Workflow tool, ultracode): reading their files into the chat block, the ultracode effort level,
+// Workflows (the Workflow tool, ultracode): reading their files into the chat block, the ultracode switch,
 // stopping one, and the spending cap counting their helper agents.
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Board, WORKFLOW_STOPPED_TEXT } from "../src/server/board";
-import { EFFORTS, runEffort, validEffort } from "../src/server/commands";
+import { EFFORTS, runOptions, validEffort } from "../src/server/commands";
 import { buildArgs } from "../src/server/runner";
 import { parseSession, SessionCache } from "../src/server/session";
 import {
@@ -183,35 +183,71 @@ test("workflowDirCost adds up every agent transcript in the folder; a missing fo
   expect(new WorkflowCache().version(f.file)).not.toBe("");
 });
 
-test("ultracode is an effort level; only a ticket's own work gets it, Planning and quick chats get xhigh", () => {
-  expect(EFFORTS).toContain("ultracode");
-  expect(validEffort("ultracode")).toBe(true);
-  expect(runEffort("ultracode", true)).toBe("ultracode");
-  expect(runEffort("ultracode", false)).toBe("xhigh");
-  expect(runEffort("high", false)).toBe("high");
-  expect(runEffort(null, true)).toBeNull();
-  expect(buildArgs("s", false, null, [], undefined, undefined, null, "ultracode").join(" ")).toContain("--effort ultracode");
+const ULTRA = `--settings ${JSON.stringify({ ultracode: true })}`;
+
+test("ultracode is its own switch next to the effort level; only a ticket's own work turns it on", () => {
+  expect(EFFORTS).not.toContain("ultracode");
+  expect(validEffort("ultracode")).toBe(false);
+  // Any level with ultracode on, the ticket over the board.
+  expect(runOptions({ effort: "medium", ultracode: true }, null, true)).toEqual({ effort: "medium", ultracode: true });
+  expect(runOptions({ effort: null, ultracode: null }, { effort: "high", ultracode: true }, true)).toEqual({ effort: "high", ultracode: true });
+  expect(runOptions({ ultracode: false }, { ultracode: true }, true).ultracode).toBe(false);
+  // Planning and quick chats: never.
+  expect(runOptions({ effort: "medium", ultracode: true }, null, false)).toEqual({ effort: "medium", ultracode: false });
+  // The first version saved "ultracode" as the effort: xhigh with ultracode on.
+  expect(runOptions({ effort: "ultracode" }, null, true)).toEqual({ effort: "xhigh", ultracode: true });
+  expect(runOptions(null, { effort: "ultracode" }, false)).toEqual({ effort: "xhigh", ultracode: false });
+  const args = buildArgs("s", false, null, [], undefined, undefined, null, "medium", true).join(" ");
+  expect(args).toContain("--effort medium");
+  expect(args).toContain(ULTRA);
+  expect(buildArgs("s", false, null, [], undefined, undefined, null, "medium").join(" ")).not.toContain("--settings");
 });
 
-test("/effort ultracode on a ticket: its work runs start with --effort ultracode, its Planning chat with xhigh", async () => {
+test("/effort medium + /effort ultracode: work runs get both, Planning chats only the effort; /effort ultracode off and default", async () => {
   await setup();
   const t = await board.createTicket("p", { title: "Big audit", body: "audit", status: "backlog", mode: "auto" });
+  await board.chat("p", t.id, "/effort medium");
   await board.chat("p", t.id, "/effort ultracode");
   await board.whenIdle();
-  expect(store.getTicket("p", t.id)!.effort).toBe("ultracode");
+  expect(store.getTicket("p", t.id)).toMatchObject({ effort: "medium", ultracode: true });
+  expect(store.getTicket("p", t.id)!.notice).toStartWith("Ultracode on for this ticket");
+  await board.chat("p", t.id, "/effort");
+  expect(store.getTicket("p", t.id)!.notice).toStartWith("This ticket uses effort medium, ultracode on.");
   await board.updateTicket("p", t.id, { status: "ready" });
   await board.whenIdle();
   const work = readArgs().at(-1)!.args.join(" ");
-  expect(work).toContain("--effort ultracode");
+  expect(work).toContain("--effort medium");
+  expect(work).toContain(ULTRA);
 
+  await board.chat("p", t.id, "/effort ultracode off");
+  expect(store.getTicket("p", t.id)).toMatchObject({ effort: "medium", ultracode: false });
+  await board.chat("p", t.id, "/effort default");
+  expect(store.getTicket("p", t.id)).toMatchObject({ effort: null, ultracode: null });
+
+  // A board with ultracode on: its Planning chats keep the effort but never get ultracode.
   const p2 = store.getProfile("p")!;
-  store.saveProfile({ ...p2, effort: "ultracode" });
+  store.saveProfile({ ...p2, effort: "low", ultracode: true });
   const plan = await board.createTicket("p", { title: "Plan it", body: "x", status: "planning" });
   await board.whenIdle();
   const last = readArgs().at(-1)!;
   expect(last.prompt).toContain("Plan it");
-  expect(last.args.join(" ")).toContain("--effort xhigh");
+  expect(last.args.join(" ")).toContain("--effort low");
+  expect(last.args.join(" ")).not.toContain("--settings");
   expect(store.getTicket("p", plan.id)!.status).toBe("planning");
+});
+
+test("the first version's /effort ultracode (saved as the effort) still runs as xhigh with ultracode on", async () => {
+  await setup();
+  const t = await board.createTicket("p", { title: "Old", body: "x", status: "backlog", mode: "auto" });
+  store.updateTicket("p", t.id, { effort: "ultracode" });
+  await board.updateTicket("p", t.id, { status: "ready" });
+  await board.whenIdle();
+  const work = readArgs().at(-1)!.args.join(" ");
+  expect(work).toContain("--effort xhigh");
+  expect(work).toContain(ULTRA);
+  // Picking a level keeps ultracode on.
+  await board.chat("p", t.id, "/effort medium");
+  expect(store.getTicket("p", t.id)).toMatchObject({ effort: "medium", ultracode: true });
 });
 
 test("a capped run stops once its workflow's helper agents push it past the cap, and says so", async () => {

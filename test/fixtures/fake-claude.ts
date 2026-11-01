@@ -221,6 +221,8 @@ if (mode === "workflow" || mode === "workflow-nostop") {
       emit({ type: "control_response", response: ok ? { subtype: "success", request_id: stop.request_id } : { subtype: "error", request_id: stop.request_id, error: "stop_task: not supported" } });
       if (ok) {
         end = "killed";
+        // Like the real CLI, the run goes on a moment after the stop (the host's note about it can still arrive).
+        await Bun.sleep(100);
         break;
       }
     }

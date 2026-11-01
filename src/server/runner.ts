@@ -66,6 +66,8 @@ export function buildArgs(
   maxBudgetUsd?: number | null,
   /** Reasoning effort (--effort): low, medium, high, xhigh or max. */
   effort?: string | null,
+  /** Ultracode on for this session (the `ultracode` settings key): a workflow for every substantial task. */
+  ultracode = false,
 ): string[] {
   // Prompts go in on stdin (see startRun) so more messages can follow while Claude works;
   // --replay-user-messages echoes each one back when Claude picks it up.
@@ -76,6 +78,7 @@ export function buildArgs(
   args.push(resume ? "--resume" : "--session-id", sessionId);
   if (model) args.push("--model", model);
   if (effort) args.push("--effort", effort);
+  if (ultracode) args.push("--settings", JSON.stringify({ ultracode: true }));
   if (mcp) args.push("--mcp-config", mcp);
   if (systemPrompt) args.push("--append-system-prompt", systemPrompt);
   if (maxBudgetUsd) args.push("--max-budget-usd", String(maxBudgetUsd));

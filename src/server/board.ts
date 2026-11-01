@@ -34,7 +34,7 @@ import { AUTO_CONTINUE_PER_DAY, clockTime, CONTINUE_TEXT, dayKey, limitMessage, 
 import { DraftTracker } from "./draft";
 import { buildArgs, DEFAULT_STALL_MINUTES, PLANNING_DISALLOWED_TOOLS, startRun, type RunHandle } from "./runner";
 import { RETRY_DELAY_MS, RETRY_TEXT, transientError } from "./retry";
-import { BOARD_COMMANDS, commandText, EFFORT_HELP, runEffort, validEffort, listCommands, MODEL_HELP, parseSlash, REFUSED_COMMANDS, rememberInit, slashMessage, useBundledFile, validModel, type SlashCommand } from "./commands";
+import { BOARD_COMMANDS, commandText, EFFORT_HELP, runOptions, ultracodeOn, validEffort, listCommands, MODEL_HELP, parseSlash, REFUSED_COMMANDS, rememberInit, slashMessage, useBundledFile, validModel, type SlashCommand } from "./commands";
 import { mcpConfig } from "./agents";
 import type { OwnedSession } from "./shell";
 import type { Store } from "./store";
@@ -635,14 +635,38 @@ export class Board {
     }
     if (name === "effort") {
       const profile = this.store.getProfile(slug)!;
-      const fallback = profile.effort ? `the board's effort (${profile.effort})` : "Claude Code's default effort";
+      const level = (e: string | null | undefined) => (e === "ultracode" ? "xhigh" : e || null);
+      const boardUltra = !!runOptions(null, profile, true).ultracode;
+      const fallback = level(profile.effort) ? `the board's effort (${level(profile.effort)})` : "Claude Code's default effort";
+      const ultraText = (on: boolean) => (on ? ", ultracode on" : "");
+      const when = this.isRunning(slug, id) ? "from the next run (the current one keeps its settings)" : "from the next run";
       if (!args) {
-        return this.patch(slug, id, { notice: t.effort ? `This ticket uses effort ${t.effort}. Change it with /effort <level>, or /effort default.` : `This ticket uses ${fallback}. Change it with /effort <level>, e.g. /effort high.` });
+        const mine = level(t.effort);
+        const ultra = ultracodeOn(t, profile);
+        return this.patch(slug, id, {
+          notice: `${mine ? `This ticket uses effort ${mine}` : `This ticket uses ${fallback}`}${ultraText(ultra)}. Change it with /effort <level>, /effort ultracode (on or off), or /effort default.`,
+        });
+      }
+      const words = args.toLowerCase().split(/\s+/);
+      // Ultracode is a switch next to the effort level, like Claude Code's: /effort ultracode, /effort ultracode off.
+      if (words[0] === "ultracode") {
+        const on = words[1] !== "off";
+        // The first version saved ultracode as the effort level: keep its level (xhigh) when switching it separately.
+        const effort = t.effort === "ultracode" ? "xhigh" : t.effort;
+        return this.patch(slug, id, {
+          ultracode: on, effort: effort ?? null,
+          notice: `Ultracode ${on ? "on" : "off"} for this ticket, ${when}.${on ? " Claude runs a workflow of helper agents for every substantial task, which uses much more of your plan." : ""}`,
+        });
       }
       const reset = args === "default" || args === "reset";
       if (!reset && !validEffort(args)) throw new Error(`"${args}" is not an effort level. Use ${EFFORT_HELP}.`);
-      const when = this.isRunning(slug, id) ? "from the next run (the current one keeps its effort)" : "from the next run";
-      return this.patch(slug, id, { effort: reset ? null : args, notice: reset ? `Effort reset: this ticket uses ${fallback} ${when}.` : `Effort set to ${args} for this ticket, ${when}.` });
+      if (reset) {
+        return this.patch(slug, id, { effort: null, ultracode: null, notice: `Effort reset: this ticket uses ${fallback}${ultraText(boardUltra)} ${when}.` });
+      }
+      // A level set over the old "ultracode" effort keeps ultracode on.
+      const keep = t.effort === "ultracode" && t.ultracode == null ? { ultracode: true } : {};
+      const ultra = ultracodeOn({ ...t, ...keep, effort: args }, profile);
+      return this.patch(slug, id, { effort: args, ...keep, notice: `Effort set to ${args}${ultraText(ultra)} for this ticket, ${when}.` });
     }
     return t;
   }
@@ -941,10 +965,11 @@ export class Board {
     // Marks where this run starts in the log and what it was (the Usage tab lists runs by kind).
     // A resumed attempt (retry, stall restart) continues the same run in the log.
     if (!resumeText) this.store.appendActivity(slug, id, runNo, { type: "ckanban_run", kind: refine ? "planning" : quiet ? "reply" : run.chat?.followUp ? "follow-up" : run.chat ? "chat" : "work" });
+    const effortNow = runOptions(t, profile, !refine);
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: session.dir,
-      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, refine ? PLANNING_DISALLOWED_TOOLS : [], mcpConfig(), systemPrompt, cap, runEffort(t.effort ?? profile.effort, !refine)),
+      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, refine ? PLANNING_DISALLOWED_TOOLS : [], mcpConfig(), systemPrompt, cap, effortNow.effort, effortNow.ultracode),
       input: prompt,
       inputLocal: run.chat?.slash === "local" && !resume,
       planning: refine,
@@ -1681,7 +1706,7 @@ export class Board {
   async updateTicket(
     slug: string,
     id: string,
-    patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "dependsOn" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort">> & {
+    patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "dependsOn" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode">> & {
       expectedBody?: string;
       /** null: take the ticket out of its plan (only clearing is allowed here; adoptTickets sets it). */
       parentId?: null;
@@ -1705,6 +1730,7 @@ export class Board {
     if (patch.runCapUsd !== undefined) clean.runCapUsd = patch.runCapUsd;
     if (patch.model !== undefined) clean.model = patch.model;
     if (patch.effort !== undefined) clean.effort = patch.effort;
+    if (patch.ultracode !== undefined) clean.ultracode = patch.ultracode;
     if (patch.needs !== undefined) clean.needs = normalizeNeeds(patch.needs);
     if (patch.tags !== undefined) clean.tags = normalizeTags(patch.tags);
     if (patch.suggestedTags !== undefined || patch.tags !== undefined) {

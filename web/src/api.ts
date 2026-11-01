@@ -201,6 +201,8 @@ export interface Profile {
   maxParallel: number;
   model?: string | null;
   effort?: string | null;
+  /** Ultracode by default: tickets' work runs plan a workflow of helper agents for every substantial task. */
+  ultracode?: boolean;
   createdAt: string;
   /** Git-ignored files copied into each new worktree (paths or globs relative to the folder). */
   copyFiles?: string[];
@@ -285,6 +287,8 @@ export interface Ticket {
   model?: string | null;
   /** Reasoning effort set for this ticket (overrides the board's). */
   effort?: string | null;
+  /** Ultracode for this ticket (true/false), or null for the board's. */
+  ultracode?: boolean | null;
   /** Created by this schedule. */
   scheduleId?: string | null;
   /** Created by this one-time scheduled job. */
@@ -1290,7 +1294,7 @@ export const api = {
   reportBug: (input: { title: string; description: string; include: BugBlockId[]; profile?: string; ticketId?: string }) =>
     req<BugReportResult>("POST", "/api/bug-report", { ...input, source: "ui" }),
   profiles: () => req<Profile[]>("GET", "/api/profiles"),
-  createProfile: (p: { name: string; path: string; maxParallel?: number; model?: string; effort?: string; baseBranch?: string; workspace?: Workspace }) =>
+  createProfile: (p: { name: string; path: string; maxParallel?: number; model?: string; effort?: string; ultracode?: boolean; baseBranch?: string; workspace?: Workspace }) =>
     req<Profile>("POST", "/api/profiles", p),
   updateProfile: (slug: string, p: Partial<Profile>) => req<Profile>("PATCH", `/api/profiles/${slug}`, p),
   deleteProfile: (slug: string) => req<void>("DELETE", `/api/profiles/${slug}`),
@@ -1426,7 +1430,7 @@ export const api = {
   }) => req<Ticket>("POST", t(slug), input),
   plan: (slug: string, id: string, action: "start" | "pause" | "resume" | "done" | "concurrency", maxConcurrent?: number) =>
     req<Ticket>("POST", `${t(slug, id)}/plan`, { action, maxConcurrent }),
-  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort">> & { expectedBody?: string }) =>
+  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode">> & { expectedBody?: string }) =>
     req<Ticket>("PATCH", t(slug, id), patch),
   deleteTicket: (slug: string, id: string) => req<void>("DELETE", t(slug, id)),
   /** Part of parent's family (null unlinks). */

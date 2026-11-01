@@ -33,7 +33,9 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const maxParallelError = /^\d+$/.test(maxParallelText.trim()) && maxParallel >= 1 && maxParallel <= 20 ? null : "A whole number from 1 to 20";
   const [saving, setSaving] = useState(false);
   const [model, setModel] = useState(profile?.model ?? "");
-  const [effort, setEffort] = useState(profile?.effort ?? "");
+  // "ultracode" saved as the effort (the first version): xhigh with the Ultracode switch on.
+  const [effort, setEffort] = useState(profile?.effort === "ultracode" ? "xhigh" : profile?.effort ?? "");
+  const [ultracode, setUltracode] = useState(!!profile?.ultracode || profile?.effort === "ultracode");
   const [autoHuddles, setAutoHuddles] = useState(profile?.autoHuddles !== false);
   const [keepAwake, setKeepAwake] = useState(profile?.keepAwake !== false);
   const [capText, setCapText] = useState(capInputText(profile?.runCapUsd));
@@ -104,12 +106,12 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
     try {
       const p = profile
         ? await api.updateProfile(profile.slug, {
-          name, path, maxParallel, model: model || null, effort: effort || null, autoHuddles, keepAwake, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
+          name, path, maxParallel, model: model || null, effort: effort || null, ultracode, autoHuddles, keepAwake, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
           // A file typed but not yet added with Enter still counts.
           copyFiles: newFile.trim() && !copyFiles.includes(newFile.trim()) ? [...copyFiles, newFile.trim()] : copyFiles,
           setupCommand: setupCommand.trim(), cleanupCommand: cleanupCommand.trim(), setupDetected: detected,
         })
-        : await api.createProfile({ name, path, maxParallel, model: model || undefined, effort: effort || undefined, workspace });
+        : await api.createProfile({ name, path, maxParallel, model: model || undefined, effort: effort || undefined, ultracode: ultracode || undefined, workspace });
       onSaved(p);
     } catch (e: any) {
       setErr(e.message);
@@ -261,6 +263,15 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               options={[{ value: "", label: "Claude default" }, ...EFFORTS.map((e) => ({ value: e, label: e }))]}
             />
             <span className="muted small">Tickets can override both. Changes apply from the next run.</span>
+          </label>
+          <label className="check-row board-switch ultracode-row">
+            <input type="checkbox" checked={ultracode} onChange={(e) => setUltracode(e.target.checked)} />
+            <span>
+              Ultracode
+              <span className="muted small">
+                At any effort level, Claude runs a workflow of helper agents for every big task. More thorough, but it uses much more of your plan.
+              </span>
+            </span>
           </label>
         </div>
         </>}

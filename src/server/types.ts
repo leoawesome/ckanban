@@ -20,6 +20,8 @@ export interface Profile {
   model?: string | null;
   /** Default reasoning effort (low, medium, high, xhigh, max); empty: Claude's own. */
   effort?: string | null;
+  /** Ultracode by default: tickets' work runs plan a workflow (many helper agents) for every substantial task. */
+  ultracode?: boolean;
   createdAt: string;
   /** Git-ignored files (paths or globs relative to the board folder) copied into each new worktree. */
   copyFiles?: string[];
@@ -159,6 +161,8 @@ export interface Ticket {
   model?: string | null;
   /** Reasoning effort for this ticket's runs, set with /effort in its chat; overrides the board's effort. */
   effort?: string | null;
+  /** Ultracode for this ticket's work runs (/effort ultracode, or the Ultracode chip); null: the board's. */
+  ultracode?: boolean | null;
   /** Set on tickets created by a schedule (see Schedule). */
   scheduleId?: string | null;
   /** Set on tickets created by a one-time scheduled job (see Job). */

@@ -64,26 +64,37 @@ export function validModel(name: string): boolean {
   return MODEL_ALIASES.includes(base) || /^claude-[a-z0-9][a-z0-9.-]*$/.test(base);
 }
 
-/**
- * Reasoning effort levels `claude --effort` takes. ultracode is xhigh plus workflows: Claude runs many helper agents
- * for every substantial task (much more of the plan's usage).
- */
-export const EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultracode"] as const;
+/** Reasoning effort levels `claude --effort` takes. */
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 /**
- * The --effort a run gets. Only a ticket's own work runs workflows: Planning chats and quick chats get ultracode's
- * effort (xhigh) without them.
+ * Effort and ultracode for a run. Ultracode is its own switch, like in Claude Code: at any effort level, Claude runs a
+ * workflow (many helper agents) for every substantial task. The ticket's settings win over the board's. Only a
+ * ticket's own work turns it on; Planning chats and quick chats never start workflows.
+ * "ultracode" saved as the effort (how the first version stored it) reads as xhigh with ultracode on.
  */
-export function runEffort(effort: string | null | undefined, workflows: boolean): string | null {
-  if (!effort) return null;
-  return effort === "ultracode" && !workflows ? "xhigh" : effort;
+export function runOptions(
+  t: { effort?: string | null; ultracode?: boolean | null } | null,
+  p: { effort?: string | null; ultracode?: boolean | null } | null | undefined,
+  workflows: boolean,
+): { effort: string | null; ultracode: boolean } {
+  const level = (e: string | null | undefined) => (e === "ultracode" ? "xhigh" : e || null);
+  const legacy = (e: string | null | undefined) => (e === "ultracode" ? true : undefined);
+  const effort = level(t?.effort) ?? level(p?.effort);
+  const on = t?.ultracode ?? legacy(t?.effort) ?? p?.ultracode ?? legacy(p?.effort) ?? false;
+  return { effort, ultracode: workflows && on };
+}
+
+/** Ultracode for a ticket as it stands (its own switch, else the board's). */
+export function ultracodeOn(t: { effort?: string | null; ultracode?: boolean | null }, p: { effort?: string | null; ultracode?: boolean | null } | null | undefined): boolean {
+  return runOptions(t, p, true).ultracode;
 }
 
 export function validEffort(name: string): boolean {
   return (EFFORTS as readonly string[]).includes(name);
 }
 
-export const EFFORT_HELP = `${EFFORTS.join(", ")}, or default`;
+export const EFFORT_HELP = `${EFFORTS.join(", ")}, or default (turn ultracode on or off with /effort ultracode, /effort ultracode off)`;
 
 export const MODEL_HELP = `${MODEL_ALIASES.join(", ")}, a full model id (claude-…), or default`;
 

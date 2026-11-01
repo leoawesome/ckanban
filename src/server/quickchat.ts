@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { summarizeEvent } from "./activity";
-import { runEffort } from "./commands";
+import { runOptions } from "./commands";
 import { mcpConfig } from "./agents";
 import { localizeAttachments } from "./attachments";
 import { claudeSessionExists, sessionMissing, type Board } from "./board";
@@ -265,7 +265,7 @@ export class QuickChats {
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: profile.path,
-      args: buildArgs(c.sessionId, resume, profile.model, [], (this.opts.mcp ?? (() => mcpConfig()))(), quickChatNote(profile), null, runEffort(profile.effort, false)),
+      args: buildArgs(c.sessionId, resume, profile.model, [], (this.opts.mcp ?? (() => mcpConfig()))(), quickChatNote(profile), null, runOptions(null, profile, false).effort),
       input: localizeAttachments(run.prompt, this.store.attachmentsDir),
       onEvent: (ev) => {
         const changed = run.draft.feed(ev);
