@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, COLUMNS, safeHref, startWorkTarget, subscribe, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "./api";
 import { boardColumnOf, menuPick, STATUS_MENU } from "./columns";
-import { outcomeBadge } from "./Card";
+import { finishBadge, outcomeBadge, useFinishMark } from "./Card";
 import { JobChip } from "./Jobs";
 import { CapActions } from "./CapActions";
 import { capLabel, capWait } from "./capText";
@@ -433,6 +433,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   }, []);
   const working = ticket.status === "in_progress" || !!ticket.running;
   const att = working ? null : ticket.attention ?? null;
+  const finish = useFinishMark(working, ticket);
   const { stopping, stop } = useStop(slug, ticket, working, (m) => setPanelError(m));
   const bodyRef = useRef<HTMLDivElement>(null);
   const side = useSidebarWidth(bodyRef);
@@ -828,12 +829,12 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
           <StarToggle on={!!ticket.important} onChange={toggleStar} keyHint="S" />
           {/* The shrunk header's one line: the title, cut short (the full one is in .panel-top). */}
           <span className="head-title" aria-hidden={!slim}>{ticket.title}</span>
-          {att && (
+          {finish ? finishBadge(finish) : att && (
             <span className={`your-turn inline att-${att.kind}`} title={att.kind === "limit" ? limitLabel(ticket) : att.label}>
               <span className="yt-dot" aria-hidden /><span className="yt-label">Your turn</span><span className="yt-why">{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
             </span>
           )}
-          {!att && !ticket.huddleBusy && outcomeBadge(ticket)}
+          {!finish && !att && !ticket.huddleBusy && outcomeBadge(ticket)}
           <span className="save-state" aria-live="polite">
             {titleSave === "saving" && <span className="muted small">Saving…</span>}
             {titleSave === "saved" && <span className="saved small"><CheckIcon size={12} /> Saved</span>}

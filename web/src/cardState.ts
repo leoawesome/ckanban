@@ -1,0 +1,63 @@
+// How a card shows its state: which "Your turn" dots pulse, sign-in errors, the mark a finished run leaves.
+// No imports from ./api: the server's tests import this file, and api.ts needs the browser's types.
+interface AttentionLike { kind: string; since: string }
+
+/** Kinds where Claude is stopped until you act. Review and proposals can wait, so they never pulse. */
+const URGENT: ReadonlySet<string> = new Set(["questions", "blocked", "failed", "limit", "stalled"]);
+/** How long a new urgent item keeps pulsing. */
+export const FRESH_MS = 30 * 60_000;
+
+/**
+ * Pulse only an urgent item that became your turn in the last 30 minutes and that you haven't opened since.
+ * openedAt: when you last opened the ticket (ISO), if ever.
+ */
+export function shouldPulse(att: AttentionLike | null | undefined, now: number, openedAt?: string | null): boolean {
+  if (!att || !URGENT.has(att.kind)) return false;
+  const since = Date.parse(att.since);
+  if (!Number.isFinite(since) || now - since > FRESH_MS) return false;
+  return !(openedAt && Date.parse(openedAt) >= since);
+}
+
+// When each ticket was last opened, kept in this browser.
+const KEY = "ck-opened";
+const MAX = 300;
+let cache: Record<string, string> | null = null;
+function load(): Record<string, string> {
+  if (cache) return cache;
+  try { cache = JSON.parse(localStorage.getItem(KEY) || "{}") ?? {}; } catch { cache = {}; }
+  return cache!;
+}
+export function openedAt(id: string): string | null {
+  return load()[id] ?? null;
+}
+export function markOpened(id: string, at = new Date().toISOString()) {
+  const all = load();
+  all[id] = at;
+  const ids = Object.keys(all);
+  if (ids.length > MAX) for (const old of ids.sort((a, b) => all[a].localeCompare(all[b])).slice(0, ids.length - MAX)) delete all[old];
+  try { localStorage.setItem(KEY, JSON.stringify(all)); } catch { /* private mode: stays in memory */ }
+}
+
+/** Claude Code's own sign-in errors, which arrive as if they were Claude's last message. */
+const SIGN_IN = /not logged in|please run \/login|invalid api key|oauth token (has )?expired|authentication_error/i;
+export function signInError(text: string | null | undefined): boolean {
+  return !!text && SIGN_IN.test(text);
+}
+
+export type FinishMark = { icon: "✓" | "✕" | "!"; tone: "ok" | "failed" | "warn"; label: string };
+/** The mark a run leaves for a moment when it ends: ✓ finished, ✕ failed, ! stopped and needs you. */
+export function finishMark(t: { outcome?: string | null }): FinishMark {
+  switch (t.outcome) {
+    case "failed": return { icon: "✕", tone: "failed", label: "Failed" };
+    case "blocked": case "needs_input": case "limit": case "stopped": return { icon: "!", tone: "warn", label: "Stopped" };
+    default: return { icon: "✓", tone: "ok", label: "Finished" };
+  }
+}
+
+/** Chips shown before the rest fold into "+N". */
+export const MAX_EXTRA_CHIPS = 2;
+/** Split extra chips into the ones shown and how many fold away. */
+export function foldChips<T>(chips: T[], max = MAX_EXTRA_CHIPS): { shown: T[]; more: number } {
+  if (chips.length <= max) return { shown: chips, more: 0 };
+  return { shown: chips.slice(0, max), more: chips.length - max };
+}

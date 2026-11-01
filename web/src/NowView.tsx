@@ -1,30 +1,22 @@
-import { useState } from "react";
 import type { InboxItem, Ticket } from "./api";
-import { groupInbox } from "./inboxOrder";
-import { useSafeClear } from "./useSafeClear";
 import { elapsed, OLD_WAIT_MS, waitedFor } from "./time";
 import { useNow } from "./useNow";
 
 /**
- * Phone home (≤720px), for the board shown: what needs you (what Claude is waiting on, then what is ready to check,
- * newest first; over a week old folds into Older), what runs and what is being planned. Other boards that need you are
- * one line at the end. Tapping a card opens the ticket full screen. A cleared card shrinks away and taps pause briefly.
+ * Phone home (≤720px), for the board shown: what needs you (the Inbox, oldest wait first), what runs and what is
+ * being planned. Other boards that need you are one line at the end. Tapping a card opens the ticket full screen.
  */
-export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, onSnoozeAll, onSwitchBoard }: {
+export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, onSwitchBoard }: {
   inbox: InboxItem[];
   tickets: Ticket[];
   slug: string;
   onOpen: (profile: string, id: string) => void;
   onMarkDone: (i: InboxItem) => void;
   onSnooze: (i: InboxItem) => void;
-  onSnoozeAll: (list: InboxItem[]) => void;
   onSwitchBoard: (slug: string) => void;
 }) {
   const now = useNow();
-  const [showOlder, setShowOlder] = useState(false);
-  const { clear, busy, leaving } = useSafeClear();
-  const needs = inbox.filter((i) => i.profile === slug);
-  const groups = groupInbox(needs, now);
+  const needs = inbox.filter((i) => i.profile === slug).sort((a, b) => a.attention.since.localeCompare(b.attention.since));
   const elsewhere = [...inbox.filter((i) => i.profile !== slug).reduce((m, i) => {
     const b = m.get(i.profile) ?? { slug: i.profile, name: i.profileName, n: 0 };
     b.n++;
@@ -34,53 +26,35 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
   const running = tickets.filter((t) => t.running && !waiting.has(t.id));
   const planning = tickets.filter((t) => t.status === "planning" && !t.running && !waiting.has(t.id));
 
-  const open = (i: InboxItem) => { if (!busy()) onOpen(i.profile, i.id); };
-  const card = (i: InboxItem) => {
-    const answer = i.attention.kind === "questions" || i.attention.kind === "proposal" || i.attention.kind === "reply" || i.attention.kind === "huddle";
-    const review = i.attention.kind === "review";
-    const old = now - new Date(i.attention.since).getTime() > OLD_WAIT_MS;
-    const key = `${i.profile}/${i.id}`;
-    return (
-      <div key={key} className={`now-card need att-${i.attention.kind}${leaving(key) ? " leaving" : ""}`}>
-        <div className="now-card-in">
-          <button className="now-open" onClick={() => open(i)}>
-            <span className="now-title">{i.title}</span>
-            <span className="now-act">
-              {i.attention.label}
-              <span className={old ? " now-old" : ""}> · {waitedFor(i.attention.since, now)}</span>
-            </span>
-          </button>
-          <div className="now-actions">
-            <button className="btn primary" onClick={() => open(i)}>{answer ? "Answer" : "Open"}</button>
-            {review && <button className="btn" onClick={() => clear(key, () => onMarkDone(i))}>Mark done</button>}
-            <button className="btn ghost" onClick={() => clear(key, () => onSnooze(i))} title="Hide it for a day, or until something changes">Snooze</button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <main className="now">
-      {needs.length === 0 && <>
-        <h3 className="now-head">Needs you · 0</h3>
-        <p className="now-empty muted small">Nothing waits on you right now.</p>
-      </>}
-      {groups.waiting.length > 0 && <h3 className="now-head">Claude is waiting on you · {groups.waiting.length}</h3>}
-      {groups.waiting.map(card)}
-      {groups.check.length > 0 && <h3 className="now-head">Ready to check · {groups.check.length}</h3>}
-      {groups.check.map(card)}
-      {groups.older.length > 0 && (
-        <>
-          <div className="now-older">
-            <button className="now-head now-older-toggle" aria-expanded={showOlder} onClick={() => setShowOlder((v) => !v)}>
-              {showOlder ? "▾" : "▸"} Older · {groups.older.length}
+      <h3 className="now-head">Needs you · {needs.length}</h3>
+      {needs.length === 0 && <p className="now-empty muted small">Nothing waits on you right now.</p>}
+      {needs.map((i) => {
+        const answer = i.attention.kind === "questions" || i.attention.kind === "proposal" || i.attention.kind === "reply" || i.attention.kind === "huddle";
+        const review = i.attention.kind === "review";
+        const old = now - new Date(i.attention.since).getTime() > OLD_WAIT_MS;
+        return (
+          <div key={`${i.profile}/${i.id}`} className={`now-card need att-${i.attention.kind}`}>
+            <button className="now-open" onClick={() => onOpen(i.profile, i.id)}>
+              <span className="now-title">{i.title}</span>
+              <span className="now-act">
+                {i.attention.label}
+                <span className={old ? " now-old" : ""}> · {waitedFor(i.attention.since, now)}</span>
+              </span>
             </button>
-            <button className="btn ghost" onClick={() => { if (!busy()) onSnoozeAll(groups.older); }} title="Hide every item waiting more than a week for a day">Snooze all</button>
+            <div className="now-actions">
+              {answer ? (
+                <button className="btn primary" onClick={() => onOpen(i.profile, i.id)}>Answer</button>
+              ) : (
+                <button className={`btn${review ? "" : " primary"}`} onClick={() => onOpen(i.profile, i.id)}>Open</button>
+              )}
+              {review && <button className="btn primary" onClick={() => onMarkDone(i)}>Mark done</button>}
+              <button className="btn ghost" onClick={() => onSnooze(i)} title="Hide it for a day, or until something changes">Snooze</button>
+            </div>
           </div>
-          {showOlder && groups.older.map(card)}
-        </>
-      )}
+        );
+      })}
 
       <h3 className="now-head">Running · {running.length}</h3>
       {running.length === 0 && <p className="now-empty muted small">No run active on this board.</p>}

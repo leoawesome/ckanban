@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { Fragment, useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { newestArtifact, safeHref, waitsForSlot, type Job, type SessionMessage, type Ticket } from "./api";
 import { type CardHuddleBadge, digestPreview } from "./huddleText";
 import { ClockIcon, ExternalIcon, HuddleIcon } from "./icons";
@@ -21,6 +21,7 @@ import { ImportantStar } from "./StarToggle";
 import { elapsed, fullTime, plainPreview, timeAgo } from "./time";
 import { costText } from "./usage";
 import { useNow } from "./useNow";
+import { finishMark, foldChips, openedAt, shouldPulse, signInError, type FinishMark } from "./cardState";
 
 /** Live running time: ticks every second for the first minute, then every 30s. */
 function Elapsed({ since }: { since: string }) {
@@ -36,6 +37,39 @@ function Elapsed({ since }: { since: string }) {
 function workingBadge(label: string, since?: string | null) {
   // The label hides in a phone's ticket header (just spinner and time there); the title keeps it.
   return <span className="badge running" title={label}><span className="spinner" /> <span className="badge-label">{label}</span>{since && <Elapsed since={since} />}</span>;
+}
+
+// Whether each ticket was working when last drawn, and the mark its last run left. Kept outside the components:
+// a card that finishes usually moves column, which mounts a new Card.
+const seenWorking = new Map<string, boolean>();
+const finished = new Map<string, { mark: FinishMark; until: number }>();
+const FINISH_MS = 2400;
+
+/**
+ * For a moment after a run ends (working turns false), the mark it leaves: ✓, ✕ or !, shown in place of the spinner.
+ * Null the rest of the time, and on first load (nothing was seen running).
+ */
+export function useFinishMark(working: boolean, t: Ticket): FinishMark | null {
+  const [, rerender] = useState(0);
+  const now = Date.now();
+  if (working) finished.delete(t.id);
+  else if (seenWorking.get(t.id)) finished.set(t.id, { mark: finishMark(t), until: now + FINISH_MS });
+  seenWorking.set(t.id, working);
+  let f = finished.get(t.id);
+  if (f && f.until <= now) {
+    finished.delete(t.id);
+    f = undefined;
+  }
+  useEffect(() => {
+    if (!f) return;
+    const timer = setTimeout(() => rerender((n) => n + 1), f.until - Date.now() + 20);
+    return () => clearTimeout(timer);
+  }, [f]);
+  return f?.mark ?? null;
+}
+
+export function finishBadge(m: FinishMark) {
+  return <span className={`badge finish ${m.tone}`} role="status"><span className="finish-icon" aria-hidden>{m.icon}</span> {m.label}</span>;
 }
 
 /** Badge text plus a shorter form that a phone's ticket header shows instead (styles.css picks one). */
@@ -132,7 +166,12 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
     : outcomeBadge(ticket);
   const showActivity = working && ticket.lastActivity && !QUIET_ACTIVITY.has(ticket.lastActivity);
   const last = ticket.session?.lastMessage;
-  useNow();
+  const done = ticket.status === "done";
+  // Claude Code's own "Not logged in" isn't Claude's last word: a red chip says what to do instead (nothing on Done).
+  const signIn = !!last && last.role !== "user" && signInError(last.text);
+  const finish = useFinishMark(working, ticket);
+  const now = useNow();
+  const pulse = shouldPulse(att, now, openedAt(ticket.id));
   const lastAt = ticket.session ? ticket.session.lastMessage?.at || ticket.session.updatedAt : null;
   const artifact = newestArtifact(ticket);
   const artifactHref = safeHref(artifact?.url);
@@ -160,13 +199,35 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
       Link? 1 suggestion
     </button>
   );
+  // Chips that need no action: at most two, the rest fold into "+N".
+  const extras: { key: string; node: ReactNode; label: string }[] = [];
+  if (partOfChip) extras.push({ key: "part-of", node: partOfChip, label: `Part of “${family!.partOf!.title}”` });
+  if (addOnChip) extras.push({ key: "add-on", node: addOnChip, label: addOn?.of ? `Add-on to “${addOn.of.title}”` : "Add-on" });
+  if (linkedChip) extras.push({ key: "linked", node: linkedChip, label: `${linked.length} linked` });
+  if (suggestChip) extras.push({ key: "suggest", node: suggestChip, label: "Link? 1 suggestion" });
+  if (ticket.source?.url) extras.push({ key: "source", label: `From ${ticket.source.provider}`, node: (
+    <a className="badge pr" href={safeHref(ticket.source.url)} target="_blank" rel="noreferrer" title={`Open ${ticket.source.label} in ${ticket.source.provider}`}
+      onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      {ticket.source.provider} <ExternalIcon size={11} />
+    </a>
+  ) });
+  if (artifact && artifactHref) extras.push({ key: "artifact", label: `Artifact: ${artifact.label}`, node: (
+    <a className="badge artifact" href={artifactHref} target="_blank" rel="noreferrer" title={artifact.label === "claude.ai artifact" ? "Open claude.ai artifact" : `Open ${artifact.label} (claude.ai artifact)`}
+      aria-label={`Open artifact: ${artifact.label}`} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <ExternalIcon size={11} /> artifact
+    </a>
+  ) });
+  for (const g of ticket.tags ?? []) extras.push({ key: `tag-${g}`, label: `Tag: ${g}`, node: <TagChip name={g} onClick={onTag && !dragging ? () => onTag(g) : undefined} /> });
+  const folded = foldChips(extras);
+  const hiddenLabels = extras.slice(folded.shown.length).map((x) => x.label);
+  const signInChip = signIn && !done && <span className="badge failed sign-in" title={last!.text}>Sign-in needed</span>;
   return (
     <article
-      className={`card ${dragging ? "dragging" : ""} ${queued && !working ? "is-queued" : ""} ${working ? "is-running" : ""} ${att ? `needs-you att-${att.kind}` : ""}`}
+      className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working ? "is-running" : ""} ${att ? `needs-you att-${att.kind}` : ""}`}
       onClick={onClick}>
       {att && (
         <div className={`your-turn att-${att.kind}`}>
-          <span className="yt-dot" aria-hidden />
+          <span className={`yt-dot ${pulse ? "pulse" : ""}`} aria-hidden />
           <span className="yt-label">Your turn</span>
           <span className="yt-why" title={ticket.error ?? undefined}>{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
         </div>
@@ -174,14 +235,15 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
       <KeyHint inset className="card-keys" keys={ticket.status === "review" ? "↵ open · D done · Space move" : "↵ open · Space move"} />
       <div className="card-title" title={ticket.title}>{ticket.important && <ImportantStar />}{ticket.title}</div>
       {showActivity ? (
-        <div className="card-activity" title={ticket.lastActivity!}>{ticket.lastActivity}</div>
-      ) : last && (
+        // Keyed on the text, so each new step fades in instead of swapping.
+        <div key={ticket.lastActivity!} className="card-activity" title={ticket.lastActivity!}>{ticket.lastActivity}</div>
+      ) : last && !signIn && (
         <div className="card-last" title={last.text}>
           <span className={`who ${last.role}`}>{lastWho(last)}:</span>{" "}
           {plainPreview(last.from === "huddle" ? digestPreview(last.text) : last.text)}
         </div>
       )}
-      {(badge || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.devices || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp || ticket.followUpStopped) && (
+      {(badge || finish || signInChip || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.devices || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp) && (
         <div className="card-meta">
           {ticket.plan && ticket.plan.state !== "done" && (
             <span className={`badge plan ${ticket.plan.state}`} title="This ticket runs a plan of child tickets">
@@ -193,33 +255,19 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
               <ClockIcon size={11} strokeWidth={1.8} />
             </span>
           )}
-          {ticket.source?.url && (
-            <a className="badge pr" href={safeHref(ticket.source.url)} target="_blank" rel="noreferrer" title={`Open ${ticket.source.label} in ${ticket.source.provider}`}
-              onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-              {ticket.source.provider} <ExternalIcon size={11} />
-            </a>
-          )}
-          {partOfChip}
-          {addOnChip}
-          {linkedChip}
-          {suggestChip}
           <DeviceChips ticket={ticket} />
-          {badge}
+          {finish ? finishBadge(finish) : badge}
+          {signInChip}
           {ticket.autoHuddle && working && autoHuddleChip(ticket.autoHuddle)}
           {huddle && <HuddleBadge badge={huddle} onOpen={onOpenHuddle} />}
-          {limit && (ticket.followUp || ticket.followUpStopped) && (
+          {/* Why Claude stopped following up is history: the ticket shows it, the card doesn't. */}
+          {limit && ticket.followUp && (
             <FollowUpChip slug={limit.slug} ticket={ticket} onError={limit.onError} disabled={dragging} />
           )}
           {hasJobs && <JobChip jobs={jobs!} ticketId={ticket.id} onOpen={dragging ? undefined : onOpenJobs} />}
           {ticket.prUrl && (
-            <a className="badge pr" href={safeHref(ticket.prUrl)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+            <a className="badge pr pr-link" href={safeHref(ticket.prUrl)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
               PR #{ticket.prUrl.split("/").pop()}{(ticket.prs?.length ?? 0) > 1 && <span className="pr-more-count" title={`${ticket.prs!.length} pull requests: open the ticket to see them all`}> +{ticket.prs!.length - 1}</span>}
-            </a>
-          )}
-          {artifact && artifactHref && (
-            <a className="badge artifact" href={artifactHref} target="_blank" rel="noreferrer" title={artifact.label === "claude.ai artifact" ? "Open claude.ai artifact" : `Open ${artifact.label} (claude.ai artifact)`}
-              aria-label={`Open artifact: ${artifact.label}`} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-              <ExternalIcon size={11} /> artifact
             </a>
           )}
           {ticket.status === "review" && prChips(currentPr(ticket)).map((c) => (
@@ -236,7 +284,8 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
           {ticket.workdir && (ticket.terminalOpen
             ? <span className="badge running" title="This ticket's Claude session is open in a terminal"><span className="live-dot" /> In terminal</span>
             : <span className="badge stopped" title="Linked to an existing Claude session">session</span>)}
-          {ticket.tags?.map((g) => <TagChip key={g} name={g} onClick={onTag && !dragging ? () => onTag(g) : undefined} />)}
+          {folded.shown.map((x) => <Fragment key={x.key}>{x.node}</Fragment>)}
+          {folded.more > 0 && <span className="badge more-chips" title={hiddenLabels.join("\n")} aria-label={`${folded.more} more: ${hiddenLabels.join(", ")}`}>+{folded.more}</span>}
           {lastAt && !working && (
             <time className="card-time" dateTime={lastAt} title={fullTime(lastAt)}>{timeAgo(lastAt)}</time>
           )}
