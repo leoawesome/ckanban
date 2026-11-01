@@ -303,7 +303,7 @@ export function Markdown({ text, commands, handles }: { text: string; commands?:
 
 function Event({ ev }: { ev: any }) {
   if (ev.type === "system" && ev.subtype === "init") {
-    return <div className="ev ev-system">Session started · {ev.model ?? "claude"} · <code>{ev.cwd}</code></div>;
+    return <div className="ev ev-system">Chat started · {ev.model ?? "claude"} · <code>{ev.cwd}</code></div>;
   }
   if (ev.type === "assistant") {
     const blocks: any[] = ev.message?.content ?? [];

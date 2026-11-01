@@ -282,8 +282,8 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
             </span>
           )}
           {ticket.workdir && (ticket.terminalOpen
-            ? <span className="badge running" title="This ticket's Claude session is open in a terminal"><span className="live-dot" /> In terminal</span>
-            : <span className="badge stopped" title="Linked to an existing Claude session">session</span>)}
+            ? <span className="badge running" title="This ticket's Claude Code chat is open in a terminal"><span className="live-dot" /> In terminal</span>
+            : <span className="badge stopped" title="Linked to an existing Claude Code chat">linked chat</span>)}
           {folded.shown.map((x) => <Fragment key={x.key}>{x.node}</Fragment>)}
           {folded.more > 0 && <span className="badge more-chips" title={hiddenLabels.join("\n")} aria-label={`${folded.more} more: ${hiddenLabels.join(", ")}`}>+{folded.more}</span>}
           {lastAt && !working && (

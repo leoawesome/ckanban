@@ -22,7 +22,7 @@ export function StallActions({ slug, ticket, onError, small }: { slug: string; t
   return (
     <div className="limit-actions" onKeyDown={(e) => e.stopPropagation()}>
       <button className={`btn primary${size}`} disabled={busy} onClick={run("restart")}
-        title="Stop the stuck process and continue in the same session">Restart</button>
+        title="Stop the stuck process and continue the same conversation">Restart</button>
       <button className={`btn${size}`} disabled={busy} onClick={run("wait")}
         title="It may just be a long step: ask again after another stall period">Keep waiting</button>
       <button className={`btn${size}`} disabled={busy} onClick={run("stop")} title="Stop the run">Stop</button>

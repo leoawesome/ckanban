@@ -147,27 +147,27 @@ export function SessionPanel({ slug, huddle: h, participant: p, onClose, onStep,
   });
 
   return (
-    <section className="hd-session" aria-label={`@${handle}'s session (read-only)`}>
+    <section className="hd-session" aria-label={`@${handle}'s steps (read-only)`}>
       <header className="hd-session-head">
         {phone && <button className="icon-btn phone-back" onClick={onClose} aria-label="Back to the huddle"><ChevronLeftIcon size={22} /></button>}
         <span className="hd-av" style={{ background: handleColor(handle) }} aria-hidden>{handleInitials(handle)}</span>
         <div className="hd-session-title">
           <div><b>@{handle}</b> <span className="hd-ro">read-only</span></div>
-          <div className="hd-session-meta" title={view.sessionId ? `Session ${view.sessionId}` : undefined}>{sessionMeta(view)}</div>
+          <div className="hd-session-meta" title={view.sessionId ? `Claude Code chat ID ${view.sessionId}` : undefined}>{sessionMeta(view)}</div>
         </div>
         <span className="spacer" />
         {!closed && (
           <button className="btn small primary" onClick={() => onMessage(handle)} title={`Write to @${handle} in the huddle`}>Message @{handle}</button>
         )}
-        {!phone && <button className="icon-btn" onClick={onClose} aria-label="Close the session" title="Close (Esc)"><CloseIcon size={12} /><KeyHint keys="Esc" /></button>}
+        {!phone && <button className="icon-btn" onClick={onClose} aria-label="Close the steps" title="Close (Esc)"><CloseIcon size={12} /><KeyHint keys="Esc" /></button>}
       </header>
       {view.kind !== "agent" ? (
         <div className="hd-session-steps">
           <div className="hd-session-note">
             {view.ticketId === h.hostTicket ? (
-              <>@{handle} is this ticket's own session: its steps are in the Chat tab. <button className="link-btn" onClick={onOpenChat}>Open Chat</button></>
+              <>@{handle} is this ticket's own Claude: its steps are in the Chat tab. <button className="link-btn" onClick={onOpenChat}>Open Chat</button></>
             ) : view.ticketId ? (
-              <>@{handle} is ticket {view.ticketId}'s own session: its steps are in that ticket's chat. <button className="link-btn" onClick={() => onOpenTicket(view.ticketId!)}>Open the ticket</button></>
+              <>@{handle} is ticket {view.ticketId}'s own Claude: its steps are in that ticket's chat. <button className="link-btn" onClick={() => onOpenTicket(view.ticketId!)}>Open the ticket</button></>
             ) : null}
           </div>
         </div>
@@ -177,15 +177,15 @@ export function SessionPanel({ slug, huddle: h, participant: p, onClose, onStep,
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}>
           {hasMore && <button className="btn ghost small load-earlier" onClick={earlier} disabled={loadingEarlier}>{loadingEarlier ? "Loading…" : "Load earlier steps"}</button>}
-          {!s && !error && <div className="hd-session-note"><span className="spinner" /> Loading the session…</div>}
-          {s && !steps.length && <div className="hd-session-note">{view.sessionId ? "No steps recorded yet." : "No session yet: it starts when the agent first runs."}</div>}
+          {!s && !error && <div className="hd-session-note"><span className="spinner" /> Loading the steps…</div>}
+          {s && !steps.length && <div className="hd-session-note">{view.sessionId ? "No steps recorded yet." : "No steps yet: they start when the helper first runs."}</div>}
           {steps.map((x) => <Step key={x.i} step={x} current={live && x.i === view.current}
             tool={(item) => <ToolRow slug={slug} ticketId={toolKey} live={live} load={loadTool} item={item} />} />)}
           {live && view.current === null && (
             <div className="hd-st"><span className="hd-st-i"><span className="spinner" /></span><span className="hd-think live">Thinking…</span></div>
           )}
           {p.status === "failed" && p.error && <div className="hd-session-err" role="alert">Failed: {p.error}</div>}
-          {error && <div className="hd-session-err" role="alert">Couldn't load the session: {error} <button className="link-btn" onClick={() => refresh()}>Retry</button></div>}
+          {error && <div className="hd-session-err" role="alert">Couldn't load the steps: {error} <button className="link-btn" onClick={() => refresh()}>Retry</button></div>}
         </div>
       )}
       <footer className="hd-session-foot">

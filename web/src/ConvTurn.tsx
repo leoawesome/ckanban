@@ -94,7 +94,7 @@ export function ReplyActions({ text, simpler, newest, lastOfTurn, active }: {
   );
 }
 
-/** A run of tool calls: one line under the reply, "✓ Did 6 steps · last step"; click to see each step. */
+/** A run of tool calls: one line under the reply, "✓ Did 6 steps · last step" in plain words; click to see each step by its real tool name. */
 export function StepsLine({ items, running, old, children }: {
   items: { text: string; error?: true }[];
   /** The run is on this step right now: spinner and "Step 4 · …". */
@@ -108,7 +108,7 @@ export function StepsLine({ items, running, old, children }: {
     <details className={`steps-line${old ? " inherited" : ""}`}>
       <summary>
         {running ? <span className="spinner" /> : <CheckIcon size={13} className="icon steps-ok" />}
-        <span className="steps-text" title={items.at(-1)?.text}>{s.text}</span>
+        <span className="steps-text">{s.text}</span>
         {s.failed > 0 && <span className="steps-failed">· {s.failed} failed</span>}
       </summary>
       {children}

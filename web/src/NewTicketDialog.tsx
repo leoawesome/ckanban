@@ -33,7 +33,7 @@ export function NewTicketDialog({ slug, folder, knownTags = [], onClose, onCreat
 
   // Start: an interview goes to Planning (questions now), "Just do it" goes to Ready (runs when a slot is free).
   const startStatus: Status = mode === "interview" ? "planning" : "ready";
-  const startLabel = mode === "interview" ? "Start planning" : "Start now";
+  const startLabel = mode === "interview" ? "Start: Claude asks first" : "Start: Claude just does it";
 
   const submit = async (status: Status) => {
     if (busy || !title.trim() || images.uploading) return;
@@ -61,17 +61,6 @@ export function NewTicketDialog({ slug, folder, knownTags = [], onClose, onCreat
           else setImportant((v) => !v);
         }}>
         <div className="field">
-          {session ? (
-            <div className="session-chip">
-              <span className="muted small">From session</span>
-              <span className="session-title">{sessionLabel(session)}</span>
-              <button type="button" className="link-btn" onClick={() => setSession(null)}>Remove</button>
-            </div>
-          ) : (
-            <button type="button" className="link-btn" onClick={() => setPicking(true)}>Start from an existing Claude session…</button>
-          )}
-        </div>
-        <div className="field">
           <label htmlFor="new-ticket-title">Title</label>
           <div className="title-row">
             <input id="new-ticket-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What should be done?" />
@@ -95,20 +84,26 @@ export function NewTicketDialog({ slug, folder, knownTags = [], onClose, onCreat
               : "Claude works on its own and reports back when done."}
           </span>
         </div>
+        {session && (
+          <div className="session-chip">
+            <span className="muted small">Continues the Claude Code chat</span>
+            <span className="session-title">{sessionLabel(session)}</span>
+            <button type="button" className="link-btn" onClick={() => setSession(null)}>Remove</button>
+          </div>
+        )}
         {err && <div className="form-error">{err}</div>}
+        {/* One main button that says what happens (it follows the mode toggle) and one quiet "Save for later": no legend needed. */}
         <div className="form-actions new-ticket-actions">
-          <button type="button" className="btn ghost" onClick={onClose}>Cancel<KeyHint keys="Esc" /></button>
-          <button type="button" className="btn" disabled={busy || !title.trim() || images.uploading} onClick={() => submit("backlog")} title={`Park it in Backlog; nothing runs (${MOD}S)`}>Create<KeyHint keys="⌘S" /></button>
-          <button type="button" className="btn primary icon-label" onClick={() => submit(startStatus)} disabled={busy || !title.trim() || images.uploading}>
+          <button type="button" className="btn" disabled={busy || !title.trim() || images.uploading} onClick={() => submit("backlog")} title={`Put it in Backlog; nothing runs until you start it (${MOD}S)`}>Save for later<KeyHint keys="⌘S" /></button>
+          <button type="button" className="btn primary icon-label" onClick={() => submit(startStatus)} disabled={busy || !title.trim() || images.uploading}
+            title={mode === "interview" ? "Goes to Planning: Claude asks its questions now" : "Goes to In Progress, or waits its turn if every slot is busy"}>
             {images.uploading ? "Uploading…" : <>{startLabel} <kbd className="kbd-on-primary">⌘↵</kbd></>}
             <KeyHint keys="⌘↵" />
           </button>
         </div>
-        <div className="muted small form-where">
-          {mode === "interview"
-            ? "Create → Backlog · Start planning → Planning (Claude asks questions now)"
-            : "Create → Backlog · Start now → In Progress (queued if all slots busy)"}
-        </div>
+        {!session && (
+          <button type="button" className="link-btn small new-ticket-from-chat" onClick={() => setPicking(true)}>Continue a Claude Code chat instead…</button>
+        )}
       </form>
       {picking && (
         <SessionPicker slug={slug} folder={folder} onClose={() => setPicking(false)} onPick={(s) => {

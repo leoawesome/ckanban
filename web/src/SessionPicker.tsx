@@ -29,17 +29,17 @@ export function SessionPicker({ slug, folder, currentTicketId, onPick, onClose }
   }, [sessions, q]);
 
   return (
-    <Modal title="Link a Claude Code session" onClose={onClose} wide>
+    <Modal title="Continue a Claude Code chat" onClose={onClose} wide>
       <div className="form">
         <p className="muted small" style={{ margin: 0 }}>
-          Sessions you started in <code>{folder}</code>. Linking lets this ticket continue that conversation.
+          Claude Code chats you started in <code>{folder}</code>. This ticket picks up that conversation.
         </p>
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or first message…" />
         <div className="picker-list sessions" role="listbox">
           {err && <div className="picker-empty">{err}</div>}
           {!err && sessions === null && <div className="picker-empty">Loading…</div>}
           {sessions !== null && shown.length === 0 && (
-            <div className="picker-empty">{sessions.length ? "No match." : "No Claude Code sessions found in this folder."}</div>
+            <div className="picker-empty">{sessions.length ? "No match." : "No Claude Code chats found in this folder."}</div>
           )}
           {shown.map((s) => {
             const takenByOther = s.ticket && s.ticket.id !== currentTicketId;

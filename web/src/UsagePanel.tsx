@@ -38,14 +38,14 @@ export function useTicketUsage(slug: string, ticketId: string) {
 /** Why a % is missing, for tooltips. */
 export function missingPctReason(u: TicketUsage): string {
   return u.windowError
-    ? `No 5h usage data: ${u.windowError}`
-    : "No 5h usage window seen for this time yet. The board reads it from Anthropic when you open the Usage pill or this tab.";
+    ? `No 5-hour limit data: ${u.windowError}`
+    : "No 5-hour limit reading for this time yet. The board reads it from Anthropic when you open the Usage pill or this tab.";
 }
 
-/** Sidebar chip text: "≈ 6% of 5h · $4.12". */
+/** Sidebar chip text: "≈ 6% of 5-hour limit · $4.12". */
 export function usageChipText(u: TicketUsage): string {
   const p = u.totals.pctCurrentWindow;
-  return p === null ? costText(u.totals.costUsd) : `${approxPct(p)} of 5h · ${costText(u.totals.costUsd)}`;
+  return p === null ? costText(u.totals.costUsd) : `${approxPct(p)} of 5-hour limit · ${costText(u.totals.costUsd)}`;
 }
 
 /** "Huddle teammates: $X", then each huddle (when there are several) and its teammates. */
@@ -90,16 +90,16 @@ export function UsagePanel({ usage, error }: { usage: TicketUsage | null; error:
         <div className="usage-stat" title={totals.pctCurrentWindow === null ? missing : undefined}>
           <b>{approxPct(totals.pctCurrentWindow)}</b>
           <span>
-            of current 5h session{w && <> (now at {Math.round(w.utilization)}%, <span title={fullTime(w.seenAt)}>checked {timeAgo(w.seenAt)}</span>)</>}
+            of your plan's current 5-hour limit{w && <> (now at {Math.round(w.utilization)}%, <span title={fullTime(w.seenAt)}>checked {timeAgo(w.seenAt)}</span>)</>}
           </span>
         </div>
         <div className="usage-stat" title={totals.pctLifetime === null ? missing : undefined}>
           <b>{approxPct(totals.pctLifetime)}</b>
-          <span>all 5h windows, lifetime</span>
+          <span>of 5-hour limits, all time</span>
         </div>
         <div className="usage-stat">
           <b>{costText(totals.costUsd)}</b>
-          <span>API-equivalent · {tokenText(totals.tokens)} tokens{usage.teammates || usage.sideCostUsd ? " (runs)" : ""}</span>
+          <span title={`${tokenText(totals.tokens)} tokens`}>API-equivalent cost{usage.teammates || usage.sideCostUsd ? " (runs)" : ""}</span>
         </div>
       </div>
       {usage.teammates && <TeammateLines teammates={usage.teammates} />}
@@ -110,7 +110,7 @@ export function UsagePanel({ usage, error }: { usage: TicketUsage | null; error:
       )}
       <table className="usage-table">
         <thead>
-          <tr><th>Run</th><th>When</th><th>Model</th><th className="n">Tokens</th><th className="n">Cost</th><th className="n">% of 5h</th></tr>
+          <tr><th>Run</th><th>When</th><th>Model</th><th className="n">Cost</th><th className="n">% of 5-hour limit</th></tr>
         </thead>
         <tbody>
           {runs.map((r, i) => (
@@ -120,8 +120,7 @@ export function UsagePanel({ usage, error }: { usage: TicketUsage | null; error:
                 {new Date(r.startedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
               </td>
               <td title={r.model ?? undefined}>{modelName(r.model)}</td>
-              <td className="n">{tokenText(r.tokens)}</td>
-              <td className="n">{costText(r.costUsd)}</td>
+              <td className="n" title={`${tokenText(r.tokens)} tokens`}>{costText(r.costUsd)}</td>
               <td className="n" title={r.pct5h === null ? missing : undefined}>
                 {approxPct(r.pct5h)}
                 <span className="usage-mini"><i style={{ width: `${maxPct > 0 ? ((r.pct5h ?? 0) / maxPct) * 100 : 0}%` }} /></span>

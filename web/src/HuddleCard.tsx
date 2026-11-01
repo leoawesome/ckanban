@@ -90,7 +90,7 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
             <button className="btn small" onClick={onOpen}>Open huddle</button>
           </>
         ) : old ? (
-          <span className="muted small">From the conversation this ticket was branched from.</span>
+          <span className="muted small">From the conversation this ticket was copied from.</span>
         ) : (
           <>
             <span className="muted small">{otherOpen ? "This ticket already has an open huddle." : err ?? "Nothing runs until you start."}</span>

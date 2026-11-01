@@ -37,7 +37,7 @@ const GROUPS: { title: string; keys: [string[], string][] }[] = [
     title: "New ticket dialog",
     keys: [
       [[MOD, "Enter"], "Start (planning or work, by how Claude works)"],
-      [[MOD, "S"], "Create in Backlog (nothing runs)"],
+      [[MOD, "S"], "Save for later (Backlog, nothing runs)"],
       [[MOD, "I"], "Switch Interview me first / Just do it"],
       [[MOD, "D"], "Star as important"],
     ],

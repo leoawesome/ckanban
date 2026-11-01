@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dividerLabel, layoutTurns, shortStep, stepsSummary } from "../web/src/chatTurns";
+import { dividerLabel, layoutTurns, plainStep, shortStep, stepsSummary } from "../web/src/chatTurns";
 
 const at = (min: number) => new Date(Date.UTC(2026, 9, 25, 6, 0) + min * 60_000).toISOString();
 const NOW = Date.UTC(2026, 9, 25, 8, 0);
@@ -45,9 +45,9 @@ test("dividerLabel: Today and Yesterday, else the date", () => {
 
 test("stepsSummary: running, done and failed steps", () => {
   const items = [{ text: "Read: a.ts" }, { text: "Bash: bun test", error: true as const }, { text: "Edit: b.ts" }];
-  expect(stepsSummary(items, true)).toEqual({ text: "Step 3 · Edit: b.ts", failed: 1 });
-  expect(stepsSummary(items, false)).toEqual({ text: "Did 3 steps · Edit: b.ts", failed: 1 });
-  expect(stepsSummary([{ text: "Read: a.ts" }], false).text).toBe("Did 1 step · Read: a.ts");
+  expect(stepsSummary(items, true)).toEqual({ text: "Step 3 · Edited b.ts", failed: 1 });
+  expect(stepsSummary(items, false)).toEqual({ text: "Did 3 steps · Edited b.ts", failed: 1 });
+  expect(stepsSummary([{ text: "Read: a.ts" }], false).text).toBe("Did 1 step · Read a.ts");
 });
 
 test("shortStep: a file tool's path becomes its file name; other steps stay as they are", () => {
@@ -57,5 +57,21 @@ test("shortStep: a file tool's path becomes its file name; other steps stay as t
   expect(shortStep("Bash: ls /Users/leo/dev")).toBe("Bash: ls /Users/leo/dev");
   expect(shortStep("Grep: /api/attachments/")).toBe("Grep: /api/attachments/");
   expect(shortStep("Read: notes.md")).toBe("Read: notes.md");
-  expect(stepsSummary([{ text: "Bash: ls" }, { text: "Read: /a/b/c.png" }], false).text).toBe("Did 2 steps · Read: c.png");
+  expect(stepsSummary([{ text: "Bash: ls" }, { text: "Read: /a/b/c.png" }], false).text).toBe("Did 2 steps · Read c.png");
+});
+
+test("plainStep: tool names become plain verbs for the summary line", () => {
+  expect(plainStep("mcp__linear-server__get_document: abc")).toBe("Linear: read document");
+  expect(plainStep("mcp__ckanban__ask_questions")).toBe("Board: ask questions");
+  expect(plainStep("mcp__claude-in-chrome__navigate: https://x")).toBe("Chrome: navigate");
+  expect(plainStep("mcp__claude_ai_Gmail__search_threads: q")).toBe("Gmail: search threads");
+  expect(plainStep("ToolSearch: select:mcp__ckanban__ask_questions")).toBe("Got tools ready");
+  expect(plainStep("Bash: git push origin HEAD:main")).toBe("Ran a command");
+  expect(plainStep("Read: /Users/leo/dev/app/src/api.ts")).toBe("Read api.ts");
+  expect(plainStep("WebSearch: bun release notes")).toBe("Searched the web for bun release notes");
+  expect(plainStep("Thinking about it")).toBe("Thinking about it");
+  // The summary never shows a raw tool name.
+  for (const t of ["mcp__linear-server__get_document: x", "ToolSearch: select:mcp__a__b", "Bash: ls", "Grep: foo", "TodoWrite"]) {
+    expect(stepsSummary([{ text: t }], false).text).not.toMatch(/mcp__|ToolSearch|Bash|Grep|TodoWrite/);
+  }
 });

@@ -102,7 +102,7 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
             {s.tags?.map((g) => <TagChip key={g} name={g} />)}
           </div>
           <div className="sched-when">
-            {s.summary} <code>{s.cron}</code>
+            {s.summary}
           </div>
           <div className="muted small">
             {s.enabled && s.nextRunAt ? <>Next: {when(s.nextRunAt)} ({timeUntil(s.nextRunAt)})</> : "Paused: won't run until resumed."}

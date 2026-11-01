@@ -2,7 +2,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, type Huddle, type HuddleMode, type HuddlePreset, type HuddleTemplate, type RosterEntry, type Ticket } from "./api";
 import { CloseIcon } from "./icons";
 import { Select } from "./Select";
-import { applyProposedTemplate, applyTemplate, DEFAULT_MAX, draftError, draftSize, dollars, handleBase, rosterDraft, rowHandle, rowKey as key, type Draft } from "./huddleText";
+import { applyProposedTemplate, applyTemplate, DEFAULT_MAX, draftError, draftSize, dollars, handleBase, rosterDraft, rowHandle, rowKey as key, MODE_LABEL, type Draft } from "./huddleText";
 
 const MODELS = ["opus", "sonnet", "haiku"];
 const MAX_COUNT = 8;
@@ -77,8 +77,8 @@ export function TemplatePicker({ templates, draft, setDraft, disabled }: {
 }
 
 const MODE_OPTIONS = [
-  { value: "tagged" as const, label: "tagged", hint: "sleeps until @mentioned" },
-  { value: "monitor" as const, label: "monitor", hint: "gets every message" },
+  { value: "tagged" as const, label: MODE_LABEL.tagged, hint: "sleeps until someone @mentions it" },
+  { value: "monitor" as const, label: MODE_LABEL.monitor, hint: "gets every message" },
 ];
 
 /** Roster table: role, count, mode, model and focus per line; add and remove roles; invite tickets. */
@@ -123,8 +123,8 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
         <tbody>
           {!hideMain && <tr>
             <td>
-              <b>@main</b> <span className="pill lead">{hosted ? "ticket's session" : "coordinator"}</span>
-              <div className="roster-desc">this ticket's session · {hosted ? "woken for decisions and the host's final report" : "only one who edits code"}</div>
+              <b>@main</b> <span className="pill lead">{hosted ? "this ticket's Claude" : "in charge"}</span>
+              <div className="roster-desc">this ticket's own Claude · {hosted ? "woken for decisions and the host's final report" : "only one who edits code"}</div>
             </td>
             <td className="roster-num">1</td>
             <td>
@@ -193,7 +193,7 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
               <tr key={id}>
                 <td colSpan={5}>
                   <b>Ticket</b> {t?.title ?? id}
-                  <div className="roster-desc">invited: its own session joins as @{handleBase(`${t?.planKey || t?.title.split(/\s+/)[0] || "ticket"}-main`)}</div>
+                  <div className="roster-desc">invited: its own Claude joins as @{handleBase(`${t?.planKey || t?.title.split(/\s+/)[0] || "ticket"}-main`)}</div>
                 </td>
                 <td>
                   <button className="icon-btn tiny" aria-label="Remove invite" title="Remove" disabled={disabled}

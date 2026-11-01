@@ -414,7 +414,7 @@ function TeammateEditor({ slug, boardName, draft: initial, isNew, scope: initial
         <textarea rows={4} value={draft.prompt} onChange={(e) => set({ prompt: e.target.value })} placeholder="What this teammate does in a huddle: what to look at, how to report." />
       </label>
       {main ? (
-        <span className="muted small">The coordinator is the ticket's own session (@main): only its label, mode and prompt apply.</span>
+        <span className="muted small">@main is the ticket's own Claude: only its label, mode and prompt apply.</span>
       ) : (
         <div className="row two">
           <label>

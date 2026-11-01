@@ -5,7 +5,7 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { draftKey, formKey } from "./drafts";
 import {
-  BIG_CONTEXT_TOKENS, contextText, dollars, handleColor, handleInitials, huddleCost, idleFor, isForYou, members, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint,
+  BIG_CONTEXT_TOKENS, contextText, MODE_LABEL, modeLabel, dollars, handleColor, handleInitials, huddleCost, idleFor, isForYou, members, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint,
   type HuddleState,
   huddleIdle, keepHuddleOpen, keptOpenAt, useHuddleIdleTick,
 } from "./huddle";
@@ -221,7 +221,7 @@ function StartHuddle({ slug, ticket, tickets, onError, onBack, onStarted, seed }
       <div className="huddle-intro">
         <h3>Start a huddle</h3>
         <p className="muted">
-          Helper Claude sessions (reviewers, QA, a lead…) work on this ticket with its own session, which joins as <b>@main</b> and coordinates.
+          Helper Claudes (reviewers, QA, a lead…) work on this ticket with its own Claude, which joins as <b>@main</b> and coordinates.
           They talk in one room; you can read along and @tag anyone. Claude can also propose a roster from the chat.
         </p>
       </div>
@@ -702,7 +702,7 @@ function Message({ m, p, handles, forYou }: { m: HuddleMessage; p: HuddlePartici
           <b>@{m.from}</b>
           {p && p.kind !== "human" && <span className="muted">{p.role}</span>}
           <time className="muted" dateTime={m.ts} title={[fullTime(m.ts), sourceLabel(m.source)].filter(Boolean).join(" · ")}>· {clock(m.ts)}</time>
-          {p?.mode === "monitor" && p.kind !== "human" && <span className="hd-mode monitor">monitor</span>}
+          {p?.mode === "monitor" && p.kind !== "human" && <span className="hd-mode monitor">{MODE_LABEL.monitor}</span>}
           {forYou && <span className="hd-for-you">· for you</span>}
         </div>
         {m.kind === "finding" ? (
@@ -996,8 +996,8 @@ function Composer({ slug, ticket, huddle: h, onError, prefill, onPrefilled, onOp
 }
 
 const MODE_OPTIONS = [
-  { value: "tagged" as const, label: "tagged", hint: "wakes when @tagged" },
-  { value: "monitor" as const, label: "monitor ($)", hint: "reads every message: costs more" },
+  { value: "tagged" as const, label: MODE_LABEL.tagged, hint: "sleeps until someone @mentions it" },
+  { value: "monitor" as const, label: MODE_LABEL.monitor, hint: "reads every message: costs more" },
 ];
 
 /** The pinned brief: goal and decisions, at the head of every digest the agents get. The user, leads and @main edit it. */
@@ -1077,12 +1077,12 @@ function Roster({ slug, huddle: h, onError, viewing, onView }: {
             <Avatar handle={p.handle} small />
             {!human && (
               <button className="hd-p-open" onClick={() => onView(p.handle)} aria-pressed={viewing === p.handle}
-                aria-label={`${viewing === p.handle ? "Close" : "Open"} @${p.handle}'s session`} title={`@${p.handle}'s session (read-only)`} />
+                aria-label={`${viewing === p.handle ? "Close" : "Open"} @${p.handle}'s work`} title={`@${p.handle}'s steps (read-only)`} />
             )}
             <div className="hd-p-name" title={role && !human ? `@${p.handle} · ${role}` : `@${p.handle}`}>
               <b>@{p.handle}</b>
               {role && <span className="hd-p-role"> · {role}</span>}
-              {p.handle === "main" && <span className="pill lead">{h.host ? "ticket's session" : "coordinator"}</span>}
+              {p.handle === "main" && <span className="pill lead">{h.host ? "this ticket's Claude" : "in charge"}</span>}
               {h.host === p.handle && <span className="pill host" title={`Runs the huddle: hands out the tasks, accepts the hand-ins and tags @main only for decisions and the final report`}>host</span>}
               {p.lead && p.handle !== "main" && h.host !== p.handle && !human && <span className="pill lead">lead</span>}
               {p.kind === "agent" && p.canEdit && <span className="pill" title="Works in its own copy of the folder and hands its changes in">changes files</span>}
@@ -1110,7 +1110,7 @@ function Roster({ slug, huddle: h, onError, viewing, onView }: {
               <div className="hd-p-meta">
                 <span className="hd-p-actions">
                   {closed ? (
-                    <span className={`hd-mode ${p.mode}`}>{p.mode}</span>
+                    <span className={`hd-mode ${p.mode}`}>{modeLabel(p.mode)}</span>
                   ) : (
                     <Select ariaLabel={`@${p.handle} mode`} className="roster-select hd-mode-select" value={p.mode} options={MODE_OPTIONS}
                       onChange={(v) => setMode(p, v)} />

@@ -1852,7 +1852,8 @@ input[aria-invalid="true"] { border-color: var(--err); }
 .sched-prev summary { cursor: pointer; list-style: none; }
 .sched-prev pre { margin: 4px 0 6px; padding: 6px 8px; background: var(--surface); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow-y: auto; }
 .sched-entry { flex-wrap: wrap; align-items: baseline; padding: 2px 0; }
-.form-where { text-align: right; margin-top: -4px; }
+.new-ticket-from-chat, .more-options { align-self: flex-start; }
+.new-ticket-from-chat { font-size: 12.5px; font-weight: 500; color: var(--muted); }
 .btn.primary kbd.kbd-on-primary { font-family: inherit; background: rgba(255, 255, 255, 0.2); border-color: transparent; color: inherit; }
 .queue-sep { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 6px 2px 0; display: flex; align-items: center; gap: 8px; }
 .queue-sep::after { content: ""; flex: 1; border-top: 1px dashed var(--border); }
@@ -2789,7 +2790,7 @@ button.hd-mode:disabled { cursor: default; }
 }
 
 /* Phone (≤720px): the description box footer is a row of tap buttons (Photo, File, @ Snippet, / Skill; DescriptionEditor),
-   and New ticket puts Start planning on its own full-width row with Cancel and Create below. */
+   and New ticket puts Start on its own full-width row with Save for later below. */
 @media (max-width: 720px) {
   .desc-editor-foot.phone { flex-wrap: wrap; gap: 2px 4px; padding: 4px 6px; overflow: visible; font-size: 14px; color: var(--text); }
   .desc-editor-foot .desc-editor-tool, .desc-editor-foot .btn.desc-editor-tool {
@@ -2806,11 +2807,10 @@ button.hd-mode:disabled { cursor: default; }
   /* Ticket tab: the editor fills the tab, its text scrolling inside, with Save below */
   .panel-ticket .desc-edit .desc-editor.fill { flex: 1; min-height: 0; }
 
-  .form-actions.new-ticket-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .form-actions.new-ticket-actions { display: grid; grid-template-columns: 1fr; gap: 8px; }
   .new-ticket-actions .btn { justify-content: center; min-height: 44px; }
   .new-ticket-actions .btn.primary { grid-column: 1 / -1; order: -1; }
   .new-ticket-actions kbd.kbd-on-primary { display: none; }
-  .form-where { text-align: left; margin-top: 0; }
 }
 
 /* huddle on a phone (HuddlePanel, ≤720px): a one-line bar with a ⋯ sheet, Chat / People / Findings panes, the session full screen */
@@ -3215,7 +3215,6 @@ button.tag-chip:hover { border-color: currentColor; }
   .push-hint .btn, .col-jump .chip, .now-elsewhere .chip, .team-bar .segmented button { min-height: 40px; }
   .composer textarea { min-height: 40px; }
 }
-=======
 /* Loading: grey placeholders stand in for cards until the board's tickets arrive (no counts, no "empty" texts). */
 .skeleton-card { display: flex; flex-direction: column; gap: 8px; cursor: default; box-shadow: none; pointer-events: none; }
 .skeleton-card > i, .pill-skeleton {

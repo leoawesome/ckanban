@@ -267,10 +267,10 @@ test("team tab: usage text, scope chips only for exceptions, reset target", () =
 });
 
 test("context tag: size text, warn threshold, and live updates through huddle.activity", () => {
-  expect(contextText(850)).toBe("850 ctx");
-  expect(contextText(42_400)).toBe("42k ctx");
-  expect(contextText(1_200_000)).toBe("1.2M ctx");
-  expect(contextText(2_000_000)).toBe("2M ctx");
+  expect(contextText(850)).toBe("850 chat size");
+  expect(contextText(42_400)).toBe("42k chat size");
+  expect(contextText(1_200_000)).toBe("1.2M chat size");
+  expect(contextText(2_000_000)).toBe("2M chat size");
   expect(BIG_CONTEXT_TOKENS).toBe(120_000);
   const h = { participants: [{ handle: "qa", lastActivity: "x", contextTokens: 1000 }] };
   expect(withActivity(h, "qa", "x", undefined, 1000)).toBe(h);

@@ -765,7 +765,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   const steps = entries.slice(lastAsk + 1).filter((e) => e.kind === "tool" || e.kind === "agent").length;
   const divider = bp && (
     <div key={`branch-${bp.at}`} className="branch-divider" role="separator">
-      <BranchIcon size={12} /> branched from {branchedFrom
+      <BranchIcon size={12} /> copied from {branchedFrom
         ? <button className="link-btn" onClick={() => onOpenTicket(branchedFrom.id)}>{branchedFrom.title}</button>
         : bp.sourceTitle} · <time dateTime={bp.at} title={fullTime(bp.at)}>{new Date(bp.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</time>
     </div>

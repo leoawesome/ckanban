@@ -263,7 +263,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             <div className="mcp-help info">
               <div className="mcp-help-text">
                 {shortName(s)} is a claude.ai connector, so you sign in on claude.ai.{" "}
-                {login.url ? "A claude.ai tab opened. New Claude sessions can use it once you're done." : <><span className="spinner" /> Getting the claude.ai link…</>}
+                {login.url ? "A claude.ai tab opened. New Claude chats can use it once you're done." : <><span className="spinner" /> Getting the claude.ai link…</>}
               </div>
               <div className="mcp-help-actions">
                 {safeHref(login.url) && <a className="btn small" href={safeHref(login.url)} target="_blank" rel="noreferrer">Open claude.ai again</a>}
@@ -302,7 +302,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
           <div className="mcp-help">
             <div className="mcp-help-text">
               {stdio
-                ? <><b>The server stops right after it starts.</b> Run it in the terminal to see why (a missing tool, token or package).</>
+                ? <><b>The server stops right after it starts.</b> Run it in the terminal to see why (a missing tool, key or package).</>
                 : <><b>Couldn't reach the server.</b> Try again, or sign in again if it worked before.</>}
             </div>
             <div className="mcp-help-actions">
@@ -519,7 +519,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
           }}
         >
           {confirm.kind === "remove"
-            ? <p>Runs <code>claude mcp remove {confirm.server.name} --scope user</code>. Claude sessions (terminal and board) won't have it anymore.</p>
+            ? <p>Runs <code>claude mcp remove {confirm.server.name} --scope user</code>. Claude chats (terminal and board) won't have it anymore.</p>
             : <p>Clears the saved sign-in. Claude can't use this server until you sign in again.</p>}
         </ConfirmDialog>
       )}
@@ -713,7 +713,7 @@ function AddServerForm({ onAdded, initial, onCancel }: { onAdded: () => void; in
         <span className="muted small">
           {initial
             ? <>Saving runs <code>claude mcp remove</code> then <code>claude mcp add</code> with the new settings (user scope).</>
-            : <>Added with <code>--scope user</code>, so every Claude session can use it.{!stdio && " If it uses OAuth, click Log in once it shows up."}</>}
+            : <>Added with <code>--scope user</code>, so every Claude chat can use it.{!stdio && " If it uses OAuth, click Log in once it shows up."}</>}
         </span>
       </div>
       {err && <div className="form-error">{err}</div>}

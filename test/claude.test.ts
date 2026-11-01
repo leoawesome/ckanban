@@ -36,6 +36,16 @@ test("listClaudeProjects: existing dirs, newest session first, tmp excluded", ()
   expect(list[2].lastUsed).toBeNull();
 });
 
+test("listClaudeProjects: hides the home folder and the board's own data folders", () => {
+  const f = fixture();
+  const dataDir = join(f.home, "ck-data");
+  const internal = [f.home, join(f.home, ".claude-kanban"), join(f.home, ".claude-kanban", "artifact-helper"), dataDir, join(dataDir, "x")];
+  for (const d of internal) mkdirSync(d, { recursive: true });
+  writeFileSync(join(f.home, ".claude.json"), JSON.stringify({ projects: Object.fromEntries([f.older, ...internal].map((p) => [p, {}])) }));
+  const list = listClaudeProjects({ homeDir: f.home, configDir: f.configDir, excludePrefixes: [], dataDir });
+  expect(list.map((p) => p.path)).toEqual([f.older]);
+});
+
 test("listClaudeProjects: missing ~/.claude.json gives empty list", () => {
   expect(listClaudeProjects({ homeDir: tempDir(), configDir: tempDir() })).toEqual([]);
 });

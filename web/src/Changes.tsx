@@ -122,8 +122,11 @@ export function Changes({ slug, ticket, state, onSent, onError }: {
         <span>{files.length} file{files.length === 1 ? "" : "s"}</span>
         <span className="diff-add">+{diff.additions}</span>
         <span className="diff-del">−{diff.deletions}</span>
-        <span className="changes-ref" title={inFolder ? "Everything changed in the project folder since this ticket's first run, including edits made there by others" : undefined}>
-          vs <code>{diff.base}</code>{inFolder && " (this ticket's start)"}{diff.branch && <> · <code>{diff.branch}</code></>}
+        {/* The version names (origin/main, ck/t_…) only in the tooltip: users read "main version", not refs. */}
+        <span className="changes-ref" title={inFolder
+          ? `Everything changed in the project folder since this ticket's first run, including edits made there by others (${diff.base})`
+          : `${diff.base}${diff.branch ? ` · ${diff.branch}` : ""}`}>
+          {inFolder ? "Compared with this ticket's start" : "Compared with the main version"}
         </span>
         <span className="spacer" />
         {error && <span className="changes-err" title={error}>Refresh failed</span>}
@@ -133,7 +136,7 @@ export function Changes({ slug, ticket, state, onSent, onError }: {
       {diff.note ? (
         <div className="panel-scroll muted small changes-none">{diff.note}</div>
       ) : files.length === 0 ? (
-        <div className="panel-scroll muted small">No changes against <code>{diff.base}</code> yet.</div>
+        <div className="panel-scroll muted small">No changes yet.</div>
       ) : (
         <div className="changes-body">
           <div className="changes-side">

@@ -6,7 +6,7 @@ import { mergeMessages, pickHuddle, ticketHuddles, upsertHuddle, withActivity } 
 
 export { huddleIdle, IDLE_HUDDLE_MS } from "./huddleText";
 export { BIG_CONTEXT_TOKENS, brakeLabel, cardHuddleBadge, contextText, dollars, guestTickets, huddleRound, huddleTitle, idleFor, quietLabel, roundTag, sortHuddles, type CardHuddleBadge } from "./huddleText";
-export { handleInitials, isForYou, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint } from "./huddleText";
+export { handleInitials, isForYou, MODE_LABEL, modeLabel, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint } from "./huddleText";
 
 /** Participants that count toward the cap (everyone but the user). */
 export const members = (h: Huddle) => h.participants.filter((p) => p.kind !== "human");

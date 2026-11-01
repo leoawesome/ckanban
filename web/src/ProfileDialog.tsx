@@ -54,6 +54,8 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const [picking, setPicking] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // A new board asks only for a folder and a name; the rest waits under "More options" (settings always show it all).
+  const [more, setMore] = useState(!isNew);
   const [ticketCount, setTicketCount] = useState<number | null>(null);
   // Worktree setup (existing boards; new ones are detected when created).
   const [copyFiles, setCopyFiles] = useState<string[]>(profile?.copyFiles ?? []);
@@ -160,7 +162,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               <div className="picker-list" role="listbox" aria-label="Recent folders">
                 {recent === null && <div className="picker-empty">Loading…</div>}
                 {recent !== null && shown.length === 0 && (
-                  <div className="picker-empty">{recent.length ? "No match." : "No Claude Code sessions found. Browse for a folder below."}</div>
+                  <div className="picker-empty">{recent.length ? "No match." : "No recent Claude Code folders. Browse for a folder below."}</div>
                 )}
                 {shown.map((p) => (
                   <button
@@ -190,6 +192,18 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
           <VersionHistoryOffer path={path} onRepo={setRepo} />
         </div>
 
+        <label>
+          Name
+          <input value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My app" />
+        </label>
+
+        {isNew && (
+          <button type="button" className="link-btn more-options" aria-expanded={more} onClick={() => setMore((v) => !v)}>
+            {more ? "Fewer options" : "More options"}
+          </button>
+        )}
+
+        {more && <>
         <fieldset className="ws-cards">
           <legend>Workspace</legend>
           <label className={`ws-card ${shownWorkspace === "worktree" ? "on" : ""} ${noHistory ? "off" : ""}`}
@@ -215,11 +229,6 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             </span>
           </label>
         </fieldset>
-
-        <label>
-          Name
-          <input value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My app" />
-        </label>
 
         <div className="row two">
           <label>
@@ -254,6 +263,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             <span className="muted small">Tickets can override both. Changes apply from the next run.</span>
           </label>
         </div>
+        </>}
 
         {profile && (
           <>
@@ -308,8 +318,8 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               </button>
             </div>
             <div className="setup-explain">
-              Each ticket works in a fresh copy of your repo (a git worktree). Git-ignored files like <code>.env</code> and{" "}
-              <code>node_modules</code> aren't there. The files below are copied in when the copy is made; the setup command runs only when Claude needs the project's dependencies (to build, test or run it), so other tickets start right away.{" "}
+              Each ticket works in a fresh copy of your folder. Files your version history skips, like <code>.env</code> and{" "}
+              <code>node_modules</code>, aren't in it. The files below are copied in when the copy is made; the setup command runs only when Claude needs the project's dependencies (to build, test or run it), so other tickets start right away.{" "}
               {(filesAuto || setupAuto) && <b>We filled them in from your folder, so you can leave them as they are.</b>}
             </div>
             <div className="field">
@@ -328,7 +338,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addFile(); } }}
                 placeholder="Add a path or glob, then Enter" aria-label="Add a file to copy" />
               <span className="muted small">
-                {filesAuto ? "Found git-ignored .env* files in your folder." : "Copied from your folder into each new worktree; missing ones are skipped."}
+                {filesAuto ? "Found .env* files your version history skips." : "Copied from your folder into each new copy; missing ones are skipped."}
               </span>
             </div>
             <label>
@@ -344,7 +354,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               <span>Cleanup command <span className="muted small setup-hint">(optional, rarely needed)</span></span>
               <input className="mono" value={cleanupCommand} onChange={(e) => setCleanupCommand(e.target.value)} spellCheck={false}
                 placeholder="e.g. docker compose down" />
-              <span className="muted small setup-hint">Runs in the worktree before the board removes it.</span>
+              <span className="muted small setup-hint">Runs in the ticket's copy before the board removes it.</span>
             </label>
             <span className="muted small">
               Teammates and templates moved to the Team tab{onOpenTeam && <> · <button type="button" className="link-btn" onClick={onOpenTeam}>Open Team</button></>}
@@ -376,7 +386,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             Removes {ticketCount === null ? "all" : ticketCount} ticket{ticketCount === 1 ? "" : "s"} with their comments and transcripts
             from <code>~/.claude-kanban</code>. This cannot be undone.
           </p>
-          <p className="muted">Your folder <code>{profile.path}</code>, git branches and Claude sessions are not touched.</p>
+          <p className="muted">Your folder <code>{profile.path}</code>, its version history and your Claude Code chats are not touched.</p>
         </ConfirmDialog>
       )}
     </Modal>

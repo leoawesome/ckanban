@@ -56,7 +56,7 @@ export function DeleteCard({ slug, ticket, tickets, uuid, ids, reason, onError }
           </li>
         ))}
       </ul>
-      <div className="small">{found.length > 1 || (!found.length && ids.length > 1) ? "Their worktrees, branches and chats are removed." : "Its worktree, branch and chat are removed."} This can't be undone.</div>
+      <div className="small">{found.length > 1 || (!found.length && ids.length > 1) ? "Their copies of the folder, saved versions and chats are removed." : "Its copy of the folder, saved versions and chat are removed."} This can't be undone.</div>
       {reason && <div className="muted small">Reason: {reason}</div>}
       <div className="proposal-actions">
         {result ? (

@@ -995,7 +995,7 @@ export function App() {
       ) : !profile ? (
         <div className="empty">
           <h2>No boards yet</h2>
-          <p>A board runs tickets in one folder, usually a git repo.</p>
+          <p>A board works on one folder on your Mac.</p>
           <button className="btn primary" onClick={() => setProfileDialog("new")}>
             Create board
           </button>

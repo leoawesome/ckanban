@@ -14,6 +14,8 @@ interface Dirs {
   configDir?: string;
   /** Paths under these prefixes are skipped (scratch/temp sessions). */
   excludePrefixes?: string[];
+  /** The board's own data folder (~/.claude-kanban or $CKANBAN_HOME): its helper folders are never a project. */
+  dataDir?: string;
 }
 
 function configDirOf(d: Dirs): string {
@@ -42,11 +44,14 @@ export function listClaudeProjects(d: Dirs = {}): ClaudeProject[] {
   // ~/.claude.json, or $CLAUDE_CONFIG_DIR/.claude.json when Claude Code is configured that way.
   const stateDir = !d.homeDir && process.env.CLAUDE_CONFIG_DIR ? process.env.CLAUDE_CONFIG_DIR : home;
   const state = readJson(join(stateDir, ".claude.json"));
-  const exclude = d.excludePrefixes ?? TEMP_PREFIXES;
+  // The board's own folders and the home folder itself aren't projects a user means to pick.
+  const internal = [...new Set([join(home, ".claude-kanban"), d.dataDir ?? process.env.CKANBAN_HOME].filter((x): x is string => !!x))];
+  const exclude = [...(d.excludePrefixes ?? TEMP_PREFIXES), ...internal.map((p) => p.replace(/\/+$/, "") + "/")];
   const paths = Object.keys(state?.projects ?? {});
   const out: ClaudeProject[] = [];
   for (const path of paths) {
-    if (exclude.some((p) => path.startsWith(p))) continue;
+    const bare = path.replace(/\/+$/, "");
+    if (bare === home.replace(/\/+$/, "") || internal.includes(bare) || exclude.some((p) => path.startsWith(p))) continue;
     try {
       if (!statSync(path).isDirectory()) continue;
     } catch {

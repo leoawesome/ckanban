@@ -78,8 +78,8 @@ export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap
   return (
     <div className="ticket-menu-wrap" ref={root}>
       <button ref={button} className={`icon-btn more-btn ${open ? "on" : ""}`} aria-haspopup="menu" aria-expanded={open}
-        aria-label={live ? "Session and ticket actions (session open in terminal)" : "Session and ticket actions"}
-        title="Session & ticket actions" onClick={() => (open ? close() : setOpen(true))}>
+        aria-label={live ? "Ticket actions (open in a terminal)" : "Ticket actions"}
+        title="Ticket actions" onClick={() => (open ? close() : setOpen(true))}>
         <MoreIcon size={16} />
         {live && <span className="more-dot" aria-hidden />}
       </button>
@@ -87,7 +87,7 @@ export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap
         <MenuSheet onClose={() => close(false)}>
           <div className="inbox-menu ticket-menu" role="menu" aria-label="Ticket actions" ref={menu} onKeyDown={onKey}>
             <div className="menu-heading">
-              Session
+              Claude Code
               {live && <span className="badge ok live-badge"><span className="live-dot" /> open in terminal</span>}
             </div>
             {ticket.resumeCommand && (
@@ -115,30 +115,30 @@ export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap
             </button>
             {ticket.session && (
               <button role="menuitem" className="menu-item" disabled={working}
-                title={working ? "Wait until Claude is done" : "New ticket in Planning with a copy of this conversation and its own branch off this one's committed code"}
+                title={working ? "Wait until Claude is done" : "New ticket in Planning with a copy of this conversation and the work this one has saved"}
                 onClick={pick(onBranch)}>
                 <span className="menu-icon" aria-hidden><BranchIcon size={14} /></span>
-                <span className="menu-label">Branch ticket…</span>
-                <span className="menu-hint">{working ? "Wait until Claude is done" : "copy chat + code"}</span>
+                <span className="menu-label">Try another direction (copy this ticket)…</span>
+                <span className="menu-hint">{working ? "Wait until Claude is done" : "copy chat + work"}</span>
               </button>
             )}
             {hasSession && !working && (
               <>
                 <button role="menuitem" className="menu-item" onClick={pick(onPickSession)}>
                   <span className="menu-icon" aria-hidden><TerminalIcon size={14} /></span>
-                  <span className="menu-label">Change linked session…</span>
+                  <span className="menu-label">Change linked Claude Code chat…</span>
                   {linkedLabel && <span className="menu-value">{linkedLabel}</span>}
                 </button>
                 <button role="menuitem" className="menu-item" onClick={pick(onUnlink)}>
                   <span className="menu-icon" aria-hidden><CloseIcon size={14} /></span>
-                  <span className="menu-label">Unlink session</span>
+                  <span className="menu-label">Unlink Claude Code chat</span>
                 </button>
               </>
             )}
             {canLink && (
               <button role="menuitem" className="menu-item" onClick={pick(onPickSession)}>
                 <span className="menu-icon" aria-hidden><TerminalIcon size={14} /></span>
-                <span className="menu-label">Link an existing Claude session…</span>
+                <span className="menu-label">Continue a Claude Code chat…</span>
               </button>
             )}
             {ticket.prUrl && ticket.status === "review" && (

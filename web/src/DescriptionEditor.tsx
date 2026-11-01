@@ -65,7 +65,7 @@ export function DescriptionEditor({ slug, ticketId, value, setValue, images, inp
     <>
     <div className={`desc-editor${fill ? " fill" : ""}${images?.dragOver ? " drop-target" : ""}`}>
       <textarea ref={inputRef} rows={rows} value={value} onChange={(e) => setValue(e.target.value)} autoFocus={autoFocus}
-        placeholder={placeholder ?? "Context, acceptance criteria, links… (markdown)"} {...images?.handlers}
+        placeholder={placeholder ?? "Context, what done looks like, links…"} {...images?.handlers}
         onSelect={() => { snippets.handlers.onSelect(); slash.handlers.onSelect(); }}
         onBlur={() => { snippets.handlers.onBlur(); slash.handlers.onBlur(); }}
         onKeyDown={(e) => {

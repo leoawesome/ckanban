@@ -54,8 +54,46 @@ const FILE_STEP = /^(Read|Write|Edit|MultiEdit|NotebookEdit): ((?:~|\/)\S*\/([^/
 /** A step label for one line: a file tool's full path becomes its file name ("Read: /a/b/c.png" is "Read: c.png"). */
 export const shortStep = (label: string) => label.replace(FILE_STEP, "$1: $3");
 
+/** Built-in tools as plain verbs; the raw label stays in the expanded step list. */
+const PLAIN_TOOL: Record<string, string | ((arg: string) => string)> = {
+  Read: (f) => `Read ${f}`, Edit: (f) => `Edited ${f}`, MultiEdit: (f) => `Edited ${f}`, NotebookEdit: (f) => `Edited ${f}`, Write: (f) => `Wrote ${f}`,
+  Bash: "Ran a command", BashOutput: "Checked a command", KillShell: "Stopped a command", Monitor: "Watched a command",
+  Grep: "Searched the files", Glob: "Looked for files", LS: "Listed files",
+  WebFetch: "Opened a web page", WebSearch: (q) => `Searched the web for ${q}`,
+  ToolSearch: "Got tools ready", Task: "Started a helper", Agent: "Started a helper", TodoWrite: "Updated its to-do list",
+  Skill: "Used a skill", AskUserQuestion: "Asked you a question", ExitPlanMode: "Finished the plan", EnterPlanMode: "Started planning",
+};
+
+/** "mcp__linear-server__get_document" as "Linear", "get document" as "read document". */
+const SERVICE: Record<string, string> = { ckanban: "Board", "claude-in-chrome": "Chrome" };
+const VERB: Record<string, string> = {
+  get: "read", read: "read", fetch: "read", view: "read", list: "list", search: "search", find: "search", query: "search",
+  create: "create", add: "add", update: "update", edit: "update", set: "set", delete: "delete", remove: "delete", send: "send", post: "post",
+};
+function serviceName(raw: string): string {
+  const s = raw.replace(/^claude_ai_/, "").replace(/[-_](server|mcp)$/i, "");
+  return SERVICE[s] ?? (s.replace(/[-_]+/g, " ").replace(/^\w/, (c) => c.toUpperCase()) || "a tool");
+}
+
+/** A step label ("<Tool>: <arg>", src/server/subagents.ts toolLabel) in plain words for the one-line summary:
+ *  "Read: /a/b/api.ts" is "Read api.ts", "Bash: bun test" is "Ran a command", "mcp__linear-server__get_document: X" is "Linear: read document". */
+export function plainStep(label: string): string {
+  const m = /^([\w-]+)(?:: ([\s\S]*))?$/.exec(label);
+  if (!m) return label;
+  const [, tool, arg = ""] = m;
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(tool);
+  if (mcp) {
+    const [first, ...rest] = mcp[2].split(/[_-]+/);
+    return `${serviceName(mcp[1])}: ${[VERB[first.toLowerCase()] ?? first, ...rest].join(" ").toLowerCase()}`;
+  }
+  const plain = PLAIN_TOOL[tool];
+  if (!plain) return label;
+  if (typeof plain === "string") return plain;
+  return arg ? plain(/^(?:~|\/)/.test(arg) ? arg.replace(/\/+$/, "").split("/").pop()! : arg) : tool;
+}
+
 export function stepsSummary(items: { text: string; error?: true }[], running: boolean): { text: string; failed: number } {
-  const last = shortStep(items.at(-1)?.text ?? "");
+  const last = plainStep(items.at(-1)?.text ?? "");
   const failed = items.filter((t) => t.error).length;
   const n = items.length;
   return { text: running ? `Step ${n} · ${last}` : `Did ${n} step${n === 1 ? "" : "s"} · ${last}`, failed };

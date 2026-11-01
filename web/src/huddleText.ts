@@ -73,10 +73,10 @@ export function withActivity<H extends { participants: { handle: string; lastAct
 /** Context tag at or above this many tokens is warn-coloured: every step re-reads a big conversation. */
 export const BIG_CONTEXT_TOKENS = 120_000;
 
-/** "42k ctx", "850 ctx", "1.2M ctx". */
+/** "42k chat size", "850 chat size", "1.2M chat size": how much Claude re-reads each step. */
 export function contextText(tokens: number): string {
   const n = tokens >= 1e6 ? `${(tokens / 1e6).toFixed(1).replace(/\.0$/, "")}M` : tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : String(tokens);
-  return `${n} ctx`;
+  return `${n} chat size`;
 }
 
 /** Where a post came in from, for its tooltip; null for system messages and old posts without a source. */
@@ -466,3 +466,7 @@ export function huddleIdle(
   if (keptAt && keptAt === h.idleSince) return false;
   return now - Date.parse(h.idleSince) >= IDLE_HUDDLE_MS;
 }
+
+/** A helper's mode in plain words: "tagged" joins when @mentioned, "monitor" reads every message (and costs more). */
+export const MODE_LABEL = { tagged: "When @mentioned", monitor: "Reads everything" } as const;
+export const modeLabel = (mode: string) => MODE_LABEL[mode as keyof typeof MODE_LABEL] ?? mode;

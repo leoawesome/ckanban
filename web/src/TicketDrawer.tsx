@@ -690,7 +690,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
   const cancelEdit = () => { setBody(baseBody); setEditing(false); images.clearError(); };
 
   const usageTitle = !usage ? "" : usage.totals.pctCurrentWindow === null ? missingPctReason(usage)
-    : "This ticket's ≈ share of the current 5h plan window, and its API-equivalent cost";
+    : "This ticket's ≈ share of your plan's current 5-hour limit, and its API-equivalent cost";
   // On a phone the run cost joins the column's help line when it is the only result chip.
   const usageInline = phone && !!col && hasUsage && !links.length && outputCount === 0;
   // Status, actions, links and the description: a sidebar on wider screens, the Ticket tab on phones.
@@ -744,7 +744,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
 
         {ticket.branchedFrom && (
           <div className="field-row">
-            <span className="field-key" title="This ticket started as a copy of that one's conversation and code">Branched from</span>
+            <span className="field-key" title="This ticket started as a copy of that one's conversation and work">Copied from</span>
             {branchedFrom ? (
               <button className="link-btn ticket-link" onClick={() => onOpenTicket(branchedFrom.id)}>{branchedFrom.title}</button>
             ) : (
@@ -754,7 +754,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
         )}
         {branches.length > 0 && (
           <div className="field-row">
-            <span className="field-key" title="Tickets branched from this one">Branches</span>
+            <span className="field-key" title="Tickets copied from this one">Copies</span>
             <span className="dep-list">
               {branches.map((b) => <button key={b.id} className="link-btn ticket-link" onClick={() => onOpenTicket(b.id)}>{b.title}</button>)}
             </span>
@@ -993,7 +993,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
               <div className="banner warn inline limit-banner cap-banner" role="status">
                 <div className="limit-text">
                   <strong>{capLabel(ticket)}</strong>
-                  <span>The run spent its budget before it finished. Continue it in the same session with more, or change the cap in ⋯.</span>
+                  <span>The run spent its budget before it finished. Continue the same conversation with more, or change the cap in ⋯.</span>
                 </div>
                 <CapActions slug={slug} ticket={ticket} onError={onError} small />
               </div>
@@ -1064,10 +1064,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
           </ConfirmDialog>
         )}
         {confirmBranch && (
-          <ConfirmDialog title="Branch this ticket?" confirmLabel="Branch ticket" busyLabel="Branching…" tone="primary"
+          <ConfirmDialog title="Try another direction?" confirmLabel="Copy ticket" busyLabel="Copying…" tone="primary"
             onCancel={() => setConfirmBranch(false)}
             onConfirm={async () => { await branchTicket(slug, ticket, onOpenTicket); setConfirmBranch(false); }}>
-            <p>Creates <b>Branch: {ticket.title}</b> in Planning with a copy of this conversation{ticket.branch ? <>, on its own branch off <code>{ticket.branch}</code> (committed work only)</> : ""}. Then take it in another direction; this ticket stays as it is.</p>
+            <p>Creates a copy of this ticket in Planning with this conversation{ticket.branch ? " and the work it has saved so far" : ""}. Take the copy in another direction; this ticket stays as it is.</p>
           </ConfirmDialog>
         )}
         {reportingBug && (
@@ -1077,7 +1077,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose, 
           <ConfirmDialog title={`Delete "${ticket.title}"?`} confirmLabel="Delete ticket" busyLabel="Deleting…" onCancel={() => setConfirmDelete(false)}
             onConfirm={async () => { await api.deleteTicket(slug, ticket.id); onClose(); }}>
             <p>Removes the ticket and its board history.{working ? " Claude will be stopped." : ""}</p>
-            {ticket.worktree && <p className="muted">Its worktree is removed if it has no uncommitted changes. The branch and any PR stay.</p>}
+            {ticket.worktree && <p className="muted">Its copy of the folder is removed if it has no unsaved changes. Its saved versions and any pull request stay.</p>}
           </ConfirmDialog>
         )}
       </aside>

@@ -18,25 +18,25 @@ export function BranchCard({ reason, branch, here, running, onBranch, onOpen }: 
   return (
     <div className={`proposal branch-card ${done ? "applied" : ""}`}>
       <div className="proposal-head">
-        <span className="proposal-tag"><BranchIcon size={12} /> Branch this ticket</span>
+        <span className="proposal-tag"><BranchIcon size={12} /> Try another direction</span>
       </div>
       {reason && <div className="branch-reason">{reason}</div>}
       <div className="proposal-actions">
         {here ? (
-          <span className="badge ok">Branched: this ticket</span>
+          <span className="badge ok">Copied: this is the copy</span>
         ) : branch ? (
           <>
-            <span className="badge ok">Branched</span>
+            <span className="badge ok">Copied</span>
             <button className="link-btn ticket-link" onClick={() => onOpen(branch.id)}>{branch.title}</button>
           </>
         ) : (
           <>
             <button className="btn primary small" disabled={busy || running} title={running ? "Wait until Claude is done" : undefined}
               onClick={async () => { setBusy(true); try { await onBranch(); } finally { setBusy(false); } }}>
-              {busy ? "Branching…" : "Branch"}
+              {busy ? "Copying…" : "Copy ticket"}
             </button>
             <span className="muted small">
-              {running ? "Wait until Claude is done." : "New ticket in Planning with a copy of this conversation and the committed code. This one stays as it is."}
+              {running ? "Wait until Claude is done." : "New ticket in Planning with a copy of this conversation and the saved work. This one stays as it is."}
             </span>
           </>
         )}
