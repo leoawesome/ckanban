@@ -3,6 +3,8 @@ import { openedAt, shouldPulse } from "./cardState";
 import type { InboxItem } from "./api";
 import { useLayer } from "./layers";
 import { MenuSheet } from "./MenuSheet";
+import { groupInbox } from "./inboxOrder";
+import { useSafeClear } from "./useSafeClear";
 import { fullTime, OLD_WAIT_MS, timeUntil, waitedFor } from "./time";
 import { useNow } from "./useNow";
 
@@ -11,20 +13,26 @@ export const answers = (i: InboxItem) => ["questions", "proposal", "reply", "hud
 const keyOf = (i: InboxItem) => `${i.profile}/${i.id}`;
 
 /**
- * Top-bar "N need you" across every board, oldest wait first, each with how long it has waited (marked after 8h).
- * Each entry opens its ticket (Answer/Open), marks it done or snoozes it for a day; snoozed ones sit in a collapsed
- * section with time left and Unsnooze. ↑↓ move, Enter opens, d marks done, s snoozes (or unsnoozes), Esc closes.
+ * Top-bar "N need you" across every board, in two groups: what Claude is waiting on (questions, blocked, ...) then what
+ * is ready to check (review, reply), each newest first with how long it has waited (marked after 8h). Items waiting
+ * over a week fold into "Older" with Snooze all. Each entry opens its ticket (Answer/Open), marks it done or snoozes it
+ * for a day; a cleared row shrinks away and clicks pause briefly, so the next row's button can't be hit by mistake.
+ * Snoozed ones sit in a collapsed section with time left and Unsnooze.
+ * ↑↓ move, Enter opens, d marks done, s snoozes (or unsnoozes), Esc closes.
  */
-export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, openRequest }: {
+export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSnoozeAll, openRequest }: {
   items: InboxItem[];
   snoozed?: InboxItem[];
   onPick: (i: InboxItem) => void;
   onMarkDone: (i: InboxItem) => void;
   onSnooze: (i: InboxItem, on: boolean) => void;
+  onSnoozeAll: (list: InboxItem[]) => void;
   openRequest?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [showSnoozed, setShowSnoozed] = useState(false);
+  const [showOlder, setShowOlder] = useState(false);
+  const { clear, busy, leaving } = useSafeClear();
   const root = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const pill = useRef<HTMLButtonElement>(null);
@@ -67,10 +75,13 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, openR
       const i = key && [...items, ...snoozed].find((x) => keyOf(x) === key);
       if (!i) return;
       e.preventDefault();
-      if (e.key.toLowerCase() === "d") onMarkDone(i);
-      else onSnooze(i, !i.snoozedUntil);
-      // The next entry moves up into this place.
-      requestAnimationFrame(() => focusAt(Math.min(at, entries().length - 1)));
+      const done = e.key.toLowerCase() === "d";
+      clear(keyOf(i), () => {
+        if (done) onMarkDone(i);
+        else onSnooze(i, !i.snoozedUntil);
+        // The next entry moves up into this place.
+        requestAnimationFrame(() => focusAt(Math.min(at, entries().length - 1)));
+      });
     }
   };
 
@@ -83,11 +94,42 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, openR
   const now = useNow();
   if (empty) return null;
   const several = new Set([...items, ...snoozed].map((i) => i.profile)).size > 1;
+  const groups = groupInbox(items, now);
   // The pill pulses only while something new and urgent waits (cardState.ts).
   const fresh = items.some((i) => shouldPulse(i.attention, now, openedAt(i.id)));
-  const sorted = [...items].sort((a, b) => a.attention.since.localeCompare(b.attention.since));
   const later = [...snoozed].sort((a, b) => a.snoozedUntil!.localeCompare(b.snoozedUntil!));
-  const pick = (i: InboxItem) => { setOpen(false); onPick(i); };
+  const pick = (i: InboxItem) => {
+    if (busy()) return;
+    setOpen(false);
+    onPick(i);
+  };
+  const row = (i: InboxItem) => {
+    const old = now - new Date(i.attention.since).getTime() > OLD_WAIT_MS;
+    const key = keyOf(i);
+    return (
+      <div key={key} className={`inbox-entry${leaving(key) ? " leaving" : ""}`}>
+        <div className="inbox-entry-in">
+          <button role="menuitem" data-entry={key} className="inbox-item" onClick={() => pick(i)}
+            title={`Enter ${answers(i) ? "answers" : "opens"} · d marks done · s snoozes for a day`}>
+            <span className="inbox-title">{i.title}</span>
+            <span className="inbox-row">
+              <span className={`inbox-why att-${i.attention.kind}`}>
+                {i.attention.label}{several && <span className="inbox-board-name"> · {i.profileName}</span>}
+              </span>
+              <time className={`inbox-age${old ? " old" : ""}`} dateTime={i.attention.since} title={`Waiting since ${fullTime(i.attention.since)}`}>
+                waiting {waitedFor(i.attention.since, now)}
+              </time>
+            </span>
+          </button>
+          <span className="inbox-actions">
+            <button className="btn small primary" tabIndex={-1} onClick={() => pick(i)} title="Open the ticket (Enter)">{answers(i) ? "Answer" : "Open"}</button>
+            <button className="btn small" tabIndex={-1} onClick={() => clear(key, () => onMarkDone(i))} title="Move it to Done (d)">Mark done</button>
+            <button className="btn small ghost" tabIndex={-1} onClick={() => clear(key, () => onSnooze(i, true))} title="Hide it from the Inbox and counts for a day, or until something changes (s)">Snooze</button>
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="inbox" ref={root}>
@@ -106,37 +148,30 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, openR
         <MenuSheet onClose={() => setOpen(false)}>
           <div className="inbox-menu" role="menu" ref={menu} onKeyDown={onMenuKey}>
             {!items.length && <p className="inbox-empty muted small">Nothing needs you right now.</p>}
-            {sorted.map((i) => {
-              const old = now - new Date(i.attention.since).getTime() > OLD_WAIT_MS;
-              return (
-                <div key={keyOf(i)} className="inbox-entry">
-                  <button role="menuitem" data-entry={keyOf(i)} className="inbox-item" onClick={() => pick(i)}
-                    title={`Enter ${answers(i) ? "answers" : "opens"} · d marks done · s snoozes for a day`}>
-                    <span className="inbox-title">{i.title}</span>
-                    <span className="inbox-row">
-                      <span className={`inbox-why att-${i.attention.kind}`}>
-                        {i.attention.label}{several && <span className="inbox-board-name"> · {i.profileName}</span>}
-                      </span>
-                      <time className={`inbox-age${old ? " old" : ""}`} dateTime={i.attention.since} title={`Waiting since ${fullTime(i.attention.since)}`}>
-                        waiting {waitedFor(i.attention.since, now)}
-                      </time>
-                    </span>
+            {groups.waiting.length > 0 && <div className="inbox-board" role="presentation">Claude is waiting on you · {groups.waiting.length}</div>}
+            {groups.waiting.map(row)}
+            {groups.check.length > 0 && <div className="inbox-board" role="presentation">Ready to check · {groups.check.length}</div>}
+            {groups.check.map(row)}
+            {groups.older.length > 0 && (
+              <>
+                <div className="inbox-older-head">
+                  <button role="menuitem" className="inbox-board inbox-snoozed-toggle" aria-expanded={showOlder} onClick={() => setShowOlder((v) => !v)}
+                    title="Waiting for more than a week">
+                    {showOlder ? "▾" : "▸"} Older · {groups.older.length}
                   </button>
-                  <span className="inbox-actions">
-                    <button className="btn small primary" tabIndex={-1} onClick={() => pick(i)} title="Open the ticket (Enter)">{answers(i) ? "Answer" : "Open"}</button>
-                    <button className="btn small" tabIndex={-1} onClick={() => onMarkDone(i)} title="Move it to Done (d)">Mark done</button>
-                    <button className="btn small ghost" tabIndex={-1} onClick={() => onSnooze(i, true)} title="Hide it from the Inbox and counts for a day, or until something changes (s)">Snooze</button>
-                  </span>
+                  <button className="btn small ghost" tabIndex={-1} onClick={() => { if (!busy()) onSnoozeAll(groups.older); }}
+                    title="Hide every item waiting more than a week for a day">Snooze all</button>
                 </div>
-              );
-            })}
+                {showOlder && groups.older.map(row)}
+              </>
+            )}
             {later.length > 0 && (
               <>
                 <button role="menuitem" className="inbox-board inbox-snoozed-toggle" aria-expanded={showSnoozed} onClick={() => setShowSnoozed((v) => !v)}>
                   {showSnoozed ? "▾" : "▸"} Snoozed · {later.length}
                 </button>
                 {showSnoozed && later.map((i) => (
-                  <div key={keyOf(i)} className="inbox-entry snoozed">
+                  <div key={keyOf(i)} className={`inbox-entry snoozed${leaving(keyOf(i)) ? " leaving" : ""}`}><div className="inbox-entry-in">
                     <button role="menuitem" data-entry={keyOf(i)} className="inbox-item" onClick={() => pick(i)} title="Enter opens · s unsnoozes · d marks done">
                       <span className="inbox-title">{i.title}</span>
                       <span className="inbox-row">
@@ -149,9 +184,9 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, openR
                       </span>
                     </button>
                     <span className="inbox-actions">
-                      <button className="btn small ghost" tabIndex={-1} onClick={() => onSnooze(i, false)} title="Back in the Inbox now (s)">Unsnooze</button>
+                      <button className="btn small ghost" tabIndex={-1} onClick={() => clear(keyOf(i), () => onSnooze(i, false))} title="Back in the Inbox now (s)">Unsnooze</button>
                     </span>
-                  </div>
+                  </div></div>
                 ))}
               </>
             )}

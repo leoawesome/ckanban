@@ -1398,6 +1398,27 @@ body > .output-view.reader { position: fixed; }
 .inbox-entry .inbox-item:hover { background: none; }
 .inbox-actions { display: flex; gap: 4px; padding: 0 8px; }
 .inbox-entry.snoozed .inbox-title { color: var(--muted); }
+/* A cleared row shrinks away (LEAVE_MS in inboxOrder.ts) so the next one slides up instead of jumping under the pointer. */
+.inbox-entry { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.18s ease, opacity 0.18s ease, padding 0.18s ease; }
+.inbox-entry-in { min-height: 0; overflow: hidden; }
+.inbox-entry.leaving { grid-template-rows: 0fr; opacity: 0; padding-bottom: 0; pointer-events: none; }
+.inbox-older-head { display: flex; align-items: center; gap: 6px; padding-right: 4px; }
+.inbox-older-head .inbox-snoozed-toggle { flex: 1; }
+.now-card.need { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.18s ease, opacity 0.18s ease, padding 0.18s ease, margin 0.18s ease, border-width 0.18s ease; }
+.now-card-in { min-height: 0; overflow: hidden; display: flex; flex-direction: column; margin: -3px; padding: 3px; }
+.now-card.need.leaving { grid-template-rows: 0fr; opacity: 0; padding-top: 0; padding-bottom: 0; margin-bottom: 0; border-top-width: 0; border-bottom-width: 0; pointer-events: none; }
+.now-older { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 16px 0 6px; }
+.now-older-toggle { margin: 0 !important; border: 0; background: none; cursor: pointer; min-height: 40px; padding: 0 4px; text-align: left; flex: 1; }
+.phone-team { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+/* The phone's Team tab: the views scroll sideways, the list sits above the selected teammate. */
+.phone-team .team-bar { flex-wrap: wrap; padding: 8px 12px; }
+.phone-team .segmented { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.phone-team .team-bar .spacer { display: none; }
+.phone-team .team-filter { flex: 1; min-width: 0; width: auto; min-height: 40px; font-size: 16px; }
+.phone-team .team-body:not(.single) { flex-direction: column; }
+.phone-team .tm-list { width: auto; min-width: 0; max-width: none; max-height: 38%; flex: none; border-right: 0; border-bottom: 1px solid var(--border); }
+.phone-team .tm-detail { flex: 1; min-height: 0; }
+@media (prefers-reduced-motion: reduce) { .inbox-entry, .now-card.need { transition: none; } }
 .inbox-snoozed-toggle { display: block; width: 100%; text-align: left; border: 0; background: none; cursor: pointer; border-radius: 6px; }
 .inbox-snoozed-toggle:hover, .inbox-snoozed-toggle:focus-visible { background: var(--surface-2); }
 .inbox-empty { padding: 8px; margin: 0; }
@@ -3129,3 +3150,29 @@ button.tag-chip:hover { border-color: currentColor; }
 .find-links-foot { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 12px; }
 .find-links-foot .btn { margin-left: 6px; }
 .proposal-family { margin-top: 6px; }
+
+/* ============ touch screens: big enough to tap ============
+   Main controls at least 40px, everything else at least 24px. Small chips keep their look and get an invisible
+   larger tap area (::after). The column collapse button only shows on hover, so touch screens don't get it. */
+@media (pointer: coarse) {
+  .btn { min-height: 40px; }
+  .btn.small { min-height: 36px; padding-left: 12px; padding-right: 12px; }
+  .icon-btn, .banner .icon-btn, .toast .icon-btn { width: 40px; height: 40px; }
+  .icon-btn.tiny { width: 32px; height: 32px; }
+  .icon-btn-placeholder { width: 40px; height: 40px; }
+  .column-head { min-height: 48px; }
+  .column-head .column-collapse { display: none; }
+  .chip { min-height: 36px; }
+  .select-trigger { min-height: 40px; }
+  .segmented button { min-height: 36px; }
+  .tag-add { min-height: 32px; }
+  .inbox-snoozed-toggle { min-height: 36px; }
+  button.tag-chip, .tag-x { position: relative; }
+  button.tag-chip::after { content: ""; position: absolute; inset: -7px -3px; }
+  .tag-x { min-width: 20px; }
+  .tag-x::after { content: ""; position: absolute; inset: -7px -4px; }
+  button.badge { padding-top: 5px; padding-bottom: 5px; }
+  /* main controls on the phone screens */
+  .push-hint .btn, .col-jump .chip, .now-elsewhere .chip, .team-bar .segmented button { min-height: 40px; }
+  .composer textarea { min-height: 40px; }
+}
