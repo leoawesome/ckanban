@@ -13,7 +13,7 @@ import { capWait } from "./capText";
 import { LimitActions } from "./LimitActions";
 import { StallActions, stallWait } from "./StallActions";
 import { limitLabel, limitWait } from "./limitText";
-import { ResourceChip, resourceWait } from "./Needs";
+import { DeviceChips } from "./Needs";
 import { currentPr, prChips } from "./prText";
 import { ResolveConflicts } from "./ResolveConflicts";
 import { TagChip } from "./Tags";
@@ -123,10 +123,8 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
 }) {
   const working = (ticket.status === "in_progress" && !waitsForSlot(ticket) && !autoHuddleIdle(ticket)) || !!ticket.running;
   const att = ticket.attention ?? null;
-  const waitFor = resourceWait(ticket);
   // Its own huddle works on it: the huddle badge says so, not a stale Blocked or Failed.
   const badge = att || (ticket.huddleBusy && huddle) ? null
-    : waitFor.length ? <span className="badge wait" title={`Waiting for ${waitFor.join(", ")}: another ticket is using it`}>waiting</span>
     : ticket.folderWait ? <span className="badge wait" title="Tickets on a folder without version history run one at a time; this one starts when the other finishes">waiting: another ticket is using the folder</span>
     : queued && !working ? (held
       ? <span className="badge queued" title="A daemon restart is pending; queued tickets start right after it">Waits for restart</span>
@@ -183,7 +181,7 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
           {plainPreview(last.from === "huddle" ? digestPreview(last.text) : last.text)}
         </div>
       )}
-      {(badge || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp || ticket.followUpStopped) && (
+      {(badge || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.devices || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp || ticket.followUpStopped) && (
         <div className="card-meta">
           {ticket.plan && ticket.plan.state !== "done" && (
             <span className={`badge plan ${ticket.plan.state}`} title="This ticket runs a plan of child tickets">
@@ -205,7 +203,7 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
           {addOnChip}
           {linkedChip}
           {suggestChip}
-          {ticket.needs?.map((n) => <ResourceChip key={n} name={n} held={!!ticket.resources?.holding} />)}
+          <DeviceChips ticket={ticket} />
           {badge}
           {ticket.autoHuddle && working && autoHuddleChip(ticket.autoHuddle)}
           {huddle && <HuddleBadge badge={huddle} onOpen={onOpenHuddle} />}

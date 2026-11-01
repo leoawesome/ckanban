@@ -272,16 +272,17 @@ test("API connection retries show on the card instead of looking frozen", () => 
 
 test("ticket chats can manage tickets when the user asks; planners hear about needs", () => {
   const act = chatPrompt(ticket, "manage A and B", "act", "/o");
-  for (const s of ["adopt_tickets", "plan_control", "needs (e.g. [\"emulator\"])", "If the user only asked to create or adopt tickets, don't start the plan"]) expect(act).toContain(s);
+  for (const s of ["adopt_tickets", "plan_control", "needs (e.g. [\"chrome-whatsapp\"]) as a hint", "If the user only asked to create or adopt tickets, don't start the plan"]) expect(act).toContain(s);
   const refine = chatPrompt(ticket, "manage A and B", "refine", "/o");
   expect(refine).not.toContain("read-only and can't change the board");
   for (const s of ["ONLY when the user asks for it in their message", "move_ticket", "propose_delete", "Never edit, stop or delete this ticket itself", "only when the user asks for it in a message they typed", "Say in your reply what you changed"]) {
     expect(refine).toContain(s);
   }
-  expect(refine).toContain('"needs":["emulator"]');
+  expect(refine).toContain('"needs":["chrome-whatsapp"] (not "chrome"): a hint only');
   const wake = orchestratorPrompt(ticket, { kind: "event", events: [], table: "", board: "kanban", outputDir: "/o" });
-  expect(wake).toContain("one ticket per exclusive resource (needs) at a time");
-  expect(wake).toContain("instead of a dependsOn chain");
+  expect(wake).not.toContain("exclusive resource");
+  expect(wake).toContain("not a dependsOn chain");
+  expect(wake).toContain("take_devices");
 });
 
 test("run prompts adapt to the folder's version history and never block on missing git", () => {

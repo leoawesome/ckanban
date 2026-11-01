@@ -1793,6 +1793,38 @@ button.pill:hover { color: var(--text); }
   border: 1px solid var(--border); border-radius: 99px; color: var(--muted); white-space: nowrap; vertical-align: 1px;
 }
 .res-chip.held { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+/* "Waiting for chrome-whatsapp · 3 min" can be wider than a card: it wraps instead of running past the edge. */
+.card-meta .res-chip { max-width: 100%; white-space: normal; border-radius: 10px; }
+.res-chip.wait { border-color: color-mix(in srgb, var(--warn) 35%, transparent); color: var(--warn); background: var(--warn-soft); }
+/* More, Devices: the shared device list (DevicesDialog.tsx). */
+.devices { display: flex; flex-direction: column; gap: 10px; padding: 4px 18px 18px; }
+.devices-intro { margin: 0 0 2px; }
+.device { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.device-head { display: flex; align-items: center; gap: 8px; }
+.device-name { font-family: var(--mono); font-weight: 600; font-size: 13px; }
+.device-cap { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.device-cap input { width: 50px; padding: 2px 6px; text-align: center; }
+.device-desc { font-size: 13px; color: var(--muted); }
+.device-desc.muted { font-style: italic; }
+.device-status { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; font-size: 12.5px; }
+.device-use { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.device-ticket { color: var(--text); text-align: left; }
+.device-free { margin-left: auto; font-size: 12px; color: var(--muted); text-decoration: underline; }
+.device-pill { font-size: 11px; font-weight: 550; padding: 1px 8px; border-radius: 99px; white-space: nowrap; }
+.device-pill.using { background: var(--accent-soft); color: var(--accent); }
+.device-pill.wait { background: var(--warn-soft); color: var(--warn); }
+.device-pill.free { background: var(--ok-soft); color: var(--ok); }
+.device-pill.new { background: var(--surface-2); color: var(--muted); }
+.device-edit { display: flex; gap: 6px; align-items: center; }
+.device-edit input { flex: 1; min-width: 0; }
+.device-new input:not([type="number"]) { width: 100%; }
+.device-new .device-name-input { font-family: var(--mono); flex: 1; width: auto; }
+.device-edit-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.device-add {
+  border: 1px dashed var(--border); background: none; width: 100%; padding: 9px; border-radius: var(--radius);
+  color: var(--muted); font: inherit; cursor: pointer;
+}
+.device-add:hover { color: var(--text); border-color: var(--muted); }
 .child-deps .res-chip { margin-right: 4px; }
 .needs-field { display: flex; flex-direction: column; gap: 5px; }
 .needs-field .field-help { margin: 0; }

@@ -31,6 +31,7 @@ import {
 import { FileError, findInRoots, listDir, openWithSystem, readFileForView, type FileRoot } from "./files";
 import { McpError, McpManager } from "./mcp";
 import { MessageError, Notifier } from "./notify";
+import { DeviceError, TAKE_WAIT_MS, type DeviceUser } from "./devices";
 import { PushService } from "./push";
 import { LISTENER_HEADER, LOGIN_HEADER, qrSvg, RemoteAccess, RemoteError, remoteUrl, type RemoteConfig } from "./remote";
 import { AGENT_IDS, AgentError, AgentRegistry, type AgentId } from "./agents";
@@ -433,8 +434,8 @@ export function createServer(deps: ServerDeps) {
       terminalOpen: deps.terminals?.isOpen(p.slug, t.id) ?? false,
       /** The last run's error has a one-click fix (Start fresh session / Take over here). */
       recovery: running ? null : recoveryFor(t.error),
-      /** Ticket.needs: holds them now, or which ones another ticket holds while this one would start. */
-      resources: board.resourceState(p.slug, t),
+      /** Shared devices its run uses now, and the ones it waits for (devices.ts); Ticket.needs is only a hint. */
+      devices: board.deviceState(p.slug, t.id),
       /** It would start now but another ticket is editing the board's folder in place (see Board.folderBusy). */
       folderWait: board.folderWait(p.slug, t),
       /** A plan child waiting on the user (never started by the plan until then). */
@@ -450,6 +451,12 @@ export function createServer(deps: ServerDeps) {
       runCap: runCapFor(t, p),
     };
   };
+
+  /** The Devices screen: each device with who uses it and who waits, by ticket title and board name. */
+  const deviceViews = () => board.devices.views().map((d) => {
+    const who = (u: DeviceUser) => ({ ...u, title: store.getTicket(u.slug, u.id)?.title ?? null, board: store.getProfile(u.slug)?.name ?? u.slug });
+    return { ...d, using: d.using.map(who), waiting: d.waiting.map(who) };
+  });
 
   const emitTicket = (slug: string, id: string) => {
     const t = store.getTicket(slug, id);
@@ -572,6 +579,35 @@ export function createServer(deps: ServerDeps) {
         if (typeof b?.enabled !== "boolean") throw new HttpError(400, "enabled must be true or false");
         const st = b.enabled ? await remote.on() : await remote.off();
         return json({ ...st, qrSvg: st.url ? qrSvg(st.url) : null, local: true });
+      }
+    }
+
+    // Shared devices (devices.ts): every board's list, who uses each one and who waits. Runs read it; only the user edits or frees.
+    if (parts[0] === "devices") {
+      try {
+        if (parts.length === 1 && m === "GET") return json(deviceViews());
+        if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user changes or frees devices (More, Devices); a run takes and lets go of its own with take_devices and release_devices");
+        if (parts.length === 1 && m === "POST") {
+          const b = (await body(req)) ?? {};
+          board.devices.upsert({
+            name: String(b.name ?? ""), description: b.description === undefined ? undefined : String(b.description),
+            capacity: b.capacity === undefined ? undefined : Number(b.capacity),
+          });
+          return json(deviceViews());
+        }
+        const name = decodeURIComponent(parts[1] ?? "");
+        if (parts.length === 2 && m === "DELETE") {
+          board.devices.remove(name);
+          return json(deviceViews());
+        }
+        if (parts.length === 3 && parts[2] === "free" && m === "POST") {
+          const b = (await body(req)) ?? {};
+          board.devices.free(name, String(b.profile ?? ""), String(b.id ?? ""));
+          return json(deviceViews());
+        }
+      } catch (e) {
+        if (e instanceof DeviceError) throw new HttpError(e.status, e.message);
+        throw e;
       }
     }
 
@@ -1492,6 +1528,23 @@ export function createServer(deps: ServerDeps) {
         }
       } catch (e) {
         if (e instanceof FollowUpError) throw new HttpError(400, e.message);
+        throw e;
+      }
+    }
+    // take_devices / release_devices: the ticket's own Claude takes shared devices just before it uses them (devices.ts).
+    if (action === "devices" && m === "POST" && parts.length === 5) {
+      const caller = req.headers.get(RUN_HEADER);
+      if (caller !== `${slug}/${id}` || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the ticket's own run takes or lets go of devices for it");
+      const b = (await body(req)) ?? {};
+      try {
+        if (b.action === "take") {
+          const r = await board.devices.take(slug, id, b.names, Number.isFinite(b.waitMs) ? Math.max(0, Math.min(Number(b.waitMs), TAKE_WAIT_MS)) : TAKE_WAIT_MS);
+          return json(r.ok ? r : { ...r, usedBy: r.usedBy.map((u) => ({ ...u, title: store.getTicket(u.slug, u.id)?.title ?? null })) });
+        }
+        if (b.action === "release") return json({ released: board.devices.release(slug, id, b.names) });
+        throw new HttpError(400, "action must be take or release");
+      } catch (e) {
+        if (e instanceof DeviceError) throw new HttpError(e.status, e.message);
         throw e;
       }
     }

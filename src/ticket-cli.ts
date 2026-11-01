@@ -1,7 +1,7 @@
 // `ckanban profiles`, `ckanban ticket ...` and `ckanban mcp ...`: the board from a terminal or another agent.
 import { readFileSync } from "node:fs";
 import {
-  assertCanChange, BoardClient, RUN_ENV, bugReportText, ClientError, parseMode, parseStatus, profileList, resolveProfile, runProfile,
+  assertCanChange, BoardClient, RUN_ENV, bugReportText, ClientError, deviceTakeText, parseMode, parseStatus, profileList, resolveProfile, runProfile,
   ticketLine, ticketText, type TicketPatch,
 } from "./client";
 import { AGENT_IDS, AgentRegistry, type AgentId } from "./server/agents";
@@ -21,6 +21,11 @@ export const TICKET_USAGE = `  ckanban profiles     List boards (profiles) and t
   ckanban ticket setup [<board>/]<id>
                        Install a ticket's project dependencies (the board's setup command)
                        in its copy of the folder; waits until done. Runs ask for this.
+  ckanban ticket take-device <name> [<name>...]
+                       Inside a board run: take shared devices for this ticket just before
+                       using them (all at once; waits up to 4 minutes, then call again).
+  ckanban ticket release-device [<name>...]
+                       Let go of them (all of this run's devices when no name is given).
   ckanban ticket report-bug [<id>] --title <t> [--body <md> | --body-file <f>] [--no-logs]
                        File a ckanban bug as a GitHub issue (with <id>: attach that
                        ticket's details and last run log). Needs gh, else prints a link.
@@ -124,12 +129,14 @@ export async function ticketCommand(argv: string[], io: CliIo = defaultIo()): Pr
   const [action, id, ...rest] = p.positional;
   const json = !!p.flags.json;
   const print = (data: unknown, text: string) => io.out(json ? JSON.stringify(data, null, 2) : text);
-  const known = ["list", "show", "create", "update", "move", "chat", "comment", "stop", "delete", "report-bug", "setup"];
+  const known = ["list", "show", "create", "update", "move", "chat", "comment", "stop", "delete", "report-bug", "setup", "take-device", "release-device"];
   if (!action || !known.includes(action)) throw new ClientError(`usage:\n${TICKET_USAGE}`);
   // Filing a bug doesn't touch the board (and needs no board without a ticket id), so runs may do it.
   if (action === "report-bug") return reportBug(p, id, io);
   // Installing a ticket's dependencies is what its run asks for, so runs may do it.
   if (action === "setup") return setupTicket(p, id, io);
+  // A run takes and lets go of shared devices for its own ticket.
+  if (action === "take-device" || action === "release-device") return deviceCommand(action, p, [id, ...rest].filter(Boolean), io);
   if (!["list", "show"].includes(action)) assertCanChange(io.env);
   const slug = resolveProfile(await io.client.listProfiles(), {
     explicit: flagStr(p, "profile") ?? runProfile(io.env), cwd: io.cwd,
@@ -211,6 +218,19 @@ export async function ticketCommand(argv: string[], io: CliIo = defaultIo()): Pr
       return print({ deleted: tid }, `Deleted ${tid}.`);
     }
   }
+}
+
+async function deviceCommand(action: "take-device" | "release-device", p: ParsedArgs, names: string[], io: CliIo): Promise<void> {
+  const run = io.env[RUN_ENV];
+  const [slug, tid] = run?.split("/") ?? [];
+  if (!slug || !tid) throw new ClientError(`ckanban ticket ${action} works inside a board run, for its own ticket`);
+  if (action === "take-device") {
+    const r = await io.client.takeDevices(slug, tid, names.length ? names : [need(undefined, "ticket take-device <name> [<name>...]")], run);
+    io.out(p.flags.json ? JSON.stringify(r, null, 2) : deviceTakeText(r));
+    return;
+  }
+  const r = await io.client.releaseDevices(slug, tid, names.length ? names : null, run);
+  io.out(p.flags.json ? JSON.stringify(r, null, 2) : r.released.length ? `Let go of ${r.released.join(", ")}.` : "Nothing to let go of.");
 }
 
 async function setupTicket(p: ParsedArgs, ref: string | undefined, io: CliIo): Promise<void> {

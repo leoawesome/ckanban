@@ -244,3 +244,15 @@ test("non-git profile runs in profile path without worktree", async () => {
   expect(prompt).toContain("no version history");
   expect(prompt).not.toContain('report status "blocked"');
 });
+
+test("a run gets the shared device list and the ticket's device hint in its system prompt", async () => {
+  await setup();
+  board.devices.upsert({ name: "chrome-whatsapp", description: "WhatsApp Web tab" });
+  const t = await board.createTicket("p", { title: "Call test", body: "", status: "ready", needs: ["leo-phone"] });
+  await board.whenIdle();
+  const args = readArgs()[0].args as string[];
+  const note = args[args.indexOf("--append-system-prompt") + 1];
+  expect(note).toContain("- chrome-whatsapp (one ticket at a time): WhatsApp Web tab");
+  expect(note).toContain("This ticket expects to use: leo-phone");
+  expect(store.getTicket("p", t.id)!.outcome).toBe("done");
+});

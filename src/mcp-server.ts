@@ -1,7 +1,7 @@
 // `ckanban mcp`: a stdio MCP server (newline-delimited JSON-RPC 2.0) exposing the board as tools.
 // Hand-rolled instead of @modelcontextprotocol/sdk: we only need initialize, tools/list and tools/call.
 import {
-  assertCanChange, BoardClient, bugReportText, ClientError, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
+  assertCanChange, BoardClient, bugReportText, ClientError, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
   familyLine, ticketLine, ticketText, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
 } from "./client";
 import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./server/huddle-presets";
@@ -72,13 +72,14 @@ function depList(args: any): string[] | undefined {
 const NEEDS = {
   type: "array", items: { type: "string" },
   description:
-    "Exclusive resources this ticket's runs use, e.g. [\"emulator\"]: tickets that need the same one never run at the same time " +
-    "(on any board), in any order. Use it for a shared device instead of chaining dependsOn. Replaces the list; [] clears it.",
+    "Shared devices this ticket expects to use, e.g. [\"chrome-whatsapp\"] (specific names, not \"chrome\"). A hint only: it never holds the ticket back; " +
+    "its run takes a device with take_devices just before using it, so tickets that share a device still run side by side and only take turns on it. " +
+    "Don't chain dependsOn for a shared device. Replaces the list; [] clears it.",
 };
 
 function needsList(args: any): string[] | undefined {
   if (args?.needs === undefined) return undefined;
-  if (!Array.isArray(args.needs) || args.needs.some((n: unknown) => typeof n !== "string")) throw new ClientError("needs must be a list of resource names, e.g. [\"emulator\"]");
+  if (!Array.isArray(args.needs) || args.needs.some((n: unknown) => typeof n !== "string")) throw new ClientError("needs must be a list of device names, e.g. [\"chrome-whatsapp\"]");
   return args.needs.map((n: string) => n.trim().toLowerCase()).filter(Boolean);
 }
 
@@ -99,6 +100,12 @@ const BACKLOG_HUDDLE =
   "this ticket is in Backlog, so no huddle starts before its work: put it in the proposed ticket's description as a \"## Review huddle\" section " +
   "(Template: auto-review or another template, or a short roster; what it should check; Budget: ~$N). The ticket's run does the work first, then starts that huddle itself. " +
   `Only in Planning, and only when the user asks for one, can the chat propose a ${PLAN_REVIEW} huddle that reviews the plan.`;
+
+/** take_devices / release_devices: names as a list of strings. */
+function deviceArg(args: any): string[] {
+  if (!Array.isArray(args?.names) || args.names.some((n: unknown) => typeof n !== "string")) throw new ClientError("names must be a list of device names, e.g. [\"chrome-whatsapp\"]");
+  return args.names;
+}
 
 /** The ticket a board run belongs to ("<profile>/<ticket id>" in CKANBAN_TICKET), or null outside runs. */
 function runTicketId(ctx: ToolContext): string | null {
@@ -136,7 +143,7 @@ interface Tool {
 export interface ToolContext {
   client: Pick<BoardClient,
     | "listProfiles" | "listTickets" | "getTicket" | "getFamily" | "createTicket" | "updateTicket" | "deleteTicket" | "chat" | "stop" | "listComments"
-    | "comment" | "reportBug" | "setFollowUp" | "cancelFollowUp" | "notifyUser" | "listSchedules" | "createSchedule" | "updateSchedule" | "deleteSchedule" | "runSchedule"
+    | "comment" | "reportBug" | "setFollowUp" | "cancelFollowUp" | "notifyUser" | "takeDevices" | "releaseDevices" | "listSchedules" | "createSchedule" | "updateSchedule" | "deleteSchedule" | "runSchedule"
     | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "adopt" | "planAction" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
     | "huddleStatus" | "huddleCloseRequest" | "startAutoHuddle" | "huddleHandIn" | "huddleReviewHandIn" | "huddleAllowChanges"
     | "listHuddlePresets" | "saveHuddlePreset" | "deleteHuddlePreset" | "listHuddleTemplates" | "huddleBrief" | "huddleProposeTeammate"
@@ -623,7 +630,7 @@ export function ticketsError(args: any): string | null {
   }
   for (const [i, t] of ts.entries()) {
     if (t.needs === undefined) continue;
-    if (!Array.isArray(t.needs) || t.needs.some((n: unknown) => typeof n !== "string")) return `ticket ${i + 1}: needs must be a list of resource names, e.g. ["emulator"]`;
+    if (!Array.isArray(t.needs) || t.needs.some((n: unknown) => typeof n !== "string")) return `ticket ${i + 1}: needs must be a list of device names, e.g. ["chrome-whatsapp"]`;
   }
   for (const [i, t] of ts.entries()) {
     if (t.important !== undefined && typeof t.important !== "boolean") return `ticket ${i + 1}: important must be true or false`;
@@ -925,7 +932,7 @@ const PLANNING_TOOLS: Tool[] = [
       "The board shows one card per ticket; the user clicks Create to add it to Backlog, linked to this ticket. " +
       "Each description must be self-contained (goal, context with relevant files, acceptance criteria). " +
       "key is a short unique name; dependsOn lists keys that must be finished first: give one to tickets that build on each other or likely edit the same files. " +
-      "needs lists exclusive resources (e.g. [\"emulator\"]): tickets that need the same one never run at the same time, in any order. " +
+      "needs lists shared devices a ticket expects to use (e.g. [\"chrome-whatsapp\"]), as a hint: its run takes them only while it uses them, so don't chain dependsOn for them. " +
       "tags (e.g. [\"post\"]) label the tickets so the user can filter the board by them; give the tags the user uses for this kind of work. " +
       "important: true marks a ticket ⭐ Important (reviewed in an auto huddle before landing); use it, not a ⭐ in the title. " +
       "Nothing is created by the call.",
@@ -941,7 +948,7 @@ const PLANNING_TOOLS: Tool[] = [
               title: TITLE,
               description: { type: "string", description: "Markdown description." },
               dependsOn: { type: "array", items: { type: "string" }, description: "Keys of tickets in this list that must be finished first." },
-              needs: { type: "array", items: { type: "string" }, description: "Exclusive resources its runs use, e.g. [\"emulator\"]." },
+              needs: { type: "array", items: { type: "string" }, description: "Shared devices it expects to use (a hint), e.g. [\"chrome-whatsapp\"]." },
               tags: { type: "array", items: { type: "string" }, description: "Tags it gets, e.g. [\"post\"]." },
               important: PROPOSED_IMPORTANT,
             },
@@ -1726,6 +1733,53 @@ export const TOOLS: Tool[] = [
       const slug = await slugFor(args, ctx);
       const r = await ctx.client.notifyUser(slug, own, str(args, "message")!, ctx.env[RUN_ENV]);
       return messageResultText(r);
+    },
+  },
+  {
+    name: "take_devices",
+    description:
+      "Take shared devices (a WhatsApp Web tab, a phone, an emulator) just before you use them, so other tickets don't use them at the same time. " +
+      "The device list in your instructions says what each one is and how many tickets may use it at once. Ask for everything you need together " +
+      "in one call (e.g. [\"chrome-whatsapp\", \"leo-phone\"]): you get all of them or wait for all of them. Waits up to 4 minutes; if they are " +
+      "still busy it says so and you keep your place in line: call again with the same names. A name not on the list is added as a device one " +
+      "ticket at a time may use. Let go with release_devices as soon as you are done; the board also frees them when your run ends. " +
+      "Things not on the list (plain Chrome, your own simulator) need no take.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        names: { type: "array", items: { type: "string" }, description: "Device names from the list, e.g. [\"chrome-whatsapp\"]." },
+        profile: PROFILE,
+      },
+      required: ["names"],
+    },
+    changes: true,
+    allowInRun: true,
+    async run(args, ctx) {
+      const own = runTicketId(ctx);
+      if (!own || ctx.env[HUDDLE_AGENT_ENV]) throw new ClientError("take_devices works inside a board run or ticket chat, for its own ticket (not from a huddle)");
+      const slug = await slugFor(args, ctx);
+      return deviceTakeText(await ctx.client.takeDevices(slug, own, deviceArg(args), ctx.env[RUN_ENV]));
+    },
+  },
+  {
+    name: "release_devices",
+    description: "Let go of shared devices you took with take_devices, as soon as you are done with them, so the next ticket in line gets them. " +
+      "Leave names out to let go of everything you hold (and stop waiting for any).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        names: { type: "array", items: { type: "string" }, description: "Devices to let go of. Default: all of yours." },
+        profile: PROFILE,
+      },
+    },
+    changes: true,
+    allowInRun: true,
+    async run(args, ctx) {
+      const own = runTicketId(ctx);
+      if (!own || ctx.env[HUDDLE_AGENT_ENV]) throw new ClientError("release_devices works inside a board run or ticket chat, for its own ticket (not from a huddle)");
+      const slug = await slugFor(args, ctx);
+      const r = await ctx.client.releaseDevices(slug, own, args?.names === undefined ? null : deviceArg(args), ctx.env[RUN_ENV]);
+      return r.released.length ? `Let go of ${r.released.join(", ")}.` : "You weren't holding any of those, so nothing changed.";
     },
   },
   {

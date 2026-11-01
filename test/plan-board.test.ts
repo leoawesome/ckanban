@@ -158,59 +158,41 @@ test("Mark plan done closes a stuck plan with open children, without waking the 
   expect(() => board.markPlanDone("p", kids[0].id)).toThrow(/no plan/);
 });
 
-/** Tracks which tickets are In progress at once (by title). */
-function liveTracker() {
-  const live = new Set<string>();
-  const overlaps: string[][] = [];
-  bus.on((ev) => {
-    if (ev.type !== "ticket.updated") return;
-    if (ev.ticket.status === "in_progress") live.add(ev.ticket.title);
-    else live.delete(ev.ticket.title);
-    overlaps.push([...live].sort());
-  });
-  return overlaps;
-}
-
-test("children that need the emulator run one at a time; a child without needs runs alongside", async () => {
-  process.env.FAKE_STEP_MS = "60";
-  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog" });
-  const mk = (title: string, needs?: string[]) => board.createTicket("p", { title, body: "", status: "backlog", parentId: planner.id, needs });
-  const kids = [await mk("E1", ["Emulator "]), await mk("E2", ["emulator"]), await mk("E3", ["emulator"]), await mk("Free")];
-  expect(kids[0].needs).toEqual(["emulator"]);
-  const seen = liveTracker();
-  board.startPlan("p", planner.id, { maxConcurrent: 3 });
-  // Right away: one E child holds the emulator (whichever the plan picked first), the other two wait for it in Backlog.
-  const emuKids = kids.slice(0, 3).map((k) => store.getTicket("p", k.id)!);
-  const holders = emuKids.filter((t) => board.resourceState("p", t)?.holding);
-  expect(holders.length).toBe(1);
-  for (const t of emuKids.filter((t) => t.id !== holders[0].id)) {
-    expect(board.resourceState("p", t)).toEqual({ holding: false, waitingFor: ["emulator"] });
-    expect(t.status).toBe("backlog");
-  }
-  await settle();
-  const emu = (s: string[]) => s.filter((t) => t.startsWith("E")).length;
-  expect(Math.max(...seen.map(emu))).toBe(1);
-  expect(seen.some((s) => s.includes("Free") && emu(s) === 1)).toBe(true);
-  for (const k of kids) expect(store.getTicket("p", k.id)!.outcome).toBe("done");
-  expect(store.getTicket("p", planner.id)!.plan?.state).toBe("done");
-}, 30000);
-
-test("tickets on different boards that need the same resource never run at the same time", async () => {
+test("tickets that list the same device all start at once: needs is only a hint", async () => {
   process.env.FAKE_STEP_MS = "40";
   const p2: Profile = { name: "Q", slug: "q", path: await makeRepo(), baseBranch: "main", maxParallel: 5, model: null, createdAt: new Date().toISOString() };
   store.saveProfile(p2);
-  const seen = liveTracker();
-  const a = await board.createTicket("p", { title: "A", body: "", status: "ready", needs: ["emulator"] });
+  const a = await board.createTicket("p", { title: "A", body: "", status: "ready", needs: ["Emulator "] });
   const b = await board.createTicket("q", { title: "B", body: "", status: "ready", needs: ["emulator"] });
-  const c = await board.createTicket("q", { title: "C", body: "", status: "ready" });
-  // B keeps its place in Ready while A has the emulator; C (no needs) starts anyway.
-  expect(board.isRunning("q", b.id)).toBe(false);
-  expect(board.resourceState("q", store.getTicket("q", b.id)!)).toEqual({ holding: false, waitingFor: ["emulator"] });
-  expect(board.isRunning("q", c.id)).toBe(true);
+  expect(a.needs).toEqual(["emulator"]);
+  expect(board.isRunning("p", a.id)).toBe(true);
+  expect(board.isRunning("q", b.id)).toBe(true);
   await settle();
-  expect(seen.some((s) => s.includes("A") && s.includes("B"))).toBe(false);
   expect(store.getTicket("p", a.id)!.outcome).toBe("done");
   expect(store.getTicket("q", b.id)!.outcome).toBe("done");
+}, 30000);
+
+test("a plan starts children that list the same device together", async () => {
+  process.env.FAKE_STEP_MS = "40";
+  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog" });
+  const mk = (title: string) => board.createTicket("p", { title, body: "", status: "backlog", parentId: planner.id, needs: ["emulator"] });
+  const kids = [await mk("E1"), await mk("E2")];
+  board.startPlan("p", planner.id, { maxConcurrent: 3 });
+  for (const k of kids) expect(store.getTicket("p", k.id)!.status).not.toBe("backlog");
+  await settle();
+  expect(store.getTicket("p", planner.id)!.plan?.state).toBe("done");
+}, 30000);
+
+test("a run's end frees the devices it still holds and hands them to the next in line", async () => {
+  process.env.FAKE_STEP_MS = "200";
+  const a = await board.createTicket("p", { title: "A", body: "", status: "ready" });
+  expect(board.isRunning("p", a.id)).toBe(true);
+  expect((await board.devices.take("p", a.id, ["leo-phone"])).ok).toBe(true);
+  expect(board.deviceState("p", a.id)?.using.map((u) => u.name)).toEqual(["leo-phone"]);
+  const next = board.devices.take("p", "t_other", ["leo-phone"], 20_000);
+  await settle();
+  expect((await next).ok).toBe(true);
+  expect(board.deviceState("p", a.id)).toBeNull();
 }, 30000);
 
 test("a plan never starts a child waiting on the user, and stops naming it once nothing else is left", async () => {

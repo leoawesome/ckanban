@@ -1192,3 +1192,37 @@ test("follow-ups: a run sets and stops its own ticket's only; the user's Stop, s
   r = await send(fu, {}, undefined, "DELETE");
   expect(((await r.json()) as any).followUp).toBeNull();
 });
+
+test("devices: a ticket's own run takes and lets go; only the user edits and frees; cards show who uses what", async () => {
+  const path = tempDir("ck-plain-");
+  const p = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Devs", path }))).json()) as any;
+  const mk = async (title: string) => (await (await fetch(`${base}/api/profiles/${p.slug}/tickets`, json("POST", { title }))).json()) as any;
+  const a = await mk("Chat test");
+  const b = await mk("Call test");
+  const as = (who: string, method: string, body: unknown) => ({ ...json(method, body), headers: { "content-type": "application/json", "x-ckanban-run": who } });
+  const take = (t: any, who: string, waitMs = 0) => fetch(`${base}/api/profiles/${p.slug}/tickets/${t.id}/devices`, as(who, "POST", { action: "take", names: ["leo-phone"], waitMs }));
+  // Only the ticket's own run takes for it.
+  expect((await take(a, `${p.slug}/${b.id}`)).status).toBe(403);
+  expect((await fetch(`${base}/api/profiles/${p.slug}/tickets/${a.id}/devices`, json("POST", { action: "take", names: ["leo-phone"] }))).status).toBe(403);
+  expect(await (await take(a, `${p.slug}/${a.id}`)).json()).toEqual({ ok: true, names: ["leo-phone"] });
+  expect(await (await take(b, `${p.slug}/${b.id}`)).json()).toMatchObject({ ok: false, place: 1, usedBy: [{ id: a.id, title: "Chat test" }] });
+  let card = (await (await fetch(`${base}/api/profiles/${p.slug}/tickets/${a.id}`)).json()) as any;
+  expect(card.devices.using.map((u: any) => u.name)).toEqual(["leo-phone"]);
+  let list = (await (await fetch(`${base}/api/devices`)).json()) as any[];
+  const phone = list.find((d) => d.name === "leo-phone");
+  expect(phone).toMatchObject({ capacity: 1, addedByClaude: true, using: [{ id: a.id, title: "Chat test", board: "Devs" }], waiting: [{ id: b.id }] });
+  // Runs can't edit or free.
+  expect((await fetch(`${base}/api/devices`, as(`${p.slug}/${a.id}`, "POST", { name: "leo-phone", capacity: 2 }))).status).toBe(403);
+  expect((await fetch(`${base}/api/devices/leo-phone/free`, as(`${p.slug}/${a.id}`, "POST", { profile: p.slug, id: a.id }))).status).toBe(403);
+  // The user's Free it hands it to the next in line.
+  list = (await (await fetch(`${base}/api/devices/leo-phone/free`, json("POST", { profile: p.slug, id: a.id }))).json()) as any[];
+  expect(list.find((d) => d.name === "leo-phone").using.map((u: any) => u.id)).toEqual([b.id]);
+  list = (await (await fetch(`${base}/api/devices`, json("POST", { name: "leo-phone", description: "Leo's iPhone", capacity: 2 }))).json()) as any[];
+  expect(list.find((d) => d.name === "leo-phone")).toMatchObject({ description: "Leo's iPhone", capacity: 2 });
+  expect(list.find((d) => d.name === "leo-phone").addedByClaude).toBeUndefined();
+  const rel = await fetch(`${base}/api/profiles/${p.slug}/tickets/${b.id}/devices`, as(`${p.slug}/${b.id}`, "POST", { action: "release" }));
+  expect(await rel.json()).toEqual({ released: ["leo-phone"] });
+  card = (await (await fetch(`${base}/api/profiles/${p.slug}/tickets/${b.id}`)).json()) as any;
+  expect(card.devices).toBeNull();
+  expect((await fetch(`${base}/api/devices/leo-phone`, { method: "DELETE" })).status).toBe(200);
+});

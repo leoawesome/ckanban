@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, COLUMNS, type Ticket } from "./api";
-import { ResourceChip, resourceWait } from "./Needs";
+import { DeviceChips } from "./Needs";
 import { checkInsText, complete, planFinished } from "./planText";
 
 export { complete, planFinished };
@@ -117,8 +117,6 @@ export function PlanPanel({ slug, ticket, children, onOpenTicket, onError, onMov
       )}
       <ul className="child-tickets">
         {children.map((c) => {
-          const waitFor = complete(c) ? [] : resourceWait(c);
-          const holding = !!c.resources?.holding;
           const notes = [
             c.dependsOn?.length ? `after ${c.dependsOn.map(titleOf).join(", ")}` : null,
             c.userWait && !complete(c) ? c.userWait : null,
@@ -127,18 +125,15 @@ export function PlanPanel({ slug, ticket, children, onOpenTicket, onError, onMov
             <li key={c.id}>
               <span className="child-main">
                 <button className="link-btn ticket-link" onClick={() => onOpenTicket(c.id)}>{c.title}</button>
-                {(!!c.needs?.length || notes.length > 0) && (
+                {(!!c.needs?.length || !!c.devices || notes.length > 0) && (
                   <span className="muted small child-deps">
-                    {c.needs?.map((n) => <ResourceChip key={n} name={n} held={holding && !complete(c)} />)}
-                    {holding && !complete(c) && " in use "}
+                    <DeviceChips ticket={complete(c) ? { ...c, devices: null } : c} />
                     {notes.join(" · ")}
                   </span>
                 )}
               </span>
               {c.userWait && !complete(c) && !c.running && c.status !== "in_progress" ? (
                 <span className="badge wait" title={c.userWait}>Needs you</span>
-              ) : waitFor.length ? (
-                <span className="badge wait" title="Another ticket is using it; this one starts when it is free">Waiting for {waitFor.join(", ")}</span>
               ) : (
                 <span className={`badge ${complete(c) ? "ok" : c.outcome === "failed" ? "failed" : c.outcome === "blocked" || c.outcome === "needs_input" ? "blocked" : ""}`}>
                   {complete(c) ? "Done" : COLUMNS.find((x) => x.id === c.status)?.label ?? c.status}

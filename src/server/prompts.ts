@@ -4,6 +4,7 @@ import { helperCommand } from "./artifact";
 import { activeHost, huddleLine, REVIEW_HUDDLE_HEADING, reviewHuddleRequest, summaryFile } from "./huddle-roster";
 import { AUTO_REVIEW_READ_ONLY, PLAN_REVIEW } from "./huddle-templates";
 import { MOCKUPS_DIR } from "./mockups";
+import type { Device } from "./devices";
 import type { RepoKind } from "./git";
 import { MAX_RETRIES, MAX_RUN_CHAIN, MAX_RUN_STARTS } from "./plan";
 import type { AutoHuddle, Comment, Huddle, HuddleMessage, HuddleParticipant, Ticket } from "./types";
@@ -36,15 +37,15 @@ Only if the ckanban tools aren't available: put {"title":"...","description":"..
 
 /** How a planner ticket's chat proposes splitting the work into new tickets; the user creates them by clicking. */
 export const TICKETS_FORMAT = `When the user wants to split the work into separate tickets (this ticket as the planner), first call the ckanban \`list_tickets\` tool to avoid duplicates, then call the \`propose_tickets\` tool ${TOOL_NOTE}, e.g. tickets: [{"key":"api","title":"Short, specific title (under 80 characters)","description":"## Goal\\n...\\n\\n## Context\\n...\\n\\n## Acceptance criteria\\n- ..."},{"key":"ui","title":"...","description":"...","dependsOn":["api"]}]
-Each description must be self-contained (goal, context with relevant files, acceptance criteria): another Claude session works on it later without this chat. "key" is a short unique name; "dependsOn" lists the keys that must be finished first. Give a dependency to tickets that build on each other or likely edit the same files, so they don't run at the same time and conflict. Optional "needs" lists exclusive resources a ticket's runs use, e.g. "needs":["emulator"] for tickets that test on a shared device: tickets with the same need never run at the same time, in any order (better than chaining dependsOn when order doesn't matter). Optional "important": true marks a ticket ⭐ Important (its run gets a review huddle before landing) when the user or the project's rules say the work is important; set it there, not as a ⭐ in the title. The board shows one card per ticket; the user clicks Create to add it to Backlog, linked to this ticket, and can then press Start plan: the board runs the tickets in dependency order and wakes you only when one needs a decision. Don't create these tickets yourself: the cards let the user decide. If the tool returns an error, fix the input and call it again.
+Each description must be self-contained (goal, context with relevant files, acceptance criteria): another Claude session works on it later without this chat. "key" is a short unique name; "dependsOn" lists the keys that must be finished first. Give a dependency to tickets that build on each other or likely edit the same files, so they don't run at the same time and conflict. Optional "needs" lists shared devices a ticket expects to use, with specific names, e.g. "needs":["chrome-whatsapp"] (not "chrome"): a hint only. Its run takes a device just before using it and lets go when done, so tickets that share a device still run side by side; don't chain dependsOn for a shared device. Optional "important": true marks a ticket ⭐ Important (its run gets a review huddle before landing) when the user or the project's rules say the work is important; set it there, not as a ⭐ in the title. The board shows one card per ticket; the user clicks Create to add it to Backlog, linked to this ticket, and can then press Start plan: the board runs the tickets in dependency order and wakes you only when one needs a decision. Don't create these tickets yourself: the cards let the user decide. If the tool returns an error, fix the input and call it again.
 Only if the ckanban tools aren't available: put the same JSON array in ONE <ckanban-tickets>[...]</ckanban-tickets> block in your message instead. ${BLOCK_RULE}`;
 
 /** A ticket's chat can manage other tickets when the user asks for it there (see Board.plannerRights). */
 const MANAGE_RULE = `# Managing tickets (this ticket as manager)
 If the user asks you here to manage, run, control or take over tickets (existing ones, or the ones this ticket proposed), you can, because they asked in this chat:
 1. Find them with the ckanban \`list_tickets\` tool. To take over tickets that already exist, call \`adopt_tickets\` with their ids: they become this ticket's child tickets. Tickets that belong to another plan, finished ones and this ticket itself are skipped; tell the user what was adopted and what was skipped and why.
-2. Order them: \`update_ticket\` with dependsOn (sibling ticket ids) for tickets that build on each other or edit the same files, and needs (e.g. ["emulator"]) for tickets that share a device or other resource only one may use at a time. Leave independent tickets without either: they run in parallel.
-3. Start the plan with \`plan_control\` (action "start", or "resume" for a paused or stuck plan). The board then moves children through Ready, In progress and Review itself, a few at a time, one per resource, and wakes this ticket when one needs a decision. It never starts a child that waits on the user (open questions, a proposal to apply, in Planning). Don't move children to ready yourself unless the user asks.
+2. Order them: \`update_ticket\` with dependsOn (sibling ticket ids) for tickets that build on each other or edit the same files, and needs (e.g. ["chrome-whatsapp"]) as a hint for tickets that use a shared device: their runs take it only while they use it, so they still run in parallel. Leave independent tickets without dependsOn: they run in parallel.
+3. Start the plan with \`plan_control\` (action "start", or "resume" for a paused or stuck plan). The board then moves children through Ready, In progress and Review itself, a few at a time, and wakes this ticket when one needs a decision. It never starts a child that waits on the user (open questions, a proposal to apply, in Planning). Don't move children to ready yourself unless the user asks.
 If the user only asked to create or adopt tickets, don't start the plan. You can also move, update, chat with, comment on, stop or release (update_ticket release: true) this ticket's own children; every other ticket is refused.`;
 
 /**
@@ -75,6 +76,24 @@ const OUTBOUND_RULE = "During a follow-up never send an outbound message (email,
 /** notify_user: Claude pings the user's phone in its own words when it is stuck on them; not an outbound message. */
 const NOTIFY_USER_RULE = "If you are stuck waiting on the user and they haven't answered (they may have missed the board's notification), you may send them a notification with the ckanban `notify_user` tool: one short, specific ask, like \"Pick A or B for the login page so I can continue.\" Use it sparingly, not for progress updates or finished work. It goes only to the user, so the rule on outbound messages doesn't apply to it.";
 /** One-time jobs (schedule_job): the future run sees only the job's prompt. */
+/**
+ * Every run that may act (not Planning chats) gets this in its system prompt: the shared device list, the ticket's
+ * hint (Ticket.needs) and how to take and let go of a device (devices.ts). Null when there is nothing to say.
+ */
+export function devicesNote(devices: Pick<Device, "name" | "description" | "capacity">[], needs: string[] = []): string | null {
+  if (!devices.length && !needs.length) return null;
+  const list = devices.map((d) => `- ${d.name} (${d.capacity === 1 ? "one ticket at a time" : `${d.capacity} tickets at once`})${d.description ? `: ${d.description}` : ""}`);
+  return [
+    "# Shared devices",
+    devices.length ? `Things only a few tickets may use at once, shared by every board:\n${list.join("\n")}` : "The board has no shared devices listed yet.",
+    needs.length ? `This ticket expects to use: ${needs.join(", ")} (a hint; it holds nothing).` : null,
+    "Just before you use one of these, take it with the ckanban `take_devices` tool (exact names; several you need together in one call). " +
+      "If it's busy, the call waits, and you keep your place in line; call again with the same names when it says to. " +
+      "Let go with `release_devices` as soon as you are done with it (don't keep it while you write code or wait), so the next ticket can have it; the board also frees it when your run ends. " +
+      "Anything not on the list, like plain Chrome, needs no take. If you need something else only one ticket may use at a time, give it a specific name (\"chrome-whatsapp\", not \"chrome\") and take it.",
+  ].filter(Boolean).join("\n\n");
+}
+
 const JOB_RULE = "To do something once at a later time (post at Tue 22:00, run a script tomorrow), use `schedule_job`; a ticket job's prompt is all its future run sees, so put everything it needs in it, and for long content or images save files in the board folder first and give their paths.";
 /** Follow-ups (follow_up): the board wakes this ticket's conversation later; Claude Code's own timers die with the run. */
 /** Work runs and chat replies may manage other tickets on their board (see runRights in http.ts). */
@@ -603,7 +622,7 @@ ${repo === "remote" ? "- Child finished with an open PR: review it (`gh pr view`
 - Don't do a child's work yourself in this session; keep this reply short.`;
   return `${head}
 
-${context("Plan update from the board", `You are the planner (orchestrator) of ticket "${t.title}" (${t.id}) on board ${o.board}. The board runs this ticket's child tickets unattended, in dependency order, a few at a time, one ticket per exclusive resource (needs) at a time, and wakes you only when a decision is needed. It never starts a child that waits on the user (open questions, a proposal to apply, in Planning). The user is not watching.
+${context("Plan update from the board", `You are the planner (orchestrator) of ticket "${t.title}" (${t.id}) on board ${o.board}. The board runs this ticket's child tickets unattended, in dependency order, a few at a time, and wakes you only when a decision is needed. It never starts a child that waits on the user (open questions, a proposal to apply, in Planning). The user is not watching.
 
 # Child tickets
 ${o.table}
@@ -612,7 +631,7 @@ ${job}
 
 # Your board rights
 The ckanban MCP tools create_ticket, update_ticket (title, body, status, mode, dependsOn, needs, release), move_ticket, chat_ticket, stop_ticket and comment_ticket work on THIS plan's child tickets only; everything else on the board is refused. create_ticket here always makes a child of this plan in Backlog (auto mode). Every change is logged on the child.
-Children that share a device or other resource only one may use at a time (e.g. the Android emulator) should have needs (e.g. ["emulator"]) instead of a dependsOn chain: the board then runs them one at a time, in any order, while the others keep going.
+Children that share a device only a few may use at once (e.g. the WhatsApp Web tab) get needs (e.g. ["chrome-whatsapp"]) as a hint, not a dependsOn chain: they all run, and each run takes the device only while it uses it (take_devices), so they take turns just on the device.
 
 # When you need the user
 End with status "blocked" (or "questions" after asking with the ask_questions tool) only when a human must decide or fix something. That pauses the plan and notifies the user. Otherwise end with "done".

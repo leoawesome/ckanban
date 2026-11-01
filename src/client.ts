@@ -4,6 +4,7 @@ import { dirname, isAbsolute, resolve, sep } from "node:path";
 import type { HuddlePresetView } from "./server/huddle-presets";
 import { HUDDLE_AGENT_ENV, HUDDLE_HEADER, SOURCE_HEADER, type RosterEntry } from "./server/huddle-roster";
 import type { HuddleTemplateView } from "./server/huddle-templates";
+import type { DeviceUser } from "./server/devices";
 import type { MessageResult } from "./server/notify";
 import type { SetupOutcome } from "./server/worktree-setup";
 import { RUN_HEADER } from "./server/scheduler";
@@ -364,6 +365,11 @@ export class BoardClient {
     this.req<TicketInfo>("DELETE", `${this.t(slug, id)}/follow-up`, { reason }, this.by(run));
   notifyUser = (slug: string, id: string, message: string, run?: string | null) =>
     this.req<MessageResult>("POST", `${this.t(slug, id)}/notify`, { message }, this.by(run));
+  /** Waits up to a few minutes for every named device at once (see devices.ts). */
+  takeDevices = (slug: string, id: string, names: string[], run?: string | null) =>
+    this.req<DeviceTake>("POST", `${this.t(slug, id)}/devices`, { action: "take", names }, this.by(run), true);
+  releaseDevices = (slug: string, id: string, names: string[] | null, run?: string | null) =>
+    this.req<{ released: string[] }>("POST", `${this.t(slug, id)}/devices`, { action: "release", names: names ?? [] }, this.by(run));
   reportBug = (input: BugReportRequest) => this.req<BugReportReply>("POST", "/api/bug-report", input);
 
   private s(slug: string, id?: string): string {
@@ -566,6 +572,19 @@ function state(t: TicketInfo): string {
   else if (t.outcome) bits.push(t.outcome);
   if (t.attention?.kind && !t.running) bits.push(`waiting: ${t.attention.kind}`);
   return bits.join(", ");
+}
+
+/** take_devices' answer; usedBy names the tickets that have the devices now. */
+export type DeviceTake =
+  | { ok: true; names: string[] }
+  | { ok: false; names: string[]; place: number; usedBy: (DeviceUser & { title: string | null })[] };
+
+/** What take_devices / `ticket take-device` tell Claude. */
+export function deviceTakeText(r: DeviceTake): string {
+  if (r.ok) return `You have ${r.names.join(", ")} now. Use it, then let go with release_devices as soon as you are done, so the next ticket can have it.`;
+  const who = r.usedBy.map((u) => `"${u.title ?? u.id}"${u.slug ? ` (${u.slug})` : ""}`).join(", ");
+  return `Still waiting for ${r.names.join(", ")}: ${who ? `${who} has it` : "other tickets are ahead of you"}; you are #${r.place} in line and keep that place. ` +
+    "Do other work that doesn't need it if there is some, then call take_devices again with the same names (each call waits up to 4 minutes).";
 }
 
 export function ticketLine(t: TicketInfo): string {

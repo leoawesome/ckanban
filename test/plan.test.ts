@@ -89,19 +89,12 @@ test("isComplete, wakeupCap, planTable", () => {
   expect(planTable([a, b])).toBe(`- ${a.id} [a] "A": backlog\n- ${b.id} [b] "B": backlog; waits for ${a.id}`);
 });
 
-test("children that need the same resource start one at a time; others start in parallel", () => {
+test("needs is only a hint: children that list the same device start together", () => {
   const e1 = T({ title: "E1", needs: ["emulator"] });
   const e2 = T({ title: "E2", needs: ["emulator"] });
-  const e3 = T({ title: "E3", needs: ["emulator"] });
   const free = T({ title: "Free" });
-  const s = planStep(plan({ maxConcurrent: 3 }), [e1, e2, e3, free], idle);
-  expect(s.start).toEqual([e1.id, free.id]);
-  expect(s.resourceWait).toEqual([{ id: e2.id, resources: ["emulator"] }, { id: e3.id, resources: ["emulator"] }]);
-  // Held elsewhere (another ticket, maybe on another board): nothing needing it starts, and that is not a dead end.
-  const held = planStep(plan({ maxConcurrent: 3 }), [e2, e3], idle, { held: (t) => (t.needs ?? []).filter((n) => n === "emulator") });
-  expect(held.start).toEqual([]);
-  expect(held.resourceWait.map((w) => w.id)).toEqual([e2.id, e3.id]);
-  expect(held.deadEnd).toBeNull();
+  const s = planStep(plan({ maxConcurrent: 3 }), [e1, e2, free], idle);
+  expect(s.start).toEqual([e1.id, e2.id, free.id]);
 });
 
 test("children waiting on the user are never started; alone they end the plan with a reason naming them", () => {

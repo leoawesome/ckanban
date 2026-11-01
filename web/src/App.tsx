@@ -11,6 +11,7 @@ import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, C
 import { Inbox } from "./Inbox";
 import { NowView } from "./NowView";
 import { NotificationsDialog } from "./NotificationsDialog";
+import { DevicesDialog } from "./DevicesDialog";
 import { PushHint } from "./PushHint";
 import { startPushClient } from "./push";
 import { PhoneAccessDialog } from "./PhoneAccessDialog";
@@ -219,6 +220,7 @@ export function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [phoneAccess, setPhoneAccess] = useState(false);
   const [notifications, setNotifications] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
   // Phone notifications: tell the daemon while the board is on screen here, open tapped notifications' tickets.
   useEffect(() => startPushClient(), []);
   const [version, setVersion] = useState<{ version: string; latest: string | null; updateAvailable: boolean } | null>(null);
@@ -686,6 +688,7 @@ export function App() {
             label: "Find links", icon: <LinkIcon />, onSelect: () => setFindLinksOpen(true),
             title: "Claude suggests which tickets belong together (part of one piece of work); you pick the links to make",
           }] : []),
+          { label: "Devices", icon: <DeviceIcon />, onSelect: () => setDevicesOpen(true), title: "Shared devices (a phone, a WhatsApp Web tab): who uses each one and who waits" },
           {
             label: "Connections", icon: <PlugIcon />, onSelect: () => setConnections(true), separator: true,
             title: mcpAttention ? `${mcpAttention} MCP server${mcpAttention === 1 ? "" : "s"} failed or need you to log in again` : "Claude Code MCP servers",
@@ -756,6 +759,7 @@ export function App() {
     ...(profile ? [{ id: "schedules", label: "Schedules", icon: <ClockIcon size={14} />, run: () => openSchedules() }] : []),
     ...(profile ? [{ id: "automations", label: "Automations", icon: <LoopIcon size={14} />, run: () => setAutomationsOpen(true) }] : []),
     { id: "connections", label: "Connections", icon: <PlugIcon size={14} />, run: () => setConnections(true) },
+    { id: "devices", label: "Devices", icon: <DeviceIcon size={14} />, hint: "who uses each shared device", run: () => setDevicesOpen(true) },
     ...(profile ? [{ id: "snippets", label: "Snippets", icon: <AtIcon size={14} />, run: () => setSnippetsOpen(true) }] : []),
     { id: "usage", label: "Usage", run: () => setUsageRequest(Date.now()) },
     ...(profile ? [{ id: "settings", label: "Board settings", icon: <GearIcon size={14} />, run: () => setProfileDialog("edit") }] : []),
@@ -984,6 +988,14 @@ export function App() {
       {moreOpen && <MoreSheet items={menuItems.filter((i) => i.label !== "Schedules" && i.label !== "Keyboard shortcuts")} footer={menuFooter} onClose={() => setMoreOpen(false)}
         top={<UsageBox state={usage} />} />}
       {phoneAccess && <PhoneAccessDialog onClose={() => setPhoneAccess(false)} />}
+      {devicesOpen && (
+        <DevicesDialog board={profile?.slug ?? null} onClose={() => setDevicesOpen(false)}
+          onOpenTicket={(board, id) => {
+            setDevicesOpen(false);
+            if (board !== slug) switchBoard(board);
+            openTicket(id, board);
+          }} />
+      )}
       {notifications && <NotificationsDialog profile={profile?.slug ?? null} onClose={() => setNotifications(false)} />}
 
       {dockOpen && profile && (

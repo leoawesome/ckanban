@@ -9,6 +9,7 @@ import { addWorktree, branchesWithPrefix, branchExists, FetchError, isGitRepo, l
 import { MOVE_TO_PLANNING_RE, STAY_RE } from "./session";
 import { forkSessionFile } from "./fork";
 import { saveMockups } from "./mockups";
+import { Devices, type DeviceTicketState } from "./devices";
 import { macBanner } from "./notify";
 import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
 import type { SessionSummary } from "./session";
@@ -16,7 +17,7 @@ import { recallBlock } from "./recall";
 import { wouldLoop } from "../../web/src/family";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
-import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake } from "./prompts";
+import { chatPrompt, devicesNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake } from "./prompts";
 import {
   childrenOf, DEFAULT_MAX_CONCURRENT, findCycle, isComplete, MAX_RUN_CHAIN, MAX_RUN_STARTS, normalizeNeeds, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
@@ -173,14 +174,9 @@ export function autoHuddleActivity(a: NonNullable<Ticket["autoHuddle"]>): string
   return a.state === "waiting" ? "Waiting for huddle slot" : "Auto huddle: waiting for the review";
 }
 
-/** Holding a resource: Claude works on the ticket (In progress or a chat reply), or it is queued in Ready. */
 /** Statuses whose ticket already did its work: moving it back to Planning or Backlog remembers it (Ticket.reopenedFrom). */
 function reopenable(s: Status): boolean {
   return s === "review" || s === "done";
-}
-
-function holding(t: Ticket, running: boolean, withReady: boolean): boolean {
-  return running || t.status === "in_progress" || (withReady && t.status === "ready");
 }
 
 /**
@@ -269,6 +265,8 @@ export class ConflictError extends Error {}
 
 export class Board {
   private runs = new Map<string, ActiveRun>();
+  /** Shared devices every board's runs take and let go (devices.ts); a run's end frees what it still holds. */
+  readonly devices: Devices;
   /** Setup commands running now (`ckanban ticket setup`; stopping the ticket's run aborts them), per ticket key. */
   private setups = new Map<string, { done: Promise<SetupOutcome>; abort: AbortController }>();
   private shuttingDown = false;
@@ -290,6 +288,7 @@ export class Board {
     this.isSessionLive = opts.isSessionLive ?? psSessionLive;
     this.notify = opts.notify ?? ((title, body) => macBanner(title, body));
     useBundledFile(join(store.root, "claude-commands.json"));
+    this.devices = new Devices(store.root, (owners) => this.devicesChanged(owners));
   }
 
   private key(slug: string, id: string) {
@@ -301,11 +300,8 @@ export class Board {
   }
 
   private patch(slug: string, id: string, patch: Partial<Ticket>): Ticket {
-    const before = "needs" in patch ? this.store.getTicket(slug, id) : null;
     const t = this.store.updateTicket(slug, id, patch);
     this.emitTicket(slug, t);
-    const needs = [...(before?.needs ?? []), ...(t.needs ?? [])];
-    if (needs.length && ("status" in patch || "runStartedAt" in patch || "needs" in patch)) this.resourceChanged(needs);
     return t;
   }
 
@@ -319,59 +315,22 @@ export class Board {
     return this.patch(slug, id, prs);
   }
 
-  // ---- Exclusive resources (Ticket.needs): one ticket per resource at a time, across every board ----
+  // ---- Shared devices (devices.ts): taken by a run only while it uses them; Ticket.needs is just a hint ----
 
-  private resourceDirty = new Set<string>();
-
-  /**
-   * A ticket started or stopped holding these resources: once the current change is done, refresh the cards that
-   * wait for them and let every board start what can start now (the holder may be on another board).
-   */
-  private resourceChanged(names: string[]): void {
-    const first = !this.resourceDirty.size;
-    for (const n of names) this.resourceDirty.add(n);
-    if (!first) return;
-    queueMicrotask(() => {
-      const dirty = new Set(this.resourceDirty);
-      this.resourceDirty.clear();
-      if (this.shuttingDown) return;
-      for (const p of this.store.listProfiles()) {
-        for (const t of this.store.listTickets(p.slug)) {
-          if (t.needs?.some((n) => dirty.has(n)) && !holding(t, this.isRunning(p.slug, t.id), false)) this.emitTicket(p.slug, t);
-        }
-        this.dispatch(p.slug);
-        this.advancePlans(p.slug);
-      }
-    });
-  }
-
-  /**
-   * Resources `t` needs that another ticket holds right now, on any board. withReady: a ticket queued in Ready
-   * counts as holding (when deciding what a plan moves to Ready); dispatch() leaves it out, Ready is the queue.
-   */
-  heldResources(slug: string, t: Ticket, withReady: boolean): string[] {
-    const want = t.needs ?? [];
-    if (!want.length) return [];
-    const busy = new Set<string>();
-    for (const p of this.store.listProfiles()) {
-      for (const o of this.store.listTickets(p.slug)) {
-        if ((p.slug === slug && o.id === t.id) || !o.needs?.length) continue;
-        if (!holding(o, this.isRunning(p.slug, o.id), withReady)) continue;
-        for (const n of o.needs) if (want.includes(n)) busy.add(n);
-      }
+  /** Who holds or waits for devices changed: refresh those tickets' cards and the Devices screen. */
+  private devicesChanged(owners: string[]): void {
+    if (this.shuttingDown) return;
+    for (const o of owners) {
+      const i = o.indexOf("/");
+      const t = this.store.getTicket(o.slice(0, i), o.slice(i + 1));
+      if (t) this.emitTicket(o.slice(0, i), t);
     }
-    return want.filter((n) => busy.has(n));
+    this.bus.emit({ type: "devices.updated" });
   }
 
-  /** For the card: whether the ticket holds its resources now, or which ones it waits for. */
-  resourceState(slug: string, t: Ticket): { holding: boolean; waitingFor: string[] } | null {
-    if (!t.needs?.length) return null;
-    const running = this.isRunning(slug, t.id);
-    if (holding(t, running, false)) return { holding: true, waitingFor: [] };
-    // Only cards the board would start soon can wait: Ready, or Backlog children of a running plan.
-    const parent = t.parentId ? this.store.getTicket(slug, t.parentId) : null;
-    if (t.status !== "ready" && !(t.status === "backlog" && planActive(parent?.plan))) return { holding: false, waitingFor: [] };
-    return { holding: false, waitingFor: this.heldResources(slug, t, t.status === "backlog") };
+  /** For the card: the devices the ticket's run uses now, and the ones it waits for. */
+  deviceState(slug: string, id: string): DeviceTicketState | null {
+    return this.devices.ticketState(slug, id);
   }
 
   /** Why a plan child waits on the user (questions, a proposal to apply, in Planning), or null. */
@@ -440,8 +399,6 @@ export class Board {
     const ready = idle.filter((t) => t.status === "ready").sort((a, b) => a.order - b.order);
     for (const t of ready) {
       if (this.full(slug)) break;
-      // Its resource (e.g. the emulator) is in use: it keeps its place and the next ticket starts instead.
-      if (t.needs?.length && this.heldResources(slug, t, false).length) continue;
       // It would edit the board's folder in place while another ticket does: it waits its turn the same way.
       if (this.folderBusy(slug, t)) continue;
       this.start(slug, t.id);
@@ -673,6 +630,8 @@ export class Board {
       })
       .finally(async () => {
         this.runs.delete(this.key(slug, id));
+        // Whatever devices the run still holds or waits for go to the next ticket in line.
+        this.devices.releaseAll(slug, id);
         // Before a pending restart, so the move the user asked for isn't lost.
         await this.applySelfMove(run);
         if (this.restartPending) this.emitRestart();
@@ -835,6 +794,9 @@ export class Board {
         prompt = prompt.slice(0, cut);
       }
     }
+    // Runs that may act learn the shared device list here, so it is current on every turn (Planning chats don't use devices).
+    const deviceNote = refine ? null : devicesNote(this.devices.devices(), t.needs);
+    if (deviceNote) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${deviceNote}` : deviceNote;
 
     let lastWrite = 0;
     let pendingActivity: string | null = null;
@@ -1957,7 +1919,6 @@ export class Board {
       return false;
     }
     const step = planStep(plan, kids, (id) => this.isRunning(slug, id), {
-      held: (t) => this.heldResources(slug, t, true),
       waitingOnUser: (t) => this.userWait(t),
     });
     for (const cid of step.start) this.patch(slug, cid, { status: "ready", mode: "auto", outcome: null, error: null });

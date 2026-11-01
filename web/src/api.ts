@@ -224,6 +224,26 @@ export interface Profile {
   running?: number;
 }
 
+/** Shared devices a ticket's run uses now, and the ones it waits for (server: devices.ts). */
+export interface TicketDevices {
+  using: { name: string; since: string }[];
+  waiting: { names: string[]; since: string } | null;
+}
+
+/** A ticket using or waiting for a device, on any board. */
+export interface DeviceUser { slug: string; id: string; since: string; title: string | null; board: string }
+
+/** More, Devices: a shared device with who uses it and who waits. */
+export interface DeviceView {
+  name: string;
+  description: string;
+  capacity: number;
+  addedByClaude?: boolean;
+  lastUsedAt?: string | null;
+  using: DeviceUser[];
+  waiting: DeviceUser[];
+}
+
 export interface Ticket {
   id: string;
   title: string;
@@ -292,14 +312,14 @@ export interface Ticket {
   planKey?: string | null;
   /** Siblings (ticket id or planKey) a running plan finishes before starting this one. */
   dependsOn?: string[];
-  /** Exclusive resources (e.g. emulator): tickets needing the same one never run at the same time, on any board. */
+  /** Shared devices it expects to use (e.g. chrome-whatsapp): a hint only, its run takes them while it uses them. */
   needs?: string[];
   /** The user's labels for finding related tickets (e.g. "post"), lowercase. */
   tags?: string[];
   /** Tags Claude suggested: shown dashed until the user keeps (moves to tags) or drops each one. */
   suggestedTags?: string[];
-  /** For tickets with needs: holds them now, or which ones another ticket holds while this one would start. */
-  resources?: { holding: boolean; waitingFor: string[] } | null;
+  /** Shared devices its run uses now (since when) and the ones it waits for; null when neither. */
+  devices?: TicketDevices | null;
   /** It would start now, but another ticket is editing the board's folder in place (no version history). */
   folderWait?: boolean;
   /** A plan child waiting on the user (questions, a proposal to apply, in Planning); the plan won't start it. */
@@ -1007,6 +1027,7 @@ export type BusEvent =
   | { type: "draft"; profile: string; id: string; text: string; final?: string }
   | { type: "mcp.updated"; state: McpState }
   | { type: "snippets.updated" }
+  | { type: "devices.updated" }
   | { type: "schedule.updated"; profile: string; id: string; schedule: Omit<Schedule, "summary" | "active"> | null }
   | { type: "loop.updated"; profile: string; id: string; loop: Loop | null }
   | { type: "integration.updated" }
@@ -1195,6 +1216,10 @@ export const api = {
   /** pending: a daemon restart holds new runs until the `waiting` active runs finish. */
   remote: () => req<RemoteState>("GET", "/api/remote"),
   setRemote: (enabled: boolean) => req<RemoteState>("POST", "/api/remote", { enabled }),
+  devices: () => req<DeviceView[]>("GET", "/api/devices"),
+  saveDevice: (input: { name: string; description?: string; capacity?: number }) => req<DeviceView[]>("POST", "/api/devices", input),
+  deleteDevice: (name: string) => req<DeviceView[]>("DELETE", `/api/devices/${encodeURIComponent(name)}`),
+  freeDevice: (name: string, profile: string, id: string) => req<DeviceView[]>("POST", `/api/devices/${encodeURIComponent(name)}/free`, { profile, id }),
   notify: () => req<NotifyState>("GET", "/api/notify"),
   setNotify: (patch: Partial<Pick<NotifyState, "webhookUrl" | "format" | "mac">> & { kinds?: Partial<Record<NotifyKind, boolean>> }) => req<NotifyState>("POST", "/api/notify", patch),
   testNotify: (profile: string | null) =>
