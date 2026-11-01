@@ -6,6 +6,9 @@
 // FAKE_HEARD_FILE=<path>: appends {session, text} for every user message it reads (huddle routing tests).
 // FAKE_NO_SAVE=1: stopped before the session transcript is saved (under CLAUDE_CONFIG_DIR, like the real CLI).
 // FAKE_START_MS: how long it starts up (SessionStart hooks) before it reads its prompt.
+// FAKE_MODE=workflow|workflow-nostop: starts a workflow (a background task) with FAKE_WF_AGENTS helper agents (default 5),
+// one every FAKE_WF_STEP_MS (default 20), each writing a transcript in FAKE_WF_DIR that costs $0.04. The host can stop
+// it with a stop_task control request (workflow-nostop refuses, like a CLI that can't).
 // FAKE_TRANSCRIPT=1: it also thinks, runs a Bash call and posts to its huddle, and writes what it emits to the transcript.
 // With --input-format stream-json it reads user messages from stdin like the real CLI: messages that
 // arrive mid-run are picked up at the next step (replayed with --replay-user-messages), later ones
@@ -23,6 +26,8 @@ const initSkills = fakeSkills.length ? { skills: fakeSkills, slash_commands: fak
 const inbox: string[] = [];
 // Answers to control requests (permission asks), by request id.
 const answers = new Map<string, any>();
+// Control requests the host sent (stop_task).
+const controls: any[] = [];
 let eof = false;
 let wake = (): void => {};
 if (streamIn) {
@@ -33,6 +38,7 @@ if (streamIn) {
       if (!l.trim()) return;
       const m = JSON.parse(l);
       if (m.type === "control_response") return void answers.set(m.response.request_id, m.response);
+      if (m.type === "control_request") return void controls.push(m);
       inbox.push(m.message.content.map((c: any) => c.text ?? "").join(""));
     };
     for await (const chunk of Bun.stdin.stream()) {
@@ -194,6 +200,41 @@ if (mode === "asks") {
     const a = answers.get(id);
     decisions.push(`${tool}=${a?.subtype === "error" ? "error" : a?.response?.behavior}`);
   }
+}
+
+if (mode === "workflow" || mode === "workflow-nostop") {
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const dir = `${process.env.FAKE_WF_DIR}/subagents/workflows/wf_fake`;
+  mkdirSync(dir, { recursive: true });
+  const script = "export const meta = { name: 'fake-review', description: 'Review then sum up', phases: [{ title: 'Review' }, { title: 'Sum up' }] }";
+  emit({ type: "assistant", message: { id: "msg_wf", model: "claude-opus-5-5", content: [{ type: "tool_use", id: "tu_wf", name: "Workflow", input: { script } }], usage: { input_tokens: 1000, output_tokens: 10 } } });
+  emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu_wf", content: `Workflow launched in background. Task ID: wtask1\nSummary: Review then sum up\nTranscript dir: ${dir}\nRun ID: wf_fake` }] } });
+  emit({ type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "wtask1", task_type: "local_workflow", description: "Review then sum up" }] });
+  appendFileSync(`${dir}/journal.jsonl`, JSON.stringify({ type: "launched" }) + "\n");
+  const n = Number(process.env.FAKE_WF_AGENTS ?? 5);
+  let end = "completed";
+  for (let i = 1; i <= n; i++) {
+    await Bun.sleep(Number(process.env.FAKE_WF_STEP_MS ?? 20));
+    const stop = controls.shift();
+    if (stop) {
+      const ok = mode === "workflow";
+      emit({ type: "control_response", response: ok ? { subtype: "success", request_id: stop.request_id } : { subtype: "error", request_id: stop.request_id, error: "stop_task: not supported" } });
+      if (ok) {
+        end = "killed";
+        break;
+      }
+    }
+    if (eof) break;
+    const id = `ag${i}`;
+    const phase = i < n ? "Review" : "Sum up";
+    appendFileSync(`${dir}/journal.jsonl`, JSON.stringify({ type: "started", agentId: id, label: `agent ${i}`, phase }) + "\n");
+    writeFileSync(`${dir}/agent-${id}.meta.json`, JSON.stringify({ agentType: "workflow-subagent", description: `agent ${i}`, workflowPhase: phase }));
+    writeFileSync(`${dir}/agent-${id}.jsonl`, JSON.stringify({ type: "assistant", timestamp: new Date().toISOString(), message: { id: `m_${id}`, model: "claude-opus-5-5", stop_reason: "end_turn", content: [{ type: "text", text: `found ${i}` }], usage: { input_tokens: 10_000, output_tokens: 0 } } }) + "\n");
+    appendFileSync(`${dir}/journal.jsonl`, JSON.stringify({ type: "result", agentId: id, result: `found ${i}` }) + "\n");
+    emit({ type: "system", subtype: "task_progress", task_id: "wtask1", tool_use_id: "tu_wf", workflow_progress: [{ type: "workflow_phase", index: 1, title: "Review" }, { type: "workflow_phase", index: 2, title: "Sum up" }] });
+  }
+  emit({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+  emit({ type: "system", subtype: "task_notification", task_id: "wtask1", tool_use_id: "tu_wf", status: end });
 }
 
 const pr = process.env.FAKE_PR ?? null;

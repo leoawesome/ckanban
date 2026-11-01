@@ -267,7 +267,7 @@ type Block = { kind: "entry"; e: SessionEntry } | { kind: "tools"; items: Sessio
 function group(entries: SessionEntry[]): Block[] {
   const out: Block[] = [];
   for (const e of entries) {
-    if (e.kind === "tool" || e.kind === "agent") {
+    if (e.kind === "tool" || e.kind === "agent" || e.kind === "workflow") {
       const prev = out.at(-1);
       if (prev?.kind === "tools") prev.items.push(e);
       else out.push({ kind: "tools", items: [e] });

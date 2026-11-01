@@ -14,6 +14,7 @@ import { branchTicket } from "./branch";
 import { BranchCard } from "./BranchCard";
 import { DeleteCard } from "./DeleteCard";
 import { AgentRows } from "./AgentRow";
+import { WorkflowBlocks } from "./WorkflowBlock";
 import { ToolRows } from "./ToolRows";
 import { ArrowDownIcon, BranchIcon, CloseIcon, FileCodeIcon, FileTextIcon } from "./icons";
 import { useImagePaste } from "./imagePaste";
@@ -98,7 +99,8 @@ function UserText({ text, commands, command }: { text: string; commands: SlashCo
 }
 
 /** tools: a run of tool calls folded into one line; agents: a run of subagent rows. */
-type Block = { kind: "entry"; e: SessionEntry; index: number } | { kind: "tools"; items: SessionEntry[] } | { kind: "agents"; items: SessionEntry[] };
+type Block = { kind: "entry"; e: SessionEntry; index: number } | { kind: "tools"; items: SessionEntry[] } | { kind: "agents"; items: SessionEntry[] }
+  | { kind: "workflows"; items: SessionEntry[] };
 
 /** Who a block is from, for grouping rows into turns. */
 function speaker(b: Block): string {
@@ -119,8 +121,8 @@ function group(entries: SessionEntry[], splitAt?: string): Block[] {
   const out: Block[] = [];
   entries.forEach((e, index) => {
     const prev = out.at(-1);
-    if (e.kind === "tool" || e.kind === "agent") {
-      const kind: "tools" | "agents" = e.kind === "tool" ? "tools" : "agents";
+    if (e.kind === "tool" || e.kind === "agent" || e.kind === "workflow") {
+      const kind = e.kind === "tool" ? "tools" : e.kind === "agent" ? "agents" : "workflows";
       if (prev?.kind === kind && before(prev.items[0], splitAt) === before(e, splitAt)) prev.items.push(e);
       else out.push({ kind, items: [e] });
     } else out.push({ kind: "entry", e, index });
@@ -596,6 +598,13 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
             return (
               <Turn key={b.items[0].uuid} start={l.start} at={b.items[0].at} className={inherited}>
                 <AgentRows slug={slug} ticketId={ticket.id} items={b.items} old={old} />
+              </Turn>
+            );
+          }
+          if (b.kind === "workflows") {
+            return (
+              <Turn key={b.items[0].uuid} start={l.start} at={b.items[0].at} className={inherited}>
+                <WorkflowBlocks slug={slug} ticketId={ticket.id} items={b.items} old={old} />
               </Turn>
             );
           }

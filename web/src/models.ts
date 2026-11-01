@@ -1,2 +1,2 @@
 export const MODELS = ["opus", "sonnet", "haiku"];
-export const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultracode"];

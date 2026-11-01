@@ -187,14 +187,22 @@ export class SubagentCache {
   }
 }
 
-/** A session's subagent transcript files (empty when there are none). */
+/** A session's subagent transcript files, workflow agents' included (empty when there are none). */
 export function subagentFiles(sessionFile: string): string[] {
   const dir = subagentsDir(sessionFile);
+  const list = (d: string) => {
+    try {
+      return readdirSync(d).filter((n) => n.endsWith(".jsonl") && n !== "journal.jsonl").map((n) => join(d, n));
+    } catch {
+      return [];
+    }
+  };
+  const runs = join(dir, "workflows");
+  let ids: string[] = [];
   try {
-    return readdirSync(dir).filter((n) => n.endsWith(".jsonl")).map((n) => join(dir, n));
-  } catch {
-    return [];
-  }
+    ids = readdirSync(runs);
+  } catch {}
+  return [...list(dir), ...ids.flatMap((id) => list(join(runs, id)))];
 }
 
 function subagentsDir(sessionFile: string): string {

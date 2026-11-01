@@ -28,12 +28,13 @@ import { deleteSnapshots, takeSnapshot } from "./rewind";
 import { parseResult } from "./result";
 import { FOLLOW_UP_LATE_MS, FOLLOW_UP_NOTE_MAX, FOLLOW_UP_REASON_MAX, FollowUpError, followUpTime, logFollowUp } from "./followup";
 import { formatAt } from "./jobs";
-import { ticketRuns } from "./ticket-usage";
+import { messageCost, ticketRuns } from "./ticket-usage";
+import { transcriptDirOf, workflowDirCost } from "./workflows";
 import { AUTO_CONTINUE_PER_DAY, clockTime, CONTINUE_TEXT, dayKey, limitMessage, parseReset } from "./limit";
 import { DraftTracker } from "./draft";
 import { buildArgs, DEFAULT_STALL_MINUTES, PLANNING_DISALLOWED_TOOLS, startRun, type RunHandle } from "./runner";
 import { RETRY_DELAY_MS, RETRY_TEXT, transientError } from "./retry";
-import { BOARD_COMMANDS, commandText, EFFORT_HELP, validEffort, listCommands, MODEL_HELP, parseSlash, REFUSED_COMMANDS, rememberInit, slashMessage, useBundledFile, validModel, type SlashCommand } from "./commands";
+import { BOARD_COMMANDS, commandText, EFFORT_HELP, runEffort, validEffort, listCommands, MODEL_HELP, parseSlash, REFUSED_COMMANDS, rememberInit, slashMessage, useBundledFile, validModel, type SlashCommand } from "./commands";
 import { mcpConfig } from "./agents";
 import type { OwnedSession } from "./shell";
 import type { Store } from "./store";
@@ -65,6 +66,8 @@ export interface BoardOptions {
   now?: () => Date;
   /** Pause before the one automatic retry after a passing API error (default RETRY_DELAY_MS; tests pass a short one). */
   retryDelayMs?: number;
+  /** How often a capped run with workflows adds up what it spent (default WORKFLOW_CAP_POLL_MS; tests pass a short one). */
+  capPollMs?: number;
   /** Stall watchdog time in ms, overriding the board's stallMinutes (tests). */
   stallMs?: number;
 }
@@ -100,6 +103,8 @@ interface ActiveRun {
   retried?: boolean;
   /** The user chose Restart on a stalled run: once it is stopped, it resumes in the same session. */
   restartRequested?: boolean;
+  /** Workflows pushed this run past its spending cap: the board stopped it (what the run had spent, in $). */
+  workflowCapHit?: number;
   /** This run started an auto huddle (start_huddle): one per run. */
   autoHuddleStarted?: boolean;
   /** Other tickets' runs this run started (see runStart). */
@@ -210,6 +215,18 @@ const STALL_RESTART_TEXT = "Your previous run stopped responding and the user re
 /** A requested restart waits this long for active runs to finish, then restarts anyway (recover() resumes them). */
 export const RESTART_MAX_WAIT_MS = 10 * 60_000;
 const DRAFT_THROTTLE_MS = 120;
+/** What a run spent: its own messages plus its workflows' helper agents. */
+function spentWith(spend: { main: Map<string, number>; workflowDirs: Set<string>; files: Map<string, { key: string; cost: number }> }): number {
+  let total = 0;
+  for (const c of spend.main.values()) total += c;
+  for (const dir of spend.workflowDirs) total += workflowDirCost(dir, spend.files);
+  return total;
+}
+
+/** What Claude is told when the user stops one of its workflows from the board. */
+export const WORKFLOW_STOPPED_TEXT = "The user stopped your workflow from the board. Don't start it again; finish the task with the results you already have and say which parts the workflow didn't get to.";
+/** How often a capped run with workflows running adds up its spending (see executeOnce). */
+export const WORKFLOW_CAP_POLL_MS = 5_000;
 
 /** The session's transcript file under Claude's projects folder, if any. */
 export function claudeSessionFile(sessionId: string): string | null {
@@ -266,6 +283,8 @@ export class ConflictError extends Error {}
 
 export class Board {
   private runs = new Map<string, ActiveRun>();
+  /** Latest live progress of each workflow (stream task_progress: every agent, waiting ones too), by ticket and Workflow call. */
+  private workflowLive = new Map<string, any[]>();
   /** Shared devices every board's runs take and let go (devices.ts); a run's end frees what it still holds. */
   readonly devices: Devices;
   /** Setup commands running now (`ckanban ticket setup`; stopping the ticket's run aborts them), per ticket key. */
@@ -383,6 +402,47 @@ export class Board {
 
   isRunning(slug: string, id: string): boolean {
     return this.runs.has(this.key(slug, id));
+  }
+
+  /** Live progress of a workflow in this ticket's run (the latest task_progress agent list), if any came in. */
+  workflowProgress(slug: string, id: string, toolUseId: string): any[] | null {
+    return this.workflowLive.get(`${slug}/${id}/${toolUseId}`) ?? null;
+  }
+
+  /** Keep a run's workflow progress for the chat, and what it spends for the cap. */
+  private watchWorkflows(slug: string, id: string, ev: any, spend: { main: Map<string, number>; workflowDirs: Set<string> }): void {
+    if (ev?.type === "system" && ev.subtype === "task_progress" && typeof ev.tool_use_id === "string" && Array.isArray(ev.workflow_progress)) {
+      this.workflowLive.set(`${slug}/${id}/${ev.tool_use_id}`, ev.workflow_progress);
+    } else if (ev?.type === "assistant" && ev.message?.usage) {
+      const mid = typeof ev.message.id === "string" ? ev.message.id : `#${spend.main.size}`;
+      spend.main.set(mid, messageCost(String(ev.message.model ?? ""), ev.message.usage));
+    } else if (ev?.type === "user" && Array.isArray(ev.message?.content)) {
+      for (const b of ev.message.content) {
+        if (b?.type !== "tool_result") continue;
+        const text = typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((c: any) => c?.text ?? "").join("\n") : "";
+        const dir = text.startsWith("Workflow launched") ? transcriptDirOf(text) : null;
+        if (dir) spend.workflowDirs.add(dir);
+      }
+    }
+  }
+
+  /**
+   * Stop one workflow of the ticket's run and let the run go on. Claude Code answers the stop request; if it can't
+   * stop just the workflow, the whole run stops instead (the result says which).
+   */
+  async stopWorkflow(slug: string, id: string, taskId: string): Promise<{ stopped: "workflow" | "run"; error?: string }> {
+    const r = this.runs.get(this.key(slug, id));
+    if (!r?.handle) throw new Error("this ticket isn't running");
+    const res = await r.handle.stopTask(taskId);
+    if (res.ok) {
+      // Claude only hears "killed": tell it the user did it, so it doesn't report the workflow as still running.
+      r.handle.send(WORKFLOW_STOPPED_TEXT);
+      this.store.addComment(slug, id, "ai", "Workflow stopped by user. The run goes on.");
+      this.emitTicket(slug, this.store.getTicket(slug, id)!);
+      return { stopped: "workflow" };
+    }
+    this.stopRun(r);
+    return { stopped: "run", error: res.error };
   }
 
   /** The ticket's current run is a quiet reply to another session's message (a peer run, e.g. a huddle's). */
@@ -867,13 +927,24 @@ export class Board {
     // The spending cap applies to the ticket's own work (not Planning chats or replies to other tickets).
     const cap = refine || quiet ? null : runCapFor(t, profile);
     if (!refine && !quiet && t.capNextUsd) this.patch(slug, id, { capNextUsd: null });
+    // Workflow helper agents' spending doesn't count toward claude's own --max-budget-usd: the board adds it up
+    // (this run's messages + its workflows' agents) and stops the run once the total reaches the cap.
+    const spend = { main: new Map<string, number>(), workflowDirs: new Set<string>(), files: new Map<string, { key: string; cost: number }>() };
+    const capWatch = cap === null ? null : setInterval(() => {
+      if (!spend.workflowDirs.size || run.stopRequested || run.workflowCapHit !== undefined || !run.handle) return;
+      const total = spentWith(spend);
+      if (total < cap) return;
+      run.workflowCapHit = total;
+      this.patch(slug, id, { lastActivity: "Stopping: spending cap reached" });
+      run.handle.stop();
+    }, this.opts.capPollMs ?? WORKFLOW_CAP_POLL_MS);
     // Marks where this run starts in the log and what it was (the Usage tab lists runs by kind).
     // A resumed attempt (retry, stall restart) continues the same run in the log.
     if (!resumeText) this.store.appendActivity(slug, id, runNo, { type: "ckanban_run", kind: refine ? "planning" : quiet ? "reply" : run.chat?.followUp ? "follow-up" : run.chat ? "chat" : "work" });
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: session.dir,
-      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, refine ? PLANNING_DISALLOWED_TOOLS : [], mcpConfig(), systemPrompt, cap, t.effort ?? profile.effort),
+      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, refine ? PLANNING_DISALLOWED_TOOLS : [], mcpConfig(), systemPrompt, cap, runEffort(t.effort ?? profile.effort, !refine)),
       input: prompt,
       inputLocal: run.chat?.slash === "local" && !resume,
       planning: refine,
@@ -891,6 +962,7 @@ export class Board {
           } else if (!draftTimer) draftTimer = setTimeout(emitDraft, DRAFT_THROTTLE_MS);
         }
         if (ev?.type === "stream_event") return;
+        this.watchWorkflows(slug, id, ev, spend);
         rememberInit(session.dir, ev, { projects: [profile.path] });
         if (refine && ev?.type === "assistant") this.saveMockups(slug, id, outputDir, ev);
         if (showsInterrupted && !this.shuttingDown && hasText(ev)) {
@@ -941,6 +1013,7 @@ export class Board {
     for (const msg of this.waiting(slug, id)) this.steer(run, msg);
 
     const out = await run.handle.done;
+    if (capWatch) clearInterval(capWatch);
     if (draftTimer) clearTimeout(draftTimer);
     // A reply cut off before its message ended (Stop, a crash): the chat keeps it until it knows what was saved.
     if (draft.text) this.bus.emit({ type: "draft", profile: slug, id, text: "", final: draft.text });
@@ -971,13 +1044,18 @@ export class Board {
       this.patch(slug, id, { sessionStarted: started, stalled: null, lastActivity: "Restarting…" });
       return this.executeOnce(run, healed, STALL_RESTART_TEXT);
     }
+    if (run.workflowCapHit !== undefined && cap !== null) {
+      this.capReached(slug, id, base, cap, run.workflowCapHit);
+      return;
+    }
     if (run.handle.stopped) {
       this.store.addComment(slug, id, "ai", "Run stopped by user.");
       this.patch(slug, id, { ...base, outcome: "stopped", error: null, lastActivity: null, ...this.dropAutoWait(slug, id) });
       return;
     }
     if (cap !== null && out.events.some((e) => e?.type === "result" && e.subtype === "error_max_budget_usd")) {
-      this.capReached(slug, id, base, cap);
+      // Claude Code's own cap counts only this conversation: with workflows, say what they added on top.
+      this.capReached(slug, id, base, cap, spend.workflowDirs.size ? spentWith(spend) : undefined);
       return;
     }
     // The account hit its usage limit: not a failure of the work, it continues once the limit resets.
@@ -1119,9 +1197,12 @@ export class Board {
   }
 
   /** A run stopped at its spending cap: blocked until the user continues it with more budget (continueAfterCap). */
-  private capReached(slug: string, id: string, base: Partial<Ticket>, cap: number): void {
+  private capReached(slug: string, id: string, base: Partial<Ticket>, cap: number, withWorkflows?: number): void {
     const msg = `Stopped at $${cap.toFixed(2)} cap`;
-    this.store.addComment(slug, id, "ai", `${msg}: this run spent its budget before it finished. Continue it with more budget, or change the ticket's cap in its ⋯ menu.`);
+    const why = withWorkflows === undefined
+      ? "this run spent its budget before it finished"
+      : `this run and its workflow's helper agents spent $${withWorkflows.toFixed(2)}, so the board stopped the run and its workflow`;
+    this.store.addComment(slug, id, "ai", `${msg}: ${why}. Continue it with more budget, or change the ticket's cap in its ⋯ menu.`);
     this.patch(slug, id, { ...base, outcome: "blocked", error: msg, capHit: { capUsd: cap, at: nowIso() } });
   }
 

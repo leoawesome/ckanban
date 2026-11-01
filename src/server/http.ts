@@ -42,6 +42,7 @@ import { collectLinks } from "./links";
 import { fromTicketText, SessionCache, type SessionSummary } from "./session";
 import { ptySupported, ShellManager, type Shell } from "./shell";
 import { AGENT_STEP_TAIL, settleAgent } from "./subagents";
+import { settleWorkflow, withRun, workflowAgentDetail, workflowScript, type WorkflowInfo } from "./workflows";
 import { QuickChatError, QuickChats } from "./quickchat";
 import type { TerminalWatcher } from "./terminals";
 import { attachmentHeader, canCopyFile, copyFileToClipboard, markdownPage, markdownTitle, revealFile, ShareError } from "./share";
@@ -293,6 +294,13 @@ export function createServer(deps: ServerDeps) {
    * run (RUN_HEADER), and not any other program, header or not: a run's shell, a check script, the board's terminal or
    * a page from elsewhere (no Origin of the board). Fails closed when the caller can't be told.
    */
+  /** A workflow as the chat shows it: its files plus the run's live progress, settled once the run is gone, no script. */
+  const workflowView = (w: WorkflowInfo, slug: string, id: string, sessionId: string, active: boolean): WorkflowInfo => {
+    const live = board.workflowProgress(slug, id, w.toolUseId);
+    const merged = live && w.status === "running" && w.runId ? withRun(w, sessions.workflowRun(sessionId, w.runId), live) : w;
+    const { script: _script, scriptPath: _path, ...rest } = settleWorkflow(merged, active);
+    return rest;
+  };
   const userOnly = async (req: Request, what: string) => {
     const refusal = `${what} is for the user only, from the board in a browser: a board run, a check script or another program can't do it. Ask the user to do it in the board.`;
     if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER) || !req.headers.get("origin")) throw new HttpError(403, refusal);
@@ -1116,6 +1124,10 @@ export function createServer(deps: ServerDeps) {
         const start = Math.max(0, end - limit);
         const active = quickChats.isRunning(slug, cid);
         const entries = all.slice(start, end).map((e) => {
+          if (e.workflow) {
+            const { script: _script, scriptPath: _path, ...workflow } = settleWorkflow(e.workflow, active);
+            return { ...e, workflow };
+          }
           if (!e.agent) return e;
           const agent = settleAgent(e.agent, active);
           return { ...e, agent: { ...agent, steps: agent.steps.slice(-AGENT_STEP_TAIL) } };
@@ -1687,7 +1699,9 @@ export function createServer(deps: ServerDeps) {
       const start = Math.max(0, end - limit);
       const active = board.isRunning(slug, id);
       // Subagent rows carry only their last steps; "show all" fetches the rest (agent endpoint below).
+      // Workflows get the run's live progress (waiting agents too); their script loads on "Show script".
       const entries = all.slice(start, end).map((e) => {
+        if (e.workflow) return { ...e, workflow: workflowView(e.workflow, slug, id, t.sessionId!, active) };
         if (!e.agent) return e;
         const agent = settleAgent(e.agent, active);
         return { ...e, agent: { ...agent, steps: agent.steps.slice(-AGENT_STEP_TAIL) } };
@@ -1770,6 +1784,35 @@ export function createServer(deps: ServerDeps) {
       const e = (t.sessionId ? sessions.get(t.sessionId)?.entries : null)?.find((x) => x.agent?.toolUseId === parts[5]);
       if (!e?.agent) throw new HttpError(404, "no such subagent in this ticket's conversation");
       return json(settleAgent(e.agent, board.isRunning(slug, id)));
+    }
+    // A workflow in the ticket's conversation: its script, one helper agent in full, or stopping it (the user's click).
+    if (action === "workflow" && parts.length >= 7) {
+      const t = store.getTicket(slug, id)!;
+      const e = (t.sessionId ? sessions.get(t.sessionId)?.entries : null)?.find((x) => x.workflow?.toolUseId === parts[5]);
+      if (!e?.workflow || !t.sessionId) throw new HttpError(404, "no such workflow in this ticket's conversation");
+      const w = e.workflow;
+      const run = w.runId ? sessions.workflowRun(t.sessionId, w.runId) : null;
+      if (parts[6] === "script" && parts.length === 7 && m === "GET") {
+        const script = workflowScript(w, run);
+        if (script === null) throw new HttpError(404, "the workflow's script wasn't saved");
+        return json({ script });
+      }
+      if (parts[6] === "agent" && parts.length === 8 && m === "GET") {
+        const view = workflowView(w, slug, id, t.sessionId, board.isRunning(slug, id));
+        const d = workflowAgentDetail(view, run, parts[7]);
+        if (!d) throw new HttpError(404, "no such helper agent in this workflow");
+        return json(d);
+      }
+      if (parts[6] === "stop" && parts.length === 7 && m === "POST") {
+        if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "Stopping a workflow is the user's click, not a board run's");
+        if (!w.taskId) throw new HttpError(400, "this workflow hasn't started yet");
+        if (!board.isRunning(slug, id)) throw new HttpError(400, "this ticket isn't running");
+        try {
+          return json(await board.stopWorkflow(slug, id, w.taskId));
+        } catch (err) {
+          throw new HttpError(400, (err as Error).message);
+        }
+      }
     }
     if (action === "tool" && parts.length === 6 && m === "GET") {
       // A tool call's full input and output, loaded when the user opens its row in the chat.

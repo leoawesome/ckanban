@@ -16,6 +16,7 @@ import { parseAutomationProposal, type AutomationProposal } from "./automation-p
 import type { Store } from "./store";
 import { normalizeTags } from "./tags";
 import { AGENT_TOOL, notifiedStatus, parseTaskNotification, SubagentCache, subagentFiles, toolLabel, withTranscript, type AgentInfo } from "./subagents";
+import { WORKFLOW_TOOL, WorkflowCache, withRun, workflowFromCall, workflowLaunched, workflowNotified, type WorkflowInfo, type WorkflowRun } from "./workflows";
 import { findToolDetailIn, type ToolDetail } from "./tooldetail";
 import { parseSetupBlock, type SetupResult } from "./worktree-setup";
 import { starredTitle } from "./util";
@@ -60,13 +61,15 @@ export interface SessionEntry {
   role: "user" | "assistant";
   /** board: a prompt the board sent on the user's behalf (instructions hidden). */
   /** agent: a subagent Claude started (rendered as its own row with status and steps). */
-  kind: "text" | "tool" | "board" | "agent";
+  /** workflow: a workflow Claude started (rendered as a block with its phases and helper agents). */
+  kind: "text" | "tool" | "board" | "agent" | "workflow";
   text: string;
   /** Tool rows: the tool_use id (its full input and output load from the tool endpoint). */
   toolUseId?: string;
   /** Tool rows whose result was an error. */
   error?: true;
   agent?: AgentInfo;
+  workflow?: WorkflowInfo;
   /** Interview questions Claude asked (rendered as a form). */
   questions?: Question[];
   /** Improved title/description Claude proposed (rendered with an Apply button). */
@@ -487,11 +490,15 @@ export function parseSession(raw: string): ParsedSession {
   const errored = new Set<string>();
   /** Subagents by the Agent tool_use id; their rows update as results and notifications arrive. */
   const agents = new Map<string, AgentInfo>();
+  /** Workflows by the Workflow tool_use id; they update as the launch result and the end notification arrive. */
+  const workflows = new Map<string, WorkflowInfo>();
   /** The last command was terminal-only: its output (next local-command-stdout, if any) is hidden too. */
   let hideOutput = false;
   const cache = new ChatCacheTracker();
   const notified = (text: unknown, at: string) => {
     const n = typeof text === "string" ? parseTaskNotification(text) : null;
+    const w = n && workflows.get(n.toolUseId);
+    if (n && w) workflowNotified(w, n.status, n.result, at);
     const a = n && agents.get(n.toolUseId);
     if (!n || !a) return;
     a.status = notifiedStatus(n.status);
@@ -524,6 +531,8 @@ export function parseSession(raw: string): ParsedSession {
     const uuid = typeof ev.uuid === "string" ? ev.uuid : `${entries.length}`;
     // A message sent while Claude was working is saved as an attachment to the running turn, not a user message.
     if (ev.type === "attachment" && ev.attachment?.type === "queued_command" && !ev.isSidechain) notified(ev.attachment.prompt, at);
+    // A background task's end is queued for Claude first; a run that ends meanwhile (e.g. at its cap) never delivers it.
+    if (ev.type === "queue-operation" && ev.operation === "enqueue" && typeof ev.content === "string") notified(ev.content, at);
     if (ev.type === "attachment" && ev.attachment?.type === "queued_command" && ev.attachment.commandMode === "prompt" && !ev.isSidechain) {
       const u = userText(ev.attachment.prompt);
       if (u) entries.push(peerEntry(u, uuid, at));
@@ -560,6 +569,7 @@ export function parseSession(raw: string): ParsedSession {
       if (Array.isArray(content)) {
         for (const b of content) {
           if (b?.type === "tool_result" && agents.has(b.tool_use_id)) agentResult(agents.get(b.tool_use_id)!, b, ev.toolUseResult, at);
+          if (b?.type === "tool_result" && workflows.has(b.tool_use_id)) workflowLaunched(workflows.get(b.tool_use_id)!, b, ev.toolUseResult, at);
           if (b?.type === "tool_result" && b.is_error && cards.has(b.tool_use_id)) failed.add(b.tool_use_id);
           if (b?.type === "tool_result" && b.is_error) errored.add(b.tool_use_id);
           if (b?.type === "tool_result" && setups.has(b.tool_use_id)) {
@@ -607,6 +617,10 @@ export function parseSession(raw: string): ParsedSession {
         };
         agents.set(b.id, agent);
         entries.push({ uuid: b.id, at, role: "assistant", kind: "agent", text: toolLabel(b), agent });
+      } else if (b?.type === "tool_use" && WORKFLOW_TOOL.test(b.name ?? "") && typeof b.id === "string") {
+        const workflow = workflowFromCall(b.id, b.input, at);
+        workflows.set(b.id, workflow);
+        entries.push({ uuid: b.id, at, role: "assistant", kind: "workflow", text: workflow.name, workflow });
       } else if (b?.type === "tool_use") {
         entries.push({ uuid: id, at, role: "assistant", kind: "tool", text: toolLabel(b), ...(typeof b.id === "string" ? { toolUseId: b.id } : {}) });
       }
@@ -737,6 +751,7 @@ export class SessionCache {
   private items = new Map<string, CacheItem>();
   private files = new Map<string, string>();
   private agents = new SubagentCache();
+  private workflowFiles = new WorkflowCache();
   /** Sessions whose file wasn't found: since when, and when it was last searched for. */
   private missing = new Map<string, { since: number; at: number }>();
   /**
@@ -828,7 +843,8 @@ export class SessionCache {
     const v = f && this.fileVersion(f);
     if (!f || !v) return null;
     const agents = this.agents.version(f);
-    return agents ? `${v}|${agents}` : v;
+    const workflows = this.workflowFiles.version(f);
+    return `${v}${agents ? `|${agents}` : ""}${workflows ? `|w${workflows}` : ""}`;
   }
 
   get(sessionId: string): ParsedSession | null {
@@ -847,17 +863,29 @@ export class SessionCache {
       hit = { file: f, key, parsed, agentKey: "", merged: parsed };
       this.items.set(sessionId, hit);
     }
-    if (!hit.parsed.entries.some((e) => e.agent)) return hit.parsed;
-    const agentKey = this.agents.version(f);
+    const hasAgents = hit.parsed.entries.some((e) => e.agent);
+    const hasWorkflows = hit.parsed.entries.some((e) => e.workflow);
+    if (!hasAgents && !hasWorkflows) return hit.parsed;
+    const agentKey = `${hasAgents ? this.agents.version(f) : ""}|${hasWorkflows ? this.workflowFiles.version(f) : ""}`;
     if (hit.agentKey !== agentKey || hit.merged === hit.parsed) {
-      const transcripts = this.agents.load(f);
+      const transcripts = hasAgents ? this.agents.load(f) : new Map();
       hit.merged = {
         ...hit.parsed,
-        entries: hit.parsed.entries.map((e) => (e.agent ? { ...e, agent: withTranscript(e.agent, transcripts.get(e.agent.toolUseId)) } : e)),
+        entries: hit.parsed.entries.map((e) => {
+          if (e.agent) return { ...e, agent: withTranscript(e.agent, transcripts.get(e.agent.toolUseId)) };
+          if (e.workflow) return { ...e, workflow: withRun(e.workflow, e.workflow.runId ? this.workflowFiles.load(f, e.workflow.runId) : null) };
+          return e;
+        }),
       };
       hit.agentKey = agentKey;
     }
     return hit.merged;
+  }
+
+  /** A workflow's files (journal, agent transcripts, summary), or null when the session or run is unknown. */
+  workflowRun(sessionId: string, runId: string): WorkflowRun | null {
+    const f = this.locate(sessionId);
+    return f ? this.workflowFiles.load(f, runId) : null;
   }
 
   /** One tool call in full (input and output), from the session or one of its subagents' transcripts. */

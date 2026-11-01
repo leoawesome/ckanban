@@ -64,6 +64,7 @@ function line(e: SessionEntry): string {
   if (e.peer || e.huddleId) return `Review team (huddle) message: ${text}`;
   if (e.kind === "board") return `Board (automatic message): ${text}`;
   if (e.kind === "agent") return `Claude started a helper: ${text}`;
+  if (e.kind === "workflow") return `Claude started a workflow of helper agents: ${text}`;
   if (e.role === "user") return `User: ${text}`;
   const parts = [`Claude: ${text}`];
   if (e.questions?.length) parts.push(`Claude asked the user: ${e.questions.map((q) => q.question).join(" / ")}`);

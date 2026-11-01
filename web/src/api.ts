@@ -490,7 +490,7 @@ export interface SessionEntry {
   at: string;
   role: "user" | "assistant";
   /** agent: a subagent Claude started (its own row with status, steps and result). */
-  kind: "text" | "tool" | "board" | "agent";
+  kind: "text" | "tool" | "board" | "agent" | "workflow";
   text: string;
   /** Tool rows: the tool_use id (api.tool loads its full input and output). */
   toolUseId?: string;
@@ -499,6 +499,8 @@ export interface SessionEntry {
   /** A plain message of the user's: the chat can rewind to it. */
   rewind?: true;
   agent?: AgentInfo;
+  /** A workflow Claude started (kind "workflow"): its phases and helper agents. */
+  workflow?: WorkflowInfo;
   questions?: Question[];
   proposal?: Proposal;
   newTickets?: NewTicketDraft[];
@@ -567,6 +569,48 @@ export interface AgentInfo {
   stepCount: number;
   current: string | null;
   result: string | null;
+  error: string | null;
+}
+
+export type WorkflowStatus = "running" | "done" | "failed" | "stopped";
+export type WorkflowAgentStatus = "waiting" | "running" | "done" | "failed" | "stopped";
+
+export interface WorkflowAgent {
+  /** null for an agent still waiting to start. */
+  agentId: string | null;
+  label: string;
+  /** "" when the script named no phase. */
+  phase: string;
+  status: WorkflowAgentStatus;
+  startedAt: string | null;
+  endedAt: string | null;
+  updatedAt: string | null;
+  costUsd: number;
+  current: string | null;
+  stepCount: number;
+}
+
+/** One helper agent in full: what it did and what it handed back. */
+export interface WorkflowAgentDetail extends WorkflowAgent {
+  steps: AgentStep[];
+  result: string | null;
+}
+
+export interface WorkflowInfo {
+  /** The Workflow tool_use id. */
+  toolUseId: string;
+  runId: string | null;
+  taskId: string | null;
+  name: string;
+  description: string;
+  /** Phase titles in script order. */
+  phases: string[];
+  status: WorkflowStatus;
+  startedAt: string;
+  endedAt: string | null;
+  updatedAt: string;
+  agents: WorkflowAgent[];
+  costUsd: number;
   error: string | null;
 }
 
@@ -1431,6 +1475,14 @@ export const api = {
   askHelp: (slug: string, id: string, kind: HelpKind) => req<HelpCard>("POST", `${t(slug, id)}/help`, { kind }),
   /** One subagent of the ticket's conversation, with all of its steps. */
   agent: (slug: string, id: string, toolUseId: string) => req<AgentInfo>("GET", `${t(slug, id)}/agent/${encodeURIComponent(toolUseId)}`),
+  /** A workflow's script ("Show script"). */
+  workflowScript: (slug: string, id: string, toolUseId: string) => req<{ script: string }>("GET", `${t(slug, id)}/workflow/${encodeURIComponent(toolUseId)}/script`),
+  /** One helper agent of a workflow, with all of its steps and its result. */
+  workflowAgent: (slug: string, id: string, toolUseId: string, agentId: string) =>
+    req<WorkflowAgentDetail>("GET", `${t(slug, id)}/workflow/${encodeURIComponent(toolUseId)}/agent/${encodeURIComponent(agentId)}`),
+  /** Stop a running workflow; when Claude Code can't stop just the workflow, the whole run stops ("run"). */
+  stopWorkflow: (slug: string, id: string, toolUseId: string) =>
+    req<{ stopped: "workflow" | "run"; error?: string }>("POST", `${t(slug, id)}/workflow/${encodeURIComponent(toolUseId)}/stop`),
   /** A tool call's full input and output (main conversation or a subagent's). */
   tool: (slug: string, id: string, toolUseId: string) => req<ToolDetail>("GET", `${t(slug, id)}/tool/${encodeURIComponent(toolUseId)}`),
   /** What `/` can run in this ticket's chat (skills, custom commands, built-ins). */

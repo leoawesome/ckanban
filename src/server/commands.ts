@@ -64,8 +64,20 @@ export function validModel(name: string): boolean {
   return MODEL_ALIASES.includes(base) || /^claude-[a-z0-9][a-z0-9.-]*$/.test(base);
 }
 
-/** Reasoning effort levels `claude --effort` takes. */
-export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+/**
+ * Reasoning effort levels `claude --effort` takes. ultracode is xhigh plus workflows: Claude runs many helper agents
+ * for every substantial task (much more of the plan's usage).
+ */
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultracode"] as const;
+
+/**
+ * The --effort a run gets. Only a ticket's own work runs workflows: Planning chats and quick chats get ultracode's
+ * effort (xhigh) without them.
+ */
+export function runEffort(effort: string | null | undefined, workflows: boolean): string | null {
+  if (!effort) return null;
+  return effort === "ultracode" && !workflows ? "xhigh" : effort;
+}
 
 export function validEffort(name: string): boolean {
   return (EFFORTS as readonly string[]).includes(name);

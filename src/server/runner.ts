@@ -20,10 +20,18 @@ export interface RunHandle {
   send(text: string, opts?: { local?: boolean }): boolean;
   /** A run started with idleMs: stop keeping input open, and end it now if Claude is idle. */
   endWhenIdle(): void;
+  /**
+   * Stop one background task (a workflow, a background agent) and keep the run going: a stop_task control request.
+   * Resolves to what Claude Code answered: ok, or the error it gave (also when input is closed or it doesn't answer).
+   */
+  stopTask(taskId: string): Promise<{ ok: true } | { ok: false; error: string }>;
   /** A stalled run (see stallMs): the user chose Keep waiting, so the watchdog starts counting again. */
   keepWaiting(): void;
   readonly stopped: boolean;
 }
+
+/** How long stopTask waits for Claude Code's answer. */
+export const CONTROL_TIMEOUT_MS = 10_000;
 
 /** After Claude's last task finishes, how long to wait for the turn it starts before ending input anyway. */
 export const BACKGROUND_GRACE_MS = 10_000;
@@ -254,6 +262,27 @@ export function startRun(opts: {
     }
     return true;
   };
+  // Control requests the board sent (stop_task), by request id: settled by Claude Code's control_response.
+  const pending = new Map<string, (r: { ok: true } | { ok: false; error: string }) => void>();
+  let requests = 0;
+  const control = (request: object): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const id = `ckanban-${++requests}`;
+    return new Promise((resolve) => {
+      if (!writeLine(JSON.stringify({ type: "control_request", request_id: id, request }) + "\n")) {
+        resolve({ ok: false, error: "the run is finishing" });
+        return;
+      }
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        resolve({ ok: false, error: "Claude Code didn't answer" });
+      }, CONTROL_TIMEOUT_MS);
+      pending.set(id, (r) => {
+        clearTimeout(timer);
+        pending.delete(id);
+        resolve(r);
+      });
+    });
+  };
   const write = (text: string, local = false): boolean => {
     if (!writeLine(userMessage(text))) return false;
     if (!local) {
@@ -314,6 +343,15 @@ export function startRun(opts: {
           writeLine(JSON.stringify(controlResponse(ev, opts.planning)) + "\n");
           return;
         }
+        // Claude Code's answer to a request the board sent.
+        if (ev?.type === "control_response") {
+          const r = ev.response;
+          const settle = typeof r?.request_id === "string" ? pending.get(r.request_id) : undefined;
+          if (settle) {
+            settle(r.subtype === "success" ? { ok: true } : { ok: false, error: typeof r.error === "string" ? r.error : "Claude Code refused" });
+            return;
+          }
+        }
         // Partial-message deltas are only for the live view; don't keep thousands of them in memory.
         if (ev?.type !== "stream_event") events.push(ev);
         if (ev?.type === "user" && ev.isReplay) unread = Math.max(0, unread - 1);
@@ -353,6 +391,7 @@ export function startRun(opts: {
     const stderrText = new Response(p.stderr as ReadableStream).text();
     const [code, stderr] = await Promise.all([p.exited, stderrText, readStdout]);
     clearStall();
+    for (const settle of [...pending.values()]) settle({ ok: false, error: "the run ended" });
     if (stalled) {
       stalled = false;
       opts.onStall?.(false);
@@ -366,6 +405,7 @@ export function startRun(opts: {
   return {
     done,
     send: (text, o) => !stopped && write(text, o?.local),
+    stopTask: (taskId) => (stopped ? Promise.resolve({ ok: false as const, error: "the run is stopping" }) : control({ subtype: "stop_task", task_id: taskId })),
     endWhenIdle() {
       keepMs = 0;
       if (idleTimer && quiet()) closeInput();
