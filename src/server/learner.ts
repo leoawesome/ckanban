@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { trackedInterval } from "./lag";
 import { join } from "node:path";
 import type { Bus } from "./events";
 import { ALL_ROLES, type HuddleNote, type LessonInput, type NoteScope, noteText, parseNotes, serializeNotes } from "./huddle-notes";
@@ -194,7 +195,7 @@ export class Learner {
     const every = this.o.tidyCheckMs ?? 3_600_000;
     const check = () => void this.tidyIfDue().catch((err) => console.error("tidy pass failed:", err));
     const first = every > 0 ? setTimeout(check, 60_000) : null;
-    const tick = every > 0 ? setInterval(check, every) : null;
+    const tick = every > 0 ? trackedInterval("learner-tidy", check, every) : null;
     return () => {
       off();
       if (first) clearTimeout(first);

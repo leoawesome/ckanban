@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { trackedInterval } from "./lag";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Board } from "./board";
@@ -494,7 +495,7 @@ export class LoopManager {
 
   start(intervalMs = 60_000): () => void {
     const run = () => this.tick().catch((e) => console.error("automations tick failed", e));
-    const timer = setInterval(run, intervalMs);
+    const timer = trackedInterval("automations", run, intervalMs);
     run();
     return () => clearInterval(timer);
   }

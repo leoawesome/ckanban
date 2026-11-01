@@ -1,4 +1,5 @@
 import type { Board } from "./board";
+import { trackedInterval } from "./lag";
 import { run } from "./git";
 import { conflictMessage, failureMessage, ghFailedLog, ghMerge, ghPrStatus, mergeBlock } from "./prstatus";
 import { prFinal, ticketPrs, updatePrs } from "./prs";
@@ -184,7 +185,7 @@ export function startPoller(board: Board, store: Store, minutes: number): () => 
       busy = false;
     }
   };
-  const timer = setInterval(tick, Math.max(1, minutes) * 60_000);
+  const timer = trackedInterval("pr-poller", tick, Math.max(1, minutes) * 60_000);
   tick();
   return () => clearInterval(timer);
 }

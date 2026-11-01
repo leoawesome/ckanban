@@ -1,3 +1,5 @@
+import { trackedInterval } from "./lag";
+
 // Keep the Mac awake while Claude works. macOS sleeps an idle Mac even with runs going, and every session on the
 // board then freezes until someone touches the keyboard. While there is active work on a board with "Keep this Mac
 // awake" on, the daemon holds a `caffeinate -i` child (idle sleep only; the display may still turn off) and kills it
@@ -87,7 +89,7 @@ export class StayAwake {
   /** Check every intervalMs; the returned function stops checking and ends the hold. */
   start(): () => void {
     this.check();
-    const timer = setInterval(() => this.check(), this.o.intervalMs ?? AWAKE_CHECK_MS);
+    const timer = trackedInterval("awake", () => this.check(), this.o.intervalMs ?? AWAKE_CHECK_MS);
     return () => {
       clearInterval(timer);
       if (this.hold) this.release();

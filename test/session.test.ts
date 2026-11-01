@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FILES_NOTE, IMAGES_NOTE } from "../src/server/attachments";
 import { Bus, type BusEvent } from "../src/server/events";
-import { SessionCache, findSessionFile, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessions } from "../src/server/session";
+import { SessionCache, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessions } from "../src/server/session";
 import { Store } from "../src/server/store";
 import { tempDir } from "./helpers";
 
@@ -510,4 +510,46 @@ test("session summaries are kept on disk: a new cache answers without reading an
   appendFileSync(file, user("second", "2026-09-29T01:00:01Z") + "\n");
   expect(b.summary(sid)?.lastMessage?.text).toBe("second");
   expect(reads).toBe(1);
+});
+
+test("the summaries' tag changes with the code that makes them, not with other server files", () => {
+  const dir = tempDir();
+  writeFileSync(join(dir, "session.ts"), 'import { a } from "./a";\nimport type { T } from "./typesonly";\nexport const s = a;\n');
+  writeFileSync(join(dir, "a.ts"), 'import {\n  b,\n} from "./b";\nexport const a = b;\n');
+  writeFileSync(join(dir, "b.ts"), "export const b = 1;\n");
+  writeFileSync(join(dir, "typesonly.ts"), "export type T = 1;\n");
+  writeFileSync(join(dir, "http.ts"), "export const h = 1;\n");
+  const tag = summaryTag(dir);
+  writeFileSync(join(dir, "http.ts"), "export const h = 2;\n");
+  writeFileSync(join(dir, "typesonly.ts"), "export type T = 2;\n");
+  expect(summaryTag(dir)).toBe(tag);
+  writeFileSync(join(dir, "b.ts"), "export const b = 2;\n");
+  expect(summaryTag(dir)).not.toBe(tag);
+});
+
+test("the session watcher's first pass only takes stock: no session.updated until a transcript changes", async () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-f");
+  mkdirSync(dir, { recursive: true });
+  const sid = "31111111-2222-3333-4444-555555555555";
+  const file = join(dir, `${sid}.jsonl`);
+  writeFileSync(file, user("first", "2026-09-29T01:00:00Z") + "\n");
+  const store = new Store(tempDir());
+  store.saveProfile({ name: "P", slug: "p", path: tempDir(), baseBranch: "main", maxParallel: 1, createdAt: "" });
+  const t = store.createTicket("p", { title: "x", body: "", status: "review" });
+  store.updateTicket("p", t.id, { sessionId: sid });
+  const bus = new Bus();
+  const seen: BusEvent[] = [];
+  bus.on((e) => seen.push(e));
+  const stop = startSessionWatcher(store, bus, new SessionCache({ configDir }), 20);
+  try {
+    await Bun.sleep(120);
+    expect(seen).toEqual([]);
+    appendFileSync(file, asst([{ type: "text", text: "reply" }], "2026-09-29T01:00:01Z") + "\n");
+    await Bun.sleep(120);
+    expect(seen.length).toBe(1);
+    expect(seen[0]).toMatchObject({ type: "session.updated", profile: "p", id: t.id });
+  } finally {
+    stop();
+  }
 });

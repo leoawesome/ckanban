@@ -1,4 +1,5 @@
 import type { Board } from "./board";
+import { trackedInterval } from "./lag";
 import type { Store } from "./store";
 
 /**
@@ -164,7 +165,7 @@ export class LimitWatcher {
 
   start(intervalMs = 30_000): () => void {
     const run = () => this.tick().catch((e) => console.error("limit watcher tick failed", e));
-    const timer = setInterval(run, intervalMs);
+    const timer = trackedInterval("limit-watcher", run, intervalMs);
     run();
     return () => clearInterval(timer);
   }

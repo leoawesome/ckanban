@@ -44,6 +44,7 @@
 // leads are warned at 80%) and at maxMessages; routing pauses after AGENT_ONLY_MAX messages without the user; two
 // participants answering each other PING_PONG times in a row stop waking each other and their lead is tagged.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { trackedInterval } from "./lag";
 import { basename, dirname, join } from "node:path";
 import { summarizeEvent } from "./activity";
 import { mcpConfig } from "./agents";
@@ -1793,7 +1794,7 @@ export class Huddles {
   /** Start the idle watchdog's sweep (the daemon, after recover()). */
   startWatchdog(): void {
     if (this.sweeper) return;
-    this.sweeper = setInterval(() => {
+    this.sweeper = trackedInterval("huddle-idle-sweep", () => {
       try {
         this.idleSweep();
       } catch (e) {

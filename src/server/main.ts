@@ -15,6 +15,7 @@ import { PushService } from "./push";
 import { RemoteAccess, remoteListenPort, remoteUrl } from "./remote";
 import { Passes } from "./integrations/passes";
 import { ckanbanShim } from "./integrations/script";
+import { startLagMonitor, track } from "./lag";
 import { LoopManager } from "./loops";
 import { makeSideCaller } from "./side-call";
 import { Learner } from "./learner";
@@ -89,12 +90,13 @@ export async function startDaemon(): Promise<void> {
   const remotePort = remoteListenPort(port, config.remotePort);
   const server = createServer({ store, bus, board, port, remotePort, webDir, sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push });
   console.log(`ckanban v${VERSION} listening on http://localhost:${server.port} (data: ${store.root})`);
-  board.recover();
-  huddles.recover();
-  quickChats.recover();
+  const stopLag = startLagMonitor();
+  track("startup: board.recover", () => board.recover());
+  track("startup: huddles.recover", () => huddles.recover());
+  track("startup: quickChats.recover", () => quickChats.recover());
   huddles.startWatchdog();
-  void board.sweepWorktrees();
-  void detectMissing(store, (profile) => bus.emit({ type: "profile.updated", slug: profile.slug, profile }));
+  void track("startup: sweepWorktrees", () => board.sweepWorktrees());
+  void track("startup: detectMissing", () => detectMissing(store, (profile) => bus.emit({ type: "profile.updated", slug: profile.slug, profile })));
   const stopPoller = startPoller(board, store, config.prPollMinutes);
   // After recover(): a missed run's ticket must not be mistaken for an interrupted one.
   const stopScheduler = scheduler.start();
@@ -128,6 +130,7 @@ export async function startDaemon(): Promise<void> {
     stopMcp();
     stopNotifier();
     stopAwake();
+    stopLag();
     await Promise.all([board.shutdown(), huddles.shutdown(), quickChats.shutdown()]);
     server.stop(true);
     server.remoteServer?.stop(true);

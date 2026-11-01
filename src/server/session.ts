@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { withoutAttachmentNote } from "./attachments";
@@ -698,15 +699,29 @@ interface SummaryFile {
 }
 
 /**
- * Tells summaries made by other code apart: the release version, and from source the newest change to the server's
- * files (a fix to the parsing applies at the next restart).
+ * Tells summaries made by other code apart: the release version, and from source a hash of the code that makes them
+ * (this file and what it imports, recursively), so a fix to the parsing applies at the next restart while a change
+ * elsewhere in the server keeps the saved summaries. Most landed tickets change server files; dropping every summary
+ * then made the first pass after the restart read every transcript again (seconds on a big board).
  */
-function summaryTag(): string {
-  let newest = 0;
-  try {
-    for (const name of readdirSync(import.meta.dir)) newest = Math.max(newest, statSync(join(import.meta.dir, name)).mtimeMs);
-  } catch {}
-  return `1:${VERSION}:${newest}`;
+export function summaryTag(dir = import.meta.dir, entry = "session"): string {
+  const seen = new Set<string>();
+  const hash: string[] = [];
+  const todo = [entry];
+  while (todo.length) {
+    const name = todo.pop()!;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    let src: string;
+    try {
+      src = readFileSync(join(dir, `${name}.ts`), "utf8");
+    } catch {
+      continue;
+    }
+    hash.push(`${name}:${Bun.hash(src).toString(36)}`);
+    for (const m of src.matchAll(/^(?:import|export)(?! type )[^;]*?from "\.\/([\w.-]+)"/gm)) todo.push(m[1]);
+  }
+  return `2:${VERSION}:${Bun.hash(hash.sort().join(",")).toString(36)}`;
 }
 
 /** Parses session files lazily; re-reads only when size/mtime change. */
@@ -866,8 +881,12 @@ export class SessionCache {
   }
 }
 
-/** One polling pass: emit session.updated for every ticket whose session file changed since last pass. */
-export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>): void {
+/**
+ * One polling pass: emit session.updated for every ticket whose session file changed since last pass. With emit
+ * false it only notes the versions and readies the summaries (the watcher's first pass: nothing changed yet for pages
+ * that load after it, and their first load finds the summaries ready).
+ */
+export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true): void {
   const live = new Set<string>();
   for (const p of store.listProfiles()) {
     for (const t of store.listTickets(p.slug)) {
@@ -878,7 +897,7 @@ export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state:
       if (!v || state.get(key) === `${t.sessionId}:${v}`) continue;
       state.set(key, `${t.sessionId}:${v}`);
       const session = cache.summary(t.sessionId);
-      if (session) bus.emit({ type: "session.updated", profile: p.slug, id: t.id, session });
+      if (session && emit) bus.emit({ type: "session.updated", profile: p.slug, id: t.id, session });
     }
   }
   for (const k of state.keys()) if (!live.has(k)) state.delete(k);
@@ -886,9 +905,14 @@ export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state:
 
 export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache, intervalMs = 2000): () => void {
   const state = new Map<string, string>();
-  const timer = setInterval(() => {
+  // The first pass after a start announced every ticket's session (hundreds of events, each built for every open tab:
+  // seconds right after a restart). Pages load what they need when they (re)connect, and the notifier takes stock at
+  // its start, so the first pass only takes stock.
+  let primed = false;
+  const timer = trackedInterval("session-watcher", () => {
     try {
-      pollSessions(store, bus, cache, state);
+      pollSessions(store, bus, cache, state, primed);
+      primed = true;
     } catch (e) {
       console.error("session watcher", e);
     }

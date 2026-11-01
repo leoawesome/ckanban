@@ -1,4 +1,5 @@
 import { liveSessionMatch, processCommands } from "./claude";
+import { trackedInterval } from "./lag";
 import type { Bus } from "./events";
 import type { SessionCache } from "./session";
 import type { Store } from "./store";
@@ -60,7 +61,7 @@ export class TerminalWatcher {
       }
     };
     tick();
-    const timer = setInterval(tick, intervalMs);
+    const timer = trackedInterval("terminal-watcher", tick, intervalMs);
     return () => clearInterval(timer);
   }
 }

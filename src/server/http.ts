@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, resolve } from "node:path";
+import { routeLabel, track } from "./lag";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "./artifact";
 import { profileFor } from "./cpuprof";
 import { ConflictError, recoveryFor, type Board } from "./board";
@@ -2223,6 +2224,29 @@ export function createServer(deps: ServerDeps) {
     throw new HttpError(404, "not found");
   }
 
+  /** What an event sends to the board's pages, built once per event and shared by every open tab. */
+  const ssePayloads = new WeakMap<BusEvent, string>();
+  const ssePayload = (e: BusEvent): string => {
+    const hit = ssePayloads.get(e);
+    if (hit !== undefined) return hit;
+    let out: unknown = e;
+    if (e.type === "ticket.updated") {
+      const p = store.getProfile(e.profile);
+      if (p) out = { ...e, ticket: view(p, e.ticket) };
+    }
+    let msg = `data: ${JSON.stringify(out)}\n\n`;
+    // Session changes (terminal chat, new questions) and the host's huddle change the ticket's "your turn" state too.
+    const changed = e.type === "session.updated" ? { profile: e.profile, id: e.id }
+      : e.type === "huddle.updated" ? { profile: e.profile, id: e.huddle.hostTicket } : null;
+    if (changed) {
+      const p = store.getProfile(changed.profile);
+      const t = p && store.getTicket(changed.profile, changed.id);
+      if (p && t) msg += `data: ${JSON.stringify({ type: "ticket.updated", profile: changed.profile, ticket: view(p, t) })}\n\n`;
+    }
+    ssePayloads.set(e, msg);
+    return msg;
+  };
+
   function sse(req: Request): Response {
     let unsubscribe = () => {};
     let ping: ReturnType<typeof setInterval>;
@@ -2235,22 +2259,7 @@ export function createServer(deps: ServerDeps) {
           } catch {}
         };
         send(": connected\n\n");
-        unsubscribe = bus.on((e: BusEvent) => {
-          let out: unknown = e;
-          if (e.type === "ticket.updated") {
-            const p = store.getProfile(e.profile);
-            if (p) out = { ...e, ticket: view(p, e.ticket) };
-          }
-          send(`data: ${JSON.stringify(out)}\n\n`);
-          // Session changes (terminal chat, new questions) and the host's huddle change the ticket's "your turn" state too.
-          const changed = e.type === "session.updated" ? { profile: e.profile, id: e.id }
-            : e.type === "huddle.updated" ? { profile: e.profile, id: e.huddle.hostTicket } : null;
-          if (changed) {
-            const p = store.getProfile(changed.profile);
-            const t = p && store.getTicket(changed.profile, changed.id);
-            if (p && t) send(`data: ${JSON.stringify({ type: "ticket.updated", profile: changed.profile, ticket: view(p, t) })}\n\n`);
-          }
-        });
+        unsubscribe = bus.on((e: BusEvent) => send(ssePayload(e)));
         ping = setInterval(() => send(": ping\n\n"), 15_000);
         req.signal.addEventListener("abort", () => {
           unsubscribe();
@@ -2307,7 +2316,7 @@ export function createServer(deps: ServerDeps) {
   }
 
   async function handle(req: Request, srv: import("bun").Server<ShellSocket>, listener: Listener): Promise<Response | undefined> {
-    const res = await route(req, srv, listener);
+    const res = await track(routeLabel(req), () => route(req, srv, listener));
     if (res && listener === "remote") res.headers.set(LISTENER_HEADER, "remote");
     return res;
   }

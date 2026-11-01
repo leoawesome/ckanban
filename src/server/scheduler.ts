@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { trackedInterval } from "./lag";
 import type { Board } from "./board";
 import { cronError, describeCron, nextRun, parseCron } from "./cron";
 import type { Bus } from "./events";
@@ -232,7 +233,7 @@ export class Scheduler {
 
   start(intervalMs = 30_000): () => void {
     const run = () => this.tick().catch((e) => console.error("scheduler tick failed", e));
-    const timer = setInterval(run, intervalMs);
+    const timer = trackedInterval("scheduler", run, intervalMs);
     run();
     return () => clearInterval(timer);
   }

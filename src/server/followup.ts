@@ -2,6 +2,7 @@
 // it is due, wakes the same conversation with what happened since (followUpWakePrompt); Claude checks, acts, and sets
 // the next follow-up or stops. A board run is `claude -p`, so Claude Code's own timers die with it: the daemon owns this one.
 import type { Board } from "./board";
+import { trackedInterval } from "./lag";
 import { parseAt } from "./jobs";
 import type { Store } from "./store";
 import type { FollowUpLogEntry } from "./types";
@@ -102,7 +103,7 @@ export class FollowUpWatcher {
 
   start(intervalMs = 30_000): () => void {
     const run = () => this.tick().catch((e) => console.error("follow-up watcher tick failed", e));
-    const timer = setInterval(run, intervalMs);
+    const timer = trackedInterval("followups", run, intervalMs);
     run();
     return () => clearInterval(timer);
   }

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Bus } from "./events";
@@ -340,7 +341,7 @@ export class McpManager {
   /** Refresh now and every `intervalMs`. Returns a stop function. */
   start(intervalMs = 10 * 60_000): () => void {
     this.refresh();
-    const t = setInterval(() => this.refresh(), intervalMs);
+    const t = trackedInterval("mcp-refresh", () => this.refresh(), intervalMs);
     return () => clearInterval(t);
   }
 

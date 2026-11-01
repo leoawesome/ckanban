@@ -2,6 +2,7 @@
 // A ticket's Claude can also send its own message (notify_user, Notifier.message). Sends to a webhook (ntfy topic URL or any JSON endpoint), to devices that turned phone push on (push.ts) and/or
 // shows a macOS banner, per kind (notify.json).
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type AttentionKind, type HostHuddle, ticketAttention } from "./attention";
@@ -297,7 +298,7 @@ export class Notifier {
       else if (e.type === "huddle.updated" && e.huddle.hostTicket) this.dirty.add(`${e.profile}/${e.huddle.hostTicket}`);
       else if (e.type === "ticket.deleted") this.tracker.forget(`${e.profile}/${e.id}`);
     });
-    const timer = setInterval(() => this.tick(), this.o.tickMs ?? 1000);
+    const timer = trackedInterval("notifier", () => this.tick(), this.o.tickMs ?? 1000);
     return () => {
       off();
       clearInterval(timer);

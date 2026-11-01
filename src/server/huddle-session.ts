@@ -3,6 +3,7 @@
 // session file, found by the participant's sessionId under ~/.claude/projects; it stays there after the huddle closes
 // and its snapshot worktree is removed, so nothing is copied.
 import { readFileSync, statSync } from "node:fs";
+import { trackedInterval } from "./lag";
 import type { Bus } from "./events";
 import { HuddleError, type Huddles } from "./huddle";
 import { USER_HANDLE } from "./huddle-roster";
@@ -266,6 +267,6 @@ export function startHuddleSessionWatcher(store: Store, bus: Bus, version: (sess
     first = false;
   };
   tick();
-  const timer = setInterval(tick, intervalMs);
+  const timer = trackedInterval("huddle-session-watcher", tick, intervalMs);
   return () => clearInterval(timer);
 }

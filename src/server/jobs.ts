@@ -3,6 +3,7 @@
 // A job seen more than LATE_AFTER_MS past its time (computer asleep, daemon off) is late: a ticket job still starts, and its
 // run decides whether the work still makes sense; a command job is skipped unless its action says ifLate: "run".
 import { existsSync } from "node:fs";
+import { trackedInterval } from "./lag";
 import type { Board } from "./board";
 import type { Bus } from "./events";
 import type { Store } from "./store";
@@ -459,7 +460,7 @@ export class JobRunner {
   start(intervalMs = 30_000): () => void {
     this.recover();
     const run = () => this.tick().catch((e) => console.error("job tick failed", e));
-    const timer = setInterval(run, intervalMs);
+    const timer = trackedInterval("jobs", run, intervalMs);
     run();
     return () => {
       clearInterval(timer);
