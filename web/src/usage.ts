@@ -25,11 +25,11 @@ export function worstTone(windows: UsageWindow[]): UsageTone {
 
 const pct = (n: number) => `${Math.round(n)}%`;
 
-/** "Usage · 5h 42% · week 81%" */
-export function pillText(windows: UsageWindow[]): string {
-  const short: Record<string, string> = { five_hour: "5h", seven_day: "week" };
-  const parts = windows.filter((w) => short[w.key]).map((w) => `${short[w.key]} ${pct(w.percent)}`);
-  return ["Usage", ...(parts.length ? parts : windows.slice(0, 2).map((w) => `${w.label} ${pct(w.percent)}`))].join(" · ");
+/** The status pill's limit part, only once a window is near its limit (80%): "5h 92%". Null while all are fine. */
+export function limitNote(windows: UsageWindow[]): string | null {
+  if (!windows.length || worstTone(windows) === "ok") return null;
+  const w = windows.reduce((a, b) => (b.percent > a.percent ? b : a));
+  return `${shortLabel(w)} ${pct(w.percent)}`;
 }
 
 /** "5h", "Week", or the window's own label for the others (phone usage box rows). */

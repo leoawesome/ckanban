@@ -2,11 +2,29 @@ import { useEffect, useRef, useState } from "react";
 import { useLayer } from "./layers";
 import { fullTime, timeAgo } from "./time";
 import { useNow } from "./useNow";
-import { costText, pillText, resetText, shortLabel, usageTone, worstTone } from "./usage";
+import { runStatusText } from "./boardStats";
+import { costText, limitNote, resetText, shortLabel, usageTone, worstTone } from "./usage";
 import type { UsageState } from "./useUsage";
 
-/** Header pill with Claude plan usage and what all boards spent today (data from useUsage, shared with the phone UsageBox). */
-export function UsagePill({ state, openRequest }: { state: UsageState; openRequest?: number }) {
+/** What the status pill says about the board shown; null until its tickets have loaded. */
+export interface BoardRuns {
+  runs: number;
+  /** Runs holding one of the board's run slots, and how many slots it has. */
+  slots: number;
+  maxParallel: number;
+  queued: number;
+  /** Huddle agents working (outside the slots). */
+  agents: number;
+  /** The Mac is kept awake until the work on the boards finishes. */
+  awake: boolean;
+}
+
+/**
+ * Header status pill: the board's runs, today's spend, and the Claude plan limit once it is near ("2 working · $37.12 today").
+ * Click for the details: run slots, queue, huddle agents, plan usage bars and spend per board. Data from useUsage, shared
+ * with the phone UsageBox. `board`: undefined without a board, null while its tickets load (no count is shown then).
+ */
+export function StatusPill({ state, board, openRequest }: { state: UsageState; board?: BoardRuns | null; openRequest?: number }) {
   const { usage, loading, load, spend, loadSpend } = state;
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -34,20 +52,37 @@ export function UsagePill({ state, openRequest }: { state: UsageState; openReque
   const failed = !!usage && "error" in usage;
   const windows = usage && !("error" in usage) ? usage.windows : [];
   const tone = failed || !windows.length ? "ok" : worstTone(windows);
-  const label = !usage ? "Usage …" : failed ? "Usage unavailable" : windows.length ? pillText(windows) : "Usage · no data";
-  const today = spend ? `today ${costText(spend.costUsd)}` : null;
-  const spendTitle = spend
-    ? `Spent today (API-equivalent $): ${spend.boards.filter((b) => b.costUsd > 0).map((b) => `${b.name} ${costText(b.costUsd)}`).join(" · ") || "nothing yet"}`
-    : null;
+  const limit = limitNote(windows);
+  const today = spend ? `${costText(spend.costUsd)} today` : null;
+  const parts = [board ? runStatusText(board.runs, board.queued) : null, limit, today].filter(Boolean) as string[];
+  const loadingRuns = board === null;
+  const label = parts.join(" · ") || (loadingRuns ? "" : "Usage");
 
   return (
     <div className="usage" ref={root}>
-      <button ref={pill} className={`pill usage-pill${tone === "ok" ? "" : ` ${tone}`}`} aria-haspopup="dialog" aria-expanded={open}
-        onClick={() => { setOpen((v) => !v); loadSpend(); }} title={spendTitle ? `Claude plan usage\n${spendTitle}` : "Claude plan usage"}>
-        {label}{today && <span className="usage-today"> · {today}</span>}
+      <button ref={pill} className={`pill usage-pill${tone === "ok" ? "" : ` ${tone}`}${loadingRuns ? " is-loading" : ""}`} aria-haspopup="dialog" aria-expanded={open}
+        aria-label={loadingRuns ? `Loading the board${label ? `. ${label}` : ""}` : undefined}
+        onClick={() => { setOpen((v) => !v); loadSpend(); }} title="Runs on this board, and Claude plan usage">
+        {loadingRuns && <span className="pill-skeleton" aria-hidden />}
+        {loadingRuns && label ? ` · ${label}` : label}
       </button>
       {open && (
-        <div className="usage-pop" role="dialog" aria-label="Claude plan usage">
+        <div className="usage-pop" role="dialog" aria-label="Runs and Claude plan usage">
+          {board !== undefined && (
+            <div className="usage-runs">
+              <h4>This board</h4>
+              {!board ? <p className="muted small">Loading…</p> : <>
+                <div className="usage-top"><span>Run slots in use</span><b>{board.slots} of {board.maxParallel}</b></div>
+                <div className="usage-sub">
+                  {board.runs === 0 ? "Nothing is running." : `${board.runs} ${board.runs === 1 ? "run" : "runs"} active.`}
+                  {board.queued > 0 && ` ${board.queued} queued for a free slot.`}
+                  {board.agents > 0 && ` ${board.agents} huddle ${board.agents === 1 ? "agent" : "agents"} working (outside the slots).`}
+                </div>
+                <div className="usage-sub">At most {board.maxParallel} tickets work at the same time. Planning chats and replies don't take a slot.</div>
+                {board.awake && <div className="usage-sub">Keeping the Mac awake until the work on your boards finishes.</div>}
+              </>}
+            </div>
+          )}
           <h4>Claude plan usage</h4>
           {usage && "error" in usage && <p className="usage-error">{usage.error}</p>}
           {!usage && <p className="muted small">Loading…</p>}

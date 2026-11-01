@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { fetchUsage, normalizeUsage, parseCredentials, USAGE_URL } from "../src/server/usage";
-import { pillText, resetText, shortLabel, usageTone, worstTone } from "../web/src/usage";
+import { limitNote, resetText, shortLabel, usageTone, worstTone } from "../web/src/usage";
 
 const FULL = {
   five_hour: { utilization: 42, resets_at: "2026-10-05T16:10:00+00:00" },
@@ -87,9 +87,7 @@ test("pill colour thresholds", () => {
   expect(worstTone([])).toBe("ok");
 });
 
-test("pillText and resetText", () => {
-  const w = (key: string, percent: number) => ({ key, label: key, percent, resetsAt: null });
-  expect(pillText([w("five_hour", 42.4), w("seven_day", 81), w("seven_day_opus", 12)])).toBe("Usage · 5h 42% · week 81%");
+test("resetText", () => {
   const now = Date.parse("2026-10-05T12:00:00Z");
   expect(resetText(null, now)).toBeNull();
   expect(resetText("2026-10-05T14:15:00Z", now)).toMatch(/^Resets .+ \(in 2h 15m\)$/);
@@ -102,4 +100,12 @@ test("shortLabel names the 5h and week windows briefly, keeps other labels", () 
   expect(shortLabel(w("five_hour", "Current session (5h)"))).toBe("5h");
   expect(shortLabel(w("seven_day", "Week · all models"))).toBe("Week");
   expect(shortLabel(w("seven_day_opus", "Week · Opus"))).toBe("Week · Opus");
+});
+
+test("limitNote names the fullest window only once it is near its limit", () => {
+  const w = (key: string, percent: number) => ({ key, label: key, percent, resetsAt: null });
+  expect(limitNote([])).toBeNull();
+  expect(limitNote([w("five_hour", 40), w("seven_day", 79)])).toBeNull();
+  expect(limitNote([w("five_hour", 92), w("seven_day", 81)])).toBe("5h 92%");
+  expect(limitNote([w("five_hour", 10), w("seven_day", 96)])).toBe("Week 96%");
 });

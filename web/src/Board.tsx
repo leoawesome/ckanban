@@ -28,6 +28,8 @@ function readCollapsed(): Set<Status> {
 
 interface Props {
   tickets: Ticket[];
+  /** The board's tickets haven't loaded yet: grey placeholder cards, no counts and no "empty" texts. */
+  loading?: boolean;
   onOpen: (id: string) => void;
   onMove: (id: string, status: Status, order: number) => void;
   onAdd: (status: Status) => void;
@@ -98,10 +100,12 @@ const EMPTY_HINT: Record<Status, string> = {
 };
 
 const DONE_LIMIT = 10;
+/** Placeholder cards per column while the board loads (Backlog, Planning, In Progress, Review, Done). */
+const PLACEHOLDERS: Record<Status, number> = { backlog: 3, planning: 2, ready: 0, in_progress: 2, review: 2, done: 3 };
 const CLAUDE_TAG = "Claude starts automatically when a card is here";
 
-function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, ctx }: {
-  id: Status; label: string; hint: string; claude: boolean; tickets: Ticket[];
+function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx }: {
+  id: Status; label: string; hint: string; claude: boolean; tickets: Ticket[]; loading: boolean;
   /** In Progress only: tickets waiting for a free run slot, in start order. */
   queue?: Ticket[];
   /** A pending daemon restart holds the queue. */
@@ -119,12 +123,12 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   const [showAll, setShowAll] = useState(false);
   const limited = id === "done" && !showAll && tickets.length > DONE_LIMIT;
   const shown = limited ? tickets.slice(0, DONE_LIMIT) : tickets;
-  const countBadge = <span className={`count ${needYou > 0 ? "needs-you" : ""}`} title={countLabel} aria-label={countLabel}>{all.length}</span>;
+  const countBadge = loading ? null : <span className={`count ${needYou > 0 ? "needs-you" : ""}`} title={countLabel} aria-label={countLabel}>{all.length}</span>;
   if (collapsed) {
     // Narrow strip: still a drop target; click to expand.
     return (
       <section ref={setNodeRef} className={`column collapsed col-${id} ${claude ? "claude-zone" : ""} ${isOver ? "over" : ""}`}>
-        <button className="column-strip" onClick={() => onCollapse(false)} title={`Expand ${label}`} aria-label={`Expand ${label}, ${countLabel}`}>
+        <button className="column-strip" onClick={() => onCollapse(false)} title={`Expand ${label}`} aria-label={loading ? `Expand ${label}` : `Expand ${label}, ${countLabel}`}>
           {countBadge}
           <span className="column-strip-title">{label}</span>
         </button>
@@ -132,7 +136,7 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
     );
   }
   return (
-    <section className={`column col-${id} ${claude ? "claude-zone" : ""} ${isOver ? "over" : ""}`} aria-label={label}>
+    <section className={`column col-${id} ${claude ? "claude-zone" : ""} ${isOver ? "over" : ""}`} aria-label={label} aria-busy={loading || undefined}>
       <header className="column-head">
         <span className="column-title">{label}</span>
         {/* One badge: total count, turning amber with a dot while tickets wait on you. */}
@@ -149,6 +153,7 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
       <div className="column-hint">{hint}</div>
       <SortableContext items={[...shown, ...queue].map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div ref={setNodeRef} className="column-body">
+          {loading && Array.from({ length: PLACEHOLDERS[id] }, (_, i) => <div key={i} className="card skeleton-card" aria-hidden><i /><i /><i /></div>)}
           {shown.map((t) => (
             <SortableCard key={t.id} ticket={t} onOpen={onOpen} ctx={ctx} />
           ))}
@@ -161,7 +166,7 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
               {showAll ? "Show fewer" : `Show all ${tickets.length}`}
             </button>
           )}
-          {all.length === 0 && (
+          {!loading && all.length === 0 && (
             <div className={claude ? "column-drop-hint" : "column-empty"}>{filtered ? "No matching tickets" : EMPTY_HINT[id]}</div>
           )}
         </div>
@@ -202,7 +207,7 @@ const collision: CollisionDetection = (args) => {
 
 const NO_HUDDLES: Huddle[] = [];
 
-export function Board({ tickets, onOpen, onMove, onAdd, filtered = false, restartPending = false, huddles = NO_HUDDLES, onOpenHuddle, slug, onTag, jobs, onOpenJobs, allTickets }: Props) {
+export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, huddles = NO_HUDDLES, onOpenHuddle, slug, onTag, jobs, onOpenJobs, allTickets }: Props) {
   const linked = allTickets ?? tickets;
   const addOns = useMemo(() => addOnLinks(linked), [linked]);
   const families = useMemo(() => cardFamilies(linked), [linked]);
@@ -234,6 +239,18 @@ export function Board({ tickets, onOpen, onMove, onAdd, filtered = false, restar
   });
 
   const byColumn = useMemo(() => groupByColumn(tickets), [tickets]);
+  // The cards fade in when the first load lands (not on later moves).
+  const [fadeIn, setFadeIn] = useState(false);
+  const wasLoading = useRef(loading);
+  useEffect(() => {
+    if (wasLoading.current && !loading) {
+      setFadeIn(true);
+      const t = setTimeout(() => setFadeIn(false), 400);
+      wasLoading.current = loading;
+      return () => clearTimeout(t);
+    }
+    wasLoading.current = loading;
+  }, [loading]);
 
   const onDragStart = (e: DragStartEvent) => setDragId(String(e.active.id));
 
@@ -298,15 +315,15 @@ export function Board({ tickets, onOpen, onMove, onAdd, filtered = false, restar
             const n = (byColumn.get(c.id)?.length ?? 0) + (c.id === "in_progress" ? byColumn.get("ready")?.length ?? 0 : 0);
             return (
               <button key={c.id} className={`chip${i === shownCol ? " on" : ""}`} aria-current={i === shownCol || undefined} onClick={() => jumpTo(i)}>
-                {c.label}<span className="chip-count">{n}</span>
+                {c.label}{!loading && <span className="chip-count">{n}</span>}
               </button>
             );
           })}
         </nav>
       )}
-      <main className="board" ref={boardRef} onScroll={phone ? onBoardScroll : undefined}>
+      <main className={`board${fadeIn ? " fade-in" : ""}`} ref={boardRef} onScroll={phone ? onBoardScroll : undefined}>
         {BOARD_COLUMNS.map((c) => (
-          <Column key={c.id} {...c} tickets={byColumn.get(c.id) ?? []} queue={c.id === "in_progress" ? byColumn.get("ready") : undefined} held={restartPending} onOpen={onOpen} onAdd={onAdd} filtered={filtered} ctx={ctx}
+          <Column key={c.id} {...c} tickets={byColumn.get(c.id) ?? []} queue={c.id === "in_progress" ? byColumn.get("ready") : undefined} held={restartPending} onOpen={onOpen} onAdd={onAdd} filtered={filtered} loading={loading} ctx={ctx}
             collapsed={!phone && collapsed.has(c.id)} onCollapse={(v) => setColumnCollapsed(c.id, v)} />
         ))}
       </main>

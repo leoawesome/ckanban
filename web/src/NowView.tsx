@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { InboxItem, Ticket } from "./api";
 import { groupInbox } from "./inboxOrder";
 import { useSafeClear } from "./useSafeClear";
@@ -9,8 +9,10 @@ import { useNow } from "./useNow";
  * Phone home (≤720px), for the board shown: what needs you (what Claude is waiting on, then what is ready to check,
  * newest first; over a week old folds into Older), what runs and what is being planned. Other boards that need you are
  * one line at the end. Tapping a card opens the ticket full screen. A cleared card shrinks away and taps pause briefly.
+ * Until the inbox and the tickets have loaded, grey placeholder rows stand in (no "nothing waits" line yet). `footer`
+ * (the notifications offer) goes below the list, so its late arrival doesn't push the rows down.
  */
-export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, onSnoozeAll, onSwitchBoard }: {
+export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, onSnoozeAll, onSwitchBoard, inboxLoaded = true, ticketsLoaded = true, footer }: {
   inbox: InboxItem[];
   tickets: Ticket[];
   slug: string;
@@ -19,6 +21,9 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
   onSnooze: (i: InboxItem) => void;
   onSnoozeAll: (list: InboxItem[]) => void;
   onSwitchBoard: (slug: string) => void;
+  inboxLoaded?: boolean;
+  ticketsLoaded?: boolean;
+  footer?: ReactNode;
 }) {
   const now = useNow();
   const [showOlder, setShowOlder] = useState(false);
@@ -61,8 +66,12 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
   };
 
   return (
-    <main className="now">
-      {needs.length === 0 && <>
+    <main className="now" aria-busy={!inboxLoaded || !ticketsLoaded}>
+      {!inboxLoaded && <>
+        <h3 className="now-head">Needs you</h3>
+        <NowPlaceholders n={2} />
+      </>}
+      {inboxLoaded && needs.length === 0 && <>
         <h3 className="now-head">Needs you · 0</h3>
         <p className="now-empty muted small">Nothing waits on you right now.</p>
       </>}
@@ -82,8 +91,9 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
         </>
       )}
 
-      <h3 className="now-head">Running · {running.length}</h3>
-      {running.length === 0 && <p className="now-empty muted small">No run active on this board.</p>}
+      <h3 className="now-head">Running{ticketsLoaded && <> · {running.length}</>}</h3>
+      {!ticketsLoaded && <NowPlaceholders n={1} />}
+      {ticketsLoaded && running.length === 0 && <p className="now-empty muted small">No run active on this board.</p>}
       {running.map((t) => (
         <button key={t.id} className="now-card run now-open" onClick={() => onOpen(slug, t.id)}>
           <span className="now-title">{t.title}</span>
@@ -111,6 +121,11 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
           ))}
         </div>
       )}
+      {footer}
     </main>
   );
+}
+
+function NowPlaceholders({ n }: { n: number }) {
+  return <>{Array.from({ length: n }, (_, i) => <div key={i} className="now-card skeleton-card" aria-hidden><i /><i /></div>)}</>;
 }

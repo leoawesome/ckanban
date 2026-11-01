@@ -19,8 +19,8 @@ import { startPushClient } from "./push";
 import { PhoneAccessDialog } from "./PhoneAccessDialog";
 import { MoreSheet, PhoneNav, type PhoneTab } from "./PhoneNav";
 import { QuickChatPane } from "./QuickChat";
-import { usePhone } from "./usePhone";
-import { UsageBox, UsagePill } from "./UsagePill";
+import { TOOLS_IN_MENU_QUERY, useMedia, usePhone } from "./usePhone";
+import { StatusPill, UsageBox } from "./UsagePill";
 import { useUsage } from "./useUsage";
 import { anyLayerOpen } from "./layers";
 import { Board } from "./Board";
@@ -140,6 +140,8 @@ export function App() {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [slug, setSlug] = useState<string | null>(parseHash().slug ?? readLast());
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  // The board whose tickets are in `tickets`: until it matches the board shown, the list is still loading (not empty).
+  const [loadedSlug, setLoadedSlug] = useState<string | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [dockOpen, setDockOpen] = useState(() => {
     try {
@@ -156,6 +158,7 @@ export function App() {
   // Column and ticket order prev/next follow, frozen when the drawer opens (see below).
   const [navOrder, setNavOrder] = useState<{ column: Status; ids: string[] } | null>(null);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
+  const [inboxLoaded, setInboxLoaded] = useState(false);
   const [query, setQuery] = useState("");
   // Tags picked by clicking a card's tag chip, shown as chips in the search box (typed #tags stay in the query).
   const [tagFilter, setTagFilter] = useState<string[]>([]);
@@ -240,6 +243,12 @@ export function App() {
 
   const slugRef = useRef(slug);
   slugRef.current = slug;
+  // A late answer for a board no longer shown is dropped (it would show that board's cards here).
+  const loadTickets = useCallback((board: string) => api.tickets(board).then((list) => {
+    if (slugRef.current !== board) return;
+    setTickets(list);
+    setLoadedSlug(board);
+  }), []);
   const loadSchedules = useCallback((board: string) => api.schedules(board).then((list) => {
     // Ignore a late answer for a board we already left.
     if (slugRef.current === board) setSchedules(list);
@@ -260,6 +269,7 @@ export function App() {
   const loadInbox = useCallback(() => quiet(api.inbox, "the inbox", (list) => {
     setInbox(list.filter((i) => !i.snoozedUntil));
     setSnoozed(list.filter((i) => i.snoozedUntil));
+    setInboxLoaded(true);
   }), []);
   const refreshInboxSoon = useCallback(() => {
     if (inboxTimer.current) return;
@@ -366,11 +376,11 @@ export function App() {
     loadInbox();
     api.mcp().then(setMcp).catch(() => {});
     if (slug) {
-      api.tickets(slug).then(setTickets).catch(() => {});
+      loadTickets(slug).catch(() => {});
       loadSchedules(slug);
       loadJobs(slug);
     }
-  }), [slug, loadProfiles, loadInbox, loadSchedules, loadJobs]);
+  }), [slug, loadProfiles, loadInbox, loadSchedules, loadJobs, loadTickets]);
 
   const needYou = inbox.length;
   // A snooze ends by itself: reload when the first one runs out (the server only counts it again then).
@@ -379,7 +389,7 @@ export function App() {
     const first = Math.min(...snoozed.map((i) => Date.parse(i.snoozedUntil!)));
     const timer = setTimeout(() => {
       loadInbox();
-      if (slugRef.current) api.tickets(slugRef.current).then(setTickets).catch(() => {});
+      if (slugRef.current) loadTickets(slugRef.current).catch(() => {});
     }, Math.min(Math.max(first - Date.now(), 0) + 1000, 2 ** 31 - 1));
     return () => clearTimeout(timer);
   }, [snoozed, loadInbox]);
@@ -524,12 +534,13 @@ export function App() {
       localStorage.setItem(LAST_PROFILE, slug);
     } catch {}
     setTickets([]);
+    setLoadedSlug(null);
     setSchedules(null);
     setJobs(null);
-    api.tickets(slug).then(setTickets).catch((e) => setError(e.message));
+    loadTickets(slug).catch((e) => setError(e.message));
     loadSchedules(slug);
     loadJobs(slug);
-  }, [slug, slugKnown, loadSchedules, loadJobs]);
+  }, [slug, slugKnown, loadSchedules, loadJobs, loadTickets]);
 
   useEffect(
     () =>
@@ -654,7 +665,7 @@ export function App() {
       }
     } catch (e: any) {
       setError(`Couldn't move the ticket: ${e.message}`);
-      api.tickets(board).then(setTickets).catch(() => {});
+      loadTickets(board).catch(() => {});
     }
   };
 
@@ -687,6 +698,9 @@ export function App() {
     });
   }, [slug]);
   const queued = tickets.filter((t) => t.status === "ready" || waitsForSlot(t)).length;
+  const ticketsLoaded = !!slug && loadedSlug === slug;
+  // Mid width (not a phone): the tool buttons live in ⋯ so New ticket always fits.
+  const toolsInMenu = useMedia(TOOLS_IN_MENU_QUERY) && !phone;
 
   const updateKey = `update:${version?.latest}`;
   const pathKey = `path:${missing.join(",")}`;
@@ -698,7 +712,18 @@ export function App() {
     return next;
   });
 
+  const toolItems: MenuItem[] = toolsInMenu && profile ? [
+    { label: "Terminal", icon: <TerminalIcon size={14} />, onSelect: () => openDockOn("terminal") },
+    { label: "Files", icon: <FolderIcon size={14} />, onSelect: () => openDockOn("files") },
+    { label: "Quick Claude chat", icon: <ChatIcon size={14} />, onSelect: () => openDockOn("claude") },
+    {
+      label: "Team", icon: <TeamIcon size={14} />, separator: true,
+      onSelect: () => (learnedNew ? openDockOn("team", { action: "learned" }) : openDockOn("team")),
+      badge: liveHuddles > 0 ? <span className="tab-count ok">{liveHuddles} live</span> : learnedNew > 0 ? <span className="tab-count">{learnedNew} new</span> : undefined,
+    },
+  ] : [];
   const menuItems: MenuItem[] = [
+    ...toolItems,
           ...(profile ? [{
             label: "Schedules", icon: <ClockIcon />, onSelect: () => openSchedules(),
             title: scheduleFails ? `${scheduleFails} schedule${scheduleFails === 1 ? "" : "s"} could not start their last run`
@@ -727,7 +752,7 @@ export function App() {
           { label: "Keyboard shortcuts", hint: "?", icon: <KeyboardIcon />, onSelect: () => setShortcuts(true) },
           { label: "Report a bug", icon: <BugIcon />, onSelect: () => setBugReport(true) },
   ];
-  const menuAlert = scheduleFails > 0 || mcpAttention > 0;
+  const menuAlert = scheduleFails > 0 || mcpAttention > 0 || (toolItems.length > 0 && learnedNew > 0);
   const menuFooter = version && version.version !== "dev" ? `ckanban v${version.version} · by Leo` : "by Leo";
   // Inbox triage on any board: the entry leaves the list (and the counts) at once, the server confirms.
   const inboxDone = async (i: InboxItem) => {
@@ -766,7 +791,7 @@ export function App() {
       merge(t);
     } catch (e: any) {
       setError(`Couldn't ${on ? "snooze" : "unsnooze"} the ticket: ${e.message}`);
-      if (i.profile === slugRef.current) api.tickets(i.profile).then(setTickets).catch(() => {});
+      if (i.profile === slugRef.current) loadTickets(i.profile).catch(() => {});
     }
     loadInbox();
   };
@@ -792,12 +817,12 @@ export function App() {
           label: "Undo",
           run: () => void Promise.allSettled(ok.map((i) => api.unsnooze(i.profile, i.id))).then(() => {
             loadInbox();
-            if (slugRef.current) api.tickets(slugRef.current).then(setTickets).catch(() => {});
+            if (slugRef.current) loadTickets(slugRef.current).catch(() => {});
           }),
         },
       });
     }
-    if (slug) api.tickets(slug).then((ts) => { if (slugRef.current === slug) setTickets(ts); }).catch(() => {});
+    if (slug) loadTickets(slug).catch(() => {});
     loadInbox();
   };
 
@@ -841,7 +866,7 @@ export function App() {
           <KeyHint keys="⌘K" />
           <Logo />
           <span className="brand-name">ckanban</span>
-          <span className="brand-tagline">Kanban for Claude Code</span>
+          {!profiles?.length && <span className="brand-tagline">Kanban for Claude Code</span>}
         </div>
         {profiles && profiles.length > 0 && (
           <Select
@@ -877,12 +902,8 @@ export function App() {
             ]}
           />
         )}
-        {profile && (
-          <span className="pill" title={`${running.runs} ticket ${running.runs === 1 ? "run" : "runs"} active, ${running.slots} of ${profile.maxParallel} slots in use. Slots apply to ticket runs: at most ${profile.maxParallel} work at the same time on this board. Planning chats and replies to other tickets don't take a slot.${running.agents ? ` Huddle agents (${running.agents} working) run outside the slots.` : ""}${awake ? " Keeping Mac awake until the work on your boards finishes." : ""}`}>
-            {running.runs}/{profile.maxParallel} running{running.agents > 0 && <> · {running.agents} huddle {running.agents === 1 ? "agent" : "agents"}</>}{queued > 0 && <> · {queued} queued</>}{awake && <> · keeping Mac awake</>}
-          </span>
-        )}
-        <UsagePill state={usage} openRequest={usageRequest} />
+        <StatusPill state={usage} openRequest={usageRequest}
+          board={!profile ? undefined : !ticketsLoaded ? null : { ...running, maxParallel: profile.maxParallel, queued, awake }} />
         {restart.pending && (
           <span className="pill warn" title="The daemon restarts once every active run (on any board) has finished. Until then nothing new starts: queued tickets, chat replies and Planning interviews wait.">
             Restart pending{restart.waiting > 0 ? ` · waiting for ${restart.waiting} ${restart.waiting === 1 ? "run" : "runs"}` : ""}
@@ -891,36 +912,32 @@ export function App() {
         <div className="spacer" />
         <Inbox items={inbox} snoozed={snoozed} openRequest={inboxRequest} onPick={(i) => openFrom(i.profile, i.id)}
           onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, on) => void inboxSnooze(i, on)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} />
-        {profile && (
-          <button className={`btn ghost icon-label${shownItem === "terminal" ? " on" : ""}`} onClick={() => toggleDock("terminal")}
-            aria-pressed={shownItem === "terminal"} title="A terminal in this folder (Ctrl+`). Hiding it keeps the shell running." aria-label="Terminal">
-            <TerminalIcon /><span className="label">Terminal</span><KeyHint keys="Ctrl+`" />
-          </button>
-        )}
-        {profile && (
-          <button className={`btn ghost icon-label${shownItem === "files" ? " on" : ""}`} onClick={() => toggleDock("files")}
-            aria-pressed={shownItem === "files"} title="Browse the files in this folder (F)" aria-label="Files">
-            <FolderIcon /><span className="label">Files</span><KeyHint keys="F" />
-          </button>
-        )}
-        {profile && (
-          <button className={`btn ghost icon-label${shownItem === "claude" ? " on" : ""}`} onClick={() => toggleDock("claude")}
-            aria-pressed={shownItem === "claude"} title="Quick chat with Claude in this folder, no ticket needed (C)" aria-label="Quick Claude chat">
-            <ChatIcon /><span className="label">Claude</span><KeyHint keys="C" />
-          </button>
-        )}
-        {profile && (
-          <button className={`btn ghost icon-label${shownItem === "team" ? " on" : ""}`} onClick={() => (learnedNew && shownItem !== "team" ? openDockOn("team", { action: "learned" }) : toggleDock("team"))}
-            aria-pressed={shownItem === "team"} title={`Teammates, templates and huddles (T)${liveHuddles ? `. ${liveHuddles} ${liveHuddles === 1 ? "huddle" : "huddles"} live.` : ""}${learnedNew ? `. ${learnedNew} ${learnedNew === 1 ? "lesson" : "lessons"} saved.` : ""}`} aria-label="Team">
-            <TeamIcon /><span className="label">Team</span>
-            {(liveHuddles > 0 || learnedNew > 0) && (
-              <span className="tab-counts">
-                {liveHuddles > 0 && <span className="tab-count ok">{liveHuddles} live</span>}
-                {learnedNew > 0 && <span className="tab-count">{learnedNew} new</span>}
-              </span>
-            )}
-            <KeyHint keys="T" />
-          </button>
+        {profile && !toolsInMenu && (
+          <div className="tool-group" role="group" aria-label="Tools">
+            <button className={`btn ghost icon-label${shownItem === "terminal" ? " on" : ""}`} onClick={() => toggleDock("terminal")}
+              aria-pressed={shownItem === "terminal"} title="A terminal in this folder (Ctrl+`). Hiding it keeps the shell running." aria-label="Terminal">
+              <TerminalIcon /><span className="label">Terminal</span><KeyHint keys="Ctrl+`" />
+            </button>
+            <button className={`btn ghost icon-label${shownItem === "files" ? " on" : ""}`} onClick={() => toggleDock("files")}
+              aria-pressed={shownItem === "files"} title="Browse the files in this folder (F)" aria-label="Files">
+              <FolderIcon /><span className="label">Files</span><KeyHint keys="F" />
+            </button>
+            <button className={`btn ghost icon-label${shownItem === "claude" ? " on" : ""}`} onClick={() => toggleDock("claude")}
+              aria-pressed={shownItem === "claude"} title="Quick chat with Claude in this folder, no ticket needed (C)" aria-label="Quick Claude chat">
+              <ChatIcon /><span className="label">Claude</span><KeyHint keys="C" />
+            </button>
+            <button className={`btn ghost icon-label${shownItem === "team" ? " on" : ""}`} onClick={() => (learnedNew && shownItem !== "team" ? openDockOn("team", { action: "learned" }) : toggleDock("team"))}
+              aria-pressed={shownItem === "team"} title={`Teammates, templates and huddles (T)${liveHuddles ? `. ${liveHuddles} ${liveHuddles === 1 ? "huddle" : "huddles"} live.` : ""}${learnedNew ? `. ${learnedNew} ${learnedNew === 1 ? "lesson" : "lessons"} saved.` : ""}`} aria-label="Team">
+              <TeamIcon /><span className="label">Team</span>
+              {(liveHuddles > 0 || learnedNew > 0) && (
+                <span className="tab-counts">
+                  {liveHuddles > 0 && <span className="tab-count ok">{liveHuddles} live</span>}
+                  {learnedNew > 0 && <span className="tab-count">{learnedNew} new</span>}
+                </span>
+              )}
+              <KeyHint keys="T" />
+            </button>
+          </div>
         )}
         {profile && (
           <button className="btn ghost phone-only topbar-icon" aria-label="Search tickets"
@@ -973,8 +990,6 @@ export function App() {
         </div>
       )}
 
-      {phone && profile && <PushHint onSetup={() => setNotifications(true)} />}
-
       {profiles === null ? (
         <div className="empty"><span className="spinner" /> Loading boards…</div>
       ) : !profile ? (
@@ -996,7 +1011,8 @@ export function App() {
             </Suspense>
           </main>
         ) : phone && phoneTab === "now" ? (
-          <NowView inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i) => void inboxSnooze(i, true)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} onSwitchBoard={switchBoard} />
+          <NowView inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i) => void inboxSnooze(i, true)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} onSwitchBoard={switchBoard}
+            inboxLoaded={inboxLoaded} ticketsLoaded={ticketsLoaded} footer={<PushHint onSetup={() => setNotifications(true)} />} />
         ) : <>
           <div className="board-bar">
             <div className={`search${tagFilter.length ? " has-tags" : ""}`}>
@@ -1047,7 +1063,7 @@ export function App() {
                 openTicket(t.id);
               }} />
           )}
-          <Board tickets={shownTickets} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
+          <Board tickets={shownTickets} loading={!ticketsLoaded} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
             huddles={huddles} onOpenHuddle={openHuddle} slug={slug ?? undefined} onTag={addTagFilter}
             jobs={jobs ?? undefined} onOpenJobs={openSchedules} allTickets={tickets} />
         </>

@@ -27,3 +27,10 @@ export function hasOpenPr(t: PrLike): boolean {
   const state = t.pr?.url === t.prUrl ? t.pr.state : null;
   return state !== "MERGED" && state !== "CLOSED";
 }
+
+/** The header status pill's run part: "Idle", "2 working", "2 working · 1 queued", or "1 queued" while nothing runs. */
+export function runStatusText(runs: number, queued: number): string {
+  const q = queued > 0 ? `${queued} queued` : "";
+  if (runs > 0) return q ? `${runs} working · ${q}` : `${runs} working`;
+  return q || "Idle";
+}

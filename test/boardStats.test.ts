@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { hasOpenPr, runCounts } from "../web/src/boardStats";
+import { hasOpenPr, runCounts, runStatusText } from "../web/src/boardStats";
 
 test("runCounts counts every ticket run, the slots apart, and working huddle agents", () => {
   const tickets = [
@@ -31,4 +31,11 @@ test("hasOpenPr leaves out Done tickets and merged or closed PRs", () => {
   expect(hasOpenPr({ status: "in_progress", prUrl: url, pr: pr("CLOSED") })).toBe(false);
   // Status of an older PR doesn't count for the current one.
   expect(hasOpenPr({ status: "review", prUrl: url, pr: pr("MERGED", "https://github.com/o/r/pull/6") })).toBe(true);
+});
+
+test("runStatusText says Idle, working and queued in plain words", () => {
+  expect(runStatusText(0, 0)).toBe("Idle");
+  expect(runStatusText(2, 0)).toBe("2 working");
+  expect(runStatusText(1, 3)).toBe("1 working · 3 queued");
+  expect(runStatusText(0, 2)).toBe("2 queued");
 });

@@ -133,9 +133,12 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 }
 .topbar > * { flex-shrink: 0; }
 .topbar > .spacer { flex-shrink: 1; min-width: 0; }
-.topbar .profile-select { flex-shrink: 1; min-width: 120px; }
-/* The run pill gives way first (its tooltip has the full text), so the panel buttons stay on screen. */
+/* The board picker shrinks with its slot (the name ends in "…"), so it never covers the status pill beside it. */
+.topbar .profile-select { flex-shrink: 1; min-width: 96px; max-width: 240px; }
+/* The status pill gives way first, cut at its end (the run count comes first), so New ticket stays on screen. */
 .topbar > .pill { flex-shrink: 1; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar > .usage { flex-shrink: 1; min-width: 64px; }
+.topbar .usage-pill { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -0.01em; }
 .logo { flex: none; display: block; }
 .brand-tagline { font-size: 12px; font-weight: 450; color: var(--muted); letter-spacing: 0; white-space: nowrap; }
@@ -205,7 +208,7 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
   flex: 1; display: flex; gap: 12px; padding: 12px 16px 14px; overflow-x: auto; min-height: 0;
 }
 .column {
-  flex: 1 1 0; min-width: 200px; display: flex; flex-direction: column; min-height: 0; background: var(--surface-2);
+  flex: 1 1 0; min-width: 240px; display: flex; flex-direction: column; min-height: 0; background: var(--surface-2);
   border-radius: 12px; border: 1px solid transparent; transition: border-color 0.12s, background 0.12s;
 }
 .column.collapsed { flex: 0 0 42px; min-width: 42px; }
@@ -215,8 +218,9 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 }
 .column-strip:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
 .column-strip-title { writing-mode: vertical-rl; white-space: nowrap; }
-.column-head .column-collapse { margin-left: 0; opacity: 0; transition: opacity 0.12s; }
-.column:hover .column-collapse, .column-collapse:focus-visible { opacity: 1; }
+/* Hidden until the column is hovered or has focus, and then only it takes room from the title. */
+.column-head .column-collapse { margin-left: 0; }
+.column:not(:hover):not(:focus-within) .column-collapse { width: 0; padding: 0; margin-left: -6px; opacity: 0; overflow: hidden; }
 .column-empty { font-size: 12px; color: var(--muted); text-align: center; padding: 14px 10px; }
 .column.over { border-color: var(--accent); background: var(--accent-soft); }
 .column-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 2px 12px; }
@@ -524,7 +528,7 @@ textarea { resize: vertical; font-size: 13.5px; }
 .select-label { display: flex; flex-direction: column; min-width: 0; }
 .select-hint { font-size: 11.5px; color: var(--muted); font-weight: 400; font-family: var(--mono); white-space: normal; overflow-wrap: anywhere; }
 
-.topbar .profile-select .select-trigger { background: var(--surface-2); border-color: transparent; font-weight: 600; padding: 5px 10px; min-width: 150px; }
+.topbar .profile-select .select-trigger { background: var(--surface-2); border-color: transparent; font-weight: 600; padding: 5px 10px; min-width: 0; }
 .topbar .profile-select .select-trigger:hover { border-color: var(--border); }
 .status-select .select-trigger { padding: 4px 10px; font-weight: 550; }
 /* profile switcher menu: avatar, name + need-you chip on one line, path below, check on the right */
@@ -1720,9 +1724,18 @@ button.badge.job-chip:hover { filter: brightness(0.96); text-decoration: underli
 .sheet .theme-picker { padding: 12px; }
 .sheet .theme-opt { padding: 8px 12px; font-size: 14px; }
 @media (max-width: 1280px) { .brand-tagline { display: none; } }
+/* Terminal, Files, Claude and Team: one group. Where only icons show, the name appears under the icon on hover or focus. */
+.tool-group { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 10px; border: 1px solid var(--border); }
+.tool-group .btn { padding: 4px 8px; }
+@media (max-width: 1360px) {
+  .topbar .tool-group .icon-label:is(:hover, :focus-visible) .label {
+    display: block; position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 40; pointer-events: none;
+    padding: 3px 8px; border-radius: 6px; background: var(--text); color: var(--surface); font-size: 12px; font-weight: 520; white-space: nowrap;
+  }
+}
 @media (max-width: 1360px) { .topbar .icon-label .label { display: none; } }
 @media (max-width: 1180px) { .brand-name { display: none; } }
-@media (max-width: 760px) { .topbar .pill { display: none; } }
+@media (max-width: 760px) { .topbar > .pill { display: none; } }
 
 /* toasts */
 .toaster { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 120; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
@@ -1861,6 +1874,8 @@ button.pill:hover { color: var(--text); }
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
 }
 .usage-pop h4 { margin: 0 0 10px; font-size: 13px; }
+.usage-runs { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.usage-runs .usage-sub + .usage-sub { margin-top: 4px; }
 .usage-error { margin: 0 0 12px; font-size: 12.5px; color: var(--err); }
 .usage-row { margin: 0 0 12px; }
 .usage-top { display: flex; justify-content: space-between; font-size: 13px; }
@@ -2596,7 +2611,7 @@ button.hd-mode:disabled { cursor: default; }
 .phone-nav, .col-jump { display: none; }
 @media (max-width: 720px) {
   .phone-only { display: inline-flex !important; }
-  .desktop-only, .topbar .pill, .topbar .inbox, .topbar .header-menu, .topbar .icon-label, .topbar .usage, .topbar .key-hint { display: none !important; }
+  .desktop-only, .topbar .pill, .topbar .inbox, .topbar .header-menu, .topbar .tool-group, .topbar .usage, .topbar .key-hint { display: none !important; }
   .app { height: 100dvh; }
   .topbar { gap: 8px; padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); }
   .topbar .profile-select { min-width: 0; }
@@ -2990,7 +3005,7 @@ button.tag-chip:hover { border-color: currentColor; }
 .push-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .push-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .push-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
-.push-hint { margin: 10px 12px 0; background: var(--accent-soft); border-radius: var(--radius); padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; }
+.push-hint { margin: 18px 4px 0; background: var(--accent-soft); border-radius: var(--radius); padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; }
 .push-hint-text { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
 .push-hint-text .push-actions { margin-top: 8px; }
 .push-hint .icon-btn { color: var(--muted); }
@@ -3175,7 +3190,7 @@ button.tag-chip:hover { border-color: currentColor; }
 .find-links-foot .btn { margin-left: 6px; }
 .proposal-family { margin-top: 6px; }
 
-/* ============ touch screens: big enough to tap ============
+/* ============ touch screens: big enough to tap =====
    Main controls at least 40px, everything else at least 24px. Small chips keep their look and get an invisible
    larger tap area (::after). The column collapse button only shows on hover, so touch screens don't get it. */
 @media (pointer: coarse) {
@@ -3200,3 +3215,19 @@ button.tag-chip:hover { border-color: currentColor; }
   .push-hint .btn, .col-jump .chip, .now-elsewhere .chip, .team-bar .segmented button { min-height: 40px; }
   .composer textarea { min-height: 40px; }
 }
+=======
+/* Loading: grey placeholders stand in for cards until the board's tickets arrive (no counts, no "empty" texts). */
+.skeleton-card { display: flex; flex-direction: column; gap: 8px; cursor: default; box-shadow: none; pointer-events: none; }
+.skeleton-card > i, .pill-skeleton {
+  display: block; height: 9px; border-radius: 5px; background: var(--border); animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+.skeleton-card > i:first-child { width: 85%; height: 11px; }
+.skeleton-card > i:nth-child(2) { width: 60%; }
+.skeleton-card > i:nth-child(3) { width: 35%; }
+.column-body > .skeleton-card + .skeleton-card > i:first-child { width: 70%; }
+.now .now-card.skeleton-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.pill-skeleton { display: inline-block; width: 52px; height: 8px; vertical-align: 0; }
+.board.fade-in .sortable-card { animation: card-fade-in 0.25s ease-out both; }
+@keyframes skeleton-pulse { 50% { opacity: 0.45; } }
+@keyframes card-fade-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-card > i, .pill-skeleton, .board.fade-in .sortable-card { animation: none; } }
