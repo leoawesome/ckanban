@@ -33,13 +33,15 @@ export function PhoneNav({ tab, onTab, needYou, scheduleAlert, onSchedules, onMo
 }
 
 /** More: the header menu as a bottom sheet, plus whatever the phone top bar has no room for. */
-export function MoreSheet({ items, footer, onClose, label = "More", top }: {
+export function MoreSheet({ items, footer, onClose, label = "More", top, bottom }: {
   items: MenuItem[];
   footer?: string | null;
   onClose: () => void;
   label?: string;
   /** Shown above the items (the phone More sheet's usage box). */
   top?: ReactNode;
+  /** Shown below the items, above the footer (the theme choice). */
+  bottom?: ReactNode;
 }) {
   useLayer(onClose);
   return (
@@ -53,6 +55,7 @@ export function MoreSheet({ items, footer, onClose, label = "More", top }: {
             {it.icon}<span className="sheet-label">{it.label}</span>{it.badge}
           </button>
         ))}
+        {bottom}
         {footer && <div className="sheet-foot muted small">{footer}</div>}
       </div>
     </div>

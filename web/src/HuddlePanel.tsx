@@ -13,7 +13,7 @@ import { autoGrow } from "./autoGrow";
 import {
   applyTemplate, brakeHeadline, BRIEF_MAX, budgetRaise, BUDGET_STEPS, clampSideWidth, clause, DEFAULT_BUDGET, handInGroups, handInStatus, participantRole, POST_MAX, SIDE_DEFAULT, stoppedWhenDone,
 } from "./huddleText";
-import { CloseIcon, MoreIcon } from "./icons";
+import { CloseIcon, MoreIcon, HuddleIcon, CapIcon, WarnIcon, StopIcon } from "./icons";
 import { KeyHint } from "./KeyHint";
 import { useLayer } from "./layers";
 import { Select } from "./Select";
@@ -225,7 +225,7 @@ function StartHuddle({ slug, ticket, tickets, onError, onBack, onStarted, seed }
         </p>
       </div>
       <div className="huddle-card">
-        <div className="huddle-card-head"><span>🗣 New huddle</span><small>roster</small></div>
+        <div className="huddle-card-head"><span className="icon-label"><HuddleIcon /> New huddle</span><small>roster</small></div>
         <TemplatePicker templates={templates} draft={draft} setDraft={setDraft} disabled={busy} />
         <RosterEditor presets={presets} draft={draft} setDraft={setDraft} tickets={tickets} hostId={ticket.id} onEnter={start} disabled={busy} />
         <div className="huddle-card-actions">
@@ -347,7 +347,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
     }
   }
   if (learnings.length) {
-    actions.push({ label: "🎓 Learnings", onSelect: () => setLearningsOpen(true),
+    actions.push({ label: "Learnings", icon: <CapIcon />, onSelect: () => setLearningsOpen(true),
       badge: pending.length ? <span className="for-you-pill">{pending.length}</span> : <span className="hd-learn-done">✓ all reviewed</span> });
   }
   if (rounds) actions.push({ label: roundLabel(state.list, h), onSelect: () => setSheet("rounds"), badge: <span className="muted small">Rounds ›</span> });
@@ -408,7 +408,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
         {learnings.length > 0 && (
           <button className={`btn small hd-learn-btn${pending.length ? " pending" : ""}`} aria-expanded={showLearnings} onClick={() => setLearningsOpen(!showLearnings)}
             title={pending.length ? `${pending.length} proposal${pending.length === 1 ? "" : "s"} from agents to review (lessons, teammates)` : "Everything is reviewed"}>
-            <span aria-hidden>🎓</span> Learnings
+            <CapIcon /> Learnings
             {pending.length ? <span className="for-you-pill">{pending.length}</span> : <span className="hd-learn-done">✓ all reviewed</span>}
           </button>
         )}
@@ -558,7 +558,7 @@ function Learnings({ slug, huddle: h, onClose, onError, onOpenTeam }: {
   return (
     <section className="hd-learnings" aria-label="Learnings to review">
       <div className="hd-learnings-head">
-        <span aria-hidden>🎓</span> {pending.length ? "Learnings to review" : "Learnings: all reviewed"}
+        <CapIcon /> {pending.length ? "Learnings to review" : "Learnings: all reviewed"}
         {pending.length > 0 && <span className="for-you-pill">{pending.length}</span>}
         <span className="spacer" />
         <button className="icon-btn" onClick={onClose} aria-label="Close learnings" title="Close (Esc)"><CloseIcon size={12} /><KeyHint keys="Esc" /></button>
@@ -697,7 +697,7 @@ function Message({ m, p, handles, forYou }: { m: HuddleMessage; p: HuddlePartici
           {forYou && <span className="hd-for-you">· for you</span>}
         </div>
         {m.kind === "finding" ? (
-          <div className="hd-finding"><span className="hd-finding-tag">⚠ Finding</span><Markdown text={m.text} handles={handles} /></div>
+          <div className="hd-finding"><span className="hd-finding-tag"><WarnIcon size={11} /> Finding</span><Markdown text={m.text} handles={handles} /></div>
         ) : (
           <Markdown text={m.text} handles={handles} />
         )}
@@ -801,7 +801,7 @@ function BrakeDock({ slug, ticket, huddle: h, reason, spent, max, done, spenders
     <>
       <div className={`hd-dock${open ? " open" : ""}`} role="status">
         <button className="hd-dock-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-          <span aria-hidden>⛔</span>
+          <StopIcon />
           <span className="hd-dock-line"><b>{brakeHeadline(reason, max, done)}</b></span>
           <span className="hd-dock-chev" aria-hidden>⌄</span>
         </button>

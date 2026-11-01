@@ -4,6 +4,7 @@ import { useLayer } from "./layers";
 import { Markdown } from "./Transcript";
 import { costText } from "./usage";
 import { fullTime, timeAgo } from "./time";
+import { BulbIcon } from "./icons";
 
 /** The menu's questions: a bold question and a grey line saying what the answer gives. */
 export const HELP_ITEMS: { kind: HelpKind; question: string; hint: string; heading: string }[] = [
@@ -75,7 +76,7 @@ export function useHelp(slug: string, ticket: Ticket, hasChanges: boolean) {
 
 export type HelpState = ReturnType<typeof useHelp>;
 
-/** "💡 Help me understand ▾" in the ticket header: a dropdown, or a bottom sheet on a phone. */
+/** "Help me understand ▾" in the ticket header: a dropdown, or a bottom sheet on a phone. */
 export function HelpMenu({ help, phone, onAsk }: { help: HelpState; phone: boolean; onAsk: (kind: HelpKind) => void }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -124,7 +125,7 @@ export function HelpMenu({ help, phone, onAsk }: { help: HelpState; phone: boole
     <div className="help-menu-wrap" ref={root}>
       <button ref={button} className={`btn small help-btn ${open ? "on" : ""}`} aria-haspopup="menu" aria-expanded={open}
         aria-label="Help me understand" title="Plain-words answers about this ticket" onClick={() => (open ? close() : setOpen(true))}>
-        <span aria-hidden>💡</span><span className="help-btn-label"> Help me understand <span aria-hidden>▾</span></span>
+        <BulbIcon /><span className="help-btn-label"> Help me understand <span aria-hidden>▾</span></span>
       </button>
       {open && (phone
         ? <div className="sheet-wrap" onMouseDown={(e) => e.target === e.currentTarget && close(false)}>{list}</div>

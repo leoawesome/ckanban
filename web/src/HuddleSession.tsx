@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, copy, onReconnect, subscribe, type Huddle, type HuddleParticipant, type ParticipantSession, type SessionStep } from "./api";
 import { handleColor, handleInitials } from "./huddle";
-import { ChevronLeftIcon, CloseIcon } from "./icons";
+import { ChevronLeftIcon, CloseIcon, ThoughtIcon } from "./icons";
 import { isTyping, panelStep } from "./keynav";
 import { KeyHint } from "./KeyHint";
 import { useLayer } from "./layers";
@@ -209,7 +209,7 @@ function Step({ step: x, current, tool }: {
   const time = x.at ? fullTime(x.at) : undefined;
   if (x.kind === "wake") return <div className="hd-st-wake" title={time}>{x.text}</div>;
   if (x.kind === "text") {
-    return <div className="hd-st" title={time}><span className="hd-st-i" aria-hidden>💭</span><span className="hd-think">{x.text}</span></div>;
+    return <div className="hd-st" title={time}><span className="hd-st-i" aria-hidden><ThoughtIcon size={12} /></span><span className="hd-think">{x.text}</span></div>;
   }
   if (x.kind === "post") {
     const label = x.seq ? `posted #${x.seq} to the huddle` : x.error ? `post failed${x.out ? `: ${x.out}` : ""}` : x.pending ? "posting…" : "posted to the huddle";

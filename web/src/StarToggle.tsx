@@ -1,7 +1,7 @@
 import { KeyHint } from "./KeyHint";
 import { MOD } from "./Shortcuts";
 
-/** ⭐ Important toggle (new-ticket dialog, drawer header): unattended runs review an important ticket in an auto huddle before landing. */
+/** Star "Important" toggle (new-ticket dialog, drawer header): unattended runs review an important ticket in an auto huddle before landing. */
 export function StarToggle({ on, onChange, disabled, keyHint }: { on: boolean; onChange: (on: boolean) => void; disabled?: boolean; keyHint?: string }) {
   const what = on
     ? "Important: Claude reviews the work in an auto huddle before landing it. Click to unmark."
@@ -19,7 +19,13 @@ export function StarToggle({ on, onChange, disabled, keyHint }: { on: boolean; o
   );
 }
 
-/** The ⭐ before a card's title. */
+/** The star before a card's title. */
 export function ImportantStar() {
-  return <span className="important-star" title="Important: reviewed in an auto huddle before landing" aria-label="Important">⭐</span>;
+  return (
+    <span className="important-star" title="Important: reviewed in an auto huddle before landing" role="img" aria-label="Important">
+      <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden>
+        <path d="M12 3.2l2.6 5.5 6 .8-4.4 4.1 1.1 5.9L12 16.6l-5.3 2.9 1.1-5.9-4.4-4.1 6-.8z" fill="currentColor" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
 }

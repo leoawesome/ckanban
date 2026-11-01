@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { digestSenders, parseDigest } from "./huddleText";
 import { Markdown } from "./Transcript";
+import { HuddleIcon, PinIcon } from "./icons";
 
 /**
  * Huddle messages the board delivered to this ticket's session, shown as a collapsible huddle entry (not a user
- * bubble): "🗣 Huddle · N messages · from @x, @y", the [#n] entries inside, a link to the Huddle tab.
+ * bubble): "Huddle · N messages · from @x, @y", the [#n] entries inside, a link to the Huddle tab.
  */
 export function HuddleDigest({ text, meta, old, pending, onOpen, children }: {
   text: string;
@@ -22,13 +23,13 @@ export function HuddleDigest({ text, meta, old, pending, onOpen, children }: {
   const block = (
     <details className={`conv-msg peer in huddle-digest${old ? " inherited" : ""}${pending ? " pending" : ""}`}>
       <summary className="conv-head">
-        <b><span aria-hidden>🗣</span> Huddle</b>
+        <b className="icon-label"><HuddleIcon size={13} /> Huddle</b>
         <span className="muted small hdg-sum">
           · {n} message{n === 1 ? "" : "s"}{senders.length > 0 && <> · from {senders.map((s) => `@${s}`).join(", ")}</>}
         </span>
         {meta}
       </summary>
-      {brief && <div className="muted small hdg-brief" title={brief}>📌 Brief: {brief.split("\n")[0]}</div>}
+      {brief && <div className="muted small hdg-brief" title={brief}><PinIcon size={12} /> Brief: {brief.split("\n")[0]}</div>}
       {note && <div className="muted small">{note}</div>}
       {n === 0 ? <Markdown text={text} /> : (
         <ol className="hdg-list">

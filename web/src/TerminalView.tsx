@@ -4,6 +4,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import { shellSocketUrl } from "./api";
 import { keyToInput } from "./termKeys";
+import { THEME_EVENT } from "./theme";
 
 function themeFromCss(): ITheme {
   const css = getComputedStyle(document.documentElement);
@@ -93,14 +94,13 @@ export function TerminalView({ slug, active, restartSignal, command, onCommandSe
       }
     });
     ro.observe(host.current!);
-    const dark = matchMedia("(prefers-color-scheme: dark)");
     const onScheme = () => (t.options.theme = themeFromCss());
-    dark.addEventListener("change", onScheme);
+    window.addEventListener(THEME_EVENT, onScheme);
     return () => {
       onData.dispose();
       onResize.dispose();
       ro.disconnect();
-      dark.removeEventListener("change", onScheme);
+      window.removeEventListener(THEME_EVENT, onScheme);
       t.dispose();
     };
   }, []);

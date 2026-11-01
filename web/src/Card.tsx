@@ -1,7 +1,7 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { newestArtifact, safeHref, waitsForSlot, type Job, type SessionMessage, type Ticket } from "./api";
 import { type CardHuddleBadge, digestPreview } from "./huddleText";
-import { ClockIcon, ExternalIcon } from "./icons";
+import { ClockIcon, ExternalIcon, HuddleIcon } from "./icons";
 import type { AddOnLinks } from "./addOn";
 import type { CardFamily } from "./family";
 import { FollowUpChip } from "./FollowUpChip";
@@ -93,7 +93,7 @@ function HuddleBadge({ badge, onOpen }: { badge: CardHuddleBadge; onOpen?: (tick
       onClick={(e) => { e.stopPropagation(); onOpen?.(badge.openTicket); }}
       onKeyDown={(e) => e.stopPropagation()}>
       {badge.state === "live" && <span className="live-dot" />}
-      <span aria-hidden>🗣</span> {badge.label}
+      <HuddleIcon size={12} /> {badge.label}
       {badge.failed > 0 && <span className="hb-failed">· {badge.failed} failed</span>}
       {badge.forYou > 0 && <span className="for-you-pill">{badge.forYou} for you</span>}
     </button>

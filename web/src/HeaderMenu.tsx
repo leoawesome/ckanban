@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { MoreIcon } from "./icons";
 import { useLayer } from "./layers";
 import { MenuSheet } from "./MenuSheet";
+import { ThemePicker } from "./ThemePicker";
 
 export interface MenuItem {
   label: string;
@@ -39,7 +40,7 @@ export function HeaderMenu({ items, footer, alert, keyHint }: { items: MenuItem[
   }, [open]);
 
   const onKey = (e: React.KeyboardEvent) => {
-    const list = [...(menu.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]") ?? [])];
+    const list = [...(menu.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem], [role=menuitemradio]") ?? [])];
     const at = list.indexOf(document.activeElement as HTMLButtonElement);
     const go = (i: number) => list[(i + list.length) % list.length]?.focus();
     if (e.key === "ArrowDown") { e.preventDefault(); go(at + 1); }
@@ -69,6 +70,7 @@ export function HeaderMenu({ items, footer, alert, keyHint }: { items: MenuItem[
                 {it.separator && <div className="menu-sep" role="separator" />}
               </Fragment>
             ))}
+            <ThemePicker />
             {footer && <div className="menu-footer muted small">{footer}</div>}
           </div>
         </MenuSheet>

@@ -54,6 +54,24 @@ export const AtIcon = (p: IconProps) => svg(<><circle cx="8" cy="8" r="2.4" /><p
 export const PlugIcon = (p: IconProps) => svg(<path d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0V5zM8 11v3" />, p);
 export const BugIcon = (p: IconProps) => svg(<><rect x="5" y="5" width="6" height="8.5" rx="3" /><path d="M6.3 5.2a1.7 1.7 0 0 1 3.4 0M8 8v5.5M5 8.5H2.5M13.5 8.5H11M5.2 11.5l-2 1.2M10.8 11.5l2 1.2M5.3 6.3L3.5 5M10.7 6.3L12.5 5" /></>, p);
 export const TrashIcon = (p: IconProps) => svg(<path d="M2.8 4.5h10.4M6.3 4.5V3.2c0-.4.3-.7.7-.7h2c.4 0 .7.3.7.7v1.3M4.2 4.5l.6 8.3c0 .4.4.7.8.7h4.8c.4 0 .8-.3.8-.7l.6-8.3" />, p);
+/** A huddle: two speech bubbles (agents talking together). */
+export const HuddleIcon = (p: IconProps) => svg(<><path d="M2.5 3.6c0-.6.5-1.1 1.1-1.1h5.8c.6 0 1.1.5 1.1 1.1v3.8c0 .6-.5 1.1-1.1 1.1H5.6L3.5 10.3V8.5h0c-.6 0-1-.5-1-1.1V3.6z" /><path d="M12.2 5.5h.2c.6 0 1.1.5 1.1 1.1v3.8c0 .6-.4 1.1-1 1.1v1.8l-2.1-1.8H7.6c-.6 0-1.1-.5-1.1-1.1" /></>, p);
+/** An idea ("Help me understand"). */
+export const BulbIcon = (p: IconProps) => svg(<><path d="M6 11.5h4M6.5 13.8h3" /><path d="M5.9 9.6C4.9 8.9 4.2 7.8 4.2 6.5a3.8 3.8 0 0 1 7.6 0c0 1.3-.7 2.4-1.7 3.1-.3.2-.5.6-.5 1v.9H6.4v-.9c0-.4-.2-.8-.5-1z" /></>, p);
+/** Learnings: a graduation cap. */
+export const CapIcon = (p: IconProps) => svg(<><path d="M1.8 6.2L8 3.2l6.2 3L8 9.2 1.8 6.2z" /><path d="M4.5 7.6v3c0 .9 1.6 1.9 3.5 1.9s3.5-1 3.5-1.9v-3M14.2 6.2v3.6" /></>, p);
+/** A pinned note (the huddle brief). */
+export const PinIcon = (p: IconProps) => svg(<><path d="M9.8 2.2l4 4-1.4.6-2.3 2.3-.3 2.7-1.2 1.2-5.4-5.4 1.2-1.2 2.7-.3 2.3-2.3.4-1.6z" /><path d="M5.2 10.8L2.2 13.8" /></>, p);
+/** Thinking: a thought bubble. */
+export const ThoughtIcon = (p: IconProps) => svg(<><path d="M5 10.2a3 3 0 0 1-.4-5.9 3.4 3.4 0 0 1 6.3-.2 2.8 2.8 0 0 1 .4 5.6c-.3.3-.8.5-1.3.5H5z" /><circle cx="4" cy="12.3" r=".8" /><circle cx="2.4" cy="14" r=".5" /></>, p);
+/** Stopped: an octagon with a bar. */
+export const StopIcon = (p: IconProps) => svg(<><path d="M5.5 2h5L14 5.5v5L10.5 14h-5L2 10.5v-5L5.5 2z" /><path d="M5.2 8h5.6" /></>, p);
+/** Warning: a triangle with a mark. */
+export const WarnIcon = (p: IconProps) => svg(<><path d="M7.1 2.6a1 1 0 0 1 1.8 0l5.3 9.6a1 1 0 0 1-.9 1.5H2.7a1 1 0 0 1-.9-1.5l5.3-9.6z" /><path d="M8 6.3v3.2M8 11.6h.01" /></>, p);
+/** Theme choices (header menu). */
+export const SunIcon = (p: IconProps) => svg(<><circle cx="8" cy="8" r="2.8" /><path d="M8 1.8v1.3M8 12.9v1.3M1.8 8h1.3M12.9 8h1.3M3.6 3.6l.9.9M11.5 11.5l.9.9M3.6 12.4l.9-.9M11.5 4.5l.9-.9" /></>, p);
+export const MoonIcon = (p: IconProps) => svg(<path d="M13.2 9.6A5.5 5.5 0 0 1 6.4 2.8a5.5 5.5 0 1 0 6.8 6.8z" />, p);
+export const SystemThemeIcon = (p: IconProps) => svg(<><rect x="2" y="2.8" width="12" height="8.4" rx="1.4" /><path d="M5.5 13.6h5M8 11.2v2.4" /></>, p);
 export const InfoIcon = (p: IconProps) => svg(<><circle cx="8" cy="8" r="6.2" /><path d="M8 7.3v3.7M8 5h.01" /></>, p);
 export const CollapseIcon = (p: IconProps) => svg(<path d="M9.5 3.5L5 8l4.5 4.5M13 3v10" />, p);
 export const ExpandIcon = (p: IconProps) => svg(<path d="M6.5 3.5L11 8l-4.5 4.5M3 3v10" />, p);

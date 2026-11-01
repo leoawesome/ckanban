@@ -4,6 +4,7 @@ import { formKey } from "./drafts";
 import { dollars } from "./huddleText";
 import { applyProposedTemplate, draftError, RosterEditor, rosterDraft, startFromDraft, TemplatePicker, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
 import { usePersistentState } from "./usePersistentState";
+import { HuddleIcon } from "./icons";
 
 /**
  * Claude proposed a huddle (propose_huddle). The roster is editable until Start; nothing runs before that.
@@ -66,7 +67,7 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
   return (
     <div className={`huddle-card${started ? " started" : ""}`}>
       <div className="huddle-card-head">
-        <span>🗣 {started ? "Huddle started" : "Proposed huddle"}</span>
+        <span className="icon-label"><HuddleIcon /> {started ? "Huddle started" : "Proposed huddle"}</span>
         <small>{started ? `${huddle!.participants.length - 1} participants` : "you can edit before starting"}</small>
       </div>
       {reason && <div className="huddle-card-reason">{reason}</div>}

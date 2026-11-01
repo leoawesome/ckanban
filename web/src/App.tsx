@@ -5,6 +5,7 @@ import { BugReportDialog } from "./BugReportDialog";
 import { AutomationsDialog } from "./AutomationsDialog";
 import { ConnectionsDialog } from "./ConnectionsDialog";
 import { HeaderMenu, type MenuItem } from "./HeaderMenu";
+import { ThemePicker } from "./ThemePicker";
 import { boardTags, hasTags, parseSearch, tagStyle } from "./tagText";
 import { TagFilter } from "./Tags";
 import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, FolderIcon, GearIcon, KeyboardIcon, LinkIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
@@ -986,7 +987,7 @@ export function App() {
           onMore={() => setMoreOpen(true)} moreAlert={mcpAttention > 0} />
       )}
       {moreOpen && <MoreSheet items={menuItems.filter((i) => i.label !== "Schedules" && i.label !== "Keyboard shortcuts")} footer={menuFooter} onClose={() => setMoreOpen(false)}
-        top={<UsageBox state={usage} />} />}
+        top={<UsageBox state={usage} />} bottom={<ThemePicker />} />}
       {phoneAccess && <PhoneAccessDialog onClose={() => setPhoneAccess(false)} />}
       {devicesOpen && (
         <DevicesDialog board={profile?.slug ?? null} onClose={() => setDevicesOpen(false)}
