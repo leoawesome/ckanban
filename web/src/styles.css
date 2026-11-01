@@ -3296,3 +3296,13 @@ button.tag-chip:hover { border-color: currentColor; }
 @keyframes skeleton-pulse { 50% { opacity: 0.45; } }
 @keyframes card-fade-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton-card > i, .pill-skeleton, .board.fade-in .sortable-card { animation: none; } }
+/* Rewind: a pill on hover over the user's own messages, and the inline confirmation under it. */
+.conv-msg.user { position: relative; }
+.rewind-pill { position: absolute; top: -11px; right: 8px; display: none; font-size: var(--fs-xs); line-height: 1.4; padding: 2px 10px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); color: var(--text); cursor: pointer; }
+.conv-msg.user:hover .rewind-pill, .rewind-pill.open, .rewind-pill:focus-visible { display: block; }
+.rewind-pill:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (hover: none) { .rewind-pill { display: block; position: static; margin-top: 4px; } }
+.rewind-confirm { margin-top: 8px; padding: 10px; border: 1px solid var(--warn); background: var(--surface); border-radius: var(--r-md); font-size: var(--fs-sm); }
+.rewind-confirm ul { margin: 6px 0; padding-left: 18px; }
+.rewind-warn { font-size: var(--fs-xs); color: var(--muted); margin-bottom: 6px; }
+.rewind-actions { display: flex; flex-wrap: wrap; gap: 6px; }
