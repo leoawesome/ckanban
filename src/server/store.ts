@@ -61,6 +61,9 @@ function serializeTicket(t: Ticket): string {
 
 export class Store {
   /** Parsed huddle message logs by "<slug>/<huddle>", with the byte offset read up to (see readHuddleMessages). */
+  /** huddleIndex's parsed huddles per board, with the folder mtime they were read at. */
+  private huddleCache = new Map<string, { mtime: number; gen: number; list: Huddle[] }>();
+  private huddleGen = 0;
   private huddleLogs = new Map<string, { offset: number; msgs: HuddleMessage[] }>();
   private aiCache = new Map<string, { key: string; comments: Comment[] }>();
   /**
@@ -542,28 +545,41 @@ export class Store {
     return join(this.profileDir(slug), "huddles");
   }
 
-  listHuddles(slug: string): Huddle[] {
+  /**
+   * The board's huddles, parsed once and shared: read only, never change them (listHuddles gives copies to change).
+   * Read again after saveHuddle or when the folder's mtime changes: huddle files are written by rename (atomicWrite),
+   * which changes it; appending to a message log doesn't.
+   * shortcut: a huddle .json rewritten in place from outside (no rename) shows only after the next change; fine while every writer renames.
+   */
+  huddleIndex(slug: string): readonly Huddle[] {
     const dir = this.huddlesDir(slug);
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
+    let mtime: number;
+    try {
+      mtime = statSync(dir).mtimeMs;
+    } catch {
+      this.huddleCache.delete(slug);
+      return [];
+    }
+    const hit = this.huddleCache.get(slug);
+    if (hit?.mtime === mtime) return hit.list;
+    const list = readdirSync(dir)
       .filter((f) => f.endsWith(".json"))
       .map((f) => this.getHuddle(slug, f.slice(0, -5)))
       .filter((h): h is Huddle => h !== null)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    this.huddleCache.set(slug, { mtime, gen: ++this.huddleGen, list });
+    return list;
   }
 
-  /** Cheap change marker for the board's huddle files (names, sizes and mtimes). */
+  /** The board's huddles, oldest first, as copies the caller may change. */
+  listHuddles(slug: string): Huddle[] {
+    return structuredClone(this.huddleIndex(slug) as Huddle[]);
+  }
+
+  /** Change marker for the board's huddle files: a new value whenever huddleIndex was read again. */
   huddlesVersion(slug: string): string {
-    const dir = this.huddlesDir(slug);
-    if (!existsSync(dir)) return "";
-    return readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => {
-      try {
-        const st = statSync(join(dir, f));
-        return `${f}:${st.size}:${st.mtimeMs}`;
-      } catch {
-        return f;
-      }
-    }).join("|");
+    this.huddleIndex(slug);
+    return String(this.huddleCache.get(slug)?.gen ?? "");
   }
 
   getHuddle(slug: string, id: string): Huddle | null {
@@ -579,6 +595,7 @@ export class Store {
 
   saveHuddle(slug: string, h: Huddle): void {
     atomicWrite(join(this.huddlesDir(slug), `${h.id}.json`), JSON.stringify(h, null, 2) + "\n");
+    this.huddleCache.delete(slug);
   }
 
   /** Identifies one version of the huddle file (inode and mtime), or null if it is gone: tells edits from outside. */

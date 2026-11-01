@@ -129,7 +129,7 @@ export interface HuddleTeammateSpend {
  * What the agents of a ticket's huddles spent: it counts on the host ticket's card and Usage tab. Ticket sessions
  * (@main, invited tickets) are left out, their huddle replies are runs of their own ticket and counted there.
  */
-export function teammateSpend(huddles: Huddle[], ticketId: string): { costUsd: number; huddles: HuddleTeammateSpend[] } {
+export function teammateSpend(huddles: readonly Huddle[], ticketId: string): { costUsd: number; huddles: HuddleTeammateSpend[] } {
   const out: HuddleTeammateSpend[] = [];
   for (const h of huddles) {
     if (h.hostTicket !== ticketId) continue;
@@ -560,7 +560,7 @@ export class Huddles {
    */
   hostStates(slug: string): Map<string, HostHuddle> {
     const out = new Map<string, HostHuddle>();
-    for (const h of this.store.listHuddles(slug)) {
+    for (const h of this.store.huddleIndex(slug)) {
       if (h.status === "closed") continue;
       const msgs = this.store.readHuddleMessages(slug, h.id);
       const seen = userSeenSeq(h, msgs);
@@ -606,7 +606,7 @@ export class Huddles {
 
   /** What the agents of a ticket's huddles spent (see teammateSpend). */
   ticketSpend(slug: string, ticketId: string): { costUsd: number; huddles: HuddleTeammateSpend[] } {
-    return teammateSpend(this.store.listHuddles(slug), ticketId);
+    return teammateSpend(this.store.huddleIndex(slug), ticketId);
   }
 
   list(slug: string, ticketId?: string): HuddleView[] {

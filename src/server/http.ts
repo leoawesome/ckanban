@@ -422,7 +422,7 @@ export function createServer(deps: ServerDeps) {
     const version = store.huddlesVersion(slug);
     if (hit?.version !== version) {
       const byHost = new Map<string, { handle: string; sessionId: string }[]>();
-      for (const h of store.listHuddles(slug)) {
+      for (const h of store.huddleIndex(slug)) {
         const list = byHost.get(h.hostTicket) ?? [];
         for (const p of h.participants) if (p.kind === "agent" && p.sessionId && p.sessionStarted) list.push({ handle: p.handle, sessionId: p.sessionId });
         byHost.set(h.hostTicket, list);
