@@ -22,14 +22,14 @@
 
 ## What it does
 
-- 🤖 **Tickets run by headless Claude.** Move a card to Ready and a `claude -p` session works it in its own copy of the folder, up to 5 at once per board. No git? It works in the folder itself and lists what changed.
+- 🤖 **Tickets run by headless Claude.** Move a card to Ready and a `claude -p` session works it in its own copy of the folder, up to 5 at once per board (change it in *Board settings*). No git? It works in the folder itself, one ticket at a time, and lists what changed.
 - 💬 **Planning chat.** Claude interviews you with a clickable question form, draws HTML mockups for UI work and proposes a clear ticket. *Apply & start work* is one click.
 - 🗺️ **Plans.** Split a big ticket into child tickets that run unattended in dependency order; Claude is only woken when one needs it.
 - 🗣️ **Huddles.** A team of Claude teammates (reviewer, QA, researcher, UX critic, facilitator, ...) discuss one ticket in a shared room, tag each other and pin findings, with a budget you set. While you're away, Claude starts a review huddle on its own before landing ⭐ Important or risky work.
 - ⏰ **Follow-ups and scheduled jobs.** Claude comes back to a ticket by itself when work waits on someone ("check for a reply every morning"), and can start a ticket or run a command at a set time.
 - 📱 **Ask Claude without a ticket.** Quick chats from the *Ask* tab on your phone or the *Claude* button on your computer, the same saved chats on both. *Make ticket* turns one into a ticket.
 - 📎 **Files and tags.** Attach PDFs, Office, text and code files, preview them in Outputs, tap a file name in the chat to open it. Tag tickets and filter the board by tag with the *Tags* chip.
-- 💡 **Help me understand.** Ask what happened while you were away, have the changes explained, get a reply in simpler words, or turn your corrections into project rules.
+- 💡 **Help me understand.** Ask what happened while you were away, have the changes explained, or get a reply in simpler words. The board learns from your repeated corrections on its own, with *Undo* in *Team → Learned*.
 - ✅ **Review with PR checks.** See the diff, comment on lines, watch the PR's checks on the card, send failures back to Claude, or **Merge & done**.
 - 👥 **Team tab.** Your teammates, their prompts and the notes they've learned, for every board or just one.
 - ⌘ **`⌘K` everywhere.** Jump to any ticket on any board by title, description, result or PR number, or run any action.
@@ -71,7 +71,7 @@ Then open the board switcher (top left) → **New board…**, pick a folder you'
 
 ## More features
 
-Inbox of everything waiting on you, Changes tab with line comments, per-ticket folder setup (`.env` copy, install only when needed), auto-continue after a usage limit, one-click session recovery, schedules on a cron and one-time jobs, add-on tickets, a brief of related past tickets for every run, prompt snippets, terminal and files panel, MCP connections, branching a ticket, and keyboard shortcuts for nearly everything.
+Inbox of everything waiting on you, Changes tab with line comments, per-ticket folder setup (`.env` copy, install only when needed), auto-continue after a usage limit, one-click session recovery, schedules on a cron and one-time jobs, add-on tickets, a brief of related past tickets for every run, prompt snippets, terminal and files panel, MCP connections, automations that turn new items from a service into tickets ([details](docs/automations.md)), shared devices, rewinding a ticket chat, moving a ticket to another board, several PRs per ticket, a spending cap per run, a light or dark theme, branching a ticket, and keyboard shortcuts for nearly everything.
 
 Every feature in detail: **[docs/features.md](docs/features.md)**. What changed in each release: **[CHANGELOG.md](CHANGELOG.md)**.
 
@@ -84,6 +84,8 @@ ckanban open        # open the board
 ckanban remote on   # open the board from your phone over Tailscale (off / status too)
 ckanban uninstall   # stop and remove the service (your boards in ~/.claude-kanban stay)
 ```
+
+`ckanban --help` lists every command, including `ckanban ticket ...` to work the board from a terminal.
 
 It runs in the background and survives restarts ([details](docs/features.md#runs-in-the-background-survives-restarts)). Logs: `~/.claude-kanban/daemon.log`. If `ckanban` isn't found, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc`.
 
@@ -136,13 +138,13 @@ Run from source as the daemon: `bun src/cli.ts install`. Data layout and env ove
 
 ### Releasing
 
-Move the `## Unreleased` notes in [CHANGELOG.md](CHANGELOG.md) under `## [X.Y.Z] - <date>`, bump `version` in `package.json`, commit, then:
+Move the `## Unreleased` notes in [CHANGELOG.md](CHANGELOG.md) under `## [X.Y.Z] - <date>`, add a fresh empty `## Unreleased` and the compare link at the bottom, bump `version` in `package.json`, commit `chore: release vX.Y.Z` and push, then:
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-GitHub Actions takes the release notes from that CHANGELOG section, runs the tests, builds `ckanban-darwin-arm64` / `ckanban-darwin-x64` with the UI embedded, and publishes a GitHub Release. Users get it with `ckanban update`.
+GitHub Actions takes the release notes from that CHANGELOG section, runs the tests, builds `ckanban-darwin-arm64` / `ckanban-darwin-x64` with the UI embedded, and publishes a GitHub Release and the `npx ckanban` installer. It stops early if CHANGELOG has no section for the version. Users get it with `ckanban update`.
 
 Design: `docs/superpowers/specs/2026-09-29-claude-kanban-design.md`.
 

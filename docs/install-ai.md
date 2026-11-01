@@ -9,12 +9,12 @@ Supported: **macOS only** (Apple Silicon or Intel). If `uname -s` is not `Darwin
 ```bash
 uname -s && uname -m
 command -v claude && claude --version
-command -v git && git --version
+xcode-select -p >/dev/null 2>&1 && git --version
 command -v gh && gh auth status
 ```
 
 - `claude` missing → tell the user to install Claude Code (https://claude.com/claude-code) and log in, then continue. The board cannot run tickets without it.
-- `git` missing → `xcode-select --install` (needs user interaction; ask them to accept the dialog).
+- `git` missing → optional. Without it, tickets edit the folder directly. If the user wants version history (each ticket works in its own copy of the folder), suggest `xcode-select --install`; they accept the dialog themselves.
 - `gh` missing or not logged in → optional. Without it Claude cannot open pull requests. Suggest `brew install gh && gh auth login` (interactive; the user must run the login themselves).
 
 ## 2. Install
@@ -27,7 +27,7 @@ This downloads the `ckanban` binary to `~/.local/bin/ckanban`, installs a launch
 
 If `curl` can't reach ckanban.dev or raw.githubusercontent.com but Node is installed, `npx --yes ckanban` does the same steps.
 
-Options (environment variables, put before `bash`): `CKANBAN_VERSION=0.1.0` pins a version; `CKANBAN_BIN_DIR=/path` changes the install folder.
+Options (environment variables, put before `bash`): `CKANBAN_VERSION=0.1.0` pins a version; `CKANBAN_BIN_DIR=/path` changes the install folder; `CKANBAN_NO_DAEMON=1` installs the program without starting the background service (start it later with `ckanban install`).
 
 ## 3. Make `ckanban` available on PATH
 
@@ -45,10 +45,10 @@ curl -s http://localhost:7777/api/health
 launchctl print gui/$(id -u)/io.ckanban.daemon | grep -E "state|pid"
 ```
 
-Expected: a version number, JSON like `{"claude":true,"git":true,"gh":true}`, and `state = running`.
+Expected: a version number, JSON like `{"claude":true,"git":true,"gh":true,"pty":true}`, and `state = running`. Only `"claude"` must be true; `git` and `gh` are optional, and `"pty":false` only means the built-in terminal is off.
 
 - Health shows `"claude":false` → the service cannot find the `claude` binary on its PATH. Make sure `claude` works in the user's shell, then re-run `~/.local/bin/ckanban install` from that shell (it records the current PATH).
-- `curl` fails to connect → check `~/.claude-kanban/daemon.log`. If port 7777 is in use by something else, tell the user.
+- `curl` fails to connect → check `~/.claude-kanban/daemon.log`. If port 7777 is in use by something else, tell the user. To use another port, set `"port": 7790` (for example) in `~/.claude-kanban/config.json`, run `ckanban restart`, and open that port instead.
 
 ## 5. Hand over to the user
 
@@ -61,12 +61,12 @@ Tell them:
 ## Updating, restarting, uninstalling
 
 ```bash
-ckanban update      # download latest release and restart the service
+ckanban update      # get the latest release; the service restarts once active runs finish
 ckanban restart     # restart the service once active runs finish (--now: at once)
 ckanban uninstall   # stop and remove the service; boards in ~/.claude-kanban are kept
 ```
 
-To remove everything: `ckanban uninstall && rm ~/.local/bin/ckanban` (and `rm -rf ~/.claude-kanban` only if the user explicitly wants their boards deleted — it cannot be undone).
+To remove everything: `ckanban remote off; ckanban mcp uninstall; ckanban uninstall && rm ~/.local/bin/ckanban` (and `rm -rf ~/.claude-kanban` only if the user explicitly wants their boards deleted — it cannot be undone).
 
 ## Do not
 

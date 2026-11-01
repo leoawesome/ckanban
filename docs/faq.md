@@ -20,15 +20,15 @@ Phone access is off until you turn it on with `ckanban remote on` (or **⋯ → 
 
 ### Where is my data kept?
 
-In plain files on your Mac, under `~/.claude-kanban/`: tickets, chats, run logs, schedules and settings. The copies of the folder for tickets sit next to your project in `.ckanban-worktrees/`. ckanban has no account, no server of its own and no analytics.
+In plain files on your Mac, under `~/.claude-kanban/`: tickets, chats, run logs, schedules, settings, and the sign-ins and keys you give automations. The copies of the folder for tickets sit next to your project in `.ckanban-worktrees/`. ckanban has no account, no server of its own and no analytics.
 
 ### What leaves my machine?
 
-Your code and prompts go to Anthropic through your own Claude Code, the same as when you use Claude Code yourself. ckanban itself only contacts: GitHub's releases page to check for updates (at most every 6 hours), Anthropic to show your Claude plan usage in the header, and GitHub through `gh` to read and merge your pull requests.
+Your code and prompts go to Anthropic through your own Claude Code, the same as when you use Claude Code yourself. ckanban itself only contacts: GitHub's releases page to check for updates (at most every 6 hours), Anthropic to show your Claude plan usage in the header, GitHub through `gh` to read and merge your pull requests, and your project's own online copy (if it has one) to get its latest version when a ticket starts.
 
 ### What is only sent when I turn it on?
 
-Notifications to a phone go through the browser's own push service (Apple, Google or Mozilla), encrypted, and only to devices where you turned them on. A webhook or ntfy address gets a short message only if you set one. claude.ai artifacts (off by default), MCP connections you add, and bug reports (you see and can untick everything before it is filed on GitHub) also only happen when you use them.
+Notifications to a phone go through the browser's own push service (Apple, Google or Mozilla), encrypted, and only to devices where you turned them on. A webhook or ntfy address gets a short message only if you set one. claude.ai artifacts (off by default), MCP connections you add, and bug reports (you see and can untick everything before it is filed on GitHub) also only happen when you use them. Automations you set up contact the services you connect, on their timer, and with *Ask Claude first* each new item's text goes to Claude.
 
 ### What does it cost?
 

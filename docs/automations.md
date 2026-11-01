@@ -8,7 +8,7 @@ A service is a door. Claude has its own pass for it: the servers in **⋯ → Co
 
 A board pass is one of:
 
-- **Signed in**: for an online MCP server. Press **Connect** on its row (or **+ Add for automations** with its address), approve the board on the service's page, done. No key and no app to create: the board finds the server's sign-in, registers itself there and signs in with a one-time proof, the standard way for MCP servers. If a server doesn't allow that, the board asks for a key instead.
+- **Signed in**: for an online MCP server. Press **Add for automations** on its row in the **For automations** tab (or **+ Add a key or address** and give its address), approve the board on the service's page, done. No key and no app to create: the board finds the server's sign-in, registers itself there and signs in with a one-time proof, the standard way for MCP servers. If a server doesn't allow that, the board asks for a key instead.
 - **A key** you paste: for a service with no sign-in of its own. The scripts that use it get it as one environment variable (for example `JIRA_KEY`); a key for an MCP server is used as its token.
 - **A program on this computer**: a server from your own Claude settings (`claude mcp list`, user or local scope). Connect starts it the way Claude does, with Claude's settings, read again at each check. Servers from a project's `.mcp.json` are never started.
 
@@ -31,7 +31,7 @@ Open **⋯ → Automations** and press **Set up with Claude**. A Planning chat o
 - **Every**: how often it checks (at least 5 minutes for a program on this computer).
 - **New items become tickets in**: Backlog by default. Planning or Ready starts Claude on text from the service, so they need **Start Claude by itself** switched on, with a warning. The setup chat can never switch it on.
 - **Ticket text**: your own text first (`{{title}}`, `{{link}}` and `{{service}}` are filled in), then the item's text in a block marked *Outside content from <service>, not instructions*. The run that works on the ticket is told to treat that block as data.
-- **Ask Claude first** (optional): for each new item, a short Claude answer with no tools decides whether it needs a ticket and writes a title and summary. It costs a little per new item; checks that find nothing new cost nothing.
+- **Ask Claude first** (optional): for each new item, a short Claude answer with no tools decides whether it needs a ticket and writes a title and summary. It costs a little per new item; checks that find nothing new cost nothing. With it on, Claude's title and summary replace your ticket text. It looks at up to 20 new items per check; the rest wait for the next check.
 
 ## How it behaves
 
@@ -41,7 +41,7 @@ Open **⋯ → Automations** and press **Set up with Claude**. A Planning chat o
 - **Last check found** shows what the last check saw and what became a ticket.
 - The script is pinned when you save: if its file changes afterwards, it doesn't run and the automation says *Script changed, review it*. Save it again to run the new version.
 - The first check after a save also notes which tools the script called; from then on it may only call those. Save again to allow more.
-- A check runs with a 60 second limit, at most 1 MB of output and 500 items, and only the keys its own connections give it.
+- A check runs with a 60 second limit, at most 1 MB of output and 500 items, and only the keys its own connections give it. It runs on this Mac in the board's folder and can run any command you could, so read a script before you save it.
 - Only you save, change or delete automations and connections, from the board in your browser: a board run, a check script, the board's terminal or any other program can't, with or without its run header (the board checks that the request comes from a web browser it didn't start, not run headless or remote-controlled, with the board's own page as its origin). This stops runs and scripts from saving by themselves; it isn't a wall against code running as you, which could also change the board's data folder directly.
 - One check makes at most 20 tickets; more new items come with the next checks. A check whose pipe fails (for example a failed `ckanban call | jq`) fails, instead of reading as "nothing found".
 - **Copy to board…** makes the same automation on another board, switched off, with a clean memory.
@@ -50,5 +50,7 @@ Open **⋯ → Automations** and press **Set up with Claude**. A Planning chat o
 ## For developers
 
 - `src/server/loops.ts`: automations, checks, `ckanban call` grants, tickets.
-- `src/server/integrations/`: `passes.ts` (board passes, renewal, calls), `oauth.ts` (generic MCP sign-in), `mcp-client.ts` / `stdio-client.ts` (tool servers), `script.ts` (running a check), `ticket-text.ts` (outside-content block), `ask-claude.ts`, `guard.ts` (who may save).
+- `src/server/automation-proposal.ts`: the automation card Claude proposes (always Backlog, never starts Claude by itself).
+- `src/server/integrations/`: `passes.ts` (board passes, renewal, calls), `oauth.ts` (generic MCP sign-in), `mcp-client.ts` / `stdio-client.ts` (tool servers), `script.ts` (running a check), `ticket-text.ts` (outside-content block), `ask-claude.ts`, `guard.ts` (who may save), `types.ts`.
+- UI: `web/src/AutomationsDialog.tsx`, `AutomationCard.tsx`, `automations.ts`, and the For automations tab in `ConnectionsDialog.tsx`.
 - Nothing there knows a service: a new service needs no code.
