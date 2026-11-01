@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { copy, type Ticket } from "./api";
-import { BranchIcon, BugIcon, CheckIcon, ChevronRightIcon, CloseIcon, CopyIcon, HuddleIcon, MoreIcon, RefreshIcon, TerminalIcon, TrashIcon } from "./icons";
+import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, MoreIcon, MoveIcon, RefreshIcon, TerminalIcon, TrashIcon } from "./icons";
 import { capInputText, parseCap } from "./capText";
 import { useLayer } from "./layers";
 import { MenuSheet } from "./MenuSheet";
@@ -124,14 +124,6 @@ export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap
                 <span className="menu-hint">{working ? "Wait until Claude is done" : "copy chat + work"}</span>
               </button>
             )}
-            {ticket.status === "backlog" && onMoveToBoard && (
-              <button role="menuitem" className="menu-item" disabled={working}
-                title={working ? "Wait until Claude is done" : "Send this ticket to the Backlog of another board"} onClick={pick(onMoveToBoard)}>
-                <span className="menu-icon" aria-hidden><ChevronRightIcon size={14} /></span>
-                <span className="menu-label">Move to board…</span>
-                <span className="menu-hint">{working ? "Wait until Claude is done" : "title, description, tags"}</span>
-              </button>
-            )}
             {hasSession && !working && (
               <>
                 <button role="menuitem" className="menu-item" onClick={pick(onPickSession)}>
@@ -167,6 +159,14 @@ export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap
             <div className="menu-sep" role="separator" />
             <CapRow ticket={ticket} boardCap={boardCap} onCap={onCap} />
             <div className="menu-sep" role="separator" />
+            {ticket.status === "backlog" && onMoveToBoard && (
+              <button role="menuitem" className="menu-item" disabled={working}
+                title={working ? "Wait until Claude is done" : "Send this ticket to the Backlog of another board"} onClick={pick(onMoveToBoard)}>
+                <span className="menu-icon" aria-hidden><MoveIcon size={14} /></span>
+                <span className="menu-label">Move to board…</span>
+                <span className="menu-hint">{working ? "Wait until Claude is done" : "title, description, tags"}</span>
+              </button>
+            )}
             <button role="menuitem" className="menu-item" title="Something wrong with ckanban on this ticket? File a GitHub issue with its details attached"
               onClick={pick(onReportBug)}>
               <span className="menu-icon" aria-hidden><BugIcon size={14} /></span>
