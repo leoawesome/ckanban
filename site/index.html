@@ -49,7 +49,7 @@ nav .sp{flex:1}nav a.l{color:var(--muted);text-decoration:none;font-size:14.5px}
 .cmd code{overflow-x:auto;white-space:nowrap;font-size:14px;padding:4px 0;scrollbar-width:none}.cmd code::-webkit-scrollbar{display:none}
 .cmd button{flex:none;font:600 13px -apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);border:0;border-radius:7px;padding:6px 11px;cursor:pointer}
 .alt{font-size:14px;color:var(--muted);margin-top:12px}.alt code{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:1px 6px}
-.ph:empty{display:none}.ph{margin-top:20px}
+.ph{margin-top:20px}.ph a,.ph img{display:block;width:250px;height:54px}
 /* board */
 .stage{margin:44px 0 20px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
 .bar{display:flex;gap:6px;align-items:center;padding:8px 10px 8px 14px;border-bottom:1px solid var(--border);font-size:13px;color:var(--muted)}.bar i{width:10px;height:10px;border-radius:50%;background:var(--border)}.bar span{margin-left:10px;flex:1}
@@ -119,8 +119,8 @@ footer{border-top:1px solid var(--border);padding:24px 0 40px;color:var(--muted)
 <div class="cmd"><code>curl -fsSL https://ckanban.dev/install | bash</code><button type="button" data-copy="curl -fsSL https://ckanban.dev/install | bash" aria-label="Copy the install command">Copy</button></div>
 <p class="alt">Or with Node: <code>npx ckanban</code>. macOS. Free and open source (MIT). Needs <a href="https://claude.com/claude-code">Claude Code</a>.</p>
 <p class="sr-only" role="status" id="copied"></p>
-<!-- Product Hunt badge: paste the embed from producthunt.com into this div on launch day (it stays hidden while empty). -->
-<div class="ph" id="ph-badge-top"></div>
+<!-- Product Hunt badge: official embed from producthunt.com/posts/ckanban/embed, with the dark theme for dark mode. -->
+<div class="ph"><a href="https://www.producthunt.com/products/ckanban?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-ckanban" target="_blank" rel="noopener noreferrer"><picture><source media="(prefers-color-scheme: dark)" srcset="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1300227&amp;theme=dark&amp;t=1793521752015"><img alt="ckanban on Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1300227&amp;theme=light&amp;t=1793521731002"></picture></a></div>
 </section>
 
 <section class="stage" aria-label="How a ticket moves across the board">
@@ -187,8 +187,6 @@ footer{border-top:1px solid var(--border);padding:24px 0 40px;color:var(--muted)
 <a href="https://github.com/leoawesome/ckanban/blob/main/CHANGELOG.md">Changelog</a>
 <a href="https://x.com/leotechlead">Made by @leotechlead</a>
 <span class="sp"></span>
-<!-- Product Hunt badge: paste the embed from producthunt.com into this div on launch day (it stays hidden while empty). -->
-<div class="ph" id="ph-badge-footer"></div>
 </footer>
 </div>
 <script>

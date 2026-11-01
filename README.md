@@ -9,6 +9,7 @@
 <p align="center"><a href="https://ckanban.dev/"><b>Website</b></a> · <a href="docs/features.md">Features</a> · <a href="docs/faq.md">FAQ</a> · <a href="CHANGELOG.md">Changelog</a></p>
 
 <p align="center">
+  <a href="https://www.producthunt.com/products/ckanban?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-ckanban"><img src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1300227&amp;theme=light&amp;t=1793521731002" alt="ckanban on Product Hunt" width="250" height="54"></a>
   <a href="https://buymeacoffee.com/leoawesome"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy me a coffee"></a>
 </p>
 
