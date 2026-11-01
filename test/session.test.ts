@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FILES_NOTE, IMAGES_NOTE } from "../src/server/attachments";
 import { Bus, type BusEvent } from "../src/server/events";
-import { SessionCache, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessions } from "../src/server/session";
+import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessions } from "../src/server/session";
 import { Store } from "../src/server/store";
 import { tempDir } from "./helpers";
 
@@ -502,7 +502,7 @@ test("session summaries are kept on disk: a new cache answers without reading an
   const b = new SessionCache({ configDir }, Date.now, summaryFile);
   let reads = 0;
   const get = b.get.bind(b);
-  b.get = (id: string) => (reads++, get(id));
+  (b as any).parsed = (id: string) => (reads++, get(id));
   expect(b.summary(sid)?.lastMessage?.text).toBe("first");
   expect(reads).toBe(0);
 
@@ -552,4 +552,103 @@ test("the session watcher's first pass only takes stock: no session.updated unti
   } finally {
     stop();
   }
+});
+
+test("SessionParser: feeding a transcript in pieces (split mid-line and mid-character) gives the same result as parsing it whole", () => {
+  const raw = [
+    RAW,
+    user("ünïcödé 🎉 message", "2026-09-29T01:00:09Z"),
+    asst([{ type: "tool_use", id: "ag1", name: "Agent", input: { description: "Look around", subagent_type: "Explore" } }], "2026-09-29T01:00:10Z"),
+    user([{ type: "tool_result", tool_use_id: "ag1", content: "found it" }], "2026-09-29T01:00:11Z"),
+    asst([{ type: "tool_use", id: "q1", name: "mcp__ckanban__ask_questions", input: { questions: [{ question: "A or B?", options: ["A", "B"] }] } }], "2026-09-29T01:00:12Z"),
+    asst([{ type: "text", text: "Last words ✓" }], "2026-09-29T01:00:13Z"),
+  ].join("\n") + "\n";
+  const whole = parseSession(raw);
+  const bytes = Buffer.from(raw);
+  for (const size of [1, 7, 50, 333]) {
+    const p = new SessionParser();
+    for (let i = 0; i < bytes.length; i += size) {
+      p.feed(bytes.subarray(i, i + size));
+      // Reading the result midway doesn't change what comes after.
+      if (i % (size * 3) === 0) p.result();
+    }
+    expect(p.result()).toEqual(whole);
+  }
+});
+
+test("SessionParser: a result read earlier doesn't change when more lines arrive", () => {
+  const p = new SessionParser();
+  p.feed(Buffer.from(asst([{ type: "tool_use", id: "ag1", name: "Agent", input: { description: "Look" } }], "2026-09-29T01:00:00Z") + "\n"));
+  const before = p.result();
+  const copy = structuredClone(before);
+  p.feed(Buffer.from(user([{ type: "tool_result", tool_use_id: "ag1", content: "done", is_error: true }], "2026-09-29T01:00:01Z") + "\n"));
+  expect(p.result().entries[0].agent!.status).toBe("failed");
+  expect(before).toEqual(copy);
+});
+
+test("SessionCache reads only what was appended, keeps a half-written line, and starts over when the file shrinks or is replaced", () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-inc");
+  mkdirSync(dir, { recursive: true });
+  const sid = "41111111-2222-3333-4444-555555555555";
+  const file = join(dir, `${sid}.jsonl`);
+  const lines = [
+    user("hi", "2026-09-29T01:00:00Z"),
+    asst([{ type: "text", text: "hello" }], "2026-09-29T01:00:01Z"),
+    asst([{ type: "tool_use", id: "t9", name: "Bash", input: { command: "ls" } }], "2026-09-29T01:00:02Z"),
+    user([{ type: "tool_result", tool_use_id: "t9", content: "oops", is_error: true }], "2026-09-29T01:00:03Z"),
+    asst([{ type: "text", text: "done ✓" }], "2026-09-29T01:00:04Z"),
+  ];
+  const cache = new SessionCache({ configDir });
+  writeFileSync(file, lines[0] + "\n");
+  expect(cache.get(sid)).toEqual(parseSession(lines[0] + "\n"));
+  let text = lines[0] + "\n";
+  for (const l of lines.slice(1)) {
+    // Half a line first (cut inside a multi-byte character when there is one), then the rest.
+    const b = Buffer.from(l + "\n");
+    const cut = l.includes("✓") ? Buffer.from(l.slice(0, l.indexOf("✓"))).length + 1 : Math.floor(b.length / 2);
+    appendFileSync(file, b.subarray(0, cut));
+    expect(cache.get(sid)).toEqual(parseSession(text));
+    appendFileSync(file, b.subarray(cut));
+    text += l + "\n";
+    expect(cache.get(sid)).toEqual(parseSession(text));
+  }
+  expect(cache.get(sid)!.lastMessage!.text).toBe("done ✓");
+  expect(cache.get(sid)!.entries.find((e) => e.toolUseId === "t9")!.error).toBe(true);
+  // A last line with no newline yet but complete is read, like a whole parse does.
+  appendFileSync(file, asst([{ type: "text", text: "no newline" }], "2026-09-29T01:00:05Z"));
+  expect(cache.get(sid)!.lastMessage!.text).toBe("no newline");
+  // Shrunk (rewritten shorter): parsed again from the start.
+  writeFileSync(file, lines[1] + "\n");
+  expect(cache.get(sid)).toEqual(parseSession(lines[1] + "\n"));
+  // Replaced by a new file of the same size or bigger: parsed again from the start.
+  const other = join(dir, "tmp.jsonl");
+  writeFileSync(other, lines[4] + "\n" + lines[0] + "\n");
+  renameSync(other, file);
+  expect(cache.get(sid)).toEqual(parseSession(lines[4] + "\n" + lines[0] + "\n"));
+});
+
+test("SessionCache.warm parses many transcripts without blocking the event loop for long, then summaries are ready", async () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-warm");
+  mkdirSync(dir, { recursive: true });
+  const ids: string[] = [];
+  const big = Array.from({ length: 3000 }, (_, i) => asst([{ type: "text", text: `line ${i} ${"x".repeat(300)}` }], `2026-09-29T01:${String(i % 60).padStart(2, "0")}:00Z`)).join("\n") + "\n";
+  for (let i = 0; i < 20; i++) {
+    const sid = `5111111${i.toString(16)}-2222-3333-4444-555555555555`;
+    ids.push(sid);
+    writeFileSync(join(dir, `${sid}.jsonl`), big);
+  }
+  const cache = new SessionCache({ configDir });
+  // Timers get to run while it works: it pauses between steps instead of parsing all 20 files (24MB) in one go.
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 0);
+  const done = cache.warm(ids, 0);
+  expect(cache.ready()).toBe(done);
+  await done;
+  clearInterval(timer);
+  expect(ticks).toBeGreaterThan(5);
+  // Every transcript was read to the end, so summaries need no more reading.
+  for (const id of ids) expect((cache as any).items.get(id).offset).toBe(Buffer.byteLength(big));
+  for (const id of ids) expect(cache.summary(id)!.lastMessage!.text).toBe(`line 2999 ${"x".repeat(300)}`);
 });

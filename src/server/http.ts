@@ -713,6 +713,8 @@ export function createServer(deps: ServerDeps) {
     if (parts[0] === "team-usage" && m === "GET") return json(huddles.usage());
     if (parts[0] === "inbox" && m === "GET") {
       // Every board: tickets that need the user (the same rule as the cards' "Your turn"), oldest first.
+      // Right after a start with no saved summaries, wait for the sliced read instead of reading every transcript now.
+      await sessions.ready();
       const out = [];
       for (const p of store.listProfiles()) {
         const hosts = board.hostHuddles(p.slug);
@@ -1333,6 +1335,7 @@ export function createServer(deps: ServerDeps) {
     if (parts[2] !== "tickets") throw new HttpError(404, "not found");
     if (parts.length === 3) {
       if (m === "GET") {
+        await sessions.ready();
         const hosts = board.hostHuddles(slug);
         return json(store.listTickets(slug).map((t) => view(profile, t, hosts)));
       }

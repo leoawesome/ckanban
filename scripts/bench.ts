@@ -5,6 +5,7 @@
  *   bun scripts/bench.ts                 generated data (default scale), with budgets
  *   bun scripts/bench.ts --scale 2       twice as many boards, tickets and transcripts
  *   bun scripts/bench.ts --real          the real ~/.claude-kanban and ~/.claude/projects, read-only, no budgets
+ *   bun scripts/bench.ts --real --no-summaries   same, starting with no saved session summaries
  *   bun --cpu-prof-md --cpu-prof-dir=/tmp/prof scripts/bench.ts    with a CPU profile
  *
  * "first" is the very first load (no saved session summaries), "restart" a new server on the same data with the
@@ -18,7 +19,8 @@ import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
 import { createServer } from "../src/server/http";
-import { pollSessions, SessionCache } from "../src/server/session";
+import { startLagMonitor } from "../src/server/lag";
+import { pollSessions, primeSessions, SessionCache } from "../src/server/session";
 import { Store } from "../src/server/store";
 import type { Status } from "../src/server/types";
 
@@ -195,7 +197,10 @@ async function main() {
         (pollSessions as (...a: unknown[]) => void)(store, bus, sessions, state, emit);
         return performance.now() - t0;
       };
-      note("session watcher pass", phase, watch(false));
+      // The daemon's first pass (primeSessions): reads in slices, so its time is spread out, not one block.
+      const t0 = performance.now();
+      await primeSessions(store, sessions, state);
+      note("session watcher pass", phase, performance.now() - t0);
       for (const [name, path] of endpoints) note(name, phase, await timeGet(base, path));
       if (warm) {
         const runs = new Map<string, number[]>();
@@ -213,9 +218,26 @@ async function main() {
     }
   };
 
-  // Real data: the summaries copy already holds what the daemon saved, so "first" is really a restart too.
+  // The daemon's lag monitor: one [lag] line per synchronous step over 200ms (what the daemon logs), naming its cause.
+  const lags: string[] = [];
+  let worst = 0;
+  const stopLag = startLagMonitor({ thresholdMs: 50, log: (line) => lags.push(line) });
+  const lagOf = (line: string) => Number(/blocked (\d+)ms/.exec(line)?.[1] ?? 0);
+  const phaseLags = (phase: string, from: number) => {
+    for (const l of lags.slice(from)) {
+      worst = Math.max(worst, lagOf(l));
+      if (lagOf(l) > 200) console.log(`${phase}: ${l}`);
+    }
+    return lags.length;
+  };
+  // Real data: the summaries copy already holds what the daemon saved, so "first" is really a restart too, unless
+  // --no-summaries drops the copy (as after a change to the code that makes them).
+  if (args.includes("--no-summaries")) rmSync(summaryFile, { force: true });
   await life("first", true);
+  let seen = phaseLags("first", 0);
   await life("restart", false);
+  seen = phaseLags("restart", seen);
+  stopLag();
 
   const pad = (s: string, n: number) => s.padEnd(n);
   const num = (n: number) => `${Math.round(n)}`.padStart(8);
@@ -227,6 +249,7 @@ async function main() {
     for (const k of over) fails.push(`${r.name} ${k} ${Math.round(r[k])}ms > ${b![k] * scale}ms`);
     console.log(`${pad(r.name, 50)}${num(r.first)}${num(r.restart)}${num(r.warm)}${over.length ? "   OVER: " + over.join(",") : ""}`);
   }
+  console.log(`\nlongest event-loop block: ${worst ? `${worst}ms` : "under 50ms"} (${lags.filter((l) => lagOf(l) > 200).length} over 200ms)`);
   const mem = process.memoryUsage();
   console.log(`\nrss ${Math.round(mem.rss / 1048576)}MB heap ${Math.round(mem.heapUsed / 1048576)}MB`);
   if (!keep) rmSync(tmp, { recursive: true, force: true });

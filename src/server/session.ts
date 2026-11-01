@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { trackedInterval } from "./lag";
+import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, type Stats } from "node:fs";
+import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { withoutAttachmentNote } from "./attachments";
@@ -14,6 +14,7 @@ import { VERSION } from "./version";
 import { parseTeammateProposal, type TeammateProposal } from "./teammate-proposal";
 import { parseAutomationProposal, type AutomationProposal } from "./automation-proposal";
 import type { Store } from "./store";
+import type { Ticket } from "./types";
 import { normalizeTags } from "./tags";
 import { AGENT_TOOL, notifiedStatus, parseTaskNotification, SubagentCache, subagentFiles, toolLabel, withTranscript, type AgentInfo } from "./subagents";
 import { WORKFLOW_TOOL, WorkflowCache, withRun, workflowFromCall, workflowLaunched, workflowNotified, type WorkflowInfo, type WorkflowRun } from "./workflows";
@@ -475,39 +476,85 @@ function cardEntry(block: any): Pick<SessionEntry, "questions" | "proposal" | "n
   return null;
 }
 
-export function parseSession(raw: string): ParsedSession {
-  let customTitle: string | null = null;
-  let aiTitle: string | null = null;
-  const entries: SessionEntry[] = [];
-  const artifacts = new Map<string, SessionArtifact>();
-  const publishers = new Set<string>();
+/**
+ * Parses a transcript as it grows: feed it the new bytes, read the result when needed. Feeding a transcript in pieces
+ * gives the same result as parsing it whole, so a running session's new lines are parsed on their own.
+ */
+export class SessionParser {
+  private customTitle: string | null = null;
+  private aiTitle: string | null = null;
+  /** As parsed; result() copies them before the end-of-transcript fix-ups (errors, failed cards, blocked moves). */
+  private entries: SessionEntry[] = [];
+  private artifacts = new Map<string, SessionArtifact>();
+  private publishers = new Set<string>();
   /** Bash calls running `ckanban ticket setup` (by tool_use id). */
-  const setups = new Set<string>();
+  private setups = new Set<string>();
   /** Card tool calls (by tool_use id) and those whose result was an error: those don't render. */
-  const cards = new Set<string>();
-  const failed = new Set<string>();
+  private cards = new Set<string>();
+  private failed = new Set<string>();
   /** Tool calls whose result was an error (their rows get a ✗). */
-  const errored = new Set<string>();
+  private errored = new Set<string>();
   /** Subagents by the Agent tool_use id; their rows update as results and notifications arrive. */
-  const agents = new Map<string, AgentInfo>();
+  private agents = new Map<string, AgentInfo>();
   /** Workflows by the Workflow tool_use id; they update as the launch result and the end notification arrive. */
-  const workflows = new Map<string, WorkflowInfo>();
+  private workflows = new Map<string, WorkflowInfo>();
   /** The last command was terminal-only: its output (next local-command-stdout, if any) is hidden too. */
-  let hideOutput = false;
-  const cache = new ChatCacheTracker();
-  const notified = (text: unknown, at: string) => {
+  private hideOutput = false;
+  private cache = new ChatCacheTracker();
+  /** The bytes after the last newline: a line still being written. */
+  private tail: Buffer = Buffer.alloc(0);
+  private snapshot: ParsedSession | null = null;
+
+  /** New bytes of the transcript, cut anywhere (even inside a line or a character). */
+  feed(chunk: Uint8Array): void {
+    let buf = this.tail.length ? Buffer.concat([this.tail, chunk]) : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+    const nl = buf.lastIndexOf(10);
+    if (nl >= 0) {
+      this.lines(buf.toString("utf8", 0, nl));
+      buf = buf.subarray(nl + 1);
+    }
+    // A complete JSON object with no newline yet is a whole line (a whole parse reads it too); a half-written one waits.
+    if (buf.length && buf[0] === 0x7b && buf[buf.length - 1] === 0x7d) {
+      let ev: any;
+      try {
+        ev = JSON.parse(buf.toString("utf8"));
+      } catch {}
+      if (ev && typeof ev === "object") {
+        this.event(ev);
+        buf = buf.subarray(buf.length);
+      }
+    }
+    this.tail = Buffer.from(buf);
+  }
+
+  /** Whole lines of text (the last one may lack its newline). */
+  lines(text: string): void {
+    for (const line of text.split("\n")) {
+      if (!line) continue;
+      let ev: any;
+      try {
+        ev = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      this.event(ev);
+    }
+  }
+
+  private notified(text: unknown, at: string) {
     const n = typeof text === "string" ? parseTaskNotification(text) : null;
-    const w = n && workflows.get(n.toolUseId);
+    const w = n && this.workflows.get(n.toolUseId);
     if (n && w) workflowNotified(w, n.status, n.result, at);
-    const a = n && agents.get(n.toolUseId);
+    const a = n && this.agents.get(n.toolUseId);
     if (!n || !a) return;
     a.status = notifiedStatus(n.status);
     a.endedAt = at || a.endedAt;
     a.updatedAt = at || a.updatedAt;
     if (a.status === "done") a.result = n.result ?? a.result;
     else a.error = n.result ?? `Agent ${n.status}`;
-  };
-  const peerEntry = (u: NonNullable<ReturnType<typeof userText>>, uuid: string, at: string): SessionEntry => {
+  }
+
+  private peerEntry(u: NonNullable<ReturnType<typeof userText>>, uuid: string, at: string): SessionEntry {
     const from = u.kind === "text" && !u.huddle ? fromTicket(u.text) : null;
     return {
       uuid, at, role: "user", kind: u.kind, text: from ? from.text : u.text, ...(u.command ? { command: u.command } : {}),
@@ -515,99 +562,93 @@ export function parseSession(raw: string): ParsedSession {
       ...(from ? { peer: { dir: "in" as const, ticketId: from.ticketId, title: from.title } } : {}),
       ...(u.setup ? { setup: u.setup } : {}),
     };
-  };
+  }
 
-  for (const line of raw.split("\n")) {
-    if (!line) continue;
-    let ev: any;
-    try {
-      ev = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (ev.type === "custom-title" && typeof ev.customTitle === "string") customTitle = ev.customTitle;
-    else if (ev.type === "ai-title" && typeof ev.aiTitle === "string") aiTitle = ev.aiTitle;
+  private event(ev: any): void {
+    this.snapshot = null;
+    if (ev.type === "custom-title" && typeof ev.customTitle === "string") this.customTitle = ev.customTitle;
+    else if (ev.type === "ai-title" && typeof ev.aiTitle === "string") this.aiTitle = ev.aiTitle;
     const at = typeof ev.timestamp === "string" ? ev.timestamp : "";
-    const uuid = typeof ev.uuid === "string" ? ev.uuid : `${entries.length}`;
+    const uuid = typeof ev.uuid === "string" ? ev.uuid : `${this.entries.length}`;
     // A message sent while Claude was working is saved as an attachment to the running turn, not a user message.
-    if (ev.type === "attachment" && ev.attachment?.type === "queued_command" && !ev.isSidechain) notified(ev.attachment.prompt, at);
+    if (ev.type === "attachment" && ev.attachment?.type === "queued_command" && !ev.isSidechain) this.notified(ev.attachment.prompt, at);
     // A background task's end is queued for Claude first; a run that ends meanwhile (e.g. at its cap) never delivers it.
-    if (ev.type === "queue-operation" && ev.operation === "enqueue" && typeof ev.content === "string") notified(ev.content, at);
+    if (ev.type === "queue-operation" && ev.operation === "enqueue" && typeof ev.content === "string") this.notified(ev.content, at);
     if (ev.type === "attachment" && ev.attachment?.type === "queued_command" && ev.attachment.commandMode === "prompt" && !ev.isSidechain) {
       const u = userText(ev.attachment.prompt);
-      if (u) entries.push(peerEntry(u, uuid, at));
-      continue;
+      if (u) this.entries.push(this.peerEntry(u, uuid, at));
+      return;
     }
     if (ev.type === "system" && !ev.isSidechain) {
       // What a built-in command printed (/context, /model), and where /compact summarised the conversation.
       const out = ev.subtype === "local_command" && typeof ev.content === "string" ? localCommandOutput(ev.content) : null;
-      if (out !== null && hideOutput) hideOutput = false;
-      else if (out) entries.push({ uuid, at, role: "assistant", kind: "text", text: out, commandOutput: true });
-      else if (ev.subtype === "compact_boundary") entries.push({ uuid, at, role: "user", kind: "board", text: "Conversation compacted" });
-      continue;
+      if (out !== null && this.hideOutput) this.hideOutput = false;
+      else if (out) this.entries.push({ uuid, at, role: "assistant", kind: "text", text: out, commandOutput: true });
+      else if (ev.subtype === "compact_boundary") this.entries.push({ uuid, at, role: "user", kind: "board", text: "Conversation compacted" });
+      return;
     }
-    if ((ev.type !== "user" && ev.type !== "assistant") || ev.isSidechain) continue;
-    if (ev.type === "assistant") cache.add(ev);
+    if ((ev.type !== "user" && ev.type !== "assistant") || ev.isSidechain) return;
+    if (ev.type === "assistant") this.cache.add(ev);
     const content = ev.message?.content;
 
     if (ev.type === "user") {
       // The summary /compact left behind: the boundary above already says so.
-      if (ev.isCompactSummary) continue;
+      if (ev.isCompactSummary) return;
       // A terminal-only command is hidden, and so is what it printed.
       if (typeof content === "string" && terminalOnly(commandText(content.trim()))) {
-        hideOutput = true;
-        continue;
+        this.hideOutput = true;
+        return;
       }
       const out = typeof content === "string" ? localCommandOutput(content) : null;
       if (out !== null) {
-        if (hideOutput) hideOutput = false;
-        else if (out) entries.push({ uuid, at, role: "assistant", kind: "text", text: out, commandOutput: true });
-        continue;
+        if (this.hideOutput) this.hideOutput = false;
+        else if (out) this.entries.push({ uuid, at, role: "assistant", kind: "text", text: out, commandOutput: true });
+        return;
       }
-      if (!ev.isMeta) hideOutput = false;
-      notified(typeof content === "string" ? content : Array.isArray(content) ? content.map((c: any) => (c?.type === "text" ? c.text : "")).join("\n") : "", at);
+      if (!ev.isMeta) this.hideOutput = false;
+      this.notified(typeof content === "string" ? content : Array.isArray(content) ? content.map((c: any) => (c?.type === "text" ? c.text : "")).join("\n") : "", at);
       if (Array.isArray(content)) {
         for (const b of content) {
-          if (b?.type === "tool_result" && agents.has(b.tool_use_id)) agentResult(agents.get(b.tool_use_id)!, b, ev.toolUseResult, at);
-          if (b?.type === "tool_result" && workflows.has(b.tool_use_id)) workflowLaunched(workflows.get(b.tool_use_id)!, b, ev.toolUseResult, at);
-          if (b?.type === "tool_result" && b.is_error && cards.has(b.tool_use_id)) failed.add(b.tool_use_id);
-          if (b?.type === "tool_result" && b.is_error) errored.add(b.tool_use_id);
-          if (b?.type === "tool_result" && setups.has(b.tool_use_id)) {
+          if (b?.type === "tool_result" && this.agents.has(b.tool_use_id)) agentResult(this.agents.get(b.tool_use_id)!, b, ev.toolUseResult, at);
+          if (b?.type === "tool_result" && this.workflows.has(b.tool_use_id)) workflowLaunched(this.workflows.get(b.tool_use_id)!, b, ev.toolUseResult, at);
+          if (b?.type === "tool_result" && b.is_error && this.cards.has(b.tool_use_id)) this.failed.add(b.tool_use_id);
+          if (b?.type === "tool_result" && b.is_error) this.errored.add(b.tool_use_id);
+          if (b?.type === "tool_result" && this.setups.has(b.tool_use_id)) {
             const setup = parseSetupBlock(resultText(b.content));
-            if (setup) entries.push({ uuid: `${b.tool_use_id}:setup`, at, role: "assistant", kind: "board", text: "", setup });
+            if (setup) this.entries.push({ uuid: `${b.tool_use_id}:setup`, at, role: "assistant", kind: "board", text: "", setup });
           }
           // Only real publishes: output of the Artifact tool, or of the `ckanban artifact publish`
           // helper / publish_artifact MCP tool headless runs use. Other tools (e.g. Bash grepping a different session's file)
           // can print the same text.
-          if (b?.type !== "tool_result" || !publishers.has(b.tool_use_id)) continue;
+          if (b?.type !== "tool_result" || !this.publishers.has(b.tool_use_id)) continue;
           for (const m of resultText(b.content).matchAll(PUBLISHED)) {
             const label = basename(m[1]).replace(/\.[a-z0-9]+$/i, "");
-            artifacts.delete(m[2]); // re-insert so the newest publish sorts last
-            artifacts.set(m[2], { url: m[2], label, at });
+            this.artifacts.delete(m[2]); // re-insert so the newest publish sorts last
+            this.artifacts.set(m[2], { url: m[2], label, at });
           }
         }
       }
       const u = userText(content);
       if (u && !ev.isMeta) {
-        const e = peerEntry(u, uuid, at);
+        const e = this.peerEntry(u, uuid, at);
         if (e.kind === "text" && !e.peer && !e.setup) e.rewind = true;
-        entries.push(e);
+        this.entries.push(e);
       }
-      continue;
+      return;
     }
 
-    hideOutput = false;
-    if (!Array.isArray(content)) continue;
+    this.hideOutput = false;
+    if (!Array.isArray(content)) return;
     content.forEach((b: any, i: number) => {
-      if (b?.type === "tool_use" && typeof b.id === "string" && isPublisher(b)) publishers.add(b.id);
-      if (b?.type === "tool_use" && typeof b.id === "string" && b.name === "Bash" && SETUP_HELPER.test(String(b.input?.command ?? ""))) setups.add(b.id);
+      if (b?.type === "tool_use" && typeof b.id === "string" && isPublisher(b)) this.publishers.add(b.id);
+      if (b?.type === "tool_use" && typeof b.id === "string" && b.name === "Bash" && SETUP_HELPER.test(String(b.input?.command ?? ""))) this.setups.add(b.id);
       const id = i ? `${uuid}:${i}` : uuid;
       const card = b?.type === "tool_use" && typeof b.id === "string" ? cardEntry(b) : null;
-      if (b?.type === "text" && b.text?.trim()) entries.push({ uuid: id, at, role: "assistant", kind: "text", ...assistantBlock(b.text.trim()) });
+      if (b?.type === "text" && b.text?.trim()) this.entries.push({ uuid: id, at, role: "assistant", kind: "text", ...assistantBlock(b.text.trim()) });
       else if (card) {
         // The tool_use id keeps the uuid stable, so form drafts and answered/applied state stick to it.
-        cards.add(b.id);
-        entries.push({ uuid: b.id, at, role: "assistant", kind: "text", text: "", ...card });
+        this.cards.add(b.id);
+        this.entries.push({ uuid: b.id, at, role: "assistant", kind: "text", text: "", ...card });
       } else if (b?.type === "tool_use" && AGENT_TOOL.test(b.name ?? "") && typeof b.id === "string") {
         const input = b.input ?? {};
         const agent: AgentInfo = {
@@ -615,44 +656,57 @@ export function parseSession(raw: string): ParsedSession {
           type: typeof input.subagent_type === "string" ? input.subagent_type : null, background: input.run_in_background === true,
           status: "running", startedAt: at, endedAt: null, updatedAt: at, steps: [], stepCount: 0, current: null, result: null, error: null,
         };
-        agents.set(b.id, agent);
-        entries.push({ uuid: b.id, at, role: "assistant", kind: "agent", text: toolLabel(b), agent });
+        this.agents.set(b.id, agent);
+        this.entries.push({ uuid: b.id, at, role: "assistant", kind: "agent", text: toolLabel(b), agent });
       } else if (b?.type === "tool_use" && WORKFLOW_TOOL.test(b.name ?? "") && typeof b.id === "string") {
         const workflow = workflowFromCall(b.id, b.input, at);
-        workflows.set(b.id, workflow);
-        entries.push({ uuid: b.id, at, role: "assistant", kind: "workflow", text: workflow.name, workflow });
+        this.workflows.set(b.id, workflow);
+        this.entries.push({ uuid: b.id, at, role: "assistant", kind: "workflow", text: workflow.name, workflow });
       } else if (b?.type === "tool_use") {
-        entries.push({ uuid: id, at, role: "assistant", kind: "tool", text: toolLabel(b), ...(typeof b.id === "string" ? { toolUseId: b.id } : {}) });
+        this.entries.push({ uuid: id, at, role: "assistant", kind: "tool", text: toolLabel(b), ...(typeof b.id === "string" ? { toolUseId: b.id } : {}) });
       }
     });
   }
 
-  for (const e of entries) if (e.toolUseId && errored.has(e.toolUseId)) e.error = true;
-  if (failed.size) entries.splice(0, entries.length, ...entries.filter((e) => !failed.has(e.uuid)));
-  dropBlockedMoves(entries);
-  const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.teammate || e.automation));
-  const lastText = !last ? "" : last.text
-    || (last.questions ? `Asked ${last.questions.length} question${last.questions.length > 1 ? "s" : ""}`
-      : last.newTickets ? `Proposed ${last.newTickets.length} new ticket${last.newTickets.length > 1 ? "s" : ""}`
-      : last.branch ? "Offered to branch this ticket"
-      : last.deletion ? `Asked to delete ${last.deletion.ids.length} ticket${last.deletion.ids.length > 1 ? "s" : ""}`
-      : last.teammate ? `Proposed teammate @${last.teammate.name}`
-      : last.automation ? `Proposed automation "${last.automation.name}"` : "Proposed an updated ticket");
-  const asked = last?.role === "assistant" ? entries.findLast((e, i) => i < entries.indexOf(last) && e.role === "user" && e.kind === "text") : undefined;
-  return {
-    title: customTitle ?? aiTitle,
-    entries,
-    artifacts: [...artifacts.values()],
-    lastMessage: last
-      ? {
-        role: last.role, text: lastText, at: last.at,
-        ...(last.role === "user" && last.huddleId ? { from: "huddle" as const } : {}),
-        ...(asked?.huddleId ? { peerReply: true } : {}),
-      }
-      : null,
-    ...pendingSince(entries),
-    cache: cache.result(),
-  };
+  /** The session as parsed so far (the same object until more lines arrive; later lines don't change it). */
+  result(): ParsedSession {
+    if (this.snapshot) return this.snapshot;
+    const entries = this.entries.filter((e) => !this.failed.has(e.uuid)).map((e) => {
+      const c: SessionEntry = { ...e, ...(e.agent ? { agent: { ...e.agent } } : {}), ...(e.workflow ? { workflow: { ...e.workflow } } : {}) };
+      if (c.toolUseId && this.errored.has(c.toolUseId)) c.error = true;
+      return c;
+    });
+    dropBlockedMoves(entries);
+    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.teammate || e.automation));
+    const lastText = !last ? "" : last.text
+      || (last.questions ? `Asked ${last.questions.length} question${last.questions.length > 1 ? "s" : ""}`
+        : last.newTickets ? `Proposed ${last.newTickets.length} new ticket${last.newTickets.length > 1 ? "s" : ""}`
+        : last.branch ? "Offered to branch this ticket"
+        : last.deletion ? `Asked to delete ${last.deletion.ids.length} ticket${last.deletion.ids.length > 1 ? "s" : ""}`
+        : last.teammate ? `Proposed teammate @${last.teammate.name}`
+        : last.automation ? `Proposed automation "${last.automation.name}"` : "Proposed an updated ticket");
+    const asked = last?.role === "assistant" ? entries.findLast((e, i) => i < entries.indexOf(last) && e.role === "user" && e.kind === "text") : undefined;
+    return (this.snapshot = {
+      title: this.customTitle ?? this.aiTitle,
+      entries,
+      artifacts: [...this.artifacts.values()],
+      lastMessage: last
+        ? {
+          role: last.role, text: lastText, at: last.at,
+          ...(last.role === "user" && last.huddleId ? { from: "huddle" as const } : {}),
+          ...(asked?.huddleId ? { peerReply: true } : {}),
+        }
+        : null,
+      ...pendingSince(entries),
+      cache: this.cache.result(),
+    });
+  }
+}
+
+export function parseSession(raw: string): ParsedSession {
+  const p = new SessionParser();
+  p.lines(raw);
+  return p.result();
 }
 
 /** The parent's tool_result for an Agent call: the report (sync), the launch (background) or an error. */
@@ -699,12 +753,20 @@ function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestio
 
 interface CacheItem {
   file: string;
-  key: string;
-  parsed: ParsedSession;
-  /** parsed with its subagents' transcripts merged in, for agentKey. */
+  /** The file read so far: its inode, size and change time when last checked, and how many bytes were parsed. */
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  offset: number;
+  parser: SessionParser;
+  /** The parse with its subagents' transcripts merged in, for agentKey and that parse. */
   agentKey: string;
-  merged: ParsedSession;
+  mergedFrom: ParsedSession | null;
+  merged: ParsedSession | null;
 }
+
+/** How much of a transcript one step of a warm-up reads (about 1 to 2ms of parsing). */
+const WARM_CHUNK = 1 << 20;
 
 /** A session file missing this long is searched for at most every MISSING_RETRY_MS. */
 const MISSING_GRACE_MS = 5 * 60_000;
@@ -766,6 +828,8 @@ export class SessionCache {
    */
   private summaries: SummaryFile | null = null;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The warm-ups started so far (warm()), one after another. */
+  private warming: Promise<void> = Promise.resolve();
 
   constructor(private dirs: Dirs = {}, private now: () => number = Date.now, private summaryFile?: string) {}
 
@@ -847,39 +911,108 @@ export class SessionCache {
     return `${v}${agents ? `|${agents}` : ""}${workflows ? `|w${workflows}` : ""}`;
   }
 
-  get(sessionId: string): ParsedSession | null {
-    const f = this.locate(sessionId);
-    const key = f && this.fileVersion(f);
-    if (!f || !key) return null;
+  /**
+   * Parses what the transcript gained since the last call (at most maxBytes of it): only new lines are read, a
+   * half-written last line waits for the next call, and a file that shrank or was replaced is parsed from the start.
+   */
+  private catchUp(sessionId: string, f: string, maxBytes = Infinity): CacheItem | null {
+    let st: Stats;
+    try {
+      st = statSync(f);
+    } catch {
+      return null;
+    }
     let hit = this.items.get(sessionId);
-    if (!hit || hit.key !== key || hit.file !== f) {
-      let raw = "";
-      try {
-        raw = readFileSync(f, "utf8");
-      } catch {
-        return null;
-      }
-      const parsed = parseSession(raw);
-      hit = { file: f, key, parsed, agentKey: "", merged: parsed };
+    const rewritten = hit && (hit.file !== f || hit.ino !== st.ino || st.size < hit.offset || (st.size === hit.size && st.mtimeMs !== hit.mtimeMs));
+    if (!hit || rewritten) {
+      hit = { file: f, ino: st.ino, size: 0, mtimeMs: 0, offset: 0, parser: new SessionParser(), agentKey: "", mergedFrom: null, merged: null };
       this.items.set(sessionId, hit);
     }
-    const hasAgents = hit.parsed.entries.some((e) => e.agent);
-    const hasWorkflows = hit.parsed.entries.some((e) => e.workflow);
-    if (!hasAgents && !hasWorkflows) return hit.parsed;
+    hit.size = st.size;
+    hit.mtimeMs = st.mtimeMs;
+    const n = Math.min(st.size - hit.offset, maxBytes);
+    if (n <= 0) return hit;
+    let fd: number | null = null;
+    try {
+      fd = openSync(f, "r");
+      const buf = Buffer.allocUnsafe(n);
+      const got = readSync(fd, buf, 0, n, hit.offset);
+      hit.parser.feed(buf.subarray(0, got));
+      hit.offset += got;
+      // The file is shorter than it said (cut while reading): look again next time.
+      if (got < n) hit.size = hit.offset;
+    } catch {
+      this.items.delete(sessionId);
+      return null;
+    } finally {
+      if (fd !== null) closeSync(fd);
+    }
+    return hit;
+  }
+
+  /** The session's own transcript parsed, without its subagents' transcripts. */
+  private parsed(sessionId: string): ParsedSession | null {
+    const f = this.locate(sessionId);
+    return (f ? this.catchUp(sessionId, f)?.parser.result() : null) ?? null;
+  }
+
+  get(sessionId: string): ParsedSession | null {
+    const f = this.locate(sessionId);
+    const hit = f && this.catchUp(sessionId, f);
+    if (!f || !hit) return null;
+    const parsed = hit.parser.result();
+    const hasAgents = parsed.entries.some((e) => e.agent);
+    const hasWorkflows = parsed.entries.some((e) => e.workflow);
+    if (!hasAgents && !hasWorkflows) return parsed;
     const agentKey = `${hasAgents ? this.agents.version(f) : ""}|${hasWorkflows ? this.workflowFiles.version(f) : ""}`;
-    if (hit.agentKey !== agentKey || hit.merged === hit.parsed) {
+    if (hit.agentKey !== agentKey || hit.mergedFrom !== parsed || !hit.merged) {
       const transcripts = hasAgents ? this.agents.load(f) : new Map();
       hit.merged = {
-        ...hit.parsed,
-        entries: hit.parsed.entries.map((e) => {
+        ...parsed,
+        entries: parsed.entries.map((e) => {
           if (e.agent) return { ...e, agent: withTranscript(e.agent, transcripts.get(e.agent.toolUseId)) };
           if (e.workflow) return { ...e, workflow: withRun(e.workflow, e.workflow.runId ? this.workflowFiles.load(f, e.workflow.runId) : null) };
           return e;
         }),
       };
+      hit.mergedFrom = parsed;
       hit.agentKey = agentKey;
     }
     return hit.merged;
+  }
+
+  /**
+   * Readies these sessions' summaries without blocking the event loop for more than about sliceMs at a time: big
+   * transcripts are read in chunks, with a pause between steps. Sessions whose saved summary is still valid are
+   * skipped. Pages that list many tickets wait for it (ready()) instead of parsing everything at once.
+   */
+  warm(sessionIds: string[], sliceMs = 30): Promise<void> {
+    const pause = pauser(sliceMs);
+    const run = async () => {
+      for (const id of sessionIds) {
+        await pause();
+        const f = this.locate(id);
+        if (!f) continue;
+        const v = this.summaryFile ? this.version(id) : null;
+        if (v && this.storedSummaries().items[id]?.v === v) continue;
+        for (;;) {
+          const hit = this.catchUp(id, f, WARM_CHUNK);
+          if (!hit || hit.offset >= hit.size) break;
+          await pause();
+        }
+        this.summary(id);
+      }
+    };
+    const prev = this.warming;
+    const next: Promise<void> = prev.then(run, run).finally(() => {
+      if (this.warming === next) this.warming = Promise.resolve();
+    });
+    return (this.warming = next);
+  }
+
+  /** Settles when every warm() started so far has finished. */
+  ready(): Promise<void> {
+    return this.warming;
   }
 
   /** A workflow's files (journal, agent transcripts, summary), or null when the session or run is unknown. */
@@ -905,7 +1038,7 @@ export class SessionCache {
     const v = this.summaryFile ? this.version(sessionId) : null;
     const hit = v ? this.storedSummaries().items[sessionId] : undefined;
     if (hit && hit.v === v) return { ...hit.s, updatedAt };
-    const p = this.get(sessionId);
+    const p = this.parsed(sessionId);
     if (!p) return null;
     const s: StoredSummary = {
       title: p.title, lastMessage: p.lastMessage, artifacts: p.artifacts,
@@ -925,27 +1058,54 @@ export class SessionCache {
 export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true): void {
   const live = new Set<string>();
   for (const p of store.listProfiles()) {
-    for (const t of store.listTickets(p.slug)) {
-      if (!t.sessionId) continue;
-      const key = `${p.slug}/${t.id}`;
-      live.add(key);
-      const v = cache.version(t.sessionId);
-      if (!v || state.get(key) === `${t.sessionId}:${v}`) continue;
-      state.set(key, `${t.sessionId}:${v}`);
-      const session = cache.summary(t.sessionId);
-      if (session && emit) bus.emit({ type: "session.updated", profile: p.slug, id: t.id, session });
-    }
+    for (const t of store.listTickets(p.slug)) pollOne(bus, cache, state, live, p.slug, t, emit);
   }
   for (const k of state.keys()) if (!live.has(k)) state.delete(k);
+}
+
+function pollOne(bus: Bus, cache: SessionCache, state: Map<string, string>, live: Set<string>, slug: string, t: Ticket, emit: boolean): void {
+  if (!t.sessionId) return;
+  const key = `${slug}/${t.id}`;
+  live.add(key);
+  const v = cache.version(t.sessionId);
+  if (!v || state.get(key) === `${t.sessionId}:${v}`) return;
+  state.set(key, `${t.sessionId}:${v}`);
+  const session = cache.summary(t.sessionId);
+  if (session && emit) bus.emit({ type: "session.updated", profile: slug, id: t.id, session });
+}
+
+/**
+ * The watcher's first pass after a start: readies every ticket's summary (reading transcripts in slices, see
+ * SessionCache.warm) and notes the versions, sending nothing. It pauses every ~sliceMs, so a start with no saved
+ * summaries (seconds of reading on a big board) never freezes the daemon.
+ */
+export async function primeSessions(store: Store, cache: SessionCache, state: Map<string, string>, sliceMs = 30): Promise<void> {
+  const tickets = store.listProfiles().flatMap((p) => store.listTickets(p.slug).map((t) => ({ slug: p.slug, t })));
+  // Huddle teammates' sessions too: a ticket's links list their artifacts.
+  const teammates = store.listProfiles().flatMap((p) => store.listHuddles(p.slug).flatMap((h) => h.participants.flatMap((x) => (x.kind === "agent" && x.sessionId ? [x.sessionId] : []))));
+  await cache.warm([...tickets.flatMap(({ t }) => (t.sessionId ? [t.sessionId] : [])), ...teammates], sliceMs);
+  const pause = pauser(sliceMs);
+  const live = new Set<string>();
+  const bus = { emit() {} } as unknown as Bus;
+  for (const { slug, t } of tickets) {
+    await pause();
+    pollOne(bus, cache, state, live, slug, t, false);
+  }
 }
 
 export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache, intervalMs = 2000): () => void {
   const state = new Map<string, string>();
   // The first pass after a start announced every ticket's session (hundreds of events, each built for every open tab:
   // seconds right after a restart). Pages load what they need when they (re)connect, and the notifier takes stock at
-  // its start, so the first pass only takes stock.
+  // its start, so the first pass only takes stock. It starts at once (pages and the notifier wait for it through
+  // cache.ready()) and runs in slices; the timer's passes wait until it is done.
   let primed = false;
+  let priming = true;
+  void track("session-watcher: first pass", () => primeSessions(store, cache, state))
+    .then(() => (primed = true), (e) => console.error("session watcher", e))
+    .finally(() => (priming = false));
   const timer = trackedInterval("session-watcher", () => {
+    if (priming) return;
     try {
       pollSessions(store, bus, cache, state, primed);
       primed = true;

@@ -2,7 +2,7 @@
 // A ticket's Claude can also send its own message (notify_user, Notifier.message). Sends to a webhook (ntfy topic URL or any JSON endpoint), to devices that turned phone push on (push.ts) and/or
 // shows a macOS banner, per kind (notify.json).
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { trackedInterval } from "./lag";
+import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type AttentionKind, type HostHuddle, ticketAttention } from "./attention";
@@ -226,6 +226,11 @@ export class TransitionTracker {
 export interface NotifierOptions {
   root: string;
   sessionSummary: (sessionId: string) => SessionSummary | null;
+  /**
+   * Settles once session summaries are ready (SessionCache.ready). Given, the start-up stock-take waits for it and then
+   * runs in slices instead of reading every transcript at once.
+   */
+  sessionsReady?: () => Promise<unknown>;
   isRunning: (slug: string, id: string) => boolean;
   hostHuddles: (slug: string) => Map<string, HostHuddle>;
   /** Where links point: the tailnet URL when phone access is on, else this Mac's localhost. */
@@ -288,20 +293,39 @@ export class Notifier {
 
   /** Seeds what already waits (no notification for it), then follows ticket, session and huddle changes. */
   start(): () => void {
-    const now = this.now();
-    for (const p of this.store.listProfiles()) {
-      for (const t of this.store.listTickets(p.slug)) this.tracker.seed(`${p.slug}/${t.id}`, this.kindOf(p.slug, t.id), now);
-    }
+    let stopped = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
     const off = this.bus.on((e) => {
       if (e.type === "ticket.updated") this.dirty.add(`${e.profile}/${e.ticket.id}`);
       else if (e.type === "session.updated") this.dirty.add(`${e.profile}/${e.id}`);
       else if (e.type === "huddle.updated" && e.huddle.hostTicket) this.dirty.add(`${e.profile}/${e.huddle.hostTicket}`);
       else if (e.type === "ticket.deleted") this.tracker.forget(`${e.profile}/${e.id}`);
     });
-    const timer = trackedInterval("notifier", () => this.tick(), this.o.tickMs ?? 1000);
+    const follow = () => {
+      if (!stopped) timer = trackedInterval("notifier", () => this.tick(), this.o.tickMs ?? 1000);
+    };
+    const keys = () => this.store.listProfiles().flatMap((p) => this.store.listTickets(p.slug).map((t) => [p.slug, t.id] as const));
+    if (this.o.sessionsReady) {
+      // Changes seen meanwhile are kept (dirty) and looked at on the first tick.
+      void track("notifier: stock-take", async () => {
+        await this.o.sessionsReady!();
+        const now = this.now();
+        const pause = pauser(30);
+        for (const [slug, id] of keys()) {
+          await pause();
+          if (stopped) return;
+          this.tracker.seed(`${slug}/${id}`, this.kindOf(slug, id), now);
+        }
+      }).catch((e) => console.error("notifier", e)).finally(follow);
+    } else {
+      const now = this.now();
+      for (const [slug, id] of keys()) this.tracker.seed(`${slug}/${id}`, this.kindOf(slug, id), now);
+      follow();
+    }
     return () => {
+      stopped = true;
       off();
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
     };
   }
 

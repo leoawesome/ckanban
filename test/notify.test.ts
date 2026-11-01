@@ -198,6 +198,33 @@ function describeNotifier() {
     stop();
   });
 
+  test("with sessionsReady, the stock-take waits for the summaries, then tickets already waiting don't notify", async () => {
+    let open!: () => void;
+    const ready = new Promise<void>((r) => (open = r));
+    let asked = 0;
+    const n = new Notifier(store, bus, {
+      root: store.root, sessionSummary: () => (asked++, null), sessionsReady: () => ready, isRunning: () => false, hostHuddles: () => new Map(),
+      baseUrl: () => "https://mac.tail.ts.net", debounceMs: 1000, tickMs: 60_000, now: () => clock,
+      fetch: async (url, init) => {
+        sent.push({ url, init });
+        return new Response("ok");
+      },
+      banner: (title) => banners.push(title),
+    });
+    store.updateTicket("kb", ticket.id, { status: "review", outcome: "done", sessionId: "s1" });
+    const stop = n.start();
+    expect(asked).toBe(0);
+    open();
+    for (let i = 0; i < 200 && !asked; i++) await Bun.sleep(10);
+    expect(asked).toBeGreaterThan(0);
+    move({ title: "Fix it again" });
+    clock += 2000;
+    n.tick();
+    await Promise.resolve();
+    expect(sent).toHaveLength(0);
+    stop();
+  });
+
   test("a run starting and ending quickly doesn't notify twice", async () => {
     const stop = notifier.start();
     move({ status: "review", outcome: "done" });

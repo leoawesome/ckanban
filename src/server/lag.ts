@@ -82,3 +82,16 @@ export function routeLabel(req: Request): string {
   const path = new URL(req.url).pathname.split("/").map((s) => (/^t_\d{8}_/.test(s) || s.length > 40 ? ":id" : s)).join("/");
   return `${req.method} ${path}`;
 }
+
+/**
+ * For long jobs split into steps: `await pause()` between steps lets other work (requests, timers) run once about
+ * sliceMs have passed since the last pause, so the job never blocks the event loop for much longer than that.
+ */
+export function pauser(sliceMs = 30): () => Promise<void> {
+  let start = performance.now();
+  return async () => {
+    if (performance.now() - start < sliceMs) return;
+    await new Promise((r) => setTimeout(r, 0));
+    start = performance.now();
+  };
+}
