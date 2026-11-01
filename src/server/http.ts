@@ -409,7 +409,7 @@ export function createServer(deps: ServerDeps) {
   /** Every artifact and share link of the ticket, newest first (see links.ts). */
   const ticketLinks = (slug: string, t: Ticket, session: SessionSummary | null) => collectLinks({
     ticket: session?.artifacts,
-    huddles: teammatesOf(slug, t.id).map((m) => ({ handle: m.handle, artifacts: sessions.get(m.sessionId)?.artifacts ?? [] })),
+    huddles: teammatesOf(slug, t.id).map((m) => ({ handle: m.handle, artifacts: sessions.summary(m.sessionId)?.artifacts ?? [] })),
     results: store.aiComments(slug, t.id),
     shareLinks: t.shareLinks,
   });

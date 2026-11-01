@@ -39,7 +39,7 @@ export async function startDaemon(): Promise<void> {
   const config = store.config();
   const port = Number(process.env.CKANBAN_PORT) || config.port;
   const bus = new Bus();
-  const sessions = new SessionCache();
+  const sessions = new SessionCache({}, Date.now, join(store.root, "session-summaries.json"));
   const shells = new ShellManager();
   void cleanupTmuxLeftovers();
   const board = new Board(store, bus, {
@@ -121,6 +121,7 @@ export async function startDaemon(): Promise<void> {
     stopLimits();
     stopFollowUps();
     stopWatcher();
+    sessions.flushSummaries();
     stopHuddleWatcher();
     stopTerminals();
     shells.killAll();

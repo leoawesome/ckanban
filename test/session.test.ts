@@ -485,3 +485,29 @@ test("a session file missing for a while is searched for less often", () => {
   now += 30_000;
   expect(cache.file(gone)).toBe(join(dir, `${gone}.jsonl`));
 });
+
+test("session summaries are kept on disk: a new cache answers without reading an unchanged transcript", () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-f");
+  mkdirSync(dir, { recursive: true });
+  const sid = "21111111-2222-3333-4444-555555555555";
+  const file = join(dir, `${sid}.jsonl`);
+  writeFileSync(file, user("first", "2026-09-29T01:00:00Z") + "\n");
+  const summaryFile = join(tempDir(), "session-summaries.json");
+  const a = new SessionCache({ configDir }, Date.now, summaryFile);
+  expect(a.summary(sid)?.lastMessage?.text).toBe("first");
+  a.flushSummaries();
+
+  // After a restart: the stored summary is used while the transcript is unchanged (even if unreadable now).
+  const b = new SessionCache({ configDir }, Date.now, summaryFile);
+  let reads = 0;
+  const get = b.get.bind(b);
+  b.get = (id: string) => (reads++, get(id));
+  expect(b.summary(sid)?.lastMessage?.text).toBe("first");
+  expect(reads).toBe(0);
+
+  // The transcript grew: read again.
+  appendFileSync(file, user("second", "2026-09-29T01:00:01Z") + "\n");
+  expect(b.summary(sid)?.lastMessage?.text).toBe("second");
+  expect(reads).toBe(1);
+});

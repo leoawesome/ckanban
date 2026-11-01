@@ -7,6 +7,8 @@ import type { Bus } from "./events";
 import { proposedBudget, rosterError, type RosterEntry } from "./huddle-roster";
 import { mockupName, stripMockups } from "./mockups";
 import { parseResult } from "./result";
+import { atomicWrite } from "./store";
+import { VERSION } from "./version";
 import { parseTeammateProposal, type TeammateProposal } from "./teammate-proposal";
 import { parseAutomationProposal, type AutomationProposal } from "./automation-proposal";
 import type { Store } from "./store";
@@ -322,6 +324,32 @@ export function findSessionFile(sessionId: string, d: Dirs = {}): string | null 
     } catch {}
   }
   return null;
+}
+
+/** Every session file under the projects folder by session id (one readdir per project folder, not a stat per id). */
+export function scanSessionFiles(d: Dirs = {}): Map<string, string> {
+  const root = projectsDir(d);
+  const out = new Map<string, string>();
+  let dirs: string[];
+  try {
+    dirs = readdirSync(root);
+  } catch {
+    return out;
+  }
+  for (const dir of dirs) {
+    let names: string[];
+    try {
+      names = readdirSync(join(root, dir));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!name.endsWith(".jsonl")) continue;
+      const id = name.slice(0, -6);
+      if (!out.has(id)) out.set(id, join(root, dir, name));
+    }
+  }
+  return out;
 }
 
 const PUBLISHED = /Published (\S+) at (https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]+)/g;
@@ -658,6 +686,28 @@ interface CacheItem {
 /** A session file missing this long is searched for at most every MISSING_RETRY_MS. */
 const MISSING_GRACE_MS = 5 * 60_000;
 const MISSING_RETRY_MS = 60_000;
+/** How long one scan of the projects folder answers lookups (a new run's file is found on the next poll). */
+const INDEX_MS = 1_000;
+/** How soon new summaries are written to the summary cache file. */
+const SUMMARY_FLUSH_MS = 2_000;
+
+type StoredSummary = Omit<SessionSummary, "updatedAt">;
+interface SummaryFile {
+  tag: string;
+  items: Record<string, { v: string; s: StoredSummary }>;
+}
+
+/**
+ * Tells summaries made by other code apart: the release version, and from source the newest change to the server's
+ * files (a fix to the parsing applies at the next restart).
+ */
+function summaryTag(): string {
+  let newest = 0;
+  try {
+    for (const name of readdirSync(import.meta.dir)) newest = Math.max(newest, statSync(join(import.meta.dir, name)).mtimeMs);
+  } catch {}
+  return `1:${VERSION}:${newest}`;
+}
 
 /** Parses session files lazily; re-reads only when size/mtime change. */
 export class SessionCache {
@@ -666,8 +716,52 @@ export class SessionCache {
   private agents = new SubagentCache();
   /** Sessions whose file wasn't found: since when, and when it was last searched for. */
   private missing = new Map<string, { since: number; at: number }>();
+  /**
+   * Session files by id from one scan of the projects folder. Searching each id on its own stats a path per projects
+   * folder (often 1000+), so a few dozen tickets whose transcripts are gone held the daemon up for seconds.
+   */
+  private index: { at: number; files: Map<string, string> } | null = null;
 
-  constructor(private dirs: Dirs = {}, private now: () => number = Date.now) {}
+  /**
+   * Summaries by session id and file version, kept on disk (summaryFile) so the board's first load after a restart
+   * doesn't read and parse every ticket's transcript again.
+   */
+  private summaries: SummaryFile | null = null;
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(private dirs: Dirs = {}, private now: () => number = Date.now, private summaryFile?: string) {}
+
+  private storedSummaries(): SummaryFile {
+    if (this.summaries) return this.summaries;
+    const tag = summaryTag();
+    let items: SummaryFile["items"] = {};
+    if (this.summaryFile) {
+      try {
+        const v = JSON.parse(readFileSync(this.summaryFile, "utf8"));
+        if (v?.tag === tag && v.items && typeof v.items === "object") items = v.items;
+      } catch {}
+    }
+    return (this.summaries = { tag, items });
+  }
+
+  private storeSummary(sessionId: string, v: string, s: StoredSummary) {
+    if (!this.summaryFile) return;
+    this.storedSummaries().items[sessionId] = { v, s };
+    this.flushTimer ??= setTimeout(() => this.flushSummaries(), SUMMARY_FLUSH_MS);
+    (this.flushTimer as { unref?: () => void }).unref?.();
+  }
+
+  /** Writes the summary cache file now (also called on a timer after new summaries). */
+  flushSummaries(): void {
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    if (!this.summaryFile || !this.summaries) return;
+    try {
+      atomicWrite(this.summaryFile, JSON.stringify(this.summaries));
+    } catch (e) {
+      console.error("session summary cache", e);
+    }
+  }
 
   private locate(sessionId: string): string | null {
     const known = this.files.get(sessionId);
@@ -682,7 +776,8 @@ export class SessionCache {
     const now = this.now();
     const miss = this.missing.get(sessionId);
     if (miss && now - miss.since >= MISSING_GRACE_MS && now - miss.at < MISSING_RETRY_MS) return null;
-    const f = findSessionFile(sessionId, this.dirs);
+    if (!this.index || now - this.index.at >= INDEX_MS || now < this.index.at) this.index = { at: now, files: scanSessionFiles(this.dirs) };
+    const f = this.index.files.get(sessionId) ?? null;
     if (f) {
       this.files.set(sessionId, f);
       this.missing.delete(sessionId);
@@ -749,18 +844,25 @@ export class SessionCache {
   }
 
   summary(sessionId: string): SessionSummary | null {
-    const p = this.get(sessionId);
     const f = this.locate(sessionId);
-    if (!p || !f) return null;
+    if (!f) return null;
     let updatedAt = "";
     try {
       updatedAt = statSync(f).mtime.toISOString();
     } catch {}
-    return {
-      title: p.title, lastMessage: p.lastMessage, artifacts: p.artifacts, updatedAt,
+    // Its transcript (and its subagents') unchanged since the summary was made: no need to read it.
+    const v = this.summaryFile ? this.version(sessionId) : null;
+    const hit = v ? this.storedSummaries().items[sessionId] : undefined;
+    if (hit && hit.v === v) return { ...hit.s, updatedAt };
+    const p = this.get(sessionId);
+    if (!p) return null;
+    const s: StoredSummary = {
+      title: p.title, lastMessage: p.lastMessage, artifacts: p.artifacts,
       openQuestions: p.openQuestions, pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates,
       pendingAutomations: p.pendingAutomations,
     };
+    if (v) this.storeSummary(sessionId, v, s);
+    return { ...s, updatedAt };
   }
 }
 
