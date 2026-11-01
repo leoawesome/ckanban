@@ -1489,7 +1489,9 @@ export const api = {
   commands: (slug: string, id: string) => req<SlashCommand[]>("GET", `${t(slug, id)}/commands`),
   /** Skills and commands in the board's folder: the `/` picker of descriptions not tied to a ticket yet. */
   boardCommands: (slug: string) => req<SlashCommand[]>("GET", `/api/profiles/${slug}/commands`),
-  activity: (slug: string, id: string) => req<ActivityEntry[]>("GET", `${t(slug, id)}/activity`),
+  /** The activity log's newest page; pass the answer's `before` back for the page before it (null: reached the start). */
+  activity: (slug: string, id: string, before?: number) =>
+    req<{ entries: ActivityEntry[]; before: number | null }>("GET", `${t(slug, id)}/activity${before === undefined ? "" : `?before=${before}`}`),
   /** Cost, tokens and ≈ share of the 5h plan window per run. */
   ticketUsage: (slug: string, id: string) => req<TicketUsage>("GET", `${t(slug, id)}/usage`),
   inbox: () => req<InboxItem[]>("GET", "/api/inbox"),

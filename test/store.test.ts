@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_OUTPUT_FILES, Store } from "../src/server/store";
+import { MAX_OUTPUT_FILES, readJsonlPage, Store } from "../src/server/store";
 import type { Profile } from "../src/server/types";
 
 let store: Store;
@@ -144,4 +144,34 @@ test("ticket reads reuse the parse until the file changes, and hand out copies",
   store.deleteTicket("demo", t.id);
   expect(store.getTicket("demo", t.id)).toBeNull();
   expect(store.listTickets("demo")).toEqual([]);
+});
+
+test("activity pages: newest first page, older pages back to the first entry, a half-written last line left out", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ck-page-"));
+  const file = join(dir, "activity.jsonl");
+  const lines = Array.from({ length: 50 }, (_, i) => JSON.stringify({ run: 1, at: `t${i}`, event: { type: "x", text: "a".repeat(i % 7 === 0 ? 300 : 20) } }));
+  writeFileSync(file, lines.join("\n") + "\n" + '{"run":1,"at":"partial","ev');
+  const pageOf = (before?: number) => readJsonlPage<{ at: string }>(file, { before, maxBytes: 200 });
+
+  const first = pageOf();
+  expect(first.entries.at(-1)!.at).toBe("t49");
+  expect(first.before).not.toBeNull();
+  const seen: string[] = [];
+  let page = first;
+  for (let guard = 0; ; guard++) {
+    seen.unshift(...page.entries.map((e) => e.at));
+    if (page.before === null || guard > 100) break;
+    page = pageOf(page.before);
+  }
+  expect(seen).toEqual(lines.map((_, i) => `t${i}`));
+
+  // The writer finishes the line: the next newest page has it.
+  writeFileSync(file, lines.join("\n") + "\n" + '{"run":1,"at":"done","event":{}}\n');
+  expect(pageOf().entries.at(-1)!.at).toBe("done");
+  // A line longer than the page still comes back whole.
+  expect(readJsonlPage<{ at: string }>(file, { maxBytes: 5 }).entries.map((e) => e.at)).toEqual(["done"]);
+  // Same as reading the whole file when it fits in one page.
+  expect(readJsonlPage(file).entries).toEqual(readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l)));
+  expect(readJsonlPage(file).before).toBeNull();
+  expect(readJsonlPage(join(dir, "missing.jsonl"))).toEqual({ entries: [], before: null });
 });

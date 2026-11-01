@@ -1527,7 +1527,13 @@ export function createServer(deps: ServerDeps) {
     }
 
     const action = parts[4];
-    if (action === "activity" && m === "GET") return json(store.readActivity(slug, id));
+    // The log's newest page; `?before=` (the previous answer's `before`) pages back, null once the first entry is in.
+    if (action === "activity" && m === "GET") {
+      const raw = url.searchParams.get("before");
+      const before = raw === null ? undefined : Number(raw);
+      if (before !== undefined && (!Number.isInteger(before) || before < 0)) throw new HttpError(400, "before must be a byte offset from a previous page");
+      return json(store.readActivityPage(slug, id, before));
+    }
     // The ticket's whole family from the top ticket down (web/src/family.ts), with each one's session and last result.
     if (action === "family" && m === "GET") {
       return json(familyOf(store.listTickets(slug), id).map(({ ticket: t, depth, how }) => ({

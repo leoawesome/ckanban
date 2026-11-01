@@ -41,6 +41,55 @@ function readJsonl<T>(file: string): T[] {
   return out;
 }
 
+/** About how much of an activity log one page holds (GET ticket activity). */
+export const ACTIVITY_PAGE_BYTES = 512 * 1024;
+
+/**
+ * One page of a JSONL file read from its end with positioned reads: the whole lines that end before byte `before`
+ * (default: the end of the file), about maxBytes of them (more when one line is bigger). Lines that don't parse are
+ * skipped, like readJsonl, so a last line still being written is left out until it is complete. The result's
+ * `before` is where the page starts (pass it back for the page before); null once the page reaches the first line.
+ */
+export function readJsonlPage<T>(file: string, opts: { before?: number; maxBytes?: number } = {}): { entries: T[]; before: number | null } {
+  if (!existsSync(file)) return { entries: [], before: null };
+  const fd = openSync(file, "r");
+  try {
+    const size = statSync(file).size;
+    const end = Math.min(Math.max(0, opts.before ?? size), size);
+    let want = Math.max(1, opts.maxBytes ?? ACTIVITY_PAGE_BYTES);
+    for (;;) {
+      const start = Math.max(0, end - want);
+      const buf = Buffer.alloc(end - start);
+      for (let got = 0; got < buf.length;) {
+        const n = readSync(fd, buf, got, buf.length - got, start + got);
+        if (n <= 0) break;
+        got += n;
+      }
+      // The chunk starts mid-line unless it starts the file: the page begins after its first newline.
+      const skip = start === 0 ? 0 : buf.indexOf(10) + 1;
+      if (start > 0 && skip === 0) {
+        want *= 2; // one line longer than the page: read more of it
+        continue;
+      }
+      const entries: T[] = [];
+      for (const line of buf.subarray(skip).toString("utf8").split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          entries.push(JSON.parse(line));
+        } catch {}
+      }
+      // Nothing whole yet (a long last line still being written filled the page): read more.
+      if (!entries.length && start > 0) {
+        want *= 2;
+        continue;
+      }
+      return { entries, before: start === 0 ? null : start + skip };
+    }
+  } finally {
+    closeSync(fd);
+  }
+}
+
 function parseTicket(raw: string): Ticket {
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!m) throw new Error("missing frontmatter");
@@ -336,6 +385,11 @@ export class Store {
 
   readActivity(slug: string, id: string): ActivityEntry[] {
     return readJsonl<ActivityEntry>(this.activityPath(slug, id));
+  }
+
+  /** The newest page of the activity log, or the page before byte `before` (readJsonlPage). */
+  readActivityPage(slug: string, id: string, before?: number, maxBytes?: number): { entries: ActivityEntry[]; before: number | null } {
+    return readJsonlPage<ActivityEntry>(this.activityPath(slug, id), { before, maxBytes });
   }
 
   private schedulesDir(slug: string) {

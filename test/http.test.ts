@@ -1274,3 +1274,18 @@ test("one board per folder: same folder refused (slash, symlink, case), subfolde
   r = await fetch(`${base}/api/profiles/twin/tickets`);
   expect(r.status).toBe(200);
 });
+
+test("ticket activity endpoint pages back from the newest entries", async () => {
+  const path = tempDir("ck-act-");
+  await fetch(`${base}/api/profiles`, json("POST", { name: "Acty", path }));
+  const t = (await (await fetch(`${base}/api/profiles/acty/tickets`, json("POST", { title: "log", status: "backlog" }))).json()) as any;
+  const url = `${base}/api/profiles/acty/tickets/${t.id}/activity`;
+  expect(await (await fetch(url)).json()).toEqual({ entries: [], before: null });
+  for (let i = 0; i < 3; i++) store.appendActivity("acty", t.id, 1, { type: "x", i });
+  const page = (await (await fetch(url)).json()) as any;
+  expect(page.before).toBeNull();
+  expect(page.entries.map((e: any) => e.event.i)).toEqual([0, 1, 2]);
+  expect(((await (await fetch(`${url}?before=0`)).json()) as any).entries).toEqual([]);
+  expect((await fetch(`${url}?before=-1`)).status).toBe(400);
+  expect((await fetch(`${url}?before=abc`)).status).toBe(400);
+});
