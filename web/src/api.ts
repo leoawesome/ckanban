@@ -1385,6 +1385,8 @@ export const api = {
   /** Find links: Claude's suggested parents for tickets without one (nothing changes until each is set). */
   findLinks: (slug: string) =>
     req<{ links: { id: string; parent: string; reason: string }[]; checked: number }>("POST", `/api/profiles/${encodeURIComponent(slug)}/find-links`, {}),
+  /** Send a Backlog ticket to another board; returns the new ticket there. */
+  moveTicketToBoard: (slug: string, id: string, board: string) => req<Ticket>("POST", `${t(slug, id)}/move`, { board }),
   /** Inbox Snooze: hide what the ticket waits for now for a day (or until its state changes). */
   followUpNow: (slug: string, id: string) => req<Ticket>("POST", `${t(slug, id)}/follow-up/now`, {}),
   stopFollowUp: (slug: string, id: string) => req<Ticket>("DELETE", `${t(slug, id)}/follow-up`, {}),

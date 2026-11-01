@@ -1226,3 +1226,16 @@ test("devices: a ticket's own run takes and lets go; only the user edits and fre
   expect(card.devices).toBeNull();
   expect((await fetch(`${base}/api/devices/leo-phone`, { method: "DELETE" })).status).toBe(200);
 });
+
+test("POST move sends a Backlog ticket to another board", async () => {
+  await fetch(`${base}/api/profiles`, json("POST", { name: "Move A", path: tempDir("ck-plain-") }));
+  await fetch(`${base}/api/profiles`, json("POST", { name: "Move B", path: tempDir("ck-plain-") }));
+  const t = (await (await fetch(`${base}/api/profiles/move-a/tickets`, json("POST", { title: "Wrong board", body: "b", status: "backlog" }))).json()) as any;
+  let r = await fetch(`${base}/api/profiles/move-a/tickets/${t.id}/move`, json("POST", { board: "nowhere" }));
+  expect(r.status).toBe(404);
+  r = await fetch(`${base}/api/profiles/move-a/tickets/${t.id}/move`, json("POST", { board: "move-b" }));
+  expect(r.status).toBe(201);
+  expect(((await r.json()) as any).title).toBe("Wrong board");
+  expect(((await (await fetch(`${base}/api/profiles/move-a/tickets`)).json()) as any[]).length).toBe(0);
+  expect(((await (await fetch(`${base}/api/profiles/move-b/tickets`)).json()) as any[]).map((x) => x.title)).toEqual(["Wrong board"]);
+});
