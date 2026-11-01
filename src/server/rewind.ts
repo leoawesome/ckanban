@@ -22,11 +22,27 @@ export function textKey(text: string): string {
   return createHash("sha1").update(norm(text)).digest("hex").slice(0, 12);
 }
 
-/** Runs f with a throwaway git index, so the folder's own staged changes are never touched. */
-async function withIndex<T>(f: (env: Record<string, string>) => Promise<T>): Promise<T> {
+/**
+ * Runs f with a throwaway git index, so the folder's own staged changes are never touched. With `seedFrom`, the
+ * throwaway index starts as a copy of that folder's real one: git then only re-reads files whose size or time
+ * changed, instead of every file in the folder (seconds on a few thousand files, well under one with the copy).
+ */
+async function withIndex<T>(f: (env: Record<string, string>) => Promise<T>, seedFrom?: string): Promise<T> {
   const dir = mkdtempSync(join(tmpdir(), "ck-rewind-"));
   try {
-    return await f({ GIT_INDEX_FILE: join(dir, "index"), ...IDENTITY });
+    const index = join(dir, "index");
+    if (seedFrom) {
+      const real = await run(["git", "rev-parse", "--git-path", "index"], seedFrom);
+      const path = real.code === 0 && real.stdout.trim() ? resolve(seedFrom, real.stdout.trim()) : null;
+      if (path && existsSync(path)) {
+        try {
+          copyFileSync(path, index);
+        } catch {
+          // No copy: git builds the index from scratch, only slower.
+        }
+      }
+    }
+    return await f({ GIT_INDEX_FILE: index, ...IDENTITY });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -73,7 +89,7 @@ export async function takeSnapshot(dir: string, ticketId: string, text: string, 
       const ref = `${REWIND_REFS}/${ticketId}/${at}-${textKey(text)}`;
       const set = await run(["git", "update-ref", ref, commit.stdout.trim()], dir);
       return set.code === 0 ? ref : null;
-    });
+    }, dir);
   } catch {
     return null;
   }
@@ -111,10 +127,12 @@ export type FileChange = { path: string; status: "A" | "D" | "M" };
 export async function changesSince(dir: string, ref: string): Promise<FileChange[] | null> {
   const top = await historyTop(dir);
   if (!top) return null;
+  // A folder inside a bigger repo: only its own files count (the seeded index also holds the rest of the repo).
+  const prefix = (await run(["git", "rev-parse", "--show-prefix"], dir)).stdout.trim();
   return withIndex(async (env) => {
     const tree = await currentTree(dir, env);
     if (!tree) return null;
-    const d = await run(["git", "diff-tree", "-r", "-z", "--name-status", "--no-renames", ref, tree], dir);
+    const d = await run(["git", "diff-tree", "-r", "-z", "--name-status", "--no-renames", ref, tree, ...(prefix ? ["--", prefix] : [])], top);
     if (d.code !== 0) return null;
     const parts = d.stdout.split("\0").filter((x) => x !== "");
     const out: FileChange[] = [];
@@ -123,7 +141,7 @@ export async function changesSince(dir: string, ref: string): Promise<FileChange
       out.push({ path: parts[i + 1], status: s === "A" || s === "D" ? s : "M" });
     }
     return out;
-  });
+  }, dir);
 }
 
 /** Puts the folder's files back as the snapshot has them. Returns the files that changed back. */

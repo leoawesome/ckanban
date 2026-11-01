@@ -40,3 +40,31 @@ test("a copy that runs past its time limit is skipped and leaves nothing behind"
   await Bun.sleep(50);
   expect(await refs(p.path)).toEqual([]);
 });
+
+test("the copy starts from the folder's own index: same files, real index untouched, only the folder's own changes count", async () => {
+  const { makeRepo } = await import("./helpers");
+  const repo = await makeRepo();
+  const { mkdirSync, readFileSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { changesSince } = await import("../src/server/rewind");
+  const sub = join(repo, "app");
+  mkdirSync(sub);
+  writeFileSync(join(sub, "a.txt"), "a\n");
+  writeFileSync(join(repo, "outside.txt"), "o\n");
+  await run(["git", "add", "-A"], repo);
+  await run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-qm", "two"], repo);
+  writeFileSync(join(sub, "a.txt"), "a staged\n");
+  await run(["git", "add", "app/a.txt"], repo);
+  const index = readFileSync(join(repo, ".git", "index"));
+
+  const ref = await takeSnapshot(sub, "t_seed", "hello");
+  expect(ref).not.toBeNull();
+  expect(readFileSync(join(repo, ".git", "index")).equals(index)).toBe(true);
+  expect((await run(["git", "show", `${ref}:app/a.txt`], repo)).stdout).toBe("a staged\n");
+
+  // Claude edits the folder; the user changes and stages a file outside it.
+  writeFileSync(join(sub, "b.txt"), "b\n");
+  writeFileSync(join(repo, "outside.txt"), "changed\n");
+  await run(["git", "add", "outside.txt"], repo);
+  expect(await changesSince(sub, ref!)).toEqual([{ path: "app/b.txt", status: "A" }]);
+});
