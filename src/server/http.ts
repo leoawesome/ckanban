@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, resolve } from "node:path";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "./artifact";
+import { profileFor } from "./cpuprof";
 import { ConflictError, recoveryFor, type Board } from "./board";
 import { FollowUpError } from "./followup";
 import { claudeDefaults, findClaude, listClaudeProjects, listSessions, liveSessionMatch, pickFolder, processCommands } from "./claude";
@@ -683,6 +684,15 @@ export function createServer(deps: ServerDeps) {
         process.env.CKANBAN_CLAUDE_BIN ? which(process.env.CKANBAN_CLAUDE_BIN) : findClaude(), which("git"), which("gh"),
       ]);
       return json({ claude, git, gh, pty: ptySupported() });
+    }
+
+    // A CPU profile of this daemon for N seconds (to find what holds the board up): this Mac's own address only.
+    if (parts[0] === "debug" && parts[1] === "profile" && m === "POST") {
+      const host = req.headers.get("host") ?? "";
+      if (req.headers.get(RUN_HEADER) || !/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) || host.endsWith(`:${deps.remotePort}`)) {
+        throw new HttpError(403, "profiles are taken from this Mac only");
+      }
+      return json(await profileFor(Number(url.searchParams.get("seconds")) || 15, join(store.root, "debug")));
     }
 
     if (parts[0] === "events" && m === "GET") return sse(req);
