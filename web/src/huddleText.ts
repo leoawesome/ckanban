@@ -470,3 +470,17 @@ export function huddleIdle(
 /** A helper's mode in plain words: "tagged" joins when @mentioned, "monitor" reads every message (and costs more). */
 export const MODE_LABEL = { tagged: "When @mentioned", monitor: "Reads everything" } as const;
 export const modeLabel = (mode: string) => MODE_LABEL[mode as keyof typeof MODE_LABEL] ?? mode;
+
+/**
+ * The header's Team button: its screen-reader name carries the counts its badges show ("Team, 1 huddle live, 1 new lesson"),
+ * and its tooltip lists them as sentences.
+ */
+export function teamButtonText(live: number, lessons: number): { label: string; title: string } {
+  const parts: string[] = [];
+  if (live > 0) parts.push(`${live} ${live === 1 ? "huddle" : "huddles"} live`);
+  if (lessons > 0) parts.push(`${lessons} new ${lessons === 1 ? "lesson" : "lessons"}`);
+  return {
+    label: ["Team", ...parts].join(", "),
+    title: ["Teammates, templates and huddles (T)", ...parts].join(". ") + (parts.length ? "." : ""),
+  };
+}

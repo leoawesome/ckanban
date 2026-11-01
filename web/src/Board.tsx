@@ -4,7 +4,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BOARD_COLUMNS, type Huddle, type Job, type Status, type Ticket } from "./api";
 import { Card } from "./Card";
 import { boardColumnOf, groupByColumn } from "./columns";
@@ -13,6 +13,7 @@ import { reducedMotion } from "./motion";
 import { addOnLinks, type AddOnLinks } from "./addOn";
 import { cardFamilies, type CardFamily } from "./family";
 import { cardHuddleBadge } from "./huddleText";
+import { useCardTabs } from "./useCardTabs";
 import { CollapseIcon, PlusIcon, SparkIcon } from "./icons";
 import { useNow } from "./useNow";
 import { usePhone } from "./usePhone";
@@ -59,7 +60,15 @@ interface Props {
 interface CardCtx { huddles: Huddle[]; onOpenHuddle?: (id: string) => void; limit?: { slug: string; onError: (msg: string) => void }; onTag?: (tag: string) => void;
   jobs?: Job[]; onOpenJobs?: (ticketId: string) => void; addOns: Map<string, AddOnLinks>; families: Map<string, CardFamily> }
 
-/** Drag with the mouse, or focus a card: Enter opens it, Space picks it up (arrows move, Space drops, Esc cancels). */
+/** What a screen reader says on every card, after its title and status (also how to move between cards). */
+const CARD_HELP = "Arrow keys or J and K move between cards in a column, H and L between columns. Enter opens the ticket. " +
+  "Tab reaches the card's buttons, and Escape comes back to the card. To move the card, press Space, then the arrow keys, then Space to drop it or Escape to cancel.";
+
+/**
+ * Drag with the mouse, or focus a card: Enter opens it, Space picks it up (arrows move, Space drops, Esc cancels).
+ * One Tab stop per card: Tab enters its chips only once the card has focus (cardTabs.ts). Screen readers hear the
+ * title as its name and the status lines plus CARD_HELP as its description.
+ */
 function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; onOpen: (id: string) => void; queued?: number; held?: boolean; ctx: CardCtx }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: ticket.id,
@@ -69,6 +78,8 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
   const now = useNow();
   // Claude moved it here: the card travels from where it was (arrivals.ts).
   const node = useRef<HTMLDivElement | null>(null);
+  useCardTabs(node);
+  const a11y = useId();
   const column = boardColumnOf(ticket);
   useLayoutEffect(() => {
     playMove(ticket.id, node.current?.querySelector<HTMLElement>(":scope > .card") ?? null);
@@ -80,7 +91,9 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : 1 }}
       {...attributes}
       {...listeners}
-      aria-label={ticket.title}
+      aria-roledescription="card"
+      aria-labelledby={`${a11y}-title`}
+      aria-describedby={[`${a11y}-turn`, `${a11y}-line`, `${a11y}-meta`, attributes["aria-describedby"]].join(" ")}
       data-ticket={ticket.id}
       onKeyDown={(e) => {
         if (e.key === "Enter" && e.target === e.currentTarget) {
@@ -91,7 +104,7 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
         listeners?.onKeyDown?.(e);
       }}
     >
-      <Card ticket={ticket} onClick={() => onOpen(ticket.id)} queued={queued} held={held}
+      <Card a11yId={a11y} ticket={ticket} onClick={() => onOpen(ticket.id)} queued={queued} held={held}
         huddle={cardHuddleBadge(ctx.huddles, ticket.id, now)} onOpenHuddle={ctx.onOpenHuddle} limit={ctx.limit} onTag={ctx.onTag}
         jobs={ctx.jobs} onOpenJobs={ctx.onOpenJobs} addOn={ctx.addOns.get(ticket.id)} family={ctx.families.get(ticket.id)} onOpenTicket={onOpen} />
     </div>
@@ -155,7 +168,7 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   return (
     <section className={`column col-${id} ${claude ? "claude-zone" : ""} ${isOver ? "over" : ""}`} aria-label={label} aria-busy={loading || undefined}>
       <header className="column-head">
-        <span className="column-title">{label}</span>
+        <h2 className="column-title">{label}</h2>
         {/* One badge: total count, turning amber with a dot while tickets wait on you. */}
         {countBadge}
         {claude && <span className="claude-tag" title={CLAUDE_TAG} aria-label={CLAUDE_TAG}><SparkIcon /></span>}
@@ -325,7 +338,7 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
   };
 
   return (
-    <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
+    <DndContext accessibility={{ screenReaderInstructions: { draggable: CARD_HELP } }} sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
       {phone && (
         <nav className="col-jump" aria-label="Columns">
           {BOARD_COLUMNS.map((c, i) => {

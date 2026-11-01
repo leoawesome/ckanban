@@ -35,6 +35,7 @@ import { BoardSwitcher, ShortcutsDialog } from "./Shortcuts";
 import { CommandBar, type CommandAction } from "./CommandBar";
 import { boardDigit, cardDir, isTyping, stepBoard, stepCard, type CardPos } from "./keynav";
 import { KeyHint, useHintReveal } from "./KeyHint";
+import { teamButtonText } from "./huddleText";
 import { TicketDrawer } from "./TicketDrawer";
 import { toast, Toaster } from "./toast";
 import { clearArrival, noteServerMove } from "./arrivals";
@@ -936,7 +937,7 @@ export function App() {
               <ChatIcon /><span className="label">Claude</span><KeyHint keys="C" />
             </button>
             <button className={`btn ghost icon-label${shownItem === "team" ? " on" : ""}`} onClick={() => (learnedNew && shownItem !== "team" ? openDockOn("team", { action: "learned" }) : toggleDock("team"))}
-              aria-pressed={shownItem === "team"} title={`Teammates, templates and huddles (T)${liveHuddles ? `. ${liveHuddles} ${liveHuddles === 1 ? "huddle" : "huddles"} live.` : ""}${learnedNew ? `. ${learnedNew} ${learnedNew === 1 ? "lesson" : "lessons"} saved.` : ""}`} aria-label="Team">
+              aria-pressed={shownItem === "team"} title={teamButtonText(liveHuddles, learnedNew).title} aria-label={teamButtonText(liveHuddles, learnedNew).label}>
               <TeamIcon /><span className="label">Team</span>
               {(liveHuddles > 0 || learnedNew > 0) && (
                 <span className="tab-counts">

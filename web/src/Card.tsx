@@ -155,7 +155,9 @@ function HuddleBadge({ badge, onOpen }: { badge: CardHuddleBadge; onOpen?: (tick
  * limit: the board's slug and error toast, for the usage-limit buttons ("Continue now", auto-continue) and a stalled
  * run's Stop / Keep waiting / Restart.
  */
-export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHuddle, limit, onTag, jobs, onOpenJobs, addOn, family, onOpenTicket }: {
+export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, onOpenHuddle, limit, onTag, jobs, onOpenJobs, addOn, family, onOpenTicket }: {
+  /** Board cards: id prefix of the title (`-title`) and status lines (`-turn`, `-line`, `-meta`) the card is labelled by. */
+  a11yId?: string;
   ticket: Ticket; onClick?: () => void; dragging?: boolean; queued?: number; held?: boolean;
   huddle?: CardHuddleBadge | null; onOpenHuddle?: (ticketId: string) => void;
   limit?: { slug: string; onError: (msg: string) => void };
@@ -246,20 +248,20 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
       className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working ? "is-running" : ""} ${quiet ? "is-quiet" : ""} ${att ? `needs-you att-${att.kind}` : ""}${arrival.ring ? " just-arrived" : ""}`}
       onClick={() => { clearArrival(ticket.id); onClick?.(); }} onMouseEnter={arrival.isNew ? () => clearArrival(ticket.id) : undefined}>
       {att && (
-        <div className={`your-turn att-${att.kind}`}>
+        <div className={`your-turn att-${att.kind}`} id={a11yId && `${a11yId}-turn`}>
           <span className={`yt-dot ${pulse ? "pulse" : ""}`} aria-hidden />
           <span className="yt-label">Your turn</span>
           <span className="yt-why" title={ticket.error ?? undefined}>{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
         </div>
       )}
       <KeyHint inset className="card-keys" keys={ticket.status === "review" ? "↵ open · D done · Space move" : "↵ open · Space move"} />
-      <div className="card-title" title={ticket.title}>
+      <div className="card-title" title={ticket.title} id={a11yId && `${a11yId}-title`}>
         {arrival.isNew && <span className="arrived-dot" role="img" aria-label="New here" title="Claude moved this card here" />}
         {ticket.important && <ImportantStar />}{ticket.title}
       </div>
       {showActivity ? (
         // Keyed on the text, so each new step fades in instead of swapping.
-        <div key={ticket.lastActivity!} className="card-activity" title={step ? `${ticket.lastActivity!}\n${step.quiet ? "No new step" : "Last step"} ${step.text} ago` : ticket.lastActivity!}>
+        <div key={ticket.lastActivity!} id={a11yId && `${a11yId}-line`} className="card-activity" title={step ? `${ticket.lastActivity!}\n${step.quiet ? "No new step" : "Last step"} ${step.text} ago` : ticket.lastActivity!}>
           <span className="activity-text">{ticket.lastActivity}</span>
           {step && <span className={`step-age${step.quiet ? " quiet" : ""}`}>{step.quiet ? ` · quiet for ${step.text}` : ` · ${step.text}`}</span>}
         </div>
@@ -270,7 +272,7 @@ export function Card({ ticket, onClick, dragging, queued, held, huddle, onOpenHu
         </div>
       )}
       {(badge || finish || signInChip || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.devices || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp) && (
-        <div className="card-meta">
+        <div className="card-meta" id={a11yId && `${a11yId}-meta`}>
           {ticket.plan && ticket.plan.state !== "done" && (
             <span className={`badge plan ${ticket.plan.state}`} title="This ticket runs a plan of child tickets">
               Plan {ticket.plan.state === "finishing" ? "final check" : ticket.plan.state}
