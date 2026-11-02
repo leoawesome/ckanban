@@ -4,6 +4,7 @@
 // and its snapshot worktree is removed, so nothing is copied.
 import { readFileSync, statSync } from "node:fs";
 import { trackedInterval } from "./lag";
+import { SAFETY_PASS_MS, type SessionChanges } from "./changefeed";
 import type { Bus } from "./events";
 import { HuddleError, type Huddles } from "./huddle";
 import { USER_HANDLE } from "./huddle-roster";
@@ -254,19 +255,44 @@ export function pollHuddleSessions(store: Store, bus: Bus, version: (sessionId: 
   for (const k of state.keys()) if (!seen.has(k)) state.delete(k);
 }
 
-/** Polls huddle agents' session files (every 2 s, like the ticket session watcher); the event is the viewer's cue to refetch. */
-export function startHuddleSessionWatcher(store: Store, bus: Bus, version: (sessionId: string) => string | null, intervalMs = 2000): () => void {
+/**
+ * Polls huddle agents' session files (every 2 s, like the ticket session watcher); the event is the viewer's cue to
+ * refetch. With a live session feed a pass runs only after a huddle write or a change to one of the watched sessions,
+ * plus once every safetyMs for missed changes.
+ */
+export function startHuddleSessionWatcher(store: Store, bus: Bus, version: (sessionId: string) => string | null, intervalMs = 2000, o: { feed?: SessionChanges; safetyMs?: number; now?: () => number } = {}): () => void {
   const state = new Map<string, string>();
+  const now = o.now ?? Date.now;
+  const safetyMs = o.safetyMs ?? SAFETY_PASS_MS;
   let first = true;
+  let dirty = true;
+  let lastPass = 0;
+  // The agent sessions the last pass looked at: a change to one of them is worth a pass.
+  let watched = new Set<string>();
+  const stopStore = store.onChange((c) => {
+    if (c.kind === "huddle") dirty = true;
+  });
+  const stopFeed = o.feed?.subscribe((c) => {
+    if (!c || watched.has(c.sessionId)) dirty = true;
+  });
   const tick = () => {
+    if (o.feed?.live && !dirty && now() - lastPass < safetyMs) return;
+    dirty = false;
+    lastPass = now();
+    const seen = new Set<string>();
     try {
-      pollHuddleSessions(store, bus, version, state, first);
+      pollHuddleSessions(store, bus, (id) => (seen.add(id), version(id)), state, first);
     } catch (e) {
       console.error("huddle session watcher", e);
     }
+    watched = seen;
     first = false;
   };
   tick();
   const timer = trackedInterval("huddle-session-watcher", tick, intervalMs);
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    stopStore();
+    stopFeed?.();
+  };
 }

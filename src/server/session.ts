@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import { withoutAttachmentNote } from "./attachments";
 import { commandText, localCommandOutput, TERMINAL_COMMANDS } from "./commands";
 import type { Bus } from "./events";
+import { SAFETY_PASS_MS, type SessionChanges } from "./changefeed";
 import { proposedBudget, rosterError, type RosterEntry } from "./huddle-roster";
 import { mockupName, stripMockups } from "./mockups";
 import { parseResult } from "./result";
@@ -315,7 +316,7 @@ interface Dirs {
   configDir?: string;
 }
 
-function projectsDir(d: Dirs): string {
+export function projectsDir(d: Dirs = {}): string {
   return join(d.configDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
 }
 
@@ -782,6 +783,8 @@ const MISSING_GRACE_MS = 5 * 60_000;
 const MISSING_RETRY_MS = 60_000;
 /** How long one scan of the projects folder answers lookups (a new run's file is found on the next poll). */
 const INDEX_MS = 1_000;
+/** The same while the session feed watches the folder: it adds new files to the scan, this is only a safety net. */
+const FED_INDEX_MS = 60_000;
 /** How soon new summaries are written to the summary cache file. */
 const SUMMARY_FLUSH_MS = 2_000;
 
@@ -839,6 +842,8 @@ export class SessionCache {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   /** The warm-ups started so far (warm()), one after another. */
   private warming: Promise<void> = Promise.resolve();
+  /** The session feed keeping the scan current (follow()), so it isn't redone every second while a session is missing. */
+  private feed: SessionChanges | null = null;
 
   constructor(private dirs: Dirs = {}, private now: () => number = Date.now, private summaryFile?: string) {}
 
@@ -874,20 +879,39 @@ export class SessionCache {
     }
   }
 
+  /** Keeps the scan of the projects folder current from the feed's new transcripts instead of rescanning it every second. */
+  follow(feed: SessionChanges): () => void {
+    this.feed = feed;
+    const stop = feed.subscribe((c) => {
+      if (!c?.file) return;
+      this.index?.files.set(c.sessionId, c.file);
+      this.missing.delete(c.sessionId);
+    });
+    return () => {
+      stop();
+      if (this.feed === feed) this.feed = null;
+    };
+  }
+
   private locate(sessionId: string): string | null {
     const known = this.files.get(sessionId);
     if (known) {
       try {
         statSync(known);
         return known;
-      } catch {}
+      } catch {
+        // Gone: the scan still lists it until its next refresh (up to a minute while the feed runs).
+        this.files.delete(sessionId);
+        if (this.index?.files.get(sessionId) === known) this.index.files.delete(sessionId);
+      }
     }
     // A search stats one path per projects folder (often 1000+), and old tickets' transcripts get deleted. A new run's
     // file shows up within seconds, so only one missing for a while is searched less often.
     const now = this.now();
     const miss = this.missing.get(sessionId);
     if (miss && now - miss.since >= MISSING_GRACE_MS && now - miss.at < MISSING_RETRY_MS) return null;
-    if (!this.index || now - this.index.at >= INDEX_MS || now < this.index.at) this.index = { at: now, files: scanSessionFiles(this.dirs) };
+    const indexMs = this.feed?.live ? FED_INDEX_MS : INDEX_MS;
+    if (!this.index || now - this.index.at >= indexMs || now < this.index.at) this.index = { at: now, files: scanSessionFiles(this.dirs) };
     const f = this.index.files.get(sessionId) ?? null;
     if (f) {
       this.files.set(sessionId, f);
@@ -1081,10 +1105,13 @@ export class SessionCache {
  * false it only notes the versions and readies the summaries (the watcher's first pass: nothing changed yet for pages
  * that load after it, and their first load finds the summaries ready).
  */
-export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true): void {
+export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true, seen?: (sessionId: string | null, key: string) => void): void {
   const live = new Set<string>();
   for (const p of store.listProfiles()) {
-    for (const t of store.listTickets(p.slug)) pollOne(bus, cache, state, live, p.slug, t, emit);
+    for (const t of store.listTickets(p.slug)) {
+      seen?.(t.sessionId, `${p.slug}/${t.id}`);
+      pollOne(bus, cache, state, live, p.slug, t, emit);
+    }
   }
   for (const k of state.keys()) if (!live.has(k)) state.delete(k);
 }
@@ -1119,8 +1146,58 @@ export async function primeSessions(store: Store, cache: SessionCache, state: Ma
   }
 }
 
-export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache, intervalMs = 2000): () => void {
+/**
+ * Announces ticket sessions that changed. With a session feed watching Claude's projects folder, a pass looks only at
+ * the tickets the Store just wrote and the sessions the feed reported, plus a full pass every safetyMs for missed
+ * changes (outside edits to ticket files, a dropped event). Without a live feed every pass is a full one.
+ */
+export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache, intervalMs = 2000, o: { feed?: SessionChanges; safetyMs?: number; now?: () => number } = {}): () => void {
   const state = new Map<string, string>();
+  const now = o.now ?? Date.now;
+  const safetyMs = o.safetyMs ?? SAFETY_PASS_MS;
+  // Changes since the last pass: tickets by "slug/id", sessions by id; unknown when the feed couldn't say what changed.
+  const tickets = new Set<string>();
+  const sessions = new Set<string>();
+  let unknown = false;
+  // Ticket keys by session id, from the last full pass and the Store's writes since.
+  const owners = new Map<string, Set<string>>();
+  const own = (sessionId: string | null | undefined, key: string) => {
+    if (!sessionId) return;
+    let keys = owners.get(sessionId);
+    if (!keys) owners.set(sessionId, (keys = new Set()));
+    keys.add(key);
+  };
+  const stopStore = store.onChange((c) => {
+    if (c.kind === "ticket") tickets.add(`${c.slug}/${c.id}`);
+  });
+  const stopFeed = o.feed?.subscribe((c) => (c ? sessions.add(c.sessionId) : (unknown = true)));
+  // The first timer pass is a full one: it learns which tickets own which sessions.
+  let lastFull = -Infinity;
+  const full = (emit: boolean) => {
+    tickets.clear();
+    sessions.clear();
+    unknown = false;
+    owners.clear();
+    lastFull = now();
+    pollSessions(store, bus, cache, state, emit, own);
+  };
+  const changed = () => {
+    const keys = new Set(tickets);
+    for (const id of sessions) for (const k of owners.get(id) ?? []) keys.add(k);
+    tickets.clear();
+    sessions.clear();
+    for (const key of keys) {
+      const i = key.indexOf("/");
+      const slug = key.slice(0, i);
+      const t = store.getTicket(slug, key.slice(i + 1));
+      if (!t?.sessionId) {
+        state.delete(key);
+        continue;
+      }
+      own(t.sessionId, key);
+      pollOne(bus, cache, state, new Set(), slug, t, true);
+    }
+  };
   // The first pass after a start announced every ticket's session (hundreds of events, each built for every open tab:
   // seconds right after a restart). Pages load what they need when they (re)connect, and the notifier takes stock at
   // its start, so the first pass only takes stock. It starts at once (pages and the notifier wait for it through
@@ -1133,11 +1210,16 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
   const timer = trackedInterval("session-watcher", () => {
     if (priming) return;
     try {
-      pollSessions(store, bus, cache, state, primed);
+      if (!primed || !o.feed?.live || unknown || now() - lastFull >= safetyMs) full(primed);
+      else changed();
       primed = true;
     } catch (e) {
       console.error("session watcher", e);
     }
   }, intervalMs);
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    stopStore();
+    stopFeed?.();
+  };
 }

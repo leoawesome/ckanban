@@ -24,6 +24,9 @@ export function defaultRoot(): string {
   return process.env.CKANBAN_HOME ?? join(homedir(), ".claude-kanban");
 }
 
+/** One of the Store's own writes (Store.onChange). */
+export type StoreChange = { kind: "ticket" | "huddle" | "schedule" | "job"; slug: string; id: string };
+
 export function atomicWrite(file: string, content: string) {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.tmp-${newId()}`;
@@ -137,6 +140,7 @@ export class Store {
    */
   private boards = new Map<string, { dirMtime: number; checkedAt: number; ids: Set<string>; list: readonly Ticket[] | null; version: number }>();
   private now: () => number;
+  private changeFns = new Set<(c: StoreChange) => void>();
   constructor(public readonly root: string, opts: { now?: () => number } = {}) {
     mkdirSync(join(root, "profiles"), { recursive: true });
     this.now = opts.now ?? Date.now;
@@ -287,6 +291,23 @@ export class Store {
       } catch {}
     }
     this.touchBoard(slug);
+    this.changed({ kind: "ticket", slug, id });
+  }
+
+  /** Calls fn after each of this Store's own writes to a ticket, huddle, schedule or job (not outside edits). */
+  onChange(fn: (c: StoreChange) => void): () => void {
+    this.changeFns.add(fn);
+    return () => this.changeFns.delete(fn);
+  }
+
+  private changed(c: StoreChange): void {
+    for (const fn of this.changeFns) {
+      try {
+        fn(c);
+      } catch (e) {
+        console.error("store change listener", e);
+      }
+    }
   }
 
   private touchBoard(slug: string): void {
@@ -503,11 +524,13 @@ export class Store {
 
   saveSchedule(slug: string, s: Schedule): void {
     atomicWrite(join(this.schedulesDir(slug), `${s.id}.json`), JSON.stringify(s, null, 2) + "\n");
+    this.changed({ kind: "schedule", slug, id: s.id });
   }
 
   deleteSchedule(slug: string, id: string): void {
     rmSync(join(this.schedulesDir(slug), `${id}.json`), { force: true });
     rmSync(join(this.schedulesDir(slug), `${id}.history.jsonl`), { force: true });
+    this.changed({ kind: "schedule", slug, id });
   }
 
   appendScheduleHistory(slug: string, id: string, e: ScheduleHistoryEntry): void {
@@ -609,6 +632,7 @@ export class Store {
 
   saveJob(slug: string, j: Job): void {
     atomicWrite(join(this.jobsDir(slug), `${j.id}.json`), JSON.stringify(j, null, 2) + "\n");
+    this.changed({ kind: "job", slug, id: j.id });
   }
 
   /** Huddle presets at one level: a board's own (slug), or the global ones every board gets (slug null). Merge with mergePresets. */
@@ -734,6 +758,7 @@ export class Store {
   saveHuddle(slug: string, h: Huddle): void {
     atomicWrite(join(this.huddlesDir(slug), `${h.id}.json`), JSON.stringify(h, null, 2) + "\n");
     this.huddleCache.delete(slug);
+    this.changed({ kind: "huddle", slug, id: h.id });
   }
 
   /** Identifies one version of the huddle file (inode and mtime), or null if it is gone: tells edits from outside. */

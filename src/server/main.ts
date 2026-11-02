@@ -24,7 +24,8 @@ import { JobRunner } from "./jobs";
 import { FollowUpWatcher } from "./followup";
 import { LimitWatcher } from "./limit";
 import { startHuddleSessionWatcher } from "./huddle-session";
-import { SessionCache, startSessionWatcher } from "./session";
+import { projectsDir, SessionCache, startSessionWatcher } from "./session";
+import { SessionFeed } from "./changefeed";
 import { ShellManager } from "./shell";
 import { TerminalWatcher } from "./terminals";
 import { defaultRoot, Store } from "./store";
@@ -41,6 +42,10 @@ export async function startDaemon(): Promise<void> {
   const port = Number(process.env.CKANBAN_PORT) || config.port;
   const bus = new Bus();
   const sessions = new SessionCache({}, Date.now, join(store.root, "session-summaries.json"));
+  // One watch on Claude's projects folder: watchers look only at sessions that changed (they poll if it can't start).
+  const feed = new SessionFeed(projectsDir());
+  if (!feed.start()) console.warn("session feed: can't watch Claude's projects folder; watchers poll every ticket");
+  const stopFollow = sessions.follow(feed);
   const shells = new ShellManager();
   void cleanupTmuxLeftovers();
   const board = new Board(store, bus, {
@@ -63,7 +68,7 @@ export async function startDaemon(): Promise<void> {
   const webDir = join(import.meta.dir, "..", "..", "web", "dist");
   const embedded = Object.keys(WEB_ASSETS).length > 0;
   if (!embedded && !existsSync(join(webDir, "index.html"))) console.warn("web UI not built yet: run `bun run build:web`");
-  const terminals = new TerminalWatcher(store, bus, sessions);
+  const terminals = new TerminalWatcher(store, bus, sessions, undefined, feed);
   const mcp = new McpManager(bus, { claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude", seenFile: join(store.root, "mcp-seen.json") });
   const scheduler = new Scheduler(board, store, bus);
   const jobs = new JobRunner(board, store, bus);
@@ -105,8 +110,8 @@ export async function startDaemon(): Promise<void> {
   const stopLearner = learner.start();
   const stopLimits = new LimitWatcher(board, store).start();
   const stopFollowUps = new FollowUpWatcher(board, store).start();
-  const stopWatcher = startSessionWatcher(store, bus, sessions);
-  const stopHuddleWatcher = startHuddleSessionWatcher(store, bus, (id) => sessions.version(id));
+  const stopWatcher = startSessionWatcher(store, bus, sessions, 2000, { feed });
+  const stopHuddleWatcher = startHuddleSessionWatcher(store, bus, (id) => sessions.version(id), 2000, { feed });
   const stopTerminals = terminals.start();
   const stopMcp = mcp.start();
   // After recover(): what already waits when the daemon starts doesn't notify again.
@@ -125,6 +130,8 @@ export async function startDaemon(): Promise<void> {
     stopWatcher();
     sessions.flushSummaries();
     stopHuddleWatcher();
+    stopFollow();
+    feed.stop();
     stopTerminals();
     shells.killAll();
     stopMcp();

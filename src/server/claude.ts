@@ -144,9 +144,14 @@ export function listSessions(projectPath: string, d: Dirs = {}, limit = 50): Cla
 }
 
 /** True if any process command line looks like a claude CLI resuming this session (by id or title). */
+/** A process command line that runs Claude Code. */
+export function isClaudeCommand(cmd: string): boolean {
+  return /(^|[\s/])claude(\s|$)|claude(-code)?\/cli\.js/.test(cmd);
+}
+
 export function liveSessionMatch(commands: string[], s: { id: string; title: string | null }): boolean {
   return commands.some((cmd) => {
-    if (!/(^|[\s/])claude(\s|$)|claude(-code)?\/cli\.js/.test(cmd)) return false;
+    if (!isClaudeCommand(cmd)) return false;
     if (cmd.includes(s.id)) return true;
     return !!s.title && cmd.includes(s.title);
   });
