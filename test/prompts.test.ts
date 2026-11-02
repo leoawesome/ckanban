@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { extractFinalText, summarizeEvent } from "../src/server/activity";
-import { chatPrompt, firstRunPrompt, freshSessionPrompt, orchestratorPrompt, planningCommand, planningPrompt, resumeCommand, resumePrompt, WRITING_RULE } from "../src/server/prompts";
+import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, LENGTH_RULE, orchestratorPrompt, planningCommand, planningPrompt, QUESTIONS_FORMAT, resumeCommand, resumePrompt, WRITING_RULE } from "../src/server/prompts";
 import { parseResult } from "../src/server/result";
 import type { Ticket } from "../src/server/types";
 
@@ -158,12 +158,36 @@ test("planning chats reach artifacts through the MCP tools, not the Bash helper 
   expect(chatPrompt({ ...ticket, mode: "auto" } as Ticket, "", "refine", "/o")).not.toContain("read_artifact");
 });
 
-test("run prompts and planning chats ask for plain, filler-free user-facing text", () => {
+test("every prompt the user reads replies from asks for short, plain, filler-free text", () => {
   expect(WRITING_RULE).toContain("No AI filler (crucial, leverage, ensure, seamless), no em dashes, arrows or made-up abbreviations");
+  expect(WRITING_RULE).toContain(LENGTH_RULE);
+  expect(LENGTH_RULE).toContain("Most messages are one or two sentences, and two short paragraphs is already long");
+  expect(LENGTH_RULE).toContain("Lead with the answer");
+  expect(LENGTH_RULE).toContain("Short means fewer ideas, not clipped ones");
+  expect(LENGTH_RULE).toContain("drafts you write for them");
+  expect(WRITING_RULE).toContain("Proposed ticket descriptions are the exception to the length");
   const fresh = { repo: "remote" as const, linked: false, baseBranch: "main", lastResult: null, comments: [], outputDir: "/o" };
-  for (const p of [firstRunPrompt(ticket, { repo: "remote" as const, outputDir: "/o" }), resumePrompt(ticket, [], "/o"), chatPrompt(ticket, "hi", "act", "/o"), freshSessionPrompt(ticket, fresh), chatPrompt(ticket, "hi", "refine", "/o")]) {
+  const followUp = { followUp: { setAt: "2026-11-01T10:00:00.000Z", dueAt: "2026-11-02T10:00:00.000Z", note: "check the reply" }, followUpLog: [], seenAt: null } as unknown as Parameters<typeof followUpWakePrompt>[0];
+  for (const p of [
+    firstRunPrompt(ticket, { repo: "remote" as const, outputDir: "/o" }),
+    resumePrompt(ticket, [], "/o"),
+    chatPrompt(ticket, "hi", "act", "/o"),
+    freshSessionPrompt(ticket, fresh),
+    chatPrompt(ticket, "hi", "refine", "/o"),
+    planningPrompt(ticket, "/tmp/t.md"),
+    orchestratorPrompt(ticket, { kind: "event", events: ["a"], table: "-", board: "b", outputDir: "/o" }),
+    orchestratorPrompt(ticket, { kind: "final", events: [], table: "-", board: "b", outputDir: "/o" }),
+    followUpWakePrompt(followUp, new Date("2026-11-02T10:00:00.000Z")),
+  ]) {
     expect(p).toContain(WRITING_RULE);
   }
+});
+
+test("summaries, report openings and question forms are short", () => {
+  const p = firstRunPrompt(ticket, { repo: "remote" as const, outputDir: "/o" });
+  expect(p).toContain("<1-2 sentence summary for the user, outcome first>");
+  expect(p).toContain("Start with a TL;DR of one or two sentences");
+  expect(QUESTIONS_FORMAT).toContain("each option description to a few words");
 });
 
 test("runs copy files they ask the user to review into Outputs; every prompt asks for paths in backticks", () => {
@@ -179,7 +203,7 @@ test("runs copy files they ask the user to review into Outputs; every prompt ask
 
 test("planning chats play back the goal and shape tickets like an expert", () => {
   const p = chatPrompt({ ...ticket, mode: "auto" } as Ticket, "", "refine", "/o");
-  expect(p).toContain("Before your first questions or proposal, restate in 1-2 sentences what the user is really after");
+  expect(p).toContain("Before your first questions or proposal, restate in one sentence what the user is really after");
   expect(p).toContain("drop constraints that don't serve the goal, leave the user's choices open");
   expect(p).toContain("one outside check that the result is right in Acceptance criteria");
   expect(p).toContain("Don't narrate this framing");
