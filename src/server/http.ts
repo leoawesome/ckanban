@@ -32,7 +32,7 @@ import {
   AttachmentError, attachmentFile, attachmentType, cleanFileName, IMAGE_TYPES, opensInline, saveAttachment, UNSUPPORTED, uploadExt,
 } from "./attachments";
 import { FileError, findInRoots, listDir, openWithSystem, readFileForView, type FileRoot } from "./files";
-import { McpError, McpManager } from "./mcp";
+import { boardToolsSource, McpError, McpManager } from "./mcp";
 import { MessageError, Notifier } from "./notify";
 import { DeviceError, TAKE_WAIT_MS, type DeviceUser } from "./devices";
 import { PushService } from "./push";
@@ -266,7 +266,7 @@ export function createServer(deps: ServerDeps) {
   const huddleSessions = new HuddleSessionCache();
   const updates = deps.updates ?? new UpdateChecker();
   const shells = deps.shells ?? new ShellManager();
-  const mcp = deps.mcp ?? new McpManager(bus, { claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude" });
+  const mcp = deps.mcp ?? new McpManager(bus, { claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude", boards: boardToolsSource(store) });
   const scheduler = deps.scheduler ?? new Scheduler(board, store, bus);
   const jobs = deps.jobs ?? new JobRunner(board, store, bus);
   // The address a service sends the user back to after signing in: always localhost, on this board's port.
@@ -772,7 +772,20 @@ export function createServer(deps: ServerDeps) {
         return json(mcp.state(), 202);
       }
       if (parts.length === 2 && m === "DELETE") {
-        await mcp.remove(name);
+        await mcp.remove(name, url.searchParams.get("board") ?? undefined);
+        return json(mcp.state());
+      }
+      // Move between "All projects" and "Only this board": { to: "board" | "all", board: <slug> }.
+      if (parts.length === 3 && m === "POST" && parts[2] === "move") {
+        const b = (await body(req)) ?? {};
+        const board = String(b.board ?? "");
+        if (b.to === "board") await mcp.moveToBoard(name, board);
+        else if (b.to === "all") await mcp.moveToUser(name, board);
+        else throw new HttpError(400, "to must be board or all");
+        return json(mcp.state());
+      }
+      if (parts.length === 3 && m === "POST" && parts[2] === "retry-move") {
+        await mcp.retryMove(name);
         return json(mcp.state());
       }
       if (parts.length === 3 && m === "POST" && parts[2] === "login") {
@@ -796,7 +809,7 @@ export function createServer(deps: ServerDeps) {
         if (!s) throw new HttpError(502, `couldn't check ${name}; try Refresh`);
         return json(mcp.state());
       }
-      if (parts.length === 3 && m === "GET" && parts[2] === "config") return json(mcp.config(name));
+      if (parts.length === 3 && m === "GET" && parts[2] === "config") return json(mcp.config(name, url.searchParams.get("board") ?? undefined));
       if (parts.length === 2 && m === "PUT") {
         await mcp.update(name, await body(req));
         return json(mcp.state());

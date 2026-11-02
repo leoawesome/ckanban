@@ -17,10 +17,13 @@ export const SERVER_NAME = "ckanban";
 /**
  * Inline `--mcp-config` JSON with the board's MCP server (`ckanban mcp`), so a session has the board tools without
  * registering ckanban with Claude Code first. Claude Code lets it replace a user-scope `ckanban` of the same name.
+ * `boardTools`: the board's "only this board" tools (see board-tools.ts), merged in; ckanban always wins its name.
+ * The result can hold secrets (headers, env values): never log it.
  */
-export function mcpConfig(serverArgv: string[] = [...helperArgv(), "mcp"]): string {
+export function mcpConfig(serverArgv: string[] = [...helperArgv(), "mcp"], boardTools: Record<string, unknown> = {}): string {
   const [command, ...args] = serverArgv;
-  return JSON.stringify({ mcpServers: { [SERVER_NAME]: { command, args } } });
+  const { [SERVER_NAME]: _own, ...extra } = boardTools;
+  return JSON.stringify({ mcpServers: { ...extra, [SERVER_NAME]: { command, args } } });
 }
 
 export interface AgentStatus {

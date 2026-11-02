@@ -205,3 +205,16 @@ test("chat in Review acts right away: In Progress then back to Review", async ()
   expect(call.args).not.toContain("--disallowedTools");
   expect(call.prompt.startsWith("Please also add tests")).toBe(true);
 });
+
+test("a board's runs get its only-this-board tools next to the board's own tool; other boards' don't", async () => {
+  await setup();
+  store.saveBoardTools("p", { probe: { type: "stdio", command: "/usr/bin/true", args: [] } });
+  store.saveBoardTools("other", { elsewhere: { type: "stdio", command: "/usr/bin/false", args: [] } });
+  const t = await board.createTicket("p", { title: "Tools", body: "x", status: "backlog" });
+  await board.chat("p", t.id, "hi");
+  await board.whenIdle();
+  const call = readArgs()[0];
+  const servers = JSON.parse(call.args[call.args.indexOf("--mcp-config") + 1]).mcpServers;
+  expect(Object.keys(servers).sort()).toEqual(["ckanban", "probe"]);
+  expect(servers.probe).toEqual({ type: "stdio", command: "/usr/bin/true", args: [] });
+});

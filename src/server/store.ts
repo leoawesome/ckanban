@@ -11,6 +11,7 @@ import { cleanPresets, type HuddlePreset } from "./huddle-presets";
 import { cleanTemplates, type HuddleTemplate } from "./huddle-templates";
 import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "./huddle-notes";
 import { newId, newTicketId, nowIso } from "./util";
+import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "./board-tools";
 
 /** Dependency, build and version-history folders: never deliverables, and they can hold tens of thousands of files. */
 const SKIPPED_OUTPUT_DIRS = new Set(["node_modules", ".git", ".next", ".nuxt", ".turbo", ".cache", ".venv", "venv", "__pycache__"]);
@@ -189,6 +190,20 @@ export class Store {
 
   saveProfile(p: Profile): void {
     atomicWrite(join(this.profileDir(p.slug), "profile.json"), JSON.stringify(p, null, 2) + "\n");
+  }
+
+  /** The board's "only this board" tools file (see board-tools.ts). Deleted with the board. */
+  boardToolsPath(slug: string): string {
+    return join(this.profileDir(slug), BOARD_TOOLS_FILE);
+  }
+
+  /** The board's "only this board" tools, as `mcpServers` entries. Can hold secrets: never log them. */
+  boardTools(slug: string): Record<string, ToolEntry> {
+    return readBoardTools(this.boardToolsPath(slug));
+  }
+
+  saveBoardTools(slug: string, servers: Record<string, ToolEntry>): void {
+    writeBoardTools(this.boardToolsPath(slug), servers);
   }
 
   deleteProfile(slug: string): void {

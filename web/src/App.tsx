@@ -1183,6 +1183,7 @@ export function App() {
 
       {connections && (
         <ConnectionsDialog state={mcp} refreshKey={autoTick} onClose={() => setConnections(false)}
+          board={profile ? { slug: profile.slug, name: profile.name } : null}
           onRunInTerminal={profile && health?.pty !== false ? (cmd) => { setConnections(false); runInTerminal(cmd); } : undefined} />
       )}
       {shortcuts && <ShortcutsDialog onClose={() => setShortcuts(false)} />}

@@ -656,7 +656,8 @@ export interface ClaudeSession {
 }
 
 export type McpStatus = "connected" | "needs_auth" | "failed" | "pending" | "unknown";
-export type McpScope = "user" | "local" | "project" | "claude.ai" | "other";
+/** "board": an "only this board" tool, kept by the board, not in Claude's own config. */
+export type McpScope = "user" | "local" | "project" | "claude.ai" | "board" | "other";
 export type McpTransport = "stdio" | "http" | "sse";
 
 export interface McpServer {
@@ -675,6 +676,12 @@ export interface McpServer {
     /** Takes the address the sign-in page ended on (signed in on another device). */
     canPaste: boolean;
   } | null;
+  /** Boards that have it as an "only this board" tool (empty: none). */
+  boards: { slug: string; name: string }[];
+  /** Whether it can move between "All projects" and "Only this board", and why not. */
+  move: { can: boolean; why: string | null };
+  /** A move's second step failed: the tool is in both places until Try again. */
+  leftover: string | null;
 }
 
 export interface McpState {
@@ -693,6 +700,8 @@ export interface McpAddInput {
   url?: string;
   env?: { key: string; value: string }[];
   headers?: { name: string; value: string }[];
+  /** Add or edit it as an "only this board" tool on this board (slug). Missing: all projects. */
+  board?: string;
 }
 
 /** An outside agent that can use the board through `ckanban mcp`. */
@@ -1551,13 +1560,15 @@ export const api = {
   mcp: () => req<McpState>("GET", "/api/mcp"),
   mcpRefresh: () => req<McpState>("POST", "/api/mcp/refresh"),
   mcpAdd: (input: McpAddInput) => req<McpState>("POST", "/api/mcp", input),
-  mcpRemove: (name: string) => req<McpState>("DELETE", `/api/mcp/${encodeURIComponent(name)}`),
+  mcpRemove: (name: string, board?: string) => req<McpState>("DELETE", `/api/mcp/${encodeURIComponent(name)}${board ? `?board=${encodeURIComponent(board)}` : ""}`),
+  mcpMove: (name: string, to: "board" | "all", board: string) => req<McpState>("POST", `/api/mcp/${encodeURIComponent(name)}/move`, { to, board }),
+  mcpRetryMove: (name: string) => req<McpState>("POST", `/api/mcp/${encodeURIComponent(name)}/retry-move`),
   mcpLogin: (name: string) => req<McpState>("POST", `/api/mcp/${encodeURIComponent(name)}/login`),
   mcpLoginPaste: (name: string, text: string) => req<McpState>("POST", `/api/mcp/${encodeURIComponent(name)}/login-paste`, { text }),
   mcpCancelLogin: (name: string) => req<McpState>("POST", `/api/mcp/${encodeURIComponent(name)}/cancel-login`),
   mcpLogout: (name: string) => req<McpState>("POST", `/api/mcp/${encodeURIComponent(name)}/logout`),
   mcpRecheck: (name: string) => req<McpState>("POST", `/api/mcp/${encodeURIComponent(name)}/recheck`),
-  mcpConfig: (name: string) => req<McpConfig>("GET", `/api/mcp/${encodeURIComponent(name)}/config`),
+  mcpConfig: (name: string, board?: string) => req<McpConfig>("GET", `/api/mcp/${encodeURIComponent(name)}/config${board ? `?board=${encodeURIComponent(board)}` : ""}`),
   mcpUpdate: (name: string, input: McpAddInput) => req<McpState>("PUT", `/api/mcp/${encodeURIComponent(name)}`, input),
   agents: () => req<AgentStatus[]>("GET", "/api/agents"),
   agentInstall: (id: AgentStatus["id"]) => req<AgentStatus[]>("POST", `/api/agents/${id}/install`),

@@ -9,7 +9,7 @@ import { timeAgo } from "./time";
 import { useNow } from "./useNow";
 
 const SCOPE_LABEL: Record<McpServer["scope"], string> = {
-  user: "user", local: "local", project: "project", "claude.ai": "claude.ai", other: "other",
+  user: "user", local: "local", project: "project", "claude.ai": "claude.ai", board: "board", other: "other",
 };
 
 export function canLogin(s: McpServer): boolean {
@@ -35,12 +35,22 @@ export function splitArgs(line: string): string[] {
 }
 
 const SCOPE_HELP: Record<McpServer["scope"], string> = {
-  user: "Your user config (~/.claude.json): every Claude session can use it.",
-  local: "Local to your home folder's project entry in ~/.claude.json. Edit or remove it with `claude mcp` there.",
-  project: "From a .mcp.json file. Edit or remove it in that file.",
-  "claude.ai": "A claude.ai connector. Add or remove it in claude.ai → Settings → Connectors.",
-  other: "From a plugin or another config. Manage it where it's defined.",
+  user: "On for all projects: every Claude session on this Mac can use it.",
+  local: "Set up by hand for your home folder only. Change it in Claude Code there.",
+  project: "Set up in a settings file in a project folder. Change it in that file.",
+  "claude.ai": "A claude.ai connector. Add or remove it in claude.ai, Settings, Connectors.",
+  board: "Only on the boards named here: only their Claude runs can use it.",
+  other: "Comes from a plugin or other settings. Change it where it was set up.",
 };
+
+/** Shown once after any change: runs already going keep the tools they started with. */
+const CHANGES_APPLY = "Changes apply to Claude runs that start from now on.";
+
+type BoardRef = { slug: string; name: string };
+
+/** The board a board-only tool's Edit / Remove / move acts on: this board if it has it, else the first one. */
+const targetBoard = (s: McpServer, board: BoardRef | null | undefined) =>
+  (board && s.boards.some((b) => b.slug === board.slug) ? board.slug : s.boards[0]?.slug) ?? "";
 
 const CLAUDE_AI_CONNECTORS = "https://claude.ai/settings/connectors";
 
@@ -73,8 +83,10 @@ export function needsAttention(s: McpServer): boolean {
  * Claude Code MCP servers, like `/mcp`: status, sign in / out, add, edit and remove (user scope), on a "For Claude" tab.
  * A "For automations" tab shows the board's own pass per service (see automations.ts boardCell).
  */
-export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTerminal }: {
+export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTerminal, board: thisBoard }: {
   state: McpState | null;
+  /** The board the window was opened from: "Only this board" puts tools there. Missing: no board-only choice. */
+  board?: BoardRef | null;
   /** Bumps when the board's passes or automations changed. */
   refreshKey?: number;
   onClose: () => void;
@@ -99,6 +111,8 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
   const [addingPass, setAddingPass] = useState(false);
   const [removePass, setRemovePass] = useState<Pass | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // A tool was added, edited, removed or moved: say once that running Claude sessions keep what they had.
+  const [changed, setChanged] = useState(false);
   // Tabs opened on a Sign in click, waiting for the sign-in link (opened in the click so it isn't blocked as a popup).
   // `seen`: the server reported the sign-in as started, so its end without a link means the tab isn't needed.
   const signInTabs = useRef(new Map<string, { win: Window | null; seen: boolean }>());
@@ -127,11 +141,12 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
     }
   }, [state]);
 
-  const act = async (key: string, fn: () => Promise<unknown>) => {
+  const act = async (key: string, fn: () => Promise<unknown>, changes = false) => {
     setBusy(key);
     setErr(null);
     try {
       await fn();
+      if (changes) setChanged(true);
     } catch (e: any) {
       setErr(e.message);
     } finally {
@@ -183,8 +198,11 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
   });
   const startEdit = (s: McpServer) => act(`edit:${s.name}`, async () => {
     setAdding(false);
-    setEditing(await api.mcpConfig(s.name));
+    setEditing(await api.mcpConfig(s.name, s.scope === "board" ? targetBoard(s, thisBoard) : undefined));
   });
+  const move = (s: McpServer) => act(`move:${s.name}`, () => s.scope === "board"
+    ? api.mcpMove(s.name, "all", targetBoard(s, thisBoard))
+    : api.mcpMove(s.name, "board", thisBoard!.slug), true);
 
   const attention = servers.filter(needsAttention);
   const connected = servers.filter((s) => !needsAttention(s) && (s.status === "connected" || s.scope !== "claude.ai"));
@@ -212,7 +230,12 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
     const failed = s.status === "failed";
     const stdio = !canLogin(s);
     const signingIn = busy === `login:${s.name}`;
-    const info = `${SCOPE_HELP[s.scope]}${s.transport && s.scope !== "claude.ai" ? ` Connects over ${s.transport}.` : ""}`;
+    const info = SCOPE_HELP[s.scope];
+    const own = s.scope === "user" || s.scope === "board";
+    const reach = s.scope === "board" ? `Only ${s.boards.map((b) => b.name).join(", ")}` : s.scope === "user" ? "All projects" : null;
+    // Move: user-wide tools go to this board; board-only tools go to all projects (from any board's window).
+    const canMoveHere = s.scope === "board" || (s.scope === "user" && !!thisBoard && (s.move.can || !!s.move.why));
+    const moving = busy === `move:${s.name}`;
     const signInButton = (text: string, primary: boolean) => (
       <button className={`btn small${primary ? " primary" : ""}`} disabled={signingIn} onClick={() => signIn(s)}>
         {signingIn ? "Starting…" : text}
@@ -225,13 +248,19 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             <span className="conn-name" title={info}>{shortName(s)}</span>
             <span className={`badge ${tone}`}>{label}</span>
             {s.scope === "claude.ai" && <span className="badge stopped" title={SCOPE_HELP["claude.ai"]}>claude.ai</span>}
+            {reach && <span className={`badge reach${s.scope === "board" ? " board" : ""}`} title={info}>{reach}</span>}
           </div>
           <div className="conn-actions">
             {canLogin(s) && !waiting && (s.status === "connected" ? signInButton("Sign in again", false) : signInButton("Sign in", true))}
             {canLogin(s) && s.scope !== "claude.ai" && !waiting && s.status === "connected" && (
               <button className="btn small" onClick={() => setConfirm({ kind: "logout", server: s })}>Log out</button>
             )}
-            {s.scope === "user" && (
+            {canMoveHere && s.name !== "ckanban" && (
+              <button className="btn small" disabled={!s.move.can || moving || !!s.leftover} title={s.move.why ?? undefined} onClick={() => move(s)}>
+                {moving ? "Moving…" : s.scope === "board" ? "Use in all projects" : "Only this board"}
+              </button>
+            )}
+            {own && (
               <>
                 <button className="btn small" disabled={busy === `edit:${s.name}`} onClick={() => (editing?.name === s.name ? setEditing(null) : startEdit(s))}>
                   {editing?.name === s.name ? "Close" : "Edit"}
@@ -242,8 +271,8 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             {s.scope === "claude.ai" && (
               <a className="btn small" href={CLAUDE_AI_CONNECTORS} target="_blank" rel="noreferrer">Manage on claude.ai</a>
             )}
-            {s.scope !== "user" && s.scope !== "claude.ai" && (
-              <span className="muted small mcp-managed" title={SCOPE_HELP[s.scope]}>Managed in {s.scope === "project" ? ".mcp.json" : "its config"}</span>
+            {!own && s.scope !== "claude.ai" && (
+              <span className="muted small mcp-managed" title={SCOPE_HELP[s.scope]}>Set up outside the board</span>
             )}
           </div>
         </div>
@@ -256,6 +285,17 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
                 <CopyIcon size={12} /><span className="mcp-copy-label">{copiedTarget === s.name ? "Copied" : "Copy"}</span>
               </button>
             )}
+          </div>
+        )}
+        {canMoveHere && s.move.why && <span className="muted small">{s.move.why}</span>}
+        {s.leftover && (
+          <div className="mcp-help">
+            <div className="mcp-help-text">Moved, but the old copy couldn't be removed: {s.leftover}</div>
+            <div className="mcp-help-actions">
+              <button className="btn small" disabled={busy === `retry:${s.name}`} onClick={() => act(`retry:${s.name}`, () => api.mcpRetryMove(s.name), true)}>
+                {busy === `retry:${s.name}` ? "Trying…" : "Try again"}
+              </button>
+            </div>
           </div>
         )}
         {waiting && login && (login.claudeAi
@@ -302,8 +342,8 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
           <div className="mcp-help">
             <div className="mcp-help-text">
               {stdio
-                ? <><b>The server stops right after it starts.</b> Run it in the terminal to see why (a missing tool, key or package).</>
-                : <><b>Couldn't reach the server.</b> Try again, or sign in again if it worked before.</>}
+                ? <><b>The tool stops right after it starts.</b> Run it in the terminal to see why (a missing program, key or package).</>
+                : <><b>Couldn't reach the tool.</b> Try again, or sign in again if it worked before.</>}
             </div>
             <div className="mcp-help-actions">
               {stdio ? terminalButton("Run in terminal", () => runServer(s), `run:${s.name}`) : signInButton("Sign in again", false)}
@@ -326,7 +366,8 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
           </div>
         )}
         {editing?.name === s.name && (
-          <AddServerForm key={s.name} initial={editing} onAdded={() => setEditing(null)} onCancel={() => setEditing(null)} />
+          <AddServerForm key={s.name} initial={editing} editBoard={s.scope === "board" ? targetBoard(s, thisBoard) : undefined}
+            onAdded={() => { setEditing(null); setChanged(true); }} onCancel={() => setEditing(null)} />
         )}
       </div>
     );
@@ -436,15 +477,18 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
         {err && <div className="form-error" role="alert">{err}</div>}
         {tab === "claude" && (
           <>
-            <span className="muted small">Tools Claude can use, as <code>claude mcp list</code> sees them from your home folder.</span>
-            {adding && <AddServerForm onAdded={() => setAdding(false)} onCancel={() => setAdding(false)} />}
+            <span className="muted small">
+              Tools Claude can use.{thisBoard && " Only-this-board tools work in this board's Claude runs, not in Claude chats you open yourself."}
+            </span>
+            {changed && <div className="mcp-msg info">{CHANGES_APPLY}</div>}
+            {adding && <AddServerForm board={thisBoard} onAdded={() => { setAdding(false); setChanged(true); }} onCancel={() => setAdding(false)} />}
             {state?.error && <div className="banner error mcp-banner">{state.error}</div>}
             {!state && <div className="muted"><span className="spinner" /> Loading…</div>}
             {state && !servers.length && !state.checking && !state.error && (
-              <div className="muted">No MCP servers yet. Add one above, or with <code>claude mcp add</code>.</div>
+              <div className="muted">No tools yet. Click Add to give Claude one.</div>
             )}
             {state && !servers.length && state.checking && !state.checkedAt && (
-              <div className="muted">Checking every server takes a little while (they're all health-checked)…</div>
+              <div className="muted">Checking every tool takes a little while…</div>
             )}
             {section("Needs attention", attention)}
             {section("Connected", connected)}
@@ -513,14 +557,22 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
           busyLabel={confirm.kind === "remove" ? "Removing…" : "Logging out…"}
           onCancel={() => setConfirm(null)}
           onConfirm={async () => {
-            if (confirm.kind === "remove") await api.mcpRemove(confirm.server.name);
-            else await api.mcpLogout(confirm.server.name);
+            const s = confirm.server;
+            if (confirm.kind === "remove") await api.mcpRemove(s.name, s.scope === "board" ? targetBoard(s, thisBoard) : undefined);
+            else await api.mcpLogout(s.name);
+            if (confirm.kind === "remove") setChanged(true);
             setConfirm(null);
           }}
         >
           {confirm.kind === "remove"
-            ? <p>Runs <code>claude mcp remove {confirm.server.name} --scope user</code>. Claude chats (terminal and board) won't have it anymore.</p>
-            : <p>Clears the saved sign-in. Claude can't use this server until you sign in again.</p>}
+            ? confirm.server.scope === "board"
+              ? <p>{(() => {
+                  const slug = targetBoard(confirm.server, thisBoard);
+                  const name = confirm.server.boards.find((b) => b.slug === slug)?.name ?? slug;
+                  return `Claude runs on ${name} won't have it anymore.${confirm.server.boards.length > 1 ? " Other boards keep theirs." : ""}`;
+                })()}</p>
+              : <p>Claude won't have it in any project anymore, on the board or in the terminal.</p>
+            : <p>Clears the saved sign-in. Claude can't use this tool until you sign in again.</p>}
         </ConfirmDialog>
       )}
     </Modal>
@@ -584,7 +636,7 @@ function AgentsSection() {
     <div className="mcp-section">
       <div className="inbox-board">Use this board from Claude Code / Codex</div>
       <span className="muted small">
-        Adds the <code>ckanban</code> MCP server, so you can ask those agents things like "find what's left to do in this repo and put it on my board".
+        Gives them the board's own tool, so you can ask them things like "find what's left to do in this repo and put it on my board".
       </span>
       {err && <div className="form-error" role="alert">{err}</div>}
       {!agents && !err && <div className="muted small"><span className="spinner" /> Checking…</div>}
@@ -622,7 +674,13 @@ function AgentsSection() {
 
 type Pair = { k: string; v: string };
 
-function AddServerForm({ onAdded, initial, onCancel }: { onAdded: () => void; initial?: McpConfig; onCancel?: () => void }) {
+/**
+ * Add or edit a tool. `board`: the board the window belongs to, for the "Only this board" choice (adding only).
+ * `editBoard`: editing a board-only tool, saved back to that board's tools.
+ */
+function AddServerForm({ onAdded, initial, onCancel, board, editBoard }: {
+  onAdded: () => void; initial?: McpConfig; onCancel?: () => void; board?: BoardRef | null; editBoard?: string;
+}) {
   const [name, setName] = useState(initial?.name ?? "");
   const [transport, setTransport] = useState<McpTransport>(initial?.transport ?? "stdio");
   const [command, setCommand] = useState(initial?.command ?? "");
@@ -631,6 +689,7 @@ function AddServerForm({ onAdded, initial, onCancel }: { onAdded: () => void; in
   const [pairs, setPairs] = useState<Pair[]>(
     initial?.transport === "stdio" ? (initial.env ?? []).map((e) => ({ k: e.key, v: e.value }))
       : (initial?.headers ?? []).map((h) => ({ k: h.name, v: h.value })));
+  const [onlyHere, setOnlyHere] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const stdio = transport === "stdio";
@@ -640,9 +699,11 @@ function AddServerForm({ onAdded, initial, onCancel }: { onAdded: () => void; in
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const filled = pairs.filter((p) => p.k.trim() || p.v);
+    const target = initial ? editBoard : onlyHere && board ? board.slug : undefined;
     const input: McpAddInput = stdio
       ? { name: name.trim(), transport, command: command.trim(), args: splitArgs(args), env: filled.map((p) => ({ key: p.k.trim(), value: p.v })) }
       : { name: name.trim(), transport, url: url.trim(), headers: filled.map((p) => ({ name: p.k.trim(), value: p.v })) };
+    if (target) input.board = target;
     setBusy(true);
     setErr(null);
     try {
@@ -666,12 +727,13 @@ function AddServerForm({ onAdded, initial, onCancel }: { onAdded: () => void; in
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="github" spellCheck={false} autoFocus />
         </label>
         <div className="field">
-          <div className="field-label">Transport</div>
-          <div className="segmented" role="radiogroup" aria-label="Transport">
-            {(["stdio", "http", "sse"] as const).map((t) => (
+          <div className="field-label">How it runs</div>
+          <div className="segmented" role="radiogroup" aria-label="How it runs">
+            {/* A web address is HTTP; an older SSE tool being edited keeps SSE. */}
+            {([["stdio", "A command on this Mac"], [initial?.transport === "sse" ? "sse" : "http", "A web address"]] as const).map(([t, label]) => (
               <button key={t} type="button" role="radio" aria-checked={transport === t} className={transport === t ? "on" : ""}
-                onClick={() => { setTransport(t); setPairs([]); }}>
-                {t === "stdio" ? "Command (stdio)" : t.toUpperCase()}
+                onClick={() => { if (transport !== t) { setTransport(t); setPairs([]); } }}>
+                {label}
               </button>
             ))}
           </div>
@@ -690,7 +752,7 @@ function AddServerForm({ onAdded, initial, onCancel }: { onAdded: () => void; in
         </div>
       ) : (
         <label>
-          URL
+          Address
           <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mcp.example.com/mcp" spellCheck={false} />
         </label>
       )}
@@ -710,17 +772,23 @@ function AddServerForm({ onAdded, initial, onCancel }: { onAdded: () => void; in
             <button type="button" className="icon-btn" aria-label="Remove" onClick={() => setPairs((ps) => ps.filter((_, j) => j !== i))}><CloseIcon /></button>
           </div>
         ))}
-        <span className="muted small">
-          {initial
-            ? <>Saving runs <code>claude mcp remove</code> then <code>claude mcp add</code> with the new settings (user scope).</>
-            : <>Added with <code>--scope user</code>, so every Claude chat can use it.{!stdio && " If it uses OAuth, click Log in once it shows up."}</>}
-        </span>
+        {!stdio && <span className="muted small">If it needs a sign-in, click Sign in once it shows up.</span>}
       </div>
+      {!initial && board && (
+        <div className="field">
+          <div className="field-label">Where Claude can use it</div>
+          <div className="segmented" role="radiogroup" aria-label="Where Claude can use it">
+            <button type="button" role="radio" aria-checked={!onlyHere} className={!onlyHere ? "on" : ""} onClick={() => setOnlyHere(false)}>All projects</button>
+            <button type="button" role="radio" aria-checked={onlyHere} className={onlyHere ? "on" : ""} onClick={() => setOnlyHere(true)}>Only this board ({board.name})</button>
+          </div>
+          <span className="muted small">Other projects won't load it, so they don't pay for it on every message.</span>
+        </div>
+      )}
       {err && <div className="form-error">{err}</div>}
       <div className="form-actions">
         {onCancel && <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>}
         <button type="submit" className="btn primary" disabled={busy || !name.trim() || (stdio ? !command.trim() : !url.trim())}>
-          {initial ? (busy ? "Saving…" : "Save changes") : busy ? "Adding…" : "Add server"}
+          {initial ? (busy ? "Saving…" : "Save changes") : busy ? "Adding…" : "Add tool"}
         </button>
       </div>
     </form>

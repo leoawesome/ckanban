@@ -2055,7 +2055,7 @@ export class Huddles {
     const summary = join(this.store.outputsDir(slug, h.hostTicket), summaryFile(hid));
     const plan = join(this.store.outputsDir(slug, h.hostTicket), proposalFile(hid));
     const system = huddleAgentSystemPrompt(h, p, host as Ticket, outputDir, dir, profile.baseBranch, this.lessonsFor(slug, p.preset), summary, existsSync(plan) ? plan : undefined);
-    const args = buildArgs(sessionId, resume, p.model ?? profile.model, p.canEdit ? [] : NO_EDIT_TOOLS.split(","), mcpConfig(), system);
+    const args = buildArgs(sessionId, resume, p.model ?? profile.model, p.canEdit ? [] : NO_EDIT_TOOLS.split(","), mcpConfig(undefined, this.store.boardTools(slug)), system);
     let lastWrite = 0;
     let started = resume;
     run.handle = startRun({

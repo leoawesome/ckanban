@@ -18,6 +18,11 @@ if (args[0] === "-p") {
     const override = process.env.FAKE_SESSION ? JSON.parse(process.env.FAKE_SESSION) : {};
     const sdk = (status: string) => (/connected/i.test(status) ? "connected" : /auth/i.test(status) ? "needs-auth" : "failed");
     const mcp_servers = Object.entries(state).map(([n, s]) => ({ name: n, status: override[n] ?? sdk(s.status) }));
+    // Tools passed inline (--mcp-config) show too, connected unless FAKE_SESSION says otherwise.
+    const inline = args.indexOf("--mcp-config");
+    if (inline >= 0) {
+      for (const n of Object.keys(JSON.parse(args[inline + 1]).mcpServers ?? {})) mcp_servers.push({ name: n, status: override[n] ?? "connected" });
+    }
     console.log(JSON.stringify({ type: "system", subtype: "hook_started" }));
     console.log(JSON.stringify({ type: "system", subtype: "init", mcp_servers }));
   }
@@ -76,7 +81,43 @@ if (args[0] === "-p") {
   const dd = rest.indexOf("--");
   state[n] = { target: dd >= 0 ? rest.slice(dd + 1).join(" ") : `${rest[1]} (HTTP)`, status: "✔ Connected" };
   save();
+} else if (cmd === "add-json") {
+  // `mcp add-json --scope <s> <name> <json>`: user scope lands in the list and, with FAKE_CLAUDE_JSON, in that config.
+  if (process.env.FAKE_ADD === "fail") {
+    console.error("add failed");
+    process.exit(1);
+  }
+  const at = args.indexOf("--scope");
+  const scope = args[at + 1];
+  const [n, json] = args.slice(2).filter((_, i) => i + 2 !== at && i + 2 !== at + 1);
+  if (scope === "user") {
+    const e = JSON.parse(json);
+    state[n] = { target: e.url ? `${e.url} (HTTP)` : [e.command, ...(e.args ?? [])].join(" "), status: "✔ Connected" };
+    save();
+    editConfig((c) => ({ ...c, mcpServers: { ...(c.mcpServers ?? {}), [n]: e } }));
+  }
 } else if (cmd === "remove") {
+  // FAKE_REMOVE=fail makes a user-scope remove exit 1. A local-scope remove (board sign-in folder) leaves the list.
+  const scope = args[args.indexOf("--scope") + 1];
+  if (scope === "local") process.exit(0);
+  if (process.env.FAKE_REMOVE === "fail") {
+    console.error("remove failed: config is locked");
+    process.exit(1);
+  }
   delete state[name];
   save();
+  editConfig((c) => {
+    const { [name]: _, ...rest } = c.mcpServers ?? {};
+    return { ...c, mcpServers: rest };
+  });
+}
+
+function editConfig(fn: (c: any) => any) {
+  const f = process.env.FAKE_CLAUDE_JSON;
+  if (!f) return;
+  let c: any = {};
+  try {
+    c = JSON.parse(readFileSync(f, "utf8"));
+  } catch {}
+  writeFileSync(f, JSON.stringify(fn(c)));
 }

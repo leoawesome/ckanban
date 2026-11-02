@@ -998,7 +998,7 @@ export class Board {
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: session.dir,
-      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, refine ? planningDisallowed(t) : [], mcpConfig(), systemPrompt, cap, effortNow.effort, effortNow.ultracode),
+      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, refine ? planningDisallowed(t) : [], mcpConfig(undefined, this.store.boardTools(slug)), systemPrompt, cap, effortNow.effort, effortNow.ultracode),
       input: prompt,
       inputLocal: run.chat?.slash === "local" && !resume,
       planning: refine,

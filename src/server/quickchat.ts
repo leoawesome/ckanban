@@ -107,7 +107,7 @@ export interface QuickChatOptions {
   claudeBin: string;
   sessionExists?: (sessionId: string) => boolean;
   /** MCP config for the runs (default: this ckanban's MCP server). */
-  mcp?: () => string;
+  mcp?: (slug: string) => string;
 }
 
 export class QuickChats {
@@ -265,7 +265,7 @@ export class QuickChats {
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: profile.path,
-      args: buildArgs(c.sessionId, resume, profile.model, [], (this.opts.mcp ?? (() => mcpConfig()))(), quickChatNote(profile), null, runOptions(null, profile, false).effort),
+      args: buildArgs(c.sessionId, resume, profile.model, [], (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), quickChatNote(profile), null, runOptions(null, profile, false).effort),
       input: localizeAttachments(run.prompt, this.store.attachmentsDir),
       onEvent: (ev) => {
         const changed = run.draft.feed(ev);

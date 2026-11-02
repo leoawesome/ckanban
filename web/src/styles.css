@@ -3252,6 +3252,10 @@ button.tag-chip:hover { border-color: currentColor; }
 .conn-card:hover .mcp-target-row .icon-btn, .conn-card .mcp-target-row .icon-btn:focus-visible { opacity: 1; }
 .conn-card > .mcp-add { margin-top: 6px; }
 .conn-card .mcp-help { margin-top: 6px; }
+/* Where a tool reaches: grey for all projects, blue for only some boards. */
+.badge.reach { background: var(--surface-2); color: var(--muted); }
+.badge.reach.board { background: var(--info-soft); color: var(--info); }
+.mcp-add .segmented button { white-space: normal; text-align: center; }
 .mcp-help.info { background: var(--info-soft); }
 .mcp-help.info .spinner { vertical-align: -1px; }
 .conn-paste form { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }

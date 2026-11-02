@@ -1,11 +1,14 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Bus } from "./events";
+import type { Store } from "./store";
+import { entryFromInput, inputFromEntry, type ToolEntry } from "./board-tools";
 
 export type McpStatus = "connected" | "needs_auth" | "failed" | "pending" | "unknown";
-export type McpScope = "user" | "local" | "project" | "claude.ai" | "other";
+/** "board": an "only this board" tool, kept by the board (board-tools.ts), not in Claude's own config. */
+export type McpScope = "user" | "local" | "project" | "claude.ai" | "board" | "other";
 export type McpTransport = "stdio" | "http" | "sse";
 
 export interface McpServer {
@@ -20,6 +23,12 @@ export interface McpServer {
   /** Counts toward the header badge: failed, or needs auth after having worked before. */
   attention: boolean;
   login: McpLogin | null;
+  /** Boards that have it as an "only this board" tool (empty: none). */
+  boards: { slug: string; name: string }[];
+  /** Whether the Connections window can move it between "All projects" and "Only this board", and why not. */
+  move: { can: boolean; why: string | null };
+  /** A move's second step failed: the tool is in both places. Plain words, secrets masked. */
+  leftover: string | null;
 }
 
 export interface McpLogin {
@@ -51,7 +60,31 @@ export interface McpAddInput {
   url?: string;
   env?: { key: string; value: string }[];
   headers?: { name: string; value: string }[];
+  /** Add or edit it as an "only this board" tool on this board (slug). Missing: all projects. */
+  board?: string;
 }
+
+/** The boards' "only this board" tools (Store.boardTools), and a folder for signing in to them. */
+export interface BoardToolsSource {
+  list(): { slug: string; name: string }[];
+  read(slug: string): Record<string, ToolEntry>;
+  write(slug: string, servers: Record<string, ToolEntry>): void;
+  /** Board-owned folder where `claude mcp login` runs for a board-only tool (never a project folder). */
+  signInDir(): string;
+}
+
+const OWN = "ckanban";
+
+/** The boards' tools as kept by the store. Sign-ins for them run in <home>/signin (board data, not a project). */
+export function boardToolsSource(store: Pick<Store, "listProfiles" | "boardTools" | "saveBoardTools" | "root">): BoardToolsSource {
+  return {
+    list: () => store.listProfiles().map((p) => ({ slug: p.slug, name: p.name })),
+    read: (slug) => store.boardTools(slug),
+    write: (slug, servers) => store.saveBoardTools(slug, servers),
+    signInDir: () => join(store.root, "signin"),
+  };
+}
+const CANT_READ = "Can't move: the board can't read back how this tool was set up.";
 
 export class McpError extends Error {
   constructor(public status: number, message: string) {
@@ -59,7 +92,9 @@ export class McpError extends Error {
   }
 }
 
-type Parsed = Omit<McpServer, "scope" | "attention" | "login">;
+const NO_EXTRA = { boards: [] as McpServer["boards"], move: { can: false, why: null as string | null }, leftover: null as string | null };
+
+type Parsed = Omit<McpServer, "scope" | "attention" | "login" | "boards" | "move" | "leftover">;
 
 const SECRET = /key|token|secret|pass|auth|sig|cred|bearer/i;
 
@@ -205,10 +240,31 @@ export function readMcpConfig(name: string, cwd: string, configFile: string): Mc
     const command = String(e.command ?? "");
     const args = Array.isArray(e.args) ? e.args.map(String) : [];
     const env = Object.entries(e.env ?? {}).map(([k, v]) => ({ key: k, value: String(v) }));
-    const commandLine = [...env.map((x) => `${x.key}=${shellQuote(x.value)}`), shellQuote(command), ...args.map(shellQuote)].join(" ");
-    return { name, scope, transport: "stdio", command, args, env, commandLine };
+    return { name, scope, transport: "stdio", command, args, env, commandLine: commandLineOf(command, args, env) };
   }
   return null;
+}
+
+function commandLineOf(command: string, args: string[], env: { key: string; value: string }[]): string {
+  return [...env.map((x) => `${x.key}=${shellQuote(x.value)}`), shellQuote(command), ...args.map(shellQuote)].join(" ");
+}
+
+/** A tool's raw entry in Claude's user config (~/.claude.json `mcpServers`), or null. */
+function userEntry(name: string, configFile: string): ToolEntry | null {
+  const e = readJson(configFile)?.mcpServers?.[name];
+  return e && typeof e === "object" && !Array.isArray(e) ? e : null;
+}
+
+/** Form input for an entry, only if `claude mcp add` can take it back as it is. */
+function movableInput(name: string, e: ToolEntry | null): McpAddInput | null {
+  const input = e ? inputFromEntry(name, e) : null;
+  if (!input) return null;
+  try {
+    addArgs(input);
+    return input;
+  } catch {
+    return null;
+  }
 }
 
 function readJson(path: string): any {
@@ -288,7 +344,12 @@ export interface McpOptions {
   /** How often and how long to re-check a server after `login` exits, waiting for the browser flow. */
   loginPollMs?: number;
   loginPollForMs?: number;
+  /** The boards' "only this board" tools. Missing: the window only manages Claude's own (user-wide) tools. */
+  boards?: BoardToolsSource;
 }
+
+/** A move whose second step failed, so the tool is in both places until "Try again" removes the old copy. */
+type Leftover = { kind: "user"; reason: string } | { kind: "boards"; boards: string[]; reason: string };
 
 /** Cached view of `claude mcp list` plus the actions behind the Connections panel. */
 export class McpManager {
@@ -307,6 +368,9 @@ export class McpManager {
   private bin: string;
   private cwd: string;
   private configFile: string;
+  /** Board-only tools' statuses, from the probe session (`claude mcp list` doesn't know them). */
+  private boardStatus = new Map<string, { status: McpStatus; message: string | null }>();
+  private leftovers = new Map<string, Leftover>();
   private opts: Required<Pick<McpOptions, "listTimeoutMs" | "probeTimeoutMs" | "loginTimeoutMs" | "loginPollMs" | "loginPollForMs">>;
 
   constructor(private bus: Bus, private options: McpOptions = {}) {
@@ -326,7 +390,7 @@ export class McpManager {
 
   state(): McpState {
     return {
-      servers: this.servers.map((s) => ({ ...s, login: this.logins.get(s.name) ?? null })),
+      servers: this.all().map((s) => ({ ...s, login: this.logins.get(s.name) ?? null })),
       unparsed: this.unparsed,
       checkedAt: this.checkedAt,
       checking: this.inflight !== null,
@@ -372,7 +436,7 @@ export class McpManager {
     }
     const { servers, unparsed } = parseMcpList(r.stdout);
     const scopes = configScopes(this.cwd, this.configFile);
-    let next = servers.map((s) => this.decorate(applySessionStatus({ ...s, scope: scopeOf(s.name, scopes), attention: false, login: null }, session)));
+    let next = servers.map((s) => this.decorate(applySessionStatus({ ...s, scope: scopeOf(s.name, scopes), attention: false, login: null, ...NO_EXTRA }, session)));
     for (const name of touched) {
       const now = this.servers.find((x) => x.name === name);
       next = next.filter((x) => x.name !== name);
@@ -380,9 +444,20 @@ export class McpManager {
     }
     this.servers = next;
     this.unparsed = unparsed;
+    this.noteBoardStatuses(session);
     this.checkedAt = new Date().toISOString();
     this.error = null;
     this.saveSeen();
+  }
+
+  private noteBoardStatuses(session: Map<string, McpStatus> | null) {
+    if (!session) return;
+    for (const name of this.boardGroups().keys()) {
+      const status = session.get(name);
+      if (!status) continue;
+      const message = status === "connected" ? null : status === "needs_auth" ? "Needs a sign-in" : status === "failed" ? "Couldn't start or connect" : null;
+      this.boardStatus.set(name, { status, message });
+    }
   }
 
   private decorate(s: McpServer): McpServer {
@@ -398,8 +473,51 @@ export class McpManager {
     } catch {}
   }
 
+  /** Every board-only tool by name, with the boards that have it (first board's entry first). */
+  private boardGroups(): Map<string, { slug: string; name: string; entry: ToolEntry }[]> {
+    const out = new Map<string, { slug: string; name: string; entry: ToolEntry }[]>();
+    for (const b of this.options.boards?.list() ?? []) {
+      for (const [name, entry] of Object.entries(this.options.boards!.read(b.slug))) {
+        if (name === OWN) continue;
+        out.set(name, [...(out.get(name) ?? []), { ...b, entry }]);
+      }
+    }
+    return out;
+  }
+
+  /** Claude's own servers plus the boards' tools, each with its reach, move state and leftover. */
+  private all(): McpServer[] {
+    const groups = this.boardGroups();
+    const user = readJson(this.configFile)?.mcpServers ?? {};
+    const leftover = (name: string) => this.leftovers.get(name)?.reason ?? null;
+    const own = this.servers.map((s): McpServer => {
+      const boards = (groups.get(s.name) ?? []).map(({ slug, name }) => ({ slug, name }));
+      const movable = s.scope === "user" && s.name !== OWN && !!this.options.boards;
+      const move = !movable ? { can: false, why: null } : movableInput(s.name, user[s.name] ?? null) ? { can: true, why: null } : { can: false, why: CANT_READ };
+      return { ...s, boards, move, leftover: leftover(s.name) };
+    });
+    const extra = [...groups].filter(([name]) => !this.servers.some((x) => x.name === name)).map(([name, g]): McpServer => {
+      const input = inputFromEntry(name, g[0].entry);
+      const target = !input ? "" : input.transport === "stdio" ? [input.command ?? "", ...(input.args ?? [])].join(" ") : input.url ?? "";
+      const st = this.boardStatus.get(name) ?? { status: "unknown" as McpStatus, message: null };
+      return {
+        name, target: maskSecrets(target), transport: input?.transport ?? null, scope: "board", ...st,
+        attention: st.status === "failed", login: null, boards: g.map(({ slug, name }) => ({ slug, name })),
+        move: movableInput(name, g[0].entry) ? { can: true, why: null } : { can: false, why: CANT_READ }, leftover: leftover(name),
+      };
+    });
+    return [...own, ...extra];
+  }
+
+  /** Union of the boards' tools, for the probe session (one entry per name). Null when there are none. */
+  private probeConfig(): string | null {
+    const groups = this.boardGroups();
+    if (!groups.size) return null;
+    return JSON.stringify({ mcpServers: Object.fromEntries([...groups].map(([name, g]) => [name, g[0].entry])) });
+  }
+
   private find(name: string): McpServer {
-    const s = this.servers.find((x) => x.name === name);
+    const s = this.all().find((x) => x.name === name);
     if (!s) throw new McpError(404, `no MCP server named "${name}"`);
     return s;
   }
@@ -407,6 +525,13 @@ export class McpManager {
   /** Re-checks one server with `claude mcp get` (a few seconds, vs. the whole list). */
   async recheck(name: string): Promise<McpServer | null> {
     if (this.servers.find((x) => x.name === name)?.scope === "claude.ai") return this.recheckConnector(name);
+    if (!this.servers.some((x) => x.name === name) && this.boardGroups().has(name)) {
+      const session = await this.sessionStatuses();
+      if (!session?.has(name)) return null;
+      this.noteBoardStatuses(session);
+      this.emit();
+      return this.all().find((x) => x.name === name) ?? null;
+    }
     const r = await this.run(["mcp", "get", name], 60_000);
     const parsed = r.code === 0 ? parseMcpGet(r.stdout) : null;
     const i = this.servers.findIndex((x) => x.name === name);
@@ -437,7 +562,9 @@ export class McpManager {
     let p: ReturnType<typeof Bun.spawn>;
     try {
       p = Bun.spawn([this.bin, "-p", "ok", "--output-format", "stream-json", "--verbose", "--tools", "", "--max-turns", "1",
-        "--no-session-persistence", "--settings", JSON.stringify({ disableAllHooks: true })], {
+        "--no-session-persistence", "--settings", JSON.stringify({ disableAllHooks: true }),
+        // The boards' own tools, so their statuses show too. Holds secrets: never logged.
+        ...((cfg) => (cfg ? ["--mcp-config", cfg] : []))(this.probeConfig())], {
         cwd: this.cwd, env: { ...process.env, ANTHROPIC_BASE_URL: "http://127.0.0.1:9" },
         stdin: "ignore", stdout: "pipe", stderr: "ignore",
       });
@@ -468,8 +595,16 @@ export class McpManager {
   }
 
   /** Saved settings of one server (unmasked). Throws 404 if it isn't in Claude's config files. */
-  config(name: string): McpConfig {
-    this.find(name);
+  config(name: string, board?: string): McpConfig {
+    const s = this.find(name);
+    if (s.scope === "board" || board) {
+      const g = this.boardGroups().get(name) ?? [];
+      const e = (g.find((x) => x.slug === board) ?? (board ? undefined : g[0]))?.entry;
+      const input = e ? inputFromEntry(name, e) : null;
+      if (!input) throw new McpError(404, `The board can't read back how ${name} was set up, so it can't be edited here`);
+      const commandLine = input.transport === "stdio" ? commandLineOf(input.command ?? "", input.args ?? [], input.env ?? []) : null;
+      return { ...input, scope: "board", commandLine };
+    }
     const c = readMcpConfig(name, this.cwd, this.configFile);
     if (!c) throw new McpError(404, `${name} isn't in Claude's config files, so it can't be edited here`);
     return c;
@@ -477,6 +612,7 @@ export class McpManager {
 
   /** Replaces a user-scope server: remove, then add with the new settings (restores the old one if that fails). */
   async update(name: string, input: McpAddInput): Promise<void> {
+    if (input.board) return this.updateOnBoard(name, input, input.board);
     const s = this.find(name);
     if (s.scope !== "user") throw new McpError(400, `${name} isn't a user-scope server; edit it where it's configured`);
     const args = addArgs(input);
@@ -513,7 +649,7 @@ export class McpManager {
       : String(input.url ?? "").trim();
     const server = this.decorate({
       name, target: maskSecrets(target), transport: input.transport, scope: "user",
-      status: parsed?.status ?? "unknown", message: parsed?.message ?? null, attention: false, login: null,
+      status: parsed?.status ?? "unknown", message: parsed?.message ?? null, attention: false, login: null, ...NO_EXTRA,
     });
     const i = this.servers.findIndex((x) => x.name === name);
     if (i >= 0) this.servers[i] = server;
@@ -572,7 +708,8 @@ export class McpManager {
           await Bun.sleep(this.opts.loginPollMs);
         }
       } else {
-        const r = await this.runLogin(name, login, onOutput);
+        const copy = s.scope === "board" ? await this.localCopy(name) : null;
+        const r = await this.runLogin(name, login, onOutput, copy?.cwd).finally(() => copy?.cleanup());
         if (!current()) return;
         if (r.code !== 0) return fail(r.timedOut ? "Sign-in timed out" : errorText(r, "claude mcp login"));
         login.canPaste = false;
@@ -590,18 +727,18 @@ export class McpManager {
   }
 
   /** `claude mcp login <name> --no-browser` on a pseudo-terminal (falls back to pipes where there is none). */
-  private async runLogin(name: string, login: McpLogin, onOutput: (soFar: string) => void): Promise<RunOut & { timedOut?: boolean }> {
+  private async runLogin(name: string, login: McpLogin, onOutput: (soFar: string) => void, cwd = this.cwd): Promise<RunOut & { timedOut?: boolean }> {
     const args = [this.bin, "mcp", "login", name, "--no-browser"];
     let out = "";
     const dec = new TextDecoder();
     let p: ReturnType<typeof Bun.spawn>;
     try {
       p = Bun.spawn(args, {
-        cwd: this.cwd, env: { ...process.env, TERM: "xterm-256color" },
+        cwd, env: { ...process.env, TERM: "xterm-256color" },
         terminal: { cols: 2000, rows: 50, name: "xterm-256color", data: (_t, d) => { out = (out + dec.decode(d, { stream: true })).slice(-64 * 1024); onOutput(out); } },
       });
     } catch {
-      return this.run(args.slice(1), this.opts.loginTimeoutMs, onOutput);
+      return this.run(args.slice(1), this.opts.loginTimeoutMs, onOutput, cwd);
     }
     let exited = false;
     // The terminal echoes what's typed: pasted addresses (they carry the sign-in code) are cut from error text.
@@ -647,7 +784,8 @@ export class McpManager {
   async logout(name: string): Promise<void> {
     const s = this.find(name);
     if (!canLogin(s)) throw new McpError(400, `${name} doesn't use OAuth`);
-    const r = await this.run(["mcp", "logout", name], 60_000);
+    const copy = s.scope === "board" ? await this.localCopy(name) : null;
+    const r = await this.run(["mcp", "logout", name], 60_000, undefined, copy?.cwd).finally(() => copy?.cleanup());
     if (r.code !== 0) throw new McpError(502, errorText(r, "claude mcp logout"));
     this.logins.delete(name);
     await this.recheck(name);
@@ -656,33 +794,204 @@ export class McpManager {
   async add(input: McpAddInput): Promise<void> {
     const args = addArgs(input);
     const name = String(input.name).trim();
+    if (input.board) return this.addToBoard({ ...input, name }, input.board);
     if (this.servers.some((s) => s.name === name)) throw new McpError(409, `a server named "${name}" already exists`);
+    const on = this.boardGroups().get(name);
+    if (on) throw new McpError(409, `A tool called ${name} is already on ${on.map((b) => b.name).join(", ")} only. Use its "Use in all projects" button instead.`);
     const r = await this.run(args, 60_000);
     if (r.code !== 0) throw new McpError(502, errorText(r, "claude mcp add"));
     await this.show(input);
     this.refresh();
   }
 
-  async remove(name: string): Promise<void> {
+  async remove(name: string, board?: string): Promise<void> {
     const s = this.find(name);
+    if (board || s.scope === "board") {
+      const slug = board ?? s.boards[0]?.slug;
+      const src = this.boardSource(slug);
+      const servers = src.read(slug!);
+      if (!servers[name]) throw new McpError(404, `This board has no tool called ${name}`);
+      delete servers[name];
+      src.write(slug!, servers);
+      this.forgetBoardTool(name);
+      this.emit();
+      return;
+    }
     if (s.scope !== "user") throw new McpError(400, `${name} isn't a user-scope server; remove it where it's configured`);
     const r = await this.run(["mcp", "remove", name, "--scope", "user"], 60_000);
     if (r.code !== 0) throw new McpError(502, errorText(r, "claude mcp remove"));
     this.servers = this.servers.filter((x) => x.name !== name);
     this.touched.add(name);
     this.logins.delete(name);
+    this.leftovers.delete(name);
     this.emit();
     this.refresh();
+  }
+
+  /** The board-only tools store, checked to know `slug`. */
+  private boardSource(slug: string | undefined): BoardToolsSource {
+    const src = this.options.boards;
+    if (!src) throw new McpError(400, "Only-this-board tools aren't available here");
+    if (!slug || !src.list().some((b) => b.slug === slug)) throw new McpError(404, `board ${slug ?? ""} not found`);
+    return src;
+  }
+
+  /** Refuses a board-only name that is the board's own tool or a tool on for all projects. */
+  private checkBoardName(name: string) {
+    if (name === OWN) throw new McpError(409, `The name ${OWN} belongs to the board's own tool. Pick another name.`);
+    if (this.servers.some((s) => s.name === name && s.scope !== "board") || userEntry(name, this.configFile)) {
+      throw new McpError(409, `A tool called ${name} is already on for all projects.`);
+    }
+  }
+
+  /** Drops a board-only tool's cached status once no board has it any more. */
+  private forgetBoardTool(name: string) {
+    if (this.boardGroups().has(name)) return;
+    this.boardStatus.delete(name);
+    this.logins.delete(name);
+    if (this.leftovers.get(name)?.kind === "boards") this.leftovers.delete(name);
+  }
+
+  private addToBoard(input: McpAddInput, slug: string) {
+    const src = this.boardSource(slug);
+    const name = input.name;
+    this.checkBoardName(name);
+    const servers = src.read(slug);
+    if (servers[name]) throw new McpError(409, `This board already has a tool called ${name}.`);
+    servers[name] = entryFromInput(input);
+    src.write(slug, servers);
+    this.boardStatus.delete(name);
+    this.emit();
+    this.refresh();
+  }
+
+  private updateOnBoard(name: string, input: McpAddInput, slug: string) {
+    const src = this.boardSource(slug);
+    addArgs(input);
+    const next = String(input.name).trim();
+    const servers = src.read(slug);
+    if (!servers[name]) throw new McpError(404, `This board has no tool called ${name}`);
+    if (next !== name) {
+      this.checkBoardName(next);
+      if (servers[next]) throw new McpError(409, `This board already has a tool called ${next}.`);
+    }
+    const entries = Object.entries(servers).map(([k, v]): [string, ToolEntry] => (k === name ? [next, entryFromInput({ ...input, name: next })] : [k, v]));
+    src.write(slug, Object.fromEntries(entries));
+    this.boardStatus.delete(next);
+    this.forgetBoardTool(name);
+    this.emit();
+    this.refresh();
+  }
+
+  /**
+   * "Only this board": copies the user-wide entry as it is (so a sign-in made for it still matches) into the board's
+   * tools, then removes the user-wide one. If that second step fails the tool stays in both places (`leftover`).
+   */
+  async moveToBoard(name: string, slug: string): Promise<void> {
+    const src = this.boardSource(slug);
+    const s = this.find(name);
+    if (s.scope !== "user" || name === OWN) throw new McpError(400, `${name} can't be moved from here`);
+    const entry = userEntry(name, this.configFile);
+    if (!movableInput(name, entry)) throw new McpError(400, CANT_READ);
+    const servers = src.read(slug);
+    servers[name] = { ...entry! };
+    src.write(slug, servers);
+    this.boardStatus.set(name, { status: s.status, message: s.message });
+    await this.removeUserCopy(name);
+  }
+
+  /**
+   * "Use in all projects": adds the board's entry user-wide as it is (`claude mcp add-json`), then drops it from every
+   * board that has it. If dropping fails the tool stays in both places (`leftover`).
+   */
+  async moveToUser(name: string, slug: string): Promise<void> {
+    this.boardSource(slug);
+    const g = this.boardGroups().get(name);
+    if (!g) throw new McpError(404, `No board has a tool called ${name}`);
+    if (this.servers.some((x) => x.name === name && x.scope !== "board") || userEntry(name, this.configFile)) {
+      throw new McpError(409, `A tool called ${name} is already on for all projects.`);
+    }
+    const pick = g.find((x) => x.slug === slug) ?? g[0];
+    const input = movableInput(name, pick.entry);
+    if (!input) throw new McpError(400, CANT_READ);
+    const json = JSON.stringify(pick.entry);
+    const r = await this.run(["mcp", "add-json", "--scope", "user", name, json], 60_000);
+    if (r.code !== 0) throw new McpError(502, errorText(r, "claude mcp add-json", secretsOf(input)));
+    await this.dropBoardCopies(name, g.map((b) => b.slug));
+    await this.show(input);
+    this.refresh();
+  }
+
+  /** Retries the failed second step of a move. */
+  async retryMove(name: string): Promise<void> {
+    const lf = this.leftovers.get(name);
+    if (!lf) throw new McpError(404, `${name} has nothing left to clean up`);
+    if (lf.kind === "user") await this.removeUserCopy(name);
+    else await this.dropBoardCopies(name, lf.boards);
+    const now = this.leftovers.get(name);
+    if (now) throw new McpError(502, `The old copy still couldn't be removed: ${now.reason}`);
+  }
+
+  private async removeUserCopy(name: string): Promise<void> {
+    const r = await this.run(["mcp", "remove", name, "--scope", "user"], 60_000);
+    if (r.code !== 0) {
+      this.leftovers.set(name, { kind: "user", reason: errorText(r, "claude mcp remove") });
+      this.emit();
+      return;
+    }
+    this.leftovers.delete(name);
+    this.servers = this.servers.filter((x) => x.name !== name);
+    this.touched.add(name);
+    this.emit();
+    this.refresh();
+  }
+
+  private async dropBoardCopies(name: string, slugs: string[]): Promise<void> {
+    const src = this.options.boards!;
+    const failed: string[] = [];
+    let reason = "";
+    for (const slug of slugs) {
+      try {
+        const servers = src.read(slug);
+        if (!servers[name]) continue;
+        delete servers[name];
+        src.write(slug, servers);
+      } catch (e) {
+        failed.push(slug);
+        reason = (e as Error).message;
+      }
+    }
+    if (failed.length) this.leftovers.set(name, { kind: "boards", boards: failed, reason: reason || "couldn't save the board's tools" });
+    else this.leftovers.delete(name);
+    this.boardStatus.delete(name);
+    this.emit();
+  }
+
+  /**
+   * `claude mcp login` / `logout` only know tools in Claude's own config, seen from their folder. For a board-only
+   * tool, add the same entry for a board-owned folder (local scope, nowhere near a project), run there, then remove it.
+   * Claude keys sign-ins by name + address + headers, so the login then also works through `--mcp-config`.
+   */
+  private async localCopy(name: string): Promise<{ cwd: string; cleanup: () => Promise<unknown> }> {
+    const src = this.options.boards;
+    const entry = this.boardGroups().get(name)?.[0]?.entry;
+    if (!src || !entry) throw new McpError(404, `No board has a tool called ${name}`);
+    const cwd = src.signInDir();
+    mkdirSync(cwd, { recursive: true });
+    await this.run(["mcp", "remove", name, "--scope", "local"], 30_000, undefined, cwd);
+    const r = await this.run(["mcp", "add-json", "--scope", "local", name, JSON.stringify(entry)], 60_000, undefined, cwd);
+    if (r.code !== 0) throw new McpError(502, errorText(r, "claude mcp add-json", secretsOf(inputFromEntry(name, entry))));
+    return { cwd, cleanup: () => this.run(["mcp", "remove", name, "--scope", "local"], 30_000, undefined, cwd).catch(() => null) };
   }
 
   private emit() {
     this.bus.emit({ type: "mcp.updated", state: this.state() });
   }
 
-  private async run(args: string[], timeoutMs: number, onStdout?: (soFar: string) => void): Promise<RunOut> {
+  private async run(args: string[], timeoutMs: number, onStdout?: (soFar: string) => void, cwd = this.cwd): Promise<RunOut> {
     let p: ReturnType<typeof Bun.spawn>;
     try {
-      p = Bun.spawn([this.bin, ...args], { cwd: this.cwd, env: process.env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+      p = Bun.spawn([this.bin, ...args], { cwd, env: process.env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
     } catch (e) {
       const missing = /ENOENT|not found|No such file/i.test((e as Error).message);
       return { code: -1, stdout: "", stderr: missing ? `Claude CLI not found (${this.bin}). Is Claude Code installed and on PATH?` : (e as Error).message };
@@ -723,7 +1032,13 @@ export function findUrl(out: string): string | null {
   return stripAnsi(out).match(/https?:\/\/[^\s\x07\x1b]+/)?.[0] ?? null;
 }
 
-function errorText(r: RunOut, what: string): string {
-  const text = (r.stderr.trim() || r.stdout.trim()).split("\n").slice(-5).join("\n");
+function errorText(r: RunOut, what: string, secrets: string[] = []): string {
+  let text = (r.stderr.trim() || r.stdout.trim()).split("\n").slice(-5).join("\n");
+  for (const v of secrets) if (v.length >= 4) text = text.split(v).join("***");
   return `${what} failed: ${maskSecrets(text) || `exit code ${r.code}`}`;
+}
+
+/** Header and env values of a tool, to cut from error text. */
+function secretsOf(input: McpAddInput | null): string[] {
+  return [...(input?.env ?? []).map((e) => e.value), ...(input?.headers ?? []).map((h) => h.value)];
 }

@@ -2,7 +2,7 @@
 import type { AutomationProposal, Loop, LoopColumn, Pass } from "./automationTypes";
 
 /** What boardCell needs of a Connections server (api.ts McpServer; not imported, so tests can load this file). */
-type ClaudeServer = { name: string; scope: "user" | "local" | "project" | "claude.ai" | "other"; transport: "stdio" | "http" | "sse" | null };
+type ClaudeServer = { name: string; scope: "user" | "local" | "project" | "claude.ai" | "board" | "other"; transport: "stdio" | "http" | "sse" | null };
 
 export const COLUMN_LABEL: Record<LoopColumn, string> = { backlog: "Backlog", planning: "Planning", ready: "Ready" };
 

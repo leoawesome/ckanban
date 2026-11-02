@@ -8,7 +8,7 @@ import { createServer } from "./http";
 import { QuickChats } from "./quickchat";
 import { Huddles } from "./huddle";
 import { withUtf8Locale } from "./locale";
-import { McpManager } from "./mcp";
+import { boardToolsSource, McpManager } from "./mcp";
 import { startPoller } from "./prpoller";
 import { Notifier } from "./notify";
 import { PushService } from "./push";
@@ -69,7 +69,7 @@ export async function startDaemon(): Promise<void> {
   const embedded = Object.keys(WEB_ASSETS).length > 0;
   if (!embedded && !existsSync(join(webDir, "index.html"))) console.warn("web UI not built yet: run `bun run build:web`");
   const terminals = new TerminalWatcher(store, bus, sessions, undefined, feed);
-  const mcp = new McpManager(bus, { claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude", seenFile: join(store.root, "mcp-seen.json") });
+  const mcp = new McpManager(bus, { claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude", seenFile: join(store.root, "mcp-seen.json"), boards: boardToolsSource(store) });
   const scheduler = new Scheduler(board, store, bus);
   const jobs = new JobRunner(board, store, bus);
   const passes = new Passes(store.root, bus, { fetch: globalThis.fetch, now: () => new Date() }, () => `http://localhost:${port}/api/passes/oauth/callback`);
