@@ -412,7 +412,7 @@ test("a teammate's system prompt carries the host ticket's description, cut with
   const t = await board.createTicket("p", { title: "Login page", body: `Build the login form.\n${"y".repeat(9000)}TAIL`, status: "review" });
   huddles.create("p", t.id, [{ preset: "reviewer" }]);
   await idle();
-  const args: string[] = processes().find((r) => r.env?.CKANBAN_HUDDLE_AGENT || r.args.includes("--disallowedTools"))!.args;
+  const args: string[] = processes().find((r) => r.args.includes("--append-system-prompt") && r.args.join(" ").includes("Build the login form."))!.args;
   const system = args[args.indexOf("--append-system-prompt") + 1];
   expect(system).toContain(`## The ticket (${t.id} "Login page")\nBuild the login form.`);
   expect(system).toContain("(truncated; use get_ticket for the full text)");

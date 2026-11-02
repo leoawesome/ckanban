@@ -72,7 +72,7 @@ test("a first message makes a chat that runs Claude in the board's folder, with 
   expect(run.args).toContain("--session-id");
   expect(run.args).toContain(v.sessionId);
   expect(run.args).toContain("bypassPermissions");
-  expect(run.args).not.toContain("--disallowedTools");
+  expect(run.args[run.args.indexOf("--disallowedTools") + 1].split(",")).not.toContain("Edit");
   expect(run.args[run.args.indexOf("--append-system-prompt") + 1]).toBe(quickChatNote(profile));
   const c = chats.get("p", v.id)!;
   expect(c.started).toBe(true);

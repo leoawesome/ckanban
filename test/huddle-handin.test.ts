@@ -167,7 +167,7 @@ test("read-only helpers can't hand in; a lead or @main lets them change files, a
   // Its new run works in the copy with the edit tools.
   const last = processes().at(-1)!;
   expect(last.cwd).toBe(snap);
-  expect(last.args).not.toContain("--disallowedTools");
+  expect(last.args[last.args.indexOf("--disallowedTools") + 1].split(",")).not.toContain("Edit");
   writeFileSync(join(p.copy!.dir, "app.txt"), "fixed\n");
   expect(text(await callTool("huddle_hand_in", { summary: "Fix what I found" }, agentCtx(h, "researcher")))).toContain("Handed in c1");
   expect(text(await callTool("huddle_review_changes", { id: "c1", accept: true }, mainCtx(h)))).toContain("Accepted c1");

@@ -1,3 +1,4 @@
+import { boardConnectorOptions } from "./connectors";
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { summarizeEvent } from "./activity";
@@ -262,10 +263,12 @@ export class QuickChats {
     let draftTimer: ReturnType<typeof setTimeout> | null = null;
     let lastActivity = 0;
     const emitDraft = (text: string, final?: string) => this.bus.emit({ type: "chat.draft", profile: slug, id, text, ...(final ? { final } : {}) });
+    const connectors = boardConnectorOptions(profile);
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: profile.path,
-      args: buildArgs(c.sessionId, resume, profile.model, [], (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), quickChatNote(profile), null, runOptions(null, profile, false).effort),
+      env: connectors.env,
+      args: buildArgs(c.sessionId, resume, profile.model, connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), quickChatNote(profile), null, runOptions(null, profile, false).effort),
       input: localizeAttachments(run.prompt, this.store.attachmentsDir),
       onEvent: (ev) => {
         const changed = run.draft.feed(ev);

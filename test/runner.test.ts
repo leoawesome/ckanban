@@ -50,7 +50,8 @@ test("missing binary resolves with error", async () => {
 test("buildArgs", () => {
   const first = buildArgs("u1", false, "sonnet");
   expect(first).toEqual(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages",
-    "--include-partial-messages", "--permission-mode", "bypassPermissions", "--session-id", "u1", "--model", "sonnet",
+    "--include-partial-messages", "--permission-mode", "bypassPermissions",
+    "--disallowedTools", "Workflow,ScheduleWakeup,AskUserQuestion,ShareOnboardingGuide,CronCreate,CronDelete,CronList", "--session-id", "u1", "--model", "sonnet",
     "--chrome", "--permission-prompt-tool", "stdio"]);
   const again = buildArgs("u1", true, null);
   expect(again).toContain("--resume");
@@ -144,7 +145,8 @@ test("buildArgs: planning chats skip plan mode but can't edit files", () => {
   expect(planning[planning.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
   const off = planning[planning.indexOf("--disallowedTools") + 1].split(",");
   for (const t of ["Edit", "Write", "NotebookEdit", "mcp__ckanban__run_schedule", "mcp__ckanban__schedule_job", "mcp__ckanban__start_huddle"]) expect(off).toContain(t);
-  expect(buildArgs("u1", false, null)).not.toContain("--disallowedTools");
+  const work = buildArgs("u1", false, null);
+  expect(work[work.indexOf("--disallowedTools") + 1].split(",")).not.toContain("Edit");
 });
 
 test("buildArgs turns Claude in Chrome on for work runs and planning chats", () => {

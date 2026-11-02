@@ -1,3 +1,4 @@
+import { runDisallowed } from "./connectors";
 import { findClaude } from "./claude";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
 import type { BackgroundTask } from "./types";
@@ -56,7 +57,10 @@ function killGroup(p: { pid: number; exitCode: number | null; signalCode: unknow
 
 export function buildArgs(
   sessionId: string, resume: boolean, model?: string | null,
-  /** Tools this run can't use (--disallowedTools), e.g. NO_EDIT_TOOLS or PLANNING_DISALLOWED_TOOLS. */
+  /**
+   * Tools this run can't use (--disallowedTools), e.g. NO_EDIT_TOOLS or PLANNING_DISALLOWED_TOOLS. The tools board runs
+   * never use (UNUSED_TOOLS) are always added: a run's own list only adds to them.
+   */
   disallowedTools: string[] = [],
   /** Inline MCP config (see mcpConfig) so every run has the board's tools. */
   mcp?: string,
@@ -74,7 +78,7 @@ export function buildArgs(
   // --include-partial-messages: token-level stream events, used for live replies in the chat.
   const args = ["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--replay-user-messages",
     "--include-partial-messages", "--permission-mode", "bypassPermissions"];
-  if (disallowedTools.length) args.push("--disallowedTools", disallowedTools.join(","));
+  args.push("--disallowedTools", runDisallowed(disallowedTools, ultracode).join(","));
   args.push(resume ? "--resume" : "--session-id", sessionId);
   if (model) args.push("--model", model);
   if (effort) args.push("--effort", effort);

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Bus } from "./events";
 import type { Store } from "./store";
+import { knownConnectors, setKnownConnectors } from "./connectors";
 import { entryFromInput, inputFromEntry, type ToolEntry } from "./board-tools";
 
 export type McpStatus = "connected" | "needs_auth" | "failed" | "pending" | "unknown";
@@ -337,6 +338,8 @@ export interface McpOptions {
   configFile?: string;
   /** Remembers which servers once worked, so "needs auth" there means expired (badge). */
   seenFile?: string;
+  /** Remembers the account's claude.ai connector names, so runs right after a restart know them (see connectors.ts). */
+  connectorsFile?: string;
   listTimeoutMs?: number;
   /** How long to wait for a probe session's statuses (see `sessionStatuses`). */
   probeTimeoutMs?: number;
@@ -386,6 +389,10 @@ export class McpManager {
       loginPollForMs: options.loginPollForMs ?? 5 * 60_000,
     };
     this.seen = new Set(options.seenFile && existsSync(options.seenFile) ? readJson(options.seenFile) ?? [] : []);
+    if (options.connectorsFile && existsSync(options.connectorsFile)) {
+      const saved = readJson(options.connectorsFile);
+      if (Array.isArray(saved)) setKnownConnectors(saved.filter((x) => typeof x === "string"));
+    }
   }
 
   state(): McpState {
@@ -448,6 +455,16 @@ export class McpManager {
     this.checkedAt = new Date().toISOString();
     this.error = null;
     this.saveSeen();
+    this.noteConnectors();
+  }
+
+  /** Boards' runs hide the connectors their board turned off by name, so they need the current list. */
+  private noteConnectors() {
+    setKnownConnectors(this.servers.filter((s) => s.scope === "claude.ai").map((s) => s.name));
+    if (!this.options.connectorsFile) return;
+    try {
+      writeFileSync(this.options.connectorsFile, JSON.stringify(knownConnectors()));
+    } catch {}
   }
 
   private noteBoardStatuses(session: Map<string, McpStatus> | null) {

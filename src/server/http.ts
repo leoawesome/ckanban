@@ -1,3 +1,4 @@
+import { parseConnectorSetting } from "./connectors";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, resolve } from "node:path";
 import { routeLabel, track } from "./lag";
@@ -1035,6 +1036,11 @@ export function createServer(deps: ServerDeps) {
         }
         if (b.artifacts !== undefined) next.artifacts = !!b.artifacts;
         if (b.workspace !== undefined) next.workspace = workspaceValue(b.workspace);
+        if (b.claudeAiConnectors !== undefined) {
+          const v = parseConnectorSetting(b.claudeAiConnectors);
+          if (v === null) throw new HttpError(400, 'claudeAiConnectors must be "all", "none" or a list of connector names');
+          next.claudeAiConnectors = v;
+        }
         if (b.stallMinutes !== undefined) {
           const n = b.stallMinutes;
           if (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 1440) throw new HttpError(400, "stallMinutes must be a whole number of minutes from 0 (off) to 1440");

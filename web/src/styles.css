@@ -3371,3 +3371,11 @@ button.tag-chip:hover { border-color: currentColor; }
 .rewind-confirm ul { margin: 6px 0; padding-left: 18px; }
 .rewind-warn { font-size: var(--fs-xs); color: var(--muted); margin-bottom: 6px; }
 .rewind-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Board settings: claude.ai connectors for this board's runs */
+.connectors-field .segmented { align-self: flex-start; }
+.connectors-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; }
+@media (max-width: 520px) { .connectors-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.connectors-grid label.check-row { flex-direction: row; align-items: center; gap: 6px; font-weight: 500; font-size: var(--fs-sm); }
+.connectors-grid label.check-row input { width: auto; flex: none; margin: 0; }
+.connectors-empty { background: var(--surface-2); padding: 8px 10px; border-radius: var(--r-sm); font-size: var(--fs-sm); color: var(--muted); }

@@ -51,6 +51,11 @@ export interface Profile {
    * folder itself on its current branch (one ticket at a time). Missing: worktree. Only new runs follow a change.
    */
   workspace?: Workspace;
+  /**
+   * Which connectors from the user's claude.ai account this board's runs get (they cost tokens on every turn):
+   * "all", "none", or the names to keep ("Slack"). Missing or unknown: all. See connectors.ts.
+   */
+  claudeAiConnectors?: "all" | "none" | string[];
 }
 
 export type Workspace = "worktree" | "folder";

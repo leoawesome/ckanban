@@ -42,6 +42,12 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const cap = parseCap(capText);
   const capError = cap === undefined ? "An amount in $, e.g. 5 (empty: no cap)" : null;
   const [artifacts, setArtifacts] = useState(!!profile?.artifacts);
+  const savedConnectors = profile?.claudeAiConnectors;
+  const [connectorMode, setConnectorMode] = useState<"all" | "none" | "some">(
+    Array.isArray(savedConnectors) ? "some" : savedConnectors === "none" ? "none" : "all");
+  const [keepConnectors, setKeepConnectors] = useState<string[]>(Array.isArray(savedConnectors) ? savedConnectors : []);
+  // Signed-in claude.ai connectors the board sees now (Connections list); null while loading.
+  const [connectors, setConnectors] = useState<string[] | null>(null);
   const [workspace, setWorkspace] = useState<Workspace>(profile?.workspace ?? "worktree");
   // The folder's version history (VersionHistoryOffer checks it): without commits there is nothing to make copies from.
   const [repo, setRepo] = useState<RepoKind | null>(null);
@@ -73,6 +79,10 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
     api.claudeDefaults().then((d) => setClaudeModel(d.model)).catch(() => {});
     if (isNew) api.claudeProjects().then(setRecent).catch(() => setRecent([]));
     else api.tickets(profile!.slug).then((ts) => setTicketCount(ts.length)).catch(() => {});
+    if (!isNew) api.mcp().then((s) => setConnectors(s.servers
+      .filter((x) => x.scope === "claude.ai" && x.status === "connected")
+      .map((x) => x.name.replace(/^claude\.ai /, ""))
+      .sort((a, b) => a.localeCompare(b)))).catch(() => setConnectors([]));
   }, [isNew]);
 
   const choose = (p: string) => {
@@ -107,6 +117,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
       const p = profile
         ? await api.updateProfile(profile.slug, {
           name, path, maxParallel, model: model || null, effort: effort || null, ultracode, autoHuddles, keepAwake, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
+          claudeAiConnectors: connectorMode === "some" ? keepConnectors : connectorMode,
           // A file typed but not yet added with Enter still counts.
           copyFiles: newFile.trim() && !copyFiles.includes(newFile.trim()) ? [...copyFiles, newFile.trim()] : copyFiles,
           setupCommand: setupCommand.trim(), cleanupCommand: cleanupCommand.trim(), setupDetected: detected,
@@ -305,6 +316,30 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                 </span>
               </span>
             </label>
+            <div className="field connectors-field">
+              <span className="field-label">claude.ai connectors for this board's runs</span>
+              <div className="segmented" role="group" aria-label="claude.ai connectors for this board's runs">
+                {(["all", "none", "some"] as const).map((m) => (
+                  <button key={m} type="button" className={connectorMode === m ? "on" : ""} aria-pressed={connectorMode === m} onClick={() => setConnectorMode(m)}>
+                    {m === "all" ? "All" : m === "none" ? "None" : "Only these"}
+                  </button>
+                ))}
+              </div>
+              {connectorMode === "some" && (connectors === null
+                ? <span className="muted small">Looking for your connectors…</span>
+                : connectors.length === 0
+                  ? <div className="connectors-empty">No claude.ai connectors found right now. Your saved choice stays as it is.</div>
+                  : <div className="connectors-grid">
+                    {connectors.map((c) => (
+                      <label key={c} className="check-row">
+                        <input type="checkbox" checked={keepConnectors.includes(c)}
+                          onChange={(e) => setKeepConnectors(e.target.checked ? [...keepConnectors, c] : keepConnectors.filter((k) => k !== c))} />
+                        <span>{c}</span>
+                      </label>
+                    ))}
+                  </div>)}
+              <span className="muted small">Fewer connectors make every Claude run cheaper. Runs on this board can't use the ones you turn off.</span>
+            </div>
             <label className="cap-field">
               Spending cap per run
               <span className="muted small">

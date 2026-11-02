@@ -1,3 +1,4 @@
+import { boardConnectorOptions } from "./connectors";
 import { existsSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -995,15 +996,17 @@ export class Board {
     // A resumed attempt (retry, stall restart) continues the same run in the log.
     if (!resumeText) this.store.appendActivity(slug, id, runNo, { type: "ckanban_run", kind: refine ? "planning" : quiet ? "reply" : run.chat?.followUp ? "follow-up" : run.chat ? "chat" : "work" });
     const effortNow = runOptions(t, profile, !refine);
+    // The board's claude.ai connector setting: hidden connectors join --disallowedTools, "none" turns them all off.
+    const connectors = boardConnectorOptions(profile);
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: session.dir,
-      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, refine ? planningDisallowed(t) : [], mcpConfig(undefined, this.store.boardTools(slug)), systemPrompt, cap, effortNow.effort, effortNow.ultracode),
+      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, [...(refine ? planningDisallowed(t) : []), ...connectors.disallowed], mcpConfig(undefined, this.store.boardTools(slug)), systemPrompt, cap, effortNow.effort, effortNow.ultracode),
       input: prompt,
       inputLocal: run.chat?.slash === "local" && !resume,
       planning: refine,
       // CKANBAN_TICKET marks board runs: the ckanban MCP/CLI refuses board changes there (no runs starting runs).
-      env: { CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${id}` },
+      env: { ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${id}` },
       onEvent: (ev) => {
         const changed = draft.feed(ev);
         if (changed !== null) {

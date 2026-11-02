@@ -43,6 +43,7 @@
 // Brakes, so a huddle can't loop or overspend: it stops at maxCostUsd (agents' runs and @main's huddle replies; the
 // leads are warned at 80%) and at maxMessages; routing pauses after AGENT_ONLY_MAX messages without the user; two
 // participants answering each other PING_PONG times in a row stop waking each other and their lead is tagged.
+import { boardConnectorOptions } from "./connectors";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { trackedInterval } from "./lag";
 import { basename, dirname, join } from "node:path";
@@ -2055,13 +2056,14 @@ export class Huddles {
     const summary = join(this.store.outputsDir(slug, h.hostTicket), summaryFile(hid));
     const plan = join(this.store.outputsDir(slug, h.hostTicket), proposalFile(hid));
     const system = huddleAgentSystemPrompt(h, p, host as Ticket, outputDir, dir, profile.baseBranch, this.lessonsFor(slug, p.preset), summary, existsSync(plan) ? plan : undefined);
-    const args = buildArgs(sessionId, resume, p.model ?? profile.model, p.canEdit ? [] : NO_EDIT_TOOLS.split(","), mcpConfig(undefined, this.store.boardTools(slug)), system);
+    const connectors = boardConnectorOptions(profile);
+    const args = buildArgs(sessionId, resume, p.model ?? profile.model, [...(p.canEdit ? [] : NO_EDIT_TOOLS.split(",")), ...connectors.disallowed], mcpConfig(undefined, this.store.boardTools(slug)), system);
     let lastWrite = 0;
     let started = resume;
     run.handle = startRun({
       bin: this.opts.claudeBin, cwd: dir, args, input,
       // Huddle agents have no board slot: CKANBAN_TICKET is the host (its board and outputs), CKANBAN_HUDDLE_AGENT who they are.
-      env: { CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${h.hostTicket}`, [HUDDLE_AGENT_ENV]: `${hid}/${handle}/${p.token}` },
+      env: { ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${h.hostTicket}`, [HUDDLE_AGENT_ENV]: `${hid}/${handle}/${p.token}` },
       idleMs: p.mode === "monitor" ? this.opts.idleMs ?? MONITOR_IDLE_MS : undefined,
       onEvent: (ev) => {
         if (ev?.type === "stream_event" || this.shuttingDown) return;

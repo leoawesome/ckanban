@@ -202,7 +202,7 @@ test("chat in Review acts right away: In Progress then back to Review", async ()
   const call = readArgs()[1];
   expect(call.args).toContain("--resume");
   expect(call.args[call.args.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
-  expect(call.args).not.toContain("--disallowedTools");
+  expect(call.args[call.args.indexOf("--disallowedTools") + 1].split(",")).not.toContain("Edit");
   expect(call.prompt.startsWith("Please also add tests")).toBe(true);
 });
 

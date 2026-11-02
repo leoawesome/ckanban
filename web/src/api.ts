@@ -225,6 +225,8 @@ export interface Profile {
   stallMinutes?: number;
   /** Where new runs work: a worktree per ticket (missing: this) or the project folder itself. */
   workspace?: Workspace;
+  /** Connectors from the claude.ai account this board's runs get: "all" (missing), "none" or the names to keep ("Slack"). */
+  claudeAiConnectors?: "all" | "none" | string[];
   pathExists?: boolean;
   running?: number;
 }

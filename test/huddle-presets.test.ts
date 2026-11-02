@@ -43,7 +43,8 @@ test("a huddle file edited outside the board can't raise canEdit, lead or the li
   // The agent's next run still has no edit tools.
   huddles.post("p", h.id, you(h), "@reviewer go");
   await idle();
-  expect(processes().at(-1)!.args).toContain("--disallowedTools");
+  const lastArgs = processes().at(-1)!.args;
+  expect(lastArgs[lastArgs.indexOf("--disallowedTools") + 1].split(",")).toContain("Edit");
 }, 30000);
 
 test("a huddle file edited outside the board can't unpause it, lower a cost or add participants", async () => {

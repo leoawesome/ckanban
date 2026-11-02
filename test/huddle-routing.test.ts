@@ -35,7 +35,7 @@ test("creating a huddle: @you and @main join, agents start on their job with sta
   expect(runs.length).toBe(3);
   for (const r of runs) {
     expect(r.args).toContain("--disallowedTools");
-    expect(r.args[r.args.indexOf("--disallowedTools") + 1]).toBe("Edit,Write,NotebookEdit");
+    expect(r.args[r.args.indexOf("--disallowedTools") + 1]).toStartWith("Edit,Write,NotebookEdit,");
     expect(r.args.join(" ")).toContain("You must NOT edit tracked files");
     expect(r.cwd).not.toBe(store.getTicket("p", t.id)!.worktree);
   }

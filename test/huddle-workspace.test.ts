@@ -93,7 +93,7 @@ test("own workspace: the agent gets a copy of the host's folder as it is now and
   expect(await git(hostDir, "status", "--porcelain")).toBe(status);
   const run = processes()[0];
   expect(run.cwd).toBe(p.copy!.dir);
-  expect(run.args).not.toContain("--disallowedTools");
+  expect(run.args[run.args.indexOf("--disallowedTools") + 1].split(",")).not.toContain("Edit");
   expect(run.args.join(" ")).toContain("huddle_hand_in");
 }, 20000);
 
