@@ -26,14 +26,19 @@ export interface ScheduleInput {
   enabled?: unknown;
   skipIfRunning?: unknown;
   tags?: unknown;
+  quiet?: unknown;
+  model?: unknown;
 }
+
+/** Model names a schedule accepts: an alias (sonnet, opus, haiku) or a full model id. */
+const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,79}$/;
 
 /** A due time older than this when the scheduler sees it was missed (daemon off, laptop asleep). */
 const MISSED_AFTER_MS = 90_000;
 const HISTORY_LIMIT = 100;
 /** Old prompt/title/cron kept in an "updated" history entry, cut to this many characters. */
 const PREVIOUS_MAX = 2000;
-const EDITABLE = ["name", "title", "body", "mode", "cron", "enabled", "skipIfRunning", "tags"] as const;
+const EDITABLE = ["name", "title", "body", "mode", "cron", "enabled", "skipIfRunning", "tags", "quiet", "model"] as const;
 
 const editorText = (by: ScheduleEditor) => (by === "user" ? "the user" : `ticket ${by.ticketId}`);
 
@@ -90,12 +95,20 @@ export class Scheduler {
     const err = cronError(cron);
     if (err) throw new ScheduleError(400, `invalid cron expression: ${err}`);
     const mode = input.mode === undefined ? base?.mode ?? "auto" : input.mode === "interview" ? "interview" : "auto";
+    let model = base?.model ?? null;
+    if (input.model !== undefined) {
+      const m = input.model === null ? "" : String(input.model).trim();
+      if (m && !MODEL_RE.test(m)) throw new ScheduleError(400, `invalid model "${m}": use sonnet, opus, haiku or a model id`);
+      model = m || null;
+    }
     return {
       name, title, cron, mode,
       body: str(input.body, base?.body ?? ""),
       enabled: input.enabled === undefined ? base?.enabled ?? true : input.enabled === true,
       skipIfRunning: input.skipIfRunning === undefined ? base?.skipIfRunning ?? true : input.skipIfRunning === true,
       tags: input.tags === undefined ? base?.tags ?? [] : normalizeTags(input.tags),
+      quiet: input.quiet === undefined ? base?.quiet ?? false : input.quiet === true,
+      model,
     };
   }
 
@@ -132,7 +145,8 @@ export class Scheduler {
     if (!next.enabled) next.nextRunAt = null;
     else if (!current.enabled || next.cron !== current.cron || !current.nextRunAt) next.nextRunAt = this.nextRunAt(next.cron);
     this.store.saveSchedule(slug, next);
-    const changed: string[] = EDITABLE.filter((k) => k === "tags" ? (next.tags ?? []).join() !== (current.tags ?? []).join() : next[k] !== current[k]);
+    const changed: string[] = EDITABLE.filter((k) => k === "tags" ? (next.tags ?? []).join() !== (current.tags ?? []).join()
+      : k === "quiet" ? !!next.quiet !== !!current.quiet : k === "model" ? (next.model ?? null) !== (current.model ?? null) : next[k] !== current[k]);
     if (changed.length) {
       const toggle = changed.length === 1 && changed[0] === "enabled";
       const previous: SchedulePrevious = {};
@@ -154,7 +168,10 @@ export class Scheduler {
   /** Newest first, with each ticket's current state (null once the ticket was deleted). */
   history(slug: string, id: string) {
     this.get(slug, id);
-    return this.store.readScheduleHistory(slug, id).slice(-HISTORY_LIMIT).reverse().map((e) => {
+    const all = this.store.readScheduleHistory(slug, id);
+    // A quiet run shows once, as its "quiet" line: the fire that made its (removed) ticket is left out.
+    const quiet = new Set(all.flatMap((e) => (e.kind === "quiet" ? [e.ticketId] : [])));
+    return all.filter((e) => !(e.kind === "fired" && quiet.has(e.ticketId))).slice(-HISTORY_LIMIT).reverse().map((e) => {
       // Fires and skips point at the schedule's ticket; edits at the ticket whose run made them.
       const tid = e.kind === "fired" || e.kind === "skipped" ? e.ticketId
         : e.kind === "edited" && e.by !== "user" ? e.by.ticketId : null;
@@ -186,6 +203,7 @@ export class Scheduler {
         if (!existsSync(profile.path)) throw new Error(`board folder ${profile.path} does not exist`);
         const t = await this.board.createTicket(slug, {
           title: fillTitle(s.title, now), body: s.body, status: "in_progress", mode: s.mode, scheduleId: s.id, tags: s.tags,
+          ...(s.model ? { model: s.model } : {}),
         });
         entry = { at, kind: "fired", trigger, ticketId: t.id };
         lastError = null;

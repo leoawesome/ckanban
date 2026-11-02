@@ -56,6 +56,16 @@ const SCHEDULE_FIELDS = {
     type: "array", items: { type: "string" },
     description: "Tags every ticket it creates gets, e.g. [\"post\"], so the user can filter them on the board. Replaces the list; [] clears it.",
   },
+  quiet: {
+    type: "boolean",
+    description: "Quiet when nothing needs the user: each run is told which tickets it raised are still open, and a run that finds nothing " +
+      "ends with \"quiet\":true in its result line so the board removes its ticket and keeps one line in the history. " +
+      "For check-ins (\"every hour, tell me what needs me\"). Default: false.",
+  },
+  model: {
+    type: "string",
+    description: "Model for its runs, e.g. \"sonnet\" (cheaper for frequent check-ins), \"opus\", \"haiku\" or a model id. \"\" goes back to the board's model.",
+  },
 };
 
 const DEPENDS_ON = {
@@ -272,6 +282,8 @@ export function scheduleLine(s: ScheduleInfo): string {
   if (s.enabled && s.nextRunAt) bits.push(`next ${localTime(s.nextRunAt)}`);
   if (s.lastFiredAt) bits.push(`last ticket ${localTime(s.lastFiredAt)}`);
   if (s.lastError) bits.push(`last run failed to start: ${s.lastError}`);
+  if (s.quiet) bits.push("quiet when nothing needs the user");
+  if (s.model) bits.push(`model ${s.model}`);
   return bits.join("; ");
 }
 
@@ -291,6 +303,7 @@ function historyLine(e: ScheduleHistoryInfo): string {
   if (e.kind === "fired") return `${at}  fired (${e.trigger}): ${t ?? `${e.ticketId} (deleted)`}`;
   if (e.kind === "skipped") return `${at}  skipped (${e.trigger}): previous ticket ${e.ticketId ?? ""} still queued or running`;
   if (e.kind === "error") return `${at}  could not create the ticket (${e.trigger}): ${e.message}`;
+  if (e.kind === "quiet") return `${at}  checked, nothing new: ${e.summary ?? ""}`;
   const by = !e.by || e.by === "user" ? "the user" : `ticket ${e.by.ticketId}`;
   const fields = e.fields?.length ? ` ${e.fields.join(", ")}` : "";
   const prev = e.previous ? Object.entries(e.previous).map(([k, v]) => `\n    previous ${k}: ${String(v).replace(/\s+/g, " ").slice(0, 300)}`).join("") : "";
@@ -304,7 +317,11 @@ function scheduleInput(args: any, partial: boolean): ScheduleInput {
     else if (!partial && k !== "body") throw new ClientError(`${k} is required`);
   }
   if (args?.mode !== undefined) out.mode = parseMode(args.mode);
-  for (const k of ["enabled", "skipIfRunning"] as const) {
+  if (args?.model !== undefined) {
+    if (typeof args.model !== "string") throw new ClientError("model must be a string");
+    out.model = args.model.trim() || null;
+  }
+  for (const k of ["enabled", "skipIfRunning", "quiet"] as const) {
     if (args?.[k] === undefined) continue;
     if (typeof args[k] !== "boolean") throw new ClientError(`${k} must be true or false`);
     out[k] = args[k];
@@ -351,7 +368,7 @@ const SCHEDULE_TOOLS: Tool[] = [
   {
     name: "update_schedule",
     description:
-      "Change a schedule: any of name, title, prompt (body), cron, mode, skipIfRunning, tags; enabled false/true pauses/resumes it. " +
+      "Change a schedule: any of name, title, prompt (body), cron, mode, skipIfRunning, tags, quiet, model; enabled false/true pauses/resumes it. " +
       "Only the fields you pass change. A run created by a schedule may update its own schedule (e.g. refine its prompt); " +
       "the old prompt is kept in the schedule's history.",
     inputSchema: { type: "object", properties: { profile: PROFILE, id: SCHEDULE_ID, ...SCHEDULE_FIELDS }, required: ["id"] },
@@ -360,7 +377,7 @@ const SCHEDULE_TOOLS: Tool[] = [
     async run(args, ctx) {
       const slug = await slugFor(args, ctx);
       const patch = scheduleInput(args, true);
-      if (!Object.keys(patch).length) throw new ClientError("nothing to change: pass name, title, body, cron, mode, enabled, skipIfRunning or tags");
+      if (!Object.keys(patch).length) throw new ClientError("nothing to change: pass name, title, body, cron, mode, enabled, skipIfRunning, tags, quiet or model");
       const s = await ctx.client.updateSchedule(slug, str(args, "id")!, patch, ctx.env[RUN_ENV]);
       return `Updated: ${scheduleLine(s)}`;
     },

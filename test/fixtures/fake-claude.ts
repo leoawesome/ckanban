@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 // Fake `claude` CLI for tests. Behaviour controlled by env:
+// FAKE_QUIET=1: the result line says "quiet": true (a quiet schedule's run that found nothing).
 // FAKE_MODE=ok|fail|limit|budget|slow|partial|blocked|noresult|background|bgsilent|asks|nosession|overloaded|badrequest|silent, FAKE_PR=<url>, FAKE_ARGS_FILE=<path to append argv JSON>
 // FAKE_ONCE_FILE=<path>: overloaded/silent only misbehave on the first run (the file marks it); later runs are ok.
 // FAKE_SILENT_MS: how long silent mode goes quiet after init before carrying on (default 30s).
@@ -255,7 +256,7 @@ const steered = heard.slice(1);
 const status = mode === "blocked" ? "blocked" : mode === "questions" ? "questions" : "done";
 const text = mode === "noresult"
   ? "All done, no result line."
-  : `Work complete.${steered.length ? `\nSteered: ${steered.join(" | ")}` : ""}${decisions.length ? `\nAsks: ${decisions.join(" ")}` : ""}${process.env.FAKE_EXTRA ?? ""}\nCKANBAN_RESULT: ${JSON.stringify({ status, prUrl: pr, ...(process.env.FAKE_PRS ? { prUrls: process.env.FAKE_PRS.split(",") } : {}), summary: `fake ${status}` })}`;
+  : `Work complete.${steered.length ? `\nSteered: ${steered.join(" | ")}` : ""}${decisions.length ? `\nAsks: ${decisions.join(" ")}` : ""}${process.env.FAKE_EXTRA ?? ""}\nCKANBAN_RESULT: ${JSON.stringify({ status, prUrl: pr, ...(process.env.FAKE_PRS ? { prUrls: process.env.FAKE_PRS.split(",") } : {}), ...(process.env.FAKE_QUIET ? { quiet: true } : {}), summary: `fake ${status}` })}`;
 for (const chunk of ["Work ", "complete."]) {
   if (process.env.FAKE_STREAM_DELAY) await Bun.sleep(Number(process.env.FAKE_STREAM_DELAY));
   emit({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: chunk } } });

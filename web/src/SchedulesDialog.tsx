@@ -22,6 +22,23 @@ export const CRON_PRESETS: { label: string; cron: string }[] = [
 
 const FIELD_LABEL: Record<string, string> = {
   name: "name", title: "ticket title", body: "prompt", mode: "mode", cron: "timing", enabled: "on/off", skipIfRunning: "skip setting", tags: "tags",
+  quiet: "quiet setting", model: "model",
+};
+
+/** Models a schedule can pick; "" is the board's own. */
+const MODELS: { value: string; label: string }[] = [
+  { value: "", label: "Board's model" },
+  { value: "sonnet", label: "Sonnet (cheaper, good for check-ins)" },
+  { value: "opus", label: "Opus" },
+  { value: "haiku", label: "Haiku (cheapest)" },
+];
+
+const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
+
+/** Local day key (YYYY-MM-DD), as the server counts quiet checks. */
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
 const ACTION_LABEL = { created: "Created", updated: "Edited", paused: "Paused", resumed: "Resumed" } as const;
@@ -83,6 +100,11 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
     }
   };
 
+  const setUpCheckins = () => act("checkin", async () => {
+    const t = await api.checkinSetup(profile.slug);
+    onOpenTicket(t.id);
+  });
+
   const runNow = (s: Schedule) => act(`run:${s.id}`, async () => {
     const { entry } = await api.runSchedule(profile.slug, s.id);
     if (entry.kind === "skipped") setNote(`${s.name}: skipped, the previous run is still going.`);
@@ -99,6 +121,8 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
             {s.enabled ? <span className="badge ok">Active</span> : <span className="badge stopped">Paused</span>}
             {s.active && <span className="badge running"><span className="spinner" /> Running</span>}
             <span className="badge stopped">{s.mode === "auto" ? "Just do it" : "Interview first"}</span>
+            {s.quiet && <span className="badge stopped" title="Checks that find nothing leave no ticket">Quiet</span>}
+            {s.model && <span className="badge stopped">{s.model}</span>}
             {s.tags?.map((g) => <TagChip key={g} name={g} />)}
           </div>
           <div className="sched-when">
@@ -106,8 +130,14 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
           </div>
           <div className="muted small">
             {s.enabled && s.nextRunAt ? <>Next: {when(s.nextRunAt)} ({timeUntil(s.nextRunAt)})</> : "Paused: won't run until resumed."}
-            {s.lastFiredAt && <> · Last ticket {timeAgo(s.lastFiredAt)}</>}
+            {s.lastFiredAt && <> · Last {s.quiet ? "check" : "ticket"} {timeAgo(s.lastFiredAt)}</>}
           </div>
+          {(s.spend7dUsd !== undefined || s.quiet) && (
+            <div className="muted small">
+              {s.spend7dUsd !== undefined && <>Last 7 days: {usd(s.spend7dUsd)}</>}
+              {s.quiet && <>{s.spend7dUsd !== undefined ? " · " : ""}Quiet checks today: {s.quietPerDay?.find((d) => d.day === today())?.count ?? 0}</>}
+            </div>
+          )}
           {s.lastError && <div className="mcp-msg">Last run failed to start: {s.lastError}</div>}
         </div>
         <div className="mcp-actions">
@@ -147,6 +177,10 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
             Times are this computer's local time; runs happen only while ckanban is running (one missed run is caught up on start).
           </span>
           <div className="spacer" />
+          <button className="btn small" disabled={busy === "checkin"} onClick={setUpCheckins}
+            title="Claude checks every work hour what needs you and tells you only then. Set it up in a short chat.">
+            {busy === "checkin" ? "Opening…" : "✦ Proactive check-ins"}
+          </button>
           <button className="btn small primary" onClick={() => setEditing((e) => (e === "new" ? null : "new"))}>
             {editing === "new" ? "Close form" : "New schedule"}
           </button>
@@ -206,7 +240,13 @@ function History({ slug, schedule, tickets, onOpenTicket }: {
         return (
           <div key={i} className="sched-entry">
             <span className="sched-at" title={new Date(e.at).toLocaleString()}>{when(e.at)}</span>
-            {e.kind !== "edited" && <span className="muted small">{TRIGGER_LABEL[e.trigger]}</span>}
+            {(e.kind === "fired" || e.kind === "skipped" || e.kind === "error") && <span className="muted small">{TRIGGER_LABEL[e.trigger]}</span>}
+            {e.kind === "quiet" && (
+              <>
+                <span className="badge stopped">Checked, nothing new</span>
+                <span className="muted small" title={e.summary}>{e.summary}</span>
+              </>
+            )}
             {e.kind === "edited" && (
               <span className="sched-edit">
                 <span className="badge stopped">{ACTION_LABEL[e.action]}{e.action === "updated" && e.fields.length ? `: ${e.fields.map((f) => FIELD_LABEL[f] ?? f).join(", ")}` : ""}</span>
@@ -253,6 +293,8 @@ function ScheduleForm({ slug, initial, knownTags, onDone }: {
   const [custom, setCustom] = useState(() => !!initial && !CRON_PRESETS.some((p) => p.cron === initial.cron));
   const [skipIfRunning, setSkipIfRunning] = useState(initial?.skipIfRunning ?? true);
   const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
+  const [quiet, setQuiet] = useState(initial?.quiet ?? false);
+  const [model, setModel] = useState(initial?.model ?? "");
   const [preview, setPreview] = useState<CronPreview | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -277,7 +319,7 @@ function ScheduleForm({ slug, initial, knownTags, onDone }: {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const input: ScheduleInput = { name: name.trim(), title: title.trim(), body, mode, cron: cron.trim(), skipIfRunning, tags };
+    const input: ScheduleInput = { name: name.trim(), title: title.trim(), body, mode, cron: cron.trim(), skipIfRunning, tags, quiet, model: model || null };
     setBusy(true);
     setErr(null);
     try {
@@ -339,6 +381,17 @@ function ScheduleForm({ slug, initial, knownTags, onDone }: {
         <TagEditor tags={tags} known={knownTags} onChange={setTags} disabled={busy} />
         <span className="muted small">Every ticket this schedule creates gets these tags, so you can filter them on the board.</span>
       </div>
+      <label className="check-row">
+        <input type="checkbox" checked={quiet} onChange={(e) => setQuiet(e.target.checked)} />
+        Quiet when nothing needs me: a run that finds nothing leaves no ticket, only a line in History
+      </label>
+      <label>
+        Model
+        <select value={model} onChange={(e) => setModel(e.target.value)}>
+          {MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          {model && !MODELS.some((m) => m.value === model) && <option value={model}>{model}</option>}
+        </select>
+      </label>
       <label className="check-row">
         <input type="checkbox" checked={skipIfRunning} onChange={(e) => setSkipIfRunning(e.target.checked)} />
         Skip a run while the previous one is still queued or running

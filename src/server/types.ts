@@ -42,6 +42,8 @@ export interface Profile {
   runCapUsd?: number | null;
   /** Runs are taught the claude.ai artifact helper (publish/read artifacts). Missing: off, except for runs whose ticket or messages hold an artifact link. */
   artifacts?: boolean;
+  /** The user dismissed the board's one-time offer to set up proactive check-ins (Schedules → Proactive check-ins). */
+  checkinOfferDismissed?: boolean;
   /** Minutes without stream output before a run counts as stalled (the Inbox asks what to do). 0: off. Missing: 20. */
   stallMinutes?: number;
   /**
@@ -165,6 +167,11 @@ export interface Ticket {
   ultracode?: boolean | null;
   /** Set on tickets created by a schedule (see Schedule). */
   scheduleId?: string | null;
+  /**
+   * Set on tickets a schedule's run created (create_ticket from inside the run of ticket ticketId): what that schedule
+   * raised for the user. A quiet schedule's next runs are told which of these are still open.
+   */
+  raisedBy?: { scheduleId: string; ticketId: string } | null;
   /** Set on tickets created by a one-time scheduled job (see Job). */
   jobId?: string | null;
   /** Set on tickets an automation loop made from an event in another service (see TicketSource). */
@@ -263,6 +270,8 @@ export interface Ticket {
   automationCards?: Record<string, { loopId: string; at: string }>;
   /** Made by Automations → Set up with Claude: its Planning chat sets up an automation instead of shaping a ticket. */
   automationSetup?: boolean;
+  /** Made by Schedules → Proactive check-ins: its Planning chat sets up a quiet check-in schedule (checkin-guides.ts). */
+  checkinSetup?: boolean;
   createdAt: string;
   updatedAt: string;
   body: string;
@@ -448,6 +457,14 @@ export interface Schedule {
   enabled: boolean;
   /** Skip a fire while the previous ticket from this schedule is still queued or running. */
   skipIfRunning: boolean;
+  /**
+   * Quiet when nothing needs the user: a run that ends with "quiet": true in its result line (and made no ticket) is
+   * removed by the board and leaves one "quiet" line in the history. Its runs are told which tickets it raised are
+   * still open. Missing on older schedules (off).
+   */
+  quiet?: boolean;
+  /** Model for the tickets it creates (e.g. "sonnet"); null/missing: the board's model. */
+  model?: string | null;
   /** Tags every ticket it creates gets. Missing on older schedules. */
   tags?: string[];
   createdAt: string;
@@ -512,6 +529,8 @@ export type ScheduleHistoryEntry =
   | { at: string; kind: "fired"; trigger: ScheduleTrigger; ticketId: string }
   | { at: string; kind: "skipped"; trigger: ScheduleTrigger; ticketId: string | null }
   | { at: string; kind: "error"; trigger: ScheduleTrigger; message: string }
+  /** A quiet schedule's run found nothing for the user: the board removed its ticket (ticketId, now gone). */
+  | { at: string; kind: "quiet"; ticketId: string; summary: string; costUsd: number }
   | { at: string; kind: "edited"; action: ScheduleEditAction; fields: string[]; by: ScheduleEditor; previous?: SchedulePrevious };
 
 export interface Interrupted {

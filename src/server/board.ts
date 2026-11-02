@@ -17,7 +17,9 @@ import { recallBlock } from "./recall";
 import { wouldLoop } from "../../web/src/family";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
-import { chatPrompt, devicesNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake } from "./prompts";
+import { canEndQuietly, quietContext } from "./quiet";
+import { addHuddleSpend } from "./spend";
+import { chatPrompt, devicesNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
   childrenOf, DEFAULT_MAX_CONCURRENT, findCycle, isComplete, MAX_RUN_CHAIN, MAX_RUN_STARTS, normalizeNeeds, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
@@ -81,6 +83,8 @@ interface ActiveRun {
   targetStatus: Status | null;
   /** The user asked this run, in its own chat, to move its card: the board moves it once the run ends (see requestSelfMove). */
   selfMove?: SelfMove;
+  /** A quiet schedule's run found nothing for the user: once it is over, the board removes the ticket (endQuietly). */
+  quietEnd?: { summary: string; costUsd: number };
   stopRequested: boolean;
   /**
    * Set for runs started from the ticket chat (not the Ready queue). raw: text is the full prompt (planner wake-ups);
@@ -216,6 +220,15 @@ const STALL_RESTART_TEXT = "Your previous run stopped responding and the user re
 export const RESTART_MAX_WAIT_MS = 10 * 60_000;
 const DRAFT_THROTTLE_MS = 120;
 /** What a run spent: its own messages plus its workflows' helper agents. */
+/**
+ * Tools a Planning chat doesn't get. The check-in setup chat (Schedules → Proactive check-ins, which the user opened to
+ * make a schedule) may create and change schedules; it still can't run, delete or edit files.
+ */
+function planningDisallowed(t: Ticket): string[] {
+  if (!t.checkinSetup) return PLANNING_DISALLOWED_TOOLS;
+  return PLANNING_DISALLOWED_TOOLS.filter((x) => x !== "mcp__ckanban__create_schedule" && x !== "mcp__ckanban__update_schedule");
+}
+
 function spentWith(spend: { main: Map<string, number>; workflowDirs: Set<string>; files: Map<string, { key: string; cost: number }> }): number {
   let total = 0;
   for (const c of spend.main.values()) total += c;
@@ -771,6 +784,11 @@ export class Board {
         this.runs.delete(this.key(slug, id));
         // Whatever devices the run still holds or waits for go to the next ticket in line.
         this.devices.releaseAll(slug, id);
+        if (run.quietEnd && !this.shuttingDown && await this.endQuietly(slug, id, run.quietEnd)) {
+          if (this.restartPending) this.emitRestart();
+          this.dispatch(slug);
+          return;
+        }
         // Before a pending restart, so the move the user asked for isn't lost.
         await this.applySelfMove(run);
         if (this.restartPending) this.emitRestart();
@@ -833,6 +851,8 @@ export class Board {
         return;
       }
       run.chat = chat;
+      // A message came in after a quiet run: the user is talking to this ticket now, so it stays.
+      run.quietEnd = undefined;
       run.retried = false;
       run.restartRequested = false;
       run.promptMsgId = next.id;
@@ -918,7 +938,7 @@ export class Board {
         repo: session.repo, inPlace: session.inPlace, home: { folder: profile.path, baseBranch: profile.baseBranch }, linked: !!t.workdir,
         // Notes other tickets' runs left reach even a ticket's first run: nobody else passes them on.
         comments: t.workdir || t.runCount > 0 ? newComments : newComments.filter((c) => c.from), outputDir,
-        schedule: t.scheduleId ? { id: t.scheduleId, name: this.store.getSchedule(slug, t.scheduleId)?.name ?? null, board: slug } : undefined,
+        schedule: t.scheduleId ? this.scheduleContext(slug, t) : undefined,
         autoHuddles: autoHuddlesOn(profile), artifacts, recall: this.recall(slug, t),
       })
       : resumePrompt(t, newComments, outputDir, autoHuddlesOn(profile), artifacts, session.repo, session.inPlace, { folder: profile.path, baseBranch: profile.baseBranch }), this.store.attachmentsDir));
@@ -969,7 +989,7 @@ export class Board {
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: session.dir,
-      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, refine ? PLANNING_DISALLOWED_TOOLS : [], mcpConfig(), systemPrompt, cap, effortNow.effort, effortNow.ultracode),
+      args: buildArgs(session.sessionId, session.existed, t.model ?? profile.model, refine ? planningDisallowed(t) : [], mcpConfig(), systemPrompt, cap, effortNow.effort, effortNow.ultracode),
       input: prompt,
       inputLocal: run.chat?.slash === "local" && !resume,
       planning: refine,
@@ -1157,6 +1177,16 @@ export class Board {
       return;
     }
     const current = this.store.getTicket(slug, id)!;
+    // A quiet schedule's run that found nothing: Done without a word to the user; the ticket goes once the run is over.
+    if (!run.chat && !run.targetStatus && result && current.scheduleId && canEndQuietly({
+      schedule: this.store.getSchedule(slug, current.scheduleId), ticket: current, tickets: this.store.listTickets(slug),
+      quietResult: !!result.quiet, prUrls: result.prUrls, waiting: this.waiting(slug, id).length,
+    }) && !this.huddleOpen(slug, id)) {
+      run.quietEnd = { summary: result.summary || body || "Nothing new.", costUsd: spentWith(spend) };
+      this.store.addComment(slug, id, "ai", run.quietEnd.summary);
+      this.patch(slug, id, { ...base, status: "done", outcome: "done", error: null, lastActivity: null });
+      return;
+    }
     // Questions must reach the user verbatim; otherwise the short summary is enough.
     const summary = (result?.status === "questions" ? body : result?.summary) || body || "(no output)";
     this.store.addComment(slug, id, "ai", summary);
@@ -1685,6 +1715,7 @@ export class Board {
     input: {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
+      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null;
     },
   ): Promise<Ticket> {
     const status = input.status === "in_progress" ? "ready" : input.status;
@@ -2186,6 +2217,39 @@ export class Board {
       } catch (e) {
         console.error(`profile ${profile.slug}: worktree sweep failed: ${(e as Error).message}`);
       }
+    }
+  }
+
+  /** Prompt context of a schedule's ticket: which schedule, and for a quiet one what it raised that is still open. */
+  private scheduleContext(slug: string, t: Ticket): PromptContext["schedule"] {
+    const s = this.store.getSchedule(slug, t.scheduleId!);
+    if (!s) return { id: t.scheduleId!, name: null, board: slug };
+    return {
+      id: s.id, name: s.name, board: slug,
+      ...(s.quiet ? { quiet: quietContext(this.store.listTickets(slug), this.store.readScheduleHistory(slug, s.id), s.id, t.id) } : {}),
+    };
+  }
+
+  /**
+   * Remove a quiet schedule's ticket whose run found nothing for the user, and note it in the schedule's history (with
+   * its cost, which also counts in today's spend). Not when something came up meanwhile (a message, a new run, a move).
+   */
+  private async endQuietly(slug: string, id: string, end: { summary: string; costUsd: number }): Promise<boolean> {
+    const t = this.store.getTicket(slug, id);
+    if (!t?.scheduleId || t.status !== "done" || this.isRunning(slug, id) || this.waiting(slug, id).length) return false;
+    try {
+      const scheduleId = t.scheduleId;
+      await this.deleteTicket(slug, id);
+      addHuddleSpend(this.store.root, slug, end.costUsd);
+      const s = this.store.getSchedule(slug, scheduleId);
+      if (s) {
+        this.store.appendScheduleHistory(slug, scheduleId, { at: nowIso(), kind: "quiet", ticketId: id, summary: end.summary.slice(0, 500), costUsd: Math.round(end.costUsd * 10000) / 10000 });
+        this.bus.emit({ type: "schedule.updated", profile: slug, id: scheduleId, schedule: s });
+      }
+      return true;
+    } catch (e) {
+      console.error(`ticket ${slug}/${id}: could not remove the quiet schedule run`, e);
+      return false;
     }
   }
 

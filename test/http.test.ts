@@ -1289,3 +1289,27 @@ test("ticket activity endpoint pages back from the newest entries", async () => 
   expect((await fetch(`${url}?before=-1`)).status).toBe(400);
   expect((await fetch(`${url}?before=abc`)).status).toBe(400);
 });
+
+test("tickets a schedule's run creates are linked to that schedule; the list shows spend and quiet checks", async () => {
+  const p = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Raised", path: tempDir("ck-raised-") }))).json()) as any;
+  const url = `${base}/api/profiles/${p.slug}/schedules`;
+  const s = (await (await fetch(url, json("POST", { name: "Check-ins", title: "C", body: "b", cron: "0 9 * * *", quiet: true, model: "sonnet" }))).json()) as any;
+  expect(s).toMatchObject({ quiet: true, model: "sonnet" });
+  const runTicket = store.createTicket(p.slug, { title: "C", body: "", status: "review", scheduleId: s.id });
+  const other = store.createTicket(p.slug, { title: "Other", body: "", status: "review" });
+  const make = (from: string) => fetch(`${base}/api/profiles/${p.slug}/tickets`, {
+    method: "POST", headers: { "content-type": "application/json", "x-ckanban-run": `${p.slug}/${from}` },
+    body: JSON.stringify({ title: "Reply to Ana", body: "https://slack.com/x", status: "review" }),
+  });
+  // Both tickets' runs are working right now (only a working run may create tickets).
+  const real = board.runnerRights.bind(board);
+  (board as any).runnerRights = (slug: string, id: string) => (id === runTicket.id || id === other.id ? store.getTicket(slug, id) : real(slug, id));
+  let r = await make(runTicket.id);
+  expect(r.status).toBe(201);
+  expect(((await r.json()) as any).raisedBy).toEqual({ scheduleId: s.id, ticketId: runTicket.id });
+  r = await make(other.id);
+  expect(((await r.json()) as any).raisedBy).toBeUndefined();
+  const list = (await (await fetch(url)).json()) as any[];
+  expect(list[0]).toMatchObject({ id: s.id, spend7dUsd: 0, quietPerDay: [] });
+  (board as any).runnerRights = real;
+});

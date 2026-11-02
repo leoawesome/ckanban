@@ -318,6 +318,7 @@ export class Store {
     input: {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
+      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null;
     },
   ): Ticket {
     const at = nowIso();
@@ -335,6 +336,8 @@ export class Store {
       ...(input.tags?.length ? { tags: input.tags } : {}),
       ...(input.important ? { important: true } : {}),
       ...(input.partOf ? { partOf: input.partOf, ...(input.partOfVia ? { partOfVia: input.partOfVia } : {}) } : {}),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.raisedBy ? { raisedBy: input.raisedBy } : {}),
     };
     atomicWrite(this.ticketPath(slug, t.id), serializeTicket(t));
     this.saved(slug, t.id, t);

@@ -123,6 +123,8 @@ export interface ScheduleInfo {
   enabled: boolean;
   skipIfRunning: boolean;
   tags?: string[];
+  quiet?: boolean;
+  model?: string | null;
   lastFiredAt: string | null;
   nextRunAt: string | null;
   lastError: string | null;
@@ -139,11 +141,13 @@ export interface ScheduleInput {
   enabled?: boolean;
   skipIfRunning?: boolean;
   tags?: string[];
+  quiet?: boolean;
+  model?: string | null;
 }
 
 export interface ScheduleHistoryInfo {
   at: string;
-  kind: "fired" | "skipped" | "error" | "edited";
+  kind: "fired" | "skipped" | "error" | "edited" | "quiet";
   trigger?: string;
   ticketId?: string | null;
   message?: string;
@@ -151,6 +155,8 @@ export interface ScheduleHistoryInfo {
   fields?: string[];
   by?: "user" | { ticketId: string };
   previous?: { title?: string; body?: string; cron?: string };
+  summary?: string;
+  costUsd?: number;
   ticket: { id: string; title: string; status: Status; outcome: string | null; running: boolean } | null;
 }
 

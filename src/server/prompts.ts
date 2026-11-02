@@ -1,3 +1,4 @@
+import { checkinSetupPrompt } from "./checkin-guides";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { helperCommand } from "./artifact";
@@ -309,7 +310,7 @@ export interface PromptContext {
   comments?: Comment[];
   outputDir: string;
   /** The ticket was created by this schedule (null name: schedule since deleted). */
-  schedule?: { id: string; name: string | null; board: string };
+  schedule?: { id: string; name: string | null; board: string; quiet?: QuietContext };
   /** The board has "Auto huddles" on: add the auto huddle section (not for interview-mode tickets' first run). */
   autoHuddles?: boolean;
   /** The board has "claude.ai artifacts" on: teach the artifact helper. */
@@ -338,11 +339,36 @@ This ticket exists to set up an automation for this board with the user, not to 
 5. Call \`propose_automation\` with the tested script. The user's click on the card saves it (and connects what still needs connecting); you can't save it yourself, and don't try through the API.
 Don't use propose_ticket in this chat. Offer "Ask Claude first" only when the user wants Claude to filter items: it costs a little per new item.`;
 
+/** What a quiet schedule's run is told: its last check and the tickets it raised that are still open. */
+export interface QuietContext {
+  /** When the schedule's previous run started (null: this is its first). */
+  lastCheckAt: string | null;
+  open: { id: string; title: string; status: string; createdAt: string; links: string[] }[];
+}
+
+/** The board's part of a quiet schedule's run: how to raise things, follow up on open ones and end quietly. */
+export function quietSection(q: QuietContext): string {
+  const open = q.open.length
+    ? q.open.map((t) => `- ${t.id} "${t.title}" (${t.status}, raised ${t.createdAt})${t.links.length ? `: ${t.links.join(" ")}` : ""}`).join("\n")
+    : "(none)";
+  return `
+# Quiet check-in
+This schedule is quiet: the user only wants to hear from it when something needs them.
+- Previous check: ${q.lastCheckAt ?? "none, this is the first one"}. Look at what is new since then.
+- To raise something for the user, create a ticket with the ckanban \`create_ticket\` tool, status "review", with what happened, a link to the source and what you suggest. The board links it to this schedule. One ticket per separate task; related things share one.
+- Tickets this schedule raised that are still open (follow your instructions above on what to do with them; comment on one instead of raising the same thing again):
+${open}
+- If nothing needs the user now, end with status "done" and add "quiet":true to the result line, e.g. CKANBAN_RESULT: {"status":"done","prUrl":null,"quiet":true,"summary":"Checked Slack and Linear, nothing new."}. The board then removes this ticket and keeps only a line in the schedule's history. Commenting on or closing tickets listed above still counts as quiet; creating a ticket doesn't (the board keeps this ticket then).
+- When you raised or reminded something, end normally (no "quiet").
+`;
+}
+
 function scheduleNote(s: PromptContext["schedule"]): string {
   if (!s) return "";
   if (s.name === null) return `\nThis ticket was created by schedule ${s.id} on board ${s.board}, which has since been deleted.\n`;
   return `\nThis ticket was created by schedule ${s.id} ("${s.name}") on board ${s.board}; it creates a new ticket like this on its own timetable. ` +
-    `You can read or change that schedule (for example refine its prompt for future runs) with the ckanban tools list_schedules, schedule_history and update_schedule.\n`;
+    `You can read or change that schedule (for example refine its prompt for future runs) with the ckanban tools list_schedules, schedule_history and update_schedule.\n` +
+    (s.quiet ? quietSection(s.quiet) : "");
 }
 
 export function firstRunPrompt(t: Ticket, ctx: PromptContext): string {
@@ -521,7 +547,7 @@ Current ticket
 Title: ${t.title}${t.tags?.length ? `\nTags: ${t.tags.join(", ")}` : ""}
 Description:
 ${t.body.trim() || "(empty)"}
-${sourceNote(t)}${addOnRule(t)}${recall ? `\n${recall}\n` : ""}${t.automationSetup ? `\n${AUTOMATION_SETUP}\n` : ""}
+${sourceNote(t)}${addOnRule(t)}${recall ? `\n${recall}\n` : ""}${t.automationSetup ? `\n${AUTOMATION_SETUP}\n` : ""}${t.checkinSetup ? `\n${checkinSetupPrompt()}\n` : ""}
 How to help:
 - Before your first questions or proposal, restate in 1-2 sentences what the user is really after and the problem behind it.
 - ${PUSHBACK_RULE.split("\n").join(" ")}

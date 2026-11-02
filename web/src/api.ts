@@ -219,6 +219,8 @@ export interface Profile {
   /** Spending cap per run in USD for its tickets' work runs; missing/null: none. */
   runCapUsd?: number | null;
   artifacts?: boolean;
+  /** The user dismissed the one-time offer to set up proactive check-ins. */
+  checkinOfferDismissed?: boolean;
   /** Minutes without output before a run counts as stalled; 0: off. Missing: 20. */
   stallMinutes?: number;
   /** Where new runs work: a worktree per ticket (missing: this) or the project folder itself. */
@@ -1009,6 +1011,14 @@ export interface Schedule {
   summary: string;
   /** Its previous ticket is still queued or running. */
   active: boolean;
+  /** Quiet when nothing needs the user: runs that find nothing are removed, leaving a line in the history. */
+  quiet?: boolean;
+  /** Model for its runs (e.g. "sonnet"); null: the board's. */
+  model?: string | null;
+  /** What it spent over the last 7 days, in USD (list only). */
+  spend7dUsd?: number;
+  /** Quiet checks per local day, newest first (list only). */
+  quietPerDay?: { day: string; count: number }[];
 }
 
 /** Reusable prompt text, inserted by typing `@name` in a composer. scope: "global" or a board slug. */
@@ -1054,13 +1064,15 @@ export interface Job {
   result: JobResult | null;
 }
 
-export type ScheduleInput = Pick<Schedule, "name" | "title" | "body" | "mode" | "cron" | "skipIfRunning" | "tags">;
+export type ScheduleInput = Pick<Schedule, "name" | "title" | "body" | "mode" | "cron" | "skipIfRunning" | "tags" | "quiet" | "model">;
 
 export type ScheduleTrigger = "schedule" | "missed" | "manual";
 
 export type ScheduleHistoryItem = { at: string } & (
   | { kind: "fired" | "skipped"; trigger: ScheduleTrigger; ticketId: string | null }
   | { kind: "error"; trigger: ScheduleTrigger; message: string }
+  /** A quiet run found nothing: the board removed its ticket. */
+  | { kind: "quiet"; ticketId: string; summary: string; costUsd: number }
   /** by: who changed it (a ticket = Claude in that ticket's run). previous: old title/prompt/cron. */
   | {
       kind: "edited"; action: "created" | "updated" | "paused" | "resumed"; fields: string[];
@@ -1512,6 +1524,8 @@ export const api = {
   authorizePass: (id: string) => req<{ url: string }>("POST", `/api/passes/${encodeURIComponent(id)}/authorize`),
   testLoop: (slug: string, script: string, passes: string[]) => req<LoopTest>("POST", `${lp(slug)}/test`, { script, passes }),
   automationSetup: (slug: string) => req<Ticket>("POST", `/api/profiles/${encodeURIComponent(slug)}/automation-setup`),
+  /** Schedules → Proactive check-ins: a Planning chat that sets up a quiet check-in schedule. */
+  checkinSetup: (slug: string) => req<Ticket>("POST", `/api/profiles/${encodeURIComponent(slug)}/checkin-setup`),
   answerAutomationCard: (slug: string, ticketId: string, uuid: string, loopId: string) =>
     req<Ticket>("PUT", `/api/profiles/${encodeURIComponent(slug)}/tickets/${encodeURIComponent(ticketId)}/automation-cards/${encodeURIComponent(uuid)}`, { loopId }),
   loops: (slug: string) => req<Loop[]>("GET", lp(slug)),

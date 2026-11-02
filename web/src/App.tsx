@@ -141,6 +141,22 @@ function readLast(): string | null {
   }
 }
 
+/**
+ * The one-time offer to set up proactive check-ins: what Claude could check (e.g. "Slack and Linear"), when a connected
+ * Claude server for messages, issues, code or a calendar exists, the board has no check-in schedule yet and the user
+ * hasn't dismissed it. Null: don't offer.
+ */
+function checkinOffer(profile: Profile, mcp: McpState | null, schedules: Schedule[] | null): string | null {
+  if (profile.checkinOfferDismissed || !mcp || !schedules) return null;
+  if (schedules.some((s) => s.quiet || s.tags?.includes("check-in"))) return null;
+  const found: string[] = [];
+  for (const [re, name] of [[/slack/i, "Slack"], [/linear/i, "Linear"], [/github/i, "GitHub"], [/gmail/i, "Gmail"], [/calendar/i, "your calendar"]] as const) {
+    if (mcp.servers.some((x) => x.status === "connected" && re.test(x.name)) && !found.includes(name)) found.push(name);
+  }
+  if (!found.length) return null;
+  return found.length === 1 ? found[0] : `${found.slice(0, -1).join(", ")} and ${found.at(-1)}`;
+}
+
 export function App() {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [slug, setSlug] = useState<string | null>(parseHash().slug ?? readLast());
@@ -1037,6 +1053,23 @@ export function App() {
         <div className="banner warn" role="status">
           <span>Board folder <code>{profile.path}</code> does not exist. Tickets will not be picked up.</span>
           <button className="icon-btn" aria-label="Dismiss" title="Hide until next time" onClick={() => dismiss(folderKey)}><CloseIcon size={12} /></button>
+        </div>
+      )}
+
+      {profile && checkinOffer(profile, mcp, schedules) && (
+        <div className="banner info" role="status">
+          <span>
+            Want Claude to check {checkinOffer(profile, mcp, schedules)} every work hour and tell you what needs you? Hours with nothing new leave no ticket.
+          </span>
+          <button className="btn small primary" onClick={async () => {
+            try {
+              const t = await api.checkinSetup(profile.slug);
+              openTicket(t.id);
+            } catch {}
+          }}>Set it up</button>
+          <button className="btn small ghost" onClick={() => { api.updateProfile(profile.slug, { checkinOfferDismissed: true }).catch(() => {}); }}>No thanks</button>
+          <button className="icon-btn" aria-label="Dismiss" title="Don't offer again on this board"
+            onClick={() => { api.updateProfile(profile.slug, { checkinOfferDismissed: true }).catch(() => {}); }}><CloseIcon size={12} /></button>
         </div>
       )}
 

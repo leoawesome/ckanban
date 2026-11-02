@@ -48,6 +48,7 @@ import type { TerminalWatcher } from "./terminals";
 import { attachmentHeader, canCopyFile, copyFileToClipboard, markdownPage, markdownTitle, revealFile, ShareError } from "./share";
 import { UpdateChecker } from "./update";
 import { SpendIndex } from "./spend";
+import { quietPerDay, scheduleSpend } from "./quiet";
 import { makeSideCaller, readSideSpend, type SideCaller } from "./side-call";
 import { LearnError, Learner } from "./learner";
 import { Simplifier, SimplifyError } from "./simplify";
@@ -57,7 +58,7 @@ import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
 import { familyOf, LINK_WORDS, parentLink } from "../../web/src/family";
 import type { Store } from "./store";
-import { runCapFor, SELF_MOVES, STATUSES, type Profile, type SelfMove, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
+import { runCapFor, SELF_MOVES, STATUSES, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
 import { nowIso, slugify } from "./util";
 import { applyDetection, detectSetup } from "./worktree-setup";
 
@@ -983,6 +984,7 @@ export function createServer(deps: ServerDeps) {
         if (b.baseBranch !== undefined) next.baseBranch = String(b.baseBranch);
         if (b.maxParallel !== undefined) next.maxParallel = Math.max(1, Number(b.maxParallel) || 1);
         if (b.model !== undefined) next.model = b.model || null;
+        if (b.checkinOfferDismissed !== undefined) next.checkinOfferDismissed = b.checkinOfferDismissed === true;
         if (b.effort !== undefined) {
           if (b.effort && !validEffort(String(b.effort))) throw new HttpError(400, `"${b.effort}" is not an effort level. Use ${EFFORT_HELP}.`);
           next.effort = b.effort || null;
@@ -1172,7 +1174,13 @@ export function createServer(deps: ServerDeps) {
       // Set by the ckanban MCP tools inside a board run ("<profile>/<ticket id>"): the edit is credited to that ticket.
       const run = req.headers.get(RUN_HEADER)?.split("/")[1] ?? "";
       const by: ScheduleEditor = /^t_[a-z0-9_]+$/i.test(run) ? { ticketId: run } : "user";
-      if (parts.length === 3 && m === "GET") return json(store.listSchedules(slug).map((s) => scheduler.view(slug, s)));
+      // The list also shows each schedule's spend over 7 days and its quiet checks per day (quiet.ts).
+      const view7 = (s: Schedule) => {
+        const h = store.readScheduleHistory(slug, s.id);
+        const costOf = (tid: string) => (store.getTicket(slug, tid) ? spend.ticket(slug, tid).costUsd : 0);
+        return { ...scheduler.view(slug, s), spend7dUsd: scheduleSpend(h, new Date(Date.now() - 7 * 86_400_000), costOf), quietPerDay: quietPerDay(h).slice(0, 7) };
+      };
+      if (parts.length === 3 && m === "GET") return json(store.listSchedules(slug).map(view7));
       if (parts.length === 3 && m === "POST") return json(scheduler.view(slug, scheduler.create(slug, (await body(req)) ?? {}, by)), 201);
       const sid = parts[3];
       if (parts.length === 4 && m === "PATCH") return json(scheduler.view(slug, scheduler.update(slug, sid, (await body(req)) ?? {}, by)));
@@ -1207,6 +1215,19 @@ export function createServer(deps: ServerDeps) {
         body: "Set up an automation for this board with Claude: say what to watch (for example \"new Linear issues assigned to me\") and how often to check.",
       });
       store.updateTicket(slug, t.id, { automationSetup: true });
+      emitTicket(slug, t.id);
+      return json(view(profileOr404(slug), store.getTicket(slug, t.id)!), 201);
+    }
+
+    // POST /profiles/:p/checkin-setup — Schedules → Proactive check-ins: a Planning ticket whose chat sets up a quiet
+    // check-in schedule (checkin-guides.ts). Nothing runs or costs anything until that chat creates the schedule.
+    if (parts[2] === "checkin-setup" && parts.length === 3 && m === "POST") {
+      await userOnly(req, "Setting up check-ins");
+      const t = await board.createTicket(slug, {
+        title: "Set up proactive check-ins", status: "planning",
+        body: "Set up proactive check-ins with Claude: every work hour, Claude checks what needs you (messages, reviews, meetings coming up) and raises only that in Review. Pick what to check, your hours and what counts as urgent.",
+      });
+      store.updateTicket(slug, t.id, { checkinSetup: true });
       emitTicket(slug, t.id);
       return json(view(profileOr404(slug), store.getTicket(slug, t.id)!), 201);
     }
@@ -1376,6 +1397,9 @@ export function createServer(deps: ServerDeps) {
         // for the user, any ticket of this board.
         const partOf = typeof b.partOf === "string" && b.partOf ? b.partOf : undefined;
         const fromRun = req.headers.get(RUN_HEADER)?.split("/");
+        // Made by a schedule's run: what that schedule raised for the user (its next quiet runs follow up on it).
+        const runTicket = fromRun?.[0] === slug && fromRun[1] && !req.headers.get(HUDDLE_HEADER) ? store.getTicket(slug, fromRun[1]) : null;
+        const raisedBy = runTicket?.scheduleId ? { scheduleId: runTicket.scheduleId, ticketId: runTicket.id } : null;
         const partOfVia = partOf && fromRun?.[0] === slug && fromRun[1] === partOf ? "chat" as const : undefined;
         if (partOf && !store.getTicket(slug, partOf)) throw new HttpError(400, `ticket ${partOf} not found (partOf)`);
         if (partOf && fromRun && !partOfVia) throw new HttpError(403, "from a board run, partOf can only be the run's own ticket (use partOfThisTicket)");
@@ -1383,6 +1407,7 @@ export function createServer(deps: ServerDeps) {
         let t = await board.createTicket(slug, {
           title, body: String(b.body ?? ""), status: b.sessionId && !planner ? "backlog" : status, mode, parentId, planKey, dependsOn, needs, tags,
           important: b.important === true, ...(partOf ? { partOf, ...(partOfVia ? { partOfVia } : {}) } : {}),
+          ...(raisedBy ? { raisedBy } : {}),
         });
         if (planner) store.addComment(slug, t.id, "ai", `Created by the planner of plan ${planner.id}.`);
         if (requester) store.addComment(slug, t.id, "ai", `Created ${byRequest(requester)}.`);

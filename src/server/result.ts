@@ -5,6 +5,8 @@ export interface RunResult {
   /** Every PR it reported: prUrls plus prUrl. */
   prUrls: string[];
   summary: string;
+  /** A quiet schedule's run says nothing needs the user ("quiet": true): the board removes its ticket. */
+  quiet?: boolean;
 }
 
 const PREFIX = "CKANBAN_RESULT:";
@@ -24,6 +26,7 @@ export function parseResult(text: string): RunResult | null {
       prUrl: url(v.prUrl) ? v.prUrl : prUrls.at(-1) ?? null,
       prUrls,
       summary: typeof v.summary === "string" ? v.summary : "",
+      ...(v.quiet === true && v.status === "done" ? { quiet: true } : {}),
     };
   } catch {
     return null;
