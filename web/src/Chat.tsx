@@ -8,7 +8,7 @@ import { usePresets } from "./HuddleRoster";
 import type { TeamRequest } from "./Team";
 import { TeammateCard } from "./TeammateCard";
 import { AutomationCard } from "./AutomationCard";
-import { ChatCacheNote } from "./ChatCacheNote";
+import { oldChat } from "./cacheNote";
 import { autoGrow } from "./autoGrow";
 import { branchTicket } from "./branch";
 import { BranchCard } from "./BranchCard";
@@ -114,6 +114,9 @@ function speaker(b: Block): string {
 }
 
 /** Copied history of a branched ticket: entries from before the branch point (at = the branch time). */
+/** Old chats the user already chose to send to, by ticket: the reply (cache.at) they confirmed for; asked once per old period. */
+const oldChatOk = new Map<string, string>();
+
 const before = (e: SessionEntry, at: string | undefined) => !!at && !!e.at && e.at < at;
 
 /** Tool calls (and subagents) in a row fold into one block; a branch point (splitAt) starts a new one. */
@@ -440,7 +443,32 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
     setJump(null);
   };
 
-  const send = async (text: string) => {
+  // An old chat re-reads in full: the footer says so, and the first Send asks (Send anyway / Send in a fresh chat).
+  const old = oldChat({ cache: ticket.session?.cache, running, freshSession: ticket.freshSession, now: Date.now() });
+  const okKey = `${slug}/${ticket.id}`;
+  const oldUnconfirmed = !!old && oldChatOk.get(okKey) !== old.at;
+  const [askOld, setAskOld] = useState(false);
+  const asking = askOld && oldUnconfirmed && !!draft.trim();
+  /** Send or Enter in the box: asks first on an old chat; Enter (or Send) again means send anyway. */
+  const submit = () => {
+    if (!draft.trim() || stopping || images.uploading) return;
+    if (old && oldUnconfirmed) {
+      if (!asking) {
+        setAskOld(true);
+        return;
+      }
+      oldChatOk.set(okKey, old.at);
+    }
+    setAskOld(false);
+    send(draft);
+  };
+  const sendFresh = () => {
+    if (old) oldChatOk.set(okKey, old.at);
+    setAskOld(false);
+    send(draft, true);
+  };
+
+  const send = async (text: string, fresh = false) => {
     // A command goes as `/name args`, the way the server queues it and the session shows it.
     const t = messageCommand(text, commands) ? text.trim().replace(/^(\S+)\s+/, "$1 ") : text.trim();
     if (!t || stopping || images.uploading) return;
@@ -450,7 +478,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
     setPending((ps) => [...ps, { text: t, steer }]);
     setDraft("");
     try {
-      const r = await api.chat(slug, ticket.id, t);
+      const r = await api.chat(slug, ticket.id, t, fresh);
       // Steering or waiting for a slot: the server queue now shows it. A reply it started keeps its plain bubble while the
       // board holds it until Claude reads it. /clear and /model: the board ran them, nothing reaches the session.
       if ((r.queued?.some((q) => q.text === t) && (steer || !r.running)) || messageCommand(t, commands)?.source === "board") setPending((ps) => ps.filter((p) => p.text !== t));
@@ -997,7 +1025,6 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
         )}
       </div>
 
-      <ChatCacheNote slug={slug} ticket={ticket} />
       {ticket.terminalOpen && !running && (
         <div className="composer-warn">
           Also open in your terminal: type in one place at a time.{" "}
@@ -1031,22 +1058,33 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
             }
             if (enterSends(e)) {
               e.preventDefault();
-              send(draft);
+              submit();
             }
           }} />
         {snippets.popup}
         {slash.popup}
         <AttachmentChips text={draft} images={images} />
         {images.error && <div className="form-error">{images.error}</div>}
+        {asking && old && (
+          <div className="old-chat-ask" role="alert" title={old.title}>
+            <span>{old.ask}</span>
+            <button className="btn primary small" onClick={submit}>Send anyway</button>
+            <button className="btn small" onClick={sendFresh}>Send in a fresh chat</button>
+          </div>
+        )}
         <div className="composer-foot">
-          <span className="muted small composer-hint">
-            {refine ? "Refine mode: Claude won't change files." : "Claude acts on your message."}
-            <span className="composer-keys"> Enter to send · Shift+Enter for a new line{queued.some((q) => fromUser(q) && editable(q)) && " · ↑ to edit your queued message"}</span>
-          </span>
+          {old ? (
+            <span className="muted small composer-hint composer-old" title={old.title}>{phone ? old.phoneLine : old.line}</span>
+          ) : (
+            <span className="muted small composer-hint">
+              {refine ? "Refine mode: Claude won't change files." : "Claude acts on your message."}
+              <span className="composer-keys"> Enter to send · Shift+Enter for a new line{queued.some((q) => fromUser(q) && editable(q)) && " · ↑ to edit your queued message"}</span>
+            </span>
+          )}
           <span className="composer-actions">
             <ImagePickButton images={images} target={composer} disabled={stopping} />
             <SendOrStop running={running} hasDraft={!!draft.trim()} stopping={stopping} onStop={stop}
-              send={<button className="btn primary small" disabled={!draft.trim() || stopping || images.uploading} onClick={() => send(draft)}>{images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" /></button>} />
+              send={<button className="btn primary small" disabled={!draft.trim() || stopping || images.uploading} onClick={submit}>{images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" /></button>} />
           </span>
         </div>
       </div>

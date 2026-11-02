@@ -454,7 +454,7 @@ export interface SessionSummary {
   pendingProposal: { title: string; description: string } | null;
   pendingNewTickets?: { title: string; description: string }[];
   pendingTeammates?: string[];
-  /** Conversation size and cache time at Claude's last reply, for the "gone cold" note (cacheNote.ts). */
+  /** Conversation size and cache time at Claude's last reply, for the old-chat line and Send ask (cacheNote.ts). */
   cache?: ChatCacheInfo | null;
 }
 
@@ -1467,7 +1467,8 @@ export const api = {
   addComment: (slug: string, id: string, text: string) => req<Comment>("POST", `${t(slug, id)}/comments`, { text }),
   diff: (slug: string, id: string, ignoreWhitespace: boolean) =>
     req<TicketDiff>("GET", `${t(slug, id)}/diff${ignoreWhitespace ? "?w=1" : ""}`),
-  chat: (slug: string, id: string, text: string) => req<Ticket>("POST", `${t(slug, id)}/chat`, { text }),
+  /** fresh: "Send in a fresh chat" (the old chat stays visible, Claude no longer sees it). */
+  chat: (slug: string, id: string, text: string, fresh?: boolean) => req<Ticket>("POST", `${t(slug, id)}/chat`, fresh ? { text, fresh } : { text }),
   sendQueued: (slug: string, id: string, msgId: string) => req<Ticket>("POST", `${t(slug, id)}/queued/${msgId}`),
   discardQueued: (slug: string, id: string, msgId: string) => req<Ticket>("DELETE", `${t(slug, id)}/queued/${msgId}`),
   editQueued: (slug: string, id: string, msgId: string, text: string) => req<Ticket>("PATCH", `${t(slug, id)}/queued/${msgId}`, { text }),

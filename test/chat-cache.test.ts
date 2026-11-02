@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { ChatCacheTracker, coldCost } from "../src/server/chat-cache";
 import { parseSession } from "../src/server/session";
 import { priceFor } from "../src/server/ticket-usage";
-import { cacheNote, coldNoteKey, COLD_NOTE_MIN_TOKENS, costText, nextNoteChange, tokensText, type ChatCacheInfo } from "../web/src/cacheNote";
+import { COLD_NOTE_MIN_TOKENS, costText, oldChat, tokensText, type ChatCacheInfo } from "../web/src/cacheNote";
 
 const T0 = Date.parse("2026-11-01T10:00:00Z");
 const min = 60_000;
@@ -83,71 +83,48 @@ test("parseSession: cache comes from the main conversation, not subagents' sidec
 
 // ---------- web: the note ----------
 
-test("cacheNote: warm, counting down by the minute, with the chat size", () => {
-  const n = cacheNote({ cache: info(), running: false, now: T0 + 20 * min })!;
-  expect(n.kind).toBe("warm");
-  expect(n.text).toBe("Chat ready for 40 more minutes. Replying before then is cheap (169k chat size).");
-  expect(n.title).toContain("List price; on a Claude plan this counts against your usage instead");
-  expect(cacheNote({ cache: info(), running: false, now: T0 + 59 * min + 30_000 })).toMatchObject({ kind: "warm", minutesLeft: 1 });
-  expect(cacheNote({ cache: info(), running: false, now: T0 + 59 * min + 30_000 })!.text).toStartWith("Chat ready for 1 more minute.");
+test("oldChat: nothing while Claude still has the chat ready, no countdown", () => {
+  expect(oldChat({ cache: info(), running: false, now: T0 + 20 * min })).toBeNull();
+  expect(oldChat({ cache: info(), running: false, now: T0 + 59 * min + 59_000 })).toBeNull();
 });
 
-test("cacheNote: cold after 1 hour, with tokens, cost and the cache time", () => {
-  const n = cacheNote({ cache: info(), running: false, now: T0 + 3 * 60 * min })!;
-  expect(n.kind).toBe("cold");
-  expect(n.text).toBe("Your next message makes Claude re-read the whole chat: about 169k tokens, around $1.35. Claude only keeps a chat ready for 1 hour after its last reply.");
-  expect(n.title).toStartWith("List price; on a Claude plan this counts against your usage instead.");
-  expect(cacheNote({ cache: info(), running: false, now: T0 + 60 * min })!.kind).toBe("cold");
+test("oldChat: after 1 hour, input tokens in the line and the ask; money only in the hover", () => {
+  const n = oldChat({ cache: info(), running: false, now: T0 + 3 * 60 * min })!;
+  expect(n.at).toBe(info().at);
+  expect(n.line).toBe("Old chat · next message re-reads about 169k input tokens");
+  expect(n.phoneLine).toBe("Old chat · ~169k tokens to re-read");
+  expect(n.ask).toBe("Old chat: sending makes Claude re-read about 169k input tokens.");
+  for (const t of [n.line, n.phoneLine, n.ask]) expect(t).not.toContain("$");
+  expect(n.title).toContain("ready for 1 hour after its last reply");
+  expect(n.title).toContain("List price around $1.35; on a Claude plan this counts against your usage instead.");
+  expect(oldChat({ cache: info(), running: false, now: T0 + 60 * min })).not.toBeNull();
 });
 
-test("cacheNote: the cold note counts only what is re-read at full price; the hover gives the chat size", () => {
+test("oldChat: counts only what is re-read at full price; the hover gives the chat size", () => {
   const c = info({ tokens: 83_245, coldTokens: 66_779, costUsd: coldCost("claude-opus-5-5", 66_779, "1h") });
-  const n = cacheNote({ cache: c, running: false, now: T0 + 3 * 60 * min })!;
-  expect(n.text).toContain("about 67k tokens, around $0.53.");
+  const n = oldChat({ cache: c, running: false, now: T0 + 3 * 60 * min })!;
+  expect(n.line).toEndWith("about 67k input tokens");
   expect(n.title).toContain("chat size 83k tokens");
   expect(n.title).toContain("The first 16k tokens (Claude Code's own instructions) are usually still ready from your other chats.");
-  // The warm note still shows the chat size, and the size limit uses it too.
-  expect(cacheNote({ cache: c, running: false, now: T0 + 10 * min })!.text).toContain("(83k chat size)");
-  expect(cacheNote({ cache: { ...c, tokens: 55_000, coldTokens: 40_000 }, running: false, now: T0 + 3 * 60 * min })?.kind).toBe("cold");
+  expect(n.title).toContain("around $0.53");
 });
 
-test("cacheNote: 5-minute chats go cold after 5 minutes and say so", () => {
+test("oldChat: 5-minute chats are old after 5 minutes and say so", () => {
   const c = info({ ttl: "5m", costUsd: coldCost("claude-opus-5-5", 169_000, "5m") });
-  expect(cacheNote({ cache: c, running: false, now: T0 + 2 * min })).toMatchObject({ kind: "warm", minutesLeft: 3 });
-  const cold = cacheNote({ cache: c, running: false, now: T0 + 6 * min })!;
-  expect(cold.kind).toBe("cold");
-  expect(cold.text).toContain("around $0.84");
-  expect(cold.text).toEndWith("ready for 5 minutes after its last reply.");
+  expect(oldChat({ cache: c, running: false, now: T0 + 2 * min })).toBeNull();
+  const n = oldChat({ cache: c, running: false, now: T0 + 6 * min })!;
+  expect(n.title).toContain("ready for 5 minutes after its last reply");
+  expect(n.title).toContain("around $0.84");
 });
 
-test("cacheNote: nothing below 50k tokens, while Claude works, before a fresh chat, or without a reply", () => {
+test("oldChat: never below 50k tokens, while Claude works, before a fresh chat, or without a reply", () => {
   const late = T0 + 3 * 60 * min;
-  expect(cacheNote({ cache: info({ tokens: COLD_NOTE_MIN_TOKENS - 1 }), running: false, now: late })).toBeNull();
-  expect(cacheNote({ cache: info({ tokens: COLD_NOTE_MIN_TOKENS }), running: false, now: late })?.kind).toBe("cold");
-  expect(cacheNote({ cache: info({ tokens: COLD_NOTE_MIN_TOKENS - 1 }), running: false, now: T0 })).toBeNull();
-  expect(cacheNote({ cache: info(), running: true, now: late })).toBeNull();
-  expect(cacheNote({ cache: info(), running: false, freshSession: true, now: late })).toBeNull();
-  expect(cacheNote({ cache: null, running: false, now: late })).toBeNull();
-  expect(cacheNote({ cache: info({ at: "" }), running: false, now: late })).toBeNull();
-});
-
-test("cacheNote: hidden cold note stays hidden until Claude replies again", () => {
-  const late = T0 + 3 * 60 * min;
-  const c = info();
-  expect(cacheNote({ cache: c, running: false, hiddenAt: c.at, now: late })).toBeNull();
-  // A newer reply brings it back once that one goes cold too.
-  const newer = info({ at: new Date(T0 + 60 * min).toISOString() });
-  expect(cacheNote({ cache: newer, running: false, hiddenAt: c.at, now: T0 + 3 * 60 * min })?.kind).toBe("cold");
-  // Hiding doesn't touch the warm note.
-  expect(cacheNote({ cache: c, running: false, hiddenAt: c.at, now: T0 + 10 * min })?.kind).toBe("warm");
-  expect(coldNoteKey("kanban", "t_1")).toBe("ckanban.coldNoteHidden.kanban.t_1");
-});
-
-test("nextNoteChange: the next countdown minute, then the moment it goes cold, then nothing", () => {
-  expect(nextNoteChange(info(), T0 + 20 * min + 15_000)).toBe(T0 + 21 * min);
-  expect(nextNoteChange(info(), T0 + 59 * min + 40_000)).toBe(T0 + 60 * min);
-  expect(nextNoteChange(info(), T0 + 61 * min)).toBeNull();
-  expect(nextNoteChange(null, T0)).toBeNull();
+  expect(oldChat({ cache: info({ tokens: COLD_NOTE_MIN_TOKENS - 1 }), running: false, now: late })).toBeNull();
+  expect(oldChat({ cache: info({ tokens: COLD_NOTE_MIN_TOKENS }), running: false, now: late })).not.toBeNull();
+  expect(oldChat({ cache: info(), running: true, now: late })).toBeNull();
+  expect(oldChat({ cache: info(), running: false, freshSession: true, now: late })).toBeNull();
+  expect(oldChat({ cache: null, running: false, now: late })).toBeNull();
+  expect(oldChat({ cache: info({ at: "" }), running: false, now: late })).toBeNull();
 });
 
 test("text helpers: token and cost wording", () => {

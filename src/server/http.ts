@@ -39,7 +39,7 @@ import { PushService } from "./push";
 import { LISTENER_HEADER, LOGIN_HEADER, qrSvg, RemoteAccess, RemoteError, remoteUrl, type RemoteConfig } from "./remote";
 import { AGENT_IDS, AgentError, AgentRegistry, type AgentId } from "./agents";
 import { collectLinks } from "./links";
-import { fromTicketText, SessionCache, type SessionSummary } from "./session";
+import { fromTicketText, SessionCache, type SessionEntry, type SessionSummary } from "./session";
 import { ptySupported, ShellManager, type Shell } from "./shell";
 import { AGENT_STEP_TAIL, settleAgent } from "./subagents";
 import { settleWorkflow, withRun, workflowAgentDetail, workflowScript, type WorkflowInfo } from "./workflows";
@@ -274,6 +274,19 @@ export function createServer(deps: ServerDeps) {
   const passes = deps.passes ?? new Passes(store.root, bus, { fetch: globalThis.fetch, now: () => new Date() }, callbackUrl);
   const agents = deps.agents ?? new AgentRegistry();
   const sideCall = deps.sideCall ?? makeSideCaller({ cwd: join(store.root, "side-calls") });
+  /**
+   * The ticket chat's conversation: chats left behind with "Send in a fresh chat" (no rewinding into them), each followed
+   * by a note that Claude doesn't see what's above, then the current chat.
+   */
+  const chatEntries = (t: Ticket): SessionEntry[] => {
+    const current = (t.sessionId ? sessions.get(t.sessionId)?.entries : null) ?? [];
+    if (!t.earlierSessions?.length) return current;
+    const earlier = t.earlierSessions.flatMap((s) => [
+      ...(sessions.get(s.sessionId)?.entries ?? []).map(({ rewind: _, ...e }) => e as SessionEntry),
+      { uuid: `fresh-chat-${s.sessionId}`, at: s.endedAt, role: "assistant", kind: "board", text: "Fresh chat from here: Claude doesn't see the messages above." } as SessionEntry,
+    ]);
+    return [...earlier, ...current];
+  };
   const learner = deps.learner ?? new Learner(store, bus, {
     sideCall, entries: (t) => (t.sessionId ? sessions.get(t.sessionId)?.entries : null) ?? [], isRunning: (slug, id) => board.isRunning(slug, id),
   });
@@ -1739,7 +1752,7 @@ export function createServer(deps: ServerDeps) {
       // Read-only view of the ticket's Claude session file (terminal chat + board runs), newest last.
       const t = store.getTicket(slug, id)!;
       const parsed = t.sessionId ? sessions.get(t.sessionId) : null;
-      const all = parsed?.entries ?? [];
+      const all = chatEntries(t);
       const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 100));
       const before = url.searchParams.has("before") ? Number(url.searchParams.get("before")) : all.length;
       const end = Math.max(0, Math.min(all.length, before));
@@ -1747,8 +1760,10 @@ export function createServer(deps: ServerDeps) {
       const active = board.isRunning(slug, id);
       // Subagent rows carry only their last steps; "show all" fetches the rest (agent endpoint below).
       // Workflows get the run's live progress (waiting agents too); their script loads on "Show script".
-      const entries = all.slice(start, end).map((e) => {
-        if (e.workflow) return { ...e, workflow: workflowView(e.workflow, slug, id, t.sessionId!, active) };
+      // Rows from chats left behind with "Send in a fresh chat" come first; none of them is live.
+      const earlier = all.length - (parsed?.entries.length ?? 0);
+      const entries = all.slice(start, end).map((e, i) => {
+        if (e.workflow) return { ...e, workflow: workflowView(e.workflow, slug, id, t.sessionId!, active && start + i >= earlier) };
         if (!e.agent) return e;
         const agent = settleAgent(e.agent, active);
         return { ...e, agent: { ...agent, steps: agent.steps.slice(-AGENT_STEP_TAIL) } };
@@ -1777,14 +1792,14 @@ export function createServer(deps: ServerDeps) {
     if (action === "simplified" && m === "GET") {
       // Saved plain-words versions of this ticket's Claude replies, by message.
       const t = store.getTicket(slug, id)!;
-      return json(simplifier.saved(slug, id, (t.sessionId ? sessions.get(t.sessionId)?.entries : null) ?? []));
+      return json(simplifier.saved(slug, id, chatEntries(t)));
     }
     if (action === "simplify" && m === "POST") {
       // "Say it simpler": a side call rewrites one reply; the ticket's session and activity log never see it.
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "Say it simpler is the user's click, not a board run's");
       const b = await body(req);
       const t = store.getTicket(slug, id)!;
-      const e = typeof b?.uuid === "string" ? (t.sessionId ? sessions.get(t.sessionId)?.entries : null)?.find((x) => x.uuid === b.uuid) : null;
+      const e = typeof b?.uuid === "string" ? chatEntries(t).find((x) => x.uuid === b.uuid) : null;
       if (!e) throw new HttpError(404, "no such message in this ticket's conversation");
       try {
         return json(await simplifier.simplify(slug, id, t.title, e));
@@ -1828,7 +1843,7 @@ export function createServer(deps: ServerDeps) {
     }
     if (action === "agent" && parts.length === 6 && m === "GET") {
       const t = store.getTicket(slug, id)!;
-      const e = (t.sessionId ? sessions.get(t.sessionId)?.entries : null)?.find((x) => x.agent?.toolUseId === parts[5]);
+      const e = chatEntries(t).find((x) => x.agent?.toolUseId === parts[5]);
       if (!e?.agent) throw new HttpError(404, "no such subagent in this ticket's conversation");
       return json(settleAgent(e.agent, board.isRunning(slug, id)));
     }
@@ -1864,7 +1879,8 @@ export function createServer(deps: ServerDeps) {
     if (action === "tool" && parts.length === 6 && m === "GET") {
       // A tool call's full input and output, loaded when the user opens its row in the chat.
       const t = store.getTicket(slug, id)!;
-      const d = t.sessionId ? sessions.toolDetail(t.sessionId, parts[5]) : null;
+      const d = [t.sessionId, ...(t.earlierSessions ?? []).map((x) => x.sessionId).reverse()]
+        .reduce<ReturnType<typeof sessions.toolDetail>>((found, sid) => found ?? (sid ? sessions.toolDetail(sid, parts[5]) : null), null);
       if (!d) throw new HttpError(404, "no such tool call in this ticket's conversation");
       return json(d);
     }
@@ -1895,8 +1911,10 @@ export function createServer(deps: ServerDeps) {
       // A message from a run never hands the user's rights on to the run it starts.
       // Labelled with the sending ticket, so neither Claude nor the chat takes it for the user's own message.
       const sender = runner ?? planner ?? requester ?? guest?.ticket;
+      // "Send in a fresh chat" is the user's own choice, never a run's or another ticket's.
+      const fresh = b.fresh === true && !sender && !req.headers.get(RUN_HEADER);
       const t = await board.chat(slug, id, sender ? fromTicketText(sender.id, sender.title, text) : text,
-        { fromPlanner: !!sender, ...(sender ? { from: { ticketId: sender.id, title: sender.title } } : {}) });
+        { fromPlanner: !!sender, ...(sender ? { from: { ticketId: sender.id, title: sender.title } } : {}), ...(fresh ? { fresh } : {}) });
       if (startedBy !== undefined) board.markStartedBy(slug, id, startedBy);
       // A message the user typed (not a slash command) reached Claude: a pending follow-up hears about it, and stops if it was set to.
       if (!req.headers.get(RUN_HEADER) && !text.startsWith("/")) board.userReplied(slug, id);

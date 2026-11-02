@@ -185,3 +185,45 @@ test("a ticket's own cap overrides the board's; 0 runs without one", async () =>
   await board.whenIdle();
   expect(readArgs().at(-1)!.args).not.toContain("--max-budget-usd");
 });
+
+// ---- Send in a fresh chat: an old chat's next message starts a new one ----
+
+test("Send in a fresh chat: new chat with the ticket and last result, old chat kept, card stays put", async () => {
+  await setup();
+  const t = await board.createTicket("p", { title: "x", body: "the task", status: "ready" });
+  await board.whenIdle();
+  const before = store.getTicket("p", t.id)!;
+  expect(before.status).toBe("review");
+  await board.chat("p", t.id, "one more thing", { fresh: true });
+  await board.whenIdle();
+  const got = store.getTicket("p", t.id)!;
+  expect(got.sessionId).not.toBe(before.sessionId);
+  expect(got.earlierSessions?.map((s) => s.sessionId)).toEqual([before.sessionId!]);
+  expect(got.freshSession).toBe(false);
+  expect(got.worktree).toBe(before.worktree);
+  expect(got.status).toBe("review");
+  const call = readArgs().at(-1)!;
+  expect(call.args).toContain("--session-id");
+  expect(call.args).toContain(got.sessionId!);
+  expect(call.prompt).toStartWith("one more thing");
+  expect(call.prompt).toContain("This is a new chat");
+  expect(call.prompt).toContain("the task");
+  expect(call.prompt).toContain("# Last result\nfake done");
+  expect(store.listComments("p", t.id).some((c) => c.author === "ai" && c.text.startsWith("Started a fresh chat"))).toBe(true);
+  // The next message continues the new chat as usual, without the note.
+  await board.chat("p", t.id, "and then");
+  await board.whenIdle();
+  const next = readArgs().at(-1)!;
+  expect(next.args).toContain("--resume");
+  expect(next.prompt).not.toContain("This is a new chat");
+}, 15000);
+
+test("Send in a fresh chat is refused while Claude works", async () => {
+  await setup();
+  process.env.FAKE_MODE = "slow";
+  const t = await board.createTicket("p", { title: "x", body: "", status: "ready" });
+  await Bun.sleep(150);
+  await expect(board.chat("p", t.id, "hi", { fresh: true })).rejects.toBeInstanceOf(ConflictError);
+  board.stop("p", t.id);
+  await board.whenIdle();
+});

@@ -456,6 +456,27 @@ function notesSection(notes: Comment[]): string {
 }
 
 /** First prompt of a new session on a ticket whose previous session can't be resumed (Start fresh session). */
+/**
+ * Added to the first message of a chat the user started fresh ("Send in a fresh chat"): the earlier conversation is
+ * gone for Claude, so it gets the ticket, its last result and recent comments, and looks at the folder for the rest.
+ */
+export function freshChatNote(t: Ticket, lastResult: string | null, comments: { author: string; at: string; text: string }[]): string {
+  const recent = comments.length
+    ? comments.map((c) => `- ${c.author === "user" ? "User" : "Claude"} (${c.at.slice(0, 16).replace("T", " ")}): ${clip(c.text.trim(), 1500).replace(/\n/g, "\n  ")}`).join("\n")
+    : "- (none)";
+  return context("The user started a fresh chat on this ticket", `This is a new chat: the user chose not to continue the earlier conversation on this ticket (it was old and long), so you don't have its history. Here is what you need instead. Before changing anything, look at the files in this folder for the work done so far.
+
+# Ticket: ${t.title}
+
+${t.body.trim() || "(no description)"}
+
+# Last result
+${lastResult?.trim() || "(no result reported yet)"}
+
+# Recent comments
+${recent}`);
+}
+
 export function freshSessionPrompt(t: Ticket, ctx: FreshContext): string {
   const comments = ctx.comments.length
     ? ctx.comments.map((c) => `- ${c.author === "user" ? "User" : "Claude"} (${c.at.slice(0, 16).replace("T", " ")}): ${clip(c.text.trim(), 1500).replace(/\n/g, "\n  ")}`).join("\n")

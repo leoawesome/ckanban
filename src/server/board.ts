@@ -19,7 +19,7 @@ import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
 import { canEndQuietly, quietContext } from "./quiet";
 import { addHuddleSpend } from "./spend";
-import { chatPrompt, devicesNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
+import { chatPrompt, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
   childrenOf, DEFAULT_MAX_CONCURRENT, findCycle, isComplete, MAX_RUN_CHAIN, MAX_RUN_STARTS, normalizeNeeds, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
@@ -177,6 +177,8 @@ export interface ChatOptions {
   slash?: "prompt" | "local";
   hostWake?: boolean;
   followUp?: boolean;
+  /** The user's "Send in a fresh chat": this message starts a new chat; the old one stays visible above it. */
+  fresh?: boolean;
 }
 
 /** What the card says while the ticket waits for its auto huddle. */
@@ -290,7 +292,7 @@ export function recoveryFor(error: string | null | undefined): Recovery | null {
 }
 
 /** Board comments that aren't Claude's result (a fresh session's prompt skips them for "Last result"). */
-const BOARD_NOTE_RE = /^(Run failed|Could not start|Run stopped|Planner stopped|Started a fresh session|Took over the session|This ticket's Claude session is still open)/;
+const BOARD_NOTE_RE = /^(Run failed|Could not start|Run stopped|Planner stopped|Started a fresh session|Started a fresh chat|Took over the session|This ticket's Claude session is still open)/;
 
 export class ConflictError extends Error {}
 
@@ -532,6 +534,10 @@ export class Board {
     if (!text.trim()) throw new Error("message is empty");
     if (t.error?.startsWith("corrupt")) throw new Error("ticket file is corrupt");
     const active = this.runs.get(this.key(slug, id));
+    if (opts.fresh) {
+      if (active) throw new ConflictError("Claude is working on this ticket; send it once Claude is done");
+      t = this.startFreshChat(slug, id);
+    }
     if (!opts.peer && !opts.slash && !opts.hostWake && !opts.followUp) {
       const refused = parseSlash(text)?.name;
       if (refused && REFUSED_COMMANDS.has(refused)) {
@@ -926,11 +932,14 @@ export class Board {
     const outputDir = this.store.outputsDir(slug, id);
     // Start fresh session: a work run in a new session that picks up from the branch (until that session exists).
     const fresh = !!t.freshSession && !run.chat;
+    // "Send in a fresh chat": the new chat's first message carries the ticket and its last result (until that chat exists).
+    const freshChat = !!t.freshSession && !!run.chat && !run.chat.raw && !session.existed;
     const artifacts = !!profile.artifacts || mentionsArtifact(t.body, run.chat?.text, ...newComments.map((c) => c.text));
     let prompt = resume ?? this.withSetupNote(slug, t, profile, session, refine, localizeAttachments(run.chat?.raw
       ? run.chat.text
       : run.chat
       ? chatPrompt(t, run.chat.text, run.chat.mode, outputDir, artifacts, session.repo, session.inPlace, refine && !session.existed ? this.recall(slug, t) : "")
+        + (freshChat ? `\n\n${this.freshChatContext(slug, t)}` : "")
       : fresh
       ? this.freshPrompt(slug, t, session, outputDir)
       : t.runCount === 0 || !session.existed
@@ -1077,7 +1086,7 @@ export class Board {
       ...this.endStatus(run),
       stalled: null,
       sessionStarted: started,
-      ...(fresh && started ? { freshSession: false } : {}),
+      ...((fresh || freshChat) && started ? { freshSession: false } : {}),
       ...(refine || quiet ? {} : { lastRunAt: startedAt, runCount: runNo }),
       lastActivity: pendingActivity ?? this.store.getTicket(slug, id)?.lastActivity ?? null,
     };
@@ -2481,6 +2490,13 @@ export class Board {
     });
   }
 
+  private freshChatContext(slug: string, t: Ticket): string {
+    const comments = this.store.listComments(slug, t.id);
+    const last = comments.findLast((c) => c.author === "ai" && !BOARD_NOTE_RE.test(c.text));
+    const recent = comments.filter((c) => !BOARD_NOTE_RE.test(c.text) && c !== last).slice(-10);
+    return freshChatNote(t, last?.text ?? null, recent);
+  }
+
   /**
    * "What we did before on this board": related past tickets for t's first prompt (see recall.ts), the rules the board
    * learned from the user's corrections (learn.ts), and the project's saved lessons a run in a worktree can't see yet
@@ -2521,6 +2537,22 @@ export class Board {
     this.patch(slug, id, { sessionId: crypto.randomUUID(), sessionStarted: false, freshSession: true });
     this.store.addComment(slug, id, "ai", "Started a fresh session: the previous conversation is gone, so Claude continues from the ticket, its last result and the branch as it is now.");
     return this.requeue(slug, id);
+  }
+
+  /**
+   * "Send in a fresh chat" (an old chat would be re-read in full): the next message starts a new session that gets the
+   * ticket, its last result and recent comments instead of the old conversation. Unlike startFresh, nothing is queued
+   * and the card stays where it is; the old session is kept so the ticket chat still shows it.
+   */
+  private startFreshChat(slug: string, id: string): Ticket {
+    const t = this.store.getTicket(slug, id)!;
+    const earlier = t.sessionId && (t.sessionStarted || this.sessionExists(t.sessionId))
+      ? [...(t.earlierSessions ?? []), { sessionId: t.sessionId, endedAt: nowIso() }]
+      : t.earlierSessions;
+    this.store.addComment(slug, id, "ai", "Started a fresh chat: Claude no longer sees the earlier messages; it gets the ticket, its last result and recent comments instead.");
+    return this.patch(slug, id, {
+      sessionId: crypto.randomUUID(), sessionStarted: false, freshSession: true, ...(earlier ? { earlierSessions: earlier } : {}),
+    });
   }
 
   /**

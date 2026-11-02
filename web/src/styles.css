@@ -1463,14 +1463,9 @@ button.your-turn.go:focus-visible { outline: 2px solid currentColor; outline-off
 }
 
 .composer-warn { font-size: var(--fs-sm); color: var(--warn); background: var(--warn-soft); border-radius: var(--r-sm); padding: 6px 10px; }
-/* Above the ticket chat's box: how cold its Claude conversation is (ChatCacheNote). */
-.cache-note { font-size: var(--fs-sm); border-radius: var(--r-sm); padding: 6px 10px; display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
-.cache-note.warm { color: var(--ok); background: var(--ok-soft); }
-.cache-note.cold { color: var(--warn); background: var(--warn-soft); }
-.cache-note > span:nth-child(2) { flex: 1; min-width: 0; }
-.cache-note b { font-weight: 600; }
-.cache-note-x { flex: none; border: 0; background: transparent; color: inherit; padding: 2px; cursor: pointer; opacity: 0.7; line-height: 0; }
-.cache-note-x:hover { opacity: 1; }
+/* An old ticket chat (cacheNote.ts): a muted line in the box's footer, and one ask when the user presses Send. */
+.old-chat-ask { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--warn); background: var(--warn-soft); border-radius: var(--r-sm); padding: 6px 10px; }
+.old-chat-ask > span { flex: 1; min-width: 200px; }
 
 .chat-mockups { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chat-mockup { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--bg); color: inherit; border-radius: var(--r-sm); padding: 5px 10px; font-size: var(--fs-sm); cursor: pointer; }
@@ -3017,6 +3012,7 @@ button.hd-mode:disabled { cursor: default; }
   .composer { gap: 4px; padding: 10px 8px 8px 12px; }
   .composer > textarea { min-height: 0; padding: 2px 0; }
   .composer-hint.muted { display: none; }
+  .composer-hint.muted.composer-old { display: inline; }
 
   .huddle-bar { gap: 6px; padding: 6px 6px 6px 12px; }
   .huddle-bar .hd-state-dot { font-size: var(--fs-xs); }

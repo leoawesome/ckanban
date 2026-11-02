@@ -123,6 +123,11 @@ export interface Ticket {
   sessionStarted?: boolean;
   /** The next run starts a new session that picks up from the worktree (Start fresh session after a lost session). */
   freshSession?: boolean;
+  /**
+   * Chats this ticket left behind with "Send in a fresh chat", oldest first: the ticket chat still shows them (above a
+   * note), but Claude doesn't see them.
+   */
+  earlierSessions?: { sessionId: string; endedAt: string }[];
   /** True once a refine conversation began (auto-start on entering Planning happens only once). */
   refineStarted?: boolean;
   order: number;
