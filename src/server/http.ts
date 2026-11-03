@@ -1765,7 +1765,7 @@ export function createServer(deps: ServerDeps) {
       try {
         if (!t.worktree && t.baseSha && !t.workdir) return await folderDiff(profile.path, t.baseSha, { ignoreWhitespace });
         if (!t.worktree) throw new HttpError(404, "No version history for this folder, so changes can't be shown.");
-        return await ticketDiff(t.worktree, profile.baseBranch || (await detectBaseBranch(t.worktree)), { ignoreWhitespace });
+        return await ticketDiff(t.worktree, profile.baseBranch || (await detectBaseBranch(t.worktree)), { ignoreWhitespace, prBase: t.pr?.base });
       } catch (e) {
         if (e instanceof DiffError) throw new HttpError(e.status, e.message);
         throw e;

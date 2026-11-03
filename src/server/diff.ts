@@ -42,6 +42,11 @@ export interface TicketDiff {
   deletions: number;
   /** Shown instead of files when the changes can't be worked out (e.g. the folder's history was rewritten). */
   note?: string;
+  /**
+   * Set when the changes are compared with another version than the board's base branch, because the
+   * ticket's branch was moved onto it (e.g. "flight/x"; no "origin/" prefix). The tab names it.
+   */
+  startedFrom?: string;
 }
 
 export class DiffError extends Error {
@@ -72,15 +77,73 @@ async function mergeBase(dir: string, base: string): Promise<{ ref: string; sha:
 }
 
 /**
- * The worktree's changes against the merge-base with `base`: commits on the branch plus staged,
- * unstaged and untracked (not ignored) files. Untracked files are picked up by staging everything
- * into a throwaway index, so the real index is never touched.
+ * Versions the ticket's branch was moved onto, newest first, read from the reflogs of HEAD and the branch:
+ * `git checkout -B <branch> X` / `git branch -f` ("branch: Created from X", "branch: Reset to X"),
+ * `git rebase X` ("rebase (start): checkout X") and `git reset --hard X` ("reset: moving to X").
+ * Only names of branches that still exist count (no SHAs, HEAD~1 and the like), and never the ticket's
+ * own branch or its origin/ copy (comparing with those would hide the ticket's own commits).
  */
-export async function ticketDiff(dir: string, base: string, opts: { ignoreWhitespace?: boolean } = {}): Promise<TicketDiff> {
+async function movedOnto(dir: string, branch: string | null): Promise<string[]> {
+  const logs = [await run(["git", "reflog", "show", "-n", "200", "--format=%gs", "HEAD"], dir)];
+  if (branch) logs.push(await run(["git", "reflog", "show", "-n", "200", "--format=%gs", `refs/heads/${branch}`], dir));
+  const own = new Set(branch ? [branch, `origin/${branch}`] : []);
+  const names: string[] = [];
+  for (const r of logs) {
+    if (r.code !== 0) continue;
+    for (const line of r.stdout.split("\n")) {
+      const m = /^(?:branch: (?:Created from|Reset to)|rebase(?: \([a-z]+\))?: checkout|reset: moving to) (\S+)$/.exec(line.trim());
+      const name = m?.[1];
+      if (!name || own.has(name) || names.includes(name) || /^HEAD\b|^[0-9a-f]{7,40}$|[~^@:]/.test(name)) continue;
+      names.push(name);
+    }
+  }
+  const real: string[] = [];
+  for (const name of names.slice(0, 8)) {
+    const ok = (await run(["git", "show-ref", "--verify", "--quiet", `refs/heads/${name}`], dir)).code === 0
+      || (await run(["git", "show-ref", "--verify", "--quiet", `refs/remotes/${name}`], dir)).code === 0;
+    if (ok) real.push(name);
+  }
+  return real;
+}
+
+const plain = (ref: string) => ref.replace(/^origin\//, "");
+
+/**
+ * What the ticket's changes are compared with. Rule:
+ * 1. The base branch of the ticket's pull request, when it has one (that is where the work lands).
+ * 2. Otherwise the board's base branch, unless the branch was later moved onto another version (see
+ *    `movedOnto`, e.g. a run told to work on a feature branch resets onto origin/feature): then whichever
+ *    of them has the newest merge-base with HEAD, i.e. the version the ticket's own commits sit on.
+ * Only the reflog and a few merge-bases are read, so this stays fast on repos with thousands of branches.
+ */
+async function compareBase(dir: string, base: string, prBase: string | null | undefined, branch: string | null): Promise<{ ref: string; sha: string } | null> {
+  if (prBase) {
+    const mb = await mergeBase(dir, prBase);
+    if (mb) return mb;
+  }
+  let best = await mergeBase(dir, base);
+  for (const name of await movedOnto(dir, branch)) {
+    if (plain(name) === plain(base)) continue;
+    const mb = await mergeBase(dir, name);
+    if (!mb) continue;
+    if (!best || (mb.sha !== best.sha && (await run(["git", "merge-base", "--is-ancestor", best.sha, mb.sha], dir)).code === 0)) best = mb;
+  }
+  return best;
+}
+
+/**
+ * The worktree's changes against the merge-base with the version the ticket started from (see
+ * `compareBase`; normally `base`): commits on the branch plus staged, unstaged and untracked (not ignored)
+ * files. Untracked files are picked up by staging everything into a throwaway index, so the real index is
+ * never touched.
+ */
+export async function ticketDiff(dir: string, base: string, opts: { ignoreWhitespace?: boolean; prBase?: string | null } = {}): Promise<TicketDiff> {
   if (!existsSync(dir)) throw new DiffError(404, "the ticket's worktree no longer exists");
-  const mb = await mergeBase(dir, base);
+  const branch = (await run(["git", "branch", "--show-current"], dir)).stdout.trim() || null;
+  const mb = await compareBase(dir, base, opts.prBase, branch);
   if (!mb) throw new DiffError(400, `no common ancestor with the base branch "${base}"`);
-  return diffFrom(dir, mb, opts);
+  const d = await diffFrom(dir, mb, opts);
+  return plain(mb.ref) === plain(base) ? d : { ...d, startedFrom: plain(mb.ref) };
 }
 
 /** Says why a folder's changes can't be shown since `sha`. */

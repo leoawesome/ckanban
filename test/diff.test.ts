@@ -206,3 +206,79 @@ test("GET /tickets/:id/diff", async () => {
   r = await fetch(`${base}/api/profiles/${p.slug}/tickets/${t.id}/diff`);
   expect(r.status).toBe(404);
 });
+
+/**
+ * A board whose base branch is "master" while a run moved its ticket branch onto origin/feature, which is
+ * far ahead of master: the Changes tab must compare with feature, not list everything feature has.
+ */
+async function movedRepo() {
+  const origin = await makeRepo();
+  await git(origin, "branch", "-m", "master");
+  await git(origin, "checkout", "-qb", "feature");
+  for (let i = 0; i < 5; i++) {
+    writeFileSync(join(origin, `feature-${i}.ts`), `f${i}\n`);
+    await git(origin, "add", ".");
+    await git(origin, "commit", "-qm", `feature ${i}`);
+  }
+  await git(origin, "checkout", "-q", "master");
+  const clone = tempDir("ck-clone-");
+  await git(clone, "clone", "-q", origin, ".");
+  const wt = (name: string) => join(clone, "..", `${name}-${Math.random().toString(36).slice(2)}`);
+  return { clone, wt };
+}
+
+test("a ticket branch reset onto another branch is compared with that branch", async () => {
+  const { clone, wt } = await movedRepo();
+  const dir = wt("moved");
+  await git(clone, "worktree", "add", "-q", "--no-track", "-b", "ck/t2", dir, "origin/master");
+  await git(dir, "checkout", "-q", "-B", "ck/t2", "origin/feature");
+  let d = await ticketDiff(dir, "master");
+  expect(d.files).toEqual([]);
+  expect(d.startedFrom).toBe("feature");
+
+  writeFileSync(join(dir, "mine.ts"), "mine\n");
+  await git(dir, "add", ".");
+  await git(dir, "commit", "-qm", "ticket work");
+  d = await ticketDiff(dir, "master");
+  expect(d.files.map((f) => f.path)).toEqual(["mine.ts"]);
+  expect(d.startedFrom).toBe("feature");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("git reset --hard onto another branch counts as a move too", async () => {
+  const { clone, wt } = await movedRepo();
+  const dir = wt("reset");
+  await git(clone, "worktree", "add", "-q", "--no-track", "-b", "ck/t3", dir, "origin/master");
+  await git(dir, "reset", "-q", "--hard", "origin/feature");
+  const d = await ticketDiff(dir, "master");
+  expect(d.files).toEqual([]);
+  expect(d.startedFrom).toBe("feature");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("a ticket that stayed on the board's base branch is compared with it, as before", async () => {
+  const { clone, wt } = await movedRepo();
+  const dir = wt("stay");
+  await git(clone, "worktree", "add", "-q", "--no-track", "-b", "ck/t4", dir, "origin/master");
+  writeFileSync(join(dir, "mine.ts"), "mine\n");
+  await git(dir, "add", ".");
+  await git(dir, "commit", "-qm", "ticket work");
+  const d = await ticketDiff(dir, "master");
+  expect(d.base).toBe("master");
+  expect(d.files.map((f) => f.path)).toEqual(["mine.ts"]);
+  expect(d.startedFrom).toBeUndefined();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("the pull request's base branch wins over the board's base branch", async () => {
+  const { clone, wt } = await movedRepo();
+  const dir = wt("pr");
+  // Merged rather than reset, so the reflog names no other branch: only the PR says where the work lands.
+  await git(clone, "worktree", "add", "-q", "--no-track", "-b", "ck/t5", dir, "origin/master");
+  await git(dir, "merge", "-q", "--ff-only", "origin/feature");
+  expect((await ticketDiff(dir, "master")).files.length).toBe(5);
+  const d = await ticketDiff(dir, "master", { prBase: "feature" });
+  expect(d.files).toEqual([]);
+  expect(d.startedFrom).toBe("feature");
+  rmSync(dir, { recursive: true, force: true });
+});

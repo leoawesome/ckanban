@@ -126,7 +126,7 @@ export function Changes({ slug, ticket, state, onSent, onError }: {
         <span className="changes-ref" title={inFolder
           ? `Everything changed in the project folder since this ticket's first run, including edits made there by others (${diff.base})`
           : `${diff.base}${diff.branch ? ` · ${diff.branch}` : ""}`}>
-          {inFolder ? "Compared with this ticket's start" : "Compared with the main version"}
+          {inFolder ? "Compared with this ticket's start" : diff.startedFrom ? `Compared with the version this ticket's work started from (${diff.startedFrom})` : "Compared with the main version"}
         </span>
         <span className="spacer" />
         {error && <span className="changes-err" title={error}>Refresh failed</span>}

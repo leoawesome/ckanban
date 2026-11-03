@@ -138,6 +138,8 @@ export interface TicketDiff {
   deletions: number;
   /** Shown instead of files when the changes can't be worked out. */
   note?: string;
+  /** The version the changes are compared with, when it isn't the board's base branch. */
+  startedFrom?: string;
 }
 
 export interface FileContent {
