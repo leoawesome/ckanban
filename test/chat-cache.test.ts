@@ -59,7 +59,34 @@ test("tracker: a session that switched to the 5-minute cache uses the latest cho
   const t = new ChatCacheTracker();
   t.add(assistant("2026-11-01T09:00:00Z", usage1h(0, 40_000)));
   t.add(assistant("2026-11-01T09:10:00Z", usage5m(40_000, 10_000)));
-  expect(t.result()!.ttl).toBe("5m");
+  expect(t.result()).toMatchObject({ ttl: "5m", hourTokens: 40_000, hourAt: "2026-11-01T09:10:00Z" }); // its read hit the 1-hour part, restarting its timer
+});
+
+const user = (n = 1) => ({ type: "user", message: { role: "user", content: Array.from({ length: n }, () => ({ type: "tool_result", content: "x" })) } });
+
+test("tracker: the 1-hour part only counts while it is within Claude's 20-block look-back", () => {
+  const t = new ChatCacheTracker();
+  t.add(assistant("2026-11-01T09:00:00Z", usage1h(0, 300_000)));
+  t.add(user(9));
+  t.add(assistant("2026-11-01T09:01:00Z", usage5m(300_000, 5_000)));
+  expect(t.result()).toMatchObject({ hourTokens: 300_000 }); // 10 blocks since the 1-hour write
+  t.add(user(10));
+  t.add(assistant("2026-11-01T09:02:00Z", usage5m(305_000, 5_000)));
+  expect(t.result()).toMatchObject({ hourTokens: 0, hourAt: null }); // 21 blocks: out of reach
+});
+
+test("tracker: chats with one cache time have no 1-hour part; compacting drops it", () => {
+  const h = new ChatCacheTracker();
+  h.add(assistant("2026-11-01T09:00:00Z", usage1h(0, 100_000)));
+  h.add(assistant("2026-11-01T09:01:00Z", usage1h(100_000, 5_000)));
+  expect(h.result()).toMatchObject({ ttl: "1h", hourTokens: 0, hourAt: null });
+  const f = new ChatCacheTracker();
+  f.add(assistant("2026-11-01T09:00:00Z", usage5m(0, 100_000)));
+  expect(f.result()).toMatchObject({ ttl: "5m", hourTokens: 0, hourAt: null });
+  const c = new ChatCacheTracker();
+  c.add(assistant("2026-11-01T09:00:00Z", usage1h(0, 200_000)));
+  c.add(assistant("2026-11-01T09:01:00Z", usage5m(10_000, 20_000)));
+  expect(c.result()).toMatchObject({ hourTokens: 0 });
 });
 
 test("tracker: unknown cache time counts as 1 hour; synthetic and usage-less messages are skipped", () => {
@@ -125,6 +152,41 @@ test("oldChat: never below 50k tokens, while Claude works, before a fresh chat, 
   expect(oldChat({ cache: info(), running: false, freshSession: true, now: late })).toBeNull();
   expect(oldChat({ cache: null, running: false, now: late })).toBeNull();
   expect(oldChat({ cache: info({ at: "" }), running: false, now: late })).toBeNull();
+});
+
+// Re-read size at gaps of 3, 20 and 90 minutes, for each kind of chat (tracker plus note, as the board runs them).
+function reread(build: (t: ChatCacheTracker) => void, gapMin: number): number {
+  const t = new ChatCacheTracker();
+  build(t);
+  const c = t.result()!;
+  return oldChat({ cache: c, running: false, now: Date.parse(c.at) + gapMin * min })?.tokens ?? 0;
+}
+
+test("oldChat: re-read sizes for 1-hour, 5-minute and switched chats at 3, 20 and 90 minutes", () => {
+  const only1h = (t: ChatCacheTracker) => { t.add(assistant("2026-11-01T09:00:00Z", usage1h(10_000, 190_000, 0))); t.add(assistant("2026-11-01T09:10:00Z", usage1h(200_000, 30_000, 0))); };
+  const only5m = (t: ChatCacheTracker) => { t.add(assistant("2026-11-01T09:00:00Z", usage5m(10_000, 190_000, 0))); t.add(assistant("2026-11-01T09:10:00Z", usage5m(200_000, 30_000, 0))); };
+  const switched = (t: ChatCacheTracker) => { t.add(assistant("2026-11-01T09:00:00Z", usage1h(10_000, 190_000, 0))); t.add(user(3)); t.add(assistant("2026-11-01T09:10:00Z", usage5m(200_000, 80_000, 0))); };
+  // 1 hour only: ready for an hour, then all but the 10k opening.
+  expect([3, 20, 90].map((g) => reread(only1h, g))).toEqual([0, 0, 220_000]);
+  // 5 minutes only: all but the opening after 5 minutes.
+  expect([3, 20, 90].map((g) => reread(only5m, g))).toEqual([0, 220_000, 220_000]);
+  // Switched: within the hour only the 80k written after the 1-hour part; after it, all but the opening.
+  expect([3, 20, 90].map((g) => reread(switched, g))).toEqual([0, 80_000, 270_000]);
+  // Small newer part: no note within the hour.
+  const smallTail = (t: ChatCacheTracker) => { t.add(assistant("2026-11-01T09:00:00Z", usage1h(10_000, 190_000, 0))); t.add(assistant("2026-11-01T09:10:00Z", usage5m(200_000, 20_000, 0))); };
+  expect([3, 20, 90].map((g) => reread(smallTail, g))).toEqual([0, 0, 210_000]);
+});
+
+test("oldChat: a switched chat's hover names both cache times and prices only the newer part", () => {
+  const t = new ChatCacheTracker();
+  t.add(assistant("2026-11-01T09:00:00Z", usage1h(10_000, 190_000, 0)));
+  t.add(assistant("2026-11-01T09:10:00Z", usage5m(200_000, 80_000, 0)));
+  const c = t.result()!;
+  const n = oldChat({ cache: c, running: false, now: Date.parse(c.at) + 20 * min })!;
+  expect(n.line).toBe("Old chat · next message re-reads about 80k input tokens");
+  expect(n.title).toContain("ready for 5 minutes (the first 200k tokens for 1 hour) after its last reply");
+  expect(n.title).toContain("re-reads the newer part of the chat (chat size 280k tokens)");
+  expect(n.title).toContain(`around ${costText(coldCost("claude-opus-5-5", 80_000, "5m"))}`);
 });
 
 test("text helpers: token and cost wording", () => {

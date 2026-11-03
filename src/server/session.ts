@@ -589,7 +589,7 @@ export class SessionParser {
       return;
     }
     if ((ev.type !== "user" && ev.type !== "assistant") || ev.isSidechain) return;
-    if (ev.type === "assistant") this.cache.add(ev);
+    if (!ev.isCompactSummary) this.cache.add(ev);
     const content = ev.message?.content;
 
     if (ev.type === "user") {
