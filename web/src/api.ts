@@ -323,6 +323,8 @@ export interface Ticket {
   reopenedFrom?: { status: Status; outcome: Outcome } | null;
   /** Short name siblings use in dependsOn. */
   planKey?: string | null;
+  /** Title of the chat proposal it was created from: its card still finds it after a rename. */
+  proposedAs?: string | null;
   /** Siblings (ticket id or planKey) a running plan finishes before starting this one. */
   dependsOn?: string[];
   /** Shared devices it expects to use (e.g. chrome-whatsapp): a hint only, its run takes them while it uses them. */
@@ -1449,7 +1451,7 @@ export const api = {
     `${t(slug, id)}/file?raw=1${download ? "&download=1" : ""}&path=${encodeURIComponent(path)}`,
   createTicket: (slug: string, input: {
     title: string; body: string; status: Status; sessionId?: string; mode?: TicketMode; parentId?: string; planKey?: string; dependsOn?: string[];
-    needs?: string[]; tags?: string[]; important?: boolean;
+    needs?: string[]; tags?: string[]; important?: boolean; proposedAs?: string;
   }) => req<Ticket>("POST", t(slug), input),
   plan: (slug: string, id: string, action: "start" | "pause" | "resume" | "done" | "concurrency", maxConcurrent?: number) =>
     req<Ticket>("POST", `${t(slug, id)}/plan`, { action, maxConcurrent }),

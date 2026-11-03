@@ -53,13 +53,15 @@ export function lastChange(t: Ticket, s: SessionSummary | null): string {
 /**
  * createdTitles: titles of the board's other tickets, to tell which proposed new tickets still wait for a click: a proposal
  * whose title is already on the board (created from this chat, or by hand, or by another ticket) counts as handled.
+ * createdKeys: keys of this ticket's children made before cards saved the proposed title (proposedAs, in createdTitles), so
+ * those stay handled after a rename too.
  * managed: the ticket is a child of a running plan, so its planner, not the user, handles it.
  * planComplete: every child of this ticket's plan is finished, so a stuck plan no longer needs the user.
  * huddle: the ticket's own open huddle; while it works the ticket doesn't need the user unless the huddle asks.
  */
 export function attentionFor(
   t: Ticket, s: SessionSummary | null, running: boolean,
-  o: { createdTitles?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null } = {},
+  o: { createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null } = {},
 ): Attention | null {
   // A follow-up the board saw too late to wake (computer asleep, board off) waits for the user in any column: Claude
   // meant to come back, and only the user can say whether that still makes sense.
@@ -88,7 +90,7 @@ export function attentionFor(
   if (p && !((!p.title || p.title === t.title) && (!p.description || p.description.trim() === t.body.trim()))) {
     return { kind: "proposal", label: "Review proposal", since };
   }
-  if (s?.pendingNewTickets?.some((n) => !o.createdTitles?.has(titleKey(n.title)))) return { kind: "proposal", label: "Review proposed tickets", since };
+  if (s?.pendingNewTickets?.some((n) => !o.createdTitles?.has(titleKey(n.title)) && !(n.key && o.createdKeys?.has(n.key)))) return { kind: "proposal", label: "Review proposed tickets", since };
   if (s?.pendingTeammates?.some((id) => !t.teammateCards?.[id])) return { kind: "proposal", label: "Review proposed teammate", since };
   if (s?.pendingAutomations?.some((id) => !t.automationCards?.[id])) return { kind: "proposal", label: "Review proposed automation", since };
   if (t.status === "review") return { kind: "review", label: "Ready for review", since };
@@ -97,9 +99,16 @@ export function attentionFor(
   return null;
 }
 
-/** Titles of every ticket on the board but `self`, trimmed and case-folded the way sameTitle compares them. */
-export function boardTitles(tickets: Pick<Ticket, "id" | "title">[], self: string): Set<string> {
-  return new Set(tickets.filter((c) => c.id !== self).map((c) => titleKey(c.title)));
+/**
+ * Titles of every ticket on the board but `self`, trimmed and case-folded the way sameTitle compares them, plus the title
+ * each of self's children was proposed with (it may have been renamed since).
+ */
+export function boardTitles(tickets: Pick<Ticket, "id" | "title" | "parentId" | "proposedAs">[], self: string): Set<string> {
+  const others = tickets.filter((c) => c.id !== self);
+  return new Set([
+    ...others.map((c) => titleKey(c.title)),
+    ...others.filter((c) => c.parentId === self && c.proposedAs).map((c) => titleKey(c.proposedAs!)),
+  ]);
 }
 
 /** How two ticket titles are compared to tell a proposal is already on the board: case and spacing don't count. */
@@ -115,6 +124,8 @@ export function ticketAttention(
   };
   return attentionFor(t, s, running, {
     createdTitles: s?.pendingNewTickets.length ? boardTitles(store.listTickets(slug), t.id) : undefined,
+    createdKeys: s?.pendingNewTickets.length
+      ? new Set(childrenOf(store.listTickets(slug), t.id).flatMap((c) => (c.planKey && !c.proposedAs ? [c.planKey] : []))) : undefined,
     managed: t.parentId ? planActive(store.getTicket(slug, t.parentId)?.plan) : false,
     planComplete: t.plan?.state === "stuck" ? planComplete() : undefined,
     huddle,

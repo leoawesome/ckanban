@@ -169,3 +169,15 @@ test("a ⭐ at the start of a title marks the ticket Important and leaves the st
   const f = await board.addOnTicket("p", u.id, { title: "Export", body: "", important: true });
   expect(f.important).toBe(true);
 });
+
+test("an add-on renamed and started by its run still matches its card, and a second Create returns it", async () => {
+  await setup();
+  const src = await board.createTicket("p", { title: "Add export", body: "", status: "backlog" });
+  store.updateTicket("p", src.id, { status: "done", outcome: "done", runCount: 1 });
+  const a = await board.addOnTicket("p", src.id, { title: "Excel too", body: "x" });
+  store.updateTicket("p", a.id, { title: "Export to Excel and CSV", status: "in_progress", runCount: 1 });
+  expect(addOnFor(store.listTickets("p"), src.id, "Excel too")?.id).toBe(a.id);
+  const again = await board.addOnTicket("p", src.id, { title: "Excel too", body: "x" });
+  expect(again.id).toBe(a.id);
+  expect(store.listTickets("p").length).toBe(2);
+});

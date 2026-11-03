@@ -288,7 +288,7 @@ export interface ParsedSession {
   /** Latest ticket proposal since the user's last message. */
   pendingProposal: TicketProposal | null;
   /** Latest proposed new tickets since the user's last message (some may already be created). */
-  pendingNewTickets: TicketProposal[];
+  pendingNewTickets: NewTicketDraft[];
   /** Teammate cards (their entry uuids) since the user's last message; Ticket.teammateCards says which were answered. */
   pendingTeammates: string[];
   /** Automation cards (entry uuids) since the user's last message; Ticket.automationCards says which were saved. */
@@ -305,7 +305,7 @@ export interface SessionSummary {
   updatedAt: string;
   openQuestions: number;
   pendingProposal: TicketProposal | null;
-  pendingNewTickets: TicketProposal[];
+  pendingNewTickets: NewTicketDraft[];
   pendingTeammates: string[];
   pendingAutomations?: string[];
   /** See ParsedSession.cache: the ticket chat's "gone cold" note. */

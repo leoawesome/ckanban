@@ -16,6 +16,7 @@ import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
 import type { SessionSummary } from "./session";
 import { recallBlock } from "./recall";
 import { wouldLoop } from "../../web/src/family";
+import { addOnFor } from "../../web/src/addOn";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
 import { canEndQuietly, quietContext } from "./quiet";
@@ -1727,7 +1728,7 @@ export class Board {
     input: {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
-      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null;
+      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string;
     },
   ): Promise<Ticket> {
     const status = input.status === "in_progress" ? "ready" : input.status;
@@ -2420,10 +2421,13 @@ export class Board {
     if (!src) throw new Error(`ticket ${id} not found`);
     const title = input.title.trim();
     if (!title) throw new Error("title is required");
+    // Clicked again (another tab, a slow reply): the add-on this card already made, even renamed or started since.
+    const made = addOnFor(this.store.listTickets(slug), src.id, title);
+    if (made) return made;
     const shaping = src.status === "planning" || src.status === "backlog";
     const was = shaping && src.reopenedFrom ? src.reopenedFrom : src;
     const t = await this.createTicket(slug, {
-      title, body: input.body, status: "backlog", mode: "auto",
+      title, body: input.body, status: "backlog", mode: "auto", proposedAs: title,
       ...(src.tags?.length ? { tags: src.tags } : {}), ...(src.important || input.important ? { important: true } : {}),
     });
     const patch: Partial<Ticket> = { addOnOf: src.id };

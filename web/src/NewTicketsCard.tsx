@@ -1,17 +1,16 @@
 import { useState } from "react";
 import type { NewTicketDraft as Draft, Ticket } from "./api";
+import { COLUMNS } from "./columns";
 import { ImportantStar } from "./StarToggle";
 import { TagChip } from "./Tags";
 import { Markdown } from "./Transcript";
 
-/** Two titles name the same ticket: case and spacing don't count (the server's titleKey). */
-export const sameTitle = (a: string, b: string) => norm(a) === norm(b);
-const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+export { sameTitle } from "./proposalMatch";
 
 /** Tickets a planner's chat proposed; Create adds each to Backlog, linked to the planner. */
 export function NewTicketsCard({ drafts, created, parentId, onCreate, onOpen }: {
   drafts: Draft[];
-  /** The ticket a draft already is (matched by title): the planner's child, or any ticket on the board with that title. */
+  /** The ticket a draft already is (matched by key or proposed title, see createdFromDraft): the planner's child, or any ticket on the board with that title. */
   created: (d: Draft) => Ticket | undefined;
   /** The planner: a match that isn't its child is "Already on the board". */
   parentId?: string;
@@ -67,7 +66,9 @@ export function NewTicketsCard({ drafts, created, parentId, onCreate, onOpen }: 
               </button>
               {t ? (
                 t.parentId === parentId || made.get(i) === t ? (
-                  <button className="link-btn small" onClick={() => onOpen(t.id)}>Created, open</button>
+                  <button className="link-btn small" onClick={() => onOpen(t.id)} title={t.title === d.title ? undefined : `Now “${t.title}”`}>
+                    Created, in {COLUMNS.find((c) => c.id === t.status)?.label ?? t.status}, open
+                  </button>
                 ) : (
                   <button className="link-btn small" onClick={() => onOpen(t.id)} title={`“${t.title}” is already a ticket on this board`}>Already on the board, open</button>
                 )

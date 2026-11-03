@@ -20,7 +20,8 @@ import { ArrowDownIcon, BranchIcon, CloseIcon, FileCodeIcon, FileTextIcon } from
 import { useImagePaste } from "./imagePaste";
 import { AttachmentChips } from "./AttachmentChips";
 import { ImagePickButton } from "./ImagePickButton";
-import { NewTicketsCard, sameTitle } from "./NewTicketsCard";
+import { NewTicketsCard } from "./NewTicketsCard";
+import { createdFromDraft } from "./proposalMatch";
 import { KeyHint } from "./KeyHint";
 import { addOnFor, addOnState } from "./addOn";
 import { parentLink } from "./family";
@@ -517,16 +518,15 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
 
   const empty = page !== null && !loadError && entries.length === 0 && !pending.length && !queued.length && !running;
 
-  // The ticket a proposed draft became: this ticket's child of that title, else any ticket on the board with it (made by
-  // hand or from another chat), which counts as handled too (the server's attention rule, titleKey).
+  // The ticket a proposed draft became: this ticket's child with its key or proposed title (still found after a rename),
+  // else any ticket on the board with that title, which counts as handled too (the server's attention rule).
   // A questions form still waits for answers: the message box offers a note instead of a second way to answer.
   const formWaiting = entries.some((e, i) => !!e.questions && !answeredAfter(i));
-  const childFor = (d: { title: string }) => tickets.find((t) => t.parentId === ticket.id && t.title === d.title)
-    ?? tickets.find((t) => t.id !== ticket.id && sameTitle(t.title, d.title));
+  const childFor = (d: NewTicketDraft) => createdFromDraft(tickets, ticket.id, d);
   const createChild = async (d: NewTicketDraft) => {
     try {
       return await api.createTicket(slug, {
-        title: d.title, body: d.description, status: "backlog", mode: "interview", parentId: ticket.id,
+        title: d.title, body: d.description, status: "backlog", mode: "interview", parentId: ticket.id, proposedAs: d.title,
         ...(d.key ? { planKey: d.key } : {}), ...(d.dependsOn?.length ? { dependsOn: d.dependsOn } : {}),
         ...(d.needs?.length ? { needs: d.needs } : {}), ...(d.tags?.length ? { tags: d.tags } : {}), ...(d.important ? { important: true } : {}),
       });

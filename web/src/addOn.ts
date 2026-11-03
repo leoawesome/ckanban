@@ -15,8 +15,10 @@ export function addOnState(t: { status: string; runCount: number; reopenedFrom?:
 }
 
 /** The add-on made from a proposal: a ticket linked to this one with the proposed title. */
-export function addOnFor<T extends Pick<Linkable, "title" | "addOnOf">>(tickets: T[], of: string, title: string): T | undefined {
-  return tickets.find((t) => t.addOnOf === of && t.title === title.trim());
+export function addOnFor<T extends Pick<Linkable, "title" | "addOnOf"> & { proposedAs?: string | null }>(tickets: T[], of: string, title: string): T | undefined {
+  const own = tickets.filter((t) => t.addOnOf === of);
+  // The title it was proposed with first: the add-on's own run may have renamed it.
+  return own.find((t) => t.proposedAs === title.trim()) ?? own.find((t) => t.title === title.trim());
 }
 
 /** Add-on links for every ticket: the one it is an add-on to, and its own add-ons (oldest first). */

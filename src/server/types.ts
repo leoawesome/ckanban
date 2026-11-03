@@ -190,6 +190,8 @@ export interface Ticket {
   parentId?: string | null;
   /** Short name siblings use in dependsOn (from the planner's proposal). */
   planKey?: string | null;
+  /** Title of the chat proposal (a propose_tickets draft or an add-on card) it was created from, so that card still finds it after a rename. */
+  proposedAs?: string | null;
   /** Siblings (ticket id or planKey) that must be done before a running plan starts this ticket. */
   dependsOn?: string[];
   /**

@@ -58,6 +58,7 @@ import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, Usa
 import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
 import { familyOf, LINK_WORDS, parentLink } from "../../web/src/family";
+import { createdFromDraft } from "../../web/src/proposalMatch";
 import type { Store } from "./store";
 import { runCapFor, SELF_MOVES, STATUSES, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
 import { nowIso, slugify } from "./util";
@@ -1425,6 +1426,13 @@ export function createServer(deps: ServerDeps) {
           if (running) mode = "auto";
         }
         if (parentId && !store.getTicket(slug, parentId)) throw new HttpError(400, `parent ticket ${parentId} not found`);
+        // Create on a chat's proposed-tickets card: a draft that is already this parent's child (same key or proposed
+        // title, even renamed, started or moved since) answers with that ticket instead of making it twice.
+        const proposedAs = !planner && parentId && typeof b.proposedAs === "string" && b.proposedAs.trim() ? b.proposedAs.trim() : undefined;
+        if (proposedAs) {
+          const made = createdFromDraft(store.listTickets(slug), parentId!, { title: proposedAs, ...(planKey ? { key: planKey } : {}) });
+          if (made && made.parentId === parentId) return json(view(profile, made), 200);
+        }
         // Part of another ticket's family: a run's own ticket (create_ticket's partOfThisTicket, shown as "from chat") or,
         // for the user, any ticket of this board.
         const partOf = typeof b.partOf === "string" && b.partOf ? b.partOf : undefined;
@@ -1438,6 +1446,7 @@ export function createServer(deps: ServerDeps) {
         const startedBy = runner && startsRun(status) ? runStart(slug, runner) : guest && startsRun(status) ? guestStart(guest) : null;
         let t = await board.createTicket(slug, {
           title, body: String(b.body ?? ""), status: b.sessionId && !planner ? "backlog" : status, mode, parentId, planKey, dependsOn, needs, tags,
+          ...(proposedAs ? { proposedAs } : {}),
           important: b.important === true, ...(partOf ? { partOf, ...(partOfVia ? { partOfVia } : {}) } : {}),
           ...(raisedBy ? { raisedBy } : {}),
         });

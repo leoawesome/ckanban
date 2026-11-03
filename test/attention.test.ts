@@ -214,3 +214,13 @@ test("a new huddle ask ends the snooze while an older one is still open", () => 
   expect(again.label).toBe(a.label);
   expect(withSnooze(snoozed, null, again, now, tagged).attention).toEqual(again);
 });
+
+test("a proposed ticket created from the card stays handled after the child is renamed", () => {
+  const kid = { id: "k", title: "Renamed by its run", parentId: "me", planKey: "fix", proposedAs: "Old title" };
+  const titles = boardTitles([kid, { id: "me", title: "Planner" }], "me");
+  expect(titles.has("old title")).toBe(true);
+  expect(titles.has("planner")).toBe(false);
+  const s = S({ pendingNewTickets: [{ title: "Old title v2", description: "", key: "fix" }] });
+  expect(attentionFor(T({}), s, false, { createdTitles: titles, createdKeys: new Set(["fix"]) })).toBeNull();
+  expect(attentionFor(T({}), s, false, { createdTitles: titles, createdKeys: new Set() })!.kind).toBe("proposal");
+});

@@ -1313,3 +1313,46 @@ test("tickets a schedule's run creates are linked to that schedule; the list sho
   expect(list[0]).toMatchObject({ id: s.id, spend7dUsd: 0, quietPerDay: [] });
   (board as any).runnerRights = real;
 });
+
+test("a ticket made from a proposed-tickets card stays created after it is renamed and started, and Create can't make it twice", async () => {
+  const { createdFromDraft } = await import("../web/src/proposalMatch");
+  const path = tempDir("ck-card-");
+  const p = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Card Proj", path }))).json()) as any;
+  const tickets = `${base}/api/profiles/${p.slug}/tickets`;
+  const chat = (await (await fetch(tickets, json("POST", { title: "Tests" }))).json()) as any;
+  const keyed = { title: "Book in 1.5 minutes", description: "d", key: "fix" };
+  const plain = { title: "Update test docs", description: "d" };
+  const create = (d: { title: string; key?: string }) =>
+    fetch(tickets, json("POST", { title: d.title, body: "d", status: "backlog", parentId: chat.id, proposedAs: d.title, ...(d.key ? { planKey: d.key } : {}) }));
+  let r = await create(keyed);
+  expect(r.status).toBe(201);
+  const a = (await r.json()) as any;
+  expect(a.proposedAs).toBe(keyed.title);
+  const b = (await (await create(plain)).json()) as any;
+
+  // The children's own runs rename them, then they start and move on.
+  await fetch(`${tickets}/${a.id}`, json("PATCH", { title: "Round minute fractions up" }));
+  await fetch(`${tickets}/${b.id}`, json("PATCH", { title: "Docs: new guard lines" }));
+  store.updateTicket(p.slug, a.id, { status: "in_progress", runCount: 1 });
+  store.updateTicket(p.slug, b.id, { status: "review", runCount: 1 });
+  const all = (await (await fetch(tickets)).json()) as any[];
+  expect(createdFromDraft(all, chat.id, keyed)?.id).toBe(a.id);
+  expect(createdFromDraft(all, chat.id, plain)?.id).toBe(b.id);
+
+  // Create clicked again (stale card, another tab): the ticket it already made, no duplicate.
+  r = await create(keyed);
+  expect(r.status).toBe(200);
+  expect(((await r.json()) as any).id).toBe(a.id);
+  r = await create(plain);
+  expect(((await r.json()) as any).id).toBe(b.id);
+  expect(((await (await fetch(tickets)).json()) as any[]).length).toBe(3);
+});
+
+test("a card's key matches an older child without a proposed title, but never one a different draft made", async () => {
+  const { createdFromDraft } = await import("../web/src/proposalMatch");
+  const old = { id: "o", title: "Renamed", parentId: "me", planKey: "fix" };
+  expect(createdFromDraft([old], "me", { title: "Original", key: "fix" })?.id).toBe("o");
+  const made = { ...old, proposedAs: "Original" };
+  expect(createdFromDraft([made], "me", { title: "A new fix", key: "fix" })).toBeUndefined();
+  expect(createdFromDraft([made], "me", { title: " original ", key: "fix" })?.id).toBe("o");
+});

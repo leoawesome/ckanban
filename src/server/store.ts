@@ -354,7 +354,7 @@ export class Store {
     input: {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
-      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null;
+      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string;
     },
   ): Ticket {
     const at = nowIso();
@@ -367,6 +367,7 @@ export class Store {
       ...(input.source ? { source: input.source } : {}),
       ...(input.parentId ? { parentId: input.parentId } : {}),
       ...(input.planKey ? { planKey: input.planKey } : {}),
+      ...(input.proposedAs ? { proposedAs: input.proposedAs } : {}),
       ...(input.dependsOn?.length ? { dependsOn: input.dependsOn } : {}),
       ...(input.needs?.length ? { needs: input.needs } : {}),
       ...(input.tags?.length ? { tags: input.tags } : {}),
