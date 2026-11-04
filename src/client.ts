@@ -373,6 +373,16 @@ export class BoardClient {
   /** land_milestone: lands the main ticket's copy (push and PR, or a merge into the folder). */
   landMilestone = (slug: string, id: string, summary: string, run?: string | null) =>
     this.req<{ message: string }>("POST", `${this.t(slug, id)}/land`, { summary }, this.by(run), true);
+  /** search_chat: earlier messages of a ticket's chat (all its sessions); text for Claude. */
+  searchChat = (slug: string, q: { query: string; ticket?: string | null; includeTools?: boolean }, run?: string | null) => {
+    const p = new URLSearchParams({ q: q.query, ...(q.ticket ? { ticket: q.ticket } : {}), ...(q.includeTools ? { tools: "1" } : {}) });
+    return this.req<{ text: string }>("GET", `/api/profiles/${encodeURIComponent(slug)}/chat/search?${p}`, undefined, this.by(run));
+  };
+  /** read_chat: the messages around a search_chat ref. */
+  readChat = (slug: string, q: { ref: string; before?: number; after?: number }, run?: string | null) => {
+    const p = new URLSearchParams({ ref: q.ref, ...(q.before !== undefined ? { before: String(q.before) } : {}), ...(q.after !== undefined ? { after: String(q.after) } : {}) });
+    return this.req<{ text: string }>("GET", `/api/profiles/${encodeURIComponent(slug)}/chat/read?${p}`, undefined, this.by(run));
+  };
   /** update_status: the feature's "Where we are" (only the sections named change); returns the whole status as markdown. */
   updateStatus = (slug: string, id: string, patch: Record<string, unknown>, run?: string | null) =>
     this.req<{ topId: string; title: string; markdown: string }>("POST", `${this.t(slug, id)}/status`, patch, this.by(run));

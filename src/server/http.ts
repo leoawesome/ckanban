@@ -42,7 +42,8 @@ import { PushService } from "./push";
 import { LISTENER_HEADER, LOGIN_HEADER, qrSvg, RemoteAccess, RemoteError, remoteUrl, type RemoteConfig } from "./remote";
 import { AGENT_IDS, AgentError, AgentRegistry, type AgentId } from "./agents";
 import { collectLinks } from "./links";
-import { fromTicketText, SessionCache, type SessionEntry, type SessionSummary } from "./session";
+import { findSessionFile, fromTicketText, SessionCache, type SessionEntry, type SessionSummary } from "./session";
+import { matchesText, parseRef, readChat, readText, searchChat, toolOutputs, type ChatSource } from "./chat-search";
 import { ptySupported, ShellManager, type Shell } from "./shell";
 import { AGENT_STEP_TAIL, settleAgent } from "./subagents";
 import { settleWorkflow, withRun, workflowAgentDetail, workflowScript, type WorkflowInfo } from "./workflows";
@@ -290,7 +291,7 @@ export function createServer(deps: ServerDeps) {
     if (!t.earlierSessions?.length) return current;
     const earlier = t.earlierSessions.flatMap((s) => [
       ...(sessions.get(s.sessionId)?.entries ?? []).map(({ rewind: _, ...e }) => e as SessionEntry),
-      { uuid: `fresh-chat-${s.sessionId}`, at: s.endedAt, role: "assistant", kind: "board", text: "Fresh chat from here: Claude doesn't see the messages above." } as SessionEntry,
+      { uuid: `fresh-chat-${s.sessionId}`, at: s.endedAt, role: "assistant", kind: "board", text: "Fresh chat from here: Claude no longer reads the messages above, but can look them up." } as SessionEntry,
     ]);
     return [...earlier, ...current];
   };
@@ -416,6 +417,31 @@ export function createServer(deps: ServerDeps) {
       "without the user's message, a reply to another ticket's question or a huddle helper): only a ticket's active run or chat reply, " +
       "a Planning chat answering the user's message, and a planner on its own child tickets may change other tickets");
   };
+  /** search_chat / read_chat: a run reads its own ticket's chat, and a main ticket its family's; the user's own Claude any. */
+  const chatReach = (req: Request, slug: string, target: Ticket) => {
+    if (req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "search_chat and read_chat work in a ticket's own runs, not for huddle helpers");
+    const caller = runTicket(req, slug);
+    if (!caller || caller === target.id) return;
+    const me = store.getTicket(slug, caller);
+    const manager = isManager(me);
+    if (manager && inFamily(slug, caller, target.id)) return;
+    throw new HttpError(403, `${target.id} is out of reach: from this run you may search the chat of your own ticket (${caller})` +
+      (manager ? " and of its tool tickets (get_family lists them)" : "") + ".");
+  };
+  /** A ticket's chat, oldest session first: every one left behind with "Send in a fresh chat", then the current one. */
+  const chatSources = (t: Ticket, tools: boolean): ChatSource[] =>
+    [...(t.earlierSessions ?? []).map((s) => s.sessionId), ...(t.sessionId ? [t.sessionId] : [])].flatMap((sid) => {
+      const parsed = sessions.get(sid);
+      if (!parsed) return [];
+      let toolOutput: Map<string, string> | undefined;
+      if (tools) {
+        const f = findSessionFile(sid);
+        try {
+          toolOutput = f ? toolOutputs(readFileSync(f, "utf8")) : undefined;
+        } catch {}
+      }
+      return [{ sessionId: sid, entries: parsed.entries, toolOutput }];
+    });
   /** target is below id in id's family (any link). */
   const inFamily = (slug: string, id: string, target: string): boolean => {
     const rows = familyOf(store.listTickets(slug), id);
@@ -1037,10 +1063,10 @@ export function createServer(deps: ServerDeps) {
           if (b.mainModel && !(typeof b.mainModel === "string" && validModel(b.mainModel))) throw new HttpError(400, `"${b.mainModel}" is not a model name. Use ${MODEL_HELP}.`);
           next.mainModel = b.mainModel || null;
         }
-        for (const k of ["checkinUsd", "checkinTickets"] as const) {
+        for (const k of ["checkinUsd", "checkinTickets", "freshChatTokens"] as const) {
           if (b[k] === undefined) continue;
-          if (b[k] !== null && (typeof b[k] !== "number" || !(b[k] > 0) || b[k] > 100000)) throw new HttpError(400, `${k} must be a positive number, or null for the default`);
-          next[k] = b[k] === null ? null : k === "checkinTickets" ? Math.round(b[k]) : b[k];
+          if (b[k] !== null && (typeof b[k] !== "number" || !(b[k] > 0) || b[k] > (k === "freshChatTokens" ? 10_000_000 : 100000))) throw new HttpError(400, `${k} must be a positive number, or null for the default`);
+          next[k] = b[k] === null ? null : k === "checkinUsd" ? b[k] : Math.round(b[k]);
         }
         if (b.checkinOfferDismissed !== undefined) next.checkinOfferDismissed = b.checkinOfferDismissed === true;
         if (b.effort !== undefined) {
@@ -1293,6 +1319,39 @@ export function createServer(deps: ServerDeps) {
       store.updateTicket(slug, t.id, { checkinSetup: true });
       emitTicket(slug, t.id);
       return json(view(profileOr404(slug), store.getTicket(slug, t.id)!), 201);
+    }
+
+    // /profiles/:p/chat/search and /chat/read: search_chat and read_chat, earlier messages of a ticket's chat (chat-search.ts).
+    // A run reads its own ticket's chat; a main ticket also its tool tickets'. Huddle helpers don't.
+    if (parts[2] === "chat" && parts.length === 4 && m === "GET") {
+      if (parts[3] === "search") {
+        const id = url.searchParams.get("ticket") || runTicket(req, slug);
+        if (!id) throw new HttpError(400, "say which ticket's chat to search (ticket)");
+        const t = ticketOr404(slug, id);
+        chatReach(req, slug, t);
+        const tools = url.searchParams.get("tools") === "1";
+        const q = url.searchParams.get("q") ?? "";
+        try {
+          return json({ text: matchesText(t.id, q, searchChat(chatSources(t, tools), q, { includeTools: tools }), tools) });
+        } catch (e) {
+          throw new HttpError(400, (e as Error).message);
+        }
+      }
+      if (parts[3] === "read") {
+        const ref = parseRef(url.searchParams.get("ref") ?? "");
+        if (!ref) throw new HttpError(400, "ref must look like <sessionId>:<message number>, as search_chat gives it");
+        const t = store.listTickets(slug).find((x) => x.sessionId === ref.sessionId || x.earlierSessions?.some((s) => s.sessionId === ref.sessionId));
+        if (!t) throw new HttpError(404, `no ticket on this board has the chat ${ref.sessionId}`);
+        chatReach(req, slug, t);
+        const src = chatSources(t, true).find((s) => s.sessionId === ref.sessionId);
+        if (!src) throw new HttpError(404, `the chat ${ref.sessionId} can't be read any more (its transcript is gone)`);
+        const num = (k: string) => (url.searchParams.has(k) ? Number(url.searchParams.get(k)) : undefined);
+        try {
+          return json({ text: readText(t.id, readChat(src, ref.index, { before: num("before"), after: num("after") })) });
+        } catch (e) {
+          throw new HttpError(400, (e as Error).message);
+        }
+      }
     }
 
     // /profiles/:p/loops — automations: a check script on a timer turns new items into tickets. Anyone lists and

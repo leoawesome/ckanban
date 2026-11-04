@@ -208,6 +208,8 @@ export interface Profile {
   /** A main ticket's family checks in with the user past this cost or this many tool tickets (null: 25 and 30). */
   checkinUsd?: number | null;
   checkinTickets?: number | null;
+  /** A cold main or feature chat over this many tokens starts its next turn fresh. Missing: 150,000. */
+  freshChatTokens?: number | null;
   effort?: string | null;
   /** Ultracode by default: tickets' work runs plan a workflow of helper agents for every substantial task. */
   ultracode?: boolean;

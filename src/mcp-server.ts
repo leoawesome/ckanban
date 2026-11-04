@@ -155,7 +155,7 @@ export interface ToolContext {
     | "listProfiles" | "listTickets" | "getTicket" | "getFamily" | "createTicket" | "updateTicket" | "deleteTicket" | "chat" | "stop" | "listComments"
     | "comment" | "reportBug" | "setFollowUp" | "cancelFollowUp" | "notifyUser" | "takeDevices" | "releaseDevices" | "listSchedules" | "createSchedule" | "updateSchedule" | "deleteSchedule" | "runSchedule"
     | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "adopt" | "updateStatus" | "gather" | "planAction"
-    | "askTicket" | "mergeIntoMain" | "landMilestone" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
+    | "askTicket" | "searchChat" | "readChat" | "mergeIntoMain" | "landMilestone" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
     | "huddleStatus" | "huddleCloseRequest" | "startAutoHuddle" | "huddleHandIn" | "huddleReviewHandIn" | "huddleAllowChanges"
     | "listHuddlePresets" | "saveHuddlePreset" | "deleteHuddlePreset" | "listHuddleTemplates" | "huddleBrief" | "huddleProposeTeammate"
     | "listPasses" | "claudeServers" | "passTools" | "testAutomation">;
@@ -1557,6 +1557,55 @@ export const TOOLS: Tool[] = [
       const rows = await ctx.client.getFamily(slug, str(args, "id")!);
       if (rows.length <= 1) return `${rows[0]?.id ?? str(args, "id")} has no linked tickets yet: it is not part of a family.`;
       return [`Family of ${rows.length} tickets on board ${slug}, from the top ticket down:`, "", ...rows.map(familyLine)].join("\n");
+    },
+  },
+  {
+    name: "search_chat",
+    description:
+      "Search earlier messages of a ticket's chat, including chats from before \"Send in a fresh chat\" or an automatic fresh start, instead of " +
+      "guessing or re-reading everything. Matches messages that have all the query's words (whole words, any case), newest first, at most 10, " +
+      "each with its date, who wrote it, the lines around it and a ref for read_chat. Searches the user's messages and your replies; tool calls " +
+      "and their output only with includeTools. By default your own ticket's chat; a main ticket may also search its tool tickets'.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profile: PROFILE,
+        query: { type: "string", description: "Words to look for, e.g. \"staging password\". Every word must appear." },
+        ticket: { type: "string", description: "Ticket whose chat to search. Default: your own ticket." },
+        includeTools: { type: "boolean", description: "Also search tool calls and their output. Default false." },
+      },
+      required: ["query"],
+    },
+    annotations: { readOnlyHint: true },
+    changes: false,
+    async run(args, ctx) {
+      const slug = await slugFor(args, ctx);
+      const ticket = str(args, "ticket", false) ?? null;
+      if (!ticket && !runTicketId(ctx)) throw new ClientError("outside a board run, say which ticket's chat to search (ticket)");
+      return (await ctx.client.searchChat(slug, { query: str(args, "query")!, ticket, includeTools: args?.includeTools === true }, ctx.env[RUN_ENV])).text;
+    },
+  },
+  {
+    name: "read_chat",
+    description:
+      "Load the messages of a ticket's chat around a ref from search_chat (\"<session id>:<number>\"): by default 10 before and 10 after, at most " +
+      "40 messages or about 8,000 tokens, whichever comes first.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profile: PROFILE,
+        ref: { type: "string", description: "A ref from search_chat, e.g. 1f0c...:42." },
+        before: { type: "number", description: "How many earlier messages to include. Default 10." },
+        after: { type: "number", description: "How many later messages to include. Default 10." },
+      },
+      required: ["ref"],
+    },
+    annotations: { readOnlyHint: true },
+    changes: false,
+    async run(args, ctx) {
+      const slug = await slugFor(args, ctx);
+      const n = (k: string) => (typeof args?.[k] === "number" ? args[k] : undefined);
+      return (await ctx.client.readChat(slug, { ref: str(args, "ref")!, before: n("before"), after: n("after") }, ctx.env[RUN_ENV])).text;
     },
   },
   {

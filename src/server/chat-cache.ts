@@ -97,3 +97,14 @@ export class ChatCacheTracker {
     return { ...this.last, coldTokens, ttl, hourTokens, hourAt, costUsd: coldCost(this.last.model, coldTokens, ttl) };
   }
 }
+
+const TTL_MS: Record<CacheTtl, number> = { "1h": 3600_000, "5m": 300_000 };
+
+/** The chat has gone cold: Claude last replied longer ago than it keeps the chat ready (the web's rule, cacheNote.ts). */
+export function chatIsCold(c: Pick<ChatCache, "at" | "ttl">, now: number): boolean {
+  const at = Date.parse(c.at);
+  return Number.isFinite(at) && now - at > (TTL_MS[c.ttl] ?? TTL_MS["1h"]);
+}
+
+/** Board setting freshChatTokens's default: a cold main or feature chat bigger than this starts its next turn fresh. */
+export const FRESH_CHAT_TOKENS = 150_000;

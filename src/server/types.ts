@@ -64,6 +64,11 @@ export interface Profile {
   checkinUsd?: number | null;
   /** ...or once it made this many tool tickets since the last check-in. Missing: 30. */
   checkinTickets?: number | null;
+  /**
+   * A main ticket's or feature's chat that has gone cold starts its next turn as a fresh chat seeded from the status once
+   * it would re-read more than this many tokens. Missing: 150,000.
+   */
+  freshChatTokens?: number | null;
 }
 
 export type Workspace = "worktree" | "folder";
@@ -136,6 +141,8 @@ export interface Ticket {
   sessionStarted?: boolean;
   /** The next run starts a new session that picks up from the worktree (Start fresh session after a lost session). */
   freshSession?: boolean;
+  /** The fresh chat freshSession starts was started by the board (a cold, large main or feature chat), not the user. */
+  freshAuto?: boolean | null;
   /**
    * Chats this ticket left behind with "Send in a fresh chat", oldest first: the ticket chat still shows them (above a
    * note), but Claude doesn't see them.

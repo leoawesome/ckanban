@@ -39,6 +39,9 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const [checkinTicketsText, setCheckinTicketsText] = useState(profile?.checkinTickets ? String(profile.checkinTickets) : "");
   const checkinUsd = checkinUsdText.trim() ? Number(checkinUsdText) : null;
   const checkinTickets = checkinTicketsText.trim() ? Number(checkinTicketsText) : null;
+  const [freshText, setFreshText] = useState(profile?.freshChatTokens ? String(Math.round(profile.freshChatTokens / 1000)) : "");
+  const freshK = freshText.trim() ? Number(freshText) : null;
+  const freshError = freshK !== null && !(freshK > 0 && freshK <= 10_000) ? "Enter a chat size in thousands, like 150, or leave it empty." : null;
   const checkinError = (checkinUsd !== null && !(checkinUsd > 0)) || (checkinTickets !== null && !(Number.isInteger(checkinTickets) && checkinTickets > 0))
     ? "A positive amount and a whole number of tickets (empty: $25 and 30)" : null;
   // "ultracode" saved as the effort (the first version): xhigh with the Ultracode switch on.
@@ -119,13 +122,13 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (saving || maxParallelError || capError || (profile && (stallError || checkinError))) return;
+    if (saving || maxParallelError || capError || (profile && (stallError || checkinError || freshError))) return;
     setSaving(true);
     try {
       const p = profile
         ? await api.updateProfile(profile.slug, {
           name, path, maxParallel, model: model || null, effort: effort || null, ultracode, autoHuddles, keepAwake, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
-          mainModel: mainModel || null, checkinUsd, checkinTickets,
+          mainModel: mainModel || null, checkinUsd, checkinTickets, freshChatTokens: freshK === null ? null : Math.round(freshK * 1000),
           claudeAiConnectors: connectorMode === "some" ? keepConnectors : connectorMode,
           // A file typed but not yet added with Enter still counts.
           copyFiles: newFile.trim() && !copyFiles.includes(newFile.trim()) ? [...copyFiles, newFile.trim()] : copyFiles,
@@ -387,6 +390,13 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             {checkinError
               ? <span className="field-error">{checkinError}</span>
               : <span className="muted small">A main ticket asks "Keep going?" once its work passes either amount, or starts its third testing round.</span>}
+            <label>
+              Start an old chat fresh above this chat size (thousands)
+              <input inputMode="numeric" value={freshText} onChange={(e) => setFreshText(e.target.value)} placeholder="150" aria-invalid={!!freshError} />
+              {freshError
+                ? <span className="field-error">{freshError}</span>
+                : <span className="muted small">When a main ticket's chat has gone old and is bigger than this (the chat size shown in the chat), its next turn starts fresh from the status. Claude can still look up earlier messages.</span>}
+            </label>
             <label>
               Flag a run as stalled after (minutes without output)
               <input type="number" min={0} max={1440} step={1} value={stallText} onChange={(e) => setStallText(e.target.value)}

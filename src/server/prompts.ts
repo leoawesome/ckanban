@@ -466,11 +466,23 @@ function notesSection(notes: Comment[]): string {
  * Added to the first message of a chat the user started fresh ("Send in a fresh chat"): the earlier conversation is
  * gone for Claude, so it gets the ticket, its last result and recent comments, and looks at the folder for the rest.
  */
-export function freshChatNote(t: Ticket, lastResult: string | null, comments: { author: string; at: string; text: string }[]): string {
+export function freshChatNote(
+  t: Ticket, lastResult: string | null, comments: { author: string; at: string; text: string }[],
+  feature?: { status: string | null; table: string; auto: boolean },
+): string {
   const recent = comments.length
     ? comments.map((c) => `- ${c.author === "user" ? "User" : "Claude"} (${c.at.slice(0, 16).replace("T", " ")}): ${clip(c.text.trim(), 1500).replace(/\n/g, "\n  ")}`).join("\n")
     : "- (none)";
-  return context("The user started a fresh chat on this ticket", `This is a new chat: the user chose not to continue the earlier conversation on this ticket (it was old and long), so you don't have its history. Here is what you need instead. Before changing anything, look at the files in this folder for the work done so far.
+  const why = feature?.auto
+    ? "the board started it because the earlier conversation on this ticket had gone cold and was large, so re-reading it would be expensive"
+    : "the user chose not to continue the earlier conversation on this ticket (it was old and long)";
+  const lookup = feature
+    ? "\n\nThe earlier messages of this chat are not in your context, but you can look them up: use the search_chat board tool (then read_chat on a result's ref) whenever you need a detail from them, such as something the user said, a decision or a value. Don't guess, and don't ask the user for something they already told you there."
+    : "";
+  const featureParts = feature
+    ? `\n\n# Where we are (the feature's status.md)\n${feature.status?.trim() || "(no status written yet)"}\n\n# Family (tool tickets)\n${feature.table}`
+    : "";
+  return context(feature?.auto ? "The board started a fresh chat to keep this cheap" : "The user started a fresh chat on this ticket", `This is a new chat: ${why}, so you don't have its history. Here is what you need instead.${feature ? " Start from the status below." : ""} Before changing anything, look at the files in this folder for the work done so far.${lookup}
 
 # Ticket: ${t.title}
 
@@ -480,7 +492,7 @@ ${t.body.trim() || "(no description)"}
 ${lastResult?.trim() || "(no result reported yet)"}
 
 # Recent comments
-${recent}`);
+${recent}${featureParts}`);
 }
 
 export function freshSessionPrompt(t: Ticket, ctx: FreshContext): string {

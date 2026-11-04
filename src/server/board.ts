@@ -16,6 +16,7 @@ import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
 import type { SessionSummary } from "./session";
 import { recallBlock } from "./recall";
 import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, type TicketKind } from "../../web/src/family";
+import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, familySig, readStatus, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { addOnFor } from "../../web/src/addOn";
 import { learnedRulesBlock } from "./learn";
@@ -317,6 +318,8 @@ export function recoveryFor(error: string | null | undefined): Recovery | null {
 }
 
 /** Board comments that aren't Claude's result (a fresh session's prompt skips them for "Last result"). */
+/** The chat note when a cold, large main or feature chat starts its next turn fresh (Board.autoFresh). */
+export const AUTO_FRESH_NOTE = "Started a fresh chat to keep this cheap: Claude starts from the status and can look up earlier messages.";
 const BOARD_NOTE_RE = /^(Run failed|Could not start|Run stopped|Planner stopped|Started a fresh session|Started a fresh chat|Took over the session|This ticket's Claude session is still open)/;
 
 export class ConflictError extends Error {}
@@ -624,6 +627,8 @@ export class Board {
       const msg: QueuedMessage = { id: crypto.randomUUID(), text, at: nowIso(), state: "queued", ...flags(opts) };
       return this.patch(slug, id, { queued: [...(t.queued ?? []), msg] });
     }
+    // A cold, large main or feature chat: this turn starts fresh from the status (not for a reply to another session).
+    if (!opts.peer && !opts.fresh) t = this.autoFresh(slug, t);
     const chat = chatFor(t, { text, ...opts });
     // A reply that may edit files (not a read-only Planning one) waits while another ticket edits the folder in place.
     const folderBusy = chat.mode === "act" && this.folderBusy(slug, t);
@@ -1003,7 +1008,8 @@ export class Board {
     // Start fresh session: a work run in a new session that picks up from the branch (until that session exists).
     const fresh = !!t.freshSession && !run.chat;
     // "Send in a fresh chat": the new chat's first message carries the ticket and its last result (until that chat exists).
-    const freshChat = !!t.freshSession && !!run.chat && !run.chat.raw && !session.existed;
+    // A main ticket's or feature's fresh chat also seeds a wake (raw) with the status, and whatever it starts with.
+    const freshChat = !!t.freshSession && !!run.chat && !session.existed && (!run.chat.raw || this.seedsFromStatus(slug, t));
     const artifacts = !!profile.artifacts || mentionsArtifact(t.body, run.chat?.text, ...newComments.map((c) => c.text));
     // Main and tool tickets get their own rules (main-ticket.ts); a failure to work them out never stops the run.
     let role: RunRole | undefined;
@@ -1013,7 +1019,7 @@ export class Board {
       console.error(`role of ${slug}/${id}:`, e);
     }
     let prompt = resume ?? this.withSetupNote(slug, t, profile, session, refine, localizeAttachments(run.chat?.raw
-      ? run.chat.text
+      ? run.chat.text + (freshChat ? `\n\n${this.freshChatContext(slug, t)}` : "")
       : run.chat
       ? chatPrompt(t, run.chat.text, run.chat.mode, outputDir, artifacts, session.repo, session.inPlace, refine && !session.existed ? this.recall(slug, t) : "", role)
         + (freshChat ? `\n\n${this.freshChatContext(slug, t)}` : "")
@@ -1188,7 +1194,7 @@ export class Board {
       stalled: null,
       sessionStarted: started,
       runEndedAt: nowIso(),
-      ...((fresh || freshChat) && started ? { freshSession: false } : {}),
+      ...((fresh || freshChat) && started ? { freshSession: false, freshAuto: null } : {}),
       ...(refine || quiet ? {} : { lastRunAt: startedAt, runCount: runNo }),
       lastActivity: pendingActivity ?? this.store.getTicket(slug, id)?.lastActivity ?? null,
     };
@@ -2354,6 +2360,7 @@ export class Board {
       : orchestratorPrompt(planner, { kind, events, table: planTable(kids), board: slug, outputDir: this.store.outputsDir(slug, planner.id), repo: this.repoState(slug) ?? this.guessRepo(slug) });
     const progress = managed ? progressStep(plan, familySig(kids)) : null;
     this.patch(slug, planner.id, { plan: { ...plan, inbox: [], awaiting: kind, wakeups: plan.wakeups + 1, ...(progress ? { progressSig: progress.progressSig, noProgress: progress.noProgress } : {}) } });
+    this.autoFresh(slug, this.store.getTicket(slug, planner.id) ?? planner);
     if (planner.main) {
       // Its card stays where it is (a wake isn't new work to review); no slot, no folder lock (it edits nothing).
       this.start(slug, planner.id, { text, mode: "act", raw: true });
@@ -3243,7 +3250,43 @@ export class Board {
     const comments = this.store.listComments(slug, t.id);
     const last = comments.findLast((c) => c.author === "ai" && !BOARD_NOTE_RE.test(c.text));
     const recent = comments.filter((c) => !BOARD_NOTE_RE.test(c.text) && c !== last).slice(-10);
-    return freshChatNote(t, last?.text ?? null, recent);
+    if (!this.seedsFromStatus(slug, t)) return freshChatNote(t, last?.text ?? null, recent);
+    // A main ticket or feature starts from its status and its collapsed family table; search_chat finds the rest.
+    let status: string | null = null;
+    try {
+      const path = this.refreshStatusFile(slug, t.id);
+      status = path && existsSync(path) ? readFileSync(path, "utf8") : null;
+    } catch (e) {
+      console.error(`status of ${slug}/${t.id}:`, e);
+    }
+    const all = this.store.listTickets(slug);
+    const kids = all.filter((c) => c.parentId === t.id || c.partOf === t.id);
+    const table = wakeTable(kids, all, (id) => this.isRunning(slug, id));
+    return freshChatNote(t, last?.text ?? null, recent, { status, table, auto: !!t.freshAuto });
+  }
+
+  /** A main ticket, or the top ticket of a feature: its fresh chats start from the status (and may start by themselves). */
+  private seedsFromStatus(slug: string, t: Ticket): boolean {
+    if (t.main) return true;
+    try {
+      return isFeature(this.store.listTickets(slug), t);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * The next turn of a main ticket's or feature's chat that has gone cold and is large (over the board's freshChatTokens)
+   * starts as a fresh chat seeded from the status, instead of re-reading the whole conversation. Returns the ticket as it
+   * is now (unchanged when not).
+   */
+  private autoFresh(slug: string, t: Ticket): Ticket {
+    if (t.freshSession || !t.sessionId || !this.seedsFromStatus(slug, t)) return t;
+    const cache = this.sessionSummary(t.sessionId)?.cache;
+    if (!cache || !chatIsCold(cache, (this.opts.now?.() ?? new Date()).getTime())) return t;
+    const limit = this.store.getProfile(slug)?.freshChatTokens || FRESH_CHAT_TOKENS;
+    if ((cache.coldTokens ?? cache.tokens) <= limit) return t;
+    return this.startFreshChat(slug, t.id, true);
   }
 
   /**
@@ -3293,14 +3336,18 @@ export class Board {
    * ticket, its last result and recent comments instead of the old conversation. Unlike startFresh, nothing is queued
    * and the card stays where it is; the old session is kept so the ticket chat still shows it.
    */
-  private startFreshChat(slug: string, id: string): Ticket {
+  private startFreshChat(slug: string, id: string, auto = false): Ticket {
     const t = this.store.getTicket(slug, id)!;
     const earlier = t.sessionId && (t.sessionStarted || this.sessionExists(t.sessionId))
       ? [...(t.earlierSessions ?? []), { sessionId: t.sessionId, endedAt: nowIso() }]
       : t.earlierSessions;
-    this.store.addComment(slug, id, "ai", "Started a fresh chat: Claude no longer sees the earlier messages; it gets the ticket, its last result and recent comments instead.");
+    this.store.addComment(slug, id, "ai", auto
+      ? AUTO_FRESH_NOTE
+      : this.seedsFromStatus(slug, t)
+      ? "Started a fresh chat: Claude starts from the status and can look up earlier messages."
+      : "Started a fresh chat: Claude no longer sees the earlier messages; it gets the ticket, its last result and recent comments instead.");
     return this.patch(slug, id, {
-      sessionId: crypto.randomUUID(), sessionStarted: false, freshSession: true, ...(earlier ? { earlierSessions: earlier } : {}),
+      sessionId: crypto.randomUUID(), sessionStarted: false, freshSession: true, freshAuto: auto || null, ...(earlier ? { earlierSessions: earlier } : {}),
     });
   }
 
