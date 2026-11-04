@@ -4,6 +4,24 @@ What changed in each ckanban release. Get the latest with `ckanban update`.
 
 ## Unreleased
 
+## [0.17.0] - 2026-11-04
+
+### Added
+- **Proactive check-ins**: *Schedules* has a setup chat with ready-made guides (message catch-up, meeting prep, or your own) that creates a quiet schedule. A quiet schedule leaves only one line in its history when nothing needs you. Schedules can pick a model, and the list shows each one's spend over 7 days.
+- **Tools for one board only**: in *Connections*, a tool can be added for this board only, so other projects stop loading it. Tools can move between one board and every project.
+- **Pick claude.ai connectors per board**: Board settings choose which claude.ai connectors the board's runs get (all, none or only some). Runs also leave out Claude Code tools they never use, so they start lighter.
+- **Fresh chat for old tickets**: instead of a countdown, an old ticket chat shows what the next message will re-read, and the first Send asks once: send anyway, or send in a fresh chat that starts with the ticket, its last result and recent comments.
+
+### Changed
+- **Shorter replies**: Claude's replies, summaries, question forms, notifications and drafts lead with the answer and keep to a sentence or two unless you ask for more.
+
+### Fixed
+- The *Changes* tab compares a ticket with the version its work started from, not always the board's main version.
+- A proposed-ticket card stays marked as created after the ticket is renamed or started, and clicking *Create* again can't make a duplicate.
+- The old-chat note gets the cost of the next message right after a chat switches to the shorter 5-minute cache.
+- The board uses much less CPU while idle (about 0.7% of one core, down from about 4%).
+- Phones: the ticket's top bar shows one status button instead of two cut-off ones.
+
 ## [0.16.0] - 2026-11-02
 
 ### Added
@@ -343,6 +361,7 @@ First release.
 - Terminal & file explorer panel, Connections panel for MCP servers, scheduled tickets on a cron, claude.ai artifacts from runs.
 - Standalone binary, installer, `ckanban update` and a background service that starts at login.
 
+[0.17.0]: https://github.com/leoawesome/ckanban/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/leoawesome/ckanban/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/leoawesome/ckanban/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/leoawesome/ckanban/compare/v0.13.0...v0.14.0
