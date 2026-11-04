@@ -149,23 +149,23 @@ test("stepTab cycles through the visible tabs and wraps", () => {
   expect(stepTab(tabs, "usage", 1)).toBe("chat");
   expect(stepTab(tabs, "chat", -1)).toBe("usage");
   // A tab that isn't shown (e.g. Plan after its children went away) starts from the first.
-  expect(stepTab(tabs, "plan", 1)).toBe("chat");
+  expect(stepTab(tabs, "family", 1)).toBe("chat");
   expect(stepTab([], "chat", 1)).toBeNull();
 });
 
-test("drawerTabs puts a Ticket tab first on phones only, and Plan / Changes only when they apply", () => {
-  expect(drawerTabs({ phone: false, plan: false, changes: false })).toEqual(["chat", "huddle", "outputs", "usage"]);
-  expect(drawerTabs({ phone: true, plan: false, changes: false })).toEqual(["ticket", "chat", "huddle", "outputs", "usage"]);
-  expect(drawerTabs({ phone: true, plan: true, changes: true })).toEqual(["ticket", "chat", "plan", "huddle", "changes", "outputs", "usage"]);
+test("drawerTabs puts a Ticket tab first on phones only, and Family / Changes only when they apply", () => {
+  expect(drawerTabs({ phone: false, family: false, changes: false })).toEqual(["chat", "huddle", "outputs", "usage"]);
+  expect(drawerTabs({ phone: true, family: false, changes: false })).toEqual(["ticket", "chat", "huddle", "outputs", "usage"]);
+  expect(drawerTabs({ phone: true, family: true, changes: true })).toEqual(["ticket", "chat", "family", "huddle", "changes", "outputs", "usage"]);
   // Huddle only once there is one; Usage only while opened from the cost chip.
-  expect(drawerTabs({ phone: false, plan: false, changes: false, huddle: false, usage: false })).toEqual(["chat", "outputs"]);
-  expect(drawerTabs({ phone: false, plan: false, changes: true, huddle: true, usage: true })).toEqual(["chat", "huddle", "changes", "outputs", "usage"]);
+  expect(drawerTabs({ phone: false, family: false, changes: false, huddle: false, usage: false })).toEqual(["chat", "outputs"]);
+  expect(drawerTabs({ phone: false, family: false, changes: true, huddle: true, usage: true })).toEqual(["chat", "huddle", "changes", "outputs", "usage"]);
 });
 
 test("phoneTabs keeps at most 4 places, More taking one, and the open tab stays in the bar", () => {
   expect(phoneTabs(["ticket", "chat", "outputs"], "chat")).toEqual({ shown: ["ticket", "chat", "outputs"], more: [] });
-  expect(phoneTabs(["ticket", "chat", "plan", "outputs"], "chat")).toEqual({ shown: ["ticket", "chat", "plan", "outputs"], more: [] });
-  const all = ["ticket", "chat", "plan", "huddle", "changes", "outputs"];
-  expect(phoneTabs(all, "chat")).toEqual({ shown: ["ticket", "chat", "plan"], more: ["huddle", "changes", "outputs"] });
-  expect(phoneTabs(all, "outputs")).toEqual({ shown: ["ticket", "chat", "outputs"], more: ["plan", "huddle", "changes"] });
+  expect(phoneTabs(["ticket", "chat", "family", "outputs"], "chat")).toEqual({ shown: ["ticket", "chat", "family", "outputs"], more: [] });
+  const all = ["ticket", "chat", "family", "huddle", "changes", "outputs"];
+  expect(phoneTabs(all, "chat")).toEqual({ shown: ["ticket", "chat", "family"], more: ["huddle", "changes", "outputs"] });
+  expect(phoneTabs(all, "outputs")).toEqual({ shown: ["ticket", "chat", "outputs"], more: ["family", "huddle", "changes"] });
 });

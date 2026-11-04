@@ -3,6 +3,7 @@ import type { ChatCacheInfo } from "./cacheNote";
 import type { SlashCommand } from "./slashText";
 import type { TicketUsage, UsageResult } from "./usage";
 import type { Status } from "./columns";
+import type { TicketKind } from "./family";
 import type { PrStatus, TicketPr } from "./prText";
 export type { PrCheck, PrStatus, TicketPr } from "./prText";
 export type { Status } from "./columns";
@@ -253,6 +254,44 @@ export interface DeviceView {
   waiting: DeviceUser[];
 }
 
+export interface FeatureStatusNote {
+  at: string;
+  text: string;
+  delivered?: boolean;
+}
+
+/** GET …/status: the feature's saved status (Claude's words, the user's notes) and the board's facts, as sections. */
+export interface FeatureStatus {
+  topId: string;
+  title: string;
+  feature: boolean;
+  saved: { updatedAt: string; claudeAt?: string | null; notes?: FeatureStatusNote[]; prNotes?: Record<string, string>; goal?: string; done?: string; broken?: string; waiting?: string; next?: string } | null;
+  facts: {
+    size: number;
+    groups: { id: string; title: string; kind: string | null; total: number; counts: Record<string, number>; settled: boolean }[];
+    loose: { total: number; counts: Record<string, number> };
+    rounds: { id: string; title: string; passed: number; problem: number; open: number }[];
+    broken: { id: string; title: string; state: string }[];
+    needsYou: { id: string; title: string }[];
+    prs: { url: string; number: number | null; state: "open" | "merged" | "closed" | "unknown"; ticketId: string; ticketTitle: string; note?: string }[];
+  };
+  sections: { key: string; label: string; text: string }[];
+  path: string;
+}
+
+export interface FamilyViewRow {
+  id: string;
+  depth: number;
+  parent: string | null;
+  model: string | null;
+  effort: string | null;
+  costUsd: number;
+  needsYou: boolean;
+  summary: string | null;
+  finishedAt: string | null;
+  report: boolean;
+}
+
 export interface Ticket {
   id: string;
   title: string;
@@ -311,6 +350,14 @@ export interface Ticket {
   addOnOf?: string | null;
   /** Ticket this one is part of (its family's parent, see family.ts); "chat": that ticket's chat created it. */
   partOf?: string | null;
+  /** What the ticket is for (family.ts TicketKind); missing on old tickets. */
+  kind?: TicketKind | null;
+  /** A test ticket's result. */
+  verdict?: "passed" | "problem" | null;
+  /** On a feature's top ticket: when its "Where we are" status last changed. */
+  statusAt?: string | null;
+  /** When its last run or chat reply ended. */
+  runEndedAt?: string | null;
   partOfVia?: "chat" | null;
   /** A parent the board suggests for this ticket; the panel offers Link / Not related. */
   parentSuggestion?: { id: string; reason: string } | null;
@@ -1453,8 +1500,18 @@ export const api = {
     `${t(slug, id)}/file?raw=1${download ? "&download=1" : ""}&path=${encodeURIComponent(path)}`,
   createTicket: (slug: string, input: {
     title: string; body: string; status: Status; sessionId?: string; mode?: TicketMode; parentId?: string; planKey?: string; dependsOn?: string[];
-    needs?: string[]; tags?: string[]; important?: boolean; proposedAs?: string;
+    needs?: string[]; tags?: string[]; important?: boolean; proposedAs?: string; partOf?: string; kind?: TicketKind;
   }) => req<Ticket>("POST", t(slug), input),
+  /** The feature's "Where we are" status (on any ticket of its family). */
+  featureStatus: (slug: string, id: string) => req<FeatureStatus>("GET", `${t(slug, id)}/status`),
+  /** "Add a note": saved in the status; the main chat gets it at its next turn. */
+  addStatusNote: (slug: string, id: string, text: string) => req<FeatureStatus>("POST", `${t(slug, id)}/status/notes`, { text }),
+  /** The Family tab's rows: each ticket's model, cost, state and last summary. */
+  familyView: (slug: string, id: string) => req<FamilyViewRow[]>("GET", `${t(slug, id)}/family-view`),
+  /** Gather tickets into the feature: each under one of its groups, a new group ("new"), or the feature itself. */
+  gather: (slug: string, id: string, tickets: { id: string; group: string | null }[], newGroup: string | null) =>
+    req<{ gathered: Ticket[]; movedUp: { id: string; title: string; to: string }[]; skipped: { id: string; reason: string }[]; group: Ticket | null }>(
+      "POST", `${t(slug, id)}/gather`, { tickets, newGroup }),
   plan: (slug: string, id: string, action: "start" | "pause" | "resume" | "done" | "concurrency", maxConcurrent?: number) =>
     req<Ticket>("POST", `${t(slug, id)}/plan`, { action, maxConcurrent }),
   updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode">> & { expectedBody?: string }) =>

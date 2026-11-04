@@ -1241,6 +1241,7 @@ export function App() {
           slug={profile.slug}
           folder={profile.path}
           knownTags={boardTags(tickets)}
+          tickets={tickets}
           onClose={() => setNewTicket(false)}
           onCreate={async (input) => {
             const t = await api.createTicket(profile.slug, input);

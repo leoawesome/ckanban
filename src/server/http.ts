@@ -57,7 +57,8 @@ import { changesPrompt, HELP_KINDS, Helper, HelpError, newId, recapAvailable, re
 import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, UsageCache, windowsNeeded } from "./ticket-usage";
 import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
-import { familyOf, LINK_WORDS, parentLink } from "../../web/src/family";
+import { familyOf, familyRoot, groupsOf, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
+import { STATUS_FIELDS, type StatusPatch } from "./feature";
 import { createdFromDraft } from "../../web/src/proposalMatch";
 import type { Store } from "./store";
 import { runCapFor, SELF_MOVES, STATUSES, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
@@ -1398,7 +1399,10 @@ export function createServer(deps: ServerDeps) {
       if (m === "GET") {
         await sessions.ready();
         const hosts = board.hostHuddles(slug);
-        return json(store.listTickets(slug).map((t) => view(profile, t, hosts)));
+        const tickets = store.listTickets(slug);
+        // Open features (feature.ts) are marked, so list_tickets can show which work to add new tickets to.
+        const features = new Set(openFeatures(tickets).map((f) => f.top.id));
+        return json(tickets.map((t) => ({ ...view(profile, t, hosts), ...(features.has(t.id) ? { feature: true } : {}) })));
       }
       if (m === "POST") {
         const b = await body(req);
@@ -1436,20 +1440,34 @@ export function createServer(deps: ServerDeps) {
         // Part of another ticket's family: a run's own ticket (create_ticket's partOfThisTicket, shown as "from chat") or,
         // for the user, any ticket of this board.
         const partOf = typeof b.partOf === "string" && b.partOf ? b.partOf : undefined;
+        if (b.kind !== undefined && b.kind !== null && !TICKET_KINDS.includes(b.kind)) throw new HttpError(400, `kind must be one of ${TICKET_KINDS.join(", ")}`);
+        const kind: TicketKind | undefined = b.kind ?? undefined;
         const fromRun = req.headers.get(RUN_HEADER)?.split("/");
         // Made by a schedule's run: what that schedule raised for the user (its next quiet runs follow up on it).
         const runTicket = fromRun?.[0] === slug && fromRun[1] && !req.headers.get(HUDDLE_HEADER) ? store.getTicket(slug, fromRun[1]) : null;
         const raisedBy = runTicket?.scheduleId ? { scheduleId: runTicket.scheduleId, ticketId: runTicket.id } : null;
         const partOfVia = partOf && fromRun?.[0] === slug && fromRun[1] === partOf ? "chat" as const : undefined;
         if (partOf && !store.getTicket(slug, partOf)) throw new HttpError(400, `ticket ${partOf} not found (partOf)`);
-        if (partOf && fromRun && !partOfVia) throw new HttpError(403, "from a board run, partOf can only be the run's own ticket (use partOfThisTicket)");
+        // From a run, partOf is the run's own ticket, or an open feature (its top ticket or one of its groups): work that
+        // belongs to a feature joins it.
+        if (partOf && fromRun && !partOfVia) {
+          const all = store.listTickets(slug);
+          const top = familyRoot(all, partOf);
+          const ok = !!top && isFeature(all, top) && (top.id === partOf || groupsOf(all, top.id).some((g) => g.id === partOf));
+          if (!ok) throw new HttpError(403, "from a board run, partOf can only be the run's own ticket (use partOfThisTicket), an open feature's top ticket or one of its groups");
+        }
         const startedBy = runner && startsRun(status) ? runStart(slug, runner) : guest && startsRun(status) ? guestStart(guest) : null;
-        let t = await board.createTicket(slug, {
-          title, body: String(b.body ?? ""), status: b.sessionId && !planner ? "backlog" : status, mode, parentId, planKey, dependsOn, needs, tags,
-          ...(proposedAs ? { proposedAs } : {}),
-          important: b.important === true, ...(partOf ? { partOf, ...(partOfVia ? { partOfVia } : {}) } : {}),
-          ...(raisedBy ? { raisedBy } : {}),
-        });
+        let t: Ticket;
+        try {
+          t = await board.createTicket(slug, {
+            title, body: String(b.body ?? ""), status: b.sessionId && !planner ? "backlog" : status, mode, parentId, planKey, dependsOn, needs, tags,
+            ...(proposedAs ? { proposedAs } : {}),
+            important: b.important === true, ...(partOf ? { partOf, ...(partOfVia ? { partOfVia } : {}) } : {}),
+            ...(raisedBy ? { raisedBy } : {}), ...(kind ? { kind } : {}),
+          });
+        } catch (e) {
+          throw new HttpError(400, (e as Error).message);
+        }
         if (planner) store.addComment(slug, t.id, "ai", `Created by the planner of plan ${planner.id}.`);
         if (requester) store.addComment(slug, t.id, "ai", `Created ${byRequest(requester)}.`);
         if (runner) store.addComment(slug, t.id, "ai", `Created ${byRun(runner)}.`);
@@ -1620,6 +1638,82 @@ export function createServer(deps: ServerDeps) {
         sessionId: t.sessionId, resumeCommand: t.sessionId ? resumeCommand(t.workdir ?? t.worktree ?? profile.path, t.sessionId) : null,
         prUrl: t.prUrl, updatedAt: t.updatedAt, result: store.lastAiComment(slug, t.id),
       })));
+    }
+    // The Family tab: the whole family from the top with each ticket's model, cost, state and last summary. The family's
+    // total cost is worked out here only, never written into a ticket's own spend.
+    if (action === "family-view" && m === "GET") {
+      const tickets = store.listTickets(slug);
+      const hosts = board.hostHuddles(slug);
+      return json(familyOf(tickets, id).map(({ ticket: t, depth }) => {
+        const v = view(profile, t, hosts);
+        const out = store.outputsPath(slug, t.id);
+        return {
+          id: t.id, depth, parent: depth ? parentLink(t)?.id ?? null : null,
+          model: t.model ?? profile.model ?? null, effort: t.effort ?? profile.effort ?? null,
+          costUsd: spend.ticket(slug, t.id).costUsd + huddles.ticketSpend(slug, t.id).costUsd,
+          needsYou: !!v.attention && v.attention.kind !== "review",
+          summary: store.lastAiComment(slug, t.id), finishedAt: v.running ? null : t.runEndedAt ?? t.doneAt ?? null,
+          report: existsSync(join(out, "report.md")),
+        };
+      }));
+    }
+    // "Where we are": the feature's status (feature.ts). GET reads it; POST is update_status (the user, or a run of a
+    // ticket in the same family); POST notes is "Add a note" (the user only).
+    if (action === "status" && parts.length === 5 && m === "GET") {
+      const f = board.featureStatus(slug, id);
+      return json({ topId: f.top.id, title: f.top.title, feature: f.feature, saved: f.saved, facts: f.facts, sections: f.sections, path: f.path });
+    }
+    if (action === "status" && parts.length === 5 && m === "POST") {
+      if (req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "huddle helpers can't change the feature's status; tell @main what to put there");
+      const caller = runTicket(req, slug);
+      const all = store.listTickets(slug);
+      if (caller && familyRoot(all, caller)?.id !== familyRoot(all, id)?.id) {
+        throw new HttpError(403, `only runs of tickets in this feature may update its status (${caller} is not in ${id}'s family)`);
+      }
+      const b = await body(req);
+      const patch: StatusPatch = {};
+      for (const f of STATUS_FIELDS) {
+        if (b[f] === undefined) continue;
+        if (b[f] !== null && typeof b[f] !== "string") throw new HttpError(400, `${f} must be text or null`);
+        patch[f] = b[f];
+      }
+      if (b.prNotes !== undefined) {
+        if (!b.prNotes || typeof b.prNotes !== "object" || Array.isArray(b.prNotes)) throw new HttpError(400, "prNotes must map pull request URLs to a short note");
+        // Only the family's own pull requests get a note.
+        const prs = new Set(board.featureStatus(slug, id).facts.prs.map((p) => p.url));
+        patch.prNotes = Object.fromEntries(Object.entries(b.prNotes).filter(([u]) => prs.has(u)).slice(0, 100).map(([u, v]) => [u, typeof v === "string" ? v : null]));
+      }
+      if (!Object.keys(patch).length) throw new HttpError(400, `nothing to update: pass ${STATUS_FIELDS.join(", ")} or prNotes`);
+      const f = board.updateStatus(slug, id, patch);
+      return json({ topId: f.top.id, title: f.top.title, feature: f.feature, saved: f.saved, facts: f.facts, sections: f.sections, path: f.path, markdown: f.markdown });
+    }
+    if (action === "status" && parts[5] === "notes" && m === "POST") {
+      if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user adds notes to the status (Add a note)");
+      const b = await body(req);
+      try {
+        const f = board.addStatusNote(slug, id, String(b.text ?? ""));
+        return json({ topId: f.top.id, title: f.top.title, feature: f.feature, saved: f.saved, facts: f.facts, sections: f.sections, path: f.path });
+      } catch (e) {
+        throw new HttpError(400, (e as Error).message);
+      }
+    }
+    // Gather tickets into a feature: the user (Family tab), or the feature's chat answering the user's own message.
+    if (action === "gather" && m === "POST") {
+      const caller = runTicket(req, slug);
+      const all = store.listTickets(slug);
+      if (caller && (familyRoot(all, caller)?.id !== familyRoot(all, id)?.id || !board.userAskedRun(slug, caller) || req.headers.get(HUDDLE_HEADER))) {
+        throw new HttpError(403, "gathering tickets works from the feature's own chat, in a reply to a message the user typed there");
+      }
+      const b = await body(req);
+      if (!Array.isArray(b.tickets) || !b.tickets.length) throw new HttpError(400, "tickets must list { id, group } entries");
+      const items = b.tickets.filter((x: any) => x && typeof x.id === "string" && x.id.trim())
+        .map((x: any) => ({ id: x.id.trim(), group: typeof x.group === "string" && x.group.trim() ? x.group.trim() : null }));
+      try {
+        const r = await board.gather(slug, id, items, typeof b.newGroup === "string" ? b.newGroup : null);
+        return json({ gathered: r.gathered.map((t) => view(profile, t)), movedUp: r.movedUp, skipped: r.skipped, group: r.group && view(profile, r.group) });
+      } catch (e) {
+        throw new HttpError(400, (e as Error).message);
+      }
     }
     // Inbox Snooze: hide what the ticket waits for now (1 day, or { hours }); DELETE unsnoozes.
     if (action === "snooze" && (m === "POST" || m === "DELETE")) {

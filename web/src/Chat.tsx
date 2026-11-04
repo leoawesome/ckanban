@@ -32,6 +32,7 @@ import { Rewind } from "./Rewind";
 import { restoredDraft } from "./rewindText";
 import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
+import { StatusBlock, StatusNoteView, useFeatureStatus } from "./StatusBlock";
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
@@ -244,6 +245,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   const endedAt = useRef<number | null>(running ? null : Date.now());
   const { stopping, stop } = useStop(slug, ticket, running, onError);
   const refine = REFINE(ticket.status);
+  // A feature's main chat pins its "Where we are" status on top; the user's notes show in the timeline.
+  const feature = useFeatureStatus(slug, ticket, tickets);
 
   // Resolves to the loaded tail (null when a newer load won or there is no session).
   const loadTail = useCallback(async (): Promise<SessionEntry[] | null> => {
@@ -799,6 +802,14 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
     if (i < 0) i = blocks.length;
     helpAt.set(i, [...(helpAt.get(i) ?? []), c]);
   }
+  // The user's status notes, like help cards: before the first block that came after them.
+  const notesAt = new Map<number, { at: string; text: string }[]>();
+  for (const nt of feature.status?.saved?.notes ?? []) {
+    if (page && page.start > 0 && entries.length && nt.at < entries[0].at) continue;
+    let i = blocks.findIndex((b) => (b.kind === "entry" ? b.e : b.items[0]).at > nt.at);
+    if (i < 0) i = blocks.length;
+    notesAt.set(i, [...(notesAt.get(i) ?? []), nt]);
+  }
   // Turns: avatar and name line on the first row of each; time dividers after long pauses.
   const layout = layoutTurns(blocks.map((b) => {
     const first = b.kind === "entry" ? b.e : b.items[0];
@@ -831,6 +842,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
 
   return (
     <div className="chat">
+      {feature.status && <StatusBlock slug={slug} ticket={ticket} status={feature.status} onChanged={feature.reload} onOpenTicket={onOpenTicket} />}
       <div className="chat-log" ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -878,6 +890,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
           return (
             <Fragment key={first.uuid}>
               {helpAt.get(i)?.map((c) => <HelpCardView key={c.id} card={c} />)}
+              {notesAt.get(i)?.map((nt) => <StatusNoteView key={nt.at} text={nt.text} />)}
               {i === dividerAt && divider}
               {layout[i].divider && <TimeDivider label={layout[i].divider!} />}
               {renderBlock(b, before(first, bp?.at), layout[i], b.kind === "tools" ? i === blocks.length - 1 : i === newestReply)}
@@ -886,6 +899,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
         })}
         {dividerAt === blocks.length && divider}
         {helpAt.get(blocks.length)?.map((c) => <HelpCardView key={c.id} card={c} />)}
+        {notesAt.get(blocks.length)?.map((nt) => <StatusNoteView key={nt.at} text={nt.text} />)}
         {help && <HelpPending help={help} />}
         {/* Replies sent while Claude wasn't working are part of the timeline: plain bubbles, before Claude's reply. */}
         {pending.filter((p) => !p.steer).map((p, i) => {

@@ -15,12 +15,14 @@ import { macBanner } from "./notify";
 import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
 import type { SessionSummary } from "./session";
 import { recallBlock } from "./recall";
-import { wouldLoop } from "../../web/src/family";
+import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, type TicketKind } from "../../web/src/family";
+import { applyPatch, familySig, readStatus, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { addOnFor } from "../../web/src/addOn";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
 import { canEndQuietly, quietContext } from "./quiet";
 import { addHuddleSpend } from "./spend";
+import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "./prompts";
 import { chatPrompt, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
   childrenOf, DEFAULT_MAX_CONCURRENT, findCycle, isComplete, MAX_RUN_CHAIN, MAX_RUN_STARTS, normalizeNeeds, planActive, planProblem, planStep, planTable,
@@ -104,6 +106,8 @@ interface ActiveRun {
     hostWake?: boolean;
     /** The board's follow-up wake (see Board.wakeFollowUp): a full prompt; afterwards the card goes back to returnTo. */
     followUp?: boolean;
+    /** The board's one status nudge (see Board.nudgeStatus): a quiet turn that changes nothing on the card. */
+    nudge?: boolean;
   };
   /** This message's run already got its one automatic retry after a passing API error. */
   retried?: boolean;
@@ -123,6 +127,10 @@ interface ActiveRun {
   promptMsgId?: string;
   /** Reply text streaming in right now; kept on the ticket if a restart cuts the run off. */
   draft?: DraftTracker;
+  /** A chat reply or plan wake was part of this run: on a feature's top ticket it may get the status nudge. */
+  statusEligible?: boolean;
+  /** This run already got its one status nudge. */
+  nudged?: boolean;
 }
 
 /** A finished assistant message with text in it (not just thinking or a tool call). */
@@ -298,6 +306,32 @@ const BOARD_NOTE_RE = /^(Run failed|Could not start|Run stopped|Planner stopped|
 
 export class ConflictError extends Error {}
 
+/** Every ticket below id in its family (not id itself). */
+function subtreeIds(tickets: Ticket[], id: string): string[] {
+  const rows = familyOf(tickets, id);
+  const at = rows.findIndex((r) => r.ticket.id === id);
+  const out: string[] = [];
+  for (let i = at + 1; i < rows.length && rows[i].depth > rows[at].depth; i++) out.push(rows[i].ticket.id);
+  return out;
+}
+
+/** What changed in a feature's family between two familySig values, as short lines for the status nudge. */
+export function sigChanges(before: string, after: string, rows: Ticket[]): string[] {
+  const parse = (sig: string) => new Map(sig.split("|").filter(Boolean).map((e) => [e.slice(0, e.indexOf(":")), e.slice(e.indexOf(":") + 1)]));
+  const [a, b] = [parse(before), parse(after)];
+  const title = (id: string) => rows.find((r) => r.id === id)?.title ?? id;
+  const out: string[] = [];
+  for (const [id, v] of b) {
+    if (!a.has(id)) out.push(`"${title(id)}" joined the feature`);
+    else if (a.get(id) !== v) {
+      const [status, outcome, verdict] = v.split(":");
+      out.push(`"${title(id)}" is now ${status}${outcome ? ` (${outcome})` : ""}${verdict ? `, verdict ${verdict}` : ""}`);
+    }
+  }
+  for (const id of a.keys()) if (!b.has(id)) out.push(`${id} left the feature`);
+  return out;
+}
+
 export class Board {
   private runs = new Map<string, ActiveRun>();
   /** Latest live progress of each workflow (stream task_progress: every agent, waiting ones too), by ticket and Workflow call. */
@@ -390,7 +424,7 @@ export class Board {
   waitsOnUser(slug: string, id: string): boolean {
     const t = this.store.getTicket(slug, id);
     if (!t) return false;
-    const a = ticketAttention(this.store, slug, t, t.sessionId ? this.sessionSummary(t.sessionId) : null, this.isRunning(slug, id),
+    const a = ticketAttention(this.store, slug, t, t.sessionId ? this.sessionSummary(t.sessionId) ?? null : null, this.isRunning(slug, id),
       this.hostHuddles(slug).get(id));
     return !!a && a.kind !== "review";
   }
@@ -827,6 +861,7 @@ export class Board {
   }
 
   private begin(run: ActiveRun) {
+    if (run.chat && !run.chat.quiet && (run.chat.mode !== "refine" || run.chat.text.trim())) run.statusEligible = true;
     const t = this.store.getTicket(run.slug, run.id);
     const followUpRun = run.chat?.followUp && run.chat.returnTo ? { returnTo: run.chat.returnTo } : null;
     if (followUpRun || t?.followUpRun) this.patch(run.slug, run.id, { followUpRun });
@@ -839,8 +874,15 @@ export class Board {
 
   /** One claude run, then a chat reply for each message that came in too late for it. */
   private async execute(run: ActiveRun): Promise<void> {
+    const startedAt = nowIso();
     await this.executeOnce(run);
     if (run.chat?.followUp) this.followUpCost(run.slug, run.id);
+    await this.drainQueue(run);
+    if (await this.nudgeStatus(run, startedAt)) await this.drainQueue(run);
+  }
+
+  /** A chat reply for each message that came in too late for the run's last turn. */
+  private async drainQueue(run: ActiveRun): Promise<void> {
     for (;;) {
       if (this.shuttingDown || this.restartPending) return; // queue stays on the ticket; recover() delivers it
       const t = this.store.getTicket(run.slug, run.id);
@@ -967,6 +1009,20 @@ export class Board {
     // Runs that may act learn the shared device list here, so it is current on every turn (Planning chats don't use devices).
     const deviceNote = refine ? null : devicesNote(this.devices.devices(), t.needs);
     if (deviceNote) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${deviceNote}` : deviceNote;
+    // A feature's main chat reads its status first and keeps it current; the family's other runs may update it too.
+    if (!run.chat?.nudge && !quiet) {
+      let featureNote: string | null = null;
+      try {
+        featureNote = this.featureNote(slug, t);
+      } catch (e) {
+        // The status is a help, never a reason for a run to fail.
+        console.error(`feature status for ${slug}/${id}:`, e);
+      }
+      if (featureNote) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${featureNote}` : featureNote;
+      // Notes the user added to the status reach the main chat at its next turn (they never start a run themselves).
+      const notes = resume ? null : this.takeStatusNotes(slug, id);
+      if (notes) prompt += `\n\n${notes}`;
+    }
 
     let lastWrite = 0;
     let pendingActivity: string | null = null;
@@ -1090,6 +1146,7 @@ export class Board {
       ...this.endStatus(run),
       stalled: null,
       sessionStarted: started,
+      runEndedAt: nowIso(),
       ...((fresh || freshChat) && started ? { freshSession: false } : {}),
       ...(refine || quiet ? {} : { lastRunAt: startedAt, runCount: runNo }),
       lastActivity: pendingActivity ?? this.store.getTicket(slug, id)?.lastActivity ?? null,
@@ -1157,7 +1214,7 @@ export class Board {
     const body = finalText.replace(/^.*CKANBAN_RESULT:.*$/gm, "").replace(MOVE_TO_PLANNING_RE, "").trim();
     // A reply to the ticket's huddle can land the work and report it: keep its PRs, summary and outcome. The card
     // stays where it is, and a ticket waiting for its auto huddle keeps waiting.
-    if (quiet && result && !refine) {
+    if (quiet && result && !refine && !run.chat?.nudge) {
       const current = this.store.getTicket(slug, id)!;
       this.store.addComment(slug, id, "ai", (result.status === "questions" ? body : result.summary) || body || "(no output)");
       this.patch(slug, id, {
@@ -1165,6 +1222,7 @@ export class Board {
         ...(current.autoHuddle ? {} : { outcome: result.status === "questions" ? "needs_input" : result.status, ...(result.status === "questions" ? { interviewed: true } : {}) }),
         // A planner's PRs are its own work only when its own run reports them (see below).
         ...(current.plan ? {} : addPrs(current, result.prUrls)),
+        ...(current.kind === "test" && !current.autoHuddle && result.status === "done" ? { verdict: result.verdict ?? null } : {}),
       });
       return;
     }
@@ -1221,6 +1279,8 @@ export class Board {
       ...(result?.status === "questions" ? { interviewed: true } : {}),
       // A planner wake-up reports its children's PRs; the planner keeps its own.
       ...(run.chat?.raw && !run.chat.hostWake ? {} : addPrs(current, result?.prUrls ?? [])),
+      // A test ticket's result: the newest run's verdict (none: a done test counts as passed).
+      ...(current.kind === "test" && result ? { verdict: result.verdict ?? null } : {}),
       error: null,
     });
   }
@@ -1728,10 +1788,11 @@ export class Board {
     input: {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
-      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string;
+      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string; kind?: TicketKind | null;
     },
   ): Promise<Ticket> {
     const status = input.status === "in_progress" ? "ready" : input.status;
+    input = this.placeInFeature(slug, input);
     const star = starredTitle(input.title);
     const t = this.store.createTicket(slug, {
       ...input, status, needs: normalizeNeeds(input.needs), tags: normalizeTags(input.tags),
@@ -1745,6 +1806,23 @@ export class Board {
     if (status === "planning") this.autoRefine(slug, t.id);
     if (parent) this.advancePlans(slug);
     return this.store.getTicket(slug, t.id)!;
+  }
+
+  /**
+   * Where a new ticket goes in its family: a round is titled "Testing round N" by the board and always hangs right under
+   * the feature's top ticket (also when created under a group); any other link below level 2 is refused with a hint.
+   */
+  private placeInFeature<T extends { title: string; kind?: TicketKind | null; partOf?: string; partOfVia?: "chat"; parentId?: string }>(slug: string, input: T): T {
+    const tickets = this.store.listTickets(slug);
+    const parent = input.partOf ?? input.parentId ?? null;
+    if (input.kind === "round") {
+      const top = parent ? familyRoot(tickets, parent) : undefined;
+      const out = { ...input, title: nextRoundTitle(tickets, top?.id ?? null) };
+      if (top && top.id !== parent) Object.assign(out, { partOf: top.id, partOfVia: undefined });
+      return out;
+    }
+    if (parent && tickets.some((t) => t.id === parent) && levelOf(tickets, parent) + 1 > MAX_LEVEL) throw new Error(tooDeepMessage(tickets, parent));
+    return input;
   }
 
   async updateTicket(
@@ -2028,6 +2106,7 @@ export class Board {
         : t.parentId ? `belongs to plan ${t.parentId}`
         : t.status === "done" ? "already done"
         : t.error?.startsWith("corrupt") ? "its ticket file is corrupt"
+        : !t.partOf && !t.addOnOf && levelOf(this.store.listTickets(slug), plannerId) + 1 > MAX_LEVEL ? tooDeepMessage(this.store.listTickets(slug), plannerId)
         : null;
       if (reason) {
         skipped.push({ id, reason });
@@ -2431,6 +2510,10 @@ export class Board {
       ...(src.tags?.length ? { tags: src.tags } : {}), ...(src.important || input.important ? { important: true } : {}),
     });
     const patch: Partial<Ticket> = { addOnOf: src.id };
+    // An add-on of a level-2 ticket would sit at level 3: it shows beside it instead (still building on its work).
+    const all = this.store.listTickets(slug);
+    const srcParent = parentLink(src)?.id;
+    if (srcParent && levelOf(all, src.id) + 1 > MAX_LEVEL) patch.partOf = srcParent;
     if (was.status === "review" && src.branch && !src.workdir) patch.startFrom = src.branch;
     this.patch(slug, t.id, patch);
     if (shaping && src.reopenedFrom && !this.isRunning(slug, id)) {
@@ -2459,6 +2542,7 @@ export class Board {
       if (wouldLoop(without, id, parent)) {
         throw new Error(parent === id ? "a ticket can't be part of itself" : `${parent} is already part of ${id}'s family below it; linking would make a loop`);
       }
+      if (levelOf(without, parent) + 1 > MAX_LEVEL) throw new Error(tooDeepMessage(without, parent));
     }
     if (t.parentId && t.parentId !== parent) t = await this.updateTicket(slug, id, { parentId: null });
     const patch: Partial<Ticket> = { partOf: parent, partOfVia: parent ? via : null, parentSuggestion: null, parentChecked: true };
@@ -2480,6 +2564,171 @@ export class Board {
     if (!t || t.parentChecked || t.partOf || t.addOnOf || t.parentId) return null;
     if (suggestion && !this.store.getTicket(slug, suggestion.id)) suggestion = null;
     return this.patch(slug, id, { parentSuggestion: suggestion, parentChecked: true });
+  }
+
+  // ---- Features: the pinned "Where we are" status, gathering tickets (feature.ts, web/src/family.ts) ----
+
+  /** The family's top ticket for id, its saved status and the board's facts. */
+  featureStatus(slug: string, id: string): { top: Ticket; feature: boolean; saved: SavedStatus | null; facts: StatusFacts; sections: ReturnType<typeof statusSections>; path: string } {
+    const tickets = this.store.listTickets(slug);
+    const top = familyRoot(tickets, id);
+    if (!top) throw new Error(`ticket ${id} not found`);
+    const dir = this.store.outputsDir(slug, top.id);
+    const saved = readStatus(dir);
+    const facts = statusFacts(tickets, top.id, (t) => this.waitsOnUser(slug, t.id), saved?.prNotes);
+    return { top, feature: isFeature(tickets, top), saved, facts, sections: statusSections(saved, facts), path: statusFiles(dir).md };
+  }
+
+  /** Rewrites status.md from the saved status and the board's facts now (a feature or a ticket with a status only). */
+  refreshStatusFile(slug: string, id: string): string | null {
+    const f = this.featureStatus(slug, id);
+    if (!f.saved && !f.feature) return null;
+    writeStatus(this.store.outputsDir(slug, f.top.id), f.top, f.saved, f.facts, false);
+    return f.path;
+  }
+
+  /** update_status: replaces only the sections the patch names, on the top ticket of id's family (making it a feature). */
+  updateStatus(slug: string, id: string, patch: StatusPatch): ReturnType<Board["featureStatus"]> & { markdown: string } {
+    const tickets = this.store.listTickets(slug);
+    const top = familyRoot(tickets, id);
+    if (!top) throw new Error(`ticket ${id} not found`);
+    const dir = this.store.outputsDir(slug, top.id);
+    const now = nowIso();
+    const saved = applyPatch(readStatus(dir), patch, now, familySig(familyOf(tickets, top.id).slice(1).map((r) => r.ticket)));
+    const facts = statusFacts(tickets, top.id, (t) => this.waitsOnUser(slug, t.id), saved.prNotes);
+    const markdown = writeStatus(dir, top, saved, facts, true);
+    this.patch(slug, top.id, { statusAt: now });
+    return { ...this.featureStatus(slug, top.id), markdown };
+  }
+
+  /** "Add a note": saved in the status under its date; the main chat gets it at its next turn without a run starting. */
+  addStatusNote(slug: string, id: string, text: string): ReturnType<Board["featureStatus"]> {
+    const note = text.trim().slice(0, STATUS_NOTE_MAX);
+    if (!note) throw new Error("the note is empty");
+    const tickets = this.store.listTickets(slug);
+    const top = familyRoot(tickets, id);
+    if (!top) throw new Error(`ticket ${id} not found`);
+    const dir = this.store.outputsDir(slug, top.id);
+    const now = nowIso();
+    const old = readStatus(dir);
+    const saved: SavedStatus = { ...(old ?? {}), updatedAt: now, notes: [...(old?.notes ?? []), { at: now, text: note, delivered: false }] };
+    writeStatus(dir, top, saved, statusFacts(tickets, top.id, (t) => this.waitsOnUser(slug, t.id), saved.prNotes), true);
+    this.patch(slug, top.id, { statusAt: now });
+    return this.featureStatus(slug, top.id);
+  }
+
+  /** The user's status notes the top ticket's Claude hasn't had yet, as a prompt block (marked delivered); null for none. */
+  private takeStatusNotes(slug: string, id: string): string | null {
+    const dir = this.store.outputsPath(slug, id);
+    const saved = existsSync(dir) ? readStatus(dir) : null;
+    const fresh = saved?.notes?.filter((n) => !n.delivered) ?? [];
+    if (!saved || !fresh.length) return null;
+    const t = this.store.getTicket(slug, id)!;
+    const next = { ...saved, notes: saved.notes!.map((n) => ({ ...n, delivered: true })) };
+    const f = statusFacts(this.store.listTickets(slug), id, (x) => this.waitsOnUser(slug, x.id), next.prNotes);
+    writeStatus(dir, t, next, f, true);
+    return statusNotesBlock(fresh);
+  }
+
+  /** What a run in a feature is told about the status: the main chat reads and keeps it; family runs may update it. */
+  private featureNote(slug: string, t: Ticket): string | null {
+    const tickets = this.store.listTickets(slug);
+    const top = familyRoot(tickets, t.id);
+    if (!top || !isFeature(tickets, top)) return null;
+    const path = this.refreshStatusFile(slug, top.id);
+    if (!path) return null;
+    return top.id === t.id ? featureMainNote(path) : featureMemberNote(top, path);
+  }
+
+  /**
+   * After a chat reply or plan wake of a feature's top ticket that didn't call update_status while the family changed
+   * since the status was last updated: one short quiet turn asking Claude to update it. At most once per run.
+   */
+  private async nudgeStatus(run: ActiveRun, startedAt: string): Promise<boolean> {
+    if (run.nudged || !run.statusEligible || run.stopRequested || this.shuttingDown || this.restartPending) return false;
+    if (this.waiting(run.slug, run.id).length) return false;
+    const tickets = this.store.listTickets(run.slug);
+    const top = familyRoot(tickets, run.id);
+    if (!top || top.id !== run.id || !isFeature(tickets, top)) return false;
+    const saved = readStatus(this.store.outputsPath(run.slug, run.id));
+    if (!saved || (saved.claudeAt && saved.claudeAt >= startedAt)) return false;
+    const rows = familyOf(tickets, top.id).slice(1).map((r) => r.ticket);
+    const sig = familySig(rows);
+    if (saved.familySig === sig) return false;
+    run.nudged = true;
+    const path = this.refreshStatusFile(run.slug, run.id)!;
+    // Same mode as the reply it follows: a Planning chat's nudge can't change files either.
+    const mode = run.chat?.mode ?? "act";
+    run.chat = { text: statusNudgePrompt(path, sigChanges(saved.familySig ?? "", sig, rows)), mode, raw: true, quiet: true, nudge: true };
+    run.promptMsgId = undefined;
+    run.inFlight = new Map();
+    run.handle = null;
+    run.retried = false;
+    run.restartRequested = false;
+    this.begin(run);
+    await this.executeOnce(run);
+    return true;
+  }
+
+  /**
+   * Gather tickets into the feature: each picked one links under its group (an existing group of the feature, "new" for
+   * a new group named newGroup, or none: under the feature itself). Chats, work and pull requests stay; running tickets
+   * keep running. A ticket in another family moves (setPartOf rules). Its own tickets that would sit deeper than level 2
+   * move up beside it (still in their plan, if any).
+   */
+  async gather(slug: string, featureId: string, items: { id: string; group?: string | null }[], newGroup?: string | null): Promise<{
+    gathered: Ticket[]; movedUp: { id: string; title: string; to: string }[]; skipped: { id: string; reason: string }[]; group: Ticket | null;
+  }> {
+    const top = familyRoot(this.store.listTickets(slug), featureId);
+    if (!top) throw new Error(`ticket ${featureId} not found`);
+    let group: Ticket | null = null;
+    if (items.some((i) => i.group === "new")) {
+      group = await this.createTicket(slug, { title: newGroup?.trim() || "New group", body: "", status: "backlog", mode: "auto", kind: "group", partOf: top.id });
+    }
+    const groups = new Set(groupsOf(this.store.listTickets(slug), top.id).map((g) => g.id));
+    const gathered: Ticket[] = [];
+    const skipped: { id: string; reason: string }[] = [];
+    const movedUp: { id: string; title: string; to: string }[] = [];
+    for (const item of items) {
+      const target = item.group === "new" ? group!.id : item.group || top.id;
+      const t = this.store.getTicket(slug, item.id);
+      if (!t) {
+        skipped.push({ id: item.id, reason: "not found" });
+        continue;
+      }
+      if (t.id === top.id) {
+        skipped.push({ id: t.id, reason: "that is the feature itself" });
+        continue;
+      }
+      if (target !== top.id && !groups.has(target)) {
+        skipped.push({ id: t.id, reason: `${target} is not a group of this feature` });
+        continue;
+      }
+      // Its own tickets (all levels), to keep within the depth limit once it has moved.
+      const own = new Set(subtreeIds(this.store.listTickets(slug), t.id));
+      try {
+        if (parentLink(t)?.id !== target) await this.setPartOf(slug, t.id, target);
+        gathered.push(this.store.getTicket(slug, t.id)!);
+        this.store.addComment(slug, t.id, "ai", `Gathered into the feature "${top.title}" (${top.id})${target !== top.id ? `, under "${this.store.getTicket(slug, target)?.title}"` : ""}.`);
+      } catch (e) {
+        skipped.push({ id: t.id, reason: (e as Error).message });
+        continue;
+      }
+      // Its own tickets deeper than level 2 move up beside it: linked to its ancestor at level 1.
+      for (let guard = 0; guard < 500; guard++) {
+        const rows = familyOf(this.store.listTickets(slug), top.id);
+        const deep = rows.findIndex((r) => own.has(r.ticket.id) && r.depth > MAX_LEVEL);
+        if (deep < 0) break;
+        const anc = rows.slice(0, deep).findLast((r) => r.depth === 1)!;
+        const d = rows[deep].ticket;
+        this.patch(slug, d.id, { partOf: anc.ticket.id, partOfVia: null });
+        movedUp.push({ id: d.id, title: d.title, to: anc.ticket.id });
+        this.store.addComment(slug, d.id, "ai", `Moved up under "${anc.ticket.title}" so the feature "${top.title}" stays at most ${MAX_LEVEL} levels deep.`);
+      }
+    }
+    if (gathered.length) this.store.addComment(slug, top.id, "ai", `Gathered ${gathered.length} ticket${gathered.length === 1 ? "" : "s"} into this feature: ${gathered.map((t) => `"${t.title}"`).join(", ")}.`);
+    this.emitTicket(slug, this.store.getTicket(slug, top.id)!);
+    return { gathered, movedUp, skipped, group };
   }
 
   // ---- One-click recovery from a lost or busy session ----

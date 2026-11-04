@@ -38,7 +38,7 @@ test("Your turn leads to the thing to do, and the main button says so", () => {
   expect(attentionGoal({ kind: "proposal", label: "Review proposed tickets" })).toMatchObject({ button: "Review proposed tickets", tab: "chat" });
   expect(attentionGoal({ kind: "blocked", label: "Blocked" })).toMatchObject({ button: "See what Claude needs", tab: "chat" });
   expect(attentionGoal({ kind: "blocked", label: "Stopped at $1.00 cap" }, { capHit: { capUsd: 1 } })!.targets[0]).toBe(".cap-banner");
-  expect(attentionGoal({ kind: "blocked", label: "Plan stuck" })).toMatchObject({ button: "Open plan", tab: "plan" });
+  expect(attentionGoal({ kind: "blocked", label: "Plan stuck" })).toMatchObject({ button: "Open plan", tab: "family" });
   expect(attentionGoal({ kind: "huddle", label: "Huddle: 2 for you" })).toMatchObject({ tab: "huddle" });
   expect(attentionGoal({ kind: "review", label: "Ready for review" })).toBeNull();
   expect(attentionGoal(null)).toBeNull();

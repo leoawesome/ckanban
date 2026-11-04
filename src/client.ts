@@ -73,6 +73,10 @@ export interface TicketInfo {
   parentId?: string | null;
   /** Ticket this one is part of (its family's parent) and the one it is an add-on to. */
   partOf?: string | null;
+  /** An open feature's top ticket (list only): new work that belongs to it is added to it. */
+  feature?: boolean;
+  /** What the ticket is for (explore, build, test, review, fix, group, round). */
+  kind?: string | null;
   addOnOf?: string | null;
   planKey?: string | null;
   dependsOn?: string[];
@@ -349,12 +353,18 @@ export class BoardClient {
   // `run` (a board run's CKANBAN_TICKET): the daemon only lets a running plan's planner change its own children.
   createTicket = (
     slug: string,
-    input: { title: string; body?: string; status?: Status; mode?: TicketMode; planKey?: string; dependsOn?: string[]; needs?: string[]; tags?: string[]; partOf?: string },
+    input: { title: string; body?: string; status?: Status; mode?: TicketMode; planKey?: string; dependsOn?: string[]; needs?: string[]; tags?: string[]; partOf?: string; kind?: string },
     run?: string | null,
   ) => this.req<TicketInfo>("POST", this.t(slug), input, this.by(run));
   // From a run, only the planner's own plan, and only with planner rights (see Board.plannerRights).
   planAction = (slug: string, id: string, action: "start" | "resume", run?: string | null) =>
     this.req<TicketInfo>("POST", `${this.t(slug, id)}/plan`, { action }, this.by(run));
+  /** update_status: the feature's "Where we are" (only the sections named change); returns the whole status as markdown. */
+  updateStatus = (slug: string, id: string, patch: Record<string, unknown>, run?: string | null) =>
+    this.req<{ topId: string; title: string; markdown: string }>("POST", `${this.t(slug, id)}/status`, patch, this.by(run));
+  gather = (slug: string, id: string, tickets: { id: string; group?: string | null }[], newGroup: string | null, run?: string | null) =>
+    this.req<{ gathered: TicketInfo[]; movedUp: { id: string; title: string; to: string }[]; skipped: { id: string; reason: string }[]; group: TicketInfo | null }>(
+      "POST", `${this.t(slug, id)}/gather`, { tickets, newGroup }, this.by(run));
   adopt = (slug: string, id: string, ids: string[], run?: string | null) => this.req<AdoptReply>("POST", `${this.t(slug, id)}/adopt`, { ids }, this.by(run));
   updateTicket = (slug: string, id: string, patch: TicketPatch, run?: string | null) => this.req<TicketInfo>("PATCH", this.t(slug, id), patch, this.by(run));
   deleteTicket = (slug: string, id: string) => this.req<void>("DELETE", this.t(slug, id));
@@ -595,6 +605,7 @@ export function deviceTakeText(r: DeviceTake): string {
 
 export function ticketLine(t: TicketInfo): string {
   const extra = [
+    t.feature ? "open feature" : null, t.kind ? t.kind : null,
     t.parentId ? `in plan ${t.parentId}` : null, t.needs?.length ? `needs ${t.needs.join(", ")}` : null,
     t.tags?.length ? t.tags.map((g) => `#${g}`).join(" ") : null,
   ].filter(Boolean);

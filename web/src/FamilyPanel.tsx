@@ -1,10 +1,8 @@
-// The ticket panel's family: the "Part of" row (link, change, unlink, the board's suggestion) and the tree of the
-// whole family from its top ticket down (family.ts).
+// The ticket panel's "Part of" row (link, change, unlink, the board's suggestion); the whole family is in the Family
+// tab (FamilyTab.tsx).
 import { useMemo, useState } from "react";
 import { api, COLUMNS, type Ticket } from "./api";
-import { familyNearby, familyOf, LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
-import { copyText } from "./share";
-import { ImportantStar } from "./StarToggle";
+import { LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
 
 const columnLabel = (status: string) => COLUMNS.find((c) => c.id === status)?.label ?? status;
 
@@ -131,77 +129,5 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
         </div>
       )}
     </>
-  );
-}
-
-/** A bigger family first shows only the rows near this ticket (familyNearby) until "Show all". */
-const FAMILY_ROWS = 8;
-/** Open or folded, remembered per browser; folded (one line) until the user opens it. */
-const FAMILY_OPEN_KEY = "ckanban.familyOpen";
-/** Rows indent per level up to this depth; deeper rows line up with it, so their titles keep room. */
-const MAX_INDENT = 3;
-
-/** The folded family's one line: "Part of <top> · 64 related", or "64 related tickets" on the top ticket itself. */
-export function familyLine(topTitle: string, isTop: boolean, related: number): string {
-  const n = `${related} related${isTop ? ` ticket${related === 1 ? "" : "s"}` : ""}`;
-  return isTop ? n : `Part of ${topTitle} · ${n}`;
-}
-
-/** Left padding of a family row: 18px per level, capped at MAX_INDENT levels. */
-export const familyIndent = (depth: number) => 10 + Math.min(depth, MAX_INDENT) * 18;
-
-/**
- * The whole family from its top ticket down, this ticket highlighted; each row opens its ticket. Hidden when alone.
- * Folded to one line by default (remembered per browser); a big family shows the rows near this ticket until "Show all".
- */
-export function FamilyTree({ ticket, tickets, onOpenTicket }: { ticket: Ticket; tickets: Ticket[]; onOpenTicket: (id: string) => void }) {
-  const rows = useMemo(() => familyOf(tickets, ticket.id), [tickets, ticket.id]);
-  const near = useMemo(() => familyNearby(rows, ticket.id), [rows, ticket.id]);
-  const [folded, setFolded] = useState(() => {
-    try {
-      return localStorage.getItem(FAMILY_OPEN_KEY) !== "1";
-    } catch {
-      return true;
-    }
-  });
-  const [all, setAll] = useState(false);
-  if (rows.length < 2) return null;
-  const toggle = () => {
-    setFolded((f) => {
-      try {
-        localStorage.setItem(FAMILY_OPEN_KEY, f ? "1" : "0");
-      } catch {}
-      return !f;
-    });
-  };
-  const trimmed = rows.length > FAMILY_ROWS && near.length < rows.length;
-  const shown = trimmed && !all ? near : rows;
-  return (
-    <section className={`family ${folded ? "folded" : ""}`} aria-label="Family">
-      <div className="family-head">
-        <button className="fold-head" onClick={toggle} aria-expanded={!folded} title={folded ? "Show the family" : "Hide the family"}>
-          <span className="fold-chev" aria-hidden>▾</span>
-          <span className="field-key">Family</span>
-          <span className="family-line" title={rows[0].ticket.title}>{familyLine(rows[0].ticket.title, rows[0].ticket.id === ticket.id, rows.length - 1)}</span>
-        </button>
-        <button className="mini-link" onClick={() => copyText(familyText(rows), "Family list copied")}
-          title="Copy the family as a list, for example to ask Claude to summarise this piece of work">Copy list</button>
-      </div>
-      {!folded && (
-        <div className="family-tree">
-          {shown.map((r) => (
-            <button key={r.ticket.id} className={`family-row ${r.ticket.id === ticket.id ? "me" : ""}`} style={{ paddingLeft: familyIndent(r.depth) }} title={r.ticket.title}
-              aria-current={r.ticket.id === ticket.id ? "true" : undefined} onClick={() => r.ticket.id !== ticket.id && onOpenTicket(r.ticket.id)}>
-              <span className="fam-title">{r.ticket.important && <ImportantStar />}{r.ticket.title}</span>
-              {r.how && <span className="fam-how">{LINK_WORDS[r.how]}</span>}
-              <span className={`fam-status st-${r.ticket.status}`}>{columnLabel(r.ticket.status)}</span>
-            </button>
-          ))}
-          {trimmed && (
-            <button className="mini-link family-more" onClick={() => setAll((v) => !v)}>{all ? "Show only nearby" : `Show all ${rows.length}`}</button>
-          )}
-        </div>
-      )}
-    </section>
   );
 }

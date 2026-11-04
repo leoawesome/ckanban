@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, COLUMNS, safeHref, startWorkTarget, subscribe, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "./api";
 import { boardColumnOf, menuPick, STATUS_MENU } from "./columns";
 import { PANEL_LEAVE_MS, reducedMotion } from "./motion";
@@ -24,7 +24,9 @@ import { attentionGoal } from "./attentionGoal";
 import { MoreSheet } from "./PhoneNav";
 import { KeyHint } from "./KeyHint";
 import { MOD } from "./Shortcuts";
-import { complete, PlanFinished, planFinished, PlanPanel, PlanSummary } from "./PlanPanel";
+import { complete, PlanFinished, planFinished, PlanSummary } from "./PlanPanel";
+import { FamilyTab } from "./FamilyTab";
+import { familyOf } from "./family";
 import { Outputs } from "./Outputs";
 import { PrBox } from "./PrBox";
 import { PrList } from "./PrList";
@@ -48,7 +50,7 @@ import { usePhone } from "./usePhone";
 import { useShrinkHeader } from "./useShrinkHeader";
 import { toast } from "./toast";
 import { FollowUpChip } from "./FollowUpChip";
-import { FamilyTree, PartOfField } from "./FamilyPanel";
+import { PartOfField } from "./FamilyPanel";
 import { FileLinksProvider } from "./FileViewer";
 
 // v2: widths saved under the old 80% default are dropped once so the new default shows.
@@ -345,15 +347,16 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     api.markSeen(slug, ticket.id).catch(() => {});
   }, [slug, ticket.id]);
   const huddleState = useHuddle(slug, ticket.id, huddlePick);
+  const familySize = useMemo(() => familyOf(tickets, ticket.id).length, [tickets, ticket.id]);
   const huddle = huddleState.latest;
-  // The Plan tab exists only while the ticket has children; Changes once Claude changed files (in a worktree, or in the
+  // The Family tab exists while the ticket has a family (plan children included); Changes once Claude changed files (in a worktree, or in the
   // board's folder itself); Huddle once the ticket has had a huddle (or one is being started); Usage only while open
   // from the cost chip. A tab asked for (a card badge, Start huddle, the chip) shows while it is open.
   const inFolder = !ticket.worktree && !ticket.workdir && !ticket.branch && (ticket.runCount > 0 || !!ticket.sessionStarted || !!ticket.baseSha);
   const diffState = useTicketDiff(slug, ticket);
   // The tabs shown, in order ([ and ] step through them); opening one refreshes what it shows, like a click.
   const tabs = drawerTabs({
-    phone, plan: children.length > 0,
+    phone, family: children.length > 0 || familySize > 1,
     changes: !!(ticket.worktree || inFolder) && (!!diffState.diff?.files.length || tabPick === "changes"),
     huddle: huddleState.list.length > 0 || tabPick === "huddle",
     usage: tabPick === "usage",
@@ -806,8 +809,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
         {/* Rarely set by hand (plans and update_ticket set it), so only shown once the ticket has needs. */}
         {!!ticket.needs?.length && <NeedsField slug={slug} ticket={ticket} onError={onError} />}
 
-        {children.length > 0 && <PlanSummary ticket={ticket} children={children} onOpen={() => setTab("plan")} />}
-        <FamilyTree ticket={ticket} tickets={tickets} onOpenTicket={onOpenTicket} />
+        {children.length > 0 && <PlanSummary ticket={ticket} children={children} onOpen={() => setTab("family")} />}
 
         {(!!links.length || outputCount > 0 || (hasUsage && !usageInline)) && (
           <div className="result-chips" aria-label="Results">
@@ -868,15 +870,15 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     </div>
   );
   // The tab bar's buttons; a phone shows at most 4 places, the rest under More.
-  const tabName: Record<DrawerTab, string> = { ticket: "Ticket", chat: "Chat", plan: "Plan", huddle: "Huddle", changes: "Changes", outputs: "Outputs", usage: "Usage" };
+  const tabName: Record<DrawerTab, string> = { ticket: "Ticket", chat: "Chat", family: "Family", huddle: "Huddle", changes: "Changes", outputs: "Outputs", usage: "Usage" };
   const tabLabel: Record<DrawerTab, React.ReactNode> = {
     ticket: "Ticket",
     chat: <>Chat {working && <span className="dot" />}</>,
-    plan: (
-      <>Plan<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : children.every(complete) ? "ok" : ""}`}>
+    family: children.length > 0 ? (
+      <>Family<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : children.every(complete) ? "ok" : ""}`}>
         {children.filter(complete).length}/{children.length}
       </span></>
-    ),
+    ) : <>Family<span className="tab-count">{familySize}</span></>,
     huddle: (
       <>
         Huddle{huddle && huddle.status !== "closed" && <span className={`tab-count${huddle.status === "live" ? " ok" : ""}`}>{members(huddle).length}</span>}
@@ -1044,9 +1046,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             )}
             {tab === "ticket" ? (
               <div className={`panel-ticket ${editing ? "editing" : ""}`}>{details}</div>
-            ) : tab === "plan" ? (
+            ) : tab === "family" ? (
               <div className="panel-scroll panel-plan">
-                <PlanPanel slug={slug} ticket={ticket} children={children} onOpenTicket={onOpenTicket} onError={onError}
+                <FamilyTab slug={slug} ticket={ticket} tickets={tickets} planChildren={children} onOpenTicket={onOpenTicket} onError={onError}
                   onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />
               </div>
             ) : tab === "huddle" ? (

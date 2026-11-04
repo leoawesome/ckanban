@@ -1,5 +1,7 @@
 import type { TeammateProposal } from "./teammate-proposal";
 
+import type { TicketKind } from "../../web/src/family";
+export type { TicketKind };
 export type Status = "backlog" | "planning" | "ready" | "in_progress" | "review" | "done";
 /** limit: the run ended because the Claude usage/spend limit was hit (see Ticket.limit). */
 export type Outcome = null | "done" | "blocked" | "failed" | "stopped" | "needs_input" | "limit";
@@ -156,6 +158,8 @@ export interface Ticket {
   /** When lastActivity last changed (the run's latest step); null with it. Missing on old tickets. */
   lastActivityAt?: string | null;
   lastRunAt: string | null;
+  /** When the last run or chat reply ended (the Family tab's "finished … ago"). Missing on old tickets. */
+  runEndedAt?: string | null;
   /** When the current run or chat reply started; null when Claude is not working. Missing on old tickets. */
   runStartedAt?: string | null;
   /**
@@ -214,6 +218,12 @@ export interface Ticket {
    * chat that created it. Unlike addOnOf it changes nothing about how work runs and is no correction to learn from.
    */
   partOf?: string | null;
+  /** What the ticket is for, set when it is created (see web/src/family.ts TicketKind). Missing on old tickets. */
+  kind?: TicketKind | null;
+  /** A test ticket's result ("verdict" on its result line); a test that ended done without one counts as passed. */
+  verdict?: "passed" | "problem" | null;
+  /** On a feature's top ticket: when its "Where we are" status last changed (status.json in its outputs, see feature.ts). */
+  statusAt?: string | null;
   /** "chat": the ticket's chat created this one as part of it (create_ticket's partOfThisTicket). */
   partOfVia?: "chat" | null;
   /** A parent the board suggests for a ticket the user created (see linker.ts); the panel offers Link / Not related. */

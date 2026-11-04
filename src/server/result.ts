@@ -7,6 +7,8 @@ export interface RunResult {
   summary: string;
   /** A quiet schedule's run says nothing needs the user ("quiet": true): the board removes its ticket. */
   quiet?: boolean;
+  /** A test ticket's result: it passed or found a problem. */
+  verdict?: "passed" | "problem";
 }
 
 const PREFIX = "CKANBAN_RESULT:";
@@ -27,6 +29,7 @@ export function parseResult(text: string): RunResult | null {
       prUrls,
       summary: typeof v.summary === "string" ? v.summary : "",
       ...(v.quiet === true && v.status === "done" ? { quiet: true } : {}),
+      ...(v.verdict === "passed" || v.verdict === "problem" ? { verdict: v.verdict } : {}),
     };
   } catch {
     return null;

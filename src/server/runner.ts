@@ -114,7 +114,7 @@ const HUDDLE_TOOLS = new Set(["huddle_post", "huddle_read", "huddle_mode", "hudd
  * user's message gets nothing.
  * suggest_tags only adds suggestions to the chat's own ticket, which the user keeps or drops.
  */
-const PLANNING_BOARD_TOOLS = new Set(["move_ticket", "update_ticket", "comment_ticket", "create_ticket", "chat_ticket", "stop_ticket", "plan_control", "adopt_tickets", "suggest_tags"]
+const PLANNING_BOARD_TOOLS = new Set(["move_ticket", "update_ticket", "comment_ticket", "create_ticket", "chat_ticket", "stop_ticket", "plan_control", "adopt_tickets", "suggest_tags", "update_status", "gather_tickets"]
   .map((t) => `mcp__ckanban__${t}`));
 
 /**

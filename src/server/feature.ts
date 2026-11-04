@@ -1,0 +1,233 @@
+// A feature's "Where we are" status: the pinned block at the top of its main chat (the top ticket's chat).
+// Claude writes the words (goal, done, broken, waiting on you, next step, a note per pull request) with update_status;
+// the board adds the facts it knows from ticket data (counts per group, test results per round, pull requests). Both
+// are saved in the top ticket's outputs folder: status.json (what the block renders from) and status.md (to read).
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { childrenByParent, familyOf, familyState, settled, STATE_WORDS, type FamilyState } from "../../web/src/family";
+import { ticketPrs } from "./prs";
+import type { Ticket } from "./types";
+
+/** The sections Claude writes, in the block's order (Pull requests sits between waiting and next). */
+export const STATUS_FIELDS = ["goal", "done", "broken", "waiting", "next"] as const;
+export type StatusField = (typeof STATUS_FIELDS)[number];
+export const STATUS_FIELD_MAX = 2000;
+export const STATUS_NOTE_MAX = 2000;
+
+export interface StatusNote {
+  at: string;
+  text: string;
+  /** Claude in the main chat got it (at its next turn). */
+  delivered?: boolean;
+}
+
+export interface SavedStatus extends Partial<Record<StatusField, string | null>> {
+  /** Claude's note per pull request URL, e.g. "on staging". */
+  prNotes?: Record<string, string>;
+  /** "Add a note": what the user added from outside the board, oldest first. */
+  notes?: StatusNote[];
+  /** Any change (Claude's or a note). */
+  updatedAt: string;
+  /** Claude's last update_status. */
+  claudeAt?: string | null;
+  /** The family as it was at Claude's last update_status (familySig): the board nudges once it has changed. */
+  familySig?: string | null;
+}
+
+export type StatusPatch = Partial<Record<StatusField, string | null>> & { prNotes?: Record<string, string | null> };
+
+export interface GroupFacts {
+  id: string;
+  title: string;
+  kind: string | null;
+  total: number;
+  counts: Partial<Record<FamilyState, number>>;
+  /** Every child is Done, Passed or Found a problem. */
+  settled: boolean;
+}
+
+export interface PrFact {
+  url: string;
+  number: number | null;
+  state: "open" | "merged" | "closed" | "unknown";
+  ticketId: string;
+  ticketTitle: string;
+  note?: string;
+}
+
+export interface StatusFacts {
+  /** Tickets in the family, the top one included. */
+  size: number;
+  /** Counts over the family below the top ticket. */
+  counts: Partial<Record<FamilyState, number>>;
+  /** Level-1 tickets that hold others (or are of kind group or round). */
+  groups: GroupFacts[];
+  /** Level-1 tickets that are no group, counted together. */
+  loose: { total: number; counts: Partial<Record<FamilyState, number>> };
+  /** Test results per round (rounds and groups whose children are tests). */
+  rounds: { id: string; title: string; passed: number; problem: number; open: number }[];
+  /** Tickets that failed or found a problem, and ones that need the user. */
+  broken: { id: string; title: string; state: FamilyState }[];
+  needsYou: { id: string; title: string }[];
+  prs: PrFact[];
+}
+
+export const statusFiles = (outputsDir: string) => ({ json: join(outputsDir, "status.json"), md: join(outputsDir, "status.md") });
+
+export function readStatus(outputsDir: string): SavedStatus | null {
+  const { json } = statusFiles(outputsDir);
+  if (!existsSync(json)) return null;
+  try {
+    const v = JSON.parse(readFileSync(json, "utf8"));
+    return v && typeof v === "object" && typeof v.updatedAt === "string" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What the family looks like for the nudge: who is in it, each one's column, outcome, verdict and pull request states. */
+export function familySig(rows: Ticket[]): string {
+  return rows.map((t) => `${t.id}:${t.status}:${t.outcome ?? ""}:${t.verdict ?? ""}:${ticketPrs(t).map((p) => p.state ?? "").join(",")}`).sort().join("|");
+}
+
+const add = (c: Partial<Record<FamilyState, number>>, s: FamilyState) => {
+  c[s] = (c[s] ?? 0) + 1;
+};
+
+const prNumber = (url: string) => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? NaN) || null;
+
+/** The board's facts for the feature topId (its family from tickets). needsYou: the board's attention says Your turn. */
+export function statusFacts(tickets: Ticket[], topId: string, needsYou: (t: Ticket) => boolean, prNotes: Record<string, string> = {}): StatusFacts {
+  const rows = familyOf(tickets, topId);
+  const kids = childrenByParent(tickets);
+  const stateOf = new Map(rows.map((r) => [r.ticket.id, familyState(r.ticket, needsYou(r.ticket))]));
+  const counts: StatusFacts["counts"] = {};
+  const groups: GroupFacts[] = [];
+  const loose: StatusFacts["loose"] = { total: 0, counts: {} };
+  const rounds: StatusFacts["rounds"] = [];
+  const below = (id: string): Ticket[] => (kids.get(id) ?? []).flatMap((c) => [c.ticket, ...below(c.ticket.id)]);
+  for (const r of rows.slice(1)) add(counts, stateOf.get(r.ticket.id)!);
+  for (const r of rows.filter((x) => x.depth === 1)) {
+    const t = r.ticket;
+    const inside = below(t.id);
+    if (!inside.length && t.kind !== "group" && t.kind !== "round") {
+      loose.total++;
+      add(loose.counts, stateOf.get(t.id)!);
+      continue;
+    }
+    const c: GroupFacts["counts"] = {};
+    for (const k of inside) add(c, stateOf.get(k.id)!);
+    groups.push({ id: t.id, title: t.title, kind: t.kind ?? null, total: inside.length, counts: c, settled: inside.every((k) => settled(stateOf.get(k.id)!)) });
+    const tests = inside.filter((k) => k.kind === "test");
+    if (t.kind === "round" || (tests.length && tests.length === inside.length)) {
+      const verdicts = tests.map((k) => stateOf.get(k.id)!);
+      rounds.push({
+        id: t.id, title: t.title,
+        passed: verdicts.filter((s) => s === "passed").length,
+        problem: verdicts.filter((s) => s === "problem").length,
+        open: verdicts.filter((s) => !settled(s)).length,
+      });
+    }
+  }
+  // A problem an earlier round found is history (later work fixed it or not; the newest round tells): only the newest
+  // round's problems, tests outside rounds and failed tickets count as broken now.
+  const newest = rounds.at(-1)?.id;
+  const roundOf = new Map<string, string>();
+  for (const g of rounds) for (const k of below(g.id)) roundOf.set(k.id, g.id);
+  const broken = rows.slice(1)
+    .filter((r) => stateOf.get(r.ticket.id) === "failed" || (stateOf.get(r.ticket.id) === "problem" && (!roundOf.has(r.ticket.id) || roundOf.get(r.ticket.id) === newest)))
+    .map((r) => ({ id: r.ticket.id, title: r.ticket.title, state: stateOf.get(r.ticket.id)! }));
+  const waiting = rows.slice(1).filter((r) => stateOf.get(r.ticket.id) === "needs_you").map((r) => ({ id: r.ticket.id, title: r.ticket.title }));
+  const prs: PrFact[] = rows.flatMap((r) => ticketPrs(r.ticket).map((p) => ({
+    url: p.url, number: prNumber(p.url), state: (p.state?.toLowerCase() ?? "unknown") as PrFact["state"], ticketId: r.ticket.id, ticketTitle: r.ticket.title,
+    ...(prNotes[p.url] ? { note: prNotes[p.url] } : {}),
+  })));
+  return { size: rows.length, counts, groups, loose, rounds, broken, needsYou: waiting, prs };
+}
+
+/** Applies Claude's update: only the sections it names change (null or "" clears one). */
+export function applyPatch(saved: SavedStatus | null, patch: StatusPatch, now: string, sig: string): SavedStatus {
+  const next: SavedStatus = { ...(saved ?? {}), updatedAt: now, claudeAt: now, familySig: sig };
+  for (const f of STATUS_FIELDS) {
+    if (!(f in patch)) continue;
+    const v = patch[f];
+    if (typeof v === "string" && v.trim()) next[f] = v.trim().slice(0, STATUS_FIELD_MAX);
+    else delete next[f];
+  }
+  if (patch.prNotes) {
+    const notes = { ...(saved?.prNotes ?? {}) };
+    for (const [url, v] of Object.entries(patch.prNotes)) {
+      if (typeof v === "string" && v.trim()) notes[url] = v.trim().slice(0, 200);
+      else delete notes[url];
+    }
+    next.prNotes = notes;
+  }
+  return next;
+}
+
+const countWords = (c: Partial<Record<FamilyState, number>>, total: number): string => {
+  const done = (c.done ?? 0) + (c.passed ?? 0) + (c.problem ?? 0);
+  const rest = (["working", "waiting", "needs_you", "failed", "paused"] as FamilyState[])
+    .filter((s) => c[s]).map((s) => `${c[s]} ${s === "needs_you" ? "need you" : STATE_WORDS[s].toLowerCase()}`);
+  return [`${done} of ${total} done`, ...rest].join(", ");
+};
+
+/** The block's sections as plain lines, in order; empty ones left out. */
+export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key: string; label: string; text: string }[] {
+  const out: { key: string; label: string; text: string }[] = [];
+  const push = (key: string, label: string, ...parts: (string | null | undefined)[]) => {
+    const text = parts.filter((p) => p && p.trim()).join(" ");
+    if (text) out.push({ key, label, text });
+  };
+  push("goal", "Goal", saved?.goal);
+  const doneGroups = f.groups.filter((g) => g.settled && g.total).map((g) => {
+    const r = f.rounds.find((x) => x.id === g.id);
+    return r ? `${g.title} (${r.passed} passed${r.problem ? `, ${r.problem} found a problem` : ""})` : `${g.title} (${g.total} done)`;
+  });
+  const looseDone = (f.loose.counts.done ?? 0) + (f.loose.counts.passed ?? 0) + (f.loose.counts.problem ?? 0);
+  const doneFacts = [...doneGroups, ...(looseDone ? [`${looseDone} other ticket${looseDone === 1 ? "" : "s"} done`] : [])];
+  push("done", "Done", doneFacts.length ? `[${doneFacts.join("; ")}]` : null, saved?.done);
+  const running = f.groups.filter((g) => !g.settled && g.total).map((g) => {
+    const r = f.rounds.find((x) => x.id === g.id);
+    return `${g.title}: ${countWords(g.counts, g.total)}${r && (r.passed || r.problem) ? ` (${r.passed} passed, ${r.problem} found a problem)` : ""}.`;
+  });
+  const looseActive = (["working", "waiting", "needs_you", "paused"] as FamilyState[]).some((x) => f.loose.counts[x]);
+  if (looseActive) running.push(`Other tickets: ${countWords(f.loose.counts, f.loose.total)}.`);
+  push("running", "Running", running.join(" "));
+  const brokenFacts = f.broken.length ? `[${f.broken.length}: ${f.broken.map((b) => `${b.title} (${STATE_WORDS[b.state].toLowerCase()})`).join("; ")}]` : null;
+  push("broken", "Broken", brokenFacts, saved?.broken);
+  const youFacts = f.needsYou.length ? `[${f.needsYou.length}: ${f.needsYou.map((b) => b.title).join("; ")}]` : null;
+  push("waiting", "Waiting on you", youFacts, saved?.waiting);
+  push("prs", "Pull requests", f.prs.map((p) => `${p.number ? `#${p.number}` : p.url} ${p.ticketTitle} · ${p.state === "open" ? "open" : p.state}${p.note ? ` · ${p.note}` : ""}`).join("\n"));
+  push("next", "Next step", saved?.next);
+  return out;
+}
+
+/** status.md: the combined status for Claude and the user to read as a file. */
+export function statusMarkdown(top: Pick<Ticket, "id" | "title">, saved: SavedStatus | null, f: StatusFacts): string {
+  const lines = [`# Where we are: ${top.title}`, "", `Feature ticket ${top.id}, ${f.size} tickets. Updated ${saved?.updatedAt ?? "never"}.`, ""];
+  for (const s of statusSections(saved, f)) {
+    lines.push(`## ${s.label}`, "", s.key === "prs" ? s.text.split("\n").map((l) => `- ${l}`).join("\n") : s.text, "");
+  }
+  if (saved?.notes?.length) {
+    lines.push("## Notes from the user", "", ...saved.notes.map((n) => `- ${n.at.slice(0, 10)}: ${n.text}`), "");
+  }
+  lines.push("Counts, test results and pull requests in [brackets] come from the board; the rest is written with update_status.", "");
+  return lines.join("\n");
+}
+
+/** Writes status.json (only with saved) and status.md; returns the markdown. */
+export function writeStatus(outputsDir: string, top: Pick<Ticket, "id" | "title">, saved: SavedStatus | null, f: StatusFacts, writeJson: boolean): string {
+  const { json, md } = statusFiles(outputsDir);
+  if (writeJson && saved) {
+    writeFileSync(`${json}.tmp`, JSON.stringify(saved, null, 2));
+    renameSync(`${json}.tmp`, json);
+  }
+  const text = statusMarkdown(top, saved, f);
+  let old = "";
+  try {
+    old = readFileSync(md, "utf8");
+  } catch {}
+  if (old !== text) writeFileSync(md, text);
+  return text;
+}

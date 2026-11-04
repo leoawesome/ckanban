@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
-import type { ClaudeSession, Status, TicketMode } from "./api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { COLUMNS, type ClaudeSession, type Status, type Ticket, type TicketMode } from "./api";
+import { openFeatures, suggestFeature } from "./family";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { useImagePaste } from "./imagePaste";
 import { ModeToggle } from "./ModeToggle";
@@ -11,13 +12,15 @@ import { MOD } from "./Shortcuts";
 import { StarToggle } from "./StarToggle";
 import { TagEditor } from "./Tags";
 
-export function NewTicketDialog({ slug, folder, knownTags = [], onClose, onCreate }: {
+export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], onClose, onCreate }: {
   slug: string;
   folder: string;
   /** This board's tags (most used first), offered in the Tags field. */
   knownTags?: { name: string; count: number }[];
+  /** The board's tickets: a new ticket that shares words with an open feature is offered to it. */
+  tickets?: Ticket[];
   onClose: () => void;
-  onCreate: (input: { title: string; body: string; status: Status; sessionId?: string; mode?: TicketMode; important?: boolean; tags?: string[] }) => Promise<void>;
+  onCreate: (input: { title: string; body: string; status: Status; sessionId?: string; mode?: TicketMode; important?: boolean; tags?: string[]; partOf?: string }) => Promise<void>;
 }) {
   const [mode, setMode] = useState<TicketMode>("interview");
   const [session, setSession] = useState<ClaudeSession | null>(null);
@@ -30,6 +33,13 @@ export function NewTicketDialog({ slug, folder, knownTags = [], onClose, onCreat
   const [err, setErr] = useState<string | null>(null);
   const images = useImagePaste(setBody);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  // "This looks like part of X": the open feature sharing the most words (no AI call); Add to X is the default.
+  const features = useMemo(() => openFeatures(tickets), [tickets]);
+  const suggestion = useMemo(() => suggestFeature(tickets, title, body), [tickets, title, body]);
+  const [choice, setChoice] = useState<"add" | "new" | "other">("add");
+  const [other, setOther] = useState("");
+  useEffect(() => setChoice((c) => (c === "other" ? c : "add")), [suggestion?.feature.id]);
+  const partOf = choice === "add" ? suggestion?.feature.id : choice === "other" ? other || undefined : undefined;
 
   // Start: an interview goes to Planning (questions now), "Just do it" goes to Ready (runs when a slot is free).
   const startStatus: Status = mode === "interview" ? "planning" : "ready";
@@ -39,7 +49,7 @@ export function NewTicketDialog({ slug, folder, knownTags = [], onClose, onCreat
     if (busy || !title.trim() || images.uploading) return;
     setBusy(true);
     try {
-      await onCreate({ title: title.trim(), body, status, sessionId: session?.id, mode, ...(important ? { important } : {}), ...(tags.length ? { tags } : {}) });
+      await onCreate({ title: title.trim(), body, status, sessionId: session?.id, mode, ...(important ? { important } : {}), ...(tags.length ? { tags } : {}), ...(partOf ? { partOf } : {}) });
     } catch (e: any) {
       setErr(e.message);
       setBusy(false);
@@ -75,6 +85,31 @@ export function NewTicketDialog({ slug, folder, knownTags = [], onClose, onCreat
           Description
           <DescriptionEditor slug={slug} value={body} setValue={setBody} images={images} inputRef={bodyRef} />
         </label>
+        {(suggestion || choice === "other") && (() => {
+          const f = suggestion?.feature;
+          const size = (id: string) => features.find((x) => x.top.id === id)?.rows.length ?? 1;
+          const col = (t: Ticket) => COLUMNS.find((c) => c.id === t.status)?.label ?? t.status;
+          return (
+            <div className="feature-suggest" role="group" aria-label="Part of a feature">
+              {f ? <p>This looks like part of <b>{f.title}</b> ({col(f)}, {size(f.id)} tickets).</p> : <p>Add it to a feature you're already working on.</p>}
+              {f && (
+                <label className="choice"><input type="radio" name="feature" checked={choice === "add"} onChange={() => setChoice("add")} /> Add to {f.title}
+                  <span className="muted small">its chat picks it up and it shows in the feature's status</span></label>
+              )}
+              <label className="choice"><input type="radio" name="feature" checked={choice === "new"} onChange={() => setChoice("new")} /> Start a new feature
+                <span className="muted small">its own card and its own status</span></label>
+              <label className="choice"><input type="radio" name="feature" checked={choice === "other"} onChange={() => setChoice("other")} /> Other feature…
+                {choice === "other" && (
+                  <select value={other} onChange={(e) => setOther(e.target.value)} aria-label="Feature to add it to">
+                    <option value="">Pick a feature</option>
+                    {features.map((x) => <option key={x.top.id} value={x.top.id}>{x.top.title} ({x.rows.length})</option>)}
+                  </select>
+                )}
+              </label>
+              {suggestion && <div className="why muted small">Matched words: {suggestion.words.join(", ")}.</div>}
+            </div>
+          );
+        })()}
         <div className="field">
           <div className="field-label">How should Claude work?</div>
           <ModeToggle value={mode} onChange={setMode} keyHint="⌘I" />

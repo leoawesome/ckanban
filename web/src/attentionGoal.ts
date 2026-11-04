@@ -19,7 +19,7 @@ export function attentionGoal(att: { kind: string; label: string } | null | unde
     case "proposal":
       return { button: att.label, tab: "chat", targets: [".proposal:not(.applied)", ".reply-text"] };
     case "blocked":
-      if (att.label === "Plan stuck") return { button: "Open plan", tab: "plan", targets: [".plan-waiting", ".plan-reason", ".plan-panel"] };
+      if (att.label === "Plan stuck") return { button: "Open plan", tab: "family", targets: [".plan-waiting", ".plan-reason", ".plan-panel"] };
       if (t.capHit) return { button: "See what Claude needs", tab: "chat", targets: [".cap-banner", ".reply-text"] };
       return { button: "See what Claude needs", tab: "chat", targets: [".reply-text", ".conv-msg"] };
     case "failed":

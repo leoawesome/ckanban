@@ -154,7 +154,7 @@ export interface ToolContext {
   client: Pick<BoardClient,
     | "listProfiles" | "listTickets" | "getTicket" | "getFamily" | "createTicket" | "updateTicket" | "deleteTicket" | "chat" | "stop" | "listComments"
     | "comment" | "reportBug" | "setFollowUp" | "cancelFollowUp" | "notifyUser" | "takeDevices" | "releaseDevices" | "listSchedules" | "createSchedule" | "updateSchedule" | "deleteSchedule" | "runSchedule"
-    | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "adopt" | "planAction" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
+    | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "adopt" | "updateStatus" | "gather" | "planAction" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
     | "huddleStatus" | "huddleCloseRequest" | "startAutoHuddle" | "huddleHandIn" | "huddleReviewHandIn" | "huddleAllowChanges"
     | "listHuddlePresets" | "saveHuddlePreset" | "deleteHuddlePreset" | "listHuddleTemplates" | "huddleBrief" | "huddleProposeTeammate"
     | "listPasses" | "claudeServers" | "passTools" | "testAutomation">;
@@ -1568,6 +1568,16 @@ export const TOOLS: Tool[] = [
         dependsOn: DEPENDS_ON,
         needs: NEEDS,
         tags: TAGS,
+        kind: {
+          type: "string", enum: ["explore", "build", "test", "review", "fix", "group", "round"],
+          description: "What the ticket is for. test: it checks whether something works and ends with a verdict. group: holds other tickets of a feature. " +
+            "round: a testing round of a feature; the board titles it \"Testing round N\" and puts it right under the feature.",
+        },
+        partOf: {
+          type: "string",
+          description: "Add the new ticket to an open feature: the feature's top ticket id or one of its groups (list_tickets marks open features). " +
+            "Use it when the work belongs to that feature instead of starting a new top ticket. A feature keeps tickets at most 2 levels deep.",
+        },
         partOfThisTicket: {
           type: "boolean",
           description: "Inside a board run or ticket chat: true links the new ticket as part of your ticket (same piece of work: a next step, " +
@@ -1594,6 +1604,8 @@ export const TOOLS: Tool[] = [
         ...(tags?.length ? { tags } : {}),
         // Only the run's own board: a guest chat on another board has no ticket here to be part of.
         ...(args?.partOfThisTicket === true && runTicketId(ctx) && ctx.env[RUN_ENV]?.split("/")[0] === slug ? { partOf: runTicketId(ctx)! } : {}),
+        ...(str(args, "partOf", false)?.trim() ? { partOf: str(args, "partOf")!.trim() } : {}),
+        ...(str(args, "kind", false) ? { kind: str(args, "kind")!.trim() } : {}),
       }, ctx.env[RUN_ENV]);
       return `Created ${t.id} on board ${slug} in ${t.status} (${t.mode} mode)${t.partOf ? `, part of ${t.partOf}` : ""}: ${t.title}`;
     },
@@ -1812,6 +1824,87 @@ export const TOOLS: Tool[] = [
       const t = await ctx.client.updateTicket(slug, str(args, "id")!, { status: parseStatus(str(args, "status")) }, ctx.env[RUN_ENV]);
       if (t.selfMove) return `${t.id} moves to ${t.selfMove} once this reply ends. Tell the user.`;
       return `Moved ${t.id} to ${t.status}${t.running ? " (Claude is working on it)" : ""}.`;
+    },
+  },
+  {
+    name: "update_status",
+    description:
+      "Update a feature's \"Where we are\" status, pinned at the top of its main chat (the family's top ticket) and saved as status.md in its outputs. " +
+      "Pass only the sections that changed; each call replaces just those (an empty string clears one) and returns the whole status. " +
+      "The board adds counts, test results and pull request states itself. Any run of a ticket in the feature may call it; " +
+      "on a ticket that has no status yet it starts one, which makes its family's top ticket a feature.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profile: PROFILE,
+        id: { ...ID, description: "A ticket in the feature. Omit inside a board run to use your own ticket's feature." },
+        goal: { type: "string", description: "What the feature is for, in one or two plain sentences." },
+        done: { type: "string", description: "What is done, in words." },
+        broken: { type: "string", description: "What is broken or failed, and why." },
+        waitingOnYou: { type: "string", description: "What the user has to do or decide." },
+        nextStep: { type: "string", description: "The one next step." },
+        prNotes: {
+          type: "object", additionalProperties: { type: "string" },
+          description: "A short note per pull request URL, e.g. {\"https://github.com/o/r/pull/7\": \"on staging\"}.",
+        },
+      },
+    },
+    changes: true,
+    allowInRun: true,
+    async run(args, ctx) {
+      const slug = await slugFor(args, ctx);
+      const id = str(args, "id", false)?.trim() || runTicketId(ctx);
+      if (!id) throw new ClientError("id is required outside a board run");
+      const patch: Record<string, unknown> = {};
+      for (const [from, to] of [["goal", "goal"], ["done", "done"], ["broken", "broken"], ["waitingOnYou", "waiting"], ["nextStep", "next"]] as const) {
+        if (typeof args?.[from] === "string") patch[to] = args[from];
+      }
+      if (args?.prNotes && typeof args.prNotes === "object") patch.prNotes = args.prNotes;
+      if (!Object.keys(patch).length) throw new ClientError("nothing to update: pass goal, done, broken, waitingOnYou, nextStep or prNotes");
+      const r = await ctx.client.updateStatus(slug, id, patch, ctx.env[RUN_ENV]);
+      return `Updated the status of "${r.title}" (${r.topId}). The whole status now:\n\n${r.markdown}`;
+    },
+  },
+  {
+    name: "gather_tickets",
+    description:
+      "Gather existing tickets into a feature (when the user asks in the feature's main chat): each one links under one of the feature's groups, " +
+      "a new group, or the feature itself. They keep their chats, work and pull requests, and running ones keep running. " +
+      "A ticket's own tickets that would sit deeper than 2 levels move up beside it. Find tickets with list_tickets first.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profile: PROFILE,
+        id: { ...ID, description: "The feature's top ticket. Default: the ticket of this board run." },
+        tickets: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              group: { type: "string", description: "A group ticket id of the feature, \"new\" for the new group, or omit for under the feature itself." },
+            },
+            required: ["id"],
+          },
+        },
+        newGroup: { type: "string", description: "Title of the new group, when a ticket uses group \"new\"." },
+      },
+      required: ["tickets"],
+    },
+    changes: true,
+    allowInRun: true,
+    async run(args, ctx) {
+      const slug = await slugFor(args, ctx);
+      const id = str(args, "id", false)?.trim() || runTicketId(ctx);
+      if (!id) throw new ClientError("id is required outside a board run");
+      if (!Array.isArray(args?.tickets) || !args.tickets.length) throw new ClientError("tickets must list { id, group } entries");
+      const r = await ctx.client.gather(slug, id, args.tickets, typeof args?.newGroup === "string" ? args.newGroup : null, ctx.env[RUN_ENV]);
+      return [
+        r.gathered.length ? `Gathered ${r.gathered.length}:\n${r.gathered.map((t) => `- ${ticketLine(t)}`).join("\n")}` : "Gathered none.",
+        ...(r.group ? [`New group: ${ticketLine(r.group)}`] : []),
+        ...(r.movedUp.length ? [`Moved up to stay 2 levels deep:\n${r.movedUp.map((m) => `- ${m.id} "${m.title}" under ${m.to}`).join("\n")}`] : []),
+        ...(r.skipped.length ? [`Skipped ${r.skipped.length}:\n${r.skipped.map((x) => `- ${x.id}: ${x.reason}`).join("\n")}`] : []),
+      ].join("\n\n");
     },
   },
   {

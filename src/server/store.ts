@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import YAML from "yaml";
 import type {
-  ActivityEntry, Comment, Config, Huddle, HuddleMessage, Job, Loop, LoopState, OutputFile, Profile, Schedule, ScheduleHistoryEntry, Status, Ticket, TicketMode, TicketSource,
+  ActivityEntry, Comment, Config, Huddle, HuddleMessage, Job, Loop, LoopState, OutputFile, Profile, Schedule, ScheduleHistoryEntry, Status, Ticket, TicketKind, TicketMode, TicketSource,
 } from "./types";
 import { cleanPresets, type HuddlePreset } from "./huddle-presets";
 import { cleanTemplates, type HuddleTemplate } from "./huddle-templates";
@@ -354,7 +354,7 @@ export class Store {
     input: {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
-      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string;
+      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string; kind?: TicketKind | null;
     },
   ): Ticket {
     const at = nowIso();
@@ -375,6 +375,7 @@ export class Store {
       ...(input.partOf ? { partOf: input.partOf, ...(input.partOfVia ? { partOfVia: input.partOfVia } : {}) } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.raisedBy ? { raisedBy: input.raisedBy } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
     };
     atomicWrite(this.ticketPath(slug, t.id), serializeTicket(t));
     this.saved(slug, t.id, t);

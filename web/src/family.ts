@@ -131,3 +131,151 @@ export function cardFamilies<T extends FamilyTicket>(tickets: T[]): Map<string, 
   }
   return out;
 }
+
+// ---- Features (a big piece of work followed from its top ticket; see feature.ts on the server) ----
+
+/** What a ticket is for, set when it is created. group: holds other tickets; round: a testing round. Old tickets have none. */
+export type TicketKind = "explore" | "build" | "test" | "review" | "fix" | "group" | "round";
+export const TICKET_KINDS: TicketKind[] = ["explore", "build", "test", "review", "fix", "group", "round"];
+
+/** Deepest level a new link may make (the feature's top ticket is level 0). */
+export const MAX_LEVEL = 2;
+
+export interface FeatureTicket extends FamilyTicket {
+  kind?: TicketKind | null;
+  outcome?: string | null;
+  verdict?: "passed" | "problem" | null;
+  /** When the feature's status ("Where we are") last changed; set only on a top ticket that has one. */
+  statusAt?: string | null;
+  updatedAt?: string;
+  running?: boolean;
+}
+
+/** id's level in its family: 0 for the top ticket (or a ticket that isn't on the board). */
+export function levelOf<T extends FamilyTicket>(tickets: T[], id: string): number {
+  const byId = new Map(tickets.map((t) => [t.id, t]));
+  let n = 0;
+  const seen = new Set<string>();
+  for (let cur = byId.get(id); cur && !seen.has(cur.id); n++) {
+    seen.add(cur.id);
+    const p = parentIn(byId, cur);
+    if (!p) return n;
+    cur = p.parent;
+  }
+  return n;
+}
+
+/** A family's top ticket is a feature: not Done, and 2 or more other tickets in its family or a status already. */
+export function isFeature<T extends FeatureTicket>(tickets: T[], top: T): boolean {
+  if (top.status === "done" || familyRoot(tickets, top.id)?.id !== top.id) return false;
+  return !!top.statusAt || familyOf(tickets, top.id).length >= 3;
+}
+
+/** The open feature id belongs to (its family's top ticket), or null. */
+export function featureOf<T extends FeatureTicket>(tickets: T[], id: string): T | null {
+  const top = familyRoot(tickets, id);
+  return top && isFeature(tickets, top) ? top : null;
+}
+
+/** Every open feature with its family (familyOf order), working out the families once. */
+export function openFeatures<T extends FeatureTicket>(tickets: T[]): { top: T; rows: FamilyRow<T>[] }[] {
+  const byId = new Map(tickets.map((t) => [t.id, t]));
+  const kids = childrenByParent(tickets);
+  const out: { top: T; rows: FamilyRow<T>[] }[] = [];
+  for (const top of tickets) {
+    if (top.status === "done" || parentIn(byId, top)) continue;
+    const rows: FamilyRow<T>[] = [];
+    const seen = new Set<string>();
+    const walk = (t: T, depth: number, how: LinkHow | null) => {
+      if (seen.has(t.id)) return;
+      seen.add(t.id);
+      rows.push({ ticket: t, depth, how });
+      for (const c of kids.get(t.id) ?? []) walk(c.ticket, depth + 1, c.how);
+    };
+    walk(top, 0, null);
+    if (top.statusAt || rows.length >= 3) out.push({ top, rows });
+  }
+  return out;
+}
+
+/** A feature's groups: its level-1 tickets of kind group or round. */
+export function groupsOf<T extends FeatureTicket>(tickets: T[], topId: string): T[] {
+  return (childrenByParent(tickets).get(topId) ?? []).map((c) => c.ticket).filter((t) => t.kind === "group" || t.kind === "round");
+}
+
+const ROUND_RE = /^testing round (\d+)\b/i;
+
+/** "Testing round N" for a new round in the family of topId: one more than the highest round number there. */
+export function nextRoundTitle<T extends FeatureTicket>(tickets: T[], topId: string | null): string {
+  const rows = topId ? familyOf(tickets, topId) : [];
+  const n = rows.reduce((m, r) => Math.max(m, Number(ROUND_RE.exec(r.ticket.title)?.[1] ?? 0)), 0);
+  return `Testing round ${n + 1}`;
+}
+
+/** The refusal for a link that would go below MAX_LEVEL: where to put the ticket instead. */
+export function tooDeepMessage<T extends FeatureTicket>(tickets: T[], parentId: string): string {
+  const top = familyRoot(tickets, parentId);
+  const groups = top ? groupsOf(tickets, top.id) : [];
+  const where = top
+    ? `under the feature "${top.title}" (${top.id})${groups.length ? ` or one of its groups: ${groups.map((g) => `"${g.title}" (${g.id})`).join(", ")}` : ""}`
+    : "under the feature's top ticket or one of its groups";
+  return `That would put the ticket ${levelOf(tickets, parentId) + 1} levels deep; a feature keeps its tickets at most ${MAX_LEVEL} levels deep. Put it ${where}.`;
+}
+
+/** How a family row reads: the words the Family tab and the status counts use. */
+export type FamilyState = "waiting" | "working" | "done" | "passed" | "problem" | "failed" | "needs_you" | "paused";
+export const STATE_WORDS: Record<FamilyState, string> = {
+  waiting: "Waiting", working: "Working", done: "Done", passed: "Passed", problem: "Found a problem", failed: "Failed", needs_you: "Needs you", paused: "Paused",
+};
+
+/** needsYou: the board's attention shows the ticket as Your turn. */
+export function familyState(t: FeatureTicket, needsYou = false): FamilyState {
+  const finished = (): FamilyState => (t.kind === "test" ? (t.verdict === "problem" ? "problem" : "passed") : "done");
+  if (t.status === "done") return finished();
+  if (t.running || t.status === "ready" || t.status === "in_progress") return t.outcome === "limit" ? "paused" : "working";
+  if (t.outcome === "limit") return "paused";
+  if (t.status === "review" && t.outcome === "done") return finished();
+  if (t.outcome === "failed" || t.outcome === "blocked") return "failed";
+  if (needsYou) return "needs_you";
+  if (t.status === "backlog" || t.status === "planning") return "waiting";
+  return "needs_you";
+}
+
+/** A group is finished (folds) once every child is Done, Passed or Found a problem. */
+export const settled = (s: FamilyState) => s === "done" || s === "passed" || s === "problem";
+
+/** A group's short summary: "5 of 6 passed" for tests, else "4 of 6 done". */
+export function groupSummary(states: { kind?: TicketKind | null; state: FamilyState }[]): string {
+  if (!states.length) return "empty";
+  const tests = states.filter((s) => s.kind === "test");
+  if (tests.length && tests.length === states.length) return `${states.filter((s) => s.state === "passed").length} of ${states.length} passed`;
+  return `${states.filter((s) => settled(s.state)).length} of ${states.length} done`;
+}
+
+// ---- New ticket: "This looks like part of X" (no AI call) ----
+
+const COMMON = new Set(("about after again also because been before being both could does doing done each from have here into just like make more most much need only other over should some such than that their them then there these they this those very want were what when where which while will with would your " +
+  "ticket tickets sure using").split(" "));
+
+/** The words a match counts: lower case, 4 letters or more, not a common word. */
+export function matchWords(text: string): Set<string> {
+  return new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4 && !COMMON.has(w)));
+}
+
+/**
+ * The open feature a new ticket most likely belongs to: the one whose title or family titles share the most words (2 at
+ * least) with the ticket's title and description; ties go to the most recently touched. null when none does.
+ */
+export function suggestFeature<T extends FeatureTicket>(tickets: T[], title: string, body: string): { feature: T; words: string[] } | null {
+  const mine = matchWords(`${title} ${body}`);
+  if (mine.size < 2) return null;
+  let best: { feature: T; words: string[]; touched: string } | null = null;
+  for (const { top, rows } of openFeatures(tickets)) {
+    const theirs = new Set(rows.flatMap((r) => [...matchWords(r.ticket.title)]));
+    const shared = [...mine].filter((w) => theirs.has(w));
+    if (shared.length < 2) continue;
+    const touched = rows.reduce((m, r) => ((r.ticket.updatedAt ?? r.ticket.createdAt) > m ? r.ticket.updatedAt ?? r.ticket.createdAt : m), "");
+    if (!best || shared.length > best.words.length || (shared.length === best.words.length && touched > best.touched)) best = { feature: top, words: shared, touched };
+  }
+  return best && { feature: best.feature, words: best.words };
+}

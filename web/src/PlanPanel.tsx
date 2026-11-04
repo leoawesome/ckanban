@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { api, COLUMNS, type Ticket } from "./api";
-import { DeviceChips } from "./Needs";
-import { checkInsText, complete, finishedLabel, planFinished, waitPhrase } from "./planText";
+import { api, type Ticket } from "./api";
+import { checkInsText, complete, planFinished, waitPhrase } from "./planText";
 
 export { complete, planFinished };
 
@@ -47,8 +46,8 @@ export function PlanFinished({ ticket, total, onMoveToDone, onAddMore }: {
   );
 }
 
-/** Plan tab: a planner's children, plus Start / Pause / Resume for running them unattended in dependency order. */
-export function PlanPanel({ slug, ticket, children, onOpenTicket, onError, onMoveToDone, onAddMore }: {
+/** The plan controls at the top of a planner's Family tab: state, Start / Pause / Resume and how many run at once. */
+export function PlanControls({ slug, ticket, children, onOpenTicket, onError, onMoveToDone, onAddMore }: {
   slug: string;
   ticket: Ticket;
   children: Ticket[];
@@ -78,7 +77,6 @@ export function PlanPanel({ slug, ticket, children, onOpenTicket, onError, onMov
   const finished = planFinished(children);
   // Children only the user can move on (questions, a proposal, Planning): what a stuck plan waits for.
   const waiting = children.filter((c) => c.userWait && !complete(c) && !c.running && c.status !== "in_progress");
-  const titleOf = (ref: string) => children.find((c) => c.id === ref || c.planKey === ref)?.title ?? ref;
   return (
     <section className="plan-panel">
       <div className="plan-head">
@@ -127,34 +125,6 @@ export function PlanPanel({ slug, ticket, children, onOpenTicket, onError, onMov
           {plan && <span className="muted small" title="Times the plan asked Claude to decide something">{checkInsText(plan.wakeups)}</span>}
         </div>
       )}
-      <ul className="child-tickets">
-        {children.map((c) => {
-          const notes = [
-            c.dependsOn?.length ? `after ${c.dependsOn.map(titleOf).join(", ")}` : null,
-            c.userWait && !complete(c) ? c.userWait : null,
-          ].filter(Boolean);
-          return (
-            <li key={c.id}>
-              <span className="child-main">
-                <button className="link-btn ticket-link" onClick={() => onOpenTicket(c.id)}>{c.title}</button>
-                {(!!c.needs?.length || !!c.devices || notes.length > 0) && (
-                  <span className="muted small child-deps">
-                    <DeviceChips ticket={complete(c) ? { ...c, devices: null } : c} />
-                    {notes.join(" · ")}
-                  </span>
-                )}
-              </span>
-              {c.userWait && !complete(c) && !c.running && c.status !== "in_progress" ? (
-                <span className="badge wait" title={c.userWait}>Needs you</span>
-              ) : (
-                <span className={`badge ${complete(c) ? "ok" : c.outcome === "failed" ? "failed" : c.outcome === "blocked" || c.outcome === "needs_input" ? "blocked" : ""}`}>
-                  {complete(c) ? finishedLabel(c) : COLUMNS.find((x) => x.id === c.status)?.label ?? c.status}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
     </section>
   );
 }

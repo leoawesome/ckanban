@@ -111,18 +111,18 @@ export function isStopKey(e: Keys): boolean {
   return (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && !e.isComposing && e.key === ".";
 }
 
-export type DrawerTab = "ticket" | "chat" | "plan" | "huddle" | "changes" | "outputs" | "usage";
+export type DrawerTab = "ticket" | "chat" | "family" | "huddle" | "changes" | "outputs" | "usage";
 
 /** The ticket panel's tabs, in order. Phones get a Ticket tab first (details and description), which the sidebar shows elsewhere. */
 /**
- * The ticket panel's tabs, in order. Huddle and Changes only once they have something to show; Usage is reached from
+ * The ticket panel's tabs, in order. Family only when the ticket has a family (it holds the plan controls too); Huddle and Changes only once they have something to show; Usage is reached from
  * the cost chip, so it is a tab only while open (usage).
  */
-export function drawerTabs({ phone, plan, changes, huddle = true, usage = true }: {
-  phone: boolean; plan: boolean; changes: boolean; huddle?: boolean; usage?: boolean;
+export function drawerTabs({ phone, family, changes, huddle = true, usage = true }: {
+  phone: boolean; family: boolean; changes: boolean; huddle?: boolean; usage?: boolean;
 }): DrawerTab[] {
-  const on: Record<DrawerTab, boolean> = { ticket: phone, chat: true, plan, huddle, changes, outputs: true, usage };
-  return (["ticket", "chat", "plan", "huddle", "changes", "outputs", "usage"] as const).filter((t) => on[t]);
+  const on: Record<DrawerTab, boolean> = { ticket: phone, chat: true, family, huddle, changes, outputs: true, usage };
+  return (["ticket", "chat", "family", "huddle", "changes", "outputs", "usage"] as const).filter((t) => on[t]);
 }
 
 /**
