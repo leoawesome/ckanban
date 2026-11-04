@@ -54,11 +54,13 @@ interface Props {
   onOpenJobs?: (ticketId: string) => void;
   /** Every ticket of the board, also the ones a search hides: the add-on chips name the linked ticket. */
   allTickets?: Ticket[];
+  /** A search found a main ticket through one of its tool tickets: main ticket id to that tool ticket's title. */
+  via?: Map<string, string>;
 }
 
 /** Card props shared down the columns. */
 interface CardCtx { huddles: Huddle[]; onOpenHuddle?: (id: string) => void; limit?: { slug: string; onError: (msg: string) => void }; onTag?: (tag: string) => void;
-  jobs?: Job[]; onOpenJobs?: (ticketId: string) => void; addOns: Map<string, AddOnLinks>; families: Map<string, CardFamily> }
+  jobs?: Job[]; onOpenJobs?: (ticketId: string) => void; addOns: Map<string, AddOnLinks>; families: Map<string, CardFamily>; via?: Map<string, string> }
 
 /** What a screen reader says on every card, after its title and status (also how to move between cards). */
 const CARD_HELP = "Arrow keys or J and K move between cards in a column, H and L between columns. Enter opens the ticket. " +
@@ -106,7 +108,7 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
     >
       <Card a11yId={a11y} ticket={ticket} onClick={() => onOpen(ticket.id)} queued={queued} held={held}
         huddle={cardHuddleBadge(ctx.huddles, ticket.id, now)} onOpenHuddle={ctx.onOpenHuddle} limit={ctx.limit} onTag={ctx.onTag}
-        jobs={ctx.jobs} onOpenJobs={ctx.onOpenJobs} addOn={ctx.addOns.get(ticket.id)} family={ctx.families.get(ticket.id)} onOpenTicket={onOpen} />
+        jobs={ctx.jobs} onOpenJobs={ctx.onOpenJobs} addOn={ctx.addOns.get(ticket.id)} family={ctx.families.get(ticket.id)} onOpenTicket={onOpen} via={ctx.via?.get(ticket.id)} />
     </div>
   );
 }
@@ -237,13 +239,14 @@ const collision: CollisionDetection = (args) => {
 
 const NO_HUDDLES: Huddle[] = [];
 
-export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, huddles = NO_HUDDLES, onOpenHuddle, slug, onTag, jobs, onOpenJobs, allTickets }: Props) {
+export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, huddles = NO_HUDDLES, onOpenHuddle, slug, onTag, jobs, onOpenJobs, allTickets, via }: Props) {
   const linked = allTickets ?? tickets;
   const addOns = useMemo(() => addOnLinks(linked), [linked]);
-  const families = useMemo(() => cardFamilies(linked), [linked]);
+  // Tool tickets (with you ones too) aren't counted as linked tickets: the main card's "N tickets" chip counts them.
+  const families = useMemo(() => cardFamilies(linked.filter((t) => !t.tool)), [linked]);
   const ctx = useMemo(() => ({
-    huddles, onOpenHuddle, limit: slug ? { slug, onError: (msg: string) => toast(msg, { tone: "error" }) } : undefined, onTag, jobs, onOpenJobs, addOns, families,
-  }), [huddles, onOpenHuddle, slug, onTag, jobs, onOpenJobs, addOns, families]);
+    huddles, onOpenHuddle, limit: slug ? { slug, onError: (msg: string) => toast(msg, { tone: "error" }) } : undefined, onTag, jobs, onOpenJobs, addOns, families, via,
+  }), [huddles, onOpenHuddle, slug, onTag, jobs, onOpenJobs, addOns, families, via]);
   const phone = usePhone();
   const sensors = useSensors(
     // Phones: long-press picks a card up, so a swipe still scrolls the board.

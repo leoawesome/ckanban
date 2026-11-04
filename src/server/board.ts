@@ -25,7 +25,7 @@ import { canEndQuietly, quietContext } from "./quiet";
 import { addHuddleSpend } from "./spend";
 import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "./prompts";
 import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
-import { ASK_TIMEOUT_MS, checkinDue, checkinLimits, checkinLine, finishedLine, isManager, kindDefaults, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, type FamilyCounts } from "./main-ticket";
+import { ASK_TIMEOUT_MS, checkinDue, familyCard, type FamilyCard, checkinLimits, checkinLine, finishedLine, isManager, kindDefaults, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, type FamilyCounts } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
 import { chatPrompt, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
@@ -443,7 +443,7 @@ export class Board {
     const t = this.store.getTicket(slug, id);
     if (!t) return false;
     const a = ticketAttention(this.store, slug, t, t.sessionId ? this.sessionSummary(t.sessionId) ?? null : null, this.isRunning(slug, id),
-      this.hostHuddles(slug).get(id));
+      this.hostHuddles(slug).get(id), (x) => this.isRunning(slug, x));
     return !!a && a.kind !== "review";
   }
 
@@ -1322,8 +1322,11 @@ export class Board {
     if (run.chat?.followUp && asks && (base.status === "done" || base.status === "backlog")) base.status = "review";
     // A tool ticket whose merges into the main ticket's copy failed MERGE_TRIES times hasn't landed anything: blocked.
     const unmerged = !!current.tool && (current.mergeFails ?? 0) >= MERGE_TRIES && (result?.status ?? "done") === "done";
+    // A tool ticket whose work is finished (and merged, where it merges) is Done: it has no card to review.
+    const toolDone = !!current.tool && !unmerged && (result?.status ?? "done") === "done" && !run.targetStatus && !this.huddleOpen(slug, id);
     this.patch(slug, id, {
       ...base,
+      ...(toolDone ? { status: "done" } : {}),
       outcome: unmerged ? "blocked" : result?.status === "questions" ? "needs_input" : result?.status ?? "done",
       ...(result?.status === "questions" ? { interviewed: true } : {}),
       // A planner wake-up reports its children's PRs; the planner keeps its own.
@@ -2293,7 +2296,10 @@ export class Board {
       const checkin = this.checkinStep(slug, planner, plan);
       if (checkin !== plan.checkin) plan.checkin = checkin;
     }
-    const held = !!plan.checkin?.due;
+    // A main ticket parked in Backlog or Done: no new tool ticket starts and it isn't woken (running ones finish, queued
+    // ones wait); moving it back to In progress lets them go on.
+    const parked = !!planner.main && (planner.status === "backlog" || planner.status === "done");
+    const held = !!plan.checkin?.due || parked;
     if (!held) for (const cid of step.start) this.patch(slug, cid, { status: "ready", mode: "auto", outcome: null, error: null });
     if (step.events.length) {
       plan.inbox = [...(plan.inbox ?? []), ...step.events.map((e) => e.line)];
@@ -2462,7 +2468,26 @@ export class Board {
     }
   }
 
+  /**
+   * Delete a ticket. A main ticket takes its tool tickets with it (their runs stop and their copies go, as for any
+   * deleted ticket); the rest of its family stays, unlinked. Refused while a merge into its copy runs.
+   */
   async deleteTicket(slug: string, id: string): Promise<void> {
+    const t0 = this.store.getTicket(slug, id);
+    if (t0?.main) {
+      if (this.merging(slug, id)) throw new Error("Wait a moment: a merge is running");
+      // Deepest first, so a group never outlives its children.
+      for (const o of this.toolTickets(slug, id).reverse()) {
+        if (this.store.getTicket(slug, o.id)) await this.deleteOne(slug, o.id);
+      }
+    } else if (t0?.tool) {
+      const main = this.mainOf(slug, t0);
+      if (main && this.merging(slug, main.id)) throw new Error("Wait a moment: a merge is running");
+    }
+    await this.deleteOne(slug, id);
+  }
+
+  private async deleteOne(slug: string, id: string): Promise<void> {
     const active = this.runs.get(this.key(slug, id));
     if (active) {
       this.stopRun(active);
@@ -2870,6 +2895,21 @@ export class Board {
     return this.patch(slug, id, { plan: { ...t.plan, checkin, state: "paused" } });
   }
 
+  /** What a main ticket's card shows of its family (main-ticket.ts familyCard). */
+  familyCard(slug: string, id: string): FamilyCard | null {
+    const all = this.store.listTickets(slug);
+    const main = all.find((t) => t.id === id);
+    if (!main?.main) return null;
+    const family = familyOf(all, id).map((r) => r.ticket).filter((t) => t.id !== id);
+    let cost = 0;
+    for (const t of [main, ...family]) {
+      try {
+        cost += this.costOf(slug, t.id);
+      } catch {}
+    }
+    return familyCard(main, family, all, (x) => this.isRunning(slug, x), Math.round(cost * 100) / 100);
+  }
+
   /** How many of a main ticket's tool tickets are working now (its card shows In progress meanwhile). */
   familyWorking(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
     let n = 0;
@@ -2901,6 +2941,7 @@ export class Board {
       kind: "tool", repo: session.repo, parent: { id: parent.id, title: parent.title }, main: { id: main.id, title: main.title },
       goal: saved?.goal?.trim() || main.title, statusPath, depReports: deps,
       mainBranch: session.inPlace ? null : main.branch ?? null, outputDir: this.store.outputsDir(slug, t.id),
+      ...(t.kind === "with_you" ? { withYou: true } : {}),
     } satisfies ToolRole;
   }
 
@@ -3385,6 +3426,40 @@ export class Board {
     run.stopRequested = true;
     run.handle?.stop();
     this.setups.get(this.key(run.slug, run.id))?.abort.abort();
+  }
+
+  /** A main ticket's tool tickets (hidden and with you), from familyOf. */
+  toolTickets(slug: string, mainId: string, tickets = this.store.listTickets(slug)): Ticket[] {
+    return familyOf(tickets, mainId).map((r) => r.ticket).filter((t) => t.id !== mainId && t.tool);
+  }
+
+  /** Stop a main ticket and its running tool tickets (other family members are left alone). How many tool tickets stopped. */
+  stopFamily(slug: string, id: string): { stopped: boolean; tools: number } {
+    const stopped = this.stop(slug, id);
+    let tools = 0;
+    const t = this.store.getTicket(slug, id);
+    if (t?.main) {
+      for (const o of this.toolTickets(slug, id)) {
+        if (this.isRunning(slug, o.id) || o.status === "in_progress") {
+          if (this.stop(slug, o.id)) tools++;
+        } else if (o.status === "ready") {
+          // Queued to start: back to waiting (Backlog), so nothing new starts behind the user's Stop.
+          this.patch(slug, o.id, { status: "backlog" });
+        }
+      }
+      // Nothing new starts behind the user's Stop: the plan pauses until it is resumed (or the main ticket starts it).
+      const now = this.store.getTicket(slug, id);
+      if (now?.plan && (now.plan.state === "running" || now.plan.state === "finishing")) {
+        this.patch(slug, id, { plan: { ...now.plan, state: "paused", awaiting: null } });
+        this.store.addComment(slug, id, "ai", `Stopped by you with ${tools} running tool ticket${tools === 1 ? "" : "s"}; the plan is paused until it is resumed.`);
+      }
+    }
+    return { stopped: stopped || tools > 0, tools };
+  }
+
+  /** A merge_into_main into this main ticket's copy is running. */
+  merging(slug: string, mainId: string): boolean {
+    return this.mergeLocks.has(this.key(slug, mainId));
   }
 
   stop(slug: string, id: string): boolean {

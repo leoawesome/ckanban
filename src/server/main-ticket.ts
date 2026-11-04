@@ -2,7 +2,7 @@
 // A main ticket is the conversation the user started: it talks, decides and keeps the feature's status, and never edits
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
-import { familyState, groupSummary, type TicketKind } from "../../web/src/family";
+import { familyState, groupSummary, hiddenTool, type TicketKind } from "../../web/src/family";
 import type { CheckIn, Plan, Ticket } from "./types";
 
 /** Model and effort a tool ticket gets from its kind when create_ticket leaves them out. */
@@ -14,6 +14,7 @@ export const KIND_DEFAULTS: Record<TicketKind, { model: string; effort: string }
   fix: { model: "claude-opus-5-5", effort: "medium" },
   group: { model: "claude-sonnet-5-5", effort: "low" },
   round: { model: "claude-sonnet-5-5", effort: "low" },
+  with_you: { model: "claude-sonnet-5-5", effort: "medium" },
 };
 
 export function kindDefaults(kind: string | null | undefined): { model: string; effort: string } | null {
@@ -142,4 +143,109 @@ export function progressStep(plan: Pick<Plan, "progressSig" | "noProgress">, sig
   const same = plan.progressSig != null && plan.progressSig === sig;
   const noProgress = same ? (plan.noProgress ?? 0) + 1 : 0;
   return { progressSig: sig, noProgress, stuck: noProgress >= NO_PROGRESS_WAKES };
+}
+
+// ---- The main ticket's card: one card per feature (tool tickets have none) ----
+
+/** Refusal for notify_user in a tool ticket (with_you ones may ping the user). */
+export const TOOL_NO_NOTIFY = "Tool tickets report to their main ticket; end your run with your question instead.";
+
+const KIND_WORD: Partial<Record<TicketKind, string>> = { explore: "Explore", build: "Build", test: "Test", review: "Review", fix: "Fix", with_you: "With you" };
+
+/** How the card names a step: its title, led by its kind unless the title already says it ("Test: checkout sign-in"). */
+export function stepName(t: Pick<Ticket, "title" | "kind">): string {
+  const word = t.kind ? KIND_WORD[t.kind] : undefined;
+  if (!word || t.title.toLowerCase().startsWith(word.toLowerCase())) return t.title;
+  return `${word}: ${t.title}`;
+}
+
+/** Why a tool ticket waits (it ended and only its main ticket or the user can move it on), or null. */
+export interface StepWait {
+  id: string;
+  /** "Test: checkout sign-in asks a question" */
+  label: string;
+  attention: "questions" | "failed" | "blocked" | "limit";
+  since: string;
+}
+
+export function stepWait(t: Ticket, running: boolean): StepWait | null {
+  if (running || t.status === "done" || t.status === "ready" || t.status === "in_progress" || t.status === "backlog") return null;
+  const since = t.runEndedAt ?? t.updatedAt;
+  const at = (why: string, attention: StepWait["attention"]): StepWait => ({ id: t.id, label: `${stepName(t)} ${why}`, attention, since });
+  if (t.outcome === "needs_input") return at("asks a question", "questions");
+  // A failure says why in a few words (its error's last line), so the user needn't open the tool ticket.
+  const why = (t.error ?? "").trim().split("\n").findLast((l) => l.trim())?.trim();
+  if (t.outcome === "failed") return at(why ? `failed: ${clip(why, 80)}` : "failed", "failed");
+  if (t.outcome === "blocked") return at(t.capHit ? `stopped at its $${t.capHit.capUsd.toFixed(2)} cap` : "is blocked", "blocked");
+  if (t.outcome === "limit" && !t.limit?.auto) return at("hit the usage limit", "limit");
+  return null;
+}
+
+/** The main card's working line: warn for a step that needs the user, a failure, stuck or paused. */
+export interface FamilyLine {
+  text: string;
+  tone: "work" | "warn";
+  /** Paused on a usage limit: when it resumes (the card adds "resumes at 15:00"). */
+  until?: string | null;
+}
+
+/** What a main ticket's card shows of its family. */
+export interface FamilyCard {
+  /** Its tool tickets (hidden and with you). */
+  tools: number;
+  /** Titles of the tool tickets working or queued now (the chip's hover). */
+  running: string[];
+  /** What the whole family spent so far (main ticket included). */
+  costUsd: number;
+  line: FamilyLine | null;
+  /** The oldest step waiting on a decision the main ticket hasn't made yet (or passes on to the user). */
+  waiting: StepWait | null;
+}
+
+/**
+ * The main card's summary. family: every ticket below the main one (familyOf order); all: the board, for groups'
+ * children. The working line names the current step: one that needs the user, then failed or stuck, then paused, then
+ * the most recently started working group or ticket ("Testing round 2: 4 of 6 done").
+ */
+export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], running: (id: string) => boolean, costUsd: number): FamilyCard {
+  const tools = family.filter((t) => t.tool);
+  const busy = (t: Ticket) => running(t.id) || t.status === "ready" || t.status === "in_progress";
+  const startedAt = (t: Ticket) => t.runStartedAt ?? t.lastRunAt ?? t.updatedAt;
+  const working = tools.filter(busy);
+  const newestStart = working.reduce((m, t) => (startedAt(t) > m ? startedAt(t) : m), "");
+  // Steps the main ticket hasn't seen yet (it ran before they ended), or any when it passes a question on to the user.
+  const seenUntil = main.runEndedAt ?? "";
+  const waits = tools.filter(hiddenTool).map((t) => stepWait(t, running(t.id))).filter((w): w is StepWait => !!w)
+    .sort((a, b) => a.since.localeCompare(b.since));
+  const mainAsks = !running(main.id) && (main.outcome === "needs_input" || main.outcome === "blocked" || main.plan?.state === "stuck");
+  const waiting = waits.find((w) => w.since > seenUntil) ?? (mainAsks ? waits[0] ?? null : null);
+  let line: FamilyLine | null = null;
+  if (waiting) line = { text: waiting.label, tone: "warn" };
+  if (!line && main.plan?.state === "stuck") line = { text: `Stuck: ${clip(oneLine(main.plan.reason ?? "no progress"), 140)}`, tone: "warn" };
+  if (!line) {
+    const stalled = working.find((t) => t.stalled);
+    if (stalled) line = { text: `Stuck: ${stepName(stalled)} has had no output for ${stalled.stalled!.minutes} min`, tone: "warn" };
+  }
+  if (!line) {
+    // A failure the main ticket hasn't moved past: nothing started since it ended.
+    const failed = waits.filter((w) => w.attention !== "questions" && w.since > newestStart).at(-1);
+    if (failed) line = { text: failed.label, tone: "warn" };
+  }
+  if (!line) {
+    const paused = tools.filter((t) => t.outcome === "limit" && t.limit?.auto && t.status !== "done" && !running(t.id))
+      .sort((a, b) => a.limit!.resetAt.localeCompare(b.limit!.resetAt))[0];
+    if (paused) line = { text: "Paused: usage limit", tone: "warn", until: paused.limit!.resetAt };
+    else if (main.outcome === "limit" && main.limit?.auto && !running(main.id)) line = { text: "Paused: usage limit", tone: "warn", until: main.limit.resetAt };
+  }
+  if (!line && working.length) {
+    const top = [...working].sort((a, b) => startedAt(b).localeCompare(startedAt(a)))[0];
+    // The step's group (a level-1 group or round) speaks for it: "Testing round 2: 4 of 6 done".
+    const isGroup = (g: Ticket) => g.kind === "group" || g.kind === "round";
+    const group = isGroup(top) ? top : top.parentId && top.parentId !== main.id ? family.find((g) => g.id === top.parentId && isGroup(g)) : undefined;
+    if (group) {
+      const kids = all.filter((c) => c.parentId === group.id || c.partOf === group.id);
+      line = { text: `${group.title}: ${groupSummary(kids.map((c) => ({ kind: c.kind, state: familyState({ ...c, running: running(c.id) } as any) })))}`, tone: "work" };
+    } else line = { text: stepName(top), tone: "work" };
+  }
+  return { tools: tools.length, running: working.map((t) => stepName(t)), costUsd, line, waiting };
 }

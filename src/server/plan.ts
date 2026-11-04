@@ -150,6 +150,12 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
       if (t.kind && BUILD_KINDS.has(t.kind) && !planActive(t.plan)) building++;
       continue;
     }
+    // A "with you" tool ticket waiting for the user's answer is the user's turn, not its parent's: no event (the parent
+    // mustn't answer for the user), and it counts as at work, so the plan isn't stuck meanwhile.
+    if (managed && t.tool && t.kind === "with_you" && t.outcome === "needs_input" && t.status !== "done") {
+      active++;
+      continue;
+    }
     let ev: PlanEvent | null = null;
     if (managed) {
       // Every result reaches the parent once per run: done (with or without a PR), failed, blocked, questions.

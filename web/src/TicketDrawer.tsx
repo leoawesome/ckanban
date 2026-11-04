@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, runningTools, stopTitle, toolCount } from "./familyActions";
 import { api, COLUMNS, safeHref, startWorkTarget, subscribe, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "./api";
 import { boardColumnOf, menuPick, STATUS_MENU } from "./columns";
 import { PANEL_LEAVE_MS, reducedMotion } from "./motion";
@@ -439,7 +440,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const revertTitle = useRef(false);
   // Leaving for the neighbouring ticket: keep a title edit, and don't drop an unsaved description edit.
   const step = (id: string | null | undefined) => {
-    if (!id || !nav || editing || confirmDelete || confirmStart || confirmBranch || moveBoard !== null || confirmStop || picking || reportingBug) return;
+    if (!id || !nav || editing || confirmDelete || confirmStart || confirmBranch || moveBoard !== null || confirmStop || confirmPark || picking || reportingBug) return;
     if (title !== ticket.title) saveTitle();
     nav.go(id);
   };
@@ -465,6 +466,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const working = ticket.status === "in_progress" || !!ticket.running;
+  // A main ticket whose tool tickets work: Stop stops them (and it) after a confirm.
+  const familyBusy = runningTools(ticket) > 0;
   const att = working ? null : ticket.attention ?? null;
   const finish = useFinishMark(working, ticket);
   // Where "Your turn" leads: the header's reason and the main button both open it (goTo).
@@ -588,7 +591,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   // Marked Done: on to the next ticket of the column the drawer walks, or back to the board after its last one,
   // at once rather than after the save, so a close in the meantime can't be undone by a late jump.
   // The drawer may be gone when the save fails, so the error goes to the board's toast.
-  const setStatus = (status: Status) => {
+  // A main ticket with tool tickets: Backlog and Done hold its family, after one confirm.
+  const [confirmPark, setConfirmPark] = useState<"backlog" | "done" | null>(null);
+  const setStatus = (status: Status, confirmed = false) => {
+    if (!confirmed && parkNeedsConfirm(ticket, status)) return setConfirmPark(status as "backlog" | "done");
     if (status !== "done" || ticket.status === "done") return act(() => api.updateTicket(slug, ticket.id, { status }));
     const title = ticket.title;
     api.updateTicket(slug, ticket.id, { status }).catch((e) => toast(<>Couldn't mark <b>{title}</b> done: {e.message}</>, { tone: "error" }));
@@ -679,7 +685,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   };
   // ⌘. / Ctrl+.: Stop Claude, after a confirm; also while typing.
   const stopKeyRef = useRef(() => {});
-  stopKeyRef.current = () => { if (working && !stopping) setConfirmStop(true); };
+  stopKeyRef.current = () => { if ((working || familyBusy) && !stopping) setConfirmStop(true); };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isStopKey(e) || document.querySelector(".overlay")) return;
@@ -745,7 +751,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           {goal && !working && (
             <button className="btn primary goal-btn" onClick={goTo} title={`${att!.label}: show me where`}>{goal.button}</button>
           )}
-          {working && <button className="btn danger" disabled={stopping} onClick={stop} title={`Stop Claude (${MOD}.)`}>{stopping ? "Stopping…" : "Stop Claude"}<KeyHint keys="⌘." /></button>}
+          {working && !familyBusy && <button className="btn danger" disabled={stopping} onClick={stop} title={`Stop Claude (${MOD}.)`}>{stopping ? "Stopping…" : "Stop Claude"}<KeyHint keys="⌘." /></button>}
+          {familyBusy && <button className="btn danger" disabled={stopping} onClick={() => setConfirmStop(true)} title={`Stop this ticket and its running tool tickets (${MOD}.)`}>{stopping ? "Stopping…" : "Stop"}<KeyHint keys="⌘." /></button>}
           {finished && <PlanFinished ticket={ticket} total={children.length} onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />}
           {!working && !finished && (ticket.status === "backlog" || ticket.status === "planning") && (
             <button className={`btn ${goal ? "" : "primary"}`}
@@ -1088,10 +1095,23 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           </ConfirmDialog>
         )}
         {confirmStop && (
-          <ConfirmDialog title="Stop Claude?" confirmLabel="Stop Claude" busyLabel="Stopping…"
+          <ConfirmDialog title={stopTitle(ticket)} confirmLabel={familyBusy ? "Stop all" : "Stop Claude"} busyLabel="Stopping…"
             onCancel={() => setConfirmStop(false)}
-            onConfirm={() => { if (working) stop(); setConfirmStop(false); }}>
-            <p>Claude stops working on this ticket now. You can start it again later.</p>
+            onConfirm={async () => {
+              if (familyBusy) await api.stop(slug, ticket.id);
+              else if (working) stop();
+              setConfirmStop(false);
+            }}>
+            {familyBusy
+              ? <p>Its running tool tickets stop now and queued ones don't start. Tickets you added to the feature keep going. {`$${ticket.familyCard!.costUsd.toFixed(2)}`} spent so far.</p>
+              : <p>Claude stops working on this ticket now. You can start it again later.</p>}
+          </ConfirmDialog>
+        )}
+        {confirmPark && (
+          <ConfirmDialog title={parkTitle(ticket, confirmPark)} confirmLabel={confirmPark === "done" ? "Move to Done" : "Move to Backlog"} busyLabel="Moving…" tone="primary"
+            onCancel={() => setConfirmPark(null)}
+            onConfirm={() => { const to = confirmPark; setConfirmPark(null); setStatus(to, true); }}>
+            <p>{parkText(ticket)}</p>
           </ConfirmDialog>
         )}
         {confirmBranch && (
@@ -1118,9 +1138,11 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           <BugReportDialog ticket={{ profile: slug, id: ticket.id, title: ticket.title }} onClose={() => setReportingBug(false)} />
         )}
         {confirmDelete && (
-          <ConfirmDialog title={`Delete "${ticket.title}"?`} confirmLabel="Delete ticket" busyLabel="Deleting…" onCancel={() => setConfirmDelete(false)}
+          <ConfirmDialog title={deleteTitle(ticket)} confirmLabel={toolCount(ticket) ? "Delete all" : "Delete ticket"} busyLabel="Deleting…" onCancel={() => setConfirmDelete(false)}
             onConfirm={async () => { await api.deleteTicket(slug, ticket.id); onClose(); }}>
-            <p>Removes the ticket and its board history.{working ? " Claude will be stopped." : ""}</p>
+            {toolCount(ticket) > 0
+              ? <p>Work that isn't merged is lost. Their copies of the folder go too; tickets you added to the feature stay, unlinked.</p>
+              : <p>Removes the ticket and its board history.{working ? " Claude will be stopped." : ""}</p>}
             {ticket.worktree && <p className="muted">Its copy of the folder is removed if it has no unsaved changes. Its saved versions and any pull request stay.</p>}
           </ConfirmDialog>
         )}

@@ -1,10 +1,11 @@
 // Recall: a short brief of related past tickets for a run's first prompt, so Claude doesn't redo or undo earlier
 // work on the same topic. Plain word matching over the board's own tickets; no model call.
 import type { Ticket } from "./types";
+import { hiddenTool } from "../../web/src/family";
 
 /** A ticket on the board with its last result summary (null: none reported yet). */
 export interface RecallRow {
-  ticket: Pick<Ticket, "id" | "title" | "body" | "status" | "parentId" | "lastRunAt" | "updatedAt" | "runCount">;
+  ticket: Pick<Ticket, "id" | "title" | "body" | "status" | "parentId" | "lastRunAt" | "updatedAt" | "runCount"> & Partial<Pick<Ticket, "tool" | "kind">>;
   summary: string | null;
 }
 
@@ -58,7 +59,8 @@ export function pickRelated(t: Pick<Ticket, "id" | "title" | "body" | "parentId"
   const others = rows.filter((r) => r.ticket.id !== t.id && r.ticket.parentId !== t.id);
   const pinnedIds = [t.parentId, t.addOnOf, t.partOf].filter((x): x is string => !!x);
   const pinned = pinnedIds.map((id) => others.find((r) => r.ticket.id === id)).filter((r): r is RecallRow => !!r);
-  const pool = others.filter((r) => !pinnedIds.includes(r.ticket.id) && worked(r));
+  // Tool tickets report to their main ticket, which is recalled for them.
+  const pool = others.filter((r) => !pinnedIds.includes(r.ticket.id) && worked(r) && !hiddenTool(r.ticket));
   const query = weights(t.title, t.body);
   if (!query.size || !pool.length) return pinned.slice(0, RECALL_MAX);
   const docs = pool.map((r) => ({ r, w: weights(r.ticket.title, `${r.ticket.body}\n${r.summary ?? ""}`) }));

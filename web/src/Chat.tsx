@@ -34,6 +34,7 @@ import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
 import { StatusBlock, StatusNoteView, useFeatureStatus } from "./StatusBlock";
 import { ResultCardView } from "./ResultCardView";
+import { hiddenTool } from "./family";
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
@@ -1061,6 +1062,13 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
               Sending here works, but if you type in both places at once the two conversations can get mixed up.
             </div>
           )}
+        </div>
+      )}
+      {hiddenTool(ticket) && (
+        <div className="tool-note" role="note">
+          {ticket.mainTicket
+            ? <><button className="link-btn" onClick={() => onOpenTicket?.(ticket.mainTicket!.id)}>{ticket.mainTicket.title}</button> is in charge of this.</>
+            : "Its feature is in charge of this."} What you say here is passed to it.
         </div>
       )}
       <div className="composer">

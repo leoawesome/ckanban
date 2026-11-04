@@ -1,5 +1,6 @@
 // `ckanban profiles`, `ckanban ticket ...` and `ckanban mcp ...`: the board from a terminal or another agent.
 import { readFileSync } from "node:fs";
+import { hiddenTool } from "../web/src/family";
 import {
   assertCanChange, BoardClient, RUN_ENV, bugReportText, ClientError, deviceTakeText, parseMode, parseStatus, profileList, resolveProfile, runProfile,
   ticketLine, ticketText, type TicketPatch,
@@ -9,7 +10,7 @@ import { normalizeTags } from "./server/tags";
 import { setupBlock, type SetupOutcome } from "./server/worktree-setup";
 
 export const TICKET_USAGE = `  ckanban profiles     List boards (profiles) and their folders
-  ckanban ticket list [--status <s>]
+  ckanban ticket list [--status <s>] [--include-tool]
   ckanban ticket show <id>
   ckanban ticket create --title <t> [--body <md> | --body-file <f>] [--status <s>] [--mode interview|auto] [--needs <r1,r2>] [--tags <t1,t2>]
   ckanban ticket update <id> [--title <t>] [--body <md> | --body-file <f>] [--status <s>] [--mode <m>] [--needs <r1,r2>] [--tags <t1,t2>]
@@ -38,7 +39,7 @@ export const TICKET_USAGE = `  ckanban profiles     List boards (profiles) and t
   ckanban mcp uninstall [--claude] [--codex]
   ckanban mcp status   Show where the MCP server is registered`;
 
-const BOOLEAN_FLAGS = new Set(["json", "claude", "codex", "no-logs"]);
+const BOOLEAN_FLAGS = new Set(["json", "claude", "codex", "no-logs", "include-tool"]);
 
 export interface ParsedArgs {
   positional: string[];
@@ -145,7 +146,9 @@ export async function ticketCommand(argv: string[], io: CliIo = defaultIo()): Pr
 
   switch (action) {
     case "list": {
+      // Tool tickets have no card and report to their main ticket: listed only with --include-tool.
       let ts = await c.listTickets(slug);
+      if (!p.flags["include-tool"]) ts = ts.filter((t) => !hiddenTool(t));
       const status = flagStr(p, "status");
       if (status) {
         const s = parseStatus(status);

@@ -6,7 +6,7 @@ import { jsonObject } from "./learn";
 import { addSideSpend, type SideCaller } from "./side-call";
 import type { Store } from "./store";
 import type { Ticket } from "./types";
-import { parentLink, wouldLoop } from "../../web/src/family";
+import { hiddenTool, parentLink, wouldLoop } from "../../web/src/family";
 
 /** Tickets a suggestion may point at: every open one, plus Done ones touched in the last RECENT_DAYS days. */
 export const RECENT_DAYS = 30;
@@ -99,7 +99,8 @@ export class Linker {
   async suggest(slug: string, id: string): Promise<void> {
     const t = this.store.getTicket(slug, id);
     if (!t || t.parentChecked || parentLink(t) || t.branchedFrom) return;
-    const list = candidates(this.store.listTickets(slug).filter((o) => o.id !== id), this.now());
+    // Tool tickets have no card: never suggested as a parent.
+    const list = candidates(this.store.listTickets(slug).filter((o) => o.id !== id && !hiddenTool(o)), this.now());
     if (!list.length) {
       this.board.suggestParent(slug, id, null);
       return;
@@ -116,7 +117,7 @@ export class Linker {
 
   /** Find links: suggested parents for the board's open and recent tickets that have none. Changes nothing. */
   async find(slug: string): Promise<{ links: LinkSuggestion[]; checked: number }> {
-    const list = candidates(this.store.listTickets(slug), this.now());
+    const list = candidates(this.store.listTickets(slug).filter((o) => !hiddenTool(o)), this.now());
     if (list.length < 2) return { links: [], checked: list.length };
     const r = await this.sideCall({ system: FIND_SYSTEM, prompt: findPrompt(list), model: FIND_MODEL, timeoutMs: 240_000 });
     if (!r.ok) throw new Error(r.error);

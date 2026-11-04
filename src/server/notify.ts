@@ -5,6 +5,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { mainTicketOf } from "../../web/src/family";
 import { type AttentionKind, type HostHuddle, ticketAttention } from "./attention";
 import type { Bus } from "./events";
 import { run as runCmd } from "./git";
@@ -296,7 +297,14 @@ export class Notifier {
     let stopped = false;
     let timer: ReturnType<typeof setInterval> | null = null;
     const off = this.bus.on((e) => {
-      if (e.type === "ticket.updated") this.dirty.add(`${e.profile}/${e.ticket.id}`);
+      if (e.type === "ticket.updated") {
+        this.dirty.add(`${e.profile}/${e.ticket.id}`);
+        // A tool ticket's question or failure shows on its main ticket: look at that one again too.
+        if (e.ticket.tool) {
+          const main = mainTicketOf(this.store.listTickets(e.profile), e.ticket.id);
+          if (main) this.dirty.add(`${e.profile}/${main.id}`);
+        }
+      }
       else if (e.type === "session.updated") this.dirty.add(`${e.profile}/${e.id}`);
       else if (e.type === "huddle.updated" && e.huddle.hostTicket) this.dirty.add(`${e.profile}/${e.huddle.hostTicket}`);
       else if (e.type === "ticket.deleted") this.tracker.forget(`${e.profile}/${e.id}`);
@@ -345,7 +353,7 @@ export class Notifier {
     const t = this.store.getTicket(slug, id);
     if (!t) return null;
     const s = t.sessionId ? this.o.sessionSummary(t.sessionId) : null;
-    return ticketAttention(this.store, slug, t, s, this.o.isRunning(slug, id), this.o.hostHuddles(slug).get(id))?.kind ?? null;
+    return ticketAttention(this.store, slug, t, s, this.o.isRunning(slug, id), this.o.hostHuddles(slug).get(id), (x) => this.o.isRunning(slug, x))?.kind ?? null;
   }
 
   private fire(slug: string, id: string, kind: AttentionKind) {
@@ -355,7 +363,7 @@ export class Notifier {
     const p = this.store.getProfile(slug);
     if (!t || !p) return;
     const s = t.sessionId ? this.o.sessionSummary(t.sessionId) : null;
-    const att = ticketAttention(this.store, slug, t, s, this.o.isRunning(slug, id), this.o.hostHuddles(slug).get(id));
+    const att = ticketAttention(this.store, slug, t, s, this.o.isRunning(slug, id), this.o.hostHuddles(slug).get(id), (x) => this.o.isRunning(slug, x));
     void this.send(settings, {
       board: slug, boardName: p.name, ticketId: id, title: t.title, kind, label: att?.label ?? kind, url: this.link(slug, id),
     });

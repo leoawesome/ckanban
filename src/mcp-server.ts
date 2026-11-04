@@ -1,5 +1,7 @@
 // `ckanban mcp`: a stdio MCP server (newline-delimited JSON-RPC 2.0) exposing the board as tools.
 // Hand-rolled instead of @modelcontextprotocol/sdk: we only need initialize, tools/list and tools/call.
+import { hiddenTool } from "../web/src/family";
+import { TOOL_NO_NOTIFY } from "./server/main-ticket";
 import {
   assertCanChange, BoardClient, bugReportText, ClientError, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
   familyLine, ticketLine, ticketText, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
@@ -730,7 +732,7 @@ const PLANNING_TOOLS: Tool[] = [
       const own = ctx.env[RUN_ENV]?.split("/");
       if (own?.[0] && own[1]) {
         const t = await Promise.resolve().then(() => ctx.client.getTicket(own[0], own[1])).catch(() => null);
-        if (t?.tool) throw new ClientError(TOOL_NO_QUESTIONS);
+        if (hiddenTool(t)) throw new ClientError(TOOL_NO_QUESTIONS);
       }
       const e = questionsError(args);
       if (e) throw new ClientError(`${e}. Fix it and call ask_questions again.`);
@@ -1516,13 +1518,21 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "list_tickets",
-    description: "List tickets on a board with id, column and title. Call this before create_ticket to avoid duplicates.",
-    inputSchema: { type: "object", properties: { profile: PROFILE, status: { ...STATUS, description: "Only this column." } } },
+    description: "List tickets on a board with id, column and title. Call this before create_ticket to avoid duplicates. " +
+      "Tool tickets (the ones a main ticket made to do its work; they have no card) are left out unless includeTool is true.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profile: PROFILE, status: { ...STATUS, description: "Only this column." },
+        includeTool: { type: "boolean", description: "true: also list tool tickets. get_family lists one feature's tool tickets." },
+      },
+    },
     annotations: { readOnlyHint: true },
     changes: false,
     async run(args, ctx) {
       const slug = await slugFor(args, ctx);
       let ts = await ctx.client.listTickets(slug);
+      if (args?.includeTool !== true) ts = ts.filter((t) => !hiddenTool(t));
       if (args?.status) {
         const s = parseStatus(args.status);
         ts = ts.filter((t) => t.status === s);
@@ -1628,9 +1638,11 @@ export const TOOLS: Tool[] = [
         needs: NEEDS,
         tags: TAGS,
         kind: {
-          type: "string", enum: ["explore", "build", "test", "review", "fix", "group", "round"],
+          type: "string", enum: ["explore", "build", "test", "review", "fix", "group", "round", "with_you"],
           description: "What the ticket is for. test: it checks whether something works and ends with a verdict. group: holds other tickets of a feature. " +
-            "round: a testing round of a feature; the board titles it \"Testing round N\" and puts it right under the feature.",
+            "round: a testing round of a feature; the board titles it \"Testing round N\" and puts it right under the feature. " +
+            "with_you: a step that needs the user live (a phone test, an approval): unlike other tool tickets it gets its own card, may ask the user " +
+            "with ask_questions in its own chat and may call notify_user; its result still comes back to you.",
         },
         partOf: {
           type: "string",
@@ -1640,7 +1652,7 @@ export const TOOLS: Tool[] = [
         model: {
           type: "string",
           description: "Model for its runs, e.g. \"claude-sonnet-5-5\" or \"opus\". Inside a main ticket, leave it out to use the kind's default " +
-            "(explore, test, review: Sonnet 5.5; build, fix: Opus 5.5; group, round: Sonnet 5.5).",
+            "(explore, test, review, with_you: Sonnet 5.5; build, fix: Opus 5.5; group, round: Sonnet 5.5).",
         },
         effort: {
           type: "string", enum: ["low", "medium", "high", "xhigh", "max"],
@@ -1832,6 +1844,8 @@ export const TOOLS: Tool[] = [
       const own = runTicketId(ctx);
       if (!own) throw new ClientError("notify_user works inside a board run or ticket chat, on its own ticket");
       const slug = await slugFor(args, ctx);
+      const me = await Promise.resolve().then(() => ctx.client.getTicket(slug, own)).catch(() => null);
+      if (hiddenTool(me)) throw new ClientError(TOOL_NO_NOTIFY);
       const r = await ctx.client.notifyUser(slug, own, str(args, "message")!, ctx.env[RUN_ENV]);
       return messageResultText(r);
     },

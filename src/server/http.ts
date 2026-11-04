@@ -9,7 +9,7 @@ import { FollowUpError } from "./followup";
 import { claudeDefaults, findClaude, listClaudeProjects, listSessions, liveSessionMatch, pickFolder, processCommands } from "./claude";
 import type { Bus, BusEvent } from "./events";
 import { EFFORT_HELP, listCommands, MODEL_HELP, validEffort, validModel } from "./commands";
-import { isManager, kindDefaults } from "./main-ticket";
+import { isManager, kindDefaults, TOOL_NO_NOTIFY } from "./main-ticket";
 import { addPrs } from "./prs";
 import { DiffError, folderDiff, ticketDiff } from "./diff";
 import { detectBaseBranch, enableVersionHistory, hasUncommittedChanges, isGitRepo, repoKind, resolveBaseBranch, which } from "./git";
@@ -60,7 +60,7 @@ import { changesPrompt, HELP_KINDS, Helper, HelpError, newId, recapAvailable, re
 import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, UsageCache, windowsNeeded } from "./ticket-usage";
 import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
-import { familyOf, familyRoot, groupsOf, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
+import { familyOf, familyRoot, groupsOf, hiddenTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
 import { STATUS_FIELDS, type StatusPatch } from "./feature";
 import { createdFromDraft } from "../../web/src/proposalMatch";
 import type { Store } from "./store";
@@ -505,7 +505,7 @@ export function createServer(deps: ServerDeps) {
     const running = board.isRunning(p.slug, t.id);
     const session = t.sessionId ? sessions.summary(t.sessionId) : null;
     const huddle = hosts.get(t.id);
-    const { attention, snoozed } = withSnooze(t, session, ticketAttention(store, p.slug, t, session, running, huddle), Date.now(), huddle);
+    const { attention, snoozed } = withSnooze(t, session, ticketAttention(store, p.slug, t, session, running, huddle, (x) => board.isRunning(p.slug, x)), Date.now(), huddle);
     return {
       ...t,
       running,
@@ -539,7 +539,12 @@ export function createServer(deps: ServerDeps) {
       /** Spending cap its next work run gets (null: none). */
       runCap: runCapFor(t, p),
       /** A main ticket: its tool tickets working now (the card shows In progress meanwhile, wherever the user put it). */
-      ...(t.main ? { familyWorking: board.familyWorking(p.slug, t.id) } : {}),
+      ...(t.main ? { familyWorking: board.familyWorking(p.slug, t.id), familyCard: board.familyCard(p.slug, t.id) } : {}),
+      /** A "with you" tool ticket's main ticket: its card's "↳ feature" chip; any tool ticket's chat names it. */
+      ...(t.tool ? { mainTicket: (() => {
+        const m = board.mainOf(p.slug, t);
+        return m ? { id: m.id, title: m.title } : null;
+      })() } : {}),
     };
   };
 
@@ -802,6 +807,10 @@ export function createServer(deps: ServerDeps) {
             profile: p.slug, profileName: p.name, id: t.id, title: t.title, status: t.status,
             running: board.isRunning(p.slug, t.id), updatedAt: t.updatedAt,
             body: cap(t.body), summary: cap(store.lastAiComment(p.slug, t.id)), prUrl: t.prUrl,
+            ...(hiddenTool(t) ? { mainTicket: (() => {
+              const main = board.mainOf(p.slug, t) ?? familyRoot(store.listTickets(p.slug), t.id);
+              return main && main.id !== t.id ? { id: main.id, title: main.title } : null;
+            })() } : {}),
           });
         }
       }
@@ -1731,8 +1740,17 @@ export function createServer(deps: ServerDeps) {
           const { planner } = target.tool ? runRights(req, slug, target) : {};
           if (!planner || !isManager(planner)) throw new HttpError(403, "deleting tickets is disabled inside a board run");
         }
+        const doomed = store.getTicket(slug, id)!;
+        const main = doomed.main ? doomed : doomed.tool ? board.mainOf(slug, doomed) : null;
+        if (main && board.merging(slug, main.id)) throw new HttpError(409, "Wait a moment: a merge is running");
+        // A main ticket takes its tool tickets with it (Board.deleteTicket): their huddles close too.
+        for (const o of doomed.main ? board.toolTickets(slug, id) : []) huddles.closeForTicket(slug, o.id);
         huddles.closeForTicket(slug, id);
-        await board.deleteTicket(slug, id);
+        try {
+          await board.deleteTicket(slug, id);
+        } catch (e) {
+          throw new HttpError(409, (e as Error).message);
+        }
         return new Response(null, { status: 204 });
       }
     }
@@ -1852,7 +1870,7 @@ export function createServer(deps: ServerDeps) {
       const t = store.getTicket(slug, id)!;
       const session = t.sessionId ? sessions.summary(t.sessionId) : null;
       const huddle = board.hostHuddles(slug).get(id);
-      const att = ticketAttention(store, slug, t, session, board.isRunning(slug, id), huddle);
+      const att = ticketAttention(store, slug, t, session, board.isRunning(slug, id), huddle, (x) => board.isRunning(slug, x));
       if (!att) throw new HttpError(409, "this ticket doesn't need you, nothing to snooze");
       const until = new Date(Date.now() + hours * 3600_000).toISOString();
       return json(view(profile, board.setSnooze(slug, id, { until, key: snoozeKey(t, session, att, huddle) })));
@@ -1906,6 +1924,7 @@ export function createServer(deps: ServerDeps) {
     if (action === "notify" && m === "POST" && parts.length === 5) {
       const caller = req.headers.get(RUN_HEADER);
       if (caller !== `${slug}/${id}` || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the ticket's own Claude sends it a notification, from its run or chat");
+      if (hiddenTool(store.getTicket(slug, id))) throw new HttpError(403, TOOL_NO_NOTIFY);
       const b = (await body(req)) ?? {};
       if (typeof b.message !== "string") throw new HttpError(400, "message is required");
       try {
@@ -2170,7 +2189,8 @@ export function createServer(deps: ServerDeps) {
       // A message the user typed (not a slash command) reached Claude: a pending follow-up hears about it, and stops if it was set to.
       if (!req.headers.get(RUN_HEADER) && !text.startsWith("/")) board.userReplied(slug, id);
       // The user wrote in a tool ticket: its parent hears the whole message before its next decision.
-      if (!req.headers.get(RUN_HEADER) && !req.headers.get(HUDDLE_HEADER) && t.tool) board.noteUserMessage(slug, id, text);
+      // A "with you" ticket is the user's own live step: its chat stays there, and its result reaches the main ticket.
+      if (!req.headers.get(RUN_HEADER) && !req.headers.get(HUDDLE_HEADER) && hiddenTool(t)) board.noteUserMessage(slug, id, text);
       if (requester) store.addComment(slug, id, "ai", `Message sent ${byRequest(requester)}.`);
       if (runner) store.addComment(slug, id, "ai", `Message sent ${byRun(runner)}.`);
       if (guest) store.addComment(slug, id, "ai", `Message sent ${byGuest(guest)}.`);
@@ -2330,7 +2350,13 @@ export function createServer(deps: ServerDeps) {
       }
     }
     if (m === "POST" && action === "stop") {
-      const { planner, requester, runner, guest } = runRights(req, slug, store.getTicket(slug, id)!);
+      const target = store.getTicket(slug, id)!;
+      const { planner, requester, runner, guest } = runRights(req, slug, target);
+      // The user's Stop on a main ticket stops its running tool tickets too.
+      if (target.main && !req.headers.get(RUN_HEADER)) {
+        const r = board.stopFamily(slug, id);
+        return json({ stopped: r.stopped, tools: r.tools });
+      }
       const stopped = board.stop(slug, id);
       if (planner && stopped) store.addComment(slug, id, "ai", "Planner stopped this run.");
       if (requester && stopped) store.addComment(slug, id, "ai", `Run stopped ${byRequest(requester)}.`);

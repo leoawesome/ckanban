@@ -317,6 +317,20 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .step-age { flex: none; white-space: pre; font-variant-numeric: tabular-nums; }
 .step-age.quiet { color: var(--warn); font-weight: 600; }
 .card.is-quiet .spinner { animation-duration: 2s; }
+/* A main ticket's working line: the current step of its feature; Paused, Stuck or a step that needs you in amber. */
+.card-family-line {
+  display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: var(--fs-xs); color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.card-family-line .spinner { flex: none; }
+.card-family-line.warn { color: var(--warn); font-weight: 600; }
+.card-via { margin-top: 3px; font-size: var(--fs-2xs); color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge.fam { background: var(--surface-2); color: var(--muted); cursor: default; }
+.badge.with-you { border: 1px solid var(--warn); color: var(--warn); background: transparent; }
+.badge.part-of-feature { background: var(--info-soft); color: var(--info); border: 0; cursor: pointer; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+/* A tool ticket's chat: its feature is in charge. */
+.tool-note { margin: 8px 12px 0; padding: 6px 10px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); }
+.tool-note button { font-weight: 600; }
 .card-meta { display: flex; align-items: center; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
 .card-time { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
 

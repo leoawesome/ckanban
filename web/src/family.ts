@@ -134,9 +134,34 @@ export function cardFamilies<T extends FamilyTicket>(tickets: T[]): Map<string, 
 
 // ---- Features (a big piece of work followed from its top ticket; see feature.ts on the server) ----
 
-/** What a ticket is for, set when it is created. group: holds other tickets; round: a testing round. Old tickets have none. */
-export type TicketKind = "explore" | "build" | "test" | "review" | "fix" | "group" | "round";
-export const TICKET_KINDS: TicketKind[] = ["explore", "build", "test", "review", "fix", "group", "round"];
+/**
+ * What a ticket is for, set when it is created. group: holds other tickets; round: a testing round; with_you: a tool
+ * ticket that needs the user live (a phone test, an approval), so it keeps its own card. Old tickets have none.
+ */
+export type TicketKind = "explore" | "build" | "test" | "review" | "fix" | "group" | "round" | "with_you";
+export const TICKET_KINDS: TicketKind[] = ["explore", "build", "test", "review", "fix", "group", "round", "with_you"];
+
+/**
+ * A tool ticket the board hides: no card, no column count, no Your turn; it lives in its main ticket's Family tab and
+ * reports there. "With you" tool tickets need the user live, so they keep a card. Old plan children have no tool flag.
+ */
+export const hiddenTool = (t: { tool?: boolean; kind?: string | null } | null | undefined): boolean => !!t?.tool && t.kind !== "with_you";
+
+/** The ticket a tool ticket works for: its nearest main ancestor, else its family's top ticket. */
+export function mainTicketOf<T extends FamilyTicket & { main?: boolean }>(tickets: T[], id: string): T | undefined {
+  const byId = new Map(tickets.map((t) => [t.id, t]));
+  const seen = new Set<string>();
+  let cur = byId.get(id);
+  let top = cur;
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    if (cur.main && cur.id !== id) return cur;
+    top = cur;
+    const p = parentIn(byId, cur);
+    cur = p?.parent;
+  }
+  return top && top.id !== id ? top : undefined;
+}
 
 /** Deepest level a new link may make (the feature's top ticket is level 0). */
 export const MAX_LEVEL = 2;

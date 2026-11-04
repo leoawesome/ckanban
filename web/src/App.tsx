@@ -25,6 +25,10 @@ import { useUsage } from "./useUsage";
 import { anyLayerOpen } from "./layers";
 import { Board } from "./Board";
 import { boardColumnOf, columnNeighbours, columnOrder } from "./columns";
+import { hiddenTool } from "./family";
+import { searchBoard } from "./toolTickets";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { parkNeedsConfirm, parkText, parkTitle } from "./familyActions";
 import { NewTicketDialog } from "./NewTicketDialog";
 import { ProfileDialog } from "./ProfileDialog";
 import { SchedulesDialog } from "./SchedulesDialog";
@@ -441,7 +445,7 @@ export function App() {
   const workingIds = useRef<Set<string>>(new Set());
   const ranOutTimer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
-    const now = new Set(tickets.filter((t) => t.status === "in_progress" || t.running).map((t) => t.id));
+    const now = new Set(tickets.filter((t) => !hiddenTool(t) && (t.status === "in_progress" || t.running)).map((t) => t.id));
     const ended = [...workingIds.current].some((id) => !now.has(id) && tickets.some((t) => t.id === id));
     workingIds.current = now;
     if (!ended || !document.hidden) return;
@@ -678,8 +682,11 @@ export function App() {
   const q = search.text;
   const tagsWanted = [...new Set([...tagFilter, ...search.tags])];
   const activeFilters = FILTERS.filter((f) => filters.has(f.id));
-  const shownTickets = tickets.filter((t) =>
-    (!q || `${t.title}\n${t.body}`.toLowerCase().includes(q)) && hasTags(t, tagsWanted) && (!activeFilters.length || activeFilters.some((f) => f.test(t))));
+  // Tool tickets have no card: a search that finds one shows its main ticket's card, "via" the tool ticket.
+  const visibleTickets = useMemo(() => tickets.filter((t) => !hiddenTool(t)), [tickets]);
+  const { shown: shownTickets, via: searchVia } = useMemo(() => searchBoard(tickets, (t) => !q || `${t.title}\n${t.body}`.toLowerCase().includes(q),
+    (t) => hasTags(t, tagsWanted) && (!activeFilters.length || activeFilters.some((f) => f.test(t))), !!q),
+  [tickets, query, tagFilter, filters]);
   const filtering = !!q || tagsWanted.length > 0 || activeFilters.length > 0;
   // Prev/next walk the visible tickets of the column the drawer opened in, in its order at that time, so
   // moving the open ticket (e.g. Planning to Done) keeps Next in Planning, and the ends of the column stop
@@ -715,9 +722,15 @@ export function App() {
     },
   }), [profiles, slug]);
 
-  const move = async (id: string, status: Status, order?: number, undo = true) => {
+  // A feature card (main ticket with tool tickets) dragged to Backlog or Done: one confirm first (familyActions.ts).
+  const [parkAsk, setParkAsk] = useState<{ id: string; status: "backlog" | "done"; order?: number } | null>(null);
+  const move = async (id: string, status: Status, order?: number, undo = true, confirmed = false) => {
     const board = slug!;
     const before = tickets.find((t) => t.id === id);
+    if (!confirmed && before && parkNeedsConfirm(before, status)) {
+      setParkAsk({ id, status: status as "backlog" | "done", order });
+      return;
+    }
     // You moved it yourself: it isn't "new" where it lands.
     clearArrival(id);
     setTickets((ts) => ts.map((t) => (t.id === id ? { ...t, status, ...(order === undefined ? {} : { order }) } : t)));
@@ -763,7 +776,7 @@ export function App() {
       if (e.type === "learned.updated" && (e.profile === slug || e.profile === null)) load();
     });
   }, [slug]);
-  const queued = tickets.filter((t) => t.status === "ready" || waitsForSlot(t)).length;
+  const queued = visibleTickets.filter((t) => t.status === "ready" || waitsForSlot(t)).length;
   const ticketsLoaded = !!slug && loadedSlug === slug;
   // Mid width (not a phone): the tool buttons live in ⋯ so New ticket always fits.
   const toolsInMenu = useMedia(TOOLS_IN_MENU_QUERY) && !phone;
@@ -1122,7 +1135,7 @@ export function App() {
             </div>
             <div className="filter-chips" role="group" aria-label="Filter tickets">
               {FILTERS.map((f) => {
-                const n = tickets.filter(f.test).length;
+                const n = visibleTickets.filter(f.test).length;
                 return (
                   <button key={f.id} className={`chip${filters.has(f.id) ? " on" : ""}`} aria-pressed={filters.has(f.id)} onClick={() => toggleFilter(f.id)}>
                     {f.label}{n > 0 && <span className="chip-count">{n}</span>}
@@ -1133,7 +1146,7 @@ export function App() {
             </div>
             {filtering && (
               <span className="muted small" aria-live="polite">
-                {shownTickets.length} of {tickets.length} ticket{tickets.length === 1 ? "" : "s"}
+                {shownTickets.length} of {visibleTickets.length} ticket{visibleTickets.length === 1 ? "" : "s"}
                 {" · "}<button className="link-btn small" onClick={() => { clearSearch(); setFilters(new Set()); }}>Clear all</button>
               </span>
             )}
@@ -1148,7 +1161,7 @@ export function App() {
           )}
           <Board tickets={shownTickets} loading={!ticketsLoaded} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
             huddles={huddles} onOpenHuddle={openHuddle} slug={slug ?? undefined} onTag={addTagFilter}
-            jobs={jobs ?? undefined} onOpenJobs={openSchedules} allTickets={tickets} />
+            jobs={jobs ?? undefined} onOpenJobs={openSchedules} allTickets={tickets} via={searchVia} />
         </>
       )}
       {phone && profile && (
@@ -1210,6 +1223,17 @@ export function App() {
           onOpenConnections={() => { setAutomationsOpen(false); setConnections(true); }} />
       )}
       {snippetsOpen && profile && <SnippetsDialog profile={profile} onClose={() => setSnippetsOpen(false)} />}
+      {parkAsk && (() => {
+        const t = tickets.find((x) => x.id === parkAsk.id);
+        if (!t) return null;
+        return (
+          <ConfirmDialog title={parkTitle(t, parkAsk.status)} confirmLabel={parkAsk.status === "done" ? "Move to Done" : "Move to Backlog"} tone="primary"
+            onCancel={() => setParkAsk(null)}
+            onConfirm={() => { const a = parkAsk; setParkAsk(null); void move(a.id, a.status, a.order, true, true); }}>
+            <p>{parkText(t)}</p>
+          </ConfirmDialog>
+        );
+      })()}
       {findLinksOpen && profile && <FindLinksDialog slug={profile.slug} tickets={tickets} onClose={() => setFindLinksOpen(false)} />}
       {open && profile && <TicketDrawer key={open.id} profile={profile} ticket={open} tickets={tickets} onOpenTicket={openTicket} onClose={closeTicket} moveTo={moveTo}
         jobs={jobs ?? []} onOpenJobs={openSchedules}

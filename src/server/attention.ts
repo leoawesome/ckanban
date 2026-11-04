@@ -1,3 +1,5 @@
+import { familyOf, hiddenTool } from "../../web/src/family";
+import { stepWait, type StepWait } from "./main-ticket";
 import { childrenOf, isComplete, planActive } from "./plan";
 import type { SessionSummary } from "./session";
 import type { Store } from "./store";
@@ -58,10 +60,31 @@ export function lastChange(t: Ticket, s: SessionSummary | null): string {
  * managed: the ticket is a child of a running plan, so its planner, not the user, handles it.
  * planComplete: every child of this ticket's plan is finished, so a stuck plan no longer needs the user.
  * huddle: the ticket's own open huddle; while it works the ticket doesn't need the user unless the huddle asks.
+ * step: a main ticket's oldest tool ticket waiting on a decision (main-ticket.ts stepWait), when the main ticket hasn't
+ * dealt with it yet or passes it on to the user: the main card names it ("Test: checkout sign-in asks a question").
  */
 export function attentionFor(
   t: Ticket, s: SessionSummary | null, running: boolean,
-  o: { createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null } = {},
+  o: { createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null; step?: StepWait | null } = {},
+): Attention | null {
+  // A tool ticket is its main ticket's business: its questions, failures and limits show on the main card instead.
+  if (hiddenTool(t)) return null;
+  const own = ownAttention(t, s, running, o);
+  const step = o.step;
+  if (!t.main || !step || t.status === "done" || t.status === "backlog") return own;
+  // The main ticket passes a step's question on (or its plan stopped there): name the step.
+  if (own && (own.kind === "questions" || own.kind === "blocked" || own.kind === "failed") && own.label !== "Keep going?") return { ...own, label: step.label };
+  if (running || (own && own.kind !== "review" && own.kind !== "reply")) return own;
+  // A step ended and the main ticket hasn't run since (and won't be woken for it): the main card names it until it does.
+  const unseen = step.since > (t.runEndedAt ?? "");
+  const willWake = (t.plan?.state === "running" || t.plan?.state === "finishing") && (!!t.plan.awaiting || !!t.plan.inbox?.length);
+  if (unseen && !willWake) return { kind: step.attention, label: step.label, since: step.since };
+  return own;
+}
+
+function ownAttention(
+  t: Ticket, s: SessionSummary | null, running: boolean,
+  o: { createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null },
 ): Attention | null {
   // A follow-up the board saw too late to wake (computer asleep, board off) waits for the user in any column: Claude
   // meant to come back, and only the user can say whether that still makes sense.
@@ -106,8 +129,9 @@ export function attentionFor(
  * Titles of every ticket on the board but `self`, trimmed and case-folded the way sameTitle compares them, plus the title
  * each of self's children was proposed with (it may have been renamed since).
  */
-export function boardTitles(tickets: Pick<Ticket, "id" | "title" | "parentId" | "proposedAs">[], self: string): Set<string> {
-  const others = tickets.filter((c) => c.id !== self);
+export function boardTitles(tickets: Pick<Ticket, "id" | "title" | "parentId" | "proposedAs" | "tool" | "kind">[], self: string): Set<string> {
+  // Tool tickets have no card: a proposal isn't "already on the board" because a hidden tool ticket has its title.
+  const others = tickets.filter((c) => c.id !== self && !hiddenTool(c));
   return new Set([
     ...others.map((c) => titleKey(c.title)),
     ...others.filter((c) => c.parentId === self && c.proposedAs).map((c) => titleKey(c.proposedAs!)),
@@ -120,19 +144,34 @@ export const titleKey = (title: string) => title.trim().replace(/\s+/g, " ").toL
 /** attentionFor with its options read from the board; the other tickets are only listed when they matter. */
 export function ticketAttention(
   store: Store, slug: string, t: Ticket, s: SessionSummary | null, running: boolean, huddle?: HostHuddle | null,
+  isRunning: (id: string) => boolean = () => false,
 ): Attention | null {
   const planComplete = () => {
     const kids = childrenOf(store.listTickets(slug), t.id);
     return kids.length > 0 && kids.every(isComplete);
   };
+  if (hiddenTool(t)) return null;
   return attentionFor(t, s, running, {
     createdTitles: s?.pendingNewTickets.length ? boardTitles(store.listTickets(slug), t.id) : undefined,
     createdKeys: s?.pendingNewTickets.length
       ? new Set(childrenOf(store.listTickets(slug), t.id).flatMap((c) => (c.planKey && !c.proposedAs ? [c.planKey] : []))) : undefined,
-    managed: t.parentId ? planActive(store.getTicket(slug, t.parentId)?.plan) : false,
+    // A "with you" tool ticket needs the user live: its own Your turn shows even while its main ticket's plan runs.
+    managed: t.parentId && t.kind !== "with_you" ? planActive(store.getTicket(slug, t.parentId)?.plan) : false,
+    step: t.main ? oldestStep(store.listTickets(slug), t.id, isRunning) : undefined,
     planComplete: t.plan?.state === "stuck" ? planComplete() : undefined,
     huddle,
   });
+}
+
+/** A main ticket's oldest hidden tool ticket that waits on a decision, or null. */
+export function oldestStep(tickets: Ticket[], mainId: string, running: (id: string) => boolean): StepWait | null {
+  let best: StepWait | null = null;
+  for (const r of familyOf(tickets, mainId)) {
+    if (r.ticket.id === mainId || !hiddenTool(r.ticket)) continue;
+    const w = stepWait(r.ticket, running(r.ticket.id));
+    if (w && (!best || w.since < best.since)) best = w;
+  }
+  return best;
 }
 
 /** How long Snooze in the Inbox hides a ticket. */

@@ -367,6 +367,10 @@ export interface Ticket {
   results?: ResultCard[];
   /** A main ticket: its tool tickets working now (the card shows In progress meanwhile). */
   familyWorking?: number;
+  /** A main ticket: what its card shows of the family (tool tickets have no card). */
+  familyCard?: FamilyCardInfo | null;
+  /** A tool ticket: the main ticket it works for (a "with you" card's chip, the chat's note). */
+  mainTicket?: { id: string; title: string } | null;
   /** A test ticket's result. */
   verdict?: "passed" | "problem" | null;
   /** On a feature's top ticket: when its "Where we are" status last changed. */
@@ -1258,6 +1262,15 @@ export interface InboxItem {
   snoozedUntil?: string;
 }
 
+/** What a main ticket's card shows of its family (src/server/main-ticket.ts familyCard). */
+export interface FamilyCardInfo {
+  tools: number;
+  running: string[];
+  costUsd: number;
+  line: { text: string; tone: "work" | "warn"; until?: string | null } | null;
+  waiting: { id: string; label: string; attention: string; since: string } | null;
+}
+
 /** A ticket on any board, as the ⌘K command bar lists it. */
 export interface TicketRow {
   profile: string;
@@ -1271,6 +1284,9 @@ export interface TicketRow {
   /** Its last result summary (Claude's last comment), capped. */
   summary: string;
   prUrl: string | null;
+  /** A hidden tool ticket: its main ticket, whose card the bar shows instead ("via" this one). */
+  mainTicket?: { id: string; title: string } | null;
+  via?: string;
 }
 
 export type BugBlockId = "env" | "ticket" | "log";
