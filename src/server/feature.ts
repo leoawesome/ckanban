@@ -32,6 +32,8 @@ export interface SavedStatus extends Partial<Record<StatusField, string | null>>
   claudeAt?: string | null;
   /** The family as it was at Claude's last update_status (familySig): the board nudges once it has changed. */
   familySig?: string | null;
+  /** Milestones the main ticket landed (land_milestone), oldest first. */
+  milestones?: { at: string; summary: string; landed: string }[];
 }
 
 export type StatusPatch = Partial<Record<StatusField, string | null>> & { prNotes?: Record<string, string | null> };
@@ -199,6 +201,7 @@ export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key
   const youFacts = f.needsYou.length ? `[${f.needsYou.length}: ${f.needsYou.map((b) => b.title).join("; ")}]` : null;
   push("waiting", "Waiting on you", youFacts, saved?.waiting);
   push("prs", "Pull requests", f.prs.map((p) => `${p.number ? `#${p.number}` : p.url} ${p.ticketTitle} · ${p.state === "open" ? "open" : p.state}${p.note ? ` · ${p.note}` : ""}`).join("\n"));
+  push("milestones", "Milestones landed", (saved?.milestones ?? []).slice(-5).map((m) => `${m.at.slice(0, 10)}: ${m.summary} (${m.landed})`).join("\n"));
   push("next", "Next step", saved?.next);
   return out;
 }
@@ -207,7 +210,7 @@ export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key
 export function statusMarkdown(top: Pick<Ticket, "id" | "title">, saved: SavedStatus | null, f: StatusFacts): string {
   const lines = [`# Where we are: ${top.title}`, "", `Feature ticket ${top.id}, ${f.size} tickets. Updated ${saved?.updatedAt ?? "never"}.`, ""];
   for (const s of statusSections(saved, f)) {
-    lines.push(`## ${s.label}`, "", s.key === "prs" ? s.text.split("\n").map((l) => `- ${l}`).join("\n") : s.text, "");
+    lines.push(`## ${s.label}`, "", s.key === "prs" || s.key === "milestones" ? s.text.split("\n").map((l) => `- ${l}`).join("\n") : s.text, "");
   }
   if (saved?.notes?.length) {
     lines.push("## Notes from the user", "", ...saved.notes.map((n) => `- ${n.at.slice(0, 10)}: ${n.text}`), "");

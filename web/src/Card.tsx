@@ -10,6 +10,7 @@ import { jobChip } from "./jobText";
 import { KeyHint } from "./KeyHint";
 import { CapActions } from "./CapActions";
 import { capWait } from "./capText";
+import { CheckinActions } from "./CheckinActions";
 import { LimitActions } from "./LimitActions";
 import { StallActions, stallWait } from "./StallActions";
 import { limitLabel, limitWait } from "./limitText";
@@ -273,7 +274,8 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
       )}
       {(badge || finish || signInChip || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.devices || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp) && (
         <div className="card-meta" id={a11yId && `${a11yId}-meta`}>
-          {ticket.plan && ticket.plan.state !== "done" && (
+          {/* A main ticket's plan runs in the background: its card shows In progress instead, unless it stopped. */}
+          {ticket.plan && ticket.plan.state !== "done" && !(ticket.main && (ticket.plan.state === "running" || ticket.plan.state === "finishing")) && (
             <span className={`badge plan ${ticket.plan.state}`} title="This ticket runs a plan of child tickets">
               Plan {ticket.plan.state === "finishing" ? "final check" : ticket.plan.state}
             </span>
@@ -317,6 +319,12 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
           {lastAt && !working && (
             <time className="card-time" dateTime={lastAt} title={fullTime(lastAt)}>{timeAgo(lastAt)}</time>
           )}
+        </div>
+      )}
+      {ticket.plan?.checkin?.due && (
+        <div className="card-checkin">
+          <div className="checkin-line">{ticket.plan.checkin.due.line}</div>
+          {limit && !dragging && <CheckinActions slug={limit.slug} ticket={ticket} onError={limit.onError} small />}
         </div>
       )}
       {limit && !dragging && limitWait(ticket) && <LimitActions slug={limit.slug} ticket={ticket} onError={limit.onError} small />}

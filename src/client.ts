@@ -77,6 +77,11 @@ export interface TicketInfo {
   feature?: boolean;
   /** What the ticket is for (explore, build, test, review, fix, group, round). */
   kind?: string | null;
+  model?: string | null;
+  effort?: string | null;
+  /** A main ticket, or a tool ticket of one (main-ticket.ts). */
+  main?: boolean;
+  tool?: boolean;
   addOnOf?: string | null;
   planKey?: string | null;
   dependsOn?: string[];
@@ -353,12 +358,21 @@ export class BoardClient {
   // `run` (a board run's CKANBAN_TICKET): the daemon only lets a running plan's planner change its own children.
   createTicket = (
     slug: string,
-    input: { title: string; body?: string; status?: Status; mode?: TicketMode; planKey?: string; dependsOn?: string[]; needs?: string[]; tags?: string[]; partOf?: string; kind?: string },
+    input: { title: string; body?: string; status?: Status; mode?: TicketMode; planKey?: string; dependsOn?: string[]; needs?: string[]; tags?: string[]; partOf?: string; kind?: string; model?: string; effort?: string },
     run?: string | null,
   ) => this.req<TicketInfo>("POST", this.t(slug), input, this.by(run));
   // From a run, only the planner's own plan, and only with planner rights (see Board.plannerRights).
   planAction = (slug: string, id: string, action: "start" | "resume", run?: string | null) =>
     this.req<TicketInfo>("POST", `${this.t(slug, id)}/plan`, { action }, this.by(run));
+  /** ask_ticket: a fork of another ticket's session answers; the answer reaches the asker (id) as an event. */
+  askTicket = (slug: string, id: string, target: string, question: string, run?: string | null) =>
+    this.req<{ message: string }>("POST", `${this.t(slug, id)}/ask`, { target, question }, this.by(run));
+  /** merge_into_main: fast-forwards the main ticket's copy to this tool ticket's branch. */
+  mergeIntoMain = (slug: string, id: string, run?: string | null) =>
+    this.req<{ message: string }>("POST", `${this.t(slug, id)}/merge-into-main`, {}, this.by(run), true);
+  /** land_milestone: lands the main ticket's copy (push and PR, or a merge into the folder). */
+  landMilestone = (slug: string, id: string, summary: string, run?: string | null) =>
+    this.req<{ message: string }>("POST", `${this.t(slug, id)}/land`, { summary }, this.by(run), true);
   /** update_status: the feature's "Where we are" (only the sections named change); returns the whole status as markdown. */
   updateStatus = (slug: string, id: string, patch: Record<string, unknown>, run?: string | null) =>
     this.req<{ topId: string; title: string; markdown: string }>("POST", `${this.t(slug, id)}/status`, patch, this.by(run));

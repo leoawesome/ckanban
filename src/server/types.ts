@@ -58,6 +58,12 @@ export interface Profile {
    * "all", "none", or the names to keep ("Slack"). Missing or unknown: all. See connectors.ts.
    */
   claudeAiConnectors?: "all" | "none" | string[];
+  /** Board setting "Main ticket model": model for main tickets' runs (their own /model still wins). Missing/null: the board's model. */
+  mainModel?: string | null;
+  /** A main ticket's family checks in with the user once it has spent this much since the last check-in. Missing: 25. */
+  checkinUsd?: number | null;
+  /** ...or once it made this many tool tickets since the last check-in. Missing: 30. */
+  checkinTickets?: number | null;
 }
 
 export type Workspace = "worktree" | "folder";
@@ -244,6 +250,24 @@ export interface Ticket {
   startedBy?: { ticketId: string; depth: number; slug?: string } | null;
   /** Set on a planner ticket once its plan was started: the board runs its children unattended. */
   plan?: Plan | null;
+  /**
+   * A main ticket: the conversation the user started for a piece of work. It talks, decides and keeps the status; its
+   * tool tickets do the work (main-ticket.ts). Its runs never edit files. Set when the user creates a ticket on its own.
+   */
+  main?: boolean;
+  /** A tool ticket: made by Claude inside a main ticket's family; runs unattended and reports to its parent. */
+  tool?: boolean;
+  /** Tool tickets' results, shown in this ticket's chat as result cards (oldest first, the last RESULTS_KEEP kept). */
+  results?: ResultCard[];
+  /** A tool ticket's merge_into_main calls that failed since its last merge (3 end it blocked). */
+  mergeFails?: number;
+  /** A tool ticket's commit last fast-forwarded into its main ticket's copy. */
+  merged?: string | null;
+  /**
+   * A main ticket's copy started from this commit: its Changes tab shows everything its tool tickets merged since, also
+   * after milestones landed it in the base branch.
+   */
+  startSha?: string | null;
   /** Chat messages Claude has not read yet, oldest first: sent while it was working, or the one that started its reply. */
   queued?: QueuedMessage[];
   /** A chat reply the daemon cut off by restarting (or held back while a restart waited); recover() resumes it. */
@@ -297,6 +321,23 @@ export interface Ticket {
   createdAt: string;
   updatedAt: string;
   body: string;
+}
+
+/** A tool ticket's result as a card in its parent's chat (see main-ticket.ts). */
+export interface ResultCard {
+  at: string;
+  ticketId: string;
+  title: string;
+  kind?: string | null;
+  outcome: string;
+  verdict?: "passed" | "problem" | null;
+  summary: string;
+  /** Its outputs/report.md, or null when it wrote none. */
+  report: string | null;
+  model?: string | null;
+  costUsd?: number | null;
+  /** Files it changed in the project folder itself (a folder without version history). */
+  folderFiles?: number | null;
 }
 
 /** A pending follow-up: at dueAt the board wakes the ticket's conversation with the note (followup.ts). */
@@ -647,6 +688,19 @@ export interface Plan {
   awaiting?: "event" | "final" | null;
   /** Why the plan is stuck. */
   reason?: string | null;
+  /** A main ticket's plan (main-ticket.ts): the family at the last wake, and wakes in a row since it last changed. */
+  progressSig?: string | null;
+  noProgress?: number;
+  /** A main ticket's check-in: what the family had at the last one, and the one waiting for the user (due). */
+  checkin?: CheckIn | null;
+}
+
+export interface CheckIn {
+  costBase: number;
+  ticketsBase: number;
+  roundsBase: number;
+  /** The family passed a threshold: no tool ticket starts and the main ticket isn't woken until the user answers. */
+  due?: { at: string; line: string } | null;
 }
 
 // ---- Huddles: several Claude sessions working on one ticket in a shared message room (see huddle.ts) ----

@@ -19,6 +19,7 @@ import { DescriptionEditor, useDescriptionCommands } from "./DescriptionEditor";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, FileTextIcon, LinkIcon, SparkIcon } from "./icons";
 import { useImagePaste } from "./imagePaste";
 import { useFocusTrap, useLayer } from "./layers";
+import { takeTab } from "./pendingTab";
 import { drawerTabs, isStopKey, isTyping, nextStep, panelStep, phoneTabs, stepTab, type DrawerTab } from "./keynav";
 import { attentionGoal } from "./attentionGoal";
 import { MoreSheet } from "./PhoneNav";
@@ -334,6 +335,11 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const [baseBody, setBaseBody] = useState(ticket.body);
   const phone = usePhone();
   const [tabPick, setTab] = useState<DrawerTab>(tabRequest?.tab ?? "chat");
+  // A result card's Changes link opens the tool ticket on its Changes tab.
+  useEffect(() => {
+    const asked = takeTab(ticket.id);
+    if (asked) setTab(asked as DrawerTab);
+  }, [ticket.id]);
   // The huddle round picked in the Huddle tab (null: the default one); kept while the drawer stays on this ticket.
   const [huddlePick, setHuddlePick] = useState<string | null>(tabRequest?.huddleId ?? null);
   useEffect(() => {

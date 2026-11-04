@@ -1,5 +1,6 @@
 // Planner orchestration: pure decisions about a plan's children. Board.advancePlans() applies them.
 // Ordering is plain code (no tokens); the planner's Claude session is only woken for events below.
+import { BUILD_KINDS, BUILD_LIMIT, finishedLine } from "./main-ticket";
 import type { Plan, Ticket } from "./types";
 
 export const DEFAULT_MAX_CONCURRENT = 2;
@@ -25,8 +26,12 @@ export function planActive(p: Plan | null | undefined): boolean {
   return p?.state === "running" || p?.state === "finishing";
 }
 
-/** Done, or finished in Review without a PR to merge (repos that push straight to main). */
+/**
+ * Done, or finished in Review without a PR to merge (repos that push straight to main). A ticket whose own plan still
+ * runs (a group with children at work, or between two of its own wakes) is never complete.
+ */
 export function isComplete(t: Ticket): boolean {
+  if (planActive(t.plan)) return false;
   return t.status === "done" || (t.status === "review" && t.outcome === "done" && !t.prUrl);
 }
 
@@ -89,6 +94,8 @@ export interface PlanEvent {
   /** Child state the event is about; the planner hears about each one once. */
   sig: string;
   line: string;
+  /** A tool ticket's result: it also shows as a result card in the planner's chat. */
+  result?: boolean;
 }
 
 export interface PlanStep {
@@ -110,6 +117,12 @@ export interface PlanStep {
 export interface PlanStepOptions {
   /** Why this ticket waits on the user, or null. */
   waitingOnUser?: (t: Ticket) => string | null;
+  /**
+   * A main ticket's (or tool group's) plan: every result is a "finished" event with its summary and report, tool
+   * tickets never wait on the user, and at most BUILD_LIMIT build or fix tickets run at once (no other limit: the
+   * board's run slots cap the rest).
+   */
+  managed?: { summary: (t: Ticket) => string; report: (t: Ticket) => string | null };
 }
 
 /** Hit the usage limit and the board continues it automatically once the limit resets. */
@@ -126,15 +139,25 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
   const events: PlanEvent[] = [];
   let active = 0;
   let awaitingMerge = 0;
+  const managed = opts.managed;
+  let building = 0;
   for (const t of children) {
     // Waiting for a usage limit to reset with an automatic continue coming: still at work, not failed.
-    const busy = running(t.id) || t.status === "ready" || t.status === "in_progress" || waitsOnLimit(t);
+    // A child running a plan of its own (a group) reports once all of its children are finished.
+    const busy = running(t.id) || t.status === "ready" || t.status === "in_progress" || waitsOnLimit(t) || (!!managed && planActive(t.plan));
     if (busy) {
       active++;
+      if (t.kind && BUILD_KINDS.has(t.kind) && !planActive(t.plan)) building++;
       continue;
     }
     let ev: PlanEvent | null = null;
-    if (t.outcome === "failed" || t.outcome === "blocked" || t.outcome === "needs_input" || t.outcome === "limit") {
+    if (managed) {
+      // Every result reaches the parent once per run: done (with or without a PR), failed, blocked, questions.
+      const ended = t.outcome === "done" || t.outcome === "failed" || t.outcome === "blocked" || t.outcome === "needs_input" || t.outcome === "limit";
+      if (ended && t.status !== "backlog" && t.status !== "planning") {
+        ev = { childId: t.id, sig: `${t.runCount}:${t.outcome}:${t.prUrl ?? ""}`, line: finishedLine(t, managed.summary(t), managed.report(t)), result: true };
+      }
+    } else if (t.outcome === "failed" || t.outcome === "blocked" || t.outcome === "needs_input" || t.outcome === "limit") {
       const what = t.outcome === "needs_input" ? "is asking questions" : t.outcome === "failed" ? "failed"
         : t.outcome === "limit" ? "hit the usage limit and won't continue on its own" : "is blocked";
       ev = { childId: t.id, sig: `${t.runCount}:${t.outcome}`, line: `${t.id} "${t.title}" ${what} (${t.status})${lastError(t)}` };
@@ -148,6 +171,8 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
   const userWait: PlanStep["userWait"] = [];
   for (const t of children) {
     if (isComplete(t) || running(t.id) || t.status === "ready" || t.status === "in_progress") continue;
+    // A tool ticket never waits on the user: its questions go to its parent.
+    if (managed && t.tool) continue;
     const reason = opts.waitingOnUser?.(t) ?? null;
     if (reason) userWait.push({ id: t.id, reason });
   }
@@ -158,6 +183,15 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
     if (userWait.some((w) => w.id === t.id)) continue;
     const { deps, missing } = resolveDeps(t, children);
     if (missing.length || !deps.every(isComplete)) continue;
+    if (managed) {
+      // Only build and fix tickets are limited (they change files); the board's run slots cap the rest.
+      if (t.kind && BUILD_KINDS.has(t.kind)) {
+        if (building >= BUILD_LIMIT) continue;
+        building++;
+      }
+      start.push(t.id);
+      continue;
+    }
     if (start.length >= room) continue;
     start.push(t.id);
   }

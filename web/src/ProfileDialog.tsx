@@ -33,6 +33,14 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const maxParallelError = /^\d+$/.test(maxParallelText.trim()) && maxParallel >= 1 && maxParallel <= 20 ? null : "A whole number from 1 to 20";
   const [saving, setSaving] = useState(false);
   const [model, setModel] = useState(profile?.model ?? "");
+  const [mainModel, setMainModel] = useState(profile?.mainModel ?? "");
+  // Check-ins of a main ticket's family: empty means the default ($25, 30 tool tickets).
+  const [checkinUsdText, setCheckinUsdText] = useState(profile?.checkinUsd ? String(profile.checkinUsd) : "");
+  const [checkinTicketsText, setCheckinTicketsText] = useState(profile?.checkinTickets ? String(profile.checkinTickets) : "");
+  const checkinUsd = checkinUsdText.trim() ? Number(checkinUsdText) : null;
+  const checkinTickets = checkinTicketsText.trim() ? Number(checkinTicketsText) : null;
+  const checkinError = (checkinUsd !== null && !(checkinUsd > 0)) || (checkinTickets !== null && !(Number.isInteger(checkinTickets) && checkinTickets > 0))
+    ? "A positive amount and a whole number of tickets (empty: $25 and 30)" : null;
   // "ultracode" saved as the effort (the first version): xhigh with the Ultracode switch on.
   const [effort, setEffort] = useState(profile?.effort === "ultracode" ? "xhigh" : profile?.effort ?? "");
   const [ultracode, setUltracode] = useState(!!profile?.ultracode || profile?.effort === "ultracode");
@@ -111,12 +119,13 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (saving || maxParallelError || capError || (profile && stallError)) return;
+    if (saving || maxParallelError || capError || (profile && (stallError || checkinError))) return;
     setSaving(true);
     try {
       const p = profile
         ? await api.updateProfile(profile.slug, {
           name, path, maxParallel, model: model || null, effort: effort || null, ultracode, autoHuddles, keepAwake, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
+          mainModel: mainModel || null, checkinUsd, checkinTickets,
           claudeAiConnectors: connectorMode === "some" ? keepConnectors : connectorMode,
           // A file typed but not yet added with Enter still counts.
           copyFiles: newFile.trim() && !copyFiles.includes(newFile.trim()) ? [...copyFiles, newFile.trim()] : copyFiles,
@@ -349,6 +358,35 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                 aria-invalid={!!capError} aria-describedby={capError ? "cap-error" : undefined} />
               {capError && <span id="cap-error" className="field-error">{capError}</span>}
             </label>
+            <label>
+              Main ticket model
+              <Select
+                ariaLabel="Main ticket model"
+                value={mainModel}
+                onChange={setMainModel}
+                options={[
+                  { value: "", label: "Same as the board's model" },
+                  ...MODELS.map((m) => ({ value: m, label: m })),
+                  ...(mainModel && !MODELS.includes(mainModel) ? [{ value: mainModel, label: mainModel }] : []),
+                ]}
+              />
+              <span className="muted small">The ticket you talk to. Its tool tickets pick their model by kind; a ticket's own /model still wins.</span>
+            </label>
+            <div className="row two">
+              <label>
+                Check in after ($)
+                <input inputMode="decimal" value={checkinUsdText} onChange={(e) => setCheckinUsdText(e.target.value)} placeholder="25"
+                  aria-invalid={!!checkinError} />
+              </label>
+              <label>
+                or after (tool tickets)
+                <input inputMode="numeric" value={checkinTicketsText} onChange={(e) => setCheckinTicketsText(e.target.value)} placeholder="30"
+                  aria-invalid={!!checkinError} />
+              </label>
+            </div>
+            {checkinError
+              ? <span className="field-error">{checkinError}</span>
+              : <span className="muted small">A main ticket asks "Keep going?" once its work passes either amount, or starts its third testing round.</span>}
             <label>
               Flag a run as stalled after (minutes without output)
               <input type="number" min={0} max={1440} step={1} value={stallText} onChange={(e) => setStallText(e.target.value)}

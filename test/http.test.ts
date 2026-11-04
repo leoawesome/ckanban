@@ -539,6 +539,8 @@ test("inside a board run only a running plan's planner may change tickets, and o
   const post = async (u: string, b: unknown, run?: string, method = "POST") =>
     fetch(u, { method, headers: { "content-type": "application/json", ...(run ? { "x-ckanban-run": run } : {}) }, body: JSON.stringify(b) });
   const planner = (await (await post(tickets, { title: "Plan" })).json()) as any;
+  // An old-style planner (made before main tickets): its plan keeps today's rules (caps, rights per running plan).
+  store.updateTicket(p.slug, planner.id, { main: false });
   const child = (await (await post(tickets, { title: "Child", parentId: planner.id, planKey: "c" })).json()) as any;
   const other = (await (await post(tickets, { title: "Other" })).json()) as any;
   const run = `${p.slug}/${planner.id}`;
@@ -605,6 +607,8 @@ test("the user's chat gives a ticket planner rights over its own children: adopt
   const post = async (u: string, b: unknown, run?: string, method = "POST") =>
     fetch(u, { method, headers: { "content-type": "application/json", ...(run ? { "x-ckanban-run": run } : {}) }, body: JSON.stringify(b) });
   const mgr = (await (await post(tickets, { title: "Manager" })).json()) as any;
+  // An old-style manager (made before main tickets): today's rules.
+  store.updateTicket(p.slug, mgr.id, { main: false });
   const a = (await (await post(tickets, { title: "A" })).json()) as any;
   const b = (await (await post(tickets, { title: "B", needs: ["Emulator"] })).json()) as any;
   expect(b.needs).toEqual(["emulator"]);

@@ -1,6 +1,6 @@
 import { parseConnectorSetting } from "./connectors";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join, normalize, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { routeLabel, track } from "./lag";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "./artifact";
 import { profileFor } from "./cpuprof";
@@ -9,6 +9,8 @@ import { FollowUpError } from "./followup";
 import { claudeDefaults, findClaude, listClaudeProjects, listSessions, liveSessionMatch, pickFolder, processCommands } from "./claude";
 import type { Bus, BusEvent } from "./events";
 import { EFFORT_HELP, listCommands, MODEL_HELP, validEffort, validModel } from "./commands";
+import { isManager, kindDefaults } from "./main-ticket";
+import { addPrs } from "./prs";
 import { DiffError, folderDiff, ticketDiff } from "./diff";
 import { detectBaseBranch, enableVersionHistory, hasUncommittedChanges, isGitRepo, repoKind, resolveBaseBranch, which } from "./git";
 import { checkPr, mergePr, PrError, REFRESH_MIN_MS, refreshPr, resolveConflicts, sendFailures, type PrDeps } from "./prpoller";
@@ -192,6 +194,8 @@ function fileRoots(profile: Profile, t: Ticket, outputs: string): FileRoot[] {
     ...(own && resolve(own) !== resolve(profile.path) ? [{ name: "ticket" as const, dir: own }] : []),
     { name: "project", dir: profile.path },
     { name: "outputs", dir: outputs },
+    // A main ticket's result cards open its tool tickets' reports (Read report).
+    ...[...new Set((t.results ?? []).flatMap((r) => (r.report ? [dirname(r.report)] : [])))].map((dir) => ({ name: "outputs" as const, dir })),
   ];
 }
 
@@ -302,6 +306,8 @@ export function createServer(deps: ServerDeps) {
   const windowsFile = join(store.root, "usage-windows.json");
   const usage = new UsageCache(deps.usage ?? fetchUsage, (r) => recordWindow(windowsFile, r));
   const spend = new SpendIndex(store);
+  // A main ticket's check-in and result cards count what its family spent.
+  board.onCost((s, id) => spend.ticket(s, id).costUsd + huddles.ticketSpend(s, id).costUsd);
   const loops = deps.loops ?? new LoopManager(store, bus, board, passes, {
     now: () => new Date(), sideCall, shimDir: () => ckanbanShim(store.root), port: () => server.port ?? deps.port,
   });
@@ -381,6 +387,12 @@ export function createServer(deps: ServerDeps) {
         `that chat (on ${runSlug}); work runs, plan wake-ups, replies to other tickets and huddle helpers stay on their own board`);
     }
     const mine = runSlug === slug && !!runId && !req.headers.get(HUDDLE_HEADER);
+    // A main ticket (or tool group) manages its own family from every run, whoever started it, in any column.
+    const self = mine && target?.id !== runId ? store.getTicket(slug, runId) : null;
+    if (self && isManager(self)) {
+      const planner = board.plannerRights(slug, runId);
+      if (planner && (!target || inFamily(slug, planner.id, target.id))) return { planner };
+    }
     const requester = mine ? board.userRequestRights(slug, runId) : null;
     if (requester) {
       if (target?.id === requester.id) {
@@ -394,7 +406,7 @@ export function createServer(deps: ServerDeps) {
         "user asks for that in a message they typed in this ticket's chat; otherwise ask the user to change it on the board");
     }
     const planner = mine ? board.plannerRights(slug, runId) : null;
-    if (planner && (!target || target.parentId === planner.id)) return { planner };
+    if (planner && (!target || target.parentId === planner.id || (isManager(planner) && inFamily(slug, planner.id, target.id)))) return { planner };
     const runner = mine ? board.runnerRights(slug, runId) : null;
     if (runner) return { runner };
     if (planner) {
@@ -403,6 +415,12 @@ export function createServer(deps: ServerDeps) {
     throw new HttpError(403, "changing the board is disabled inside a board run that isn't working right now (or is a Planning chat " +
       "without the user's message, a reply to another ticket's question or a huddle helper): only a ticket's active run or chat reply, " +
       "a Planning chat answering the user's message, and a planner on its own child tickets may change other tickets");
+  };
+  /** target is below id in id's family (any link). */
+  const inFamily = (slug: string, id: string, target: string): boolean => {
+    const rows = familyOf(store.listTickets(slug), id);
+    const at = rows.findIndex((r) => r.ticket.id === id);
+    return at >= 0 && rows.some((r, i) => i > at && r.ticket.id === target && rows.slice(at + 1, i + 1).every((x) => x.depth > rows[at].depth));
   };
   /** How a change made for the user from a Planning chat is credited on the changed ticket. */
   const byRequest = (requester: Ticket) => `by the Planning chat of ${requester.id} (user request)`;
@@ -494,6 +512,8 @@ export function createServer(deps: ServerDeps) {
       costUsd: running || t.status === "in_progress" || t.status === "review" ? spend.ticket(p.slug, t.id).costUsd + huddles.ticketSpend(p.slug, t.id).costUsd : null,
       /** Spending cap its next work run gets (null: none). */
       runCap: runCapFor(t, p),
+      /** A main ticket: its tool tickets working now (the card shows In progress meanwhile, wherever the user put it). */
+      ...(t.main ? { familyWorking: board.familyWorking(p.slug, t.id) } : {}),
     };
   };
 
@@ -1013,6 +1033,15 @@ export function createServer(deps: ServerDeps) {
         if (b.baseBranch !== undefined) next.baseBranch = String(b.baseBranch);
         if (b.maxParallel !== undefined) next.maxParallel = Math.max(1, Number(b.maxParallel) || 1);
         if (b.model !== undefined) next.model = b.model || null;
+        if (b.mainModel !== undefined) {
+          if (b.mainModel && !(typeof b.mainModel === "string" && validModel(b.mainModel))) throw new HttpError(400, `"${b.mainModel}" is not a model name. Use ${MODEL_HELP}.`);
+          next.mainModel = b.mainModel || null;
+        }
+        for (const k of ["checkinUsd", "checkinTickets"] as const) {
+          if (b[k] === undefined) continue;
+          if (b[k] !== null && (typeof b[k] !== "number" || !(b[k] > 0) || b[k] > 100000)) throw new HttpError(400, `${k} must be a positive number, or null for the default`);
+          next[k] = b[k] === null ? null : k === "checkinTickets" ? Math.round(b[k]) : b[k];
+        }
         if (b.checkinOfferDismissed !== undefined) next.checkinOfferDismissed = b.checkinOfferDismissed === true;
         if (b.effort !== undefined) {
           if (b.effort && !validEffort(String(b.effort))) throw new HttpError(400, `"${b.effort}" is not an effort level. Use ${EFFORT_HELP}.`);
@@ -1420,15 +1449,18 @@ export function createServer(deps: ServerDeps) {
           // A planner adds children to its own plan; the board starts them when their dependencies are done.
           const kids = store.listTickets(slug).filter((c) => c.parentId === planner.id);
           const running = planActive(planner.plan);
-          // Unattended plans are capped; in the user's chat the user is there to stop it.
-          const cap = running ? 2 * Math.max(1, planner.plan!.originalCount) : Infinity;
+          // Unattended plans are capped; in the user's chat the user is there to stop it. A main ticket's family has no
+          // such cap: its check-ins and no-progress rule stop runaway loops instead.
+          const cap = running && !isManager(planner) ? 2 * Math.max(1, planner.plan!.originalCount) : Infinity;
           if (kids.length >= cap) throw new HttpError(409, `child ticket limit reached (${cap}) for this plan`);
           const missing = (dependsOn ?? []).filter((d) => !kids.some((k) => k.id === d || k.planKey === d));
           if (missing.length) throw new HttpError(400, `unknown dependency ${missing.join(", ")}: use a sibling's ticket id or key`);
           // Children wait in Backlog until the plan starts them; a running plan's children skip the interview.
           [parentId, status] = [planner.id, "backlog"];
-          if (running) mode = "auto";
+          if (running || isManager(planner)) mode = "auto";
         }
+        // A ticket Claude creates inside a main ticket's family is a tool ticket: unattended, never interviewing.
+        const tool = !!planner && isManager(planner);
         if (parentId && !store.getTicket(slug, parentId)) throw new HttpError(400, `parent ticket ${parentId} not found`);
         // Create on a chat's proposed-tickets card: a draft that is already this parent's child (same key or proposed
         // title, even renamed, started or moved since) answers with that ticket instead of making it twice.
@@ -1442,6 +1474,12 @@ export function createServer(deps: ServerDeps) {
         const partOf = typeof b.partOf === "string" && b.partOf ? b.partOf : undefined;
         if (b.kind !== undefined && b.kind !== null && !TICKET_KINDS.includes(b.kind)) throw new HttpError(400, `kind must be one of ${TICKET_KINDS.join(", ")}`);
         const kind: TicketKind | undefined = b.kind ?? undefined;
+        // Model and effort for its runs: from create_ticket inside a run, else a tool ticket's kind decides.
+        if (b.model !== undefined && b.model !== null && !(typeof b.model === "string" && validModel(b.model))) throw new HttpError(400, `"${b.model}" is not a model name. Use ${MODEL_HELP}.`);
+        if (b.effort !== undefined && b.effort !== null && !(typeof b.effort === "string" && validEffort(b.effort))) throw new HttpError(400, `"${b.effort}" is not an effort level. Use ${EFFORT_HELP}.`);
+        const defaults = tool ? kindDefaults(kind) : null;
+        const model: string | null = (typeof b.model === "string" && b.model) || defaults?.model || null;
+        const effort: string | null = (typeof b.effort === "string" && b.effort) || defaults?.effort || null;
         const fromRun = req.headers.get(RUN_HEADER)?.split("/");
         // Made by a schedule's run: what that schedule raised for the user (its next quiet runs follow up on it).
         const runTicket = fromRun?.[0] === slug && fromRun[1] && !req.headers.get(HUDDLE_HEADER) ? store.getTicket(slug, fromRun[1]) : null;
@@ -1457,18 +1495,30 @@ export function createServer(deps: ServerDeps) {
           if (!ok) throw new HttpError(403, "from a board run, partOf can only be the run's own ticket (use partOfThisTicket), an open feature's top ticket or one of its groups");
         }
         const startedBy = runner && startsRun(status) ? runStart(slug, runner) : guest && startsRun(status) ? guestStart(guest) : null;
+        // The user's own new ticket, on its own (not under another ticket, not a linked session): a main ticket.
+        const main = !fromRun && !parentId && !partOf && !b.sessionId;
+        // A tool ticket that changes files starts from its main ticket's copy (git boards), so its work merges back there.
+        const mainTicket = tool ? board.mainOf(slug, planner!) : null;
+        const startFrom = tool && mainTicket?.branch && mainTicket.worktree ? mainTicket.branch : null;
         let t: Ticket;
         try {
           t = await board.createTicket(slug, {
             title, body: String(b.body ?? ""), status: b.sessionId && !planner ? "backlog" : status, mode, parentId, planKey, dependsOn, needs, tags,
             ...(proposedAs ? { proposedAs } : {}),
-            important: b.important === true, ...(partOf ? { partOf, ...(partOfVia ? { partOfVia } : {}) } : {}),
+            important: b.important === true, ...(partOf && !tool ? { partOf, ...(partOfVia ? { partOfVia } : {}) } : {}),
             ...(raisedBy ? { raisedBy } : {}), ...(kind ? { kind } : {}),
+            ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(main ? { main: true } : {}), ...(tool ? { tool: true } : {}),
+            ...(startFrom ? { startFrom } : {}),
           });
         } catch (e) {
           throw new HttpError(400, (e as Error).message);
         }
-        if (planner) store.addComment(slug, t.id, "ai", `Created by the planner of plan ${planner.id}.`);
+        if (planner) store.addComment(slug, t.id, "ai", tool ? `Tool ticket of ${planner.id} ("${planner.title}").` : `Created by the planner of plan ${planner.id}.`);
+        // Its manager's plan runs it (in any column): started now if the plan was resting.
+        if (tool) {
+          board.ensurePlan(slug, planner!.id);
+          board.advancePlans(slug);
+        }
         if (requester) store.addComment(slug, t.id, "ai", `Created ${byRequest(requester)}.`);
         if (runner) store.addComment(slug, t.id, "ai", `Created ${byRun(runner)}.`);
         if (guest) store.addComment(slug, t.id, "ai", `Created ${byGuest(guest)}.`);
@@ -1616,7 +1666,12 @@ export function createServer(deps: ServerDeps) {
         return json(view(profile, startedBy === undefined ? t : store.getTicket(slug, id)!));
       }
       if (m === "DELETE") {
-        if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "deleting tickets is disabled inside a board run");
+        if (req.headers.get(RUN_HEADER)) {
+          // A main ticket may delete its own tool tickets; every other delete stays the user's.
+          const target = store.getTicket(slug, id)!;
+          const { planner } = target.tool ? runRights(req, slug, target) : {};
+          if (!planner || !isManager(planner)) throw new HttpError(403, "deleting tickets is disabled inside a board run");
+        }
         huddles.closeForTicket(slug, id);
         await board.deleteTicket(slug, id);
         return new Response(null, { status: 204 });
@@ -1683,7 +1738,20 @@ export function createServer(deps: ServerDeps) {
         const prs = new Set(board.featureStatus(slug, id).facts.prs.map((p) => p.url));
         patch.prNotes = Object.fromEntries(Object.entries(b.prNotes).filter(([u]) => prs.has(u)).slice(0, 100).map(([u, v]) => [u, typeof v === "string" ? v : null]));
       }
-      if (!Object.keys(patch).length) throw new HttpError(400, `nothing to update: pass ${STATUS_FIELDS.join(", ")} or prNotes`);
+      // Pull requests in other repos, by URL: they join the feature's list and the board tracks their state.
+      let addedPrs = false;
+      if (b.prs !== undefined) {
+        if (!Array.isArray(b.prs) || b.prs.some((u: unknown) => typeof u !== "string" || !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/.test(u))) {
+          throw new HttpError(400, "prs must be a list of GitHub pull request URLs, e.g. https://github.com/owner/repo/pull/12");
+        }
+        const top = familyRoot(store.listTickets(slug), id);
+        if (top && b.prs.length) {
+          const add = addPrs(top, b.prs.slice(0, 20));
+          if ("prs" in add) board.patchPrs(slug, top.id, add as Pick<Ticket, "prs" | "prUrl">);
+          addedPrs = true;
+        }
+      }
+      if (!Object.keys(patch).length && !addedPrs) throw new HttpError(400, `nothing to update: pass ${STATUS_FIELDS.join(", ")}, prNotes or prs`);
       const f = board.updateStatus(slug, id, patch);
       return json({ topId: f.top.id, title: f.top.title, feature: f.feature, saved: f.saved, facts: f.facts, sections: f.sections, path: f.path, markdown: f.markdown });
     }
@@ -1859,6 +1927,8 @@ export function createServer(deps: ServerDeps) {
       try {
         if (!t.worktree && t.baseSha && !t.workdir) return await folderDiff(profile.path, t.baseSha, { ignoreWhitespace });
         if (!t.worktree) throw new HttpError(404, "No version history for this folder, so changes can't be shown.");
+        // A main ticket: everything its tool tickets merged into its copy since it started, landed milestones included.
+        if (t.main && t.startSha) return await folderDiff(t.worktree, t.startSha, { ignoreWhitespace });
         return await ticketDiff(t.worktree, profile.baseBranch || (await detectBaseBranch(t.worktree)), { ignoreWhitespace, prBase: t.pr?.base });
       } catch (e) {
         if (e instanceof DiffError) throw new HttpError(e.status, e.message);
@@ -2040,6 +2110,8 @@ export function createServer(deps: ServerDeps) {
       if (startedBy !== undefined) board.markStartedBy(slug, id, startedBy);
       // A message the user typed (not a slash command) reached Claude: a pending follow-up hears about it, and stops if it was set to.
       if (!req.headers.get(RUN_HEADER) && !text.startsWith("/")) board.userReplied(slug, id);
+      // The user wrote in a tool ticket: its parent hears the whole message before its next decision.
+      if (!req.headers.get(RUN_HEADER) && !req.headers.get(HUDDLE_HEADER) && t.tool) board.noteUserMessage(slug, id, text);
       if (requester) store.addComment(slug, id, "ai", `Message sent ${byRequest(requester)}.`);
       if (runner) store.addComment(slug, id, "ai", `Message sent ${byRun(runner)}.`);
       if (guest) store.addComment(slug, id, "ai", `Message sent ${byGuest(guest)}.`);
@@ -2150,6 +2222,53 @@ export function createServer(deps: ServerDeps) {
       // A run may only install its own ticket's dependencies (the command runs the branch's install scripts).
       if (req.headers.get(RUN_HEADER) && runTicket(req, slug) !== id) throw new HttpError(403, "a board run may only run the setup of its own ticket");
       return json(await board.runSetup(slug, id));
+    }
+    // Main and tool tickets (main-ticket.ts). ask: a run asks a ticket of its family (POST .../<asker>/ask {target, question}).
+    if (m === "POST" && action === "ask") {
+      const asker = runTicket(req, slug);
+      if (!asker || asker !== id || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "ask_ticket works from a board run, for that run's own ticket");
+      const b = await body(req);
+      const target = store.getTicket(slug, String(b.target ?? ""));
+      if (!target) throw new HttpError(404, `ticket ${b.target} not found`);
+      if (!inFamily(slug, id, target.id) && familyRoot(store.listTickets(slug), id)?.id !== familyRoot(store.listTickets(slug), target.id)?.id) {
+        throw new HttpError(403, `${target.id} is not in this ticket's family`);
+      }
+      try {
+        return json({ message: board.askTicket(slug, id, target.id, String(b.question ?? "")) }, 202);
+      } catch (e) {
+        throw new HttpError(400, (e as Error).message);
+      }
+    }
+    // merge_into_main: a tool ticket's own run fast-forwards its main ticket's copy.
+    if (m === "POST" && action === "merge-into-main") {
+      if (runTicket(req, slug) !== id || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "merge_into_main works only from the tool ticket's own run");
+      try {
+        return json({ message: await board.mergeIntoMain(slug, id) });
+      } catch (e) {
+        throw new HttpError(409, (e as Error).message);
+      }
+    }
+    // land_milestone: the main ticket's own run (or the user) lands its copy.
+    if (m === "POST" && action === "land") {
+      const caller = runTicket(req, slug);
+      if ((caller && caller !== id) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "land_milestone works only from the main ticket's own run");
+      const b = await body(req);
+      try {
+        return json({ message: await board.landMilestone(slug, id, String(b.summary ?? "")) });
+      } catch (e) {
+        throw new HttpError(409, (e as Error).message);
+      }
+    }
+    // A check-in's answer (the card's Keep going / Stop here): the user's.
+    if (m === "POST" && action === "checkin") {
+      if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user answers a check-in");
+      const b = await body(req);
+      if (b.action !== "keep" && b.action !== "stop") throw new HttpError(400, "action must be keep or stop");
+      try {
+        return json(view(profile, board.answerCheckin(slug, id, b.action)));
+      } catch (e) {
+        throw new HttpError(400, (e as Error).message);
+      }
     }
     if (m === "POST" && action === "stop") {
       const { planner, requester, runner, guest } = runRights(req, slug, store.getTicket(slug, id)!);

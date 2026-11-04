@@ -154,7 +154,8 @@ export interface ToolContext {
   client: Pick<BoardClient,
     | "listProfiles" | "listTickets" | "getTicket" | "getFamily" | "createTicket" | "updateTicket" | "deleteTicket" | "chat" | "stop" | "listComments"
     | "comment" | "reportBug" | "setFollowUp" | "cancelFollowUp" | "notifyUser" | "takeDevices" | "releaseDevices" | "listSchedules" | "createSchedule" | "updateSchedule" | "deleteSchedule" | "runSchedule"
-    | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "adopt" | "updateStatus" | "gather" | "planAction" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
+    | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "adopt" | "updateStatus" | "gather" | "planAction"
+    | "askTicket" | "mergeIntoMain" | "landMilestone" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
     | "huddleStatus" | "huddleCloseRequest" | "startAutoHuddle" | "huddleHandIn" | "huddleReviewHandIn" | "huddleAllowChanges"
     | "listHuddlePresets" | "saveHuddlePreset" | "deleteHuddlePreset" | "listHuddleTemplates" | "huddleBrief" | "huddleProposeTeammate"
     | "listPasses" | "claudeServers" | "passTools" | "testAutomation">;
@@ -681,6 +682,9 @@ const PRESET_FIELDS = {
 const PROPOSE_INSTEAD = "Nothing was saved: inside a board or huddle run only the user saves teammates. Call propose_teammate with the same fields and a one-line why; " +
   "the user saves it with one click (in a ticket chat it shows as a card, in a huddle under Learnings).";
 
+/** ask_questions inside a tool ticket's run. */
+export const TOOL_NO_QUESTIONS = "This is a tool ticket: it never asks the user. End your run with status \"questions\" and put the question in your summary instead; your parent ticket answers it with a message that resumes you.";
+
 const PLANNING_TOOLS: Tool[] = [
   {
     name: "ask_questions",
@@ -721,7 +725,13 @@ const PLANNING_TOOLS: Tool[] = [
     },
     annotations: { readOnlyHint: true },
     changes: false,
-    async run(args) {
+    async run(args, ctx) {
+      // A tool ticket never asks the user: its question goes to its parent through its result.
+      const own = ctx.env[RUN_ENV]?.split("/");
+      if (own?.[0] && own[1]) {
+        const t = await Promise.resolve().then(() => ctx.client.getTicket(own[0], own[1])).catch(() => null);
+        if (t?.tool) throw new ClientError(TOOL_NO_QUESTIONS);
+      }
       const e = questionsError(args);
       if (e) throw new ClientError(`${e}. Fix it and call ask_questions again.`);
       return SHOWN.replace("a card", "a form");
@@ -1578,6 +1588,15 @@ export const TOOLS: Tool[] = [
           description: "Add the new ticket to an open feature: the feature's top ticket id or one of its groups (list_tickets marks open features). " +
             "Use it when the work belongs to that feature instead of starting a new top ticket. A feature keeps tickets at most 2 levels deep.",
         },
+        model: {
+          type: "string",
+          description: "Model for its runs, e.g. \"claude-sonnet-5-5\" or \"opus\". Inside a main ticket, leave it out to use the kind's default " +
+            "(explore, test, review: Sonnet 5.5; build, fix: Opus 5.5; group, round: Sonnet 5.5).",
+        },
+        effort: {
+          type: "string", enum: ["low", "medium", "high", "xhigh", "max"],
+          description: "Reasoning effort for its runs. Inside a main ticket, leave it out to use the kind's default (medium; low for group and round).",
+        },
         partOfThisTicket: {
           type: "boolean",
           description: "Inside a board run or ticket chat: true links the new ticket as part of your ticket (same piece of work: a next step, " +
@@ -1606,8 +1625,12 @@ export const TOOLS: Tool[] = [
         ...(args?.partOfThisTicket === true && runTicketId(ctx) && ctx.env[RUN_ENV]?.split("/")[0] === slug ? { partOf: runTicketId(ctx)! } : {}),
         ...(str(args, "partOf", false)?.trim() ? { partOf: str(args, "partOf")!.trim() } : {}),
         ...(str(args, "kind", false) ? { kind: str(args, "kind")!.trim() } : {}),
+        ...(str(args, "model", false)?.trim() ? { model: str(args, "model")!.trim() } : {}),
+        ...(str(args, "effort", false)?.trim() ? { effort: str(args, "effort")!.trim() } : {}),
       }, ctx.env[RUN_ENV]);
-      return `Created ${t.id} on board ${slug} in ${t.status} (${t.mode} mode)${t.partOf ? `, part of ${t.partOf}` : ""}: ${t.title}`;
+      const how = [t.kind, t.model, t.effort ? `${t.effort} effort` : null].filter(Boolean).join(", ");
+      if (t.tool) return `Created tool ticket ${t.id}${how ? ` (${how})` : ""}: ${t.title}. The board starts it when its dependsOn are done and wakes you with its result.`;
+      return `Created ${t.id} on board ${slug} in ${t.status} (${t.mode} mode)${t.partOf ? `, part of ${t.partOf}` : ""}${how ? ` (${how})` : ""}: ${t.title}`;
     },
   },
   {
@@ -1847,6 +1870,10 @@ export const TOOLS: Tool[] = [
           type: "object", additionalProperties: { type: "string" },
           description: "A short note per pull request URL, e.g. {\"https://github.com/o/r/pull/7\": \"on staging\"}.",
         },
+        prs: {
+          type: "array", items: { type: "string" },
+          description: "Pull requests in other repos that belong to this feature, by URL: they join its list and the board tracks their state.",
+        },
       },
     },
     changes: true,
@@ -1860,7 +1887,8 @@ export const TOOLS: Tool[] = [
         if (typeof args?.[from] === "string") patch[to] = args[from];
       }
       if (args?.prNotes && typeof args.prNotes === "object") patch.prNotes = args.prNotes;
-      if (!Object.keys(patch).length) throw new ClientError("nothing to update: pass goal, done, broken, waitingOnYou, nextStep or prNotes");
+      if (Array.isArray(args?.prs)) patch.prs = args.prs;
+      if (!Object.keys(patch).length) throw new ClientError("nothing to update: pass goal, done, broken, waitingOnYou, nextStep, prNotes or prs");
       const r = await ctx.client.updateStatus(slug, id, patch, ctx.env[RUN_ENV]);
       return `Updated the status of "${r.title}" (${r.topId}). The whole status now:\n\n${r.markdown}`;
     },
@@ -1983,6 +2011,54 @@ export const TOOLS: Tool[] = [
       const slug = await slugFor(args, ctx);
       const t = await ctx.client.chat(slug, str(args, "id")!, str(args, "message")!, ctx.env[RUN_ENV]);
       return `Sent to ${t.id}. ${t.running ? "Claude is working on it" : `Ticket is in ${t.status}`}; read the reply later with get_ticket or on the board.`;
+    },
+  },
+  {
+    name: "ask_ticket",
+    description:
+      "Main tickets: ask one of your tool tickets a question about its work. Read its report first. A copy of its conversation answers in at most " +
+      "5 sentences with read-only tools; the ticket itself is untouched and may keep working. The answer comes back to you as an event when you are " +
+      "woken (\"no answer\" after 5 minutes), so end your run if you have nothing else to do.",
+    inputSchema: { type: "object", properties: { profile: PROFILE, id: ID, question: { type: "string" } }, required: ["id", "question"] },
+    changes: true,
+    allowInRun: true,
+    async run(args, ctx) {
+      const slug = await slugFor(args, ctx);
+      const me = runTicketId(ctx);
+      if (!me) throw new ClientError("ask_ticket works inside a board run (the answer comes back to that run's ticket)");
+      return (await ctx.client.askTicket(slug, me, str(args, "id")!, str(args, "question")!, ctx.env[RUN_ENV])).message;
+    },
+  },
+  {
+    name: "merge_into_main",
+    description:
+      "Tool tickets: once your work is committed and you merged the main ticket's branch into yours (and the checks pass), fast-forward the main " +
+      "ticket's copy to your branch. One merge runs at a time per main ticket. If the main copy moved meanwhile it fails with \"merge again and retry\"; " +
+      "after 3 failed tries end your run with status \"blocked\".",
+    inputSchema: { type: "object", properties: { profile: PROFILE } },
+    changes: true,
+    allowInRun: true,
+    async run(args, ctx) {
+      const slug = await slugFor(args, ctx);
+      const me = runTicketId(ctx);
+      if (!me) throw new ClientError("merge_into_main works inside a tool ticket's board run");
+      return (await ctx.client.mergeIntoMain(slug, me, ctx.env[RUN_ENV])).message;
+    },
+  },
+  {
+    name: "land_milestone",
+    description:
+      "Main tickets: land a milestone of the work in your copy (for example before a test round that needs it deployed). The board pushes your " +
+      "copy and opens one pull request (or updates the open one), or merges it into the project folder when the repo has no remote, and records " +
+      "it in the status. Plain folders only record it. If it can't land cleanly it refuses and says why: start a fix tool ticket then.",
+    inputSchema: { type: "object", properties: { profile: PROFILE, summary: { type: "string", description: "One line: what this milestone is." } }, required: ["summary"] },
+    changes: true,
+    allowInRun: true,
+    async run(args, ctx) {
+      const slug = await slugFor(args, ctx);
+      const me = runTicketId(ctx);
+      if (!me) throw new ClientError("land_milestone works inside the main ticket's board run");
+      return (await ctx.client.landMilestone(slug, me, str(args, "summary")!, ctx.env[RUN_ENV])).message;
     },
   },
   {

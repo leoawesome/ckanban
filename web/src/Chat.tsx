@@ -33,6 +33,7 @@ import { restoredDraft } from "./rewindText";
 import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
 import { StatusBlock, StatusNoteView, useFeatureStatus } from "./StatusBlock";
+import { ResultCardView } from "./ResultCardView";
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
@@ -810,6 +811,14 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
     if (i < 0) i = blocks.length;
     notesAt.set(i, [...(notesAt.get(i) ?? []), nt]);
   }
+  // Tool tickets' results (a main ticket's chat), like the notes: before the first block that came after them.
+  const resultsAt = new Map<number, NonNullable<Ticket["results"]>>();
+  for (const r of ticket.results ?? []) {
+    if (page && page.start > 0 && entries.length && r.at < entries[0].at) continue;
+    let i = blocks.findIndex((b) => (b.kind === "entry" ? b.e : b.items[0]).at > r.at);
+    if (i < 0) i = blocks.length;
+    resultsAt.set(i, [...(resultsAt.get(i) ?? []), r]);
+  }
   // Turns: avatar and name line on the first row of each; time dividers after long pauses.
   const layout = layoutTurns(blocks.map((b) => {
     const first = b.kind === "entry" ? b.e : b.items[0];
@@ -891,6 +900,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
             <Fragment key={first.uuid}>
               {helpAt.get(i)?.map((c) => <HelpCardView key={c.id} card={c} />)}
               {notesAt.get(i)?.map((nt) => <StatusNoteView key={nt.at} text={nt.text} />)}
+              {resultsAt.get(i)?.map((r) => <ResultCardView key={`${r.ticketId}-${r.at}`} r={r} onOpenTicket={onOpenTicket} />)}
               {i === dividerAt && divider}
               {layout[i].divider && <TimeDivider label={layout[i].divider!} />}
               {renderBlock(b, before(first, bp?.at), layout[i], b.kind === "tools" ? i === blocks.length - 1 : i === newestReply)}
@@ -900,6 +910,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
         {dividerAt === blocks.length && divider}
         {helpAt.get(blocks.length)?.map((c) => <HelpCardView key={c.id} card={c} />)}
         {notesAt.get(blocks.length)?.map((nt) => <StatusNoteView key={nt.at} text={nt.text} />)}
+        {resultsAt.get(blocks.length)?.map((r) => <ResultCardView key={`${r.ticketId}-${r.at}`} r={r} onOpenTicket={onOpenTicket} />)}
         {help && <HelpPending help={help} />}
         {/* Replies sent while Claude wasn't working are part of the timeline: plain bubbles, before Claude's reply. */}
         {pending.filter((p) => !p.steer).map((p, i) => {
@@ -1017,7 +1028,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
           </div>
           <div className="me-meta">{q.state === "unsent" ? "not sent · Claude was stopped before reading it"
             : running ? (q.slash ? "queued · runs after Claude's current turn" : "sent · Claude reads it at its next step")
-            : ticket.slotWait ? "queued · starts when a run slot is free" : "queued · starts when the board is back"}</div>
+            : ticket.slotWait ? "queued · starts when a run slot is free" : "The board restarts soon; your message is sent right after (at most 10 minutes)."}</div>
           </div>
         ))}
         {!running && ticket.recovery && <RecoveryBanner slug={slug} ticket={ticket} onError={onError} />}

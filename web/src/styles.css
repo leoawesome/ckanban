@@ -3470,3 +3470,19 @@ button.tag-chip:hover { border-color: currentColor; }
 .feature-suggest .choice select { width: auto; max-width: 260px; }
 .gather-new input { width: auto; flex: 1; }
 .ft-st { white-space: nowrap; width: 112px; }
+
+/* A tool ticket's result in its main ticket's chat (main-ticket.ts). */
+.result-card { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--r-md); padding: 8px 14px; max-width: 90%; background: var(--surface); margin: 6px 0; }
+.result-card.bad { border-left-color: var(--err); }
+.result-card .r-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-xs); color: var(--muted); }
+.result-card .r-head b { color: var(--text); font-weight: 600; font-size: var(--fs-sm); }
+.result-card .r-state { font-size: var(--fs-2xs); font-weight: 600; padding: 1px 7px; border-radius: var(--r-pill); }
+.result-card .r-state.done { background: var(--ok-soft); color: var(--ok); }
+.result-card .r-state.fail { background: var(--err-soft); color: var(--err); }
+.result-card .r-summary { margin: 6px 0; font-size: var(--fs-md); line-height: 1.5; white-space: pre-wrap; }
+.result-card .r-folder { margin: 4px 0; }
+.result-card .r-links { display: flex; gap: 12px; font-size: var(--fs-xs); }
+.result-card .r-links .link-btn { font-weight: 600; }
+/* A main ticket's check-in on its card: what triggered it, then Keep going / Stop here. */
+.card-checkin { margin-top: 6px; }
+.card-checkin .checkin-line { font-size: var(--fs-sm); color: var(--warn); }

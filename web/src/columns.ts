@@ -1,7 +1,10 @@
 export type Status = "backlog" | "planning" | "ready" | "in_progress" | "review" | "done";
 
 /** The ticket fields that place a card on the board (kept apart from api.ts so tests can load this file). */
-interface Placed { id: string; status: Status; order: number; slotWait?: { at: string } | null; running?: boolean }
+interface Placed { id: string; status: Status; order: number; slotWait?: { at: string } | null; running?: boolean; main?: boolean; familyWorking?: number }
+
+/** A main ticket shows In progress while any of its tool tickets works; otherwise it stays where the user put it. */
+const familyBusy = (t: Placed): boolean => !!t.main && !!t.familyWorking && t.status !== "in_progress" && t.status !== "ready";
 
 /** claude: dropping a card here makes Claude start (or it is running). */
 export const COLUMNS: { id: Status; label: string; hint: string; claude: boolean }[] = [
@@ -25,7 +28,7 @@ export function waitsForSlot(t: Placed): boolean {
 export function groupByColumn<T extends Placed>(tickets: T[]): Map<Status, T[]> {
   const m = new Map<Status, T[]>(COLUMNS.map((c) => [c.id, []]));
   // Replies waiting for a slot sit in the queue, first in line (oldest first), like the server starts them.
-  for (const t of tickets) m.get(waitsForSlot(t) ? "ready" : t.status)?.push(t);
+  for (const t of tickets) m.get(waitsForSlot(t) ? "ready" : familyBusy(t) ? "in_progress" : t.status)?.push(t);
   for (const list of m.values()) {
     list.sort((a, b) => a.slotWait && b.slotWait ? a.slotWait.at.localeCompare(b.slotWait.at)
       : a.slotWait ? -1 : b.slotWait ? 1 : a.order - b.order);
@@ -38,7 +41,7 @@ const shownIn = <T extends Placed>(byColumn: Map<Status, T[]>, id: Status): T[] 
   id === "in_progress" ? [...(byColumn.get("in_progress") ?? []), ...(byColumn.get("ready") ?? [])] : byColumn.get(id) ?? [];
 
 /** The board column a ticket's card sits in: queued tickets and replies waiting for a slot show under In Progress. */
-export const boardColumnOf = (t: Placed): Status => (waitsForSlot(t) || t.status === "ready" ? "in_progress" : t.status);
+export const boardColumnOf = (t: Placed): Status => (waitsForSlot(t) || t.status === "ready" || familyBusy(t) ? "in_progress" : t.status);
 
 /** Ids of the tickets in one board column, top to bottom. */
 export const columnOrder = (tickets: Placed[], column: Status): string[] => shownIn(groupByColumn(tickets), column).map((t) => t.id);

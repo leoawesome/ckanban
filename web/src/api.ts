@@ -203,6 +203,11 @@ export interface Profile {
   baseBranch: string;
   maxParallel: number;
   model?: string | null;
+  /** "Main ticket model": main tickets' runs (their own /model still wins); null: the board's model. */
+  mainModel?: string | null;
+  /** A main ticket's family checks in with the user past this cost or this many tool tickets (null: 25 and 30). */
+  checkinUsd?: number | null;
+  checkinTickets?: number | null;
   effort?: string | null;
   /** Ultracode by default: tickets' work runs plan a workflow of helper agents for every substantial task. */
   ultracode?: boolean;
@@ -352,6 +357,14 @@ export interface Ticket {
   partOf?: string | null;
   /** What the ticket is for (family.ts TicketKind); missing on old tickets. */
   kind?: TicketKind | null;
+  /** A main ticket: the user's conversation; tool tickets in its family do the work. */
+  main?: boolean;
+  /** A tool ticket: made by Claude inside a main ticket's family; reports to its parent. */
+  tool?: boolean;
+  /** Tool tickets' results, shown in this chat as cards. */
+  results?: ResultCard[];
+  /** A main ticket: its tool tickets working now (the card shows In progress meanwhile). */
+  familyWorking?: number;
   /** A test ticket's result. */
   verdict?: "passed" | "problem" | null;
   /** On a feature's top ticket: when its "Where we are" status last changed. */
@@ -471,6 +484,23 @@ export interface Plan {
   originalCount: number;
   awaiting?: "event" | "final" | null;
   reason?: string | null;
+  /** A main ticket's check-in: due while it waits for Keep going or Stop here. */
+  checkin?: { due?: { at: string; line: string } | null } | null;
+}
+
+/** A tool ticket's result as a card in its parent's chat. */
+export interface ResultCard {
+  at: string;
+  ticketId: string;
+  title: string;
+  kind?: string | null;
+  outcome: string;
+  verdict?: "passed" | "problem" | null;
+  summary: string;
+  report: string | null;
+  model?: string | null;
+  costUsd?: number | null;
+  folderFiles?: number | null;
 }
 
 export type NewTicketDraft = { title: string; description: string; important?: true; key?: string; dependsOn?: string[]; needs?: string[]; tags?: string[] };
@@ -1506,6 +1536,8 @@ export const api = {
   featureStatus: (slug: string, id: string) => req<FeatureStatus>("GET", `${t(slug, id)}/status`),
   /** "Add a note": saved in the status; the main chat gets it at its next turn. */
   addStatusNote: (slug: string, id: string, text: string) => req<FeatureStatus>("POST", `${t(slug, id)}/status/notes`, { text }),
+  /** A main ticket's check-in: keep going (counters start over) or stop here (its running tool tickets stop). */
+  answerCheckin: (slug: string, id: string, action: "keep" | "stop") => req<Ticket>("POST", `${t(slug, id)}/checkin`, { action }),
   /** The Family tab's rows: each ticket's model, cost, state and last summary. */
   familyView: (slug: string, id: string) => req<FamilyViewRow[]>("GET", `${t(slug, id)}/family-view`),
   /** Gather tickets into the feature: each under one of its groups, a new group ("new"), or the feature itself. */

@@ -71,7 +71,10 @@ export function attentionFor(
   const since = lastChange(t, s);
   // A run that went silent: still running, but only the user can tell a hung tool from a slow one.
   if (t.stalled && running) return { kind: "stalled", label: `Stalled · no output for ${t.stalled.minutes} min`, since: t.stalled.at };
-  if (t.plan?.state === "stuck" && !o.planComplete) return { kind: "blocked", label: "Plan stuck", since: t.updatedAt };
+  // A main ticket's stuck plan (no progress, or it asked something) needs the user even when its tool tickets are done.
+  if (t.plan?.state === "stuck" && (!o.planComplete || t.main)) return { kind: "blocked", label: "Plan stuck", since: t.updatedAt };
+  // A main ticket's family passed its check-in threshold: nothing starts until the user says Keep going or Stop here.
+  if (t.plan?.checkin?.due) return { kind: "blocked", label: "Keep going?", since: t.plan.checkin.due.at };
   if (running || t.status === "in_progress") return null;
   // A running plan's planner and children are handled unattended; the plan pings the user when stuck.
   if (o.managed || t.plan?.state === "running" || t.plan?.state === "finishing" || t.plan?.state === "paused") return null;
