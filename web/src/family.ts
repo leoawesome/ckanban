@@ -136,16 +136,21 @@ export function cardFamilies<T extends FamilyTicket>(tickets: T[]): Map<string, 
 
 /**
  * What a ticket is for, set when it is created. group: holds other tickets; round: a testing round; with_you: a tool
- * ticket that needs the user live (a phone test, an approval), so it keeps its own card. Old tickets have none.
+ * ticket that needs the user live (a phone test, an approval): it talks to the user in its main ticket's chat. Old
+ * tickets have none.
  */
 export type TicketKind = "explore" | "build" | "test" | "review" | "fix" | "group" | "round" | "with_you";
 export const TICKET_KINDS: TicketKind[] = ["explore", "build", "test", "review", "fix", "group", "round", "with_you"];
 
 /**
  * A tool ticket the board hides: no card, no column count, no Your turn; it lives in its main ticket's Family tab and
- * reports there. "With you" tool tickets need the user live, so they keep a card. Old plan children have no tool flag.
+ * reports there. "With you" tool tickets are hidden too: their messages and questions show in the main ticket's chat
+ * and their "needs you" on its card. Old plan children have no tool flag.
  */
-export const hiddenTool = (t: { tool?: boolean; kind?: string | null } | null | undefined): boolean => !!t?.tool && t.kind !== "with_you";
+export const hiddenTool = (t: { tool?: boolean; kind?: string | null } | null | undefined): boolean => !!t?.tool;
+
+/** A "with you" tool ticket: a step that needs the user live; it may ask and notify the user (in its main ticket's chat). */
+export const withYouTool = (t: { tool?: boolean; kind?: string | null } | null | undefined): boolean => !!t?.tool && t?.kind === "with_you";
 
 /** The ticket a tool ticket works for: its nearest main ancestor, else its family's top ticket. */
 export function mainTicketOf<T extends FamilyTicket & { main?: boolean }>(tickets: T[], id: string): T | undefined {

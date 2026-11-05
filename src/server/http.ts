@@ -60,7 +60,7 @@ import { changesPrompt, HELP_KINDS, Helper, HelpError, newId, recapAvailable, re
 import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, UsageCache, windowsNeeded } from "./ticket-usage";
 import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
-import { familyOf, familyRoot, groupsOf, hiddenTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
+import { familyOf, familyRoot, groupsOf, hiddenTool, withYouTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
 import { STATUS_FIELDS, type StatusPatch } from "./feature";
 import { createdFromDraft } from "../../web/src/proposalMatch";
 import type { Store } from "./store";
@@ -2011,7 +2011,7 @@ export function createServer(deps: ServerDeps) {
     if (action === "notify" && m === "POST" && parts.length === 5) {
       const caller = req.headers.get(RUN_HEADER);
       if (caller !== `${slug}/${id}` || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the ticket's own Claude sends it a notification, from its run or chat");
-      if (hiddenTool(store.getTicket(slug, id))) throw new HttpError(403, TOOL_NO_NOTIFY);
+      if (hiddenTool(store.getTicket(slug, id)) && !withYouTool(store.getTicket(slug, id))) throw new HttpError(403, TOOL_NO_NOTIFY);
       const b = (await body(req)) ?? {};
       if (typeof b.message !== "string") throw new HttpError(400, "message is required");
       try {
@@ -2276,8 +2276,9 @@ export function createServer(deps: ServerDeps) {
       // A message the user typed (not a slash command) reached Claude: a pending follow-up hears about it, and stops if it was set to.
       if (!req.headers.get(RUN_HEADER) && !text.startsWith("/")) board.userReplied(slug, id);
       // The user wrote in a tool ticket: its parent hears the whole message before its next decision.
-      // A "with you" ticket is the user's own live step: its chat stays there, and its result reaches the main ticket.
-      if (!req.headers.get(RUN_HEADER) && !req.headers.get(HUDDLE_HEADER) && hiddenTool(t)) board.noteUserMessage(slug, id, text);
+      // A "with you" ticket is the user's own live step: answers go straight to it (also from the main ticket's chat), and
+      // its result reaches the main ticket.
+      if (!req.headers.get(RUN_HEADER) && !req.headers.get(HUDDLE_HEADER) && hiddenTool(t) && !withYouTool(t)) board.noteUserMessage(slug, id, text);
       if (requester) store.addComment(slug, id, "ai", `Message sent ${byRequest(requester)}.`);
       if (runner) store.addComment(slug, id, "ai", `Message sent ${byRun(runner)}.`);
       if (guest) store.addComment(slug, id, "ai", `Message sent ${byGuest(guest)}.`);

@@ -262,6 +262,8 @@ export interface Ticket {
   tool?: boolean;
   /** Tool tickets' results, shown in this ticket's chat as result cards (oldest first, the last RESULTS_KEEP kept). */
   results?: ResultCard[];
+  /** Board notes in this (main) ticket's chat, e.g. a "with you" step started waiting (oldest first, the last BOARD_NOTES_KEEP kept). */
+  boardNotes?: BoardNote[];
   /** A tool ticket's merge_into_main calls that failed since its last merge (3 end it blocked). */
   mergeFails?: number;
   /** A tool ticket's commit last fast-forwarded into its main ticket's copy. */
@@ -327,6 +329,17 @@ export interface Ticket {
 }
 
 /** A tool ticket's result as a card in its parent's chat (see main-ticket.ts). */
+/** A grey note the board adds to a main ticket's chat without waking its Claude. */
+export interface BoardNote {
+  at: string;
+  /** The tool ticket it is about. */
+  ticketId: string;
+  text: string;
+}
+
+/** How many board notes a ticket keeps. */
+export const BOARD_NOTES_KEEP = 30;
+
 export interface ResultCard {
   at: string;
   ticketId: string;

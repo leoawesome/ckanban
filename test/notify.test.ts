@@ -252,6 +252,18 @@ function describeNotifier() {
     expect(banners).toEqual(["Fix it"]);
   });
 
+  test("notify_user from a with-you step opens its main ticket's chat, named after the main ticket", async () => {
+    store.updateTicket("kb", ticket.id, { main: true, title: "AI Outreach" });
+    const step = store.createTicket("kb", { title: "Staging check", body: "b", status: "review" });
+    store.updateTicket("kb", step.id, { parentId: ticket.id, tool: true, kind: "with_you" });
+    const r = await notifier.message("kb", step.id, "Pick up the WhatsApp call");
+    expect(r.delivered).toBe(true);
+    const h = sent[0].init.headers as Record<string, string>;
+    expect(h.Title).toBe("AI Outreach");
+    expect(h.Click).toBe(`https://mac.tail.ts.net/#/kb/${ticket.id}`);
+    expect(sent[0].init.body).toBe("Kanban · Staging check: Pick up the WhatsApp call");
+  });
+
   test("test notification goes out whatever the toggles, and webhook errors are kept", async () => {
     notifier = new Notifier(store, bus, {
       root: store.root, sessionSummary: () => null, isRunning: () => false, hostHuddles: () => new Map(), baseUrl: () => "http://localhost:3000",

@@ -15,7 +15,7 @@ import { macBanner } from "./notify";
 import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
 import { recallBlock } from "./recall";
-import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, type TicketKind } from "../../web/src/family";
+import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, withYouTool, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, familySig, readStatus, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { addOnFor } from "../../web/src/addOn";
@@ -25,7 +25,7 @@ import { canEndQuietly, quietContext } from "./quiet";
 import { addHuddleSpend } from "./spend";
 import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "./prompts";
 import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
-import { ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable } from "./main-ticket";
+import { ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
 import { chatPrompt, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
@@ -49,7 +49,7 @@ import { mcpConfig } from "./agents";
 import type { OwnedSession } from "./shell";
 import type { Store } from "./store";
 import { normalizeTags } from "./tags";
-import { autoHuddlesOn, runCapFor, workspaceOf, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "./types";
+import { autoHuddlesOn, runCapFor, workspaceOf, BOARD_NOTES_KEEP, type BoardNote, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "./types";
 import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TIMEOUT_MS, withBoardText, type SetupOutcome, type SetupResult } from "./worktree-setup";
 
 const INSTALLING = "Installing project dependencies…";
@@ -442,6 +442,8 @@ export class Board {
   waitsOnUser(slug: string, id: string): boolean {
     const t = this.store.getTicket(slug, id);
     if (!t) return false;
+    // A "with you" step has no card of its own: it waits on the user while its question is unanswered.
+    if (withYouTool(t)) return youWaiting(t, this.isRunning(slug, id));
     const a = ticketAttention(this.store, slug, t, t.sessionId ? this.sessionSummary(t.sessionId) ?? null : null, this.isRunning(slug, id),
       this.hostHuddles(slug).get(id), (x) => this.isRunning(slug, x));
     return !!a && a.kind !== "review";
@@ -1339,6 +1341,7 @@ export class Board {
     // A ticket the user added to a feature (not one of its tool tickets): its result also reaches the main ticket.
     try {
       this.reportToMain(slug, id, summary);
+      this.noteStepWaiting(slug, id, summary);
     } catch (e) {
       console.error(`report ${slug}/${id} to its main ticket:`, e);
     }
@@ -2839,6 +2842,22 @@ export class Board {
     const card = this.resultCard(slug, id);
     if (card) this.patch(slug, main.id, { results: [...(this.store.getTicket(slug, main.id)?.results ?? []), card].slice(-RESULTS_KEEP) });
     this.pushEvent(slug, main.id, finishedLine(t, summary, this.reportOf(slug, id)));
+  }
+
+  /**
+   * A "with you" step ended waiting for the user: a grey board note in its main ticket's chat says so ("Staging check
+   * needs you: <its first question>"). The note doesn't wake the main ticket: only the user answers the step.
+   */
+  private noteStepWaiting(slug: string, id: string, summary: string): void {
+    const t = this.store.getTicket(slug, id);
+    if (!t || !youWaiting(t, false)) return;
+    const main = this.mainOf(slug, t);
+    if (!main || main.id === id) return;
+    const ask = this.openForm(t)[0]?.question ?? summary;
+    const first = ask.split("\n").map((l) => l.replace(/^[#>*\-\s]+/, "").trim()).find(Boolean) ?? "";
+    const line = first.length > 160 ? `${first.slice(0, 159)}…` : first;
+    const note: BoardNote = { at: nowIso(), ticketId: t.id, text: `${stepName(t)} needs you${line ? `: ${line}` : ""}` };
+    this.patch(slug, main.id, { boardNotes: [...(this.store.getTicket(slug, main.id)?.boardNotes ?? []), note].slice(-BOARD_NOTES_KEEP) });
   }
 
   /** The user wrote in a tool ticket's chat: its parent hears the whole message before its next decision. */

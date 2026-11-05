@@ -196,6 +196,30 @@ test("a tool ticket's question reaches its parent, it waits, and chat_ticket fro
   expect(readArgs().some((a) => a.prompt.startsWith("Use WhatsApp.") && a.prompt.includes("message for tool ticket"))).toBe(true);
 }, 60_000);
 
+test("a with-you step that ends asking puts a grey note in the main chat without waking it; the user's answer goes straight to the step", async () => {
+  await setup({ maxParallel: 3 });
+  quickBoard();
+  delete process.env.FAKE_PR;
+  const main = await mkMain("Main", "review");
+  const step = await mkTool(main.id, "Staging check", "with_you");
+  process.env.FAKE_MODE = "questions";
+  board.ensurePlan("p", main.id);
+  board.advancePlans("p");
+  await until(() => get(step.id).outcome === "needs_input" && !board.isRunning("p", step.id), 30000);
+  process.env.FAKE_MODE = "ok";
+  await board.whenIdle();
+  board.advancePlans("p");
+  await Bun.sleep(100);
+  // A grey note in the main chat, first line of what it asks.
+  expect(get(main.id).boardNotes).toEqual([{ at: expect.any(String), ticketId: step.id, text: "Staging check needs you: Work complete." }]);
+  // The main ticket isn't woken for it: no run, no event waiting.
+  expect(get(main.id).runCount).toBe(0);
+  expect(promptsOf(null, "outcome questions")).toEqual([]);
+  expect(get(main.id).plan?.inbox ?? []).toEqual([]);
+  expect(board.waitsOnUser("p", step.id)).toBe(true);
+  expect(board.familyCard("p", main.id)?.needsYou.map((w) => w.id)).toEqual([step.id]);
+}, 60_000);
+
 test("recover() wakes a main ticket from its saved events instead of starting a work run", async () => {
   await setup();
   const main = await mkMain("Main", "in_progress");

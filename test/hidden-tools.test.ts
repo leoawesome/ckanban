@@ -1,5 +1,5 @@
 // Phase 3: tool tickets have no card (one card per feature). Attention rolls up to the main ticket, "with you" tool
-// tickets keep a card and may notify, Stop / Backlog / Delete on the main ticket act on its tool tickets, search finds
+// tickets (hidden too) talk to the user in the main ticket's chat and may notify, Stop / Backlog / Delete on the main ticket act on its tool tickets, search finds
 // tool tickets through their main card, and the other list readers skip them by default.
 import { expect, test } from "bun:test";
 import { BoardClient } from "../src/client";
@@ -7,12 +7,13 @@ import { callTool, type ToolContext } from "../src/mcp-server";
 import { attentionFor, boardTitles, ticketAttention } from "../src/server/attention";
 import { createServer } from "../src/server/http";
 import { Linker } from "../src/server/linker";
-import { familyCard, KIND_DEFAULTS, stepName, stepWait, TOOL_NO_NOTIFY } from "../src/server/main-ticket";
+import { familyCard, KIND_DEFAULTS, stepName, stepWait, TOOL_NO_NOTIFY, youWaiting } from "../src/server/main-ticket";
+import { statusFacts, statusSections } from "../src/server/feature";
 import { pickRelated } from "../src/server/recall";
 import type { Ticket } from "../src/server/types";
 import { ticketCommand } from "../src/ticket-cli";
 import { deleteTitle, parkNeedsConfirm, stopTitle } from "../web/src/familyActions";
-import { hiddenTool, mainTicketOf, TICKET_KINDS } from "../web/src/family";
+import { hiddenTool, mainTicketOf, TICKET_KINDS, withYouTool } from "../web/src/family";
 import { groupByColumn } from "../web/src/columns";
 import { searchBoard } from "../web/src/toolTickets";
 import { board, setup, store, useBoardEnv } from "./board-env";
@@ -35,31 +36,33 @@ function feature(extra: Partial<Ticket> = {}) {
     ...(n <= 4 ? { status: "done", outcome: "done", verdict: "passed" } : { status: "in_progress", runStartedAt: at(20 + n) }),
   }));
   const build = tk("B", { title: "Build the queue", parentId: "M", tool: true, kind: "build", status: "done", outcome: "done", runStartedAt: at(2) });
-  const withYou = tk("W", { title: "Phone call on Leo's WhatsApp", parentId: "M", tool: true, kind: "with_you", status: "review", outcome: "needs_input" });
+  const withYou = tk("W", { title: "Phone call on Leo's WhatsApp", parentId: "M", tool: true, kind: "with_you", status: "done", outcome: "done" });
   const added = tk("U", { title: "Copy for the landing page", partOf: "M", status: "review", outcome: "done" });
   const old = tk("O", { title: "Old plan child", parentId: "M", status: "review", outcome: "done" });
   return { main, round, tests, build, withYou, added, old, all: [main, round, ...tests, build, withYou, added, old] };
 }
 
-test("the with_you kind exists with Sonnet 5.5 at medium; only tool tickets that aren't with you are hidden", () => {
+test("the with_you kind exists with Sonnet 5.5 at medium; every tool ticket is hidden, with you ones too", () => {
   expect(TICKET_KINDS).toContain("with_you");
   expect(KIND_DEFAULTS.with_you).toEqual({ model: "claude-sonnet-5-5", effort: "medium" });
   expect(hiddenTool(tk("a", { tool: true, kind: "test" }))).toBe(true);
-  expect(hiddenTool(tk("a", { tool: true, kind: "with_you" }))).toBe(false);
+  expect(hiddenTool(tk("a", { tool: true, kind: "with_you" }))).toBe(true);
+  expect(withYouTool(tk("a", { tool: true, kind: "with_you" }))).toBe(true);
+  expect(withYouTool(tk("a", { tool: true, kind: "test" }))).toBe(false);
   // An old plan child has no tool flag: it keeps its card.
   expect(hiddenTool(tk("a", { parentId: "M" }))).toBe(false);
   expect(stepName({ title: "checkout sign-in", kind: "test" })).toBe("Test: checkout sign-in");
   expect(stepName({ title: "Test: checkout sign-in", kind: "test" })).toBe("Test: checkout sign-in");
 });
 
-test("the board shows one card for the feature, plus the with-you card, the added ticket and the old plan child; columns don't count tool tickets", () => {
+test("the board shows one card for the feature, plus the added ticket and the old plan child; columns don't count tool tickets", () => {
   const f = feature();
   const { shown, via } = searchBoard(f.all, () => true);
-  expect(shown.map((t) => t.id).sort()).toEqual(["M", "O", "U", "W"]);
+  expect(shown.map((t) => t.id).sort()).toEqual(["M", "O", "U"]);
   expect(via.size).toBe(0);
   const cols = groupByColumn(shown);
   expect(cols.get("in_progress")!.length).toBe(0);
-  expect(cols.get("review")!.map((t) => t.id).sort()).toEqual(["M", "O", "U", "W"]);
+  expect(cols.get("review")!.map((t) => t.id).sort()).toEqual(["M", "O", "U"]);
   expect(mainTicketOf(f.all, "T5")?.id).toBe("M");
 });
 
@@ -94,7 +97,7 @@ test("a tool ticket has no Your turn; its question shows on the main card naming
   expect(attentionFor(waking, null, false, { step })).toBeNull();
 });
 
-test("ticketAttention: tool tickets need nothing, a with-you one does while its main ticket's plan runs, and the paused main ticket rolls up the oldest step", async () => {
+test("ticketAttention: tool tickets need nothing themselves, the main ticket says Needs you for a with-you step, and the paused main ticket rolls up the oldest step", async () => {
   await setup();
   const main = await board.createTicket("p", { title: "AI Outreach", body: "", status: "backlog", mode: "auto", main: true });
   store.updateTicket("p", main.id, { status: "review", outcome: "done", runEndedAt: at(1), plan: { state: "running", maxConcurrent: 2, wakeups: 0, startedAt: at(0), originalCount: 0, inbox: [], seen: {}, retries: {}, awaiting: null } });
@@ -104,11 +107,21 @@ test("ticketAttention: tool tickets need nothing, a with-you one does while its 
   };
   const failed = await mk("Build the queue", "build", { status: "review", outcome: "failed", runEndedAt: at(20) });
   const asks = await mk("checkout sign-in", "test", { status: "review", outcome: "needs_input", runEndedAt: at(10) });
-  const live = await mk("Phone call", "with_you", { status: "review", outcome: "needs_input" });
+  const live = await mk("Phone call", "with_you", { status: "review", outcome: "needs_input", runEndedAt: at(30) });
   const att = (t: Ticket) => ticketAttention(store, "p", store.getTicket("p", t.id)!, null, false);
   expect(att(failed)).toBeNull();
   expect(att(asks)).toBeNull();
-  expect(att(live)).toMatchObject({ kind: "questions" });
+  expect(att(live)).toBeNull();
+  // A with-you step waits for the user whatever the main ticket does: the main card says so, also while its plan runs.
+  expect(att(main)).toMatchObject({ kind: "questions", label: "Phone call needs you" });
+  expect(board.waitsOnUser("p", live.id)).toBe(true);
+  // Two of them: counted.
+  const live2 = await mk("Approve the copy", "with_you", { status: "review", outcome: "needs_input", runEndedAt: at(31) });
+  expect(att(main)).toMatchObject({ kind: "questions", label: "2 steps need you" });
+  // Answered (an answer queued or the step running again): no longer waiting.
+  store.updateTicket("p", live.id, { status: "in_progress" });
+  store.updateTicket("p", live2.id, { status: "done", outcome: "done" });
+  expect(board.waitsOnUser("p", live.id)).toBe(false);
   // The plan already queued a wake for the main ticket: it handles the step before the user hears of it.
   expect(att(main)).toBeNull();
   // Paused (the user said Stop here): the step that asks shows on the main card.
@@ -117,7 +130,7 @@ test("ticketAttention: tool tickets need nothing, a with-you one does while its 
   // Title dedup leaves hidden tool tickets out.
   const titles = boardTitles(store.listTickets("p"), "x");
   expect(titles.has("build the queue")).toBe(false);
-  expect(titles.has("phone call")).toBe(true);
+  expect(titles.has("phone call")).toBe(false);
 });
 
 test("the main card's line: a step that needs you, then failed or stuck, then paused, then the newest working group", () => {
@@ -149,6 +162,16 @@ test("the main card's line: a step that needs you, then failed or stuck, then pa
   const needs = familyCard({ ...f.main, runEndedAt: at(45) }, [...family, lim, bad, ask], [...f.all, lim, bad, ask], run(["T5"]), 0);
   expect(needs.line).toEqual({ text: "Test: checkout sign-in asks a question", tone: "warn" });
   expect(needs.waiting?.id).toBe("A");
+  expect(needs.needsYou).toEqual([]);
+  // A with-you step waiting for the user beats that, even when the main ticket ran since: only the user answers it.
+  const live = tk("W2", { title: "Staging check", parentId: "M", tool: true, kind: "with_you", status: "review", outcome: "needs_input", runEndedAt: at(30) });
+  const you = familyCard({ ...f.main, runEndedAt: at(50) }, [...family, ask, live], [...f.all, ask, live], run(["T5"]), 0);
+  expect(you.line).toEqual({ text: "Staging check needs you", tone: "warn" });
+  expect(you.needsYou.map((w) => w.id)).toEqual(["W2"]);
+  // An answer on its way (queued) or a running step: not waiting.
+  const queued = { ...live, queued: [{ id: "q", text: "yes", at: at(51) }] } as any;
+  expect(familyCard(f.main, [...family, queued], [...f.all, queued], run([]), 0).needsYou).toEqual([]);
+  expect(familyCard(f.main, [...family, live], [...f.all, live], run(["W2"]), 0).needsYou).toEqual([]);
 });
 
 test("the confirms name the count and the cost; only main tickets with tool tickets ask before Backlog or Done", () => {
@@ -281,7 +304,7 @@ test("list_tickets and the CLI skip tool tickets unless asked; recall and the li
     const ctx: ToolContext = { client: new BoardClient(server.port!), cwd: store.getProfile("p")!.path, env: {} };
     const plain = (await callTool("list_tickets", { profile: "p" }, ctx)).content[0].text;
     expect(plain).toContain(f.main.id);
-    expect(plain).toContain(f.live.id);
+    expect(plain).not.toContain(f.live.id);
     expect(plain).not.toContain(f.running.id);
     const all = (await callTool("list_tickets", { profile: "p", includeTool: true }, ctx)).content[0].text;
     expect(all).toContain(f.running.id);
@@ -337,4 +360,14 @@ test("a working group started last speaks with its summary", () => {
 test("a failed step says why on the main card", () => {
   const t = tk("F", { title: "welcome email sends", kind: "test", tool: true, status: "review", outcome: "failed", error: "Run failed\nSMTP login refused" });
   expect(stepWait(t, false)!.label).toBe("Test: welcome email sends failed: SMTP login refused");
+});
+
+test("Where we are lists a with-you step waiting on the user in its board-written waiting line", () => {
+  const f = feature();
+  const live = tk("W2", { title: "Staging check", parentId: "M", tool: true, kind: "with_you", status: "review", outcome: "needs_input", runEndedAt: at(30) });
+  const all = [...f.all, live];
+  const facts = statusFacts(all, "M", (t) => youWaiting(t, false));
+  expect(facts.needsYou.map((w) => w.title)).toEqual(["Staging check"]);
+  const waiting = statusSections(null, facts).find((s) => s.key === "waiting");
+  expect(waiting?.text).toBe("[1: Staging check]");
 });

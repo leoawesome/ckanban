@@ -1,6 +1,6 @@
 // `ckanban mcp`: a stdio MCP server (newline-delimited JSON-RPC 2.0) exposing the board as tools.
 // Hand-rolled instead of @modelcontextprotocol/sdk: we only need initialize, tools/list and tools/call.
-import { hiddenTool } from "../web/src/family";
+import { hiddenTool, withYouTool } from "../web/src/family";
 import { TOOL_NO_NOTIFY } from "./server/main-ticket";
 import {
   assertCanChange, BoardClient, bugReportText, ClientError, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
@@ -740,7 +740,7 @@ const PLANNING_TOOLS: Tool[] = [
       const own = ctx.env[RUN_ENV]?.split("/");
       if (own?.[0] && own[1]) {
         const t = await Promise.resolve().then(() => ctx.client.getTicket(own[0], own[1])).catch(() => null);
-        if (hiddenTool(t)) throw new ClientError(TOOL_NO_QUESTIONS);
+        if (hiddenTool(t) && !withYouTool(t)) throw new ClientError(TOOL_NO_QUESTIONS);
       }
       const e = questionsError(args);
       if (e) throw new ClientError(`${e}. Fix it and call ask_questions again.`);
@@ -1650,8 +1650,8 @@ export const TOOLS: Tool[] = [
           type: "string", enum: ["explore", "build", "test", "review", "fix", "group", "round", "with_you"],
           description: "What the ticket is for. test: it checks whether something works and ends with a verdict. group: holds other tickets of a feature. " +
             "round: a testing round of a feature; the board titles it \"Testing round N\" and puts it right under the feature. " +
-            "with_you: a step that needs the user live (a phone test, an approval): unlike other tool tickets it gets its own card, may ask the user " +
-            "with ask_questions in its own chat and may call notify_user; its result still comes back to you.",
+            "with_you: a step that needs the user live (a phone test, an approval): unlike other tool tickets it talks to the user itself. Its messages " +
+            "and ask_questions forms show in the main ticket's chat, where the user answers it directly, and it may call notify_user; its result still comes back to you.",
         },
         partOf: {
           type: "string",
@@ -1883,7 +1883,7 @@ export const TOOLS: Tool[] = [
       if (!own) throw new ClientError("notify_user works inside a board run or ticket chat, on its own ticket");
       const slug = await slugFor(args, ctx);
       const me = await Promise.resolve().then(() => ctx.client.getTicket(slug, own)).catch(() => null);
-      if (hiddenTool(me)) throw new ClientError(TOOL_NO_NOTIFY);
+      if (hiddenTool(me) && !withYouTool(me)) throw new ClientError(TOOL_NO_NOTIFY);
       const r = await ctx.client.notifyUser(slug, own, str(args, "message")!, ctx.env[RUN_ENV]);
       return messageResultText(r);
     },

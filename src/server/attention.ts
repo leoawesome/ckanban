@@ -72,6 +72,9 @@ export function attentionFor(
   const own = ownAttention(t, s, running, o);
   const step = o.step;
   if (!t.main || !step || t.status === "done" || t.status === "backlog") return own;
+  // A "with you" step waits for the user's answer (in this chat): the main card says so until the user answers it,
+  // also while the main ticket works. Its own asks come first.
+  if (step.withYou) return own && own.kind !== "review" && own.kind !== "reply" ? own : { kind: "questions", label: step.label, since: step.since };
   // The main ticket passes a step's question on (or its plan stopped there): name the step.
   if (own && (own.kind === "questions" || own.kind === "blocked" || own.kind === "failed")) return { ...own, label: step.label };
   if (running || (own && own.kind !== "review" && own.kind !== "reply")) return own;
@@ -153,21 +156,29 @@ export function ticketAttention(
     createdTitles: s?.pendingNewTickets.length ? boardTitles(store.listTickets(slug), t.id) : undefined,
     createdKeys: s?.pendingNewTickets.length
       ? new Set(childrenOf(store.listTickets(slug), t.id).flatMap((c) => (c.planKey && !c.proposedAs ? [c.planKey] : []))) : undefined,
-    // A "with you" tool ticket needs the user live: its own Your turn shows even while its main ticket's plan runs.
-    managed: t.parentId && t.kind !== "with_you" ? planActive(store.getTicket(slug, t.parentId)?.plan) : false,
+    managed: t.parentId ? planActive(store.getTicket(slug, t.parentId)?.plan) : false,
     step: t.main ? oldestStep(store.listTickets(slug), t.id, isRunning) : undefined,
     planComplete: t.plan?.state === "stuck" ? planComplete() : undefined,
     huddle,
   });
 }
 
-/** A main ticket's oldest hidden tool ticket that waits on a decision, or null. */
+/**
+ * A main ticket's oldest tool ticket that waits on a decision, or null. "With you" steps waiting for the user come
+ * first; with more than one, the label counts them ("2 steps need you").
+ */
 export function oldestStep(tickets: Ticket[], mainId: string, running: (id: string) => boolean): StepWait | null {
   let best: StepWait | null = null;
+  const you: StepWait[] = [];
   for (const r of familyOf(tickets, mainId)) {
     if (r.ticket.id === mainId || !hiddenTool(r.ticket)) continue;
     const w = stepWait(r.ticket, running(r.ticket.id));
-    if (w && (!best || w.since < best.since)) best = w;
+    if (w?.withYou) you.push(w);
+    else if (w && (!best || w.since < best.since)) best = w;
+  }
+  if (you.length) {
+    you.sort((a, b) => a.since.localeCompare(b.since));
+    return you.length === 1 ? you[0] : { ...you[0], label: `${you.length} steps need you` };
   }
   return best;
 }

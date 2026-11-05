@@ -2,7 +2,7 @@
 // A main ticket is the conversation the user started: it talks, decides and keeps the feature's status, and never edits
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
-import { familyState, groupSummary, hiddenTool, type TicketKind } from "../../web/src/family";
+import { familyState, groupSummary, hiddenTool, withYouTool, type TicketKind } from "../../web/src/family";
 import type { Plan, Ticket } from "./types";
 
 /** Model and effort a tool ticket gets from its kind when create_ticket leaves them out. */
@@ -111,7 +111,7 @@ export function progressStep(plan: Pick<Plan, "progressSig" | "noProgress">, sig
 /** Refusal for notify_user in a tool ticket (with_you ones may ping the user). */
 export const TOOL_NO_NOTIFY = "Tool tickets report to their main ticket; end your run with your question instead.";
 
-const KIND_WORD: Partial<Record<TicketKind, string>> = { explore: "Explore", build: "Build", test: "Test", review: "Review", fix: "Fix", with_you: "With you" };
+const KIND_WORD: Partial<Record<TicketKind, string>> = { explore: "Explore", build: "Build", test: "Test", review: "Review", fix: "Fix" };
 
 /** How the card names a step: its title, led by its kind unless the title already says it ("Test: checkout sign-in"). */
 export function stepName(t: Pick<Ticket, "title" | "kind">): string {
@@ -127,9 +127,22 @@ export interface StepWait {
   label: string;
   attention: "questions" | "failed" | "blocked" | "limit";
   since: string;
+  /** A "with you" step waiting for the user's answer: only the user moves it on, never the main ticket. */
+  withYou?: true;
+}
+
+/**
+ * A "with you" tool ticket waits for the user's answer (its run ended asking, and no answer is on its way). It talks
+ * to the user in its main ticket's chat; the main ticket's card says "Needs you" meanwhile.
+ */
+export function youWaiting(t: Ticket, running: boolean): boolean {
+  if (!withYouTool(t) || running || t.outcome !== "needs_input") return false;
+  if (t.status === "done" || t.status === "ready" || t.status === "in_progress" || t.status === "backlog") return false;
+  return !(t.queued?.length);
 }
 
 export function stepWait(t: Ticket, running: boolean): StepWait | null {
+  if (youWaiting(t, running)) return { id: t.id, label: `${stepName(t)} needs you`, attention: "questions", since: t.runEndedAt ?? t.updatedAt, withYou: true };
   if (running || t.status === "done" || t.status === "ready" || t.status === "in_progress" || t.status === "backlog") return null;
   const since = t.runEndedAt ?? t.updatedAt;
   const at = (why: string, attention: StepWait["attention"]): StepWait => ({ id: t.id, label: `${stepName(t)} ${why}`, attention, since });
@@ -161,6 +174,8 @@ export interface FamilyCard {
   line: FamilyLine | null;
   /** The oldest step waiting on a decision the main ticket hasn't made yet (or passes on to the user). */
   waiting: StepWait | null;
+  /** "With you" steps waiting for the user's answer, oldest first: the card's "Needs you · n". */
+  needsYou: StepWait[];
 }
 
 /**
@@ -179,7 +194,9 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
   const waits = tools.filter(hiddenTool).map((t) => stepWait(t, running(t.id))).filter((w): w is StepWait => !!w)
     .sort((a, b) => a.since.localeCompare(b.since));
   const mainAsks = !running(main.id) && (main.outcome === "needs_input" || main.outcome === "blocked" || main.plan?.state === "stuck");
-  const waiting = waits.find((w) => w.since > seenUntil) ?? (mainAsks ? waits[0] ?? null : null);
+  // A "with you" step waits for the user whatever the main ticket saw: only the user answers it.
+  const needsYou = waits.filter((w) => w.withYou);
+  const waiting = needsYou[0] ?? waits.find((w) => w.since > seenUntil) ?? (mainAsks ? waits[0] ?? null : null);
   let line: FamilyLine | null = null;
   if (waiting) line = { text: waiting.label, tone: "warn" };
   if (!line && main.plan?.state === "stuck") line = { text: `Stuck: ${clip(oneLine(main.plan.reason ?? "no progress"), 140)}`, tone: "warn" };
@@ -208,5 +225,5 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
       line = { text: `${group.title}: ${groupSummary(kids.map((c) => ({ kind: c.kind, state: familyState({ ...c, running: running(c.id) } as any) })))}`, tone: "work" };
     } else line = { text: stepName(top), tone: "work" };
   }
-  return { tools: tools.length, running: working.map((t) => stepName(t)), costUsd, line, waiting };
+  return { tools: tools.length, running: working.map((t) => stepName(t)), costUsd, line, waiting, needsYou };
 }

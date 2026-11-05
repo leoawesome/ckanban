@@ -237,11 +237,9 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
       Link? 1 suggestion
     </button>
   );
-  // A "with you" tool ticket: its own card, with the feature it works for.
-  const withYou = ticket.tool && ticket.kind === "with_you";
-  const featureChip = withYou && ticket.mainTicket ? (
-    <button className="badge part-of-feature" title={`Part of “${ticket.mainTicket.title}”`} onClick={openLinked(ticket.mainTicket.id)}>↳ {ticket.mainTicket.title}</button>
-  ) : null;
+  // A main ticket whose "with you" steps wait for the user's answers (in its chat): "Needs you · n".
+  const stepsWaiting = ticket.main ? ticket.familyCard?.needsYou ?? [] : [];
+  const fromSteps = !!att && stepsWaiting.length > 0 && (stepsWaiting.some((w) => w.label === att.label) || / steps need you$/.test(att.label));
   // Chips that need no action: at most two, the rest fold into "+N".
   const extras: { key: string; node: ReactNode; label: string }[] = [];
   if (partOfChip) extras.push({ key: "part-of", node: partOfChip, label: `Part of “${family!.partOf!.title}”` });
@@ -271,7 +269,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
       {att && (
         <div className={`your-turn att-${att.kind}`} id={a11yId && `${a11yId}-turn`}>
           <span className={`yt-dot ${pulse ? "pulse" : ""}`} aria-hidden />
-          <span className="yt-label">Your turn</span>
+          <span className="yt-label">{fromSteps ? `Needs you · ${stepsWaiting.length}` : "Your turn"}</span>
           <span className="yt-why" title={ticket.error ?? undefined}>{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
         </div>
       )}
@@ -295,7 +293,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
           {plainPreview(last.from === "huddle" ? digestPreview(last.text) : last.text)}
         </div>
       )}
-      {(badge || finish || signInChip || fc || withYou || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.devices || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp) && (
+      {(badge || finish || signInChip || fc || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.devices || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp) && (
         <div className="card-meta" id={a11yId && `${a11yId}-meta`}>
           {/* A main ticket's plan runs in the background: its card shows In progress instead, unless it stopped. */}
           {ticket.plan && ticket.plan.state !== "done" && !(ticket.main && (ticket.plan.state === "running" || ticket.plan.state === "finishing")) && (
@@ -329,8 +327,6 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
           {ticket.status === "review" && limit && !dragging && currentPr(ticket)?.state === "OPEN" && currentPr(ticket)?.conflicts && (
             <ResolveConflicts slug={limit.slug} ticket={ticket} onError={limit.onError} small />
           )}
-          {withYou && <span className="badge with-you" title="This step needs you live; its result goes to its feature">with you</span>}
-          {featureChip}
           {fc && (
             <span className="badge fam" title={fc.running.length ? `Working now:\n${fc.running.join("\n")}` : "No tool ticket is working now"}
               aria-label={`${fc.tools} tool tickets${fc.running.length ? `, ${fc.running.length} working` : ""}`}>

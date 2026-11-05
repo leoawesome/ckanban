@@ -5,7 +5,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mainTicketOf } from "../../web/src/family";
+import { mainTicketOf, withYouTool } from "../../web/src/family";
 import { type AttentionKind, type HostHuddle, ticketAttention } from "./attention";
 import type { Bus } from "./events";
 import { run as runCmd } from "./git";
@@ -438,9 +438,13 @@ export class Notifier {
     const none = { delivered: false, devices: 0, onScreen: 0, webhook: false, banner: false, error: null };
     const settings = this.settings();
     if (!settings.kinds.message) return { ...none, reason: "off" };
-    const m: NotifyMessage = { board: slug, boardName: p.name, ticketId: id, title: t.title, kind: "message", label: text, url: this.link(slug, id) };
+    // A "with you" step talks to the user in its main ticket's chat: a tap opens that chat (newest at the bottom, where its message is).
+    const main = withYouTool(t) ? mainTicketOf(this.store.listTickets(slug), id) : undefined;
+    const m: NotifyMessage = main && main.id !== id
+      ? { board: slug, boardName: p.name, ticketId: main.id, title: main.title, kind: "message", label: `${t.title}: ${text}`, url: this.link(slug, main.id) }
+      : { board: slug, boardName: p.name, ticketId: id, title: t.title, kind: "message", label: text, url: this.link(slug, id) };
     const banner = settings.mac && !this.macBrowser();
-    if (banner) this.banner(t.title, text);
+    if (banner) this.banner(m.title, m.label);
     const [hook, push] = await Promise.all([
       this.sendWebhook(settings, m),
       this.o.push ? this.o.push.send(pushPayload(m)) : Promise.resolve({ sent: 0, removed: 0, onScreen: 0, error: null }),

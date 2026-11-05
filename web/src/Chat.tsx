@@ -34,7 +34,8 @@ import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
 import { StatusBlock, StatusNoteView, useFeatureStatus } from "./StatusBlock";
 import { ResultCardView } from "./ResultCardView";
-import { hiddenTool } from "./family";
+import { hiddenTool, withYouTool } from "./family";
+import { StepBlock, type StepInfo, type StepMsg, useStepMessages } from "./StepMessages";
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
@@ -260,6 +261,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   const refine = REFINE(ticket.status);
   // A feature's main chat pins its "Where we are" status on top; the user's notes show in the timeline.
   const feature = useFeatureStatus(slug, ticket, tickets);
+  // A main ticket's "with you" steps talk to the user here: their messages and forms show inline, answered right here.
+  const stepTalk = useStepMessages(slug, ticket, tickets);
 
   // Resolves to the loaded tail (null when a newer load won or there is no session).
   const loadTail = useCallback(async (): Promise<SessionEntry[] | null> => {
@@ -838,6 +841,34 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
     if (i < 0) i = blocks.length;
     resultsAt.set(i, [...(resultsAt.get(i) ?? []), r]);
   }
+  // "With you" steps' messages and the board's grey notes, like the results: before the first block that came after
+  // them, in time order; a step's messages in a row form one labelled block.
+  type Side = { kind: "note"; at: string; ticketId: string; text: string } | { kind: "step"; at: string; step: StepInfo; msgs: StepMsg[] };
+  const sideAt = new Map<number, Side[]>();
+  const sideItems: ({ kind: "note"; at: string; ticketId: string; text: string } | { kind: "msg"; at: string; m: StepMsg })[] = [
+    ...(ticket.boardNotes ?? []).map((n) => ({ kind: "note" as const, ...n })),
+    ...stepTalk.messages.map((m) => ({ kind: "msg" as const, at: m.at, m })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  for (const it of sideItems) {
+    if (page && page.start > 0 && entries.length && it.at < entries[0].at) continue;
+    let i = blocks.findIndex((b) => (b.kind === "entry" ? b.e : b.items[0]).at > it.at);
+    if (i < 0) i = blocks.length;
+    const list = sideAt.get(i) ?? sideAt.set(i, []).get(i)!;
+    if (it.kind === "note") {
+      list.push(it);
+      continue;
+    }
+    const step = stepTalk.steps.find((x) => x.id === it.m.stepId);
+    if (!step) continue;
+    const prev = list.at(-1);
+    if (prev?.kind === "step" && prev.step.id === step.id) prev.msgs.push(it.m);
+    else list.push({ kind: "step", at: it.at, step, msgs: [it.m] });
+  }
+  const newestOf = new Map(stepTalk.messages.map((m) => [m.stepId, m.uuid]));
+  const sideView = (i: number) => sideAt.get(i)?.map((x) => x.kind === "note"
+    ? <div key={`note-${x.ticketId}-${x.at}`} className="chat-note board-note">{x.text}<span title={fullTime(x.at)}> · {timeAgo(x.at)}</span></div>
+    : <StepBlock key={`step-${x.msgs[0].uuid}`} slug={slug} step={x.step} msgs={x.msgs} newest={x.msgs.some((m) => newestOf.get(x.step.id) === m.uuid)}
+        onOpenTicket={onOpenTicket} onError={onError} onSent={stepTalk.reload} onPreview={onOpenOutput && ((m) => onOpenOutput(`mockups/${m}`))} />);
   // Turns: avatar and name line on the first row of each; time dividers after long pauses.
   const layout = layoutTurns(blocks.map((b) => {
     const first = b.kind === "entry" ? b.e : b.items[0];
@@ -920,6 +951,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
               {helpAt.get(i)?.map((c) => <HelpCardView key={c.id} card={c} />)}
               {notesAt.get(i)?.map((nt) => <StatusNoteView key={nt.at} text={nt.text} />)}
               {resultsAt.get(i)?.map((r) => <ResultCardView key={`${r.ticketId}-${r.at}`} r={r} onOpenTicket={onOpenTicket} />)}
+              {sideView(i)}
               {i === dividerAt && divider}
               {layout[i].divider && <TimeDivider label={layout[i].divider!} />}
               {renderBlock(b, before(first, bp?.at), layout[i], b.kind === "tools" ? i === blocks.length - 1 : i === newestReply)}
@@ -930,6 +962,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
         {helpAt.get(blocks.length)?.map((c) => <HelpCardView key={c.id} card={c} />)}
         {notesAt.get(blocks.length)?.map((nt) => <StatusNoteView key={nt.at} text={nt.text} />)}
         {resultsAt.get(blocks.length)?.map((r) => <ResultCardView key={`${r.ticketId}-${r.at}`} r={r} onOpenTicket={onOpenTicket} />)}
+        {sideView(blocks.length)}
         {help && <HelpPending help={help} />}
         {/* Replies sent while Claude wasn't working are part of the timeline: plain bubbles, before Claude's reply. */}
         {pending.filter((p) => !p.steer).map((p, i) => {
@@ -1086,7 +1119,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
         <div className="tool-note" role="note">
           {ticket.mainTicket
             ? <><button className="link-btn" onClick={() => onOpenTicket?.(ticket.mainTicket!.id)}>{ticket.mainTicket.title}</button> is in charge of this.</>
-            : "Its feature is in charge of this."} What you say here is passed to it.
+            : "Its feature is in charge of this."} {withYouTool(ticket)
+            ? "This step talks to you in its feature's chat too; what you say here or there goes straight to it."
+            : "What you say here is passed to it."}
         </div>
       )}
       <div className="composer">

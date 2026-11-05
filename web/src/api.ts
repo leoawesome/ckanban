@@ -362,6 +362,8 @@ export interface Ticket {
   tool?: boolean;
   /** Tool tickets' results, shown in this chat as cards. */
   results?: ResultCard[];
+  /** Grey board notes in this chat (a "with you" step started waiting); they never wake Claude. */
+  boardNotes?: { at: string; ticketId: string; text: string }[];
   /** A main ticket: its tool tickets working now (the card shows In progress meanwhile). */
   familyWorking?: number;
   /** A main ticket: what its card shows of the family (tool tickets have no card). */
@@ -1266,6 +1268,8 @@ export interface FamilyCardInfo {
   costUsd: number;
   line: { text: string; tone: "work" | "warn"; until?: string | null } | null;
   waiting: { id: string; label: string; attention: string; since: string } | null;
+  /** "With you" steps waiting for the user's answer in this chat, oldest first. */
+  needsYou?: { id: string; label: string; attention: string; since: string }[];
 }
 
 /** A ticket on any board, as the ⌘K command bar lists it. */

@@ -326,8 +326,6 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .card-family-line.warn { color: var(--warn); font-weight: 600; }
 .card-via { margin-top: 3px; font-size: var(--fs-2xs); color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge.fam { background: var(--surface-2); color: var(--muted); cursor: default; }
-.badge.with-you { border: 1px solid var(--warn); color: var(--warn); background: transparent; }
-.badge.part-of-feature { background: var(--info-soft); color: var(--info); border: 0; cursor: pointer; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 /* A tool ticket's chat: its feature is in charge. */
 .tool-note { margin: 8px 12px 0; padding: 6px 10px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); }
 .tool-note button { font-weight: 600; }
@@ -842,6 +840,15 @@ body > .output-view.reader { position: fixed; }
 .wake-note summary::before { content: "▸ "; }
 .wake-note[open] summary::before { content: "▾ "; }
 .wake-note[open] { align-self: stretch; border-radius: var(--r-md); padding: 6px 10px; }
+/* A "with you" step talking to the user in its main ticket's chat: its own labelled block, answered right there. */
+.step-block { border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: var(--r-md); padding: 8px 14px; max-width: 90%; background: var(--surface); margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
+.step-head { font-size: var(--fs-xs); color: var(--muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.step-head .link-btn { font-weight: 600; color: var(--text); font-size: var(--fs-sm); }
+.step-head .step-waiting { margin-left: 6px; border: 1px solid var(--warn); color: var(--warn); background: transparent; }
+.step-msg.user { font-size: var(--fs-sm); color: var(--muted); }
+.step-msg.user .who { font-weight: 600; color: var(--text); }
+.step-reply { display: flex; gap: 6px; align-items: flex-end; }
+.step-reply textarea { flex: 1; resize: none; font: inherit; font-size: var(--fs-sm); padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); }
 .wake-body { margin-top: 6px; color: var(--text); font-size: var(--fs-xs); max-height: 320px; overflow: auto; }
 .chat-typing { align-self: flex-start; display: flex; gap: 8px; align-items: center; max-width: 100%; font-size: var(--fs-sm); color: var(--accent-text); padding: 4px 6px; font-family: var(--mono); }
 /* What Claude is doing can be one long word (a tool's input): wrap it instead of widening the chat. */

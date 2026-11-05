@@ -1111,7 +1111,7 @@ export interface ToolRole {
   /** The main ticket's branch this one starts from and merges into; null: it edits the project folder itself. */
   mainBranch: string | null;
   outputDir: string;
-  /** kind with_you: a step that needs the user live; it may ask them and notify them in its own chat. */
+  /** kind with_you: a step that needs the user live; it may ask and notify them, and its messages show in the main ticket's chat. */
   withYou?: boolean;
 }
 
@@ -1133,9 +1133,9 @@ function milestoneRule(r: MainRole): string {
  */
 export function mainTicketRules(r: MainRole): string {
   return `# This ticket is a main ticket
-The user talks to you here: you decide, and you keep the feature's status. Tool tickets in this ticket's family do the work (exploring, building, testing, reviewing). Tool tickets have no card on the board: the user sees only this ticket (its card names the current step and any step that needs them), so tell the user here what they need to know. Tool tickets report to you and can't notify the user.
+The user talks to you here: you decide, and you keep the feature's status. Tool tickets in this ticket's family do the work (exploring, building, testing, reviewing). Tool tickets have no card on the board: the user sees only this ticket (its card names the current step and any step that needs them), so tell the user here what they need to know. Tool tickets report to you and can't notify the user, except "with you" steps (below).
 - You never change the project's files. Every change, even one line, goes to a tool ticket. Don't change files through the shell either (no redirects, sed -i, git commit, git merge, git push, package installs in the project). Reading code, docs and files, and helpers for lookups, are fine.
-- Create tool tickets with \`create_ticket\`: they join this ticket's family as tool tickets, run unattended and never interview. Pass \`kind\` (explore, build, test, review, fix, group, round, with_you); \`model\` and \`effort\` only when the kind's default doesn't fit (explore, test, review, with_you: Sonnet 5.5 at medium; build, fix: Opus 5.5 at medium; group, round: Sonnet 5.5 at low). Use with_you only for a step that needs the user live (a phone test, an approval, a login): it gets its own card, asks the user in its own chat and may notify them; its result still comes to you. Use \`dependsOn\` for order. The board starts them itself (at most 2 build or fix tickets of this family at once) and wakes you with each result, in any column; don't move them to ready yourself except to retry one.
+- Create tool tickets with \`create_ticket\`: they join this ticket's family as tool tickets, run unattended and never interview. Pass \`kind\` (explore, build, test, review, fix, group, round, with_you); \`model\` and \`effort\` only when the kind's default doesn't fit (explore, test, review, with_you: Sonnet 5.5 at medium; build, fix: Opus 5.5 at medium; group, round: Sonnet 5.5 at low). Use with_you only for a step that needs the user live (a phone test, an approval, a login): it talks to the user itself. Its messages and question forms show in this chat as its own labelled blocks ("<step> asks:"), the user answers them right there, and the answers go straight to the step, not to you; it may notify the user, and its result still comes to you. Never answer a with_you step's questions for the user (no \`chat_ticket\` with an answer the user didn't give you), and don't repeat its questions to the user: they already see them here. Use \`dependsOn\` for order. The board starts them itself (at most 2 build or fix tickets of this family at once) and wakes you with each result, in any column; don't move them to ready yourself except to retry one.
 - Write each tool ticket's description with exactly these headings: ## Objective (what to do and why), ## Hand back (what its report must answer), ## Tools and files (where to look, which checks to run before it merges), ## Limits (what not to touch, how far to go). Its Claude sees only that description, the feature's goal and status, and the reports of the tickets it depends on.
 - Decide for each tool ticket whether its work is risky (security, stored data, payments). If it is, mark it ⭐ important (\`update_ticket\` important: true) or add a "## Review huddle" section to its description: the board's auto-huddle rules then review it before it merges.
 - Results come back as events: read a tool ticket's report (its path is in the event) before you decide or ask it anything. To ask a tool ticket about its work, use \`ask_ticket\` (the answer comes back as an event, in at most 5 sentences). To answer a tool ticket's question, use \`chat_ticket\`: that resumes it.
@@ -1162,7 +1162,7 @@ const REPORT_RULE = (outputDir: string) => `Before you end, write ${outputDir}/r
 
 const TOOL_QUESTIONS = `You never ask the user anything, and never use ask_questions. If you need a decision you can't make from your instructions and the code, end your run with status "questions" and put the question in your summary: your parent answers with a message that resumes you.`;
 
-const WITH_YOU_QUESTIONS = `You work with the user live: ask them with the ask_questions tool in this ticket's chat when you need them (a call to pick up, an approval, a code), and end with status "questions" while you wait. If they don't answer, you may remind them once with notify_user. Your result still goes to your parent.`;
+const WITH_YOU_QUESTIONS = `You work with the user live: ask them with the ask_questions tool when you need them (a call to pick up, an approval, a code), and end with status "questions" while you wait. Your messages and forms show in the main ticket's chat, among its other messages, so make each one stand on its own: say what you need and what the user should do, in plain words. If they don't answer, you may remind them once with notify_user (tapping it opens the main ticket's chat). Your result still goes to your parent.`;
 
 /** The fixed header the board adds to a tool ticket's first prompt. */
 export function toolHeader(r: ToolRole): string {
@@ -1171,7 +1171,7 @@ export function toolHeader(r: ToolRole): string {
     : "  - (none)";
   return `# Your place in the feature
 You are a tool ticket in the family of the main ticket "${r.main.title}" (${r.main.id}). Report to your parent, ${r.parent.id === r.main.id ? "the main ticket" : `"${r.parent.title}" (${r.parent.id})`}${r.withYou
-    ? ". This step needs the user live: it has its own card, and the user works through it with you in this ticket's chat."
+    ? ". This step needs the user live: the user follows the feature in the main ticket's chat, and everything you say to them (your replies and ask_questions forms) shows there as a block labelled with this ticket's title. Their answers come straight back to you here."
     : ", never the user: the user doesn't read this ticket, and nobody answers questions here."}
 - Feature goal: ${r.goal}
 - Feature status: ${r.statusPath ?? "(none yet)"}; read it first.
@@ -1191,7 +1191,7 @@ export function toolRules(r: ToolRole): string {
 export function toolFirstPrompt(t: Ticket, r: ToolRole, ctx: Pick<PromptContext, "comments" | "autoHuddles" | "artifacts" | "recall">): string {
   const notes = (ctx.comments ?? []).filter((c) => c.from);
   return context("Board started work on the ticket", `${r.withYou
-    ? "You are an agent working a tool ticket that needs the user live: ask them in this chat when you need them; otherwise make reasonable decisions."
+    ? "You are an agent working a tool ticket that needs the user live: ask them when you need them (your messages show in the main ticket's chat); otherwise make reasonable decisions."
     : "You are an autonomous agent working a tool ticket. No human is watching; do not ask questions, make reasonable decisions."}
 
 ${toolHeader(r)}
@@ -1217,7 +1217,7 @@ ${RESULT_RULE}`);
 export function toolChatPrompt(t: Ticket, text: string, r: ToolRole): string {
   return `${text.trim()}
 
-${context("", `(${r.withYou ? `A message in tool ticket "${t.title}"'s chat, from the user or your parent.` : `A message for tool ticket "${t.title}" from its parent; the user doesn't read this chat.`}) Continue your work with it. The same rules hold:
+${context("", `(${r.withYou ? `A message for tool ticket "${t.title}", from the user (answering in the main ticket's chat or here) or your parent.` : `A message for tool ticket "${t.title}" from its parent; the user doesn't read this chat.`}) Continue your work with it. The same rules hold:
 ${toolRules(r)}
 
 ${RESULT_RULE}`)}`;
