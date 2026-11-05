@@ -11,7 +11,7 @@ import { parseProposal } from "../src/server/session";
 import type { SideCallInput, SideCallResult } from "../src/server/side-call";
 import { Store } from "../src/server/store";
 import type { Ticket } from "../src/server/types";
-import { cardFamilies, familyNearby, familyOf, parentLink, wouldLoop, type FamilyTicket } from "../web/src/family";
+import { cardFamilies, familyNearby, familyOf, looksLikeQuestion, parentLink, wouldLoop, type FamilyTicket } from "../web/src/family";
 import { tempDir, until } from "./helpers";
 
 const at = (n: number) => `2026-10-${String(n).padStart(2, "0")}T00:00:00.000Z`;
@@ -270,4 +270,20 @@ test("propose_ticket can carry a family move: a ticket id, or none to take it ou
   expect(parseProposal({ title: "T", description: "D" })!.partOf).toBeUndefined();
   expect(proposalError({ title: "T", description: "D", partOf: 5 })).toContain("partOf");
   expect(proposalError({ title: "T", description: "D", partOf: "t_abc" })).toBeNull();
+});
+
+test("looksLikeQuestion: a question mark at the end or a question word first, no AI call", () => {
+  expect(looksLikeQuestion("why does this chat show Old chat")).toBe(true);
+  expect(looksLikeQuestion("The chat shows Old chat?")).toBe(true);
+  expect(looksLikeQuestion("How do I add a tag")).toBe(true);
+  expect(looksLikeQuestion("Is the daemon running")).toBe(true);
+  expect(looksLikeQuestion("Can we ship today")).toBe(true);
+  expect(looksLikeQuestion("Old chat label", "Why is it there?")).toBe(true);
+  expect(looksLikeQuestion("", "what does Make ticket do")).toBe(true);
+  // Work, not questions: words that only start like one don't count.
+  expect(looksLikeQuestion("Add a login page")).toBe(false);
+  expect(looksLikeQuestion("Issue with the board")).toBe(false);
+  expect(looksLikeQuestion("Document the API", "Cover every route.")).toBe(false);
+  expect(looksLikeQuestion("Cannot log in")).toBe(false);
+  expect(looksLikeQuestion("")).toBe(false);
 });

@@ -3489,6 +3489,7 @@ button.tag-chip:hover { border-color: currentColor; }
 .gather-row input[type="checkbox"], .feature-suggest .choice input[type="radio"] { width: auto; flex: none; }
 .feature-suggest .choice { flex-direction: row; font-weight: 400; }
 .feature-suggest .choice select { width: auto; max-width: 260px; }
+.ask-first { border: 1px dashed var(--border); border-radius: var(--r-md); padding: 8px 12px; line-height: 1.45; }
 .gather-new input { width: auto; flex: 1; }
 .ft-st { white-space: nowrap; width: 112px; }
 

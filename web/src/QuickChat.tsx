@@ -1,9 +1,12 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { api, onReconnect, subscribe, type Profile, type QuickChat, type SessionEntry } from "./api";
+import { api, onReconnect, subscribe, type Profile, type QuickChat, type SessionEntry, type Ticket } from "./api";
+import { openFeatures } from "./family";
 import { AttachmentChips } from "./AttachmentChips";
 import { autoGrow } from "./autoGrow";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { draftKey } from "./drafts";
+import { browserStore, draftKey, loadSaved, save } from "./drafts";
+import { FeatureChoice, useFeatureChoice } from "./FeatureChoice";
+import { Modal } from "./Modal";
 import { enterSends } from "./enterSends";
 import { ArrowDownIcon, ChatIcon, MoreIcon, PlusIcon, TrashIcon } from "./icons";
 import { ImagePickButton } from "./ImagePickButton";
@@ -42,6 +45,22 @@ const writeSelected = (slug: string, id: string | null) => {
 
 const HANDOFF_RETRY_MS = 500;
 
+/** Fired by askInChat: an open Chat pane switches to a new chat so the filled-in message box shows. */
+const ASK_EVENT = "ckanban:ask-in-chat";
+
+/**
+ * Puts text in a new chat's message box (added under anything already typed there) and selects the new chat, so Chat
+ * opens on it. The caller then opens the Chat panel or the Ask tab.
+ */
+export function askInChat(slug: string, text: string) {
+  const key = draftKey(slug, "chat-new");
+  const had = loadSaved<string>(browserStore(), key);
+  const before = typeof had === "string" && had.trim() ? had : "";
+  if (!before.includes(text)) save(browserStore(), key, before ? `${before}\n\n${text}` : text);
+  writeSelected(slug, null);
+  window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: slug }));
+}
+
 /** What Retry under a failed reply sends. */
 const RETRY = "That reply stopped with an error. Please try again.";
 
@@ -64,6 +83,8 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
   const [renaming, setRenaming] = useState<QuickChat | null>(null);
   const [deleting, setDeleting] = useState<QuickChat | null>(null);
   const [making, setMaking] = useState(false);
+  // Make ticket with open features on the board: which one the new ticket joins (null: no choice open).
+  const [choosing, setChoosing] = useState<{ chat: QuickChat; tickets: Ticket[] } | null>(null);
 
   const load = useCallback(() => api.chats(slug).then(setChats).catch((e) => toast(`Couldn't load the chats: ${e.message}`, { tone: "error" })), [slug]);
   useEffect(() => {
@@ -72,6 +93,14 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
     setThreadKey((n) => n + 1);
     load();
     return onReconnect(load);
+  }, [slug]);
+  // "Ask in Chat" from the New ticket form: show the new chat, whose message box askInChat filled in.
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent).detail === slug) pick(null);
+    };
+    window.addEventListener(ASK_EVENT, on);
+    return () => window.removeEventListener(ASK_EVENT, on);
   }, [slug]);
   useEffect(() => subscribe((e) => {
     if (e.type === "chat.updated" && e.profile === slug) {
@@ -107,11 +136,27 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
     writeSelected(slug, c.id);
   };
 
+  // With an open feature on the board, ask which one the ticket joins first; with none, one click makes it.
   const makeTicket = async (c: QuickChat) => {
     if (making) return;
     setMaking(true);
+    let tickets: Ticket[] = [];
     try {
-      const r = await api.chatTicket(slug, c.id);
+      tickets = await api.tickets(slug);
+    } catch {}
+    if (openFeatures(tickets).length) {
+      setMaking(false);
+      setChoosing({ chat: c, tickets });
+      return;
+    }
+    await makeTicketNow(c);
+  };
+
+  const makeTicketNow = async (c: QuickChat, partOf?: string) => {
+    setMaking(true);
+    try {
+      const r = await api.chatTicket(slug, c.id, partOf);
+      setChoosing(null);
       setChats((cs) => cs?.map((x) => (x.id === c.id ? r.chat : x)) ?? cs);
       toast("Ticket made from the chat. It's in Backlog and its chat carries on from here.", { tone: "ok" });
       // The ticket owns that conversation now: a fresh chat here, so two replies never share it.
@@ -134,6 +179,8 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
   );
   const dialogs = (
     <>
+      {choosing && <MakeTicketDialog chat={choosing.chat} tickets={choosing.tickets} busy={making}
+        onClose={() => setChoosing(null)} onMake={(partOf) => makeTicketNow(choosing.chat, partOf)} />}
       {renaming && <RenameDialog chat={renaming} onClose={() => setRenaming(null)}
         onSave={async (title) => {
           const c = await api.chatRename(slug, renaming.id, title);
@@ -204,6 +251,33 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
       </section>
       {dialogs}
     </div>
+  );
+}
+
+/** Make ticket when the board has open features: add the new ticket to one of them, or keep it on its own. */
+function MakeTicketDialog({ chat, tickets, busy, onClose, onMake }: {
+  chat: QuickChat;
+  tickets: Ticket[];
+  busy: boolean;
+  onClose: () => void;
+  onMake: (partOf?: string) => void;
+}) {
+  const fc = useFeatureChoice(tickets, chat.title, chat.firstMessage ?? "");
+  const ready = fc.choice !== "other" || !!fc.partOf;
+  return (
+    <Modal title="Make a ticket from this chat" onClose={onClose}>
+      <form className="form" onSubmit={(e) => {
+        e.preventDefault();
+        if (!busy && ready) onMake(fc.partOf);
+      }}>
+        <p className="muted small">The ticket goes to Backlog and its chat carries on this conversation.</p>
+        <FeatureChoice state={fc} name="chat-feature" />
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="btn primary" disabled={busy || !ready}>{busy ? "Making ticket…" : "Make ticket"}</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
