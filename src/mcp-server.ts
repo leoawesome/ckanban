@@ -1583,7 +1583,8 @@ export const TOOLS: Tool[] = [
       "Search earlier messages of a ticket's chat, including chats from before \"Send in a fresh chat\" or an automatic fresh start, instead of " +
       "guessing or re-reading everything. Matches messages that have all the query's words (whole words, any case), newest first, at most 10, " +
       "each with its date, who wrote it, the lines around it and a ref for read_chat. Searches the user's messages and your replies; tool calls " +
-      "and their output only with includeTools. By default your own ticket's chat; a main ticket may also search its tool tickets'.",
+      "and their output only with includeTools. By default your own ticket's chat; a main ticket may also search its tool tickets'. In a chat reply to a message the user typed, any ticket's chat, " +
+      "also on another board (pass its profile and ticket).",
     inputSchema: {
       type: "object",
       properties: {
@@ -1607,7 +1608,7 @@ export const TOOLS: Tool[] = [
     name: "read_chat",
     description:
       "Load the messages of a ticket's chat around a ref from search_chat (\"<session id>:<number>\"): by default 10 before and 10 after, at most " +
-      "40 messages or about 8,000 tokens, whichever comes first.",
+      "40 messages or about 8,000 tokens, whichever comes first. For another board's ticket pass its profile (in a chat reply to a message the user typed).",
     inputSchema: {
       type: "object",
       properties: {
@@ -1679,7 +1680,7 @@ export const TOOLS: Tool[] = [
         },
         gather: {
           type: "array",
-          description: "With main: true, existing tickets (same board) to move into the new main ticket, when the user asks for that. " +
+          description: "With main: true, existing tickets (of the board it is created on) to move into the new main ticket, when the user asks for that. " +
             "They keep their cards, chats, work and pull requests. Same entries as gather_tickets.",
           items: {
             type: "object",
@@ -1955,7 +1956,8 @@ export const TOOLS: Tool[] = [
       "Update a feature's \"Where we are\" status, pinned at the top of its main chat (the family's top ticket) and saved as status.md in its outputs. " +
       "Pass only the sections that changed; each call replaces just those (an empty string clears one) and returns the whole status. " +
       "The board adds counts, test results and pull request states itself. Any run of a ticket in the feature may call it; " +
-      "on a ticket that has no status yet it starts one, which makes its family's top ticket a feature.",
+      "on a ticket that has no status yet it starts one, which makes its family's top ticket a feature. A chat reply to a message the user typed may " +
+      "also update another feature, on this board or another (pass its profile and id); the change is logged on the feature.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1980,8 +1982,8 @@ export const TOOLS: Tool[] = [
     allowInRun: true,
     async run(args, ctx) {
       const slug = await slugFor(args, ctx);
-      const id = str(args, "id", false)?.trim() || runTicketId(ctx);
-      if (!id) throw new ClientError("id is required outside a board run");
+      const id = str(args, "id", false)?.trim() || (slug === runProfile(ctx.env) ? runTicketId(ctx) : null);
+      if (!id) throw new ClientError("id is required outside a board run and for another board's feature");
       const patch: Record<string, unknown> = {};
       for (const [from, to] of [["goal", "goal"], ["done", "done"], ["broken", "broken"], ["waitingOnYou", "waiting"], ["nextStep", "next"]] as const) {
         if (typeof args?.[from] === "string") patch[to] = args[from];
@@ -1996,9 +1998,10 @@ export const TOOLS: Tool[] = [
   {
     name: "gather_tickets",
     description:
-      "Gather existing tickets into a feature (when the user asks in the feature's main chat): each one links under one of the feature's groups, " +
+      "Gather existing tickets into a feature (when the user asks, in a message they typed in this chat): each one links under one of the feature's groups, " +
       "a new group, or the feature itself. They keep their chats, work and pull requests, and running ones keep running. " +
-      "A ticket's own tickets that would sit deeper than 2 levels move up beside it. Find tickets with list_tickets first.",
+      "A ticket's own tickets that would sit deeper than 2 levels move up beside it. Find tickets with list_tickets first. " +
+      "Works on any feature, also on another board (pass its profile and the feature's id); outside the feature's own chat it is logged on the changed tickets.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2023,8 +2026,8 @@ export const TOOLS: Tool[] = [
     allowInRun: true,
     async run(args, ctx) {
       const slug = await slugFor(args, ctx);
-      const id = str(args, "id", false)?.trim() || runTicketId(ctx);
-      if (!id) throw new ClientError("id is required outside a board run");
+      const id = str(args, "id", false)?.trim() || (slug === runProfile(ctx.env) ? runTicketId(ctx) : null);
+      if (!id) throw new ClientError("id is required outside a board run and for another board's feature");
       if (!Array.isArray(args?.tickets) || !args.tickets.length) throw new ClientError("tickets must list { id, group } entries");
       return gatherText(await ctx.client.gather(slug, id, args.tickets, typeof args?.newGroup === "string" ? args.newGroup : null, ctx.env[RUN_ENV]));
     },

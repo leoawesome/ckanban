@@ -384,8 +384,7 @@ export function createServer(deps: ServerDeps) {
     if (runSlug !== slug && runId) {
       const ticket = !req.headers.get(HUDDLE_HEADER) && board.userAskedRun(runSlug, runId) ? store.getTicket(runSlug, runId) : null;
       if (ticket) return { guest: { slug: runSlug, ticket } };
-      throw new HttpError(403, `changing tickets on another board (${slug}) only works in a chat reply to a message the user typed in ` +
-        `that chat (on ${runSlug}); work runs, plan wake-ups, replies to other tickets and huddle helpers stay on their own board`);
+      throw otherBoard("changing tickets", slug, runSlug);
     }
     const mine = runSlug === slug && !!runId && !req.headers.get(HUDDLE_HEADER);
     // A main ticket (or tool group) manages its own family from every run, whoever started it, in any column.
@@ -417,16 +416,48 @@ export function createServer(deps: ServerDeps) {
       "without the user's message, a reply to another ticket's question or a huddle helper): only a ticket's active run or chat reply, " +
       "a Planning chat answering the user's message, and a planner on its own child tickets may change other tickets");
   };
-  /** search_chat / read_chat: a run reads its own ticket's chat, and a main ticket its family's; the user's own Claude any. */
+  /** The refusal for a run reaching another board without the user's typed message (see runRights and askedBy). */
+  const otherBoard = (what: string, slug: string, runSlug: string) =>
+    new HttpError(403, `${what} on another board (${slug}) only works in a chat reply to a message the user typed in ` +
+      `that chat (on ${runSlug}); work runs, follow-ups, plan wake-ups, replies to other tickets and huddle helpers stay on their own board`);
+  /**
+   * A chat answering a message the user typed there (Board.userAskedRun), on this board or another, not a huddle helper:
+   * it may update any feature's status, gather tickets into any feature and read any ticket's chat for the user.
+   * Returns how its change is credited on the changed ticket, or null for every other caller (and the user).
+   */
+  const askedBy = (req: Request, slug: string): string | null => {
+    const h = req.headers.get(RUN_HEADER);
+    if (!h || req.headers.get(HUDDLE_HEADER)) return null;
+    const [runSlug, runId] = h.split("/");
+    if (!runSlug || !runId || !board.userAskedRun(runSlug, runId)) return null;
+    const t = store.getTicket(runSlug, runId);
+    if (!t) return null;
+    return runSlug === slug ? byChat(t) : byGuest({ slug: runSlug, ticket: t });
+  };
+  /** The board of the run that sent the request (RUN_HEADER), null outside runs. */
+  const runBoard = (req: Request): string | null => req.headers.get(RUN_HEADER)?.split("/")[0] ?? null;
+  /** The run's ticket when it runs on this board, else null (a run on another board, or the user). */
+  const ownRun = (req: Request, slug: string): string | null => {
+    const [runSlug, runId] = req.headers.get(RUN_HEADER)?.split("/") ?? [];
+    return runSlug === slug && runId ? runId : null;
+  };
+  /**
+   * search_chat / read_chat: a run reads its own ticket's chat, and a main ticket its family's; a chat answering the
+   * user's typed message any ticket's, on any board (askedBy); the user's own Claude any.
+   */
   const chatReach = (req: Request, slug: string, target: Ticket) => {
     if (req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "search_chat and read_chat work in a ticket's own runs, not for huddle helpers");
-    const caller = runTicket(req, slug);
-    if (!caller || caller === target.id) return;
-    const me = store.getTicket(slug, caller);
-    const manager = isManager(me);
-    if (manager && inFamily(slug, caller, target.id)) return;
+    const from = runBoard(req);
+    if (from === null) return;
+    const caller = ownRun(req, slug);
+    if (caller === target.id) return;
+    const manager = !!caller && isManager(store.getTicket(slug, caller));
+    if (manager && inFamily(slug, caller!, target.id)) return;
+    if (askedBy(req, slug)) return;
+    if (!caller) throw otherBoard("reading chats", slug, from);
     throw new HttpError(403, `${target.id} is out of reach: from this run you may search the chat of your own ticket (${caller})` +
-      (manager ? " and of its tool tickets (get_family lists them)" : "") + ".");
+      (manager ? " and of its tool tickets (get_family lists them)" : "") +
+      "; other tickets' chats only in a reply to a message the user typed in this chat.");
   };
   /** A ticket's chat, oldest session first: every one left behind with "Send in a fresh chat", then the current one. */
   const chatSources = (t: Ticket, tools: boolean): ChatSource[] =>
@@ -454,6 +485,8 @@ export function createServer(deps: ServerDeps) {
   const byRun = (runner: Ticket) => `by the run of ${runner.id} ("${runner.title}")`;
   /** How a change a chat on another board made for the user is credited on the changed ticket. */
   const byGuest = (g: Guest) => `by the chat of ${g.ticket.id} on ${store.getProfile(g.slug)?.name ?? g.slug} (user request)`;
+  /** How a change a chat on this board made for the user, outside its own feature, is credited on the changed ticket. */
+  const byChat = (t: Ticket) => `by the chat of ${t.id} ("${t.title}") (user request)`;
   /** Statuses whose move starts a Claude run: Ready (In progress queues there) and Planning (its interview). */
   const startsRun = (st?: string) => st === "ready" || st === "in_progress" || st === "planning";
   /** A run's start of another ticket's run, refused past the chain limits (Board.runStart). */
@@ -1334,7 +1367,7 @@ export function createServer(deps: ServerDeps) {
     // A run reads its own ticket's chat; a main ticket also its tool tickets'. Huddle helpers don't.
     if (parts[2] === "chat" && parts.length === 4 && m === "GET") {
       if (parts[3] === "search") {
-        const id = url.searchParams.get("ticket") || runTicket(req, slug);
+        const id = url.searchParams.get("ticket") || ownRun(req, slug);
         if (!id) throw new HttpError(400, "say which ticket's chat to search (ticket)");
         const t = ticketOr404(slug, id);
         chatReach(req, slug, t);
@@ -1824,18 +1857,26 @@ export function createServer(deps: ServerDeps) {
         };
       }));
     }
-    // "Where we are": the feature's status (feature.ts). GET reads it; POST is update_status (the user, or a run of a
-    // ticket in the same family); POST notes is "Add a note" (the user only).
+    // "Where we are": the feature's status (feature.ts). GET reads it; POST is update_status (the user, a run of a
+    // ticket in the same family, or a chat answering the user's typed message, on any board: askedBy); POST notes is
+    // "Add a note" (the user only).
     if (action === "status" && parts.length === 5 && m === "GET") {
       const f = board.featureStatus(slug, id);
       return json({ topId: f.top.id, title: f.top.title, feature: f.feature, saved: f.saved, facts: f.facts, sections: f.sections, path: f.path });
     }
     if (action === "status" && parts.length === 5 && m === "POST") {
       if (req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "huddle helpers can't change the feature's status; tell @main what to put there");
-      const caller = runTicket(req, slug);
+      const from = runBoard(req);
+      const caller = ownRun(req, slug);
       const all = store.listTickets(slug);
-      if (caller && familyRoot(all, caller)?.id !== familyRoot(all, id)?.id) {
-        throw new HttpError(403, `only runs of tickets in this feature may update its status (${caller} is not in ${id}'s family)`);
+      let by: string | null = null;
+      if (from !== null && !(caller && familyRoot(all, caller)?.id === familyRoot(all, id)?.id)) {
+        by = askedBy(req, slug);
+        if (!by && from !== slug) throw otherBoard("updating a feature's status", slug, from);
+        if (!by) {
+          throw new HttpError(403, `only runs of tickets in this feature may update its status (${caller} is not in ${id}'s family), ` +
+            "or a chat replying to a message the user typed there");
+        }
       }
       const b = await body(req);
       const patch: StatusPatch = {};
@@ -1865,6 +1906,7 @@ export function createServer(deps: ServerDeps) {
       }
       if (!Object.keys(patch).length && !addedPrs) throw new HttpError(400, `nothing to update: pass ${STATUS_FIELDS.join(", ")}, prNotes or prs`);
       const f = board.updateStatus(slug, id, patch);
+      if (by) store.addComment(slug, f.top.id, "ai", `Status updated ${by}.`);
       return json({ topId: f.top.id, title: f.top.title, feature: f.feature, saved: f.saved, facts: f.facts, sections: f.sections, path: f.path, markdown: f.markdown });
     }
     if (action === "status" && parts[5] === "notes" && m === "POST") {
@@ -1877,19 +1919,25 @@ export function createServer(deps: ServerDeps) {
         throw new HttpError(400, (e as Error).message);
       }
     }
-    // Gather tickets into a feature: the user (Family tab), or the feature's chat answering the user's own message.
+    // Gather tickets into a feature: the user (Family tab), or a chat answering the user's own message (askedBy): the
+    // feature's own, another one on this board or one on another board. Credited when it isn't the feature's own.
     if (action === "gather" && m === "POST") {
-      const caller = runTicket(req, slug);
+      const from = runBoard(req);
+      const caller = ownRun(req, slug);
       const all = store.listTickets(slug);
-      if (caller && (familyRoot(all, caller)?.id !== familyRoot(all, id)?.id || !board.userAskedRun(slug, caller) || req.headers.get(HUDDLE_HEADER))) {
-        throw new HttpError(403, "gathering tickets works from the feature's own chat, in a reply to a message the user typed there");
+      let by: string | null = null;
+      if (from !== null) {
+        by = askedBy(req, slug);
+        if (!by && from !== slug) throw otherBoard("gathering tickets", slug, from);
+        if (!by) throw new HttpError(403, "gathering tickets works from a chat, in a reply to a message the user typed there");
+        if (caller && familyRoot(all, caller)?.id === familyRoot(all, id)?.id) by = null;
       }
       const b = await body(req);
       if (!Array.isArray(b.tickets) || !b.tickets.length) throw new HttpError(400, "tickets must list { id, group } entries");
       const items = b.tickets.filter((x: any) => x && typeof x.id === "string" && x.id.trim())
         .map((x: any) => ({ id: x.id.trim(), group: typeof x.group === "string" && x.group.trim() ? x.group.trim() : null }));
       try {
-        const r = await board.gather(slug, id, items, typeof b.newGroup === "string" ? b.newGroup : null);
+        const r = await board.gather(slug, id, items, typeof b.newGroup === "string" ? b.newGroup : null, by);
         return json({ gathered: r.gathered.map((t) => view(profile, t)), movedUp: r.movedUp, skipped: r.skipped, group: r.group && view(profile, r.group) });
       } catch (e) {
         throw new HttpError(400, (e as Error).message);

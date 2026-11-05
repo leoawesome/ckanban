@@ -3215,9 +3215,9 @@ export class Board {
    * Gather tickets into the feature: each picked one links under its group (an existing group of the feature, "new" for
    * a new group named newGroup, or none: under the feature itself). Chats, work and pull requests stay; running tickets
    * keep running. A ticket in another family moves (setPartOf rules). Its own tickets that would sit deeper than level 2
-   * move up beside it (still in their plan, if any).
+   * move up beside it (still in their plan, if any). by: who to credit, for a chat outside the feature ("by the chat of ...").
    */
-  async gather(slug: string, featureId: string, items: { id: string; group?: string | null }[], newGroup?: string | null): Promise<{
+  async gather(slug: string, featureId: string, items: { id: string; group?: string | null }[], newGroup?: string | null, by?: string | null): Promise<{
     gathered: Ticket[]; movedUp: { id: string; title: string; to: string }[]; skipped: { id: string; reason: string }[]; group: Ticket | null;
   }> {
     const top = familyRoot(this.store.listTickets(slug), featureId);
@@ -3250,7 +3250,7 @@ export class Board {
       try {
         if (parentLink(t)?.id !== target) await this.setPartOf(slug, t.id, target);
         gathered.push(this.store.getTicket(slug, t.id)!);
-        this.store.addComment(slug, t.id, "ai", `Gathered into the feature "${top.title}" (${top.id})${target !== top.id ? `, under "${this.store.getTicket(slug, target)?.title}"` : ""}.`);
+        this.store.addComment(slug, t.id, "ai", `Gathered into the feature "${top.title}" (${top.id})${target !== top.id ? `, under "${this.store.getTicket(slug, target)?.title}"` : ""}${by ? ` ${by}` : ""}.`);
       } catch (e) {
         skipped.push({ id: t.id, reason: (e as Error).message });
         continue;
@@ -3267,7 +3267,7 @@ export class Board {
         this.store.addComment(slug, d.id, "ai", `Moved up under "${anc.ticket.title}" so the feature "${top.title}" stays at most ${MAX_LEVEL} levels deep.`);
       }
     }
-    if (gathered.length) this.store.addComment(slug, top.id, "ai", `Gathered ${gathered.length} ticket${gathered.length === 1 ? "" : "s"} into this feature: ${gathered.map((t) => `"${t.title}"`).join(", ")}.`);
+    if (gathered.length) this.store.addComment(slug, top.id, "ai", `Gathered ${gathered.length} ticket${gathered.length === 1 ? "" : "s"} into this feature${by ? ` ${by}` : ""}: ${gathered.map((t) => `"${t.title}"`).join(", ")}.`);
     this.emitTicket(slug, this.store.getTicket(slug, top.id)!);
     return { gathered, movedUp, skipped, group };
   }
