@@ -13,7 +13,7 @@ import { saveMockups } from "./mockups";
 import { Devices, type DeviceTicketState } from "./devices";
 import { macBanner } from "./notify";
 import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
-import type { SessionSummary } from "./session";
+import type { Question, SessionSummary } from "./session";
 import { recallBlock } from "./recall";
 import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
@@ -2358,12 +2358,19 @@ export class Board {
     return step.start.length > 0;
   }
 
+  /** The questions form in the ticket's chat still waiting for the user's answers (empty when none). */
+  private openForm(t: Ticket): Question[] {
+    return (t.sessionId ? this.sessionSummary(t.sessionId)?.openForm : undefined) ?? [];
+  }
+
   /** Resume the planner's session with what happened; several events arrive as one message. */
   private wake(slug: string, planner: Ticket, plan: Plan, kind: PlanWake, events: string[], kids: Ticket[]) {
     const managed = managedPlan(planner);
+    // Read before autoFresh: a fresh chat no longer has the form, but Claude still asks it again from this list.
+    const open = this.openForm(planner);
     const text = managed
-      ? mainWakePrompt(planner, { kind, events, table: wakeTable(kids, this.store.listTickets(slug), (id) => this.isRunning(slug, id)), board: slug, group: !planner.main })
-      : orchestratorPrompt(planner, { kind, events, table: planTable(kids), board: slug, outputDir: this.store.outputsDir(slug, planner.id), repo: this.repoState(slug) ?? this.guessRepo(slug) });
+      ? mainWakePrompt(planner, { kind, events, table: wakeTable(kids, this.store.listTickets(slug), (id) => this.isRunning(slug, id)), board: slug, group: !planner.main, open })
+      : orchestratorPrompt(planner, { kind, events, table: planTable(kids), board: slug, outputDir: this.store.outputsDir(slug, planner.id), repo: this.repoState(slug) ?? this.guessRepo(slug), open });
     const progress = managed ? progressStep(plan, familySig(kids)) : null;
     this.patch(slug, planner.id, { plan: { ...plan, inbox: [], awaiting: kind, wakeups: plan.wakeups + 1, ...(progress ? { progressSig: progress.progressSig, noProgress: progress.noProgress } : {}) } });
     this.autoFresh(slug, this.store.getTicket(slug, planner.id) ?? planner);
@@ -3200,7 +3207,8 @@ export class Board {
     const path = this.refreshStatusFile(run.slug, run.id)!;
     // Same mode as the reply it follows: a Planning chat's nudge can't change files either.
     const mode = run.chat?.mode ?? "act";
-    run.chat = { text: statusNudgePrompt(path, sigChanges(saved.familySig ?? "", sig, rows)), mode, raw: true, quiet: true, nudge: true };
+    const t = this.store.getTicket(run.slug, run.id);
+    run.chat = { text: statusNudgePrompt(path, sigChanges(saved.familySig ?? "", sig, rows), t ? this.openForm(t) : []), mode, raw: true, quiet: true, nudge: true };
     run.promptMsgId = undefined;
     run.inFlight = new Map();
     run.handle = null;

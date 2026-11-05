@@ -836,6 +836,13 @@ body > .output-view.reader { position: fixed; }
 .chat-empty { border: 1px dashed var(--border); border-radius: var(--r-md); padding: 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .chat-empty p { margin: 0; font-size: var(--fs-md); }
 .chat-note { align-self: center; font-size: var(--fs-xs); color: var(--muted); background: var(--surface-2); padding: 2px 10px; border-radius: var(--r-pill); }
+/* A message the board sent by itself: a grey one-liner that opens to the full text. */
+.wake-note summary { cursor: pointer; list-style: none; }
+.wake-note summary::-webkit-details-marker { display: none; }
+.wake-note summary::before { content: "▸ "; }
+.wake-note[open] summary::before { content: "▾ "; }
+.wake-note[open] { align-self: stretch; border-radius: var(--r-md); padding: 6px 10px; }
+.wake-body { margin-top: 6px; color: var(--text); font-size: var(--fs-xs); max-height: 320px; overflow: auto; }
 .chat-typing { align-self: flex-start; display: flex; gap: 8px; align-items: center; max-width: 100%; font-size: var(--fs-sm); color: var(--accent-text); padding: 4px 6px; font-family: var(--mono); }
 /* What Claude is doing can be one long word (a tool's input): wrap it instead of widening the chat. */
 .chat-typing > :last-child { min-width: 0; overflow-wrap: anywhere; }

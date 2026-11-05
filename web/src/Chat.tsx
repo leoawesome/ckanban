@@ -49,6 +49,7 @@ import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, t
 import { heldByReply, inSession, norm, unsentNow, type Pending } from "./pendingBubbles";
 import { baseName, copyFile, dirName, downloadFile } from "./share";
 import { draftKey, formKey } from "./drafts";
+import { type FormState, formStates } from "./questionForms";
 import { fullTime, timeAgo } from "./time";
 import { useNow } from "./useNow";
 import { canStartFromProposal } from "./keynav";
@@ -99,6 +100,16 @@ function UserText({ text, commands, command }: { text: string; commands: SlashCo
       <div className="cmd-line"><span className="cmd-chip">/{name}</span>{args && <span className="cmd-args">{args}</span>}</div>
       <div className="cmd-note">{commandNote(c)}</div>
     </>
+  );
+}
+
+/** A message the board sent by itself (status refresh, tool ticket updates): one grey line that opens to the full text. */
+function WakeNote({ entry: e, old }: { entry: SessionEntry; old: boolean }) {
+  return (
+    <details className={`chat-note wake-note${old ? " inherited" : ""}`}>
+      <summary>Board update: {e.wake}{e.at && <span title={fullTime(e.at)}> · {timeAgo(e.at)}</span>}</summary>
+      {e.text && <div className="wake-body"><Markdown text={e.text} /></div>}
+    </details>
   );
 }
 
@@ -509,7 +520,13 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
 
   // A reply still on its way to the session file counts too, so the form doesn't offer "Send answers" again.
   const replying = pending.some((p) => !p.steer);
+  // Board updates (kind "board") never answer: a form they interrupt stays open, or is asked again below.
   const answeredAfter = (index: number) => replying || entries.slice(index + 1).some((e) => e.role === "user" && e.kind === "text" && !e.huddleId);
+  const forms = useMemo(() => formStates(entries, replying), [entries, replying]);
+  const formState = (index: number): FormState => forms.get(index) ?? { state: "answered" };
+  const replacedBy = (index: number) => { const f = formState(index); return f.state === "replaced" ? f : undefined; };
+  /** Where an open form saves its progress: shared with the earlier forms it asks again. */
+  const openKey = (index: number) => { const f = formState(index); return f.state === "open" ? f.key : undefined; };
   const isApplied = (p: Proposal) =>
     (!p.title || p.title === ticket.title) && (!p.description || p.description.trim() === ticket.body.trim()) && (!p.important || !!ticket.important) &&
     (p.partOf === undefined || (parentLink(ticket)?.id ?? null) === p.partOf);
@@ -526,7 +543,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   // The ticket a proposed draft became: this ticket's child with its key or proposed title (still found after a rename),
   // else any ticket on the board with that title, which counts as handled too (the server's attention rule).
   // A questions form still waits for answers: the message box offers a note instead of a second way to answer.
-  const formWaiting = entries.some((e, i) => !!e.questions && !answeredAfter(i));
+  const formWaiting = [...forms.values()].some((f) => f.state === "open");
   const childFor = (d: NewTicketDraft) => createdFromDraft(tickets, ticket.id, d);
   const createChild = async (d: NewTicketDraft) => {
     try {
@@ -652,6 +669,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
             );
           }
           const e = b.e;
+          if (e.kind === "board" && e.wake) return <WakeNote key={e.uuid} entry={e} old={old} />;
           if (e.kind === "board") {
             return <div key={e.uuid} className={`chat-note${old ? " inherited" : ""}`}>{e.text}{e.at && <span title={fullTime(e.at)}> · {timeAgo(e.at)}</span>}</div>;
           }
@@ -704,9 +722,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
                   newest={newest} lastOfTurn={l.lastReply} active={simpler.active(e.uuid)} />
               )}
               {e.questions && (
-                <QuestionsForm questions={e.questions} answered={answeredAfter(b.index)} disabled={running} onSubmit={send}
-                  onPreview={onOpenOutput && ((m) => onOpenOutput(`mockups/${m}`))}
-                  storageKey={formKey(slug, ticket.id, e.uuid)} />
+                <QuestionsForm questions={e.questions} answered={formState(b.index).state === "answered"} replaced={replacedBy(b.index)}
+                  disabled={running} onSubmit={send} onPreview={onOpenOutput && ((m) => onOpenOutput(`mockups/${m}`))}
+                  storageKey={formKey(slug, ticket.id, openKey(b.index) ?? e.uuid)} />
               )}
               {e.proposal && (
                 <ProposalCard proposal={e.proposal} applied={isApplied(e.proposal)} started={startedProposals.has(e.uuid)}

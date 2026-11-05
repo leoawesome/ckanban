@@ -625,6 +625,8 @@ export interface SessionEntry {
   command?: string;
   /** Output of a built-in command (/context), not a reply from Claude. */
   commandOutput?: boolean;
+  /** A message the board sent by itself (status refresh, tool ticket updates; kind "board"): its one-line summary. text is the full message. */
+  wake?: string;
 }
 
 export type SubagentStatus = "running" | "done" | "failed" | "stopped";

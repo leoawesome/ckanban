@@ -97,6 +97,27 @@ test("a main-chat run that changed the family without calling update_status gets
   expect(readArgs().length).toBe(3);
 }, 30000);
 
+test("a board wake that arrives while a questions form waits tells Claude which questions to ask again", async () => {
+  await setup();
+  const f = await feature();
+  board.updateStatus("p", f.top.id, { goal: "G" });
+  store.updateTicket("p", f.t1.id, { status: "done", outcome: "done" });
+  // Claude asked a form in this chat and the user hasn't answered it yet.
+  const open = [{ question: "Which channel first?", multiSelect: false, options: [{ label: "WhatsApp", recommended: true }, { label: "Email" }] }];
+  (board as any).sessionSummary = () => ({ openQuestions: 1, openForm: open, pendingProposal: null, pendingNewTickets: [], pendingTeammates: [] });
+  await board.chat("p", f.top.id, "where are we?");
+  await untilSpawned(2);
+  await until(() => !board.isRunning("p", f.top.id));
+  await Bun.sleep(300);
+  const nudge = readArgs()[1].prompt;
+  expect(nudge).toContain("family changed since its status was last updated");
+  expect(nudge).toContain("# Questions still open");
+  expect(nudge).toContain('"Which channel first?"');
+  expect(nudge).toContain("call ask_questions again with exactly the same questions and options");
+  // The chat shows it as a board note, not as the user's message.
+  expect(nudge).toMatch(/<ckanban-context [^>]*wake="status refresh, 1 change in the feature"/);
+}, 30000);
+
 test("a test ticket with verdict problem counts as Found a problem; one without a verdict as passed", async () => {
   await setup();
   const f = await feature();
