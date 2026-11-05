@@ -84,6 +84,7 @@ export function quickChatNote(profile: Pick<Profile, "name" | "slug" | "path">):
     `You can read, edit and run commands there when the user asks.`,
     `For board work (making, finding, updating or moving tickets) use the ckanban MCP tools: create_ticket, list_tickets, get_ticket, update_ticket, move_ticket, comment_ticket.`,
     `Use profile "${profile.slug}" unless the user names another board. New tickets land in Backlog. The user can also turn this whole chat into a ticket with the Make ticket button.`,
+    `When the conversation turns up a real problem or a piece of work (a bug, a change to make), offer once, in one short sentence, to wrap this chat up into a ticket: the user can press Make ticket, or say yes and you make it with create_ticket. If the work belongs to an open feature (list_tickets marks them), add the ticket to that feature with partOf. Don't offer a ticket for a plain question you have answered, and don't offer again once the user has said no.`,
     `If you use Claude in Chrome, open your own new tab and don't take over the user's tabs.`,
     `The user may not be technical and may read this on a phone: answer in plain words, short and to the point. ${WRITING_RULE}`,
   ].join(" ");
@@ -378,18 +379,19 @@ export class QuickChats {
    * Make ticket: a Backlog ticket that continues this conversation. The chat is marked with the ticket and takes no
    * more messages, so two runs never share one conversation.
    */
-  async makeTicket(slug: string, id: string): Promise<{ ticket: Ticket; chat: QuickChatView }> {
+  async makeTicket(slug: string, id: string, partOf?: string): Promise<{ ticket: Ticket; chat: QuickChatView }> {
     const k = this.key(slug, id);
     if (this.making.has(k)) throw new QuickChatError(409, "This chat is already being made into a ticket.");
     this.making.add(k);
     try {
-      return await this.makeTicketNow(slug, id);
+      return await this.makeTicketNow(slug, id, partOf);
     } finally {
       this.making.delete(k);
     }
   }
 
-  private async makeTicketNow(slug: string, id: string): Promise<{ ticket: Ticket; chat: QuickChatView }> {
+  /** partOf: the feature (or group) the user picked for it; the board refuses a link that would go too deep. */
+  private async makeTicketNow(slug: string, id: string, partOf?: string): Promise<{ ticket: Ticket; chat: QuickChatView }> {
     const c = this.getOr404(slug, id);
     if (c.ticketId && this.store.getTicket(slug, c.ticketId)) throw new QuickChatError(409, "This chat is already a ticket.");
     if (this.isRunning(slug, id)) throw new QuickChatError(409, "Claude is still replying. Wait for it to finish, or stop it, then try again.");
@@ -397,7 +399,12 @@ export class QuickChats {
     const title = c.title ?? autoTitle(c.firstMessage);
     const first = (c.firstMessage ?? "").trim();
     const body = `Started from a quick chat with Claude on the board.${first ? `\n\nFirst message:\n\n${first.split("\n").map((l) => `> ${l}`).join("\n")}` : ""}`;
-    let t = await this.board.createTicket(slug, { title, body, status: "backlog" });
+    let t: Ticket;
+    try {
+      t = await this.board.createTicket(slug, { title, body, status: "backlog", ...(partOf ? { partOf } : {}) });
+    } catch (e) {
+      throw new QuickChatError(400, (e as Error).message);
+    }
     try {
       await this.board.linkSession(slug, t.id, c.sessionId);
       t = await this.board.updateTicket(slug, t.id, { status: "backlog" });

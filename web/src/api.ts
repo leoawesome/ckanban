@@ -1513,7 +1513,9 @@ export const api = {
   chatStop: (slug: string, id: string) => req<QuickChat>("POST", `${chatsUrl(slug, id)}/stop`, {}),
   chatRename: (slug: string, id: string, title: string) => req<QuickChat>("PATCH", chatsUrl(slug, id), { title }),
   chatDelete: (slug: string, id: string) => req<void>("DELETE", chatsUrl(slug, id)),
-  chatTicket: (slug: string, id: string) => req<{ ticket: Ticket; chat: QuickChat }>("POST", `${chatsUrl(slug, id)}/ticket`, {}),
+  /** partOf: the open feature (or one of its groups) the new ticket joins. */
+  chatTicket: (slug: string, id: string, partOf?: string) =>
+    req<{ ticket: Ticket; chat: QuickChat }>("POST", `${chatsUrl(slug, id)}/ticket`, partOf ? { partOf } : {}),
   chatConversation: (slug: string, id: string, before?: number) =>
     req<{ entries: SessionEntry[]; start: number; total: number }>("GET", `${chatsUrl(slug, id)}/conversation${before !== undefined ? `?before=${before}` : ""}`),
   chatTool: (slug: string, id: string, toolUseId: string) => req<ToolDetail>("GET", `${chatsUrl(slug, id)}/tool/${encodeURIComponent(toolUseId)}`),

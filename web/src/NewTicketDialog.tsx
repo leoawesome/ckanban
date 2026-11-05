@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { COLUMNS, type ClaudeSession, type Status, type Ticket, type TicketMode } from "./api";
-import { openFeatures, suggestFeature } from "./family";
+import { useMemo, useRef, useState } from "react";
+import { type ClaudeSession, type Status, type Ticket, type TicketMode } from "./api";
+import { looksLikeQuestion } from "./family";
+import { FeatureChoice, useFeatureChoice } from "./FeatureChoice";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { useImagePaste } from "./imagePaste";
 import { ModeToggle } from "./ModeToggle";
@@ -12,7 +13,7 @@ import { MOD } from "./Shortcuts";
 import { StarToggle } from "./StarToggle";
 import { TagEditor } from "./Tags";
 
-export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], onClose, onCreate }: {
+export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], onClose, onCreate, onAskInChat }: {
   slug: string;
   folder: string;
   /** This board's tags (most used first), offered in the Tags field. */
@@ -20,6 +21,8 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
   /** The board's tickets: a new ticket that shares words with an open feature is offered to it. */
   tickets?: Ticket[];
   onClose: () => void;
+  /** Closes the form and opens Chat with this text in a new chat's message box. */
+  onAskInChat?: (text: string) => void;
   onCreate: (input: { title: string; body: string; status: Status; sessionId?: string; mode?: TicketMode; important?: boolean; tags?: string[]; partOf?: string }) => Promise<void>;
 }) {
   const [mode, setMode] = useState<TicketMode>("interview");
@@ -34,12 +37,10 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
   const images = useImagePaste(setBody);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   // "This looks like part of X": the open feature sharing the most words (no AI call); Add to X is the default.
-  const features = useMemo(() => openFeatures(tickets), [tickets]);
-  const suggestion = useMemo(() => suggestFeature(tickets, title, body), [tickets, title, body]);
-  const [choice, setChoice] = useState<"add" | "new" | "other">("add");
-  const [other, setOther] = useState("");
-  useEffect(() => setChoice((c) => (c === "other" ? c : "add")), [suggestion?.feature.id]);
-  const partOf = choice === "add" ? suggestion?.feature.id : choice === "other" ? other || undefined : undefined;
+  const fc = useFeatureChoice(tickets, title, body);
+  const partOf = fc.partOf;
+  // "Just a question? Ask in Chat first": a word check, no AI call.
+  const question = useMemo(() => looksLikeQuestion(title, body), [title, body]);
 
   // Start: an interview goes to Planning (questions now), "Just do it" goes to Ready (runs when a slot is free).
   const startStatus: Status = mode === "interview" ? "planning" : "ready";
@@ -85,31 +86,13 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
           Description
           <DescriptionEditor slug={slug} value={body} setValue={setBody} images={images} inputRef={bodyRef} />
         </label>
-        {(suggestion || choice === "other") && (() => {
-          const f = suggestion?.feature;
-          const size = (id: string) => features.find((x) => x.top.id === id)?.rows.length ?? 1;
-          const col = (t: Ticket) => COLUMNS.find((c) => c.id === t.status)?.label ?? t.status;
-          return (
-            <div className="feature-suggest" role="group" aria-label="Part of a feature">
-              {f ? <p>This looks like part of <b>{f.title}</b> ({col(f)}, {size(f.id)} tickets).</p> : <p>Add it to a feature you're already working on.</p>}
-              {f && (
-                <label className="choice"><input type="radio" name="feature" checked={choice === "add"} onChange={() => setChoice("add")} /> Add to {f.title}
-                  <span className="muted small">its chat picks it up and it shows in the feature's status</span></label>
-              )}
-              <label className="choice"><input type="radio" name="feature" checked={choice === "new"} onChange={() => setChoice("new")} /> Start a new feature
-                <span className="muted small">its own card and its own status</span></label>
-              <label className="choice"><input type="radio" name="feature" checked={choice === "other"} onChange={() => setChoice("other")} /> Other feature…
-                {choice === "other" && (
-                  <select value={other} onChange={(e) => setOther(e.target.value)} aria-label="Feature to add it to">
-                    <option value="">Pick a feature</option>
-                    {features.map((x) => <option key={x.top.id} value={x.top.id}>{x.top.title} ({x.rows.length})</option>)}
-                  </select>
-                )}
-              </label>
-              {suggestion && <div className="why muted small">Matched words: {suggestion.words.join(", ")}.</div>}
-            </div>
-          );
-        })()}
+        {question && (
+          <div className="ask-first muted small" role="note">
+            Just a question? Ask in Chat first. You can turn the chat into a ticket later.
+            {onAskInChat && <> <button type="button" className="link-btn small" onClick={() => onAskInChat([title.trim(), body.trim()].filter(Boolean).join("\n\n"))}>Ask in Chat</button></>}
+          </div>
+        )}
+        {(fc.suggestion || fc.choice === "other") && <FeatureChoice state={fc} />}
         <div className="field">
           <div className="field-label">How should Claude work?</div>
           <ModeToggle value={mode} onChange={setMode} keyHint="⌘I" />

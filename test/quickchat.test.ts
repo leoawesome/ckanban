@@ -58,6 +58,10 @@ test("the note says which board and folder the chat is on and how to reach the b
   expect(note).toContain(profile.path);
   expect(note).toContain("create_ticket");
   expect(note).toContain("not a ticket");
+  // Offers a ticket once for real work, into its open feature, and not for a plain question.
+  expect(note).toContain("offer once");
+  expect(note).toContain("partOf");
+  expect(note).toContain("plain question");
 });
 
 test("a first message makes a chat that runs Claude in the board's folder, with full powers and the board note", async () => {
@@ -142,6 +146,27 @@ test("Make ticket creates a Backlog ticket on the same conversation, marks the c
   const last = args()[1];
   expect(last.args).toContain("--resume");
   expect(last.args).toContain(v.sessionId);
+});
+
+test("Make ticket with partOf adds the new ticket to the feature the user picked", async () => {
+  const feature = await board.createTicket("p", { title: "Login work", body: "", status: "backlog" });
+  const v = chats.send("p", null, "The login page shows a blank screen");
+  await chats.idle();
+  const { ticket } = await chats.makeTicket("p", v.id, feature.id);
+  expect(ticket.partOf).toBe(feature.id);
+  expect(store.getTicket("p", ticket.id)!.partOf).toBe(feature.id);
+  expect(ticket.sessionId).toBe(v.sessionId);
+});
+
+test("Make ticket with a link that would go too deep makes no ticket and keeps the chat", async () => {
+  const top = await board.createTicket("p", { title: "Top", body: "", status: "backlog" });
+  const mid = await board.createTicket("p", { title: "Mid", body: "", status: "backlog", partOf: top.id });
+  const low = await board.createTicket("p", { title: "Low", body: "", status: "backlog", partOf: mid.id });
+  const v = chats.send("p", null, "Something to do");
+  await chats.idle();
+  await expect(chats.makeTicket("p", v.id, low.id)).rejects.toThrow(/levels deep/);
+  expect(store.listTickets("p")).toHaveLength(3);
+  expect(chats.get("p", v.id)!.ticketId).toBeNull();
 });
 
 test("two Make ticket calls at once make one ticket, and no reply starts meanwhile", async () => {
@@ -241,6 +266,15 @@ test("HTTP: list, send, conversation, rename, make ticket and delete", async () 
     expect(t.body.ticket.title).toBe("Renamed");
     expect(t.body.chat.ticketId).toBe(t.body.ticket.id);
     expect((await call("POST", `/${id}/messages`, { text: "more" })).status).toBe(409);
+    // Make ticket into a feature the user picked: partOf links it; an unknown or bad id is refused.
+    const feature = await board.createTicket("p", { title: "Login work", body: "", status: "backlog" });
+    const other = await call("POST", "", { text: "The login page is blank" });
+    await chats.idle();
+    expect((await call("POST", `/${other.body.id}/ticket`, { partOf: "t_nope" })).status).toBe(400);
+    expect((await call("POST", `/${other.body.id}/ticket`, { partOf: 5 })).status).toBe(400);
+    const joined = await call("POST", `/${other.body.id}/ticket`, { partOf: feature.id });
+    expect(joined.status).toBe(201);
+    expect(joined.body.ticket.partOf).toBe(feature.id);
     expect((await call("DELETE", `/${id}`)).status).toBe(204);
     expect((await call("GET", `/${id}`)).status).toBe(404);
   } finally {
