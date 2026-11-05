@@ -11,6 +11,7 @@ import { MAX_RETRIES, MAX_RUN_CHAIN, MAX_RUN_STARTS } from "./plan";
 import type { AutoHuddle, Comment, Huddle, HuddleMessage, HuddleParticipant, Ticket } from "./types";
 import { USER_HUDDLE_TRIGGER } from "./types";
 import { shellQuote } from "./util";
+import type { Question } from "./session";
 
 const RESULT_RULE = `When you finish this run, end your final message with exactly one line in this format (valid JSON, single line):
 CKANBAN_RESULT: {"status":"done"|"blocked"|"questions","prUrl":<string or null>,"summary":"<1-2 sentence summary for the user, outcome first>"}
@@ -677,9 +678,27 @@ ${notes.map((n) => `- ${n.at.slice(0, 10)}: ${n.text}`).join("\n")}`;
 }
 
 /** The board's one nudge after a main-chat run that left the status behind. */
-export function statusNudgePrompt(statusPath: string, changes: string[]): string {
+export function statusNudgePrompt(statusPath: string, changes: string[], open: Question[] = []): string {
   return `The feature's family changed since its status was last updated${changes.length ? `:\n${changes.slice(0, 12).map((c) => `- ${c}`).join("\n")}${changes.length > 12 ? `\n- and ${changes.length - 12} more` : ""}` : "."}
-Read ${statusPath}, then call the ckanban \`update_status\` tool with the sections this changes (done, broken, waitingOnYou, nextStep; goal only if it changed). Then reply with one short sentence. Don't start other work, and don't write a CKANBAN_RESULT line.`;
+
+${context("Status refresh from the board", `Read ${statusPath}, then call the ckanban \`update_status\` tool with the sections this changes (done, broken, waitingOnYou, nextStep; goal only if it changed). Then reply with one short sentence. Don't start other work, and don't write a CKANBAN_RESULT line.${openQuestionsRule(open)}`, { wake: changes.length ? `status refresh, ${changes.length} change${changes.length === 1 ? "" : "s"} in the feature` : "status refresh" })}`;
+}
+
+/**
+ * A board wake (status refresh, tool ticket updates) that arrives while the user still has questions to answer: the
+ * wake doesn't answer them, so Claude asks them again after handling it (the chat shows the new form below the update).
+ */
+export function openQuestionsRule(open: Question[]): string {
+  if (!open.length) return "";
+  const qs = open.map((q) => ({
+    question: q.question, ...(q.multiSelect ? { multiSelect: true } : {}),
+    options: q.options.map((o) => ({ label: o.label, ...(o.description ? { description: o.description } : {}), ...(o.recommended ? { recommended: true } : {}), ...(o.mockup ? { mockup: o.mockup } : {}) })),
+  }));
+  return `
+
+# Questions still open
+You asked the user ${open.length === 1 ? "this question" : "these questions"} with ask_questions and they haven't answered yet: this message is from the board, not their answer. Handle the update as asked above, then, in the same turn, call ask_questions again with exactly the same questions and options, so the form shows again below the update (the user's half-typed answers carry over). If this run ends with a result line, use status "questions".
+${JSON.stringify(qs)}`;
 }
 
 /** Planning chats push back instead of agreeing: a plan's gaps are cheapest to fix before the work starts. */
@@ -719,7 +738,7 @@ const MAIN_PLANNING = `This ticket is a main ticket: it never proposes child-tic
  * Wakes a planner ticket's session while its plan runs: either child events to decide on, or the
  * final check once every child is done. The first line is what the ticket chat shows.
  */
-export function orchestratorPrompt(t: Ticket, o: { kind: PlanWake; events: string[]; table: string; board: string; outputDir: string; repo?: RepoKind }): string {
+export function orchestratorPrompt(t: Ticket, o: { kind: PlanWake; events: string[]; table: string; board: string; outputDir: string; repo?: RepoKind; open?: Question[] }): string {
   const repo = o.repo ?? "remote";
   const where = repo === "remote"
     ? "on the latest remote base branch, in a fresh temporary worktree (`git fetch`, then `git worktree add --detach <tmp dir> origin/<base branch>`; remove it afterwards), never in a folder with someone's uncommitted work"
@@ -755,11 +774,11 @@ The ckanban MCP tools create_ticket, update_ticket (title, body, status, mode, d
 Children that share a device only a few may use at once (e.g. the WhatsApp Web tab) get needs (e.g. ["chrome-whatsapp"]) as a hint, not a dependsOn chain: they all run, and each run takes the device only while it uses it (take_devices), so they take turns just on the device.
 
 # When you need the user
-End with status "blocked" (or "questions" after asking with the ask_questions tool) only when a human must decide or fix something. That pauses the plan and notifies the user. Otherwise end with "done".
+End with status "blocked" (or "questions" after asking with the ask_questions tool) only when a human must decide or fix something. That pauses the plan and notifies the user. Otherwise end with "done".${openQuestionsRule(o.open ?? [])}
 
 ${WRITING_RULE}
 
-${RESULT_RULE}`)}`;
+${RESULT_RULE}`, { wake: wakeSummary(o.kind, o.events.length, false, "child") })}`;
 }
 
 // ---- Huddles (see huddle.ts) ----
@@ -1212,8 +1231,15 @@ ${bugReportRule(t)}
 ${SELF_MOVE_RULE}`;
 }
 
+/** The one line the chat shows for a board wake (the full text opens below it): see the wake attribute of context(). */
+export function wakeSummary(kind: PlanWake, events: number, group: boolean, who: "tool" | "child"): string {
+  const tickets = who === "child" ? "child ticket" : group ? "ticket in this group" : "tool ticket";
+  if (kind === "final") return who === "child" ? "every child ticket is done" : group ? "every ticket in this group finished" : "every tool ticket finished";
+  return `${events} update${events === 1 ? "" : "s"} from ${events === 1 ? `a ${tickets}` : `${tickets.replace("ticket", "tickets")}`}`;
+}
+
 /** Wakes a main ticket (or a tool group) with what happened in its family: events and the collapsed table. */
-export function mainWakePrompt(t: Ticket, o: { kind: PlanWake; events: string[]; table: string; board: string; group?: boolean }): string {
+export function mainWakePrompt(t: Ticket, o: { kind: PlanWake; events: string[]; table: string; board: string; group?: boolean; open?: Question[] }): string {
   const head = o.kind === "final"
     ? (o.group ? "All tickets in this group are finished." : "Every tool ticket has finished.")
     : `${o.events.length} update${o.events.length === 1 ? "" : "s"} from ${o.group ? "this group's" : "your"} tool tickets.\n${o.events.map((e) => `- ${e}`).join("\n")}`;
@@ -1227,9 +1253,9 @@ ${context("Update from the board", `${job}
 # Tool tickets (only those working, failed or waiting; groups as one row)
 ${o.table}
 
-End with status "blocked" (or "questions" after asking with ask_questions) only when the user must decide or fix something; otherwise "done".
+End with status "blocked" (or "questions" after asking with ask_questions) only when the user must decide or fix something; otherwise "done".${openQuestionsRule(o.open ?? [])}
 
 ${WRITING_RULE}
 
-${RESULT_RULE}`)}`;
+${RESULT_RULE}`, { wake: wakeSummary(o.kind, o.events.length, !!o.group, "tool") })}`;
 }

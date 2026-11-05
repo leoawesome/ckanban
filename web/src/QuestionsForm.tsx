@@ -1,35 +1,11 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { Question } from "./api";
 import { autoGrow } from "./autoGrow";
-import { browserStore, forget } from "./drafts";
+import { browserStore, forget, loadSaved } from "./drafts";
+import { type Answer, fresh, type Progress, signature, startProgress } from "./questionForms";
 import { CheckIcon } from "./icons";
 import { usePersistentState } from "./usePersistentState";
 import { enterSends } from "./enterSends";
-
-interface Answer {
-  picked: string[];
-  otherOn: boolean;
-  other: string;
-}
-
-function initial(q: Question): Answer {
-  const rec = q.options.find((o) => o.recommended) ?? (q.multiSelect ? undefined : q.options[0]);
-  return { picked: rec ? [rec.label] : [], otherOn: false, other: "" };
-}
-
-/** Progress saved while answering; `sig` ties it to these exact questions. */
-interface Progress {
-  sig: string;
-  answers: Answer[];
-  step: number;
-  note: string;
-}
-
-const signature = (questions: Question[]) => JSON.stringify(questions.map((q) => [q.question, q.options.map((o) => o.label)]));
-
-function fresh(questions: Question[]): Progress {
-  return { sig: signature(questions), answers: questions.map(initial), step: 0, note: "" };
-}
 
 /**
  * A free-text answer box: grows to about 6 lines, then scrolls. Enter runs `onEnter`, Shift+Enter adds a new
@@ -67,9 +43,11 @@ function answerText(a: Answer): string {
  * Claude's interview questions, one at a time (like Claude Code's question picker).
  * Keys: 1-9 pick an option, Enter goes next, Backspace/← goes back when not typing.
  */
-export function QuestionsForm({ questions, answered, disabled, onSubmit, storageKey, onPreview }: {
+export function QuestionsForm({ questions, answered, replaced, disabled, onSubmit, storageKey, onPreview }: {
   questions: Question[];
   answered: boolean;
+  /** Asked again further down (after a board update); same: with the same questions. Its progress lives on there. */
+  replaced?: { same: boolean };
   disabled: boolean;
   onSubmit: (text: string) => void;
   /** Open an option's mockup (file name in outputs/mockups); options with one get a Preview link. */
@@ -78,9 +56,11 @@ export function QuestionsForm({ questions, answered, disabled, onSubmit, storage
   storageKey?: string;
 }) {
   const sig = signature(questions);
+  const key = answered || replaced ? null : storageKey ?? null;
+  // Progress saved for this form, or for the earlier form it asks again (same key), carried over question by question.
   const [progress, setProgress] = usePersistentState<Progress>(
-    answered ? null : storageKey ?? null,
-    () => fresh(questions),
+    key,
+    () => startProgress(questions, key ? loadSaved<Progress>(browserStore(), key) : null),
     (p) => JSON.stringify(p) === JSON.stringify(fresh(questions)),
     (p) => p?.sig === sig && Array.isArray(p.answers) && p.answers.length === questions.length,
   );
@@ -100,8 +80,8 @@ export function QuestionsForm({ questions, answered, disabled, onSubmit, storage
   const a = answers[Math.min(step, total - 1)];
 
   useEffect(() => {
-    if (!answered) root.current?.focus({ preventScroll: true });
-  }, [step, answered]);
+    if (!answered && !replaced) root.current?.focus({ preventScroll: true });
+  }, [step, answered, !!replaced]);
 
   const update = (i: number, fn: (a: Answer) => Answer) => setAnswers((arr) => arr.map((x, j) => (j === i ? fn(x) : x)));
 
@@ -120,6 +100,14 @@ export function QuestionsForm({ questions, answered, disabled, onSubmit, storage
   };
 
   const next = () => (step < total - 1 || (total > 1 && step === total - 1) ? setStep(step + 1) : send());
+
+  if (replaced) {
+    return (
+      <div className="qcard answered replaced">
+        <div className="qcard-head"><span className="qcard-title muted">{replaced.same ? "Asked again below" : "Replaced by newer questions below"}</span></div>
+      </div>
+    );
+  }
 
   if (answered) {
     return (

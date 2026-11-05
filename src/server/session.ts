@@ -109,6 +109,11 @@ export interface SessionEntry {
   command?: string;
   /** Output of a built-in command Claude Code ran itself (/context), not a reply from Claude. */
   commandOutput?: boolean;
+  /**
+   * A message the board sent by itself (status refresh, tool ticket updates): kind "board", text is what it said, and
+   * this is its one-line summary. It never answers a questions form.
+   */
+  wake?: string;
 }
 
 export type BlockKind = "questions" | "proposal" | "tickets";
@@ -283,8 +288,10 @@ export interface ParsedSession {
   entries: SessionEntry[];
   artifacts: SessionArtifact[];
   lastMessage: SessionMessage | null;
-  /** Questions Claude asked since the user's last message. */
+  /** Questions Claude asked since the user's last message (in its newest form). */
   openQuestions: number;
+  /** That form's questions (empty when none waits): a board wake tells Claude to ask them again. */
+  openForm: Question[];
   /** Latest ticket proposal since the user's last message. */
   pendingProposal: TicketProposal | null;
   /** Latest proposed new tickets since the user's last message (some may already be created). */
@@ -304,6 +311,8 @@ export interface SessionSummary {
   artifacts: SessionArtifact[];
   updatedAt: string;
   openQuestions: number;
+  /** See ParsedSession.openForm. */
+  openForm?: Question[];
   pendingProposal: TicketProposal | null;
   pendingNewTickets: NewTicketDraft[];
   pendingTeammates: string[];
@@ -391,7 +400,7 @@ export function fromTicket(text: string): { ticketId: string; title: string; tex
   return m ? { ticketId: m[1], title: m[2], text: m[3].trim() } : null;
 }
 
-function userText(content: unknown): { kind: "text" | "board"; text: string; huddle?: string; setup?: SetupResult; command?: string } | null {
+function userText(content: unknown): { kind: "text" | "board"; text: string; huddle?: string; setup?: SetupResult; command?: string; wake?: string } | null {
   if (Array.isArray(content)) {
     if (content.some((c: any) => c?.type === "tool_result")) return null;
     content = content.map((c: any) => (c?.type === "text" ? c.text : "")).join("\n");
@@ -406,6 +415,9 @@ function userText(content: unknown): { kind: "text" | "board"; text: string; hud
     const extra = setup ? { setup } : {};
     // Huddle messages for this ticket's session: huddle="<huddle id>".
     const huddle = tag.match(/ huddle="([^"]*)"/)?.[1];
+    // A wake the board sent by itself (wake="<summary>"): a board note that opens to the full text, never the user's message.
+    const wake = tag.match(/ wake="([^"]*)"/)?.[1];
+    if (wake !== undefined) return { kind: "board", text: typed, wake: wake || "update", ...extra };
     if (typed && huddle) return { kind: "text", text: typed, huddle, ...extra };
     if (typed) return { kind: "text", text: typed, ...extra };
     const note = content.slice(ctx).match(/note="([^"]*)"/)?.[1];
@@ -561,7 +573,7 @@ export class SessionParser {
       uuid, at, role: "user", kind: u.kind, text: from ? from.text : u.text, ...(u.command ? { command: u.command } : {}),
       ...(u.huddle ? { peer: { dir: "in" as const, ticketId: null }, huddleId: u.huddle } : {}),
       ...(from ? { peer: { dir: "in" as const, ticketId: from.ticketId, title: from.title } } : {}),
-      ...(u.setup ? { setup: u.setup } : {}),
+      ...(u.setup ? { setup: u.setup } : {}), ...(u.wake ? { wake: u.wake } : {}),
     };
   }
 
@@ -736,15 +748,18 @@ function handBack(text: string): string {
   return text.slice(m[0].length).split("\n").map((l) => l.replace(/^ {2}/, "")).join("\n").trim();
 }
 
-function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingAutomations"> {
+function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingAutomations"> {
   let lastUser = -1;
   entries.forEach((e, i) => {
     // Huddle messages don't answer what Claude asked the user (another ticket's message, e.g. the planner's answer, does).
     if (e.role === "user" && e.kind === "text" && !e.huddleId) lastUser = i;
   });
   const after = entries.slice(lastUser + 1);
+  // A form asked again (after a board wake) replaces the earlier ones: the chat shows only the newest as open.
+  const openForm = after.findLast((e) => e.questions)?.questions ?? [];
   return {
-    openQuestions: after.reduce((n, e) => n + (e.questions?.length ?? 0), 0),
+    openQuestions: openForm.length,
+    openForm,
     pendingProposal: after.findLast((e) => e.proposal)?.proposal ?? null,
     pendingNewTickets: after.findLast((e) => e.newTickets)?.newTickets ?? [],
     pendingTeammates: after.filter((e) => e.teammate).map((e) => e.uuid),
@@ -1092,7 +1107,7 @@ export class SessionCache {
     if (!p) return null;
     const s: StoredSummary = {
       title: p.title, lastMessage: p.lastMessage, artifacts: p.artifacts,
-      openQuestions: p.openQuestions, pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates,
+      openQuestions: p.openQuestions, openForm: p.openForm, pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates,
       pendingAutomations: p.pendingAutomations, cache: p.cache,
     };
     if (v) this.storeSummary(sessionId, v, s);
