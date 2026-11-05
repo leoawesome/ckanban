@@ -1252,8 +1252,12 @@ export function createServer(deps: ServerDeps) {
       }
       if (parts.length === 5 && parts[4] === "ticket" && m === "POST") {
         await userAsks();
-        const r = await quickChats.makeTicket(slug, cid);
-        suggestParent(slug, r.ticket.id);
+        const b = (await body(req).catch(() => null)) ?? {};
+        if (b.partOf !== undefined && b.partOf !== null && (typeof b.partOf !== "string" || !b.partOf)) throw new HttpError(400, "partOf must be a ticket id");
+        const partOf = typeof b.partOf === "string" ? b.partOf : undefined;
+        if (partOf && !store.getTicket(slug, partOf)) throw new HttpError(400, `ticket ${partOf} not found (partOf)`);
+        const r = await quickChats.makeTicket(slug, cid, partOf);
+        if (!partOf) suggestParent(slug, r.ticket.id);
         return json({ ticket: view(profile, store.getTicket(slug, r.ticket.id) ?? r.ticket), chat: r.chat }, 201);
       }
       // The conversation, newest last, paged like a ticket's (see the ticket conversation route).
