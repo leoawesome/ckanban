@@ -1644,7 +1644,11 @@ export function createServer(deps: ServerDeps) {
         }
         if (planner) store.addComment(slug, t.id, "ai", tool ? `Tool ticket of ${planner.id} ("${planner.title}").` : `Created by the planner of plan ${planner.id}.`);
         // Its manager's plan runs it (in any column): started now if the plan was resting.
+        let planPaused = false;
         if (tool) {
+          // Its main ticket's plan still paused by Stop: the step waits, and the reply tells Claude so (no "queued").
+          const top = mainTicket ?? planner!;
+          planPaused = store.getTicket(slug, top.id)?.plan?.state === "paused";
           board.ensurePlan(slug, planner!.id);
           board.advancePlans(slug);
         }
@@ -1675,7 +1679,7 @@ export function createServer(deps: ServerDeps) {
             throw new HttpError(400, (e as Error).message);
           }
         }
-        return json({ ...view(profile, store.getTicket(slug, t.id)!), ...(gathered ? { gather: gathered } : {}) }, 201);
+        return json({ ...view(profile, store.getTicket(slug, t.id)!), ...(gathered ? { gather: gathered } : {}), ...(planPaused ? { planPaused: true } : {}) }, 201);
       }
     }
 
@@ -1785,7 +1789,7 @@ export function createServer(deps: ServerDeps) {
         try {
           if (b.partOf !== undefined) t = await board.setPartOf(slug, id, b.partOf);
           else if (b.parentSuggestion === null) t = board.dismissParentSuggestion(slug, id);
-          if (!linkOnly) t = await board.updateTicket(slug, id, patch);
+          if (!linkOnly) t = await board.updateTicket(slug, id, patch, { byUser: !req.headers.get(RUN_HEADER) });
         } catch (e) {
           if (e instanceof ConflictError) throw e;
           throw new HttpError(400, (e as Error).message);

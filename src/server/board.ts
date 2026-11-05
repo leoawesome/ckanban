@@ -616,6 +616,10 @@ export class Board {
     if (t.main && t.plan?.state === "stuck" && !opts.peer && !opts.fromPlanner && !opts.hostWake && !opts.followUp) {
       t = this.patch(slug, id, { plan: { ...t.plan, state: "running", reason: null, awaiting: null, noProgress: 0 } });
     }
+    // The user writes (or answers a form) in a stopped main ticket's chat: Stop held its steps only until now.
+    if (t.main && t.plan?.state === "paused" && !opts.peer && !opts.fromPlanner && !opts.hostWake && !opts.followUp && opts.slash !== "local") {
+      if (this.resumeStoppedPlan(slug, id, "you wrote in its chat")) t = this.store.getTicket(slug, id)!;
+    }
     if (active) {
       if (active.stopRequested || this.shuttingDown) throw new ConflictError("Claude is stopping; send your message once it has stopped");
       // Saved on the ticket until Claude reads it, so closing the chat, Stop or a restart can't lose it.
@@ -883,7 +887,7 @@ export class Board {
     const t = this.store.getTicket(run.slug, run.id);
     if (!t || t.status === status) return;
     try {
-      await this.updateTicket(run.slug, run.id, { status });
+      await this.updateTicket(run.slug, run.id, { status }, { byUser: true });
       this.store.addComment(run.slug, run.id, "ai", `Moved it to ${status} by its own chat (user request).`);
     } catch (e) {
       this.store.addComment(run.slug, run.id, "ai", `Couldn't move it to ${status} as asked in the chat: ${(e as Error).message}`);
@@ -1913,6 +1917,8 @@ export class Board {
       /** null: take the ticket out of its plan (only clearing is allowed here; adoptTickets sets it). */
       parentId?: null;
     },
+    /** byUser: the user's own move (on the board, or asked for in the ticket's chat), not a run's or a planner's. */
+    opts: { byUser?: boolean } = {},
   ): Promise<Ticket> {
     let current = this.store.getTicket(slug, id);
     if (!current) throw new Error(`ticket ${id} not found`);
@@ -1989,6 +1995,8 @@ export class Board {
 
     if (clean.status === "done") t = await this.cleanupWorktree(slug, t);
     if (clean.status === "planning") this.autoRefine(slug, id);
+    // The user moving a stopped main ticket back to work resumes its paused plan (before its run starts and reads it).
+    if (opts.byUser && t.main && (clean.status === "ready" || clean.status === "in_progress")) this.resumeStoppedPlan(slug, id, "you moved it to " + clean.status.replace("_", " "));
     if (active || clean.status === "ready" || (clean.order !== undefined && t.status === "ready")) this.dispatch(slug);
     this.advancePlans(slug);
     return this.store.getTicket(slug, id)!;
@@ -1997,7 +2005,7 @@ export class Board {
   // ---- Plans: a planner ticket runs its children unattended (see plan.ts) ----
 
   /** Start (or resume) the planner's plan: children switch to auto mode and start in dependency order. */
-  startPlan(slug: string, id: string, opts: { maxConcurrent?: number; byPlanner?: boolean } = {}): Ticket {
+  startPlan(slug: string, id: string, opts: { maxConcurrent?: number; byPlanner?: boolean; why?: string } = {}): Ticket {
     const t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
     const kids = childrenOf(this.store.listTickets(slug), id);
@@ -2019,9 +2027,26 @@ export class Board {
     for (const k of kids) if (k.status === "backlog" && k.mode !== "auto") this.patch(slug, k.id, { mode: "auto" });
     const out = this.patch(slug, id, { plan, ...(t.outcome && t.outcome !== "done" ? { outcome: null } : {}) });
     const by = opts.byPlanner ? " by the planner" : "";
-    this.store.addComment(slug, id, "ai", resuming ? `Plan resumed${by}.` : `Plan started${by}: ${kids.length} child tickets, ${plan.maxConcurrent} at a time.`);
+    this.store.addComment(slug, id, "ai", resuming ? `Plan resumed${by}${opts.why ? `: ${opts.why}` : ""}.` : `Plan started${by}: ${kids.length} child tickets, ${plan.maxConcurrent} at a time.`);
     this.advancePlans(slug);
     return this.store.getTicket(slug, id) ?? out;
+  }
+
+  /**
+   * Stop on a main ticket pauses its plan only until the user acts on it again: moving it to ready (or In progress),
+   * or writing or answering a form in its chat, resumes it (see updateTicket and chat). Any paused main ticket counts,
+   * also ones paused before this rule existed. True when a paused plan resumed.
+   */
+  resumeStoppedPlan(slug: string, id: string, why: string): boolean {
+    const t = this.store.getTicket(slug, id);
+    if (!t?.main || t.plan?.state !== "paused") return false;
+    try {
+      this.startPlan(slug, id, { why });
+      return true;
+    } catch (e) {
+      this.store.addComment(slug, id, "ai", `Couldn't resume the paused plan: ${(e as Error).message}`);
+      return false;
+    }
   }
 
   /** Pause: no new children start and the planner isn't woken; running children finish. */
@@ -2898,7 +2923,7 @@ export class Board {
   private roleOf(slug: string, t: Ticket, session: Pick<Session, "repo" | "inPlace">): RunRole | undefined {
     if (t.main) {
       const now = this.store.getTicket(slug, t.id) ?? t;
-      return { kind: "main", repo: session.repo, branch: session.inPlace ? null : now.branch ?? null, inPlace: session.inPlace } satisfies MainRole;
+      return { kind: "main", repo: session.repo, branch: session.inPlace ? null : now.branch ?? null, inPlace: session.inPlace, ...(now.plan?.state === "paused" ? { paused: true } : {}) } satisfies MainRole;
     }
     if (!t.tool) return undefined;
     const all = this.store.listTickets(slug);
@@ -3414,19 +3439,23 @@ export class Board {
     let tools = 0;
     const t = this.store.getTicket(slug, id);
     if (t?.main) {
+      let queued = 0;
       for (const o of this.toolTickets(slug, id)) {
         if (this.isRunning(slug, o.id) || o.status === "in_progress") {
           if (this.stop(slug, o.id)) tools++;
         } else if (o.status === "ready") {
           // Queued to start: back to waiting (Backlog), so nothing new starts behind the user's Stop.
           this.patch(slug, o.id, { status: "backlog" });
+          queued++;
         }
       }
-      // Nothing new starts behind the user's Stop: the plan pauses until it is resumed (or the main ticket starts it).
+      // Nothing new starts behind the user's Stop: the plan pauses until the user acts on the ticket again (moves it to
+      // ready, writes or answers in its chat: resumeStoppedPlan). A Stop that only cut off the main ticket's own reply
+      // held no step back, so it doesn't pause at all.
       const now = this.store.getTicket(slug, id);
-      if (now?.plan && (now.plan.state === "running" || now.plan.state === "finishing")) {
+      if ((tools > 0 || queued > 0) && now?.plan && (now.plan.state === "running" || now.plan.state === "finishing")) {
         this.patch(slug, id, { plan: { ...now.plan, state: "paused", awaiting: null } });
-        this.store.addComment(slug, id, "ai", `Stopped by you with ${tools} running tool ticket${tools === 1 ? "" : "s"}; the plan is paused until it is resumed.`);
+        this.store.addComment(slug, id, "ai", `Stopped by you with ${tools} running tool ticket${tools === 1 ? "" : "s"}; new steps wait until you move this ticket to ready, write in its chat or press Resume.`);
       }
     }
     return { stopped: stopped || tools > 0, tools };

@@ -1094,6 +1094,8 @@ export interface MainRole {
   branch: string | null;
   /** The ticket edits nothing, but its copy is the folder itself (plain folder, no commits, or "Work in the project folder"). */
   inPlace: boolean;
+  /** Its plan is paused (the user pressed Stop): new tool tickets don't start until the user acts on it again. */
+  paused?: boolean;
 }
 
 /** The fixed header of a tool ticket's first prompt (and the rules of every run of it). */
@@ -1141,8 +1143,12 @@ The user talks to you here: you decide, and you keep the feature's status. Tool 
 - Results come back as events: read a tool ticket's report (its path is in the event) before you decide or ask it anything. To ask a tool ticket about its work, use \`ask_ticket\` (the answer comes back as an event, in at most 5 sentences). To answer a tool ticket's question, use \`chat_ticket\`: that resumes it.
 - Build and fix tickets merge into this ticket's copy themselves${r.branch ? ` (branch \`${r.branch}\`)` : ""}. Land per milestone, not only at the end (for example before a test round that needs the work deployed): ${milestoneRule(r)} If it refuses because the work can't be landed cleanly, start a fix tool ticket. You may run one review huddle on a milestone before landing it.
 - After each result or decision, keep the status current with \`update_status\`.
-- When you answer the user, say in plain words what the tool tickets found or did; don't paste their reports.`;
+- When you answer the user, say in plain words what the tool tickets found or did; don't paste their reports.${r.paused ? `
+${MAIN_PAUSED}` : ""}`;
 }
+
+/** A main ticket whose plan is paused by Stop: its Claude must not tell the user a step is queued. */
+export const MAIN_PAUSED = "- Your steps are paused because the user pressed Stop: tool tickets you create now won't start until the user presses Resume on the Plan tab, moves this ticket to ready or writes in this chat. Never say a step is queued or started while they are paused; tell the user it waits for them. If the user asks you to go on, call `plan_control` with action \"resume\".";
 
 /** The Rules lines of a main ticket's work run, in place of where to edit and how to land. */
 function mainWhere(r: MainRole): string {
