@@ -1505,7 +1505,32 @@ export function createServer(deps: ServerDeps) {
         const b = await body(req);
         const title = String(b.title ?? "").trim();
         if (!title) throw new HttpError(400, "title is required");
-        const { planner, requester, runner, guest } = runRights(req, slug);
+        const fromRun = req.headers.get(RUN_HEADER)?.split("/");
+        // create_ticket's main: true: a new main ticket, like the user's own New ticket, made because the user asked for
+        // it in a message they typed in the calling chat (on its own board, or this one). Top level only.
+        const wantMain = b.main === true;
+        if (b.main !== undefined && b.main !== null && typeof b.main !== "boolean") throw new HttpError(400, "main must be true or false");
+        if (wantMain) {
+          if (b.partOf || b.parentId) throw new HttpError(400, "a main ticket is top level: leave out partOf, partOfThisTicket and parentId");
+          if (b.sessionId) throw new HttpError(400, "a main ticket can't be made from a linked session: leave out sessionId");
+          if (fromRun && (req.headers.get(HUDDLE_HEADER) || !fromRun[1] || !board.userAskedRun(fromRun[0], fromRun[1]))) {
+            throw new HttpError(403, "main: true needs a message the user typed in this chat: work runs, follow-ups, plan wake-ups, " +
+              "replies to other tickets and huddle helpers can't create main tickets");
+          }
+        } else if (b.gather !== undefined && b.gather !== null) {
+          throw new HttpError(400, "gather only works with main: true (use gather_tickets to add tickets to an existing feature)");
+        }
+        let gatherItems: { id: string; group: string | null }[] | null = null;
+        if (wantMain && b.gather !== undefined && b.gather !== null) {
+          if (!Array.isArray(b.gather)) throw new HttpError(400, "gather must list { id, group } entries");
+          gatherItems = b.gather.filter((x: any) => x && typeof x.id === "string" && x.id.trim())
+            .map((x: any) => ({ id: x.id.trim(), group: typeof x.group === "string" && x.group.trim() ? x.group.trim() : null }));
+        }
+        const rights = runRights(req, slug);
+        // A main ticket's own chat creating a new main ticket: not a tool ticket of its family.
+        const { requester, guest } = rights;
+        const planner = wantMain ? undefined : rights.planner;
+        const runner = rights.runner ?? (wantMain ? rights.planner : undefined);
         let status: Status = STATUSES.includes(b.status) ? b.status : "backlog";
         let mode: "auto" | "interview" = b.mode === "auto" ? "auto" : "interview";
         let parentId = typeof b.parentId === "string" && b.parentId ? b.parentId : undefined;
@@ -1548,7 +1573,6 @@ export function createServer(deps: ServerDeps) {
         const defaults = tool ? kindDefaults(kind) : null;
         const model: string | null = (typeof b.model === "string" && b.model) || defaults?.model || null;
         const effort: string | null = (typeof b.effort === "string" && b.effort) || defaults?.effort || null;
-        const fromRun = req.headers.get(RUN_HEADER)?.split("/");
         // Made by a schedule's run: what that schedule raised for the user (its next quiet runs follow up on it).
         const runTicket = fromRun?.[0] === slug && fromRun[1] && !req.headers.get(HUDDLE_HEADER) ? store.getTicket(slug, fromRun[1]) : null;
         const raisedBy = runTicket?.scheduleId ? { scheduleId: runTicket.scheduleId, ticketId: runTicket.id } : null;
@@ -1564,7 +1588,7 @@ export function createServer(deps: ServerDeps) {
         }
         const startedBy = runner && startsRun(status) ? runStart(slug, runner) : guest && startsRun(status) ? guestStart(guest) : null;
         // The user's own new ticket, on its own (not under another ticket, not a linked session): a main ticket.
-        const main = !fromRun && !parentId && !partOf && !b.sessionId;
+        const main = wantMain || (!fromRun && !parentId && !partOf && !b.sessionId);
         // A tool ticket that changes files starts from its main ticket's copy (git boards), so its work merges back there.
         const mainTicket = tool ? board.mainOf(slug, planner!) : null;
         const startFrom = tool && mainTicket?.branch && mainTicket.worktree ? mainTicket.branch : null;
@@ -1592,6 +1616,17 @@ export function createServer(deps: ServerDeps) {
         if (guest) store.addComment(slug, t.id, "ai", `Created ${byGuest(guest)}.`);
         if (partOfVia) store.addComment(slug, t.id, "ai", `Linked as part of ${partOf} ("${store.getTicket(slug, partOf!)?.title ?? ""}"), the ticket whose chat created it.`);
         if (startedBy) board.markStartedBy(slug, t.id, startedBy);
+        if (wantMain && fromRun) store.addComment(slug, t.id, "ai", "Created as a main ticket at the user's request.");
+        // Then the tickets the user asked to move into it (Board.gather: they keep their cards, chats, work and PRs).
+        let gathered: { gathered: unknown[]; movedUp: unknown[]; skipped: unknown[]; group: unknown } | null = null;
+        if (gatherItems?.length) {
+          try {
+            const r = await board.gather(slug, t.id, gatherItems, typeof b.newGroup === "string" ? b.newGroup : null);
+            gathered = { gathered: r.gathered.map((x) => view(profile, x)), movedUp: r.movedUp, skipped: r.skipped, group: r.group && view(profile, r.group) };
+          } catch (e) {
+            gathered = { gathered: [], movedUp: [], skipped: gatherItems.map((x) => ({ id: x.id, reason: (e as Error).message })), group: null };
+          }
+        }
         // A ticket the user made (not a run, plan or linked one) gets a parent suggestion in its panel.
         if (!fromRun && !parentId && !partOf) suggestParent(slug, t.id);
         if (b.sessionId && !planner) {
@@ -1603,7 +1638,7 @@ export function createServer(deps: ServerDeps) {
             throw new HttpError(400, (e as Error).message);
           }
         }
-        return json(view(profile, store.getTicket(slug, t.id)!), 201);
+        return json({ ...view(profile, store.getTicket(slug, t.id)!), ...(gathered ? { gather: gathered } : {}) }, 201);
       }
     }
 

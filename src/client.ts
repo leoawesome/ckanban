@@ -52,6 +52,14 @@ export interface ProfileInfo {
   running?: number;
 }
 
+/** What gathering tickets into a feature did (gather_tickets, create_ticket with main and gather). */
+export interface GatherResult {
+  gathered: TicketInfo[];
+  movedUp: { id: string; title: string; to: string }[];
+  skipped: { id: string; reason: string }[];
+  group: TicketInfo | null;
+}
+
 export interface TicketInfo {
   id: string;
   title: string;
@@ -358,9 +366,10 @@ export class BoardClient {
   // `run` (a board run's CKANBAN_TICKET): the daemon only lets a running plan's planner change its own children.
   createTicket = (
     slug: string,
-    input: { title: string; body?: string; status?: Status; mode?: TicketMode; planKey?: string; dependsOn?: string[]; needs?: string[]; tags?: string[]; partOf?: string; kind?: string; model?: string; effort?: string },
+    input: { title: string; body?: string; status?: Status; mode?: TicketMode; planKey?: string; dependsOn?: string[]; needs?: string[]; tags?: string[]; partOf?: string; kind?: string; model?: string; effort?: string;
+      main?: boolean; gather?: { id: string; group?: string | null }[]; newGroup?: string | null },
     run?: string | null,
-  ) => this.req<TicketInfo>("POST", this.t(slug), input, this.by(run));
+  ) => this.req<TicketInfo & { gather?: GatherResult }>("POST", this.t(slug), input, this.by(run));
   // From a run, only the planner's own plan, and only with planner rights (see Board.plannerRights).
   planAction = (slug: string, id: string, action: "start" | "resume", run?: string | null) =>
     this.req<TicketInfo>("POST", `${this.t(slug, id)}/plan`, { action }, this.by(run));
@@ -387,7 +396,7 @@ export class BoardClient {
   updateStatus = (slug: string, id: string, patch: Record<string, unknown>, run?: string | null) =>
     this.req<{ topId: string; title: string; markdown: string }>("POST", `${this.t(slug, id)}/status`, patch, this.by(run));
   gather = (slug: string, id: string, tickets: { id: string; group?: string | null }[], newGroup: string | null, run?: string | null) =>
-    this.req<{ gathered: TicketInfo[]; movedUp: { id: string; title: string; to: string }[]; skipped: { id: string; reason: string }[]; group: TicketInfo | null }>(
+    this.req<GatherResult>(
       "POST", `${this.t(slug, id)}/gather`, { tickets, newGroup }, this.by(run));
   adopt = (slug: string, id: string, ids: string[], run?: string | null) => this.req<AdoptReply>("POST", `${this.t(slug, id)}/adopt`, { ids }, this.by(run));
   updateTicket = (slug: string, id: string, patch: TicketPatch, run?: string | null) => this.req<TicketInfo>("PATCH", this.t(slug, id), patch, this.by(run));

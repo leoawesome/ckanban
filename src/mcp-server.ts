@@ -4,7 +4,7 @@ import { hiddenTool } from "../web/src/family";
 import { TOOL_NO_NOTIFY } from "./server/main-ticket";
 import {
   assertCanChange, BoardClient, bugReportText, ClientError, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
-  familyLine, ticketLine, ticketText, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
+  familyLine, ticketLine, ticketText, type GatherResult, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
 } from "./client";
 import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./server/huddle-presets";
 import { HUDDLE_AGENT_ENV, huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "./server/huddle-roster";
@@ -19,6 +19,14 @@ import { join } from "node:path";
 import { type ArtifactJob, type ArtifactOutcome, runArtifactJob } from "./server/artifact";
 import { AUTO_HUDDLE_TRIGGERS, STATUSES, USER_HUDDLE_TRIGGER } from "./server/types";
 import { REPO, VERSION } from "./server/version";
+
+/** What gathering tickets into a feature did, for gather_tickets and create_ticket's gather. */
+const gatherText = (r: GatherResult): string => [
+  r.gathered.length ? `Gathered ${r.gathered.length}:\n${r.gathered.map((t) => `- ${ticketLine(t)}`).join("\n")}` : "Gathered none.",
+  ...(r.group ? [`New group: ${ticketLine(r.group)}`] : []),
+  ...(r.movedUp.length ? [`Moved up to stay 2 levels deep:\n${r.movedUp.map((m) => `- ${m.id} "${m.title}" under ${m.to}`).join("\n")}`] : []),
+  ...(r.skipped.length ? [`Skipped ${r.skipped.length}:\n${r.skipped.map((x) => `- ${x.id}: ${x.reason}`).join("\n")}`] : []),
+].join("\n\n");
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -1663,6 +1671,26 @@ export const TOOLS: Tool[] = [
           description: "Inside a board run or ticket chat: true links the new ticket as part of your ticket (same piece of work: a next step, " +
             "a follow-up, a fix or a part of it), so both show in one family. Leave it out when the user asks for a ticket unrelated to your ticket's work.",
         },
+        main: {
+          type: "boolean",
+          description: "true makes a new main ticket, like the user's own New ticket: it talks and decides, and tool tickets in its family do the work. " +
+            "Only when the user asks, in a message they typed in this chat, for a new main ticket or a new feature they will follow as its own piece of work. " +
+            "Top level only: no partOf or partOfThisTicket. Other new work that belongs to an open feature still joins it with partOf.",
+        },
+        gather: {
+          type: "array",
+          description: "With main: true, existing tickets (same board) to move into the new main ticket, when the user asks for that. " +
+            "They keep their cards, chats, work and pull requests. Same entries as gather_tickets.",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              group: { type: "string", description: "\"new\" for the new group (newGroup), or omit for under the main ticket itself." },
+            },
+            required: ["id"],
+          },
+        },
+        newGroup: { type: "string", description: "With gather: title of the new group, when an entry uses group \"new\"." },
       },
       required: ["title"],
     },
@@ -1673,6 +1701,9 @@ export const TOOLS: Tool[] = [
       const deps = depList(args);
       const needs = needsList(args);
       const tags = tagsList(args);
+      const main = args?.main === true;
+      if (main && args?.partOfThisTicket === true) throw new ClientError("a main ticket is top level: leave out partOfThisTicket and partOf");
+      if (!main && Array.isArray(args?.gather) && args.gather.length) throw new ClientError("gather only works with main: true (use gather_tickets to add tickets to an existing feature)");
       const t = await ctx.client.createTicket(slug, {
         title: str(args, "title")!.trim(),
         body: typeof args?.body === "string" ? args.body : "",
@@ -1688,8 +1719,14 @@ export const TOOLS: Tool[] = [
         ...(str(args, "kind", false) ? { kind: str(args, "kind")!.trim() } : {}),
         ...(str(args, "model", false)?.trim() ? { model: str(args, "model")!.trim() } : {}),
         ...(str(args, "effort", false)?.trim() ? { effort: str(args, "effort")!.trim() } : {}),
+        ...(main ? { main: true } : {}),
+        ...(main && Array.isArray(args?.gather) && args.gather.length ? { gather: args.gather } : {}),
+        ...(main && typeof args?.newGroup === "string" ? { newGroup: args.newGroup } : {}),
       }, ctx.env[RUN_ENV]);
       const how = [t.kind, t.model, t.effort ? `${t.effort} effort` : null].filter(Boolean).join(", ");
+      if (t.main) {
+        return [`Created main ticket ${t.id} on board ${slug} in ${t.status} (${t.mode} mode): ${t.title}`, ...(t.gather ? [gatherText(t.gather)] : [])].join("\n\n");
+      }
       if (t.tool) return `Created tool ticket ${t.id}${how ? ` (${how})` : ""}: ${t.title}. The board starts it when its dependsOn are done and wakes you with its result.`;
       return `Created ${t.id} on board ${slug} in ${t.status} (${t.mode} mode)${t.partOf ? `, part of ${t.partOf}` : ""}${how ? ` (${how})` : ""}: ${t.title}`;
     },
@@ -1989,13 +2026,7 @@ export const TOOLS: Tool[] = [
       const id = str(args, "id", false)?.trim() || runTicketId(ctx);
       if (!id) throw new ClientError("id is required outside a board run");
       if (!Array.isArray(args?.tickets) || !args.tickets.length) throw new ClientError("tickets must list { id, group } entries");
-      const r = await ctx.client.gather(slug, id, args.tickets, typeof args?.newGroup === "string" ? args.newGroup : null, ctx.env[RUN_ENV]);
-      return [
-        r.gathered.length ? `Gathered ${r.gathered.length}:\n${r.gathered.map((t) => `- ${ticketLine(t)}`).join("\n")}` : "Gathered none.",
-        ...(r.group ? [`New group: ${ticketLine(r.group)}`] : []),
-        ...(r.movedUp.length ? [`Moved up to stay 2 levels deep:\n${r.movedUp.map((m) => `- ${m.id} "${m.title}" under ${m.to}`).join("\n")}`] : []),
-        ...(r.skipped.length ? [`Skipped ${r.skipped.length}:\n${r.skipped.map((x) => `- ${x.id}: ${x.reason}`).join("\n")}`] : []),
-      ].join("\n\n");
+      return gatherText(await ctx.client.gather(slug, id, args.tickets, typeof args?.newGroup === "string" ? args.newGroup : null, ctx.env[RUN_ENV]));
     },
   },
   {
