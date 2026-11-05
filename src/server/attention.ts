@@ -73,7 +73,7 @@ export function attentionFor(
   const step = o.step;
   if (!t.main || !step || t.status === "done" || t.status === "backlog") return own;
   // The main ticket passes a step's question on (or its plan stopped there): name the step.
-  if (own && (own.kind === "questions" || own.kind === "blocked" || own.kind === "failed") && own.label !== "Keep going?") return { ...own, label: step.label };
+  if (own && (own.kind === "questions" || own.kind === "blocked" || own.kind === "failed")) return { ...own, label: step.label };
   if (running || (own && own.kind !== "review" && own.kind !== "reply")) return own;
   // A step ended and the main ticket hasn't run since (and won't be woken for it): the main card names it until it does.
   const unseen = step.since > (t.runEndedAt ?? "");
@@ -96,8 +96,6 @@ function ownAttention(
   if (t.stalled && running) return { kind: "stalled", label: `Stalled · no output for ${t.stalled.minutes} min`, since: t.stalled.at };
   // A main ticket's stuck plan (no progress, or it asked something) needs the user even when its tool tickets are done.
   if (t.plan?.state === "stuck" && (!o.planComplete || t.main)) return { kind: "blocked", label: "Plan stuck", since: t.updatedAt };
-  // A main ticket's family passed its check-in threshold: nothing starts until the user says Keep going or Stop here.
-  if (t.plan?.checkin?.due) return { kind: "blocked", label: "Keep going?", since: t.plan.checkin.due.at };
   if (running || t.status === "in_progress") return null;
   // A running plan's planner and children are handled unattended; the plan pings the user when stuck.
   if (o.managed || t.plan?.state === "running" || t.plan?.state === "finishing" || t.plan?.state === "paused") return null;

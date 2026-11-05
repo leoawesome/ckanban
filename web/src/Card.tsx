@@ -10,7 +10,6 @@ import { jobChip } from "./jobText";
 import { KeyHint } from "./KeyHint";
 import { CapActions } from "./CapActions";
 import { capWait } from "./capText";
-import { CheckinActions } from "./CheckinActions";
 import { LimitActions } from "./LimitActions";
 import { StallActions, stallWait } from "./StallActions";
 import { clockTime, limitLabel, limitWait } from "./limitText";
@@ -282,7 +281,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
         {ticket.important && <ImportantStar />}{ticket.title}
       </div>
       {via && <div className="card-via" title={`Found in the tool ticket “${via}”`}>via {via}</div>}
-      {!showActivity && fc?.line && !att && !ticket.plan?.checkin?.due ? (
+      {!showActivity && fc?.line && !att ? (
         <FamilyLineView line={fc.line} id={a11yId && `${a11yId}-line`} />
       ) : showActivity ? (
         // Keyed on the text, so each new step fades in instead of swapping.
@@ -352,12 +351,6 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
           {lastAt && !working && (
             <time className="card-time" dateTime={lastAt} title={fullTime(lastAt)}>{timeAgo(lastAt)}</time>
           )}
-        </div>
-      )}
-      {ticket.plan?.checkin?.due && (
-        <div className="card-checkin">
-          <div className="checkin-line">{ticket.plan.checkin.due.line}</div>
-          {limit && !dragging && <CheckinActions slug={limit.slug} ticket={ticket} onError={limit.onError} small />}
         </div>
       )}
       {limit && !dragging && limitWait(ticket) && <LimitActions slug={limit.slug} ticket={ticket} onError={limit.onError} small />}

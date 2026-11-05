@@ -1,6 +1,6 @@
 // Main tickets and tool tickets (main-ticket.ts): roles, results and result cards, ask_ticket, questions, the engine in
 // every column, restarts, slots, merging into the main ticket's copy, milestones, kind defaults, the collapsed wake,
-// check-ins and the no-progress rule. Runs use the fake claude (test/fixtures/fake-claude.ts).
+// no spend hold, and the no-progress rule. Runs use the fake claude (test/fixtures/fake-claude.ts).
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,7 +10,7 @@ import { Board } from "../src/server/board";
 import { folderDiff } from "../src/server/diff";
 import { run as git } from "../src/server/git";
 import { createServer } from "../src/server/http";
-import { checkinDue, checkinLine, KIND_DEFAULTS, progressStep, wakeTable } from "../src/server/main-ticket";
+import { KIND_DEFAULTS, progressStep, wakeTable } from "../src/server/main-ticket";
 import { isComplete, planStep } from "../src/server/plan";
 import { mainWakePrompt } from "../src/server/prompts";
 import type { Ticket } from "../src/server/types";
@@ -440,43 +440,23 @@ test("the wake prompt lists only working, failed and waiting tool tickets, plus 
   expect(prompt.length).toBeLessThan(3000);
 }, 60_000);
 
-test("the check-in fires at the threshold, holds new starts, and Keep going resets it", async () => {
+test("spend never holds a main ticket's tool tickets, even with a check-in saved before it was removed", async () => {
   await setup({ maxParallel: 3 });
   quickBoard();
   delete process.env.FAKE_PR;
-  board.onCost(() => 10);
-  expect(checkinDue(null, { costUsd: 24, tools: 1, rounds: 0 }, { usd: 25, tickets: 30 })).toBeNull();
-  expect(checkinDue(null, { costUsd: 25, tools: 1, rounds: 0 }, { usd: 25, tickets: 30 })).toBe("usd");
-  expect(checkinDue(null, { costUsd: 1, tools: 2, rounds: 3 }, { usd: 25, tickets: 30 })).toBe("rounds");
-  expect(checkinLine({ costUsd: 25.1, tools: 9, rounds: 4 }, "rounds")).toBe("Round 4 of testing, $25 so far");
+  // Far past the old $25 / 30 tickets threshold.
+  board.onCost(() => 100);
   const main = await mkMain("Main", "review");
   await mkTool(main.id, "One");
   await mkTool(main.id, "Two");
   board.ensurePlan("p", main.id);
+  // An old plan whose check-in was waiting for Keep going (as saved before the check-in was removed).
+  const old = { costBase: 0, ticketsBase: 0, roundsBase: 0, due: { at: new Date().toISOString(), line: "$83 so far" } };
+  store.updateTicket("p", main.id, { plan: { ...get(main.id).plan!, checkin: old } as any });
   board.advancePlans("p");
-  // Main + 2 tool tickets at $10 each: $30 is past $25.
-  await until(() => !!get(main.id).plan?.checkin?.due);
-  expect(get(main.id).plan!.checkin!.due!.line).toBe("$30 so far");
-  expect(store.listTickets("p").filter((t) => t.tool).every((t) => t.status === "backlog")).toBe(true);
-  expect(board.waitsOnUser("p", main.id)).toBe(true);
-  const kept = board.answerCheckin("p", main.id, "keep");
-  expect(kept.plan!.checkin).toMatchObject({ costBase: 30, ticketsBase: 2, due: null });
   await until(() => store.listTickets("p").filter((t) => t.tool).every((t) => t.status !== "backlog"));
-}, 60_000);
-
-test("Stop here stops the family's running tool tickets and pauses the plan", async () => {
-  await setup({ maxParallel: 3 });
-  quickBoard();
-  const main = await mkMain("Main", "review");
-  const t = await mkTool(main.id, "Long");
-  process.env.FAKE_MODE = "slow";
-  board.ensurePlan("p", main.id);
-  board.advancePlans("p");
-  await until(() => board.isRunning("p", t.id));
-  store.updateTicket("p", main.id, { plan: { ...get(main.id).plan!, checkin: { costBase: 0, ticketsBase: 0, roundsBase: 0, due: { at: new Date().toISOString(), line: "$30 so far" } } } });
-  board.answerCheckin("p", main.id, "stop");
-  await until(() => !board.isRunning("p", t.id));
-  expect(get(main.id).plan!.state).toBe("paused");
+  expect(board.waitsOnUser("p", main.id)).toBe(false);
+  expect(store.listComments("p", main.id).some((c) => c.text.startsWith("Check-in"))).toBe(false);
 }, 60_000);
 
 test("3 wakes in a row with no tool ticket changing mark the plan stuck", async () => {

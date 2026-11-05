@@ -25,7 +25,7 @@ import { canEndQuietly, quietContext } from "./quiet";
 import { addHuddleSpend } from "./spend";
 import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "./prompts";
 import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
-import { ASK_TIMEOUT_MS, checkinDue, familyCard, type FamilyCard, checkinLimits, checkinLine, finishedLine, isManager, kindDefaults, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, type FamilyCounts } from "./main-ticket";
+import { ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
 import { chatPrompt, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
@@ -49,7 +49,7 @@ import { mcpConfig } from "./agents";
 import type { OwnedSession } from "./shell";
 import type { Store } from "./store";
 import { normalizeTags } from "./tags";
-import { autoHuddlesOn, runCapFor, workspaceOf, type CheckIn, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "./types";
+import { autoHuddlesOn, runCapFor, workspaceOf, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "./types";
 import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TIMEOUT_MS, withBoardText, type SetupOutcome, type SetupResult } from "./worktree-setup";
 
 const INSTALLING = "Installing project dependencies…";
@@ -2290,16 +2290,11 @@ export class Board {
       waitingOnUser: (t) => this.userWait(t),
       ...(managed ? { managed: { summary: (t: Ticket) => this.lastSummary(slug, t.id), report: (t: Ticket) => this.reportOf(slug, t.id) } } : {}),
     });
-    // A main ticket's check-in: past the family's cost, ticket or round threshold nothing starts and nobody is woken
-    // until the user says Keep going (or Stop here).
-    if (planner.main && (step.start.length || step.events.length || plan.checkin?.due)) {
-      const checkin = this.checkinStep(slug, planner, plan);
-      if (checkin !== plan.checkin) plan.checkin = checkin;
-    }
     // A main ticket parked in Backlog or Done: no new tool ticket starts and it isn't woken (running ones finish, queued
     // ones wait); moving it back to In progress lets them go on.
     const parked = !!planner.main && (planner.status === "backlog" || planner.status === "done");
-    const held = !!plan.checkin?.due || parked;
+    // (Plans saved before the spending check-in was removed may still have a "checkin" field: nothing reads it.)
+    const held = parked;
     if (!held) for (const cid of step.start) this.patch(slug, cid, { status: "ready", mode: "auto", outcome: null, error: null });
     if (step.events.length) {
       plan.inbox = [...(plan.inbox ?? []), ...step.events.map((e) => e.line)];
@@ -2736,7 +2731,7 @@ export class Board {
 
   /**
    * A main ticket (or tool group) gets a running plan once it has tool tickets or events: the engine then runs its
-   * family in any column. A finished plan starts again and keeps what it already reported (seen) and its check-in.
+   * family in any column. A finished plan starts again and keeps what it already reported (seen).
    */
   ensurePlan(slug: string, id: string): Ticket | null {
     const t = this.store.getTicket(slug, id);
@@ -2853,53 +2848,6 @@ export class Board {
     const parent = t.parentId ?? this.mainOf(slug, t)?.id;
     if (!parent) return;
     this.pushEvent(slug, parent, `the user wrote in tool ticket ${t.id} "${t.title}": ${text}`);
-  }
-
-  /** What a main ticket's family has now: its cost (the main ticket's own runs included), tool tickets and rounds. */
-  familyCounts(slug: string, mainId: string): FamilyCounts {
-    const rows = familyOf(this.store.listTickets(slug), mainId).map((r) => r.ticket);
-    let cost = 0;
-    for (const r of rows) {
-      try {
-        cost += this.costOf(slug, r.id);
-      } catch {}
-    }
-    return { costUsd: cost, tools: rows.filter((r) => r.tool).length, rounds: rows.filter((r) => r.kind === "round").length };
-  }
-
-  /** The plan's check-in, due now if the family passed a threshold since the last one (unchanged object otherwise). */
-  private checkinStep(slug: string, planner: Ticket, plan: Plan): CheckIn | null | undefined {
-    const cur = plan.checkin;
-    if (cur?.due) return cur;
-    const c = this.familyCounts(slug, planner.id);
-    const why = checkinDue(cur, c, checkinLimits(this.store.getProfile(slug)));
-    if (!why) return cur;
-    const line = checkinLine(c, why);
-    this.store.addComment(slug, planner.id, "ai", `Check-in: ${line}. Nothing new starts until you choose Keep going or Stop here.`);
-    this.notify(`Keep going? ${planner.title}`, line, slug, planner.id);
-    return { ...(cur ?? { costBase: 0, ticketsBase: 0, roundsBase: 0 }), due: { at: nowIso(), line } };
-  }
-
-  /** The user's answer to a check-in: keep going resets the counters; stop here stops the family's running tool tickets. */
-  answerCheckin(slug: string, id: string, action: "keep" | "stop"): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t?.plan?.checkin?.due) throw new Error("this ticket has no check-in waiting");
-    const c = this.familyCounts(slug, id);
-    const checkin: CheckIn = { costBase: c.costUsd, ticketsBase: c.tools, roundsBase: c.rounds, due: null };
-    if (action === "keep") {
-      this.patch(slug, id, { plan: { ...t.plan, checkin, state: t.plan.state === "done" ? "done" : "running", noProgress: 0 } });
-      this.store.addComment(slug, id, "ai", "Check-in: the user said keep going.");
-      this.advancePlans(slug);
-      return this.store.getTicket(slug, id)!;
-    }
-    for (const r of familyOf(this.store.listTickets(slug), id)) {
-      const o = r.ticket;
-      if (!o.tool) continue;
-      if (this.isRunning(slug, o.id)) this.stop(slug, o.id);
-      else if (o.status === "ready") this.patch(slug, o.id, { status: "backlog" });
-    }
-    this.store.addComment(slug, id, "ai", "Check-in: the user said stop here. Running tool tickets were stopped and the plan is paused.");
-    return this.patch(slug, id, { plan: { ...t.plan, checkin, state: "paused" } });
   }
 
   /** What a main ticket's card shows of its family (main-ticket.ts familyCard). */

@@ -3505,6 +3505,3 @@ button.tag-chip:hover { border-color: currentColor; }
 .result-card .r-folder { margin: 4px 0; }
 .result-card .r-links { display: flex; gap: 12px; font-size: var(--fs-xs); }
 .result-card .r-links .link-btn { font-weight: 600; }
-/* A main ticket's check-in on its card: what triggered it, then Keep going / Stop here. */
-.card-checkin { margin-top: 6px; }
-.card-checkin .checkin-line { font-size: var(--fs-sm); color: var(--warn); }

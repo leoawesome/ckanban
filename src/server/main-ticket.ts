@@ -3,7 +3,7 @@
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
 import { familyState, groupSummary, hiddenTool, type TicketKind } from "../../web/src/family";
-import type { CheckIn, Plan, Ticket } from "./types";
+import type { Plan, Ticket } from "./types";
 
 /** Model and effort a tool ticket gets from its kind when create_ticket leaves them out. */
 export const KIND_DEFAULTS: Record<TicketKind, { model: string; effort: string }> = {
@@ -32,10 +32,6 @@ export const ASK_TIMEOUT_MS = 5 * 60_000;
 export const RESULTS_KEEP = 60;
 /** No-progress wakes in a row before a main ticket's plan is stuck. */
 export const NO_PROGRESS_WAKES = 3;
-/** Check-in defaults (board settings checkinUsd / checkinTickets), and the round count that triggers one. */
-export const CHECKIN_USD = 25;
-export const CHECKIN_TICKETS = 30;
-export const CHECKIN_ROUNDS = 3;
 /** The tool ticket's report, in its outputs folder. */
 export const REPORT_FILE = "report.md";
 
@@ -47,7 +43,7 @@ export function isManager(t: Pick<Ticket, "main" | "tool" | "kind"> | null | und
   return !!t && (!!t.main || (!!t.tool && (t.kind === "group" || t.kind === "round")));
 }
 
-/** A plan the main-ticket engine runs (finished events, build limit, no-progress and check-in rules). */
+/** A plan the main-ticket engine runs (finished events, build limit and the no-progress rule). */
 export function managedPlan(t: Pick<Ticket, "main" | "tool" | "kind">): boolean {
   return isManager(t);
 }
@@ -98,41 +94,6 @@ export function wakeTable(kids: Ticket[], all: Ticket[], running: (id: string) =
   }
   if (finished) lines.push(`- ${finished} other tool ticket${finished === 1 ? "" : "s"} finished (get_family lists them)`);
   return lines.length ? lines.join("\n") : "- (no tool tickets yet)";
-}
-
-/** What the family has: cost so far, tool tickets made and testing rounds. */
-export interface FamilyCounts {
-  costUsd: number;
-  tools: number;
-  rounds: number;
-}
-
-export interface CheckinLimits {
-  usd: number;
-  tickets: number;
-}
-
-export function checkinLimits(p: { checkinUsd?: number | null; checkinTickets?: number | null } | null | undefined): CheckinLimits {
-  const pos = (n: number | null | undefined, d: number) => (typeof n === "number" && n > 0 ? n : d);
-  return { usd: pos(p?.checkinUsd, CHECKIN_USD), tickets: pos(p?.checkinTickets, CHECKIN_TICKETS) };
-}
-
-const money = (n: number) => `$${n >= 10 ? Math.round(n) : n.toFixed(2)}`;
-
-/** The card's line for a check-in, naming what triggered it ("Round 4 of testing, $25 so far"). */
-export function checkinLine(c: FamilyCounts, why: "usd" | "tickets" | "rounds"): string {
-  if (why === "rounds" || (c.rounds > 0 && why === "usd")) return `Round ${c.rounds} of testing, ${money(c.costUsd)} so far`;
-  if (why === "tickets") return `${c.tools} tool tickets, ${money(c.costUsd)} so far`;
-  return `${money(c.costUsd)} so far`;
-}
-
-/** A check-in that is now due, or null. base: what the family had at the last check-in (none: nothing). */
-export function checkinDue(base: CheckIn | null | undefined, c: FamilyCounts, limits: CheckinLimits): "usd" | "tickets" | "rounds" | null {
-  const b = base ?? { costBase: 0, ticketsBase: 0, roundsBase: 0 };
-  if (c.rounds - b.roundsBase >= CHECKIN_ROUNDS) return "rounds";
-  if (c.costUsd - b.costBase >= limits.usd) return "usd";
-  if (c.tools - b.ticketsBase >= limits.tickets) return "tickets";
-  return null;
 }
 
 /**

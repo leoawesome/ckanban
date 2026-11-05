@@ -60,10 +60,6 @@ export interface Profile {
   claudeAiConnectors?: "all" | "none" | string[];
   /** Board setting "Main ticket model": model for main tickets' runs (their own /model still wins). Missing/null: the board's model. */
   mainModel?: string | null;
-  /** A main ticket's family checks in with the user once it has spent this much since the last check-in. Missing: 25. */
-  checkinUsd?: number | null;
-  /** ...or once it made this many tool tickets since the last check-in. Missing: 30. */
-  checkinTickets?: number | null;
   /**
    * A main ticket's or feature's chat that has gone cold starts its next turn as a fresh chat seeded from the status once
    * it would re-read more than this many tokens. Missing: 150,000.
@@ -698,16 +694,6 @@ export interface Plan {
   /** A main ticket's plan (main-ticket.ts): the family at the last wake, and wakes in a row since it last changed. */
   progressSig?: string | null;
   noProgress?: number;
-  /** A main ticket's check-in: what the family had at the last one, and the one waiting for the user (due). */
-  checkin?: CheckIn | null;
-}
-
-export interface CheckIn {
-  costBase: number;
-  ticketsBase: number;
-  roundsBase: number;
-  /** The family passed a threshold: no tool ticket starts and the main ticket isn't woken until the user answers. */
-  due?: { at: string; line: string } | null;
 }
 
 // ---- Huddles: several Claude sessions working on one ticket in a shared message room (see huddle.ts) ----

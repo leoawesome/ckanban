@@ -307,7 +307,7 @@ export function createServer(deps: ServerDeps) {
   const windowsFile = join(store.root, "usage-windows.json");
   const usage = new UsageCache(deps.usage ?? fetchUsage, (r) => recordWindow(windowsFile, r));
   const spend = new SpendIndex(store);
-  // A main ticket's check-in and result cards count what its family spent.
+  // A main ticket's card and result cards count what its family spent.
   board.onCost((s, id) => spend.ticket(s, id).costUsd + huddles.ticketSpend(s, id).costUsd);
   const loops = deps.loops ?? new LoopManager(store, bus, board, passes, {
     now: () => new Date(), sideCall, shimDir: () => ckanbanShim(store.root), port: () => server.port ?? deps.port,
@@ -1105,10 +1105,10 @@ export function createServer(deps: ServerDeps) {
           if (b.mainModel && !(typeof b.mainModel === "string" && validModel(b.mainModel))) throw new HttpError(400, `"${b.mainModel}" is not a model name. Use ${MODEL_HELP}.`);
           next.mainModel = b.mainModel || null;
         }
-        for (const k of ["checkinUsd", "checkinTickets", "freshChatTokens"] as const) {
-          if (b[k] === undefined) continue;
-          if (b[k] !== null && (typeof b[k] !== "number" || !(b[k] > 0) || b[k] > (k === "freshChatTokens" ? 10_000_000 : 100000))) throw new HttpError(400, `${k} must be a positive number, or null for the default`);
-          next[k] = b[k] === null ? null : k === "checkinUsd" ? b[k] : Math.round(b[k]);
+        if (b.freshChatTokens !== undefined) {
+          const v = b.freshChatTokens;
+          if (v !== null && (typeof v !== "number" || !(v > 0) || v > 10_000_000)) throw new HttpError(400, "freshChatTokens must be a positive number, or null for the default");
+          next.freshChatTokens = v === null ? null : Math.round(v);
         }
         if (b.checkinOfferDismissed !== undefined) next.checkinOfferDismissed = b.checkinOfferDismissed === true;
         if (b.effort !== undefined) {
@@ -1580,7 +1580,7 @@ export function createServer(deps: ServerDeps) {
           const kids = store.listTickets(slug).filter((c) => c.parentId === planner.id);
           const running = planActive(planner.plan);
           // Unattended plans are capped; in the user's chat the user is there to stop it. A main ticket's family has no
-          // such cap: its check-ins and no-progress rule stop runaway loops instead.
+          // such cap: its no-progress rule stops runaway loops instead.
           const cap = running && !isManager(planner) ? 2 * Math.max(1, planner.plan!.originalCount) : Infinity;
           if (kids.length >= cap) throw new HttpError(409, `child ticket limit reached (${cap}) for this plan`);
           const missing = (dependsOn ?? []).filter((d) => !kids.some((k) => k.id === d || k.planKey === d));
@@ -2423,17 +2423,6 @@ export function createServer(deps: ServerDeps) {
         return json({ message: await board.landMilestone(slug, id, String(b.summary ?? "")) });
       } catch (e) {
         throw new HttpError(409, (e as Error).message);
-      }
-    }
-    // A check-in's answer (the card's Keep going / Stop here): the user's.
-    if (m === "POST" && action === "checkin") {
-      if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user answers a check-in");
-      const b = await body(req);
-      if (b.action !== "keep" && b.action !== "stop") throw new HttpError(400, "action must be keep or stop");
-      try {
-        return json(view(profile, board.answerCheckin(slug, id, b.action)));
-      } catch (e) {
-        throw new HttpError(400, (e as Error).message);
       }
     }
     if (m === "POST" && action === "stop") {
