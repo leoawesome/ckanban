@@ -22,7 +22,7 @@ import { elapsed, fullTime, plainPreview, timeAgo } from "./time";
 import { costText } from "./usage";
 import { useNow } from "./useNow";
 import { clearArrival, useArrival } from "./arrivals";
-import { finishMark, foldChips, openedAt, shouldPulse, signInError, stepAge, type FinishMark } from "./cardState";
+import { attentionLabel, cardFamily, familyWorkingNames, finishMark, foldChips, openedAt, shouldPulse, signInError, stepAge, stepsText, type FinishMark } from "./cardState";
 
 /** Live running time: ticks every second for the first minute, then every 30s. */
 function Elapsed({ since }: { since: string }) {
@@ -155,7 +155,7 @@ function HuddleBadge({ badge, onOpen }: { badge: CardHuddleBadge; onOpen?: (tick
  * limit: the board's slug and error toast, for the usage-limit buttons ("Continue now", auto-continue) and a stalled
  * run's Stop / Keep waiting / Restart.
  */
-/** The main card's working line (familyCard.line): the current step, or Paused / Stuck / a step that needs you in amber. */
+/** The main card's working line (familyCard.line): the current step, Paused / Stuck / a step that needs you in amber, a failed step in red. */
 function FamilyLineView({ line, id }: { line: NonNullable<NonNullable<Ticket["familyCard"]>["line"]>; id?: string }) {
   const text = line.until ? `${line.text}, resumes at ${clockTime(line.until)}` : line.text;
   return (
@@ -185,11 +185,10 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
   /** A board search found this card through one of its tool tickets: that ticket's title. */
   via?: string;
 }) {
-  // A main ticket with 2 or more tool tickets: one card for the feature (working line, "N tickets", family cost).
-  const fc = ticket.main && ticket.familyCard && ticket.familyCard.tools >= 2 ? ticket.familyCard : null;
-  const familyBusy = !!fc && fc.running.length > 0 && !ticket.running;
-  const working = (ticket.status === "in_progress" && !waitsForSlot(ticket) && !autoHuddleIdle(ticket)) || !!ticket.running;
-  const att = ticket.attention ?? null;
+  const ownWorking = (ticket.status === "in_progress" && !waitsForSlot(ticket) && !autoHuddleIdle(ticket)) || !!ticket.running;
+  // A main ticket with a step, or a ticket of its feature working: one card for the feature (working line, "7 of 16
+  // steps", family cost). Its feature working shows the blue stripe too (cardFamily).
+  const { fc, busy: familyBusy, familyWorks, working, att, doneHint } = cardFamily(ticket, ownWorking);
   // Its own huddle works on it: the huddle badge says so, not a stale Blocked or Failed.
   const badge = att || (ticket.huddleBusy && huddle) || familyBusy ? null
     : ticket.folderWait ? <span className="badge wait" title="Tickets on a folder without version history run one at a time; this one starts when the other finishes">waiting: another ticket is using the folder</span>
@@ -197,15 +196,15 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
       ? <span className="badge queued" title="A daemon restart is pending; queued tickets start right after it">Waits for restart</span>
       : <span className="badge queued" title="Starts as soon as nothing else holds it back (another ticket editing the folder, or a restart)">Queued · #{queued}</span>)
     : outcomeBadge(ticket);
-  const showActivity = working && ticket.lastActivity && !QUIET_ACTIVITY.has(ticket.lastActivity);
+  const showActivity = ownWorking && ticket.lastActivity && !QUIET_ACTIVITY.has(ticket.lastActivity);
   // How long since the run's last step; amber and a slower spinner once it has been quiet for 3 minutes.
-  const step = useStepAge(working ? ticket.lastActivityAt : null);
-  const quiet = working && !!step?.quiet;
+  const step = useStepAge(ownWorking ? ticket.lastActivityAt : null);
+  const quiet = ownWorking && !!step?.quiet;
   const last = ticket.session?.lastMessage;
   const done = ticket.status === "done";
   // Claude Code's own "Not logged in" isn't Claude's last word: a red chip says what to do instead (nothing on Done).
   const signIn = !!last && last.role !== "user" && signInError(last.text);
-  const finish = useFinishMark(working, ticket);
+  const finish = useFinishMark(ownWorking, ticket);
   // Claude just moved it here: a fading ring, then a "new" dot until hovered or opened.
   const arrival = useArrival(ticket.id);
   const now = useNow();
@@ -269,16 +268,16 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
       {att && (
         <div className={`your-turn att-${att.kind}`} id={a11yId && `${a11yId}-turn`}>
           <span className={`yt-dot ${pulse ? "pulse" : ""}`} aria-hidden />
-          <span className="yt-label">{fromSteps ? `Needs you · ${stepsWaiting.length}` : "Your turn"}</span>
+          <span className="yt-label">{attentionLabel(att, fromSteps ? stepsWaiting.length : 0, familyWorks)}</span>
           <span className="yt-why" title={ticket.error ?? undefined}>{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
         </div>
       )}
-      <KeyHint inset className="card-keys" keys={ticket.status === "review" ? "↵ open · D done · Space move" : "↵ open · Space move"} />
+      <KeyHint inset className="card-keys" keys={doneHint ? "↵ open · D done · Space move" : "↵ open · Space move"} />
       <div className="card-title" title={ticket.title} id={a11yId && `${a11yId}-title`}>
         {arrival.isNew && <span className="arrived-dot" role="img" aria-label="New here" title="Claude moved this card here" />}
         {ticket.important && <ImportantStar />}{ticket.title}
       </div>
-      {via && <div className="card-via" title={`Found in the tool ticket “${via}”`}>via {via}</div>}
+      {via && <div className="card-via" title={`Found in the step “${via}”`}>via {via}</div>}
       {!showActivity && fc?.line && !att ? (
         <FamilyLineView line={fc.line} id={a11yId && `${a11yId}-line`} />
       ) : showActivity ? (
@@ -309,7 +308,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
           <DeviceChips ticket={ticket} />
           {finish ? finishBadge(finish) : badge}
           {signInChip}
-          {ticket.autoHuddle && working && autoHuddleChip(ticket.autoHuddle)}
+          {ticket.autoHuddle && ownWorking && autoHuddleChip(ticket.autoHuddle)}
           {huddle && <HuddleBadge badge={huddle} onOpen={onOpenHuddle} />}
           {/* Why Claude stopped following up is history: the ticket shows it, the card doesn't. */}
           {limit && ticket.followUp && (
@@ -327,13 +326,16 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
           {ticket.status === "review" && limit && !dragging && currentPr(ticket)?.state === "OPEN" && currentPr(ticket)?.conflicts && (
             <ResolveConflicts slug={limit.slug} ticket={ticket} onError={limit.onError} small />
           )}
-          {fc && (
-            <span className="badge fam" title={fc.running.length ? `Working now:\n${fc.running.join("\n")}` : "No tool ticket is working now"}
-              aria-label={`${fc.tools} tool tickets${fc.running.length ? `, ${fc.running.length} working` : ""}`}>
-              {fc.tools} tickets
-            </span>
-          )}
-          {fc && fc.costUsd > 0 && <span className="badge cost" title="What the whole feature has cost so far (API-equivalent)">{costText(fc.costUsd)}</span>}
+          {fc && fc.tools > 0 && (() => {
+            const names = familyWorkingNames(fc);
+            return (
+              <span className="badge fam" title={names.length ? `Working now:\n${names.join("\n")}` : "No step is working now"}
+                aria-label={`${stepsText(fc)}${names.length ? `, ${names.length} working` : ""}`}>
+                {stepsText(fc)}
+              </span>
+            );
+          })()}
+          {fc && fc.costUsd > 0 && <span className="badge cost" title="What the whole feature has cost so far (API-equivalent)">{costText(fc.costUsd)} so far</span>}
           {!fc && !!ticket.costUsd && (
             <span className="badge cost" title={`API-equivalent cost of this ticket's runs so far${ticket.runCap ? ` · runs stop at ${costText(ticket.runCap)}` : ""}`}>
               {costText(ticket.costUsd)}

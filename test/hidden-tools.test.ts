@@ -159,7 +159,7 @@ test("the main card's line: a step that needs you, then failed or stuck, then pa
   // A failure the main ticket hasn't moved past beats paused.
   const bad = tk("F", { title: "Build retry", parentId: "M", tool: true, kind: "build", status: "review", outcome: "failed", runEndedAt: at(40) });
   const failed = familyCard({ ...f.main, runEndedAt: at(45) }, [...family, lim, bad], [...f.all, lim, bad], run(["T5"]), 0);
-  expect(failed.line).toEqual({ text: "Build retry failed", tone: "warn" });
+  expect(failed.line).toEqual({ text: "Build retry failed", tone: "fail" });
   // Stuck shows in the line's place; stuck with a failed step names the step (that is what needs the user).
   const stuckMain = { ...f.main, runEndedAt: at(45), plan: { state: "stuck", reason: "3 wakes in a row without any tool ticket changing" } as any };
   expect(familyCard(stuckMain, family, f.all, run(["T5"]), 0).line).toEqual({ text: "Stuck: 3 wakes in a row without any tool ticket changing", tone: "warn" });

@@ -3001,11 +3001,14 @@ export class Board {
     return familyCard(main, family, all, (x) => this.isRunning(slug, x), Math.round(cost * 100) / 100);
   }
 
-  /** How many of a main ticket's tool tickets are working now (its card shows In progress meanwhile). */
+  /**
+   * How many tickets of a main ticket's family are working now (tool tickets and tickets the user added; the main
+   * ticket itself left out). Its card shows In progress meanwhile (columns.ts familyBusy) with familyCard's working line.
+   */
   familyWorking(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
     let n = 0;
     for (const r of familyOf(tickets, id)) {
-      if (!r.ticket.tool) continue;
+      if (r.ticket.id === id) continue;
       if (this.isRunning(slug, r.ticket.id) || r.ticket.status === "ready" || r.ticket.status === "in_progress") n++;
     }
     return n;

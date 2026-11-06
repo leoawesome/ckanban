@@ -259,7 +259,7 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
   content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px;
 }
 .col-ready .column-title::before { background: var(--info); }
-.col-in_progress .column-title::before { background: var(--accent); }
+.col-in_progress .column-title::before { background: var(--info); }
 .col-review .column-title::before { background: var(--warn); }
 
 /* card */
@@ -324,6 +324,7 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 }
 .card-family-line .spinner { flex: none; }
 .card-family-line.warn { color: var(--warn); font-weight: 600; }
+.card-family-line.fail { color: var(--err); font-weight: 600; }
 .card-via { margin-top: 3px; font-size: var(--fs-2xs); color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge.fam { background: var(--surface-2); color: var(--muted); cursor: default; }
 /* A tool ticket's chat: its feature is in charge. */

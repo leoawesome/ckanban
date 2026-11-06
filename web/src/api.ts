@@ -194,6 +194,8 @@ export interface Attention {
   kind: AttentionKind;
   label: string;
   since: string;
+  /** On a main ticket: it comes from this kind of step wait ("failed": the card says "Step failed"). */
+  step?: "questions" | "failed" | "blocked" | "limit";
 }
 
 export interface Profile {
@@ -1269,9 +1271,14 @@ export interface FamilyCardInfo {
   tools: number;
   /** Tool tickets not finished yet (not in Done, or still running). */
   open?: number;
+  /** Finished tool tickets: "7 of 16 steps". */
+  toolsDone?: number;
+  /** Tool tickets working or queued now. */
   running: string[];
+  /** Every family ticket working or queued now (tool tickets and tickets the user added). */
+  working?: string[];
   costUsd: number;
-  line: { text: string; tone: "work" | "warn"; until?: string | null } | null;
+  line: { text: string; tone: "work" | "warn" | "fail"; until?: string | null } | null;
   waiting: { id: string; label: string; attention: string; since: string } | null;
   /** "With you" steps waiting for the user's answer in this chat, oldest first. */
   needsYou?: { id: string; label: string; attention: string; since: string }[];

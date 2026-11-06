@@ -152,10 +152,10 @@ export function stepWait(t: Ticket, running: boolean): StepWait | null {
   return null;
 }
 
-/** The main card's working line: warn for a step that needs the user, a failure, stuck or paused. */
+/** The main card's working line: fail (red) for a failed step, warn for a step that needs the user, stuck or paused. */
 export interface FamilyLine {
   text: string;
-  tone: "work" | "warn";
+  tone: "work" | "warn" | "fail";
   /** Paused on a usage limit: when it resumes (the card adds "resumes at 15:00"). */
   until?: string | null;
 }
@@ -164,10 +164,17 @@ export interface FamilyLine {
 export interface FamilyCard {
   /** Its tool tickets (hidden and with you). */
   tools: number;
+  /** Its tool tickets that finished (Done): the card's "7 of 16 steps". */
+  toolsDone: number;
   /** Its tool tickets not finished yet (anything not in Done, or still running): Backlog / Done ask first only then. */
   open: number;
-  /** Titles of the tool tickets working or queued now (the chip's hover). */
+  /** Titles of the tool tickets working or queued now (Stop's count: it stops tool tickets only). */
   running: string[];
+  /**
+   * Titles of every family ticket working or queued now: tool tickets and tickets the user added (the main ticket
+   * itself left out). Non-empty: the card shows the working stripe and line (board.familyWorking moves it).
+   */
+  working: string[];
   /** What the whole family spent so far (main ticket included). */
   costUsd: number;
   line: FamilyLine | null;
@@ -186,7 +193,8 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
   const tools = family.filter((t) => t.tool);
   const busy = (t: Ticket) => running(t.id) || t.status === "ready" || t.status === "in_progress";
   const startedAt = (t: Ticket) => t.runStartedAt ?? t.lastRunAt ?? t.updatedAt;
-  const working = tools.filter(busy);
+  // Any family ticket counts (tool tickets and tickets the user added), so the card never moves without a working line.
+  const working = family.filter((t) => t.id !== main.id && busy(t));
   const newestStart = working.reduce((m, t) => (startedAt(t) > m ? startedAt(t) : m), "");
   // Steps the main ticket hasn't seen yet (it ran before they ended), or any when it passes a question on to the user.
   const seenUntil = main.runEndedAt ?? "";
@@ -197,7 +205,8 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
   const needsYou = waits.filter((w) => w.withYou);
   const waiting = needsYou[0] ?? waits.find((w) => w.since > seenUntil) ?? (mainAsks ? waits[0] ?? null : null);
   let line: FamilyLine | null = null;
-  if (waiting) line = { text: waiting.label, tone: "warn" };
+  const tone = (w: StepWait): FamilyLine["tone"] => (w.attention === "failed" ? "fail" : "warn");
+  if (waiting) line = { text: waiting.label, tone: tone(waiting) };
   if (!line && main.plan?.state === "stuck") line = { text: `Stuck: ${clip(oneLine(main.plan.reason ?? "no progress"), 140)}`, tone: "warn" };
   if (!line) {
     const stalled = working.find((t) => t.stalled);
@@ -206,7 +215,7 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
   if (!line) {
     // A failure the main ticket hasn't moved past: nothing started since it ended.
     const failed = waits.filter((w) => w.attention !== "questions" && w.since > newestStart).at(-1);
-    if (failed) line = { text: failed.label, tone: "warn" };
+    if (failed) line = { text: failed.label, tone: tone(failed) };
   }
   if (!line) {
     const paused = tools.filter((t) => t.outcome === "limit" && t.limit?.auto && t.status !== "done" && !running(t.id))
@@ -227,5 +236,8 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
     } else line = { text: stepName(top), tone: "work" };
   }
   const open = tools.filter((t) => t.status !== "done" || running(t.id)).length;
-  return { tools: tools.length, open, running: working.map((t) => stepName(t)), costUsd, line, waiting, needsYou };
+  return {
+    tools: tools.length, open, toolsDone: tools.filter((t) => t.status === "done").length,
+    running: working.filter((t) => t.tool).map((t) => stepName(t)), working: working.map((t) => stepName(t)), costUsd, line, waiting, needsYou,
+  };
 }

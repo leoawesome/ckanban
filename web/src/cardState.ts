@@ -76,3 +76,44 @@ export function stepAge(lastActivityAt: string | null | undefined, now: number):
   const text = s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
   return { text, quiet: now - at >= QUIET_MS };
 }
+
+/** A main card's family summary, as far as these rules go (main-ticket.ts FamilyCard). */
+interface FamilyLike { tools: number; toolsDone?: number; running: string[]; working?: string[] }
+
+/** Every family ticket working now (tool tickets and tickets the user added); older servers sent tool tickets only. */
+export const familyWorkingNames = (f: FamilyLike): string[] => f.working ?? f.running;
+
+interface CardLike<F extends FamilyLike, A extends { kind: string }> {
+  status: string; main?: boolean; running?: boolean; attention?: A | null; familyCard?: F | null;
+}
+
+/**
+ * How a card shows its feature. ownWorking: its own run works. fc: the family summary a main card shows (with a step,
+ * or a ticket of its feature working). familyWorks: a ticket of its feature works and the card isn't parked in Backlog
+ * or Done (columns.ts familyBusy): the blue stripe and working line, no "Your turn" strip and no "D done" hint.
+ */
+export function cardFamily<F extends FamilyLike, A extends { kind: string }>(t: CardLike<F, A>, ownWorking: boolean) {
+  const f = t.main ? t.familyCard ?? null : null;
+  const fc = f && (f.tools >= 1 || familyWorkingNames(f).length > 0) ? f : null;
+  const busy = !!fc && familyWorkingNames(fc).length > 0 && !t.running;
+  const familyWorks = busy && t.status !== "done" && t.status !== "backlog";
+  const working = ownWorking || familyWorks;
+  // While its feature works it isn't the user's turn to check a result; strips that need the user stay.
+  const att = familyWorks && (t.attention?.kind === "review" || t.attention?.kind === "reply") ? null : t.attention ?? null;
+  return { fc, busy, familyWorks, working, att, doneHint: t.status === "review" && !working };
+}
+
+/** Progress in words on the main card: "7 of 16 steps" (finished tool tickets of all of them). */
+export function stepsText(f: FamilyLike): string {
+  return `${f.toolsDone ?? 0} of ${f.tools} step${f.tools === 1 ? "" : "s"}`;
+}
+
+/**
+ * The card's attention strip label: "Step failed" when a failed step put it there, "Needs you · n" for steps waiting
+ * on the user, "Needs you" while the feature still works (never "Your turn" then), else "Your turn".
+ */
+export function attentionLabel(att: { kind: string; step?: string }, stepsWaiting: number, familyWorks: boolean): string {
+  if (att.kind === "failed" && att.step === "failed") return "Step failed";
+  if (stepsWaiting > 0) return `Needs you · ${stepsWaiting}`;
+  return familyWorks ? "Needs you" : "Your turn";
+}
