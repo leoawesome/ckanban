@@ -1656,7 +1656,9 @@ export const TOOLS: Tool[] = [
         partOf: {
           type: "string",
           description: "Add the new ticket to an open feature: the feature's top ticket id or one of its groups (list_tickets marks open features). " +
-            "Use it when the work belongs to that feature instead of starting a new top ticket. A feature keeps tickets at most 2 levels deep.",
+            "Use it when the work belongs to that feature instead of starting a new top ticket. Inside a board run, any ticket of your own ticket's feature works " +
+            "too (a testing round, a group, another step). A feature keeps tickets at most 2 levels deep: a ticket that would go deeper goes under the nearest " +
+            "ticket above that leaves room, and a partOf the board can't use puts it under your own ticket; the reply says where it went.",
         },
         model: {
           type: "string",
@@ -1725,6 +1727,13 @@ export const TOOLS: Tool[] = [
         ...(main && typeof args?.newGroup === "string" ? { newGroup: args.newGroup } : {}),
       }, ctx.env[RUN_ENV]);
       const how = [t.kind, t.model, t.effort ? `${t.effort} effort` : null].filter(Boolean).join(", ");
+      // Where the board put it instead of the partOf asked for, or whose step it is (see the create handler in http.ts).
+      const placed = (t as { note?: unknown }).note;
+      const note = typeof placed === "string" && placed ? ` ${placed}` : "";
+      if (note) {
+        const where = t.tool ? `tool ticket ${t.id} under ${t.parentId}` : `${t.id} in ${t.status} (${t.mode} mode)${t.partOf ? `, part of ${t.partOf}` : ", at the top level"}`;
+        return `Created ${where}${how ? ` (${how})` : ""}: ${t.title}.${note}`;
+      }
       if (t.main) {
         return [`Created main ticket ${t.id} on board ${slug} in ${t.status} (${t.mode} mode): ${t.title}`, ...(t.gather ? [gatherText(t.gather)] : [])].join("\n\n");
       }

@@ -195,6 +195,23 @@ export function levelOf<T extends FamilyTicket>(tickets: T[], id: string): numbe
   return n;
 }
 
+/**
+ * Where a new ticket linked under id may hang so its family stays at most MAX_LEVEL deep: id itself, or its nearest
+ * ancestor that leaves room. A run's partOf too deep in its own feature moves up instead of failing.
+ */
+export function fitParent<T extends FamilyTicket>(tickets: T[], id: string): string {
+  const byId = new Map(tickets.map((t) => [t.id, t]));
+  const seen = new Set<string>();
+  let cur = byId.get(id);
+  while (cur && !seen.has(cur.id) && levelOf(tickets, cur.id) + 1 > MAX_LEVEL) {
+    seen.add(cur.id);
+    const p = parentIn(byId, cur);
+    if (!p) break;
+    cur = p.parent;
+  }
+  return cur?.id ?? id;
+}
+
 /** A family's top ticket is a feature: not Done, and 2 or more other tickets in its family or a status already. */
 export function isFeature<T extends FeatureTicket>(tickets: T[], top: T): boolean {
   if (top.status === "done" || familyRoot(tickets, top.id)?.id !== top.id) return false;

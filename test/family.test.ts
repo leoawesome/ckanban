@@ -213,9 +213,12 @@ test("create_ticket from a ticket's chat links only with partOfThisTicket, as fr
     // Tickets a chat creates get no suggestion call: the chat decided.
     expect(calls.length).toBe(before);
 
-    // A run can't put a new ticket under some other ticket.
+    // A run's partOf outside its own family and any open feature doesn't block it: the ticket goes under the run's own ticket.
     const r = await post("/tickets", { title: "Sneaky", partOf: other.id }, { [RUN_HEADER]: `f/${chatT.id}` });
-    expect(r.status).toBe(403);
+    expect(r.status).toBe(201);
+    const sneaky = (await r.json()) as any;
+    expect([sneaky.partOf, sneaky.note]).toEqual([chatT.id, expect.stringContaining(`under this run's own ticket ${chatT.id}`)]);
+    await board.deleteTicket("f", sneaky.id);
 
     const fam = await callTool("get_family", { profile: "f", id: linked.id }, ctx);
     expect(fam.isError).toBeUndefined();

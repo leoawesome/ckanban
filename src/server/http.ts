@@ -60,7 +60,7 @@ import { changesPrompt, HELP_KINDS, Helper, HelpError, newId, recapAvailable, re
 import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, UsageCache, windowsNeeded } from "./ticket-usage";
 import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
-import { familyOf, familyRoot, groupsOf, hiddenTool, withYouTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
+import { familyOf, familyRoot, fitParent, groupsOf, hiddenTool, levelOf, MAX_LEVEL, withYouTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
 import { STATUS_FIELDS, type StatusPatch } from "./feature";
 import { createdFromDraft } from "../../web/src/proposalMatch";
 import type { Store } from "./store";
@@ -1563,7 +1563,52 @@ export function createServer(deps: ServerDeps) {
         const rights = runRights(req, slug);
         // A main ticket's own chat creating a new main ticket: not a tool ticket of its family.
         const { requester, guest } = rights;
-        const planner = wantMain ? undefined : rights.planner;
+        // Part of another ticket's family: a run's own ticket (create_ticket's partOfThisTicket, shown as "from chat") or,
+        // for the user, any ticket of this board.
+        let partOf = typeof b.partOf === "string" && b.partOf ? b.partOf : undefined;
+        if (partOf && !store.getTicket(slug, partOf)) throw new HttpError(400, `ticket ${partOf} not found (partOf)`);
+        const ownRun = fromRun?.[0] === slug && fromRun[1] && !req.headers.get(HUDDLE_HEADER) ? store.getTicket(slug, fromRun[1]) ?? null : null;
+        let partOfVia = partOf && fromRun?.[0] === slug && fromRun[1] === partOf ? "chat" as const : undefined;
+        // Where a run's ticket went instead of the partOf it asked for, and why: told to the run in the reply.
+        const placed: string[] = [];
+        if (partOf && fromRun && !wantMain) {
+          const all = store.listTickets(slug);
+          const top = familyRoot(all, partOf);
+          // From a run, partOf is any ticket of the run's own family (its feature at any depth: groups, rounds, other
+          // tool tickets, also while its main ticket sits in Done), or another open feature's top ticket or group.
+          const ownFamily = !!ownRun && !!top && familyRoot(all, ownRun.id)?.id === top.id;
+          const feature = !!top && isFeature(all, top) && (top.id === partOf || groupsOf(all, top.id).some((g) => g.id === partOf));
+          if (!partOfVia && !ownFamily && !feature) {
+            // Anything else never blocks the work: it goes where partOfThisTicket puts it (a chat from another board: top level).
+            const asked = partOf;
+            [partOf, partOfVia] = ownRun ? [ownRun.id, "chat" as const] : [undefined, undefined];
+            placed.push(`partOf ${asked} isn't in this run's own feature or an open feature's top ticket or group, so the ticket went ` +
+              `${ownRun ? `under this run's own ticket ${ownRun.id}` : "to the top level"} instead.`);
+          }
+          // Too deep in the family: under the nearest ticket above it that leaves room.
+          const fit = partOf ? fitParent(all, partOf) : undefined;
+          if (partOf && fit && fit !== partOf) {
+            placed.push(`Under ${partOf} it would be more than ${MAX_LEVEL} levels deep, so it went under ${fit} ("${all.find((t) => t.id === fit)?.title ?? ""}") instead.`);
+            [partOf, partOfVia] = [fit, ownRun?.id === fit ? "chat" as const : undefined];
+          }
+        }
+        // A ticket a run makes inside its own main ticket's family is a tool ticket there: a step of the nearest ticket
+        // above it that runs steps (a group or round, else the main ticket), so it starts on its own and its result
+        // reaches the main ticket.
+        let stepOf: Ticket | undefined;
+        if (!wantMain && partOf && ownRun && (!rights.planner || isManager(rights.planner))) {
+          const at = store.getTicket(slug, partOf)!;
+          const main = board.mainOf(slug, at);
+          if (main && board.mainOf(slug, ownRun)?.id === main.id) {
+            const all = store.listTickets(slug);
+            stepOf = main;
+            for (let cur: Ticket | undefined = at, n = 0; cur && cur.id !== main.id && n < 50; cur = all.find((o) => o.id === parentLink(cur!)?.id), n++) {
+              if (isManager(cur) && levelOf(all, cur.id) + 1 <= MAX_LEVEL) { stepOf = cur; break; }
+            }
+            if (stepOf.id !== ownRun.id) placed.push(`It is a tool ticket of ${stepOf.id} ("${stepOf.title}"): the board starts it on its own and its result goes there.`);
+          }
+        }
+        const planner = wantMain ? undefined : stepOf ?? rights.planner;
         const runner = rights.runner ?? (wantMain ? rights.planner : undefined);
         let status: Status = STATUSES.includes(b.status) ? b.status : "backlog";
         let mode: "auto" | "interview" = b.mode === "auto" ? "auto" : "interview";
@@ -1596,9 +1641,6 @@ export function createServer(deps: ServerDeps) {
           const made = createdFromDraft(store.listTickets(slug), parentId!, { title: proposedAs, ...(planKey ? { key: planKey } : {}) });
           if (made && made.parentId === parentId) return json(view(profile, made), 200);
         }
-        // Part of another ticket's family: a run's own ticket (create_ticket's partOfThisTicket, shown as "from chat") or,
-        // for the user, any ticket of this board.
-        const partOf = typeof b.partOf === "string" && b.partOf ? b.partOf : undefined;
         if (b.kind !== undefined && b.kind !== null && !TICKET_KINDS.includes(b.kind)) throw new HttpError(400, `kind must be one of ${TICKET_KINDS.join(", ")}`);
         const kind: TicketKind | undefined = b.kind ?? undefined;
         // Model and effort for its runs: from create_ticket inside a run, else a tool ticket's kind decides.
@@ -1610,16 +1652,6 @@ export function createServer(deps: ServerDeps) {
         // Made by a schedule's run: what that schedule raised for the user (its next quiet runs follow up on it).
         const runTicket = fromRun?.[0] === slug && fromRun[1] && !req.headers.get(HUDDLE_HEADER) ? store.getTicket(slug, fromRun[1]) : null;
         const raisedBy = runTicket?.scheduleId ? { scheduleId: runTicket.scheduleId, ticketId: runTicket.id } : null;
-        const partOfVia = partOf && fromRun?.[0] === slug && fromRun[1] === partOf ? "chat" as const : undefined;
-        if (partOf && !store.getTicket(slug, partOf)) throw new HttpError(400, `ticket ${partOf} not found (partOf)`);
-        // From a run, partOf is the run's own ticket, or an open feature (its top ticket or one of its groups): work that
-        // belongs to a feature joins it.
-        if (partOf && fromRun && !partOfVia) {
-          const all = store.listTickets(slug);
-          const top = familyRoot(all, partOf);
-          const ok = !!top && isFeature(all, top) && (top.id === partOf || groupsOf(all, top.id).some((g) => g.id === partOf));
-          if (!ok) throw new HttpError(403, "from a board run, partOf can only be the run's own ticket (use partOfThisTicket), an open feature's top ticket or one of its groups");
-        }
         const startedBy = runner && startsRun(status) ? runStart(slug, runner) : guest && startsRun(status) ? guestStart(guest) : null;
         // The user's own new ticket, on its own (not under another ticket, not a linked session): a main ticket.
         const main = wantMain || (!fromRun && !parentId && !partOf && !b.sessionId);
@@ -1647,6 +1679,7 @@ export function createServer(deps: ServerDeps) {
           const top = mainTicket ?? planner!;
           planPaused = store.getTicket(slug, top.id)?.plan?.state === "paused";
           // Made by the main ticket's own run while its card sits in Done or Backlog: back to Review, so the step starts.
+          // A step made by another run in its family leaves the user's park alone (its plan still runs it).
           if (planner!.main) board.unparkForNewStep(slug, planner!.id);
           board.ensurePlan(slug, planner!.id);
           board.advancePlans(slug);
@@ -1678,7 +1711,7 @@ export function createServer(deps: ServerDeps) {
             throw new HttpError(400, (e as Error).message);
           }
         }
-        return json({ ...view(profile, store.getTicket(slug, t.id)!), ...(gathered ? { gather: gathered } : {}), ...(planPaused ? { planPaused: true } : {}) }, 201);
+        return json({ ...view(profile, store.getTicket(slug, t.id)!), ...(gathered ? { gather: gathered } : {}), ...(planPaused ? { planPaused: true } : {}), ...(placed.length ? { note: placed.join(" ") } : {}) }, 201);
       }
     }
 
