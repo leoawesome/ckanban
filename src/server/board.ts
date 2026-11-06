@@ -600,6 +600,17 @@ export class Board {
       if (slash && BOARD_COMMANDS.has(slash.command.name)) return this.boardCommand(slug, id, slash.command.name, slash.args);
       if (slash) [text, opts] = [slash.text, { ...opts, slash: slash.command.local ? "local" : "prompt" }];
     }
+    // The user writes (or answers a form) in a main ticket parked in Done, or in Backlog after its family started: they
+    // want more from it, so it is back in Review and stays there (only the user's own move parks it again). A follow-up
+    // brings it back only while its tool tickets are still at work; otherwise it rests where the user put it.
+    if (t.main && !opts.peer && !opts.fromPlanner && !opts.hostWake && opts.slash !== "local") {
+      const user = !opts.followUp;
+      if (user ? this.unparkMain(slug, id, "you wrote in its chat", true) : this.openSteps(slug, id) && this.unparkMain(slug, id, "its follow-up came while its steps are still at work")) {
+        t = this.store.getTicket(slug, id)!;
+        // Steps it held back while parked start again.
+        if (t.plan) this.advancePlans(slug);
+      }
+    }
     // The user chats on a Backlog card: it is being shaped now, so it shows in Planning (a running plan's children stay put).
     const parent = t.parentId ? this.store.getTicket(slug, t.parentId) : null;
     if (t.status === "backlog" && !opts.peer && !opts.fromPlanner && !opts.hostWake && !opts.followUp && opts.slash !== "local" && !planActive(parent?.plan)) {
@@ -2051,13 +2062,38 @@ export class Board {
    * Only for the main ticket's own runs: a tool ticket making steps doesn't undo the user's park. True when it moved.
    */
   unparkForNewStep(slug: string, id: string): boolean {
+    return this.unparkMain(slug, id, "it made a new step, so its steps run again");
+  }
+
+  /**
+   * A main ticket parked in Done or Backlog goes back to Review (why: what brought it back, shown in a note). With
+   * startedOnly, Backlog counts only once its family has started (a new main ticket in Backlog is still being shaped,
+   * and goes to Planning as usual). True when it moved.
+   */
+  private unparkMain(slug: string, id: string, why: string, startedOnly = false): boolean {
     const t = this.store.getTicket(slug, id);
     if (!t?.main || (t.status !== "done" && t.status !== "backlog")) return false;
+    if (startedOnly && t.status === "backlog" && !t.plan) return false;
     const from = t.status === "done" ? "Done" : "Backlog";
-    // patch, not updateTicket: the main ticket's run that made the step is still going and must not be stopped.
+    // patch, not updateTicket: a run of the main ticket may still be going and must not be stopped.
     this.patch(slug, id, { status: "review", reopenedFrom: null });
-    this.store.addComment(slug, id, "ai", `Moved back from ${from}: it made a new step, so its steps run again.`);
+    this.store.addComment(slug, id, "ai", `Moved back from ${from}: ${why}.`);
     return true;
+  }
+
+  /** A main ticket's family still has tool tickets that aren't finished (waiting, running or needing the user). */
+  private openSteps(slug: string, id: string): boolean {
+    const all = this.store.listTickets(slug);
+    const todo = childrenOf(all, id);
+    const seen = new Set<string>([id]);
+    while (todo.length) {
+      const k = todo.pop()!;
+      if (seen.has(k.id)) continue;
+      seen.add(k.id);
+      if (k.tool && (k.status !== "done" || this.isRunning(slug, k.id))) return true;
+      todo.push(...childrenOf(all, k.id));
+    }
+    return false;
   }
 
   /** Pause: no new children start and the planner isn't woken; running children finish. */
@@ -2412,7 +2448,9 @@ export class Board {
     this.patch(slug, planner.id, { plan: { ...plan, inbox: [], awaiting: kind, wakeups: plan.wakeups + 1, ...(progress ? { progressSig: progress.progressSig, noProgress: progress.noProgress } : {}) } });
     this.autoFresh(slug, this.store.getTicket(slug, planner.id) ?? planner);
     if (planner.main) {
-      // Its card stays where it is (a wake isn't new work to review); no slot, no folder lock (it edits nothing).
+      // Its card stays where it is (a wake isn't new work to review); no slot, no folder lock (it edits nothing). A
+      // wake never leaves it in Done while its steps are still at work (parked plans aren't woken, so this is rare).
+      if (planner.status === "done" && this.openSteps(slug, planner.id)) this.unparkMain(slug, planner.id, "its steps are still at work");
       this.start(slug, planner.id, { text, mode: "act", raw: true });
       return;
     }
