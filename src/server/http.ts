@@ -533,11 +533,16 @@ export function createServer(deps: ServerDeps) {
     shareLinks: t.shareLinks,
   });
   /** hosts: the board's open huddles by host ticket, when the caller already has them (one read per board). */
+  /** Whether the ticket waits on the user ("Your turn", the Inbox) and whether that is snoozed. */
+  const attentionOf = (p: Profile, t: Ticket, hosts: ReturnType<typeof board.hostHuddles>, running: boolean, session: SessionSummary | null) => {
+    const huddle = hosts.get(t.id);
+    return withSnooze(t, session, ticketAttention(store, p.slug, t, session, running, huddle, (x) => board.isRunning(p.slug, x)), Date.now(), huddle);
+  };
   const view = (p: Profile, t: Ticket, hosts = board.hostHuddles(p.slug)) => {
     const running = board.isRunning(p.slug, t.id);
     const session = t.sessionId ? sessions.summary(t.sessionId) : null;
     const huddle = hosts.get(t.id);
-    const { attention, snoozed } = withSnooze(t, session, ticketAttention(store, p.slug, t, session, running, huddle, (x) => board.isRunning(p.slug, x)), Date.now(), huddle);
+    const { attention, snoozed } = attentionOf(p, t, hosts, running, session);
     return {
       ...t,
       running,
@@ -819,7 +824,11 @@ export function createServer(deps: ServerDeps) {
       for (const p of store.listProfiles()) {
         const hosts = board.hostHuddles(p.slug);
         for (const t of store.listTickets(p.slug)) {
-          const v = view(p, t, hosts);
+          // Done waits on the user only for a missed follow-up (see ownAttention). Skipping the rest, and building
+          // just the attention instead of the whole card, keeps this poll from reading every old ticket's transcript
+          // summary every few seconds (most tickets are Done; it held the daemon up for seconds at a time).
+          if (t.status === "done" && !t.followUp?.missedAt) continue;
+          const v = attentionOf(p, t, hosts, board.isRunning(p.slug, t.id), t.sessionId ? sessions.summary(t.sessionId) : null);
           const base = { profile: p.slug, profileName: p.name, id: t.id, title: t.title };
           if (v.attention) out.push({ ...base, attention: v.attention });
           else if (v.snoozed) out.push({ ...base, attention: v.snoozed.attention, snoozedUntil: v.snoozed.until });

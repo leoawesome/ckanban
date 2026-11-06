@@ -279,6 +279,13 @@ test("inbox lists tickets across boards that need the user, Review included, old
   const inbox = (await (await fetch(`${base}/api/inbox`)).json()) as any[];
   const mine = inbox.filter((i) => i.profile.startsWith("inbox-"));
   expect(mine.map((i) => [i.title, i.attention.kind])).toEqual([["broken", "failed"], ["check me", "review"]]);
+  // Done tickets are skipped, except one whose follow-up was missed.
+  const done = (await (await fetch(`${base}/api/profiles/inbox-b/tickets`, json("POST", { title: "accepted", status: "backlog" }))).json()) as any;
+  store.updateTicket("inbox-b", done.id, { status: "done", outcome: "done" });
+  const missed = (await (await fetch(`${base}/api/profiles/inbox-b/tickets`, json("POST", { title: "missed", status: "backlog" }))).json()) as any;
+  store.updateTicket("inbox-b", missed.id, { status: "done", outcome: "done", followUp: { missedAt: "2026-10-03T00:00:00.000Z" } as any });
+  const again = ((await (await fetch(`${base}/api/inbox`)).json()) as any[]).filter((i) => i.profile.startsWith("inbox-"));
+  expect(again.map((i) => [i.title, i.attention.label])).toEqual([["broken", "Run failed"], ["check me", expect.any(String)], ["missed", "Missed follow-up"]]);
   // The same tickets say "Your turn" on their cards.
   for (const i of mine) {
     const t = (await (await fetch(`${base}/api/profiles/${i.profile}/tickets/${i.id}`)).json()) as any;
