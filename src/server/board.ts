@@ -100,6 +100,8 @@ interface ActiveRun {
   /** A quiet schedule's run found nothing for the user: once it is over, the board removes the ticket (endQuietly). */
   quietEnd?: { summary: string; costUsd: number };
   stopRequested: boolean;
+  /** Its promise runs (execute): the promise's end unregisters it. Without it the run never got going (see stopRun). */
+  started?: boolean;
   /**
    * Set for runs started from the ticket chat (not the Ready queue). raw: text is the full prompt (planner wake-ups);
    * returnTo: the column such a run goes back to, since a wake-up is housekeeping, not new work to review.
@@ -665,12 +667,20 @@ export class Board {
       return this.store.getTicket(slug, id)!;
     }
     // The user's message is saved until Claude reads it: Stop before then leaves it unsent, not lost.
-    if (opts.peer || opts.hostWake || opts.followUp) this.start(slug, id, chat);
-    else {
+    // If the run can't start (e.g. the disk is full), the message is still saved where possible, and the caller hears why.
+    if (opts.peer || opts.hostWake || opts.followUp) {
+      const failed = this.start(slug, id, chat);
+      if (failed) throw failed;
+    } else {
       const msg: QueuedMessage = { id: crypto.randomUUID(), text, at: nowIso(), state: "queued", ...flags(opts) };
-      this.start(slug, id, chat, msg.id);
+      const failed = this.start(slug, id, chat, msg.id);
       // Added once the run is registered, so the chat never shows it as waiting with no run behind it.
-      this.patch(slug, id, { queued: [...(this.store.getTicket(slug, id)!.queued ?? []), msg] });
+      try {
+        this.patch(slug, id, { queued: [...(this.store.getTicket(slug, id)!.queued ?? []), msg] });
+      } catch (e) {
+        if (!failed) throw e;
+      }
+      if (failed) throw failed;
     }
     return this.store.getTicket(slug, id)!;
   }
@@ -849,13 +859,26 @@ export class Board {
     this.start(slug, id, { text: "", mode: "refine" });
   }
 
-  private start(slug: string, id: string, chat?: ActiveRun["chat"], promptMsgId?: string) {
+  /**
+   * Starts the ticket's run. Returns the error when it could not even start (e.g. the disk is full): the run is not
+   * registered then, and the card shows the error; the caller keeps any message it meant for the run.
+   */
+  private start(slug: string, id: string, chat?: ActiveRun["chat"], promptMsgId?: string): Error | null {
     const run: ActiveRun = {
       slug, id, handle: null, promise: Promise.resolve(), targetStatus: null, stopRequested: false, chat, inFlight: new Map(), promptMsgId,
       noEdit: !!this.store.getTicket(slug, id)?.main,
     };
     this.runs.set(this.key(slug, id), run);
-    this.begin(run);
+    try {
+      this.begin(run);
+    } catch (e) {
+      const err = new Error(startError(e));
+      console.error(`run ${slug}/${id} could not start`, e);
+      // Never a ghost run: without its promise nothing would ever unregister it.
+      this.dropRun(run, { ...this.endStatus(run), outcome: "failed", error: err.message, lastActivity: null, runStartedAt: null });
+      return err;
+    }
+    run.started = true;
     run.promise = this.execute(run)
       .catch((e) => {
         console.error(`run ${slug}/${id} crashed`, e);
@@ -885,6 +908,23 @@ export class Board {
         if (!this.shuttingDown && !run.targetStatus) this.dispatch(slug);
         if (!this.shuttingDown) this.advancePlans(slug);
       });
+    return null;
+  }
+
+  /**
+   * Unregisters a run that has no promise behind it (it could not start), and puts what it shows on the card. The
+   * patch may fail too (a full disk): the run is gone from the board either way.
+   */
+  private dropRun(run: ActiveRun, patch: Partial<Ticket>): void {
+    const { slug, id } = run;
+    if (this.runs.get(this.key(slug, id)) === run) this.runs.delete(this.key(slug, id));
+    this.devices.releaseAll(slug, id);
+    try {
+      if (this.store.getTicket(slug, id)) this.patch(slug, id, patch);
+    } catch (e) {
+      console.error(`couldn't record the end of run ${slug}/${id}`, e);
+    }
+    if (this.restartPending) this.emitRestart();
   }
 
   /** The move the user asked the run for, now that its reply is over; not when the user stopped or moved it meanwhile. */
@@ -3473,6 +3513,15 @@ export class Board {
   }
 
   private stopRun(run: ActiveRun) {
+    // A run with nothing behind it (no promise, no claude, no setup) has nothing to wait for: clear it at once.
+    if (!run.started && !run.handle && !this.setups.has(this.key(run.slug, run.id))) {
+      const end = this.endStatus(run);
+      this.dropRun(run, { ...end, ...(end.status ? { outcome: "stopped" as const } : {}), lastActivity: null, runStartedAt: null });
+      try {
+        this.store.addComment(run.slug, run.id, "ai", "Run stopped by user (it had never started).");
+      } catch {}
+      return;
+    }
     // Show the stop at once: setup (worktree, session checks) or SIGTERM can take a while to finish.
     if (!run.stopRequested && this.store.getTicket(run.slug, run.id)) this.patch(run.slug, run.id, { lastActivity: "Stopping…" });
     run.stopRequested = true;
@@ -3699,6 +3748,12 @@ export class Board {
       await Promise.all([...this.runs.values()].map((r) => r.promise));
     }
   }
+}
+
+/** What the card says when a run couldn't even start. */
+export function startError(e: unknown): string {
+  if ((e as NodeJS.ErrnoException)?.code === "ENOSPC") return "Couldn't start: no space left on the disk";
+  return String((e as Error)?.message ?? e);
 }
 
 function clampConcurrency(n: number): number {

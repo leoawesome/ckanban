@@ -425,3 +425,54 @@ test("a claude.ai artifact link in the ticket or a message teaches the artifact 
   await board.whenIdle();
   expect(readArgs().at(-1)!.prompt).toContain("artifact publish <file.html> --url <url>");
 }, 20000);
+
+test("a run that can't start (disk full) leaves no ghost run and keeps the message", async () => {
+  await setup();
+  const t = await board.createTicket("p", { title: "x", body: "", status: "review" });
+  const real = store.updateTicket.bind(store);
+  let thrown = false;
+  store.updateTicket = ((slug: string, id: string, patch: any) => {
+    if (!thrown && "runStartedAt" in patch && patch.runStartedAt) {
+      thrown = true;
+      throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" });
+    }
+    return real(slug, id, patch);
+  }) as typeof store.updateTicket;
+  try {
+    await expect(board.chat("p", t.id, "first try")).rejects.toThrow("Couldn't start: no space left on the disk");
+  } finally {
+    store.updateTicket = real;
+  }
+  expect(board.isRunning("p", t.id)).toBe(false);
+  const failed = store.getTicket("p", t.id)!;
+  expect(failed.outcome).toBe("failed");
+  expect(failed.error).toBe("Couldn't start: no space left on the disk");
+  expect(failed.queued?.map((m) => [m.text, m.state])).toEqual([["first try", "queued"]]);
+  expect(readArgs().length).toBe(0);
+  // The next send runs normally and delivers the saved message too.
+  await board.chat("p", t.id, "second try");
+  await board.whenIdle();
+  expect(board.isRunning("p", t.id)).toBe(false);
+  // Claude gets both: the saved one is steered into the run the second send starts.
+  const sent = replays(t.id).map((m) => m.split("\n")[0]);
+  expect(sent).toContain("first try");
+  expect(sent).toContain("second try");
+  const after = store.getTicket("p", t.id)!;
+  expect(after.error).toBeNull();
+  expect(after.queued ?? []).toEqual([]);
+});
+
+test("Stop on a run with nothing behind it clears it at once", async () => {
+  await setup();
+  const t = await board.createTicket("p", { title: "x", body: "", status: "review" });
+  store.updateTicket("p", t.id, { status: "in_progress", lastActivity: "Starting…" });
+  // A ghost: registered, but no claude, no setup and no promise (as when start failed before the fix).
+  (board as any).runs.set(`p/${t.id}`, { slug: "p", id: t.id, handle: null, promise: Promise.resolve(), targetStatus: null, stopRequested: false, inFlight: new Map() });
+  expect(board.isRunning("p", t.id)).toBe(true);
+  expect(board.stop("p", t.id)).toBe(true);
+  expect(board.isRunning("p", t.id)).toBe(false);
+  const got = store.getTicket("p", t.id)!;
+  expect(got.lastActivity).toBeNull();
+  expect(got.status).toBe("review");
+  expect(got.outcome).toBe("stopped");
+});
