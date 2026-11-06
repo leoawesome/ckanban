@@ -12,7 +12,7 @@ import { statusFacts, statusSections } from "../src/server/feature";
 import { pickRelated } from "../src/server/recall";
 import type { Ticket } from "../src/server/types";
 import { ticketCommand } from "../src/ticket-cli";
-import { deleteTitle, parkNeedsConfirm, stopTitle } from "../web/src/familyActions";
+import { deleteTitle, parkNeedsConfirm, parkTitle, stopTitle } from "../web/src/familyActions";
 import { hiddenTool, mainTicketOf, TICKET_KINDS, withYouTool } from "../web/src/family";
 import { groupByColumn } from "../web/src/columns";
 import { searchBoard } from "../web/src/toolTickets";
@@ -140,6 +140,13 @@ test("the main card's line: a step that needs you, then failed or stuck, then pa
   const working = familyCard(f.main, family, f.all, run(["T5", "T6"]), 41.2);
   expect(working.line).toEqual({ text: "Testing round 2: 4 of 6 passed", tone: "work" });
   expect(working.tools).toBe(9);
+  expect(working.open).toBe(family.filter((t) => t.tool && t.status !== "done").length);
+  // Every tool ticket in Done: nothing open (so Backlog / Done moves without asking).
+  const allDone = family.map((t) => (t.tool ? { ...t, status: "done" as const } : t));
+  expect(familyCard(f.main, allDone, f.all, run([]), 0).open).toBe(0);
+  // One left (failed, not in Done): open again.
+  const oneLeft = allDone.map((t, i) => (i === allDone.findIndex((x) => x.tool) ? { ...t, status: "review" as const, outcome: "failed" as const } : t));
+  expect(familyCard(f.main, oneLeft, f.all, run([]), 0).open).toBe(1);
   expect(working.running).toEqual(["Testing round 2", "Test 5", "Test 6"]);
   expect(working.costUsd).toBe(41.2);
   // A build ticket started last speaks for itself.
@@ -181,6 +188,12 @@ test("the confirms name the count and the cost; only main tickets with tool tick
   expect(parkNeedsConfirm(t, "backlog")).toBe(true);
   expect(parkNeedsConfirm(t, "in_progress")).toBe(false);
   expect(parkNeedsConfirm({ ...t, main: false }, "done")).toBe(false);
+  // Only unfinished steps count: every tool ticket done moves straight away; one open asks, naming just that one.
+  expect(parkNeedsConfirm({ ...t, familyCard: { ...t.familyCard, open: 0 } }, "done")).toBe(false);
+  const one = { ...t, familyCard: { ...t.familyCard, open: 1 } };
+  expect(parkNeedsConfirm(one, "done")).toBe(true);
+  expect(parkTitle(one, "done")).toBe('Move "AI Outreach" and its 1 unfinished step to Done?');
+  expect(parkTitle({ ...t, familyCard: { ...t.familyCard, open: 3 } }, "backlog")).toBe('Move "AI Outreach" and its 3 unfinished steps to Backlog?');
   expect(deleteTitle({ title: "Fix login" })).toBe('Delete "Fix login"?');
 });
 

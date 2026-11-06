@@ -5,7 +5,7 @@
 interface FamilyTicketLike {
   title: string;
   main?: boolean;
-  familyCard?: { tools: number; running: string[]; costUsd: number } | null;
+  familyCard?: { tools: number; open?: number; running: string[]; costUsd: number } | null;
 }
 
 const money = (usd: number) => (usd > 0 && usd < 0.01 ? "<$0.01" : `$${usd.toFixed(2)}`);
@@ -13,6 +13,8 @@ const n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
 
 /** Its tool tickets, or 0 for any other ticket. */
 export const toolCount = (t: FamilyTicketLike): number => (t.main ? t.familyCard?.tools ?? 0 : 0);
+/** Its tool tickets not finished yet (an older server without the count: all of them, as before). */
+export const openTools = (t: FamilyTicketLike): number => (t.main ? t.familyCard?.open ?? t.familyCard?.tools ?? 0 : 0);
 /** Its tool tickets working or queued to start now. */
 export const runningTools = (t: FamilyTicketLike): number => (t.main ? t.familyCard?.running.length ?? 0 : 0);
 
@@ -29,12 +31,12 @@ export function deleteTitle(t: FamilyTicketLike): string {
   return `Delete ${t.title} and its ${n(k, "tool ticket")} (${money(t.familyCard!.costUsd)} spent)?`;
 }
 
-/** Moving a main ticket to Backlog or Done needs a confirm when it has tool tickets. */
+/** Moving a main ticket to Backlog or Done needs a confirm only when a tool ticket isn't finished: it would hold that back. */
 export const parkNeedsConfirm = (t: FamilyTicketLike & { status: string }, to: string): boolean =>
-  toolCount(t) > 0 && (to === "backlog" || to === "done") && t.status !== to;
+  openTools(t) > 0 && (to === "backlog" || to === "done") && t.status !== to;
 
 export function parkTitle(t: FamilyTicketLike, to: "backlog" | "done"): string {
-  return `Move ${t.title} and its ${n(toolCount(t), "tool ticket")} to ${to === "done" ? "Done" : "Backlog"}?`;
+  return `Move "${t.title}" and its ${n(openTools(t), "unfinished step")} to ${to === "done" ? "Done" : "Backlog"}?`;
 }
 
 export function parkText(t: FamilyTicketLike): string {

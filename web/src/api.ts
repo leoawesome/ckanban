@@ -1265,6 +1265,8 @@ export interface InboxItem {
 /** What a main ticket's card shows of its family (src/server/main-ticket.ts familyCard). */
 export interface FamilyCardInfo {
   tools: number;
+  /** Tool tickets not finished yet (not in Done, or still running). */
+  open?: number;
   running: string[];
   costUsd: number;
   line: { text: string; tone: "work" | "warn"; until?: string | null } | null;

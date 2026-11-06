@@ -164,6 +164,8 @@ export interface FamilyLine {
 export interface FamilyCard {
   /** Its tool tickets (hidden and with you). */
   tools: number;
+  /** Its tool tickets not finished yet (anything not in Done, or still running): Backlog / Done ask first only then. */
+  open: number;
   /** Titles of the tool tickets working or queued now (the chip's hover). */
   running: string[];
   /** What the whole family spent so far (main ticket included). */
@@ -224,5 +226,6 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
       line = { text: `${group.title}: ${groupSummary(kids.map((c) => ({ kind: c.kind, state: familyState({ ...c, running: running(c.id) } as any) })))}`, tone: "work" };
     } else line = { text: stepName(top), tone: "work" };
   }
-  return { tools: tools.length, running: working.map((t) => stepName(t)), costUsd, line, waiting, needsYou };
+  const open = tools.filter((t) => t.status !== "done" || running(t.id)).length;
+  return { tools: tools.length, open, running: working.map((t) => stepName(t)), costUsd, line, waiting, needsYou };
 }
