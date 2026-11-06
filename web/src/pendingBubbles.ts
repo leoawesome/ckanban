@@ -3,7 +3,7 @@
 /** A sent message not yet in the session file. steer: sent while Claude was working. */
 export interface Pending { text: string; steer: boolean }
 /** The fields used here of api.ts's QueuedMessage. */
-interface Queued { text: string; state: "queued" | "unsent"; peer?: boolean }
+interface Queued { text: string; state: "queued" | "unsent"; peer?: boolean; from?: unknown }
 /** The fields used here of api.ts's SessionEntry. */
 interface Entry { role: "user" | "assistant"; text: string; at: string }
 
@@ -23,3 +23,20 @@ export const unsentNow = (pending: Pending[], queued: Queued[]) =>
  */
 export const inSession = (q: Queued & { at: string }, entries: Entry[]) =>
   q.state === "queued" && entries.some((e) => e.role === "user" && Date.parse(e.at) >= Date.parse(q.at) && norm(e.text) === norm(q.text));
+
+/**
+ * A message of the user's shows below the saved conversation and Claude is still to answer it: a plain bubble of the
+ * reply it started, one being sent, or one the board holds for Claude's next step (not one Stop left unsent).
+ */
+export const userAfterSaved = (pending: Pending[], queued: (Queued & { at: string })[], entries: Entry[]) =>
+  pending.length > 0 || queued.some((q) => !q.peer && !q.from && q.state === "queued" && !inSession(q, entries));
+
+/**
+ * Where Claude's live progress shows while it works. The newest saved steps group is the live line only while nothing
+ * the user sent shows below it: a newer message means those steps belong to an earlier (maybe stopped) reply, so the
+ * working row shows under that message instead, until Claude's new steps or text appear.
+ */
+export function liveProgress(o: { running: boolean; streaming: boolean; lastBlock?: string; userAfter: boolean; waitingOn: boolean; stalled: boolean }) {
+  const stepsLive = o.running && !o.streaming && o.lastBlock === "tools" && !o.userAfter;
+  return { stepsLive, workingRow: o.running && !o.streaming && !o.waitingOn && (!stepsLive || o.stalled) };
+}

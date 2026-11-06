@@ -47,7 +47,7 @@ import { commandNote, messageCommand, type SlashCommand } from "./slashText";
 import { filesByReply } from "./fileCards";
 
 import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, type Handoff } from "./liveReply";
-import { heldByReply, inSession, norm, unsentNow, type Pending } from "./pendingBubbles";
+import { heldByReply, inSession, liveProgress, norm, unsentNow, userAfterSaved, type Pending } from "./pendingBubbles";
 import { baseName, copyFile, dirName, downloadFile } from "./share";
 import { draftKey, formKey } from "./drafts";
 import { type FormState, formStates } from "./questionForms";
@@ -664,7 +664,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
           if (b.kind === "tools") {
             return (
               <Turn key={b.items[0].uuid} start={l.start} at={b.items[0].at} className={inherited}>
-                <StepsLine items={b.items} running={running && !old && newest && !live} activity={activity}>
+                <StepsLine items={b.items} running={!old && newest && stepsLive} activity={activity}>
                   <ToolRows slug={slug} ticketId={ticket.id} live={running && !old}
                     items={b.items.map((t) => ({ key: t.uuid, label: t.text, toolUseId: t.toolUseId, error: t.error }))} />
                 </StepsLine>
@@ -889,8 +889,61 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   };
   const stalled = running && stallWait(ticket) ? ticket.stalled!.minutes : null;
   // While the newest block is a group of steps, its steps line is the one live line; the working row shows only before
-  // the first step, between steps and replies, and when the run has gone quiet.
-  const stepsLive = running && !live && blocks.at(-1)?.kind === "tools";
+  // the first step, between steps and replies, and when the run has gone quiet. A message of the user's shown after the
+  // saved conversation (sent after Stop, sent again from unsent, or held for Claude's next step) makes those steps an
+  // earlier reply's: the working row then shows under that message.
+  const { stepsLive, workingRow } = liveProgress({
+    running, streaming: !!live, lastBlock: blocks.at(-1)?.kind, userAfter: userAfterSaved(pending, queued, entries),
+    waitingOn: !!ticket.waitingOn?.length, stalled: !!stalled,
+  });
+  // The user's own messages the board still holds, as bubbles at the end of the chat.
+  const userQueued = queued.filter((q) => fromUser(q) && !heldByReply(q, pending) && !inSession(q, entries));
+  const userBubble = (q: QueuedMessage) => {
+    tail = "user";
+    return (
+      <div key={q.id} className="me-wrap">
+      <div className={`conv-msg user pending${editable(q) ? " unsent" : ""}${editing?.id === q.id && editable(q) ? " editing" : ""}`}>
+        {editing?.id === q.id && editable(q) ? (
+          <>
+            <textarea className="queued-edit" rows={3} autoFocus value={editing.text}
+              onChange={(e) => setEditing({ id: q.id, text: e.target.value })}
+              onFocus={(e) => e.target.setSelectionRange(e.target.value.length, e.target.value.length)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelEdit();
+                } else if (enterSends(e)) {
+                  e.preventDefault();
+                  saveEdit();
+                }
+              }} />
+            <div className="queued-actions">
+              <button className="btn primary small" disabled={!editing.text.trim()} onClick={saveEdit}>Save<KeyHint keys="↵" /></button>
+              <button className="btn ghost small" onClick={cancelEdit}>Cancel<KeyHint keys="Esc" /></button>
+            </div>
+          </>
+        ) : (
+          <>
+            <UserText text={q.text} commands={commands} />
+            {editable(q) && (
+              <div className="queued-actions">
+                <button className="btn small" onClick={() => setEditing({ id: q.id, text: q.text })}>Edit</button>
+                {q.state === "unsent" && (
+                  <button className="btn primary small" disabled={stopping}
+                    onClick={() => api.sendQueued(slug, ticket.id, q.id).catch((e) => onError(e.message))}>Send</button>
+                )}
+                <button className="btn ghost small" onClick={() => discard(q.id)}>Discard</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      <div className="me-meta">{q.state === "unsent" ? "not sent · Claude was stopped before reading it"
+        : running ? (q.slash ? "queued · runs after Claude's current turn" : "sent · Claude reads it at its next step")
+        : ticket.slotWait ? "queued · starts when a run slot is free" : "The board restarts soon; your message is sent right after (at most 10 minutes)."}</div>
+      </div>
+    );
+  };
   const divider = bp && (
     <div key={`branch-${bp.at}`} className="branch-divider" role="separator">
       <BranchIcon size={12} /> copied from {branchedFrom
@@ -994,21 +1047,21 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
           </Turn>
         )}
         {running && !live && !!ticket.waitingOn?.length && <WaitingCard tasks={ticket.waitingOn} />}
-        {running && !live && !ticket.waitingOn?.length && (!stepsLive || stalled) && (
-          <WorkingRow start={tailStart()} startedAt={ticket.runStartedAt} stalled={stalled} activity={activity}>
-            {stalled && <StallActions slug={slug} ticket={ticket} onError={onError} small />}
-          </WorkingRow>
-        )}
         {!running && ticket.outcome === "stopped" && blocks.length > 0 && speaker(blocks[blocks.length - 1]) === "claude" && !pending.length && (
           <div className="chat-note stopped">Stopped</div>
         )}
-        {pending.filter((p) => p.steer && !queued.some((q) => q.text === p.text)).map((p, i) => (
+        {pending.filter((p) => p.steer && !queued.some((q) => q.text === p.text)).map((p, i) => {
+          tail = "user";
+          return (
           <div key={i} className="me-wrap">
             <div className="conv-msg user pending"><UserText text={p.text} commands={commands} /></div>
             <div className="me-meta">sending…</div>
           </div>
-        ))}
-        {queued.filter((q) => q.peer && HUDDLE_TAG.test(q.text)).map((q) => (
+          );
+        })}
+        {queued.filter((q) => q.peer && HUDDLE_TAG.test(q.text)).map((q) => {
+          tail = "peer";
+          return (
           <HuddleDigest key={q.id} text={q.text.split("<ckanban-context")[0].trim()} pending onOpen={onOpenHuddle}
             meta={<span className="muted small">{q.state === "queued" ? "queued · Claude reads this at its next step" : "not sent · Claude was stopped before reading it"}</span>}>
             {q.state === "unsent" && (
@@ -1020,10 +1073,12 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
               </div>
             )}
           </HuddleDigest>
-        ))}
+          );
+        })}
         {queued.filter((q) => (q.peer && !HUDDLE_TAG.test(q.text)) || (q.from && !inSession({ ...q, text: fromTicket(q.text)?.text ?? q.text }, entries))).map((q) => {
           const body = q.from ? fromTicket(q.text)?.text ?? q.text : q.text.split("<ckanban-context")[0].trim();
           const state = q.state === "queued" ? "queued · Claude reads this at its next step" : "not sent · Claude was stopped before reading it";
+          tail = "peer";
           return (
             <Turn key={q.id} start className="pending"
               avatar={q.from ? <LetterAvatar seed={q.from.ticketId} name={q.from.title} /> : <LetterAvatar seed="board" name="Board" />}
@@ -1040,49 +1095,16 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
             </Turn>
           );
         })}
-        {queued.filter((q) => fromUser(q) && !heldByReply(q, pending) && !inSession(q, entries)).map((q) => (
-          <div key={q.id} className="me-wrap">
-          <div className={`conv-msg user pending${editable(q) ? " unsent" : ""}${editing?.id === q.id && editable(q) ? " editing" : ""}`}>
-            {editing?.id === q.id && editable(q) ? (
-              <>
-                <textarea className="queued-edit" rows={3} autoFocus value={editing.text}
-                  onChange={(e) => setEditing({ id: q.id, text: e.target.value })}
-                  onFocus={(e) => e.target.setSelectionRange(e.target.value.length, e.target.value.length)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      cancelEdit();
-                    } else if (enterSends(e)) {
-                      e.preventDefault();
-                      saveEdit();
-                    }
-                  }} />
-                <div className="queued-actions">
-                  <button className="btn primary small" disabled={!editing.text.trim()} onClick={saveEdit}>Save<KeyHint keys="↵" /></button>
-                  <button className="btn ghost small" onClick={cancelEdit}>Cancel<KeyHint keys="Esc" /></button>
-                </div>
-              </>
-            ) : (
-              <>
-                <UserText text={q.text} commands={commands} />
-                {editable(q) && (
-                  <div className="queued-actions">
-                    <button className="btn small" onClick={() => setEditing({ id: q.id, text: q.text })}>Edit</button>
-                    {q.state === "unsent" && (
-                      <button className="btn primary small" disabled={stopping}
-                        onClick={() => api.sendQueued(slug, ticket.id, q.id).catch((e) => onError(e.message))}>Send</button>
-                    )}
-                    <button className="btn ghost small" onClick={() => discard(q.id)}>Discard</button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-          <div className="me-meta">{q.state === "unsent" ? "not sent · Claude was stopped before reading it"
-            : running ? (q.slash ? "queued · runs after Claude's current turn" : "sent · Claude reads it at its next step")
-            : ticket.slotWait ? "queued · starts when a run slot is free" : "The board restarts soon; your message is sent right after (at most 10 minutes)."}</div>
-          </div>
-        ))}
+        {/* Held for Claude: sent while it works, or waiting for a slot or a restart. */}
+        {userQueued.filter((q) => q.state === "queued").map(userBubble)}
+        {/* Under the messages Claude is answering (the reply's own, steering ones, ones sent again after Stop). */}
+        {workingRow && (
+          <WorkingRow start={tailStart()} startedAt={ticket.runStartedAt} stalled={stalled} activity={activity}>
+            {stalled && <StallActions slug={slug} ticket={ticket} onError={onError} small />}
+          </WorkingRow>
+        )}
+        {/* Left unsent by Stop: Claude isn't answering these, so they stay at the bottom until sent or discarded. */}
+        {userQueued.filter((q) => q.state === "unsent").map(userBubble)}
         {!running && ticket.recovery && <RecoveryBanner slug={slug} ticket={ticket} onError={onError} />}
         {!running && !ticket.recovery && ticket.error && !ticket.error.startsWith("corrupt") && (
           <ErrorTurn error={ticket.error} onRetry={() => send(RETRY)} retryDisabled={stopping} />
