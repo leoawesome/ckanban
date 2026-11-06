@@ -68,8 +68,10 @@ export interface StatusFacts {
   loose: { total: number; counts: Partial<Record<FamilyState, number>> };
   /** Test results per round (rounds and groups whose children are tests). */
   rounds: { id: string; title: string; passed: number; problem: number; open: number }[];
-  /** Tickets that failed or found a problem, and ones that need the user. */
-  broken: { id: string; title: string; state: FamilyState }[];
+  /** Tickets that failed or found a problem (reason: one plain line on why), and ones that need the user. */
+  broken: { id: string; title: string; state: FamilyState; reason?: string }[];
+  /** Tickets waiting on the usage limit (not working now): resumeAt is when it resets, auto when the board continues then. */
+  paused: { id: string; title: string; resumeAt: string | null; auto: boolean }[];
   needsYou: { id: string; title: string }[];
   prs: PrFact[];
 }
@@ -95,6 +97,21 @@ export function familySig(rows: Ticket[]): string {
 const add = (c: Partial<Record<FamilyState, number>>, s: FamilyState) => {
   c[s] = (c[s] ?? 0) + 1;
 };
+
+const lastLine = (s: string | null | undefined) => (s ?? "").trim().split("\n").findLast((l) => l.trim())?.trim() ?? "";
+const clip = (s: string, max: number) => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s);
+
+/**
+ * Why a ticket failed or found a problem, in one plain line: a failure's last error line (else its last result's
+ * summary), a cap it stopped at, or a test's last result summary. results: result cards from the family, oldest first.
+ */
+export function brokenReason(t: Ticket, results: { ticketId: string; summary: string }[]): string | undefined {
+  if (t.outcome === "blocked" && t.capHit) return `Stopped at its $${t.capHit.capUsd.toFixed(2)} cap.`;
+  const summary = lastLine(results.findLast((r) => r.ticketId === t.id)?.summary);
+  const error = lastLine(t.error);
+  const why = t.outcome === "failed" ? error || summary : summary || error;
+  return why ? clip(why, 160) : undefined;
+}
 
 const prNumber = (url: string) => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? NaN) || null;
 
@@ -134,17 +151,24 @@ export function statusFacts(tickets: Ticket[], topId: string, needsYou: (t: Tick
   // A problem an earlier round found is history (later work fixed it or not; the newest round tells): only the newest
   // round's problems, tests outside rounds and failed tickets count as broken now.
   const newest = rounds.at(-1)?.id;
+  const results = rows.flatMap((r) => r.ticket.results ?? []).sort((a, b) => a.at.localeCompare(b.at));
   const roundOf = new Map<string, string>();
   for (const g of rounds) for (const k of below(g.id)) roundOf.set(k.id, g.id);
   const broken = rows.slice(1)
     .filter((r) => stateOf.get(r.ticket.id) === "failed" || (stateOf.get(r.ticket.id) === "problem" && (!roundOf.has(r.ticket.id) || roundOf.get(r.ticket.id) === newest)))
-    .map((r) => ({ id: r.ticket.id, title: r.ticket.title, state: stateOf.get(r.ticket.id)! }));
+    .map((r) => {
+      const reason = brokenReason(r.ticket, results);
+      return { id: r.ticket.id, title: r.ticket.title, state: stateOf.get(r.ticket.id)!, ...(reason ? { reason } : {}) };
+    });
+  const paused = rows.slice(1)
+    .filter((r) => stateOf.get(r.ticket.id) === "paused" && r.ticket.status !== "ready" && r.ticket.status !== "in_progress")
+    .map((r) => ({ id: r.ticket.id, title: r.ticket.title, resumeAt: r.ticket.limit?.resetAt ?? null, auto: !!r.ticket.limit?.auto }));
   const waiting = rows.slice(1).filter((r) => stateOf.get(r.ticket.id) === "needs_you").map((r) => ({ id: r.ticket.id, title: r.ticket.title }));
   const prs: PrFact[] = rows.flatMap((r) => ticketPrs(r.ticket).map((p) => ({
     url: p.url, number: prNumber(p.url), state: (p.state?.toLowerCase() ?? "unknown") as PrFact["state"], ticketId: r.ticket.id, ticketTitle: r.ticket.title,
     ...(prNotes[p.url] ? { note: prNotes[p.url] } : {}),
   })));
-  return { size: rows.length, counts, groups, loose, rounds, broken, needsYou: waiting, prs };
+  return { size: rows.length, counts, groups, loose, rounds, broken, paused, needsYou: waiting, prs };
 }
 
 /** Applies Claude's update: only the sections it names change (null or "" clears one). */
@@ -196,7 +220,7 @@ export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key
   const looseActive = (["working", "waiting", "needs_you", "paused"] as FamilyState[]).some((x) => f.loose.counts[x]);
   if (looseActive) running.push(`Other tickets: ${countWords(f.loose.counts, f.loose.total)}.`);
   push("running", "Running", running.join(" "));
-  const brokenFacts = f.broken.length ? `[${f.broken.length}: ${f.broken.map((b) => `${b.title} (${STATE_WORDS[b.state].toLowerCase()})`).join("; ")}]` : null;
+  const brokenFacts = f.broken.length ? `[${f.broken.length}: ${f.broken.map((b) => `${b.title} (${STATE_WORDS[b.state].toLowerCase()}${b.reason ? `: ${b.reason}` : ""})`).join("; ")}]` : null;
   push("broken", "Broken", brokenFacts, saved?.broken);
   const youFacts = f.needsYou.length ? `[${f.needsYou.length}: ${f.needsYou.map((b) => b.title).join("; ")}]` : null;
   push("waiting", "Waiting on you", youFacts, saved?.waiting);

@@ -22,6 +22,12 @@ export function limitLabel(t: Ticket, now = Date.now()): string {
   return t.limit.auto ? `Limit hit · continues at ${at}` : `Limit hit · resets ${at}`;
 }
 
+/** A paused step's line in "Where we are": "Hit the usage limit, resumes at 14:30" (auto), "…, resets at 14:30" (not). */
+export function pausedLine(p: { resumeAt: string | null; auto: boolean }, now = Date.now()): string {
+  if (!p.resumeAt) return "Hit the usage limit";
+  return `Hit the usage limit, ${p.auto ? "resumes" : "resets"} at ${clockTime(p.resumeAt, now)}`;
+}
+
 /** One line on what happens next, for the drawer banner. */
 export function limitHint(t: Ticket, now = Date.now()): string {
   const l = t.limit;

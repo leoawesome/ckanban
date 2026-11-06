@@ -12,7 +12,7 @@ import { statusFacts, statusSections } from "../src/server/feature";
 import { pickRelated } from "../src/server/recall";
 import type { Ticket } from "../src/server/types";
 import { ticketCommand } from "../src/ticket-cli";
-import { deleteTitle, parkNeedsConfirm, parkTitle, stopTitle } from "../web/src/familyActions";
+import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, stopTitle } from "../web/src/familyActions";
 import { hiddenTool, mainTicketOf, TICKET_KINDS, withYouTool } from "../web/src/family";
 import { groupByColumn } from "../web/src/columns";
 import { searchBoard } from "../web/src/toolTickets";
@@ -183,8 +183,8 @@ test("the main card's line: a step that needs you, then failed or stuck, then pa
 
 test("the confirms name the count and the cost; only main tickets with tool tickets ask before Backlog or Done", () => {
   const t = { title: "AI Outreach", main: true, status: "review", familyCard: { tools: 14, running: ["a", "b"], costUsd: 41.2 } };
-  expect(stopTitle(t)).toBe("Stop AI Outreach and its 2 running tool tickets?");
-  expect(deleteTitle(t)).toBe("Delete AI Outreach and its 14 tool tickets ($41.20 spent)?");
+  expect(stopTitle(t)).toBe("Stop AI Outreach and its 2 running steps?");
+  expect(deleteTitle(t)).toBe("Delete AI Outreach and its 14 steps ($41.20 spent)?");
   expect(parkNeedsConfirm(t, "backlog")).toBe(true);
   expect(parkNeedsConfirm(t, "in_progress")).toBe(false);
   expect(parkNeedsConfirm({ ...t, main: false }, "done")).toBe(false);
@@ -195,6 +195,9 @@ test("the confirms name the count and the cost; only main tickets with tool tick
   expect(parkTitle(one, "done")).toBe('Move "AI Outreach" and its 1 unfinished step to Done?');
   expect(parkTitle({ ...t, familyCard: { ...t.familyCard, open: 3 } }, "backlog")).toBe('Move "AI Outreach" and its 3 unfinished steps to Backlog?');
   expect(deleteTitle({ title: "Fix login" })).toBe('Delete "Fix login"?');
+  // The words users see say "step", never "tool ticket".
+  expect(parkText(t)).toBe("No new steps start; the 2 running ones finish, and queued ones are kept. Move it back to In progress to let them start again. \$41.20 spent so far.");
+  for (const s of [stopTitle(t), deleteTitle(t), parkTitle(t, "done"), parkText(t)]) expect(s).not.toContain("tool ticket");
 });
 
 /** A main ticket with tool tickets (one with you), a ticket the user added and an old plan child, on the real board. */

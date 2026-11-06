@@ -1,9 +1,14 @@
 // "Where we are": the feature's status pinned at the top of its main chat (the family's top ticket). Counts, test
 // results and pull requests come from the board; goal, done, broken, waiting on you and next step from Claude's
 // update_status; "Add a note" adds what happened outside the board (the main chat gets it at its next turn).
-import { useEffect, useMemo, useState } from "react";
+// Calm on purpose: the next step comes first, Done folds to two lines, and each failed or paused step says why with
+// one button to move it on (Try again, Resume).
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, type FeatureStatus, type Ticket } from "./api";
 import { familyOf, isFeature } from "./family";
+import { InfoIcon } from "./icons";
+import { pausedLine } from "./limitText";
+import { toast } from "./toast";
 import { usePersistentState } from "./usePersistentState";
 import { timeAgo } from "./time";
 
@@ -41,6 +46,51 @@ function countText(c: Record<string, number>, total: number): string {
   return parts.join(", ");
 }
 
+/** Where the words come from, behind the info icon (it used to be two grey lines under the box). */
+export const STATUS_SOURCE = "Counts, tests and pull requests come from the board; the summary, decisions and next step are written by Claude. " +
+  "\"Add a note\" adds what happened outside the board.";
+
+/** Done, folded to about two lines with "more" when it is longer. */
+function Clamped({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
+  });
+  return (
+    <>
+      <div ref={ref} className={`ws-clamp${open ? " open" : ""}`}>{children}</div>
+      {(long || open) && <button className="ws-act ws-more" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "less" : "more"}</button>}
+    </>
+  );
+}
+
+/** One failed or paused step: its title, why in one line, and the button that moves it on. */
+function StepLine({ title, why, action, onOpen }: { title: string; why?: string; action?: { label: string; run: () => Promise<unknown> }; onOpen: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      await action!.run();
+    } catch (e) {
+      toast((e as Error).message, { tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="ws-step">
+      <div className="ws-step-text">
+        <button className="link-btn ws-link" onClick={onOpen}>{title}</button>
+        {why && <span className="ws-why">{why}</span>}
+      </div>
+      {action && <button className="btn small" disabled={busy} onClick={() => void go()}>{action.label}</button>}
+    </div>
+  );
+}
+
 export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
   slug: string; ticket: Ticket; status: FeatureStatus; onChanged: () => void; onOpenTicket: (id: string) => void;
 }) {
@@ -66,9 +116,11 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
       setBusy(false);
     }
   };
+  const source = saved?.claudeAt ? STATUS_SOURCE : `Claude fills in the goal, what is done and the next step as the work goes on. ${STATUS_SOURCE}`;
   const head = (
     <div className="ws-head">
       <span className="ws-title">Where we are</span>
+      <span className="ws-info" title={source} aria-label={source} role="img"><InfoIcon size={12} /></span>
       {updated && <span className="muted small">updated {timeAgo(updated)}</span>}
       {!hidden && <button className="ws-act" onClick={() => setNoting((v) => !v)}>Add a note</button>}
       <button className="ws-act" onClick={() => setHidden(!hidden)} aria-expanded={!hidden}>{hidden ? "Show" : "Hide"}</button>
@@ -82,18 +134,20 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
   const looseActive = n(f.loose.counts, "working", "waiting", "needs_you", "paused");
   const roundOf = (id: string) => f.rounds.find((r) => r.id === id);
   const link = (id: string, title: string) => <button key={id} className="link-btn ws-link" onClick={() => onOpenTicket(id)}>{title}</button>;
+  const after = () => onChanged();
   const rows: { label: string; body: React.ReactNode }[] = [];
+  if (saved?.next) rows.push({ label: "Next step", body: <span className="ws-next">{saved.next}</span> });
   if (saved?.goal) rows.push({ label: "Goal", body: saved.goal });
   if (doneGroups.length || looseDone || saved?.done) {
     rows.push({
-      label: "Done", body: <>
+      label: "Done", body: <Clamped>
         {doneGroups.map((g) => {
           const r = roundOf(g.id);
           return <Pill key={g.id} tone="ok">{g.title}{r ? `: ${r.passed} passed${r.problem ? `, ${r.problem} problem` : ""}` : ` · ${g.total}`}</Pill>;
         })}
         {looseDone > 0 && <Pill tone="ok">{looseDone} done</Pill>}
         {saved?.done}
-      </>,
+      </Clamped>,
     });
   }
   if (running.length || looseActive) {
@@ -109,10 +163,25 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
   }
   if (f.broken.length || saved?.broken) {
     rows.push({
-      label: "Broken", body: <>
-        {f.broken.length > 0 && <Pill tone="bad">{f.broken.length}</Pill>}
-        {saved?.broken ?? <span className="ws-titles">{f.broken.map((b, i) => <span key={b.id}>{i > 0 && ", "}{link(b.id, b.title)}</span>)}</span>}
-      </>,
+      label: "Failed", body: <div className="ws-lines">
+        {f.broken.map((b) => (
+          <StepLine key={b.id} title={b.title} onOpen={() => onOpenTicket(b.id)}
+            why={b.reason ?? (b.state === "problem" ? "Found a problem" : undefined)}
+            action={b.state === "failed" ? { label: "Try again", run: () => api.updateTicket(slug, b.id, { status: "ready" }).then(after) } : undefined} />
+        ))}
+        {saved?.broken && <span>{saved.broken}</span>}
+      </div>,
+    });
+  }
+  const paused = f.paused ?? [];
+  if (paused.length) {
+    rows.push({
+      label: "Paused", body: <div className="ws-lines">
+        {paused.map((p) => (
+          <StepLine key={p.id} title={p.title} why={pausedLine(p)} onOpen={() => onOpenTicket(p.id)}
+            action={{ label: "Resume", run: () => api.limitContinue(slug, p.id).then(after) }} />
+        ))}
+      </div>,
     });
   }
   if (f.needsYou.length || saved?.waiting) {
@@ -134,7 +203,6 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
       </div>,
     });
   }
-  if (saved?.next) rows.push({ label: "Next step", body: <span className="ws-next">{saved.next}</span> });
   return (
     <section className="where-we-are" aria-label="Where we are">
       {head}
@@ -157,8 +225,6 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
         {rows.map((r) => (
           <div key={r.label} className="ws-row"><div className="ws-k">{r.label}</div><div className="ws-v">{r.body}</div></div>
         ))}
-        {!saved?.claudeAt && <p className="ws-src">Claude fills in the goal, what is done and the next step as the work goes on.</p>}
-        <p className="ws-src">Counts, tests and pull requests come from the board; the summary, decisions and next step are written by Claude. "Add a note" adds what happened outside the board.</p>
       </div>
     </section>
   );

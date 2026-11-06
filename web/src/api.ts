@@ -276,7 +276,9 @@ export interface FeatureStatus {
     groups: { id: string; title: string; kind: string | null; total: number; counts: Record<string, number>; settled: boolean }[];
     loose: { total: number; counts: Record<string, number> };
     rounds: { id: string; title: string; passed: number; problem: number; open: number }[];
-    broken: { id: string; title: string; state: string }[];
+    broken: { id: string; title: string; state: string; reason?: string }[];
+    /** Missing from an older server. */
+    paused?: { id: string; title: string; resumeAt: string | null; auto: boolean }[];
     needsYou: { id: string; title: string }[];
     prs: { url: string; number: number | null; state: "open" | "merged" | "closed" | "unknown"; ticketId: string; ticketTitle: string; note?: string }[];
   };

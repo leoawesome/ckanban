@@ -18,17 +18,17 @@ export const openTools = (t: FamilyTicketLike): number => (t.main ? t.familyCard
 /** Its tool tickets working or queued to start now. */
 export const runningTools = (t: FamilyTicketLike): number => (t.main ? t.familyCard?.running.length ?? 0 : 0);
 
-/** "Stop AI Outreach and its 2 running tool tickets?" */
+/** "Stop AI Outreach and its 2 running steps?" */
 export function stopTitle(t: FamilyTicketLike): string {
   const k = runningTools(t);
-  return k ? `Stop ${t.title} and its ${n(k, "running tool ticket")}?` : "Stop Claude?";
+  return k ? `Stop ${t.title} and its ${n(k, "running step")}?` : "Stop Claude?";
 }
 
-/** "Delete AI Outreach and its 14 tool tickets ($41.20 spent)?" */
+/** "Delete AI Outreach and its 14 steps ($41.20 spent)?" */
 export function deleteTitle(t: FamilyTicketLike): string {
   const k = toolCount(t);
   if (!k) return `Delete "${t.title}"?`;
-  return `Delete ${t.title} and its ${n(k, "tool ticket")} (${money(t.familyCard!.costUsd)} spent)?`;
+  return `Delete ${t.title} and its ${n(k, "step")} (${money(t.familyCard!.costUsd)} spent)?`;
 }
 
 /** Moving a main ticket to Backlog or Done needs a confirm only when a tool ticket isn't finished: it would hold that back. */
@@ -41,6 +41,6 @@ export function parkTitle(t: FamilyTicketLike, to: "backlog" | "done"): string {
 
 export function parkText(t: FamilyTicketLike): string {
   const k = runningTools(t);
-  return `No new tool tickets start${k ? `; the ${n(k, "running one")} ${k === 1 ? "finishes" : "finish"}` : ""}, and queued ones are kept. ` +
+  return `No new steps start${k ? `; the ${n(k, "running one")} ${k === 1 ? "finishes" : "finish"}` : ""}, and queued ones are kept. ` +
     `Move it back to In progress to let them start again. ${money(t.familyCard?.costUsd ?? 0)} spent so far.`;
 }

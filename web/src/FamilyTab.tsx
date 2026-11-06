@@ -1,5 +1,5 @@
 // The Family tab: the whole feature from its top ticket down, grouped and folded, with each ticket's model, cost and
-// status, a short view of the clicked row, the plan controls of a planner, and "Gather tickets…" (GatherDialog).
+// status, a short view of the clicked row, the plan controls of a planner, and "Add tickets…" (GatherDialog).
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Ticket } from "./api";
 import { childrenByParent, familyOf, familyState, groupsOf, groupSummary, MAX_LEVEL, matchWords, settled, STATE_WORDS, type FamilyRow, type FamilyState } from "./family";
@@ -111,11 +111,11 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
         <PlanControls slug={slug} ticket={ticket} children={planChildren} onOpenTicket={onOpenTicket} onError={onError} onMoveToDone={onMoveToDone} onAddMore={onAddMore} />
       )}
       <div className="family-tab-head">
-        <b>Family</b>
+        <b>Steps</b>
         <span className="muted small">{rows.length} ticket{rows.length === 1 ? "" : "s"} · {money(total)}</span>
-        <button className="mini-link" onClick={() => copyText(familyText(rows), "Family list copied")}
+        <button className="mini-link" onClick={() => copyText(familyText(rows), "Steps list copied")}
           title="Copy the family as a list, for example to ask Claude to summarise this piece of work">Copy list</button>
-        <button className="mini-link" onClick={() => setGathering(true)} title={`Bring tickets you already made into "${top.title}"`}>Gather tickets…</button>
+        <button className="mini-link" onClick={() => setGathering(true)} title={`Bring tickets you already made into "${top.title}"`}>Add tickets…</button>
       </div>
       <div className="family-tab-tree" role="tree">
         {shown.map((r) => {
@@ -199,7 +199,7 @@ export function GatherDialog({ slug, top, tickets, onClose, onError }: {
   }, [q, tickets, inFamily]);
   const chosen = Object.keys(picked);
   const usesNew = Object.values(picked).includes("new");
-  // Their own tickets that would sit deeper than level 2 move up beside them: say so before Gather.
+  // Their own tickets that would sit deeper than level 2 move up beside them: say so before Add.
   const moving = chosen.flatMap((id) => {
     const level = picked[id] ? 2 : 1;
     return subtreeDepths(tickets, id).filter((r) => level + r.depth > MAX_LEVEL).map((r) => r.ticket.title);
@@ -208,17 +208,17 @@ export function GatherDialog({ slug, top, tickets, onClose, onError }: {
     setBusy(true);
     try {
       const r = await api.gather(slug, top.id, chosen.map((id) => ({ id, group: picked[id] || null })), usesNew ? newGroup.trim() || "New group" : null);
-      toast(`Gathered ${r.gathered.length} ticket${r.gathered.length === 1 ? "" : "s"} into ${top.title}${r.skipped.length ? `; ${r.skipped.length} skipped: ${r.skipped.map((s) => s.reason).join("; ")}` : ""}.`);
+      toast(`Added ${r.gathered.length} ticket${r.gathered.length === 1 ? "" : "s"} to ${top.title}${r.skipped.length ? `; ${r.skipped.length} skipped: ${r.skipped.map((s) => s.reason).join("; ")}` : ""}.`);
       onClose();
     } catch (e) {
-      onError(`Couldn't gather the tickets: ${(e as Error).message}`);
+      onError(`Couldn't add the tickets: ${(e as Error).message}`);
       setBusy(false);
     }
   };
   return (
-    <Modal title={`Gather tickets into ${top.title}`} wide onClose={onClose} guard={chosen.length > 0 && !busy}>
+    <Modal title={`Add tickets to ${top.title}`} wide onClose={onClose} guard={chosen.length > 0 && !busy}>
       <div className="gather">
-        <input className="gather-search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find tickets…" aria-label="Find tickets to gather" />
+        <input className="gather-search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find tickets…" aria-label="Find tickets to add" />
         <div className="gather-list">
           {options.map((t) => (
             <label key={t.id} className="gather-row">
@@ -244,7 +244,7 @@ export function GatherDialog({ slug, top, tickets, onClose, onError }: {
           <label className="gather-new">New group's name <input value={newGroup} onChange={(e) => setNewGroup(e.target.value)} placeholder="e.g. Fixes" /></label>
         )}
         <p className="hint muted small">
-          Picked tickets keep their chats, work and pull requests, and tickets still running keep running. They move under {top.title}, grouped as shown.
+          Picked tickets keep their chats, work and changes, and tickets still running keep running. They move under {top.title}, grouped as shown.
         </p>
         {moving.length > 0 && (
           <p className="gather-warn small" role="status">
@@ -254,7 +254,7 @@ export function GatherDialog({ slug, top, tickets, onClose, onError }: {
         <div className="form-actions">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" disabled={!chosen.length || busy} onClick={() => void gather()}>
-            {busy ? "Gathering…" : `Gather ${chosen.length} ticket${chosen.length === 1 ? "" : "s"}`}
+            {busy ? "Adding…" : `Add ${chosen.length} ticket${chosen.length === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>

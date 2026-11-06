@@ -44,7 +44,7 @@ import { StallActions, stallWait } from "./StallActions";
 import { useSnippetPicker } from "./SnippetPicker";
 import { useSlashCommands, useSlashPicker } from "./SlashPicker";
 import { commandNote, messageCommand, type SlashCommand } from "./slashText";
-import { filesByReply } from "./fileCards";
+import { filesByReply, STATUS_FILES } from "./fileCards";
 
 import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, type Handoff } from "./liveReply";
 import { heldByReply, inSession, liveProgress, norm, unsentNow, userAfterSaved, type Pending } from "./pendingBubbles";
@@ -420,7 +420,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   useEffect(() => {
     if (page) api.outputs(slug, ticket.id).then(setFiles).catch(() => {});
   }, [slug, ticket.id, page, running]);
-  const cards = useMemo(() => filesByReply(entries, files), [entries, files]);
+  const pinned = !!ticket.main || !!feature.status;
+  const cards = useMemo(() => filesByReply(entries, files, pinned ? STATUS_FILES : undefined), [entries, files, pinned]);
   // Drop optimistic bubbles once the session file contains the message.
   useEffect(() => {
     if (pending.some((p) => delivered(entries, p.text))) setPending((ps) => ps.filter((p) => !delivered(entries, p.text)));

@@ -752,7 +752,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             <button className="btn primary goal-btn" onClick={goTo} title={`${att!.label}: show me where`}>{goal.button}</button>
           )}
           {working && !familyBusy && <button className="btn danger" disabled={stopping} onClick={stop} title={`Stop Claude (${MOD}.)`}>{stopping ? "Stopping…" : "Stop Claude"}<KeyHint keys="⌘." /></button>}
-          {familyBusy && <button className="btn danger" disabled={stopping} onClick={() => setConfirmStop(true)} title={`Stop this ticket and its running tool tickets (${MOD}.)`}>{stopping ? "Stopping…" : "Stop"}<KeyHint keys="⌘." /></button>}
+          {familyBusy && <button className="btn danger" disabled={stopping} onClick={() => setConfirmStop(true)} title={`Stop this ticket and its running steps (${MOD}.)`}>{stopping ? "Stopping…" : "Stop"}<KeyHint keys="⌘." /></button>}
           {finished && <PlanFinished ticket={ticket} total={children.length} onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />}
           {!working && !finished && (ticket.status === "backlog" || ticket.status === "planning") && (
             <button className={`btn ${goal ? "" : "primary"}`}
@@ -883,15 +883,15 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     </div>
   );
   // The tab bar's buttons; a phone shows at most 4 places, the rest under More.
-  const tabName: Record<DrawerTab, string> = { ticket: "Ticket", chat: "Chat", family: "Family", huddle: "Huddle", changes: "Changes", outputs: "Outputs", usage: "Usage" };
+  const tabName: Record<DrawerTab, string> = { ticket: "Ticket", chat: "Chat", family: "Steps", huddle: "Huddle", changes: "Changes", outputs: "Outputs", usage: "Usage" };
   const tabLabel: Record<DrawerTab, React.ReactNode> = {
     ticket: "Ticket",
     chat: <>Chat {working && <span className="dot" />}</>,
     family: children.length > 0 ? (
-      <>Family<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : children.every(complete) ? "ok" : ""}`}>
+      <>Steps<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : children.every(complete) ? "ok" : ""}`}>
         {children.filter(complete).length}/{children.length}
       </span></>
-    ) : <>Family<span className="tab-count">{familySize}</span></>,
+    ) : <>Steps<span className="tab-count">{familySize}</span></>,
     huddle: (
       <>
         Huddle{huddle && huddle.status !== "closed" && <span className={`tab-count${huddle.status === "live" ? " ok" : ""}`}>{members(huddle).length}</span>}
@@ -1103,7 +1103,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               setConfirmStop(false);
             }}>
             {familyBusy
-              ? <p>Its running tool tickets stop now and queued ones don't start. Tickets you added to the feature keep going. {`$${ticket.familyCard!.costUsd.toFixed(2)}`} spent so far.</p>
+              ? <p>Its running steps stop now and queued ones don't start. Tickets you added to the feature keep going. {`$${ticket.familyCard!.costUsd.toFixed(2)}`} spent so far.</p>
               : <p>Claude stops working on this ticket now. You can start it again later.</p>}
           </ConfirmDialog>
         )}

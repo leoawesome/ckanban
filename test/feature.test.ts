@@ -219,3 +219,28 @@ test("the New ticket word match suggests the feature with the most shared words,
   // A tie goes to the most recently touched feature.
   expect(suggestFeature(tickets, "agent call", "")?.feature.id).toBe("b");
 });
+
+test("broken facts say why each step failed or found a problem, and usage-limit steps are listed as paused", async () => {
+  await setup();
+  const f = await feature();
+  store.updateTicket("p", f.fix.id, { status: "review", outcome: "failed", error: "Run started\nclaude exited with code 1: tests failed in retry.test.ts\n" });
+  store.updateTicket("p", f.t2.id, { status: "review", outcome: "done", verdict: "problem" });
+  store.updateTicket("p", f.b1.id, { status: "review", outcome: "blocked", capHit: { capUsd: 5, spentUsd: 5.2, at: "2026-11-06T10:00:00Z" } } as any);
+  store.updateTicket("p", f.b2.id, { status: "review", outcome: "limit", limit: { resetAt: "2026-11-06T14:30:00Z", auto: true, at: "2026-11-06T12:00:00Z", message: "limit" } });
+  store.updateTicket("p", f.top.id, {
+    results: [
+      { at: "2026-11-06T09:00:00Z", ticketId: f.t2.id, title: "x", outcome: "done", summary: "Old summary.", report: null },
+      { at: "2026-11-06T11:00:00Z", ticketId: f.t2.id, title: "x", outcome: "done", verdict: "problem", summary: "The 24h window check lets a closed chat through.", report: null },
+    ],
+  } as any);
+  const s = board.featureStatus("p", f.top.id);
+  const why = Object.fromEntries(s.facts.broken.map((b) => [b.id, b.reason]));
+  expect(why[f.fix.id]).toBe("claude exited with code 1: tests failed in retry.test.ts");
+  expect(why[f.t2.id]).toBe("The 24h window check lets a closed chat through.");
+  expect(why[f.b1.id]).toBe("Stopped at its $5.00 cap.");
+  expect(s.facts.paused).toEqual([{ id: f.b2.id, title: "Send queue", resumeAt: "2026-11-06T14:30:00Z", auto: true }]);
+  expect(s.sections.find((x) => x.key === "broken")?.text).toContain("Fix retry count (failed: claude exited with code 1: tests failed in retry.test.ts)");
+  // A step working again is not paused.
+  store.updateTicket("p", f.b2.id, { status: "in_progress" });
+  expect(board.featureStatus("p", f.top.id).facts.paused).toEqual([]);
+});
