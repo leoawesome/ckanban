@@ -21,9 +21,6 @@ export function kindDefaults(kind: string | null | undefined): { model: string; 
   return kind && kind in KIND_DEFAULTS ? KIND_DEFAULTS[kind as TicketKind] : null;
 }
 
-/** Kinds that change files: at most BUILD_LIMIT of one family run at once. */
-export const BUILD_KINDS = new Set<string>(["build", "fix"]);
-export const BUILD_LIMIT = 2;
 /** merge_into_main tries before the tool ticket ends blocked. */
 export const MERGE_TRIES = 3;
 /** ask_ticket waits this long for an answer, then reports "no answer". */

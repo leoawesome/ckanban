@@ -129,7 +129,7 @@ const CLAUDE_TAG = "Claude starts automatically when a card is here";
 
 function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx }: {
   id: Status; label: string; hint: string; claude: boolean; tickets: Ticket[]; loading: boolean;
-  /** In Progress only: tickets waiting for a free run slot, in start order. */
+  /** In Progress only: tickets waiting their turn on the folder, in start order. */
   queue?: Ticket[];
   /** A pending daemon restart holds the queue. */
   held?: boolean;
@@ -189,7 +189,7 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
           {shown.map((t) => (
             <SortableCard key={t.id} ticket={t} onOpen={onOpen} ctx={ctx} />
           ))}
-          {queue.length > 0 && <div className="queue-sep" title="These start in this order as run slots free up">Queued</div>}
+          {queue.length > 0 && <div className="queue-sep" title="These start in this order as the folder frees up">Queued</div>}
           {queue.map((t, i) => (
             <SortableCard key={t.id} ticket={t} onOpen={onOpen} queued={i + 1} held={held} ctx={ctx} />
           ))}

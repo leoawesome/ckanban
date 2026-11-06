@@ -181,8 +181,8 @@ test("daemon restart keeps unread messages and delivers them after recovery", as
   expect(readArgs().some((c) => c.prompt?.startsWith("what about Z?"))).toBe(true);
 }, 20000);
 
-test("a chat reply that resumes work waits for a free slot, then starts before Ready tickets", async () => {
-  await setup({ maxParallel: 1 });
+test("a chat reply that resumes work waits for the folder another ticket edits, then starts before Ready tickets", async () => {
+  await setup({ git: false });
   process.env.FAKE_MODE = "slow";
   const a = await board.createTicket("p", { title: "a", body: "", status: "ready" });
   const r = await board.createTicket("p", { title: "r", body: "", status: "review" });
@@ -207,7 +207,7 @@ test("a chat reply that resumes work waits for a free slot, then starts before R
 }, 15000);
 
 test("steering a running ticket takes no extra slot", async () => {
-  await setup({ maxParallel: 1 });
+  await setup();
   process.env.FAKE_MODE = "slow";
   const a = await board.createTicket("p", { title: "a", body: "", status: "ready" });
   await untilSpawned();
@@ -216,8 +216,8 @@ test("steering a running ticket takes no extra slot", async () => {
   expect(store.getTicket("p", a.id)!.slotWait).toBeFalsy();
 }, 15000);
 
-test("Stop on a reply waiting for a slot puts the card back and keeps the message unsent", async () => {
-  await setup({ maxParallel: 1 });
+test("Stop on a reply waiting for the folder puts the card back and keeps the message unsent", async () => {
+  await setup({ git: false });
   process.env.FAKE_MODE = "slow";
   const a = await board.createTicket("p", { title: "a", body: "", status: "ready" });
   const r = await board.createTicket("p", { title: "r", body: "", status: "review" });
@@ -235,8 +235,8 @@ test("Stop on a reply waiting for a slot puts the card back and keeps the messag
   expect(readArgs().some((c) => c.prompt?.startsWith("go on with it"))).toBe(false);
 }, 15000);
 
-test("a reply waiting for a slot can be edited; Claude gets the edited text", async () => {
-  await setup({ maxParallel: 1 });
+test("a reply waiting for the folder can be edited; Claude gets the edited text", async () => {
+  await setup({ git: false });
   process.env.FAKE_MODE = "slow";
   const a = await board.createTicket("p", { title: "a", body: "", status: "ready" });
   const r = await board.createTicket("p", { title: "r", body: "", status: "review" });
@@ -255,8 +255,8 @@ test("a reply waiting for a slot can be edited; Claude gets the edited text", as
   expect(() => board.editQueued("p", r.id, msg.id, "other")).toThrow();
 }, 15000);
 
-test("discarding the only reply waiting for a slot puts the card back", async () => {
-  await setup({ maxParallel: 1 });
+test("discarding the only reply waiting for the folder puts the card back", async () => {
+  await setup({ git: false });
   process.env.FAKE_MODE = "slow";
   await board.createTicket("p", { title: "a", body: "", status: "ready" });
   const r = await board.createTicket("p", { title: "r", body: "", status: "review" });
@@ -294,8 +294,8 @@ test("a peer message waiting for a slot can't be edited", async () => {
   expect(() => board.editQueued("p", t.id, "m1", "changed")).toThrow(ConflictError);
 });
 
-test("after a restart, waiting replies still respect maxParallel", async () => {
-  await setup({ maxParallel: 1 });
+test("after a restart, waiting replies still wait for the folder", async () => {
+  await setup({ git: false });
   process.env.FAKE_MODE = "slow";
   const a = await board.createTicket("p", { title: "a", body: "", status: "ready" });
   const r = await board.createTicket("p", { title: "r", body: "", status: "review" });

@@ -57,7 +57,8 @@ test("profile + ticket flow", async () => {
   expect(r.status).toBe(201);
   const p = (await r.json()) as any;
   expect(p.slug).toBe("my-proj");
-  expect(p.maxParallel).toBe(5);
+  // Runs have no board limit any more: new boards get no maxParallel.
+  expect(p.maxParallel).toBeUndefined();
 
   r = await fetch(`${base}/api/profiles`, json("POST", { name: "My Proj", path: tempDir("ck-plain2-") }));
   expect(((await r.json()) as any).slug).toBe("my-proj-2");

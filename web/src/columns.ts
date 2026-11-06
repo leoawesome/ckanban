@@ -13,8 +13,8 @@ const familyBusy = (t: Placed): boolean => !!t.main && !!t.familyWorking && (t.s
 export const COLUMNS: { id: Status; label: string; hint: string; claude: boolean }[] = [
   { id: "backlog", label: "Backlog", hint: "Park ideas. Nothing runs.", claude: false },
   { id: "planning", label: "Planning", hint: "Claude interviews you and shapes the ticket", claude: true },
-  { id: "ready", label: "Queued", hint: "Waits for a free slot, then Claude starts the work on its own", claude: true },
-  { id: "in_progress", label: "In Progress", hint: "Claude is working, or queued for a free slot", claude: true },
+  { id: "ready", label: "Queued", hint: "Claude starts the work on its own right away", claude: true },
+  { id: "in_progress", label: "In Progress", hint: "Claude is working, or waiting for the folder another ticket edits", claude: true },
   { id: "review", label: "Review", hint: "Your turn: check the result", claude: false },
   { id: "done", label: "Done", hint: "Finished", claude: false },
 ];
@@ -22,7 +22,7 @@ export const COLUMNS: { id: Status; label: string; hint: string; claude: boolean
 /** Columns the board shows: queued (`ready`) tickets sit in In Progress, under the running ones. */
 export const BOARD_COLUMNS = COLUMNS.filter((c) => c.id !== "ready");
 
-/** A chat reply waiting for a free run slot: the board shows it in the queue, ahead of Ready tickets. */
+/** A chat reply waiting for the folder (another ticket edits it in place): the board shows it in the queue, ahead of Ready tickets. */
 export function waitsForSlot(t: Placed): boolean {
   return t.status === "in_progress" && !!t.slotWait && !t.running;
 }

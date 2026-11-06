@@ -18,7 +18,8 @@ export interface Profile {
   slug: string;
   path: string;
   baseBranch: string;
-  maxParallel: number;
+  /** No longer used: runs start as soon as they are ready. Older profile files may still have it; it is ignored. */
+  maxParallel?: number;
   model?: string | null;
   /** Default reasoning effort (low, medium, high, xhigh, max); empty: Claude's own. */
   effort?: string | null;
@@ -278,7 +279,7 @@ export interface Ticket {
   /** A chat reply the daemon cut off by restarting (or held back while a restart waited); recover() resumes it. */
   interrupted?: Interrupted | null;
   /**
-   * A chat reply waiting for a free run slot: the card shows In Progress, queued, and dispatch() starts it before
+   * A chat reply waiting for the folder (another ticket edits it in place): the card shows In Progress, queued, and dispatch() starts it before
    * Ready tickets. from: where the card was, so Stop puts it back.
    */
   slotWait?: { at: string; from: Pick<Ticket, "status" | "outcome"> } | null;

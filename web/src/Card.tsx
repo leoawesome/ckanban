@@ -112,7 +112,7 @@ export const autoHuddleIdle = (t: Ticket) => !!t.autoHuddle && !t.running;
 
 export function outcomeBadge(t: Ticket) {
   if (autoHuddleIdle(t)) return autoHuddleChip(t.autoHuddle!);
-  if (waitsForSlot(t)) return <span className="badge queued" title="Your reply starts when a run slot is free">Queued</span>;
+  if (waitsForSlot(t)) return <span className="badge queued" title="Your reply starts when the other ticket is done with the folder">Queued</span>;
   if (t.status === "in_progress") return workingBadge("Running", t.runStartedAt);
   if (t.running) return workingBadge("Replying", t.runStartedAt);
   if (t.error?.startsWith("corrupt")) return <span className="badge failed">Corrupt file</span>;
@@ -150,7 +150,7 @@ function HuddleBadge({ badge, onOpen }: { badge: CardHuddleBadge; onOpen?: (tick
 }
 
 /**
- * queued: 1-based place in the queue for a free run slot (status `ready`, or a reply waiting for one). held: a pending daemon restart holds it.
+ * queued: 1-based place in the queue (status `ready`, or a reply waiting for the folder). held: a pending daemon restart holds it.
  * huddle: what the card says about huddles; onOpenHuddle opens a ticket's Huddle tab.
  * limit: the board's slug and error toast, for the usage-limit buttons ("Continue now", auto-continue) and a stalled
  * run's Stop / Keep waiting / Restart.
@@ -195,7 +195,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
     : ticket.folderWait ? <span className="badge wait" title="Tickets on a folder without version history run one at a time; this one starts when the other finishes">waiting: another ticket is using the folder</span>
     : queued && !working ? (held
       ? <span className="badge queued" title="A daemon restart is pending; queued tickets start right after it">Waits for restart</span>
-      : <span className="badge queued" title="Starts when a run slot is free">Queued · #{queued}</span>)
+      : <span className="badge queued" title="Starts as soon as nothing else holds it back (another ticket editing the folder, or a restart)">Queued · #{queued}</span>)
     : outcomeBadge(ticket);
   const showActivity = working && ticket.lastActivity && !QUIET_ACTIVITY.has(ticket.lastActivity);
   // How long since the run's last step; amber and a slower spinner once it has been quiet for 3 minutes.

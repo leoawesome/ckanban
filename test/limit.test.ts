@@ -141,12 +141,11 @@ test("a run that hits the limit is marked limit-hit, not failed, with the reset 
   expect(board.waitsOnUser("p", t.id)).toBe(false);
 }, 15000);
 
-test("with a fake clock, continue is sent once after the reset, and it respects maxParallel", async () => {
+test("with a fake clock, continue is sent once after the reset, also while another ticket works (no board limit)", async () => {
   await setup(1);
   const t = await hitLimit();
   const watcher = new LimitWatcher(board, store);
   process.env.FAKE_MODE = "slow";
-  // Another ticket takes the only run slot.
   const busy = await board.createTicket("p", { title: "busy", body: "", status: "ready" });
   await Bun.sleep(300);
 
@@ -154,19 +153,16 @@ test("with a fake clock, continue is sent once after the reset, and it respects 
   await watcher.tick();
   expect(store.getTicket("p", t.id)!.limit).toBeTruthy();
 
+  process.env.FAKE_MODE = "ok";
   clock = new Date("2026-10-06T20:01:00Z"); // reset + 1 minute
   await watcher.tick();
   await watcher.tick();
   let got = store.getTicket("p", t.id)!;
   expect(got.limit).toBeNull();
-  expect(got.slotWait).toBeTruthy(); // waits for the busy slot
-  expect(got.queued).toMatchObject([{ text: "continue", state: "queued" }]);
-  expect(board.running("p")).toBe(1);
+  expect(got.slotWait).toBeFalsy(); // the busy ticket doesn't hold it back
   expect(got.autoContinued).toEqual({ day: dayKey(clock), count: 1 });
 
-  process.env.FAKE_MODE = "ok";
   board.stop("p", busy.id);
-  await Bun.sleep(300);
   await board.whenIdle();
   await watcher.tick();
   expect(continues()).toBe(1);

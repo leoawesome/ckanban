@@ -9,11 +9,10 @@ import type { UsageState } from "./useUsage";
 /** What the status pill says about the board shown; null until its tickets have loaded. */
 export interface BoardRuns {
   runs: number;
-  /** Runs holding one of the board's run slots, and how many slots it has. */
+  /** Runs doing a ticket's work (not Planning chats or replies). */
   slots: number;
-  maxParallel: number;
   queued: number;
-  /** Huddle agents working (outside the slots). */
+  /** Huddle agents working. */
   agents: number;
   /** The Mac is kept awake until the work on the boards finishes. */
   awake: boolean;
@@ -21,7 +20,7 @@ export interface BoardRuns {
 
 /**
  * Header status pill: the board's runs, today's spend, and the Claude plan limit once it is near ("2 working · $37.12 today").
- * Click for the details: run slots, queue, huddle agents, plan usage bars and spend per board. Data from useUsage, shared
+ * Click for the details: working runs, queue, huddle agents, plan usage bars and spend per board. Data from useUsage, shared
  * with the phone UsageBox. `board`: undefined without a board, null while its tickets load (no count is shown then).
  */
 export function StatusPill({ state, board, openRequest }: { state: UsageState; board?: BoardRuns | null; openRequest?: number }) {
@@ -72,13 +71,12 @@ export function StatusPill({ state, board, openRequest }: { state: UsageState; b
             <div className="usage-runs">
               <h4>This board</h4>
               {!board ? <p className="muted small">Loading…</p> : <>
-                <div className="usage-top"><span>Run slots in use</span><b>{board.slots} of {board.maxParallel}</b></div>
+                <div className="usage-top"><span>Tickets working</span><b>{board.slots}</b></div>
                 <div className="usage-sub">
                   {board.runs === 0 ? "Nothing is running." : `${board.runs} ${board.runs === 1 ? "run" : "runs"} active.`}
-                  {board.queued > 0 && ` ${board.queued} queued for a free slot.`}
-                  {board.agents > 0 && ` ${board.agents} huddle ${board.agents === 1 ? "agent" : "agents"} working (outside the slots).`}
+                  {board.queued > 0 && ` ${board.queued} waiting for the folder (another ticket edits it).`}
+                  {board.agents > 0 && ` ${board.agents} huddle ${board.agents === 1 ? "agent" : "agents"} working.`}
                 </div>
-                <div className="usage-sub">At most {board.maxParallel} tickets work at the same time. Planning chats and replies don't take a slot.</div>
                 {board.awake && <div className="usage-sub">Keeping the Mac awake until the work on your boards finishes.</div>}
               </>}
             </div>

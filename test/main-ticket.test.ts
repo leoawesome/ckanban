@@ -133,13 +133,13 @@ test("a group whose children still run is not complete; its children's events st
   expect(step.allComplete).toBe(false);
 }, 60_000);
 
-test("at most 2 build or fix tickets of a family start at once; others aren't limited by the plan", () => {
+test("a family's build and fix tickets aren't limited either: every step without waiting dependencies starts", () => {
   const at = new Date().toISOString();
   const kid = (id: string, kind: Ticket["kind"]) => ({ id, title: id, status: "backlog", outcome: null, kind, tool: true, body: "", order: 0, sessionId: null, worktree: null, branch: null, prUrl: null, lastActivity: null, lastRunAt: null, runCount: 0, error: null, createdAt: at, updatedAt: at }) as Ticket;
   const kids = [kid("b1", "build"), kid("b2", "build"), kid("f1", "fix"), kid("e1", "explore"), kid("e2", "explore"), kid("t1", "test")];
   const step = planStep({ state: "running", maxConcurrent: 1, wakeups: 0, startedAt: at, originalCount: 6, seen: {} }, kids, () => false,
     { managed: { summary: () => "", report: () => null } });
-  expect(step.start).toEqual(["b1", "b2", "e1", "e2", "t1"]);
+  expect(step.start).toEqual(["b1", "b2", "f1", "e1", "e2", "t1"]);
 }, 60_000);
 
 test("ask_ticket: a fork of the tool ticket's session answers as an event; no answer after the timeout", async () => {

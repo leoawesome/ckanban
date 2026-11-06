@@ -166,7 +166,6 @@ function parallelWork(req: Request, b: any, what: "huddle-open" | "run-active"):
 }
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1"];
-const DEFAULT_MAX_PARALLEL = 5;
 /** Output extensions served with their image type (raster only) so the Outputs tab can preview them. */
 const OUTPUT_IMAGE_TYPES: Record<string, string> = {
   ...Object.fromEntries(Object.entries(IMAGE_TYPES).map(([t, e]) => [e, t])),
@@ -542,7 +541,7 @@ export function createServer(deps: ServerDeps) {
     return {
       ...t,
       running,
-      /** Its run takes one of the board's maxParallel slots (Planning and peer replies don't). */
+      /** Its run is a working run (Planning and peer replies aren't). */
       holdsSlot: running && board.holdsSlot(p.slug, t.id),
       resumeCommand: t.sessionId ? resumeCommand(t.workdir ?? t.worktree ?? p.path, t.sessionId) : null,
       session,
@@ -1073,7 +1072,6 @@ export function createServer(deps: ServerDeps) {
           name, slug, path,
           // Empty when there is nothing to branch from yet (not a repo, or no commits); runs re-detect it.
           baseBranch: b.baseBranch || ((await isGitRepo(path)) ? (await resolveBaseBranch(path, await detectBaseBranch(path))) ?? "" : ""),
-          maxParallel: Math.max(1, Number(b.maxParallel) || DEFAULT_MAX_PARALLEL),
           model: b.model || null,
           ...(b.effort ? { effort: String(b.effort) } : {}),
           ...(b.ultracode === true ? { ultracode: true } : {}),
@@ -1099,7 +1097,6 @@ export function createServer(deps: ServerDeps) {
         if (b.name !== undefined) next.name = String(b.name);
         if (b.path !== undefined) next.path = String(b.path);
         if (b.baseBranch !== undefined) next.baseBranch = String(b.baseBranch);
-        if (b.maxParallel !== undefined) next.maxParallel = Math.max(1, Number(b.maxParallel) || 1);
         if (b.model !== undefined) next.model = b.model || null;
         if (b.mainModel !== undefined) {
           if (b.mainModel && !(typeof b.mainModel === "string" && validModel(b.mainModel))) throw new HttpError(400, `"${b.mainModel}" is not a model name. Use ${MODEL_HELP}.`);
@@ -1649,6 +1646,8 @@ export function createServer(deps: ServerDeps) {
           // Its main ticket's plan still paused by Stop: the step waits, and the reply tells Claude so (no "queued").
           const top = mainTicket ?? planner!;
           planPaused = store.getTicket(slug, top.id)?.plan?.state === "paused";
+          // Made by the main ticket's own run while its card sits in Done or Backlog: back to Review, so the step starts.
+          if (planner!.main) board.unparkForNewStep(slug, planner!.id);
           board.ensurePlan(slug, planner!.id);
           board.advancePlans(slug);
         }

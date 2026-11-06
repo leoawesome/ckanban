@@ -30,14 +30,16 @@ test("ready ticket runs to review with PR and AI comment", async () => {
   expect(activity.length).toBe(6);
 });
 
-test("maxParallel limits concurrent runs", async () => {
+test("there is no board limit: every Ready ticket starts at once, even with an old maxParallel in the profile", async () => {
   await setup({ maxParallel: 1 });
   process.env.FAKE_MODE = "slow";
-  await board.createTicket("p", { title: "a", body: "", status: "ready" });
-  const b = await board.createTicket("p", { title: "b", body: "", status: "ready" });
-  await untilSpawned();
-  expect(board.running("p")).toBe(1);
-  expect(store.getTicket("p", b.id)!.status).toBe("ready");
+  const ts = [];
+  for (const title of ["a", "b", "c"]) ts.push(await board.createTicket("p", { title, body: "", status: "ready" }));
+  await untilSpawned(3);
+  expect(board.running("p")).toBe(3);
+  for (const t of ts) expect(board.isRunning("p", t.id)).toBe(true);
+  board.stopAll();
+  await board.whenIdle();
 }, 15000);
 
 test("failed run marks outcome failed with stderr", async () => {

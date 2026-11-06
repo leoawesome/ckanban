@@ -39,7 +39,7 @@ const STATUS = {
   type: "string",
   enum: STATUSES,
   description: "Column. backlog: idea, nothing runs. planning: Claude interviews the user in the board chat. " +
-    "ready: queued, Claude starts working as soon as a slot is free. in_progress/review/done: usually set by the board.",
+    "ready: Claude starts working right away. in_progress/review/done: usually set by the board.",
 };
 const SCHEDULE_ID = { type: "string", description: "Schedule id (from list_schedules)." };
 const CRON = {

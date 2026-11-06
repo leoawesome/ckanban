@@ -116,12 +116,13 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
             <button className="btn small" disabled={busy} title="Close the plan as it is, without waking Claude"
               onClick={() => act("done")}>Mark plan done</button>
           )}
-          <label className="muted small plan-cap" title="Children of this plan in Ready or In progress at once">
+          {/* A main ticket's tool tickets have no such limit: each starts once its dependencies are done. */}
+          {!ticket.main && <label className="muted small plan-cap" title="Children of this plan in Ready or In progress at once">
             At once
             <select value={cap} disabled={busy} onChange={(e) => (live ? act("concurrency", Number(e.target.value)) : setDraftCap(Number(e.target.value)))}>
               {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
-          </label>
+          </label>}
           {plan && <span className="muted small" title="Times the plan asked Claude to decide something">{checkInsText(plan.wakeups)}</span>}
         </div>
       )}

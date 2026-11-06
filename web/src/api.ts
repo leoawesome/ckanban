@@ -201,7 +201,8 @@ export interface Profile {
   slug: string;
   path: string;
   baseBranch: string;
-  maxParallel: number;
+  /** Ignored (older profiles may still have it): runs start as soon as they are ready. */
+  maxParallel?: number;
   model?: string | null;
   /** "Main ticket model": main tickets' runs (their own /model still wins); null: the board's model. */
   mainModel?: string | null;
@@ -412,7 +413,7 @@ export interface Ticket {
   queued?: QueuedMessage[];
   /** A reply a daemon restart cut off; the board resumes it. partial: what Claude had written so far. */
   interrupted?: { at: string; partial?: string; held?: boolean } | null;
-  /** A chat reply waiting for a free run slot: shown queued in In Progress. */
+  /** A chat reply waiting for the folder (another ticket edits it in place): shown queued in In Progress. */
   slotWait?: { at: string; from: { status: Status; outcome: Outcome } } | null;
   /** The run has sent no output for the board's stall time: Stop, Keep waiting or Restart. */
   stalled?: { at: string; minutes: number } | null;
@@ -430,7 +431,7 @@ export interface Ticket {
   costUsd?: number | null;
   /** Spending cap its next work run gets (null: none). */
   runCap?: number | null;
-  /** Its run takes one of the board's maxParallel slots. */
+  /** Its run is a working run (not a Planning chat or a reply). */
   holdsSlot?: boolean;
   /** ⭐ Important: unattended runs review it in an auto huddle before landing. */
   important?: boolean;
@@ -1417,7 +1418,7 @@ export const api = {
   reportBug: (input: { title: string; description: string; include: BugBlockId[]; profile?: string; ticketId?: string }) =>
     req<BugReportResult>("POST", "/api/bug-report", { ...input, source: "ui" }),
   profiles: () => req<Profile[]>("GET", "/api/profiles"),
-  createProfile: (p: { name: string; path: string; maxParallel?: number; model?: string; effort?: string; ultracode?: boolean; baseBranch?: string; workspace?: Workspace }) =>
+  createProfile: (p: { name: string; path: string; model?: string; effort?: string; ultracode?: boolean; baseBranch?: string; workspace?: Workspace }) =>
     req<Profile>("POST", "/api/profiles", p),
   updateProfile: (slug: string, p: Partial<Profile>) => req<Profile>("PATCH", `/api/profiles/${slug}`, p),
   deleteProfile: (slug: string) => req<void>("DELETE", `/api/profiles/${slug}`),

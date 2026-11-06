@@ -8,7 +8,6 @@ import { Select } from "./Select";
 import { timeAgo } from "./time";
 import { VersionHistoryOffer } from "./VersionHistoryOffer";
 
-const DEFAULT_MAX_PARALLEL = 5;
 
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -28,9 +27,6 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const [name, setName] = useState(profile?.name ?? "");
   const [nameTouched, setNameTouched] = useState(!isNew);
   const [path, setPath] = useState(profile?.path ?? "");
-  const [maxParallelText, setMaxParallelText] = useState(String(profile?.maxParallel ?? DEFAULT_MAX_PARALLEL));
-  const maxParallel = Number(maxParallelText);
-  const maxParallelError = /^\d+$/.test(maxParallelText.trim()) && maxParallel >= 1 && maxParallel <= 20 ? null : "A whole number from 1 to 20";
   const [saving, setSaving] = useState(false);
   const [model, setModel] = useState(profile?.model ?? "");
   const [mainModel, setMainModel] = useState(profile?.mainModel ?? "");
@@ -115,19 +111,19 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (saving || maxParallelError || capError || (profile && (stallError || freshError))) return;
+    if (saving || capError || (profile && (stallError || freshError))) return;
     setSaving(true);
     try {
       const p = profile
         ? await api.updateProfile(profile.slug, {
-          name, path, maxParallel, model: model || null, effort: effort || null, ultracode, autoHuddles, keepAwake, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
+          name, path, model: model || null, effort: effort || null, ultracode, autoHuddles, keepAwake, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
           mainModel: mainModel || null, freshChatTokens: freshK === null ? null : Math.round(freshK * 1000),
           claudeAiConnectors: connectorMode === "some" ? keepConnectors : connectorMode,
           // A file typed but not yet added with Enter still counts.
           copyFiles: newFile.trim() && !copyFiles.includes(newFile.trim()) ? [...copyFiles, newFile.trim()] : copyFiles,
           setupCommand: setupCommand.trim(), cleanupCommand: cleanupCommand.trim(), setupDetected: detected,
         })
-        : await api.createProfile({ name, path, maxParallel, model: model || undefined, effort: effort || undefined, ultracode: ultracode || undefined, workspace });
+        : await api.createProfile({ name, path, model: model || undefined, effort: effort || undefined, ultracode: ultracode || undefined, workspace });
       onSaved(p);
     } catch (e: any) {
       setErr(e.message);
@@ -249,12 +245,6 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
         </fieldset>
 
         <div className="row two">
-          <label>
-            Max parallel runs
-            <input type="number" min={1} max={20} step={1} value={maxParallelText} onChange={(e) => setMaxParallelText(e.target.value)}
-              aria-invalid={!!maxParallelError} aria-describedby={maxParallelError ? "max-parallel-error" : undefined} />
-            {maxParallelError && <span id="max-parallel-error" className="field-error">{maxParallelError}</span>}
-          </label>
           <label>
             Model
             <Select
@@ -441,7 +431,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
           )}
           <div className="spacer" />
           <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn primary" disabled={saving || !name.trim() || !path.trim() || !!maxParallelError || !!capError || (!!profile && !!stallError)}>
+          <button type="submit" className="btn primary" disabled={saving || !name.trim() || !path.trim() || !!capError || (!!profile && !!stallError)}>
             {saving ? (profile ? "Saving…" : "Creating…") : profile ? "Save" : "Create board"}
           </button>
         </div>

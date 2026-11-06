@@ -284,7 +284,7 @@ test("a restart that cuts off a follow-up wake resumes it as a follow-up; the ca
   expect(store.listComments("p", t.id).some((c) => c.text === "Follow-up interrupted by daemon restart; resuming.")).toBe(true);
 }, 25000);
 
-test("follow-up wakes take a run slot and wait for one; they skip a usage-limit wait", async () => {
+test("follow-up wakes start right away while another ticket works (no board limit); they skip a usage-limit wait", async () => {
   await setup(1);
   const t = await worked();
   board.setFollowUp("p", t.id, { after: "1h", note: "Check" });
@@ -292,12 +292,11 @@ test("follow-up wakes take a run slot and wait for one; they skip a usage-limit 
   const busy = await board.createTicket("p", { title: "busy", body: "", status: "ready" });
   await until(() => board.isRunning("p", busy.id));
   at("2026-10-19T07:00:00Z");
-  await board.wakeFollowUp("p", t.id);
-  expect(board.isRunning("p", t.id)).toBe(false);
-  expect(store.getTicket("p", t.id)!.slotWait).toMatchObject({ from: { status: "review" } });
   process.env.FAKE_MODE = "ok";
-  board.stop("p", busy.id);
+  await board.wakeFollowUp("p", t.id);
+  expect(store.getTicket("p", t.id)!.slotWait).toBeFalsy();
   await until(() => board.isRunning("p", t.id) || store.getTicket("p", t.id)!.runCount > 1);
+  board.stop("p", busy.id);
   await board.whenIdle();
   expect(wakes()).toBe(1);
   expect(store.getTicket("p", t.id)!.status).toBe("review");

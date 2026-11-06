@@ -1,6 +1,6 @@
 // Planner orchestration: pure decisions about a plan's children. Board.advancePlans() applies them.
 // Ordering is plain code (no tokens); the planner's Claude session is only woken for events below.
-import { BUILD_KINDS, BUILD_LIMIT, finishedLine } from "./main-ticket";
+import { finishedLine } from "./main-ticket";
 import type { Plan, Ticket } from "./types";
 
 export const DEFAULT_MAX_CONCURRENT = 2;
@@ -119,8 +119,8 @@ export interface PlanStepOptions {
   waitingOnUser?: (t: Ticket) => string | null;
   /**
    * A main ticket's (or tool group's) plan: every result is a "finished" event with its summary and report, tool
-   * tickets never wait on the user, and at most BUILD_LIMIT build or fix tickets run at once (no other limit: the
-   * board's run slots cap the rest).
+   * tickets never wait on the user, and nothing but dependsOn holds one back: no plan limit, no build cap, and needs is
+   * only a hint (runs take devices with take_devices). No board limit either: runs start as soon as they are ready.
    */
   managed?: { summary: (t: Ticket) => string; report: (t: Ticket) => string | null };
 }
@@ -140,14 +140,12 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
   let active = 0;
   let awaitingMerge = 0;
   const managed = opts.managed;
-  let building = 0;
   for (const t of children) {
     // Waiting for a usage limit to reset with an automatic continue coming: still at work, not failed.
     // A child running a plan of its own (a group) reports once all of its children are finished.
     const busy = running(t.id) || t.status === "ready" || t.status === "in_progress" || waitsOnLimit(t) || (!!managed && planActive(t.plan));
     if (busy) {
       active++;
-      if (t.kind && BUILD_KINDS.has(t.kind) && !planActive(t.plan)) building++;
       continue;
     }
     // A "with you" tool ticket waiting for the user's answer is the user's turn, not its parent's: no event (the parent
@@ -189,12 +187,9 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
     if (userWait.some((w) => w.id === t.id)) continue;
     const { deps, missing } = resolveDeps(t, children);
     if (missing.length || !deps.every(isComplete)) continue;
+    // A main ticket's family: every step whose dependencies are done starts now (merges into the main ticket's copy
+    // take turns on their own lock).
     if (managed) {
-      // Only build and fix tickets are limited (they change files); the board's run slots cap the rest.
-      if (t.kind && BUILD_KINDS.has(t.kind)) {
-        if (building >= BUILD_LIMIT) continue;
-        building++;
-      }
       start.push(t.id);
       continue;
     }

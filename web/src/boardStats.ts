@@ -7,7 +7,7 @@ interface PrLike { status: string; prUrl: string | null; pr?: { url: string; sta
 export interface RunCounts {
   /** Every active ticket run: work runs, chat replies and Planning runs. */
   runs: number;
-  /** The runs that hold one of the board's maxParallel slots. */
+  /** The working runs (not Planning chats or replies). */
   slots: number;
   /** Huddle agents working right now (a ticket's @main is its ticket run, so it isn't counted again). */
   agents: number;

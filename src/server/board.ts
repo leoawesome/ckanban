@@ -213,8 +213,10 @@ function reopenable(s: Status): boolean {
 }
 
 /**
- * Runs that take a maxParallel slot: work, and chat replies that act on the ticket. Planning interviews, replies to
- * another ticket's Claude (its asker waits on them) and planner wake-ups are short housekeeping and don't.
+ * Runs that do the ticket's work: work runs, and chat replies that act on the ticket. Planning interviews, replies to
+ * another ticket's Claude (its asker waits on them) and planner wake-ups are short housekeeping and don't count. There
+ * is no limit on them (the board starts every run as soon as it is ready); the count shows on the board and decides
+ * whether a reply waits for a folder that another ticket edits in place.
  */
 function takesSlot(chat?: ActiveRun["chat"], noEdit?: boolean): boolean {
   // A main ticket's runs can't edit (they only talk and decide): they never wait for a slot.
@@ -454,22 +456,19 @@ export class Board {
     return this.patch(slug, id, { snooze });
   }
 
-  /** Runs holding a maxParallel slot (see takesSlot). */
+  /** Working runs on the board (see takesSlot). */
   running(slug: string): number {
     let n = 0;
     for (const r of this.runs.values()) if (r.slug === slug && takesSlot(r.chat, r.noEdit)) n++;
     return n;
   }
 
-  /** The ticket's run holds one of the board's maxParallel slots. */
+  /** The ticket's run is a working run (see takesSlot). */
   holdsSlot(slug: string, id: string): boolean {
     const r = this.runs.get(this.key(slug, id));
     return !!r && takesSlot(r.chat, r.noEdit);
   }
 
-  private full(slug: string): boolean {
-    return this.running(slug) >= Math.max(1, this.store.getProfile(slug)?.maxParallel ?? 1);
-  }
 
   isRunning(slug: string, id: string): boolean {
     return this.runs.has(this.key(slug, id));
@@ -534,15 +533,12 @@ export class Board {
         continue;
       }
       const chat = next.peer || next.hostWake ? chatFor(t, next) : next.followUp ? chatFor(t.slotWait!.from, next) : { ...chatFor(t, next), mode: "act" as const, from: t.slotWait!.from };
-      if (takesSlot(chat, t.main) && this.full(slug)) return;
       if (chat.mode === "act" && this.folderBusy(slug, t)) continue;
       this.patch(slug, t.id, { slotWait: null });
       this.start(slug, t.id, chat, next.id);
     }
     const ready = idle.filter((t) => t.status === "ready").sort((a, b) => a.order - b.order);
     for (const t of ready) {
-      // A main ticket's run edits nothing: it starts without a slot.
-      if (!t.main && this.full(slug)) continue;
       // It would edit the board's folder in place while another ticket does: it waits its turn the same way.
       if (this.folderBusy(slug, t)) continue;
       this.start(slug, t.id);
@@ -553,7 +549,7 @@ export class Board {
   private waitForSlot(slug: string, id: string): Ticket {
     const t = this.store.getTicket(slug, id)!;
     return this.patch(slug, id, {
-      status: "in_progress", outcome: null, error: null, lastActivity: this.full(slug) ? "Waiting for a free slot" : FOLDER_WAIT,
+      status: "in_progress", outcome: null, error: null, lastActivity: FOLDER_WAIT,
       slotWait: t.slotWait ?? { at: nowIso(), from: { status: t.status, outcome: t.outcome } },
     });
   }
@@ -649,8 +645,8 @@ export class Board {
       this.dispatch(slug);
       return this.store.getTicket(slug, id)!;
     }
-    if (slot && (t.slotWait || this.full(slug) || folderBusy)) {
-      // Every run slot is busy: the reply waits on the ticket like a Ready ticket, but starts before them.
+    if (slot && (t.slotWait || folderBusy)) {
+      // Another ticket edits the folder in place: the reply waits on the ticket like a Ready ticket, but starts before them.
       const msg: QueuedMessage = { id: crypto.randomUUID(), text, at: nowIso(), state: "queued", ...flags(opts) };
       this.patch(slug, id, { queued: [...(t.queued ?? []), msg] });
       this.waitForSlot(slug, id);
@@ -784,7 +780,7 @@ export class Board {
   }
 
   /**
-   * A queued message the user can still change: left unsent by Stop, or waiting for a run slot or a restart.
+   * A queued message the user can still change: left unsent by Stop, or waiting for the folder or a restart.
    * With a run going it was written to Claude's stdin at once (peer messages included), so it is delivered.
    */
   private held(slug: string, id: string, msgId: string): QueuedMessage {
@@ -930,8 +926,8 @@ export class Board {
         return;
       }
       const chat = chatFor(t, next);
-      // A Planning or peer reply run doesn't hold a slot: one that would now act waits for one like any other.
-      if (takesSlot(chat, run.noEdit) && !takesSlot(run.chat, run.noEdit) && this.full(run.slug)) {
+      // A Planning or peer reply run that would now edit waits while another ticket edits the folder in place.
+      if (takesSlot(chat, run.noEdit) && !takesSlot(run.chat, run.noEdit) && chat.mode === "act" && this.folderBusy(run.slug, t)) {
         this.waitForSlot(run.slug, run.id);
         return;
       }
@@ -2049,6 +2045,21 @@ export class Board {
     }
   }
 
+  /**
+   * A main ticket's own run made a new tool ticket while its card was parked in Done or Backlog: the user asked it for
+   * this work, so the card goes back to Review and its plan runs the step (parked, it would sit in Backlog for good).
+   * Only for the main ticket's own runs: a tool ticket making steps doesn't undo the user's park. True when it moved.
+   */
+  unparkForNewStep(slug: string, id: string): boolean {
+    const t = this.store.getTicket(slug, id);
+    if (!t?.main || (t.status !== "done" && t.status !== "backlog")) return false;
+    const from = t.status === "done" ? "Done" : "Backlog";
+    // patch, not updateTicket: the main ticket's run that made the step is still going and must not be stopped.
+    this.patch(slug, id, { status: "review", reopenedFrom: null });
+    this.store.addComment(slug, id, "ai", `Moved back from ${from}: it made a new step, so its steps run again.`);
+    return true;
+  }
+
   /** Pause: no new children start and the planner isn't woken; running children finish. */
   pausePlan(slug: string, id: string): Ticket {
     const t = this.store.getTicket(slug, id);
@@ -2303,9 +2314,9 @@ export class Board {
       }
       plan.awaiting = null;
     }
-    if (plan.state === "stuck") {
+    if (plan.state === "stuck" && !planner.main) {
       // Whatever made it stuck is gone once every child is finished (e.g. its last PR got merged): close it, no run needed.
-      if (!planner.main && kids.length && kids.every(isComplete)) this.closePlan(slug, planner, plan, "Plan done: every child ticket finished, so the stuck plan was closed without another run.");
+      if (kids.length && kids.every(isComplete)) this.closePlan(slug, planner, plan, "Plan done: every child ticket finished, so the stuck plan was closed without another run.");
       return false;
     }
     if (plan.state === "finishing") {
@@ -2323,6 +2334,9 @@ export class Board {
     const parked = !!planner.main && (planner.status === "backlog" || planner.status === "done");
     // (Plans saved before the spending check-in was removed may still have a "checkin" field: nothing reads it.)
     const held = parked;
+    // A stuck main ticket isn't woken until the user acts, but its steps still start once their dependencies are done
+    // (their results wait in the inbox for its next wake).
+    const quiet = plan.state === "stuck";
     if (!held) for (const cid of step.start) this.patch(slug, cid, { status: "ready", mode: "auto", outcome: null, error: null });
     if (step.events.length) {
       plan.inbox = [...(plan.inbox ?? []), ...step.events.map((e) => e.line)];
@@ -2331,9 +2345,9 @@ export class Board {
       const cards = step.events.filter((e) => e.result).map((e) => this.resultCard(slug, e.childId)).filter((c): c is ResultCard => !!c);
       if (cards.length) this.patch(slug, planner.id, { results: [...(this.store.getTicket(slug, planner.id)?.results ?? []), ...cards].slice(-RESULTS_KEEP) });
     }
-    if (held) {
+    if (held || quiet) {
       if (!sameJson(plan, planner.plan)) this.patch(slug, planner.id, { plan });
-      return false;
+      return !held && step.start.length > 0;
     }
     const inbox = plan.inbox ?? [];
     if (!plannerBusy && !plan.awaiting) {
@@ -3636,7 +3650,7 @@ export class Board {
         const next = this.waiting(p.slug, t.id)[0];
         if (!next || this.isRunning(p.slug, t.id) || t.status === "ready" || t.slotWait || t.error?.startsWith("corrupt")) continue;
         const chat = chatFor(t, next);
-        if (takesSlot(chat, t.main) && this.full(p.slug)) this.waitForSlot(p.slug, t.id);
+        if (takesSlot(chat, t.main) && chat.mode === "act" && this.folderBusy(p.slug, t)) this.waitForSlot(p.slug, t.id);
         else this.start(p.slug, t.id, chat, next.id);
       }
     }

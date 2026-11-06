@@ -760,7 +760,7 @@ export function App() {
   const mcpAttention = mcp?.servers.filter((s) => s.attention).length ?? 0;
   const scheduleFails = schedules?.filter((s) => s.lastError).length ?? 0;
   const missing = health ? (["claude", "git", "gh"] as const).filter((k) => !health[k]) : [];
-  // Every active ticket run (chat replies and Planning too); slots: the ones holding a maxParallel slot, as the server counts them.
+  // Every active ticket run (chat replies and Planning too); slots: the working runs, as the server counts them.
   const running = runCounts(tickets, huddles);
   // A huddle that has sat finished-looking for hours asks "Finished?" and stops counting as live.
   useHuddleIdleTick();
@@ -982,7 +982,7 @@ export function App() {
           />
         )}
         <StatusPill state={usage} openRequest={usageRequest}
-          board={!profile ? undefined : !ticketsLoaded ? null : { ...running, maxParallel: profile.maxParallel, queued, awake }} />
+          board={!profile ? undefined : !ticketsLoaded ? null : { ...running, queued, awake }} />
         {restart.pending && (
           <span className="pill warn" title="The daemon restarts once every active run (on any board) has finished. Until then nothing new starts: queued tickets, chat replies and Planning interviews wait.">
             Restart pending{restart.waiting > 0 ? ` · waiting for ${restart.waiting} ${restart.waiting === 1 ? "run" : "runs"}` : ""}
