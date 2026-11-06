@@ -14,9 +14,6 @@ export function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-/** Waits older than this are marked in the Inbox. */
-export const OLD_WAIT_MS = 8 * 3600_000;
-
 /** How long something has waited since `iso`, coarse: "just now", "12m", "9h", "1d 4h". */
 export function waitedFor(iso: string, at = Date.now()): string {
   const m = Math.max(0, Math.floor((at - new Date(iso).getTime()) / 60_000));

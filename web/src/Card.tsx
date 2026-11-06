@@ -1,9 +1,7 @@
-import { Fragment, useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { newestArtifact, safeHref, waitsForSlot, type Job, type SessionMessage, type Ticket } from "./api";
-import { type CardHuddleBadge, digestPreview } from "./huddleText";
-import { ClockIcon, ExternalIcon, HuddleIcon } from "./icons";
-import type { AddOnLinks } from "./addOn";
-import type { CardFamily } from "./family";
+import { digestPreview } from "./huddleText";
+import { ClockIcon, ExternalIcon } from "./icons";
 import { FollowUpChip } from "./FollowUpChip";
 import { JobChip } from "./Jobs";
 import { jobChip } from "./jobText";
@@ -14,25 +12,23 @@ import { LimitActions } from "./LimitActions";
 import { StallActions, stallWait } from "./StallActions";
 import { clockTime, limitLabel, limitWait } from "./limitText";
 import { DeviceChips } from "./Needs";
-import { currentPr, prChips } from "./prText";
-import { ResolveConflicts } from "./ResolveConflicts";
-import { TagChip } from "./Tags";
 import { ImportantStar } from "./StarToggle";
 import { elapsed, fullTime, plainPreview, timeAgo } from "./time";
 import { costText } from "./usage";
 import { useNow } from "./useNow";
 import { clearArrival, useArrival } from "./arrivals";
-import { attentionLabel, cardFamily, familyWorkingNames, finishMark, foldChips, openedAt, shouldPulse, signInError, stepAge, stepsText, type FinishMark } from "./cardState";
+import { attentionLabel, cardFamily, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
+import { boardColumnOf } from "./columns";
 
 /** Live running time: ticks every second for the first minute, then every 30s. */
-function Elapsed({ since }: { since: string }) {
+function Elapsed({ since, sep = true }: { since: string; sep?: boolean }) {
   const [now, setNow] = useState(Date.now);
   const fresh = now - new Date(since).getTime() < 60_000;
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), fresh ? 1000 : 30_000);
     return () => clearInterval(timer);
   }, [fresh]);
-  return <span className="badge-time" title={`Started ${fullTime(since)}`}><span className="badge-sep"> · </span>{elapsed(since, now)}</span>;
+  return <span className="badge-time" title={`Started ${fullTime(since)}`}>{sep && <span className="badge-sep"> · </span>}{elapsed(since, now)}</span>;
 }
 
 /** Time since a running card's last step: ticks every second for the first minute, then every 15s. */
@@ -135,23 +131,9 @@ function lastWho(m: SessionMessage): string {
   return m.role === "user" ? "You" : "Claude";
 }
 
-/** The card's huddle chip; clicking it opens that ticket's Huddle tab instead of the card. */
-function HuddleBadge({ badge, onOpen }: { badge: CardHuddleBadge; onOpen?: (ticketId: string) => void }) {
-  return (
-    <button type="button" className={`badge huddle ${badge.state}`} title={badge.title}
-      onClick={(e) => { e.stopPropagation(); onOpen?.(badge.openTicket); }}
-      onKeyDown={(e) => e.stopPropagation()}>
-      {badge.state === "live" && <span className="live-dot" />}
-      <HuddleIcon size={12} /> {badge.label}
-      {badge.failed > 0 && <span className="hb-failed">· {badge.failed} failed</span>}
-      {badge.forYou > 0 && <span className="for-you-pill">{badge.forYou} for you</span>}
-    </button>
-  );
-}
-
 /**
  * queued: 1-based place in the queue (status `ready`, or a reply waiting for the folder). held: a pending daemon restart holds it.
- * huddle: what the card says about huddles; onOpenHuddle opens a ticket's Huddle tab.
+ * PR, huddle, linked tickets and tags show only in the ticket panel, not on the card.
  * limit: the board's slug and error toast, for the usage-limit buttons ("Continue now", auto-continue) and a stalled
  * run's Stop / Keep waiting / Restart.
  */
@@ -166,22 +148,14 @@ function FamilyLineView({ line, id }: { line: NonNullable<NonNullable<Ticket["fa
   );
 }
 
-export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, onOpenHuddle, limit, onTag, jobs, onOpenJobs, addOn, family, onOpenTicket, via }: {
+export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, jobs, onOpenJobs, via }: {
   /** Board cards: id prefix of the title (`-title`) and status lines (`-turn`, `-line`, `-meta`) the card is labelled by. */
   a11yId?: string;
   ticket: Ticket; onClick?: () => void; dragging?: boolean; queued?: number; held?: boolean;
-  huddle?: CardHuddleBadge | null; onOpenHuddle?: (ticketId: string) => void;
   limit?: { slug: string; onError: (msg: string) => void };
-  /** A tag chip was clicked: filter the board by it. */
-  onTag?: (tag: string) => void;
   /** The board's one-time jobs: "⏰ N scheduled" when this ticket scheduled some; onOpenJobs opens them. */
   jobs?: Job[];
   onOpenJobs?: (ticketId: string) => void;
-  /** The ticket it is an add-on to; its chip opens that ticket with onOpenTicket. */
-  addOn?: AddOnLinks;
-  /** The ticket it is part of and its linked tickets (family.ts); their chips open with onOpenTicket. */
-  family?: CardFamily;
-  onOpenTicket?: (id: string) => void;
   /** A board search found this card through one of its tool tickets: that ticket's title. */
   via?: string;
 }) {
@@ -189,13 +163,14 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
   // A main ticket with a step, or a ticket of its feature working: one card for the feature (working line, "7 of 16
   // steps", family cost). Its feature working shows the blue stripe too (cardFamily).
   const { fc, busy: familyBusy, familyWorks, working, att, doneHint } = cardFamily(ticket, ownWorking);
-  // Its own huddle works on it: the huddle badge says so, not a stale Blocked or Failed.
-  const badge = att || (ticket.huddleBusy && huddle) || familyBusy ? null
+  // One status pill, and only when it says something the card doesn't: its own huddle working on it hides a stale
+  // Blocked or Failed, and a running card's spinner and time sit in the muted line instead of a Running pill.
+  const badge = att || ticket.huddleBusy || familyBusy ? null
     : ticket.folderWait ? <span className="badge wait" title="Tickets on a folder without version history run one at a time; this one starts when the other finishes">waiting: another ticket is using the folder</span>
     : queued && !working ? (held
       ? <span className="badge queued" title="A daemon restart is pending; queued tickets start right after it">Waits for restart</span>
       : <span className="badge queued" title="Starts as soon as nothing else holds it back (another ticket editing the folder, or a restart)">Queued · #{queued}</span>)
-    : outcomeBadge(ticket);
+    : ownWorking ? null : outcomeBadge(ticket);
   const showActivity = ownWorking && ticket.lastActivity && !QUIET_ACTIVITY.has(ticket.lastActivity);
   // How long since the run's last step; amber and a slower spinner once it has been quiet for 3 minutes.
   const step = useStepAge(ownWorking ? ticket.lastActivityAt : null);
@@ -213,38 +188,11 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
   const artifact = newestArtifact(ticket);
   const artifactHref = safeHref(artifact?.url);
   const hasJobs = !!jobs && !!jobChip(jobs, ticket.id);
-  const linked = family?.children ?? [];
-  const openLinked = (id: string) => (e: MouseEvent) => {
-    e.stopPropagation();
-    if (!dragging) onOpenTicket?.(id);
-  };
-  const addOnChip = ticket.addOnOf ? (addOn?.of
-    ? <button className="badge add-on" title={`Add-on to “${addOn.of.title}”`} onClick={openLinked(addOn.of.id)}>↳ add-on to “{addOn.of.title}”</button>
-    : <span className="badge add-on" title="Original ticket was deleted">↳ add-on</span>) : null;
-  const partOfChip = ticket.partOf ? (family?.partOf
-    ? <button className="badge add-on" title={`Part of “${family.partOf.title}”`} onClick={openLinked(family.partOf.id)}>↳ part of “{family.partOf.title}”</button>
-    : null) : null;
-  // Opens this ticket: its panel shows the whole family.
-  const linkedChip = linked.length > 0 && (
-    <button className="badge add-on" title={linked.map((f) => f.title).join("\n")} onClick={openLinked(ticket.id)}>
-      {linked.length} linked
-    </button>
-  );
-  // The board suggests a parent: the panel shows it with Link / Not related.
-  const suggestChip = ticket.parentSuggestion && !ticket.partOf && !ticket.addOnOf && !ticket.parentId && (
-    <button className="badge link-suggest" title="The board suggests a ticket this one is part of: open it to link or dismiss" onClick={openLinked(ticket.id)}>
-      Link? 1 suggestion
-    </button>
-  );
   // A main ticket whose "with you" steps wait for the user's answers (in its chat): "Needs you · n".
   const stepsWaiting = ticket.main ? ticket.familyCard?.needsYou ?? [] : [];
   const fromSteps = !!att && stepsWaiting.length > 0 && (stepsWaiting.some((w) => w.label === att.label) || / steps need you$/.test(att.label));
   // Chips that need no action: at most two, the rest fold into "+N".
   const extras: { key: string; node: ReactNode; label: string }[] = [];
-  if (partOfChip) extras.push({ key: "part-of", node: partOfChip, label: `Part of “${family!.partOf!.title}”` });
-  if (addOnChip) extras.push({ key: "add-on", node: addOnChip, label: addOn?.of ? `Add-on to “${addOn.of.title}”` : "Add-on" });
-  if (linkedChip) extras.push({ key: "linked", node: linkedChip, label: `${linked.length} linked` });
-  if (suggestChip) extras.push({ key: "suggest", node: suggestChip, label: "Link? 1 suggestion" });
   if (ticket.source?.url) extras.push({ key: "source", label: `From ${ticket.source.provider}`, node: (
     <a className="badge pr" href={safeHref(ticket.source.url)} target="_blank" rel="noreferrer" title={`Open ${ticket.source.label} in ${ticket.source.provider}`}
       onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
@@ -257,10 +205,34 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
       <ExternalIcon size={12} /> artifact
     </a>
   ) });
-  for (const g of ticket.tags ?? []) extras.push({ key: `tag-${g}`, label: `Tag: ${g}`, node: <TagChip name={g} onClick={onTag && !dragging ? () => onTag(g) : undefined} /> });
   const folded = foldChips(extras);
   const hiddenLabels = extras.slice(folded.shown.length).map((x) => x.label);
   const signInChip = signIn && !done && <span className="badge failed sign-in" title={last!.text}>Sign-in needed</span>;
+  // The muted line: "7 of 16 steps · $3.20 · 5m". Steps only part way; cost (the feature's on a main card) red when
+  // the ticket's last run stopped at its cap; the run's time while it works, else how long ago it last spoke.
+  const workingNames = fc ? familyWorkingNames(fc) : [];
+  const cost = fc ? fc.costUsd : ticket.costUsd ?? 0;
+  const capped = overCap(ticket);
+  const facts: { key: string; node: ReactNode }[] = [];
+  if (fc && stepsShown(fc)) facts.push({ key: "steps", node: (
+    <span title={workingNames.length ? `Working now:\n${workingNames.join("\n")}` : "No step is working now"}>{stepsText(fc)}</span>
+  ) });
+  if (cost > 0) facts.push({ key: "cost", node: (
+    <span className={`card-cost${capped ? " over" : ""}`}
+      title={`${fc ? "What the whole feature has cost so far" : "What this ticket's runs have cost so far"} (API-equivalent)${ticket.runCap ? ` · runs stop at ${costText(ticket.runCap)}` : ""}`}>
+      {costText(cost)}{capped && " over budget"}
+    </span>
+  ) });
+  if (ownWorking && ticket.runStartedAt) facts.push({ key: "time", node: <span className="card-run-time"><span className="spinner" aria-hidden /><Elapsed since={ticket.runStartedAt} sep={false} /></span> });
+  else if (lastAt && !working) facts.push({ key: "time", node: <time dateTime={lastAt} title={fullTime(lastAt)}>{timeAgo(lastAt)}</time> });
+  // A main ticket's plan runs in the background: its card shows In progress instead, unless it stopped.
+  const planPill = ticket.plan && ticket.plan.state !== "done" && !(ticket.main && (ticket.plan.state === "running" || ticket.plan.state === "finishing")) && (
+    <span className={`badge plan ${ticket.plan.state}`} title="This ticket runs a plan of child tickets">
+      Plan {ticket.plan.state === "finishing" ? "final check" : ticket.plan.state}
+    </span>
+  );
+  // At most one pill: Sign-in needed, then the end-of-run mark, then what needs the user, then its auto huddle or a stopped plan.
+  const pill = signInChip || (finish ? finishBadge(finish) : badge) || (ticket.autoHuddle && ownWorking && autoHuddleChip(ticket.autoHuddle)) || planPill || null;
   return (
     <article
       className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working ? "is-running" : ""} ${quiet ? "is-quiet" : ""} ${att ? `needs-you att-${att.kind}` : ""}${arrival.ring ? " just-arrived" : ""}`}
@@ -286,74 +258,39 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, huddle, 
           <span className="activity-text">{ticket.lastActivity}</span>
           {step && <span className={`step-age${step.quiet ? " quiet" : ""}`}>{step.quiet ? ` · quiet for ${step.text}` : ` · ${step.text}`}</span>}
         </div>
-      ) : last && !signIn && (
+      ) : last && !signIn && previewShown(boardColumnOf(ticket)) && (
         <div className="card-last" title={last.text}>
           <span className={`who ${last.role}`}>{lastWho(last)}:</span>{" "}
           {plainPreview(last.from === "huddle" ? digestPreview(last.text) : last.text)}
         </div>
       )}
-      {(badge || finish || signInChip || fc || ticket.autoHuddle || ticket.costUsd || ticket.prUrl || ticket.runCount > 0 || ticket.workdir || ticket.session || ticket.scheduleId || ticket.source?.url || ticket.plan || ticket.needs?.length || ticket.devices || ticket.tags?.length || huddle || artifactHref || hasJobs || addOnChip || partOfChip || linkedChip || suggestChip || ticket.followUp) && (
+      {(pill || facts.length > 0 || ticket.scheduleId || ticket.needs?.length || ticket.devices || ticket.followUp || hasJobs || ticket.terminalOpen || extras.length > 0) && (
         <div className="card-meta" id={a11yId && `${a11yId}-meta`}>
-          {/* A main ticket's plan runs in the background: its card shows In progress instead, unless it stopped. */}
-          {ticket.plan && ticket.plan.state !== "done" && !(ticket.main && (ticket.plan.state === "running" || ticket.plan.state === "finishing")) && (
-            <span className={`badge plan ${ticket.plan.state}`} title="This ticket runs a plan of child tickets">
-              Plan {ticket.plan.state === "finishing" ? "final check" : ticket.plan.state}
-            </span>
-          )}
+          {pill}
           {ticket.scheduleId && (
             <span className="badge sched" title="Created by a schedule" aria-label="Scheduled">
               <ClockIcon size={12} strokeWidth={1.8} />
             </span>
           )}
           <DeviceChips ticket={ticket} />
-          {finish ? finishBadge(finish) : badge}
-          {signInChip}
-          {ticket.autoHuddle && ownWorking && autoHuddleChip(ticket.autoHuddle)}
-          {huddle && <HuddleBadge badge={huddle} onOpen={onOpenHuddle} />}
           {/* Why Claude stopped following up is history: the ticket shows it, the card doesn't. */}
           {limit && ticket.followUp && (
             <FollowUpChip slug={limit.slug} ticket={ticket} onError={limit.onError} disabled={dragging} />
           )}
           {hasJobs && <JobChip jobs={jobs!} ticketId={ticket.id} onOpen={dragging ? undefined : onOpenJobs} />}
-          {ticket.prUrl && (
-            <a className="badge pr pr-link" href={safeHref(ticket.prUrl)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
-              PR #{ticket.prUrl.split("/").pop()}{(ticket.prs?.length ?? 0) > 1 && <span className="pr-more-count" title={`${ticket.prs!.length} pull requests: open the ticket to see them all`}> +{ticket.prs!.length - 1}</span>}
-            </a>
-          )}
-          {ticket.status === "review" && prChips(currentPr(ticket)).map((c) => (
-            <span key={c.label} className={`badge pr-chip ${c.tone}`} title={c.title}>{c.label}</span>
-          ))}
-          {ticket.status === "review" && limit && !dragging && currentPr(ticket)?.state === "OPEN" && currentPr(ticket)?.conflicts && (
-            <ResolveConflicts slug={limit.slug} ticket={ticket} onError={limit.onError} small />
-          )}
-          {fc && fc.tools > 0 && (() => {
-            const names = familyWorkingNames(fc);
-            return (
-              <span className="badge fam" title={names.length ? `Working now:\n${names.join("\n")}` : "No step is working now"}
-                aria-label={`${stepsText(fc)}${names.length ? `, ${names.length} working` : ""}`}>
-                {stepsText(fc)}
-              </span>
-            );
-          })()}
-          {fc && fc.costUsd > 0 && <span className="badge cost" title="What the whole feature has cost so far (API-equivalent)">{costText(fc.costUsd)} so far</span>}
-          {!fc && !!ticket.costUsd && (
-            <span className="badge cost" title={`API-equivalent cost of this ticket's runs so far${ticket.runCap ? ` · runs stop at ${costText(ticket.runCap)}` : ""}`}>
-              {costText(ticket.costUsd)}
-            </span>
-          )}
-          {ticket.workdir && (ticket.terminalOpen
-            ? <span className="badge running" title="This ticket's Claude Code chat is open in a terminal"><span className="live-dot" /> In terminal</span>
-            : <span className="badge stopped" title="Linked to an existing Claude Code chat">linked chat</span>)}
+          {ticket.workdir && ticket.terminalOpen && <span className="badge running" title="This ticket's Claude Code chat is open in a terminal"><span className="live-dot" /> In terminal</span>}
           {folded.shown.map((x) => <Fragment key={x.key}>{x.node}</Fragment>)}
           {folded.more > 0 && <span className="badge more-chips" title={hiddenLabels.join("\n")} aria-label={`${folded.more} more: ${hiddenLabels.join(", ")}`}>+{folded.more}</span>}
-          {lastAt && !working && (
-            <time className="card-time" dateTime={lastAt} title={fullTime(lastAt)}>{timeAgo(lastAt)}</time>
+          {facts.length > 0 && (
+            <span className="card-facts">
+              {facts.map((f, i) => <Fragment key={f.key}>{i > 0 && <span className="card-facts-sep" aria-hidden> · </span>}{f.node}</Fragment>)}
+            </span>
           )}
         </div>
       )}
-      {limit && !dragging && limitWait(ticket) && <LimitActions slug={limit.slug} ticket={ticket} onError={limit.onError} small />}
+      {limit && !dragging && limitWait(ticket) && <LimitActions slug={limit.slug} ticket={ticket} onError={limit.onError} small secondary={false} />}
       {limit && !dragging && capWait(ticket) && <CapActions slug={limit.slug} ticket={ticket} onError={limit.onError} small />}
-      {limit && !dragging && stallWait(ticket) && <StallActions slug={limit.slug} ticket={ticket} onError={limit.onError} small />}
+      {limit && !dragging && stallWait(ticket) && <StallActions slug={limit.slug} ticket={ticket} onError={limit.onError} small secondary={false} />}
     </article>
   );
 }

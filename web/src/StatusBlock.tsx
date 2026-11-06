@@ -1,8 +1,9 @@
 // "Where we are": the feature's status pinned at the top of its main chat (the family's top ticket). Counts, test
 // results and pull requests come from the board; goal, done, broken, waiting on you and next step from Claude's
 // update_status; "Add a note" adds what happened outside the board (the main chat gets it at its next turn).
-// Calm on purpose: the next step comes first, Done folds to two lines, and each failed or paused step says why with
-// one button to move it on (Try again, Resume).
+// Calm on purpose: only Next step, Waiting on you, Failed and Paused show by default ("Show more" opens the
+// goal, what is done, what runs and pull requests); each failed or paused step says why with one button to move it on
+// (Try again, Resume).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, type FeatureStatus, type Ticket } from "./api";
 import { familyOf, isFeature } from "./family";
@@ -95,6 +96,7 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
   slug: string; ticket: Ticket; status: FeatureStatus; onChanged: () => void; onOpenTicket: (id: string) => void;
 }) {
   const [hidden, setHidden] = usePersistentState(`ckanban.statusHidden.${slug}.${ticket.id}`, () => false, (v) => !v, (v) => typeof v === "boolean");
+  const [more, setMore] = useState(false);
   const [noting, setNoting] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -135,11 +137,13 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
   const roundOf = (id: string) => f.rounds.find((r) => r.id === id);
   const link = (id: string, title: string) => <button key={id} className="link-btn ws-link" onClick={() => onOpenTicket(id)}>{title}</button>;
   const after = () => onChanged();
+  // Shown by default: what moves the work on. The rest sits behind "Show more".
   const rows: { label: string; body: React.ReactNode }[] = [];
+  const extra: { label: string; body: React.ReactNode }[] = [];
   if (saved?.next) rows.push({ label: "Next step", body: <span className="ws-next">{saved.next}</span> });
-  if (saved?.goal) rows.push({ label: "Goal", body: saved.goal });
+  if (saved?.goal) extra.push({ label: "Goal", body: saved.goal });
   if (doneGroups.length || looseDone || saved?.done) {
-    rows.push({
+    extra.push({
       label: "Done", body: <Clamped>
         {doneGroups.map((g) => {
           const r = roundOf(g.id);
@@ -151,7 +155,7 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
     });
   }
   if (running.length || looseActive) {
-    rows.push({
+    extra.push({
       label: "Running", body: <div className="ws-lines">
         {running.map((g) => {
           const r = roundOf(g.id);
@@ -159,6 +163,14 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
         })}
         {looseActive > 0 && <span><Pill tone="run">Other tickets</Pill>{countText(f.loose.counts, f.loose.total)}.</span>}
       </div>,
+    });
+  }
+  if (f.needsYou.length || saved?.waiting) {
+    rows.push({
+      label: "Waiting on you", body: <>
+        {f.needsYou.length > 0 && <Pill tone="you">{f.needsYou.length}</Pill>}
+        {saved?.waiting ?? <span className="ws-titles">{f.needsYou.map((b, i) => <span key={b.id}>{i > 0 && ", "}{link(b.id, b.title)}</span>)}</span>}
+      </>,
     });
   }
   if (f.broken.length || saved?.broken) {
@@ -184,16 +196,8 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
       </div>,
     });
   }
-  if (f.needsYou.length || saved?.waiting) {
-    rows.push({
-      label: "Waiting on you", body: <>
-        {f.needsYou.length > 0 && <Pill tone="you">{f.needsYou.length}</Pill>}
-        {saved?.waiting ?? <span className="ws-titles">{f.needsYou.map((b, i) => <span key={b.id}>{i > 0 && ", "}{link(b.id, b.title)}</span>)}</span>}
-      </>,
-    });
-  }
   if (f.prs.length) {
-    rows.push({
+    extra.push({
       label: "Pull requests", body: <div className="ws-lines">
         {f.prs.map((p) => (
           <span key={p.url}>
@@ -222,9 +226,13 @@ export function StatusBlock({ slug, ticket, status, onChanged, onOpenTicket }: {
         </div>
       )}
       <div className="ws-body">
-        {rows.map((r) => (
+        {/* With nothing to act on, the rest shows straight away. */}
+        {[...rows, ...(more || !rows.length ? extra : [])].map((r) => (
           <div key={r.label} className="ws-row"><div className="ws-k">{r.label}</div><div className="ws-v">{r.body}</div></div>
         ))}
+        {rows.length > 0 && extra.length > 0 && (
+          <button className="ws-act ws-toggle" aria-expanded={more} onClick={() => setMore(!more)}>{more ? "Show less" : "Show more"}</button>
+        )}
       </div>
     </section>
   );

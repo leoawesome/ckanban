@@ -21,17 +21,3 @@ export function addOnFor<T extends Pick<Linkable, "title" | "addOnOf"> & { propo
   return own.find((t) => t.proposedAs === title.trim()) ?? own.find((t) => t.title === title.trim());
 }
 
-/** Add-on links for every ticket: the one it is an add-on to, and its own add-ons (oldest first). */
-export interface AddOnLinks { of?: Pick<Linkable, "id" | "title" | "status">; addOns: Pick<Linkable, "id" | "title">[] }
-export function addOnLinks(tickets: Linkable[]): Map<string, AddOnLinks> {
-  const byId = new Map(tickets.map((t) => [t.id, t]));
-  const out = new Map<string, AddOnLinks>();
-  const get = (id: string) => out.get(id) ?? out.set(id, { addOns: [] }).get(id)!;
-  for (const t of [...tickets].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
-    if (!t.addOnOf) continue;
-    const src = byId.get(t.addOnOf);
-    get(t.id).of = src ?? undefined;
-    if (src) get(src.id).addOns.push(t);
-  }
-  return out;
-}

@@ -30,7 +30,7 @@ export function PlanSummary({ ticket, children, onOpen }: { ticket: Ticket; chil
   );
 }
 
-/** Every child is done: "Plan finished · 5 of 5 tickets done" with Move to Done (while the planner isn't Done) and Add more tickets. */
+/** Every child is done: a muted "Plan finished · 5 of 5" with Move to Done (while the planner isn't Done) and an Add more tickets link. */
 export function PlanFinished({ ticket, total, onMoveToDone, onAddMore }: {
   ticket: Ticket;
   total: number;
@@ -38,10 +38,10 @@ export function PlanFinished({ ticket, total, onMoveToDone, onAddMore }: {
   onAddMore: () => void;
 }) {
   return (
-    <div className="banner ok plan-finished" role="status">
-      <span>Plan finished · {total} of {total} tickets done</span>
+    <div className="plan-finished" role="status">
+      <span className="plan-finished-line">Plan finished · {total} of {total}</span>
       {ticket.status !== "done" && <button className="btn primary small" onClick={onMoveToDone}>Move to Done</button>}
-      <button className="btn small" onClick={onAddMore} title="Ask Claude in the chat for more tickets">Add more tickets</button>
+      <button className="link-btn plan-add-more" onClick={onAddMore} title="Ask Claude in the chat for more tickets">Add more tickets</button>
     </div>
   );
 }
@@ -79,15 +79,12 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
   const waiting = children.filter((c) => c.userWait && !complete(c) && !c.running && c.status !== "in_progress");
   return (
     <section className="plan-panel">
-      <div className="plan-head">
-        <b>Plan</b>
-        <span className={`badge ${tone}`}>{label}</span>
-        <span className="plan-progress" role="progressbar" aria-valuemin={0} aria-valuemax={children.length} aria-valuenow={done}
-          aria-label={`${done} of ${children.length} done`}>
-          <i style={{ width: `${children.length ? (done / children.length) * 100 : 0}%` }} />
-        </span>
-        <span className="muted small">{done}/{children.length} done</span>
-      </div>
+      {/* One text line: "Plan · Running · 6 of 14 done" (the state as a coloured word, no bar). */}
+      {!finished && (
+        <div className="plan-head">
+          <b>Plan</b> · <span className={`plan-state ${tone}`}>{label}</span> · <span>{done} of {children.length} done</span>
+        </div>
+      )}
       {!finished && plan?.state === "stuck" && waiting.length > 0 && (
         <div className="plan-waiting" role="status">
           {waiting.map((c) => (

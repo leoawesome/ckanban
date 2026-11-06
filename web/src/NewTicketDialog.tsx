@@ -1,11 +1,12 @@
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type ClaudeSession, type Status, type Ticket, type TicketMode } from "./api";
 import { looksLikeQuestion } from "./family";
 import { mainHint } from "./newTicketText";
 import { FeatureChoice, useFeatureChoice } from "./FeatureChoice";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { useImagePaste } from "./imagePaste";
-import { ModeToggle } from "./ModeToggle";
+import { autoGrow } from "./autoGrow";
+import { ModeToggle, modeHint } from "./ModeToggle";
 import { KeyHint } from "./KeyHint";
 import { newTicketKey } from "./keynav";
 import { Modal } from "./Modal";
@@ -13,6 +14,7 @@ import { SessionPicker, sessionLabel } from "./SessionPicker";
 import { MOD } from "./Shortcuts";
 import { StarToggle } from "./StarToggle";
 import { TagEditor } from "./Tags";
+import { usePhone } from "./usePhone";
 
 export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], onClose, onCreate, onAskInChat }: {
   slug: string;
@@ -37,7 +39,7 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
   const [err, setErr] = useState<string | null>(null);
   const images = useImagePaste(setBody);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  // "This looks like part of X": the open feature sharing the most words (no AI call); Add to X is the default.
+  // A small "Part of X?" chip: the open feature sharing the most words (no AI call). It stays on its own until the user picks.
   const fc = useFeatureChoice(tickets, title, body);
   const partOf = fc.partOf;
   // "Just a question? Ask in Chat first": a word check, no AI call.
@@ -45,7 +47,16 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
 
   // Start: an interview goes to Planning (questions now), "Just do it" goes to Ready (runs when a slot is free).
   const startStatus: Status = mode === "interview" ? "planning" : "ready";
-  const startLabel = mode === "interview" ? "Start: Claude asks first" : "Start: Claude just does it";
+  const [mainInfo, setMainInfo] = useState(false);
+  const hint = mainHint(partOf, session?.id);
+  // On a phone the description starts at 4 rows and grows to 6 while typing, so Start stays in view.
+  const phone = usePhone();
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    if (phone) autoGrow(el, 6);
+    else { el.style.height = ""; el.style.overflowY = ""; }
+  }, [body, phone]);
 
   const submit = async (status: Status) => {
     if (busy || !title.trim() || images.uploading) return;
@@ -85,7 +96,7 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
         </div>
         <label>
           Description
-          <DescriptionEditor slug={slug} value={body} setValue={setBody} images={images} inputRef={bodyRef} />
+          <DescriptionEditor slug={slug} value={body} setValue={setBody} images={images} inputRef={bodyRef} rows={phone ? 4 : 8} />
         </label>
         {question && (
           <div className="ask-first muted small" role="note">
@@ -93,16 +104,16 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
             {onAskInChat && <> <button type="button" className="link-btn small" onClick={() => onAskInChat([title.trim(), body.trim()].filter(Boolean).join("\n\n"))}>Ask in Chat</button></>}
           </div>
         )}
-        {(fc.suggestion || fc.choice === "other") && <FeatureChoice state={fc} />}
+        <FeatureChoice state={fc} hideNoMatchOnPhone />
         <div className="field">
-          <div className="field-label">How should Claude work?</div>
           <ModeToggle value={mode} onChange={setMode} keyHint="⌘I" />
-          <span className="muted small">
-            {mode === "interview"
-              ? "Claude first asks clarifying questions in the chat, then does the work once you answer."
-              : "Claude works on its own and reports back when done."}
+          <span className="muted small mode-hint">
+            {modeHint(mode)}
+            {/* The main-ticket hint: a tooltip on desktop, and a tap shows it on a phone (no hover there). */}
+            {hint && <> <button type="button" className="info-tip" title={hint} aria-label="What happens next" aria-expanded={mainInfo}
+              onClick={() => setMainInfo((v) => !v)}>ⓘ</button></>}
           </span>
-          {mainHint(partOf, session?.id) && <span className="muted small new-ticket-main-hint">{mainHint(partOf, session?.id)}</span>}
+          {hint && mainInfo && <span className="muted small new-ticket-main-hint">{hint}</span>}
         </div>
         {session && (
           <div className="session-chip">
@@ -112,12 +123,12 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
           </div>
         )}
         {err && <div className="form-error">{err}</div>}
-        {/* One main button that says what happens (it follows the mode toggle) and one quiet "Save for later": no legend needed. */}
+        {/* One main button (the mode toggle above says what Start does) and a quiet "Save for later". */}
         <div className="form-actions new-ticket-actions">
-          <button type="button" className="btn" disabled={busy || !title.trim() || images.uploading} onClick={() => submit("backlog")} title={`Put it in Backlog; nothing runs until you start it (${MOD}S)`}>Save for later<KeyHint keys="⌘S" /></button>
+          <button type="button" className="btn ghost" disabled={busy || !title.trim() || images.uploading} onClick={() => submit("backlog")} title={`Put it in Backlog; nothing runs until you start it (${MOD}S)`}>Save for later<KeyHint keys="⌘S" /></button>
           <button type="button" className="btn primary icon-label" onClick={() => submit(startStatus)} disabled={busy || !title.trim() || images.uploading}
             title={mode === "interview" ? "Goes to Planning: Claude asks its questions now" : "Goes to In Progress, or waits its turn if every slot is busy"}>
-            {images.uploading ? "Uploading…" : <>{startLabel} <kbd className="kbd-on-primary">⌘↵</kbd></>}
+            {images.uploading ? "Uploading…" : <>Start <kbd className="kbd-on-primary">⌘↵</kbd></>}
             <KeyHint keys="⌘↵" />
           </button>
         </div>

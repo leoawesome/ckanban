@@ -296,66 +296,6 @@ export function guestTickets(h: BoardHuddleLike): string[] {
   return [...ids];
 }
 
-/** The last part of a ticket id (t_20261009_k2pm: k2pm). */
-export const shortTicketId = (id: string) => id.split("_").pop() || id;
-
-export interface CardHuddleBadge {
-  huddleId: string;
-  /** The ticket whose Huddle tab the badge opens (the host's, for an invited ticket). */
-  openTicket: string;
-  label: string;
-  title: string;
-  /** brake: stopped by a brake (err tone); quiet: live with nothing left to do (ok tone). */
-  state: "live" | "stopped" | "brake" | "quiet" | "closed" | "guest";
-  /** Messages waiting for the user (the accent "N for you" pill). */
-  forYou: number;
-  /** Agents whose run failed (err tone). */
-  failed: number;
-}
-
-/**
- * What a card says about huddles: its own open huddle (`Huddle · 8 · 3 working`), else an open one it was
- * invited to (`in huddle of k2pm`), else its newest closed one (`Huddle · closed · 31 msgs`).
- */
-export function cardHuddleBadge(list: BoardHuddleLike[], ticketId: string, now = Date.now()): CardHuddleBadge | null {
-  const open = list.find((h) => h.hostTicket === ticketId && h.status !== "closed");
-  if (open) {
-    const agents = open.participants.filter((p) => p.kind !== "human");
-    const working = agents.filter((p) => p.status === "working").length;
-    const failed = agents.filter((p) => p.status === "failed").length;
-    const forYou = open.forYou ?? 0;
-    const live = open.status === "live";
-    const brake = brakeLabel(open);
-    const quiet = quietLabel(open, now);
-    const you = forYou ? ` ${forYou} ${forYou === 1 ? "message needs" : "messages need"} you.` : "";
-    const base = { huddleId: open.id, openTicket: ticketId, forYou, failed };
-    if (brake) return { ...base, state: "brake", label: `Huddle · ${brake}`, title: `This ticket's huddle is ${brake}.${you} Click to open it.` };
-    if (quiet) return { ...base, state: "quiet", label: `Huddle · ${agents.length} · ${quiet}`, title: `This ticket's huddle is quiet: nobody working, nothing open. Check the result, then close it.${you}` };
-    return {
-      ...base, state: live ? "live" : "stopped",
-      label: `Huddle · ${agents.length} · ${live ? `${working} working` : "stopped"}`,
-      title: `${agents.length} in this ticket's huddle${live ? `, ${working} working` : ", stopped"}${failed ? `, ${failed} failed` : ""}.${you} Click to open it.`,
-    };
-  }
-  const guest = list.find((h) => h.status !== "closed" && h.hostTicket !== ticketId && guestTickets(h).includes(ticketId));
-  if (guest) {
-    return {
-      huddleId: guest.id, openTicket: guest.hostTicket, state: "guest", forYou: 0, failed: 0,
-      label: `in huddle of ${shortTicketId(guest.hostTicket)}`,
-      title: `Invited to the huddle of ${guest.hostTitle ? `"${guest.hostTitle}"` : guest.hostTicket}. Click to open it.`,
-    };
-  }
-  const closed = pickHuddle(list, ticketId);
-  if (closed) {
-    return {
-      huddleId: closed.id, openTicket: ticketId, state: "closed", forYou: 0, failed: 0,
-      label: `Huddle · closed · ${closed.seq} ${closed.seq === 1 ? "msg" : "msgs"}`,
-      title: "This ticket's huddle is closed. Click to read it.",
-    };
-  }
-  return null;
-}
-
 /** The dock's list: live first, then stopped, then closed; newest activity first within each. `limit` caps the closed ones. */
 export function sortHuddles<H extends BoardHuddleLike>(list: H[], limit = 20): H[] {
   const rank = (h: H) => (h.status === "live" ? 0 : h.status === "stopped" ? 1 : 2);
@@ -483,4 +423,12 @@ export function teamButtonText(live: number, lessons: number): { label: string; 
     label: ["Team", ...parts].join(", "),
     title: ["Teammates, templates and huddles (T)", ...parts].join(". ") + (parts.length ? "." : ""),
   };
+}
+
+/** A roster in a few words for the proposal card: "reviewer, security, 2× QA" (short role names in capitals). */
+export function rosterNames(rows: EntryLike[]): string {
+  return rows.map((r) => {
+    const name = (r.handle ?? r.preset ?? r.role ?? "").trim() || "custom role";
+    return `${r.count && r.count > 1 ? `${r.count}× ` : ""}${name.length <= 2 ? name.toUpperCase() : name}`;
+  }).join(", ");
 }

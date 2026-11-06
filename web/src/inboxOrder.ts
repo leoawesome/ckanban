@@ -33,3 +33,8 @@ export function groupInbox<T extends Waiting>(items: T[], now: number): InboxGro
   g.older.sort((a, b) => Number(WAITING_KINDS.has(b.attention.kind)) - Number(WAITING_KINDS.has(a.attention.kind)) || newestFirst(a, b));
   return g;
 }
+
+/** The entry's open action: Answer when Claude asked something, else Open. */
+export const answers = (i: Waiting) => ["questions", "proposal", "reply", "huddle"].includes(i.attention.kind);
+/** Review items' one button is Mark done (opening is a tap on the row); the rest answer or open. */
+export const marksDone = (i: Waiting) => i.attention.kind === "review";

@@ -196,7 +196,7 @@ test("conflict message names the base branch and keeps force pushes on the ticke
   expect(conflictMessage(green(), "")).toContain("the remote base branch");
 });
 
-test("card chips and the UI's merge guard match the server", async () => {
+test("the UI's merge guard matches the server", async () => {
   const web = await import("../web/src/prText");
   const cases = [
     raw(), raw({ statusCheckRollup: [] }), raw({ state: "MERGED" }), raw({ state: "CLOSED" }),
@@ -204,12 +204,6 @@ test("card chips and the UI's merge guard match the server", async () => {
     raw({ mergeable: "CONFLICTING" }), raw({ mergeable: "UNKNOWN" }), raw({ reviewDecision: "CHANGES_REQUESTED" }),
   ].map((r) => parsePrStatus(URL, r));
   for (const pr of cases) expect(web.mergeBlock(pr)).toBe(mergeBlock(pr));
-  const chips = (r: Record<string, unknown>) => web.prChips(parsePrStatus(URL, raw(r))).map((c) => c.label);
-  expect(chips({})).toEqual(["✓ checks"]);
-  expect(chips({ statusCheckRollup: [run("test", "FAILURE")], comments: [{}, {}] })).toEqual(["✗ 1 failing", "2 comments"]);
-  expect(chips({ statusCheckRollup: [run("test", null, "IN_PROGRESS")], mergeable: "CONFLICTING" })).toEqual(["● running", "conflicts"]);
-  expect(chips({ statusCheckRollup: [] })).toEqual([]);
-  expect(chips({ state: "MERGED" })).toEqual([]);
   expect(web.currentPr({ prUrl: "https://github.com/x/y/pull/8", pr: green() })).toBeNull();
 });
 

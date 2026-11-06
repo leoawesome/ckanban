@@ -188,7 +188,6 @@ export function App() {
   // Tags picked by clicking a card's tag chip, shown as chips in the search box (typed #tags stay in the query).
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   useEffect(() => setTagFilter([]), [slug]);
-  const addTagFilter = useCallback((tag: string) => setTagFilter((f) => (f.includes(tag) ? f : [...f, tag])), []);
   const clearSearch = () => { setQuery(""); setTagFilter([]); };
   const searchRef = useRef<HTMLInputElement>(null);
   const inboxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1019,12 +1018,6 @@ export function App() {
           </div>
         )}
         {profile && (
-          <button className="btn ghost phone-only topbar-icon" aria-label="Search tickets"
-            onClick={() => { setPhoneTab("board"); requestAnimationFrame(() => searchRef.current?.focus()); }}>
-            <SearchIcon size={20} />
-          </button>
-        )}
-        {profile && (
           <button className="btn primary phone-only topbar-icon" aria-label="New ticket" onClick={() => setNewTicket(true)}><PlusIcon size={20} /></button>
         )}
         {profile && (
@@ -1160,8 +1153,7 @@ export function App() {
               }} />
           )}
           <Board tickets={shownTickets} loading={!ticketsLoaded} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
-            huddles={huddles} onOpenHuddle={openHuddle} slug={slug ?? undefined} onTag={addTagFilter}
-            jobs={jobs ?? undefined} onOpenJobs={openSchedules} allTickets={tickets} via={searchVia} />
+            slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia} />
         </>
       )}
       {phone && profile && (

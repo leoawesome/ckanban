@@ -62,8 +62,13 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const [picking, setPicking] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  // A new board asks only for a folder and a name; the rest waits under "More options" (settings always show it all).
+  // A new board asks only for a folder and a name; the rest waits under "More options". Board settings keep Folder, Name,
+  // Workspace and Model at the top and the rest under a closed "More options".
   const [more, setMore] = useState(!isNew);
+  const [advanced, setAdvanced] = useState(false);
+  // New board: the 4 most recent folders, all of them after "Show all"; the path box only after "Type a path".
+  const [showAll, setShowAll] = useState(false);
+  const [typing, setTyping] = useState(false);
   const [ticketCount, setTicketCount] = useState<number | null>(null);
   // Worktree setup (existing boards; new ones are detected when created).
   const [copyFiles, setCopyFiles] = useState<string[]>(profile?.copyFiles ?? []);
@@ -106,8 +111,11 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
     const list = recent ?? [];
-    return q ? list.filter((p) => p.path.toLowerCase().includes(q)) : list;
-  }, [recent, filter]);
+    const found = q ? list.filter((p) => p.path.toLowerCase().includes(q)) : list;
+    return showAll ? found : found.slice(0, 4);
+  }, [recent, filter, showAll]);
+  // A folder from Browse (or typed) that isn't one of the rows shows in the path box, so the user sees what was picked.
+  const pathShown = !isNew || typing || (!!path && !shown.some((p) => p.path === path));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -164,52 +172,58 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
     <Modal title={profile ? `Board settings · ${profile.name}` : "New board"} onClose={onClose} wide={isNew} focusDialog={!isNew}>
       <form className="form" onSubmit={submit}>
         <div className="field">
-          <div className="field-label">Folder</div>
+          <div className="field-label">{isNew ? "Pick a folder" : "Folder"}</div>
           {isNew && (
-            <div className="picker">
-              <div className="picker-head">
-                <span className="muted small">Recent Claude Code folders</span>
-                {recent && recent.length > 6 && (
-                  <input className="picker-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter…" />
-                )}
-              </div>
-              <div className="picker-list" role="listbox" aria-label="Recent folders">
-                {recent === null && <div className="picker-empty">Loading…</div>}
-                {recent !== null && shown.length === 0 && (
-                  <div className="picker-empty">{recent.length ? "No match." : "No recent Claude Code folders. Browse for a folder below."}</div>
-                )}
-                {shown.map((p) => (
-                  <button
-                    type="button"
-                    key={p.path}
-                    role="option"
-                    aria-selected={path === p.path}
-                    className={`picker-row ${path === p.path ? "selected" : ""}`}
-                    onClick={() => choose(p.path)}
-                  >
-                    <span className="picker-name">{p.name}</span>
-                    <span className="picker-path">{p.path}</span>
-                    <span className="picker-meta">
-                      {p.hasProfile && <span className="badge stopped">has board</span>}
-                      {p.lastUsed && <span className="muted small" title={new Date(p.lastUsed).toLocaleString()}>{timeAgo(p.lastUsed)}</span>}
-                    </span>
-                  </button>
-                ))}
-              </div>
+            <div className="picker" role="listbox" aria-label="Recent folders">
+              {showAll && recent && recent.length > 6 && (
+                <input className="picker-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter…" aria-label="Filter folders" />
+              )}
+              {recent === null && <div className="picker-empty">Loading…</div>}
+              {recent !== null && shown.length === 0 && (
+                <div className="picker-empty">{recent.length ? "No match." : "No recent Claude Code folders. Browse for one."}</div>
+              )}
+              {shown.map((p) => (
+                <button
+                  type="button"
+                  key={p.path}
+                  role="option"
+                  aria-selected={path === p.path}
+                  className={`picker-row ${path === p.path ? "selected" : ""}`}
+                  onClick={() => choose(p.path)}
+                >
+                  <span className="picker-name">{p.name}</span>
+                  <span className="picker-path" title={p.path}>{p.path}</span>
+                  <span className="picker-meta">
+                    {p.hasProfile && <span className="badge stopped">has board</span>}
+                    {p.lastUsed && <span className="muted small" title={new Date(p.lastUsed).toLocaleString()}>{timeAgo(p.lastUsed)}</span>}
+                  </span>
+                </button>
+              ))}
             </div>
           )}
-          <div className="path-row">
-            <input value={path} onChange={(e) => choose(e.target.value)} placeholder="/Users/you/dev/my-app" spellCheck={false}
-              aria-label="Folder path" />
-            <button type="button" className="btn" onClick={browse} disabled={picking}>{picking ? "Choosing…" : "Browse…"}</button>
-          </div>
-          <VersionHistoryOffer path={path} onRepo={setRepo} />
+          {isNew && (
+            <div className="picker-links">
+              {recent && recent.length > 4 && (
+                <button type="button" className="link-btn" onClick={() => { setShowAll((v) => !v); setFilter(""); }}>{showAll ? "Show fewer" : "Show all"}</button>
+              )}
+              <button type="button" className="link-btn" onClick={browse} disabled={picking}>{picking ? "Choosing…" : "Browse…"}</button>
+              {!pathShown && <button type="button" className="link-btn" onClick={() => setTyping(true)}>Type a path</button>}
+            </div>
+          )}
+          {pathShown && (
+            <div className="path-row">
+              <input value={path} onChange={(e) => choose(e.target.value)} placeholder="/Users/you/dev/my-app" spellCheck={false}
+                aria-label="Folder path" autoFocus={isNew && typing && !path} />
+              {!isNew && <button type="button" className="btn" onClick={browse} disabled={picking}>{picking ? "Choosing…" : "Browse…"}</button>}
+            </div>
+          )}
         </div>
 
         <label>
           Name
           <input value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My app" />
         </label>
+        <VersionHistoryOffer path={path} onRepo={setRepo} />
 
         {isNew && (
           <button type="button" className="link-btn more-options" aria-expanded={more} onClick={() => setMore((v) => !v)}>
@@ -218,31 +232,18 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
         )}
 
         {more && <>
-        <fieldset className="ws-cards">
-          <legend>Workspace</legend>
-          <label className={`ws-card ${shownWorkspace === "worktree" ? "on" : ""} ${noHistory ? "off" : ""}`}
-            title={noHistory ? "Turn on version history above to use this" : undefined}>
-            <input type="radio" name="workspace" checked={shownWorkspace === "worktree"} disabled={noHistory} onChange={() => setWorkspace("worktree")} />
-            <span>
-              <span>A copy per ticket <span className="muted small">(default)</span></span>
-              <span className="muted small">
-                {noHistory
-                  ? "Needs version history: turn it on above. Each ticket then gets its own copy of the folder, and tickets run in parallel."
-                  : "Each ticket gets its own copy of the folder, so tickets run in parallel."}
-              </span>
+        <label className="check-row board-switch ws-check" title={noHistory ? "Turn on version history above to use copies" : undefined}>
+          <input type="checkbox" checked={shownWorkspace === "folder"} disabled={noHistory}
+            onChange={(e) => setWorkspace(e.target.checked ? "folder" : "worktree")} />
+          <span>
+            Work in my folder directly (tickets take turns)
+            <span className="muted small">
+              {noHistory
+                ? "Copies need version history: turn it on above, then several tickets can run at once."
+                : `Off: each ticket works on its own copy, so several can run at once.${profile ? " Affects new tickets only." : ""}`}
             </span>
-          </label>
-          <label className={`ws-card ${shownWorkspace === "folder" ? "on" : ""}`}>
-            <input type="radio" name="workspace" checked={shownWorkspace === "folder"} onChange={() => setWorkspace("folder")} />
-            <span>
-              <span>Work in the project folder</span>
-              <span className="muted small">
-                Claude edits your folder directly. Tickets run one at a time so they don't clash.
-                {profile && " Changing this affects new tickets only; tickets that already have their own copy keep it."}
-              </span>
-            </span>
-          </label>
-        </fieldset>
+          </span>
+        </label>
 
         <div className="row two">
           <label>
@@ -257,9 +258,15 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                 ...(customModel ? [{ value: customModel, label: customModel }] : []),
               ]}
             />
+            <span className="muted small">Tickets can override it. Changes apply from the next run.</span>
           </label>
         </div>
-        <div className="row two">
+        {profile && (
+          <button type="button" className="link-btn more-options" aria-expanded={advanced} onClick={() => setAdvanced((v) => !v)}>
+            {advanced ? "Fewer options" : "More options"} <span aria-hidden>{advanced ? "▴" : "▾"}</span>
+          </button>
+        )}
+        {(isNew || advanced) && <div className="row two">
           <label>
             Reasoning effort
             <Select
@@ -268,28 +275,28 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               onChange={setEffort}
               options={[{ value: "", label: "Claude default" }, ...EFFORTS.map((e) => ({ value: e, label: e }))]}
             />
-            <span className="muted small">Tickets can override both. Changes apply from the next run.</span>
+            <span className="muted small">Tickets can override it.</span>
           </label>
           <label className="check-row board-switch ultracode-row">
             <input type="checkbox" checked={ultracode} onChange={(e) => setUltracode(e.target.checked)} />
             <span>
               Ultracode
               <span className="muted small">
-                At any effort level, Claude runs a workflow of helper agents for every big task. More thorough, but it uses much more of your plan.
+                Helper agents on every big task: more thorough, uses much more of your plan.
               </span>
             </span>
           </label>
-        </div>
+        </div>}
         </>}
 
-        {profile && (
+        {profile && advanced && (
           <>
             <label className="check-row board-switch">
               <input type="checkbox" checked={autoHuddles} onChange={(e) => setAutoHuddles(e.target.checked)} />
               <span>
                 Auto huddles
                 <span className="muted small">
-                  When you're away, Claude starts a review huddle on its own before landing ⭐ important or risky work ($20 cap, one at a time per board).
+                  While you're away, ⭐ important or risky work gets a review huddle before it lands ($20 cap).
                 </span>
               </span>
             </label>
@@ -298,7 +305,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               <span>
                 Keep this Mac awake while Claude is working
                 <span className="muted small">
-                  While this board's tickets, chats, huddles or jobs are working, the Mac doesn't go to sleep, so they keep going when you step away. The screen can still turn off. It sleeps as usual once they finish. Mac only.
+                  The Mac stays awake while this board's work runs; the screen can still turn off.
                 </span>
               </span>
             </label>
@@ -307,7 +314,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               <span>
                 claude.ai artifacts
                 <span className="muted small">
-                  Teach Claude to publish, read and update claude.ai artifacts from runs and Planning chats. When off, Claude still learns this for tickets and messages that contain an artifact link.
+                  Claude can publish, read and update claude.ai artifacts (always, for messages with an artifact link).
                 </span>
               </span>
             </label>
@@ -333,13 +340,11 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                       </label>
                     ))}
                   </div>)}
-              <span className="muted small">Fewer connectors make every Claude run cheaper. Runs on this board can't use the ones you turn off.</span>
+              <span className="muted small">Fewer connectors make every run cheaper.</span>
             </div>
             <label className="cap-field">
               Spending cap per run
-              <span className="muted small">
-                Each work run stops once it has spent this much (API-equivalent $) and waits in the Inbox for you to continue it. Empty: no cap. Tickets can override it in their ⋯ menu.
-              </span>
+              <span className="muted small">A run pauses in the Inbox once it spends this much (API-equivalent $). Empty: no cap.</span>
               <input inputMode="decimal" value={capText} onChange={(e) => setCapText(e.target.value)} placeholder="No cap, e.g. 5"
                 aria-invalid={!!capError} aria-describedby={capError ? "cap-error" : undefined} />
               {capError && <span id="cap-error" className="field-error">{capError}</span>}
@@ -356,14 +361,14 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                   ...(mainModel && !MODELS.includes(mainModel) ? [{ value: mainModel, label: mainModel }] : []),
                 ]}
               />
-              <span className="muted small">The ticket you talk to. Its tool tickets pick their model by kind; a ticket's own /model still wins.</span>
+              <span className="muted small">The ticket you talk to; its tool tickets pick their own.</span>
             </label>
             <label>
               Start an old chat fresh above this chat size (thousands)
               <input inputMode="numeric" value={freshText} onChange={(e) => setFreshText(e.target.value)} placeholder="150" aria-invalid={!!freshError} />
               {freshError
                 ? <span className="field-error">{freshError}</span>
-                : <span className="muted small">When a main ticket's chat has gone old and is bigger than this (the chat size shown in the chat), its next turn starts fresh from the status. Claude can still look up earlier messages.</span>}
+                : <span className="muted small">A main ticket's old chat bigger than this starts its next turn fresh from the status.</span>}
             </label>
             <label>
               Flag a run as stalled after (minutes without output)
@@ -371,7 +376,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                 aria-invalid={!!stallError} aria-describedby={stallError ? "stall-error" : "stall-hint"} />
               {stallError
                 ? <span id="stall-error" className="field-error">{stallError}</span>
-                : <span id="stall-hint" className="muted small">A silent run lands in the Inbox with Stop / Keep waiting / Restart; nothing is killed. Runs waiting on background tasks don't count. 0: off.</span>}
+                : <span id="stall-hint" className="muted small">A silent run shows in the Inbox; nothing is stopped. 0: off.</span>}
             </label>
             <div className="form-section">
               <span>Preparing each ticket's copy</span>
@@ -379,11 +384,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                 {detecting ? "Detecting…" : "↺ Detect again"}
               </button>
             </div>
-            <div className="setup-explain">
-              Each ticket works in a fresh copy of your folder. Files your version history skips, like <code>.env</code> and{" "}
-              <code>node_modules</code>, aren't in it. The files below are copied in when the copy is made; the setup command runs only when Claude needs the project's dependencies (to build, test or run it), so other tickets start right away.{" "}
-              {(filesAuto || setupAuto) && <b>We filled them in from your folder, so you can leave them as they are.</b>}
-            </div>
+            <span className="muted small">Files your version history skips (like <code>.env</code>) aren't in a ticket's copy; add them here.</span>
             <div className="field">
               <div className="field-label setup-label">Files to copy {filesAuto && <span className="auto-badge">Auto-detected</span>}</div>
               {copyFiles.length > 0 && (
@@ -409,7 +410,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                 placeholder="e.g. npm ci" />
               <span className="muted small setup-hint">
                 {setupAuto && detected?.setupFrom.length ? `From ${detected.setupFrom.join(", ")}. ` : ""}
-                Runs the first time Claude needs it in a ticket; if it fails, Claude sees the error.
+                Runs when Claude first needs the project's dependencies.
               </span>
             </label>
             <label>

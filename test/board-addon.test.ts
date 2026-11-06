@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { run } from "../src/server/git";
 import { chatPrompt, addOnRule } from "../src/server/prompts";
 import type { Ticket } from "../src/server/types";
-import { addOnFor, addOnLinks, addOnState } from "../web/src/addOn";
+import { addOnFor, addOnState } from "../web/src/addOn";
 import { store, board, setup, useBoardEnv } from "./board-env";
 
 useBoardEnv();
@@ -128,15 +128,10 @@ test("addOnState: Done/Review (also reopened), ran before, or never ran (old tic
   expect(addOnState({ status: "ready", runCount: 1, reopenedFrom: { status: "done", outcome: "done" } })).toBeNull();
 });
 
-test("addOnLinks and addOnFor link both ways, oldest add-on first", () => {
+test("addOnFor finds the add-on made from a proposal", () => {
   const a = { id: "a", title: "Add export", status: "done" as const, createdAt: "1" };
   const b = { id: "b", title: "Excel", status: "backlog" as const, addOnOf: "a", createdAt: "3" };
   const c = { id: "c", title: "PDF", status: "ready" as const, addOnOf: "a", createdAt: "2" };
-  const orphan = { id: "d", title: "Gone", status: "backlog" as const, addOnOf: "zzz", createdAt: "4" };
-  const links = addOnLinks([a, b, c, orphan]);
-  expect(links.get("a")!.addOns.map((t) => t.id)).toEqual(["c", "b"]);
-  expect(links.get("b")!.of?.id).toBe("a");
-  expect(links.get("d")!.of).toBeUndefined();
   expect(addOnFor([a, b, c], "a", " Excel ")?.id).toBe("b");
   expect(addOnFor([a, b, c], "b", "Excel")).toBeUndefined();
 });

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { resetTitle, scopeChip, usageText } from "../web/src/teamText";
 import {
-  applyProposedTemplate, huddleIdle, IDLE_HUDDLE_MS, applyTemplate, brakeLabel, brakeHeadline, budgetRaise, clause, stoppedWhenDone, cardHuddleBadge, digestPreview, digestSenders, parseDigest, draftError, draftTags, idleFor, isForYou, untaggedHint, draftSize, guestTickets, handleInitials, mentionCandidates, mentionQuery, mergeMessages, participantActivity, pickHuddle, huddleRound, huddleTitle, ticketHuddles, rosterDraft, rowHandle, shortTicketId, sortHuddles, sourceLabel, upsertHuddle, withActivity, contextText, BIG_CONTEXT_TOKENS, participantRole, clampSideWidth, SIDE_DEFAULT, handInGroups, handInStatus,
+  applyProposedTemplate, huddleIdle, IDLE_HUDDLE_MS, applyTemplate, brakeLabel, brakeHeadline, budgetRaise, clause, stoppedWhenDone, digestPreview, digestSenders, parseDigest, draftError, draftTags, idleFor, isForYou, untaggedHint, draftSize, guestTickets, handleInitials, mentionCandidates, mentionQuery, mergeMessages, participantActivity, pickHuddle, huddleRound, huddleTitle, ticketHuddles, rosterDraft, rowHandle, sortHuddles, sourceLabel, upsertHuddle, withActivity, contextText, BIG_CONTEXT_TOKENS, participantRole, clampSideWidth, SIDE_DEFAULT, handInGroups, handInStatus,
 } from "../web/src/huddleText";
 import { mergeSteps, modelLabel, sessionMeta, sessionState, shortSession, toolIcon } from "../web/src/sessionText";
 
@@ -98,27 +98,9 @@ const bh = (x: Partial<BH> = {}): BH => ({
   ...x,
 });
 
-test("cardHuddleBadge: host card of a live huddle counts agents and who is working", () => {
-  const b = cardHuddleBadge([bh()], "t_20261009_k2pm");
-  expect(b).toMatchObject({ huddleId: "h1", openTicket: "t_20261009_k2pm", state: "live", label: "Huddle · 3 · 2 working" });
-  expect(cardHuddleBadge([bh({ status: "stopped" })], "t_20261009_k2pm")?.label).toBe("Huddle · 3 · stopped");
-});
-
-test("cardHuddleBadge: an invited ticket points at the host's Huddle tab", () => {
+test("guestTickets: an invited ticket of a huddle", () => {
   const h = bh({ invited: ["t_20261008_abcd"], participants: [...bh().participants, { ...p("api", { kind: "ticket-main" }), ticketId: "t_20261008_abcd" }] });
   expect(guestTickets(h)).toEqual(["t_20261008_abcd"]);
-  const b = cardHuddleBadge([h], "t_20261008_abcd");
-  expect(b).toMatchObject({ state: "guest", openTicket: "t_20261009_k2pm", label: "in huddle of k2pm" });
-  // Once the huddle closes, the guest card drops the badge.
-  expect(cardHuddleBadge([{ ...h, status: "closed" }], "t_20261008_abcd")).toBeNull();
-});
-
-test("cardHuddleBadge: a closed huddle shows its message count; its own open huddle wins over a guest one", () => {
-  expect(cardHuddleBadge([bh({ status: "closed", seq: 31 })], "t_20261009_k2pm")?.label).toBe("Huddle · closed · 31 msgs");
-  const guestOf = bh({ id: "h2", hostTicket: "t_x_other", invited: ["t_20261009_k2pm"] });
-  expect(cardHuddleBadge([guestOf, bh()], "t_20261009_k2pm")?.huddleId).toBe("h1");
-  expect(cardHuddleBadge([bh()], "t_nobody")).toBeNull();
-  expect(shortTicketId("t_20261009_k2pm")).toBe("k2pm");
 });
 
 test("sortHuddles: live, then stopped, then the newest closed ones (capped)", () => {
@@ -138,18 +120,11 @@ test("upsertHuddle replaces by id or appends", () => {
   expect(upsertHuddle([a, b], { ...a, seq: 99 })[0].seq).toBe(99);
 });
 
-test("cardHuddleBadge: brake, quiet, failed and for-you", () => {
+test("brakeLabel and idleFor", () => {
   const now = Date.parse("2026-10-10T02:12:00Z");
-  const brake = cardHuddleBadge([bh({ status: "stopped", stopReason: "budget", maxCostUsd: 20, forYou: 2 } as Partial<BH>)], "t_20261009_k2pm", now)!;
-  expect(brake).toMatchObject({ state: "brake", label: "Huddle · paused: $20 budget", forYou: 2 });
+  expect(brakeLabel({ status: "stopped", stopReason: "budget", maxCostUsd: 20 })).toBe("paused: $20 budget");
   expect(brakeLabel({ status: "stopped", stopReason: "messages" })).toBe("paused: message limit");
   expect(brakeLabel({ status: "stopped", stopReason: "loop" })).toBe("paused: waiting for you");
-  // A plain Stop keeps the quiet stopped look.
-  expect(cardHuddleBadge([bh({ status: "stopped", stopReason: null } as Partial<BH>)], "t_20261009_k2pm")).toMatchObject({ state: "stopped", label: "Huddle · 3 · stopped" });
-  const quiet = cardHuddleBadge([bh({ quiet: true, idleSince: "2026-10-10T02:00:00Z", findings: [{ status: "resolved" }] } as Partial<BH>)], "t_20261009_k2pm", now)!;
-  expect(quiet).toMatchObject({ state: "quiet", label: "Huddle · 3 · idle 12m · 0 open" });
-  const failed = bh({ participants: [...bh().participants, p("x", { status: "failed" })] });
-  expect(cardHuddleBadge([failed], "t_20261009_k2pm")).toMatchObject({ state: "live", failed: 1, forYou: 0 });
   expect(idleFor("2026-10-10T02:11:40Z", now)).toBe("<1m");
   expect(idleFor("2026-10-09T23:00:00Z", now)).toBe("3h");
 });

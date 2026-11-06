@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Proposal } from "./api";
 import { KeyHint } from "./KeyHint";
 import { MOD } from "./Shortcuts";
@@ -15,6 +15,23 @@ export interface AddOn {
   created?: { id: string; title: string };
   onCreate: (start: boolean) => Promise<void>;
   onOpen: (id: string) => void;
+}
+
+/** The proposed description, clamped to 3 lines with "more", so the buttons stay on screen. */
+function ProposalBody({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
+  });
+  return (
+    <>
+      <div ref={ref} className={`proposal-body${open ? " open" : ""}`}><Markdown text={text} /></div>
+      {(long || open) && <button className="link-btn proposal-more" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "less" : "more"}</button>}
+    </>
+  );
 }
 
 /** Claude's proposed title/description; Apply replaces the ticket's fields, Apply & start work also moves it to Ready. */
@@ -34,25 +51,23 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
   family?: string;
 }) {
   const [busy, setBusy] = useState<"apply" | "start" | null>(null);
-  const [open, setOpen] = useState(true);
   const run = (kind: "apply" | "start", fn: () => Promise<void>) => async () => {
     setBusy(kind);
     try { await fn(); } finally { setBusy(null); }
   };
   const hint = keyHint ? `${MOD}⇧Enter` : null;
-  if (addOn && !applied) return <AddOnCard {...{ proposal, addOn, open, setOpen, busy, run, onApply, keyHint, hint }} />;
+  if (addOn && !applied) return <AddOnCard {...{ proposal, addOn, busy, run, onApply, keyHint, hint }} />;
   return (
-    <div className={`proposal ${applied ? "applied" : ""}`}>
+    <div className={`proposal ticket-proposal ${applied ? "applied" : ""}`}>
       <div className="proposal-head">
         <span className="proposal-tag">Proposed ticket</span>
-        <button className="link-btn" onClick={() => setOpen((o) => !o)}>{open ? "Collapse" : "Expand"}</button>
       </div>
       {proposal.title && <div className="proposal-title">{proposal.important && <ImportantStar />}{proposal.title}</div>}
-      {open && proposal.description && <div className="proposal-body"><Markdown text={proposal.description} /></div>}
+      {proposal.description && <ProposalBody text={proposal.description} />}
       {family && <div className="proposal-family muted small">{family}</div>}
       <div className="proposal-actions">
         {applied ? (
-          <span className="badge ok">{started ? "Applied · moved to Ready" : "Applied to ticket"}</span>
+          <span className="badge ok">{started ? "Applied · moved to Queued" : "Applied to ticket"}</span>
         ) : onApplyStart ? (
           <>
             <button className="btn primary small" disabled={!!busy} title={hint ? `Apply & start work (${hint})` : undefined}
@@ -73,7 +88,7 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
           {applied
             ? started ? "Claude starts when a slot is free." : "You can still edit them in the details."
             : onApplyStart
-              ? "Replaces the title and description. Start work moves it to Ready; Claude works on its own."
+              ? "Replaces the title and description. Start work moves it to Queued; Claude works on its own."
               : "Replaces the title and description. You can undo right after."}
         </span>
       </div>
@@ -81,20 +96,19 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
   );
 }
 
-function AddOnCard({ proposal, addOn, open, setOpen, busy, run, onApply, keyHint, hint }: {
-  proposal: Proposal; addOn: AddOn; open: boolean; setOpen: (f: (o: boolean) => boolean) => void;
+function AddOnCard({ proposal, addOn, busy, run, onApply, keyHint, hint }: {
+  proposal: Proposal; addOn: AddOn;
   busy: "apply" | "start" | null; run: (kind: "apply" | "start", fn: () => Promise<void>) => () => Promise<void>;
   onApply: () => Promise<void>; keyHint?: boolean; hint: string | null;
 }) {
   const { created } = addOn;
   return (
-    <div className={`proposal ${created ? "applied" : ""}`}>
+    <div className={`proposal ticket-proposal ${created ? "applied" : ""}`}>
       <div className="proposal-head">
         <span className="proposal-tag">Proposed add-on ticket</span>
-        <button className="link-btn" onClick={() => setOpen((o) => !o)}>{open ? "Collapse" : "Expand"}</button>
       </div>
       {proposal.title && <div className="proposal-title">{proposal.important && <ImportantStar />}{proposal.title}</div>}
-      {open && proposal.description && <div className="proposal-body"><Markdown text={proposal.description} /></div>}
+      {proposal.description && <ProposalBody text={proposal.description} />}
       {created ? (
         <div className="proposal-actions">
           <span className="badge ok">Add-on ticket created</span>
@@ -106,7 +120,8 @@ function AddOnCard({ proposal, addOn, open, setOpen, busy, run, onApply, keyHint
             {addOn.state ? `This ticket is ${addOn.state}.` : "This ticket already ran."} An add-on ticket keeps this one's title and description as they are.
           </div>
           <div className="proposal-actions">
-            <button className="btn primary small" disabled={!!busy} title={hint ? `Create add-on ticket & start work (${hint})` : undefined}
+            <button className="btn primary small" disabled={!!busy}
+              title={`Creates a new ticket linked to this one and moves it to Queued; Claude works on its own${hint ? ` (${hint})` : ""}`}
               onClick={run("start", () => addOn.onCreate(true))}>
               {busy === "start" ? "Creating…" : "Create add-on ticket & start work"}{keyHint && <KeyHint keys="⌘⇧↵" />}
             </button>
@@ -118,7 +133,6 @@ function AddOnCard({ proposal, addOn, open, setOpen, busy, run, onApply, keyHint
               Replace this ticket instead
             </button>
           </div>
-          <span className="muted small">Creates a new ticket linked to this one. Start work moves it to Ready; Claude works on its own.</span>
         </>
       )}
     </div>

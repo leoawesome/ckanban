@@ -11,18 +11,22 @@ import { enterSends } from "./enterSends";
  * A free-text answer box: grows to about 6 lines, then scrolls. Enter runs `onEnter`, Shift+Enter adds a new
  * line, and nothing fires while an IME is composing.
  */
-function AnswerBox({ value, onChange, onEnter, autoFocus, disabled, placeholder }: {
+function AnswerBox({ value, onChange, onEnter, autoFocus, disabled, placeholder, className = "", onFocus, inputRef }: {
   value: string;
   onChange: (v: string) => void;
   onEnter: () => void;
   autoFocus?: boolean;
   disabled?: boolean;
   placeholder: string;
+  className?: string;
+  onFocus?: () => void;
+  inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<HTMLTextAreaElement | null>(null);
   useLayoutEffect(() => autoGrow(ref.current, 6), [value]);
   return (
-    <textarea ref={ref} rows={1} autoFocus={autoFocus} disabled={disabled} className="qother" value={value} placeholder={placeholder}
+    <textarea ref={(el) => { ref.current = el; if (inputRef) inputRef.current = el; }} rows={1} autoFocus={autoFocus} disabled={disabled}
+      className={`qother ${className}`} value={value} placeholder={placeholder} onFocus={onFocus}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => {
         if (enterSends(e)) {
@@ -90,8 +94,13 @@ export function QuestionsForm({ questions, answered, replaced, disabled, onSubmi
       ? { ...x, picked: x.picked.includes(label) ? x.picked.filter((l) => l !== label) : [...x.picked, label] }
       : { ...x, picked: [label], otherOn: false });
 
-  const toggleOther = () =>
-    update(step, (x) => ({ ...x, otherOn: !x.otherOn, picked: q.multiSelect || x.otherOn ? x.picked : [] }));
+  // "Or type your own" is a text field: typing in it (or going back into it with text) makes it the answer; on a
+  // one-answer question that clears the picked option, and picking an option sets the typed text aside.
+  const otherRef = useRef<HTMLTextAreaElement | null>(null);
+  const typeOther = (v: string) =>
+    update(step, (x) => ({ ...x, other: v, otherOn: !!v.trim(), picked: q.multiSelect || !v.trim() ? x.picked : [] }));
+  const focusOther = () =>
+    update(step, (x) => (x.other.trim() && !x.otherOn ? { ...x, otherOn: true, picked: q.multiSelect ? x.picked : [] } : x));
 
   const send = () => {
     if (storageKey) forget(browserStore(), storageKey);
@@ -122,7 +131,10 @@ export function QuestionsForm({ questions, answered, replaced, disabled, onSubmi
     if (!summary && /^[1-9]$/.test(e.key)) {
       const opt = q.options[Number(e.key) - 1];
       if (opt) pick(opt.label);
-      else if (Number(e.key) === q.options.length + 1) toggleOther();
+      else if (Number(e.key) === q.options.length + 1) {
+        e.preventDefault(); // the digit isn't typed into the field it moves to
+        otherRef.current?.focus();
+      }
     } else if (e.key === "Enter") {
       e.preventDefault();
       summary ? send() : next();
@@ -136,13 +148,13 @@ export function QuestionsForm({ questions, answered, replaced, disabled, onSubmi
     <div className="qcard" ref={root} tabIndex={-1} onKeyDown={onKey}>
       <div className="qcard-head">
         <span className="qcard-title">Claude has {total} question{total > 1 ? "s" : ""}</span>
-        <span className="qsteps" aria-label={`Step ${Math.min(step + 1, total)} of ${total}`}>
+        {total > 1 && <span className="qsteps" aria-label={`Step ${Math.min(step + 1, total)} of ${total}`}>
           {questions.map((_, i) => (
             <button key={i} className={`qstep ${i === step ? "on" : ""} ${i < step || summary ? "done" : ""}`}
               onClick={() => setStep(i)} aria-label={`Question ${i + 1}`} />
           ))}
           <span className="muted small">{summary ? "Review" : `${step + 1} / ${total}`}</span>
-        </span>
+        </span>}
       </div>
 
       {!summary ? (
@@ -161,7 +173,7 @@ export function QuestionsForm({ questions, answered, replaced, disabled, onSubmi
                       {o.label}
                       {o.recommended && <span className="qrec">Recommended</span>}
                     </span>
-                    {o.description && <span className="qdesc">{o.description}</span>}
+                    {o.description && <span className="qdesc" title={o.description}>{o.description}</span>}
                   </span>
                   <kbd className="qkey">{i + 1}</kbd>
                 </button>
@@ -176,16 +188,8 @@ export function QuestionsForm({ questions, answered, replaced, disabled, onSubmi
                 </div>
               ) : option;
             })}
-            <button type="button" disabled={disabled} className={`qopt ${a.otherOn ? "on" : ""} ${q.multiSelect ? "multi" : ""}`}
-              role={q.multiSelect ? "checkbox" : "radio"} aria-checked={a.otherOn} onClick={toggleOther}>
-              <span className="qmark" aria-hidden>{q.multiSelect && a.otherOn && <CheckIcon size={12} strokeWidth={2.2} />}</span>
-              <span className="qtext"><span className="qlabel">Other…</span><span className="qdesc">Type your own answer</span></span>
-              <kbd className="qkey">{q.options.length + 1}</kbd>
-            </button>
-            {a.otherOn && (
-              <AnswerBox autoFocus value={a.other} placeholder="Your answer (Shift+Enter for a new line)"
-                onChange={(v) => update(step, (x) => ({ ...x, other: v }))} onEnter={next} />
-            )}
+            <AnswerBox key={step} value={a.other} disabled={disabled} className={a.otherOn ? "on" : ""} inputRef={otherRef}
+              placeholder="Or type your own" onFocus={focusOther} onChange={typeOther} onEnter={next} />
           </div>
         </div>
       ) : (

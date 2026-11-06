@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { OLD_WAIT_MS, waitedFor } from "../web/src/time";
+import { waitedFor } from "../web/src/time";
 
 test("waitedFor: the Inbox's coarse waiting time", () => {
   const at = Date.parse("2026-10-10T12:00:00Z");
@@ -11,5 +11,4 @@ test("waitedFor: the Inbox's coarse waiting time", () => {
   expect(waitedFor(ago(48 * 3600_000), at)).toBe("2d");
   // A clock a little ahead never shows a negative wait.
   expect(waitedFor(ago(-5000), at)).toBe("just now");
-  expect(OLD_WAIT_MS).toBe(8 * 3600_000);
 });

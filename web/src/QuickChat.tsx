@@ -271,7 +271,7 @@ function MakeTicketDialog({ chat, tickets, busy, onClose, onMake }: {
         if (!busy && ready) onMake(fc.partOf);
       }}>
         <p className="muted small">The ticket goes to Backlog and its chat carries on this conversation.</p>
-        <FeatureChoice state={fc} name="chat-feature" />
+        <FeatureChoice state={fc} />
         <div className="form-actions">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           <button type="submit" className="btn primary" disabled={busy || !ready}>{busy ? "Making ticket…" : "Make ticket"}</button>

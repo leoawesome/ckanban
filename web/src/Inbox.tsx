@@ -3,20 +3,60 @@ import { openedAt, shouldPulse } from "./cardState";
 import type { InboxItem } from "./api";
 import { useLayer } from "./layers";
 import { MenuSheet } from "./MenuSheet";
-import { groupInbox } from "./inboxOrder";
+import { answers, groupInbox, marksDone } from "./inboxOrder";
 import { useSafeClear } from "./useSafeClear";
-import { fullTime, OLD_WAIT_MS, timeUntil, waitedFor } from "./time";
+import { fullTime, timeUntil, waitedFor } from "./time";
 import { useNow } from "./useNow";
+import { useMedia } from "./usePhone";
+import { MoreIcon } from "./icons";
 
-/** The entry's open action: Answer when Claude asked something, else Open. */
-export const answers = (i: InboxItem) => ["questions", "proposal", "reply", "huddle"].includes(i.attention.kind);
 const keyOf = (i: InboxItem) => `${i.profile}/${i.id}`;
+/** Touch screens have no keys to press: tooltips there leave out the "(d)"-style key text. */
+export const TOUCH_QUERY = "(pointer: coarse)";
+
+/**
+ * The ⋯ next to a row's one button: the row's other actions (Snooze, ...) in a small menu, a bottom sheet on a phone.
+ * Shown where there is no hover to reveal them (the phone Now cards, the Inbox on touch screens).
+ */
+export function RowMore({ label, actions }: { label: string; actions: { label: string; title?: string; run: () => void }[] }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLSpanElement>(null);
+  useLayer(() => setOpen(false), { active: open });
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!root.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <span className="row-more" ref={root}>
+      <button className="btn ghost row-more-btn" tabIndex={-1} aria-haspopup="menu" aria-expanded={open} aria-label={`More for ${label}`}
+        onClick={() => setOpen((v) => !v)}>
+        <MoreIcon size={16} />
+      </button>
+      {open && (
+        <MenuSheet onClose={() => setOpen(false)}>
+          <div className="inbox-menu row-more-menu" role="menu">
+            {actions.map((a) => (
+              <button key={a.label} className="menu-item" title={a.title} onClick={() => { setOpen(false); a.run(); }}>
+                <span className="menu-label">{a.label}</span>
+              </button>
+            ))}
+          </div>
+        </MenuSheet>
+      )}
+    </span>
+  );
+}
 
 /**
  * Top-bar "N need you" across every board, in two groups: what Claude is waiting on (questions, blocked, ...) then what
- * is ready to check (review, reply), each newest first with how long it has waited (marked after 8h). Items waiting
- * over a week fold into "Older" with Snooze all. Each entry opens its ticket (Answer/Open), marks it done or snoozes it
- * for a day; a cleared row shrinks away and clicks pause briefly, so the next row's button can't be hit by mistake.
+ * is ready to check (review, reply), each newest first, on one grey line "Ready for review · 10m" (red only for failed
+ * or blocked). Items waiting over a week fold into "Older" with Snooze all. Each entry shows one button (Mark done for
+ * review, else Answer/Open); its other actions appear on hover or focus, or behind ⋯ on a touch screen. A cleared row
+ * shrinks away and clicks pause briefly, so the next row's button can't be hit by mistake.
  * Snoozed ones sit in a collapsed section with time left and Unsnooze.
  * ↑↓ move, Enter opens, d marks done, s snoozes (or unsnoozes), Esc closes.
  */
@@ -92,6 +132,9 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
   }, [empty]);
 
   const now = useNow();
+  const touch = useMedia(TOUCH_QUERY);
+  /** Tooltip text, without its key part on a touch screen. */
+  const tip = (text: string, keys: string) => (touch ? text : `${text} ${keys}`);
   if (empty) return null;
   const several = new Set([...items, ...snoozed].map((i) => i.profile)).size > 1;
   const groups = groupInbox(items, now);
@@ -104,27 +147,31 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
     onPick(i);
   };
   const row = (i: InboxItem) => {
-    const old = now - new Date(i.attention.since).getTime() > OLD_WAIT_MS;
     const key = keyOf(i);
+    const done = () => clear(key, () => onMarkDone(i));
+    const snooze = () => clear(key, () => onSnooze(i, true));
+    const open = { label: answers(i) ? "Answer" : "Open", title: tip("Open the ticket", "(Enter)"), run: () => pick(i) };
+    const markDone = { label: "Mark done", title: tip("Move it to Done", "(d)"), run: done };
+    const snoozeIt = { label: "Snooze", title: tip("Hide it from the Inbox and counts for a day, or until something changes", "(s)"), run: snooze };
+    const primary = marksDone(i) ? markDone : open;
+    const others = marksDone(i) ? [snoozeIt] : [markDone, snoozeIt];
     return (
       <div key={key} className={`inbox-entry${leaving(key) ? " leaving" : ""}`}>
         <div className="inbox-entry-in">
           <button role="menuitem" data-entry={key} className="inbox-item" onClick={() => pick(i)}
-            title={`Enter ${answers(i) ? "answers" : "opens"} · d marks done · s snoozes for a day`}>
+            title={touch ? undefined : `Enter ${answers(i) ? "answers" : "opens"} · d marks done · s snoozes for a day`}>
             <span className="inbox-title">{i.title}</span>
-            <span className="inbox-row">
-              <span className={`inbox-why att-${i.attention.kind}`}>
-                {i.attention.label}{several && <span className="inbox-board-name"> · {i.profileName}</span>}
-              </span>
-              <time className={`inbox-age${old ? " old" : ""}`} dateTime={i.attention.since} title={`Waiting since ${fullTime(i.attention.since)}`}>
-                waiting {waitedFor(i.attention.since, now)}
-              </time>
+            <span className={`inbox-why att-${i.attention.kind}`}>
+              {i.attention.label} · <time dateTime={i.attention.since} title={`Waiting since ${fullTime(i.attention.since)}`}>{waitedFor(i.attention.since, now)}</time>
+              {several && <> · {i.profileName}</>}
             </span>
           </button>
           <span className="inbox-actions">
-            <button className="btn small primary" tabIndex={-1} onClick={() => pick(i)} title="Open the ticket (Enter)">{answers(i) ? "Answer" : "Open"}</button>
-            <button className="btn small" tabIndex={-1} onClick={() => clear(key, () => onMarkDone(i))} title="Move it to Done (d)">Mark done</button>
-            <button className="btn small ghost" tabIndex={-1} onClick={() => clear(key, () => onSnooze(i, true))} title="Hide it from the Inbox and counts for a day, or until something changes (s)">Snooze</button>
+            <button className="btn small primary" tabIndex={-1} onClick={primary.run} title={primary.title}>{primary.label}</button>
+            <span className="inbox-secondary">
+              {others.map((a) => <button key={a.label} className="btn small ghost" tabIndex={-1} onClick={a.run} title={a.title}>{a.label}</button>)}
+            </span>
+            <RowMore label={i.title} actions={others} />
           </span>
         </div>
       </div>
@@ -172,19 +219,15 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
                 </button>
                 {showSnoozed && later.map((i) => (
                   <div key={keyOf(i)} className={`inbox-entry snoozed${leaving(keyOf(i)) ? " leaving" : ""}`}><div className="inbox-entry-in">
-                    <button role="menuitem" data-entry={keyOf(i)} className="inbox-item" onClick={() => pick(i)} title="Enter opens · s unsnoozes · d marks done">
+                    <button role="menuitem" data-entry={keyOf(i)} className="inbox-item" onClick={() => pick(i)} title={touch ? undefined : "Enter opens · s unsnoozes · d marks done"}>
                       <span className="inbox-title">{i.title}</span>
-                      <span className="inbox-row">
-                        <span className="inbox-why muted">
-                          {i.attention.label}{several && <span className="inbox-board-name"> · {i.profileName}</span>}
-                        </span>
-                        <time className="inbox-age" dateTime={i.snoozedUntil} title={`Snoozed until ${fullTime(i.snoozedUntil!)}`}>
-                          back {timeUntil(i.snoozedUntil!)}
-                        </time>
+                      <span className="inbox-why">
+                        {i.attention.label} · <time dateTime={i.snoozedUntil} title={`Snoozed until ${fullTime(i.snoozedUntil!)}`}>back {timeUntil(i.snoozedUntil!)}</time>
+                        {several && <> · {i.profileName}</>}
                       </span>
                     </button>
                     <span className="inbox-actions">
-                      <button className="btn small ghost" tabIndex={-1} onClick={() => clear(keyOf(i), () => onSnooze(i, false))} title="Back in the Inbox now (s)">Unsnooze</button>
+                      <button className="btn small ghost" tabIndex={-1} onClick={() => clear(keyOf(i), () => onSnooze(i, false))} title={tip("Back in the Inbox now", "(s)")}>Unsnooze</button>
                     </span>
                   </div></div>
                 ))}

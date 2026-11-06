@@ -82,6 +82,9 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
 }) {
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The suggestion row: why (a tap on the question, or hover), and ✕'s other choices.
+  const [why, setWhy] = useState(false);
+  const [declining, setDeclining] = useState(false);
   const current = parentLink(ticket);
   const row = PARENT_ROW[current?.how ?? "none"];
   const parent = current ? tickets.find((t) => t.id === current.id) : undefined;
@@ -111,22 +114,32 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
         ) : current ? (
           <span className="part-of-value"><span className="muted small">{row.gone}</span>{changeUnlink}</span>
         ) : suggested ? (
-          <span className="muted small">Not linked</span>
+          <span className="part-of-value part-suggest">
+            {declining ? (
+              <>
+                <button className="mini-link" disabled={busy} onClick={() => setPicking(true)}>Pick another…</button>
+                <button className="mini-link" disabled={busy} onClick={() => act(api.dismissParentSuggestion(slug, ticket.id))}>Not related</button>
+                <button className="mini-link" onClick={() => setDeclining(false)}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <button className="link-btn part-suggest-q" aria-expanded={ticket.parentSuggestion!.reason ? why : undefined}
+                  title={ticket.parentSuggestion!.reason || undefined} onClick={() => setWhy((v) => !v)}>
+                  Add to “{suggested.title}”?
+                </button>
+                <button className="mini-link part-suggest-add" disabled={busy} onClick={() => link(suggested.id)}>Add</button>
+                <button className="icon-btn part-suggest-x" aria-label="Other choices: pick another ticket, or not related" title="Pick another or not related"
+                  onClick={() => setDeclining(true)}>✕</button>
+              </>
+            )}
+          </span>
         ) : (
           <button className="mini-link" disabled={busy} onClick={() => setPicking(true)}>Link to a ticket…</button>
         )}
       </div>
       {picking && <ParentPicker ticket={ticket} tickets={tickets} onPick={link} onCancel={() => setPicking(false)} />}
-      {suggested && !picking && (
-        <div className="parent-suggest">
-          Suggested: <b>{suggested.title}</b> ({columnLabel(suggested.status)})
-          {ticket.parentSuggestion!.reason && <div className="parent-suggest-why">{ticket.parentSuggestion!.reason}</div>}
-          <div className="parent-suggest-actions">
-            <button className="btn small primary" disabled={busy} onClick={() => link(suggested.id)}>Link</button>
-            <button className="btn small" disabled={busy} onClick={() => act(api.dismissParentSuggestion(slug, ticket.id))}>Not related</button>
-            <button className="btn small" disabled={busy} onClick={() => setPicking(true)}>Pick another…</button>
-          </div>
-        </div>
+      {suggested && !picking && !declining && why && ticket.parentSuggestion!.reason && (
+        <div className="parent-suggest-why">{ticket.parentSuggestion!.reason} <span className="muted">({columnLabel(suggested.status)})</span></div>
       )}
     </>
   );

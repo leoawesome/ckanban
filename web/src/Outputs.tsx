@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, copy, isArtifactLink, safeHref, subscribe, type OutputFile, type Ticket, type TicketLink } from "./api";
-import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, ExternalIcon, FileCodeIcon, FileIcon, FileImageIcon, FileTextIcon, FolderIcon, FolderOpenIcon, LinkIcon } from "./icons";
+import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, ExternalIcon, FileCodeIcon, FileIcon, FileImageIcon, FileTextIcon, LinkIcon } from "./icons";
 import { fullTime, timeAgo } from "./time";
 import { useNow } from "./useNow";
 import { Markdown } from "./Transcript";
@@ -122,7 +122,6 @@ function Links({ links }: { links: TicketLink[] }) {
   const rest = shown.filter((l) => l !== top);
   return (
     <section className="output-links" aria-label="Links">
-      <h4 className="output-section">Links</h4>
       {top && (
         <div className="link-row latest">
           <span className="link-icon" aria-hidden>★</span>
@@ -250,7 +249,6 @@ export function Outputs({ slug, ticket, onCount, focus }: {
   const withLinks = (body: React.ReactNode) => !links.some((l) => safeHref(l.url)) ? body : (
     <>
       <Links links={links} />
-      <h4 className="output-section">Files</h4>
       {body}
     </>
   );
@@ -272,7 +270,6 @@ export function Outputs({ slug, ticket, onCount, focus }: {
           <button className="tree-row" style={pad(depth)} title={s.path} role="treeitem" aria-expanded={isOpen(s.path)}
             disabled={!!needle || forcedOpen.has(s.path)} onClick={() => toggle(s.path)}>
             <span className="tree-caret" aria-hidden>{isOpen(s.path) ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}</span>
-            <span className="tree-icon" aria-hidden>{isOpen(s.path) ? <FolderOpenIcon /> : <FolderIcon />}</span>
             <span className="tree-dir output-name">{s.name}</span>
             <span className="output-count muted small">{s.count}</span>
           </button>
@@ -281,19 +278,15 @@ export function Outputs({ slug, ticket, onCount, focus }: {
       ))}
       {d.files.map((f) => (
         <div key={f.name} className={`output-row${f.name === open ? " selected" : ""}`} role="none">
-          <button className={`tree-row output-file${f.name === open ? " selected" : ""}`} style={pad(depth)} title={f.name}
+          {/* One line: name, then the age on the right; size, full time and "shared" in the tooltip. Drag it into Slack or Finder. */}
+          <button className={`tree-row output-file${f.name === open ? " selected" : ""}`} style={pad(depth)}
+            title={`${f.name}\n${kb(f.size)} · updated ${fullTime(f.updatedAt)}${shared.has(f.name) ? "\nShared as a claude.ai page" : ""}`}
             role="treeitem" aria-selected={f.name === open} onClick={() => pick(f.name)}
             draggable onDragStart={(e) => dragFile(e, slug, ticketId, f.name)}>
-            <span className="tree-caret" aria-hidden />
+            {(depth > 0 || tree.folders.length > 0) && <span className="tree-caret" aria-hidden />}
             <span className="tree-icon" aria-hidden>{fileIcon(f.name)}</span>
-            <span className="output-label">
-              <span className="output-name">{baseName(f.name)}</span>
-              <span className="output-meta muted" title={fullTime(f.updatedAt)}>
-                {kb(f.size)} · {timeAgo(f.updatedAt)}
-                {shared.has(f.name) && <span className="link-src" title="Published as a claude.ai page from the Share menu">shared</span>}
-              </span>
-            </span>
-            {narrow && <span className="output-chev muted" aria-hidden><ChevronRightIcon size={12} /></span>}
+            <span className="output-name">{baseName(f.name)}</span>
+            <span className="output-age muted">{timeAgo(f.updatedAt)}</span>
           </button>
           <ShareMenu slug={slug} ticket={ticket} name={f.name} variant="dots" text={f.name === open ? text : undefined} />
         </div>
@@ -359,7 +352,6 @@ export function Outputs({ slug, ticket, onCount, focus }: {
         <nav className="file-tree output-files" aria-label="Outputs" role="tree">
           {shown.length ? renderFolder(tree, 0) : <div className="tree-note muted small">No matches</div>}
         </nav>
-        {"chrome" in window && <div className="output-hint muted">Tip: drag a file into Slack or Finder</div>}
       </div>
       {!narrow && view}
       {readerOn && createPortal(view, panel)}

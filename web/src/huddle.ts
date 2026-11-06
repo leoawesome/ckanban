@@ -5,7 +5,7 @@ import { huddleIdle } from "./huddleText";
 import { mergeMessages, pickHuddle, ticketHuddles, upsertHuddle, withActivity } from "./huddleText";
 
 export { huddleIdle, IDLE_HUDDLE_MS } from "./huddleText";
-export { BIG_CONTEXT_TOKENS, brakeLabel, cardHuddleBadge, contextText, dollars, guestTickets, huddleRound, huddleTitle, idleFor, quietLabel, roundTag, sortHuddles, type CardHuddleBadge } from "./huddleText";
+export { BIG_CONTEXT_TOKENS, brakeLabel, contextText, dollars, guestTickets, huddleRound, huddleTitle, idleFor, quietLabel, roundTag, sortHuddles } from "./huddleText";
 export { handleInitials, isForYou, MODE_LABEL, modeLabel, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint } from "./huddleText";
 
 /** Participants that count toward the cap (everyone but the user). */

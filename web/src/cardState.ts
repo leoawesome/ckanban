@@ -117,3 +117,20 @@ export function attentionLabel(att: { kind: string; step?: string }, stepsWaitin
   if (stepsWaiting > 0) return `Needs you · ${stepsWaiting}`;
   return familyWorks ? "Needs you" : "Your turn";
 }
+
+/** The card's muted line names the steps only while some are done and some aren't (not at 0, not when all are done). */
+export function stepsShown(f: FamilyLike): boolean {
+  const done = f.toolsDone ?? 0;
+  return f.tools > 0 && done > 0 && done < f.tools;
+}
+
+/** The card's cost turns red when the ticket's last run stopped at its per-run spending cap (the cap is per run,
+ *  so the total of all runs is never compared with it). A new run clears capHit. */
+export function overCap(t: { capHit?: { capUsd: number; at: string } | null }): boolean {
+  return !!t.capHit;
+}
+
+/** Cards in Backlog and Done skip the "Claude: …" preview (parked or finished, nothing to follow). */
+export function previewShown(column: string): boolean {
+  return column !== "backlog" && column !== "done";
+}

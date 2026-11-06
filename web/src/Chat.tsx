@@ -132,6 +132,8 @@ function speaker(b: Block): string {
 /** Copied history of a branched ticket: entries from before the branch point (at = the branch time). */
 /** Old chats the user already chose to send to, by ticket: the reply (cache.at) they confirmed for; asked once per old period. */
 const oldChatOk = new Map<string, string>();
+/** The message box's footer names an old chat only above this size; smaller ones just get the ask at Send. */
+const OLD_LINE_MIN_TOKENS = 100_000;
 
 const before = (e: SessionEntry, at: string | undefined) => !!at && !!e.at && e.at < at;
 
@@ -783,7 +785,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
                 </div>
               ))}
               {(cards.get(e.uuid)?.length ?? 0) > MAX_FILE_CARDS && (
-                <button className="link-btn small" onClick={() => onOpenOutput?.(cards.get(e.uuid)![MAX_FILE_CARDS].name)}>
+                <button className="link-btn small chat-more-files" onClick={() => onOpenOutput?.(cards.get(e.uuid)![MAX_FILE_CARDS].name)}>
                   +{cards.get(e.uuid)!.length - MAX_FILE_CARDS} more files in the Outputs tab
                 </button>
               )}
@@ -1182,16 +1184,17 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
           </div>
         )}
         <div className="composer-foot">
-          {old ? (
+          {/* The old-chat line only for a big re-read (over 100k tokens); Send still asks for any old chat. */}
+          {old && old.tokens > OLD_LINE_MIN_TOKENS ? (
             <span className="muted small composer-hint composer-old" title={old.title}>{phone ? old.phoneLine : old.line}</span>
           ) : (
             <span className="muted small composer-hint">
-              {refine ? "Refine mode: Claude won't change files." : "Claude acts on your message."}
+              {refine && "Refine mode: Claude won't change files."}
               <span className="composer-keys"> Enter to send · Shift+Enter for a new line{queued.some((q) => fromUser(q) && editable(q)) && " · ↑ to edit your queued message"}</span>
             </span>
           )}
           <span className="composer-actions">
-            <ImagePickButton images={images} target={composer} disabled={stopping} />
+            <ImagePickButton images={images} target={composer} disabled={stopping} merged />
             <SendOrStop running={running} hasDraft={!!draft.trim()} stopping={stopping} onStop={stop}
               send={<button className="btn primary small" disabled={!draft.trim() || stopping || images.uploading} onClick={submit}>{images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" /></button>} />
           </span>

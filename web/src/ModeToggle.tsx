@@ -2,9 +2,12 @@ import type { TicketMode } from "./api";
 import { KeyHint } from "./KeyHint";
 
 const OPTIONS: { value: TicketMode; label: string; hint: string }[] = [
-  { value: "interview", label: "Interview me first", hint: "Claude asks clarifying questions before doing the work" },
-  { value: "auto", label: "Just do it", hint: "Claude works autonomously with its own judgement" },
+  { value: "interview", label: "Interview me first", hint: "Claude asks questions first, then does the work." },
+  { value: "auto", label: "Just do it", hint: "Claude works on its own and reports back." },
 ];
+
+/** The one short sentence for a mode (shown under the toggle, so it needs no label). */
+export const modeHint = (m: TicketMode) => OPTIONS.find((o) => o.value === m)?.hint ?? "";
 
 /** `keyHint`: the key that switches between the two (shown while ⌘ is held). */
 export function ModeToggle({ value, onChange, disabled, keyHint }: { value: TicketMode; onChange: (m: TicketMode) => void; disabled?: boolean; keyHint?: string }) {

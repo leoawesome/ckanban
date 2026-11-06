@@ -28,7 +28,7 @@ import { KeyHint } from "./KeyHint";
 import { MOD } from "./Shortcuts";
 import { complete, PlanFinished, planFinished, PlanSummary } from "./PlanPanel";
 import { FamilyTab } from "./FamilyTab";
-import { familyOf } from "./family";
+import { familyOf, isFeature } from "./family";
 import { Outputs } from "./Outputs";
 import { PrBox } from "./PrBox";
 import { PrList } from "./PrList";
@@ -38,7 +38,7 @@ import { useShareNotices } from "./share";
 import { SessionPicker, sessionLabel } from "./SessionPicker";
 import { TicketMenu } from "./TicketMenu";
 import { missingPctReason, UsagePanel, usageChipText, useTicketUsage } from "./UsagePanel";
-import { approxPct } from "./usage";
+import { approxPct, costText } from "./usage";
 import { Markdown } from "./Transcript";
 import { NeedsField } from "./Needs";
 import { TagEditor } from "./Tags";
@@ -292,6 +292,24 @@ function usePanelWidth(fit: number) {
 }
 
 /** Ticket view: details on the left, the chat with Claude filling the right side. */
+/**
+ * A run waiting on the user (usage limit, spending cap, stall): one line and its main button; "Details" opens the
+ * longer explanation and the other choices.
+ */
+function WaitBanner({ line, details, actions }: { line: string; details: React.ReactNode; actions: (open: boolean) => React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="banner warn inline limit-banner" role="status">
+      <span className="limit-line">
+        <strong>{line}</strong>
+        <button className="link-btn limit-details" aria-expanded={open} onClick={() => setOpen((v) => !v)}>{open ? "Less" : "Details"}</button>
+      </span>
+      {actions(open)}
+      {open && <div className="limit-more">{details}</div>}
+    </div>
+  );
+}
+
 export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: closeNow, nav, slideIn = true, tabRequest, huddleSeed, onOpenTeam, jobs = [], onOpenJobs, moveTo }: {
   profile: Profile;
   ticket: Ticket;
@@ -369,6 +387,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     usage: tabPick === "usage",
   });
   const tab = tabs.includes(tabPick) ? tabPick : "chat";
+  // A phone shows at most 4 tabs; the rest sit under More.
+  const barTabs = phone ? phoneTabs(tabs, tab) : { shown: tabs, more: [] as DrawerTab[] };
+  // The chat's "Where we are" shows the plan's progress for a feature's top ticket, so the sidebar's Plan row steps aside.
+  const whereShown = useMemo(() => isFeature(tickets, ticket), [tickets, ticket]);
   const help = useHelp(slug, ticket, !!diffState.diff?.files.length);
   const [outputCount, setOutputCount] = useState(0);
   const ticketUsage = useTicketUsage(slug, ticket.id);
@@ -724,7 +746,11 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const usageTitle = !usage ? "" : usage.totals.pctCurrentWindow === null ? missingPctReason(usage)
     : "This ticket's ≈ share of your plan's current 5-hour limit, and its API-equivalent cost";
   // On a phone the run cost joins the column's help line when it is the only result chip.
-  const usageInline = phone && !!col && hasUsage && !links.length && outputCount === 0;
+  // The Outputs tab's label already counts the files when the tab is in the bar, so no chip repeats it.
+  const outputChip = outputCount > 0 && !barTabs.shown.includes("outputs");
+  // The column's help line: only while the ticket waits or is stuck, not while Claude works or once it is finished.
+  const colHelp = !!col && !working && !familyBusy && ticket.status !== "done" && !finished;
+  const usageInline = phone && colHelp && hasUsage && !links.length && !outputChip;
   // Status, actions, links and the description: a sidebar on wider screens, the Ticket tab on phones.
   const details = (
     <div ref={detailsRef} className={`panel-details ${split.height !== null ? "split-set" : ""} ${split.dragging ? "splitting" : ""}`}>
@@ -737,9 +763,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               options={statusOptions} />
           </div>
         )}
-        {col && (
+        {colHelp && (
           <p className="field-help">
-            {col.claude && <SparkIcon className="icon spark" />}{col.hint}
+            {col!.claude && <SparkIcon className="icon spark" />}{col!.hint}
             {usageInline && <> · <button className="link-btn usage-inline" onClick={() => openTab("usage")} title={usageTitle}>{usageChipText(usage!)}</button></>}
           </p>
         )}
@@ -822,16 +848,16 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
         {/* Rarely set by hand (plans and update_ticket set it), so only shown once the ticket has needs. */}
         {!!ticket.needs?.length && <NeedsField slug={slug} ticket={ticket} onError={onError} />}
 
-        {children.length > 0 && <PlanSummary ticket={ticket} children={children} onOpen={() => setTab("family")} />}
+        {children.length > 0 && !whereShown && <PlanSummary ticket={ticket} children={children} onOpen={() => setTab("family")} />}
 
-        {(!!links.length || outputCount > 0 || (hasUsage && !usageInline)) && (
+        {(!!links.length || outputChip || (hasUsage && !usageInline)) && (
           <div className="result-chips" aria-label="Results">
             {usage && hasUsage && !usageInline && (
               <button className="result-chip usage-chip" onClick={() => openTab("usage")} title={usageTitle}>
                 {usageChipText(usage)}
               </button>
             )}
-            {outputCount > 0 && (
+            {outputChip && (
               <button className="result-chip" onClick={() => setTab("outputs")}><FileTextIcon size={14} /> {outputCount} output file{outputCount > 1 ? "s" : ""}</button>
             )}
             {links.slice(0, LINK_CHIPS).map((l) => (
@@ -905,7 +931,6 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     outputs: <>Outputs{outputCount + links.length > 0 && <span className="tab-count">{outputCount + links.length}</span>}</>,
     usage: <>Usage{usage && hasUsage && usage.totals.pctCurrentWindow !== null && <span className="tab-count">{approxPct(usage.totals.pctCurrentWindow).replace(" ", "")}</span>}</>,
   };
-  const barTabs = phone ? phoneTabs(tabs, tab) : { shown: tabs, more: [] as DrawerTab[] };
   return (
     <FileLinksProvider slug={slug} ticketId={ticket.id} panel={panelRef}>
     <div className={`drawer-wrap${slideIn ? "" : " no-fade"}${leaving ? " leaving" : ""}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -1018,32 +1043,19 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               </div>
             )}
             {limitWait(ticket) && (
-              <div className="banner warn inline limit-banner" role="status">
-                <div className="limit-text">
-                  <strong>{limitLabel(ticket)}</strong>
-                  <span>{limitHint(ticket)}</span>
-                  {ticket.limit?.message && <span className="muted small">{ticket.limit.message}</span>}
-                </div>
-                <LimitActions slug={slug} ticket={ticket} onError={onError} small />
-              </div>
+              <WaitBanner line={limitLabel(ticket)}
+                details={<>{limitHint(ticket)}{ticket.limit?.message && <span className="muted small">{ticket.limit.message}</span>}</>}
+                actions={(open) => <LimitActions slug={slug} ticket={ticket} onError={onError} small secondary={open} />} />
             )}
             {capWait(ticket) && (
-              <div className="banner warn inline limit-banner cap-banner" role="status">
-                <div className="limit-text">
-                  <strong>{capLabel(ticket)}</strong>
-                  <span>The run spent its budget before it finished. Continue the same conversation with more, or change the cap in ⋯.</span>
-                </div>
-                <CapActions slug={slug} ticket={ticket} onError={onError} small />
-              </div>
+              <WaitBanner line={ticket.capHit ? `Spent its ${costText(ticket.capHit.capUsd)} budget` : capLabel(ticket)}
+                details="The run spent its budget before it finished. Continue the same conversation with more, or change the cap in ⋯."
+                actions={() => <CapActions slug={slug} ticket={ticket} onError={onError} small />} />
             )}
             {stallWait(ticket) && (
-              <div className="banner warn inline limit-banner" role="status">
-                <div className="limit-text">
-                  <strong>Stalled · no output for {ticket.stalled!.minutes} min</strong>
-                  <span>A tool call may be stuck, or it's just a long step. Nothing is killed unless you choose to.</span>
-                </div>
-                <StallActions slug={slug} ticket={ticket} onError={onError} small />
-              </div>
+              <WaitBanner line={`Stalled · no output for ${ticket.stalled!.minutes} min`}
+                details="A tool call may be stuck, or it's just a long step. Nothing is killed unless you choose to."
+                actions={(open) => <StallActions slug={slug} ticket={ticket} onError={onError} small secondary={open} />} />
             )}
             <nav ref={tabsRef} className={`tabs${tabsMore ? " more-right" : ""}`} role="tablist" aria-label="Ticket" onScroll={checkTabs}>
               {barTabs.shown.map((t) => (

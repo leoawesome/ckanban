@@ -368,7 +368,6 @@ function ScheduleForm({ slug, initial, knownTags, onDone }: {
           : <span className="form-error">{preview.error}</span>)}
       </div>
       <div className="field">
-        <div className="field-label">How should Claude work?</div>
         <ModeToggle value={mode} onChange={setMode} />
         <span className="muted small">
           {mode === "auto"

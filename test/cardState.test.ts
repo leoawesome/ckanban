@@ -1,6 +1,6 @@
 // Card state rules (web/src/cardState.ts): which "Your turn" dots pulse, sign-in errors, finish marks, chip folding.
 import { expect, test } from "bun:test";
-import { finishMark, foldChips, shouldPulse, signInError, stepAge } from "../web/src/cardState";
+import { finishMark, foldChips, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown } from "../web/src/cardState";
 
 const now = Date.parse("2026-11-01T12:00:00Z");
 const ago = (min: number) => new Date(now - min * 60_000).toISOString();
@@ -68,4 +68,26 @@ test("a running card shows the time since its last step and goes quiet after 3 m
   expect(stepAge(sec(3900), now)).toEqual({ text: "1h 5m", quiet: true });
   // A clock a little ahead on the server: never a negative time.
   expect(stepAge(sec(-2), now)).toEqual({ text: "0s", quiet: false });
+});
+
+test("the card's muted line names steps only part way through", () => {
+  expect(stepsShown({ tools: 16, toolsDone: 7, running: [] })).toBe(true);
+  expect(stepsShown({ tools: 16, toolsDone: 0, running: [] })).toBe(false);
+  expect(stepsShown({ tools: 16, running: [] })).toBe(false);
+  expect(stepsShown({ tools: 16, toolsDone: 16, running: [] })).toBe(false);
+  expect(stepsShown({ tools: 0, toolsDone: 0, running: [] })).toBe(false);
+});
+
+test("cost turns red only when the last run stopped at its cap, never from the total of all runs", () => {
+  expect(overCap({ capHit: { capUsd: 5, at: "2026-11-07T00:00:00Z" } })).toBe(true);
+  expect(overCap({ capHit: null })).toBe(false);
+  expect(overCap({})).toBe(false);
+});
+
+test("Backlog and Done cards skip the Claude preview; Planning and Review keep it", () => {
+  expect(previewShown("backlog")).toBe(false);
+  expect(previewShown("done")).toBe(false);
+  expect(previewShown("planning")).toBe(true);
+  expect(previewShown("review")).toBe(true);
+  expect(previewShown("in_progress")).toBe(true);
 });

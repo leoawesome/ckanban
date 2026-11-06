@@ -113,25 +113,6 @@ export function wouldLoop(tickets: FamilyTicket[], id: string, parent: string): 
   return parent === id;
 }
 
-/** What a card shows of its family: the ticket it is part of (partOf only) and its direct children of every kind. */
-export interface CardFamily<T extends FamilyTicket = FamilyTicket> {
-  /** undefined when partOf points at a deleted ticket. */
-  partOf?: Pick<T, "id" | "title">;
-  children: Pick<T, "id" | "title">[];
-}
-
-export function cardFamilies<T extends FamilyTicket>(tickets: T[]): Map<string, CardFamily<T>> {
-  const byId = new Map(tickets.map((t) => [t.id, t]));
-  const out = new Map<string, CardFamily<T>>();
-  for (const [id, kids] of childrenByParent(tickets)) out.set(id, { children: kids.map((k) => k.ticket) });
-  for (const t of tickets) {
-    if (!t.partOf) continue;
-    const f = out.get(t.id) ?? out.set(t.id, { children: [] }).get(t.id)!;
-    f.partOf = byId.get(t.partOf);
-  }
-  return out;
-}
-
 // ---- Features (a big piece of work followed from its top ticket; see feature.ts on the server) ----
 
 /**
@@ -339,4 +320,13 @@ export function looksLikeQuestion(title: string, body = ""): boolean {
   const t = title.trim();
   const b = body.trim();
   return QUESTION_START.test(t) || t.endsWith("?") || b.endsWith("?") || (!t && QUESTION_START.test(b));
+}
+
+/**
+ * The feature a new ticket joins (undefined: its own). Only an explicit pick counts: "add" keeps the id tapped
+ * (not today's suggestion), "other" needs a pick, and a pick whose feature has since closed falls back to its own.
+ */
+export function partOfFor(choice: "add" | "own" | "other", added: string, other: string, openIds: readonly string[]): string | undefined {
+  const id = choice === "add" ? added : choice === "other" ? other : "";
+  return id && openIds.includes(id) ? id : undefined;
 }

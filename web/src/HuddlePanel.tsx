@@ -14,7 +14,7 @@ import { autoGrow } from "./autoGrow";
 import {
   applyTemplate, brakeHeadline, BRIEF_MAX, budgetRaise, BUDGET_STEPS, clampSideWidth, clause, DEFAULT_BUDGET, handInGroups, handInStatus, participantRole, POST_MAX, SIDE_DEFAULT, stoppedWhenDone,
 } from "./huddleText";
-import { CloseIcon, MoreIcon, HuddleIcon, CapIcon, WarnIcon, StopIcon } from "./icons";
+import { ChevronDownIcon, ChevronRightIcon, CloseIcon, MoreIcon, HuddleIcon, CapIcon, WarnIcon, StopIcon } from "./icons";
 import { KeyHint } from "./KeyHint";
 import { useLayer } from "./layers";
 import { Select } from "./Select";
@@ -27,6 +27,7 @@ import { MoreSheet } from "./PhoneNav";
 import { usePhone } from "./usePhone";
 import { Markdown } from "./Transcript";
 import { usePersistentState } from "./usePersistentState";
+import { TapTip } from "./TapTip";
 import type { HuddleSeed, TeamRequest } from "./Team";
 import { TeammateProposalView } from "./TeammateCard";
 import { savedText } from "./teammateText";
@@ -218,23 +219,14 @@ function StartHuddle({ slug, ticket, tickets, onError, onBack, onStarted, seed }
   };
   return (
     <div className="panel-scroll panel-huddle-start">
-      <div className="huddle-intro">
-        <h3>Start a huddle</h3>
-        <p className="muted">
-          Helper Claudes (reviewers, QA, a lead…) work on this ticket with its own Claude, which joins as <b>@main</b> and coordinates.
-          They talk in one room; you can read along and @tag anyone. Claude can also propose a roster from the chat.
-        </p>
-      </div>
-      <div className="huddle-card">
-        <div className="huddle-card-head"><span className="icon-label"><HuddleIcon /> New huddle</span><small>roster</small></div>
-        <TemplatePicker templates={templates} draft={draft} setDraft={setDraft} disabled={busy} />
-        <RosterEditor presets={presets} draft={draft} setDraft={setDraft} tickets={tickets} hostId={ticket.id} onEnter={start} disabled={busy} />
-        <div className="huddle-card-actions">
-          <span className="muted small">{err ?? "Agents start as soon as you press Start."}</span>
-          <span className="spacer" />
-          {onBack && <button className="btn small" onClick={onBack}>Back to the huddle</button>}
-          <button className="btn primary small" onClick={start} disabled={busy || !!err || presets === null}>{busy ? "Starting…" : "Start huddle"}</button>
-        </div>
+      <p className="huddle-intro"><HuddleIcon /> A few Claudes look at this together and agree on a list.</p>
+      <TemplatePicker templates={templates} draft={draft} setDraft={setDraft} disabled={busy} />
+      <RosterEditor presets={presets} draft={draft} setDraft={setDraft} tickets={tickets} hostId={ticket.id} onEnter={start} disabled={busy} />
+      <div className="huddle-card-actions">
+        <span className="muted small">{err ?? "Agents start as soon as you press Start."}</span>
+        <span className="spacer" />
+        {onBack && <button className="btn small" onClick={onBack}>Back to the huddle</button>}
+        <button className="btn primary small" onClick={start} disabled={busy || !!err || presets === null}>{busy ? "Starting…" : "Start huddle"}</button>
       </div>
     </div>
   );
@@ -328,19 +320,20 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
   const stateLabel = brake ? (
     <span className="huddle-state brake">■ Paused</span>
   ) : quiet ? (
-    <span className="huddle-state quiet" title="Nobody is working, no tag is unanswered and no finding is open: the huddle may be done.">
-      ● All quiet{h.idleSince && !phone ? ` · idle ${idleFor(h.idleSince, now)}` : ""}
-    </span>
+    <span className="huddle-state quiet">● All quiet</span>
   ) : (
     <span className={`huddle-state ${h.status}`}>{STATE_LABEL[h.status]}</span>
   );
+  // Desktop: round · status · $ used/cap on one line; when it started, the message count and what the spend covers open on hover or a tap.
+  const barTip = [
+    `${closed && h.closedAt ? `Closed ${clock(h.closedAt)} · read-only` : `Started ${clock(h.createdAt)}`} · ${h.seq} message${h.seq === 1 ? "" : "s"}`,
+    quiet && h.idleSince ? `All quiet: nobody is working, no tag is unanswered and no finding is open, idle ${idleFor(h.idleSince, now)}.` : null,
+    `${money(spent)} of the ${dollars(max)} budget spent: its agents' runs and @main's huddle replies. It stops at the budget. The agents' spend is also counted on the ticket card and its Usage tab (@main's replies already are).`,
+  ].filter(Boolean).join("\n");
   const budget = (
-    <span className="hd-budget" title="What the huddle spent so far: its agents' runs and @main's huddle replies. It stops at the budget. The agents' spend is also counted on the ticket card and its Usage tab (@main's replies already are).">
-      ·
-      <span className={`hd-meter${overBudget ? " over" : ""}`} aria-hidden><i style={{ width: `${Math.min(100, (spent / max) * 100)}%` }} /></span>
-      <span className={overBudget ? "hd-over" : undefined}>{money(spent)} / {dollars(max)}</span>
-      {!phone && <span className="hd-budget-note">also counted on the ticket card</span>}
-    </span>
+    <TapTip className={`hd-budget${overBudget ? " hd-over" : ""}`} tip={barTip} label={`${money(spent)} of ${dollars(max)} spent; more about this huddle`}>
+      {money(spent)} / {dollars(max)}
+    </TapTip>
   );
   // The phone's ⋯ sheet: every bar action that applies now (a brake's Resume buttons stay in its banner).
   const actions: MenuItem[] = [];
@@ -384,8 +377,8 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
         // One row: a status dot with the spend, the Chat / People / Findings switch, the ⋯ sheet (message count in its footer).
         <div className="huddle-bar">
           <span className={`huddle-state hd-state-dot ${brake ? "brake" : quiet ? "quiet" : h.status}`} title={brake ? "Paused" : quiet ? "All quiet" : STATE_LABEL[h.status]}
-            aria-label={brake ? "Paused" : quiet ? "All quiet" : STATE_LABEL[h.status]}>{brake || h.status === "stopped" ? "■" : "●"}</span>
-          <span className={`hd-budget${overBudget ? " hd-over" : ""}`} title="What the huddle spent so far, and its budget">{money(spent)}/{dollars(max)}</span>
+            aria-label={brake ? "Paused" : quiet ? "All quiet" : STATE_LABEL[h.status]}>{brake || h.status === "stopped" ? "■" : h.status === "closed" ? STATE_LABEL.closed : "●"}</span>
+          {budget}
           <div className="hd-seg" role="tablist" aria-label="Huddle view">
             {([["chat", "Chat", forYou], ["people", "People", count], ["findings", "Findings", openFindings]] as const).map(([k, label, n]) => (
               // Chat again while it shows: jump to the next message that tags you.
@@ -404,8 +397,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
       <div className="huddle-bar">
         {rounds && <HuddleRounds list={state.list} shown={h} onPick={onSelect} onNew={onNew} onSummary={(x) => onOpenOutput(x.summary!)} />}
         {stateLabel}
-        <span title={fullTime(h.createdAt)}>started {clock(h.createdAt)}</span>
-        <span>· {h.seq} message{h.seq === 1 ? "" : "s"}</span>
+        <span aria-hidden>·</span>
         {budget}
         {forYou > 0 && <button className="link-btn hd-jump" onClick={jump} title={`${forYou} ${forYou === 1 ? "message tags" : "messages tag"} you`}>↓ next for you</button>}
         <span className="spacer" />
@@ -418,7 +410,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
         )}
         {closed ? (
           <>
-            {h.closedAt && <span title={fullTime(h.closedAt)}>closed {clock(h.closedAt)} · read-only{summary && <> · {summary}</>}</span>}
+            {summary && <span>Read the {summary}</span>}
             {!rounds && <button className="btn small" onClick={onNew}>New huddle</button>}
           </>
         ) : (
@@ -1057,6 +1049,13 @@ function Roster({ slug, huddle: h, onError, viewing, onView }: {
   const ps = [...h.participants.filter((p) => p.kind !== "human"), ...h.participants.filter((p) => p.kind === "human")];
   const fail = (e: Error) => onError(e.message);
   const setMode = (p: HuddleParticipant, mode: HuddleMode) => p.mode !== mode && api.setHuddleMode(slug, h.id, p.handle, mode).catch(fail);
+  // Rows showing their details (role, status, mode, size, stop); each row is one line until its ⌄ is tapped.
+  const [more, setMore] = useState<Set<string>>(() => new Set());
+  const toggleMore = (handle: string) => setMore((m) => {
+    const next = new Set(m);
+    if (!next.delete(handle)) next.add(handle);
+    return next;
+  });
   return (
     <section>
       <h3>Participants <span className="hd-cap">{members(h).length}/{h.maxParticipants}</span></h3>
@@ -1070,22 +1069,23 @@ function Roster({ slug, huddle: h, onError, viewing, onView }: {
         const big = (p.contextTokens ?? 0) >= BIG_CONTEXT_TOKENS;
         // @main's coordinator pill already says its role.
         const role = p.handle === "main" ? null : participantRole(p);
-        // Long statuses wrap to two lines; the tooltip has all of it.
+        // Long statuses wrap to two lines in the details; the tooltip has all of it.
+        const open = more.has(p.handle);
         const detail = [...new Set([participantActivity(p, closed), p.error, p.statusReason, p.lastActivity].filter((x): x is string => !!x))].join("\n");
         return (
-          <div key={p.handle} className={`hd-p${human ? "" : " viewable"}${viewing === p.handle ? " sel" : ""}`}>
-            <Avatar handle={p.handle} small />
+          // One line: status dot, name, cost. The row opens the participant's steps; ⌄ shows the rest under it.
+          <div key={p.handle} className={`hd-p${human ? "" : " viewable"}${viewing === p.handle ? " sel" : ""}${open ? " open" : ""}`}>
+            <span className={`hd-dot ${human ? "human" : st}`} title={human ? undefined : activity} aria-hidden />
             {!human && (
               <button className="hd-p-open" onClick={() => onView(p.handle)} aria-pressed={viewing === p.handle}
-                aria-label={`${viewing === p.handle ? "Close" : "Open"} @${p.handle}'s work`} title={`@${p.handle}'s steps (read-only)`} />
+                aria-label={`${viewing === p.handle ? "Close" : "Open"} @${p.handle}'s work`} title={`@${p.handle}${role ? ` · ${role}` : ""}: ${activity}`} />
             )}
-            <div className="hd-p-name" title={role && !human ? `@${p.handle} · ${role}` : `@${p.handle}`}>
-              <b>@{p.handle}</b>
-              {role && <span className="hd-p-role"> · {role}</span>}
-              {p.handle === "main" && <span className="pill lead">{h.host ? "this ticket's Claude" : "in charge"}</span>}
-              {h.host === p.handle && <span className="pill host" title={`Runs the huddle: hands out the tasks, accepts the hand-ins and tags @main only for decisions and the final report`}>host</span>}
-              {p.lead && p.handle !== "main" && h.host !== p.handle && !human && <span className="pill lead">lead</span>}
-              {p.kind === "agent" && p.canEdit && <span className="pill" title="Works in its own copy of the folder and hands its changes in">changes files</span>}
+            <div className="hd-p-name">
+              <b>@{p.handle}</b>{!human && <span className="hd-p-role"> · {st === "idle" ? "waiting" : st}</span>}
+              {restartable && (
+                <button className="link-btn hd-redo" title={h.status === "live" ? `Restart @${p.handle}: it wakes now with what it hasn't read` : `Restart @${p.handle} when the huddle resumes`}
+                  onClick={() => api.restartHuddleParticipant(slug, h.id, p.handle).catch(fail)}>restart</button>
+              )}
             </div>
             <span className="hd-p-cost" title={human ? undefined : `What @${p.handle} spent in this huddle${p.liveCostUsd
               ? `, with ≈${money(p.liveCostUsd)} for the turn it is in now. That part is a live estimate: every step re-reads the whole conversation, so it climbs while @${p.handle} works and settles when the turn ends`
@@ -1093,39 +1093,49 @@ function Roster({ slug, huddle: h, onError, viewing, onView }: {
               {human ? "" : money((p.costUsd ?? 0) + (p.liveCostUsd ?? 0))}
             </span>
             {!human && (
-              <div className={`hd-p-st ${st}`}>
-                <span className={`hd-dot ${st}`} />
-                <span className="hd-p-st-text" title={detail}>{activity}</span>
-                {!closed && p.kind === "agent" && !p.canEdit && (
-                  <button className="link-btn hd-redo" title={`Let @${p.handle} change files: it gets its own copy of the folder and hands its changes in for you or @main to accept`}
-                    onClick={() => api.allowHuddleChanges(slug, h.id, p.handle).catch(fail)}>let it change files</button>
-                )}
-                {restartable && (
-                  <button className="link-btn hd-redo" title={h.status === "live" ? `Restart @${p.handle}: it wakes now with what it hasn't read` : `Restart @${p.handle} when the huddle resumes`}
-                    onClick={() => api.restartHuddleParticipant(slug, h.id, p.handle).catch(fail)}>restart</button>
-                )}
-              </div>
+              <button className="icon-btn tiny hd-p-more" aria-expanded={open} aria-label={`${open ? "Hide" : "Show"} more about @${p.handle}`}
+                title={open ? "Less" : "More"} onClick={() => toggleMore(p.handle)}>
+                {open ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
+              </button>
             )}
-            {!human && (
-              <div className="hd-p-meta">
-                <span className="hd-p-actions">
-                  {closed ? (
-                    <span className={`hd-mode ${p.mode}`}>{modeLabel(p.mode)}</span>
-                  ) : (
-                    <Select ariaLabel={`@${p.handle} mode`} className="roster-select hd-mode-select" value={p.mode} options={MODE_OPTIONS}
-                      onChange={(v) => setMode(p, v)} />
+            {open && !human && (
+              <div className="hd-p-detail">
+                {(role || p.handle === "main" || h.host === p.handle || p.lead || (p.kind === "agent" && p.canEdit)) && (
+                  <div className="hd-p-pills">
+                    {role && <span className="hd-p-role">{role}</span>}
+                    {p.handle === "main" && <span className="pill lead">{h.host ? "this ticket's Claude" : "in charge"}</span>}
+                    {h.host === p.handle && <span className="pill host" title={`Runs the huddle: hands out the tasks, accepts the hand-ins and tags @main only for decisions and the final report`}>host</span>}
+                    {p.lead && p.handle !== "main" && h.host !== p.handle && <span className="pill lead">lead</span>}
+                    {p.kind === "agent" && p.canEdit && <span className="pill" title="Works in its own copy of the folder and hands its changes in">changes files</span>}
+                  </div>
+                )}
+                <div className={`hd-p-st ${st}`}>
+                  <span className="hd-p-st-text" title={detail}>{activity}</span>
+                  {!closed && p.kind === "agent" && !p.canEdit && (
+                    <button className="link-btn hd-redo" title={`Let @${p.handle} change files: it gets its own copy of the folder and hands its changes in for you or @main to accept`}
+                      onClick={() => api.allowHuddleChanges(slug, h.id, p.handle).catch(fail)}>let it change files</button>
                   )}
-                </span>
-                {!!p.contextTokens && (
-                  <span className={`hd-ctx${big ? " big" : ""}`}
-                    title={`Conversation size Claude re-reads every step. Bigger = each step costs more.${big ? " This one is large." : ""}`}>
-                    {contextText(p.contextTokens)}
+                </div>
+                <div className="hd-p-meta">
+                  <span className="hd-p-actions">
+                    {closed ? (
+                      <span className={`hd-mode ${p.mode}`}>{modeLabel(p.mode)}</span>
+                    ) : (
+                      <Select ariaLabel={`@${p.handle} mode`} className="roster-select hd-mode-select" value={p.mode} options={MODE_OPTIONS}
+                        onChange={(v) => setMode(p, v)} />
+                    )}
                   </span>
-                )}
-                {!closed && p.status !== "stopped" && (
-                  <button className="icon-btn tiny hd-p-stop" aria-label={`Stop @${p.handle}`} title={`Stop @${p.handle}`}
-                    onClick={() => api.stopHuddleParticipant(slug, h.id, p.handle).catch(fail)}><CloseIcon size={12} /></button>
-                )}
+                  {!!p.contextTokens && (
+                    <span className={`hd-ctx${big ? " big" : ""}`}
+                      title={`Conversation size Claude re-reads every step. Bigger = each step costs more.${big ? " This one is large." : ""}`}>
+                      {contextText(p.contextTokens)}
+                    </span>
+                  )}
+                  {!closed && p.status !== "stopped" && (
+                    <button className="btn small ghost hd-p-stop" title={`Stop @${p.handle}`}
+                      onClick={() => api.stopHuddleParticipant(slug, h.id, p.handle).catch(fail)}>Stop</button>
+                  )}
+                </div>
               </div>
             )}
           </div>

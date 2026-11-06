@@ -37,3 +37,10 @@ test("a main ticket's first work run explains what happens next; later runs and 
   expect(firstRunPrompt(ticket({ status: "ready", runCount: 2 }), { repo: "remote", outputDir: "/o", main })).not.toContain(MAIN_FIRST_REPLY);
   expect(firstRunPrompt(ticket({ main: false, status: "ready" }), { repo: "remote", outputDir: "/o" })).not.toContain(MAIN_FIRST_REPLY);
 });
+
+test("the feature chip never adds a new ticket to a feature by itself", async () => {
+  // Must-not-break (U31): partOf is only set after the user taps Add or picks a feature; the default is "own".
+  const src = await Bun.file(new URL("../web/src/FeatureChoice.tsx", import.meta.url)).text();
+  expect(src).toContain('useState<FeatureChoiceValue>("own")');
+  expect(src).not.toContain("useEffect");
+});

@@ -5,17 +5,13 @@ import {
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { BOARD_COLUMNS, type Huddle, type Job, type Status, type Ticket } from "./api";
+import { BOARD_COLUMNS, type Job, type Status, type Ticket } from "./api";
 import { Card } from "./Card";
 import { boardColumnOf, groupByColumn } from "./columns";
 import { playMove } from "./arrivals";
 import { reducedMotion } from "./motion";
-import { addOnLinks, type AddOnLinks } from "./addOn";
-import { cardFamilies, type CardFamily } from "./family";
-import { cardHuddleBadge } from "./huddleText";
 import { useCardTabs } from "./useCardTabs";
 import { CollapseIcon, PlusIcon, SparkIcon } from "./icons";
-import { useNow } from "./useNow";
 import { usePhone } from "./usePhone";
 import { toast } from "./toast";
 
@@ -40,27 +36,18 @@ interface Props {
   restartPending?: boolean;
   /** A search or filter is active (empty columns say "no match" instead of the usual hint). */
   filtered?: boolean;
-  /** The board's huddles, for the card badges. */
-  huddles?: Huddle[];
-  /** Open a ticket's Huddle tab (a card's huddle badge). */
-  onOpenHuddle?: (id: string) => void;
   /** The board's slug: cards waiting on the usage limit get "Continue now" and the auto-continue toggle. */
   slug?: string;
-  /** A card's tag chip was clicked: filter the board by that tag. */
-  onTag?: (tag: string) => void;
   /** The board's one-time scheduled jobs: "⏰ N scheduled" on the cards that scheduled them. */
   jobs?: Job[];
   /** That chip was clicked: open Schedules → Upcoming for the ticket. */
   onOpenJobs?: (ticketId: string) => void;
-  /** Every ticket of the board, also the ones a search hides: the add-on chips name the linked ticket. */
-  allTickets?: Ticket[];
   /** A search found a main ticket through one of its tool tickets: main ticket id to that tool ticket's title. */
   via?: Map<string, string>;
 }
 
 /** Card props shared down the columns. */
-interface CardCtx { huddles: Huddle[]; onOpenHuddle?: (id: string) => void; limit?: { slug: string; onError: (msg: string) => void }; onTag?: (tag: string) => void;
-  jobs?: Job[]; onOpenJobs?: (ticketId: string) => void; addOns: Map<string, AddOnLinks>; families: Map<string, CardFamily>; via?: Map<string, string> }
+interface CardCtx { limit?: { slug: string; onError: (msg: string) => void }; jobs?: Job[]; onOpenJobs?: (ticketId: string) => void; via?: Map<string, string> }
 
 /** What a screen reader says on every card, after its title and status (also how to move between cards). */
 const CARD_HELP = "Arrow keys or J and K move between cards in a column, H and L between columns. Enter opens the ticket. " +
@@ -76,8 +63,6 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
     id: ticket.id,
     data: { status: ticket.status },
   });
-  // The quiet badge's "idle 12m" ticks.
-  const now = useNow();
   // Claude moved it here: the card travels from where it was (arrivals.ts).
   const node = useRef<HTMLDivElement | null>(null);
   useCardTabs(node);
@@ -107,8 +92,7 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
       }}
     >
       <Card a11yId={a11y} ticket={ticket} onClick={() => onOpen(ticket.id)} queued={queued} held={held}
-        huddle={cardHuddleBadge(ctx.huddles, ticket.id, now)} onOpenHuddle={ctx.onOpenHuddle} limit={ctx.limit} onTag={ctx.onTag}
-        jobs={ctx.jobs} onOpenJobs={ctx.onOpenJobs} addOn={ctx.addOns.get(ticket.id)} family={ctx.families.get(ticket.id)} onOpenTicket={onOpen} via={ctx.via?.get(ticket.id)} />
+        limit={ctx.limit} jobs={ctx.jobs} onOpenJobs={ctx.onOpenJobs} via={ctx.via?.get(ticket.id)} />
     </div>
   );
 }
@@ -141,7 +125,8 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   const needYou = all.filter((t) => t.attention).length;
   const total = `${all.length} ${all.length === 1 ? "ticket" : "tickets"}${queue.length ? `, ${queue.length} queued` : ""}`;
   const countLabel = needYou > 0 ? `${total}, ${needYou} ${needYou === 1 ? "needs" : "need"} you` : total;
-  const canAdd = id !== "in_progress" && id !== "done";
+  // Only Backlog has its own +: elsewhere N and New ticket add one.
+  const canAdd = id === "backlog";
   // Done keeps growing: show the most recently finished cards unless expanded.
   const [showAll, setShowAll] = useState(false);
   const limited = id === "done" && !showAll && tickets.length > DONE_LIMIT;
@@ -170,7 +155,8 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   return (
     <section className={`column col-${id} ${claude ? "claude-zone" : ""} ${isOver ? "over" : ""}`} aria-label={label} aria-busy={loading || undefined}>
       <header className="column-head">
-        <h2 className="column-title">{label}</h2>
+        {/* The column's hint is the title's tooltip (a phone has no title here: a tap on its column chip shows it). */}
+        <h2 className="column-title" title={hint}>{label}</h2>
         {/* One badge: total count, turning amber with a dot while tickets wait on you. */}
         {countBadge}
         {claude && <span className="claude-tag" title={CLAUDE_TAG} aria-label={CLAUDE_TAG}><SparkIcon /></span>}
@@ -182,7 +168,6 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
           <button className="icon-btn" title={`Add to ${label}`} aria-label={`Add ticket to ${label}`} onClick={() => onAdd(id)}><PlusIcon /></button>
         ) : <span className="icon-btn-placeholder" aria-hidden />}
       </header>
-      <div className="column-hint">{hint}</div>
       <SortableContext items={[...shown, ...queue].map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div ref={setNodeRef} className="column-body">
           {loading && Array.from({ length: PLACEHOLDERS[id] }, (_, i) => <div key={i} className="card skeleton-card" aria-hidden><i /><i /><i /></div>)}
@@ -237,16 +222,10 @@ const collision: CollisionDetection = (args) => {
   return closestCenter(args);
 };
 
-const NO_HUDDLES: Huddle[] = [];
-
-export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, huddles = NO_HUDDLES, onOpenHuddle, slug, onTag, jobs, onOpenJobs, allTickets, via }: Props) {
-  const linked = allTickets ?? tickets;
-  const addOns = useMemo(() => addOnLinks(linked), [linked]);
-  // Tool tickets (with you ones too) aren't counted as linked tickets: the main card's "N tickets" chip counts them.
-  const families = useMemo(() => cardFamilies(linked.filter((t) => !t.tool)), [linked]);
+export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via }: Props) {
   const ctx = useMemo(() => ({
-    huddles, onOpenHuddle, limit: slug ? { slug, onError: (msg: string) => toast(msg, { tone: "error" }) } : undefined, onTag, jobs, onOpenJobs, addOns, families, via,
-  }), [huddles, onOpenHuddle, slug, onTag, jobs, onOpenJobs, addOns, families, via]);
+    limit: slug ? { slug, onError: (msg: string) => toast(msg, { tone: "error" }) } : undefined, jobs, onOpenJobs, via,
+  }), [slug, jobs, onOpenJobs, via]);
   const phone = usePhone();
   const sensors = useSensors(
     // Phones: long-press picks a card up, so a swipe still scrolls the board.
@@ -324,6 +303,9 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
   // Phones show one column at a time (scroll snap): the chips jump to a column and follow the swipe.
   const boardRef = useRef<HTMLElement>(null);
   const [shownCol, setShownCol] = useState(0);
+  // A phone has no column title: a tap on the shown column's chip says what the column is for, another tap hides it.
+  const [hintOpen, setHintOpen] = useState(false);
+  useEffect(() => setHintOpen(false), [shownCol]);
   const onBoardScroll = () => {
     const el = boardRef.current;
     if (!el) return;
@@ -347,20 +329,22 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
           {BOARD_COLUMNS.map((c, i) => {
             const n = (byColumn.get(c.id)?.length ?? 0) + (c.id === "in_progress" ? byColumn.get("ready")?.length ?? 0 : 0);
             return (
-              <button key={c.id} className={`chip${i === shownCol ? " on" : ""}`} aria-current={i === shownCol || undefined} onClick={() => jumpTo(i)}>
+              <button key={c.id} className={`chip${i === shownCol ? " on" : ""}`} aria-current={i === shownCol || undefined} title={c.hint}
+                aria-expanded={i === shownCol ? hintOpen : undefined} onClick={() => (i === shownCol ? setHintOpen((v) => !v) : jumpTo(i))}>
                 {c.label}{!loading && <span className="chip-count">{n}</span>}
               </button>
             );
           })}
         </nav>
       )}
+      {phone && hintOpen && <p className="col-jump-hint" role="status">{BOARD_COLUMNS[shownCol]?.hint}</p>}
       <main className={`board${fadeIn ? " fade-in" : ""}`} ref={boardRef} onScroll={phone ? onBoardScroll : undefined}>
         {BOARD_COLUMNS.map((c) => (
           <Column key={c.id} {...c} tickets={byColumn.get(c.id) ?? []} queue={c.id === "in_progress" ? byColumn.get("ready") : undefined} held={restartPending} onOpen={onOpen} onAdd={onAdd} filtered={filtered} loading={loading} ctx={ctx}
             collapsed={!phone && collapsed.has(c.id)} onCollapse={(v) => setColumnCollapsed(c.id, v)} />
         ))}
       </main>
-      <DragOverlay>{dragging ? <Card ticket={dragging} dragging huddle={cardHuddleBadge(huddles, dragging.id)} addOn={addOns.get(dragging.id)} family={families.get(dragging.id)} /> : null}</DragOverlay>
+      <DragOverlay>{dragging ? <Card ticket={dragging} dragging /> : null}</DragOverlay>
     </DndContext>
   );
 }

@@ -11,7 +11,7 @@ import { parseProposal } from "../src/server/session";
 import type { SideCallInput, SideCallResult } from "../src/server/side-call";
 import { Store } from "../src/server/store";
 import type { Ticket } from "../src/server/types";
-import { cardFamilies, familyNearby, familyOf, looksLikeQuestion, parentLink, wouldLoop, type FamilyTicket } from "../web/src/family";
+import { familyNearby, partOfFor, familyOf, looksLikeQuestion, parentLink, wouldLoop, type FamilyTicket } from "../web/src/family";
 import { tempDir, until } from "./helpers";
 
 const at = (n: number) => `2026-10-${String(n).padStart(2, "0")}T00:00:00.000Z`;
@@ -65,13 +65,6 @@ test("wouldLoop: a ticket can't go under itself or anything below it", () => {
   expect(wouldLoop(tickets, "a", "a")).toBe(true);
   expect(wouldLoop(tickets, "c", "a")).toBe(false);
   expect(wouldLoop(tickets, "a", "d")).toBe(false);
-});
-
-test("cardFamilies: the ticket a card is part of and its direct children of every kind", () => {
-  const f = cardFamilies([tk("a", 1), tk("b", 2, { partOf: "a" }), tk("c", 3, { addOnOf: "a" }), tk("d", 4, { parentId: "a" }), tk("e", 5, { partOf: "gone" })]);
-  expect(f.get("a")!.children.map((c) => c.id)).toEqual(["b", "c", "d"]);
-  expect(f.get("b")!.partOf?.id).toBe("a");
-  expect(f.get("e")!.partOf).toBeUndefined();
 });
 
 test("parseSuggestion: only a ticket from the list; malformed or unknown answers suggest nothing", () => {
@@ -289,4 +282,17 @@ test("looksLikeQuestion: a question mark at the end or a question word first, no
   expect(looksLikeQuestion("Document the API", "Cover every route.")).toBe(false);
   expect(looksLikeQuestion("Cannot log in")).toBe(false);
   expect(looksLikeQuestion("")).toBe(false);
+});
+
+test("partOfFor: a new ticket stays on its own until the user picks a feature that is still open", () => {
+  const open = ["t_a", "t_b"];
+  expect(partOfFor("own", "", "", open)).toBeUndefined();
+  expect(partOfFor("own", "t_a", "t_b", open)).toBeUndefined();
+  expect(partOfFor("other", "", "", open)).toBeUndefined();
+  expect(partOfFor("other", "", "t_b", open)).toBe("t_b");
+  // "add" keeps the id tapped, whatever the suggestion turns into later.
+  expect(partOfFor("add", "t_a", "", open)).toBe("t_a");
+  // The picked feature closed: nothing is sent.
+  expect(partOfFor("add", "t_a", "", ["t_b"])).toBeUndefined();
+  expect(partOfFor("other", "", "t_b", ["t_a"])).toBeUndefined();
 });

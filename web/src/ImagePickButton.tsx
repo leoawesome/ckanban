@@ -1,7 +1,8 @@
-import { useRef, type RefObject } from "react";
+import { useRef, useState, type RefObject } from "react";
 import { ACCEPT, PHOTO_ACCEPT } from "./attachText";
-import { ImageIcon, PaperclipIcon } from "./icons";
+import { ImageIcon, PaperclipIcon, PlusIcon } from "./icons";
 import type { useImagePaste } from "./imagePaste";
+import { MoreSheet } from "./PhoneNav";
 import { usePhone } from "./usePhone";
 
 const FILE_TYPES = "PDF, Word, Excel, PowerPoint, text or code";
@@ -9,15 +10,18 @@ const FILE_TYPES = "PDF, Word, Excel, PowerPoint, text or code";
 /**
  * "Attach" button next to a markdown box: opens the system picker and adds the chosen images and files like a paste.
  * The way in where paste and drop don't work. Phones get two buttons instead: Photo (images only, so the phone opens
- * its gallery straight away) and a paperclip for files; a mixed picker there only offers Camera / Files.
+ * its gallery straight away) and a paperclip for files; a mixed picker there only offers Camera / Files. With `merged`
+ * (the chat's message box) a phone gets one "+" instead, whose sheet offers Photo and File.
  */
-export function ImagePickButton({ images, target, disabled, className = "" }: {
+export function ImagePickButton({ images, target, disabled, className = "", merged }: {
   images: ReturnType<typeof useImagePaste>;
   target: RefObject<HTMLTextAreaElement>;
   disabled?: boolean;
   className?: string;
+  merged?: boolean;
 }) {
   const phone = usePhone();
+  const [sheet, setSheet] = useState(false);
   const photo = useRef<HTMLInputElement>(null);
   const file = useRef<HTMLInputElement>(null);
   // No `capture`: the phone then offers its library rather than only the camera.
@@ -29,6 +33,24 @@ export function ImagePickButton({ images, target, disabled, className = "" }: {
         if (files.length && target.current) images.pick(target.current, files);
       }} />
   );
+  if (phone && merged) {
+    return (
+      <span className="image-pick-group">
+        <button type="button" className={`btn small image-pick add-pick ${className}`} disabled={disabled}
+          aria-label="Add a photo or file" aria-haspopup="menu" title="Add a photo or file" onClick={() => setSheet(true)}>
+          <PlusIcon size={16} />
+        </button>
+        {sheet && (
+          <MoreSheet label="Add" onClose={() => setSheet(false)} items={[
+            { label: "Photo", icon: <ImageIcon />, title: "Add photos from your gallery", onSelect: () => photo.current?.click() },
+            { label: "File", icon: <PaperclipIcon />, title: `Add a file: ${FILE_TYPES}`, onSelect: () => file.current?.click() },
+          ]} />
+        )}
+        {input(photo, PHOTO_ACCEPT)}
+        {input(file, ACCEPT)}
+      </span>
+    );
+  }
   if (phone) {
     return (
       <span className="image-pick-group">

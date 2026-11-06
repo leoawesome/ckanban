@@ -1,14 +1,16 @@
 import { useState, type ReactNode } from "react";
 import type { InboxItem, Ticket } from "./api";
-import { groupInbox } from "./inboxOrder";
+import { answers, groupInbox, marksDone } from "./inboxOrder";
 import { useSafeClear } from "./useSafeClear";
-import { elapsed, OLD_WAIT_MS, waitedFor } from "./time";
+import { elapsed, waitedFor } from "./time";
 import { useNow } from "./useNow";
+import { RowMore } from "./Inbox";
 
 /**
  * Phone home (≤720px), for the board shown: what needs you (what Claude is waiting on, then what is ready to check,
  * newest first; over a week old folds into Older), what runs and what is being planned. Other boards that need you are
- * one line at the end. Tapping a card opens the ticket full screen. A cleared card shrinks away and taps pause briefly.
+ * one line at the end. Tapping a card opens the ticket full screen. A waiting card shows one full-width button (Mark done
+ * for review, else Answer/Open) and a ⋯ with Snooze. A cleared card shrinks away and taps pause briefly.
  * Until the inbox and the tickets have loaded, grey placeholder rows stand in (no "nothing waits" line yet). `footer`
  * (the notifications offer) goes below the list, so its late arrival doesn't push the rows down.
  */
@@ -41,24 +43,21 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
 
   const open = (i: InboxItem) => { if (!busy()) onOpen(i.profile, i.id); };
   const card = (i: InboxItem) => {
-    const answer = i.attention.kind === "questions" || i.attention.kind === "proposal" || i.attention.kind === "reply" || i.attention.kind === "huddle";
-    const review = i.attention.kind === "review";
-    const old = now - new Date(i.attention.since).getTime() > OLD_WAIT_MS;
     const key = `${i.profile}/${i.id}`;
+    const done = marksDone(i);
+    const snooze = { label: "Snooze", title: "Hide it for a day, or until something changes", run: () => clear(key, () => onSnooze(i)) };
     return (
       <div key={key} className={`now-card need att-${i.attention.kind}${leaving(key) ? " leaving" : ""}`}>
         <div className="now-card-in">
           <button className="now-open" onClick={() => open(i)}>
             <span className="now-title">{i.title}</span>
-            <span className="now-act">
-              {i.attention.label}
-              <span className={old ? " now-old" : ""}> · {waitedFor(i.attention.since, now)}</span>
-            </span>
+            <span className="now-act">{i.attention.label} · {waitedFor(i.attention.since, now)}{done && <span className="now-go" aria-hidden>›</span>}</span>
           </button>
           <div className="now-actions">
-            <button className="btn primary" onClick={() => open(i)}>{answer ? "Answer" : "Open"}</button>
-            {review && <button className="btn" onClick={() => clear(key, () => onMarkDone(i))}>Mark done</button>}
-            <button className="btn ghost" onClick={() => clear(key, () => onSnooze(i))} title="Hide it for a day, or until something changes">Snooze</button>
+            {done
+              ? <button className="btn primary" onClick={() => clear(key, () => onMarkDone(i))}>Mark done</button>
+              : <button className="btn primary" onClick={() => open(i)}>{answers(i) ? "Answer" : "Open"}</button>}
+            <RowMore label={i.title} actions={[snooze]} />
           </div>
         </div>
       </div>

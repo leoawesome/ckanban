@@ -78,25 +78,6 @@ export function mergeBlock(pr: PrStatus | null | undefined): string | null {
   return null;
 }
 
-export interface PrChip {
-  label: string;
-  tone: "ok" | "bad" | "pend" | "plain";
-  title: string;
-}
-
-/** Review card chips after "PR #n": checks, conflicts, comments. */
-export function prChips(pr: PrStatus | null): PrChip[] {
-  if (!pr || pr.state !== "OPEN") return [];
-  const chips: PrChip[] = [];
-  const failed = pr.checks.filter((c) => c.state === "fail").map((c) => c.name);
-  if (pr.failing) chips.push({ label: `✗ ${pr.failing} failing`, tone: "bad", title: `Failing: ${failed.join(", ")}` });
-  else if (pr.pending) chips.push({ label: "● running", tone: "pend", title: `${pr.pending} ${pr.pending === 1 ? "check" : "checks"} still running` });
-  else if (pr.checks.length) chips.push({ label: "✓ checks", tone: "ok", title: `All ${pr.checks.length} checks passed` });
-  if (pr.conflicts) chips.push({ label: "conflicts", tone: "bad", title: "The PR has conflicts with its base branch" });
-  if (pr.comments > 0) chips.push({ label: `${pr.comments} ${pr.comments === 1 ? "comment" : "comments"}`, tone: "plain", title: "Comments on the PR" });
-  return chips;
-}
-
 const REVIEW: Record<string, string> = {
   APPROVED: "Approved",
   CHANGES_REQUESTED: "Changes requested",
