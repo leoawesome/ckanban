@@ -405,7 +405,8 @@ ${recallSection(ctx.recall)}${interview ? `${INTERVIEW}\n\n` : ""}# Rules
 - ${ctx.main ? mainWhere(ctx.main) : whereRule(t, ctx.repo, !!ctx.linked, inPlace)}${ctx.main ? "" : t.parentId && ctx.repo === "remote" && !inPlace && !ctx.linked ? `
 - This ticket is part of a plan (planner ticket ${t.parentId}): earlier tickets of the plan may have landed on the remote base branch after this worktree was created. Before you start, \`git fetch\` and rebase this branch onto the remote base branch.` : t.parentId && ctx.repo === "local" && !inPlace && !ctx.linked ? `
 - This ticket is part of a plan (planner ticket ${t.parentId}): earlier tickets of the plan may have been merged into the local base branch after this worktree was created. Before you start, rebase this branch onto the local base branch (there is no remote to fetch from).` : ""}
-${ctx.main ? "" : `- Decide whether this task requires changing files.
+${ctx.main && t.runCount === 0 ? `- ${MAIN_FIRST_REPLY}
+` : ""}${ctx.main ? "" : `- Decide whether this task requires changing files.
 - ${landRule(ctx.repo, inPlace, false, ctx.home)}
 `}- A missing git repository, remote or \`gh\` is never a reason to stop or report "blocked": work with what the folder has.
 - If it is a non-code task (research, writing, analysis, file organisation), no PR is needed.${t.tags?.length ? "" : `
@@ -585,7 +586,8 @@ export function chatPrompt(t: Ticket, text: string, mode: ChatMode, outputDir: s
   if (mode === "refine") {
     const start = typed ? "" : `The user just moved this ticket to Planning and is waiting for you in the ticket chat. Start now:
 - If important things are unclear, briefly say what you understood so far and interview them.
-- If the ticket is already clear enough to work on autonomously, skip the questions: propose the polished ticket, or say it looks ready.
+- If the ticket is already clear enough to work on autonomously, skip the questions: propose the polished ticket, or say it looks ready.${main && t.runCount === 0 ? `
+- ${MAIN_FIRST_REPLY}` : ""}
 
 `;
     return `${typed}${typed ? "\n\n" : ""}${context(typed ? "" : "Board asked Claude to help refine this ticket", `${start}(Sent from the kanban board's ticket chat. The user reads your reply there, not in a terminal.)
@@ -730,6 +732,9 @@ export function planningCommand(dir: string, sessionId: string, prompt: string, 
 }
 
 export type PlanWake = "event" | "final";
+
+/** A new main ticket's first reply: tells the user, in plain words, how working with a main ticket goes. */
+export const MAIN_FIRST_REPLY = `This is the first reply of a new main ticket: the user may not know yet how it works. In your reply, explain it in plain words: if the work needs several steps, say in two or three short sentences that you split it into steps that run on their own, that the user only talks to you here, and that "Where we are" at the top of this chat keeps the progress. If it is a small job you can do in one step, say it in one sentence (for example: "I'll hand this to one step that runs on its own and tell you here when it's done."). Don't use the words "tool ticket", "main ticket" or "family" for this.`;
 
 /** A main ticket's Planning chat makes no ticket cards: it creates tool tickets itself once the work starts. */
 const MAIN_PLANNING = `This ticket is a main ticket: it never proposes child-ticket cards (don't call propose_tickets). Once the user wants work done, you create tool tickets yourself with \`create_ticket\` (kind explore, build, test, review, fix, group or round), and the board runs them and wakes you with each result. In Planning, only create tool tickets that explore or check (kind explore or review) when the user asks you to look into something; building starts once the user agrees with the plan. You never change the project's files yourself.`;

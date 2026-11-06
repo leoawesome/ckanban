@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { type ClaudeSession, type Status, type Ticket, type TicketMode } from "./api";
 import { looksLikeQuestion } from "./family";
+import { mainHint } from "./newTicketText";
 import { FeatureChoice, useFeatureChoice } from "./FeatureChoice";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { useImagePaste } from "./imagePaste";
@@ -101,6 +102,7 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
               ? "Claude first asks clarifying questions in the chat, then does the work once you answer."
               : "Claude works on its own and reports back when done."}
           </span>
+          {mainHint(partOf, session?.id) && <span className="muted small new-ticket-main-hint">{mainHint(partOf, session?.id)}</span>}
         </div>
         {session && (
           <div className="session-chip">

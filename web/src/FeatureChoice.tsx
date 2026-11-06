@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { COLUMNS, type Ticket } from "./api";
 import { openFeatures, suggestFeature } from "./family";
+import { plural } from "./teamText";
 
 export type FeatureChoiceValue = "add" | "own" | "other";
 
@@ -26,7 +27,7 @@ export function FeatureChoice({ state, name = "feature" }: { state: ReturnType<t
   const col = (t: Ticket) => COLUMNS.find((c) => c.id === t.status)?.label ?? t.status;
   return (
     <div className="feature-suggest" role="group" aria-label="Part of a feature">
-      {f ? <p>This looks like part of <b>{f.title}</b> ({col(f)}, {size(f.id)} tickets).</p> : <p>Is it part of a feature you're already working on?</p>}
+      {f ? <p>This looks like part of <b>{f.title}</b> ({col(f)}, {plural(size(f.id), "ticket")}).</p> : <p>Is it part of a feature you're already working on?</p>}
       {f && (
         <label className="choice"><input type="radio" name={name} checked={choice === "add"} onChange={() => setChoice("add")} /> Add to {f.title}
           <span className="muted small">its chat picks it up and it shows in the feature's status</span></label>
