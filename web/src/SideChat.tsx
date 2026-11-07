@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Profile } from "./api";
-import { CloseIcon } from "./icons";
+import { ClockIcon, CloseIcon, PlusIcon } from "./icons";
 import { isTyping } from "./keynav";
 import { useLayer } from "./layers";
 import { QuickChatPane } from "./QuickChat";
@@ -89,6 +89,42 @@ export function SideChat({ profile, chat, onClose, onOpenTicket, focusRequest, c
   covered: boolean;
 }) {
   const section = useRef<HTMLElement>(null);
+  const historyBtn = useRef<HTMLButtonElement>(null);
+  // Past chats: QuickChatPane's chat list, shown here as a drawer over the conversation only when asked (CSS: .history-open).
+  const [history, setHistory] = useState(false);
+  const closeHistory = (focusButton = false) => {
+    setHistory(false);
+    if (focusButton) historyBtn.current?.focus({ preventScroll: true });
+  };
+  // Esc closes the drawer first: a layer on top of everything (ticket panel included) while it is open.
+  useLayer(() => closeHistory(true), { active: history });
+  useEffect(() => {
+    if (!history) return;
+    const root = section.current;
+    const list = root?.querySelector<HTMLElement>(".qc-list");
+    // The keyboard goes to the open chat's row (or the first one).
+    list?.querySelector<HTMLElement>(".qc-row.cur, .qc-row")?.focus({ preventScroll: true });
+    // Picking a chat (or New chat) in the list closes it; so does a click anywhere outside it but the Chats button.
+    const onClick = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest(".qc-row")) setHistory(false);
+    };
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (!list?.contains(t) && !historyBtn.current?.contains(t)) setHistory(false);
+    };
+    list?.addEventListener("click", onClick);
+    document.addEventListener("pointerdown", onDown, true);
+    return () => {
+      list?.removeEventListener("click", onClick);
+      document.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [history]);
+  // New chat from the header: the list's own New chat button (the list may be hidden).
+  const newChat = () => {
+    section.current?.querySelector<HTMLElement>(".qc-list .qc-new")?.click();
+    setHistory(false);
+    requestAnimationFrame(() => section.current?.querySelector<HTMLElement>(".qc-main textarea:not([disabled])")?.focus({ preventScroll: true }));
+  };
   // Esc from outside the chat (the board, nothing focused) hides it, after any ticket panel: it sits under that layer.
   useLayer(onClose, { base: true, under: true, skipInInputs: true });
 
@@ -131,14 +167,18 @@ export function SideChat({ profile, chat, onClose, onOpenTicket, focusRequest, c
   };
 
   return (
-    <section ref={section} className={`side-chat${chat.dragging ? " resizing" : ""}`} style={{ width: chat.width }} aria-label="Quick Claude chat"
+    <section ref={section} className={`side-chat${chat.dragging ? " resizing" : ""}${history ? " history-open" : ""}`} style={{ width: chat.width }} aria-label="Quick Claude chat"
       tabIndex={-1} onKeyDown={onEsc}>
       <div className="side-chat-resize" role="separator" aria-orientation="vertical" aria-label="Resize the Claude chat" tabIndex={0}
         aria-valuenow={chat.width} title="Drag (or ←→) to resize · double-click to reset" {...chat.handle} />
       <div className="side-chat-head">
+        <button ref={historyBtn} className={`btn ghost small icon-label${history ? " on" : ""}`} onClick={() => setHistory((o) => !o)}
+          aria-expanded={history} aria-pressed={history} title="Past chats in this folder" aria-label="Past chats">
+          <ClockIcon size={14} /> Chats
+        </button>
         <span className="side-chat-title">Claude</span>
-        <span className="muted small">no ticket</span>
         <div className="spacer" />
+        <button className="btn ghost small icon-label" onClick={newChat} title="Start a new chat"><PlusIcon size={14} /> New chat</button>
         <button className="icon-btn" onClick={onClose} title="Hide the chat (C, or Esc). Claude's replies keep running." aria-label="Hide the Claude chat">
           <CloseIcon />
         </button>
