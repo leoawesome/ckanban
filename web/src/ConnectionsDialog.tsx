@@ -251,7 +251,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             {reach && <span className={`badge reach${s.scope === "board" ? " board" : ""}`} title={info}>{reach}</span>}
           </div>
           <div className="conn-actions">
-            {canLogin(s) && !waiting && (s.status === "connected" ? signInButton("Sign in again", false) : signInButton("Sign in", true))}
+            {canLogin(s) && !waiting && (s.status === "connected" ? signInButton("Sign in again", false) : signInButton("Sign in", false))}
             {canLogin(s) && s.scope !== "claude.ai" && !waiting && s.status === "connected" && (
               <button className="btn small" onClick={() => setConfirm({ kind: "logout", server: s })}>Log out</button>
             )}
@@ -265,7 +265,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
                 <button className="btn small" disabled={busy === `edit:${s.name}`} onClick={() => (editing?.name === s.name ? setEditing(null) : startEdit(s))}>
                   {editing?.name === s.name ? "Close" : "Edit"}
                 </button>
-                <button className="btn small danger" onClick={() => setConfirm({ kind: "remove", server: s })}>Remove</button>
+                <button className="btn small ghost danger" onClick={() => setConfirm({ kind: "remove", server: s })}>Remove</button>
               </>
             )}
             {s.scope === "claude.ai" && (
@@ -388,7 +388,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
   const addable = fromClaude.filter((x) => x.c.kind === "connect");
   const unavailable = fromClaude.filter((x) => x.c.kind === "none");
   const usedBy = (p: Pass) => p.usedBy > 0 && <span className="muted small">Used by {p.usedBy} automation{p.usedBy === 1 ? "" : "s"}</span>;
-  const removePassButton = (p: Pass) => <button className="btn small danger" onClick={() => setRemovePass(p)}>Remove</button>;
+  const removePassButton = (p: Pass) => <button className="btn small ghost danger" onClick={() => setRemovePass(p)}>Remove</button>;
 
   const automationCard = ({ s, c }: (typeof fromClaude)[number]) => (
     <div key={s.name} className="conn-card">
@@ -402,7 +402,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
         <div className="conn-actions">
           {c.kind === "ok" && <>{usedBy(c.pass)}{removePassButton(c.pass)}</>}
           {c.kind === "connect" && (
-            <button className="btn small primary" disabled={busy === `board:${s.name}`} title={c.pass?.error ?? BOARD_TIP} onClick={() => connect(s, c.pass)}>
+            <button className="btn small" disabled={busy === `board:${s.name}`} title={c.pass?.error ?? BOARD_TIP} onClick={() => connect(s, c.pass)}>
               {busy === `board:${s.name}` ? "Connecting…" : "Add for automations"}
             </button>
           )}
@@ -430,7 +430,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
         <div className="conn-actions">
           {usedBy(p)}
           {p.kind === "mcp" && p.status !== "connected" && (
-            <button className="btn small primary" disabled={busy === `pass:${p.id}`}
+            <button className="btn small" disabled={busy === `pass:${p.id}`}
               onClick={() => act(`pass:${p.id}`, async () => { const tab = window.open("about:blank", "_blank"); try { openSignIn(tab, (await api.authorizePass(p.id)).url); } catch (e) { tab?.close(); throw e; } })}>
               Sign in
             </button>
@@ -466,7 +466,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
           </span>
           <div className="spacer" />
           <button className="btn small" disabled={!!state?.checking} onClick={() => act("refresh", async () => { await api.mcpRefresh(); await loadBoard(); })}>Refresh</button>
-          <button className="btn small primary" onClick={onAdd}>{addOpen ? "Close form" : "Add"}</button>
+          <button className="btn small" onClick={onAdd}>{addOpen ? "Close form" : "Add"}</button>
         </div>
         <div className="tabs conn-tabs" role="tablist">
           <button role="tab" aria-selected={tab === "claude"} className={tab === "claude" ? "active" : ""} onClick={() => setTab("claude")}>
@@ -656,7 +656,7 @@ function AgentsSection() {
               </div>
               <div className="mcp-actions">
                 {(!a.installed || !a.current) && (
-                  <button className="btn small primary" disabled={busy === a.id} onClick={() => act(a, true)}>
+                  <button className="btn small" disabled={busy === a.id} onClick={() => act(a, true)}>
                     {busy === a.id ? "Adding…" : a.installed ? "Update" : "Add"}
                   </button>
                 )}

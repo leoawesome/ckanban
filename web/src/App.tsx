@@ -1021,7 +1021,7 @@ export function App() {
           <button className="btn primary phone-only topbar-icon" aria-label="New ticket" onClick={() => setNewTicket(true)}><PlusIcon size={20} /></button>
         )}
         {profile && (
-          <button className="btn primary desktop-only" onClick={() => setNewTicket(true)} title="New ticket (N)">
+          <button className={`btn desktop-only${openId ? "" : " primary"}`} onClick={() => setNewTicket(true)} title="New ticket (N)">
             New ticket<KeyHint keys="N" />
           </button>
         )}

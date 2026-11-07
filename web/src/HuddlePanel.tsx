@@ -432,7 +432,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
                 </>
               )
             ) : (
-              <button className="btn small hd-danger" onClick={() => setConfirm("stop")} title={STOP_AGENTS_TIP}>■ Stop agents</button>
+              <button className="btn small ghost danger" onClick={() => setConfirm("stop")} title={STOP_AGENTS_TIP}>■ Stop agents</button>
             )}
             <button className={`btn small${h.closeRequest || quiet ? " primary" : ""}`} onClick={() => setConfirm("close")}
               title={h.closeRequest ? `@${h.closeRequest.by} asks to close: ${h.closeRequest.reason}` : undefined}>Close huddle</button>

@@ -34,7 +34,7 @@ function ProposalBody({ text }: { text: string }) {
   );
 }
 
-/** Claude's proposed title/description; Apply replaces the ticket's fields, Apply & start work also moves it to Ready. */
+/** Claude's proposed title/description; Apply replaces the ticket's fields, Apply & start work also moves it to Queued. */
 export function ProposalCard({ proposal, applied, started, onApply, onApplyStart, keyHint, addOn, family }: {
   proposal: Proposal;
   applied: boolean;

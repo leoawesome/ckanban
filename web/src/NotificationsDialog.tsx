@@ -131,7 +131,7 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
         <div className="form-actions">
           <button type="button" className="btn" disabled={!state || !!busy} onClick={test}>{busy === "test" ? "Sending…" : "Send test notification"}</button>
           <div className="spacer" />
-          <button type="button" className="btn primary" disabled={busy === "save"} onClick={async () => { if (await saveUrl()) onClose(); }}>Done</button>
+          <button type="button" className="btn" disabled={busy === "save"} onClick={async () => { if (await saveUrl()) onClose(); }}>Done</button>
         </div>
       </form>
     </Modal>

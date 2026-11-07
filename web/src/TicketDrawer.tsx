@@ -503,6 +503,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const split = useDetailsSplit(detailsRef, pinnedRef, !phone);
   // Scrolling the chat or huddle feed down shrinks the header to one line; scrolling up brings it back.
   const slim = useShrinkHeader(bodyRef, tab === "chat" || tab === "huddle", tab);
+  // Phones: away from the Ticket tab the header is the status row plus the title on one line; the editable title, tags and model sit on the Ticket tab.
+  const compactHead = phone && tab !== "ticket";
   // Opens fitted to the sidebar plus the chat's reading column; dragging can make it wider.
   const panel = usePanelWidth((detailsShown ? side.pref : 0) + CHAT_ROOM);
   const { dragging, handle } = panel;
@@ -934,7 +936,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   return (
     <FileLinksProvider slug={slug} ticketId={ticket.id} panel={panelRef}>
     <div className={`drawer-wrap${slideIn ? "" : " no-fade"}${leaving ? " leaving" : ""}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <aside ref={panelRef} className={`panel ${dragging ? "resizing" : ""} ${slideIn ? "" : "no-slide"}${slim ? " head-slim" : ""}${leaving ? " leaving" : ""}`} role="dialog" aria-modal="true" aria-label={ticket.title} style={{ width }} tabIndex={-1}>
+      <aside ref={panelRef} className={`panel ${dragging ? "resizing" : ""} ${slideIn ? "" : "no-slide"}${slim ? " head-slim" : ""}${compactHead ? " head-compact" : ""}${leaving ? " leaving" : ""}`} role="dialog" aria-modal="true" aria-label={ticket.title} style={{ width }} tabIndex={-1}>
         <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabIndex={0}
           title="Drag to resize · double-click to reset" {...handle} />
 
@@ -952,7 +954,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           </button>}
           <StarToggle on={!!ticket.important} onChange={toggleStar} keyHint="S" />
           {/* The shrunk header's one line: the title, cut short (the full one is in .panel-top). */}
-          <span className="head-title" aria-hidden={!slim}>{ticket.title}</span>
+          <span className="head-title" aria-hidden={!slim && !compactHead}>{ticket.title}</span>
           {phone ? (
             // Phones: one button says the state and moves the ticket (desktop keeps the chip and its own column picker).
             <Select className={`phone-status tone-${ps.tone}`} ariaLabel={`${ps.label}. Move to column`} value={boardColumnOf(ticket)}
@@ -1005,7 +1007,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           {!phone && <button className="icon-btn" onClick={onClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>}
         </header>
         {/* Title and tags fold away while the header is shrunk. */}
-        <div className="panel-top" aria-hidden={slim || undefined}><div className="panel-top-in">
+        <div className="panel-top" aria-hidden={slim || compactHead || undefined}><div className="panel-top-in">
         {/* The whole title, wrapping to as many lines as it needs, under the buttons. */}
         <div className="panel-title">
           <textarea ref={titleRef} className="title-input" rows={1} value={title} aria-label="Title"

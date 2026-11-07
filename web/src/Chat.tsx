@@ -1196,7 +1196,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
           <span className="composer-actions">
             <ImagePickButton images={images} target={composer} disabled={stopping} merged />
             <SendOrStop running={running} hasDraft={!!draft.trim()} stopping={stopping} onStop={stop}
-              send={<button className="btn primary small" disabled={!draft.trim() || stopping || images.uploading} onClick={submit}>{images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" /></button>} />
+              send={<button className={`btn small${draft.trim() ? " primary" : ""}`} disabled={!draft.trim() || stopping || images.uploading} onClick={submit}>{images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" /></button>} />
           </span>
         </div>
       </div>

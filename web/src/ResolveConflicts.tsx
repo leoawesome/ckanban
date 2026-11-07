@@ -3,7 +3,7 @@ import { api, type Ticket } from "./api";
 import { toast } from "./toast";
 
 /** "Resolve conflicts" next to a PR's conflict chip: asks the ticket's Claude to rebase onto the base branch and push. */
-export function ResolveConflicts({ slug, ticket, onError, small }: { slug: string; ticket: Ticket; onError: (msg: string) => void; small?: boolean }) {
+export function ResolveConflicts({ slug, ticket, onError }: { slug: string; ticket: Ticket; onError: (msg: string) => void }) {
   const [busy, setBusy] = useState(false);
   const running = !!ticket.running || ticket.status === "in_progress";
   const click = async (e: React.MouseEvent) => {
@@ -19,7 +19,7 @@ export function ResolveConflicts({ slug, ticket, onError, small }: { slug: strin
     }
   };
   return (
-    <button className={`btn primary${small ? " small pr-resolve" : " small"}`} disabled={busy || running} onClick={click}
+    <button className="btn primary small" disabled={busy || running} onClick={click}
       onKeyDown={(e) => e.stopPropagation()}
       title={running ? "Claude is already working on this ticket" : "Ask Claude to rebase onto the base branch, resolve the conflicts, run the checks and push"}>
       {busy ? "Sending…" : "Resolve conflicts"}
