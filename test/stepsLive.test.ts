@@ -14,8 +14,8 @@ describe("the chat's steps working line", () => {
     expect(stepsLineText(["Build the login page"])).toBe("Working: Build the login page");
   });
   test("several steps count and name them, then and N more", () => {
-    expect(stepsLineText(["Build the login page", "Test the signup"])).toBe("2 steps working: Build the login page, Test the signup");
-    expect(stepsLineText(["A", "B", "C", "D"])).toBe("4 steps working: A, B and 2 more");
+    expect(stepsLineText(["Build the login page", "Test the signup"])).toBe("2 tasks working: Build the login page, Test the signup");
+    expect(stepsLineText(["A", "B", "C", "D"])).toBe("4 tasks working: A, B and 2 more");
     expect(stepsLine(["A", "B", "C"])!.more).toBe(1);
   });
 });

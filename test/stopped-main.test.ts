@@ -82,11 +82,11 @@ test("a still-paused main ticket's run is told its steps are paused, and its car
   await untilSpawned(1);
   await board.whenIdle();
   const args = readArgs().at(-1)!.args.join("\n");
-  expect(args).toContain("Your steps are paused because the user pressed Stop");
-  expect(MAIN_PAUSED).toContain("Never say a step is queued");
-  expect(mainTicketRules({ kind: "main", repo: "local", branch: null, inPlace: true })).not.toContain("Your steps are paused");
+  expect(args).toContain("Your tasks are paused because the user pressed Stop");
+  expect(MAIN_PAUSED).toContain("Never say a task is queued");
+  expect(mainTicketRules({ kind: "main", repo: "local", branch: null, inPlace: true })).not.toContain("Your tasks are paused");
   const card = familyCard(g(main.id), store.listTickets("p").filter((t) => t.parentId === main.id), store.listTickets("p"), () => false, 0);
-  expect(card.line).toEqual({ text: "Paused: new steps wait until you press Resume", tone: "warn" });
+  expect(card.line).toEqual({ text: "Paused: new tasks wait until you press Resume", tone: "warn" });
 }, 60_000);
 
 test("plan_control: a main ticket's own chat reply may resume its own paused plan", async () => {

@@ -1,4 +1,5 @@
-// A feature's "Where we are" status: the pinned block at the top of its main chat (the top ticket's chat).
+// A feature's status ("Where we are" in status.md): shown at the top of its main ticket's Tasks tab, with a one-line
+// "Waiting on you" in its chat.
 // Claude writes the words (goal, done, broken, waiting on you, next step, a note per pull request) with update_status;
 // the board adds the facts it knows from ticket data (counts per group, test results per round, pull requests). Both
 // are saved in the top ticket's outputs folder: status.json (what the block renders from) and status.md (to read).

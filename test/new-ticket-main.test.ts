@@ -11,7 +11,7 @@ const ticket = (over: Record<string, unknown> = {}) => ({
 
 test("the New ticket form shows the main-ticket hint only for a top-level ticket", () => {
   expect(mainHint(undefined, undefined)).toBe(MAIN_HINT);
-  expect(MAIN_HINT).toContain("Where we are");
+  expect(MAIN_HINT).toContain("Tasks tab");
   expect(mainHint("t_feature", undefined)).toBeNull();
   expect(mainHint(undefined, "session-1")).toBeNull();
 });
@@ -24,7 +24,8 @@ test("feature suggestion counts tickets in plain words", () => {
 test("a new main ticket's first Planning reply explains what happens next", () => {
   const p = chatPrompt(ticket(), "", "refine", "/o", false, "remote", false, "", main);
   expect(p).toContain(MAIN_FIRST_REPLY);
-  expect(MAIN_FIRST_REPLY).toContain("Where we are");
+  expect(MAIN_FIRST_REPLY).toContain("Tasks tab");
+  expect(MAIN_FIRST_REPLY).not.toContain("Where we are");
   expect(MAIN_FIRST_REPLY).toContain("one sentence");
   // Not once it has run, not for a typed message, not for a plain ticket.
   expect(chatPrompt(ticket({ runCount: 1 }), "", "refine", "/o", false, "remote", false, "", main)).not.toContain(MAIN_FIRST_REPLY);

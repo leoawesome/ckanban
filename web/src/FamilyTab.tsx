@@ -1,4 +1,4 @@
-// The Family tab: the whole feature from its top ticket down, grouped and folded, with each ticket's model, cost and
+// The Tasks tab (DrawerTab "family"): on a feature's top ticket its status on top (StatusBlock), then the whole feature from its top ticket down, grouped and folded, with each ticket's model, cost and
 // status, a short view of the clicked row, the plan controls of a planner, and "Add tickets…" (GatherDialog).
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Ticket } from "./api";
@@ -8,6 +8,7 @@ import { Modal } from "./Modal";
 import { copyText } from "./share";
 import { PlanControls } from "./PlanPanel";
 import { ImportantStar } from "./StarToggle";
+import { StatusBlock, useFeatureStatus } from "./StatusBlock";
 import { timeAgo } from "./time";
 import { toast } from "./toast";
 import { Markdown } from "./Transcript";
@@ -22,6 +23,9 @@ export function modelLabel(m: string | null | undefined): string {
   const name = x[1][0].toUpperCase() + x[1].slice(1).toLowerCase();
   return x[2] ? `${name} ${x[2]}.${x[3]}` : name;
 }
+
+/** A step's kind as a word on its detail line. */
+const KIND_WORDS: Record<string, string> = { explore: "Explore", build: "Build", test: "Test", review: "Review", fix: "Fix", with_you: "With you" };
 
 const money = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(1)}`;
 
@@ -47,6 +51,7 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
   const rows = useMemo(() => familyOf(tickets, ticket.id), [tickets, ticket.id]);
   const kids = useMemo(() => childrenByParent(tickets), [tickets]);
   const top = rows[0]?.ticket;
+  const feature = useFeatureStatus(slug, ticket, tickets);
   // Reload the server's view (costs, summaries) when any ticket of the family changes.
   const key = rows.map((r) => `${r.ticket.id}:${r.ticket.updatedAt}`).join("|");
   const [view, setView] = useState<Map<string, FamilyViewRow>>(new Map());
@@ -107,14 +112,15 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
   };
   return (
     <section className="family-tab">
+      {feature.status && <StatusBlock slug={slug} ticket={ticket} tickets={tickets} status={feature.status} onChanged={feature.reload} onOpenTicket={onOpenTicket} />}
       {planChildren.length > 0 && (
-        <PlanControls slug={slug} ticket={ticket} children={planChildren} onOpenTicket={onOpenTicket} onError={onError} onMoveToDone={onMoveToDone} onAddMore={onAddMore} />
+        <PlanControls slug={slug} ticket={ticket} children={planChildren} onOpenTicket={onOpenTicket} onError={onError} onMoveToDone={onMoveToDone} onAddMore={onAddMore} countShown={!!feature.status} />
       )}
       <div className="family-tab-head">
-        <b>Steps</b>
+        <b>Tasks</b>
         <span className="muted small">{rows.length} ticket{rows.length === 1 ? "" : "s"} · {money(total)}</span>
-        <button className="mini-link" onClick={() => copyText(familyText(rows), "Steps list copied")}
-          title="Copy the family as a list, for example to ask Claude to summarise this piece of work">Copy list</button>
+        <button className="mini-link" onClick={() => copyText(familyText(rows), "Task list copied")}
+          title="Copy the tasks as a list, for example to ask Claude to summarise this piece of work">Copy list</button>
         <button className="mini-link" onClick={() => setGathering(true)} title={`Bring tickets you already made into "${top.title}"`}>Add tickets…</button>
       </div>
       <div className="family-tab-tree" role="tree">
@@ -134,12 +140,16 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
                   e.stopPropagation();
                   if (holds(r, kids) && r.depth > 0) setOpen((o) => ({ ...o, [t.id]: !isOpen(r) }));
                 }}>{holds(r, kids) ? (isOpen(r) || r.depth === 0 ? "▾" : "▸") : ""}</button>
-              <span className="ft-title">{t.important && <ImportantStar />}{t.title}</span>
-              {group
-                ? <span className="ft-sum">{groupSummary(inside.map((k) => ({ kind: k.kind, state: stateOf(k) })))}</span>
-                : <span className="ft-model">{modelLabel(v?.model ?? t.model)}</span>}
-              <span className="ft-cost">{v ? money(cost(r)) : ""}</span>
-              <span className={`ft-st ${STATE_CLASS[groupState]}`}>{STATE_WORDS[groupState]}</span>
+              <span className="ft-body">
+                <span className="ft-title">{t.important && <ImportantStar />}{t.title}</span>
+                <span className="ft-meta">
+                  {group
+                    ? <span className="ft-sum">{groupSummary(inside.map((k) => ({ kind: k.kind, state: stateOf(k) })))}</span>
+                    : <span className="ft-model">{[t.kind ? KIND_WORDS[t.kind] : null, modelLabel(v?.model ?? t.model)].filter(Boolean).join(" · ")}</span>}
+                  <span className={`ft-st ${STATE_CLASS[groupState]}`}>{STATE_WORDS[groupState]}</span>
+                  {v && cost(r) > 0 && <span className="ft-cost">{money(cost(r))}</span>}
+                </span>
+              </span>
             </div>
           );
         })}

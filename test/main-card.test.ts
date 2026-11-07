@@ -64,7 +64,7 @@ test("one tool ticket is enough for the card's working line and step count", () 
   const v = cardFamily({ ...main, familyCard: fc }, false);
   expect(v.fc).toBe(fc);
   expect(v.working).toBe(true);
-  expect(stepsText(fc)).toBe("0 of 1 step");
+  expect(stepsText(fc)).toBe("0 of 1 task");
   // No family at all: no feature summary on the card.
   expect(cardFamily({ ...main, familyCard: { ...fc, tools: 0, working: [], running: [] } }, false).fc).toBeNull();
 });
@@ -75,7 +75,7 @@ test("progress in words: finished tool tickets of all of them", () => {
   const added = tk("U", { partOf: "M", status: "done" });
   const fc = familyCard(main, [...tools, added], [main, ...tools, added], none, 41);
   expect(fc).toMatchObject({ tools: 16, toolsDone: 7 });
-  expect(stepsText(fc)).toBe("7 of 16 steps");
+  expect(stepsText(fc)).toBe("7 of 16 tasks");
 });
 
 test("a failed step reads Step failed with its reason, and the card's line is red", () => {
@@ -84,7 +84,7 @@ test("a failed step reads Step failed with its reason, and the card's line is re
   const step = stepWait(bad, false)!;
   const att = attentionFor(main, null, false, { step })!;
   expect(att).toMatchObject({ kind: "failed", step: "failed", label: "Test: staging check failed: couldn't log in to staging" });
-  expect(attentionLabel(att, 0, false)).toBe("Step failed");
+  expect(attentionLabel(att, 0, false)).toBe("Task failed");
   expect(familyCard(main, [bad], [main, bad], none, 0).line).toEqual({ text: "Test: staging check failed: couldn't log in to staging", tone: "fail" });
   // The main ticket's own failure stays "Your turn"; a step asking a question is amber.
   expect(attentionLabel({ kind: "failed" }, 0, false)).toBe("Your turn");

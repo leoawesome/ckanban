@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, copy, onReconnect, subscribe, type Huddle, type HuddleParticipant, type ParticipantSession, type SessionStep } from "./api";
-import { handleColor, handleInitials } from "./huddle";
+import { HelperFace } from "./HelperFace";
 import { ChevronLeftIcon, CloseIcon, ThoughtIcon } from "./icons";
 import { isTyping, panelStep } from "./keynav";
 import { KeyHint } from "./KeyHint";
@@ -150,7 +150,7 @@ export function SessionPanel({ slug, huddle: h, participant: p, onClose, onStep,
     <section className="hd-session" aria-label={`@${handle}'s steps (read-only)`}>
       <header className="hd-session-head">
         {phone && <button className="icon-btn phone-back" onClick={onClose} aria-label="Back to the huddle"><ChevronLeftIcon size={20} /></button>}
-        <span className="hd-av" style={{ background: handleColor(handle) }} aria-hidden>{handleInitials(handle)}</span>
+        <HelperFace p={p} size={30} />
         <div className="hd-session-title">
           <div><b>@{handle}</b> <span className="hd-ro">read-only</span></div>
           <div className="hd-session-meta" title={view.sessionId ? `Claude Code chat ID ${view.sessionId}` : undefined}>{sessionMeta(view)}</div>

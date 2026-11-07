@@ -326,3 +326,25 @@ test("a huddle quiet for hours looks finished, until Keep open or new activity",
   expect(huddleIdle(h, now, h.idleSince)).toBe(false);
   expect(huddleIdle(h, now, at(IDLE_HUDDLE_MS * 3))).toBe(true);
 });
+
+test("faceLook: preset, numbered handle and role words pick a role's look; others a stable colour", async () => {
+  const { faceLook } = await import("../web/src/huddleText");
+  expect(faceLook({ handle: "qa-2" }).badge).toBe("🧪");
+  expect(faceLook({ handle: "x", preset: "security" }).badge).toBe("🛡");
+  expect(faceLook({ handle: "bob", role: "Code reviewer" }).badge).toBe("🔍");
+  expect(faceLook({ handle: "you", kind: "human" }).you).toBe(true);
+  const a = faceLook({ handle: "demo-video-producer" });
+  expect(a).toEqual(faceLook({ handle: "demo-video-producer" }));
+  expect(a.badge).toBe("💡");
+  expect(faceLook({ handle: "t-abc", kind: "ticket-main" }).badge).toBe("📌");
+});
+
+test("rosterNoise and handInLine", async () => {
+  const { rosterNoise, handInLine } = await import("../web/src/huddleText");
+  expect(rosterNoise("@main added @qa (QA tester).")).toBe(true);
+  expect(rosterNoise("@qa switched to monitor mode.")).toBe(true);
+  expect(rosterNoise("@qa is done.")).toBe(false);
+  const files = [{ path: "a", change: "changed" as const }, { path: "b", change: "added" as const }];
+  expect(handInLine({ files, status: "waiting" })).toEqual({ what: "changed 2 files", state: null });
+  expect(handInLine({ files: files.slice(0, 1), status: "accepted" })).toEqual({ what: "changed 1 file", state: "✓ accepted" });
+});

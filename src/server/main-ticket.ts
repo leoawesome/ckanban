@@ -240,7 +240,7 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
     else if (main.outcome === "limit" && main.limit?.auto && !running(main.id)) line = { text: "Paused: usage limit", tone: "warn", until: main.limit.resetAt };
   }
   // Stopped by the user: new steps wait until they act on it again (it must not look finished).
-  if (!line && main.plan?.state === "paused") line = { text: "Paused: new steps wait until you press Resume", tone: "warn" };
+  if (!line && main.plan?.state === "paused") line = { text: "Paused: new tasks wait until you press Resume", tone: "warn" };
   if (!line && working.length) {
     const top = [...working].sort((a, b) => startedAt(b).localeCompare(startedAt(a)))[0];
     // The step's group (a level-1 group or round) speaks for it: "Testing round 2: 4 of 6 done".

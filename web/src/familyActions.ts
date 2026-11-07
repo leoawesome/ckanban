@@ -18,17 +18,17 @@ export const openTools = (t: FamilyTicketLike): number => (t.main ? t.familyCard
 /** Its tool tickets working or queued to start now. */
 export const runningTools = (t: FamilyTicketLike): number => (t.main ? t.familyCard?.running.length ?? 0 : 0);
 
-/** "Stop AI Outreach and its 2 running steps?" */
+/** "Stop AI Outreach and its 2 running tasks?" */
 export function stopTitle(t: FamilyTicketLike): string {
   const k = runningTools(t);
-  return k ? `Stop ${t.title} and its ${n(k, "running step")}?` : "Stop Claude?";
+  return k ? `Stop ${t.title} and its ${n(k, "running task")}?` : "Stop Claude?";
 }
 
-/** "Delete AI Outreach and its 14 steps ($41.20 spent)?" */
+/** "Delete AI Outreach and its 14 tasks ($41.20 spent)?" */
 export function deleteTitle(t: FamilyTicketLike): string {
   const k = toolCount(t);
   if (!k) return `Delete "${t.title}"?`;
-  return `Delete ${t.title} and its ${n(k, "step")} (${money(t.familyCard!.costUsd)} spent)?`;
+  return `Delete ${t.title} and its ${n(k, "task")} (${money(t.familyCard!.costUsd)} spent)?`;
 }
 
 /** Moving a main ticket to Backlog or Done needs a confirm only when a tool ticket isn't finished: it would hold that back. */
@@ -36,11 +36,11 @@ export const parkNeedsConfirm = (t: FamilyTicketLike & { status: string }, to: s
   openTools(t) > 0 && (to === "backlog" || to === "done") && t.status !== to;
 
 export function parkTitle(t: FamilyTicketLike, to: "backlog" | "done"): string {
-  return `Move "${t.title}" and its ${n(openTools(t), "unfinished step")} to ${to === "done" ? "Done" : "Backlog"}?`;
+  return `Move "${t.title}" and its ${n(openTools(t), "unfinished task")} to ${to === "done" ? "Done" : "Backlog"}?`;
 }
 
 export function parkText(t: FamilyTicketLike): string {
   const k = runningTools(t);
-  return `No new steps start${k ? `; the ${n(k, "running one")} ${k === 1 ? "finishes" : "finish"}` : ""}, and queued ones are kept. ` +
+  return `No new tasks start${k ? `; the ${n(k, "running one")} ${k === 1 ? "finishes" : "finish"}` : ""}, and queued ones are kept. ` +
     `Move it back to In progress to let them start again. ${money(t.familyCard?.costUsd ?? 0)} spent so far.`;
 }

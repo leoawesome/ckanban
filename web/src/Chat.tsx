@@ -32,7 +32,7 @@ import { Rewind } from "./Rewind";
 import { restoredDraft } from "./rewindText";
 import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
-import { StatusBlock, StatusNoteView, useFeatureStatus } from "./StatusBlock";
+import { StatusNoteView, useFeatureStatus, WaitingLine } from "./StatusBlock";
 import { ResultCardView } from "./ResultCardView";
 import { hiddenTool, withYouTool } from "./family";
 import { StepBlock, type StepInfo, type StepMsg, useStepMessages } from "./StepMessages";
@@ -231,12 +231,14 @@ export function useStop(slug: string, ticket: Ticket, working: boolean, onError:
 /** A queued peer message that carries huddle messages (see the server's huddleMainPrompt). */
 const HUDDLE_TAG = /<ckanban-context[^>]* huddle="/;
 
-export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help, onFilesChanged }: {
+export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help, onFilesChanged }: {
   slug: string;
   ticket: Ticket;
   /** The board's tickets, to tell which proposed new tickets already exist. */
   tickets: Ticket[];
   onOpenTicket: (id: string) => void;
+  /** Open the Tasks tab (the feature status and its tasks), from the "Waiting on you" line. */
+  onOpenTasks?: () => void;
   /** Show a file of the ticket's outputs folder (path relative to it) in the Outputs tab. */
   onOpenOutput?: (name: string) => void;
   onError: (m: string) => void;
@@ -301,7 +303,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   const endedAt = useRef<number | null>(running ? null : Date.now());
   const { stopping, stop } = useStop(slug, ticket, running, onError);
   const refine = REFINE(ticket.status);
-  // A feature's main chat pins its "Where we are" status on top; the user's notes show in the timeline.
+  // A feature's status lives in the Tasks tab; its main chat shows one "Waiting on you" line on top while something
+  // waits on the user, and the user's notes in the timeline.
   const feature = useFeatureStatus(slug, ticket, tickets);
   // A main ticket's "with you" steps talk to the user here: their messages and forms show inline, answered right here.
   const stepTalk = useStepMessages(slug, ticket, tickets);
@@ -1038,7 +1041,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
 
   return (
     <div className="chat">
-      {feature.status && <StatusBlock slug={slug} ticket={ticket} status={feature.status} onChanged={feature.reload} onOpenTicket={onOpenTicket} />}
+      {feature.status && onOpenTasks && <WaitingLine status={feature.status} onOpen={onOpenTasks} />}
       <div className="chat-log" ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget;

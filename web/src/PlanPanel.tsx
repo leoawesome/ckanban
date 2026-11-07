@@ -47,8 +47,10 @@ export function PlanFinished({ ticket, total, onMoveToDone, onAddMore }: {
 }
 
 /** The plan controls at the top of a planner's Family tab: state, Start / Pause / Resume and how many run at once. */
-export function PlanControls({ slug, ticket, children, onOpenTicket, onError, onMoveToDone, onAddMore }: {
+export function PlanControls({ slug, ticket, children, onOpenTicket, onError, onMoveToDone, onAddMore, countShown }: {
   slug: string;
+  /** The feature's status summary above already says "N of M done": leave the count off this line. */
+  countShown?: boolean;
   ticket: Ticket;
   children: Ticket[];
   onOpenTicket: (id: string) => void;
@@ -79,10 +81,10 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
   const waiting = children.filter((c) => c.userWait && !complete(c) && !c.running && c.status !== "in_progress");
   return (
     <section className="plan-panel">
-      {/* One text line: "Plan · Running · 6 of 14 done" (the state as a coloured word, no bar). */}
+      {/* One text line: "Plan · Running · 6 of 14 done" (the state as a coloured word, no bar; no count under the status summary, which has it). */}
       {!finished && (
         <div className="plan-head">
-          <b>Plan</b> · <span className={`plan-state ${tone}`}>{label}</span> · <span>{done} of {children.length} done</span>
+          <b>Plan</b> · <span className={`plan-state ${tone}`}>{label}</span>{!countShown && <> · <span>{done} of {children.length} done</span></>}
         </div>
       )}
       {!finished && plan?.state === "stuck" && waiting.length > 0 && (

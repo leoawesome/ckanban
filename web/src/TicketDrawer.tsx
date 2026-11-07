@@ -17,16 +17,15 @@ import { HelpMenu, useHelp } from "./HelpMenu";
 import { Chat, useStop } from "./Chat";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DescriptionEditor, useDescriptionCommands } from "./DescriptionEditor";
-import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, FileTextIcon, LinkIcon, SparkIcon } from "./icons";
+import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, LinkIcon, SparkIcon } from "./icons";
 import { useImagePaste } from "./imagePaste";
 import { useFocusTrap, useLayer } from "./layers";
 import { BOARD_KEEP } from "./sideChatLayout";
 import { takeTab } from "./pendingTab";
-import { drawerTabs, escLeavesField, inDock, isStopKey, isTyping, nextStep, panelStep, phoneTabs, stepTab, type DrawerTab } from "./keynav";
+import { drawerTabs, escLeavesField, inDock, isStopKey, isTyping, nextStep, panelStep, stepTab, type DrawerTab } from "./keynav";
 import { afterBar, provideTicketActions } from "./ticketActions";
 import type { CommandAction } from "./CommandBar";
 import { attentionGoal } from "./attentionGoal";
-import { MoreSheet } from "./PhoneNav";
 import { KeyHint } from "./KeyHint";
 import { MOD } from "./Shortcuts";
 import { complete, PlanFinished, planFinished, PlanSummary } from "./PlanPanel";
@@ -398,9 +397,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     usage: tabPick === "usage",
   });
   const tab = tabs.includes(tabPick) ? tabPick : "chat";
-  // A phone shows at most 4 tabs; the rest sit under More.
-  const barTabs = phone ? phoneTabs(tabs, tab) : { shown: tabs, more: [] as DrawerTab[] };
-  // The chat's "Where we are" shows the plan's progress for a feature's top ticket, so the sidebar's Plan row steps aside.
+  // The Tasks tab shows the plan's progress (the feature status) for a feature's top ticket, so the sidebar's Plan row steps aside.
   const whereShown = useMemo(() => isFeature(tickets, ticket), [tickets, ticket]);
   const help = useHelp(slug, ticket, !!diffState.diff?.files.length);
   const [outputCount, setOutputCount] = useState(0);
@@ -529,7 +526,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const split = useDetailsSplit(detailsRef, pinnedRef, !phone);
   // Scrolling the chat or huddle feed down shrinks the header to one line; scrolling up brings it back.
   const slim = useShrinkHeader(bodyRef, tab === "chat" || tab === "huddle", tab);
-  // Phones: away from the Ticket tab the header is the status row plus the title on one line; the editable title, tags and model sit on the Ticket tab.
+  // Phones: away from the Ticket tab the header is the status row plus the title on up to two lines; the editable title, tags and model sit on the Ticket tab.
   const compactHead = phone && tab !== "ticket";
   // Opens fitted to the sidebar plus the chat's reading column; dragging can make it wider.
   const room = beside ? besideRoom(beside.right) : windowRoom();
@@ -537,7 +534,6 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const { dragging, handle } = panel;
   const width = (tab === "changes" || tab === "huddle") && !panel.custom ? clampWidth(CHANGES_WIDTH, room) : panel.width;
   const [descScrolled, setDescScrolled] = useState(false);
-  const [tabSheet, setTabSheet] = useState(false);
   // The tab bar scrolls sideways on narrow screens: fade its right edge while tabs are hidden there,
   // and keep the open tab in view.
   const tabsRef = useRef<HTMLElement>(null);
@@ -790,7 +786,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     add("star", ticket.important ? "Remove the star" : "Star as important", toggleStar, ["S"]);
     add("move", "Move to a column…", openStatusPicker, ["M"]);
     if (!editing) add("edit", "Edit the description", () => letterRef.current("e"), ["E"]);
-    if ((working || familyBusy) && !stopping) add("stop", familyBusy ? "Stop this ticket and its steps…" : "Stop Claude…", () => setConfirmStop(true), [MOD, "."]);
+    if ((working || familyBusy) && !stopping) add("stop", familyBusy ? "Stop this ticket and its tasks…" : "Stop Claude…", () => setConfirmStop(true), [MOD, "."]);
     add("delete", "Delete ticket…", () => setConfirmDelete(true));
     return list;
   };
@@ -799,11 +795,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const usageTitle = !usage ? "" : usage.totals.pctCurrentWindow === null ? missingPctReason(usage)
     : "This ticket's ≈ share of your plan's current 5-hour limit, and its API-equivalent cost";
   // On a phone the run cost joins the column's help line when it is the only result chip.
-  // The Outputs tab's label already counts the files when the tab is in the bar, so no chip repeats it.
-  const outputChip = outputCount > 0 && !barTabs.shown.includes("outputs");
   // The column's help line: only while the ticket waits or is stuck, not while Claude works or once it is finished.
   const colHelp = !!col && !working && !familyBusy && ticket.status !== "done" && !finished;
-  const usageInline = phone && colHelp && hasUsage && !links.length && !outputChip;
+  const usageInline = phone && colHelp && hasUsage && !links.length;
   // Status, actions, links and the description: a sidebar on wider screens, the Ticket tab on phones.
   const details = (
     <div ref={detailsRef} className={`panel-details ${split.height !== null ? "split-set" : ""} ${split.dragging ? "splitting" : ""}`}>
@@ -831,7 +825,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             <button className="btn primary goal-btn" onClick={goTo} title={`${att!.label}: show me where`}>{goal.button}</button>
           )}
           {working && !familyBusy && <button className="btn danger" disabled={stopping} onClick={stop} title={`Stop Claude (${MOD}.)`}>{stopping ? "Stopping…" : "Stop Claude"}<KeyHint keys="⌘." /></button>}
-          {familyBusy && <button className="btn danger" disabled={stopping} onClick={() => setConfirmStop(true)} title={`Stop this ticket and its running steps (${MOD}.)`}>{stopping ? "Stopping…" : "Stop"}<KeyHint keys="⌘." /></button>}
+          {familyBusy && <button className="btn danger" disabled={stopping} onClick={() => setConfirmStop(true)} title={`Stop this ticket and its running tasks (${MOD}.)`}>{stopping ? "Stopping…" : "Stop"}<KeyHint keys="⌘." /></button>}
           {finished && <PlanFinished ticket={ticket} total={children.length} onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />}
           {!working && !finished && (ticket.status === "backlog" || ticket.status === "planning") && (
             <button className={`btn ${goal ? "" : "primary"}`}
@@ -903,15 +897,12 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
 
         {children.length > 0 && !whereShown && <PlanSummary ticket={ticket} children={children} onOpen={() => setTab("family")} />}
 
-        {(!!links.length || outputChip || (hasUsage && !usageInline)) && (
+        {(!!links.length || (hasUsage && !usageInline)) && (
           <div className="result-chips" aria-label="Results">
             {usage && hasUsage && !usageInline && (
               <button className="result-chip usage-chip" onClick={() => openTab("usage")} title={usageTitle}>
                 {usageChipText(usage)}
               </button>
-            )}
-            {outputChip && (
-              <button className="result-chip" onClick={() => setTab("outputs")}><FileTextIcon size={14} /> {outputCount} output file{outputCount > 1 ? "s" : ""}</button>
             )}
             {links.slice(0, LINK_CHIPS).map((l) => (
               <a key={l.url} className="result-chip" href={safeHref(l.url)} target="_blank" rel="noreferrer"
@@ -961,16 +952,15 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
       </section>
     </div>
   );
-  // The tab bar's buttons; a phone shows at most 4 places, the rest under More.
-  const tabName: Record<DrawerTab, string> = { ticket: "Ticket", chat: "Chat", family: "Steps", huddle: "Huddle", changes: "Changes", outputs: "Outputs", usage: "Usage" };
+  // The tab bar's buttons: every tab is in the bar, which scrolls sideways when they don't fit.
   const tabLabel: Record<DrawerTab, React.ReactNode> = {
     ticket: "Ticket",
     chat: <>Chat {working && <span className="dot" />}</>,
     family: children.length > 0 ? (
-      <>Steps<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : children.every(complete) ? "ok" : ""}`}>
+      <>Tasks<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : children.every(complete) ? "ok" : ""}`}>
         {children.filter(complete).length}/{children.length}
       </span></>
-    ) : <>Steps<span className="tab-count">{familySize}</span></>,
+    ) : <>Tasks<span className="tab-count">{familySize}</span></>,
     huddle: (
       <>
         Huddle{huddle && huddle.status !== "closed" && <span className={`tab-count${huddle.status === "live" ? " ok" : ""}`}>{members(huddle).length}</span>}
@@ -1113,17 +1103,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
                 actions={(open) => <StallActions slug={slug} ticket={ticket} onError={onError} small secondary={open} />} />
             )}
             <nav ref={tabsRef} className={`tabs${tabsMore ? " more-right" : ""}`} role="tablist" aria-label="Ticket" onScroll={checkTabs}>
-              {barTabs.shown.map((t) => (
+              {tabs.map((t) => (
                 <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => openTab(t)}>{tabLabel[t]}</button>
               ))}
-              {barTabs.more.length > 0 && (
-                <button className="tabs-more" aria-haspopup="menu" onClick={() => setTabSheet(true)}>More</button>
-              )}
             </nav>
-            {tabSheet && (
-              <MoreSheet label="More tabs" onClose={() => setTabSheet(false)}
-                items={barTabs.more.map((t) => ({ label: tabName[t], onSelect: () => { setTabSheet(false); openTab(t); } }))} />
-            )}
             {tab === "ticket" ? (
               <div className={`panel-ticket ${editing ? "editing" : ""}`}>{details}</div>
             ) : tab === "family" ? (
@@ -1143,6 +1126,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               <div className="panel-scroll panel-outputs"><Outputs slug={slug} ticket={ticket} onCount={setOutputCount} focus={outputFocus} /></div>
             ) : (
               <Chat slug={slug} ticket={ticket} tickets={tickets} onOpenTicket={onOpenTicket} onError={onError} onPendingProposal={onPendingProposal} onFilesChanged={diffState.reload}
+                onOpenTasks={tabs.includes("family") ? () => openTab("family") : undefined}
                 huddle={huddle} onOpenHuddle={() => setTab("huddle")} onOpenTeam={onOpenTeam} help={help}
                 onOpenOutput={(name) => { setOutputFocus(name); setTab("outputs"); }} />
             )}
@@ -1170,7 +1154,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               setConfirmStop(false);
             }}>
             {familyBusy
-              ? <p>Its running steps stop now and queued ones don't start. Tickets you added to the feature keep going. {`$${ticket.familyCard!.costUsd.toFixed(2)}`} spent so far.</p>
+              ? <p>Its running tasks stop now and queued ones don't start. Tickets you added to the feature keep going. {`$${ticket.familyCard!.costUsd.toFixed(2)}`} spent so far.</p>
               : <p>Claude stops working on this ticket now. You can start it again later.</p>}
           </ConfirmDialog>
         )}

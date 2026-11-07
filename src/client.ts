@@ -392,7 +392,7 @@ export class BoardClient {
     const p = new URLSearchParams({ ref: q.ref, ...(q.before !== undefined ? { before: String(q.before) } : {}), ...(q.after !== undefined ? { after: String(q.after) } : {}) });
     return this.req<{ text: string }>("GET", `/api/profiles/${encodeURIComponent(slug)}/chat/read?${p}`, undefined, this.by(run));
   };
-  /** update_status: the feature's "Where we are" (only the sections named change); returns the whole status as markdown. */
+  /** update_status: the feature's status (only the sections named change); returns the whole status as markdown. */
   updateStatus = (slug: string, id: string, patch: Record<string, unknown>, run?: string | null) =>
     this.req<{ topId: string; title: string; markdown: string }>("POST", `${this.t(slug, id)}/status`, patch, this.by(run));
   gather = (slug: string, id: string, tickets: { id: string; group?: string | null }[], newGroup: string | null, run?: string | null) =>

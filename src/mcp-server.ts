@@ -1738,7 +1738,7 @@ export const TOOLS: Tool[] = [
         return [`Created main ticket ${t.id} on board ${slug} in ${t.status} (${t.mode} mode): ${t.title}`, ...(t.gather ? [gatherText(t.gather)] : [])].join("\n\n");
       }
       if (t.tool && (t as { planPaused?: boolean }).planPaused) {
-        return `Created tool ticket ${t.id}${how ? ` (${how})` : ""}: ${t.title}. It won't start yet: this feature's steps are paused because the user pressed Stop. ` +
+        return `Created tool ticket ${t.id}${how ? ` (${how})` : ""}: ${t.title}. It won't start yet: this feature's tasks are paused because the user pressed Stop. ` +
           "Tell the user it waits until they press Resume on the Plan tab or move this ticket to ready; don't say it is queued or started.";
       }
       if (t.tool) return `Created tool ticket ${t.id}${how ? ` (${how})` : ""}: ${t.title}. The board starts it when its dependsOn are done and wakes you with its result.`;
@@ -1966,7 +1966,7 @@ export const TOOLS: Tool[] = [
   {
     name: "update_status",
     description:
-      "Update a feature's \"Where we are\" status, pinned at the top of its main chat (the family's top ticket) and saved as status.md in its outputs. " +
+      "Update a feature's status, shown at the top of its main ticket's Tasks tab (the family's top ticket; Waiting on you also shows as one line in its chat) and saved as status.md in its outputs. " +
       "Pass only the sections that changed; each call replaces just those (an empty string clears one) and returns the whole status. " +
       "The board adds counts, test results and pull request states itself. Any run of a ticket in the feature may call it; " +
       "on a ticket that has no status yet it starts one, which makes its family's top ticket a feature. A chat reply to a message the user typed may " +

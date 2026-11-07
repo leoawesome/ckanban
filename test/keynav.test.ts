@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boardDigit, canStartFromProposal, cardDir, cardKey, escLeavesField, inDock, isInboxKey, isUndoKey, listKey, panelBoardKey, stepIndex, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isStopKey, isTyping, newTicketKey, nextStep, panelStep, phoneTabs, stepBoard, stepCard, stepTab } from "../web/src/keynav";
+import { boardDigit, canStartFromProposal, cardDir, cardKey, escLeavesField, inDock, isInboxKey, isUndoKey, listKey, panelBoardKey, stepIndex, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isStopKey, isTyping, newTicketKey, nextStep, panelStep, stepBoard, stepCard, stepTab } from "../web/src/keynav";
 
 test("cardDir maps J/K/H/L and arrows, ignores other keys", () => {
   expect(cardDir("j")).toBe("down");
@@ -160,14 +160,6 @@ test("drawerTabs puts a Ticket tab first on phones only, and Family / Changes on
   // Huddle only once there is one; Usage only while opened from the cost chip.
   expect(drawerTabs({ phone: false, family: false, changes: false, huddle: false, usage: false })).toEqual(["chat", "outputs"]);
   expect(drawerTabs({ phone: false, family: false, changes: true, huddle: true, usage: true })).toEqual(["chat", "huddle", "changes", "outputs", "usage"]);
-});
-
-test("phoneTabs keeps at most 4 places, More taking one, and the open tab stays in the bar", () => {
-  expect(phoneTabs(["ticket", "chat", "outputs"], "chat")).toEqual({ shown: ["ticket", "chat", "outputs"], more: [] });
-  expect(phoneTabs(["ticket", "chat", "family", "outputs"], "chat")).toEqual({ shown: ["ticket", "chat", "family", "outputs"], more: [] });
-  const all = ["ticket", "chat", "family", "huddle", "changes", "outputs"];
-  expect(phoneTabs(all, "chat")).toEqual({ shown: ["ticket", "chat", "family"], more: ["huddle", "changes", "outputs"] });
-  expect(phoneTabs(all, "outputs")).toEqual({ shown: ["ticket", "chat", "outputs"], more: ["family", "huddle", "changes"] });
 });
 
 test("isComboKeys: ⌘ or Ctrl means hold a modifier; plain keys are not combos", () => {

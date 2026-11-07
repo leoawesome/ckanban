@@ -190,7 +190,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   const hasJobs = !!jobs && !!jobChip(jobs, ticket.id);
   // A main ticket whose "with you" steps wait for the user's answers (in its chat): "Needs you · n".
   const stepsWaiting = ticket.main ? ticket.familyCard?.needsYou ?? [] : [];
-  const fromSteps = !!att && stepsWaiting.length > 0 && (stepsWaiting.some((w) => w.label === att.label) || / steps need you$/.test(att.label));
+  const fromSteps = !!att && stepsWaiting.length > 0 && (stepsWaiting.some((w) => w.label === att.label) || / (?:steps|tasks) need you$/.test(att.label));
   // Chips that need no action: at most two, the rest fold into "+N".
   const extras: { key: string; node: ReactNode; label: string }[] = [];
   if (ticket.source?.url) extras.push({ key: "source", label: `From ${ticket.source.provider}`, node: (
@@ -208,14 +208,14 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   const folded = foldChips(extras);
   const hiddenLabels = extras.slice(folded.shown.length).map((x) => x.label);
   const signInChip = signIn && !done && <span className="badge failed sign-in" title={last!.text}>Sign-in needed</span>;
-  // The muted line: "7 of 16 steps · $3.20 · 5m". Steps only part way; cost (the feature's on a main card) red when
+  // The muted line: "7 of 16 tasks · $3.20 · 5m". Steps only part way; cost (the feature's on a main card) red when
   // the ticket's last run stopped at its cap; the run's time while it works, else how long ago it last spoke.
   const workingNames = fc ? familyWorkingNames(fc) : [];
   const cost = fc ? fc.costUsd : ticket.costUsd ?? 0;
   const capped = overCap(ticket);
   const facts: { key: string; node: ReactNode }[] = [];
   if (fc && stepsShown(fc)) facts.push({ key: "steps", node: (
-    <span title={workingNames.length ? `Working now:\n${workingNames.join("\n")}` : "No step is working now"}>{stepsText(fc)}</span>
+    <span title={workingNames.length ? `Working now:\n${workingNames.join("\n")}` : "No task is working now"}>{stepsText(fc)}</span>
   ) });
   if (cost > 0) facts.push({ key: "cost", node: (
     <span className={`card-cost${capped ? " over" : ""}`}

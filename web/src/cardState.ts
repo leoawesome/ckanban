@@ -103,17 +103,17 @@ export function cardFamily<F extends FamilyLike, A extends { kind: string }>(t: 
   return { fc, busy, familyWorks, working, att, doneHint: t.status === "review" && !working };
 }
 
-/** Progress in words on the main card: "7 of 16 steps" (finished tool tickets of all of them). */
+/** Progress in words on the main card: "7 of 16 tasks" (finished tool tickets of all of them). */
 export function stepsText(f: FamilyLike): string {
-  return `${f.toolsDone ?? 0} of ${f.tools} step${f.tools === 1 ? "" : "s"}`;
+  return `${f.toolsDone ?? 0} of ${f.tools} task${f.tools === 1 ? "" : "s"}`;
 }
 
 /**
- * The card's attention strip label: "Step failed" when a failed step put it there, "Needs you · n" for steps waiting
+ * The card's attention strip label: "Task failed" when a failed step put it there, "Needs you · n" for steps waiting
  * on the user, "Needs you" while the feature still works (never "Your turn" then), else "Your turn".
  */
 export function attentionLabel(att: { kind: string; step?: string }, stepsWaiting: number, familyWorks: boolean): string {
-  if (att.kind === "failed" && att.step === "failed") return "Step failed";
+  if (att.kind === "failed" && att.step === "failed") return "Task failed";
   if (stepsWaiting > 0) return `Needs you · ${stepsWaiting}`;
   return familyWorks ? "Needs you" : "Your turn";
 }

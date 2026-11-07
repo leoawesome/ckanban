@@ -144,18 +144,6 @@ export function drawerTabs({ phone, family, changes, huddle = true, usage = true
   return (["ticket", "chat", "family", "huddle", "changes", "outputs", "usage"] as const).filter((t) => on[t]);
 }
 
-/**
- * Tabs a phone shows in its bar: at most `max` places, More taking one of them when some don't fit. The open tab
- * always stays in the bar (it takes the last place when it would be hidden).
- */
-export function phoneTabs<T>(tabs: T[], current: T, max = 4): { shown: T[]; more: T[] } {
-  if (tabs.length <= max) return { shown: tabs, more: [] };
-  const shown = tabs.slice(0, max - 2);
-  const rest = tabs.slice(max - 2);
-  const last = rest.includes(current) ? current : rest[0];
-  return { shown: [...shown, last], more: rest.filter((t) => t !== last) };
-}
-
 /** [ / ] in the ticket panel: the visible tab `delta` steps away from the current one, wrapping around. */
 export function stepTab<T>(tabs: T[], current: T, delta: number): T | null {
   const at = stepBoard(tabs.length, tabs.indexOf(current), delta);

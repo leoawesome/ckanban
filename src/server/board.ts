@@ -3219,7 +3219,7 @@ export class Board {
     return `Landed: merged your copy into ${base} in the project folder (${sha}).`;
   }
 
-  // ---- Features: the pinned "Where we are" status, gathering tickets (feature.ts, web/src/family.ts) ----
+  // ---- Features: the feature status (Tasks tab), gathering tickets (feature.ts, web/src/family.ts) ----
 
   /** The family's top ticket for id, its saved status and the board's facts. */
   featureStatus(slug: string, id: string): { top: Ticket; feature: boolean; saved: SavedStatus | null; facts: StatusFacts; sections: ReturnType<typeof statusSections>; path: string } {
@@ -3577,7 +3577,7 @@ export class Board {
       const now = this.store.getTicket(slug, id);
       if ((tools > 0 || queued > 0) && now?.plan && (now.plan.state === "running" || now.plan.state === "finishing")) {
         this.patch(slug, id, { plan: { ...now.plan, state: "paused", awaiting: null } });
-        this.store.addComment(slug, id, "ai", `Stopped by you with ${tools} running tool ticket${tools === 1 ? "" : "s"}; new steps wait until you move this ticket to ready, write in its chat or press Resume.`);
+        this.store.addComment(slug, id, "ai", `Stopped by you with ${tools} running tool ticket${tools === 1 ? "" : "s"}; new tasks wait until you move this ticket to ready, write in its chat or press Resume.`);
       }
     }
     return { stopped: stopped || tools > 0, tools };

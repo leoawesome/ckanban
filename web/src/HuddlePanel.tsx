@@ -5,14 +5,14 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { draftKey, formKey } from "./drafts";
 import {
-  BIG_CONTEXT_TOKENS, contextText, MODE_LABEL, modeLabel, dollars, handleColor, handleInitials, huddleCost, idleFor, isForYou, members, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint,
+  BIG_CONTEXT_TOKENS, contextText, MODE_LABEL, modeLabel, dollars, huddleCost, idleFor, isForYou, members, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint,
   type HuddleState,
   huddleIdle, keepHuddleOpen, keptOpenAt, useHuddleIdleTick,
 } from "./huddle";
 import { DEFAULT_MAX, draftError, RosterEditor, rosterDraft, startFromDraft, TemplatePicker, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
 import { autoGrow } from "./autoGrow";
 import {
-  applyTemplate, brakeHeadline, BRIEF_MAX, budgetRaise, BUDGET_STEPS, clampSideWidth, clause, DEFAULT_BUDGET, handInGroups, handInStatus, participantRole, POST_MAX, SIDE_DEFAULT, stoppedWhenDone,
+  applyTemplate, brakeHeadline, BRIEF_MAX, handInLine, rosterNoise, budgetRaise, BUDGET_STEPS, clampSideWidth, clause, DEFAULT_BUDGET, handInGroups, handInStatus, participantRole, POST_MAX, SIDE_DEFAULT, stoppedWhenDone,
 } from "./huddleText";
 import { ChevronDownIcon, ChevronRightIcon, CloseIcon, MoreIcon, HuddleIcon, CapIcon, WarnIcon, StopIcon } from "./icons";
 import { KeyHint } from "./KeyHint";
@@ -31,6 +31,7 @@ import { TapTip } from "./TapTip";
 import type { HuddleSeed, TeamRequest } from "./Team";
 import { TeammateProposalView } from "./TeammateCard";
 import { savedText } from "./teammateText";
+import { FaceStack, HelperFace } from "./HelperFace";
 import { enterSends } from "./enterSends";
 
 const clock = (iso: string) => {
@@ -54,10 +55,6 @@ function BudgetSteps({ spent, max, onResume, primary }: { spent: number; max: nu
       ))}
     </span>
   );
-}
-
-function Avatar({ handle, small }: { handle: string; small?: boolean }) {
-  return <span className={`hd-av${small ? " small" : ""}`} style={{ background: handleColor(handle) }} aria-hidden>{handleInitials(handle)}</span>;
 }
 
 const SIDE_KEY = "ckanban.huddleSideWidth";
@@ -332,8 +329,17 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
   ].filter(Boolean).join("\n");
   const budget = (
     <TapTip className={`hd-budget${overBudget ? " hd-over" : ""}`} tip={barTip} label={`${money(spent)} of ${dollars(max)} spent; more about this huddle`}>
-      {money(spent)} / {dollars(max)}
+      {money(spent)} of {dollars(max)}
     </TapTip>
+  );
+  // The bar's head: the helpers' faces, then "● Live · 3 helpers · $1.20 of $20".
+  const head = (
+    <>
+      <FaceStack people={members(h)} size={phone ? 26 : 24} />
+      <span className="hd-head-meta">
+        {stateLabel}<span aria-hidden> · </span>{count} {count === 1 ? "helper" : "helpers"}<span aria-hidden> · </span>{budget}
+      </span>
+    </>
   );
   // The phone's ⋯ sheet: every bar action that applies now (a brake's Resume buttons stay in its banner).
   const actions: MenuItem[] = [];
@@ -374,31 +380,30 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
   return (
     <div className="huddle">
       {phone ? (
-        // One row: a status dot with the spend, the Chat / People / Findings switch, the ⋯ sheet (message count in its footer).
-        <div className="huddle-bar">
-          <span className={`huddle-state hd-state-dot ${brake ? "brake" : quiet ? "quiet" : h.status}`} title={brake ? "Paused" : quiet ? "All quiet" : STATE_LABEL[h.status]}
-            aria-label={brake ? "Paused" : quiet ? "All quiet" : STATE_LABEL[h.status]}>{brake || h.status === "stopped" ? "■" : h.status === "closed" ? STATE_LABEL.closed : "●"}</span>
-          {budget}
+        // The head line (faces, status, helpers, spend, ⋯ sheet), then the Chat / People / Findings switch.
+        <>
+          <div className="huddle-bar hd-head">
+            {head}
+            <span className="spacer" />
+            <button className="btn ghost hd-more" onClick={() => setSheet("actions")} aria-label="Huddle actions" aria-haspopup="menu">
+              <MoreIcon size={20} />{pending.length > 0 && <span className="pn-dot" />}
+            </button>
+          </div>
           <div className="hd-seg" role="tablist" aria-label="Huddle view">
             {([["chat", "Chat", forYou], ["people", "People", count], ["findings", "Findings", openFindings]] as const).map(([k, label, n]) => (
               // Chat again while it shows: jump to the next message that tags you.
               <button key={k} role="tab" aria-selected={pane === k} className={pane === k ? "on" : undefined}
                 onClick={() => (k === "chat" && pane === "chat" && forYou > 0 ? jump() : setPane(k))}
                 title={k === "chat" && forYou > 0 ? `${forYou} for you: tap again to jump` : undefined}>
-                {label}{k === "chat" ? n > 0 && <span className="for-you-pill">{n}</span> : <span className="hd-seg-n">{n}</span>}
+                {label}{n > 0 && (k === "chat" ? <span className="for-you-pill">{n}</span> : <span className="hd-seg-n">{n}</span>)}
               </button>
             ))}
           </div>
-          <button className="btn ghost hd-more" onClick={() => setSheet("actions")} aria-label="Huddle actions" aria-haspopup="menu">
-            <MoreIcon size={20} />{pending.length > 0 && <span className="pn-dot" />}
-          </button>
-        </div>
+        </>
       ) : (
       <div className="huddle-bar">
         {rounds && <HuddleRounds list={state.list} shown={h} onPick={onSelect} onNew={onNew} onSummary={(x) => onOpenOutput(x.summary!)} />}
-        {stateLabel}
-        <span aria-hidden>·</span>
-        {budget}
+        {head}
         {forYou > 0 && <button className="link-btn hd-jump" onClick={jump} title={`${forYou} ${forYou === 1 ? "message tags" : "messages tag"} you`}>↓ next for you</button>}
         <span className="spacer" />
         {learnings.length > 0 && (
@@ -447,34 +452,26 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
       {sheet === "rounds" && <MoreSheet label="Huddles of this ticket" items={roundItems} onClose={() => setSheet(null)}
         footer={current && current.status !== "closed" ? "Only one huddle runs at a time: close the current one to start a new round." : null} />}
       {quiet && !h.closeRequest && (
-        <div className={`hd-banner quiet${idle ? " idle" : ""}`}>
-          <span aria-hidden>✓</span>
-          {idle ? (
-            <span><b>Finished?</b> Every helper has been idle for {idleFor(h.idleSince!, now)}, so it no longer counts as live. Check the result, then close it, or keep it open.</span>
-          ) : (
-            <span><b>All quiet:</b> nobody working, no open tags, 0 open findings. Check the result, then close.</span>
-          )}
-          <span className="spacer" />
-          <button className="btn small primary" onClick={() => setConfirm("close")}>Close huddle</button>
+        // One line and the next step; the tooltip says why it shows.
+        <div className={`hd-banner quiet${idle ? " idle" : ""}`}
+          title={idle ? `Every helper has been idle for ${idleFor(h.idleSince!, now)}, so it no longer counts as live. Check the result, then close it, or keep it open.`
+            : "Nobody working, no open tags, no open findings. Check the result, then close."}>
+          <span className="hd-banner-text">{idle ? <><b>Finished?</b> Idle for {idleFor(h.idleSince!, now)}</> : <><b>All quiet</b> · nothing open</>}</span>
+          <button className="btn small primary" onClick={() => setConfirm("close")}>Close</button>
           {idle && <button className="btn small" onClick={() => keepHuddleOpen(h)} title="Count it as live again until it goes quiet next time">Keep open</button>}
         </div>
       )}
       {/* The brake dock already shows the close request when the budget stopped a finished huddle. */}
-      {h.closeRequest && !closed && !doneStop && (phone ? (
-        // Phone: one line (tap to read it all) with the two things to do about it.
+      {h.closeRequest && !closed && !doneStop && (
+        // One line (tap to read it all) and Close; on a phone the summary is in the ⋯ sheet.
         <div className={`huddle-close-ask compact${askOpen ? " open" : ""}`}>
           <button className="hd-ask-text" aria-expanded={askOpen} onClick={() => setAskOpen((o) => !o)}>
             <b>@{h.closeRequest.by}</b> asks to close: {clause(h.closeRequest.reason)}
           </button>
-          {h.summary && <button className="btn small" onClick={() => onOpenOutput(h.summary!)}>Summary</button>}
+          {!phone && h.summary && <button className="btn small" onClick={() => onOpenOutput(h.summary!)}>Summary</button>}
           <button className="btn small primary" onClick={() => setConfirm("close")}>Close</button>
         </div>
-      ) : (
-        <div className="huddle-close-ask">
-          <b>@{h.closeRequest.by}</b> asks to close the huddle: {clause(h.closeRequest.reason)}.{" "}
-          {h.summary ? <>Read the <button className="link-btn" onClick={() => onOpenOutput(h.summary!)}>summary</button> in the ticket's outputs.</> : "The summary is in the ticket's outputs."}
-        </div>
-      ))}
+      )}
       {adding && !closed && <AddAgent key={seed?.n} slug={slug} huddle={h} preset={addSeed ?? undefined} onDone={() => setAdding(false)} onError={onError} />}
       <div className={`huddle-body${side.dragging ? " resizing" : ""}`} ref={body} style={{ "--hd-side-w": `${side.width}px` } as React.CSSProperties}>
         {(!phone || pane === "chat") && <div className="huddle-feed">
@@ -668,7 +665,6 @@ function Feed({ slug, huddle: h, state, handles, scroller, onSeen, onError }: {
         seen();
       }}>
       {state.hasMore && <button className="btn ghost small load-earlier" onClick={earlier} disabled={loading}>{loading ? "Loading…" : "Load earlier"}</button>}
-      {!state.messages.length && <div className="hd-sys">No messages yet.</div>}
       {state.messages.map((m) => (
         m.kind === "handin" ? (
           <HandInCard key={m.seq} slug={slug} huddle={h} m={m} p={byHandle.get(m.from)} handles={handles} onError={onError} />
@@ -680,34 +676,35 @@ function Feed({ slug, huddle: h, state, handles, scroller, onSeen, onError }: {
   );
 }
 
-/** forYou: it tags the user since their last post, action or view of the latest message (highlighted, and a stop for "next for you"). */
+/** forYou: it tags the user since their last post, action or view of the latest message (outlined, and a stop for "next for you"). */
 function Message({ m, p, handles, forYou }: { m: HuddleMessage; p: HuddleParticipant | undefined; handles: string[]; forYou: boolean }) {
   if (m.kind === "system") {
-    return <div className={`hd-sys${forYou ? " for-you" : ""}`} title={fullTime(m.ts)}><MentionText text={m.text} handles={handles} /></div>;
+    // One line of small grey text; roster churn (joined, mode switched) hides on a phone unless it tags you.
+    return <div className={`hd-sys${forYou ? " for-you" : rosterNoise(m.text) ? " roster" : ""}`} title={fullTime(m.ts)}><MentionText text={m.text} handles={handles} /></div>;
   }
   const mine = m.from === "you";
   return (
     <div className={`hd-msg${mine ? " mine" : ""}${forYou ? " for-you" : ""}`}>
-      <Avatar handle={m.from} />
+      {!mine && <HelperFace p={p ?? { handle: m.from }} size={34} className="hd-face" />}
       <div className="hd-msg-body">
         <div className="hd-msg-head">
-          <b>@{m.from}</b>
-          {p && p.kind !== "human" && <span className="muted">{p.role}</span>}
+          <b>{mine ? "You" : `@${m.from}`}</b>
+          {/* Role, mode and "for you" are for the wide screen; a phone shows the name and time only. */}
+          {!mine && p && p.kind !== "human" && participantRole(p) && <span className="muted hd-wide">{participantRole(p)}</span>}
           <time className="muted" dateTime={m.ts} title={[fullTime(m.ts), sourceLabel(m.source)].filter(Boolean).join(" · ")}>· {clock(m.ts)}</time>
-          {p?.mode === "monitor" && p.kind !== "human" && <span className="hd-mode monitor">{MODE_LABEL.monitor}</span>}
-          {forYou && <span className="hd-for-you">· for you</span>}
+          {p?.mode === "monitor" && p.kind !== "human" && <span className="hd-mode monitor hd-wide">{MODE_LABEL.monitor}</span>}
+          {forYou && <span className="hd-for-you hd-wide">· for you</span>}
         </div>
-        {m.kind === "finding" ? (
-          <div className="hd-finding"><span className="hd-finding-tag"><WarnIcon size={12} /> Finding</span><Markdown text={m.text} handles={handles} /></div>
-        ) : (
+        <div className="hd-bubble">
+          {m.kind === "finding" && <span className="hd-finding-tag"><WarnIcon size={12} /> Finding</span>}
           <Markdown text={m.text} handles={handles} />
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-/** Changes a helper handed in: who, what changed (files in plain words) and where it stands; the user can accept or reject it. */
+/** Changes a helper handed in, on one line ("@qa changed 3 files", Accept / Reject); the summary and file list open with a tap. */
 function HandInCard({ slug, huddle: h, m, p, handles, onError }: {
   slug: string; huddle: Huddle; m: HuddleMessage; p: HuddleParticipant | undefined; handles: string[]; onError: (m: string) => void;
 }) {
@@ -715,6 +712,7 @@ function HandInCard({ slug, huddle: h, m, p, handles, onError }: {
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  const [more, setMore] = useState(false);
   const decide = async (accept: boolean) => {
     setBusy(true);
     try {
@@ -727,17 +725,31 @@ function HandInCard({ slug, huddle: h, m, p, handles, onError }: {
     }
   };
   const open = x?.status === "waiting" && h.status !== "closed";
+  const line = x ? handInLine(x) : null;
   return (
-    <div className="hd-msg">
-      <Avatar handle={m.from} />
-      <div className="hd-msg-body">
-        <div className="hd-msg-head">
-          <b>@{m.from}</b>
-          {p && <span className="muted">{p.role}</span>}
-          <time className="muted" dateTime={m.ts} title={fullTime(m.ts)}>· {clock(m.ts)}</time>
+    <div className={`hd-handin ${x?.status ?? "waiting"}`}>
+      <HelperFace p={p ?? { handle: m.from }} size={24} />
+      <button className="hd-handin-line" aria-expanded={more} onClick={() => setMore((o) => !o)} title={x ? handInStatus(x) : undefined}>
+        <b>@{m.from}</b> {line?.what ?? "handed in changes"}
+        {line?.state && <span className={`hd-handin-state ${x!.status}`}> · {line.state}</span>}
+        <time className="muted" dateTime={m.ts} title={fullTime(m.ts)}> · {clock(m.ts)}</time>
+      </button>
+      {open && !rejecting && (
+        <span className="hd-handin-actions">
+          <button className="btn small primary" disabled={busy} onClick={() => decide(true)}>Accept</button>
+          <button className="btn small" disabled={busy} onClick={() => setRejecting(true)}>Reject</button>
+        </span>
+      )}
+      {open && rejecting && (
+        <div className="hd-handin-actions hd-handin-reject">
+          <input className="hd-handin-reason" autoFocus value={reason} placeholder="Why? The helper is told." aria-label="Why you reject it"
+            onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && reason.trim()) decide(false); if (e.key === "Escape") setRejecting(false); }} />
+          <button className="btn small" disabled={busy || !reason.trim()} onClick={() => decide(false)}>Reject</button>
+          <button className="btn small ghost" disabled={busy} onClick={() => setRejecting(false)}>Cancel</button>
         </div>
-        <div className={`hd-handin ${x?.status ?? "waiting"}`}>
-          <div className="hd-handin-tag">Changes handed in</div>
+      )}
+      {more && (
+        <div className="hd-handin-more">
           <Markdown text={x?.summary ?? m.text} handles={handles} />
           {x && (
             <ul className="hd-handin-files">
@@ -747,22 +759,8 @@ function HandInCard({ slug, huddle: h, m, p, handles, onError }: {
             </ul>
           )}
           {x && <div className={`hd-handin-status ${x.status}`}>{handInStatus(x)}</div>}
-          {open && !rejecting && (
-            <div className="hd-handin-actions">
-              <button className="btn small primary" disabled={busy} onClick={() => decide(true)}>Accept</button>
-              <button className="btn small" disabled={busy} onClick={() => setRejecting(true)}>Reject…</button>
-            </div>
-          )}
-          {open && rejecting && (
-            <div className="hd-handin-actions">
-              <input className="hd-handin-reason" autoFocus value={reason} placeholder="Why? The helper is told." aria-label="Why you reject it"
-                onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && reason.trim()) decide(false); if (e.key === "Escape") setRejecting(false); }} />
-              <button className="btn small" disabled={busy || !reason.trim()} onClick={() => decide(false)}>Reject</button>
-              <button className="btn small ghost" disabled={busy} onClick={() => setRejecting(false)}>Cancel</button>
-            </div>
-          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -797,15 +795,22 @@ function BrakeDock({ slug, ticket, huddle: h, reason, spent, max, done, spenders
     setWriting(true);
   }, [prefill?.n]);
   const spentOut = spent >= max;
-  const summary = h.summary ? <button className="btn" onClick={() => onOpenOutput(h.summary!)} title={`Open ${h.summary} in Outputs`}>Summary</button> : null;
+  const summary = h.summary ? <button className="btn small" onClick={() => onOpenOutput(h.summary!)} title={`Open ${h.summary} in Outputs`}>Summary</button> : null;
   return (
     <>
       <div className={`hd-dock${open ? " open" : ""}`} role="status">
-        <button className="hd-dock-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-          <StopIcon />
-          <span className="hd-dock-line"><b>{brakeHeadline(reason, max, done)}</b></span>
-          <span className="hd-dock-chev" aria-hidden>⌄</span>
-        </button>
+        {/* Folded: the head line and one button (the next step); the rest unfolds under ⌄. */}
+        <div className="hd-dock-top">
+          <button className="hd-dock-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <StopIcon />
+            <span className="hd-dock-line"><b>{brakeHeadline(reason, max, done)}</b></span>
+            <span className="hd-dock-chev" aria-hidden>⌄</span>
+          </button>
+          {done ? <button className="btn small primary" onClick={onClose}>Close</button>
+            : spentOut ? <button className="btn small primary" onClick={() => onResume(budgetRaise(spent, max, BUDGET_STEP))}
+              title={`Resume and raise the budget to ${money(max + budgetRaise(spent, max, BUDGET_STEP))}`}>Resume +{dollars(BUDGET_STEP)}</button>
+            : <button className="btn small primary" onClick={() => onResume()}>Resume</button>}
+        </div>
         {open && (
           <div className="hd-dock-body">
             {h.closeRequest ? <p><b className="hd-dock-who">@{h.closeRequest.by}</b> asks to close it: {clause(h.closeRequest.reason)}.</p>
@@ -819,22 +824,17 @@ function BrakeDock({ slug, ticket, huddle: h, reason, spent, max, done, spenders
             </p>
           </div>
         )}
-        <div className="hd-dock-acts">
-          {done ? (
-            <>{summary}<button className="btn primary" onClick={onClose}>Close huddle</button></>
-          ) : spentOut ? (
-            <><button className="btn primary" onClick={() => onResume(budgetRaise(spent, max, BUDGET_STEP))}
-              title={`Resume and raise the budget to ${money(max + budgetRaise(spent, max, BUDGET_STEP))}`}>Resume +{dollars(BUDGET_STEP)}</button>
-              <button className="btn" onClick={onClose}>Close huddle</button></>
-          ) : (
-            <><button className="btn primary" onClick={() => onResume()}>Resume</button><button className="btn" onClick={onClose}>Close huddle</button></>
-          )}
-        </div>
         {open && (
           <div className="hd-dock-more">
             <span className="muted">Resume with:</span>
             {!spentOut && !done && <button className="btn small" onClick={() => onResume()}>no extra</button>}
             <BudgetSteps spent={spent} max={max} onResume={onResume} />
+          </div>
+        )}
+        {open && (
+          <div className="hd-dock-more">
+            {summary}
+            {!done && <button className="btn small" onClick={onClose}>Close huddle</button>}
             {!writing && <button className="link-btn hd-dock-write" onClick={() => setWriting(true)}>Write a message</button>}
           </div>
         )}
@@ -964,25 +964,26 @@ function Composer({ slug, ticket, huddle: h, onError, prefill, onPrefilled, onOp
           ))}
         </div>
       )}
-      <textarea ref={ref} rows={phone ? 1 : 2} value={draft} disabled={sending}
-        placeholder={h.status === "stopped" ? "The huddle is stopped: nobody wakes until you resume it…" : phone ? "Message @main, @all or @handle…" : "Message the huddle: @main, @all or @handle to wake someone…"}
-        onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart); setClosedPopup(false); }}
-        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
-        onBlur={() => setClosedPopup(true)} onFocus={() => setClosedPopup(false)}
-        onKeyDown={onKeyDown} aria-label="Message the huddle" />
-      <div className="composer-foot">
-        {hint ? (
-          <span className="small composer-hint hd-untagged" role="status">{hint}</span>
-        ) : (
-          <span className="muted small composer-hint">
-            You post as <b>@you</b>. Tagged participants wake; monitors read everything.
-            <span className="composer-keys"> Enter to send · Shift+Enter for a new line</span>
-          </span>
-        )}
-        <span className="composer-actions">
-          <button className="btn primary small" disabled={!draft.trim() || sending || tooLong} onClick={send}>{sending ? "Sending…" : "Send"}<KeyHint keys="↵" /></button>
-        </span>
+      {/* A rounded box with a round send button; the hint line shows on a wide screen, warnings everywhere. */}
+      <div className="hd-comp-row">
+        <textarea ref={ref} rows={1} value={draft} disabled={sending}
+          placeholder={h.status === "stopped" ? "Stopped: nobody wakes until you resume…" : phone ? "Message @main, @all or @handle…" : "Message the huddle: @main, @all or @handle to wake someone…"}
+          onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart); setClosedPopup(false); }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          onBlur={() => setClosedPopup(true)} onFocus={() => setClosedPopup(false)}
+          onKeyDown={onKeyDown} aria-label="Message the huddle" />
+        <button className="hd-send" disabled={!draft.trim() || sending || tooLong} onClick={send} aria-label={sending ? "Sending…" : "Send"} title="Send (Enter)">
+          {sending ? <span className="spinner" /> : <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+        </button>
       </div>
+      {hint ? (
+        <span className="small composer-hint hd-untagged" role="status">{hint}</span>
+      ) : !phone && (
+        <span className="muted small composer-hint">
+          You post as <b>@you</b>. Tagged participants wake; monitors read everything.
+          <span className="composer-keys"> Enter to send · Shift+Enter for a new line</span>
+        </span>
+      )}
     </div>
   );
 }
@@ -1073,9 +1074,11 @@ function Roster({ slug, huddle: h, onError, viewing, onView }: {
         const open = more.has(p.handle);
         const detail = [...new Set([participantActivity(p, closed), p.error, p.statusReason, p.lastActivity].filter((x): x is string => !!x))].join("\n");
         return (
-          // One line: status dot, name, cost. The row opens the participant's steps; ⌄ shows the rest under it.
+          // One line: face (with its status dot), name, cost. The row opens the participant's steps; ⌄ shows the rest under it.
           <div key={p.handle} className={`hd-p${human ? "" : " viewable"}${viewing === p.handle ? " sel" : ""}${open ? " open" : ""}`}>
-            <span className={`hd-dot ${human ? "human" : st}`} title={human ? undefined : activity} aria-hidden />
+            <span className="hd-p-face" title={human ? undefined : activity} aria-hidden>
+              <HelperFace p={p} size={28} /><span className={`hd-dot ${human ? "human" : st}`} />
+            </span>
             {!human && (
               <button className="hd-p-open" onClick={() => onView(p.handle)} aria-pressed={viewing === p.handle}
                 aria-label={`${viewing === p.handle ? "Close" : "Open"} @${p.handle}'s work`} title={`@${p.handle}${role ? ` · ${role}` : ""}: ${activity}`} />

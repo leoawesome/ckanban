@@ -167,7 +167,7 @@ export function ticketAttention(
 
 /**
  * A main ticket's oldest tool ticket that waits on a decision, or null. "With you" steps waiting for the user come
- * first; with more than one, the label counts them ("2 steps need you").
+ * first; with more than one, the label counts them ("2 tasks need you").
  */
 export function oldestStep(tickets: Ticket[], mainId: string, running: (id: string) => boolean): StepWait | null {
   let best: StepWait | null = null;
@@ -180,7 +180,7 @@ export function oldestStep(tickets: Ticket[], mainId: string, running: (id: stri
   }
   if (you.length) {
     you.sort((a, b) => a.since.localeCompare(b.since));
-    return you.length === 1 ? you[0] : { ...you[0], label: `${you.length} steps need you` };
+    return you.length === 1 ? you[0] : { ...you[0], label: `${you.length} tasks need you` };
   }
   return best;
 }

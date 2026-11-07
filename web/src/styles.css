@@ -517,10 +517,12 @@ textarea { resize: vertical; font-size: var(--fs-md); }
 .section h4 { margin: 4px 0 8px; }
 .body-view { cursor: text; }
 
-.tabs { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--border); }
-.tabs button { border: 0; background: none; padding: 8px 12px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 600; }
+/* The line under the bar is an inset shadow, so the active tab's underline covers it even though the bar scrolls (clips). */
+.tabs { display: flex; gap: 2px; padding: 0 20px; box-shadow: inset 0 -1px 0 var(--border); overflow-x: auto; scrollbar-width: none; flex: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { flex: none; white-space: nowrap; border: 0; background: none; padding: 8px 12px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; font-weight: 600; }
 .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
-/* More tabs off the right edge (the ticket panel on a narrow screen): fade it so the bar reads as scrollable. */
+/* Tabs off the right edge (the ticket panel on a narrow screen): fade it so the bar reads as scrollable. */
 .tabs.more-right {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
@@ -1556,7 +1558,6 @@ button.your-turn.go:focus-visible { outline: 2px solid currentColor; outline-off
 .plan-waiting-row > span { min-width: 0; }
 .run-settings-more { margin-left: 2px; text-decoration: none; }
 .run-settings-more:hover { text-decoration: underline; color: var(--text); }
-.tabs .tabs-more { margin-left: auto; }
 @keyframes yt-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 35%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
 .card.needs-you { border-left: 3px solid var(--warn); }
 .card.needs-you.att-failed, .card.needs-you.att-blocked { border-left-color: var(--err); }
@@ -1733,25 +1734,36 @@ textarea.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--
 .dock-body { flex: 1; min-height: 0; position: relative; }
 .dock-pane { position: absolute; inset: 0; display: flex; }
 .dock-pane[hidden] { display: none; }
-.dock-huddles { flex: 1; overflow: auto; padding: 8px 14px; display: flex; flex-direction: column; gap: 6px; }
+.dock-huddles { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 4px; }
 .dock-huddles .empty { padding: 24px; font-size: var(--fs-sm); }
+.hr-sec { margin: 10px 0 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.hr-list { display: flex; flex-direction: column; gap: 6px; }
+/* Two lines: the full title (wraps, up to 2 lines), then faces · when · flags … cost. */
 .huddle-row {
-  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto auto auto; gap: 14px; align-items: center; text-align: left;
-  padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-sm); cursor: pointer;
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px; text-align: left; width: 100%;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-sm); cursor: pointer;
 }
 .huddle-row:hover, .huddle-row:focus-visible { border-color: var(--accent); }
-.huddle-row .hr-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); justify-self: center; }
-.huddle-row.live .hr-dot { background: var(--ok); }
-.huddle-row.stopped .hr-dot { background: var(--warn); }
-.huddle-row .hr-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.huddle-row .hr-title {
+  font-weight: 600; line-height: 1.3; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 .huddle-row.closed .hr-title { font-weight: 500; }
-.huddle-row .hr-round { color: var(--muted); font-weight: 500; }
+.huddle-row .hr-dot { display: none; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--ok); }
+.huddle-row.live .hr-dot, .huddle-row.stopped .hr-dot { display: inline-block; }
+.huddle-row.stopped .hr-dot { background: var(--warn); }
 .huddle-row.brake .hr-dot { background: var(--err); }
-.huddle-row.quiet .hr-dot { background: var(--ok); }
-.huddle-row .hr-flags { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); white-space: nowrap; }
+.huddle-row .hr-round { color: var(--muted); font-weight: 500; }
+.huddle-row .hr-line { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: var(--fs-xs); color: var(--muted); }
 .huddle-row .hr-brake { color: var(--err); background: var(--err-soft); border-radius: var(--r-pill); padding: 0 8px; font-weight: 600; }
 .huddle-row .hr-quiet { color: var(--ok); background: var(--ok-soft); border-radius: var(--r-pill); padding: 0 8px; font-weight: 600; }
-.huddle-row .hr-meta { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.huddle-row .hr-cost { margin-left: auto; font-variant-numeric: tabular-nums; }
+/* Helper faces (HelperFace.tsx): a small overlapping stack, "+N" past four. */
+.helper-face { flex: none; display: block; border-radius: 50%; overflow: visible; }
+.face-stack { display: inline-flex; align-items: center; flex: none; }
+.face-stack .helper-face { box-shadow: 0 0 0 2px var(--surface); }
+.face-stack .helper-face + .helper-face { margin-left: -7px; }
+.face-stack .face-more { margin-left: 4px; }
 
 /* Padding lives on the view, not the host: FitAddon sizes rows from the host's computed height, which includes padding under border-box. */
 .terminal-view { flex: 1; min-width: 0; position: relative; display: flex; padding: 6px 0 0 10px; }
@@ -2623,17 +2635,23 @@ div.huddle { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .huddle-state.brake { color: var(--err); }
 .huddle-state.quiet { color: var(--ok); }
 .hd-budget { font-variant-numeric: tabular-nums; }
+/* The bar's head: faces, then "● Live · 3 helpers · $1.20 of $20". */
+.hd-head-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hd-head-meta .huddle-state.closed { background: none; padding: 0; }
 .hd-meter { width: 90px; height: 6px; border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; }
 .hd-meter i { display: block; height: 100%; background: var(--warn); }
 .hd-meter.over i { background: var(--err); }
 .hd-over { color: var(--err); font-weight: 600; }
 .hd-jump { color: var(--accent-text); font-size: var(--fs-xs); font-weight: 600; }
-.hd-banner { margin: 10px 24px 0; padding: 9px 14px; border-radius: var(--r-sm); display: flex; gap: 10px; align-items: center; font-size: var(--fs-sm); flex-wrap: wrap; }
-.hd-banner.quiet { background: var(--surface-2); color: var(--text); }
+.hd-banner { padding: 6px 12px 6px 24px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; align-items: center; font-size: var(--fs-sm); }
+.hd-banner.quiet { color: var(--text); }
+.hd-banner-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hd-banner-text b { color: var(--ok); }
 .hd-banner .btn.small:not(.primary) { color: var(--text); }
 /* A brake stopped the huddle (HuddlePanel BrakeDock): a calm card with a red edge where the message box was. */
 .hd-dock { margin: 0 24px 14px; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--err); border-radius: var(--r-md); box-shadow: var(--shadow-panel); font-size: var(--fs-sm); }
-.hd-dock-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px 8px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.hd-dock-top { display: flex; align-items: center; gap: 6px; padding-right: 10px; }
+.hd-dock-head { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 10px 4px 10px 12px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .hd-dock-line { flex: 1; min-width: 0; }
 .hd-dock-line b { color: var(--err); font-weight: 600; }
 .hd-dock-chev { color: var(--muted); transition: transform 0.2s ease; }
@@ -2643,8 +2661,6 @@ div.huddle { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .hd-dock-who { color: var(--info); }
 .hd-meter.wide { display: block; width: auto; margin-bottom: 4px; }
 .hd-dock-spend { color: var(--muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
-.hd-dock-acts { display: flex; gap: 8px; padding: 2px 12px 12px; }
-.hd-dock-acts .btn { flex: 1; justify-content: center; }
 .hd-dock-more { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 0 12px 12px; margin-top: -2px; }
 .hd-dock-write { margin-left: auto; }
 .hd-steps { display: inline-flex; gap: 4px; }
@@ -2671,7 +2687,11 @@ div.huddle { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .hd-close-learnings { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-sm); }
 .hd-close-learnings p { margin: 0 0 6px; }
 .hd-close-learnings ul { margin: 0 0 8px; padding-left: 18px; max-height: 140px; overflow-y: auto; }
-.huddle-close-ask { padding: 7px 24px; border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: var(--fs-sm); }
+/* "@x asks to close": one line (tap for all of it) and Close. */
+.huddle-close-ask { display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 24px; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); }
+.hd-ask-text { flex: 1; min-width: 0; padding: 4px 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.huddle-close-ask.open { flex-wrap: wrap; justify-content: flex-end; }
+.huddle-close-ask.open .hd-ask-text { flex-basis: 100%; white-space: normal; }
 .huddle-bar .btn.small { color: var(--text); }
 /* huddle round picker (2+ huddles on a ticket) */
 .hd-rounds { position: relative; flex: none; }
@@ -2706,41 +2726,65 @@ div.huddle { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .huddle-add { border-bottom: 1px solid var(--border); background: var(--bg); }
 .huddle-add .huddle-card-actions { border-top: 0; }
 .huddle-body { flex: 1; min-height: 0; display: flex; position: relative; }
-.huddle-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.huddle-log { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+.huddle-feed { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+.huddle-log { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 24px; display: flex; flex-direction: column; gap: 14px; }
 .panel-main .huddle .composer { margin: 0 24px 14px; position: relative; }
 .huddle-closed { margin: 0 24px 14px; padding: 10px 14px; border: 1px dashed var(--border); border-radius: var(--r-md); text-align: center; }
-.hd-sys { align-self: center; font-size: var(--fs-xs); color: var(--muted); background: var(--surface-2); border-radius: var(--r-pill); padding: 2px 10px; text-align: center; max-width: 90%; overflow-wrap: anywhere; }
-.hd-sys .at-chip { background: none; padding: 0; }
+/* System lines: one line of small grey text, no box. */
+.hd-sys { align-self: center; font-size: var(--fs-xs); color: var(--muted); text-align: center; max-width: 90%; overflow-wrap: anywhere; line-height: 1.4; }
+.hd-sys .at-chip { background: none; padding: 0; color: inherit; font-weight: 600; }
 .at-chip.me { color: var(--accent-text); background: var(--accent-soft); font-weight: 600; }
 .hd-sys .at-chip.me { padding: 0 3px; }
-.hd-msg.for-you { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); border-radius: var(--r-sm); padding: 4px 6px; margin: 0 -6px; }
-.hd-sys.for-you { background: var(--err-soft); color: var(--err); }
+.hd-sys.for-you { color: var(--accent-text); font-weight: 600; }
 .hd-for-you { color: var(--accent-text); font-weight: 600; }
 .hd-untagged { color: var(--warn); }
-.hd-msg { display: flex; gap: 10px; }
-.hd-av { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: var(--fs-2xs); font-weight: 700; color: #fff; letter-spacing: -0.02em; }
-.hd-av.small { width: 22px; height: 22px; font-size: var(--fs-2xs); }
-.hd-msg-body { min-width: 0; flex: 1; font-size: var(--fs-md); }
-.hd-msg-head { display: flex; gap: 6px; align-items: baseline; font-size: var(--fs-xs); flex-wrap: wrap; }
-.hd-msg-head b { font-size: var(--fs-sm); }
-.hd-msg-body .md > :first-child { margin-top: 2px; }
-.hd-msg-body .md > :last-child { margin-bottom: 0; }
-.hd-msg.mine .hd-msg-head b { color: var(--accent-text); }
-.hd-finding { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 6px 10px; border-radius: var(--r-sm); margin-top: 4px; }
-.hd-finding-tag { font-size: var(--fs-2xs); font-weight: 700; color: var(--warn); }
-.hd-handin { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--r-sm); padding: 6px 10px; margin-top: 4px; background: var(--surface); }
-.hd-handin.accepted { border-left-color: var(--ok); }
-.hd-handin.rejected { border-left-color: var(--muted); }
-.hd-handin.conflict { border-left-color: var(--warn); background: var(--warn-soft); }
-.hd-handin-tag { font-size: var(--fs-2xs); font-weight: 700; color: var(--accent-text); }
+/* Chat bubbles (HuddlePanel Message): helpers on the left with their face, yours on the right in orange. */
+.hd-msg { display: flex; gap: 8px; align-items: flex-start; max-width: 760px; }
+.hd-msg .hd-face { margin-top: 2px; }
+.hd-msg-body { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; font-size: var(--fs-md); max-width: min(620px, calc(100% - 42px)); }
+.hd-msg-head { display: flex; gap: 5px; align-items: baseline; font-size: var(--fs-xs); flex-wrap: wrap; margin: 0 0 3px 4px; color: var(--muted); }
+.hd-msg-head b { font-size: var(--fs-xs); font-weight: 600; color: var(--text); }
+.hd-bubble { background: var(--surface); border-radius: var(--r-sm) var(--r-md) var(--r-md) var(--r-md); padding: 8px 13px; box-shadow: var(--shadow-sm); min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.hd-bubble .md > :first-child { margin-top: 0; }
+.hd-bubble .md > :last-child { margin-bottom: 0; }
+.hd-msg.for-you .hd-bubble { box-shadow: 0 0 0 2px var(--accent); }
+.hd-msg.mine { align-self: flex-end; flex-direction: row-reverse; }
+.hd-msg.mine .hd-msg-body { align-items: flex-end; max-width: min(620px, 85%); }
+.hd-msg.mine .hd-msg-head { margin: 0 4px 3px 0; }
+.hd-msg.mine .hd-bubble { background: var(--accent-strong); color: var(--on-accent); border-radius: var(--r-md) var(--r-sm) var(--r-md) var(--r-md); }
+.hd-msg.mine .hd-bubble :is(a, code, .at-chip, .md a) { color: inherit; background: none; }
+.hd-finding-tag { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-2xs); font-weight: 700; color: var(--warn); background: var(--warn-soft); border-radius: var(--r-pill); padding: 1px 8px; margin-bottom: 4px; }
+/* A hand-in: one row (face, "@qa changed 3 files", Accept / Reject); the summary and files open under it. */
+.hd-handin { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 6px 8px 6px 6px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--border); font-size: var(--fs-sm); max-width: 760px; }
+.hd-handin.conflict { border-color: var(--warn); }
+.hd-handin-line { flex: 1; min-width: 0; text-align: left; border: 0; background: none; padding: 2px 0; font: inherit; color: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.hd-handin-line:hover b { text-decoration: underline; }
+.hd-handin-state { font-weight: 600; color: var(--muted); }
+.hd-handin-state.accepted { color: var(--ok); }
+.hd-handin-state.conflict { color: var(--warn); }
+.hd-handin-more { flex-basis: 100%; padding: 2px 4px 2px 32px; }
+.hd-handin-more .md > :first-child { margin-top: 0; }
 .hd-handin-files { margin: 4px 0; padding-left: 18px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
 .hd-handin-status { font-size: var(--fs-xs); font-weight: 600; }
 .hd-handin-status.accepted { color: var(--ok); }
 .hd-handin-status.conflict { color: var(--warn); }
 .hd-handin-status.rejected, .hd-handin-status.waiting { color: var(--muted); }
-.hd-handin-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+.hd-handin-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.hd-handin-reject { flex-basis: 100%; }
 .hd-handin-reason { flex: 1; min-width: 160px; }
+/* The huddle's message box: a rounded input with a round send button. */
+.composer.huddle-composer { border: 0; box-shadow: none; background: none; padding: 0; gap: 4px; }
+.composer.huddle-composer:focus-within { box-shadow: none; }
+.hd-comp-row { display: flex; align-items: flex-end; gap: 8px; }
+.composer.huddle-composer .hd-comp-row textarea {
+  flex: 1; min-height: 42px; padding: 9px 16px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); line-height: 22px;
+}
+.composer.huddle-composer .hd-comp-row textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) !important; outline: none; }
+.hd-send { flex: none; width: 42px; height: 42px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--accent-strong); color: var(--on-accent); cursor: pointer; }
+.hd-send:hover:not(:disabled) { filter: brightness(1.06); }
+.hd-send:disabled { background: var(--surface-2); color: var(--muted); cursor: default; }
+.hd-send .spinner { width: 14px; height: 14px; }
+.huddle-composer .composer-hint { padding: 0 16px; }
 .hd-mode { font-size: var(--fs-2xs); padding: 1px 7px; border-radius: var(--r-pill); border: 0; background: var(--surface-2); color: var(--muted); font-weight: 600; }
 .hd-mode.monitor { background: var(--info-soft); color: var(--info); }
 button.hd-mode { cursor: pointer; }
@@ -2756,8 +2800,9 @@ button.hd-mode:disabled { cursor: default; }
 .huddle-side h3 { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
 .hd-cap { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: var(--fs-xs); }
 /* A roster row: one line (status dot, name, cost, ⌄); ⌄ adds role and pills / status / mode, context, stop below; names wrap, never ellipsize. */
-.hd-p { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto auto; column-gap: 8px; row-gap: 4px; align-items: center; padding: 4px 0; font-size: var(--fs-sm); }
-.hd-p > .hd-dot { margin: 0; }
+.hd-p { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; column-gap: 8px; row-gap: 4px; align-items: center; padding: 4px 0; font-size: var(--fs-sm); }
+.hd-p-face { position: relative; width: 28px; height: 28px; }
+.hd-p-face .hd-dot { position: absolute; left: -1px; bottom: -1px; width: 9px; height: 9px; margin: 0; box-shadow: 0 0 0 2px var(--surface); }
 .hd-p-name { grid-column: 2; min-width: 0; overflow-wrap: anywhere; line-height: 1.35; }
 .hd-p-role { color: var(--muted); }
 .hd-p-more { grid-column: 4; color: var(--muted); }
@@ -2813,7 +2858,6 @@ button.hd-mode:disabled { cursor: default; }
 .hd-p-name .hd-redo { margin-left: 8px; }
 .hd-session { width: min(470px, 42%); flex: none; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border); background: var(--surface); box-shadow: var(--shadow-panel); }
 .hd-session-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
-.hd-session-head .hd-av { width: 26px; height: 26px; font-size: var(--fs-2xs); }
 .hd-session-title { min-width: 0; font-size: var(--fs-sm); }
 .hd-session-meta { font-size: var(--fs-2xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hd-ro { font-size: var(--fs-2xs); background: var(--surface-2); color: var(--muted); border-radius: var(--r-pill); padding: 1px 8px; font-weight: 500; }
@@ -3043,10 +3087,11 @@ button.hd-mode:disabled { cursor: default; }
   .panel-head { padding-bottom: 0; flex-wrap: nowrap; }
   .panel-title { padding: 2px 14px 4px; }
   .panel-title .title-input { font-size: var(--fs-lg); }
-  /* Compact header (every tab but Ticket): status row, then the title on one line; no tag row. */
+  /* Compact header (every tab but Ticket): status row, then the title on up to two lines; no tag row. */
   .panel.head-compact .panel-top { display: none; }
   .panel.head-compact:not(.head-slim) .panel-head { flex-wrap: wrap; row-gap: 0; padding-bottom: 6px; }
-  .panel.head-compact:not(.head-slim) .panel-head > .head-title { display: block; order: 99; flex: 1 0 100%; padding: 2px 8px 0; font-size: var(--fs-lg); }
+  /* Up to two lines, so a long title can be read; longer ones end in "…" (the full title is on the Ticket tab). */
+  .panel.head-compact:not(.head-slim) .panel-head > .head-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; order: 99; flex: 1 0 100%; padding: 2px 8px 0; font-size: var(--fs-lg); }
   .panel-meta { padding: 0 14px 8px; }
   .panel-head .star-toggle, .panel-head .ticket-nav, .panel-head .save-state { display: none; }
   /* One compact row: the status chip keeps only its short part (spinner and time, "Your turn",
@@ -3108,9 +3153,9 @@ button.hd-mode:disabled { cursor: default; }
   .panel-ticket.editing .panel-details { flex: 1; min-height: 0; }
   .panel-ticket.editing .details-pinned { display: none; }
   .panel-ticket.editing .details-desc { border-top: 0; }
-  .tabs { overflow-x: auto; scrollbar-width: none; padding: 0 8px; flex: none; }
+  .tabs { padding: 0 8px; }
   .tabs::-webkit-scrollbar, .col-jump::-webkit-scrollbar, .board::-webkit-scrollbar { display: none; }
-  .tabs button { white-space: nowrap; padding: 10px 10px; flex: none; }
+  .tabs button { padding: 10px 10px; }
   /* The panel's head can't push the page sideways. */
   .dock { overflow-x: clip; }
   .chat .composer { margin-bottom: env(safe-area-inset-bottom); }
@@ -3157,6 +3202,9 @@ button.hd-mode:disabled { cursor: default; }
   div.huddle { position: relative; }
   .huddle-bar { padding: 6px 8px 6px 12px; flex-wrap: nowrap; white-space: nowrap; min-height: 44px; overflow: hidden; }
   .huddle-bar > * { flex: none; }
+  .huddle-bar > .hd-head-meta { flex: 0 1 auto; }
+  /* A phone hides roster churn (joined, mode switched) and the message head's extras: name and time only. */
+  .hd-sys.roster, .hd-msg-head .hd-wide { display: none; }
   .hd-more { position: relative; width: 40px; height: 36px; padding: 0; justify-content: center; align-items: center; display: inline-flex; border-radius: var(--r-md); }
   .hd-more .pn-dot { top: 6px; right: 6px; }
   .sheet-item.danger { color: var(--err); }
@@ -3170,16 +3218,16 @@ button.hd-mode:disabled { cursor: default; }
   /* one pane fills the height and scrolls; the session and learnings cover the whole huddle */
   .huddle-body { flex-direction: column; position: static; }
   .huddle-side, .huddle-body:has(.hd-session) .huddle-side { flex: 1; min-height: 0; width: auto; max-height: none; border: 0; padding: 8px 12px max(16px, env(safe-area-inset-bottom)); gap: 16px; }
-  .huddle-log { padding: 10px 12px; }
+  .huddle-log { padding: 12px 10px; }
   .hd-msg-body { overflow-wrap: anywhere; }
-  .panel-main .huddle .composer { margin: 0 12px max(10px, env(safe-area-inset-bottom)); }
+  .hd-msg-body { max-width: calc(100% - 42px); }
+  .panel-main .huddle .composer { margin: 0 10px max(10px, env(safe-area-inset-bottom)); }
   .huddle-closed { margin: 0 12px max(10px, env(safe-area-inset-bottom)); }
-  .hd-dock, .hd-stopped-box { margin: 0 12px max(10px, env(safe-area-inset-bottom)); }
+  .hd-dock, .hd-stopped-box { margin: 0 8px max(8px, env(safe-area-inset-bottom)); }
   .hd-dock .btn { min-height: 40px; }
   .hd-dock-more .btn.small, .hd-stopped-box .btn.small { min-height: 40px; }
-  .hd-banner { margin: 8px 12px 0; padding: 8px 10px; gap: 6px 8px; }
+  .hd-banner { padding: 6px 6px 6px 12px; gap: 6px; }
   .hd-banner .btn.small { min-height: 40px; }
-  .huddle-close-ask { padding-left: 12px; padding-right: 12px; }
   .huddle-add { max-height: 50dvh; overflow-y: auto; flex: none; }
   .huddle-add .btn.small { min-height: 40px; }
 
@@ -3224,18 +3272,11 @@ button.hd-mode:disabled { cursor: default; }
   .composer-hint.muted { display: none; }
   .composer-hint.muted.composer-old { display: inline; }
 
-  .huddle-bar { gap: 6px; padding: 6px 6px 6px 12px; }
-  .huddle-bar .hd-state-dot { font-size: var(--fs-xs); }
-  .huddle-bar .hd-budget { font-size: var(--fs-sm); }
-  .huddle-bar > .hd-seg { flex: 1 1 auto; min-width: 0; margin: 0; padding: 2px; border-radius: var(--r-md); }
-  .huddle-bar .hd-seg button { min-height: 32px; font-size: var(--fs-sm); padding: 0 2px; gap: 3px; white-space: nowrap; }
-  .huddle-bar .hd-seg .for-you-pill { margin-left: 0; }
+  .huddle-bar { gap: 8px; padding: 6px 6px 6px 12px; }
+  .hd-seg .for-you-pill { margin-left: 0; }
 
-  .huddle-close-ask.compact { display: flex; align-items: center; gap: 6px; padding: 6px 6px 6px 12px; }
-  .hd-ask-text { flex: 1; min-width: 0; padding: 4px 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-  .huddle-close-ask.compact.open { flex-wrap: wrap; justify-content: flex-end; }
-  .huddle-close-ask.open .hd-ask-text { flex-basis: 100%; white-space: normal; }
-  .huddle-close-ask.compact .btn.small { min-height: 40px; }
+  .huddle-close-ask { padding: 6px 6px 6px 12px; }
+  .huddle-close-ask .btn.small { min-height: 40px; }
 }
 
 /* Notifications dialog (NotificationsDialog.tsx) */
@@ -3574,7 +3615,7 @@ button.tag-chip:hover { border-color: currentColor; }
   /* Top bar and panel icons at 40×40 (later than their own sections, so these win). */
   .topbar-icon, .hd-more { width: 40px; height: 40px; }
   .help-btn { min-width: 40px; min-height: 40px; }
-  .huddle-bar .hd-seg button { min-height: 36px; }
+  .hd-seg button { min-height: 36px; }
   /* Inbox: one full-width button + ⋯ instead of hover-only actions. */
   .inbox-secondary { display: none; }
   .inbox-actions .row-more { display: inline-flex; }
@@ -3586,7 +3627,7 @@ button.tag-chip:hover { border-color: currentColor; }
 /* Touch: the rest of the small controls the phone test found, at least 40px tall. Inline text links get padding with
    an equal negative margin, so the tap area grows and the text stays where it was. Later than the sections above. */
 @media (pointer: coarse) {
-  .tag-add, .segmented button, .huddle-bar .hd-seg button, .act-btn, .board-bar .tag-filter .chip { min-height: 40px; }
+  .tag-add, .segmented button, .hd-seg button, .act-btn, .board-bar .tag-filter .chip { min-height: 40px; }
   .board-bar .search input, .file-filter input { min-height: 40px; }
   .star-toggle { width: 40px; height: 40px; }
   :is(.result-card .r-links, .huddle-closed) .link-btn, .link-btn.chat-more-files, .mini-link.run-settings-more,
@@ -3634,31 +3675,24 @@ button.tag-chip:hover { border-color: currentColor; }
 .connectors-grid label.check-row input { width: auto; flex: none; margin: 0; }
 .connectors-empty { background: var(--surface-2); padding: 8px 10px; border-radius: var(--r-sm); font-size: var(--fs-sm); color: var(--muted); }
 
-/* Features: the pinned "Where we are" status (StatusBlock.tsx), the Family tab and Gather (FamilyTab.tsx), the New
-   ticket suggestion (NewTicketDialog.tsx). */
-.where-we-are { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); overflow: hidden; flex: none; }
-.ws-head { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--surface-2); font-size: var(--fs-sm); }
-.ws-title { font-weight: 700; }
-.ws-head .ws-act:first-of-type { margin-left: auto; }
+/* Features: the feature status at the top of the Tasks tab (StatusBlock.tsx), the chat's "Waiting on you" line, the
+   Tasks list and Gather (FamilyTab.tsx), the New ticket suggestion (NewTicketDialog.tsx). */
+.tasks-status { display: flex; flex-direction: column; gap: 4px; padding: 2px 2px 10px; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); line-height: 1.45; }
+.ts-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); }
+.ts-updated { margin-left: auto; }
+.ts-bar { height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; margin: 2px 0 6px; }
+.ts-bar i { display: block; height: 100%; background: var(--ok); border-radius: inherit; transition: width .3s; }
+.ts-row { overflow-wrap: anywhere; }
+.ts-k { color: var(--muted); font-size: var(--fs-xs); font-weight: 600; margin-right: 4px; }
+.ts-row.you .ts-k { color: var(--accent-text); }
+.ts-row.bad .ts-k { color: var(--err); }
+.ts-row .ws-lines { margin-top: 2px; }
+.ts-more, .ts-note { align-self: flex-start; }
 .ws-act { border: 0; background: none; padding: 0; font: inherit; font-size: var(--fs-xs); font-weight: 600; color: var(--accent-text); cursor: pointer; }
 .ws-act:hover { text-decoration: underline; }
-.ws-body {
-  padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 6px; max-height: 38vh; overflow-y: auto; overscroll-behavior: contain;
-  /* Scroll shadows: a soft edge shows at the top or bottom only while there is more to scroll that way, so a cut line
-     reads as "scroll for more" and never looks like it is covering the chat. */
-  background:
-    linear-gradient(var(--surface) 30%, transparent) top / 100% 28px no-repeat local,
-    linear-gradient(transparent, var(--surface) 70%) bottom / 100% 28px no-repeat local,
-    radial-gradient(farthest-side at 50% 0, rgb(0 0 0 / 0.16), transparent) top / 100% 10px no-repeat scroll,
-    radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / 0.16), transparent) bottom / 100% 10px no-repeat scroll,
-    var(--surface);
-}
-.ws-row { display: grid; grid-template-columns: 110px 1fr; gap: 10px; font-size: var(--fs-sm); line-height: 1.45; }
-.ws-k { color: var(--muted); font-size: var(--fs-xs); font-weight: 600; padding-top: 1px; }
-.ws-v { min-width: 0; overflow-wrap: anywhere; }
 .ws-lines { display: flex; flex-direction: column; gap: 2px; }
 .ws-lines a { color: inherit; }
-.ws-next { font-weight: 700; }
+.ws-next { font-weight: 600; }
 .ws-pill { display: inline-block; font-size: var(--fs-2xs); font-weight: 600; padding: 0 7px; border-radius: var(--r-pill); margin-right: 4px; }
 .ws-pill.ok { background: var(--ok-soft); color: var(--ok); }
 .ws-pill.run { background: var(--info-soft); color: var(--info); }
@@ -3675,39 +3709,41 @@ button.tag-chip:hover { border-color: currentColor; }
 .ws-step-text .ws-link { align-self: flex-start; text-align: left; }
 .ws-why { font-size: var(--fs-xs); color: var(--muted); }
 .ws-step .btn { flex: none; }
-.ws-note-form { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.ws-note-form { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 .ws-note-form textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-sm); }
 .ws-note-actions { display: flex; align-items: center; gap: 6px; }
 .ws-note-actions .muted { margin-right: auto; }
 .status-note { align-self: flex-start; font-size: var(--fs-xs); color: var(--muted); border-left: 3px solid var(--warn); padding: 2px 10px; }
-.ws-toggle { align-self: flex-start; }
-/* Narrow screens: the block stays short so the chat keeps the room under it; phones put each label above its value. */
-@media (max-width: 900px) { .ws-body { max-height: 28vh; } }
-@media (max-width: 720px) {
-  .ws-row { grid-template-columns: 1fr; gap: 0; }
-}
 @media (pointer: coarse) { .ws-act { min-height: 40px; padding: 0 6px; margin: 0 -6px; } .ws-act.ws-more { display: flex; align-items: center; width: fit-content; margin: -11px -6px -12px; } }
-/* Phone ticket page: the block sits above the chat with a clear edge, so chat lines scrolling under it never look covered. */
-@media (max-width: 720px) {
-  .panel-main .where-we-are { position: relative; z-index: 1; box-shadow: var(--shadow-sm); }
+/* The chat's one line while something waits on the user: tap opens the Tasks tab. */
+.chat-waiting {
+  flex: none; display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; cursor: pointer;
+  /* Stays in view on phones, where the whole chat scrolls. */
+  position: sticky; top: 0; z-index: 2; box-shadow: var(--shadow-sm);
+  border: 0; border-radius: var(--r-md); padding: 8px 12px; background: var(--accent-soft); color: var(--accent-text);
+  font: inherit; font-size: var(--fs-sm); font-weight: 600;
 }
+.chat-waiting:hover { filter: brightness(0.97); }
+.cw-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .family-tab { display: flex; flex-direction: column; gap: 8px; }
 .family-tab-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
 .family-tab-head .mini-link:first-of-type { margin-left: auto; }
 .family-tab-tree { border: 1px solid var(--border); border-radius: var(--r-md); padding: 4px 0; }
-.ft-row { display: flex; align-items: center; gap: 8px; padding: 4px 10px; font-size: var(--fs-sm); cursor: pointer; }
+/* A step: its full title (wraps), then a small line with kind · model, status and cost. */
+.ft-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px; font-size: var(--fs-sm); cursor: pointer; }
 .ft-row:hover { background: var(--surface-2); }
 .ft-row.me { background: var(--info-soft); }
 .ft-row.peeked { outline: 1px solid var(--border); }
 .ft-row.group .ft-title { font-weight: 600; }
-.ft-chev { flex: none; width: 14px; border: 0; background: none; padding: 0; color: var(--muted); font-size: var(--fs-2xs); cursor: pointer; }
+.ft-chev { flex: none; width: 14px; border: 0; background: none; padding: 0; color: var(--muted); font-size: var(--fs-2xs); cursor: pointer; line-height: 1.6; }
 .ft-chev.none { cursor: default; }
-.ft-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ft-sum { flex: none; font-size: var(--fs-2xs); color: var(--muted); font-weight: 500; }
-.ft-model { flex: none; font-size: var(--fs-2xs); color: var(--muted); min-width: 56px; text-align: right; }
-.ft-cost { flex: none; font-size: var(--fs-2xs); color: var(--muted); width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
-.ft-st { flex: none; font-size: var(--fs-2xs); font-weight: 600; padding: 1px 7px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); width: 104px; text-align: center; box-sizing: border-box; }
+.ft-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ft-title { line-height: 1.35; overflow-wrap: anywhere; }
+.ft-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: var(--fs-2xs); color: var(--muted); }
+.ft-sum { font-weight: 500; }
+.ft-cost { margin-left: auto; font-variant-numeric: tabular-nums; }
+.ft-st { flex: none; font-size: var(--fs-2xs); font-weight: 600; padding: 0 7px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .ft-st.done { background: var(--ok-soft); color: var(--ok); }
 .ft-st.work { background: var(--info-soft); color: var(--info); }
 .ft-st.prob { background: var(--err-soft); color: var(--err); }
@@ -3717,10 +3753,6 @@ button.tag-chip:hover { border-color: currentColor; }
 .ft-peek-sum { font-size: var(--fs-sm); line-height: 1.5; margin: 4px 0; }
 .ft-peek-btns { display: flex; gap: 6px; margin-top: 8px; }
 .ft-report { max-height: 70vh; overflow-y: auto; }
-@media (max-width: 640px) {
-  .ft-model, .ft-cost { display: none; }
-  .ft-st { width: auto; }
-}
 
 .gather { display: flex; flex-direction: column; gap: 8px; }
 .gather-search { width: 100%; box-sizing: border-box; }
@@ -3772,7 +3804,6 @@ button.fc-chip:hover, button.fc-chip[aria-expanded="true"] { color: var(--text);
 .gather-row input[type="checkbox"] { width: auto; flex: none; }
 .ask-first { border: 1px dashed var(--border); border-radius: var(--r-md); padding: 8px 12px; line-height: 1.45; }
 .gather-new input { width: auto; flex: 1; }
-.ft-st { white-space: nowrap; width: 112px; }
 
 /* A tool ticket's result in its main ticket's chat (main-ticket.ts). */
 .result-card { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--r-md); padding: 8px 14px; max-width: 90%; background: var(--surface); margin: 6px 0; }

@@ -117,7 +117,7 @@ test("ticketAttention: tool tickets need nothing themselves, the main ticket say
   expect(board.waitsOnUser("p", live.id)).toBe(true);
   // Two of them: counted.
   const live2 = await mk("Approve the copy", "with_you", { status: "review", outcome: "needs_input", runEndedAt: at(31) });
-  expect(att(main)).toMatchObject({ kind: "questions", label: "2 steps need you" });
+  expect(att(main)).toMatchObject({ kind: "questions", label: "2 tasks need you" });
   // Answered (an answer queued or the step running again): no longer waiting.
   store.updateTicket("p", live.id, { status: "in_progress" });
   store.updateTicket("p", live2.id, { status: "done", outcome: "done" });
@@ -183,8 +183,8 @@ test("the main card's line: a step that needs you, then failed or stuck, then pa
 
 test("the confirms name the count and the cost; only main tickets with tool tickets ask before Backlog or Done", () => {
   const t = { title: "AI Outreach", main: true, status: "review", familyCard: { tools: 14, running: ["a", "b"], costUsd: 41.2 } };
-  expect(stopTitle(t)).toBe("Stop AI Outreach and its 2 running steps?");
-  expect(deleteTitle(t)).toBe("Delete AI Outreach and its 14 steps ($41.20 spent)?");
+  expect(stopTitle(t)).toBe("Stop AI Outreach and its 2 running tasks?");
+  expect(deleteTitle(t)).toBe("Delete AI Outreach and its 14 tasks ($41.20 spent)?");
   expect(parkNeedsConfirm(t, "backlog")).toBe(true);
   expect(parkNeedsConfirm(t, "in_progress")).toBe(false);
   expect(parkNeedsConfirm({ ...t, main: false }, "done")).toBe(false);
@@ -192,11 +192,11 @@ test("the confirms name the count and the cost; only main tickets with tool tick
   expect(parkNeedsConfirm({ ...t, familyCard: { ...t.familyCard, open: 0 } }, "done")).toBe(false);
   const one = { ...t, familyCard: { ...t.familyCard, open: 1 } };
   expect(parkNeedsConfirm(one, "done")).toBe(true);
-  expect(parkTitle(one, "done")).toBe('Move "AI Outreach" and its 1 unfinished step to Done?');
-  expect(parkTitle({ ...t, familyCard: { ...t.familyCard, open: 3 } }, "backlog")).toBe('Move "AI Outreach" and its 3 unfinished steps to Backlog?');
+  expect(parkTitle(one, "done")).toBe('Move "AI Outreach" and its 1 unfinished task to Done?');
+  expect(parkTitle({ ...t, familyCard: { ...t.familyCard, open: 3 } }, "backlog")).toBe('Move "AI Outreach" and its 3 unfinished tasks to Backlog?');
   expect(deleteTitle({ title: "Fix login" })).toBe('Delete "Fix login"?');
-  // The words users see say "step", never "tool ticket".
-  expect(parkText(t)).toBe("No new steps start; the 2 running ones finish, and queued ones are kept. Move it back to In progress to let them start again. \$41.20 spent so far.");
+  // The words users see say "task", never "tool ticket".
+  expect(parkText(t)).toBe("No new tasks start; the 2 running ones finish, and queued ones are kept. Move it back to In progress to let them start again. \$41.20 spent so far.");
   for (const s of [stopTitle(t), deleteTitle(t), parkTitle(t, "done"), parkText(t)]) expect(s).not.toContain("tool ticket");
 });
 

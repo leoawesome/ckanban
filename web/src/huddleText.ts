@@ -432,3 +432,55 @@ export function rosterNames(rows: EntryLike[]): string {
     return `${r.count && r.count > 1 ? `${r.count}× ` : ""}${name.length <= 2 ? name.toUpperCase() : name}`;
   }).join(", ");
 }
+
+/** A helper's face colour and corner badge, per known role (robot faces, HelperFace.tsx). */
+export interface FaceLook { color: string; badge: string; you?: boolean }
+const LOOKS: Record<string, [string, string]> = {
+  main: ["#8a5a2b", "⭐"],
+  facilitator: ["#7a5af5", "🎙"],
+  reviewer: ["#2b5fb8", "🔍"],
+  qa: ["#0e7c86", "🧪"],
+  "qa-lead": ["#0b5c63", "📋"],
+  engineer: ["#2f7d4f", "🔧"],
+  designer: ["#b3428a", "🎨"],
+  security: ["#a83838", "🛡"],
+  researcher: ["#4f6386", "📚"],
+  "ux-critic": ["#c96442", "👀"],
+  "blast-radius": ["#c2410c", "💥"],
+  breaker: ["#6b4f3a", "🔨"],
+  ponytail: ["#8e44ad", "🎀"],
+};
+/** Words in a custom role that point at a known look ("Code reviewer": reviewer). */
+const LOOK_WORDS: [RegExp, string][] = [
+  [/coordinat|host/, "main"], [/facilitat/, "facilitator"], [/qa.?lead|test.?lead/, "qa-lead"], [/secur/, "security"], [/review|critic/, "reviewer"],
+  [/\bqa\b|tester|testing/, "qa"], [/design/, "designer"], [/research/, "researcher"], [/ux/, "ux-critic"], [/break/, "breaker"],
+  [/engineer|develop|coder|builder/, "engineer"],
+];
+/** Hand-picked colours for roles without a look (the same palette as the letter avatars), stable per handle. */
+const FALLBACK_COLORS = ["#7a5af5", "#2f7d4f", "#c96442", "#b3428a", "#2b5fb8", "#0e7c86", "#8a5a2b"];
+
+/** The look of a huddle participant: its preset, else its handle (qa-2: qa), else words in its role; others a stable colour and 💡. */
+export function faceLook(p: { handle: string; role?: string | null; preset?: string | null; kind?: string | null }): FaceLook {
+  if (p.handle === "you" || p.kind === "human") return { color: "#c96442", badge: "", you: true };
+  const base = p.handle.replace(/-\d+$/, "");
+  for (const k of [p.preset, base, handleBase(p.role ?? "")]) if (k && LOOKS[k]) return { color: LOOKS[k][0], badge: LOOKS[k][1] };
+  const role = (p.role ?? "").toLowerCase();
+  for (const [re, k] of LOOK_WORDS) if (re.test(role)) return { color: LOOKS[k][0], badge: LOOKS[k][1] };
+  let h = 0x811c9dc5;
+  for (const c of base) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193);
+  // Another ticket's own Claude: a pin instead of the bulb.
+  return { color: FALLBACK_COLORS[(h >>> 0) % FALLBACK_COLORS.length], badge: p.kind === "ticket-main" ? "📌" : "💡" };
+}
+
+/** Roster churn system lines (joined, invited, back, mode switched): hidden on a phone, where they crowd the chat. */
+export function rosterNoise(text: string): boolean {
+  return /^@[\w-]+ (added @|invited ticket |switched to \w+ mode|is active again\.|is back and runs the huddle)/.test(text);
+}
+
+/** A hand-in on one line: "changed 3 files", with a short status once decided. */
+export function handInLine(x: HandInLike): { what: string; state: string | null } {
+  const n = x.files.length;
+  const what = `changed ${n} file${n === 1 ? "" : "s"}`;
+  const state = x.status === "accepted" ? "✓ accepted" : x.status === "rejected" ? "rejected" : x.status === "conflict" ? "not brought in" : null;
+  return { what, state };
+}
