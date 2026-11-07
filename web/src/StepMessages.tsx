@@ -25,7 +25,7 @@ export interface StepInfo {
 }
 
 /** The main ticket's "with you" steps and what each showed the user, kept fresh as their chats change. */
-export function useStepMessages(slug: string, ticket: Ticket, tickets: Ticket[]): { steps: StepInfo[]; messages: StepMsg[]; reload: (id: string) => void } {
+export function useStepMessages(slug: string, ticket: Ticket, tickets: Ticket[]): { steps: StepInfo[]; messages: StepMsg[]; reload: (id: string) => void; loaded: boolean } {
   const steps: StepInfo[] = ticket.main
     ? familyOf(tickets, ticket.id).map((r) => r.ticket).filter((t) => withYouTool(t) && !!t.sessionId).map((t) => ({
       id: t.id, title: t.title, running: !!t.running,
@@ -38,7 +38,8 @@ export function useStepMessages(slug: string, ticket: Ticket, tickets: Ticket[])
   runningRef.current = Object.fromEntries(steps.map((s) => [s.id, s.running]));
 
   const reload = useCallback((id: string) => {
-    api.conversation(slug, id).then((r) => setByStep((m) => ({ ...m, [id]: r.entries }))).catch(() => {});
+    api.conversation(slug, id).then((r) => setByStep((m) => ({ ...m, [id]: r.entries })))
+      .catch(() => setByStep((m) => (id in m ? m : { ...m, [id]: [] })));
   }, [slug]);
 
   // Load each step (again when it starts or stops running).
@@ -66,7 +67,11 @@ export function useStepMessages(slug: string, ticket: Ticket, tickets: Ticket[])
 
   const messages = steps.flatMap((s) => stepMessages(s.id, byStep[s.id] ?? [], s.running))
     .sort((a, b) => a.at.localeCompare(b.at));
-  return { steps, messages, reload };
+  // Every step's chat answered once (or failed): the main chat waits for it so their messages paint with the rest. Stays
+  // true for this ticket, so a step added later doesn't hide the timeline while it loads.
+  const loadedFor = useRef<string | null>(null);
+  if (steps.every((s) => s.id in byStep)) loadedFor.current = ticket.id;
+  return { steps, messages, reload, loaded: loadedFor.current === ticket.id };
 }
 
 /** A reply box tied to one step: what the user types goes straight to that step. */

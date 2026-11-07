@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dividerLabel, layoutTurns, plainStep, shortStep, stepsSummary } from "../web/src/chatTurns";
+import { dividerLabel, layoutTurns, placeByTime, plainStep, shortStep, stepsSummary } from "../web/src/chatTurns";
 
 const at = (min: number) => new Date(Date.UTC(2026, 9, 25, 6, 0) + min * 60_000).toISOString();
 const NOW = Date.UTC(2026, 9, 25, 8, 0);
@@ -83,4 +83,23 @@ test("plainStep: tool names become plain verbs for the summary line", () => {
   for (const t of ["mcp__linear-server__get_document: x", "ToolSearch: select:mcp__a__b", "Bash: ls", "Grep: foo", "TodoWrite"]) {
     expect(stepsSummary([{ text: t }], false).text).not.toMatch(/mcp__|ToolSearch|Bash|Grep|TodoWrite/);
   }
+});
+
+test("placeByTime: no step notes before the conversation has loaded, then each before the first later block", () => {
+  const notes = [{ at: at(5), text: "step done" }, { at: at(0.5), text: "early" }, { at: at(30), text: "latest" }];
+  // Loading: nothing is placed (they used to all show under the loading line, then jump up).
+  expect(placeByTime(notes, [], null, true).size).toBe(0);
+  // Conversation in, but the steps' chats still loading: still nothing.
+  expect(placeByTime(notes, [at(0), at(10)], { start: 0 }, false).size).toBe(0);
+  const m = placeByTime(notes, [at(0), at(10)], { start: 0 }, true);
+  expect(m.get(1)?.map((n) => n.text)).toEqual(["step done", "early"]);
+  expect(m.get(2)?.map((n) => n.text)).toEqual(["latest"]);
+  expect(m.has(0)).toBe(false);
+});
+
+test("placeByTime: on a partial page, notes older than the first loaded message wait for Load earlier", () => {
+  const m = placeByTime([{ at: at(1) }, { at: at(12) }], [at(10), at(20)], { start: 40 }, true);
+  expect([...m.keys()]).toEqual([1]);
+  // No messages yet in a fresh chat: notes still show.
+  expect(placeByTime([{ at: at(1) }], [], { start: 0 }, true).get(0)?.length).toBe(1);
 });

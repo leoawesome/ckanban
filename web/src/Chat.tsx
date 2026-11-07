@@ -39,7 +39,7 @@ import { StepBlock, type StepInfo, type StepMsg, useStepMessages } from "./StepM
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
-import { fromTicket, layoutTurns, type TurnLayout } from "./chatTurns";
+import { fromTicket, layoutTurns, placeByTime, type TurnLayout } from "./chatTurns";
 import { StallActions, stallWait } from "./StallActions";
 import { useSnippetPicker } from "./SnippetPicker";
 import { useSlashCommands, useSlashPicker } from "./SlashPicker";
@@ -175,6 +175,9 @@ function kb(n: number): string {
 /** Whether a message the user sent is in the session file yet. */
 const delivered = (entries: SessionEntry[], text: string) => entries.some((e) => e.role === "user" && norm(e.text) === norm(text));
 
+/** How long the notes beside the conversation wait for the steps' chats and the status after the conversation is in. */
+const SIDE_WAIT_MS = 3000;
+
 /**
  * The ticket's single conversation with Claude, like the terminal: everything in the session
  * (terminal chat, board runs, messages typed here) in one timeline, plus a box to send more.
@@ -294,6 +297,15 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   const feature = useFeatureStatus(slug, ticket, tickets);
   // A main ticket's "with you" steps talk to the user here: their messages and forms show inline, answered right here.
   const stepTalk = useStepMessages(slug, ticket, tickets);
+  // A slow step chat or status doesn't hold the notes back for long once the conversation is in.
+  const [sideWaited, setSideWaited] = useState(false);
+  const pageIn = page !== null;
+  useEffect(() => {
+    setSideWaited(false);
+    if (!pageIn) return;
+    const t = setTimeout(() => setSideWaited(true), SIDE_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [pageIn, ticket.id]);
 
   // Resolves to the loaded tail (null when a newer load won or there is no session).
   const loadTail = useCallback(async (): Promise<SessionEntry[] | null> => {
@@ -848,53 +860,35 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   // Divider before the first block after the branch point (after all of them while nothing new was said yet).
   const firstNew = bp ? blocks.findIndex((b) => !before(b.kind === "entry" ? b.e : b.items[0], bp.at)) : -1;
   const dividerAt = !bp || page === null || page.start > 0 && firstNew === 0 ? -1 : firstNew < 0 ? blocks.length : firstNew;
-  // Help cards go before the first block that came after them (after them all when nothing did); older ones than the
-  // loaded page wait for "Load earlier".
-  const helpAt = new Map<number, HelpState["cards"]>();
-  for (const c of help?.cards ?? []) {
-    if (page && page.start > 0 && entries.length && c.at < entries[0].at) continue;
-    let i = blocks.findIndex((b) => (b.kind === "entry" ? b.e : b.items[0]).at > c.at);
-    if (i < 0) i = blocks.length;
-    helpAt.set(i, [...(helpAt.get(i) ?? []), c]);
-  }
-  // The user's status notes, like help cards: before the first block that came after them.
-  const notesAt = new Map<number, { at: string; text: string }[]>();
-  for (const nt of feature.status?.saved?.notes ?? []) {
-    if (page && page.start > 0 && entries.length && nt.at < entries[0].at) continue;
-    let i = blocks.findIndex((b) => (b.kind === "entry" ? b.e : b.items[0]).at > nt.at);
-    if (i < 0) i = blocks.length;
-    notesAt.set(i, [...(notesAt.get(i) ?? []), nt]);
-  }
-  // Tool tickets' results (a main ticket's chat), like the notes: before the first block that came after them.
-  const resultsAt = new Map<number, NonNullable<Ticket["results"]>>();
-  for (const r of ticket.results ?? []) {
-    if (page && page.start > 0 && entries.length && r.at < entries[0].at) continue;
-    let i = blocks.findIndex((b) => (b.kind === "entry" ? b.e : b.items[0]).at > r.at);
-    if (i < 0) i = blocks.length;
-    resultsAt.set(i, [...(resultsAt.get(i) ?? []), r]);
-  }
-  // "With you" steps' messages and the board's grey notes, like the results: before the first block that came after
-  // them, in time order; a step's messages in a row form one labelled block.
+  // Help cards, the user's status notes, tool tickets' results, "with you" steps' messages and the board's grey notes go
+  // before the first block that came after them, and only once the conversation and the steps' messages have loaded, so
+  // they paint together with the messages instead of first, under the loading line.
+  const blockAts = blocks.map((b) => (b.kind === "entry" ? b.e : b.items[0]).at);
+  const ready = page !== null && (stepTalk.loaded && feature.loaded || sideWaited);
+  const helpAt = placeByTime(help?.cards ?? [], blockAts, page, ready);
+  const notesAt = placeByTime(feature.status?.saved?.notes ?? [], blockAts, page, ready);
+  const resultsAt = placeByTime(ticket.results ?? [], blockAts, page, ready);
+  // A step's messages in a row form one labelled block.
   type Side = { kind: "note"; at: string; ticketId: string; text: string } | { kind: "step"; at: string; step: StepInfo; msgs: StepMsg[] };
-  const sideAt = new Map<number, Side[]>();
   const sideItems: ({ kind: "note"; at: string; ticketId: string; text: string } | { kind: "msg"; at: string; m: StepMsg })[] = [
     ...(ticket.boardNotes ?? []).map((n) => ({ kind: "note" as const, ...n })),
     ...stepTalk.messages.map((m) => ({ kind: "msg" as const, at: m.at, m })),
   ].sort((a, b) => a.at.localeCompare(b.at));
-  for (const it of sideItems) {
-    if (page && page.start > 0 && entries.length && it.at < entries[0].at) continue;
-    let i = blocks.findIndex((b) => (b.kind === "entry" ? b.e : b.items[0]).at > it.at);
-    if (i < 0) i = blocks.length;
-    const list = sideAt.get(i) ?? sideAt.set(i, []).get(i)!;
-    if (it.kind === "note") {
-      list.push(it);
-      continue;
+  const sideAt = new Map<number, Side[]>();
+  for (const [i, items] of placeByTime(sideItems, blockAts, page, ready)) {
+    const list: Side[] = [];
+    for (const it of items) {
+      if (it.kind === "note") {
+        list.push(it);
+        continue;
+      }
+      const step = stepTalk.steps.find((x) => x.id === it.m.stepId);
+      if (!step) continue;
+      const prev = list.at(-1);
+      if (prev?.kind === "step" && prev.step.id === step.id) prev.msgs.push(it.m);
+      else list.push({ kind: "step", at: it.at, step, msgs: [it.m] });
     }
-    const step = stepTalk.steps.find((x) => x.id === it.m.stepId);
-    if (!step) continue;
-    const prev = list.at(-1);
-    if (prev?.kind === "step" && prev.step.id === step.id) prev.msgs.push(it.m);
-    else list.push({ kind: "step", at: it.at, step, msgs: [it.m] });
+    sideAt.set(i, list);
   }
   const newestOf = new Map(stepTalk.messages.map((m) => [m.stepId, m.uuid]));
   const sideView = (i: number) => sideAt.get(i)?.map((x) => x.kind === "note"

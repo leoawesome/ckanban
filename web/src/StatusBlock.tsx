@@ -14,11 +14,13 @@ import { usePersistentState } from "./usePersistentState";
 import { timeAgo } from "./time";
 
 /** The feature status when ticket is a feature's top ticket (its main chat), reloaded as the family changes. */
-export function useFeatureStatus(slug: string, ticket: Ticket, tickets: Ticket[]): { status: FeatureStatus | null; reload: () => void } {
+export function useFeatureStatus(slug: string, ticket: Ticket, tickets: Ticket[]): { status: FeatureStatus | null; reload: () => void; loaded: boolean } {
   const rows = useMemo(() => familyOf(tickets, ticket.id), [tickets, ticket.id]);
   const main = rows[0]?.ticket.id === ticket.id && isFeature(tickets, ticket);
   const key = rows.map((r) => `${r.ticket.id}:${r.ticket.status}:${r.ticket.outcome}:${r.ticket.verdict ?? ""}:${(r.ticket.prs ?? []).map((p) => p.state).join(",")}:${r.ticket.running ? 1 : 0}`).join("|");
   const [status, setStatus] = useState<FeatureStatus | null>(null);
+  // The ticket whose status answered (or failed) at least once: its notes join the chat's first paint.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [n, setN] = useState(0);
   useEffect(() => {
     if (!main) {
@@ -26,12 +28,17 @@ export function useFeatureStatus(slug: string, ticket: Ticket, tickets: Ticket[]
       return;
     }
     let live = true;
-    api.featureStatus(slug, ticket.id).then((s) => live && setStatus(s), () => {});
+    const id = ticket.id;
+    api.featureStatus(slug, id).then((s) => {
+      if (!live) return;
+      setStatus(s);
+      setLoadedFor(id);
+    }, () => live && setLoadedFor(id));
     return () => {
       live = false;
     };
   }, [slug, ticket.id, main, ticket.statusAt, key, n]);
-  return { status: main ? status : null, reload: () => setN((x) => x + 1) };
+  return { status: main ? status : null, reload: () => setN((x) => x + 1), loaded: !main || loadedFor === ticket.id };
 }
 
 const Pill = ({ tone, children }: { tone: "ok" | "run" | "bad" | "you"; children: React.ReactNode }) => <span className={`ws-pill ${tone}`}>{children}</span>;

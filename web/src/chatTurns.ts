@@ -105,3 +105,22 @@ export function fromTicket(text: string): { ticketId: string; title: string; tex
   const m = /^Message from ticket (t_[\w-]+) \("([\s\S]*?)"\): ([\s\S]*)$/.exec(text);
   return m ? { ticketId: m[1], title: m[2], text: m[3].trim() } : null;
 }
+
+/**
+ * Where items kept beside the conversation (board notes, step results, help cards, status notes, step messages) go:
+ * index i = before block i (blocks.length = after them all), each before the first block that came after it, in order.
+ * Nothing is placed until the timeline is ready (the conversation and the step messages have loaded): placed earlier,
+ * they all land under the loading line and jump up once the messages arrive. Items older than a partial page
+ * (start > 0) wait for "Load earlier".
+ */
+export function placeByTime<T extends { at: string }>(items: readonly T[], blockAts: readonly string[], page: { start: number } | null, ready: boolean): Map<number, T[]> {
+  const out = new Map<number, T[]>();
+  if (!ready || !page) return out;
+  for (const it of items) {
+    if (page.start > 0 && blockAts.length && it.at < blockAts[0]) continue;
+    let i = blockAts.findIndex((a) => a > it.at);
+    if (i < 0) i = blockAts.length;
+    out.set(i, [...(out.get(i) ?? []), it]);
+  }
+  return out;
+}
