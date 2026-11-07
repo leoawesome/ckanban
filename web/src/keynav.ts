@@ -230,3 +230,28 @@ export function listKey(e: PlainKeys & { shiftKey: boolean; code?: string }): Li
   const digit = e.code ? boardDigit(e.code) : null;
   return digit === null ? null : { pick: digit };
 }
+
+/**
+ * Single keys in the quick Claude chat (bottom panel, computer only), when its keyboard focus isn't in a text box:
+ * O new chat, , / K previous chat, . / J next chat, M or / to the message box.
+ */
+export type QuickChatKey = "new" | "prev" | "next" | "compose";
+export function quickChatKey(e: PlainKeys & { shiftKey: boolean }): QuickChatKey | null {
+  if (!plain(e) || e.shiftKey) return null;
+  switch (e.key) {
+    case "o": case "O": return "new";
+    case ",": case "k": case "K": return "prev";
+    case ".": case "j": case "J": return "next";
+    case "m": case "M": case "/": return "compose";
+    default: return null;
+  }
+}
+
+/**
+ * The chat `delta` rows from the open one in the quick chat list (null = the New chat row on top), stopping at the ends.
+ * Undefined for an empty list.
+ */
+export function stepChat(ids: (string | null)[], current: string | null, delta: number): string | null | undefined {
+  const at = stepIndex(ids.length, ids.indexOf(current), delta);
+  return at < 0 ? undefined : ids[at];
+}

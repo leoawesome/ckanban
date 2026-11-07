@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boardDigit, canStartFromProposal, cardDir, cardKey, escLeavesField, inDock, isInboxKey, isUndoKey, listKey, panelBoardKey, stepIndex, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isStopKey, isTyping, newTicketKey, nextStep, panelStep, phoneTabs, stepBoard, stepCard, stepTab } from "../web/src/keynav";
+import { boardDigit, canStartFromProposal, cardDir, cardKey, escLeavesField, inDock, isInboxKey, isUndoKey, listKey, panelBoardKey, quickChatKey, stepChat, stepIndex, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isStopKey, isTyping, newTicketKey, nextStep, panelStep, phoneTabs, stepBoard, stepCard, stepTab } from "../web/src/keynav";
 
 test("cardDir maps J/K/H/L and arrows, ignores other keys", () => {
   expect(cardDir("j")).toBe("down");
@@ -263,4 +263,38 @@ test("listKey: arrows and J/K move, Enter picks the active row, digits pick by n
   expect(listKey(key("3", { code: "Digit3" }))).toEqual({ pick: 2 });
   expect(listKey(key("Enter", { metaKey: true }))).toBeNull();
   expect(listKey(key("x"))).toBeNull();
+});
+
+test("quickChatKey: O new chat, , . K J previous / next, M and / the message box; plain keys only", () => {
+  const k = (key: string, mods: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }> = {}) =>
+    quickChatKey({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods });
+  expect(k("o")).toBe("new");
+  expect(k("O")).toBe("new");
+  expect(k(",")).toBe("prev");
+  expect(k("k")).toBe("prev");
+  expect(k(".")).toBe("next");
+  expect(k("J")).toBe("next");
+  expect(k("m")).toBe("compose");
+  expect(k("/")).toBe("compose");
+  expect(k("n")).toBeNull();
+  expect(k("c")).toBeNull();
+  expect(k("Enter")).toBeNull();
+  expect(k("o", { metaKey: true })).toBeNull();
+  expect(k(".", { ctrlKey: true })).toBeNull();
+  expect(k("o", { altKey: true })).toBeNull();
+  expect(k("O", { shiftKey: true })).toBeNull();
+  expect(k("o", { isComposing: true })).toBeNull();
+});
+
+test("stepChat: walks the list with New chat (null) on top, stopping at the ends", () => {
+  const ids = [null, "a", "b", "c"];
+  expect(stepChat(ids, null, 1)).toBe("a");
+  expect(stepChat(ids, "a", -1)).toBeNull();
+  expect(stepChat(ids, null, -1)).toBeNull();
+  expect(stepChat(ids, "b", 1)).toBe("c");
+  expect(stepChat(ids, "c", 1)).toBe("c");
+  // The open chat isn't listed (still loading): down starts at the top, up at the bottom.
+  expect(stepChat(ids, "zz", 1)).toBeNull();
+  expect(stepChat(ids, "zz", -1)).toBe("c");
+  expect(stepChat([], null, 1)).toBeUndefined();
 });

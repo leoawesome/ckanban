@@ -12,6 +12,7 @@ import { ArrowDownIcon, ChatIcon, MoreIcon, PlusIcon, TrashIcon } from "./icons"
 import { ImagePickButton } from "./ImagePickButton";
 import { useImagePaste } from "./imagePaste";
 import { KeyHint } from "./KeyHint";
+import { escLeavesField, isTyping, quickChatKey, stepChat } from "./keynav";
 import { useLayer } from "./layers";
 import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, type Handoff } from "./liveReply";
 import { norm } from "./pendingBubbles";
@@ -130,6 +131,45 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
     setSheet(null);
   };
 
+  // Keys in the computer's panel (see quickChatKey): only while the keyboard is inside it and not in a text box. The board's
+  // single keys stay quiet in the bottom panel (inDock), so these never clash with them.
+  const root = useRef<HTMLDivElement>(null);
+  // Where the keyboard goes once a chat picked by key has rendered: its message box (new chat) or its row in the list.
+  const focusAfter = useRef<"composer" | "row" | null>(null);
+  useEffect(() => {
+    const to = focusAfter.current;
+    focusAfter.current = null;
+    const el = root.current;
+    if (!to || !el) return;
+    const composer = to === "composer" ? el.querySelector<HTMLElement>(".composer textarea") : null;
+    const target = composer ?? el.querySelector<HTMLElement>(".qc-row.cur");
+    target?.focus({ preventScroll: true });
+    if (target && !composer) target.scrollIntoView({ block: "nearest" });
+  }, [threadKey]);
+  const onKeys = (e: React.KeyboardEvent) => {
+    const el = root.current;
+    // Dialogs opened from here (Rename, Delete, Make ticket) render elsewhere in the page: their keys aren't ours.
+    if (!el || e.defaultPrevented || !el.contains(e.target as Node)) return;
+    // Esc in a text box: leave it for the chat panel (what was typed stays), so these keys work next; Esc again hides the panel (Dock.tsx).
+    if (escLeavesField(e.nativeEvent)) {
+      e.preventDefault();
+      el.focus({ preventScroll: true });
+      return;
+    }
+    if (isTyping(e)) return;
+    const k = quickChatKey(e.nativeEvent);
+    if (!k) return;
+    e.preventDefault();
+    if (k === "compose") {
+      el.querySelector<HTMLElement>(".composer textarea")?.focus();
+      return;
+    }
+    const to = k === "new" ? null : stepChat([null, ...(chats ?? []).map((c) => c.id)], currentId, k === "prev" ? -1 : 1);
+    if (to === undefined) return;
+    focusAfter.current = k === "new" ? "composer" : "row";
+    pick(to);
+  };
+
   const created = (c: QuickChat) => {
     setChats((cs) => [c, ...(cs ?? []).filter((x) => x.id !== c.id)]);
     setSelected(c.id);
@@ -229,10 +269,12 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
   }
 
   return (
-    <div className="qc qc-dock">
+    <div className="qc qc-dock" ref={root} tabIndex={-1} onKeyDown={onKeys}>
       <aside className="qc-list" aria-label="Chats in this folder">
-        <button className={`qc-row qc-new${currentId === null ? " cur" : ""}`} onClick={() => pick(null)}><PlusIcon size={14} /> New chat</button>
-        <ChatRows chats={chats} currentId={currentId} onPick={pick} />
+        <button className={`qc-row qc-new${currentId === null ? " cur" : ""}`} onClick={() => pick(null)}>
+          <PlusIcon size={14} /> New chat<KeyHint keys={currentId && chats?.[0]?.id === currentId ? "O · ," : "O"} inset />
+        </button>
+        <ChatRows chats={chats} currentId={currentId} onPick={pick} hints />
       </aside>
       <section className="qc-main">
         <div className="qc-head">
@@ -281,14 +323,17 @@ function MakeTicketDialog({ chat, tickets, busy, onClose, onMake }: {
   );
 }
 
-function ChatRows({ chats, currentId, onPick }: { chats: QuickChat[] | null; currentId: string | null; onPick: (id: string) => void }) {
+/** `hints`: the computer's list, where , and . step to the row above / below the open chat (badges on those rows). */
+function ChatRows({ chats, currentId, onPick, hints }: { chats: QuickChat[] | null; currentId: string | null; onPick: (id: string) => void; hints?: boolean }) {
   useNow();
   if (chats === null) return <div className="muted small qc-list-note"><span className="spinner" /> Loading…</div>;
   if (!chats.length) return <div className="muted small qc-list-note">No chats yet. Ask Claude anything about this folder.</div>;
   return (
     <>
-      {chats.map((c) => (
+      {chats.map((c, i) => (
         <button key={c.id} className={`qc-row${c.id === currentId ? " cur" : ""}`} onClick={() => onPick(c.id)} title={c.title}>
+          {hints && chats[i + 1]?.id === currentId && <KeyHint keys="," inset />}
+          {hints && (i > 0 ? chats[i - 1].id === currentId : currentId === null) && <KeyHint keys="." inset />}
           <span className="qc-row-title">{c.running && <span className="spinner" />}<span className="qc-row-name">{c.title}</span></span>
           <span className="qc-row-meta">
             <time dateTime={c.updatedAt} title={fullTime(c.updatedAt)}>{timeAgo(c.updatedAt)}</time>
@@ -663,6 +708,7 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
       </div>
       {!closed && (
         <div className="composer">
+          {!phone && <KeyHint keys="M" inset className="qc-compose-hint" />}
           <textarea ref={composer} rows={phone ? 1 : 2} value={draft} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
             placeholder={running ? "Add to your question: Claude reads it at its next step…" : phone ? "Ask Claude about this folder…" : "Ask Claude about this folder… (Enter sends)"}
             aria-label="Message to Claude"
