@@ -40,7 +40,7 @@ test("there is no board limit: every Ready ticket starts at once, even with an o
   for (const t of ts) expect(board.isRunning("p", t.id)).toBe(true);
   board.stopAll();
   await board.whenIdle();
-}, 15000);
+}, 60_000);
 
 test("failed run marks outcome failed with stderr", async () => {
   await setup();
@@ -99,7 +99,7 @@ test("moving running ticket out of in_progress stops the run", async () => {
   const got = store.getTicket("p", t.id)!;
   expect(got.status).toBe("backlog");
   expect(got.outcome).toBe("stopped");
-}, 15000);
+}, 60_000);
 
 test("stop moves to review with stopped outcome", async () => {
   await setup();
@@ -111,7 +111,7 @@ test("stop moves to review with stopped outcome", async () => {
   const got = store.getTicket("p", t.id)!;
   expect(got.status).toBe("review");
   expect(got.outcome).toBe("stopped");
-}, 15000);
+}, 60_000);
 
 test("stop during worktree setup shows Stopping… and never spawns claude", async () => {
   await setup();
@@ -139,7 +139,7 @@ test("stop keeps Stopping… on the card while the process shuts down", async ()
   await board.whenIdle();
   expect(store.getTicket("p", t.id)!.lastActivity).toBeNull();
   expect(store.getTicket("p", t.id)!.lastActivityAt).toBeNull();
-}, 15000);
+}, 60_000);
 
 test("stop on an in_progress ticket with no live run clears it", async () => {
   await setup();
@@ -181,7 +181,7 @@ test("a run stopped before its session was saved doesn't break the next runs", a
   await board.chat("p", t.id, "more");
   await board.whenIdle();
   expect(readArgs()[2].args).toContain("--resume");
-}, 15000);
+}, 60_000);
 
 test("a ticket stuck on a missing session heals: the next run starts a new session", async () => {
   await setup();

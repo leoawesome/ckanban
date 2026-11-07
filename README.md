@@ -132,7 +132,7 @@ cd web && bun run dev  # Vite dev server with /api proxy (view only: changes nee
 bun run build:bin      # standalone binaries in dist/ (UI embedded)
 ```
 
-`bun run test` runs test files side by side (`bun test --parallel`), slowest first using `test/timings.json`; refresh that file with `bun run test:timings` after adding or splitting slow test files. `bun test test/<file>` runs one file.
+`bun run test` runs test files side by side (`bun test --parallel` through `scripts/test.ts`: at most two suites run at once on one machine, a later one waits for a free slot, and two at once share the cores; `CKANBAN_TEST_SLOTS` and `CKANBAN_TEST_WORKERS` change that), slowest first using `test/timings.json`; refresh that file with `bun run test:timings` after adding or splitting slow test files. `bun test test/<file>` runs one file.
 
 Run from source as the daemon: `bun src/cli.ts install`. Data layout and env overrides: [docs/features.md](docs/features.md#data-layout).
 

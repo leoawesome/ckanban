@@ -29,8 +29,9 @@ export function track<T>(label: string, fn: () => T): T {
     const done = () => {
       busy.delete(id);
       const ms = performance.now() - start;
-      // Work that all ran before the first await is already noted above: one entry, not two.
-      if (ms - syncMs >= 1) ran.push({ label, ms, async: true });
+      // Work that all ran before the first await is already noted above: one entry, not two. Under 20ms more (what the
+      // lag line leaves out anyway) counts as none, so the OS pausing the process for a moment doesn't add a second one.
+      if (ms - syncMs >= 20) ran.push({ label, ms, async: true });
     };
     res.then(done, done);
   } else {

@@ -54,7 +54,7 @@ test("stop agents stops every huddle run and routing until resumed; close keeps 
   expect(page.messages.length).toBe(messages(h).length);
   // A new huddle can start on the ticket once the old one is closed.
   expect(huddles.create("p", t.id, [{ preset: "reviewer" }]).status).toBe("live");
-}, 30000);
+}, 60_000);
 
 test("huddle runs don't take board slots", async () => {
   await Promise.all([board.shutdown(), huddles.shutdown()]);
@@ -70,7 +70,7 @@ test("huddle runs don't take board slots", async () => {
   expect(board.isRunning("p", work.id)).toBe(true);
   expect(board.running("p")).toBe(1);
   huddles.stopAll("p", h.id);
-}, 30000);
+}, 60_000);
 
 test("own workspace: the agent gets a copy of the host's folder as it is now and may edit there", async () => {
   const t = await host();
@@ -95,7 +95,7 @@ test("own workspace: the agent gets a copy of the host's folder as it is now and
   expect(run.cwd).toBe(p.copy!.dir);
   expect(run.args[run.args.indexOf("--disallowedTools") + 1].split(",")).not.toContain("Edit");
   expect(run.args.join(" ")).toContain("huddle_hand_in");
-}, 20000);
+}, 60_000);
 
 test("read-only agents work in a detached snapshot of the host's HEAD, refreshed at every wake", async () => {
   const t = await host();
@@ -142,7 +142,7 @@ test("read-only agents work in a detached snapshot of the host's HEAD, refreshed
   expect(existsSync(p.worktree!)).toBe(false);
   expect(participant(h, "reviewer").worktree).toBeNull();
   expect((await git(store.getProfile("p")!.path, "worktree", "list")).includes(p.worktree!)).toBe(false);
-}, 30000);
+}, 60_000);
 
 test("a failing post-checkout hook in the project doesn't fail the snapshot or its reset", async () => {
   writeFileSync(join(store.getProfile("p")!.path, ".git", "hooks", "post-checkout"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
@@ -161,7 +161,7 @@ test("a failing post-checkout hook in the project doesn't fail the snapshot or i
   expect(participant(h, "reviewer")).toMatchObject({ status: "idle", error: null });
   expect((await git(p.worktree!, "rev-parse", "HEAD")).trim()).toBe(next);
   expect(heardBy("reviewer").at(-1)).toContain("please look again");
-}, 30000);
+}, 60_000);
 
 test("in a repo with no commits yet, read-only agents read the host's folder and editing ones get a plain copy", async () => {
   const empty = tempDir("ck-empty-");
@@ -189,7 +189,7 @@ test("in a repo with no commits yet, read-only agents read the host's folder and
   expect(heardBy("fixer").at(-1)).toContain("again");
   expect(processes().filter((x) => x.cwd === copy.dir).length).toBe(2);
   expect(messages(h).some((m) => /branch|worktree|commit/i.test(m.text))).toBe(false);
-}, 30000);
+}, 60_000);
 
 test("in a plain folder, read-only agents read the host's folder and editing ones work in a copy of it", async () => {
   const plain = tempDir("ck-plain-");
@@ -210,7 +210,7 @@ test("in a plain folder, read-only agents read the host's folder and editing one
     expect(readFileSync(join(participant(h, a).copy!.dir, "index.html"), "utf8")).toBe("<h1>Hi</h1>\n");
   }
   expect(processes().map((x) => x.cwd).sort()).toEqual([plain, participant(h, "fixer").copy!.dir, participant(h, "helper").copy!.dir].sort());
-}, 30000);
+}, 60_000);
 
 test("an agent that can't start shows why: failed with the error, and a line in the huddle", async () => {
   const t = await host();
@@ -223,7 +223,7 @@ test("an agent that can't start shows why: failed with the error, and a line in 
   expect(p.error).toContain("linked session folder no longer exists");
   expect(messages(h).at(-1)).toMatchObject({ kind: "system", text: `@reviewer failed: ${p.error}` });
   expect(processes()).toEqual([]);
-}, 30000);
+}, 60_000);
 
 test("a live monitor-mode snapshot is reset to the host's latest commit before new messages go in", async () => {
   await Promise.all([board.shutdown(), huddles.shutdown()]);
@@ -243,4 +243,4 @@ test("a live monitor-mode snapshot is reset to the host's latest commit before n
   expect(heardBy("qa")[1]).toContain(`your snapshot now shows ${store.getTicket("p", t.id)!.branch} at ${next}`);
   expect(existsSync(join(participant(h, "qa").worktree!, "form.ts"))).toBe(true);
   huddles.stopAll("p", h.id);
-}, 30000);
+}, 60_000);

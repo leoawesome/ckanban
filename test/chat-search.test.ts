@@ -133,7 +133,7 @@ test("search_chat finds a message from before Send in a fresh chat; read_chat lo
   } finally {
     server.stop(true);
   }
-}, 30_000);
+}, 60_000);
 
 // ---- Automatic fresh start of a cold, large main chat ----
 
@@ -176,7 +176,7 @@ test("a cold, large main chat starts its next turn fresh, with the status in its
   expect(call.prompt).toContain("# Family (tool tickets)");
   expect(call.prompt).toContain("search_chat");
   expect(store.listComments("p", before.id).some((c) => c.author === "ai" && c.text === AUTO_FRESH_NOTE)).toBe(true);
-}, 30_000);
+}, 60_000);
 
 test("a warm or small main chat continues as usual", async () => {
   await setup();
@@ -196,7 +196,7 @@ test("a warm or small main chat continues as usual", async () => {
   expect(got.earlierSessions ?? []).toEqual([]);
   expect(readArgs().slice(1).every((a) => a.args.includes("--resume") && !a.prompt.includes("search_chat"))).toBe(true);
   expect(store.listComments("p", before.id).some((c) => c.text === AUTO_FRESH_NOTE)).toBe(false);
-}, 30_000);
+}, 60_000);
 
 test("the board setting freshChatTokens raises the size a cold chat must pass; plain tickets never start fresh by themselves", async () => {
   const p = await setup();
@@ -219,4 +219,4 @@ test("the board setting freshChatTokens raises the size a cold chat must pass; p
   await untilSpawned(4);
   await board.whenIdle();
   expect(store.getTicket("p", plain.id)!.sessionId).toBe(s);
-}, 30_000);
+}, 60_000);

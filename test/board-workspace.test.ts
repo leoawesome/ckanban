@@ -26,7 +26,7 @@ test("tickets that edit the folder in place run one at a time; a waiting card sa
   const calls = readArgs();
   expect(calls.length).toBe(2);
   expect(calls[1].cwd).toBe(calls[0].cwd);
-}, 20000);
+}, 60_000);
 
 test("a reply that would edit the folder while another ticket does waits for it", async () => {
   await setup({ git: false, maxParallel: 3 });
@@ -44,7 +44,7 @@ test("a reply that would edit the folder while another ticket does waits for it"
   board.stop("p", b.id);
   await board.whenIdle();
   expect(readArgs().at(-1)!.prompt).toContain("one more change");
-}, 20000);
+}, 60_000);
 
 test("a reply to another session (a huddle) also waits for the folder, without moving the card", async () => {
   await setup({ git: false, maxParallel: 3 });
@@ -64,7 +64,7 @@ test("a reply to another session (a huddle) also waits for the folder, without m
   expect(readArgs().at(-1)!.prompt).toContain("message from a huddle");
   expect(store.getTicket("p", a.id)!.status).toBe("review");
   expect(store.getTicket("p", a.id)!.slotWait ?? null).toBeNull();
-}, 20000);
+}, 60_000);
 
 test("a board with no Workspace setting gives each ticket a worktree", async () => {
   const p = await setup();
@@ -116,7 +116,7 @@ test("Work in the project folder runs tickets one at a time", async () => {
   await board.whenIdle();
   expect(store.getTicket("p", b.id)!.outcome).toBe("done");
   expect(readArgs().map((c) => c.cwd)).toEqual([p.path, p.path]);
-}, 20000);
+}, 60_000);
 
 test("switching Workspace affects new tickets only: existing worktrees stay, switching back brings worktrees back", async () => {
   const p = await setup({ maxParallel: 3 });
@@ -144,7 +144,7 @@ test("switching Workspace affects new tickets only: existing worktrees stay, swi
   await board.whenIdle();
   expect(readArgs().at(-1)!.cwd).toBe(p.path);
   expect(store.getTicket("p", b.id)!.worktree).toBeNull();
-}, 20000);
+}, 60_000);
 
 test("tickets with worktrees of their own still run side by side", async () => {
   await setup({ maxParallel: 3 });
@@ -154,7 +154,7 @@ test("tickets with worktrees of their own still run side by side", async () => {
   await untilSpawned(2);
   expect(board.isRunning("p", a.id) && board.isRunning("p", b.id)).toBe(true);
   expect(board.folderWait("p", store.getTicket("p", b.id)!)).toBe(false);
-}, 20000);
+}, 60_000);
 
 test("repo with no commits runs in the folder with a notice, then worktrees once it has a commit", async () => {
   const p = await setup({ git: false });
@@ -325,7 +325,7 @@ test("startup sweep removes worktrees of done and deleted tickets, keeps dirty a
   // Branches stay: they are the undo.
   expect((await run(["git", "rev-parse", "--verify", "--quiet", `refs/heads/${done.branch}`], p.path)).code).toBe(0);
   expect((await run(["git", "rev-parse", "--verify", "--quiet", `refs/heads/${deleted.branch}`], p.path)).code).toBe(0);
-}, 20000);
+}, 60_000);
 
 test("startup sweep clears the worktree of a done ticket once it is clean", async () => {
   await setup();
@@ -340,7 +340,9 @@ test("startup sweep clears the worktree of a done ticket once it is clean", asyn
 
 test("planningCommand creates session + worktree", async () => {
   await setup();
-  const t = await board.createTicket("p", { title: "Plan me", body: "", status: "planning" });
+  // In Backlog: a card made in Planning starts its planning chat at once, and if that run saves its session first the
+  // command resumes it instead of starting one.
+  const t = await board.createTicket("p", { title: "Plan me", body: "", status: "backlog" });
   const cmd = await board.planningCommand("p", t.id);
   const got = store.getTicket("p", t.id)!;
   expect(got.sessionId).not.toBeNull();

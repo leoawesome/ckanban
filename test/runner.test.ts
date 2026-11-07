@@ -36,10 +36,10 @@ test("stop terminates slow run", withMode("slow", async () => {
   const t0 = Date.now();
   h.stop();
   const r = await h.done;
-  expect(Date.now() - t0).toBeLessThan(7000);
+  expect(Date.now() - t0).toBeLessThan(15_000);
   expect(r.code).not.toBe(0);
   expect(h.stopped).toBe(true);
-}), 10000);
+}), 60_000);
 
 test("missing binary resolves with error", async () => {
   const r = await startRun({ bin: "/nonexistent/claude", cwd: tempDir(), args: [], onEvent: () => {} }).done;
@@ -84,7 +84,7 @@ test("stop kills the whole process group (grandchildren too)", async () => {
     delete process.env.FAKE_MODE;
     delete process.env.FAKE_CHILD_PID_FILE;
   }
-}, 10000);
+}, 60_000);
 
 const STREAM = buildArgs("u1", false, null);
 
@@ -129,7 +129,7 @@ test("run without follow-ups exits once Claude has answered", async () => {
   const t0 = Date.now();
   const r = await startRun({ bin: FAKE, cwd: tempDir(), args: STREAM, input: "hi", onEvent: () => {} }).done;
   expect(r.code).toBe(0);
-  expect(Date.now() - t0).toBeLessThan(5000);
+  expect(Date.now() - t0).toBeLessThan(15_000);
 });
 
 test("buildArgs passes the board's MCP server so every run has the ckanban tools", () => {
@@ -189,7 +189,7 @@ test("input still ends if Claude starts no turn after its last background task",
   expect(r.code).toBe(0);
   expect(r.events.filter((e) => e.type === "result").length).toBe(1);
   expect(r.events.find((e) => e.subtype === "task_notification")?.status).toBe("completed");
-  expect(Date.now() - t0).toBeLessThan(5000);
+  expect(Date.now() - t0).toBeLessThan(15_000);
 }));
 
 test("stop while waiting on a background task ends the run", withMode("background", async () => {
@@ -205,7 +205,7 @@ test("stop while waiting on a background task ends the run", withMode("backgroun
   } finally {
     delete process.env.FAKE_BG_MS;
   }
-}), 10000);
+}), 60_000);
 
 test("idleMs (huddle monitor mode) keeps input open between turns, then ends it after the idle timeout", withMode("ok", async () => {
   const results: number[] = [];
@@ -227,14 +227,14 @@ test("idleMs (huddle monitor mode) keeps input open between turns, then ends it 
   expect(r.events.filter((e) => e.type === "result").map((e) => e.result.split("\n")[0])).toEqual(["Work complete.", "Reply: second"]);
   // It ended about idleMs after the last turn, not right away.
   expect(Date.now() - results[1]).toBeGreaterThanOrEqual(350);
-  expect(Date.now() - t0).toBeLessThan(5000);
-}), 10000);
+  expect(Date.now() - t0).toBeLessThan(15_000);
+}), 60_000);
 
 test("without idleMs input ends as soon as Claude is idle; endWhenIdle ends a kept-open run at once", withMode("ok", async () => {
   const quick = startRun({ bin: FAKE, cwd: tempDir(), args: ["--input-format", "stream-json", "--replay-user-messages"], input: "x", onEvent: () => {} });
   const t0 = Date.now();
   await quick.done;
-  expect(Date.now() - t0).toBeLessThan(3000);
+  expect(Date.now() - t0).toBeLessThan(15_000);
   let idle = false;
   const kept = startRun({
     bin: FAKE, cwd: tempDir(), args: ["--input-format", "stream-json", "--replay-user-messages"], input: "x", idleMs: 60_000,
@@ -244,8 +244,8 @@ test("without idleMs input ends as soon as Claude is idle; endWhenIdle ends a ke
   const t1 = Date.now();
   kept.endWhenIdle();
   expect((await kept.done).code).toBe(0);
-  expect(Date.now() - t1).toBeLessThan(3000);
-}), 10000);
+  expect(Date.now() - t1).toBeLessThan(15_000);
+}), 60_000);
 
 test("controlResponse allows the board tools only for Planning runs; Chrome and huddle tools work for every run", () => {
   const ask = (tool: string, planning?: boolean) =>

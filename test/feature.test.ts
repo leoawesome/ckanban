@@ -95,7 +95,7 @@ test("a main-chat run that changed the family without calling update_status gets
   await until(() => !board.isRunning("p", f.top.id));
   await Bun.sleep(300);
   expect(readArgs().length).toBe(3);
-}, 30000);
+}, 60_000);
 
 test("a board wake that arrives while a questions form waits tells Claude which questions to ask again", async () => {
   await setup();
@@ -116,7 +116,7 @@ test("a board wake that arrives while a questions form waits tells Claude which 
   expect(nudge).toContain("call ask_questions again with exactly the same questions and options");
   // The chat shows it as a board note, not as the user's message.
   expect(nudge).toMatch(/<ckanban-context [^>]*wake="status refresh, 1 change in the feature"/);
-}, 30000);
+}, 60_000);
 
 test("a test ticket with verdict problem counts as Found a problem; one without a verdict as passed", async () => {
   await setup();

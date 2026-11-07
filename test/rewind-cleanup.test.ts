@@ -26,7 +26,7 @@ test("deleting or finishing a ticket removes its saved copies and leaves the oth
   expect((await listSnapshots(p.path, b.id)).length).toBe(2);
 
   await board.updateTicket("p", b.id, { status: "done" });
-  for (let i = 0; i < 50 && (await listSnapshots(p.path, b.id)).length; i++) await Bun.sleep(20);
+  for (let i = 0; i < 1000 && (await listSnapshots(p.path, b.id)).length; i++) await Bun.sleep(20);
   expect(await listSnapshots(p.path, b.id)).toEqual([]);
   expect((await listSnapshots(p.path, c.id)).length).toBe(2);
 

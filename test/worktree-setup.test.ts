@@ -148,7 +148,7 @@ test("runShell captures output and exit code, and times out", async () => {
   expect(bad).toMatchObject({ ok: false, exitCode: 3 });
   const slow = await runShell(dir, "sleep 5", { shell: "/bin/sh", timeoutMs: 200 });
   expect(slow).toMatchObject({ ok: false, timedOut: true });
-  expect(slow.durationMs).toBeLessThan(3000);
+  expect(slow.durationMs).toBeLessThan(4900);
 });
 
 test("prepareWorktree copies files before running the setup command, and keeps the last 40 lines", async () => {

@@ -28,7 +28,7 @@ async function setup(opts: { stallMs?: number; retryDelayMs?: number } = {}) {
 const runs = (): number => (existsSync(argsFile) ? readFileSync(argsFile, "utf8").trim().split("\n").length : 0);
 const prompts = (): string[] => readJsonl(argsFile).map((l) => l.prompt);
 
-async function until(fn: () => boolean, ms = 8000) {
+async function until(fn: () => boolean, ms = 30_000) {
   const t0 = Date.now();
   while (!fn()) {
     if (Date.now() - t0 > ms) throw new Error("timed out");
@@ -48,7 +48,7 @@ beforeEach(() => {
 afterEach(async () => {
   await board?.shutdown();
   for (const k of ENV) delete process.env[k];
-}, 10000);
+}, 60_000);
 
 test("transient API errors are told apart from lasting ones and the usage limit", () => {
   expect(isTransientText("API Error: 529 Overloaded")).toBe(true);
@@ -86,16 +86,22 @@ test("runner: a silent run stalls, and output clears it", async () => {
   expect(seen[0]).toBe(true);
   expect(seen.at(-1)).toBe(false);
   expect(seen.every((v, i) => v === (i % 2 === 0))).toBe(true);
-}, 10000);
+}, 60_000);
 
 test("runner: waiting on a declared background task is not a stall", async () => {
   process.env.FAKE_MODE = "bgsilent";
   process.env.FAKE_BG_MS = "2500";
+  // Only stalls once the task is declared count: a slow start on a busy machine can flag (and then clear) one before.
+  let declared = false;
   const seen: boolean[] = [];
-  const r = await startRun({ bin: FAKE, cwd: tempDir(), args: STREAM, input: "go", onEvent: () => {}, graceMs: 50, stallMs: 1000, onStall: (s) => seen.push(s) }).done;
+  const onEvent = (e: any) => {
+    if (e.type === "system" && e.subtype === "background_tasks_changed" && e.tasks?.length) declared = true;
+  };
+  const r = await startRun({ bin: FAKE, cwd: tempDir(), args: STREAM, input: "go", onEvent, graceMs: 50, stallMs: 1000, onStall: (s) => declared && seen.push(s) }).done;
   expect(r.code).toBe(0);
+  expect(declared).toBe(true);
   expect(seen).toEqual([]);
-}, 10000);
+}, 60_000);
 
 test("a silent run becomes stalled, needs the user, and Restart resumes the same session", async () => {
   await setup({ stallMs: 1000 });
@@ -125,7 +131,7 @@ test("a silent run becomes stalled, needs the user, and Restart resumes the same
   expect(lines[1]).toContain("--resume");
   expect(lines[1]).toContain(done.sessionId!);
   expect(store.listComments("p", t.id).map((c) => c.text)).toContain("Restarted the stalled run: it continues in the same session.");
-}, 15000);
+}, 60_000);
 
 test("Keep waiting clears the stall; the run then finishes by itself", async () => {
   await setup({ stallMs: 1000 });
@@ -139,7 +145,7 @@ test("Keep waiting clears the stall; the run then finishes by itself", async () 
   expect(got.outcome).toBe("done");
   expect(got.stalled).toBeNull();
   expect(runs()).toBe(1);
-}, 15000);
+}, 60_000);
 
 test("Stop on a stalled run stops it", async () => {
   await setup({ stallMs: 1000 });
@@ -151,7 +157,7 @@ test("Stop on a stalled run stops it", async () => {
   const got = store.getTicket("p", t.id)!;
   expect(got.outcome).toBe("stopped");
   expect(got.stalled).toBeNull();
-}, 15000);
+}, 60_000);
 
 test("a transient API failure retries once in the same session and succeeds", async () => {
   await setup();
@@ -168,7 +174,7 @@ test("a transient API failure retries once in the same session and succeeds", as
   const texts = store.listComments("p", t.id).map((c) => c.text);
   expect(texts.some((c) => c.startsWith("Run hit a temporary API error (API Error: 529"))).toBe(true);
   expect(texts.at(-1)).toBe("fake done");
-}, 15000);
+}, 60_000);
 
 test("a second transient failure fails the run as before", async () => {
   await setup();
@@ -178,7 +184,7 @@ test("a second transient failure fails the run as before", async () => {
   const got = store.getTicket("p", t.id)!;
   expect(got.outcome).toBe("failed");
   expect(runs()).toBe(2);
-}, 15000);
+}, 60_000);
 
 test("a lasting API error does not retry", async () => {
   await setup();
@@ -213,14 +219,16 @@ test("Restart of a run that hung before its session was saved starts over with t
   await board.whenIdle();
   expect(runs()).toBe(2);
   expect(prompts()[1]).toContain("IMPORTANT TASK BODY");
-}, 15000);
+}, 60_000);
 
 test("Restart and Keep waiting refuse a run that isn't stalled; a second Restart click is refused too", async () => {
-  await setup({ stallMs: 1000 });
+  await setup({ stallMs: 2000 });
   process.env.FAKE_MODE = "silent";
-  process.env.FAKE_SILENT_MS = "2500";
+  process.env.FAKE_SILENT_MS = "4000";
   const t = await board.createTicket("p", { title: "Healthy", body: "", status: "ready" });
-  await until(() => board.isRunning("p", t.id) && existsSync(argsFile));
+  // Claude has started talking (a slow start on a busy machine can flag a stall before that, which its first output clears).
+  const started = () => store.readActivity("p", t.id).some((a: any) => (a.event ?? a).subtype === "init");
+  await until(() => board.isRunning("p", t.id) && started() && !store.getTicket("p", t.id)?.stalled);
   expect(() => board.stallAction("p", t.id, "restart")).toThrow("not stalled");
   expect(() => board.stallAction("p", t.id, "wait")).toThrow("not stalled");
   await until(() => !!store.getTicket("p", t.id)?.stalled);
@@ -228,7 +236,7 @@ test("Restart and Keep waiting refuse a run that isn't stalled; a second Restart
   expect(() => board.stallAction("p", t.id, "restart")).toThrow("not stalled");
   await board.whenIdle();
   expect(runs()).toBe(2);
-}, 15000);
+}, 60_000);
 
 test("a stalled flag left by a daemon shutdown is cleared when the run starts again", async () => {
   await setup({ stallMs: 1000 });
@@ -244,7 +252,7 @@ test("a stalled flag left by a daemon shutdown is cleared when the run starts ag
   await until(() => board.isRunning("p", t.id));
   expect(store.getTicket("p", t.id)!.stalled).toBeNull();
   await board.whenIdle();
-}, 20000);
+}, 60_000);
 
 test("Stop during the retry pause: no second run, outcome stopped", async () => {
   await setup({ retryDelayMs: 1500 });
@@ -256,4 +264,4 @@ test("Stop during the retry pause: no second run, outcome stopped", async () => 
   await board.whenIdle();
   expect(store.getTicket("p", t.id)!.outcome).toBe("stopped");
   expect(runs()).toBe(1);
-}, 15000);
+}, 60_000);

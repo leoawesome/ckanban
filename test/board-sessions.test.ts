@@ -13,7 +13,7 @@ test("shutdown leaves running ticket in_progress for recovery", async () => {
   await untilSpawned();
   await board.shutdown();
   expect(store.getTicket("p", t.id)!.status).toBe("in_progress");
-}, 15000);
+}, 60_000);
 
 test("moving a running ticket to ready restarts it and keeps in_progress", async () => {
   await setup();
@@ -21,10 +21,11 @@ test("moving a running ticket to ready restarts it and keeps in_progress", async
   const t = await board.createTicket("p", { title: "x", body: "", status: "ready" });
   await untilSpawned();
   await board.updateTicket("p", t.id, { status: "ready" });
-  await Bun.sleep(200);
+  // The restart spawns Claude again (slow on a busy machine: wait for it rather than a fixed pause).
+  await untilSpawned(2);
   expect(board.isRunning("p", t.id)).toBe(true);
   expect(store.getTicket("p", t.id)!.status).toBe("in_progress");
-}, 15000);
+}, 60_000);
 
 test("shutdown during worktree setup never spawns claude", async () => {
   await setup();
@@ -91,7 +92,7 @@ test("cannot link while running", async () => {
   const t = await board.createTicket("p", { title: "x", body: "", status: "ready" });
   await untilSpawned();
   await expect(board.linkSession("p", t.id, "11111111-2222-3333-4444-555555555555")).rejects.toThrow(/running/);
-}, 15000);
+}, 60_000);
 
 test("interview ticket asking questions lands in review as needs_input", async () => {
   await setup();

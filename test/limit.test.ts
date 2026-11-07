@@ -121,7 +121,7 @@ afterEach(async () => {
   delete process.env.FAKE_MODE;
   delete process.env.FAKE_ARGS_FILE;
   delete process.env.CLAUDE_CONFIG_DIR;
-}, 10000);
+}, 60_000);
 
 async function hitLimit(title = "x"): Promise<Ticket> {
   const t = await board.createTicket("p", { title, body: "", status: "ready" });
@@ -139,7 +139,7 @@ test("a run that hits the limit is marked limit-hit, not failed, with the reset 
   expect(last).toContain("Usage limit hit");
   expect(last).not.toContain("Run failed");
   expect(board.waitsOnUser("p", t.id)).toBe(false);
-}, 15000);
+}, 60_000);
 
 test("with a fake clock, continue is sent once after the reset, also while another ticket works (no board limit)", async () => {
   await setup(1);
@@ -168,7 +168,7 @@ test("with a fake clock, continue is sent once after the reset, also while anoth
   expect(continues()).toBe(1);
   got = store.getTicket("p", t.id)!;
   expect(got.outcome).toBe("done");
-}, 20000);
+}, 60_000);
 
 test("Continue now sends at once; any message or a move clears the wait", async () => {
   await setup();
@@ -185,7 +185,7 @@ test("Continue now sends at once; any message or a move clears the wait", async 
   expect(u.limit).toBeTruthy();
   await board.updateTicket("p", u.id, { status: "planning" });
   expect(store.getTicket("p", u.id)!.limit).toBeNull();
-}, 20000);
+}, 60_000);
 
 test("Don't auto-continue stops the timer and the ticket needs the user", async () => {
   await setup();
@@ -201,7 +201,7 @@ test("Don't auto-continue stops the timer and the ticket needs the user", async 
   await board.continueAfterLimit("p", t.id);
   await board.whenIdle();
   expect(store.getTicket("p", t.id)!.limit).toMatchObject({ auto: false });
-}, 15000);
+}, 60_000);
 
 test("the timer survives a daemon restart and a missed reset fires at once", async () => {
   await setup();
@@ -216,7 +216,7 @@ test("the timer survives a daemon restart and a missed reset fires at once", asy
   await board.whenIdle();
   expect(continues()).toBe(1);
   expect(store.getTicket("p", t.id)!.outcome).toBe("done");
-}, 15000);
+}, 60_000);
 
 test("a continue that hits the limit again re-arms; after 3 automatic continues a day it needs the user", async () => {
   await setup();
@@ -246,7 +246,7 @@ test("a continue that hits the limit again re-arms; after 3 automatic continues 
   } finally {
     delete process.env.FAKE_LIMIT_TEXT;
   }
-}, 30000);
+}, 60_000);
 
 // ---- Card and drawer text ----
 

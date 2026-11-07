@@ -215,7 +215,7 @@ function describeNotifier() {
     const stop = n.start();
     expect(asked).toBe(0);
     open();
-    for (let i = 0; i < 200 && !asked; i++) await Bun.sleep(10);
+    for (let i = 0; i < 2000 && !asked; i++) await Bun.sleep(10);
     expect(asked).toBeGreaterThan(0);
     move({ title: "Fix it again" });
     clock += 2000;

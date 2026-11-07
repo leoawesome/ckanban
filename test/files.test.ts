@@ -70,7 +70,7 @@ test("openWithSystem passes the real path as one argument and refuses paths outs
   writeFileSync(opener, `#!/bin/sh\nprintf '%s\\n' "$@" > '${log}'\n`, { mode: 0o755 });
   writeFileSync(join(root, "a b.md"), "x");
   const file = openWithSystem(root, "a b.md", opener);
-  for (let i = 0; i < 100 && !readFileSync(log, { flag: "a+" }).toString(); i++) await Bun.sleep(20);
+  for (let i = 0; i < 1000 && !readFileSync(log, { flag: "a+" }).toString(); i++) await Bun.sleep(20);
   expect(readFileSync(log, "utf8")).toBe(`${file}\n`);
   expect(status(() => openWithSystem(root, "../x", opener))).toBe(400);
   expect(status(() => openWithSystem(root, "missing", opener))).toBe(404);

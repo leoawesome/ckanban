@@ -118,7 +118,7 @@ test("stopping the ticket aborts a running setup", async () => {
   const r = await pending;
   expect(r).toMatchObject({ status: "ran", result: { ok: false } });
   expect(store.getTicket("p", t.id)!.setupPending).toBe(true);
-}, 15000);
+}, 60_000);
 
 test("planning chats never get the setup note", async () => {
   const p = await setup();

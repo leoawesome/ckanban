@@ -465,7 +465,7 @@ test.skipIf(!ptySupported())("shell socket runs commands on a PTY and replays ou
   expect(await read(b.ws, "MARK-90")).toContain("MARK-90");
   b.ws.send(JSON.stringify({ type: "input", data: "exit\n" }));
   b.ws.close();
-}, 15_000);
+}, 60_000);
 
 test("cron preview", async () => {
   let r = await fetch(`${base}/api/cron/preview?expr=${encodeURIComponent("0 9 * * 1-5")}`);
@@ -1133,7 +1133,7 @@ test("one-time jobs: schedule, list, update, run now, and runs manage only their
 
   r = await fetch(`${url}/${j.id}/run`, as(src.id, "POST"));
   expect(((await r.json()) as any).state).toBe("running");
-  for (let i = 0; i < 50 && ((await (await fetch(`${url}/${j.id}`)).json()) as any).state === "running"; i++) await Bun.sleep(50);
+  for (let i = 0; i < 400 && ((await (await fetch(`${url}/${j.id}`)).json()) as any).state === "running"; i++) await Bun.sleep(50);
   const done = (await (await fetch(`${url}/${j.id}`)).json()) as any;
   expect(done).toMatchObject({ state: "done", result: { exitCode: 0, output: "posted\n" } });
 

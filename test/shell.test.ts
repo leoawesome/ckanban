@@ -77,12 +77,12 @@ test.skipIf(typeof (Bun as any).Terminal !== "function")("findSession finds a se
   const s = shells.get("p", tmpdir());
   let out = "";
   s.subscribe((e) => { if (e.type === "data") out += new TextDecoder().decode(e.data); });
-  for (let i = 0; i < 50 && !out.includes("ready"); i++) await Bun.sleep(100);
+  for (let i = 0; i < 300 && !out.includes("ready"); i++) await Bun.sleep(100);
   expect(await shells.findSession("other-session")).toBeNull();
   const owned = await shells.findSession(id);
   expect(owned).not.toBeNull();
   expect(await owned!.close()).toBe(true);
-  for (let i = 0; i < 20 && !s.exited; i++) await Bun.sleep(50);
+  for (let i = 0; i < 400 && !s.exited; i++) await Bun.sleep(50);
   expect(s.exited).toBe(true);
   shells.killAll();
-}, 15000);
+}, 60_000);

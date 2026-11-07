@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { commandMap, descendsFrom, drivenBrowser, fromUserBrowser, isBrowser, lsofPids, parentMap } from "../src/server/integrations/guard";
+import { until } from "./helpers";
 
 test("a process tree is walked up to the daemon", () => {
   const parents = parentMap("  10 1\n  20 10\n  30 20\n  40 1\n");
@@ -40,7 +41,8 @@ test("a program, a child of the daemon or one that detached from it, is never th
     await Bun.spawn(["curl", "-s", `http://127.0.0.1:${server.port}/`], { stdout: "ignore", stderr: "ignore" }).exited;
     // A double fork: curl reparented away from this process, like a run that detaches.
     await Bun.spawn(["/bin/sh", "-c", `( curl -s http://127.0.0.1:${server.port}/ >/dev/null & ) ; sleep 0.1`], { stdout: "ignore", stderr: "ignore" }).exited;
-    await Bun.sleep(500);
+    // The detached curl answers on its own time (slow on a busy machine): wait for it instead of a fixed pause.
+    await until(() => seen.length === 2);
     // This process itself: the daemon's own pid is never counted, so nothing is found.
     await fetch(`http://127.0.0.1:${server.port}/`);
     expect(seen).toEqual([false, false, false]);

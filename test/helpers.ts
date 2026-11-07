@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../src/server/git";
@@ -6,9 +6,17 @@ import { run } from "../src/server/git";
 /** Temp dirs made by this test file; test/preload.ts deletes them once the file's tests are done. */
 export const tempDirs: string[] = ((globalThis as any).__ckTempDirs ??= []);
 
+/**
+ * A new empty folder, deleted once the file's tests are done. It sits inside a private parent folder: the board puts
+ * ticket copies next to a project (`<parent>/.ckanban-worktrees/<board>/<ticket>`), so with a shared parent (the system
+ * temp folder) every test run on the machine left its copies in one place that was never cleaned, and a new ticket
+ * whose id (date + 4 random characters) matched an old copy reused it.
+ */
 export function tempDir(prefix = "ck-"): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
-  tempDirs.push(dir);
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  tempDirs.push(parent);
+  const dir = join(parent, prefix.replace(/-+$/, "") || "dir");
+  mkdirSync(dir);
   return dir;
 }
 
@@ -21,8 +29,8 @@ export async function makeRepo(): Promise<string> {
   return dir;
 }
 
-/** Wait until `cond()` holds, checking every 20ms; throws after `ms`. */
-export async function until(cond: () => boolean, ms = 8000): Promise<void> {
+/** Wait until `cond()` holds, checking every 20ms; throws after `ms` (generous: a busy machine running several suites is slow, and a passing test never waits it out). */
+export async function until(cond: () => boolean, ms = 30_000): Promise<void> {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out waiting");

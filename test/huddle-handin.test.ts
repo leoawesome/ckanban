@@ -78,7 +78,7 @@ for (const kind of KINDS) {
     expect(text(await callTool("huddle_hand_in", { summary: "Shorter text" }, agentCtx(h, "designer")))).toContain("Handed in c2 (1 file: changed app.txt)");
     await idle();
     huddles.stopAll("p", h.id);
-  }, 30000);
+  }, 60_000);
 
   test(`${kind}: a rejected hand-in changes nothing and tells the helper why`, async () => {
     const { t, dir } = await project(kind);
@@ -105,7 +105,7 @@ for (const kind of KINDS) {
     expect(text(await callTool("huddle_review_changes", { id: "c1", accept: true }, mainCtx(h)))).toContain("already rejected");
     await idle();
     huddles.stopAll("p", h.id);
-  }, 30000);
+  }, 60_000);
 
   test(`${kind}: a conflict applies nothing and gives the helper a fresh copy to redo it`, async () => {
     const { t, dir } = await project(kind);
@@ -145,7 +145,7 @@ for (const kind of KINDS) {
     expect(read(join(dir, "app.txt"))).toBe("main and helper\n");
     await idle();
     huddles.stopAll("p", h.id);
-  }, 30000);
+  }, 60_000);
 }
 
 test("read-only helpers can't hand in; a lead or @main lets them change files, and they get a copy", async () => {
@@ -174,7 +174,7 @@ test("read-only helpers can't hand in; a lead or @main lets them change files, a
   expect(read(join(dir, "app.txt"))).toBe("fixed\n");
   await idle();
   huddles.stopAll("p", h.id);
-}, 30000);
+}, 60_000);
 
 test("in Planning nobody gets a copy or the right to change files", async () => {
   const { t } = await project("plain folder");
@@ -185,7 +185,7 @@ test("in Planning nobody gets a copy or the right to change files", async () => 
   expect(participant(h, "engineer").copy ?? null).toBeNull();
   expect(text(await callTool("huddle_allow_changes", { handle: "engineer" }, mainCtx(h)))).toContain("Planning");
   huddles.stopAll("p", h.id);
-}, 30000);
+}, 60_000);
 
 test("an outside edit of the huddle file can't accept a hand-in or move a helper's copy", async () => {
   const { t, dir } = await project("plain folder");
@@ -203,7 +203,7 @@ test("an outside edit of the huddle file can't accept a hand-in or move a helper
   expect(back.participants.find((p) => p.handle === "engineer")!.copy!.dir).toBe(copy.dir);
   await idle();
   huddles.stopAll("p", h.id);
-}, 30000);
+}, 60_000);
 
 test("symlinks: a plain copy keeps them as they are, and accept never writes through one in the ticket's folder", async () => {
   const { t, dir } = await project("plain folder");
@@ -230,7 +230,7 @@ test("symlinks: a plain copy keeps them as they are, and accept never writes thr
   expect(existsSync(join(outside, "planted.sh"))).toBe(false);
   await idle();
   huddles.stopAll("p", h.id);
-}, 30000);
+}, 60_000);
 
 test("a conflict saves the helper's later, never handed-in edits; closing keeps them and what it handed in", async () => {
   const { t, dir } = await project("plain folder");
@@ -258,7 +258,7 @@ test("a conflict saves the helper's later, never handed-in edits; closing keeps 
   const note = messages(h).at(-1)!.text;
   expect(note).toContain(`${copy.dir}.handins (changes that weren't brought in because of a conflict)`);
   expect(note).toContain(`${copy.dir}.kept (changes saved before a fresh copy was made)`);
-}, 30000);
+}, 60_000);
 
 test("a helper can't accept its own hand-in or give itself the right to change files", async () => {
   const { t } = await project("plain folder");
@@ -270,4 +270,4 @@ test("a helper can't accept its own hand-in or give itself the right to change f
   expect(text(await callTool("huddle_allow_changes", { handle: "reviewer" }, agentCtx(h, "reviewer")))).toContain("give yourself");
   await idle();
   huddles.stopAll("p", h.id);
-}, 30000);
+}, 60_000);

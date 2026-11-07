@@ -196,7 +196,7 @@ test("restart mid-reply: planning chat keeps its partial text and recover() resu
   const after = store.getTicket("p", t.id)!;
   expect(after.interrupted ?? null).toBeNull();
   expect(after.status).toBe("planning");
-}, 20000);
+}, 60_000);
 
 test("recover() starts nothing when no reply was cut off", async () => {
   await setup();
@@ -231,7 +231,7 @@ test("cut-off reply with a queued message: one reply that answers the message", 
   expect(calls[1].prompt!.startsWith("and also this")).toBe(true);
   expect(store.getTicket("p", t.id)!.queued).toEqual([]);
   expect(store.getTicket("p", t.id)!.interrupted ?? null).toBeNull();
-}, 20000);
+}, 60_000);
 
 test("a chat cut off before claude started gets its message again, not a 'continue'", async () => {
   await setup();
@@ -294,7 +294,7 @@ test("requested restart waits for active runs and holds new ones until recover()
   } finally {
     delete process.env.FAKE_STEP_MS;
   }
-}, 30000);
+}, 60_000);
 
 test("requested restart gives up waiting after the timeout", async () => {
   await setup();
@@ -305,7 +305,7 @@ test("requested restart gives up waiting after the timeout", async () => {
   board.requestRestart(() => { restarted = true; }, 500);
   await until(() => restarted);
   expect(restarted).toBe(true);
-}, 15000);
+}, 60_000);
 
 test("a reply cut off by Stop hands its streamed text over, so the chat doesn't drop it", async () => {
   await setup();
@@ -322,4 +322,4 @@ test("a reply cut off by Stop hands its streamed text over, so the chat doesn't 
   } finally {
     process.env.FAKE_MODE = "ok";
   }
-}, 20000);
+}, 60_000);

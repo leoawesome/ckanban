@@ -27,7 +27,7 @@ test("a huddle saved by the board, or renamed into the folder from outside, show
   writeFileSync(tmp, JSON.stringify(withCost(store.getHuddle("p", h.id)!, 4)));
   renameSync(tmp, join(dir, `${h.id}.json`));
   expect(await costOf(t.id)).toBeCloseTo(base + 4);
-}, 30000);
+}, 60_000);
 
 test("listHuddles hands out copies: changing one doesn't change the shared list", async () => {
   const t = await host();
@@ -36,4 +36,4 @@ test("listHuddles hands out copies: changing one doesn't change the shared list"
   store.listHuddles("p")[0].participants[0].handle = "changed";
   expect(store.huddleIndex("p")[0].participants[0].handle).not.toBe("changed");
   expect(store.huddleIndex("p")[0].id).toBe(h.id);
-}, 30000);
+}, 60_000);

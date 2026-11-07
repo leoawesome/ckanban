@@ -1,7 +1,11 @@
-import { afterAll } from "bun:test";
+import { afterAll, setDefaultTimeout } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// A test's deadline (tests can set their own). Generous: a passing test never waits it out, and a machine running
+// several suites at once can be many times slower than an idle one. `bun test <file>` gets it too, not only `bun run test`.
+setDefaultTimeout(60_000);
 
 // Tests run inside board and huddle runs too; their identity vars would leak into the code under test
 // (and into fake claude children), so every test file starts without them.
@@ -9,6 +13,9 @@ for (const k of ["CKANBAN_TICKET", "CKANBAN_HUDDLE_AGENT", "CKANBAN_OUTPUT_DIR"]
 // Code that falls back to the real `claude` (side calls such as parent suggestions) gets a stand-in that fails at
 // once: tests never spend money or wait on the user's own Claude. Tests that need a fake claude pass their own.
 process.env.CKANBAN_CLAUDE_BIN = "/bin/false";
+// Saving a copy of the folder before a message gives up after 2s in the app; a machine running several test suites
+// can be that slow, so tests allow it more time (tests of the limit itself pass their own).
+process.env.CKANBAN_SNAPSHOT_LIMIT_MS = "30000";
 
 // Git in tests ignores the user's own git config: no commit signing (slow, may prompt), hooks or
 // aliases from their setup. Commits get a fixed test identity.

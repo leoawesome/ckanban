@@ -86,7 +86,7 @@ test("a ticket write reaches the session watcher without a full pass", async () 
     await Bun.sleep(100); // first pass: takes stock, sends nothing
     expect(updates().length).toBe(0);
     store.updateTicket("p", t.id, { sessionId: sid });
-    await until(() => updates().length === 1, 2000);
+    await until(() => updates().length === 1, 10_000);
     expect(updates()[0]).toMatchObject({ profile: "p", id: t.id });
   } finally {
     stop();
@@ -108,7 +108,7 @@ test("a transcript append reaches the session watcher through the real feed", as
     await Bun.sleep(150);
     expect(updates().length).toBe(0);
     appendFileSync(file, line("reply", "2026-09-29T01:00:01Z"));
-    await until(() => updates().length === 1, 3000);
+    await until(() => updates().length === 1, 10_000);
     expect((updates()[0] as any).session.lastMessage.text).toBe("reply");
   } finally {
     stop();
@@ -133,12 +133,12 @@ test("with the watch missing a change, the safety pass still catches it", async 
     await Bun.sleep(150);
     expect(updates().length).toBe(0); // the feed said nothing: no pass looked
     now += 60_000;
-    await until(() => updates().length === 1, 2000);
+    await until(() => updates().length === 1, 10_000);
     expect(updates()[0]).toMatchObject({ profile: "p", id: t.id });
     // A feed that stops watching: every pass is a full one again.
     feed.live = false;
     appendFileSync(file, line("again", "2026-09-29T01:00:02Z"));
-    await until(() => updates().length === 2, 2000);
+    await until(() => updates().length === 2, 10_000);
   } finally {
     stop();
   }
@@ -157,6 +157,7 @@ test("huddle session watcher passes only after a huddle write or a change to a w
   const feed = new FakeFeed();
   const stop = startHuddleSessionWatcher(store, bus, (id) => (calls++, versions[id] ?? null), 20, { feed, safetyMs: 1e9 });
   try {
+    await until(() => calls >= 1, 10_000);
     await Bun.sleep(80);
     const after = calls;
     expect(after).toBe(1); // first pass only
@@ -165,7 +166,7 @@ test("huddle session watcher passes only after a huddle write or a change to a w
     await Bun.sleep(80);
     expect(calls).toBe(after);
     feed.send({ sessionId: "s1", file: null });
-    await until(() => seen.length === 1, 2000);
+    await until(() => seen.length === 1, 10_000);
     expect(seen[0]).toMatchObject({ type: "huddle.session", huddleId: "h_1", handle: "qa" });
   } finally {
     stop();

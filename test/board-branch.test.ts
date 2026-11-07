@@ -130,7 +130,7 @@ test("a run waiting on a background task shows it on the ticket, then finishes w
   try {
     const t = await board.createTicket("p", { title: "Scan logs", body: "desc", status: "ready" });
     let seen: any = null;
-    for (let i = 0; i < 200 && !seen; i++) {
+    for (let i = 0; i < 2000 && !seen; i++) {
       seen = store.getTicket("p", t.id)?.waitingOn ?? null;
       await Bun.sleep(10);
     }

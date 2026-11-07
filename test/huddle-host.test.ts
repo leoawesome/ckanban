@@ -71,7 +71,7 @@ test("with a host: the 'wasn't woken' note and the idle watchdog wake the host, 
   await idle();
   expect(activeHost(store.getHuddle("p", h.id)!)).toBe("lead");
   expect(messages(h).some((m) => m.text.includes("is back"))).toBe(false);
-}, 40000);
+}, 60_000);
 
 test("with a host: budget warnings go to the host and hand-ins ask the host to decide", async () => {
   const t = await host();
@@ -98,7 +98,7 @@ test("with a host: budget warnings go to the host and hand-ins ask the host to d
   expect(accepted.mentions).toEqual([]);
   expect(store.getTicket("p", t2.id)!.sessionStarted).toBeFalsy();
   huddles.close("p", h2.id);
-}, 40000);
+}, 60_000);
 
 test("if the host stops, @main gets the wakes again and a note says so; once it is back, the host gets them", async () => {
   const t = await host();
@@ -127,7 +127,7 @@ test("if the host stops, @main gets the wakes again and a note says so; once it 
   await until(() => messages(h).some((m) => m.text.includes("@lead is back")));
   expect(activeHost(store.getHuddle("p", h.id)!)).toBe("lead");
   await idle();
-}, 40000);
+}, 60_000);
 
 test("a blocked host hands the huddle to @main in one note; without a host nothing changes", async () => {
   const t = await host();
@@ -155,7 +155,7 @@ test("a blocked host hands the huddle to @main in one note; without a host nothi
   expect(messages(h3).find((m) => m.text.includes("no access"))!.mentions).toEqual(["main"]);
   huddles.close("p", h2.id);
   huddles.close("p", h3.id);
-}, 40000);
+}, 60_000);
 
 test("templates and auto huddles start with their first lead as host; a hand-edited file can't change the host", async () => {
   const t = await host();
@@ -173,7 +173,7 @@ test("templates and auto huddles start with their first lead as host; a hand-edi
   huddles.addParticipants("p", h2.id, you(h2), { preset: "security", host: true });
   expect(store.getHuddle("p", h2.id)!.host).toBe("qa-lead");
   huddles.close("p", h2.id);
-}, 30000);
+}, 60_000);
 
 test("prompts: the host gets the host's job, helpers report to it, @main is told to brief, answer and otherwise end its turn", async () => {
   const t = await host();
@@ -196,4 +196,4 @@ test("prompts: the host gets the host's job, helpers report to it, @main is told
   huddles.stopParticipant("p", h.id, "lead");
   await idle();
   expect(huddleMainPrompt(store.getHuddle("p", h.id)!, participant(h, "main"), "digest")).toContain("so you run the huddle until it is back");
-}, 30000);
+}, 60_000);

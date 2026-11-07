@@ -65,7 +65,7 @@ test("lessons: huddle_status done hands up to 3 to the board's pile, not to the 
   expect(store.getHuddle("p", h.id)!.learnings ?? []).toEqual([]);
   expect(view()).toMatchObject({ learningsPending: 0 });
   expect(view().forYou).toBe(before);
-}, 20000);
+}, 60_000);
 
 test("role notes: only the user changes them; anyone reads them", async () => {
   const t = await host();
@@ -82,7 +82,7 @@ test("role notes: only the user changes them; anyone reads them", async () => {
   const all = (await (await api("/huddle-notes")).json()) as { cap: number; notes: Record<string, unknown> };
   expect(all.cap).toBe(30);
   expect(Object.keys(all.notes)).toEqual(["qa"]);
-}, 20000);
+}, 60_000);
 
 test("a new agent's system prompt has the role's notes and All roles notes, newest first, capped, from its own board only", async () => {
   const day = "2026-10-10";
@@ -115,7 +115,7 @@ test("a new agent's system prompt has the role's notes and All roles notes, newe
   const ux = sys("copy-critic");
   expect(ux).toContain("all general rule");
   expect(ux).not.toContain("qa rule");
-}, 20000);
+}, 60_000);
 
 test("session viewer: a participant's steps over HTTP, also after the huddle closed and its snapshot is gone; the user's alone", async () => {
   process.env.FAKE_TRANSCRIPT = "1";
@@ -165,7 +165,7 @@ test("session viewer: a participant's steps over HTTP, also after the huddle clo
   await idle();
   expect(existsSync(p.worktree!)).toBe(false);
   await check();
-}, 30000);
+}, 60_000);
 
 test("teammates: built-in -> global -> board merge; deleting falls back one level", () => {
   const global = savePreset([], { name: "qa", prompt: "Global QA.", model: "sonnet" }).list;
@@ -240,7 +240,7 @@ test("teammates: rosters and propose_huddle resolve presets through all three le
   expect(participant(h, "a11y")).toMatchObject({ preset: "a11y", model: "haiku", prompt: "Check a11y." });
   expect(participant(h, "reviewer").prompt).toBe("Review this repo.");
   await huddles.stopAll("p", h.id);
-}, 20000);
+}, 60_000);
 
 test("usage stats: per teammate and template, from every board's huddles, closed ones included", async () => {
   const mk = (id: string, createdAt: string, template: string | null, ps: [string | null, string, number, string?][]): Huddle => ({
@@ -281,7 +281,7 @@ test("leads watch: the facilitator preset and a lead entry without a mode are mo
   expect(participant(h, "tagged-lead")).toMatchObject({ lead: true, mode: "tagged" });
   expect(participant(h, "reviewer")).toMatchObject({ lead: false, mode: "tagged" });
   await huddles.stopAll("p", h.id);
-}, 20000);
+}, 60_000);
 
 test("a done lead wakes on a worker's tag (tagged) or report (monitor); @all from a worker doesn't wake it", async () => {
   const t = await host();
@@ -316,7 +316,7 @@ test("a done lead wakes on a worker's tag (tagged) or report (monitor); @all fro
   expect(participant(h, "mon").status).not.toBe("done");
   // No "wasn't woken" note for any of it.
   expect(messages(h).some((m) => m.text.includes("wasn't woken"))).toBe(false);
-}, 30000);
+}, 60_000);
 
 test("a tag that wakes nobody is never dropped: one note tags @main per target and sender until the target wakes", async () => {
   const t = await host();
@@ -348,7 +348,7 @@ test("a tag that wakes nobody is never dropped: one note tags @main per target a
   huddles.post("p", h.id, participant(h, "b"), "@a one more");
   await idle();
   expect(notes().length).toBe(2);
-}, 30000);
+}, 60_000);
 
 test("idle watchdog: wakes @main once after 5 minutes of nobody working; not while working, not twice, not when stopped or closed", async () => {
   const t = await host();
@@ -400,7 +400,7 @@ test("idle watchdog: wakes @main once after 5 minutes of nobody working; not whi
   huddles.close("p", h.id);
   huddles.idleSweep(Date.now() + HUDDLE_IDLE_MS * 3);
   expect(nudges().length).toBe(1);
-}, 40000);
+}, 60_000);
 
 test("a teammate's system prompt carries the host ticket's description, cut with a pointer to get_ticket when long", async () => {
   expect(hostDescription("  ")).toBe("(no description)");
@@ -417,7 +417,7 @@ test("a teammate's system prompt carries the host ticket's description, cut with
   expect(system).toContain(`## The ticket (${t.id} "Login page")\nBuild the login form.`);
   expect(system).toContain("(truncated; use get_ticket for the full text)");
   expect(system).not.toContain("TAIL");
-}, 20000);
+}, 60_000);
 
 test("context size: an agent's from its own session, @main's from the ticket session, saved with the participant", async () => {
   process.env.FAKE_CTX = "42000";
@@ -435,7 +435,7 @@ test("context size: an agent's from its own session, @main's from the ticket ses
   } finally {
     delete process.env.FAKE_CTX;
   }
-}, 20000);
+}, 60_000);
 
 test("teammate spend counts on the host ticket's card and Usage tab, @main and today's total aren't counted twice", async () => {
   const t = await host();
@@ -464,4 +464,4 @@ test("teammate spend counts on the host ticket's card and Usage tab, @main and t
   expect(card.costUsd).toBeCloseTo(ticketRunsCost + reviewer);
   const today = (await (await fetch(`${base}/spend`)).json()) as any;
   expect(today.boards.find((b: any) => b.slug === "p").costUsd).toBeCloseTo(ticketRunsCost + reviewer);
-}, 20000);
+}, 60_000);

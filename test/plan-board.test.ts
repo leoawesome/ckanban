@@ -32,7 +32,7 @@ afterEach(async () => {
   delete process.env.FAKE_BLOCK_MATCH;
   delete process.env.CLAUDE_CONFIG_DIR;
   delete process.env.FAKE_STEP_MS;
-}, 15000);
+}, 60_000);
 
 /** Wait until no run is left and no wake-up is pending. */
 async function settle(ms = 20000) {
@@ -170,7 +170,7 @@ test("tickets that list the same device all start at once: needs is only a hint"
   await settle();
   expect(store.getTicket("p", a.id)!.outcome).toBe("done");
   expect(store.getTicket("q", b.id)!.outcome).toBe("done");
-}, 30000);
+}, 60_000);
 
 test("a plan starts children that list the same device together", async () => {
   process.env.FAKE_STEP_MS = "40";
@@ -181,7 +181,7 @@ test("a plan starts children that list the same device together", async () => {
   for (const k of kids) expect(store.getTicket("p", k.id)!.status).not.toBe("backlog");
   await settle();
   expect(store.getTicket("p", planner.id)!.plan?.state).toBe("done");
-}, 30000);
+}, 60_000);
 
 test("a run's end frees the devices it still holds and hands them to the next in line", async () => {
   process.env.FAKE_STEP_MS = "200";
@@ -193,7 +193,7 @@ test("a run's end frees the devices it still holds and hands them to the next in
   await settle();
   expect((await next).ok).toBe(true);
   expect(board.deviceState("p", a.id)).toBeNull();
-}, 30000);
+}, 60_000);
 
 test("a plan never starts a child waiting on the user, and stops naming it once nothing else is left", async () => {
   (board as any).sessionSummary = (sid: string) => (sid === "s-asks" ? { openQuestions: 2, pendingProposal: null } : null);
@@ -208,7 +208,7 @@ test("a plan never starts a child waiting on the user, and stops naming it once 
   const p = store.getTicket("p", planner.id)!;
   expect(p.plan?.state).toBe("stuck");
   expect(p.plan?.reason).toBe('waiting for you: "Asks" (2 questions for you)');
-}, 30000);
+}, 60_000);
 
 test("adopting existing tickets: skip reasons, a growing plan, and releasing", async () => {
   const grand = await board.createTicket("p", { title: "Grand", body: "", status: "backlog" });
@@ -246,7 +246,7 @@ test("adopting existing tickets: skip reasons, a growing plan, and releasing", a
   const c = await board.createTicket("p", { title: "C", body: "", status: "backlog" });
   board.adoptTickets("p", mgr.id, [c.id]);
   expect(store.getTicket("p", mgr.id)!.plan!.originalCount).toBe(before + 1);
-}, 30000);
+}, 60_000);
 
 test("planner rights: a reply to the user's own chat message, or any run of a running plan", async () => {
   process.env.FAKE_STEP_MS = "100";
@@ -275,7 +275,7 @@ test("planner rights: a reply to the user's own chat message, or any run of a ru
   await board.chat("p", mgr.id, "from the planner", { fromPlanner: true });
   expect(board.plannerRights("p", mgr.id)).toBeNull();
   await settle();
-}, 30000);
+}, 60_000);
 
 test("user-request rights: only a Planning chat's reply to the user's own message", async () => {
   process.env.FAKE_STEP_MS = "100";
@@ -296,4 +296,4 @@ test("user-request rights: only a Planning chat's reply to the user's own messag
   expect(board.userChatRun("p", r.id)).toBe(true);
   expect(board.userRequestRights("p", r.id)).toBeNull();
   await settle();
-}, 30000);
+}, 60_000);

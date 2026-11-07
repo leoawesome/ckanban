@@ -53,8 +53,9 @@ const GIT = ["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=fals
 /**
  * How long saving the folder may hold up a message. A bigger or slower folder skips the copy for that message
  * (git is stopped, so no late copy appears), and rewinding to it then changes the chat only.
+ * CKANBAN_SNAPSHOT_LIMIT_MS overrides it: the tests raise it, since a machine running several test suites is slow.
  */
-export const SNAPSHOT_LIMIT_MS = 2000;
+export const SNAPSHOT_LIMIT_MS = Number(process.env.CKANBAN_SNAPSHOT_LIMIT_MS) || 2000;
 
 /** The repo's top folder when `dir` has version history (a repo with at least one commit), else null. */
 async function historyTop(dir: string): Promise<string | null> {

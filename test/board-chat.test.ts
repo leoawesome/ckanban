@@ -26,7 +26,7 @@ test("chat while Claude works steers the run instead of restarting it", async ()
   } finally {
     delete process.env.FAKE_STEP_MS;
   }
-}, 15000);
+}, 60_000);
 
 test("/effort sets, shows and resets the ticket's effort; a run passes --effort (ticket over board)", async () => {
   const profile = await setup();
@@ -87,7 +87,7 @@ test("chat is rejected while Claude is stopping", async () => {
   await untilSpawned();
   board.stop("p", t.id);
   await expect(board.chat("p", t.id, "again")).rejects.toThrow(/stopping/);
-}, 15000);
+}, 60_000);
 
 test("steering messages are saved on the ticket until Claude reads them", async () => {
   await setup();
@@ -104,7 +104,7 @@ test("steering messages are saved on the ticket until Claude reads them", async 
   } finally {
     delete process.env.FAKE_STEP_MS;
   }
-}, 15000);
+}, 60_000);
 
 test("Stop keeps unread messages as unsent; send or discard them later", async () => {
   await setup();
@@ -128,7 +128,7 @@ test("Stop keeps unread messages as unsent; send or discard them later", async (
   const calls = readArgs();
   expect(calls.at(-1)!.prompt.startsWith("first")).toBe(true);
   expect(() => board.discardQueued("p", t.id, q[0].id)).toThrow(/not found/);
-}, 15000);
+}, 60_000);
 
 test("Stop before Claude reads the message that started its reply keeps it unsent", async () => {
   await setup();
@@ -148,7 +148,7 @@ test("Stop before Claude reads the message that started its reply keeps it unsen
   } finally {
     delete process.env.FAKE_START_MS;
   }
-}, 15000);
+}, 60_000);
 
 test("a reply whose message Claude read leaves nothing queued", async () => {
   await setup();
@@ -179,7 +179,7 @@ test("daemon restart keeps unread messages and delivers them after recovery", as
   expect(replays(work.id).some((m) => m.startsWith("keep going with Y"))).toBe(true);
   expect(store.getTicket("p", chatTicket.id)!.queued).toEqual([]);
   expect(readArgs().some((c) => c.prompt?.startsWith("what about Z?"))).toBe(true);
-}, 20000);
+}, 60_000);
 
 test("a chat reply that resumes work waits for the folder another ticket edits, then starts before Ready tickets", async () => {
   await setup({ git: false });
@@ -204,7 +204,7 @@ test("a chat reply that resumes work waits for the folder another ticket edits, 
   expect(store.getTicket("p", b.id)!.status).toBe("ready");
   expect(board.running("p")).toBe(1);
   expect(readArgs().at(-1)!.prompt.startsWith("go on with it")).toBe(true);
-}, 15000);
+}, 60_000);
 
 test("steering a running ticket takes no extra slot", async () => {
   await setup();
@@ -214,7 +214,7 @@ test("steering a running ticket takes no extra slot", async () => {
   await board.chat("p", a.id, "also do X");
   expect(board.running("p")).toBe(1);
   expect(store.getTicket("p", a.id)!.slotWait).toBeFalsy();
-}, 15000);
+}, 60_000);
 
 test("Stop on a reply waiting for the folder puts the card back and keeps the message unsent", async () => {
   await setup({ git: false });
@@ -233,7 +233,7 @@ test("Stop on a reply waiting for the folder puts the card back and keeps the me
   await board.whenIdle();
   expect(board.isRunning("p", r.id)).toBe(false);
   expect(readArgs().some((c) => c.prompt?.startsWith("go on with it"))).toBe(false);
-}, 15000);
+}, 60_000);
 
 test("a reply waiting for the folder can be edited; Claude gets the edited text", async () => {
   await setup({ git: false });
@@ -253,7 +253,7 @@ test("a reply waiting for the folder can be edited; Claude gets the edited text"
   expect(readArgs().at(-1)!.prompt.startsWith("go on, and add a test")).toBe(true);
   // Now it is Claude's prompt: too late to change it.
   expect(() => board.editQueued("p", r.id, msg.id, "other")).toThrow();
-}, 15000);
+}, 60_000);
 
 test("discarding the only reply waiting for the folder puts the card back", async () => {
   await setup({ git: false });
@@ -265,7 +265,7 @@ test("discarding the only reply waiting for the folder puts the card back", asyn
   const [msg] = store.getTicket("p", r.id)!.queued!;
   const got = board.discardQueued("p", r.id, msg.id);
   expect(got).toMatchObject({ status: "review", slotWait: null, queued: [] });
-}, 15000);
+}, 60_000);
 
 test("a message steered into a running Claude can't be edited; an unsent one can", async () => {
   await setup();
@@ -285,7 +285,7 @@ test("a message steered into a running Claude can't be edited; an unsent one can
   await board.whenIdle();
   expect(readArgs().at(-1)!.prompt.startsWith("first, fixed")).toBe(true);
   expect(() => board.editQueued("p", t.id, "nope", "x")).toThrow(/not found/);
-}, 15000);
+}, 60_000);
 
 test("a peer message waiting for a slot can't be edited", async () => {
   await setup();
@@ -315,7 +315,7 @@ test("after a restart, waiting replies still wait for the folder", async () => {
   expect(store.getTicket("p", a.id)!.status).toBe("ready");
   expect(board.isRunning("p", c.id)).toBe(false);
   expect(store.getTicket("p", c.id)!).toMatchObject({ status: "in_progress", slotWait: { from: { status: "review" } } });
-}, 20000);
+}, 60_000);
 
 test("refine chat does not take a queue slot", async () => {
   await setup({ maxParallel: 1 });
@@ -325,7 +325,7 @@ test("refine chat does not take a queue slot", async () => {
   const b = await board.createTicket("p", { title: "work", body: "", status: "ready" });
   await until(() => store.getTicket("p", b.id)!.status === "in_progress");
   expect(store.getTicket("p", b.id)!.status).toBe("in_progress");
-}, 15000);
+}, 60_000);
 
 test("last ticket event after a chat reply reports it idle", async () => {
   await setup();
@@ -387,7 +387,7 @@ test("the user asks a Review card's own chat to mark it done: it moves once the 
   } finally {
     delete process.env.FAKE_STEP_MS;
   }
-}, 20000);
+}, 60_000);
 
 test("a self move is dropped when the user stops the reply or moves the card meanwhile", async () => {
   await setup();
@@ -411,7 +411,7 @@ test("a self move is dropped when the user stops the reply or moves the card mea
   } finally {
     delete process.env.FAKE_STEP_MS;
   }
-}, 20000);
+}, 60_000);
 
 test("a claude.ai artifact link in the ticket or a message teaches the artifact helper, even with the board setting off", async () => {
   await setup();
@@ -424,7 +424,7 @@ test("a claude.ai artifact link in the ticket or a message teaches the artifact 
   await board.createTicket("p", { title: "y", body: "Edit https://claude.ai/artifact/XyZ789", status: "ready" });
   await board.whenIdle();
   expect(readArgs().at(-1)!.prompt).toContain("artifact publish <file.html> --url <url>");
-}, 20000);
+}, 60_000);
 
 test("a run that can't start (disk full) leaves no ghost run and keeps the message", async () => {
   await setup();

@@ -67,14 +67,14 @@ test("the board lists the feature's saved changes from the version history, newe
   await commit(p.path, "c.txt", "fix: other feature", "Ckanban-Feature: t_other");
   await commit(p.path, "d.txt", "feat: second", `Co-Authored-By: X <x@y>\nCkanban-Feature: ${top.id}`);
   board.featureStatus("p", top.id);
-  await until(() => !!board.featureStatus("p", top.id).facts.changes, 25_000);
+  await until(() => !!board.featureStatus("p", top.id).facts.changes);
   const c = board.featureStatus("p", top.id).facts.changes!;
   expect(c.kind).toBe("history");
   expect(c.items.map((i) => i.text)).toEqual(["feat: second", "fix: first"]);
   expect(c.items[0]!.id).toMatch(/^[0-9a-f]{7,}$/);
   await until(() => readFileSync(statusFiles(store.outputsDir("p", top.id)).md, "utf8").includes("feat: second"));
   expect(store.getTicket("p", top.id)!.statusAt).toBeTruthy();
-}, 40_000);
+}, 60_000);
 
 test("a feature in a folder without version history lists the files its tickets changed, and never fails", async () => {
   const p = await setup({ git: false });
@@ -83,8 +83,8 @@ test("a feature in a folder without version history lists the files its tickets 
   await mk("Step two", { partOf: top.id });
   store.appendActivity("p", s1.id, 1, { type: "assistant", message: { content: [{ type: "tool_use", name: "Edit", input: { file_path: join(p.path, "notes", "plan.md") } }] } });
   board.featureStatus("p", top.id);
-  await until(() => !!board.featureStatus("p", top.id).facts.changes, 15_000);
+  await until(() => !!board.featureStatus("p", top.id).facts.changes);
   const c = board.featureStatus("p", top.id).facts.changes!;
   expect(c).toEqual({ kind: "files", items: [{ text: "notes/plan.md" }] });
   expect(statusSections(null, board.featureStatus("p", top.id).facts).find((x) => x.key === "changes")!.label).toBe("Files changed in your folder");
-}, 20_000);
+}, 60_000);

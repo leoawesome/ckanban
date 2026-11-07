@@ -64,7 +64,7 @@ test("a fix step under a with_you step creates a ticket partOf the testing round
     // The round's plan starts the new step; the user's park of the main ticket in Done stays.
     expect(store.getTicket(p.slug, main.id)!.status).toBe("done");
     expect(store.getTicket(p.slug, round.id)!.plan).toBeTruthy();
-    await until(() => store.readActivity(p.slug, t.id).some((a: any) => a.event?.type === "ckanban_run"), 10_000);
+    await until(() => store.readActivity(p.slug, t.id).some((a: any) => a.event?.type === "ckanban_run"));
   });
   await board.whenIdle();
 });

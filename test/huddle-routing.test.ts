@@ -49,7 +49,7 @@ test("creating a huddle: @you and @main join, agents start on their job with sta
   // Tokens never leave the daemon.
   const res = await fetch(`${client.url}/api/profiles/p/huddles/${h.id}`);
   expect(JSON.stringify(await res.json())).not.toContain(participant(h, "qa-1").token!);
-}, 20000);
+}, 60_000);
 
 test("routing: tagged sleeps, a mention wakes it, monitors get everything, the sender gets nothing, @all wakes everyone", async () => {
   const t = await host();
@@ -96,7 +96,7 @@ test("routing: tagged sleeps, a mention wakes it, monitors get everything, the s
   // A huddle message leaves the card alone.
   expect(host1.status).toBe("review");
   expect(host1.runCount).toBe(0);
-}, 30000);
+}, 60_000);
 
 test("monitor mode: a live session gets messages in its process; mid-turn ones arrive together at the turn boundary", async () => {
   await Promise.all([board.shutdown(), huddles.shutdown()]);
@@ -126,7 +126,7 @@ test("monitor mode: a live session gets messages in its process; mid-turn ones a
   huddles.post("p", h.id, you(h), "nobody tagged");
   await idle();
   expect(heardBy("qa").length).toBe(3);
-}, 30000);
+}, 60_000);
 
 test("sender identity comes from the run, never from tool input", async () => {
   const t = await host();
@@ -152,7 +152,7 @@ test("sender identity comes from the run, never from tool input", async () => {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "from the board", from: "main" }),
   });
   expect(((await res.json()) as any).from).toBe("you");
-}, 20000);
+}, 60_000);
 
 test("only leads and the coordinator add participants, and the cap is enforced", async () => {
   const t = await host();
@@ -177,7 +177,7 @@ test("only leads and the coordinator add participants, and the cap is enforced",
   // A roster over the cap can't start.
   const t2 = await board.createTicket("p", { title: "Second", body: "", status: "review" });
   expect(() => huddles.create("p", t2.id, [{ preset: "qa", count: 4 }], { maxParticipants: 4 })).toThrow("over the limit of 4");
-}, 20000);
+}, 60_000);
 
 test("findings: leads and @main manage the pinned list, others can only read it", async () => {
   const t = await host();
@@ -191,7 +191,7 @@ test("findings: leads and @main manage the pinned list, others can only read it"
   expect(read).toContain("You are @qa.");
   expect(read).toContain("@qa-lead: QA lead, lead, monitor");
   expect(read).toContain("pinned finding f1");
-}, 20000);
+}, 60_000);
 
 test("huddle_mode switches your own mode only", async () => {
   const t = await host();
@@ -201,4 +201,4 @@ test("huddle_mode switches your own mode only", async () => {
   expect(participant(h, "reviewer").mode).toBe("monitor");
   expect(() => huddles.setMode("p", h.id, participant(h, "reviewer"), "main", "monitor")).toThrow("your own mode");
   expect(messages(h).at(-1)!.text).toContain("@reviewer switched to monitor mode");
-}, 20000);
+}, 60_000);

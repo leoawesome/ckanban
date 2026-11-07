@@ -30,7 +30,7 @@ test("stop agents and close leave the host's own run and card status alone", asy
   expect(store.getTicket("p", t.id)!.outcome ?? null).not.toBe("stopped");
   await idle();
   expect(store.getTicket("p", t.id)!.status).toBe("review");
-}, 30000);
+}, 60_000);
 
 test("the huddle closes when its host ticket moves to Done", async () => {
   const t = await host();
@@ -47,7 +47,7 @@ test("the huddle closes when its host ticket moves to Done", async () => {
   huddles.recover();
   expect(store.getHuddle("p", h2.id)!.status).toBe("closed");
   await idle();
-}, 20000);
+}, 60_000);
 
 test("a huddle started on a Done card survives later updates and restarts, until the card moves to Done again", async () => {
   const t = await host();
@@ -68,7 +68,7 @@ test("a huddle started on a Done card survives later updates and restarts, until
   await board.updateTicket("p", t.id, { status: "done" });
   await until(() => store.getHuddle("p", h.id)!.status === "closed");
   await idle();
-}, 20000);
+}, 60_000);
 
 test("a chat on a Done card that leaves a huddle open lands in Review, even with the stay tag", async () => {
   const t = await host();
@@ -87,7 +87,7 @@ test("a chat on a Done card that leaves a huddle open lands in Review, even with
   expect(store.getHuddle("p", h.id)!.status).not.toBe("closed");
   huddles.close("p", h.id);
   await idle();
-}, 20000);
+}, 60_000);
 
 test("closing removes helpers' copies whose changes were all handed in, and lists the ones kept", async () => {
   const t = await host();
@@ -119,7 +119,7 @@ test("closing removes helpers' copies whose changes were all handed in, and list
   expect(note).toContain(`@engineer-2: ${b.dir} (it has changes that were never handed in)`);
   expect(note).toContain(`@engineer-4: ${d.dir} (changes it handed in still wait for a decision)`);
   expect(note.replace(/\/\S+/g, "")).not.toMatch(/branch|worktree|commit|merge/i);
-}, 30000);
+}, 60_000);
 
 test("done, blocked and quiet: a done agent only wakes for a lead, @main or the user", async () => {
   const t = await host();
@@ -159,7 +159,7 @@ test("done, blocked and quiet: a done agent only wakes for a lead, @main or the 
   const read = text(await callTool("huddle_read", {}, agentCtx(h, "reviewer-1")));
   expect(read).toContain("@reviewer-2: Code reviewer, tagged, blocked (need the API spec)");
   expect(read).toContain("The huddle is quiet");
-}, 30000);
+}, 60_000);
 
 test("huddle_close: only @main and leads ask, after writing the summary; only the user closes", async () => {
   const t = await host();
@@ -185,7 +185,7 @@ test("huddle_close: only @main and leads ask, after writing the summary; only th
     method: "POST", headers: { "content-type": "application/json", "x-ckanban-run": `p/${t.id}` }, body: "{}",
   });
   expect(res.status).toBe(403);
-}, 20000);
+}, 60_000);
 
 test("fallbackSummary: brief, roster with costs, findings, each lead's last word, output files mentioned", () => {
   const h = {
@@ -237,7 +237,7 @@ test("a huddle closed without a summary gets the board's own when the host can't
   await idle();
   expect(existsSync(join(out, summaryFile(h2.id)))).toBe(true);
   expect(readFileSync(join(out, summaryFile(h1.id)), "utf8")).toBe(first);
-}, 20000);
+}, 60_000);
 
 test("closing without a summary asks @main to write it; the board writes it if @main's run ends without", async () => {
   const t = await host();
@@ -252,7 +252,7 @@ test("closing without a summary asks @main to write it; the board writes it if @
   const file = join(store.outputsDir("p", t.id), summaryFile(h.id));
   await until(() => existsSync(file));
   expect(readFileSync(file, "utf8")).toContain("Written by the board");
-}, 20000);
+}, 60_000);
 
 test("a summary in the older single file: a closed huddle reads it, and one written during the huddle becomes its own", async () => {
   const t = await host();
@@ -268,7 +268,7 @@ test("a summary in the older single file: a closed huddle reads it, and one writ
   const old = { ...store.getHuddle("p", h.id)!, id: "h_old" };
   store.saveHuddle("p", old);
   expect(huddles.list("p", t.id).find((x) => x.id === "h_old")!.summary).toBe(LEGACY_SUMMARY_FILE);
-}, 20000);
+}, 60_000);
 
 test("a pending restart waits for huddle agents mid-turn and holds new agent runs until recover", async () => {
   const t = await host();
@@ -282,7 +282,7 @@ test("a pending restart waits for huddle agents mid-turn and holds new agent run
   expect(new Set(board.busyBoards())).toEqual(new Set(["p"]));
   await Bun.sleep(250);
   expect(restarted).toBe(false);
-  await until(() => restarted, 10_000);
+  await until(() => restarted);
   delete process.env.FAKE_STEP_MS;
   // While the restart is pending a tag starts no run: the agent is marked so recover() wakes it.
   const n = heardBy("reviewer").length;
@@ -300,7 +300,7 @@ test("a pending restart waits for huddle agents mid-turn and holds new agent run
   expect(heardBy("reviewer").at(-1)).not.toContain("restarted while you were working");
   expect(participant(h, "reviewer").interrupted).toBe(false);
   await Promise.all([fresh.shutdown(), again.shutdown()]);
-}, 30000);
+}, 60_000);
 
 test("for you: tags of @you since the user's last post or action, brake messages included", async () => {
   const t = await host();
@@ -337,7 +337,7 @@ test("for you: tags of @you since the user's last post or action, brake messages
   expect(view().forYouSince).toBe(one);
   await seen(10_000);
   expect(view()).toMatchObject({ forYou: 0, forYouSince: store.getHuddle("p", h.id)!.seq });
-}, 20000);
+}, 60_000);
 
 test("needs you: a working huddle hides its host from the Inbox until it tags @you", async () => {
   const t = await host();
@@ -364,7 +364,7 @@ test("needs you: a working huddle hides its host from the Inbox until it tags @y
   const row = (await inbox()).find((i) => i.id === t.id)!;
   expect(row.attention).toMatchObject({ kind: "huddle", label: "Huddle: 1 for you", since: messages(h).at(-1)!.ts });
   expect(await card()).toMatchObject({ attention: { kind: "huddle" }, huddleBusy: false });
-}, 20000);
+}, 60_000);
 
 test("restart: a failed or stopped agent is idle again and wakes now on a live huddle", async () => {
   const t = await host();
@@ -385,4 +385,4 @@ test("restart: a failed or stopped agent is idle again and wakes now on a live h
   // A run can't restart anyone.
   const denied = await post({ [HUDDLE_HEADER]: `${h.id}/reviewer/${participant(h, "reviewer").token}` });
   expect(denied.status).toBe(403);
-}, 20000);
+}, 60_000);

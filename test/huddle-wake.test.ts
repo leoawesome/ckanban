@@ -25,7 +25,7 @@ test("huddle_post works from the host ticket's Planning-chat run", async () => {
   expect(text(r)).toContain("as @main");
   await idle();
   expect(heardBy("reviewer").at(-1)).toContain("@main: @reviewer check the plan");
-}, 20000);
+}, 60_000);
 
 test("only leads, @main and the user can wake everyone with @all; quoted handles don't wake", async () => {
   const t = await host();
@@ -45,7 +45,7 @@ test("only leads, @main and the user can wake everyone with @all; quoted handles
   huddles.post("p", h.id, you(h), "the log says `@security failed`");
   await idle();
   expect(heardBy("security").length).toBe(sec + 1);
-}, 20000);
+}, 60_000);
 
 test("participants an agent adds can't be leads, but may change files in their own copy", async () => {
   const t = await host();
@@ -58,7 +58,7 @@ test("participants an agent adds can't be leads, but may change files in their o
   const [p] = huddles.addParticipants("p", h.id, you(h), { role: "Boss", prompt: "Lead", focus: "x", lead: true });
   expect(p.lead).toBe(true);
   await huddles.stopAll("p", h.id);
-}, 20000);
+}, 60_000);
 
 test("no run saves a teammate: save_huddle_preset says to propose, the daemon refuses run and agent headers", async () => {
   const t = await host();
@@ -88,7 +88,7 @@ test("no run saves a teammate: save_huddle_preset says to propose, the daemon re
   // The user still may.
   expect(huddles.savePreset("p", { name: "qa", prompt: "Test it all." })).toMatchObject({ source: "board", base: "builtin" });
   expect((await postJson("/huddle-presets", { name: "perf", prompt: "Profile it.", scope: "global" })).status).toBe(201);
-}, 20000);
+}, 60_000);
 
 test("propose_teammate: a ticket chat gets a card, a huddle agent's waits under Learnings and saves to the chosen scope", async () => {
   const t = await host();
@@ -135,7 +135,7 @@ test("propose_teammate: a ticket chat gets a card, a huddle agent's waits under 
   expect(huddles.view("p", store.getHuddle("p", h.id)!).learningsPending).toBe(0);
   // Not the user's or @main's to propose into the huddle.
   expect((await postJson(`/huddles/${h.id}/teammates`, input)).status).toBe(400);
-}, 20000);
+}, 60_000);
 
 test("budget brake: @main's huddle replies count, the leads are warned at 80%, everything stops at 100%; resume adds budget", async () => {
   const t = await host();
@@ -166,7 +166,7 @@ test("budget brake: @main's huddle replies count, the leads are warned at 80%, e
   expect(resumed).toMatchObject({ status: "live", stopReason: null });
   expect(resumed.maxCostUsd).toBeCloseTo(10.012);
   expect(messages(h).at(-2)!.text).toContain("$10.00 more budget");
-}, 30000);
+}, 60_000);
 
 test("@main's huddle cost is only its woken replies, not what the ticket's session spent before", async () => {
   const t = await host();
@@ -189,7 +189,7 @@ test("@main's huddle cost is only its woken replies, not what the ticket's sessi
   expect(participant(h, "main").costUsd).toBeCloseTo(1);
   expect(huddleCost(store.getHuddle("p", h.id)!) - before).toBeCloseTo(1);
   expect(store.getHuddle("p", h.id)!.status).toBe("live");
-}, 30000);
+}, 60_000);
 
 test("budget runs out after a close request: the stop points to Close; resuming without a tag says nobody has work", async () => {
   const t = await host();
@@ -218,7 +218,7 @@ test("budget runs out after a close request: the stop points to Close; resuming 
   expect(messages(h).at(-1)!.text).toBe("Nobody was tagged while the huddle was stopped, so no agent has new work. @you: tag an agent to give it work, or close the huddle.");
   expect(heardBy("reviewer").length).toBe(heard);
   expect(heardBy(store.getTicket("p", t.id)!.sessionId!).length).toBe(mainHeard);
-}, 30000);
+}, 60_000);
 
 test("resume that delivers a tag wakes that agent and adds no nobody-has-work line", async () => {
   const t = await host();
@@ -231,7 +231,7 @@ test("resume that delivers a tag wakes that agent and adds no nobody-has-work li
   await idle();
   expect(heardBy("reviewer").length).toBe(heard + 1);
   expect(messages(h).some((m) => m.text.startsWith("Nobody was tagged"))).toBe(false);
-}, 20000);
+}, 60_000);
 
 test("message limit stops the huddle", async () => {
   const t = await host();
@@ -248,7 +248,7 @@ test("message limit stops the huddle", async () => {
   expect(heardBy("reviewer").length).toBe(1);
   huddles.resume("p", h.id);
   expect(store.getHuddle("p", h.id)!.maxMessages).toBe(3 + 150);
-}, 20000);
+}, 60_000);
 
 test("routing pauses after 30 messages without the user; the lead's and @main's posts don't reset it", async () => {
   const t = await host();
@@ -270,7 +270,7 @@ test("routing pauses after 30 messages without the user; the lead's and @main's 
   expect(heardBy("reviewer-1").length).toBe(n);
   huddles.resume("p", h.id);
   expect(store.getHuddle("p", h.id)!).toMatchObject({ status: "live", stopReason: null, sinceUser: 0 });
-}, 20000);
+}, 60_000);
 
 test("ping-pong: two agents answering each other stop waking each other and their lead is tagged", async () => {
   const t = await host();
@@ -298,7 +298,7 @@ test("ping-pong: two agents answering each other stop waking each other and thei
   await idle();
   expect(store.getHuddle("p", h.id)!.held).toBeNull();
   expect(heardBy("reviewer-2").length).toBe(r2 + 1);
-}, 30000);
+}, 60_000);
 
 test("a mention while the huddle is stopped wakes the agent on resume", async () => {
   const t = await host();
@@ -318,7 +318,7 @@ test("a mention while the huddle is stopped wakes the agent on resume", async ()
   huddles.resume("p", h.id);
   await idle();
   expect(heardBy("reviewer").length).toBe(n + 1);
-}, 20000);
+}, 60_000);
 
 test("a mention posted while the daemon shuts down wakes the agent after the restart", async () => {
   const t = await host();
@@ -335,7 +335,7 @@ test("a mention posted while the daemon shuts down wakes the agent after the res
   expect(heardBy("reviewer").length).toBe(n + 1);
   expect(heardBy("reviewer").at(-1)).toContain("one more thing");
   await again.shutdown();
-}, 20000);
+}, 60_000);
 
 test("a monitor ticket session's pending messages survive a restart", async () => {
   const t = await host();
@@ -357,4 +357,4 @@ test("a monitor ticket session's pending messages survive a restart", async () =
   await again.whenIdle();
   await board.whenIdle();
   await again.shutdown();
-}, 20000);
+}, 60_000);

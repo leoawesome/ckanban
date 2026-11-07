@@ -45,7 +45,7 @@ test("a huddle file edited outside the board can't raise canEdit, lead or the li
   await idle();
   const lastArgs = processes().at(-1)!.args;
   expect(lastArgs[lastArgs.indexOf("--disallowedTools") + 1].split(",")).toContain("Edit");
-}, 30000);
+}, 60_000);
 
 test("a huddle file edited outside the board can't unpause it, lower a cost or add participants", async () => {
   const t = await host();
@@ -69,7 +69,7 @@ test("a huddle file edited outside the board can't unpause it, lower a cost or a
   expect(store.getHuddle("p", h.id)!.participants.some((p) => p.handle === "sneaky")).toBe(false);
   await Bun.sleep(0);
   expect(messages(h).at(-1)).toMatchObject({ kind: "system", text: expect.stringContaining("Huddle file edited outside the board") });
-}, 30000);
+}, 60_000);
 
 test("a daemon restart resumes agents cut off mid-turn", async () => {
   const t = await host();
@@ -85,7 +85,7 @@ test("a daemon restart resumes agents cut off mid-turn", async () => {
   expect(heardBy("reviewer").at(-1)).toContain("The board restarted while you were working");
   expect(processes().at(-1)!.args).toContain("--resume");
   expect(participant(h, "reviewer")).toMatchObject({ status: "idle", interrupted: false });
-}, 20000);
+}, 60_000);
 
 test("propose_huddle validates the roster and starts nothing", async () => {
   const r = await callTool("propose_huddle", { roster: [{ preset: "reviewer" }, { preset: "qa", count: 3, workspace: "shared" }, { preset: "qa-lead" }] }, mainCtx({ hostTicket: "x" } as Huddle));
@@ -184,7 +184,7 @@ test("presets: saved through the MCP tool by the user, used by rosters, deleted 
   const builtin = await fetch(`http://127.0.0.1:${server.port}/api/profiles/p/huddle-presets/reviewer`, { method: "DELETE" });
   expect(builtin.status).toBe(409);
   expect(store.listHuddlePresets("p")).toEqual([]);
-}, 20000);
+}, 60_000);
 
 test("an agent's cost adds up from its session's running totals", async () => {
   const t = await host();

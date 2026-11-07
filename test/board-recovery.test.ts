@@ -87,7 +87,7 @@ test("Start fresh session keeps the worktree and branch and hands Claude the las
   await board.chat("p", t.id, "more");
   await board.whenIdle();
   expect(readArgs().at(-1)!.args).toContain("--resume");
-}, 15000);
+}, 60_000);
 
 test("Take over here closes the session in the board's terminal and the run resumes", async () => {
   let closed = 0;
@@ -216,7 +216,7 @@ test("Send in a fresh chat: new chat with the ticket and last result, old chat k
   const next = readArgs().at(-1)!;
   expect(next.args).toContain("--resume");
   expect(next.prompt).not.toContain("This is a new chat");
-}, 15000);
+}, 60_000);
 
 test("Send in a fresh chat is refused while Claude works", async () => {
   await setup();

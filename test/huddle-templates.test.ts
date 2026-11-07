@@ -28,7 +28,7 @@ test("post cap: a message over 2,000 characters is refused with an error that te
   // Exactly at the limit is fine.
   expect(huddles.post("p", h.id, you(h), "z".repeat(POST_MAX)).text.length).toBe(POST_MAX);
   await huddles.stopAll("p", h.id);
-}, 20000);
+}, 60_000);
 
 test("digests cut long messages and point to huddle_read; the pinned brief heads them", () => {
   const long = { id: "m", seq: 12, ts: "", from: "qa", mentions: [], kind: "message" as const, text: "word ".repeat(400) };
@@ -73,7 +73,7 @@ test("huddle_read: since skips the brief, roster and findings; the brief, findin
   expect(later).toContain("@you: next step please");
   expect(later.split("\n").filter((l) => /^\[#\d+\]/.test(l))).toHaveLength(1);
   await huddles.stopAll("p", h.id);
-}, 20000);
+}, 60_000);
 
 test("templates: built-ins merge with the board's own; overriding, resetting and checking", () => {
   const added = saveTemplate([], { name: "Bug Bash", roster: [{ preset: "qa", count: 2 }, { preset: "qa-lead" }], rounds: 1, report: "steps, expected, actual" });
@@ -128,7 +128,7 @@ test("templates: saved and listed over HTTP (the user only), and listed for Clau
   expect((await api("/huddle-templates/bug-bash", { method: "DELETE" })).status).toBe(200);
   expect((await api("/huddle-templates/design-review", { method: "DELETE" })).status).toBe(409);
   expect(store.listHuddleTemplates("p")).toEqual([]);
-}, 20000);
+}, 60_000);
 
 test("starting from a template: its roster, budget and rules (as the pinned brief every agent reads first)", async () => {
   const t = await host();
@@ -158,7 +158,7 @@ test("starting from a template: its roster, budget and rules (as the pinned brie
   await idle();
   huddles.close("p", h2.id);
   expect(() => huddles.create("p", t.id, [], { template: "nope" })).toThrow('no huddle template "nope"');
-}, 30000);
+}, 60_000);
 
 test("each post records where it came from: the board UI, the MCP tools, or no header", async () => {
   const t = await host();
@@ -172,7 +172,7 @@ test("each post records where it came from: the board UI, the MCP tools, or no h
   expect(src).toEqual({ "from the board": "ui", "from curl": "none", forged: "none", "from an agent": "mcp" });
   expect(messages(h).filter((m) => m.kind === "system").every((m) => m.source === undefined)).toBe(true);
   await huddles.stopAll("p", h.id);
-}, 20000);
+}, 60_000);
 
 test("the message log is cached and read on from where it was; lastActivity sends a small event", async () => {
   const t = await host();

@@ -33,7 +33,7 @@ test("a main ticket in Done: the user asks for more, it moves to Review and stay
   // The user's own move parks it again, and a later wake with nothing at work leaves it there.
   await board.updateTicket("p", main.id, { status: "done" }, { byUser: true });
   expect(get(main.id).status).toBe("done");
-}, 30_000);
+}, 60_000);
 
 test("a main ticket parked in Backlog after its family started goes to Review; a new one is shaped in Planning", async () => {
   const main = await mkMain("backlog");
@@ -45,7 +45,7 @@ test("a main ticket parked in Backlog after its family started goes to Review; a
   await board.chat("p", fresh.id, "let's shape it");
   expect(get(fresh.id).status).toBe("planning");
   await board.whenIdle();
-}, 30_000);
+}, 60_000);
 
 test("messages from other tickets don't undo the user's park", async () => {
   const main = await mkMain("done");
@@ -53,7 +53,7 @@ test("messages from other tickets don't undo the user's park", async () => {
   expect(get(main.id).status).toBe("done");
   await board.whenIdle();
   expect(get(main.id).status).toBe("done");
-}, 30_000);
+}, 60_000);
 
 test("a follow-up on a main ticket in Done with a step at work brings it to Review; with nothing at work it stays in Done", async () => {
   const main = await mkMain("done");
@@ -70,7 +70,7 @@ test("a follow-up on a main ticket in Done with a step at work brings it to Revi
   await board.whenIdle();
   expect(get(main.id).status).toBe("review");
   expect(notes(main.id).some((n) => n.startsWith("Moved back from Done: its follow-up came"))).toBe(true);
-}, 30_000);
+}, 60_000);
 
 test("a plan wake of a main ticket in Done with a step at work doesn't leave it in Done", async () => {
   const main = await mkMain("done");
@@ -81,7 +81,7 @@ test("a plan wake of a main ticket in Done with a step at work doesn't leave it 
   expect(get(main.id).status).toBe("review");
   await board.whenIdle();
   expect(get(main.id).status).toBe("review");
-}, 30_000);
+}, 60_000);
 
 test("a plan wake of a main ticket in Done whose steps are all done leaves it in Done", async () => {
   const main = await mkMain("done");
@@ -90,7 +90,7 @@ test("a plan wake of a main ticket in Done whose steps are all done leaves it in
   (board as any).wake("p", t, t.plan, "event", ["Live calls finished"], [get(tool.id)]);
   await board.whenIdle();
   expect(get(main.id).status).toBe("done");
-}, 30_000);
+}, 60_000);
 
 test("an ordinary ticket in Done: the user's message that asks for work ends in Review (unchanged)", async () => {
   await setup();
@@ -100,7 +100,7 @@ test("an ordinary ticket in Done: the user's message that asks for work ends in 
   await untilSpawned(1);
   await board.whenIdle();
   expect(get(t.id).status).toBe("review");
-}, 30_000);
+}, 60_000);
 
 // t_20261107_4gsl, seen on spendshare t_20261107_6tqm: the main ticket in Done got a message (Review), its run made a
 // fix step and ended done, and minutes later the PR poller saw its milestone PR (merged long before) and moved the card
@@ -139,7 +139,7 @@ test("a Done main ticket with a merged PR: a message, a new step, the poller: In
   // Only the user's own move parks it again.
   await board.updateTicket("p", main.id, { status: "done" }, { byUser: true });
   expect(column()).toBe("done");
-}, 30_000);
+}, 60_000);
 
 test("a main ticket never in Done with no open steps still goes to Done when its PR merges", async () => {
   const { checkPr } = await import("../src/server/prpoller");
@@ -147,7 +147,7 @@ test("a main ticket never in Done with no open steps still goes to Done when its
   store.updateTicket("p", main.id, { prUrl: "https://github.com/x/y/pull/12" });
   await checkPr(board, store, "p", main.id, async () => "MERGED");
   expect(get(main.id).status).toBe("done");
-}, 30_000);
+}, 60_000);
 
 test("a main card in Done shows In progress while one of its steps runs, not for a ticket the user added", async () => {
   const { groupByColumn } = await import("../web/src/columns");
@@ -170,4 +170,4 @@ test("a main card in Done shows In progress while one of its steps runs, not for
   const fc = { tools: 1, running: ["Live calls"], working: ["Live calls"] };
   expect(cardFamily({ status: "done", main: true, familyCard: fc, stepsRunning: 1 }, false).working).toBe(true);
   expect(cardFamily({ status: "done", main: true, familyCard: fc }, false).working).toBe(false);
-}, 30_000);
+}, 60_000);

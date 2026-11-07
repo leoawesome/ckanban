@@ -68,7 +68,7 @@ export function useHuddleEnv() {
     await Promise.all([board.shutdown(), huddles.shutdown()]);
     server.stop(true);
     for (const k of ["FAKE_MODE", "FAKE_ARGS_FILE", "FAKE_HEARD_FILE", "FAKE_STEP_MS", "FAKE_TRANSCRIPT", "CLAUDE_CONFIG_DIR"]) delete process.env[k];
-  }, 15000);
+  }, 60_000);
 }
 
 /** A call to the board's HTTP API under the test profile. */

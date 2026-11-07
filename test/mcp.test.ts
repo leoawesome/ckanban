@@ -91,7 +91,7 @@ function setup(servers: Record<string, { target: string; status: string }>, user
 }
 
 const calls = () => readFileSync(argsFile, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as string[]);
-async function until(fn: () => boolean, ms = 5000) {
+async function until(fn: () => boolean, ms = 30_000) {
   const end = Date.now() + ms;
   while (!fn()) {
     if (Date.now() > end) throw new Error("timed out waiting");

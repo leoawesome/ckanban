@@ -40,7 +40,7 @@ afterEach(async () => {
   await chats.shutdown();
   await board.shutdown();
   for (const k of ["FAKE_MODE", "CLAUDE_CONFIG_DIR", "FAKE_ARGS_FILE", "FAKE_TOTAL_COST"]) delete process.env[k];
-}, 10000);
+}, 60_000);
 
 test("autoTitle takes the first line of the first message, without images or markdown", () => {
   expect(autoTitle("![image](/api/attachments/a.png)\n## Why is Review always full?\nmore")).toBe("Why is Review always full?");

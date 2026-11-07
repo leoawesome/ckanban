@@ -72,5 +72,5 @@ export function useBoardEnv() {
     delete process.env.CLAUDE_CONFIG_DIR;
     delete process.env.FAKE_PR;
     delete process.env.FAKE_ARGS_FILE;
-  }, 10000);
+  }, 60_000);
 }

@@ -51,7 +51,7 @@ afterEach(async () => {
   delete process.env.FAKE_MODE;
   delete process.env.FAKE_ARGS_FILE;
   delete process.env.CLAUDE_CONFIG_DIR;
-}, 10000);
+}, 60_000);
 
 test("delays and times: after or at, never both, at least a minute away", () => {
   expect(parseDelay("30m")).toBe(30 * 60_000);
@@ -90,7 +90,7 @@ test("set, replace and cancel a follow-up; each is logged and commented", async 
   u = board.cancelFollowUp("p", t.id, "user");
   expect([u.followUp, u.followUpStopped]).toEqual([null, null]);
   expect(u.followUpLog!.at(-1)).toMatchObject({ kind: "cancelled", by: "user" });
-}, 15000);
+}, 60_000);
 
 test("the watcher wakes the same conversation when it is due; the card goes back to its column", async () => {
   await setup();
@@ -123,7 +123,7 @@ test("the watcher wakes the same conversation when it is due; the card goes back
   expect(got.runCount).toBe(before.runCount + 1);
   const kinds = store.readActivity("p", t.id).map((a: any) => a.event).filter((e: any) => e?.type === "ckanban_run").map((e: any) => e.kind);
   expect(kinds.at(-1)).toBe("follow-up");
-}, 20000);
+}, 60_000);
 
 test("a follow-up waits while the ticket is running and never stacks onto the live run", async () => {
   await setup();
@@ -146,7 +146,7 @@ test("a follow-up waits while the ticket is running and never stacks onto the li
   await new FollowUpWatcher(board, store).tick();
   await board.whenIdle();
   expect(wakes()).toBe(1);
-}, 20000);
+}, 60_000);
 
 test("a message from the user cancels a cancel-on-reply follow-up; otherwise the next wake hears about it", async () => {
   await setup();
@@ -170,7 +170,7 @@ test("a message from the user cancels a cancel-on-reply follow-up; otherwise the
   await board.wakeFollowUp("p", t.id);
   await board.whenIdle();
   expect(store.getTicket("p", t.id)!.followUpLog!.filter((e) => e.kind === "replied")).toHaveLength(2);
-}, 20000);
+}, 60_000);
 
 test("moving the card to Done keeps the follow-up; deleting the ticket ends it", async () => {
   await setup();
@@ -180,7 +180,7 @@ test("moving the card to Done keeps the follow-up; deleting the ticket ends it",
   expect(store.getTicket("p", t.id)!.followUp).toBeTruthy();
   await board.deleteTicket("p", t.id);
   expect(board.dueFollowUps("p")).toEqual([]);
-}, 15000);
+}, 60_000);
 
 test("late follow-ups: a few hours late wakes once and says so; over 12 hours waits for the user", async () => {
   await setup();
@@ -212,7 +212,7 @@ test("late follow-ups: a few hours late wakes once and says so; over 12 hours wa
   expect(wakes()).toBe(2);
   expect(store.getTicket("p", u.id)!.followUp).toBeNull();
   expect(prompts().at(-1)).toContain("the user pressed Follow up now");
-}, 25000);
+}, 60_000);
 
 test("follow-ups survive a daemon restart", async () => {
   await setup();
@@ -225,7 +225,7 @@ test("follow-ups survive a daemon restart", async () => {
   await new FollowUpWatcher(board, store).tick();
   await board.whenIdle();
   expect(wakes()).toBe(1);
-}, 15000);
+}, 60_000);
 
 test("a follow-up on a Done card that needs the user lands in Review", async () => {
   await setup();
@@ -236,7 +236,7 @@ test("a follow-up on a Done card that needs the user lands in Review", async () 
   await board.wakeFollowUp("p", t.id);
   await board.whenIdle();
   expect(store.getTicket("p", t.id)!).toMatchObject({ status: "review", outcome: "needs_input" });
-}, 15000);
+}, 60_000);
 
 test("the wake prompt gives Claude the facts: note, lateness, replies, last seen, earlier follow-ups and cost", () => {
   const t = {
@@ -282,7 +282,7 @@ test("a restart that cuts off a follow-up wake resumes it as a follow-up; the ca
   expect(kinds.at(-1)).toBe("follow-up");
   expect(kinds.filter((k: string) => k === "work")).toHaveLength(1); // never resumed as a work run
   expect(store.listComments("p", t.id).some((c) => c.text === "Follow-up interrupted by daemon restart; resuming.")).toBe(true);
-}, 25000);
+}, 60_000);
 
 test("follow-up wakes start right away while another ticket works (no board limit); they skip a usage-limit wait", async () => {
   await setup(1);
@@ -306,7 +306,7 @@ test("follow-up wakes start right away while another ticket works (no board limi
   store.updateTicket("p", u.id, { outcome: "limit", limit: { resetAt: "2026-10-20T00:00:00Z", auto: true, at: "2026-10-19T07:00:00Z", message: "limit" } });
   at("2026-10-19T09:00:00Z");
   expect(board.dueFollowUps("p")).toEqual([]);
-}, 25000);
+}, 60_000);
 
 test("a wake that sets no next follow-up leaves a stopped note; bad input is refused", async () => {
   await setup();
@@ -319,4 +319,4 @@ test("a wake that sets no next follow-up leaves a stopped note; bad input is ref
   expect(() => board.setFollowUp("p", t.id, { after: "9999999999d", note: "x" })).toThrow(FollowUpError);
   expect(() => board.setFollowUp("p", t.id, { after: "400d", note: "x" })).toThrow("at most a year");
   expect(() => board.setFollowUp("p", t.id, { after: "1d", note: "x".repeat(1001) })).toThrow("too long");
-}, 15000);
+}, 60_000);

@@ -47,9 +47,9 @@ afterEach(async () => {
   await Promise.all([board.shutdown(), huddles.shutdown()]);
   server.stop(true);
   for (const k of ["FAKE_MODE", "FAKE_STREAM_DELAY", "CLAUDE_CONFIG_DIR"]) delete process.env[k];
-}, 15000);
+}, 60_000);
 
-async function until(cond: () => boolean, ms = 8000) {
+async function until(cond: () => boolean, ms = 30_000) {
   const end = Date.now() + ms;
   while (!cond()) {
     if (Date.now() > end) throw new Error("timed out waiting");
@@ -618,7 +618,7 @@ test("userAskedRun: a reply to the user's chat message or a message they steered
   process.env.FAKE_STEP_MS = "150";
   try {
     const t = await board.createTicket("p", { title: "Calls", body: "Do it", status: "review" });
-    const idle = () => until(() => !board.isRunning("p", t.id), 15000);
+    const idle = () => until(() => !board.isRunning("p", t.id));
     expect(board.userAskedRun("p", t.id)).toBe(false);
     await board.chat("p", t.id, "start a huddle");
     expect(board.userAskedRun("p", t.id)).toBe(true);
@@ -633,12 +633,12 @@ test("userAskedRun: a reply to the user's chat message or a message they steered
     // The user types while a peer reply runs: it is handed to that run, which now acts on their words.
     await board.chat("p", t.id, "reply to the other ticket", { peer: true });
     await board.chat("p", t.id, "also start a huddle");
-    await until(() => board.userAskedRun("p", t.id), 5000);
+    await until(() => board.userAskedRun("p", t.id));
     await idle();
   } finally {
     delete process.env.FAKE_STEP_MS;
   }
-}, 40000);
+}, 60_000);
 
 test("the chat prompt outside Planning starts a huddle the user asks for; Planning keeps the card", async () => {
   const t = await board.createTicket("p", { title: "Calls", body: "Do it", status: "review" });
