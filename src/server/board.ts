@@ -25,7 +25,7 @@ import { canEndQuietly, quietContext } from "./quiet";
 import { addHuddleSpend } from "./spend";
 import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "./prompts";
 import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
-import { ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName } from "./main-ticket";
+import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
 import { chatPrompt, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
@@ -1235,7 +1235,7 @@ export class Board {
     if (this.shuttingDown) return;
     const finalText = extractFinalText(out.events);
     // A steering message can get its own turn after the result line; the ticket outcome is still the last one given.
-    const result = parseResult(finalText) ?? out.events
+    let result = parseResult(finalText) ?? out.events
       .filter((e) => e?.type === "result" && typeof e.result === "string")
       .map((e) => parseResult(e.result))
       .findLast((r) => r !== null) ?? null;
@@ -1312,6 +1312,11 @@ export class Board {
       return;
     }
     const body = finalText.replace(/^.*CKANBAN_RESULT:.*$/gm, "").replace(MOVE_TO_PLANNING_RE, "").trim();
+    // A working main ticket's reply that only answered or reported progress isn't waiting on the user: "done".
+    if (result) {
+      const t = this.store.getTicket(slug, id);
+      if (t && askedNothing(t, result.status, replyAsked(this.openForm(t), body))) result = { ...result, status: "done" };
+    }
     // A reply to the ticket's huddle can land the work and report it: keep its PRs, summary and outcome. The card
     // stays where it is, and a ticket waiting for its auto huddle keeps waiting.
     if (quiet && result && !refine && !run.chat?.nudge) {

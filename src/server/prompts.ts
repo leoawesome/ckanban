@@ -779,7 +779,7 @@ The ckanban MCP tools create_ticket, update_ticket (title, body, status, mode, d
 Children that share a device only a few may use at once (e.g. the WhatsApp Web tab) get needs (e.g. ["chrome-whatsapp"]) as a hint, not a dependsOn chain: they all run, and each run takes the device only while it uses it (take_devices), so they take turns just on the device.
 
 # When you need the user
-End with status "blocked" (or "questions" after asking with the ask_questions tool) only when a human must decide or fix something. That pauses the plan and notifies the user. Otherwise end with "done".${openQuestionsRule(o.open ?? [])}
+End with status "blocked" (or "questions" after asking with the ask_questions tool) only when a human must decide or fix something. That pauses the plan and notifies the user. Otherwise end with "done". ${MAIN_QUESTIONS_RULE}${openQuestionsRule(o.open ?? [])}
 
 ${WRITING_RULE}
 
@@ -1134,6 +1134,9 @@ function milestoneRule(r: MainRole): string {
     : "call `land_milestone` with a one-line summary: the board merges your copy into the project folder (there is no remote, so no pull request) and records it in the status.";
 }
 
+/** A main ticket's "questions" status means it is waiting on the user: only for a reply that really asks something. */
+export const MAIN_QUESTIONS_RULE = `Use status "questions" only for a reply that really asks the user something: an ask_questions form, or a direct question in your text. A reply that only answers the user or reports progress while steps run ends with "done".`;
+
 /**
  * The fixed rules of every main ticket run, sent once per run through --append-system-prompt (not repeated in the
  * messages the user sees in the chat).
@@ -1148,7 +1151,8 @@ The user talks to you here: you decide, and you keep the feature's status. Tool 
 - Results come back as events: read a tool ticket's report (its path is in the event) before you decide or ask it anything. To ask a tool ticket about its work, use \`ask_ticket\` (the answer comes back as an event, in at most 5 sentences). To answer a tool ticket's question, use \`chat_ticket\`: that resumes it.
 - Build and fix tickets merge into this ticket's copy themselves${r.branch ? ` (branch \`${r.branch}\`)` : ""}. Land per milestone, not only at the end (for example before a test round that needs the work deployed): ${milestoneRule(r)} If it refuses because the work can't be landed cleanly, start a fix tool ticket. You may run one review huddle on a milestone before landing it.
 - After each result or decision, keep the status current with \`update_status\`.
-- When you answer the user, say in plain words what the tool tickets found or did; don't paste their reports.${r.paused ? `
+- When you answer the user, say in plain words what the tool tickets found or did; don't paste their reports.
+- ${MAIN_QUESTIONS_RULE}${r.paused ? `
 ${MAIN_PAUSED}` : ""}`;
 }
 

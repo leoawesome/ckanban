@@ -45,6 +45,23 @@ export function managedPlan(t: Pick<Ticket, "main" | "tool" | "kind">): boolean 
   return isManager(t);
 }
 
+/**
+ * Whether a run's reply really asked the user something: an ask_questions form still open for it (openForm, the
+ * session's unanswered form), or else a "?" in the last text the reply shows (the result line left out).
+ */
+export function replyAsked(openForm: readonly unknown[], lastText: string): boolean {
+  if (openForm.length > 0) return true;
+  return lastText.replace(/^.*CKANBAN_RESULT:.*$/gm, "").includes("?");
+}
+
+/**
+ * A main ticket whose plan is running that ended a reply with "questions" but asked nothing (replyAsked false): the
+ * board treats it as "done", so the card doesn't say it needs the user. Tool tickets and with_you steps keep theirs.
+ */
+export function askedNothing(t: Pick<Ticket, "main" | "tool" | "plan">, status: string | undefined, asked: boolean): boolean {
+  return status === "questions" && !!t.main && !t.tool && t.plan?.state === "running" && !asked;
+}
+
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 
