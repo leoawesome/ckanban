@@ -1,13 +1,16 @@
 export type Status = "backlog" | "planning" | "ready" | "in_progress" | "review" | "done";
 
 /** The ticket fields that place a card on the board (kept apart from api.ts so tests can load this file). */
-interface Placed { id: string; status: Status; order: number; slotWait?: { at: string } | null; running?: boolean; main?: boolean; familyWorking?: number }
+interface Placed { id: string; status: Status; order: number; slotWait?: { at: string } | null; running?: boolean; main?: boolean; familyWorking?: number; stepsRunning?: number }
 
 /**
- * A main ticket shows In progress while any of its tool tickets works; otherwise it stays where the user put it. Parked
- * in Backlog or Done it stays there (nothing new starts; running tool tickets just finish).
+ * A main ticket shows In progress while any ticket of its family works (its steps and tickets the user added) and it
+ * sits in Review or Planning. Parked in Done or Backlog it moves only while one of its own steps runs (a step it started
+ * after a new message); a ticket the user added running doesn't undo the user's park.
  */
-const familyBusy = (t: Placed): boolean => !!t.main && !!t.familyWorking && (t.status === "review" || t.status === "planning");
+const familyBusy = (t: Placed): boolean => !!t.main && (
+  (!!t.familyWorking && (t.status === "review" || t.status === "planning"))
+  || (!!t.stepsRunning && (t.status === "done" || t.status === "backlog")));
 
 /** claude: dropping a card here makes Claude start (or it is running). */
 export const COLUMNS: { id: Status; label: string; hint: string; claude: boolean }[] = [

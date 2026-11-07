@@ -2121,6 +2121,16 @@ export class Board {
     return true;
   }
 
+  /**
+   * The PR poller leaves a main ticket in Review instead of moving it to Done on a merged PR: while its steps are open
+   * (Done would park them and its wake when they finish), and once it has been in Done before (the user or a step
+   * brought it back, so only the user's own move parks it again).
+   */
+  holdsReview(slug: string, id: string): boolean {
+    const t = this.store.getTicket(slug, id);
+    return !!t?.main && (!!t.doneAt || this.openSteps(slug, id));
+  }
+
   /** A main ticket's family still has tool tickets that aren't finished (waiting, running or needing the user). */
   private openSteps(slug: string, id: string): boolean {
     const all = this.store.listTickets(slug);
@@ -3007,6 +3017,14 @@ export class Board {
    */
   familyWorking(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
     return workingInFamily(familyOf(tickets, id).map((r) => r.ticket), id, (t) => this.isRunning(slug, t.id)).length;
+  }
+
+  /**
+   * How many of a main ticket's steps (tool tickets, not tickets the user added) are running now. A main card parked in
+   * Done or Backlog shows In progress meanwhile (columns.ts familyBusy); queued steps don't count there (parked, they wait).
+   */
+  stepsRunning(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
+    return familyOf(tickets, id).filter((r) => r.ticket.id !== id && r.ticket.tool && this.isRunning(slug, r.ticket.id)).length;
   }
 
   /** The main or tool rules a run of t gets, or undefined for other tickets. */

@@ -101,3 +101,73 @@ test("an ordinary ticket in Done: the user's message that asks for work ends in 
   await board.whenIdle();
   expect(get(t.id).status).toBe("review");
 }, 30_000);
+
+// t_20261107_4gsl, seen on spendshare t_20261107_6tqm: the main ticket in Done got a message (Review), its run made a
+// fix step and ended done, and minutes later the PR poller saw its milestone PR (merged long before) and moved the card
+// to Done while the step still ran. Parked in Done, its wake for the finished step never came either.
+test("a Done main ticket with a merged PR: a message, a new step, the poller: In progress until the step ends, then Review", async () => {
+  const { checkPr } = await import("../src/server/prpoller");
+  const { groupByColumn } = await import("../web/src/columns");
+  const main = await mkMain("done");
+  store.updateTicket("p", main.id, { prUrl: "https://github.com/x/y/pull/12" });
+  await board.chat("p", main.id, "three more fixes please");
+  expect(get(main.id).status).toBe("review");
+  await untilSpawned(1);
+  // The run makes a step (queued) and ends done.
+  const step = await mkTool(main.id, "ready");
+  await board.whenIdle();
+  // (The fake Claude would finish the step at once; hold it as waiting to start.)
+  store.updateTicket("p", step.id, { status: "ready", outcome: null });
+  const column = () => {
+    const t = get(main.id);
+    const placed = { ...t, familyWorking: board.familyWorking("p", main.id), stepsRunning: board.stepsRunning("p", main.id) };
+    return [...groupByColumn([placed])].find(([, l]) => l.length)![0];
+  };
+  const merged = async () => "MERGED" as const;
+  // The poller sees the old merge while the step waits or runs: the card stays put and shows In progress.
+  await checkPr(board, store, "p", main.id, merged);
+  expect(get(main.id).status).toBe("review");
+  expect(column()).toBe("in_progress");
+  store.updateTicket("p", step.id, { status: "in_progress" });
+  await checkPr(board, store, "p", main.id, merged);
+  expect(column()).toBe("in_progress");
+  // The last step finishes: Review (the user wrote after Done), and the poller doesn't send it back to Done.
+  store.updateTicket("p", step.id, { status: "done", outcome: "done" });
+  await checkPr(board, store, "p", main.id, merged);
+  expect(get(main.id).status).toBe("review");
+  expect(column()).toBe("review");
+  // Only the user's own move parks it again.
+  await board.updateTicket("p", main.id, { status: "done" }, { byUser: true });
+  expect(column()).toBe("done");
+}, 30_000);
+
+test("a main ticket never in Done with no open steps still goes to Done when its PR merges", async () => {
+  const { checkPr } = await import("../src/server/prpoller");
+  const main = await mkMain("review");
+  store.updateTicket("p", main.id, { prUrl: "https://github.com/x/y/pull/12" });
+  await checkPr(board, store, "p", main.id, async () => "MERGED");
+  expect(get(main.id).status).toBe("done");
+}, 30_000);
+
+test("a main card in Done shows In progress while one of its steps runs, not for a ticket the user added", async () => {
+  const { groupByColumn } = await import("../web/src/columns");
+  const { cardFamily } = await import("../web/src/cardState");
+  const main = await mkMain("done");
+  const step = await mkTool(main.id, "in_progress");
+  const added = await board.createTicket("p", { title: "Landing copy", body: "", status: "backlog", mode: "auto", partOf: main.id });
+  store.updateTicket("p", added.id, { status: "in_progress" });
+  const running = new Set<string>([added.id]);
+  (board as any).isRunning = (_s: string, id: string) => running.has(id);
+  const col = () => {
+    const placed = { ...get(main.id), familyWorking: board.familyWorking("p", main.id), stepsRunning: board.stepsRunning("p", main.id) };
+    return [...groupByColumn([placed])].find(([, l]) => l.length)![0];
+  };
+  expect(board.stepsRunning("p", main.id)).toBe(0);
+  expect(col()).toBe("done");
+  running.add(step.id);
+  expect(board.stepsRunning("p", main.id)).toBe(1);
+  expect(col()).toBe("in_progress");
+  const fc = { tools: 1, running: ["Live calls"], working: ["Live calls"] };
+  expect(cardFamily({ status: "done", main: true, familyCard: fc, stepsRunning: 1 }, false).working).toBe(true);
+  expect(cardFamily({ status: "done", main: true, familyCard: fc }, false).working).toBe(false);
+}, 30_000);

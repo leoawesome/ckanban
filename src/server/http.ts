@@ -576,7 +576,7 @@ export function createServer(deps: ServerDeps) {
       /** Spending cap its next work run gets (null: none). */
       runCap: runCapFor(t, p),
       /** A main ticket: its tool tickets working now (the card shows In progress meanwhile, wherever the user put it). */
-      ...(t.main ? { familyWorking: board.familyWorking(p.slug, t.id), familyCard: board.familyCard(p.slug, t.id) } : {}),
+      ...(t.main ? { familyWorking: board.familyWorking(p.slug, t.id), stepsRunning: board.stepsRunning(p.slug, t.id), familyCard: board.familyCard(p.slug, t.id) } : {}),
       /** A "with you" tool ticket's main ticket: its card's "↳ feature" chip; any tool ticket's chat names it. */
       ...(t.tool ? { mainTicket: (() => {
         const m = board.mainOf(p.slug, t);

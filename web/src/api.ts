@@ -371,6 +371,8 @@ export interface Ticket {
   boardNotes?: { at: string; ticketId: string; text: string }[];
   /** A main ticket: its tool tickets working now (the card shows In progress meanwhile). */
   familyWorking?: number;
+  /** A main ticket: its steps (tool tickets) running now; a card in Done or Backlog shows In progress meanwhile. */
+  stepsRunning?: number;
   /** A main ticket: what its card shows of the family (tool tickets have no card). */
   familyCard?: FamilyCardInfo | null;
   /** A tool ticket: the main ticket it works for (a "with you" card's chip, the chat's note). */

@@ -23,11 +23,12 @@ export async function ghState(url: string): Promise<PrState> {
  * closed and one was merged, the card moves to Done; when all were closed without merge, it says so and stays.
  * Returns the main PR's state.
  * waits: the card still needs the user, so a merged PR keeps it in Review until that is dealt with. An open huddle
- * holds it too: Done would close the huddle.
+ * holds it too: Done would close the huddle. So does a main ticket with open steps, or one brought back from Done
+ * (board.holdsReview).
  */
 export async function checkPr(
   board: Board, store: Store, slug: string, id: string, gh: (url: string) => Promise<PrState> = ghState,
-  waits: (slug: string, id: string) => boolean = (s, i) => board.waitsOnUser(s, i) || board.hostHuddles(s).has(i),
+  waits: (slug: string, id: string) => boolean = (s, i) => board.waitsOnUser(s, i) || board.hostHuddles(s).has(i) || board.holdsReview(s, i),
 ): Promise<PrState> {
   const t = store.getTicket(slug, id);
   if (!t?.prUrl || t.status !== "review") return null;

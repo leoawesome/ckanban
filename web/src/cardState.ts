@@ -84,19 +84,19 @@ interface FamilyLike { tools: number; toolsDone?: number; running: string[]; wor
 export const familyWorkingNames = (f: FamilyLike): string[] => f.working ?? f.running;
 
 interface CardLike<F extends FamilyLike, A extends { kind: string }> {
-  status: string; main?: boolean; running?: boolean; attention?: A | null; familyCard?: F | null;
+  status: string; main?: boolean; running?: boolean; attention?: A | null; familyCard?: F | null; stepsRunning?: number;
 }
 
 /**
  * How a card shows its feature. ownWorking: its own run works. fc: the family summary a main card shows (with a step,
  * or a ticket of its feature working). familyWorks: a ticket of its feature works and the card isn't parked in Backlog
- * or Done (columns.ts familyBusy): the blue stripe and working line, no "Your turn" strip and no "D done" hint.
+ * or Done, or one of its steps runs there (columns.ts familyBusy): the blue stripe and working line, no "Your turn" strip and no "D done" hint.
  */
 export function cardFamily<F extends FamilyLike, A extends { kind: string }>(t: CardLike<F, A>, ownWorking: boolean) {
   const f = t.main ? t.familyCard ?? null : null;
   const fc = f && (f.tools >= 1 || familyWorkingNames(f).length > 0) ? f : null;
   const busy = !!fc && familyWorkingNames(fc).length > 0 && !t.running;
-  const familyWorks = busy && t.status !== "done" && t.status !== "backlog";
+  const familyWorks = busy && ((t.status !== "done" && t.status !== "backlog") || !!t.stepsRunning);
   const working = ownWorking || familyWorks;
   // While its feature works it isn't the user's turn to check a result; strips that need the user stay.
   const att = familyWorks && (t.attention?.kind === "review" || t.attention?.kind === "reply") ? null : t.attention ?? null;
