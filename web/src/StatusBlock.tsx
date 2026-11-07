@@ -13,6 +13,9 @@ import { namesText, taskProgress, waitingLine } from "./tasksText";
 import { toast } from "./toast";
 import { timeAgo } from "./time";
 
+/** Saved changes shown before "and N more" (as CHANGES_SHOWN in src/server/feature.ts). */
+const CHANGES_SHOWN = 30;
+
 /** The feature status when ticket is a feature's top ticket (its main chat), reloaded as the family changes. */
 export function useFeatureStatus(slug: string, ticket: Ticket, tickets: Ticket[]): { status: FeatureStatus | null; reload: () => void; loaded: boolean } {
   const rows = useMemo(() => familyOf(tickets, ticket.id), [tickets, ticket.id]);
@@ -55,7 +58,7 @@ function countText(c: Record<string, number>, total: number): string {
 }
 
 /** Where the words come from, behind the info icon (it used to be two grey lines under the box). */
-export const STATUS_SOURCE = "Counts, tests and pull requests come from the board; the summary, decisions and next step are written by Claude. " +
+export const STATUS_SOURCE = "Counts, tests, pull requests and saved changes come from the board; the summary, decisions and next step are written by Claude. " +
   "\"Add a note\" adds what happened outside the board.";
 
 /** Done, folded to about two lines with "more" when it is longer. */
@@ -209,6 +212,20 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
           </span>
         ))}
       </div>,
+    });
+  }
+  const changes = f.changes;
+  if (changes?.items.length) {
+    const shown = changes.items.slice(0, CHANGES_SHOWN);
+    const more = changes.items.length - shown.length;
+    extra.push({
+      label: changes.kind === "history" ? "Saved changes" : "Files changed", body: <Clamped>
+        <span className="muted small">{changes.kind === "history" ? "Newest first; undo in this order." : "In your folder."}</span>
+        <div className="ws-lines">
+          {shown.map((c, i) => <span key={`${c.id ?? ""}${i}`}>{c.id && <code>{c.id}</code>} {c.text}</span>)}
+          {more > 0 && <span className="muted">…and {more} more{changes.file ? ` (full list in ${changes.file})` : ""}</span>}
+        </div>
+      </Clamped>,
     });
   }
   return (

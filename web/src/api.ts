@@ -283,6 +283,8 @@ export interface FeatureStatus {
     paused?: { id: string; title: string; resumeAt: string | null; auto: boolean }[];
     needsYou: { id: string; title: string }[];
     prs: { url: string; number: number | null; state: "open" | "merged" | "closed" | "unknown"; ticketId: string; ticketTitle: string; note?: string }[];
+    /** The feature's saved changes, newest first (history), or the files changed in a folder without one; file: the full list. */
+    changes?: { kind: "history" | "files"; items: { id?: string; text: string }[]; file?: string } | null;
   };
   sections: { key: string; label: string; text: string }[];
   path: string;

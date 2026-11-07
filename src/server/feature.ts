@@ -14,6 +14,34 @@ export const STATUS_FIELDS = ["goal", "done", "broken", "waiting", "next"] as co
 export type StatusField = (typeof STATUS_FIELDS)[number];
 export const STATUS_FIELD_MAX = 2000;
 export const STATUS_NOTE_MAX = 2000;
+/** Said where a section was longer than its limit, so it never just ends mid-word. */
+export const CUT_SHORT = "… (cut short)";
+
+/** Cuts text to max at a word break with CUT_SHORT at the end (text that fits comes back as is). */
+export function clipText(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const room = s.slice(0, max - CUT_SHORT.length);
+  const space = room.search(/\s\S*$/);
+  const cut = space > room.length - 80 ? room.slice(0, space) : room;
+  return `${cut.trimEnd().replace(/[\s,;:(]+$/, "")}${CUT_SHORT}`;
+}
+
+/** The line every commit of a feature's tickets ends with, so the board can list the feature's saved changes. */
+export const FEATURE_TRAILER = "Ckanban-Feature";
+/** Saved changes shown in "Where we are" before "and N more" (the full list is in SAVED_CHANGES_FILE). */
+export const CHANGES_SHOWN = 30;
+export const SAVED_CHANGES_FILE = "saved-changes.md";
+
+/**
+ * The feature's saved changes, built by the board: entries in the version history that carry the feature's line
+ * (newest first, so also the order to undo them in), or for a folder without version history the files its tickets
+ * changed. file: where the full list is (written when there are more than CHANGES_SHOWN).
+ */
+export interface SavedChanges {
+  kind: "history" | "files";
+  items: { id?: string; text: string }[];
+  file?: string;
+}
 
 export interface StatusNote {
   at: string;
@@ -75,6 +103,8 @@ export interface StatusFacts {
   paused: { id: string; title: string; resumeAt: string | null; auto: boolean }[];
   needsYou: { id: string; title: string }[];
   prs: PrFact[];
+  /** Filled in by the board (Board.savedChanges); missing or null when there are none yet. */
+  changes?: SavedChanges | null;
 }
 
 export const statusFiles = (outputsDir: string) => ({ json: join(outputsDir, "status.json"), md: join(outputsDir, "status.md") });
@@ -84,7 +114,12 @@ export function readStatus(outputsDir: string): SavedStatus | null {
   if (!existsSync(json)) return null;
   try {
     const v = JSON.parse(readFileSync(json, "utf8"));
-    return v && typeof v === "object" && typeof v.updatedAt === "string" ? v : null;
+    if (!v || typeof v !== "object" || typeof v.updatedAt !== "string") return null;
+    // Saved before sections said where they were cut: one exactly at the limit was cut mid-word.
+    for (const f of STATUS_FIELDS) {
+      if (typeof v[f] === "string" && v[f].length >= STATUS_FIELD_MAX && !v[f].endsWith(CUT_SHORT)) v[f] = clipText(`${v[f]}…`, STATUS_FIELD_MAX);
+    }
+    return v;
   } catch {
     return null;
   }
@@ -178,13 +213,13 @@ export function applyPatch(saved: SavedStatus | null, patch: StatusPatch, now: s
   for (const f of STATUS_FIELDS) {
     if (!(f in patch)) continue;
     const v = patch[f];
-    if (typeof v === "string" && v.trim()) next[f] = v.trim().slice(0, STATUS_FIELD_MAX);
+    if (typeof v === "string" && v.trim()) next[f] = clipText(v.trim(), STATUS_FIELD_MAX);
     else delete next[f];
   }
   if (patch.prNotes) {
     const notes = { ...(saved?.prNotes ?? {}) };
     for (const [url, v] of Object.entries(patch.prNotes)) {
-      if (typeof v === "string" && v.trim()) notes[url] = v.trim().slice(0, 200);
+      if (typeof v === "string" && v.trim()) notes[url] = clipText(v.trim(), 200);
       else delete notes[url];
     }
     next.prNotes = notes;
@@ -198,6 +233,15 @@ const countWords = (c: Partial<Record<FamilyState, number>>, total: number): str
     .filter((s) => c[s]).map((s) => `${c[s]} ${s === "needs_you" ? "need you" : STATE_WORDS[s].toLowerCase()}`);
   return [`${done} of ${total} done`, ...rest].join(", ");
 };
+
+/** The heading of the saved changes list. */
+export const changesLabel = (c: Pick<SavedChanges, "kind">) =>
+  c.kind === "history" ? "Saved changes (newest first; undo in this order)" : "Files changed in your folder";
+
+/** The full list for SAVED_CHANGES_FILE. */
+export function savedChangesMarkdown(top: Pick<Ticket, "id" | "title">, c: SavedChanges): string {
+  return [`# ${changesLabel(c)}: ${top.title}`, "", ...c.items.map((i) => `- ${i.id ? `${i.id} ` : ""}${i.text}`), ""].join("\n");
+}
 
 /** The block's sections as plain lines, in order; empty ones left out. */
 export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key: string; label: string; text: string }[] {
@@ -227,6 +271,13 @@ export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key
   push("waiting", "Waiting on you", youFacts, saved?.waiting);
   push("prs", "Pull requests", f.prs.map((p) => `${p.number ? `#${p.number}` : p.url} ${p.ticketTitle} · ${p.state === "open" ? "open" : p.state}${p.note ? ` · ${p.note}` : ""}`).join("\n"));
   push("milestones", "Milestones landed", (saved?.milestones ?? []).slice(-5).map((m) => `${m.at.slice(0, 10)}: ${m.summary} (${m.landed})`).join("\n"));
+  if (f.changes?.items.length) {
+    const c = f.changes;
+    const shown = c.items.slice(0, CHANGES_SHOWN).map((i) => (i.id ? `${i.id} ${i.text}` : i.text));
+    const more = c.items.length - shown.length;
+    if (more > 0) shown.push(`…and ${more} more${c.file ? `: the full list is in ${c.file}` : ""}`);
+    push("changes", changesLabel(c), shown.join("\n"));
+  }
   push("next", "Next step", saved?.next);
   return out;
 }
@@ -235,12 +286,12 @@ export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key
 export function statusMarkdown(top: Pick<Ticket, "id" | "title">, saved: SavedStatus | null, f: StatusFacts): string {
   const lines = [`# Where we are: ${top.title}`, "", `Feature ticket ${top.id}, ${f.size} tickets. Updated ${saved?.updatedAt ?? "never"}.`, ""];
   for (const s of statusSections(saved, f)) {
-    lines.push(`## ${s.label}`, "", s.key === "prs" || s.key === "milestones" ? s.text.split("\n").map((l) => `- ${l}`).join("\n") : s.text, "");
+    lines.push(`## ${s.label}`, "", s.key === "prs" || s.key === "milestones" || s.key === "changes" ? s.text.split("\n").map((l) => `- ${l}`).join("\n") : s.text, "");
   }
   if (saved?.notes?.length) {
     lines.push("## Notes from the user", "", ...saved.notes.map((n) => `- ${n.at.slice(0, 10)}: ${n.text}`), "");
   }
-  lines.push("Counts, test results and pull requests in [brackets] come from the board; the rest is written with update_status.", "");
+  lines.push("Counts, test results, pull requests and saved changes come from the board (counts in [brackets]); the rest is written with update_status.", "");
   return lines.join("\n");
 }
 

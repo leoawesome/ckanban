@@ -1,5 +1,5 @@
 import { boardConnectorOptions } from "./connectors";
-import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { extractFinalText, summarizeEvent } from "./activity";
@@ -17,7 +17,7 @@ import type { Question, SessionSummary } from "./session";
 import { recallBlock } from "./recall";
 import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
-import { applyPatch, familySig, readStatus, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
+import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { addOnFor } from "../../web/src/addOn";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
@@ -232,6 +232,8 @@ export const RESTART_HOLD_TEXT = "The board restarts soon; your message is sent 
 const ACTIVITY_THROTTLE_MS = 1000;
 /** How long a board folder's cached version history (see Board.repoState) is trusted. */
 const REPO_TTL_MS = 10_000;
+/** How long a feature's saved changes list (see Board.savedChanges) is trusted when its family didn't change. */
+const CHANGES_TTL_MS = 60_000;
 /** A run that would edit the board's folder while another ticket does waits with this on its card. */
 export const FOLDER_WAIT = "waiting: another ticket is using the folder";
 
@@ -2938,12 +2940,19 @@ export class Board {
         walk(root, 0);
       } catch {}
     }
+    for (const f of this.editedFiles(slug, id)) files.add(f);
+    return files.size;
+  }
+
+  /** Files a ticket's edit tool calls named (from its activity). */
+  private editedFiles(slug: string, id: string): string[] {
+    const files = new Set<string>();
     for (const a of this.store.readActivity(slug, id) as any[]) {
       const c = a?.event?.type === "assistant" ? a.event.message?.content : null;
       if (!Array.isArray(c)) continue;
       for (const b of c) if (b?.type === "tool_use" && ["Edit", "Write", "NotebookEdit"].includes(b.name) && typeof b.input?.file_path === "string") files.add(b.input.file_path);
     }
-    return files.size;
+    return [...files];
   }
 
   /** A tool ticket's result as a card for its parent's chat. */
@@ -3178,7 +3187,7 @@ export class Board {
       const dir = this.store.outputsDir(slug, id);
       const saved = readStatus(dir);
       const next: SavedStatus = { ...(saved ?? {}), updatedAt: nowIso(), milestones: [...(saved?.milestones ?? []), { at: nowIso(), summary: text, landed }].slice(-20) };
-      writeStatus(dir, this.store.getTicket(slug, id)!, next, statusFacts(this.store.listTickets(slug), id, (x) => this.waitsOnUser(slug, x.id), next.prNotes), true);
+      writeStatus(dir, this.store.getTicket(slug, id)!, next, this.facts(slug, this.store.listTickets(slug), id, next.prNotes), true);
       this.patch(slug, id, { statusAt: nowIso() });
       this.store.addComment(slug, id, "ai", `Milestone landed: ${text} (${landed}).`);
     };
@@ -3223,6 +3232,86 @@ export class Board {
 
   // ---- Features: the feature status (Tasks tab), gathering tickets (feature.ts, web/src/family.ts) ----
 
+  /** The board's facts for a feature's status, its saved changes included (from the cache). */
+  private facts(slug: string, tickets: Ticket[], topId: string, prNotes?: Record<string, string>): StatusFacts {
+    return { ...statusFacts(tickets, topId, (t) => this.waitsOnUser(slug, t.id), prNotes), changes: this.savedChanges(slug, tickets, topId) };
+  }
+
+  /** Each feature's saved changes as last built, by slug and top ticket id (see savedChanges). */
+  private changesCache = new Map<string, { at: number; sig: string; value: SavedChanges | null }>();
+  private changesChecks = new Set<string>();
+
+  /**
+   * A feature's saved changes from the cache (null until first built). The list is rebuilt in the background when the
+   * family changed (a ticket finished or merged) or after CHANGES_TTL_MS; a changed list rewrites status.md and
+   * reloads the status block. Never throws: no version history, no commits or a failing git just give no list.
+   */
+  savedChanges(slug: string, tickets: Ticket[], topId: string): SavedChanges | null {
+    const top = tickets.find((t) => t.id === topId);
+    if (!top || !(isFeature(tickets, top) || top.statusAt)) return null;
+    const key = `${slug}\u0000${topId}`;
+    const sig = familySig(familyOf(tickets, topId).map((r) => r.ticket));
+    const c = this.changesCache.get(key);
+    if (!c || c.sig !== sig || Date.now() - c.at > CHANGES_TTL_MS) void this.buildChanges(slug, topId, key, sig);
+    return c?.value ?? null;
+  }
+
+  private async buildChanges(slug: string, topId: string, key: string, sig: string): Promise<void> {
+    if (this.changesChecks.has(key) || this.shuttingDown) return;
+    this.changesChecks.add(key);
+    try {
+      const prev = this.changesCache.get(key);
+      const value = await this.readChanges(slug, topId).catch(() => prev?.value ?? null);
+      this.changesCache.set(key, { at: Date.now(), sig, value });
+      if (JSON.stringify(value) === JSON.stringify(prev?.value ?? null)) return;
+      const top = this.store.getTicket(slug, topId);
+      if (!top || !value || this.shuttingDown) return;
+      if (value.file) {
+        try {
+          writeFileSync(value.file, savedChangesMarkdown(top, value));
+        } catch {}
+      }
+      // status.md and the open status block show the new list.
+      this.refreshStatusFile(slug, topId);
+      this.patch(slug, topId, { statusAt: nowIso() });
+    } finally {
+      this.changesChecks.delete(key);
+    }
+  }
+
+  /**
+   * The feature's saved changes now: with version history, every entry on the base branch (and its remote copy) and
+   * on the main ticket's copy whose message carries "Ckanban-Feature: <topId>", newest first; in a folder without
+   * history, the files the family's tickets edited. Null when there is nothing to show.
+   */
+  private async readChanges(slug: string, topId: string): Promise<SavedChanges | null> {
+    const profile = this.store.getProfile(slug);
+    const tickets = this.store.listTickets(slug);
+    const top = tickets.find((t) => t.id === topId);
+    if (!profile || !top) return null;
+    // The cached kind without re-checking it (a re-check may start runs); else asked once here.
+    const repo = this.repos.get(profile.path)?.kind ?? await repoKind(profile.path);
+    const full = join(this.store.outputsDir(slug, topId), SAVED_CHANGES_FILE);
+    const withFile = (c: SavedChanges): SavedChanges => (c.items.length > CHANGES_SHOWN ? { ...c, file: full } : c);
+    if (repo === "local" || repo === "remote") {
+      const base = profile.baseBranch || "main";
+      const refs = [base, ...(repo === "remote" ? [`origin/${base}`] : []), ...(top.branch ? [top.branch] : [])];
+      const r = await runCmd(["git", "log", "--ignore-missing", "--format=%h%x09%s", `--grep=^${FEATURE_TRAILER}: ${topId}$`, ...refs, "--"], profile.path, undefined, 20_000);
+      if (r.code !== 0) return null;
+      const items = r.stdout.split("\n").filter((l) => l.trim()).map((l) => {
+        const [id, ...rest] = l.split("\t");
+        return { id: id!, text: rest.join("\t").trim() };
+      });
+      return items.length ? withFile({ kind: "history", items }) : null;
+    }
+    const files = new Set<string>();
+    for (const r of familyOf(tickets, topId)) for (const f of this.editedFiles(slug, r.ticket.id)) files.add(f);
+    const root = profile.path.endsWith("/") ? profile.path : `${profile.path}/`;
+    const items = [...files].map((f) => (f.startsWith(root) ? f.slice(root.length) : f)).sort().map((text) => ({ text }));
+    return items.length ? withFile({ kind: "files", items }) : null;
+  }
+
+
   /** The family's top ticket for id, its saved status and the board's facts. */
   featureStatus(slug: string, id: string): { top: Ticket; feature: boolean; saved: SavedStatus | null; facts: StatusFacts; sections: ReturnType<typeof statusSections>; path: string } {
     const tickets = this.store.listTickets(slug);
@@ -3230,7 +3319,7 @@ export class Board {
     if (!top) throw new Error(`ticket ${id} not found`);
     const dir = this.store.outputsDir(slug, top.id);
     const saved = readStatus(dir);
-    const facts = statusFacts(tickets, top.id, (t) => this.waitsOnUser(slug, t.id), saved?.prNotes);
+    const facts = this.facts(slug, tickets, top.id, saved?.prNotes);
     return { top, feature: isFeature(tickets, top), saved, facts, sections: statusSections(saved, facts), path: statusFiles(dir).md };
   }
 
@@ -3250,7 +3339,7 @@ export class Board {
     const dir = this.store.outputsDir(slug, top.id);
     const now = nowIso();
     const saved = applyPatch(readStatus(dir), patch, now, familySig(familyOf(tickets, top.id).slice(1).map((r) => r.ticket)));
-    const facts = statusFacts(tickets, top.id, (t) => this.waitsOnUser(slug, t.id), saved.prNotes);
+    const facts = this.facts(slug, tickets, top.id, saved.prNotes);
     const markdown = writeStatus(dir, top, saved, facts, true);
     this.patch(slug, top.id, { statusAt: now });
     return { ...this.featureStatus(slug, top.id), markdown };
@@ -3267,7 +3356,7 @@ export class Board {
     const now = nowIso();
     const old = readStatus(dir);
     const saved: SavedStatus = { ...(old ?? {}), updatedAt: now, notes: [...(old?.notes ?? []), { at: now, text: note, delivered: false }] };
-    writeStatus(dir, top, saved, statusFacts(tickets, top.id, (t) => this.waitsOnUser(slug, t.id), saved.prNotes), true);
+    writeStatus(dir, top, saved, this.facts(slug, tickets, top.id, saved.prNotes), true);
     this.patch(slug, top.id, { statusAt: now });
     return this.featureStatus(slug, top.id);
   }
@@ -3280,7 +3369,7 @@ export class Board {
     if (!saved || !fresh.length) return null;
     const t = this.store.getTicket(slug, id)!;
     const next = { ...saved, notes: saved.notes!.map((n) => ({ ...n, delivered: true })) };
-    const f = statusFacts(this.store.listTickets(slug), id, (x) => this.waitsOnUser(slug, x.id), next.prNotes);
+    const f = this.facts(slug, this.store.listTickets(slug), id, next.prNotes);
     writeStatus(dir, t, next, f, true);
     return statusNotesBlock(fresh);
   }
