@@ -165,10 +165,10 @@ export function stepTab<T>(tabs: T[], current: T, delta: number): T | null {
 type PlainKeys = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; isComposing?: boolean };
 const plain = (e: PlainKeys) => !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing;
 
-/** Focus is inside the bottom panel (Terminal, Files, Claude, Team): the board's single keys stay quiet there. */
+/** Focus is inside the bottom panel (Terminal, Files, Team) or the side chat: the board's single keys stay quiet there. */
 export function inDock(e: { target: EventTarget | null }): boolean {
   const el = e.target as { closest?: (sel: string) => unknown } | null;
-  return !!el?.closest?.(".dock");
+  return !!el?.closest?.(".dock, .side-chat");
 }
 
 /** N, ? and B also work while a ticket panel has the keyboard (not while typing): new ticket, this list, board picker. */

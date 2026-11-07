@@ -240,10 +240,13 @@ test("escLeavesField: Esc in a text field nobody used yet", () => {
   expect(escLeavesField({ key: "Enter", defaultPrevented: false, target: box })).toBe(false);
 });
 
-test("inDock: true only inside the bottom panel", () => {
-  const at = (inside: boolean) => ({ target: { closest: (sel: string) => (sel === ".dock" && inside ? {} : null) } as unknown as EventTarget });
-  expect(inDock(at(true))).toBe(true);
-  expect(inDock(at(false))).toBe(false);
+test("inDock: true only inside the bottom panel or the side chat", () => {
+  // A tiny closest(): matches when one of the selector's parts is the element's class.
+  const at = (cls: string | null) => ({ target: { closest: (sel: string) => (cls && sel.split(",").map((s) => s.trim()).includes(cls) ? {} : null) } as unknown as EventTarget });
+  expect(inDock(at(".dock"))).toBe(true);
+  expect(inDock(at(".side-chat"))).toBe(true);
+  expect(inDock(at(".board"))).toBe(false);
+  expect(inDock(at(null))).toBe(false);
   expect(inDock({ target: null })).toBe(false);
 });
 
