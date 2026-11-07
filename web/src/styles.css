@@ -135,11 +135,25 @@ kbd {
 :where(:has(> .key-hint)) { position: relative; }
 .key-hint {
   display: none; position: absolute; top: -9px; right: -6px; z-index: 30; pointer-events: none;
-  font: 600 var(--fs-2xs)/1 var(--mono); white-space: nowrap; padding: 4px 6px; border-radius: var(--r-sm);
-  background: var(--text); color: var(--surface); box-shadow: var(--shadow-pop);
+  font: 600 var(--fs-2xs)/1 var(--mono); white-space: nowrap; border-radius: var(--r-sm);
 }
+/* Two styles: dark = hold ⌘ (Ctrl) and press; outlined = just press the key. Same size, so both line up. */
+.kh-combo, .kh-plain { font: 600 var(--fs-2xs)/1 var(--mono); white-space: nowrap; border-radius: var(--r-sm); box-shadow: var(--shadow-pop); }
+.kh-combo { padding: 4px 6px; background: var(--text); color: var(--surface); }
+.kh-plain { padding: 2.5px 4.5px; background: var(--surface); color: var(--text); border: 1.5px solid var(--text); }
+.key-hint.kh-split { gap: 3px; }
 .key-hint.inset { top: 4px; right: 4px; }
 body.show-hints .key-hint { display: block; animation: key-hint-in 0.12s ease-out; }
+body.show-hints .key-hint.kh-split { display: flex; }
+/* What the two styles mean, at the bottom while the hints show (desktop only). */
+.hint-legend {
+  display: none; position: fixed; bottom: 16px; left: 50%; translate: -50% 0; z-index: 60; pointer-events: none;
+  align-items: center; gap: 8px; padding: 8px 14px; white-space: nowrap; font-size: var(--fs-sm); color: var(--text);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-pop);
+}
+.hint-legend .kh-plain { margin-left: 6px; }
+.hint-legend .kh-combo, .hint-legend .kh-plain { box-shadow: none; }
+body.show-hints .hint-legend { display: flex; animation: key-hint-in 0.12s ease-out; }
 /* Only the topmost layer shows its keys: a dialog over the ticket panel over the board. */
 body.show-hints:has(.drawer-wrap) .key-hint:not(.drawer-wrap .key-hint):not(.overlay .key-hint) { display: none; }
 body.show-hints:has(.overlay) .key-hint:not(.overlay .key-hint) { display: none; }
@@ -2907,7 +2921,7 @@ button.hd-mode:disabled { cursor: default; }
 .phone-nav, .col-jump { display: none; }
 @media (max-width: 720px) {
   .phone-only { display: inline-flex !important; }
-  .desktop-only, .topbar .pill, .topbar .inbox, .topbar .header-menu, .topbar .tool-group, .topbar .usage, .topbar .key-hint { display: none !important; }
+  .desktop-only, .topbar .pill, .topbar .inbox, .topbar .header-menu, .topbar .tool-group, .topbar .usage, .topbar .key-hint, .hint-legend { display: none !important; }
   .app { height: 100dvh; }
   .topbar { gap: 8px; padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); }
   .topbar .profile-select { min-width: 0; }
@@ -3561,7 +3575,7 @@ button.tag-chip:hover { border-color: currentColor; }
   .inbox-actions .row-more { display: inline-flex; }
   .inbox-actions > .btn.primary { flex: 1; }
   /* No keys to press: hide key badges and key hints (desktop keeps them). */
-  .key-hint { display: none !important; }
+  .key-hint, .hint-legend { display: none !important; }
   .header-menu-list kbd, .cmdbar-input kbd, .cmdbar-keys, .search-kbd, .cmdbar-foot > span:not(.cmdbar-foot-note) { display: none; }
 }
 /* Touch: the rest of the small controls the phone test found, at least 40px tall. Inline text links get padding with

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boardDigit, canStartFromProposal, cardDir, drawerTabs, hintStep, isStopKey, isTyping, newTicketKey, nextStep, panelStep, phoneTabs, stepBoard, stepCard, stepTab } from "../web/src/keynav";
+import { boardDigit, canStartFromProposal, cardDir, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isStopKey, isTyping, newTicketKey, nextStep, panelStep, phoneTabs, stepBoard, stepCard, stepTab } from "../web/src/keynav";
 
 test("cardDir maps J/K/H/L and arrows, ignores other keys", () => {
   expect(cardDir("j")).toBe("down");
@@ -168,4 +168,30 @@ test("phoneTabs keeps at most 4 places, More taking one, and the open tab stays 
   const all = ["ticket", "chat", "family", "huddle", "changes", "outputs"];
   expect(phoneTabs(all, "chat")).toEqual({ shown: ["ticket", "chat", "family"], more: ["huddle", "changes", "outputs"] });
   expect(phoneTabs(all, "outputs")).toEqual({ shown: ["ticket", "chat", "outputs"], more: ["family", "huddle", "changes"] });
+});
+
+test("isComboKeys: ⌘ or Ctrl means hold a modifier; plain keys are not combos", () => {
+  expect(isComboKeys("⌘B")).toBe(true);
+  expect(isComboKeys("⌘⇧↵ after Apply")).toBe(true);
+  expect(isComboKeys("Ctrl+`")).toBe(true);
+  expect(isComboKeys("N")).toBe(false);
+  expect(isComboKeys("↵ open · Space move")).toBe(false);
+  expect(isComboKeys("Esc")).toBe(false);
+});
+
+test("hintParts splits only mixed badges", () => {
+  expect(hintParts("⌘⇧↵ · R")).toEqual([{ text: "⌘⇧↵", combo: true }, { text: "R", combo: false }]);
+  expect(hintParts("↵ open · D done · Space move")).toEqual([{ text: "↵ open · D done · Space move", combo: false }]);
+  expect(hintParts("⌘K")).toEqual([{ text: "⌘K", combo: true }]);
+});
+
+test("isBoardPickerKey: ⌘B or Ctrl+B only", () => {
+  const k = { key: "b", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
+  expect(isBoardPickerKey({ ...k, metaKey: true })).toBe(true);
+  expect(isBoardPickerKey({ ...k, ctrlKey: true, key: "B" })).toBe(true);
+  expect(isBoardPickerKey(k)).toBe(false);
+  expect(isBoardPickerKey({ ...k, metaKey: true, shiftKey: true })).toBe(false);
+  expect(isBoardPickerKey({ ...k, metaKey: true, altKey: true })).toBe(false);
+  expect(isBoardPickerKey({ ...k, metaKey: true, isComposing: true })).toBe(false);
+  expect(isBoardPickerKey({ ...k, metaKey: true, key: "k" })).toBe(false);
 });

@@ -37,8 +37,8 @@ import { FindLinksDialog } from "./FindLinksDialog";
 import { Select } from "./Select";
 import { BoardSwitcher, ShortcutsDialog } from "./Shortcuts";
 import { CommandBar, type CommandAction } from "./CommandBar";
-import { boardDigit, cardDir, isTyping, stepBoard, stepCard, type CardPos } from "./keynav";
-import { KeyHint, useHintReveal } from "./KeyHint";
+import { boardDigit, cardDir, isBoardPickerKey, isTyping, stepBoard, stepCard, type CardPos } from "./keynav";
+import { HintLegend, KeyHint, useHintReveal } from "./KeyHint";
 import { teamButtonText } from "./huddleText";
 import { TicketDrawer } from "./TicketDrawer";
 import { toast, Toaster } from "./toast";
@@ -202,7 +202,7 @@ export function App() {
   const [filters, setFilters] = useState<Set<FilterId>>(new Set());
   const [dismissed, setDismissed] = useState(readDismissed);
   const [shortcuts, setShortcuts] = useState(false);
-  useHintReveal();
+  useHintReveal(); // its legend, <HintLegend />, sits at the top of the JSX below
   const [bugReport, setBugReport] = useState(false);
   // ⌘K command bar; the inbox and usage popovers open from it too (n makes repeats count).
   const [commandBar, setCommandBar] = useState(false);
@@ -478,7 +478,7 @@ export function App() {
 
   // Shortcuts: N new ticket, / search, ? cheatsheet, Ctrl+` Terminal, F Files, C Claude, T Team (each toggles its item in the bottom panel),
   // ⌘K command bar (tickets on every board, actions, boards),
-  // B board picker, [ ] previous / next board, 1…9 board N, J/K/H/L or arrows select a card, D marks a Review card done.
+  // B or ⌘B board picker, [ ] previous / next board, 1…9 board N, J/K/H/L or arrows select a card, D marks a Review card done.
   // Esc is handled by the panel and dialogs (one layer at a time, see layers.ts).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -496,6 +496,14 @@ export function App() {
         return;
       }
       const boards = live.current.profiles ?? [];
+      if (isBoardPickerKey(e)) {
+        if ((e.target as HTMLElement | null)?.closest?.(".xterm")) return;
+        e.preventDefault();
+        // Like ⌘K: works from a text field too, and a second ⌘B closes the picker.
+        const layer = anyLayerOpen();
+        setBoardSwitcher((o) => (o ? false : !layer && boards.length > 0));
+        return;
+      }
       const at = boards.findIndex((p) => p.slug === slug);
       if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e)) return;
       if (openId || profileDialog || newTicket || connections || schedulesOpen || automationsOpen || anyLayerOpen() || document.querySelector(".overlay")) return;
@@ -939,6 +947,7 @@ export function App() {
 
   return (
     <div className="app">
+      <HintLegend />
       <header className="topbar">
         <div className="brand">
           <KeyHint keys="⌘K" />
@@ -969,7 +978,7 @@ export function App() {
               </>
             )}
             renderValue={() => profile?.name}
-            badge={<KeyHint keys="B  [ ]" />}
+            badge={<KeyHint keys="⌘B" />}
             footer={[
               ...(profile ? [{
                 label: "Copy folder path",

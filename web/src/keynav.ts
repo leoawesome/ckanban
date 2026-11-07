@@ -91,6 +91,25 @@ export function hintStep(e: { type: "keydown" | "keyup"; key: string; repeat?: b
   return e.repeat ? "none" : "arm";
 }
 
+/** A key badge's text needs ⌘ (Ctrl off Mac) held: it gets the dark badge. Plain keys ("N", "↵ open") get the outlined one. */
+export function isComboKeys(keys: string): boolean {
+  return /⌘|Ctrl/.test(keys);
+}
+
+/**
+ * A badge's text split at " · " into parts, each marked combo or not, so "⌘⇧↵ · R" shows a dark ⌘⇧↵ and an outlined R
+ * (one dark badge would read as ⌘R). Parts of one kind stay one part.
+ */
+export function hintParts(keys: string): { text: string; combo: boolean }[] {
+  const parts = keys.split(" · ").map((text) => ({ text, combo: isComboKeys(text) }));
+  return parts.every((p) => p.combo === parts[0].combo) ? [{ text: keys, combo: parts[0].combo }] : parts;
+}
+
+/** ⌘B (Ctrl+B off Mac): open or close the board picker. */
+export function isBoardPickerKey(e: Keys): boolean {
+  return (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && !e.isComposing && e.key.toLowerCase() === "b";
+}
+
 type Keys = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing?: boolean };
 
 /** ⌘ (Ctrl off Mac) + one key in the New ticket dialog: ↵ start, S create in Backlog, I switch how Claude works, D star. */

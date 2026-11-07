@@ -14,6 +14,7 @@ const GROUPS: { title: string; keys: [string[], string][] }[] = [
     title: "Boards",
     keys: [
       [[MOD, "K"], "Command bar: tickets on every board, actions, boards"],
+      [[MOD, "B"], "Switch board (from anywhere, even while typing)"],
       [["B"], "Switch board"],
       [["[", "]"], "Previous / next board"],
       [["1…9"], "Go to board 1–9"],

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { hintStep } from "./keynav";
+import { hintParts, hintStep } from "./keynav";
 import { isMac } from "./Shortcuts";
 
 const REVEAL_MS = 300;
@@ -41,8 +41,29 @@ export function useHintReveal() {
 
 /**
  * Key badge on the control it sits in, shown only while ⌘ is held (see useHintReveal). Write ⌘ in `keys`;
- * off Mac it reads Ctrl+. `inset` keeps the badge inside the control (for ones in a clipping scroll area).
+ * off Mac it reads Ctrl+. Keys with ⌘ or Ctrl get a dark badge (hold ⌘ and press), plain keys an outlined one
+ * (just press); "⌘⇧↵ · R" shows one of each. `inset` keeps the badge inside the control (for ones in a clipping scroll area).
  */
 export function KeyHint({ keys, inset, className }: { keys: string; inset?: boolean; className?: string }) {
-  return <span className={`key-hint${inset ? " inset" : ""}${className ? ` ${className}` : ""}`} aria-hidden>{isMac ? keys : keys.replace(/⌘/g, "Ctrl+")}</span>;
+  const parts = hintParts(keys);
+  const show = (text: string) => (isMac ? text : text.replace(/⌘/g, "Ctrl+"));
+  const cls = (extra: string) => `key-hint ${extra}${inset ? " inset" : ""}${className ? ` ${className}` : ""}`;
+  if (parts.length === 1) return <span className={cls(parts[0].combo ? "kh-combo" : "kh-plain")} aria-hidden>{show(keys)}</span>;
+  return (
+    <span className={cls("kh-split")} aria-hidden>
+      {parts.map((p, i) => <span key={i} className={p.combo ? "kh-combo" : "kh-plain"}>{show(p.text)}</span>)}
+    </span>
+  );
+}
+
+/** Shown at the bottom while the hints are up (desktop): what the two badge styles mean. Mount once, in App. */
+export function HintLegend() {
+  const mod = isMac ? "⌘" : "Ctrl";
+  return (
+    <div className="hint-legend" aria-hidden>
+      <span className="kh-combo">{isMac ? "⌘B" : "Ctrl+B"}</span> hold {mod}
+      <span className="kh-plain">N</span> just press the key
+      <span className="muted">· ? all keys</span>
+    </div>
+  );
 }
