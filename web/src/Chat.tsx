@@ -641,9 +641,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   /** What Apply does to the ticket's family, for the card; undefined when the proposal leaves it as it is. */
   const familyNote = (p: Proposal) => {
     if (p.partOf === undefined || (parentLink(ticket)?.id ?? null) === p.partOf) return undefined;
-    if (p.partOf === null) return "Apply also takes this ticket out of its family.";
+    if (p.partOf === null) return "Apply also takes this ticket out of the work it is part of, so it is no longer one of its tasks.";
     const to = tickets.find((t) => t.id === p.partOf);
-    return to ? `Apply also moves this ticket under “${to.title}” in its family.` : undefined;
+    return to ? `Apply also moves this ticket under “${to.title}”.` : undefined;
   };
 
   const empty = page !== null && !loadError && entries.length === 0 && !pending.length && !queued.length && !running;

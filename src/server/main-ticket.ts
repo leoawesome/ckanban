@@ -223,7 +223,10 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
   let line: FamilyLine | null = null;
   const tone = (w: StepWait): FamilyLine["tone"] => (w.attention === "failed" ? "fail" : "warn");
   if (waiting) line = { text: waiting.label, tone: tone(waiting) };
-  if (!line && main.plan?.state === "stuck") line = { text: `Stuck: ${clip(oneLine(main.plan.reason ?? "no progress"), 140)}`, tone: "warn" };
+  // In Done, or every step finished: the feature rests, so an old Stuck or Paused (the plan's, a usage limit's) is no
+  // longer news. A step that still waits or failed above keeps its line.
+  const resting = main.status === "done" || (tools.length > 0 && tools.every((t) => t.status === "done" && !running(t.id)));
+  if (!line && !resting && main.plan?.state === "stuck") line = { text: `Stuck: ${clip(oneLine(main.plan.reason ?? "no progress"), 140)}`, tone: "warn" };
   if (!line) {
     const stalled = working.find((t) => t.stalled);
     if (stalled) line = { text: `Stuck: ${stepName(stalled)} has had no output for ${stalled.stalled!.minutes} min`, tone: "warn" };
@@ -233,14 +236,14 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
     const failed = waits.filter((w) => w.attention !== "questions" && w.since > newestStart).at(-1);
     if (failed) line = { text: failed.label, tone: tone(failed) };
   }
-  if (!line) {
+  if (!line && !resting) {
     const paused = tools.filter((t) => t.outcome === "limit" && t.limit?.auto && t.status !== "done" && !running(t.id))
       .sort((a, b) => a.limit!.resetAt.localeCompare(b.limit!.resetAt))[0];
     if (paused) line = { text: "Paused: usage limit", tone: "warn", until: paused.limit!.resetAt };
     else if (main.outcome === "limit" && main.limit?.auto && !running(main.id)) line = { text: "Paused: usage limit", tone: "warn", until: main.limit.resetAt };
   }
   // Stopped by the user: new steps wait until they act on it again (it must not look finished).
-  if (!line && main.plan?.state === "paused") line = { text: "Paused: new tasks wait until you press Resume", tone: "warn" };
+  if (!line && !resting && main.plan?.state === "paused") line = { text: "Paused: new tasks wait until you press Resume", tone: "warn" };
   if (!line && working.length) {
     const top = [...working].sort((a, b) => startedAt(b).localeCompare(startedAt(a)))[0];
     // The step's group (a level-1 group or round) speaks for it: "Testing round 2: 4 of 6 done".

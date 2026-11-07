@@ -2390,11 +2390,11 @@ export class Board {
       // Waiting for a usage limit to reset: the planner's automatic continue picks the wake-up up again.
       if (o === "limit" && planner.limit?.auto) return false;
       if (o === "limit") {
-        this.stuck(slug, planner, plan, "the planner's run hit the usage limit");
+        this.stuck(slug, planner, plan, "the run that plans the steps hit the usage limit");
         return false;
       }
       if (o === "blocked" || o === "needs_input" || o === "failed" || o === "stopped") {
-        this.stuck(slug, planner, plan, o === "needs_input" ? "the planner has questions for you" : `the planner's run ${o === "blocked" ? "is blocked" : o}`);
+        this.stuck(slug, planner, plan, o === "needs_input" ? "there are questions for you" : `the run that plans the steps ${o === "blocked" ? "is blocked" : o}`);
         return false;
       }
       if (plan.awaiting === "final") {

@@ -59,17 +59,17 @@ function ParentPicker({ ticket, tickets, onPick, onCancel }: {
 
 /** How the panel names a ticket's parent row, and what it explains, by how the ticket hangs on it. */
 const PARENT_ROW: Record<LinkHow | "none", { key: string; title: string; gone: string }> = {
-  linked: { key: "Part of", title: "The ticket this one belongs to: tickets of one piece of work hang together in a family", gone: "Ticket was deleted" },
+  linked: { key: "Part of", title: "The ticket this one belongs to: the tickets of one piece of work sit under one main ticket", gone: "Ticket was deleted" },
   chat: { key: "Part of", title: "This ticket was created from that ticket's chat, as part of its work", gone: "Ticket was deleted" },
   "add-on": { key: "Add-on to", title: "This ticket is a new requirement on that one, which keeps its own title and description", gone: "Original ticket was deleted" },
-  plan: { key: "From", title: "The planner ticket whose plan runs this one (it proposed or adopted it)", gone: "Planner ticket was deleted" },
-  none: { key: "Part of", title: "The ticket this one belongs to: tickets of one piece of work hang together in a family", gone: "" },
+  plan: { key: "From", title: "The ticket whose plan runs this one (it proposed or adopted it)", gone: "Ticket was deleted" },
+  none: { key: "Part of", title: "The ticket this one belongs to: the tickets of one piece of work sit under one main ticket", gone: "" },
 };
 
 /** What Unlink also ends, so the user knows before clicking. */
 const UNLINK_NOTE: Partial<Record<LinkHow, string>> = {
-  plan: "Takes it out of its family and out of that ticket's plan",
-  "add-on": "Takes it out of its family; it stops being an add-on to that ticket",
+  plan: "Takes it out of that piece of work and out of that ticket's plan",
+  "add-on": "Takes it out of that piece of work; it stops being an add-on to that ticket",
 };
 
 /**
@@ -98,7 +98,7 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
     <>
       <button className="mini-link" disabled={busy} onClick={() => setPicking(true)}
         title={current && UNLINK_NOTE[current.how] ? `Put it under another ticket. ${UNLINK_NOTE[current.how]}` : "Put it under another ticket"}>Change</button>
-      <button className="mini-link" disabled={busy} onClick={() => link(null)} title={(current && UNLINK_NOTE[current.how]) ?? "Takes it out of its family"}>Unlink</button>
+      <button className="mini-link" disabled={busy} onClick={() => link(null)} title={(current && UNLINK_NOTE[current.how]) ?? "Takes it out of that piece of work"}>Unlink</button>
     </>
   );
   return (

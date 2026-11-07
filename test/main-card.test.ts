@@ -91,3 +91,21 @@ test("a failed step reads Step failed with its reason, and the card's line is re
   const ask = { ...bad, outcome: "needs_input" } as Ticket;
   expect(familyCard(main, [ask], [main, ask], none, 0).line?.tone).toBe("warn");
 });
+
+test("a main card in Done, or whose steps have all finished, shows no Stuck or Paused line from its plan", () => {
+  const stuckPlan = { state: "stuck", reason: "the run that plans the steps stopped" } as Ticket["plan"];
+  const steps = [1, 2, 3, 4].map((n) => tk(`S${n}`, { title: `step ${n}`, parentId: "M", tool: true, kind: "build", status: "done", outcome: "done" }));
+  // In Done with 4 of 4 steps finished (the t_20261107_44u7 case).
+  const done = tk("M", { main: true, status: "done", outcome: "stopped", plan: stuckPlan, runEndedAt: at(9) });
+  expect(familyCard(done, steps, [done, ...steps], none, 1).line).toBeNull();
+  // Still in Review, but every step finished: no Stuck, no Paused either.
+  const review = { ...done, status: "review" } as Ticket;
+  expect(familyCard(review, steps, [review, ...steps], none, 1).line).toBeNull();
+  const paused = { ...review, plan: { ...stuckPlan, state: "paused" } } as Ticket;
+  expect(familyCard(paused, steps, [paused, ...steps], none, 1).line).toBeNull();
+  const limited = { ...review, plan: undefined, outcome: "limit", limit: { auto: true, resetAt: at(30) } } as Ticket;
+  expect(familyCard(limited, steps, [limited, ...steps], none, 1).line).toBeNull();
+  // A step still open: the Stuck line stays (the feature isn't resting).
+  const open = [...steps.slice(0, 3), { ...steps[3], status: "ready", outcome: null } as Ticket];
+  expect(familyCard(review, open, [review, ...open], none, 1).line).toEqual({ text: "Stuck: the run that plans the steps stopped", tone: "warn" });
+});
