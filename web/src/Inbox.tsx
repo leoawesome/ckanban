@@ -92,12 +92,19 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  // ⌘K "Open inbox": open the list with the first entry focused.
+  // I and ⌘K "Open inbox": open the list with the first entry focused, once the list is on screen (a frame later
+  // can still be too early, while the open waits to render).
+  const focusFirst = useRef(false);
   useEffect(() => {
     if (!openRequest) return;
+    focusFirst.current = true;
     setOpen(true);
-    requestAnimationFrame(() => focusAt(0));
   }, [openRequest]);
+  useEffect(() => {
+    if (!open || !focusFirst.current || !entries().length) return;
+    focusFirst.current = false;
+    focusAt(0);
+  });
 
   const entries = () => [...(menu.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]") ?? [])];
   const focusAt = (i: number) => {
@@ -197,8 +204,11 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            setOpen(true);
-            requestAnimationFrame(() => focusAt(0));
+            if (open) focusAt(0);
+            else {
+              focusFirst.current = true;
+              setOpen(true);
+            }
           }
         }}
         title="Tickets on any board where Claude is waiting on you (I)" aria-keyshortcuts="I">

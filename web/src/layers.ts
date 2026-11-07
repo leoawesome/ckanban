@@ -68,10 +68,14 @@ function focusables(el: HTMLElement): HTMLElement[] {
  * `focusContainer`: focus the container itself, not its first control (e.g. so Esc still closes the panel).
  */
 export function useFocusTrap(ref: RefObject<HTMLElement | null>, focusContainer = false) {
+  // What had focus when this opened, read on the first render: by the time effects run, an autoFocus field inside
+  // has already taken focus, and giving focus back to that (now gone) field would leave it nowhere.
+  const opener = useRef<HTMLElement | null | undefined>(undefined);
+  if (opener.current === undefined) opener.current = typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const prev = document.activeElement as HTMLElement | null;
+    const prev = opener.current && !el.contains(opener.current) ? opener.current : null;
     if (!el.contains(document.activeElement)) {
       const first = focusContainer ? null : focusables(el).find((x) => !x.classList.contains("icon-btn"));
       (first ?? el).focus({ preventScroll: true });

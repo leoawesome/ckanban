@@ -106,19 +106,27 @@ export default function Dock({ profile, pty, onClose, command, onCommandSent, ta
   useEffect(() => {
     if (tabRequest) setTab(tabRequest.tab);
   }, [tabRequest?.n]);
-  // Opening Files, Claude or Team (its button, its key, ⌘K) puts the keyboard in it. Its content may still be loading:
-  // look again on each frame for a moment.
+  // Opening Files, Claude or Team (its button, its key, ⌘K) puts the keyboard in it. Its content may still be loading
+  // (and re-render, dropping focus to the page): for a moment, look again on each frame, and focus again when focus fell
+  // back to the page. Focus the user moved elsewhere is left alone.
   const panes = useRef<Partial<Record<DockTab, HTMLDivElement | null>>>({});
   useEffect(() => {
     const want = tabRequest?.tab;
     if (!want || want === "terminal") return;
     const until = performance.now() + 1500;
     let frame = 0;
+    let landed = false;
     const land = () => {
       const pane = panes.current[want];
-      const el = pane && !pane.hidden ? FOCUS_ON_OPEN[want].map((sel) => pane.querySelector<HTMLElement>(sel)).find(Boolean) : null;
-      if (el) el.focus({ preventScroll: true });
-      else if (performance.now() < until) frame = requestAnimationFrame(land);
+      const lost = !document.activeElement || document.activeElement === document.body;
+      if (!landed || lost) {
+        const el = pane && !pane.hidden ? FOCUS_ON_OPEN[want].map((sel) => pane.querySelector<HTMLElement>(sel)).find(Boolean) : null;
+        if (el) {
+          el.focus({ preventScroll: true });
+          landed = true;
+        }
+      }
+      if (performance.now() < until) frame = requestAnimationFrame(land);
     };
     frame = requestAnimationFrame(land);
     return () => cancelAnimationFrame(frame);
