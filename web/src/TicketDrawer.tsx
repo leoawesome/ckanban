@@ -20,6 +20,7 @@ import { DescriptionEditor, useDescriptionCommands } from "./DescriptionEditor";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, FileTextIcon, LinkIcon, SparkIcon } from "./icons";
 import { useImagePaste } from "./imagePaste";
 import { useFocusTrap, useLayer } from "./layers";
+import { BOARD_KEEP } from "./sideChatLayout";
 import { takeTab } from "./pendingTab";
 import { drawerTabs, escLeavesField, inDock, isStopKey, isTyping, nextStep, panelStep, phoneTabs, stepTab, type DrawerTab } from "./keynav";
 import { afterBar, provideTicketActions } from "./ticketActions";
@@ -66,7 +67,13 @@ const BACKDROP_MIN = 64;
 /** Artifact and share link chips in the header; the rest are behind "+N more" (the Outputs tab). */
 const LINK_CHIPS = 3;
 
-const defaultWidth = () => Math.round(Math.min(1120, window.innerWidth * 0.72));
+/** The width the panel may use (the window, or the window minus the side chat beside it) and what it leaves on its left. */
+type Room = { width: number; keep: number };
+const windowRoom = (): Room => ({ width: window.innerWidth, keep: BACKDROP_MIN });
+/** Beside the side chat: the room left of the chat, and the board keeps about a column (sideChatLayout.ts). */
+const besideRoom = (chatWidth: number): Room => ({ width: window.innerWidth - chatWidth, keep: BOARD_KEEP });
+
+const defaultWidth = (room: Room) => Math.round(Math.min(1120, room.width * 0.72));
 
 /** Until the user resizes the panel, the Changes tab opens it this wide (clamped to the window): file list plus diff. */
 const CHANGES_WIDTH = 1280;
@@ -74,10 +81,10 @@ const CHANGES_WIDTH = 1280;
 /** Chat room for the default width: a comfortable reading column plus side padding. Dragging can go wider. */
 const CHAT_ROOM = 800;
 
-function clampWidth(w: number): number {
-  const vw = window.innerWidth;
+function clampWidth(w: number, room: Room = windowRoom()): number {
+  const vw = room.width;
   // Narrow windows can't fit the minimum width plus the strip: the panel goes full width there.
-  const max = vw >= MIN_WIDTH + BACKDROP_MIN ? vw - BACKDROP_MIN : vw;
+  const max = vw >= MIN_WIDTH + room.keep ? vw - room.keep : vw;
   return Math.round(Math.min(Math.max(w, Math.min(MIN_WIDTH, max)), max));
 }
 
@@ -240,12 +247,12 @@ function savedWidth(): number | null {
  * Width persists per browser. Until the user resizes, the default is min(1120px, 72%) but no wider than
  * `fit` (sidebar + chat reading room), so the panel doesn't open with empty space beside the chat.
  */
-function usePanelWidth(fit: number) {
+function usePanelWidth(fit: number, room: Room) {
   const [pref, setPref] = useState(savedWidth);
   const [dragging, setDragging] = useState(false);
   // Re-render on window resize; the width is clamped to the window on every render.
   const [, setVw] = useState(window.innerWidth);
-  const width = clampWidth(pref ?? Math.min(defaultWidth(), fit));
+  const width = clampWidth(pref ?? Math.min(defaultWidth(room), fit), room);
   const widthRef = useRef(width);
   widthRef.current = width;
 
@@ -255,7 +262,7 @@ function usePanelWidth(fit: number) {
     } catch {}
   };
   const set = (w: number) => {
-    const c = clampWidth(w);
+    const c = clampWidth(w, room);
     setPref(c);
     return c;
   };
@@ -265,7 +272,7 @@ function usePanelWidth(fit: number) {
     setDragging(true);
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (dragging) set(window.innerWidth - e.clientX);
+    if (dragging) set(room.width - e.clientX);
   };
   const onPointerUp = () => {
     if (!dragging) return;
@@ -312,7 +319,7 @@ function WaitBanner({ line, details, actions }: { line: string; details: React.R
   );
 }
 
-export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: closeNow, nav, slideIn = true, tabRequest, huddleSeed, onOpenTeam, jobs = [], onOpenJobs, moveTo }: {
+export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: closeNow, nav, slideIn = true, beside = null, tabRequest, huddleSeed, onOpenTeam, jobs = [], onOpenJobs, moveTo }: {
   profile: Profile;
   ticket: Ticket;
   /** The board's tickets, for the planner/child links. */
@@ -325,6 +332,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   nav?: { prev: string | null; next: string | null; go: (id: string) => void };
   /** Slide in when opened; off when stepping from the neighbouring ticket. */
   slideIn?: boolean;
+  /** The side chat is open on a wide window: the panel sits between the board and the chat (right: the chat's width, top: below the header). */
+  beside?: { right: number; top: number } | null;
   /** Show this tab (e.g. a card's huddle badge); `n` changes for each new request. */
   tabRequest?: { tab: "huddle"; n: number; huddleId?: string } | null;
   /** The Team tab's Start huddle: fill this roster in on the Huddle tab; `n` changes for each new request. */
@@ -523,9 +532,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   // Phones: away from the Ticket tab the header is the status row plus the title on one line; the editable title, tags and model sit on the Ticket tab.
   const compactHead = phone && tab !== "ticket";
   // Opens fitted to the sidebar plus the chat's reading column; dragging can make it wider.
-  const panel = usePanelWidth((detailsShown ? side.pref : 0) + CHAT_ROOM);
+  const room = beside ? besideRoom(beside.right) : windowRoom();
+  const panel = usePanelWidth((detailsShown ? side.pref : 0) + CHAT_ROOM, room);
   const { dragging, handle } = panel;
-  const width = (tab === "changes" || tab === "huddle") && !panel.custom ? clampWidth(CHANGES_WIDTH) : panel.width;
+  const width = (tab === "changes" || tab === "huddle") && !panel.custom ? clampWidth(CHANGES_WIDTH, room) : panel.width;
   const [descScrolled, setDescScrolled] = useState(false);
   const [tabSheet, setTabSheet] = useState(false);
   // The tab bar scrolls sideways on narrow screens: fade its right edge while tabs are hidden there,
@@ -976,7 +986,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   };
   return (
     <FileLinksProvider slug={slug} ticketId={ticket.id} panel={panelRef}>
-    <div className={`drawer-wrap${slideIn ? "" : " no-fade"}${leaving ? " leaving" : ""}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={`drawer-wrap${slideIn ? "" : " no-fade"}${leaving ? " leaving" : ""}${beside ? " beside-chat" : ""}`}
+      style={beside ? { right: beside.right, top: beside.top } : undefined} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside ref={panelRef} className={`panel ${dragging ? "resizing" : ""} ${slideIn ? "" : "no-slide"}${slim ? " head-slim" : ""}${compactHead ? " head-compact" : ""}${leaving ? " leaving" : ""}`} role="dialog" aria-modal="true" aria-label={ticket.title} style={{ width }} tabIndex={-1}>
         <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabIndex={0}
           title="Drag to resize · double-click to reset" {...handle} />

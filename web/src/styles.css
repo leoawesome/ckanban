@@ -109,6 +109,9 @@ a { color: var(--info); }
 button, input, select, textarea { font: inherit; color: inherit; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
+/* Below the header: the board column and, on computers, the side chat (SideChat.tsx). */
+.app-row { flex: 1; display: flex; min-height: 0; }
+.app-col { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
 
 /* scrollbars: thin, themed, light and dark (tokens only) */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
@@ -155,7 +158,7 @@ body.show-hints .key-hint.kh-split { display: flex; }
 .hint-legend .kh-combo, .hint-legend .kh-plain { box-shadow: none; }
 body.show-hints .hint-legend { display: flex; animation: key-hint-in 0.12s ease-out; }
 /* Only the topmost layer shows its keys: a dialog over the ticket panel over the board. */
-body.show-hints:has(.drawer-wrap) .key-hint:not(.drawer-wrap .key-hint):not(.overlay .key-hint) { display: none; }
+body.show-hints:has(.drawer-wrap) .key-hint:not(.drawer-wrap .key-hint):not(.overlay .key-hint):not(.side-chat .key-hint) { display: none; }
 body.show-hints:has(.overlay) .key-hint:not(.overlay .key-hint) { display: none; }
 /* A card's keys only show on the focused card. */
 body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; }
@@ -1716,7 +1719,7 @@ textarea.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--
 @media (prefers-reduced-motion: reduce) { .file-bar i { animation: none; width: 60%; } }
 .composer:has(textarea.drop-target) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
-/* bottom panel: terminal, files, Claude or Team, one at a time */
+/* bottom panel: terminal, files or Team, one at a time (the quick Claude chat is the side panel, .side-chat) */
 .btn.ghost.on { background: var(--surface-2); }
 .dock {
   position: relative; flex: none; display: flex; flex-direction: column; min-height: 0;
@@ -3783,3 +3786,32 @@ button.fc-chip:hover, button.fc-chip[aria-expanded="true"] { color: var(--text);
 .result-card .r-folder { margin: 4px 0; }
 .result-card .r-links { display: flex; gap: 12px; font-size: var(--fs-xs); }
 .result-card .r-links .link-btn { font-weight: 600; }
+
+/* Quick Claude chat as a side panel on the right, below the header (SideChat.tsx), in the page's own colours. It pushes
+   the board narrower; a ticket opens beside it on wide windows (.drawer-wrap.beside-chat) and over it on narrow ones. */
+.side-chat {
+  position: relative; flex: none; display: flex; flex-direction: column; min-height: 0; max-width: 100%;
+  background: var(--surface); color: var(--text); border-left: 1px solid var(--border);
+}
+.side-chat:focus { outline: none; }
+.side-chat.resizing { user-select: none; }
+.side-chat.resizing * { cursor: col-resize !important; }
+.side-chat-resize { position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 6; touch-action: none; }
+.side-chat-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; transition: background 0.12s; }
+.side-chat-resize:hover::after, .side-chat-resize:focus-visible::after, .side-chat.resizing .side-chat-resize::after { background: var(--accent); }
+.side-chat-resize:focus-visible { outline: none; }
+.side-chat-head { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.side-chat-title { font-weight: 600; font-size: var(--fs-sm); margin-left: 4px; }
+.side-chat-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.side-chat .qc { position: relative; }
+/* Past chats: the chat list slides in from the panel's left edge over the conversation, only when asked (Chats). */
+.side-chat .qc-list {
+  position: absolute; top: 0; bottom: 0; left: 0; z-index: 5; width: min(300px, 85%);
+  background: var(--surface); border-right: 1px solid var(--border); box-shadow: var(--shadow-pop);
+  transform: translateX(-100%); visibility: hidden; transition: transform 0.16s ease-out, visibility 0s linear 0.16s;
+}
+.side-chat.history-open .qc-list { transform: none; visibility: visible; transition: transform 0.16s ease-out, visibility 0s; }
+@media (prefers-reduced-motion: reduce) { .side-chat .qc-list, .side-chat.history-open .qc-list { transition: none; } }
+/* Beside the chat the ticket panel starts below the header and ends at the chat; the board behind it dims less. */
+.drawer-wrap.beside-chat { background: rgba(20, 18, 15, 0.16); }
+.drawer-wrap.beside-chat .panel { border-right: 1px solid var(--border); }

@@ -13,8 +13,9 @@ function onKey(e: KeyboardEvent) {
   const top = stack[stack.length - 1];
   const target = e.target as HTMLElement | null;
   if (top.skipInInputs && target?.closest?.("input, textarea, [contenteditable='true']")) return;
-  // Esc in the bottom panel hides that panel (Dock.tsx), not the ticket panel behind it.
-  if (top.base && target?.closest?.(".dock")) return;
+  // Esc in the bottom panel or the side chat belongs to it (Dock.tsx, SideChat.tsx), not to the ticket panel; a card
+  // picked up on the board (Space) drops it.
+  if (top.base && target?.closest?.(".dock, .side-chat, .sortable-card[aria-pressed='true']")) return;
   e.preventDefault();
   e.stopPropagation();
   top.close();
@@ -22,9 +23,11 @@ function onKey(e: KeyboardEvent) {
 
 /**
  * Returns isTop(): true while this layer is the topmost one (nothing opened above it).
- * `base`: the ticket panel, which the board's own keys (⌘K, ⌘B, N, ?, B) may open things over.
+ * `base`: the ticket panel or the side chat, which the board's own keys (⌘K, ⌘B, N, ?, B) may open things over.
+ * `under`: joins at the bottom of the stack, so whatever opens later or earlier closes first (the side chat sits
+ * under the ticket panel: Esc closes the ticket, then the chat).
  */
-export function useLayer(onEscape: () => void, opts: { active?: boolean; skipInInputs?: boolean; base?: boolean } = {}) {
+export function useLayer(onEscape: () => void, opts: { active?: boolean; skipInInputs?: boolean; base?: boolean; under?: boolean } = {}) {
   const fn = useRef(onEscape);
   fn.current = onEscape;
   const mine = useRef<Layer | null>(null);
@@ -36,14 +39,15 @@ export function useLayer(onEscape: () => void, opts: { active?: boolean; skipInI
       bound = true;
     }
     const layer: Layer = { close: () => fn.current(), skipInInputs: !!opts.skipInInputs, base: !!opts.base };
-    stack.push(layer);
+    if (opts.under) stack.unshift(layer);
+    else stack.push(layer);
     mine.current = layer;
     return () => {
       const i = stack.indexOf(layer);
       if (i >= 0) stack.splice(i, 1);
       mine.current = null;
     };
-  }, [active, opts.skipInInputs, opts.base]);
+  }, [active, opts.skipInInputs, opts.base, opts.under]);
   return () => !!mine.current && stack[stack.length - 1] === mine.current;
 }
 

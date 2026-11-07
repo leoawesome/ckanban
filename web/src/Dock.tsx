@@ -4,11 +4,11 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { FilesView } from "./FilesView";
 import { TeamTab, type HuddleSeed, type TeamRequest } from "./Team";
 import { CloseIcon, RefreshIcon } from "./icons";
-import { QuickChatPane } from "./QuickChat";
 import { TerminalView } from "./TerminalView";
 import { isTyping } from "./keynav";
 
-export type DockTab = "terminal" | "files" | "claude" | "team";
+/** The quick Claude chat lives in its own side panel now (SideChat.tsx). */
+export type DockTab = "terminal" | "files" | "team";
 const TAB_KEY = "ckanban.dock.tab";
 /** Each item keeps its own height under `${HEIGHT_KEY}.<item>`; the old shared height seeds them. */
 const HEIGHT_KEY = "ckanban.dock.height";
@@ -30,11 +30,11 @@ function store(key: string, value: string) {
 export const DOCK_ITEMS: Record<DockTab, { label: string; height: number }> = {
   terminal: { label: "Terminal", height: 280 },
   files: { label: "Files", height: 400 },
-  claude: { label: "Claude", height: 380 },
   team: { label: "Team", height: 340 },
 };
 const isTab = (v: string | null): v is DockTab => !!v && v in DOCK_ITEMS;
-/** The item shown when the panel opens without a request: the last one open (the old Huddles tab now lives in Team). */
+/** The item shown when the panel opens without a request: the last one open (the old Huddles tab now lives in Team;
+ * the old Claude item is the side chat, so a panel last left on it opens the Terminal). */
 export function lastDockTab(): DockTab {
   const t = stored(TAB_KEY);
   return t === "huddles" ? "team" : isTab(t) ? t : "terminal";
@@ -45,7 +45,6 @@ const tildePath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
 /** Where the keyboard lands when an item opens (the Terminal focuses itself): the first match in its pane. */
 const FOCUS_ON_OPEN: Record<Exclude<DockTab, "terminal">, string[]> = {
   files: [".tree-row.selected", ".tree-row", ".file-filter input"],
-  claude: ["textarea:not([disabled])", "input:not([disabled])", "button"],
   team: ["[role=tablist] [aria-selected=true]", "button"],
 };
 const clampHeight = (h: number) => Math.round(Math.max(MIN_HEIGHT, Math.min(window.innerHeight - 120, h)));
@@ -53,9 +52,8 @@ const storedHeight = (tab: DockTab) => clampHeight(Number(stored(`${HEIGHT_KEY}.
 
 /**
  * Bottom panel for the selected profile's folder. It shows one item at a time, picked by the header buttons:
- * an interactive shell, a read-only file browser, the quick chats with Claude (no ticket, see QuickChat.tsx)
- * or the Team (teammates, templates, huddles). Hiding an item or the panel never stops it: the shell and
- * Claude's replies keep running on the server.
+ * an interactive shell, a read-only file browser or the Team (teammates, templates, huddles). The quick Claude
+ * chat is a side panel (SideChat.tsx). Hiding an item or the panel never stops it: the shell keeps running on the server.
  */
 export default function Dock({ profile, pty, onClose, command, onCommandSent, tabRequest, onTabChange, onOpenTicket, huddles = [], onOpenHuddle, openTicket = null, onStartHuddle }: {
   profile: Profile;
@@ -106,7 +104,7 @@ export default function Dock({ profile, pty, onClose, command, onCommandSent, ta
   useEffect(() => {
     if (tabRequest) setTab(tabRequest.tab);
   }, [tabRequest?.n]);
-  // Opening Files, Claude or Team (its button, its key, ⌘K) puts the keyboard in it. Its content may still be loading
+  // Opening Files or Team (its button, its key, ⌘K) puts the keyboard in it. Its content may still be loading
   // (and re-render, dropping focus to the page): for a moment, look again on each frame, and focus again when focus fell
   // back to the page. Focus the user moved elsewhere is left alone.
   const panes = useRef<Partial<Record<DockTab, HTMLDivElement | null>>>({});
@@ -181,7 +179,7 @@ export default function Dock({ profile, pty, onClose, command, onCommandSent, ta
         {tab === "files" && (
           <button className="btn ghost small icon-label" onClick={() => setRefresh((n) => n + 1)}><RefreshIcon size={12} /> Refresh</button>
         )}
-        <button className="icon-btn" onClick={onClose} title={`Hide ${label} (Esc${tab === "terminal" ? " outside the shell" : ""}). The shell and Claude chats keep running.`} aria-label={`Hide ${label}`}>
+        <button className="icon-btn" onClick={onClose} title={`Hide ${label} (Esc${tab === "terminal" ? " outside the shell" : ""}). The shell keeps running.`} aria-label={`Hide ${label}`}>
           <CloseIcon />
         </button>
       </div>
@@ -192,9 +190,6 @@ export default function Dock({ profile, pty, onClose, command, onCommandSent, ta
           ) : (
             <PtyUnsupported />
           )}
-        </div>
-        <div className="dock-pane" hidden={tab !== "claude"} ref={(el) => { panes.current.claude = el; }}>
-          <QuickChatPane profile={profile} phone={false} onOpenTicket={(id) => onOpenTicket?.(id)} />
         </div>
         <div className="dock-pane" hidden={tab !== "files"} ref={(el) => { panes.current.files = el; }}>
           <FilesView key={profile.slug} slug={profile.slug} refreshSignal={refresh} />

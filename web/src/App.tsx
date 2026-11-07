@@ -44,6 +44,8 @@ import { boardDigit, cardDir, cardKey, inDock, isBoardPickerKey, isInboxKey, isT
 import { HintLegend, KeyHint, useHintReveal } from "./KeyHint";
 import { teamButtonText } from "./huddleText";
 import { TicketDrawer } from "./TicketDrawer";
+import { SideChat, useChatWidth } from "./SideChat";
+import { CHAT_OPEN_KEY, initialChatOpen, ticketPlacement } from "./sideChatLayout";
 import { toast, Toaster, undoLatest } from "./toast";
 import { clearArrival, noteServerMove } from "./arrivals";
 import { SampleOffer } from "./SampleOffer";
@@ -187,11 +189,22 @@ export function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [dockOpen, setDockOpen] = useState(() => {
     try {
-      return localStorage.getItem(DOCK_OPEN) === "1";
+      // A panel left on the old Claude item opens as the side chat instead (initialChatOpen).
+      return localStorage.getItem(DOCK_OPEN) === "1" && localStorage.getItem("ckanban.dock.tab") !== "claude";
     } catch {
       return false;
     }
   });
+  // The quick Claude chat on computers: a side panel on the right (SideChat.tsx); chatFocus: put the keyboard in it.
+  const [chatOpen, setChatOpen] = useState(() => {
+    try {
+      return initialChatOpen((k) => localStorage.getItem(k));
+    } catch {
+      return false;
+    }
+  });
+  const [chatFocus, setChatFocus] = useState(0);
+  const chatWidth = useChatWidth();
   const [openId, setOpenId] = useState<string | null>(parseHash().ticket);
   // Close went Back over the tickets opened in a row: if it lands on a ticket we didn't open (a pasted link), show the board instead.
   const closing = useRef(false);
@@ -247,8 +260,14 @@ export function App() {
   };
   /** A header button or its key: shows that item in the panel, or hides the panel when it already shows it. */
   const toggleDock = (tab: DockTab) => (shownItem === tab ? setDockOpen(false) : openDockOn(tab));
-  /** The quick chats with Claude: the Ask tab on phones, the panel's Claude on computers. */
-  const openChat = () => (phoneRef.current ? setPhoneTab("ask") : openDockOn("claude"));
+  /** The quick chats with Claude: the Ask tab on phones, the side chat on computers. */
+  const openChat = () => {
+    if (phoneRef.current) return setPhoneTab("ask");
+    setChatOpen(true);
+    setChatFocus(Date.now());
+  };
+  /** C and the header's Claude button: open the side chat, or hide it when it is open. */
+  const toggleChat = () => (chatOpen ? setChatOpen(false) : openChat());
   const [mcp, setMcp] = useState<McpState | null>(null);
   const [connections, setConnections] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[] | null>(null);
@@ -484,6 +503,11 @@ export function App() {
       localStorage.setItem(DOCK_OPEN, dockOpen ? "1" : "0");
     } catch {}
   }, [dockOpen]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_OPEN_KEY, chatOpen ? "1" : "0");
+    } catch {}
+  }, [chatOpen]);
   // An item request is one-shot: reopening the panel later shows the user's last item.
   useEffect(() => {
     if (!dockOpen) setDockTab(null);
@@ -594,7 +618,7 @@ export function App() {
         setShortcuts(true);
       } else if (e.key === "c" || e.key === "C") {
         e.preventDefault();
-        if (slug) (phoneRef.current ? openChat() : toggleDock("claude"));
+        if (slug) (phoneRef.current ? openChat() : toggleChat());
       } else if (e.key === "f" || e.key === "F") {
         if (!slug || phoneRef.current) return;
         e.preventDefault();
@@ -614,7 +638,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openId, profileDialog, newTicket, connections, schedulesOpen, automationsOpen, slug, switchBoard, dockOpen, dockShown]);
+  }, [openId, profileDialog, newTicket, connections, schedulesOpen, automationsOpen, slug, switchBoard, dockOpen, dockShown, chatOpen]);
 
   const runInTerminal = useCallback((text: string) => {
     setDockOpen(true);
@@ -700,6 +724,19 @@ export function App() {
 
   const profile = useMemo(() => profiles?.find((p) => p.slug === slug) ?? null, [profiles, slug]);
   const open = tickets.find((t) => t.id === openId) ?? null;
+  // The side chat (computers): the board and the bottom panel get narrower. A ticket opens between the board and the
+  // chat on wide windows, over the chat on narrow ones; the chat stays mounted either way (ticketPlacement).
+  const sideChat = chatOpen && !phone && !!profile;
+  const besideTicket = sideChat && ticketPlacement(chatWidth.windowWidth, chatWidth.width) === "beside";
+  const topbarRef = useRef<HTMLElement>(null);
+  const [topbarBottom, setTopbarBottom] = useState(0);
+  useEffect(() => {
+    const el = topbarRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setTopbarBottom(Math.round(el.getBoundingClientRect().bottom)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   // Opening a ticket (or having it open when it starts waiting) stops its "Your turn" pulse.
   useEffect(() => {
     if (openId) markOpened(openId);
@@ -862,7 +899,7 @@ export function App() {
   const toolItems: MenuItem[] = toolsInMenu && profile ? [
     { label: "Terminal", icon: <TerminalIcon size={14} />, onSelect: () => openDockOn("terminal") },
     { label: "Files", icon: <FolderIcon size={14} />, onSelect: () => openDockOn("files") },
-    { label: "Quick Claude chat", icon: <ChatIcon size={14} />, onSelect: () => openDockOn("claude") },
+    { label: "Quick Claude chat", icon: <ChatIcon size={14} />, onSelect: () => openChat() },
     {
       label: "Team", icon: <TeamIcon size={14} />, separator: true,
       onSelect: () => (learnedNew ? openDockOn("team", { action: "learned" }) : openDockOn("team")),
@@ -1040,7 +1077,7 @@ export function App() {
   return (
     <div className="app">
       <HintLegend />
-      <header className="topbar">
+      <header className="topbar" ref={topbarRef}>
         <div className="brand">
           <KeyHint keys="⌘K" />
           <Logo />
@@ -1101,8 +1138,8 @@ export function App() {
               aria-pressed={shownItem === "files"} title="Browse the files in this folder (F)" aria-label="Files">
               <FolderIcon /><span className="label">Files</span><KeyHint keys="F" />
             </button>
-            <button className={`btn ghost icon-label${shownItem === "claude" ? " on" : ""}`} onClick={() => toggleDock("claude")}
-              aria-pressed={shownItem === "claude"} title="Quick chat with Claude in this folder, no ticket needed (C)" aria-label="Quick Claude chat">
+            <button className={`btn ghost icon-label${sideChat ? " on" : ""}`} onClick={toggleChat}
+              aria-pressed={sideChat} title="Quick chat with Claude in this folder, no ticket needed, in a panel beside the board (C)" aria-label="Quick Claude chat">
               <ChatIcon /><span className="label">Claude</span><KeyHint keys="C" />
             </button>
             <button className={`btn ghost icon-label${shownItem === "team" ? " on" : ""}`} onClick={() => (learnedNew && shownItem !== "team" ? openDockOn("team", { action: "learned" }) : toggleDock("team"))}
@@ -1128,6 +1165,10 @@ export function App() {
         )}
         <HeaderMenu alert={menuAlert} items={menuItems} footer={menuFooter} />
       </header>
+
+      {/* Below the header: the board column (banners, board, bottom panel) and, on computers, the side chat. */}
+      <div className="app-row">
+      <div className="app-col">
 
       {version?.updateAvailable && !dismissed.has(updateKey) && (
         <div className="banner info" role="status">
@@ -1287,6 +1328,12 @@ export function App() {
             huddles={huddles} onOpenHuddle={openHuddle} openTicket={open ? { id: open.id, title: open.title } : null} onStartHuddle={startHuddle} />
         </Suspense>
       )}
+      </div>
+      {sideChat && profile && (
+        <SideChat profile={profile} chat={chatWidth} onClose={() => setChatOpen(false)} onOpenTicket={(id) => openTicket(id)}
+          focusRequest={chatFocus} covered={!!open && !besideTicket} />
+      )}
+      </div>
 
       {connections && (
         <ConnectionsDialog state={mcp} refreshKey={autoTick} onClose={() => setConnections(false)}
@@ -1363,6 +1410,7 @@ export function App() {
       {open && profile && <TicketDrawer key={open.id} profile={profile} ticket={open} tickets={tickets} onOpenTicket={openTicket} onClose={closeTicket} moveTo={moveTo}
         jobs={jobs ?? []} onOpenJobs={openSchedules}
         nav={{ prev: prevId, next: nextId, go: stepTicket }} slideIn={!stepped.current}
+        beside={besideTicket ? { right: chatWidth.width, top: topbarBottom } : null}
         tabRequest={huddleTab?.id === open.id ? { tab: "huddle", n: huddleTab.n, huddleId: huddleTab.huddleId } : null}
         huddleSeed={huddleSeed?.id === open.id ? { seed: huddleSeed.seed, n: huddleSeed.n } : null}
         onOpenTeam={(r) => { closeTicket(); openDockOn("team", r); }} />}
