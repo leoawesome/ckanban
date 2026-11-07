@@ -6,6 +6,7 @@ import { TeamTab, type HuddleSeed, type TeamRequest } from "./Team";
 import { CloseIcon, RefreshIcon } from "./icons";
 import { QuickChatPane } from "./QuickChat";
 import { TerminalView } from "./TerminalView";
+import { isTyping } from "./keynav";
 
 export type DockTab = "terminal" | "files" | "claude" | "team";
 const TAB_KEY = "ckanban.dock.tab";
@@ -40,6 +41,13 @@ export function lastDockTab(): DockTab {
 }
 
 const tildePath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+
+/** Where the keyboard lands when an item opens (the Terminal focuses itself): the first match in its pane. */
+const FOCUS_ON_OPEN: Record<Exclude<DockTab, "terminal">, string[]> = {
+  files: [".tree-row.selected", ".tree-row", ".file-filter input"],
+  claude: ["textarea:not([disabled])", "input:not([disabled])", "button"],
+  team: ["[role=tablist] [aria-selected=true]", "button"],
+};
 const clampHeight = (h: number) => Math.round(Math.max(MIN_HEIGHT, Math.min(window.innerHeight - 120, h)));
 const storedHeight = (tab: DockTab) => clampHeight(Number(stored(`${HEIGHT_KEY}.${tab}`)) || Number(stored(HEIGHT_KEY)) || DOCK_ITEMS[tab].height);
 
@@ -98,6 +106,42 @@ export default function Dock({ profile, pty, onClose, command, onCommandSent, ta
   useEffect(() => {
     if (tabRequest) setTab(tabRequest.tab);
   }, [tabRequest?.n]);
+  // Opening Files, Claude or Team (its button, its key, ⌘K) puts the keyboard in it. Its content may still be loading
+  // (and re-render, dropping focus to the page): for a moment, look again on each frame, and focus again when focus fell
+  // back to the page. Focus the user moved elsewhere is left alone.
+  const panes = useRef<Partial<Record<DockTab, HTMLDivElement | null>>>({});
+  useEffect(() => {
+    const want = tabRequest?.tab;
+    if (!want || want === "terminal") return;
+    const until = performance.now() + 1500;
+    let frame = 0;
+    let landed = false;
+    const land = () => {
+      const pane = panes.current[want];
+      const lost = !document.activeElement || document.activeElement === document.body;
+      if (!landed || lost) {
+        const el = pane && !pane.hidden ? FOCUS_ON_OPEN[want].map((sel) => pane.querySelector<HTMLElement>(sel)).find(Boolean) : null;
+        if (el) {
+          el.focus({ preventScroll: true });
+          landed = true;
+        }
+      }
+      if (performance.now() < until) frame = requestAnimationFrame(land);
+    };
+    frame = requestAnimationFrame(land);
+    return () => cancelAnimationFrame(frame);
+  }, [tabRequest?.n]);
+  // Esc (focus in the panel, not in the Terminal, where Esc belongs to the shell): first leaves a text box, keeping what
+  // was typed; then hides the panel. The keyboard goes back to the ticket panel when one is open.
+  const section = useRef<HTMLElement>(null);
+  const onEsc = (e: React.KeyboardEvent) => {
+    if (e.key !== "Escape" || e.defaultPrevented || e.nativeEvent.isComposing || (e.target as HTMLElement).closest(".xterm")) return;
+    e.preventDefault();
+    if (isTyping(e)) return section.current?.focus({ preventScroll: true });
+    const panel = document.querySelector<HTMLElement>(".drawer-wrap .panel");
+    onClose();
+    panel?.focus({ preventScroll: true });
+  };
 
   const onHandleKey = (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 120 : 40;
@@ -120,7 +164,7 @@ export default function Dock({ profile, pty, onClose, command, onCommandSent, ta
 
   const label = DOCK_ITEMS[tab].label;
   return (
-    <section className="dock" style={{ height }} aria-label={label}>
+    <section ref={section} className="dock" style={{ height }} aria-label={label} tabIndex={-1} onKeyDown={onEsc}>
       <div className="dock-resize" role="separator" aria-orientation="horizontal" aria-label={`Resize ${label} panel`} tabIndex={0}
         aria-valuenow={height} aria-valuemin={MIN_HEIGHT}
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onKeyDown={onHandleKey}
@@ -137,25 +181,25 @@ export default function Dock({ profile, pty, onClose, command, onCommandSent, ta
         {tab === "files" && (
           <button className="btn ghost small icon-label" onClick={() => setRefresh((n) => n + 1)}><RefreshIcon size={12} /> Refresh</button>
         )}
-        <button className="icon-btn" onClick={onClose} title={`Hide ${label}. The shell and Claude chats keep running.`} aria-label={`Hide ${label}`}>
+        <button className="icon-btn" onClick={onClose} title={`Hide ${label} (Esc${tab === "terminal" ? " outside the shell" : ""}). The shell and Claude chats keep running.`} aria-label={`Hide ${label}`}>
           <CloseIcon />
         </button>
       </div>
       <div className="dock-body">
-        <div className="dock-pane" hidden={tab !== "terminal"}>
+        <div className="dock-pane" hidden={tab !== "terminal"} ref={(el) => { panes.current.terminal = el; }}>
           {pty ? (
             <TerminalView key={profile.slug} slug={profile.slug} active={tab === "terminal"} restartSignal={restart} command={command ?? null} onCommandSent={onCommandSent} />
           ) : (
             <PtyUnsupported />
           )}
         </div>
-        <div className="dock-pane" hidden={tab !== "claude"}>
+        <div className="dock-pane" hidden={tab !== "claude"} ref={(el) => { panes.current.claude = el; }}>
           <QuickChatPane profile={profile} phone={false} onOpenTicket={(id) => onOpenTicket?.(id)} />
         </div>
-        <div className="dock-pane" hidden={tab !== "files"}>
+        <div className="dock-pane" hidden={tab !== "files"} ref={(el) => { panes.current.files = el; }}>
           <FilesView key={profile.slug} slug={profile.slug} refreshSignal={refresh} />
         </div>
-        <div className="dock-pane" hidden={tab !== "team"}>
+        <div className="dock-pane" hidden={tab !== "team"} ref={(el) => { panes.current.team = el; }}>
           {teamSeen && (
             <TeamTab key={profile.slug} slug={profile.slug} boardName={profile.name} active={tab === "team"} openTicket={openTicket} onOpenHuddle={onOpenHuddle} onOpenTicket={onOpenTicket}
               request={tabRequest?.tab === "team" && tabRequest.team ? { ...tabRequest.team, n: tabRequest.n } : null}

@@ -1,5 +1,6 @@
 import { useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { CloseIcon } from "./icons";
+import { KeyHint } from "./KeyHint";
 import { reducedMotion } from "./motion";
 
 type Tone = "info" | "ok" | "error";
@@ -57,7 +58,7 @@ function arm(id: number, ms: number) {
   timers.set(id, setTimeout(() => dismissToast(id), ms));
 }
 
-/** Hovering stops the clock (and the bar); leaving carries on with the time that was left. */
+/** Hovering or focusing stops the clock (and the bar); leaving carries on with the time that was left. */
 function pause(id: number) {
   if (paused.has(id) || !deadlines.has(id)) return;
   clearTimeout(timers.get(id));
@@ -85,14 +86,28 @@ export function toast(text: ReactNode, opts: { tone?: Tone; action?: Toast["acti
   return id;
 }
 
+/** The newest toast still showing an action (e.g. Undo): the one U runs. */
+const newestWithAction = (list: Toast[]) => [...list].reverse().find((t) => t.action && !t.leaving);
+
+/** U: run the newest toast's Undo and dismiss it. False when no toast offers one. */
+export function undoLatest(): boolean {
+  const t = newestWithAction(toasts);
+  if (!t) return false;
+  t.action!.run();
+  dismissToast(t.id);
+  return true;
+}
+
 export function Toaster() {
   const list = useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => toasts);
   if (!list.length) return null;
+  const keyed = newestWithAction(list);
   return (
     <div className="toaster">
       {list.map((t) => (
         <div key={t.id} className={`toast ${t.tone}${t.leaving ? " leaving" : ""}${t.action ? " has-life" : ""}`} role={t.tone === "error" ? "alert" : "status"}
-          onMouseEnter={() => pause(t.id)} onMouseLeave={() => resume(t.id)}
+          onMouseEnter={() => pause(t.id)} onMouseLeave={(e) => { if (!e.currentTarget.contains(document.activeElement)) resume(t.id); }}
+          onFocus={() => pause(t.id)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) resume(t.id); }}
           // Phone: swipe it up (or sideways) to dismiss.
           onTouchStart={(e) => { touch = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
           onTouchEnd={(e) => {
@@ -102,7 +117,9 @@ export function Toaster() {
           }}>
           <span className="toast-text">{t.text}</span>
           {t.action && (
-            <button className="toast-action" onClick={() => { t.action!.run(); dismissToast(t.id); }}>{t.action.label}</button>
+            <button className="toast-action" onClick={() => { t.action!.run(); dismissToast(t.id); }} title={t === keyed ? `${t.action.label} (U)` : undefined}>
+              {t.action.label}{t === keyed && <KeyHint keys="U" />}
+            </button>
           )}
           <button className="icon-btn" aria-label="Dismiss" onClick={() => dismissToast(t.id)}><CloseIcon size={12} /></button>
           {/* How long Undo is still there: shrinks over the toast's life, stops while hovered. */}

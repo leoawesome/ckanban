@@ -25,6 +25,23 @@ function readCollapsed(): Set<Status> {
   }
 }
 
+/** The columns folded to a narrow strip (saved in this browser): the column's own button and ⌘K both change it. */
+export function useCollapsedColumns() {
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
+    } catch {}
+  }, [collapsed]);
+  const setColumnCollapsed = (id: Status, v: boolean) => setCollapsed((s) => {
+    const next = new Set(s);
+    if (v) next.add(id);
+    else next.delete(id);
+    return next;
+  });
+  return { collapsed, setColumnCollapsed };
+}
+
 interface Props {
   tickets: Ticket[];
   /** The board's tickets haven't loaded yet: grey placeholder cards, no counts and no "empty" texts. */
@@ -44,6 +61,9 @@ interface Props {
   onOpenJobs?: (ticketId: string) => void;
   /** A search found a main ticket through one of its tool tickets: main ticket id to that tool ticket's title. */
   via?: Map<string, string>;
+  /** Folded columns (useCollapsedColumns). */
+  collapsed: Set<Status>;
+  onCollapse: (id: Status, v: boolean) => void;
 }
 
 /** Card props shared down the columns. */
@@ -233,7 +253,7 @@ const collision: CollisionDetection = (args) => {
   return closestCenter(args);
 };
 
-export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via }: Props) {
+export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed }: Props) {
   const ctx = useMemo(() => ({
     limit: slug ? { slug, onError: (msg: string) => toast(msg, { tone: "error" }) } : undefined, jobs, onOpenJobs, via,
   }), [slug, jobs, onOpenJobs, via]);
@@ -248,19 +268,6 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
     }),
   );
   const [dragId, setDragId] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(readCollapsed);
-  useEffect(() => {
-    try {
-      localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
-    } catch {}
-  }, [collapsed]);
-  const setColumnCollapsed = (id: Status, v: boolean) => setCollapsed((s) => {
-    const next = new Set(s);
-    if (v) next.add(id);
-    else next.delete(id);
-    return next;
-  });
-
   const byColumn = useMemo(() => groupByColumn(tickets), [tickets]);
   // The cards fade in when the first load lands (not on later moves).
   const [fadeIn, setFadeIn] = useState(false);

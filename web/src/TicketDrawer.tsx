@@ -21,7 +21,9 @@ import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronU
 import { useImagePaste } from "./imagePaste";
 import { useFocusTrap, useLayer } from "./layers";
 import { takeTab } from "./pendingTab";
-import { drawerTabs, isStopKey, isTyping, nextStep, panelStep, phoneTabs, stepTab, type DrawerTab } from "./keynav";
+import { drawerTabs, escLeavesField, inDock, isStopKey, isTyping, nextStep, panelStep, phoneTabs, stepTab, type DrawerTab } from "./keynav";
+import { afterBar, provideTicketActions } from "./ticketActions";
+import type { CommandAction } from "./CommandBar";
 import { attentionGoal } from "./attentionGoal";
 import { MoreSheet } from "./PhoneNav";
 import { KeyHint } from "./KeyHint";
@@ -417,8 +419,22 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     setLeaving(true);
     leaveTimer.current = setTimeout(closeNow, PANEL_LEAVE_MS);
   }, [closeNow]);
-  const isTopLayer = useLayer(onClose, { skipInInputs: true });
+  // base: the board's ⌘K, ⌘B, N, ? and B may open their dialogs over the panel.
+  const isTopLayer = useLayer(onClose, { skipInInputs: true, base: true });
   useFocusTrap(panelRef, true);
+  // Esc in a text box here (the chat box, the title, a tag field) leaves the box for the panel and keeps what was typed;
+  // the next Esc closes the panel. Boxes that use Esc themselves (the description editor cancels) go first.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const panel = panelRef.current;
+      if (!panel || !escLeavesField(e) || !isTopLayer() || document.querySelector(".overlay")) return;
+      if (!panel.contains(e.target as Node)) return;
+      e.preventDefault();
+      panel.focus({ preventScroll: true });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [reportingBug, setReportingBug] = useState(false);
   const [confirmStart, setConfirmStart] = useState(false);
@@ -470,7 +486,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const stepRef = useRef((_to: "prev" | "next") => {});
   stepRef.current = (to) => step(nav?.[to]);
   // Plain-key shortcuts (↑↓ J K, E) only when the panel itself has the keyboard: not typing, no menu, popup or dialog above it.
-  const panelKeys = (e: KeyboardEvent) => !e.isComposing && !e.defaultPrevented && !isTyping(e) && isTopLayer() && !document.querySelector(".overlay");
+  // Not from the bottom panel either (Files, Team, Claude): its keys are its own.
+  const panelKeys = (e: KeyboardEvent) => !e.isComposing && !e.defaultPrevented && !isTyping(e) && !inDock(e) && isTopLayer() && !document.querySelector(".overlay");
   const panelKeysRef = useRef(panelKeys);
   panelKeysRef.current = panelKeys;
   useEffect(() => {
@@ -667,10 +684,12 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   };
   // Every child of its plan is done: Move to Done replaces Start work.
   const finished = planFinished(children);
-  const addMoreTickets = () => {
+  // "/" (and ⌘K "Write a message"): the Chat tab, with the cursor in its message box.
+  const focusComposer = () => {
     setTab("chat");
     requestAnimationFrame(() => panelRef.current?.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus());
   };
+  const addMoreTickets = focusComposer;
   const next = nextStep({ status: ticket.status, working, proposalPending, planFinished: finished });
   const nextStepRef = useRef(() => {});
   nextStepRef.current = () => {
@@ -689,7 +708,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  // E: edit the description; R: Refine with Claude (Backlog); S: star; M: move to a column; [ ]: previous / next tab.
+  // E: edit the description; R: Refine with Claude (Backlog); S: star; M: move to a column; [ ]: previous / next tab;
+  // /: the message box.
   // Only when the panel has the keyboard.
   const letterRef = useRef<(k: string) => boolean>(() => false);
   letterRef.current = (k) => {
@@ -700,6 +720,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     if (k === "r" && !working && !editing && ticket.status === "backlog") return setStatus("planning"), true;
     if (k === "s") return toggleStar(), true;
     if (k === "m") return openStatusPicker(), true;
+    if (k === "/") return focusComposer(), true;
     if (k === "[" || k === "]") {
       const to = stepTab<typeof tabPick>(tabs, tab, k === "]" ? 1 : -1);
       if (to) openTab(to);
@@ -744,6 +765,26 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     } else open();
   };
   const cancelEdit = () => { setBody(baseBody); setEditing(false); images.clearError(); };
+
+  // This ticket's ⌘K entries, read when the command bar opens (ticketActions.ts). Same handlers as the buttons and keys.
+  const actionsRef = useRef<() => CommandAction[]>(() => []);
+  actionsRef.current = () => {
+    const list: CommandAction[] = [];
+    const add = (id: string, label: string, run: () => void, keys?: string[], hint = "this ticket") =>
+      list.push({ id: `ticket-${id}`, label, hint, keys, run: afterBar(run) });
+    if (goal && !working) add("goal", "Go to what needs you", goTo, undefined, att?.label ?? "this ticket");
+    add("message", "Write a message to Claude", focusComposer, ["/"]);
+    if (ticket.status !== "done" && (finished || ticket.status === "review")) add("done", "Mark done", () => setStatus("done"), next === "done" ? [MOD, "Shift", "Enter"] : undefined);
+    if (!working && !finished && (ticket.status === "backlog" || ticket.status === "planning")) add("start", "Start work", startWork, next === "start" ? [MOD, "Shift", "Enter"] : undefined);
+    if (!working && !editing && ticket.status === "backlog") add("refine", "Refine with Claude", () => setStatus("planning"), ["R"]);
+    add("star", ticket.important ? "Remove the star" : "Star as important", toggleStar, ["S"]);
+    add("move", "Move to a column…", openStatusPicker, ["M"]);
+    if (!editing) add("edit", "Edit the description", () => letterRef.current("e"), ["E"]);
+    if ((working || familyBusy) && !stopping) add("stop", familyBusy ? "Stop this ticket and its steps…" : "Stop Claude…", () => setConfirmStop(true), [MOD, "."]);
+    add("delete", "Delete ticket…", () => setConfirmDelete(true));
+    return list;
+  };
+  useEffect(() => provideTicketActions(() => actionsRef.current()), []);
 
   const usageTitle = !usage ? "" : usage.totals.pctCurrentWindow === null ? missingPctReason(usage)
     : "This ticket's ≈ share of your plan's current 5-hour limit, and its API-equivalent cost";
@@ -891,7 +932,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             <DescriptionEditor slug={slug} ticketId={ticket.id} value={body} setValue={setBody} images={images} inputRef={bodyInput} autoFocus fill
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.shiftKey) saveBody();
-                else if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.preventDefault(); cancelEdit(); }
+                else if (e.key === "Escape" && !e.nativeEvent.isComposing) { e.preventDefault(); cancelEdit(); panelRef.current?.focus({ preventScroll: true }); }
               }} />
             <div className="form-actions">
               <button className="btn ghost" onClick={cancelEdit} title="Cancel (Esc)">Cancel<KeyHint keys="Esc" /></button>
@@ -1015,7 +1056,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             // Esc's blur runs with this render's title, so it is told to skip the save.
             onBlur={() => { if (revertTitle.current) revertTitle.current = false; else saveTitle(); }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); e.currentTarget.blur(); }
+              // Enter saves (on blur) and gives the keyboard back to the panel; Esc reverts, then leaves the same way (see above).
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); panelRef.current?.focus({ preventScroll: true }); }
               else if (e.key === "Escape") { revertTitle.current = true; setTitle(ticket.title); e.currentTarget.blur(); }
             }} />
         </div>

@@ -70,19 +70,20 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
   };
 
   return (
-    <Modal title="New ticket" onClose={onClose} guard={!busy && (!!title.trim() || !!body.trim())}>
-      {/* Plain Enter in the title does nothing: starting a run should be deliberate (button or ⌘Enter).
-          ⌘S creates in Backlog, ⌘I switches how Claude works, ⌘D stars; each also keeps the browser's own ⌘S / ⌘D dialogs shut. */}
-      <form className="form" onSubmit={(e) => e.preventDefault()}
-        onKeyDown={(e) => {
-          const k = newTicketKey(e.nativeEvent);
-          if (!k) return;
-          e.preventDefault();
-          if (k === "start") submit(startStatus);
-          else if (k === "create") submit("backlog");
-          else if (k === "mode") setMode((m) => (m === "interview" ? "auto" : "interview"));
-          else setImportant((v) => !v);
-        }}>
+    // Plain Enter in the title does nothing: starting a run should be deliberate (button or ⌘Enter).
+    // ⌘S creates in Backlog, ⌘I switches how Claude works, ⌘D stars, anywhere in the dialog (also on its frame or ×);
+    // each also keeps the browser's own ⌘S / ⌘D dialogs shut.
+    <Modal title="New ticket" onClose={onClose} guard={!busy && (!!title.trim() || !!body.trim())}
+      onKeys={(e) => {
+        const k = newTicketKey(e.nativeEvent);
+        if (!k) return;
+        e.preventDefault();
+        if (k === "start") submit(startStatus);
+        else if (k === "create") submit("backlog");
+        else if (k === "mode") setMode((m) => (m === "interview" ? "auto" : "interview"));
+        else setImportant((v) => !v);
+      }}>
+      <form className="form" onSubmit={(e) => e.preventDefault()}>
         <div className="field">
           <label htmlFor="new-ticket-title">Title</label>
           <div className="title-row">

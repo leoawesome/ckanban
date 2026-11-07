@@ -91,6 +91,25 @@ export function hintStep(e: { type: "keydown" | "keyup"; key: string; repeat?: b
   return e.repeat ? "none" : "arm";
 }
 
+/** A key badge's text needs ⌘ (Ctrl off Mac) held: it gets the dark badge. Plain keys ("N", "↵ open") get the outlined one. */
+export function isComboKeys(keys: string): boolean {
+  return /⌘|Ctrl/.test(keys);
+}
+
+/**
+ * A badge's text split at " · " into parts, each marked combo or not, so "⌘⇧↵ · R" shows a dark ⌘⇧↵ and an outlined R
+ * (one dark badge would read as ⌘R). Parts of one kind stay one part.
+ */
+export function hintParts(keys: string): { text: string; combo: boolean }[] {
+  const parts = keys.split(" · ").map((text) => ({ text, combo: isComboKeys(text) }));
+  return parts.every((p) => p.combo === parts[0].combo) ? [{ text: keys, combo: parts[0].combo }] : parts;
+}
+
+/** ⌘B (Ctrl+B off Mac): open or close the board picker. */
+export function isBoardPickerKey(e: Keys): boolean {
+  return (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && !e.isComposing && e.key.toLowerCase() === "b";
+}
+
 type Keys = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing?: boolean };
 
 /** ⌘ (Ctrl off Mac) + one key in the New ticket dialog: ↵ start, S create in Backlog, I switch how Claude works, D star. */
@@ -141,4 +160,73 @@ export function phoneTabs<T>(tabs: T[], current: T, max = 4): { shown: T[]; more
 export function stepTab<T>(tabs: T[], current: T, delta: number): T | null {
   const at = stepBoard(tabs.length, tabs.indexOf(current), delta);
   return at < 0 ? null : tabs[at];
+}
+
+type PlainKeys = { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; isComposing?: boolean };
+const plain = (e: PlainKeys) => !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing;
+
+/** Focus is inside the bottom panel (Terminal, Files, Claude, Team): the board's single keys stay quiet there. */
+export function inDock(e: { target: EventTarget | null }): boolean {
+  const el = e.target as { closest?: (sel: string) => unknown } | null;
+  return !!el?.closest?.(".dock");
+}
+
+/** N, ? and B also work while a ticket panel has the keyboard (not while typing): new ticket, this list, board picker. */
+export type PanelBoardKey = "new" | "shortcuts" | "boards";
+export function panelBoardKey(e: PlainKeys): PanelBoardKey | null {
+  if (!plain(e)) return null;
+  switch (e.key) {
+    case "n": case "N": return "new";
+    case "?": return "shortcuts";
+    case "b": case "B": return "boards";
+    default: return null;
+  }
+}
+
+/** Single keys on a focused board card: S star, M move to a column, D mark done (Review cards). */
+export type CardKey = "star" | "move" | "done";
+export function cardKey(e: PlainKeys & { shiftKey: boolean }): CardKey | null {
+  if (!plain(e) || e.shiftKey) return null;
+  switch (e.key) {
+    case "s": case "S": return "star";
+    case "m": case "M": return "move";
+    case "d": case "D": return "done";
+    default: return null;
+  }
+}
+
+/** U (when not typing): run the Undo of the newest toast that has one. */
+export function isUndoKey(e: PlainKeys & { shiftKey: boolean }): boolean {
+  return plain(e) && !e.shiftKey && (e.key === "u" || e.key === "U");
+}
+
+/** I on the board: open the Inbox with its first entry focused. */
+export function isInboxKey(e: PlainKeys & { shiftKey: boolean }): boolean {
+  return plain(e) && !e.shiftKey && (e.key === "i" || e.key === "I");
+}
+
+/**
+ * Esc in a text box (the chat box, the title, a tag field) that nothing else used: leave the box for the panel around it.
+ * The draft stays; a second Esc then closes the panel.
+ */
+export function escLeavesField(e: { key: string; isComposing?: boolean; defaultPrevented: boolean; target: EventTarget | null }): boolean {
+  return e.key === "Escape" && !e.isComposing && !e.defaultPrevented && isTyping(e);
+}
+
+/** The item `delta` steps from `at` in a list of `count`, stopping at the ends (no wrap). -1 for an empty list. */
+export function stepIndex(count: number, at: number, delta: number): number {
+  if (count <= 0) return -1;
+  if (at < 0) return delta < 0 ? count - 1 : 0;
+  return Math.max(0, Math.min(count - 1, at + delta));
+}
+
+/** Keys in a list picker (Move to column): ↑/K and ↓/J move, Enter picks, 1…9 picks that row. */
+export type ListKey = { move: number } | { pick: number | "active" } | null;
+export function listKey(e: PlainKeys & { shiftKey: boolean; code?: string }): ListKey {
+  if (!plain(e) || e.shiftKey) return null;
+  if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") return { move: 1 };
+  if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") return { move: -1 };
+  if (e.key === "Enter") return { pick: "active" };
+  const digit = e.code ? boardDigit(e.code) : null;
+  return digit === null ? null : { pick: digit };
 }
