@@ -1312,6 +1312,13 @@ body > .output-view.reader { position: fixed; }
 .working-time { flex: none; font-variant-numeric: tabular-nums; }
 .working-row.stalled { color: var(--warn); font-weight: 600; }
 .turn.working .stall-actions, .turn.working .btn { align-self: flex-start; }
+/* A main ticket's steps working now (Chat.tsx StepsWorking): live, never a saved message */
+.steps-live { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-sm); color: var(--muted); padding: 4px 0; min-width: 0; }
+.steps-live .spinner { flex: none; align-self: center; }
+.steps-live-text { min-width: 0; overflow-wrap: anywhere; }
+.steps-live-text .link-btn { font-size: inherit; overflow-wrap: anywhere; text-align: left; }
+.steps-live-activity { display: inline; }
+@media (max-width: 640px) { .steps-live-activity { display: none; } }
 .typing-dots { display: inline-flex; gap: 4px; padding: 6px 0; }
 .typing-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: typing-dot 1.2s infinite; }
 .typing-dots i:nth-child(2) { animation-delay: 0.15s; }

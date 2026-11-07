@@ -2,7 +2,7 @@
 // A main ticket is the conversation the user started: it talks, decides and keeps the feature's status, and never edits
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
-import { familyState, groupSummary, hiddenTool, withYouTool, type TicketKind } from "../../web/src/family";
+import { familyState, groupSummary, hiddenTool, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import type { Plan, Ticket } from "./types";
 
 /** Model and effort a tool ticket gets from its kind when create_ticket leaves them out. */
@@ -191,10 +191,9 @@ export interface FamilyCard {
  */
 export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], running: (id: string) => boolean, costUsd: number): FamilyCard {
   const tools = family.filter((t) => t.tool);
-  const busy = (t: Ticket) => running(t.id) || t.status === "ready" || t.status === "in_progress";
   const startedAt = (t: Ticket) => t.runStartedAt ?? t.lastRunAt ?? t.updatedAt;
   // Any family ticket counts (tool tickets and tickets the user added), so the card never moves without a working line.
-  const working = family.filter((t) => t.id !== main.id && busy(t));
+  const working = workingInFamily(family, main.id, (t) => running(t.id));
   const newestStart = working.reduce((m, t) => (startedAt(t) > m ? startedAt(t) : m), "");
   // Steps the main ticket hasn't seen yet (it ran before they ended), or any when it passes a question on to the user.
   const seenUntil = main.runEndedAt ?? "";

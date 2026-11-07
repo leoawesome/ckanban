@@ -15,7 +15,7 @@ import { macBanner } from "./notify";
 import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
 import { recallBlock } from "./recall";
-import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, withYouTool, type TicketKind } from "../../web/src/family";
+import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, familySig, readStatus, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { addOnFor } from "../../web/src/addOn";
@@ -3006,12 +3006,7 @@ export class Board {
    * ticket itself left out). Its card shows In progress meanwhile (columns.ts familyBusy) with familyCard's working line.
    */
   familyWorking(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
-    let n = 0;
-    for (const r of familyOf(tickets, id)) {
-      if (r.ticket.id === id) continue;
-      if (this.isRunning(slug, r.ticket.id) || r.ticket.status === "ready" || r.ticket.status === "in_progress") n++;
-    }
-    return n;
+    return workingInFamily(familyOf(tickets, id).map((r) => r.ticket), id, (t) => this.isRunning(slug, t.id)).length;
   }
 
   /** The main or tool rules a run of t gets, or undefined for other tickets. */

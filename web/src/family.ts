@@ -102,6 +102,15 @@ export function familyNearby<T extends FamilyTicket>(rows: FamilyRow<T>[], id: s
   return [...path.slice(0, me.depth), me, ...kids];
 }
 
+/**
+ * The tickets of a main ticket's family working now: running, or Ready / In progress (queued or about to run). Tool
+ * tickets and tickets the user added count; the main ticket itself never does. One rule for the server's card
+ * (main-ticket.ts familyCard, board.familyWorking) and the main ticket's chat (its "Working:" line).
+ */
+export function workingInFamily<T extends { id: string; status: string }>(family: T[], mainId: string, running: (t: T) => boolean): T[] {
+  return family.filter((t) => t.id !== mainId && (running(t) || t.status === "ready" || t.status === "in_progress"));
+}
+
 /** Linking id under parent would make a ticket its own ancestor. */
 export function wouldLoop(tickets: FamilyTicket[], id: string, parent: string): boolean {
   const byId = new Map(tickets.map((t) => [t.id, t]));

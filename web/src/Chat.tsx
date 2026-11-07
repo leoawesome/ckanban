@@ -51,7 +51,8 @@ import { heldByReply, inSession, liveProgress, norm, unsentNow, userAfterSaved, 
 import { baseName, copyFile, dirName, downloadFile } from "./share";
 import { draftKey, formKey } from "./drafts";
 import { type FormState, formStates } from "./questionForms";
-import { fullTime, timeAgo } from "./time";
+import { elapsed, fullTime, timeAgo } from "./time";
+import { stepsLine, stepsLineText, stepsWorking } from "./stepsLive";
 import { useNow } from "./useNow";
 import { canStartFromProposal } from "./keynav";
 import { toast } from "./toast";
@@ -179,6 +180,34 @@ const delivered = (entries: SessionEntry[], text: string) => entries.some((e) =>
  * (terminal chat, board runs, messages typed here) in one timeline, plus a box to send more.
  */
 /** Stop Claude with instant feedback: "Stopping…" from the click until the run is gone. */
+/**
+ * A main ticket's live "Working: <step>" line while steps of its feature (or tickets the user added) work; each name
+ * opens that step. One working step also shows its latest activity and how long it has run.
+ */
+function StepsWorking({ ticket, tickets, onOpenTicket }: { ticket: Ticket; tickets: Ticket[]; onOpenTicket: (id: string) => void }) {
+  const steps = useMemo(() => stepsWorking(tickets, ticket), [tickets, ticket]);
+  const line = stepsLine(steps);
+  if (!line) return null;
+  const one = steps.length === 1 && steps[0].running ? steps[0] : null;
+  return (
+    <div className="steps-live" role="status" aria-live="polite" title={stepsLineText(steps.map((t) => t.title))}>
+      <span className="spinner" />
+      <span className="steps-live-text">
+        {line.lead}{" "}
+        {line.shown.map((t, i) => (
+          <Fragment key={t.id}>
+            {i > 0 && ", "}
+            <button type="button" className="link-btn" onClick={() => onOpenTicket(t.id)}>{t.title}</button>
+          </Fragment>
+        ))}
+        {line.more > 0 && ` and ${line.more} more`}
+        {one?.lastActivity && <span className="steps-live-activity"> · {one.lastActivity}</span>}
+      </span>
+      {one?.runStartedAt && <span className="working-time">· {elapsed(one.runStartedAt)}</span>}
+    </div>
+  );
+}
+
 export function useStop(slug: string, ticket: Ticket, working: boolean, onError: (m: string) => void) {
   const [clicked, setClicked] = useState(false);
   useEffect(() => {
@@ -1106,6 +1135,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
             {stalled && <StallActions slug={slug} ticket={ticket} onError={onError} small />}
           </WorkingRow>
         )}
+        {/* Steps of this feature working now: live state, gone when none runs (results and questions come as their own blocks). */}
+        <StepsWorking ticket={ticket} tickets={tickets} onOpenTicket={onOpenTicket} />
         {/* Left unsent by Stop: Claude isn't answering these, so they stay at the bottom until sent or discarded. */}
         {userQueued.filter((q) => q.state === "unsent").map(userBubble)}
         {!running && ticket.recovery && <RecoveryBanner slug={slug} ticket={ticket} onError={onError} />}
