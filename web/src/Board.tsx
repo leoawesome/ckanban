@@ -111,14 +111,14 @@ const DONE_LIMIT = 10;
 const PLACEHOLDERS: Record<Status, number> = { backlog: 3, planning: 2, ready: 0, in_progress: 2, review: 2, done: 3 };
 const CLAUDE_TAG = "Claude starts automatically when a card is here";
 
-function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx }: {
+function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx, phone = false }: {
   id: Status; label: string; hint: string; claude: boolean; tickets: Ticket[]; loading: boolean;
   /** In Progress only: tickets waiting their turn on the folder, in start order. */
   queue?: Ticket[];
   /** A pending daemon restart holds the queue. */
   held?: boolean;
   onOpen: (id: string) => void; onAdd: (s: Status) => void;
-  collapsed: boolean; onCollapse: (v: boolean) => void; filtered: boolean; ctx: CardCtx;
+  collapsed: boolean; onCollapse: (v: boolean) => void; filtered: boolean; ctx: CardCtx; phone?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${id}`, data: { status: id } });
   const all = [...tickets, ...queue];
@@ -154,6 +154,16 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   }
   return (
     <section className={`column col-${id} ${claude ? "claude-zone" : ""} ${isOver ? "over" : ""}`} aria-label={label} aria-busy={loading || undefined}>
+      {phone ? (
+        // A phone's column chips name the column and its count, and columns don't collapse there, so the head keeps only
+        // Backlog's + and the ✦ in one short right-aligned row; Review and Done get none, so the first card sits at the top.
+        (canAdd || claude) && (
+          <header className="column-head compact">
+            {claude && <span className="claude-tag" title={CLAUDE_TAG} aria-label={CLAUDE_TAG}><SparkIcon /></span>}
+            {canAdd && <button className="icon-btn" title={`Add to ${label}`} aria-label={`Add ticket to ${label}`} onClick={() => onAdd(id)}><PlusIcon /></button>}
+          </header>
+        )
+      ) : (
       <header className="column-head">
         {/* The column's hint is the title's tooltip (a phone has no title here: a tap on its column chip shows it). */}
         <h2 className="column-title" title={hint}>{label}</h2>
@@ -168,6 +178,7 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
           <button className="icon-btn" title={`Add to ${label}`} aria-label={`Add ticket to ${label}`} onClick={() => onAdd(id)}><PlusIcon /></button>
         ) : <span className="icon-btn-placeholder" aria-hidden />}
       </header>
+      )}
       <SortableContext items={[...shown, ...queue].map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div ref={setNodeRef} className="column-body">
           {loading && Array.from({ length: PLACEHOLDERS[id] }, (_, i) => <div key={i} className="card skeleton-card" aria-hidden><i /><i /><i /></div>)}
@@ -340,7 +351,7 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
       {phone && hintOpen && <p className="col-jump-hint" role="status">{BOARD_COLUMNS[shownCol]?.hint}</p>}
       <main className={`board${fadeIn ? " fade-in" : ""}`} ref={boardRef} onScroll={phone ? onBoardScroll : undefined}>
         {BOARD_COLUMNS.map((c) => (
-          <Column key={c.id} {...c} tickets={byColumn.get(c.id) ?? []} queue={c.id === "in_progress" ? byColumn.get("ready") : undefined} held={restartPending} onOpen={onOpen} onAdd={onAdd} filtered={filtered} loading={loading} ctx={ctx}
+          <Column key={c.id} {...c} tickets={byColumn.get(c.id) ?? []} queue={c.id === "in_progress" ? byColumn.get("ready") : undefined} held={restartPending} onOpen={onOpen} onAdd={onAdd} filtered={filtered} loading={loading} ctx={ctx} phone={phone}
             collapsed={!phone && collapsed.has(c.id)} onCollapse={(v) => setColumnCollapsed(c.id, v)} />
         ))}
       </main>

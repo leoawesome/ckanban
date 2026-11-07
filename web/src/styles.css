@@ -287,6 +287,9 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 @media (max-width: 720px) {
   /* The column chips name the shown column and its count. */
   .column-head :is(.column-title, .count) { display: none; }
+  /* Only Backlog's + and the ✦ stay: one short row at the right, no empty band above the first card. */
+  .column-head.compact { min-height: 0; justify-content: flex-end; padding: 4px 6px 0; }
+  .column-head.compact + .column-body { padding-top: 2px; }
 }
 
 /* card */
