@@ -88,3 +88,28 @@ test("a feature in a folder without version history lists the files its tickets 
   expect(c).toEqual({ kind: "files", items: [{ text: "notes/plan.md" }] });
   expect(statusSections(null, board.featureStatus("p", top.id).facts).find((x) => x.key === "changes")!.label).toBe("Files changed in your folder");
 }, 60_000);
+
+test("a change on the feature's copy that also landed on the base branch as another entry shows once", async () => {
+  const p = await setup();
+  const top = await mk("Feature");
+  await mk("Step one", { partOf: top.id });
+  await mk("Step two", { partOf: top.id });
+  const line = `Ckanban-Feature: ${top.id}`;
+  await commit(p.path, "base.txt", "chore: base");
+  await run(["git", "branch", "ck/feature"], p.path);
+  await run(["git", "checkout", "-q", "ck/feature"], p.path);
+  await commit(p.path, "a.txt", "fix: same change, reworded later", line);
+  await commit(p.path, "b.txt", "fix: same subject, patch differs", line);
+  await commit(p.path, "c.txt", "feat: only on the copy", line);
+  await run(["git", "checkout", "-q", "main"], p.path);
+  await commit(p.path, "a.txt", "fix: same change, landed", line);
+  writeFileSync(join(p.path, "b2.txt"), "sorted out\n");
+  await commit(p.path, "b.txt", "fix: same subject, patch differs", line);
+  store.updateTicket("p", top.id, { branch: "ck/feature" });
+  board.featureStatus("p", top.id);
+  await until(() => !!board.featureStatus("p", top.id).facts.changes);
+  const c = board.featureStatus("p", top.id).facts.changes!;
+  expect(c.items.map((i) => i.text).sort()).toEqual(["feat: only on the copy", "fix: same change, landed", "fix: same subject, patch differs"]);
+  const mainIds = (await run(["git", "log", "--format=%h", "main"], p.path)).stdout.split("\n");
+  expect(mainIds).toContain(c.items.find((i) => i.text === "fix: same subject, patch differs")!.id!);
+}, 60_000);

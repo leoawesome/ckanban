@@ -3295,13 +3295,16 @@ export class Board {
     const withFile = (c: SavedChanges): SavedChanges => (c.items.length > CHANGES_SHOWN ? { ...c, file: full } : c);
     if (repo === "local" || repo === "remote") {
       const base = profile.baseBranch || "main";
-      const refs = [base, ...(repo === "remote" ? [`origin/${base}`] : []), ...(top.branch ? [top.branch] : [])];
-      const r = await runCmd(["git", "log", "--ignore-missing", "--format=%h%x09%s", `--grep=^${FEATURE_TRAILER}: ${topId}$`, ...refs, "--"], profile.path, undefined, 20_000);
+      const baseRefs = [base, ...(repo === "remote" ? [`origin/${base}`] : [])];
+      const grep = `--grep=^${FEATURE_TRAILER}: ${topId}$`;
+      const r = await runCmd(["git", "log", "--ignore-missing", "--format=%H%x09%h%x09%s", grep, ...baseRefs, ...(top.branch ? [top.branch] : []), "--"], profile.path, undefined, 20_000);
       if (r.code !== 0) return null;
-      const items = r.stdout.split("\n").filter((l) => l.trim()).map((l) => {
-        const [id, ...rest] = l.split("\t");
-        return { id: id!, text: rest.join("\t").trim() };
+      const all = r.stdout.split("\n").filter((l) => l.trim()).map((l) => {
+        const [full, id, ...rest] = l.split("\t");
+        return { full: full!, id: id!, text: rest.join("\t").trim() };
       });
+      const dropped = top.branch ? await this.copyDuplicates(profile.path, grep, baseRefs, top.branch, all) : new Set<string>();
+      const items = all.filter((c) => !dropped.has(c.full)).map(({ id, text }) => ({ id, text }));
       return items.length ? withFile({ kind: "history", items }) : null;
     }
     const files = new Set<string>();
@@ -3309,6 +3312,31 @@ export class Board {
     const root = profile.path.endsWith("/") ? profile.path : `${profile.path}/`;
     const items = [...files].map((f) => (f.startsWith(root) ? f.slice(root.length) : f)).sort().map((text) => ({ text }));
     return items.length ? withFile({ kind: "files", items }) : null;
+  }
+
+  /**
+   * Entries only on the main ticket's copy whose change is already on the base branch as another entry (re-applied or
+   * squashed when it landed): same patch, or same subject line when the patch differs (e.g. after a clash was sorted
+   * out). Only the feature's own entries are compared, so it stays cheap. Empty when unsure.
+   */
+  private async copyDuplicates(cwd: string, grep: string, baseRefs: string[], branch: string, all: { full: string; text: string }[]): Promise<Set<string>> {
+    const dropped = new Set<string>();
+    const r = await runCmd(["git", "log", "--ignore-missing", "--format=%H", grep, branch, "--not", ...baseRefs, "--"], cwd, undefined, 20_000);
+    if (r.code !== 0) return dropped;
+    const copyOnly = new Set(r.stdout.split("\n").map((l) => l.trim()).filter(Boolean));
+    const onBase = all.filter((c) => !copyOnly.has(c.full));
+    if (!copyOnly.size || !onBase.length) return dropped;
+    const subjects = new Set(onBase.map((c) => c.text));
+    for (const c of all) if (copyOnly.has(c.full) && subjects.has(c.text)) dropped.add(c.full);
+    const rest = all.filter((c) => copyOnly.has(c.full) && !dropped.has(c.full)).map((c) => c.full);
+    if (!rest.length) return dropped;
+    // git patch-id prints "<patch id> <commit>" per commit; commits are passed as arguments, never through the shell text.
+    const ids = await runCmd(["sh", "-c", 'git log --no-walk=unsorted -p --no-color --format="commit %H" "$@" | git patch-id --stable', "sh", ...onBase.map((c) => c.full), ...rest], cwd, undefined, 20_000);
+    if (ids.code !== 0) return dropped;
+    const byCommit = new Map(ids.stdout.split("\n").map((l) => l.trim().split(" ")).filter((p) => p.length === 2).map(([pid, sha]) => [sha!, pid!]));
+    const basePatches = new Set(onBase.map((c) => byCommit.get(c.full)).filter(Boolean));
+    for (const sha of rest) if (basePatches.has(byCommit.get(sha))) dropped.add(sha);
+    return dropped;
   }
 
 
