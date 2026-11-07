@@ -61,9 +61,9 @@ export function HintLegend() {
   const mod = isMac ? "⌘" : "Ctrl";
   return (
     <div className="hint-legend" aria-hidden>
-      <span className="kh-combo">{isMac ? "⌘B" : "Ctrl+B"}</span> hold {mod}
-      <span className="kh-plain">N</span> just press the key
-      <span className="muted">· ? all keys</span>
+      <span className="kh-combo">{isMac ? "⌘B" : "Ctrl+B"}</span> keep {mod} held and press the letter
+      <span className="kh-plain">N</span> press the key on its own
+      <span className="muted">· Press ? to see every shortcut</span>
     </div>
   );
 }
