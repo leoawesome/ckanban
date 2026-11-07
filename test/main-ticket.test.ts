@@ -172,6 +172,30 @@ test("ask_ticket: a fork of the tool ticket's session answers as an event; no an
   await until(() => promptsOf(null, `no answer from ${tool.id} "Build the queue" to "Still there?"`).length > 0, 30000);
 }, 60_000);
 
+test("ask_ticket cut off by a restart: the asker gets a saved \"no answer\" event and is woken after the restart", async () => {
+  await setup({ maxParallel: 3 });
+  quickBoard();
+  delete process.env.FAKE_PR;
+  const main = await mkMain("Main", "review");
+  const tool = await mkTool(main.id, "Build the queue");
+  board.ensurePlan("p", main.id);
+  board.advancePlans("p");
+  await until(() => promptsOf(null, "finished: ").length > 0, 30000);
+  await board.whenIdle();
+  await until(() => !board.isRunning("p", main.id) && !(board as any).wakeDue.size);
+  process.env.FAKE_MODE = "slow";
+  board.askTicket("p", main.id, tool.id, "Why 20 at a time?");
+  await until(() => promptsOf(null, "Question: Why 20 at a time?").length > 0);
+  await board.shutdown();
+  const line = `no answer from ${tool.id} "Build the queue" to "Why 20 at a time?": the board restarted before it answered.`;
+  // Saved on the main ticket before the daemon exits (asks don't hold the restart).
+  expect(get(main.id).plan!.inbox!.some((l) => l.startsWith(line))).toBe(true);
+  process.env.FAKE_MODE = "ok";
+  quickBoard();
+  board.recover();
+  await until(() => promptsOf(null, line).length > 0, 30000);
+}, 60_000);
+
 test("a tool ticket's question reaches its parent, it waits, and chat_ticket from the parent resumes it", async () => {
   await setup({ maxParallel: 3 });
   quickBoard();

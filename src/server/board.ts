@@ -2852,7 +2852,8 @@ export class Board {
   /** What the family spent so far (the daemon's spend index; none until it registers). */
   private costOf: (slug: string, id: string) => number = () => 0;
   /** ask_ticket runs in flight (forked sessions, no run slot), stopped on shutdown. */
-  private asks = new Set<RunHandle>();
+  /** Running ask_ticket forks, each with what to tell its asker if a restart cuts it off. */
+  private asks = new Map<RunHandle, () => void>();
   /** merge_into_main runs one at a time per main ticket. */
   private mergeLocks = new Map<string, Promise<unknown>>();
 
@@ -3085,7 +3086,8 @@ export class Board {
       args: buildArgs(forkId, true, target.model ?? profile.model, [...NO_EDIT_TOOLS.split(","), "Bash"], undefined, undefined, null, "low"),
       input: prompt, env: { CKANBAN_OUTPUT_DIR: this.store.outputsPath(slug, target.id) }, onEvent: () => {},
     });
-    this.asks.add(handle);
+    // A restart stops the fork before it answers: shutdown() saves this "no answer" on the asker, so it is woken after.
+    this.asks.set(handle, () => reply(`no answer from ${label} to "${question}": the board restarted before it answered. Ask again if you still need it.`));
     const timer = setTimeout(() => {
       timedOut = true;
       handle.stop();
@@ -3096,7 +3098,7 @@ export class Board {
       try {
         rmSync(file, { force: true });
       } catch {}
-      if (this.shuttingDown) return;
+      if (this.shuttingDown) return; // shutdown() already saved the "no answer" event
       const text = extractFinalText(out.events).replace(/^.*CKANBAN_RESULT:.*$/gm, "").trim();
       const minutes = Math.round((this.opts.askTimeoutMs ?? ASK_TIMEOUT_MS) / 60_000);
       reply(timedOut || !text
@@ -3619,7 +3621,11 @@ export class Board {
       r.handle?.stop();
     }
     for (const s of this.setups.values()) s.abort.abort();
-    for (const a of this.asks) a.stop();
+    for (const [a, cutOff] of this.asks) {
+      cutOff(); // saved on the asker now (the fork's own end may come after the process exits); recover() wakes it
+      a.stop();
+    }
+    this.asks.clear();
     await Promise.race([this.whenIdle(), Bun.sleep(6000)]);
   }
 
