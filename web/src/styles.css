@@ -3804,13 +3804,14 @@ button.fc-chip:hover, button.fc-chip[aria-expanded="true"] { color: var(--text);
 .side-chat-resize:focus-visible { outline: none; }
 .side-chat-head { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 2px 8px 2px 14px; border-bottom: 1px solid var(--border); color: var(--text); color-scheme: dark; }
 .side-chat-title { font-weight: 600; font-size: var(--fs-sm); }
-.side-chat-body { flex: 1; min-height: 0; display: flex; }
+.side-chat-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .side-chat .qc > :not(.overlay) { background: var(--bg); color: var(--text); }
 .side-chat .qc-list { border-right-color: var(--border); }
 /* A narrow chat stacks its chat list above the conversation instead of beside it. */
 @container (max-width: 639px) {
   .side-chat .qc-dock { flex-direction: column; }
   .side-chat .qc-list { width: auto; max-height: 132px; flex: none; border-right: 0; border-bottom: 1px solid var(--border); }
+  .side-chat .qc-main { min-height: 0; }
 }
 /* Beside the chat the ticket panel starts below the header and ends at the chat; the board behind it dims less. */
 .drawer-wrap.beside-chat { background: rgba(20, 18, 15, 0.16); }
