@@ -9,6 +9,7 @@ import { fullTime, timeUntil, waitedFor } from "./time";
 import { useNow } from "./useNow";
 import { useMedia } from "./usePhone";
 import { MoreIcon } from "./icons";
+import { KeyHint } from "./KeyHint";
 
 const keyOf = (i: InboxItem) => `${i.profile}/${i.id}`;
 /** Touch screens have no keys to press: tooltips there leave out the "(d)"-style key text. */
@@ -58,7 +59,8 @@ export function RowMore({ label, actions }: { label: string; actions: { label: s
  * review, else Answer/Open); its other actions appear on hover or focus, or behind ⋯ on a touch screen. A cleared row
  * shrinks away and clicks pause briefly, so the next row's button can't be hit by mistake.
  * Snoozed ones sit in a collapsed section with time left and Unsnooze.
- * ↑↓ move, Enter opens, d marks done, s snoozes (or unsnoozes), Esc closes.
+ * ↑↓ move, Enter opens, d marks done, s snoozes (or unsnoozes; on the Older row: snoozes them all), Esc closes.
+ * I on the board opens it with the first entry focused (App.tsx, through openRequest).
  */
 export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSnoozeAll, openRequest }: {
   items: InboxItem[];
@@ -111,6 +113,17 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
     else if (e.key === "End") { e.preventDefault(); focusAt(-1); }
     else if (e.key === "Tab") setOpen(false);
     else if ((e.key.toLowerCase() === "d" || e.key.toLowerCase() === "s") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // s on the "Older · N" row: Snooze all, like its button.
+      if (list[at]?.dataset.older !== undefined) {
+        if (e.key.toLowerCase() !== "s") return;
+        e.preventDefault();
+        const older = groupInbox(items, Date.now()).older;
+        if (older.length && !busy()) {
+          onSnoozeAll(older);
+          requestAnimationFrame(() => focusAt(Math.min(at, entries().length - 1)));
+        }
+        return;
+      }
       const key = list[at]?.dataset.entry;
       const i = key && [...items, ...snoozed].find((x) => keyOf(x) === key);
       if (!i) return;
@@ -188,8 +201,9 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
             requestAnimationFrame(() => focusAt(0));
           }
         }}
-        title="Tickets on any board where Claude is waiting on you">
+        title="Tickets on any board where Claude is waiting on you (I)" aria-keyshortcuts="I">
         {items.length ? <><span className={`yt-dot ${fresh ? "pulse" : ""}`} aria-hidden /> {items.length} need you</> : <>{snoozed.length} snoozed</>}
+        <KeyHint keys="I" />
       </button>
       {open && (
         <MenuSheet onClose={() => setOpen(false)}>
@@ -202,12 +216,12 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
             {groups.older.length > 0 && (
               <>
                 <div className="inbox-older-head">
-                  <button role="menuitem" className="inbox-board inbox-snoozed-toggle" aria-expanded={showOlder} onClick={() => setShowOlder((v) => !v)}
-                    title="Waiting for more than a week">
+                  <button role="menuitem" data-older className="inbox-board inbox-snoozed-toggle" aria-expanded={showOlder} onClick={() => setShowOlder((v) => !v)}
+                    title={touch ? "Waiting for more than a week" : "Waiting for more than a week · s snoozes them all for a day"}>
                     {showOlder ? "▾" : "▸"} Older · {groups.older.length}
                   </button>
                   <button className="btn small ghost" tabIndex={-1} onClick={() => { if (!busy()) onSnoozeAll(groups.older); }}
-                    title="Hide every item waiting more than a week for a day">Snooze all</button>
+                    title={tip("Hide every item waiting more than a week for a day", "(s on the Older row)")}>Snooze all</button>
                 </div>
                 {showOlder && groups.older.map(row)}
               </>

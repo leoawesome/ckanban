@@ -14,6 +14,8 @@ export interface CommandAction {
   /** Keys shown on the right, e.g. ["N"] or ["Ctrl", "`"]. */
   keys?: string[];
   icon?: ReactNode;
+  /** Listed only once something is typed (filters, columns, themes), so the list stays short when it opens. */
+  searchOnly?: boolean;
   run: () => void;
 }
 
@@ -95,7 +97,7 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
       });
       return query ? out.sort((a, b) => a.score - b.score) : out;
     };
-    const actionItems: Item[] = matched(actions, (a) => a.label)
+    const actionItems: Item[] = matched(query ? actions : actions.filter((a) => !a.searchOnly), (a) => a.label)
       .map(({ x, at }) => ({ kind: "action", key: `a:${x.id}`, action: x, at }));
     const boardItems: Item[] = matched(profiles, (p) => p.name)
       .map(({ x, i, at }) => ({ kind: "board", key: `b:${x.slug}`, profile: x, num: i < 9 ? i + 1 : null, at }));
@@ -116,8 +118,8 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
     const last = items.length - 1;
     if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(last, Math.min(i, last) + 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(0, Math.min(i, last) - 1)); }
-    else if (e.key === "Home" && e.metaKey) { e.preventDefault(); setActive(0); }
-    else if (e.key === "End" && e.metaKey) { e.preventDefault(); setActive(last); }
+    else if (e.key === "Home" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setActive(0); }
+    else if (e.key === "End" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); setActive(last); }
     else if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); run(items[at]); }
   };
 

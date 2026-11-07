@@ -9,28 +9,33 @@ import { Modal } from "./Modal";
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 export const MOD = isMac ? "⌘" : "Ctrl";
 
+// Every row matches a real handler (App.tsx, TicketDrawer.tsx, Inbox.tsx, Changes.tsx, Dock.tsx, …). Single keys stay
+// quiet while typing in a field and inside the bottom panel.
 const GROUPS: { title: string; keys: [string[], string][] }[] = [
   {
     title: "Boards",
     keys: [
-      [[MOD, "K"], "Command bar: tickets on every board, actions, boards"],
+      [[MOD, "K"], "Command bar: tickets on every board, actions, boards (with a ticket open, its actions too)"],
       [[MOD, "B"], "Switch board (from anywhere, even while typing)"],
-      [["B"], "Switch board"],
-      [["[", "]"], "Previous / next board"],
-      [["1…9"], "Go to board 1–9"],
+      [["B"], "Switch board (also with a ticket open)"],
+      [["[", "]"], "Previous / next board (on the board)"],
+      [["1…9"], "Go to board 1–9 (on the board)"],
     ],
   },
   {
     title: "Board",
     keys: [
-      [["N"], "New ticket"],
+      [["N"], "New ticket (also with a ticket open)"],
       [["/"], "Search tickets"],
-      [["Esc"], "Clear the search"],
+      [["Esc"], "In the search box: clear it, again to leave it"],
+      [["I"], "Open the inbox, first entry selected"],
+      [["U"], "Undo, while a note with Undo shows (Moved…, Snoozed…)"],
       [["Ctrl", "`"], "Terminal (again to hide)"],
-      [["F"], "Files (again to hide)"],
-      [["C"], "Quick Claude chat, no ticket (again to hide)"],
-      [["T"], "Team: teammates, templates, huddles (again to hide)"],
-      [["?"], "This list"],
+      [["F"], "Files"],
+      [["C"], "Quick Claude chat, no ticket"],
+      [["T"], "Team: teammates, templates, huddles"],
+      [["Esc"], "In the bottom panel: leave a text box, again to hide the panel (not in the Terminal)"],
+      [["?"], "This list (also with a ticket open)"],
       [["Hold", MOD], "Show key hints on buttons"],
     ],
   },
@@ -41,14 +46,17 @@ const GROUPS: { title: string; keys: [string[], string][] }[] = [
       [[MOD, "S"], "Save for later (Backlog, nothing runs)"],
       [[MOD, "I"], "Switch Interview me first / Just do it"],
       [[MOD, "D"], "Star as important"],
+      [["Esc"], "Close (asks first when you typed something)"],
     ],
   },
   {
     title: "Cards",
     keys: [
-      [["J", "K", "↑", "↓", "←", "→"], "Select a card"],
+      [["J", "K", "H", "L", "↑", "↓", "←", "→"], "Select a card"],
       [["Enter"], "Open the ticket"],
-      [["D"], "Mark done (Review cards)"],
+      [["S"], "Star / unstar (a focused card)"],
+      [["M"], "Move to a column (a focused card)"],
+      [["D"], "Mark done (a focused Review card)"],
       [["Space"], "Pick up / drop the card"],
       [["↑", "↓", "←", "→"], "Move a picked-up card"],
       [["Esc"], "Cancel the move"],
@@ -57,10 +65,13 @@ const GROUPS: { title: string; keys: [string[], string][] }[] = [
   {
     title: "Inbox",
     keys: [
+      [["I"], "Open it (on the board)"],
       [["↑", "↓"], "Select an entry"],
+      [["Home", "End"], "First / last entry"],
       [["Enter"], "Open the ticket (Answer / Open)"],
       [["D"], "Mark done"],
-      [["S"], "Snooze for a day / unsnooze"],
+      [["S"], "Snooze for a day / unsnooze (on the Older row: snooze them all)"],
+      [["Esc"], "Close"],
     ],
   },
   {
@@ -69,8 +80,10 @@ const GROUPS: { title: string; keys: [string[], string][] }[] = [
       [["↑", "↓", "K", "J"], "Previous / next ticket"],
       [["Alt", "↑", "↓"], "Previous / next ticket, also while typing"],
       [[MOD, "Shift", "Enter"], "Next step: apply proposal & start work / start work / mark done"],
+      [["/"], "Write a message (opens the Chat tab)"],
       [["Enter"], "Send a chat message"],
       [["Shift", "Enter"], "New line"],
+      [["Esc"], "In a text box: leave it (what you typed stays)"],
       [["E"], "Edit the description"],
       [["R"], "Refine with Claude (Backlog)"],
       [["S"], "Star / unstar as important"],
@@ -80,7 +93,22 @@ const GROUPS: { title: string; keys: [string[], string][] }[] = [
       [[MOD, "Enter"], "Save the description"],
       [["Esc"], "Cancel the description edit"],
       [[MOD, "\\"], "Show / hide details"],
+      [[MOD, "K"], "This ticket's actions: go to what needs you, mark done, delete…"],
+      [["↑", "↓", "C"], "Changes tab, on a line's +: other lines, comment on it"],
       [["Esc"], "Close (one layer at a time)"],
+    ],
+  },
+  {
+    title: "In forms and lists",
+    keys: [
+      [["Esc"], "Close the dialog or menu on top (one at a time)"],
+      [["↑", "↓", "Enter"], "Lists (⌘K, board picker, Move to column): pick, then open"],
+      [["1…9"], "Board picker (nothing typed) and Move to column: that row"],
+      [[MOD, "Home", "End"], "Command bar: first / last result"],
+      [["1…9"], "Claude's questions: pick that answer (one more: your own answer)"],
+      [["Enter"], "Claude's questions: next question, then send"],
+      [["←"], "Claude's questions: back one question"],
+      [["↑"], "Empty chat box: edit your queued message"],
     ],
   },
 ];

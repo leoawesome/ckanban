@@ -22,13 +22,16 @@ import { askInChat, QuickChatPane } from "./QuickChat";
 import { TOOLS_IN_MENU_QUERY, useMedia, usePhone } from "./usePhone";
 import { StatusPill, UsageBox } from "./UsagePill";
 import { useUsage } from "./useUsage";
-import { anyLayerOpen } from "./layers";
-import { Board } from "./Board";
-import { boardColumnOf, columnNeighbours, columnOrder } from "./columns";
+import { onlyBaseLayers } from "./layers";
+import { Board, useCollapsedColumns } from "./Board";
+import { boardColumnOf, columnNeighbours, columnOrder, STATUS_MENU } from "./columns";
+import { ColumnPicker } from "./ColumnPicker";
+import { setThemeChoice, type ThemeChoice } from "./theme";
+import { afterBar, ticketActions } from "./ticketActions";
 import { hiddenTool } from "./family";
 import { searchBoard } from "./toolTickets";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { parkNeedsConfirm, parkText, parkTitle } from "./familyActions";
+import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, toolCount } from "./familyActions";
 import { NewTicketDialog } from "./NewTicketDialog";
 import { ProfileDialog } from "./ProfileDialog";
 import { SchedulesDialog } from "./SchedulesDialog";
@@ -37,11 +40,11 @@ import { FindLinksDialog } from "./FindLinksDialog";
 import { Select } from "./Select";
 import { BoardSwitcher, ShortcutsDialog } from "./Shortcuts";
 import { CommandBar, type CommandAction } from "./CommandBar";
-import { boardDigit, cardDir, isBoardPickerKey, isTyping, stepBoard, stepCard, type CardPos } from "./keynav";
+import { boardDigit, cardDir, cardKey, inDock, isBoardPickerKey, isInboxKey, isTyping, isUndoKey, panelBoardKey, stepBoard, stepCard, type CardPos } from "./keynav";
 import { HintLegend, KeyHint, useHintReveal } from "./KeyHint";
 import { teamButtonText } from "./huddleText";
 import { TicketDrawer } from "./TicketDrawer";
-import { toast, Toaster } from "./toast";
+import { toast, Toaster, undoLatest } from "./toast";
 import { clearArrival, noteServerMove } from "./arrivals";
 import { SampleOffer } from "./SampleOffer";
 
@@ -98,6 +101,20 @@ function focusedCard(grid: HTMLElement[][]): CardPos | null {
     if (row >= 0) return { col, row };
   }
   return null;
+}
+
+/** The board card that has the keyboard, if any (its ticket id). */
+function focusedCardId(): string | null {
+  return (document.activeElement as HTMLElement | null)?.closest?.(".sortable-card")?.getAttribute("data-ticket") ?? null;
+}
+
+/** Give a card the keyboard again by ticket id (after it moved to another column, its element is a new one). */
+function refocusCard(id: string) {
+  setTimeout(() => {
+    const el = [...document.querySelectorAll<HTMLElement>(".sortable-card")].find((c) => c.dataset.ticket === id);
+    el?.focus({ preventScroll: true });
+    el?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
 }
 
 function focusCard(pos: CardPos | null, grid = cardGrid()) {
@@ -200,6 +217,11 @@ export function App() {
   };
   const setError = (msg: string) => toast(msg, { tone: "error" });
   const [filters, setFilters] = useState<Set<FilterId>>(new Set());
+  const { collapsed, setColumnCollapsed } = useCollapsedColumns();
+  // A focused card's M (Move to column) and ⌘K Delete ticket…; cmdCard: the card focused when ⌘K opened.
+  const [moveAsk, setMoveAsk] = useState<string | null>(null);
+  const [deleteAsk, setDeleteAsk] = useState<string | null>(null);
+  const [cmdCard, setCmdCard] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(readDismissed);
   const [shortcuts, setShortcuts] = useState(false);
   useHintReveal(); // its legend, <HintLegend />, sits at the top of the JSX below
@@ -474,12 +496,14 @@ export function App() {
     setSlug(to);
   }, []);
   // Latest values for the window key handler below, which is bound once per dialog state.
-  const live = useRef({ profiles, tickets, markDone: (_id: string) => {} });
+  const live = useRef({ profiles, tickets, markDone: (_id: string) => {}, toggleStar: (_id: string) => {}, inboxCount: 0 });
 
   // Shortcuts: N new ticket, / search, ? cheatsheet, Ctrl+` Terminal, F Files, C Claude, T Team (each toggles its item in the bottom panel),
-  // ⌘K command bar (tickets on every board, actions, boards),
-  // B or ⌘B board picker, [ ] previous / next board, 1…9 board N, J/K/H/L or arrows select a card, D marks a Review card done.
-  // Esc is handled by the panel and dialogs (one layer at a time, see layers.ts).
+  // ⌘K command bar (tickets on every board, actions, boards), I the Inbox, U the newest toast's Undo,
+  // B or ⌘B board picker, [ ] previous / next board, 1…9 board N, J/K/H/L or arrows select a card;
+  // on a focused card S stars, M moves to a column, D marks a Review card done.
+  // With a ticket panel open (and it has the keyboard) only N, ?, B, U, ⌘K and ⌘B; single keys stay quiet while typing
+  // and inside the bottom panel. Esc is handled by the panel and dialogs (one layer at a time, see layers.ts).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "`") {
@@ -490,23 +514,39 @@ export function App() {
       if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
         if ((e.target as HTMLElement | null)?.closest?.(".xterm")) return;
         e.preventDefault();
-        // Works without a board too; a second ⌘K closes the bar.
-        const layer = anyLayerOpen();
-        setCommandBar((o) => (o ? false : !layer));
+        // Works without a board too, and over the ticket panel (its own entries join the list); a second ⌘K closes the bar.
+        const free = onlyBaseLayers();
+        setCmdCard(focusedCardId());
+        setCommandBar((o) => (o ? false : free));
         return;
       }
       const boards = live.current.profiles ?? [];
       if (isBoardPickerKey(e)) {
         if ((e.target as HTMLElement | null)?.closest?.(".xterm")) return;
         e.preventDefault();
-        // Like ⌘K: works from a text field too, and a second ⌘B closes the picker.
-        const layer = anyLayerOpen();
-        setBoardSwitcher((o) => (o ? false : !layer && boards.length > 0));
+        // Like ⌘K: works from a text field and over the ticket panel too, and a second ⌘B closes the picker.
+        const free = onlyBaseLayers();
+        setBoardSwitcher((o) => (o ? false : free && boards.length > 0));
         return;
       }
       const at = boards.findIndex((p) => p.slug === slug);
-      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e)) return;
-      if (openId || profileDialog || newTicket || connections || schedulesOpen || automationsOpen || anyLayerOpen() || document.querySelector(".overlay")) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e) || inDock(e)) return;
+      // U: the newest toast's Undo (Moved…, Snoozed…), from the board, the ticket panel or the open Inbox; not over a dialog.
+      if (isUndoKey(e)) {
+        if (!document.querySelector(".overlay") && undoLatest()) e.preventDefault();
+        return;
+      }
+      if (profileDialog || newTicket || connections || schedulesOpen || automationsOpen || !onlyBaseLayers() || document.querySelector(".overlay")) return;
+      if (openId) {
+        // The ticket panel has the keyboard (nothing above it, nothing typed into): N, ? and B still work.
+        const k = e.defaultPrevented ? null : panelBoardKey(e);
+        if (!k) return;
+        e.preventDefault();
+        if (k === "new") { if (slug) setNewTicket(true); }
+        else if (k === "shortcuts") setShortcuts(true);
+        else if (boards.length) setBoardSwitcher(true);
+        return;
+      }
       // Plain 1…9 (Alt+digit is taken by Chrome's tab switching); the ticket panel's questions form uses digits too.
       const digit = e.shiftKey || e.isComposing ? null : boardDigit(e.code);
       if (digit !== null) {
@@ -529,7 +569,21 @@ export function App() {
         focusCard(next, grid);
         return;
       }
-      if (e.key === "n" || e.key === "N") {
+      // S, M and D on a focused card (elsewhere they do nothing).
+      const card = cardKey(e);
+      const cardId = card && focusedCardId();
+      if (card && cardId) {
+        e.preventDefault();
+        if (card === "star") live.current.toggleStar(cardId);
+        else if (card === "move") setMoveAsk(cardId);
+        else live.current.markDone(cardId);
+        return;
+      }
+      if (isInboxKey(e)) {
+        if (!live.current.inboxCount) return;
+        e.preventDefault();
+        setInboxRequest(Date.now());
+      } else if (e.key === "n" || e.key === "N") {
         e.preventDefault();
         if (slug) setNewTicket(true);
       } else if (e.key === "/") {
@@ -556,11 +610,6 @@ export function App() {
         if (!to) return;
         e.preventDefault();
         switchBoard(to.slug);
-      } else if (e.key === "d" || e.key === "D") {
-        const id = (document.activeElement as HTMLElement | null)?.closest?.(".sortable-card")?.getAttribute("data-ticket");
-        if (!id) return;
-        e.preventDefault();
-        live.current.markDone(id);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -762,7 +811,19 @@ export function App() {
     void move(id, "done");
     setTimeout(() => focusCard(pos));
   };
-  live.current = { profiles, tickets, markDone };
+  // S on a focused card: star / unstar (shows at once, the server confirms).
+  const toggleStar = (id: string) => {
+    const t = tickets.find((x) => x.id === id);
+    const board = slug;
+    if (!t || !board) return;
+    const important = !t.important;
+    setTickets((ts) => ts.map((x) => (x.id === id ? { ...x, important } : x)));
+    api.updateTicket(board, id, { important }).catch((e) => {
+      setError(`Couldn't ${important ? "star" : "unstar"} the ticket: ${e.message}`);
+      loadTickets(board).catch(() => {});
+    });
+  };
+  live.current = { profiles, tickets, markDone, toggleStar, inboxCount: inbox.length + snoozed.length };
 
   const mcpAttention = mcp?.servers.filter((s) => s.attention).length ?? 0;
   const scheduleFails = schedules?.filter((s) => s.lastError).length ?? 0;
@@ -917,8 +978,19 @@ export function App() {
     openTicket(id, board);
   };
 
-  // ⌘K actions run the same handlers as their buttons and menu items.
+  // ⌘K actions run the same handlers as their buttons, keys and menu items. An open ticket's own entries come first
+  // (ticketActions.ts); with a card focused on the board, that card's.
+  const cardTicket = !openId && cmdCard ? tickets.find((t) => t.id === cmdCard) ?? null : null;
+  const cardActions: CommandAction[] = cardTicket ? [
+    { id: "card-star", label: cardTicket.important ? "Remove the star" : "Star as important", hint: cardTicket.title, keys: ["S"], run: () => toggleStar(cardTicket.id) },
+    { id: "card-move", label: "Move to a column…", hint: cardTicket.title, keys: ["M"], run: afterBar(() => setMoveAsk(cardTicket.id)) },
+    ...(cardTicket.status === "review" ? [{ id: "card-done", label: "Mark done", hint: cardTicket.title, keys: ["D"], run: afterBar(() => markDone(cardTicket.id)) }] : []),
+    { id: "card-delete", label: "Delete ticket…", hint: cardTicket.title, run: afterBar(() => setDeleteAsk(cardTicket.id)) },
+  ] : [];
+  const boardTagNames = boardTags(tickets).map((t) => t.name);
   const commandActions: CommandAction[] = [
+    ...(commandBar && openId ? ticketActions() : []),
+    ...cardActions,
     ...(profile ? [
       { id: "new", label: "New ticket", keys: ["N"], run: () => setNewTicket(true) },
       { id: "dock", label: "Open terminal", keys: ["Ctrl", "`"], icon: <TerminalIcon size={14} />, run: () => openDockOn("terminal") },
@@ -930,12 +1002,16 @@ export function App() {
       { id: "huddles", label: liveHuddles ? `Huddles (${liveHuddles} live)` : "Huddles", icon: <TeamIcon size={14} />, hint: "in Team", run: () => openDockOn("team", { action: "huddles" }) },
       { id: "new-teammate", label: "New teammate…", run: () => openDockOn("team", { action: "new" }) },
     ] : []),
-    ...(inbox.length ? [{ id: "inbox", label: `Open inbox (${inbox.length} need you)`, run: () => setInboxRequest(Date.now()) }] : []),
+    ...(inbox.length || snoozed.length ? [{
+      id: "inbox", label: inbox.length ? `Open inbox (${inbox.length} need you)` : `Open inbox (${snoozed.length} snoozed)`, keys: ["I"],
+      run: () => setInboxRequest(Date.now()),
+    }] : []),
     ...(profile ? [{ id: "schedules", label: "Schedules", icon: <ClockIcon size={14} />, run: () => openSchedules() }] : []),
     ...(profile ? [{ id: "automations", label: "Automations", icon: <LoopIcon size={14} />, run: () => setAutomationsOpen(true) }] : []),
     { id: "connections", label: "Connections", icon: <PlugIcon size={14} />, run: () => setConnections(true) },
     { id: "devices", label: "Devices", icon: <DeviceIcon size={14} />, hint: "who uses each shared device", run: () => setDevicesOpen(true) },
     ...(profile ? [{ id: "snippets", label: "Snippets", icon: <AtIcon size={14} />, run: () => setSnippetsOpen(true) }] : []),
+    ...(profile ? [{ id: "find-links", label: "Find links", icon: <LinkIcon size={14} />, hint: "tickets that belong together", run: () => setFindLinksOpen(true) }] : []),
     { id: "usage", label: "Usage", run: () => setUsageRequest(Date.now()) },
     ...(profile ? [{ id: "settings", label: "Board settings", icon: <GearIcon size={14} />, run: () => setProfileDialog("edit") }] : []),
     { id: "new-board", label: "New board", run: () => setProfileDialog("new") },
@@ -943,6 +1019,22 @@ export function App() {
     { id: "phone", label: "Phone access", icon: <DeviceIcon size={14} />, hint: "open the board from your phone", run: () => setPhoneAccess(true) },
     { id: "shortcuts", label: "Keyboard shortcuts", keys: ["?"], icon: <KeyboardIcon size={14} />, run: () => setShortcuts(true) },
     { id: "bug", label: "Report a bug", icon: <BugIcon size={14} />, run: () => setBugReport(true) },
+    // Listed once something is typed: the board's filters (the chips), its tags, folding columns, and the theme.
+    ...(profile && !phone ? [
+      ...FILTERS.map((f) => ({ id: `filter-${f.id}`, label: `${filters.has(f.id) ? "Stop filtering" : "Filter"}: ${f.label}`, searchOnly: true, run: () => toggleFilter(f.id) })),
+      ...boardTagNames.map((g) => ({
+        id: `tag-${g}`, label: `${tagFilter.includes(g) ? "Stop filtering by tag" : "Filter by tag"}: #${g}`, searchOnly: true,
+        run: () => setTagFilter((f) => (f.includes(g) ? f.filter((x) => x !== g) : [...f, g])),
+      })),
+      ...(filtering ? [{ id: "filter-clear", label: "Clear search and filters", searchOnly: true, run: () => { clearSearch(); setFilters(new Set()); } }] : []),
+      ...STATUS_MENU.map((c) => ({
+        id: `column-${c.id}`, label: `${collapsed.has(c.id) ? "Expand" : "Collapse"} column: ${c.label}`, searchOnly: true,
+        run: () => setColumnCollapsed(c.id, !collapsed.has(c.id)),
+      })),
+    ] : []),
+    ...(["system", "light", "dark"] as ThemeChoice[]).map((v) => ({
+      id: `theme-${v}`, label: `Theme: ${v === "system" ? "System" : v === "light" ? "Light" : "Dark"}`, searchOnly: true, run: () => setThemeChoice(v),
+    })),
   ];
 
   return (
@@ -1034,7 +1126,7 @@ export function App() {
             New ticket<KeyHint keys="N" />
           </button>
         )}
-        <HeaderMenu alert={menuAlert} keyHint={<KeyHint keys="?" />} items={menuItems} footer={menuFooter} />
+        <HeaderMenu alert={menuAlert} items={menuItems} footer={menuFooter} />
       </header>
 
       {version?.updateAvailable && !dismissed.has(updateKey) && (
@@ -1162,6 +1254,7 @@ export function App() {
               }} />
           )}
           <Board tickets={shownTickets} loading={!ticketsLoaded} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
+            collapsed={collapsed} onCollapse={setColumnCollapsed}
             slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia} />
         </>
       )}
@@ -1232,6 +1325,37 @@ export function App() {
             onCancel={() => setParkAsk(null)}
             onConfirm={() => { const a = parkAsk; setParkAsk(null); void move(a.id, a.status, a.order, true, true); }}>
             <p>{parkText(t)}</p>
+          </ConfirmDialog>
+        );
+      })()}
+      {moveAsk && (() => {
+        const t = tickets.find((x) => x.id === moveAsk);
+        if (!t) return null;
+        return (
+          <ColumnPicker ticket={t} onClose={() => setMoveAsk(null)}
+            onPick={(status) => {
+              setMoveAsk(null);
+              void move(t.id, status);
+              // The card has the keyboard again in its new column (unless a confirm asks first).
+              if (!parkNeedsConfirm(t, status)) refocusCard(t.id);
+            }} />
+        );
+      })()}
+      {deleteAsk && profile && (() => {
+        const t = tickets.find((x) => x.id === deleteAsk);
+        if (!t) return null;
+        const working = t.status === "in_progress" || !!t.running;
+        return (
+          <ConfirmDialog title={deleteTitle(t)} confirmLabel={toolCount(t) ? "Delete all" : "Delete ticket"} busyLabel="Deleting…" onCancel={() => setDeleteAsk(null)}
+            onConfirm={async () => {
+              await api.deleteTicket(profile.slug, t.id);
+              setTickets((ts) => ts.filter((x) => x.id !== t.id));
+              setDeleteAsk(null);
+            }}>
+            {toolCount(t) > 0
+              ? <p>Work that isn't merged is lost. Their copies of the folder go too; tickets you added to the feature stay, unlinked.</p>
+              : <p>Removes the ticket and its board history.{working ? " Claude will be stopped." : ""}</p>}
+            {t.worktree && <p className="muted">Its copy of the folder is removed if it has no unsaved changes. Its saved versions and any pull request stay.</p>}
           </ConfirmDialog>
         );
       })()}

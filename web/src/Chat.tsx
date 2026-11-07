@@ -1203,6 +1203,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
               submit();
             }
           }} />
+        {/* "/" in the ticket panel puts the cursor here (TicketDrawer.tsx); Esc leaves the box, the draft stays. */}
+        <KeyHint keys="/" />
         {snippets.popup}
         {slash.popup}
         <AttachmentChips text={draft} images={images} />
@@ -1221,7 +1223,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
           ) : (
             <span className="muted small composer-hint">
               {refine && "Refine mode: Claude won't change files."}
-              <span className="composer-keys"> Enter to send · Shift+Enter for a new line{queued.some((q) => fromUser(q) && editable(q)) && " · ↑ to edit your queued message"}</span>
+              <span className="composer-keys"> Enter to send · Shift+Enter for a new line · Esc to leave the box{queued.some((q) => fromUser(q) && editable(q)) && " · ↑ to edit your queued message"}</span>
             </span>
           )}
           <span className="composer-actions">

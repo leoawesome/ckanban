@@ -9,6 +9,7 @@ import { MenuSheet } from "./MenuSheet";
 import { TapTip } from "./TapTip";
 import { CheckIcon, ChevronLeftIcon, MoreIcon, RefreshIcon } from "./icons";
 import { comparedWith, fileCount, showTree } from "./changesText";
+import { stepIndex } from "./keynav";
 
 /**
  * The ticket worktree's diff for the Changes tab. Lives in the drawer so the tab can show the file
@@ -222,14 +223,17 @@ function FileDiff({ file, comments, setComments }: {
     setEditing(null);
   };
   const remove = (id: string) => setComments((all) => all.filter((c) => c.id !== id));
+  // After a comment is saved or cancelled from the keyboard, the line cursor is back on its line.
+  const table = useRef<HTMLTableElement>(null);
+  const backToLine = (line: number | undefined) => requestAnimationFrame(() => table.current?.querySelector<HTMLElement>(`.add-cmt[data-line="${line}"]`)?.focus());
 
   const editor = (
     <div className="cbox editing">
       <textarea autoFocus value={editing?.text ?? ""} placeholder={`What should Claude change on line ${editing?.line}?`} aria-label={`Comment on line ${editing?.line}`}
         onChange={(e) => setEditing((ed) => ed && { ...ed, text: e.target.value })}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
-          if (e.key === "Escape") { e.stopPropagation(); setEditing(null); }
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); backToLine(editing?.line); }
+          if (e.key === "Escape") { e.stopPropagation(); setEditing(null); backToLine(editing?.line); }
         }} />
       <div className="cbox-acts">
         <button className="btn small" onClick={() => setEditing(null)}>Cancel</button>
@@ -261,7 +265,7 @@ function FileDiff({ file, comments, setComments }: {
           <td className="ln ln-new">
             {l.new ?? ""}
             {l.new !== null && (
-              <button className="add-cmt" aria-label={`Comment on line ${l.new}`} title="Add a comment"
+              <button className="add-cmt" data-line={l.new} aria-label={`Comment on line ${l.new}`} title="Add a comment (C or Enter) · ↑↓ other lines"
                 onClick={(e) => {
                   e.stopPropagation();
                   // An open comment with text stays open until it is saved or cancelled.
@@ -298,7 +302,21 @@ function FileDiff({ file, comments, setComments }: {
       ) : (
         <>
         {coarse && <div className="diff-tap-hint muted small">Tap a line to comment on it.</div>}
-        <table className="diff-table">
+        {/* Line cursor: Tab to a line's +, ↑↓ move between lines, C (or Enter) comments on it. */}
+        <table className="diff-table" ref={table} onKeyDown={(e) => {
+          const at = e.target as HTMLElement;
+          if (!at.classList.contains("add-cmt") || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            const all = [...e.currentTarget.querySelectorAll<HTMLElement>(".add-cmt")];
+            const to = all[stepIndex(all.length, all.indexOf(at), e.key === "ArrowDown" ? 1 : -1)];
+            to?.focus();
+            to?.scrollIntoView({ block: "nearest" });
+          } else if (e.key === "c" || e.key === "C") {
+            e.preventDefault();
+            at.click();
+          }
+        }}>
           <tbody>
             {file.hunks.map((h, hi) => (
               <Fragment key={hi}>

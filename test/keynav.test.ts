@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boardDigit, canStartFromProposal, cardDir, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isStopKey, isTyping, newTicketKey, nextStep, panelStep, phoneTabs, stepBoard, stepCard, stepTab } from "../web/src/keynav";
+import { boardDigit, canStartFromProposal, cardDir, cardKey, escLeavesField, inDock, isInboxKey, isUndoKey, listKey, panelBoardKey, stepIndex, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isStopKey, isTyping, newTicketKey, nextStep, panelStep, phoneTabs, stepBoard, stepCard, stepTab } from "../web/src/keynav";
 
 test("cardDir maps J/K/H/L and arrows, ignores other keys", () => {
   expect(cardDir("j")).toBe("down");
@@ -194,4 +194,73 @@ test("isBoardPickerKey: ⌘B or Ctrl+B only", () => {
   expect(isBoardPickerKey({ ...k, metaKey: true, altKey: true })).toBe(false);
   expect(isBoardPickerKey({ ...k, metaKey: true, isComposing: true })).toBe(false);
   expect(isBoardPickerKey({ ...k, metaKey: true, key: "k" })).toBe(false);
+});
+
+const key = (k: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "isComposing", boolean>> & { code?: string } = {}) =>
+  ({ key: k, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, isComposing: false, ...mods });
+
+test("panelBoardKey: plain N, ? and B only", () => {
+  expect(panelBoardKey(key("n"))).toBe("new");
+  expect(panelBoardKey(key("N", { shiftKey: true }))).toBe("new");
+  expect(panelBoardKey(key("?", { shiftKey: true }))).toBe("shortcuts");
+  expect(panelBoardKey(key("b"))).toBe("boards");
+  expect(panelBoardKey(key("b", { metaKey: true }))).toBeNull();
+  expect(panelBoardKey(key("n", { ctrlKey: true }))).toBeNull();
+  expect(panelBoardKey(key("n", { isComposing: true }))).toBeNull();
+  expect(panelBoardKey(key("e"))).toBeNull();
+  expect(panelBoardKey(key("1"))).toBeNull();
+});
+
+test("cardKey: S star, M move, D done; not with modifiers or Shift", () => {
+  expect(cardKey(key("s"))).toBe("star");
+  expect(cardKey(key("M"))).toBe("move");
+  expect(cardKey(key("d"))).toBe("done");
+  expect(cardKey(key("s", { metaKey: true }))).toBeNull(); // ⌘S belongs to the browser / dialogs
+  expect(cardKey(key("D", { shiftKey: true }))).toBeNull();
+  expect(cardKey(key("x"))).toBeNull();
+});
+
+test("isUndoKey and isInboxKey: the plain letter only", () => {
+  expect(isUndoKey(key("u"))).toBe(true);
+  expect(isUndoKey(key("U"))).toBe(true);
+  expect(isUndoKey(key("u", { metaKey: true }))).toBe(false);
+  expect(isUndoKey(key("U", { shiftKey: true }))).toBe(false);
+  expect(isInboxKey(key("i"))).toBe(true);
+  expect(isInboxKey(key("i", { metaKey: true }))).toBe(false); // ⌘I switches mode in New ticket
+  expect(isInboxKey(key("j"))).toBe(false);
+});
+
+test("escLeavesField: Esc in a text field nobody used yet", () => {
+  const box = { tagName: "TEXTAREA" } as unknown as EventTarget;
+  const btn = { tagName: "BUTTON" } as unknown as EventTarget;
+  expect(escLeavesField({ key: "Escape", defaultPrevented: false, target: box })).toBe(true);
+  expect(escLeavesField({ key: "Escape", defaultPrevented: true, target: box })).toBe(false); // the box cancelled something itself
+  expect(escLeavesField({ key: "Escape", isComposing: true, defaultPrevented: false, target: box })).toBe(false);
+  expect(escLeavesField({ key: "Escape", defaultPrevented: false, target: btn })).toBe(false);
+  expect(escLeavesField({ key: "Enter", defaultPrevented: false, target: box })).toBe(false);
+});
+
+test("inDock: true only inside the bottom panel", () => {
+  const at = (inside: boolean) => ({ target: { closest: (sel: string) => (sel === ".dock" && inside ? {} : null) } as unknown as EventTarget });
+  expect(inDock(at(true))).toBe(true);
+  expect(inDock(at(false))).toBe(false);
+  expect(inDock({ target: null })).toBe(false);
+});
+
+test("stepIndex clamps at the ends and starts from the right end with nothing picked", () => {
+  expect(stepIndex(3, 0, 1)).toBe(1);
+  expect(stepIndex(3, 2, 1)).toBe(2);
+  expect(stepIndex(3, 0, -1)).toBe(0);
+  expect(stepIndex(3, -1, 1)).toBe(0);
+  expect(stepIndex(3, -1, -1)).toBe(2);
+  expect(stepIndex(0, 0, 1)).toBe(-1);
+});
+
+test("listKey: arrows and J/K move, Enter picks the active row, digits pick by number", () => {
+  expect(listKey(key("ArrowDown"))).toEqual({ move: 1 });
+  expect(listKey(key("k"))).toEqual({ move: -1 });
+  expect(listKey(key("Enter"))).toEqual({ pick: "active" });
+  expect(listKey(key("3", { code: "Digit3" }))).toEqual({ pick: 2 });
+  expect(listKey(key("Enter", { metaKey: true }))).toBeNull();
+  expect(listKey(key("x"))).toBeNull();
 });

@@ -244,7 +244,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
           <span className="yt-why" title={ticket.error ?? undefined}>{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
         </div>
       )}
-      <KeyHint inset className="card-keys" keys={doneHint ? "↵ open · D done · Space move" : "↵ open · Space move"} />
+      <KeyHint inset className="card-keys" keys={doneHint ? "↵ open · S star · M move · D done · Space drag" : "↵ open · S star · M move · Space drag"} />
       <div className="card-title" title={ticket.title} id={a11yId && `${a11yId}-title`}>
         {arrival.isNew && <span className="arrived-dot" role="img" aria-label="New here" title="Claude moved this card here" />}
         {ticket.important && <ImportantStar />}{ticket.title}
