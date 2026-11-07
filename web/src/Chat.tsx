@@ -40,6 +40,7 @@ import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
 import { fromTicket, layoutTurns, placeByTime, type TurnLayout } from "./chatTurns";
+import { gapOf, jumpAfterScroll, NEAR_BOTTOM, onContentChange, stickAfterScroll, USER_CHANGE_MS } from "./chatFollow";
 import { StallActions, stallWait } from "./StallActions";
 import { useSnippetPicker } from "./SnippetPicker";
 import { useSlashCommands, useSlashPicker } from "./SlashPicker";
@@ -286,6 +287,13 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
   const tailApplied = useRef(0);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+  // Bottom gap and scroll position as last seen, to tell new content below the view from a scroll.
+  const lastGap = useRef(0);
+  const lastTop = useRef(0);
+  // The user is pressing in the chat (selecting text, dragging the scrollbar, touching): new content waits for them.
+  const pressing = useRef(false);
+  const held = useRef(false);
+  const releasedAt = useRef(0);
   const keepOffset = useRef<number | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const running = !!ticket.running;
@@ -477,20 +485,70 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
     if (!el) return;
     if (page && landedOn.current !== ticket.id) {
       landedOn.current = ticket.id;
+      setJump(null);
       const form = [...el.querySelectorAll<HTMLElement>(".qcard:not(.answered)")].at(-1);
       if (form) {
         el.scrollTop = el.scrollHeight;
         el.scrollTop += form.getBoundingClientRect().top - el.getBoundingClientRect().top - 12;
-        stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        stickToBottom.current = stickAfterScroll({ gap: gapOf(el), stuck: false, movedDown: false });
+        lastGap.current = gapOf(el);
         return;
       }
+      // Opening a chat lands at the bottom, whatever the previous ticket's chat was scrolled to.
+      stickToBottom.current = true;
     }
     if (keepOffset.current !== null) {
       el.scrollTop = el.scrollHeight - keepOffset.current;
       keepOffset.current = null;
-    } else if (stickToBottom.current) el.scrollTop = el.scrollHeight;
-    else setJump((j) => (j ? { fresh: true } : j));
+    } else if (stickToBottom.current && !pressing.current) el.scrollTop = el.scrollHeight;
+    lastGap.current = gapOf(el);
   }, [page, pending, running, live, waitingHandoff, help?.cards.length, help?.failed]);
+  // Anything new at the bottom: Claude's reply, grey board notes, step cards, "asks:" blocks, the Working line, queued
+  // messages, a picture finishing loading. Watching the log itself catches all of them, whatever state they come from.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const check = () => {
+      const after = gapOf(el);
+      const userCaused = Date.now() - releasedAt.current < USER_CHANGE_MS;
+      const what = onContentChange({ before: lastGap.current, after, stuck: stickToBottom.current, pressing: pressing.current, userCaused });
+      if (userCaused && after > lastGap.current) stickToBottom.current = after < NEAR_BOTTOM;
+      if (what === "scroll") el.scrollTop = el.scrollHeight;
+      else if (what === "hold") held.current = true;
+      else if (what === "button") setJump((j) => (j?.fresh ? j : { fresh: true }));
+      lastGap.current = gapOf(el);
+      lastTop.current = el.scrollTop;
+    };
+    const mo = new MutationObserver(check);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    el.addEventListener("load", check, true);
+    const press = () => { pressing.current = true; };
+    const release = () => {
+      if (!pressing.current) return;
+      pressing.current = false;
+      releasedAt.current = Date.now();
+      if (held.current && stickToBottom.current) el.scrollTop = el.scrollHeight;
+      held.current = false;
+      lastGap.current = gapOf(el);
+    };
+    el.addEventListener("mousedown", press);
+    el.addEventListener("touchstart", press, { passive: true });
+    window.addEventListener("mouseup", release);
+    window.addEventListener("touchend", release);
+    window.addEventListener("touchcancel", release);
+    return () => {
+      mo.disconnect();
+      ro.disconnect();
+      el.removeEventListener("load", check, true);
+      el.removeEventListener("mousedown", press);
+      el.removeEventListener("touchstart", press);
+      window.removeEventListener("mouseup", release);
+      window.removeEventListener("touchend", release);
+      window.removeEventListener("touchcancel", release);
+    };
+  }, []);
   // Asking for help scrolls down to where its card appears.
   const helpBusy = help?.busy.length ?? 0;
   const helpBusyBefore = useRef(helpBusy);
@@ -984,10 +1042,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenOutput, onErro
       <div className="chat-log" ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget;
-          const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
-          stickToBottom.current = gap < 60;
-          if (gap < 60) setJump(null);
-          else if (gap > 240) setJump((j) => j ?? { fresh: false });
+          const gap = gapOf(el);
+          stickToBottom.current = stickAfterScroll({ gap, stuck: stickToBottom.current, movedDown: el.scrollTop > lastTop.current });
+          lastTop.current = el.scrollTop;
+          lastGap.current = gap;
+          setJump((j) => jumpAfterScroll(gap, j));
         }}>
         {page === null && <div className="muted"><span className="spinner" /> Loading the conversation…</div>}
         {loadError && (
