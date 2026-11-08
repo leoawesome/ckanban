@@ -749,7 +749,7 @@ export type PlanWake = "event" | "final";
 export const MAIN_FIRST_REPLY = `This is the first reply of a new main ticket: the user may not know yet how it works. In your reply, explain it in plain words: if the work needs several tasks, say in two or three short sentences that you split it into tasks that run on their own, that the user only talks to you here, and that the Tasks tab shows the progress. If it is a small job you can do in one task, say it in one sentence (for example: "I'll hand this to one task that runs on its own and tell you here when it's done."). Don't use the words "tool ticket", "main ticket" or "family" for this.`;
 
 /** A main ticket's Planning chat makes no ticket cards: it creates tool tickets itself once the work starts. */
-const MAIN_PLANNING = `This ticket is a main ticket: it never proposes child-ticket cards (don't call propose_tickets). Once the user wants work done, you create tool tickets yourself with \`create_ticket\` (kind explore, build, test, review, fix, group or round), and the board runs them and wakes you with each result. In Planning, only create tool tickets that explore or check (kind explore or review) when the user asks you to look into something; building starts once the user agrees with the plan. You never change the project's files yourself.`;
+const MAIN_PLANNING = `This ticket is a main ticket: it never proposes child-ticket cards (don't call propose_tickets). Once the user says to go ahead, you create tool tickets yourself with \`create_ticket\` (kind explore, build, test, review, fix, group or round), and the board runs them and wakes you with each result. In Planning, only create tool tickets that explore or check (kind explore or review) when the user asks you to look into something; building starts once the user agrees with the plan. You never change the project's files yourself.`;
 
 /**
  * Wakes a planner ticket's session while its plan runs: either child events to decide on, or the
@@ -1147,6 +1147,9 @@ function milestoneRule(r: MainRole): string {
 }
 
 /** A main ticket's "questions" status means it is waiting on the user: only for a reply that really asks something. */
+/** Every main ticket, in any column: discussion is not a go-ahead; steps that change files wait for a clear one. */
+export const MAIN_GO_AHEAD = `Discussion is not a go-ahead. When the user asks a question, gives an opinion or asks "what do you think", "should we" or "why not", answer it, give your recommendation and ask whether to go ahead (ask_questions or a direct question); don't create build, fix, test, round or other tool tickets that change files or start real work yet. Start them only when the user, in a message they typed, clearly says to go ahead ("do it", "go ahead", "start it", or a start option in a form), or when the message itself tells you to make a change ("fix X", "add Y"). You may start explore or review steps right away when the user asks you to look into or check something, and keep running the steps of a plan the user already approved (as when a step's result wakes you).`;
+
 export const MAIN_QUESTIONS_RULE = `Use status "questions" only for a reply that really asks the user something: an ask_questions form, or a direct question in your text. A reply that only answers the user or reports progress while steps run ends with "done".`;
 
 /**
@@ -1164,6 +1167,7 @@ The user talks to you here: you decide, and you keep the feature's status. Tool 
 - Build and fix tickets merge into this ticket's copy themselves${r.branch ? ` (branch \`${r.branch}\`)` : ""}. Land per milestone, not only at the end (for example before a test round that needs the work deployed): ${milestoneRule(r)} If it refuses because the work can't be landed cleanly, start a fix tool ticket. You may run one review huddle on a milestone before landing it.
 - After each result or decision, keep the status current with \`update_status\`.
 - When you answer the user, say in plain words what the tool tickets found or did; don't paste their reports.
+- ${MAIN_GO_AHEAD}
 - ${MAIN_QUESTIONS_RULE}${r.paused ? `
 ${MAIN_PAUSED}` : ""}`;
 }
@@ -1252,7 +1256,7 @@ ${RESULT_RULE}`)}`;
 
 /** A main ticket's chat note (act mode): it talks and decides, tool tickets do the work. */
 function mainChatRules(t: Ticket, r: MainRole, outputDir: string): string {
-  return `Act on the message through tool tickets: you never change this project's files yourself, not even one line and not through the shell. Answer questions from what you know, the status and the tool tickets' reports; create tool tickets for any change, check or longer research, and tell the user in a sentence or two what you started. Landing goes through \`land_milestone\`. Save research or writing you produce yourself in ${outputDir}. ${reviewFileRule(outputDir)} ${PLAIN_WORDS}
+  return `Work through tool tickets: you never change this project's files yourself, not even one line and not through the shell. Answer questions from what you know, the status and the tool tickets' reports; changes, checks and longer research go to tool tickets, and when you start one, tell the user in a sentence or two what you started. Discussion is not a go-ahead: follow the go-ahead rule in your main ticket rules. Landing goes through \`land_milestone\`. Save research or writing you produce yourself in ${outputDir}. ${reviewFileRule(outputDir)} ${PLAIN_WORDS}
 If you need decisions from the user, ask with the ask_questions tool.
 ${bugReportRule(t)}
 ${SELF_MOVE_RULE}`;

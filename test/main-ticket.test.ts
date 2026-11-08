@@ -12,7 +12,7 @@ import { run as git } from "../src/server/git";
 import { createServer } from "../src/server/http";
 import { KIND_DEFAULTS, progressStep, wakeTable } from "../src/server/main-ticket";
 import { isComplete, planStep } from "../src/server/plan";
-import { mainWakePrompt } from "../src/server/prompts";
+import { MAIN_GO_AHEAD, mainWakePrompt } from "../src/server/prompts";
 import type { Ticket } from "../src/server/types";
 import { argsFile, board, bus, FAKE, readArgs, setBoard, setup, store, untilSpawned, useBoardEnv } from "./board-env";
 import { tempDir, until } from "./helpers";
@@ -48,7 +48,9 @@ test("a main ticket's runs can't edit files and get its rules in the system prom
     expect(disallowed(n)).not.toContain(tool);
   }
   expect(m.args[m.args.indexOf("--append-system-prompt") + 1]).toContain("This ticket is a main ticket");
-  expect(m.prompt).toContain("Act on the message through tool tickets");
+  expect(m.args[m.args.indexOf("--append-system-prompt") + 1]).toContain(MAIN_GO_AHEAD);
+  expect(m.prompt).toContain("Work through tool tickets");
+  expect(m.prompt).toContain("Discussion is not a go-ahead");
   expect(m.prompt).not.toContain("as you would in an interactive session");
   // A reply leaves the main card where the user put it.
   expect(get(main.id).status).toBe("review");
