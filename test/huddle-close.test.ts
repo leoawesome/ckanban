@@ -302,7 +302,7 @@ test("a pending restart waits for huddle agents mid-turn and holds new agent run
   await Promise.all([fresh.shutdown(), again.shutdown()]);
 }, 60_000);
 
-test("for you: tags of @you since the user's last post or action, brake messages included", async () => {
+test("for you: tags of @you since the user's last post or action", async () => {
   const t = await host();
   const h = huddles.create("p", t.id, [{ preset: "reviewer" }]);
   await idle();
@@ -315,11 +315,10 @@ test("for you: tags of @you since the user's last post or action, brake messages
   huddles.post("p", h.id, you(h), "yes");
   await idle();
   expect(view()).toMatchObject({ forYou: 0, forYouSince: messages(h).find((m) => m.text === "yes")!.seq });
-  // A brake tags @you; acting on it (Resume) clears it.
-  store.saveHuddle("p", { ...store.getHuddle("p", h.id)!, maxMessages: 1 });
-  huddles.post("p", h.id, participant(h, "reviewer"), "more");
+  // Acting on the huddle (Resume) clears it.
+  huddles.post("p", h.id, participant(h, "reviewer"), "@you more?");
   await idle();
-  expect(view()).toMatchObject({ status: "stopped", stopReason: "messages", forYou: 1 });
+  expect(view().forYou).toBe(1);
   huddles.resume("p", h.id);
   expect(view().forYou).toBe(0);
   // Viewing the latest message (the Huddle tab, scrolled down) clears it too, up to the message seen; only the user can.

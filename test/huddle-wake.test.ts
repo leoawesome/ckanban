@@ -1,4 +1,4 @@
-// Huddles: who can wake whom, budget and message limits, ping-pong and restarts.
+// Huddles: who can wake whom, the budget brake and restarts.
 import { expect, test } from "bun:test";
 import { callTool } from "../src/mcp-server";
 import { Huddles, huddleCost } from "../src/server/huddle";
@@ -233,70 +233,21 @@ test("resume that delivers a tag wakes that agent and adds no nobody-has-work li
   expect(messages(h).some((m) => m.text.startsWith("Nobody was tagged"))).toBe(false);
 }, 60_000);
 
-test("message limit stops the huddle", async () => {
+test("no message limit: agents talk on without the user and keep waking each other", async () => {
   const t = await host();
-  const h = huddles.create("p", t.id, [{ preset: "reviewer" }]);
+  const h = huddles.create("p", t.id, [{ preset: "reviewer", count: 2 }]);
   await idle();
-  store.saveHuddle("p", { ...store.getHuddle("p", h.id)!, maxMessages: 3 });
-  for (const n of [1, 2]) huddles.post("p", h.id, you(h), `note ${n}`);
-  expect(store.getHuddle("p", h.id)!.status).toBe("live");
-  // The system messages don't count; the third real one does.
-  huddles.post("p", h.id, you(h), "@reviewer note 3");
-  await idle();
-  const s = store.getHuddle("p", h.id)!;
-  expect(s).toMatchObject({ status: "stopped", stopReason: "messages" });
-  expect(heardBy("reviewer").length).toBe(1);
-  huddles.resume("p", h.id);
-  expect(store.getHuddle("p", h.id)!.maxMessages).toBe(3 + 150);
-}, 60_000);
-
-test("routing pauses after 30 messages without the user; the lead's and @main's posts don't reset it", async () => {
-  const t = await host();
-  const h = huddles.create("p", t.id, [{ preset: "reviewer", count: 2 }, { preset: "security" }]);
-  await idle();
-  huddles.post("p", h.id, you(h), "go");
-  const who = ["reviewer-1", "reviewer-2", "security", "main"];
-  for (let i = 0; i < 29; i++) huddles.post("p", h.id, participant(h, who[i % who.length]), `step ${i}`);
-  expect(store.getHuddle("p", h.id)!.status).toBe("live");
-  huddles.post("p", h.id, participant(h, "security"), "step 29");
-  const paused = store.getHuddle("p", h.id)!;
-  expect(paused).toMatchObject({ status: "stopped", stopReason: "loop" });
-  // Paused, not stopped: the participants keep their state.
-  expect(paused.participants.some((p) => p.status === "stopped")).toBe(false);
-  expect(messages(h).at(-1)!.mentions).toEqual(["you"]);
-  const n = heardBy("reviewer-1").length;
-  huddles.post("p", h.id, participant(h, "main"), "@reviewer-1 one more");
-  await idle();
-  expect(heardBy("reviewer-1").length).toBe(n);
-  huddles.resume("p", h.id);
-  expect(store.getHuddle("p", h.id)!).toMatchObject({ status: "live", stopReason: null, sinceUser: 0 });
-}, 60_000);
-
-test("ping-pong: two agents answering each other stop waking each other and their lead is tagged", async () => {
-  const t = await host();
-  const h = huddles.create("p", t.id, [{ preset: "reviewer", count: 2 }, { preset: "qa-lead" }]);
-  await idle();
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 40; i++) {
     const [from, to] = i % 2 ? ["reviewer-2", "reviewer-1"] : ["reviewer-1", "reviewer-2"];
     huddles.post("p", h.id, participant(h, from), `@${to} no, ${i}`);
   }
   await idle();
   const s = store.getHuddle("p", h.id)!;
-  expect(s.held).toEqual(["reviewer-1", "reviewer-2"]);
-  expect(s.status).toBe("live");
-  // Found by its text: on a slow machine a line about a snapshot refresh can follow it.
-  const warn = messages(h).findLast((m) => m.kind === "system" && m.text.includes("answered each other"))!;
-  expect(warn.mentions.sort()).toEqual(["main", "qa-lead"]);
-  await until(() => heardBy("qa-lead").some((x) => x.includes("answered each other 6 times")));
-  // They no longer wake each other...
+  expect(s).toMatchObject({ status: "live", stopReason: null });
+  expect(s.held ?? null).toBeNull();
   const r2 = heardBy("reviewer-2").length;
   huddles.post("p", h.id, participant(h, "reviewer-1"), "@reviewer-2 still no");
   await idle();
-  expect(heardBy("reviewer-2").length).toBe(r2);
-  // ...until their lead tags them.
-  huddles.post("p", h.id, participant(h, "qa-lead"), "@reviewer-2 take reviewer-1's version");
-  await idle();
-  expect(store.getHuddle("p", h.id)!.held).toBeNull();
   expect(heardBy("reviewer-2").length).toBe(r2 + 1);
 }, 60_000);
 

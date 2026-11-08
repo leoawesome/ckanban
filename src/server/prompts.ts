@@ -951,7 +951,7 @@ function hostSection(h: Huddle, summary: string): string {
   return `## You host this huddle
 You run the room, so @main (the ticket's own session, which holds the ticket's whole context) keeps its turns for the ticket. @main sleeps until someone tags it.
 - Start by giving each helper one clear task: one post that tags each helper with what to do, what to report and that it reports to you. Keep the goal and the decisions in the pinned brief (\`huddle_brief\`) and the findings list current (\`huddle_findings\`).
-- Chase helpers that go quiet or drift from their task. The board sends you, not @main, the idle watchdog, the notes about tags that woke nobody, blocked helpers, ping-pong pairs and the budget warnings.
+- Chase helpers that go quiet or drift from their task. The board sends you, not @main, the idle watchdog, the notes about tags that woke nobody, blocked helpers and the budget warnings.
 - Hand-ins come to you: check each one (read its files, run what helps), then accept or reject it with \`huddle_review_changes\`, with a reason when you reject. Accepted files land in the ticket's folder.
 - Tag @main only for a decision that needs the ticket's context (what the ticket wants, a trade-off the brief doesn't settle) or when the work is finished. Never for progress, small questions or single hand-ins.
 - Before you tag @main, pin one consolidated report (in the brief, or the findings list kept current) so @main reads it in one place.
@@ -1057,7 +1057,7 @@ export function autoHuddleSlotPrompt(a: Pick<AutoHuddle, "reason" | "trigger" | 
 ${RESULT_RULE}`);
 }
 
-/** The auto huddle stopped (budget, message limit, the user): the ticket's run decides whether it can land. */
+/** The auto huddle stopped (budget, the user): the ticket's run decides whether it can land. */
 export function autoHuddleStoppedPrompt(h: Huddle, why: string, open: number): string {
   return context("Auto huddle stopped", `Your auto huddle ${h.id} stopped: ${why}. ${open} pinned finding${open === 1 ? " is" : "s are"} still open.
 If any MUST finding is still unfixed, do NOT land: end with status "blocked" and a summary like "Auto huddle hit its cap with N MUST findings open; not landed." If every MUST finding is fixed and re-checked, land the work as usual, write the huddle summary to outputs/${summaryFile(h.id)}, and list the SHOULD and COULD findings in the result.

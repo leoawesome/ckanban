@@ -22,7 +22,7 @@
 //
 // Host: a huddle may have one lead that runs it (h.host; templates and auto huddles default to their first lead), so
 // @main, which holds the ticket's whole context, doesn't spend turns on the room. While the host can act (activeHost),
-// the idle watchdog, the "wasn't woken" notes, the budget warnings, blocked notes, ping-pong notes and hand-ins go to
+// the idle watchdog, the "wasn't woken" notes, the budget warnings, blocked notes and hand-ins go to
 // it instead of @main; @main still wakes on a direct tag (the host's final report) and the user still closes. When the
 // host is stopped, blocked or fails, @main takes its place again and a system note says so (when the host is done,
 // @main takes it quietly: the host's final report already tagged @main).
@@ -40,9 +40,8 @@
 // nothing is applied and the helper redoes the work on a fresh copy. The board remembers its own last save of the
 // huddle file; an edit from outside can't raise lead, canEdit or the limits, or move a copy (see guard).
 //
-// Brakes, so a huddle can't loop or overspend: it stops at maxCostUsd (agents' runs and @main's huddle replies; the
-// leads are warned at 80%) and at maxMessages; routing pauses after AGENT_ONLY_MAX messages without the user; two
-// participants answering each other PING_PONG times in a row stop waking each other and their lead is tagged.
+// The one brake, so a huddle can't overspend: it stops at maxCostUsd (agents' runs and @main's huddle replies; the
+// leads are warned at 80%). There is no message limit: agents talk until they reach a conclusion.
 import { boardConnectorOptions } from "./connectors";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { trackedInterval } from "./lag";
@@ -101,11 +100,6 @@ const ACTIVITY_THROTTLE_MS = 1000;
 export const DEFAULT_MAX_COST_USD = 20;
 /** Most an auto huddle (start_huddle) may ask for; a run asking for more gets this. */
 export const AUTO_MAX_COST_USD = 100;
-export const DEFAULT_MAX_MESSAGES = 150;
-/** Messages (not system ones) since the user last posted or resumed before routing pauses. */
-export const AGENT_ONLY_MAX = 30;
-/** Messages in a row going back and forth between the same two participants. */
-export const PING_PONG = 6;
 const BUDGET_WARN = 0.8;
 /** Teammates one agent may have waiting for the user's review at once. */
 const MAX_PENDING_TEAMMATES = 2;
@@ -1052,7 +1046,7 @@ export class Huddles {
     const base = { prompt: "", focus: undefined, sessionId: null, status: "idle" as const, cursor: 0, joinedAt: at, workspace: "shared" as const, preset: null };
     const h: Huddle = {
       id: `h_${newId()}`, hostTicket: hostId, status: "live", maxParticipants: max, findings: [], invited: [], seq: 0,
-      maxCostUsd, maxMessages: DEFAULT_MAX_MESSAGES, posts: 0, sinceUser: 0, stopReason: null, createdAt: at, updatedAt: at,
+      maxCostUsd, posts: 0, sinceUser: 0, stopReason: null, createdAt: at, updatedAt: at,
       template: tpl?.name ?? null,
       brief: tpl ? { text: templateBrief(tpl, maxCostUsd), by: USER_HANDLE, at } : opts.auto ? { text: customReviewBrief(maxCostUsd), by: USER_HANDLE, at } : null,
       ...(opts.auto ? { auto: { reason: opts.auto.reason } } : {}),
@@ -1610,44 +1604,16 @@ export class Huddles {
     return this.get(slug, hid);
   }
 
-  /** Counts a new message against the huddle's limits; false when routing just stopped or paused. */
-  private brakes(slug: string, hid: string, by: HuddleParticipant, m: HuddleMessage): boolean {
-    const h = this.update(slug, hid, (x) => {
+  /** Counts a new message. The budget is the only brake: agents talk until they reach a conclusion. */
+  private brakes(slug: string, hid: string, by: HuddleParticipant, _m: HuddleMessage): boolean {
+    this.update(slug, hid, (x) => {
       x.posts = (x.posts ?? 0) + 1;
       x.sinceUser = by.kind === "human" ? 0 : (x.sinceUser ?? 0) + 1;
-      // A lead, @main or the user tagging a held pair settles it.
-      if (x.held?.length && !x.held.includes(by.handle) && canManage(x, by) && x.held.some((p) => m.mentions.includes(p) || m.mentions.includes("all"))) x.held = null;
     });
-    const max = h.maxMessages ?? DEFAULT_MAX_MESSAGES;
-    if ((h.posts ?? 0) >= max) {
-      this.halt(slug, hid, "messages", `The huddle reached its limit of ${max} messages and stopped; every run was stopped. @you: read what came out and resume if more is needed.`);
-      return false;
-    }
-    if ((h.sinceUser ?? 0) >= AGENT_ONLY_MAX) {
-      this.halt(slug, hid, "loop", `${AGENT_ONLY_MAX} messages went by without you, so routing is paused (runs finish what they are doing). @you: check the huddle is on track and resume it.`);
-      return false;
-    }
-    this.pingPong(slug, hid);
     return true;
   }
 
-  /** The last PING_PONG messages went back and forth between the same two participants: they stop waking each other. */
-  private pingPong(slug: string, hid: string) {
-    const h = this.get(slug, hid);
-    const last = this.store.readHuddleMessages(slug, hid).filter((m) => m.kind !== "system").slice(-PING_PONG);
-    if (last.length < PING_PONG) return;
-    const pair = [...new Set(last.map((m) => m.from))];
-    if (pair.length !== 2 || pair.includes(USER_HANDLE) || last.some((m, i) => i && m.from === last[i - 1].from)) return;
-    if (h.held && pair.every((x) => h.held!.includes(x))) return;
-    const host = activeHost(h);
-    const leads = host !== MAIN_HANDLE && !pair.includes(host) ? [host]
-      : h.participants.filter((p) => p.lead && p.kind !== "human" && p.status !== "stopped" && !pair.includes(p.handle)).map((p) => p.handle);
-    const tag = leads.length ? leads : [USER_HANDLE];
-    this.update(slug, hid, (x) => void (x.held = pair));
-    this.system(slug, hid,
-      `@${pair[0]} and @${pair[1]} answered each other ${PING_PONG} times in a row, so they no longer wake each other. ` +
-      `${tag.map((x) => `@${x}`).join(" ")}: settle it, or tag them with what to do next.`, tag);
-  }
+
 
   /** The huddle stops by itself (see HuddleStopReason). budget and messages stop every huddle run too; loop only pauses routing. */
   private halt(slug: string, hid: string, reason: HuddleStopReason, text: string) {
@@ -1716,7 +1682,6 @@ export class Huddles {
     const h = this.get(slug, hid);
     const cur = h.participants.find((x) => x.handle === p.handle);
     if (!cur || (!settled(cur) && cur.status !== "stopped") || from === USER_HANDLE) return;
-    if (h.held?.includes(p.handle) && h.held.includes(from)) return;
     if (h.unwoken?.[p.handle]?.includes(from)) return;
     this.update(slug, hid, (x) => {
       x.unwoken ??= {};
@@ -1734,9 +1699,6 @@ export class Huddles {
    */
   private wakes(h: Huddle, p: HuddleParticipant, m: HuddleMessage): "mention" | "monitor" | null {
     if (p.kind === "human" || m.from === p.handle || p.status === "stopped") return null;
-    // A held pair doesn't wake each other.
-    const held = h.held ?? [];
-    if (held.includes(p.handle) && held.includes(m.from)) return null;
     const mentioned = m.mentions.includes(p.handle) || m.mentions.includes("all");
     if (m.kind === "system") return mentioned ? "mention" : null;
     if (p.status === "done") {
@@ -2206,7 +2168,7 @@ export class Huddles {
   /**
    * Resume routing; stopped participants wake again when tagged (or, in monitor mode, on new messages), and whoever
    * was tagged while the huddle was stopped wakes now. addBudgetUsd raises the budget (needed when it was spent);
-   * the message limit and the agent-only count start over.
+   * the agent-only count starts over.
    */
   resume(slug: string, hid: string, addBudgetUsd = 0): Huddle {
     const h = this.get(slug, hid);
@@ -2223,8 +2185,6 @@ export class Huddles {
       x.held = null;
       x.finishedAtStop = false;
       if (spent < max * BUDGET_WARN) x.budgetWarned = false;
-      // Another round of messages before the limit stops it again.
-      if (h.stopReason === "messages") x.maxMessages = (x.posts ?? 0) + DEFAULT_MAX_MESSAGES;
       for (const p of x.participants) if (p.status === "stopped") p.status = "idle";
     });
     if (h.status !== "live" || addBudgetUsd) this.system(slug, hid, `Huddle resumed by @you${addBudgetUsd ? ` with ${money(addBudgetUsd)} more budget (now ${money(max)})` : ""}.`);
