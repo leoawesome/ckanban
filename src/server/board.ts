@@ -2779,6 +2779,7 @@ export class Board {
   async addOnTicket(slug: string, id: string, input: { title: string; body: string; start?: boolean; important?: boolean }): Promise<Ticket> {
     const src = this.store.getTicket(slug, id);
     if (!src) throw new Error(`ticket ${id} not found`);
+    if (src.main) throw new Error("A main ticket doesn't get add-on tickets: its proposal card updates its own plan, and new work goes to its steps.");
     const title = input.title.trim();
     if (!title) throw new Error("title is required");
     // Clicked again (another tab, a slow reply): the add-on this card already made, even renamed or started since.

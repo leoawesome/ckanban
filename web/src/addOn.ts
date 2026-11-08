@@ -5,8 +5,10 @@ interface Linkable { id: string; title: string; status: string; addOnOf?: string
  * A proposal on this ticket becomes an add-on ticket (see ProposalCard's AddOn) when the ticket already did its work:
  * it is in Review or Done, came back to Planning/Backlog from there, or ran before. Returns how the card names its
  * state ("Done", "In review", null when it only ran), or undefined for a ticket that never ran (Apply as usual).
+ * Never for a main ticket: its card updates its own plan, and new work goes to its tool tickets.
  */
-export function addOnState(t: { status: string; runCount: number; reopenedFrom?: { status: string; outcome?: string | null } | null }): string | null | undefined {
+export function addOnState(t: { status: string; runCount: number; main?: boolean; reopenedFrom?: { status: string; outcome?: string | null } | null }): string | null | undefined {
+  if (t.main) return undefined;
   const shaping = t.status === "planning" || t.status === "backlog";
   const was = shaping && t.reopenedFrom ? t.reopenedFrom.status : t.status;
   if (was === "done") return "Done";

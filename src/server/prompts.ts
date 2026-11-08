@@ -562,9 +562,11 @@ export function interruptedPrompt(): string {
 /** A message the user typed in the ticket's chat. Their text comes first; board instructions are wrapped so the UI can hide them. */
 /**
  * Planning a ticket that already ran: a new requirement becomes a linked add-on ticket (the proposal card creates
- * it), so this one keeps its title and description. Empty for a ticket that never ran.
+ * it), so this one keeps its title and description. Empty for a ticket that never ran, and for a main ticket (its
+ * proposal card updates its own plan; new work goes to tool tickets).
  */
-export function addOnRule(t: Pick<Ticket, "title" | "status" | "runCount" | "reopenedFrom">): string {
+export function addOnRule(t: Pick<Ticket, "title" | "status" | "runCount" | "reopenedFrom" | "main">): string {
+  if (t.main) return "";
   const was = t.reopenedFrom?.status ?? t.status;
   if (!(t.runCount > 0 || was === "review" || was === "done")) return "";
   const state = was === "done" ? "is Done" : was === "review" ? "is waiting in Review" : "already ran";

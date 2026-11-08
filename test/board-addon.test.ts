@@ -176,3 +176,22 @@ test("an add-on renamed and started by its run still matches its card, and a sec
   expect(again.id).toBe(a.id);
   expect(store.listTickets("p").length).toBe(2);
 });
+
+test("a main ticket never gets add-ons: its card updates its own plan, the prompt has no add-on rule, the board refuses one", async () => {
+  // The berry-best case: a main ticket in Planning that a step's result woke once.
+  expect(addOnState({ status: "planning", runCount: 1, main: true })).toBeUndefined();
+  expect(addOnState({ status: "review", runCount: 1, main: true })).toBeUndefined();
+  expect(addOnState({ status: "planning", runCount: 1, main: true, reopenedFrom: { status: "done", outcome: "done" } })).toBeUndefined();
+  expect(addOnRule(ticket({ runCount: 1, main: true }))).toBe("");
+  expect(addOnRule(ticket({ status: "review", runCount: 1, main: true }))).toBe("");
+  expect(chatPrompt(ticket({ runCount: 1, main: true }), "update the plan", "refine", "/o")).not.toContain("Treat a new requirement as an add-on");
+  // Plain tickets keep add-ons.
+  expect(addOnState({ status: "planning", runCount: 1, main: false })).toBeNull();
+  expect(addOnRule(ticket({ runCount: 1, main: false }))).toContain("Treat a new requirement as an add-on");
+
+  await setup();
+  const src = await board.createTicket("p", { title: "Outreach", body: "Plan", status: "backlog", main: true });
+  store.updateTicket("p", src.id, { status: "planning", runCount: 1 });
+  await expect(board.addOnTicket("p", src.id, { title: "Outreach", body: "New plan" })).rejects.toThrow("A main ticket doesn't get add-on tickets");
+  expect(store.listTickets("p").filter((t) => t.addOnOf === src.id)).toEqual([]);
+});
