@@ -752,7 +752,7 @@ const PLANNING_TOOLS: Tool[] = [
     description:
       "Board planning chat only: propose an improved title and markdown description for this ticket. " +
       "The board shows it as a card; the user clicks Apply to replace the ticket's title and description " +
-      "(on a ticket that already ran, Create add-on ticket makes a new ticket linked to it instead). " +
+      "(on a ticket that already ran, Start follow-up work runs it as a step that reports to the feature's main ticket, or turns a ticket on its own into a main ticket with it as the first step). " +
       "Write the description self-contained (## Goal, ## Context, ## Scope, ## Requirements, ## Acceptance criteria, ## Open questions): " +
       "Claude works on it later without this chat. Nothing is created or changed by the call.",
     inputSchema: {
@@ -762,7 +762,7 @@ const PLANNING_TOOLS: Tool[] = [
         partOf: {
           type: "string",
           description: "Only when the ticket belongs in another family (get_family shows its current one), e.g. the user says it hangs under the wrong ticket: " +
-            "the id of the ticket it is part of, or \"none\" to take it out of its family (this also ends a wrong plan or add-on link). Apply then moves it. Leave out to keep its links.",
+            "the id of the ticket it is part of, or \"none\" to take it out of its family (this also ends a wrong plan link). Apply then moves it. Leave out to keep its links.",
         },
       },
       required: ["title", "description"],
@@ -965,7 +965,7 @@ const PLANNING_TOOLS: Tool[] = [
   {
     name: "propose_tickets",
     description:
-      "Board ticket chat (any column): propose new tickets, e.g. splitting the work or add-ons, linked to this ticket as their parent. Call list_tickets first to avoid duplicates. " +
+      "Board ticket chat (any column): propose new tickets, e.g. splitting the work, linked to this ticket as their parent. Call list_tickets first to avoid duplicates. " +
       "The board shows one card per ticket; the user clicks Create to add it to Backlog, linked to this ticket. " +
       "Each description must be self-contained (goal, context with relevant files, acceptance criteria). " +
       "key is a short unique name; dependsOn lists keys that must be finished first: give one to tickets that build on each other or likely edit the same files. " +
@@ -1564,7 +1564,7 @@ export const TOOLS: Tool[] = [
   {
     name: "get_family",
     description:
-      "Show a ticket's whole family: the tickets of one piece of work (a project or flight), linked as part of, add-on to or planned by each other. " +
+      "Show a ticket's whole family: the tickets of one piece of work (a project or flight), linked as part of or planned by each other. " +
       "Lists every ticket from the top one down with its column, how it is linked, its Claude session and its last result. " +
       "Use it to summarise or learn from all the work on something, instead of searching tickets by words.",
     inputSchema: { type: "object", properties: { profile: PROFILE, id: ID }, required: ["id"] },

@@ -401,8 +401,6 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 @keyframes finish-flash { from { background-color: color-mix(in srgb, currentColor 30%, var(--surface)); } }
 @keyframes finish-pop { from { transform: scale(0.6); opacity: 0.4; } }
 .badge.ok { background: var(--ok-soft); color: var(--ok); }
-.badge.add-on { display: inline-block; background: var(--info-soft); color: var(--info); border: 0; font-family: inherit; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-span.badge.add-on { cursor: default; }
 .badge.follow-up { background: var(--info-soft); color: var(--info); border: 1px solid transparent; font-family: inherit; cursor: pointer; }
 .badge.follow-up:hover:not(:disabled) { border-color: var(--info); }
 .badge.follow-up.missed { background: var(--warn-soft); color: var(--warn); }
@@ -961,7 +959,7 @@ body > .output-view.reader { position: fixed; }
 /* proposed ticket card */
 .proposal { margin-top: 8px; border: 1px solid var(--accent); border-radius: var(--r-md); background: var(--surface); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
 .proposal.applied { border-color: var(--ok); }
-/* Proposed (add-on) ticket: a thin left rule instead of the accent box; the body folds to 3 lines with "more". */
+/* Proposed ticket (and follow-up work): a thin left rule instead of the accent box; the body folds to 3 lines with "more". */
 .proposal.ticket-proposal { border: 0; border-left: 2px solid var(--accent); border-radius: 0; padding: 4px 0 4px 12px; background: none; }
 .proposal.ticket-proposal.applied { border-left-color: var(--ok); }
 .ticket-proposal .proposal-body:not(.open) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }

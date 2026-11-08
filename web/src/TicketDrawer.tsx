@@ -351,7 +351,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const children = tickets.filter((t) => t.parentId === ticket.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const branchedFrom = ticket.branchedFrom ? tickets.find((t) => t.id === ticket.branchedFrom) : undefined;
   const branches = tickets.filter((t) => t.branchedFrom === ticket.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const addOns = tickets.filter((t) => t.addOnOf === ticket.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  // Follow-up work asked for in this ticket's chat (steps are hidden: they open in their main ticket's Tasks tab).
+  const followUps = tickets.filter((t) => t.madeFrom === ticket.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const siblings = ticket.parentId ? tickets.filter((t) => t.parentId === ticket.parentId && t.id !== ticket.id) : [];
   const deps = (ticket.dependsOn ?? []).map((ref) => siblings.find((s) => s.id === ref || s.planKey === ref) ?? ref);
   const [title, setTitle] = useState(ticket.title);
@@ -872,11 +873,11 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             <span><FollowUpChip slug={slug} ticket={ticket} onError={onError} /></span>
           </div>
         )}
-        {addOns.length > 0 && (
+        {followUps.length > 0 && (
           <div className="field-row">
-            <span className="field-key" title="New requirements on this ticket, each in its own ticket">Add-ons</span>
+            <span className="field-key" title="Work asked for in this ticket's chat after it ran">Follow-up work</span>
             <span className="dep-list">
-              {addOns.map((f) => <button key={f.id} className="link-btn ticket-link" onClick={() => onOpenTicket(f.id)}>{f.title}</button>)}
+              {followUps.map((f) => <button key={f.id} className="link-btn ticket-link" onClick={() => onOpenTicket(f.id)}>{f.title}</button>)}
             </span>
           </div>
         )}

@@ -27,7 +27,7 @@ export interface LearnSource {
   at: string;
   /** The user's words or the agent's evidence, short. */
   quote: string;
-  /** What counts as one source: the first ticket of an add-on chain, or the huddle. */
+  /** What counts as one source: the first ticket of a follow-up chain (madeFrom), or the huddle. */
   key: string;
   /** A huddle's host ticket. */
   ticket?: string;
@@ -123,7 +123,8 @@ export function correctionKeys(c: Corrections): string[] {
     ...c.messages.map((e) => `msg:${e.uuid || e.at}`),
     ...(c.reopened ? ["reopen"] : []),
     ...(c.changesRequested ? ["changes"] : []),
-    ...c.addOns.map((a) => `addon:${a.id}`),
+    // "addon:" as when these were add-on tickets, so old add-ons (now madeFrom) aren't read again as new corrections.
+    ...c.followUps.map((a) => `addon:${a.id}`),
   ];
 }
 
@@ -134,18 +135,21 @@ export function newCorrections(c: Corrections, seen: string[]): Corrections {
     messages: c.messages.filter((e) => !has.has(`msg:${e.uuid || e.at}`)),
     reopened: c.reopened && !has.has("reopen"),
     changesRequested: c.changesRequested && !has.has("changes"),
-    addOns: c.addOns.filter((a) => !has.has(`addon:${a.id}`)),
+    followUps: c.followUps.filter((a) => !has.has(`addon:${a.id}`)),
   };
 }
 
-/** A ticket's source key: its add-on chain's first ticket, so an add-on doesn't count as a repeat of its own ticket. */
-export function ticketKey(slug: string, t: Pick<Ticket, "id" | "addOnOf">, tickets: Pick<Ticket, "id" | "addOnOf">[]): string {
+/**
+ * A ticket's source key: the first ticket of its follow-up chain (madeFrom: follow-up work or an old add-on), so
+ * follow-up work doesn't count as a repeat of its own ticket.
+ */
+export function ticketKey(slug: string, t: Pick<Ticket, "id" | "madeFrom">, tickets: Pick<Ticket, "id" | "madeFrom">[]): string {
   const byId = new Map(tickets.map((x) => [x.id, x]));
-  let cur: Pick<Ticket, "id" | "addOnOf"> = t;
+  let cur: Pick<Ticket, "id" | "madeFrom"> = t;
   const seen = new Set<string>();
-  while (cur.addOnOf && byId.has(cur.addOnOf) && !seen.has(cur.id)) {
+  while (cur.madeFrom && byId.has(cur.madeFrom) && !seen.has(cur.id)) {
     seen.add(cur.id);
-    cur = byId.get(cur.addOnOf)!;
+    cur = byId.get(cur.madeFrom)!;
   }
   return `ticket:${slug}/${cur.id}`;
 }

@@ -4,14 +4,16 @@ import { KeyHint } from "./KeyHint";
 import { MOD } from "./Shortcuts";
 import { ImportantStar } from "./StarToggle";
 import { Markdown } from "./Transcript";
+import type { FollowUpPlace } from "./followUp";
 
 /**
- * A proposal on a ticket that already ran (Done, In review, or ran before): it becomes a new linked ticket, so the
- * original keeps its title and description. state: how the note names the original ("Done", "In review", null: it ran).
- * created: the add-on ticket made from this proposal.
+ * A proposal on a plain ticket that already ran (Done, In review, or ran before): follow-up work, so the ticket keeps its
+ * title and description (web/src/followUp.ts). state: how the note names the ticket ("Done", "In review", null: it ran).
+ * place: where the work goes. created: what this card already made (a step opens in its main ticket).
  */
-export interface AddOn {
+export interface FollowUp {
   state: string | null;
+  place: FollowUpPlace;
   created?: { id: string; title: string };
   onCreate: (start: boolean) => Promise<void>;
   onOpen: (id: string) => void;
@@ -35,7 +37,7 @@ function ProposalBody({ text }: { text: string }) {
 }
 
 /** Claude's proposed title/description; Apply replaces the ticket's fields, Apply & start work also moves it to Queued. */
-export function ProposalCard({ proposal, applied, started, onApply, onApplyStart, keyHint, addOn, family }: {
+export function ProposalCard({ proposal, applied, started, onApply, onApplyStart, keyHint, followUp, family }: {
   proposal: Proposal;
   applied: boolean;
   /** Applied with "Apply & start work" in this session. */
@@ -45,8 +47,8 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
   onApplyStart?: () => Promise<void>;
   /** The newest unapplied proposal: ⌘⇧Enter in the panel applies this one (and starts work when it can). */
   keyHint?: boolean;
-  /** Set on a ticket that already ran: the card offers an add-on ticket first (see AddOn). */
-  addOn?: AddOn;
+  /** Set on a plain ticket that already ran: the card offers follow-up work first (see FollowUp). */
+  followUp?: FollowUp;
   /** What Apply does to the ticket's family (proposal.partOf), e.g. Moves it under “Outbound calls”. */
   family?: string;
 }) {
@@ -56,7 +58,7 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
     try { await fn(); } finally { setBusy(null); }
   };
   const hint = keyHint ? `${MOD}⇧Enter` : null;
-  if (addOn && !applied) return <AddOnCard {...{ proposal, addOn, busy, run, onApply, keyHint, hint }} />;
+  if (followUp && !applied) return <FollowUpCard {...{ proposal, followUp, busy, run, onApply, keyHint, hint }} />;
   return (
     <div className={`proposal ticket-proposal ${applied ? "applied" : ""}`}>
       <div className="proposal-head">
@@ -96,38 +98,59 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
   );
 }
 
-function AddOnCard({ proposal, addOn, busy, run, onApply, keyHint, hint }: {
-  proposal: Proposal; addOn: AddOn;
+/** What the card says follow-up work does, by where it goes. */
+function followUpWords(f: FollowUp): { tag: string; note: string; start: string; done: string } {
+  const was = f.state ? `This ticket is ${f.state}.` : "This ticket already ran.";
+  const p = f.place;
+  if (p.as === "step") {
+    return {
+      tag: "Proposed follow-up step", start: "Start as a step", done: "Step started",
+      note: `${was} It keeps its title and description; the work runs as a step of “${p.main.title}” and reports there, so you follow it on that card.`,
+    };
+  }
+  if (p.as === "main") {
+    return {
+      tag: "Proposed follow-up step", start: "Start as a step", done: "Step started",
+      note: `${was} You keep talking here: the work runs as its first step, and from then on steps do the work while Claude talks with you here.`,
+    };
+  }
+  return { tag: "Proposed follow-up ticket", start: "Create ticket & start work", done: "Ticket created", note: `${was} A new ticket next to this one keeps this one's title and description as they are.` };
+}
+
+function FollowUpCard({ proposal, followUp, busy, run, onApply, keyHint, hint }: {
+  proposal: Proposal; followUp: FollowUp;
   busy: "apply" | "start" | null; run: (kind: "apply" | "start", fn: () => Promise<void>) => () => Promise<void>;
   onApply: () => Promise<void>; keyHint?: boolean; hint: string | null;
 }) {
-  const { created } = addOn;
+  const { created } = followUp;
+  const w = followUpWords(followUp);
+  const step = followUp.place.as !== "ticket";
   return (
     <div className={`proposal ticket-proposal ${created ? "applied" : ""}`}>
       <div className="proposal-head">
-        <span className="proposal-tag">Proposed add-on ticket</span>
+        <span className="proposal-tag">{w.tag}</span>
       </div>
       {proposal.title && <div className="proposal-title">{proposal.important && <ImportantStar />}{proposal.title}</div>}
       {proposal.description && <ProposalBody text={proposal.description} />}
       {created ? (
         <div className="proposal-actions">
-          <span className="badge ok">Add-on ticket created</span>
-          <button className="link-btn ticket-link" onClick={() => addOn.onOpen(created.id)}>Open “{created.title}” →</button>
+          <span className="badge ok">{w.done}</span>
+          <button className="link-btn ticket-link" onClick={() => followUp.onOpen(created.id)}>Open “{created.title}” →</button>
         </div>
       ) : (
         <>
-          <div className="proposal-note">
-            {addOn.state ? `This ticket is ${addOn.state}.` : "This ticket already ran."} An add-on ticket keeps this one's title and description as they are.
-          </div>
+          <div className="proposal-note">{w.note}</div>
           <div className="proposal-actions">
             <button className="btn primary small" disabled={!!busy}
-              title={`Creates a new ticket linked to this one and moves it to Queued; Claude works on its own${hint ? ` (${hint})` : ""}`}
-              onClick={run("start", () => addOn.onCreate(true))}>
-              {busy === "start" ? "Creating…" : "Create add-on ticket & start work"}{keyHint && <KeyHint keys="⌘⇧↵" />}
+              title={`${step ? "Claude works on it on its own" : "Creates a new ticket next to this one and moves it to Queued; Claude works on its own"}${hint ? ` (${hint})` : ""}`}
+              onClick={run("start", () => followUp.onCreate(true))}>
+              {busy === "start" ? "Starting…" : w.start}{keyHint && <KeyHint keys="⌘⇧↵" />}
             </button>
-            <button className="btn small" disabled={!!busy} onClick={run("apply", () => addOn.onCreate(false))}>
-              {busy === "apply" ? "Creating…" : "Create add-on ticket"}
-            </button>
+            {!step && (
+              <button className="btn small" disabled={!!busy} onClick={run("apply", () => followUp.onCreate(false))}>
+                {busy === "apply" ? "Creating…" : "Create ticket"}
+              </button>
+            )}
             <button className="btn ghost small" disabled={!!busy} title="Replaces this ticket's title and description; you can undo right after"
               onClick={run("apply", onApply)}>
               Replace this ticket instead

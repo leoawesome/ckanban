@@ -2406,12 +2406,13 @@ export function createServer(deps: ServerDeps) {
         throw new HttpError(400, (e as Error).message);
       }
     }
-    // Add-on: a new ticket for a new requirement on this one, which keeps its title and description (the user's click).
-    if (m === "POST" && action === "add-on") {
-      if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "add-on tickets are created by the user's click on a proposal card; use the propose_ticket tool");
+    // Follow-up work on a ticket that already ran (the user's click on its proposal card): a step of its feature, or its
+    // first step as it becomes a main ticket; the ticket keeps its title and description.
+    if (m === "POST" && action === "follow-up-work") {
+      if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "follow-up work starts with the user's click on a proposal card; use the propose_ticket tool");
       const b = await body(req);
       try {
-        const t = await board.addOnTicket(slug, id, { title: String(b.title ?? ""), body: String(b.body ?? ""), start: !!b.start, important: b.important === true });
+        const t = await board.followUpWork(slug, id, { title: String(b.title ?? ""), body: String(b.body ?? ""), start: !!b.start, important: b.important === true });
         return json(view(profile, t), 201);
       } catch (e) {
         throw new HttpError(400, (e as Error).message);

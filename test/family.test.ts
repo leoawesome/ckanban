@@ -17,27 +17,26 @@ import { tempDir, until } from "./helpers";
 const at = (n: number) => `2026-10-${String(n).padStart(2, "0")}T00:00:00.000Z`;
 const tk = (id: string, n: number, links: Partial<FamilyTicket> = {}): FamilyTicket => ({ id, title: id.toUpperCase(), status: "backlog", createdAt: at(n), ...links });
 
-test("parentLink: part of wins over an add-on, an add-on over a plan; chat-made links say so", () => {
-  expect(parentLink({ partOf: "a", addOnOf: "b", parentId: "c" })).toEqual({ id: "a", how: "linked" });
+test("parentLink: part of wins over a plan; chat-made links say so", () => {
+  expect(parentLink({ partOf: "a", parentId: "c" })).toEqual({ id: "a", how: "linked" });
   expect(parentLink({ partOf: "a", partOfVia: "chat" })).toEqual({ id: "a", how: "chat" });
-  expect(parentLink({ addOnOf: "b", parentId: "c" })).toEqual({ id: "b", how: "add-on" });
   expect(parentLink({ parentId: "c" })).toEqual({ id: "c", how: "plan" });
   expect(parentLink({})).toBeNull();
 });
 
-test("familyOf: the whole family from the top ticket down over all three link kinds, from any member", () => {
+test("familyOf: the whole family from the top ticket down over every link kind, from any member", () => {
   const tickets = [
     tk("top", 1),
     tk("map", 3, { partOf: "top" }),
     tk("audit", 2, { partOf: "top", partOfVia: "chat" }),
     tk("sched", 4, { partOf: "top" }),
-    tk("discuss", 5, { addOnOf: "sched" }),
+    tk("discuss", 5, { partOf: "sched" }),
     tk("child", 6, { parentId: "discuss" }),
     tk("other", 7),
   ];
   const rows = familyOf(tickets, "child");
   expect(rows.map((r) => [r.ticket.id, r.depth, r.how])).toEqual([
-    ["top", 0, null], ["audit", 1, "chat"], ["map", 1, "linked"], ["sched", 1, "linked"], ["discuss", 2, "add-on"], ["child", 3, "plan"],
+    ["top", 0, null], ["audit", 1, "chat"], ["map", 1, "linked"], ["sched", 1, "linked"], ["discuss", 2, "linked"], ["child", 3, "plan"],
   ]);
   expect(familyOf(tickets, "top").map((r) => r.ticket.id)).toEqual(rows.map((r) => r.ticket.id));
   expect(familyOf(tickets, "other").map((r) => r.ticket.id)).toEqual(["other"]);
@@ -60,7 +59,7 @@ test("familyNearby: parents up to the top, the ticket and its own children", () 
 });
 
 test("wouldLoop: a ticket can't go under itself or anything below it", () => {
-  const tickets = [tk("a", 1), tk("b", 2, { partOf: "a" }), tk("c", 3, { addOnOf: "b" }), tk("d", 4)];
+  const tickets = [tk("a", 1), tk("b", 2, { partOf: "a" }), tk("c", 3, { partOf: "b" }), tk("d", 4)];
   expect(wouldLoop(tickets, "a", "c")).toBe(true);
   expect(wouldLoop(tickets, "a", "a")).toBe(true);
   expect(wouldLoop(tickets, "c", "a")).toBe(false);
@@ -237,7 +236,7 @@ test("Find links is for the user only and returns suggestions without changing t
   expect(store.getTicket("f", ids[1])!.partOf ?? null).toBeNull();
 });
 
-test("moving a plan ticket or an add-on in its family ends the wrong link; a plan sibling that depends on it blocks the move", async () => {
+test("moving a plan ticket or an old add-on in its family ends the wrong link; a plan sibling that depends on it blocks the move", async () => {
   const planner = store.createTicket("f", { title: "Hotfix: create call permission templates", body: "", status: "review" });
   const outbound = store.createTicket("f", { title: "AI outreach: outbound calls", body: "", status: "review" });
   const kid = store.createTicket("f", { title: "AI Agent: send templates that have variables", body: "", status: "planning", parentId: planner.id, planKey: "vars" });
@@ -247,9 +246,10 @@ test("moving a plan ticket or an add-on in its family ends the wrong link; a pla
 
   const src = store.createTicket("f", { title: "Original", body: "", status: "done" });
   const addOn = store.createTicket("f", { title: "Add-on", body: "", status: "backlog" });
-  store.updateTicket("f", addOn.id, { addOnOf: src.id, startFrom: "ck/original" });
+  // An old add-on loads as partOf + madeFrom (store.ts withoutAddOn).
+  store.updateTicket("f", addOn.id, { partOf: src.id, madeFrom: src.id, startFrom: "ck/original" });
   moved = (await (await patch(addOn.id, { partOf: null })).json()) as Ticket;
-  expect(moved).toMatchObject({ addOnOf: null, startFrom: null, partOf: null });
+  expect(moved).toMatchObject({ startFrom: null, partOf: null, madeFrom: src.id });
 
   const a = store.createTicket("f", { title: "Plan step a", body: "", status: "backlog", parentId: planner.id, planKey: "a" });
   store.createTicket("f", { title: "Plan step b", body: "", status: "backlog", parentId: planner.id, planKey: "b", dependsOn: ["a"] });

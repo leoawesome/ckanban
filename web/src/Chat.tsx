@@ -23,9 +23,9 @@ import { ImagePickButton } from "./ImagePickButton";
 import { NewTicketsCard } from "./NewTicketsCard";
 import { createdFromDraft } from "./proposalMatch";
 import { KeyHint } from "./KeyHint";
-import { addOnFor, addOnState } from "./addOn";
+import { followUpFor, followUpPlace, followUpState } from "./followUp";
 import { parentLink } from "./family";
-import { ProposalCard, type AddOn } from "./ProposalCard";
+import { ProposalCard, type FollowUp } from "./ProposalCard";
 import { QuestionsForm } from "./QuestionsForm";
 import { RecoveryBanner } from "./RecoveryBanner";
 import { Rewind } from "./Rewind";
@@ -716,27 +716,37 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   };
   const dismissTeammate = (uuid: string) => api.answerTeammateCard(slug, ticket.id, uuid, { state: "dismissed" }).then(() => {}, (err) => onError(err.message));
 
-  // A ticket that already ran: proposals become linked add-on tickets, so this one keeps its title and description.
-  const onState = addOnState(ticket);
-  const createAddOn = async (p: Proposal, start: boolean) => {
+  // A plain ticket that already ran: proposals are follow-up work (a step of its feature, or its first step as it becomes
+  // a main ticket), so this one keeps its title and description and the user keeps talking here.
+  const onState = followUpState(ticket);
+  const place = onState === undefined ? null : followUpPlace(tickets, ticket.id);
+  const startFollowUp = async (p: Proposal, start: boolean) => {
     try {
-      const f = await api.addOnTicket(slug, ticket.id, { title: p.title, body: p.description, start, ...(p.important ? { important: true } : {}) });
-      toast(start ? "Add-on ticket created and moved to Ready" : "Add-on ticket created in Backlog", {
-        tone: "ok", action: { label: "Open", run: () => onOpenTicket(f.id) },
-      });
+      const f = await api.followUpWork(slug, ticket.id, { title: p.title, body: p.description, start, ...(p.important ? { important: true } : {}) });
+      const runner = place?.as === "step" ? tickets.find((t) => t.id === place.manager) : place?.as === "main" ? ticket : undefined;
+      const where = runner?.plan?.state === "paused" ? "Step added; it waits until you press Resume on the Plan tab"
+        : place?.as === "step" ? "Step started; follow it on the feature's card"
+        : place?.as === "main" ? "Step started; you keep talking here"
+        : start ? "Ticket created and moved to Ready" : "Ticket created in Backlog";
+      toast(where, { tone: "ok", ...(place?.as === "ticket" ? { action: { label: "Open", run: () => onOpenTicket(f.id) } } : {}) });
     } catch (err: any) {
       onError(err.message);
     }
   };
-  const addOnOf = (p: Proposal): AddOn | undefined => onState === undefined ? undefined : {
-    state: onState, created: addOnFor(tickets, ticket.id, p.title), onCreate: (start) => createAddOn(p, start), onOpen: onOpenTicket,
+  const followUpOf = (p: Proposal): FollowUp | undefined => {
+    const created = followUpFor(tickets, ticket.id, p.title);
+    // A card that already started its work keeps saying so, also after it made this ticket a main ticket (its Apply
+    // would otherwise overwrite the new main ticket's title and description).
+    const at = place ?? (created ? followUpPlace(tickets, ticket.id) : null);
+    if (!at || (onState === undefined && !created)) return undefined;
+    return { state: onState ?? null, place: at, created, onCreate: (start) => startFollowUp(p, start), onOpen: onOpenTicket };
   };
 
-  const pendingProposal = entries.findLast((e) => e.proposal && !isApplied(e.proposal) && !(onState !== undefined && addOnFor(tickets, ticket.id, e.proposal.title)));
+  const pendingProposal = entries.findLast((e) => e.proposal && !isApplied(e.proposal) && !followUpFor(tickets, ticket.id, e.proposal.title));
   const applyPendingRef = useRef((_start: boolean) => Promise.resolve());
   applyPendingRef.current = (start) => (!pendingProposal?.proposal ? Promise.resolve()
-    // ⌘⇧Enter on an add-on card: create it and start work.
-    : onState !== undefined ? createAddOn(pendingProposal.proposal, true)
+    // ⌘⇧Enter on a follow-up card: start that work.
+    : place ? startFollowUp(pendingProposal.proposal, true)
     : applyProposal(pendingProposal.proposal, start && canStart ? { uuid: pendingProposal.uuid } : undefined));
   useEffect(() => {
     onPendingProposal?.(pendingProposal ? (start) => applyPendingRef.current(start) : null);
@@ -839,7 +849,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                 <ProposalCard proposal={e.proposal} applied={isApplied(e.proposal)} started={startedProposals.has(e.uuid)}
                   onApply={() => applyProposal(e.proposal!)}
                   onApplyStart={canStart ? () => applyProposal(e.proposal!, { uuid: e.uuid }) : undefined}
-                  keyHint={e === pendingProposal} addOn={addOnOf(e.proposal)} family={familyNote(e.proposal)} />
+                  keyHint={e === pendingProposal} followUp={followUpOf(e.proposal)} family={familyNote(e.proposal)} />
               )}
               {e.newTickets && (
                 <NewTicketsCard drafts={e.newTickets} created={childFor} parentId={ticket.id} onCreate={createChild} onOpen={onOpenTicket} />

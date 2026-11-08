@@ -189,8 +189,8 @@ export class Learner {
     const off = this.bus.on((e) => {
       if (e.type !== "ticket.updated") return;
       if (isLearnable(e.ticket)) this.schedule(e.profile, e.ticket.id);
-      // A new add-on ticket is a correction of the ticket it follows up.
-      if (e.ticket.addOnOf) this.schedule(e.profile, e.ticket.addOnOf);
+      // Follow-up work asked for in a finished ticket's chat (or an old add-on) is a correction of that ticket.
+      if (e.ticket.madeFrom) this.schedule(e.profile, e.ticket.madeFrom);
     });
     const every = this.o.tidyCheckMs ?? 3_600_000;
     const check = () => void this.tidyIfDue().catch((err) => console.error("tidy pass failed:", err));

@@ -101,12 +101,22 @@ function parseTicket(raw: string): Ticket {
   if (!m) throw new Error("missing frontmatter");
   const meta = YAML.parse(m[1]);
   if (!meta || typeof meta !== "object" || !meta.id) throw new Error("invalid frontmatter");
-  // Add-ons were saved as followUpOf before "follow-up" came to mean a timed wake (FollowUp).
-  if ("followUpOf" in meta) {
-    const { followUpOf, ...rest } = meta;
-    return { ...rest, ...(followUpOf && !rest.addOnOf ? { addOnOf: followUpOf } : {}), body: m[2] ?? "" } as Ticket;
-  }
-  return { ...meta, body: m[2] ?? "" } as Ticket;
+  return { ...withoutAddOn(meta), body: m[2] ?? "" } as Ticket;
+}
+
+/**
+ * Add-on tickets are gone: an old add-on link (addOnOf, saved as followUpOf before "follow-up" came to mean a timed
+ * wake) loads as a plain family link to the same ticket (partOf, unless it already had one, which won before too) and
+ * keeps where it came from (madeFrom). The ticket's parent stays exactly where it was (partOf won over addOnOf, and
+ * addOnOf over a plan). Nothing is written on load: the file changes on the ticket's next save, and reading it again
+ * gives the same result.
+ */
+export function withoutAddOn(meta: Record<string, unknown>): Record<string, unknown> {
+  if (!("addOnOf" in meta) && !("followUpOf" in meta)) return meta;
+  const { addOnOf, followUpOf, ...rest } = meta;
+  const from = typeof addOnOf === "string" && addOnOf ? addOnOf : typeof followUpOf === "string" && followUpOf ? followUpOf : null;
+  if (!from) return rest;
+  return { ...rest, ...(rest.partOf ? {} : { partOf: from, ...(rest.partOfVia ? { partOfVia: null } : {}) }), ...(rest.madeFrom ? {} : { madeFrom: from }) };
 }
 
 function deepFreeze<T>(v: T): T {
@@ -354,7 +364,7 @@ export class Store {
     input: {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
-      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string; kind?: TicketKind | null;
+      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string; madeFrom?: string; kind?: TicketKind | null;
       effort?: string | null; main?: boolean; tool?: boolean; startFrom?: string | null;
     },
   ): Ticket {
@@ -369,6 +379,7 @@ export class Store {
       ...(input.parentId ? { parentId: input.parentId } : {}),
       ...(input.planKey ? { planKey: input.planKey } : {}),
       ...(input.proposedAs ? { proposedAs: input.proposedAs } : {}),
+      ...(input.madeFrom ? { madeFrom: input.madeFrom } : {}),
       ...(input.dependsOn?.length ? { dependsOn: input.dependsOn } : {}),
       ...(input.needs?.length ? { needs: input.needs } : {}),
       ...(input.tags?.length ? { tags: input.tags } : {}),

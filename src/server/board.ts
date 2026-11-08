@@ -18,7 +18,7 @@ import { recallBlock } from "./recall";
 import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
-import { addOnFor } from "../../web/src/addOn";
+import { followUpFor, followUpPlace } from "../../web/src/followUp";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
 import { canEndQuietly, quietContext } from "./quiet";
@@ -1076,7 +1076,8 @@ export class Board {
     let prompt = resume ?? this.withSetupNote(slug, t, profile, session, refine, localizeAttachments(run.chat?.raw
       ? run.chat.text + (freshChat ? `\n\n${this.freshChatContext(slug, t)}` : "")
       : run.chat
-      ? chatPrompt(t, run.chat.text, run.chat.mode, outputDir, artifacts, session.repo, session.inPlace, refine && !session.existed ? this.recall(slug, t) : "", role)
+      ? chatPrompt(t, run.chat.text, run.chat.mode, outputDir, artifacts, session.repo, session.inPlace, refine && !session.existed ? this.recall(slug, t) : "", role,
+        refine && !role ? followUpPlace(this.store.listTickets(slug), t.id) : null)
         + (freshChat ? `\n\n${this.freshChatContext(slug, t)}` : "")
       : fresh
       ? this.freshPrompt(slug, t, session, outputDir)
@@ -1806,7 +1807,7 @@ export class Board {
         const fresh = !existsSync(dir);
         if (fresh) {
           // A new branch starts from the remote's latest base (other tickets push there); an existing one keeps its history.
-          // An add-on to a ticket still in Review builds on that ticket's branch, while it exists.
+          // A step builds on its main ticket's copy (a follow-up ticket on its ticket's work in Review), while it exists.
           const from = t.startFrom && (await branchExists(profile.path, t.startFrom)) ? t.startFrom
             : repo === "remote" && !(await branchExists(profile.path, branch)) ? await latestBase(profile.path, base) : base;
           await addWorktree(profile.path, dir, branch, from);
@@ -1925,7 +1926,7 @@ export class Board {
     input: {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
-      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string; kind?: TicketKind | null;
+      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string; madeFrom?: string; kind?: TicketKind | null;
       effort?: string | null; main?: boolean; tool?: boolean; startFrom?: string | null;
     },
   ): Promise<Ticket> {
@@ -2041,7 +2042,7 @@ export class Board {
     if (clean.status && current.limit) clean.limit = null;
     if (clean.status && current.autoHuddle) clean.autoHuddle = null;
     if (clean.status && current.snooze) clean.snooze = null;
-    // Back to Planning/Backlog from Review/Done: remember where it was, so an add-on can put it back there.
+    // Back to Planning/Backlog from Review/Done: remember where it was, so a follow-up card can put it back there.
     const shaping = clean.status === "planning" || clean.status === "backlog";
     if (shaping && reopenable(current.status)) clean.reopenedFrom = { status: current.status, outcome: current.outcome };
     else if (clean.status && !shaping && current.reopenedFrom) clean.reopenedFrom = null;
@@ -2320,7 +2321,7 @@ export class Board {
         : t.parentId ? `belongs to plan ${t.parentId}`
         : t.status === "done" ? "already done"
         : t.error?.startsWith("corrupt") ? "its ticket file is corrupt"
-        : !t.partOf && !t.addOnOf && levelOf(this.store.listTickets(slug), plannerId) + 1 > MAX_LEVEL ? tooDeepMessage(this.store.listTickets(slug), plannerId)
+        : !t.partOf && levelOf(this.store.listTickets(slug), plannerId) + 1 > MAX_LEVEL ? tooDeepMessage(this.store.listTickets(slug), plannerId)
         : null;
       if (reason) {
         skipped.push({ id, reason });
@@ -2658,8 +2659,8 @@ export class Board {
     if (t.status !== "backlog") throw new Error("Only tickets in Backlog can move to another board.");
     if (this.runs.has(this.key(slug, id))) throw new Error("Claude is working on this ticket. Stop it first.");
     if (t.worktree || t.branch) throw new Error("This ticket has work in a copy of the folder. Delete the ticket or finish it instead of moving it.");
-    const linked = t.parentId || t.dependsOn?.length || t.branchedFrom || t.addOnOf || t.plan
-      || this.store.listTickets(slug).some((o) => o.id !== id && (o.parentId === id || o.branchedFrom === id || o.addOnOf === id
+    const linked = t.parentId || t.dependsOn?.length || t.branchedFrom || t.madeFrom || t.plan
+      || this.store.listTickets(slug).some((o) => o.id !== id && (o.parentId === id || o.branchedFrom === id || o.madeFrom === id
         || o.dependsOn?.some((d) => d === id || (!!t.planKey && d === t.planKey))));
     if (linked) throw new Error("Can't move: this ticket is linked to other tickets. Remove the links first.");
     // Create first, delete second: a failure in between leaves the original in place.
@@ -2771,37 +2772,67 @@ export class Board {
   }
 
   /**
-   * A new requirement on a ticket that already ran becomes its own ticket, linked to the original (addOnOf), so the
-   * original keeps its title and description. start: straight to Ready, else Backlog. An add-on to a ticket still in
-   * Review builds on its work (startFrom; in the project folder it is there anyway). The original goes back to
-   * Review/Done when a chat or the user had moved it to Planning/Backlog for this.
+   * Follow-up work the user asked for in the chat of a ticket that already ran, made by its proposal card (where it goes:
+   * web/src/followUp.ts followUpPlace). In a feature it becomes a step (a tool ticket) run by the feature's main ticket
+   * or a group above the ticket, shown under the ticket, so its result reaches the main ticket. A ticket on its own
+   * becomes a main ticket and the work its first step, so the user keeps talking to it. An old ticket under others
+   * without a main ticket gets a new ticket beside it (start: Ready, else Backlog). The ticket keeps its title and
+   * description, and goes back to Review/Done when a chat or the user had moved it to Planning/Backlog for this.
    */
-  async addOnTicket(slug: string, id: string, input: { title: string; body: string; start?: boolean; important?: boolean }): Promise<Ticket> {
+  async followUpWork(slug: string, id: string, input: { title: string; body: string; start?: boolean; important?: boolean }): Promise<Ticket> {
     const src = this.store.getTicket(slug, id);
     if (!src) throw new Error(`ticket ${id} not found`);
-    if (src.main) throw new Error("A main ticket doesn't get add-on tickets: its proposal card updates its own plan, and new work goes to its steps.");
     const title = input.title.trim();
     if (!title) throw new Error("title is required");
-    // Clicked again (another tab, a slow reply): the add-on this card already made, even renamed or started since.
-    const made = addOnFor(this.store.listTickets(slug), src.id, title);
+    // Clicked again (another tab, a slow reply): what this card already made, even renamed or started since, also
+    // once the first click made this ticket a main ticket.
+    const all = this.store.listTickets(slug);
+    const made = followUpFor(all, src.id, title);
     if (made) return made;
+    if (src.main) throw new Error("A main ticket's card updates its own plan: it adds new work as steps itself.");
+    if (src.tool) throw new Error("A step's follow-up work goes through its main ticket.");
+    const place = followUpPlace(all, src.id)!;
     const shaping = src.status === "planning" || src.status === "backlog";
     const was = shaping && src.reopenedFrom ? src.reopenedFrom : src;
-    const t = await this.createTicket(slug, {
-      title, body: input.body, status: "backlog", mode: "auto", proposedAs: title,
-      ...(src.tags?.length ? { tags: src.tags } : {}), ...(src.important || input.important ? { important: true } : {}),
-    });
-    const patch: Partial<Ticket> = { addOnOf: src.id };
-    // An add-on of a level-2 ticket would sit at level 3: it shows beside it instead (still building on its work).
-    const all = this.store.listTickets(slug);
-    const srcParent = parentLink(src)?.id;
-    if (srcParent && levelOf(all, src.id) + 1 > MAX_LEVEL) patch.partOf = srcParent;
-    if (was.status === "review" && src.branch && !src.workdir) patch.startFrom = src.branch;
-    this.patch(slug, t.id, patch);
+    const important = src.important || input.important ? { important: true } : {};
+    const tags = src.tags?.length ? { tags: src.tags } : {};
+    let t: Ticket;
+    let manager: Ticket | null = null;
+    if (place.as === "ticket") {
+      // No main ticket to report to: a plain ticket beside it, building on its work while that waits in Review.
+      t = await this.createTicket(slug, {
+        title, body: input.body, status: "backlog", mode: "auto", proposedAs: title, madeFrom: src.id, partOf: place.partOf, ...tags, ...important,
+        ...(was.status === "review" && src.branch && !src.workdir ? { startFrom: src.branch } : {}),
+      });
+    } else {
+      if (place.as === "main") {
+        this.patch(slug, src.id, { main: true });
+        this.store.addComment(slug, src.id, "ai", `Became a main ticket: follow-up work "${title}" runs as its first step, and you keep talking here.`);
+      }
+      manager = place.as === "main" ? this.store.getTicket(slug, src.id)! : this.store.getTicket(slug, place.manager)!;
+      const top = this.mainOf(slug, manager) ?? manager;
+      // A step that changes files starts from the main ticket's copy, so its work merges back there.
+      const startFrom = top.branch && top.worktree ? top.branch : null;
+      const d = kindDefaults("build")!;
+      t = await this.createTicket(slug, {
+        title, body: input.body, status: "backlog", mode: "auto", proposedAs: title, madeFrom: src.id, parentId: manager.id, kind: "build", tool: true,
+        model: d.model, effort: d.effort, ...(place.as === "step" && place.partOf ? { partOf: place.partOf } : {}), ...tags, ...important,
+        ...(startFrom ? { startFrom } : {}),
+      });
+      this.store.addComment(slug, t.id, "ai", `Tool ticket of ${manager.id} ("${manager.title}"): follow-up work the user asked for in the chat of ${src.id} ("${src.title}").`);
+      if (place.as === "step") this.store.addComment(slug, src.id, "ai", `Follow-up work "${title}" runs as a step of "${top.title}"; its result goes there.`);
+    }
     if (shaping && src.reopenedFrom && !this.isRunning(slug, id)) {
       // Like a move by hand (Done cleans up its worktree); then its old outcome badge comes back too.
       await this.updateTicket(slug, id, { status: src.reopenedFrom.status });
       this.patch(slug, id, { outcome: src.reopenedFrom.outcome });
+    }
+    if (manager) {
+      // Its manager's plan runs it in any column; a main ticket parked in Done or Backlog comes back to Review.
+      if (this.store.getTicket(slug, manager.id)?.main) this.unparkForNewStep(slug, manager.id);
+      this.ensurePlan(slug, manager.id);
+      this.advancePlans(slug);
+      return this.store.getTicket(slug, t.id)!;
     }
     return input.start ? this.updateTicket(slug, t.id, { status: "ready" }) : this.store.getTicket(slug, t.id)!;
   }
@@ -2812,15 +2843,15 @@ export class Board {
    * Makes id part of parent's family (null unlinks). via "chat": the parent's chat created it. A missing parent or a
    * loop (a ticket under its own descendant) is refused. Any parent suggestion is settled by it.
    * Moving it somewhere else also undoes the link that put it where it was: a plan ticket leaves its plan (refused
-   * while siblings depend on it), an add-on stops being one (and stops building on that ticket's work if it hasn't
-   * started), so the family shows where the user put it.
+   * while siblings depend on it), and a ticket made from another's card stops building on that ticket's work if it
+   * hasn't started, so the family shows where the user put it.
    */
   async setPartOf(slug: string, id: string, parent: string | null, via: "chat" | null = null): Promise<Ticket> {
     let t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
     if (parent !== null) {
       if (!this.store.getTicket(slug, parent)) throw new Error(`ticket ${parent} not found`);
-      const without = this.store.listTickets(slug).map((o) => (o.id === id ? { ...o, parentId: null, addOnOf: null } : o));
+      const without = this.store.listTickets(slug).map((o) => (o.id === id ? { ...o, parentId: null } : o));
       if (wouldLoop(without, id, parent)) {
         throw new Error(parent === id ? "a ticket can't be part of itself" : `${parent} is already part of ${id}'s family below it; linking would make a loop`);
       }
@@ -2830,9 +2861,10 @@ export class Board {
     const patch: Partial<Ticket> = { partOf: parent, partOfVia: parent ? via : null, parentSuggestion: null, parentChecked: true };
     // Linked under another ticket, it is no longer a main ticket of its own: it becomes a normal ticket there.
     if (parent && t.main) patch.main = false;
-    if (t.addOnOf && t.addOnOf !== parent) Object.assign(patch, { addOnOf: null }, t.startFrom && !t.worktree ? { startFrom: null } : {});
-    // Still in the same plan or an add-on of the same ticket: that link already says it.
-    if (parent && (t.parentId === parent || t.addOnOf === parent)) Object.assign(patch, { partOf: null, partOfVia: null });
+    // A ticket made from another's card that builds on its work in Review stops doing so once it moves away (not started yet).
+    if (!t.tool && t.madeFrom && t.partOf === t.madeFrom && parent !== t.madeFrom && t.startFrom && !t.worktree) patch.startFrom = null;
+    // Still in the same plan: that link already says it.
+    if (parent && t.parentId === parent) Object.assign(patch, { partOf: null, partOfVia: null });
     return this.patch(slug, id, patch);
   }
 
@@ -2845,7 +2877,7 @@ export class Board {
   /** The board's parent suggestion (linker.ts), unless the ticket got a parent or was settled meanwhile. */
   suggestParent(slug: string, id: string, suggestion: { id: string; reason: string } | null): Ticket | null {
     const t = this.store.getTicket(slug, id);
-    if (!t || t.parentChecked || t.partOf || t.addOnOf || t.parentId) return null;
+    if (!t || t.parentChecked || t.partOf || t.parentId) return null;
     if (suggestion && !this.store.getTicket(slug, suggestion.id)) suggestion = null;
     return this.patch(slug, id, { parentSuggestion: suggestion, parentChecked: true });
   }

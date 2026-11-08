@@ -79,7 +79,7 @@ export interface TicketInfo {
   jobId?: string | null;
   /** Planner ticket whose plan runs this one. */
   parentId?: string | null;
-  /** Ticket this one is part of (its family's parent) and the one it is an add-on to. */
+  /** Ticket this one is part of (its family's parent). */
   partOf?: string | null;
   /** An open feature's top ticket (list only): new work that belongs to it is added to it. */
   feature?: boolean;
@@ -90,7 +90,8 @@ export interface TicketInfo {
   /** A main ticket, or a tool ticket of one (main-ticket.ts). */
   main?: boolean;
   tool?: boolean;
-  addOnOf?: string | null;
+  /** The ticket whose chat card made this one (follow-up work asked for there). */
+  madeFrom?: string | null;
   planKey?: string | null;
   dependsOn?: string[];
   /** Exclusive resources (e.g. emulator): tickets needing the same one never run at the same time. */
@@ -119,7 +120,7 @@ export interface FamilyRowInfo {
   title: string;
   status: Status;
   depth: number;
-  /** How it hangs on its parent: "linked", "from chat", "add-on" or "plan"; null for the top ticket. */
+  /** How it hangs on its parent: "linked", "from chat" or "plan"; null for the top ticket. */
   how: string | null;
   parent: string | null;
   sessionId: string | null;
@@ -656,7 +657,7 @@ export function ticketText(t: TicketInfo, comments: CommentInfo[] = []): string 
   if (t.scheduleId) lines.push(`schedule: ${t.scheduleId} (created by this schedule; see list_schedules)`);
   if (t.parentId) lines.push(`plan: child of ${t.parentId}${t.planKey ? ` (key ${t.planKey})` : ""}`);
   if (t.partOf) lines.push(`part of: ${t.partOf} (get_family lists its whole family)`);
-  if (t.addOnOf) lines.push(`add-on to: ${t.addOnOf} (get_family lists its whole family)`);
+  if (t.madeFrom) lines.push(`asked for in the chat of: ${t.madeFrom}`);
   if (t.dependsOn?.length) lines.push(`depends on: ${t.dependsOn.join(", ")}`);
   if (t.needs?.length) {
     const r = t.resources;

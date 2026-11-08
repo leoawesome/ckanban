@@ -6,7 +6,7 @@ import type { SessionEntry } from "./session";
 import type { Ticket } from "./types";
 
 // The user's corrections on a finished ticket (messages after a run, a reopen, a pull request review asking for
-// changes, add-on tickets) and the prompt that shows them to a learning call (learn.ts reads them into the board's
+// changes, follow-up work) and the prompt that shows them to a learning call (learn.ts reads them into the board's
 // pile of lessons). Also the "## Lessons" section of a project's CLAUDE.md, which older versions wrote: runs in a
 // worktree still get the bullets their copy lacks.
 
@@ -31,22 +31,22 @@ export interface Corrections {
   reopened: boolean;
   /** A reviewer asked for changes on its pull request. */
   changesRequested: boolean;
-  /** Tickets made to follow it up. */
-  addOns: Pick<Ticket, "id" | "title">[];
+  /** Follow-up work asked for in its chat after it ran (steps or tickets its card made, old add-ons too). */
+  followUps: Pick<Ticket, "id" | "title">[];
 }
 
-/** The user's corrections on a ticket: messages after a run, a reopen, a pull request review asking for changes, add-on tickets. */
+/** The user's corrections on a ticket: messages after a run, a reopen, a pull request review asking for changes, follow-up work. */
 export function corrections(t: Ticket, entries: SessionEntry[], tickets: Ticket[]): Corrections {
   const first = entries.findIndex(runEnd);
   return {
     messages: first < 0 ? [] : entries.slice(first + 1).filter((e) => typedByUser(e) && e.text.trim()),
     reopened: !!t.reopenedFrom,
     changesRequested: t.pr?.reviewDecision === "CHANGES_REQUESTED",
-    addOns: tickets.filter((o) => o.addOnOf === t.id).map((o) => ({ id: o.id, title: o.title })),
+    followUps: tickets.filter((o) => o.madeFrom === t.id).map((o) => ({ id: o.id, title: o.title })),
   };
 }
 
-export const hasCorrections = (c: Corrections) => !!(c.messages.length || c.reopened || c.changesRequested || c.addOns.length);
+export const hasCorrections = (c: Corrections) => !!(c.messages.length || c.reopened || c.changesRequested || c.followUps.length);
 
 export interface LessonsInput {
   ticket: Ticket;
@@ -62,7 +62,7 @@ export function lessonsPrompt({ ticket: t, entries, corrections: c, existing = [
     ...c.messages.map((e) => `- [${e.at}] The user wrote after a run: "${clip(e.text.trim(), CORRECTION_MAX)}"`),
     c.reopened ? "- The user moved the ticket back to be reworked after it was finished." : "",
     c.changesRequested ? "- A reviewer asked for changes on the pull request." : "",
-    ...c.addOns.map((f) => `- The user made an add-on ticket: "${f.title}"`),
+    ...c.followUps.map((f) => `- The user asked for follow-up work: "${f.title}"`),
   ].filter(Boolean);
   return [
     `Task: "${t.title}"`,

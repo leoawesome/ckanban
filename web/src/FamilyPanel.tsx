@@ -21,7 +21,7 @@ function ParentPicker({ ticket, tickets, onPick, onCancel }: {
   const [q, setQ] = useState("");
   const options = useMemo(() => {
     // Moving it ends its current link, so only the tickets below it are off limits.
-    const unlinked = tickets.map((t) => (t.id === ticket.id ? { ...t, partOf: null, addOnOf: null, parentId: null } : t));
+    const unlinked = tickets.map((t) => (t.id === ticket.id ? { ...t, partOf: null, parentId: null } : t));
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
     return tickets
       .filter((t) => t.id !== ticket.id && t.id !== parentLink(ticket)?.id && !wouldLoop(unlinked, ticket.id, t.id))
@@ -61,7 +61,6 @@ function ParentPicker({ ticket, tickets, onPick, onCancel }: {
 const PARENT_ROW: Record<LinkHow | "none", { key: string; title: string; gone: string }> = {
   linked: { key: "Part of", title: "The ticket this one belongs to: the tickets of one piece of work sit under one main ticket", gone: "Ticket was deleted" },
   chat: { key: "Part of", title: "This ticket was created from that ticket's chat, as part of its work", gone: "Ticket was deleted" },
-  "add-on": { key: "Add-on to", title: "This ticket is a new requirement on that one, which keeps its own title and description", gone: "Original ticket was deleted" },
   plan: { key: "From", title: "The ticket whose plan runs this one (it proposed or adopted it)", gone: "Ticket was deleted" },
   none: { key: "Part of", title: "The ticket this one belongs to: the tickets of one piece of work sit under one main ticket", gone: "" },
 };
@@ -69,12 +68,11 @@ const PARENT_ROW: Record<LinkHow | "none", { key: string; title: string; gone: s
 /** What Unlink also ends, so the user knows before clicking. */
 const UNLINK_NOTE: Partial<Record<LinkHow, string>> = {
   plan: "Takes it out of that piece of work and out of that ticket's plan",
-  "add-on": "Takes it out of that piece of work; it stops being an add-on to that ticket",
 };
 
 /**
- * The ticket this one hangs under ("Part of", or "Add-on to" / "From" for add-ons and plan tickets) with Change and
- * Unlink, or the board's suggestion with Link, Not related and Pick another. Moving a plan ticket or an add-on
+ * The ticket this one hangs under ("Part of", or "From" for plan tickets) with Change and
+ * Unlink, or the board's suggestion with Link, Not related and Pick another. Moving a plan ticket
  * elsewhere ends that link too (Board.setPartOf).
  */
 export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {

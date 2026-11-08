@@ -204,7 +204,7 @@ export interface Ticket {
   parentId?: string | null;
   /** Short name siblings use in dependsOn (from the planner's proposal). */
   planKey?: string | null;
-  /** Title of the chat proposal (a propose_tickets draft or an add-on card) it was created from, so that card still finds it after a rename. */
+  /** Title of the chat proposal (a propose_tickets draft or a follow-up card) it was created from, so that card still finds it after a rename. */
   proposedAs?: string | null;
   /** Siblings (ticket id or planKey) that must be done before a running plan starts this ticket. */
   dependsOn?: string[];
@@ -221,11 +221,15 @@ export interface Ticket {
   branchedFrom?: string | null;
   /** When the branch was made: conversation entries before this are the copied history. */
   branchPoint?: BranchPoint | null;
-  /** Ticket this one follows up (a new requirement on a ticket that already ran). Not a plan parent. */
-  addOnOf?: string | null;
+  /**
+   * The ticket whose chat card made this one: follow-up work asked for there after it ran (web/src/followUp.ts), or an
+   * old add-on ticket (store.ts loads addOnOf as partOf plus madeFrom). Not a family link: the learner reads it as a
+   * correction of that ticket, and the card finds what it made by it.
+   */
+  madeFrom?: string | null;
   /**
    * Ticket this one is part of (its family's parent, see web/src/family.ts): a plain link, set by the user or by the
-   * chat that created it. Unlike addOnOf it changes nothing about how work runs and is no correction to learn from.
+   * chat that created it. It changes nothing about how work runs.
    */
   partOf?: string | null;
   /** What the ticket is for, set when it is created (see web/src/family.ts TicketKind). Missing on old tickets. */
@@ -240,7 +244,7 @@ export interface Ticket {
   parentSuggestion?: { id: string; reason: string } | null;
   /** The board already looked for a parent (or the user said Not related): it doesn't suggest one again. */
   parentChecked?: boolean;
-  /** Branch the first worktree starts from instead of the base branch (an add-on to a ticket still in Review). */
+  /** Branch the first worktree starts from instead of the base branch (a step: its main ticket's copy). */
   startFrom?: string | null;
   /** When the ticket last moved into Done (the store sets it): its huddles from before then close. */
   doneAt?: string | null;

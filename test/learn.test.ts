@@ -81,9 +81,9 @@ test("a correction on one ticket waits in Watching; the same one on a second tic
   await learner.scanTicket("p", a);
   expect(calls).toHaveLength(1);
 
-  // An add-on of the same ticket is not a second ticket.
+  // Follow-up work asked for in the same ticket's chat is not a second ticket.
   const addOn = store.createTicket("p", { title: "Fix the link again", body: "", status: "done" });
-  store.updateTicket("p", addOn.id, { addOnOf: a, sessionId: "x", runCount: 1 });
+  store.updateTicket("p", addOn.id, { madeFrom: a, sessionId: "x", runCount: 1 });
   sessions.set(addOn.id, conversation("Links still go under the button."));
   answers.push((i) => ok({ lessons: [{ mistake: "m", evidence: "under the button", rule: "Links go under the button.", match: pileId(i, "under the main button"), standing: "" }] }));
   await learner.scanTicket("p", addOn.id);
@@ -212,12 +212,12 @@ test("pile: lessons seen once expire after 60 days; repeated and saved ones stay
   expect(capped).toEqual([twice.id, fresh.id]);
 });
 
-test("helpers: new corrections, add-on chains, parsing", () => {
+test("helpers: new corrections, follow-up chains, parsing", () => {
   const t = store.createTicket("p", { title: "T", body: "", status: "done" });
   const es = conversation("No, the other way.");
   const c = corrections(t, es, []);
   expect(newCorrections(c, [`msg:${es[2].uuid}`]).messages).toEqual([]);
-  expect(ticketKey("p", { id: "c", addOnOf: "b" }, [{ id: "a", addOnOf: null }, { id: "b", addOnOf: "a" }])).toBe("ticket:p/a");
+  expect(ticketKey("p", { id: "c", madeFrom: "b" }, [{ id: "a", madeFrom: null }, { id: "b", madeFrom: "a" }])).toBe("ticket:p/a");
   expect(parseLearned("nope", [])).toBeNull();
   expect(parseLearned('{"lessons":[{"rule":"A.","match":"zz"},{"rule":"","match":""},{"rule":"B.","match":"c1"}]}', ["c1"]))
     .toEqual([{ text: "A.", match: null, standing: null, evidence: "", mistake: "" }, { text: "B.", match: "c1", standing: null, evidence: "", mistake: "" }]);

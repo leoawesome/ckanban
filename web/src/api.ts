@@ -357,8 +357,8 @@ export interface Ticket {
   branchedFrom?: string | null;
   /** When it was branched: conversation entries before this are the copied history. */
   branchPoint?: { at: string; sourceTitle: string } | null;
-  /** Ticket this one is an add-on to (a new requirement on a ticket that already ran). */
-  addOnOf?: string | null;
+  /** The ticket whose chat card made this one (follow-up work asked for there after it ran). */
+  madeFrom?: string | null;
   /** Ticket this one is part of (its family's parent, see family.ts); "chat": that ticket's chat created it. */
   partOf?: string | null;
   /** What the ticket is for (family.ts TicketKind); missing on old tickets. */
@@ -1539,8 +1539,8 @@ export const api = {
   chatSimplified: (slug: string, id: string) => req<Record<string, string>>("GET", `${chatsUrl(slug, id)}/simplified`),
   chatSimplify: (slug: string, id: string, uuid: string) => req<{ text: string; cached: boolean }>("POST", `${chatsUrl(slug, id)}/simplify`, { uuid }),
   sessions: (slug: string) => req<ClaudeSession[]>("GET", `/api/profiles/${encodeURIComponent(slug)}/sessions`),
-  addOnTicket: (slug: string, id: string, input: { title: string; body: string; start?: boolean; important?: boolean }) =>
-    req<Ticket>("POST", `${t(slug, id)}/add-on`, input),
+  followUpWork: (slug: string, id: string, input: { title: string; body: string; start?: boolean; important?: boolean }) =>
+    req<Ticket>("POST", `${t(slug, id)}/follow-up-work`, input),
   branchTicket: (slug: string, id: string) => req<{ ticket: Ticket; warning: string | null }>("POST", `${t(slug, id)}/branch`),
   /** external: the session is open in a terminal the board can't close (nothing changed). */
   freshSession: (slug: string, id: string) => req<{ ticket: Ticket; external: boolean }>("POST", `${t(slug, id)}/fresh-session`),

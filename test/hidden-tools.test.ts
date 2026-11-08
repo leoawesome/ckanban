@@ -337,7 +337,7 @@ test("list_tickets and the CLI skip tool tickets unless asked; recall and the li
   }
   // Recall: a tool ticket on the same topic isn't recalled.
   const row = (t: Partial<Ticket> & { id: string; title: string }) => ({ ticket: { body: "", status: "done", parentId: null, lastRunAt: null, updatedAt: at(0), runCount: 1, ...t } as any, summary: null });
-  const got = pickRelated({ id: "me", title: "WhatsApp outreach queue", body: "send outreach queue", parentId: null, addOnOf: null },
+  const got = pickRelated({ id: "me", title: "WhatsApp outreach queue", body: "send outreach queue", parentId: null, madeFrom: null },
     [row({ id: "tool", title: "WhatsApp outreach queue build", tool: true, kind: "build" }), row({ id: "plain", title: "WhatsApp outreach queue retry" })]);
   expect(got.map((r) => r.ticket.id)).toEqual(["plain"]);
   // The linker never offers a tool ticket as a parent.
