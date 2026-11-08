@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { attentionFor } from "../src/server/attention";
 import { familyCard, stepWait } from "../src/server/main-ticket";
 import type { Ticket } from "../src/server/types";
-import { attentionLabel, cardFamily, stepsText } from "../web/src/cardState";
+import { attentionLabel, cardFamily, featureBusy, stepsText } from "../web/src/cardState";
 import { groupByColumn } from "../web/src/columns";
 import { board, setup, store, useBoardEnv } from "./board-env";
 
@@ -108,4 +108,20 @@ test("a main card in Done, or whose steps have all finished, shows no Stuck or P
   // A step still open: the Stuck line stays (the feature isn't resting).
   const open = [...steps.slice(0, 3), { ...steps[3], status: "ready", outcome: null } as Ticket];
   expect(familyCard(review, open, [review, ...open], none, 1).line).toEqual({ text: "Stuck: the run that plans the steps stopped", tone: "warn" });
+});
+
+test("a stopped main ticket whose step runs hides its stale Stopped pill on the card and the panel header", () => {
+  const main = tk("M", { title: "AI Outreach", main: true, status: "in_progress", outcome: "stopped", runEndedAt: at(1) });
+  const step = tk("S", { title: "Step 1", parentId: "M", tool: true, kind: "build", status: "in_progress", runStartedAt: at(2) });
+  const fc = familyCard(main, [step], [main, step], none, 3);
+  // A step runs: the feature is busy, so neither the card nor the panel header shows "Stopped".
+  expect(featureBusy({ ...main, familyCard: fc })).toBe(true);
+  expect(cardFamily({ ...main, familyCard: fc }, false).busy).toBe(true);
+  // No step running: not busy, "Stopped" shows again.
+  const rest = { ...main, familyCard: { ...fc, working: [], running: [] } };
+  expect(featureBusy(rest)).toBe(false);
+  expect(cardFamily(rest, false).busy).toBe(false);
+  // Its own run going, or not a main ticket: unchanged.
+  expect(featureBusy({ ...main, familyCard: fc, running: true })).toBe(false);
+  expect(featureBusy({ ...main, main: false, familyCard: fc })).toBe(false);
 });

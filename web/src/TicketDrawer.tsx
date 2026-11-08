@@ -4,6 +4,7 @@ import { api, COLUMNS, safeHref, startWorkTarget, subscribe, type ClaudeSession,
 import { boardColumnOf, menuPick, STATUS_MENU } from "./columns";
 import { PANEL_LEAVE_MS, reducedMotion } from "./motion";
 import { finishBadge, outcomeBadge, useFinishMark } from "./Card";
+import { featureBusy } from "./cardState";
 import { JobChip } from "./Jobs";
 import { CapActions } from "./CapActions";
 import { capLabel, capWait } from "./capText";
@@ -1017,7 +1018,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
                 <span className="yt-dot" aria-hidden /><span className="yt-label">Your turn</span><span className="yt-why">{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
               </span>
             )}
-            {!finish && !att && !ticket.huddleBusy && outcomeBadge(ticket)}
+            {!finish && !att && !ticket.huddleBusy && !featureBusy(ticket) && outcomeBadge(ticket)}
           </>}
           <span className="save-state" aria-live="polite">
             {titleSave === "saving" && <span className="muted small">Saving…</span>}

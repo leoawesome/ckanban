@@ -88,6 +88,15 @@ interface CardLike<F extends FamilyLike, A extends { kind: string }> {
 }
 
 /**
+ * A main ticket's feature works (a family ticket runs) while its own run doesn't: its own last outcome (Stopped, Failed,
+ * Blocked) is stale then, so the card and the panel header hide that pill. One rule for both so they can't drift.
+ */
+export function featureBusy(t: { main?: boolean; running?: boolean; familyCard?: FamilyLike | null }): boolean {
+  const f = t.main ? t.familyCard ?? null : null;
+  return !!f && familyWorkingNames(f).length > 0 && !t.running;
+}
+
+/**
  * How a card shows its feature. ownWorking: its own run works. fc: the family summary a main card shows (with a step,
  * or a ticket of its feature working). familyWorks: a ticket of its feature works and the card isn't parked in Backlog
  * or Done, or one of its steps runs there (columns.ts familyBusy): the blue stripe and working line, no "Your turn" strip and no "D done" hint.
@@ -95,7 +104,7 @@ interface CardLike<F extends FamilyLike, A extends { kind: string }> {
 export function cardFamily<F extends FamilyLike, A extends { kind: string }>(t: CardLike<F, A>, ownWorking: boolean) {
   const f = t.main ? t.familyCard ?? null : null;
   const fc = f && (f.tools >= 1 || familyWorkingNames(f).length > 0) ? f : null;
-  const busy = !!fc && familyWorkingNames(fc).length > 0 && !t.running;
+  const busy = featureBusy(t);
   const familyWorks = busy && ((t.status !== "done" && t.status !== "backlog") || !!t.stepsRunning);
   const working = ownWorking || familyWorks;
   // While its feature works it isn't the user's turn to check a result; strips that need the user stay.
