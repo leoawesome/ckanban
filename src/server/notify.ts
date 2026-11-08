@@ -1,7 +1,8 @@
 // "Needs you" notifications: when a ticket starts waiting on the user (attention.ts), tell them once, off the Mac too.
 // A ticket's Claude can also send its own message (notify_user, Notifier.message). Sends to a webhook (ntfy topic URL or any JSON endpoint), to devices that turned phone push on (push.ts) and/or
 // shows a macOS banner, per kind (notify.json).
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { chmodSync, existsSync, rmSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,10 @@ import type { PushPayload, PushService } from "./push";
 import type { SessionSummary } from "./session";
 import type { Store } from "./store";
 import { nowIso } from "./util";
+import { Channels, macChannel, pushChannel, webhookChannel, type ChannelResult } from "./helper/channels";
+import { HelperCore } from "./helper/core";
+import { DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramSettings } from "./helper/telegram";
+import { waitIdentity, type NewWait } from "./helper/waits";
 
 /** What a notification is about: a "needs you" kind, or a message a ticket's Claude wrote itself (notify_user). */
 export type NotifyKind = AttentionKind | "message";
@@ -41,9 +46,13 @@ export interface MessageResult {
   onScreen: number;
   webhook: boolean;
   banner: boolean;
+  /** Reached the paired Telegram chat. */
+  telegram?: boolean;
   /** Why it went nowhere: "off" (Messages from Claude is off), "nowhere" (no device, webhook or banner), "on-screen". */
   reason: "off" | "nowhere" | "on-screen" | null;
   error: string | null;
+  /** Passed to the helper instead of sent (it tells the user itself). */
+  helper?: boolean;
 }
 
 /** How the webhook gets the message. auto: ntfy when the URL's host has "ntfy" in it, else JSON. */
@@ -56,10 +65,64 @@ export interface NotifySettings {
   /** macOS banner on this Mac (skipped while a browser on this Mac gets notifications, see Notifier.macBrowser). */
   mac: boolean;
   kinds: Record<NotifyKind, boolean>;
+  /** The helper groups routine waits and interrupts only for urgent ones (helper/core.ts). Off: one notification per wait, as before. */
+  helper: boolean;
+  /** Phone push channel on (phones and other browsers that turned notifications on). */
+  push: boolean;
+  /** The web address channel (ntfy or JSON) on; the address is kept while it is off. */
+  webhookOn: boolean;
+  /** Telegram (helper/telegram.ts). The token is a secret: state() masks it. */
+  telegram: TelegramSettings;
 }
 
+/** One channel as Settings lists it. */
+export interface ChannelState {
+  name: "mac" | "push" | "webhook" | "telegram";
+  label: string;
+  on: boolean;
+  /** Set up so a send can reach the user. */
+  ready: boolean;
+  /** One plain line under the switch. */
+  detail: string;
+}
+
+/** Telegram as the settings API shows it: never the token itself. */
+export interface TelegramPublic {
+  on: boolean;
+  tokenSet: boolean;
+  /** "set …AbCd" or "". */
+  tokenMasked: string;
+  paired: boolean;
+  chatName: string | null;
+  pairedAt: string | null;
+  /** off | no-token | connecting | ok | error. */
+  status: string;
+  error: string | null;
+  botName: string | null;
+  /** A pairing is going on until expiresAt. The code itself only comes back from POST /api/notify/telegram/pair. */
+  pairing: { expiresAt: string } | null;
+  pairError: string | null;
+}
+
+/** Shown with the ntfy topic box. */
+export const NTFY_WARNING = "Anyone who knows the topic name can read these messages. Use a long random name like the suggested one and don't share it.";
+/** Focus mode on the phone, in plain words (Settings, the pairing reply, the first message). */
+export const FOCUS_HINT = "Focus mode on your phone can hold notifications back. ntfy can get through Focus if you allow the ntfy app in that Focus. For Telegram, allow Telegram in your Focus (not guaranteed). Phone push from the board can't get through Focus.";
+/** The status line until a phone channel works. */
+export const MAC_ONLY_LINE = "I can only reach you on this Mac";
+
 /** What the settings dialog shows besides the settings: how the last send went. */
-export interface NotifyState extends NotifySettings {
+export interface NotifyState extends Omit<NotifySettings, "telegram"> {
+  telegram: TelegramPublic;
+  channels: ChannelState[];
+  /** A phone channel (push, ntfy/web address, Telegram) is on and set up. */
+  phoneReady: boolean;
+  /** "I can only reach you on this Mac" until phoneReady, else null. */
+  reachLine: string | null;
+  /** A random ntfy topic address to offer (the same for the daemon's lifetime). */
+  ntfyTopicSuggestion: string;
+  ntfyWarning: string;
+  focusHint: string;
   lastSentAt: string | null;
   lastError: string | null;
   /** A browser on this Mac gets notifications, so the macOS banner isn't used (see Notifier.macBrowser). */
@@ -72,6 +135,10 @@ export const DEFAULT_NOTIFY: NotifySettings = {
   format: "auto",
   mac: true,
   kinds: { stalled: true, questions: true, proposal: true, review: true, failed: true, limit: true, blocked: true, huddle: true, reply: false, message: true },
+  helper: true,
+  push: true,
+  webhookOn: true,
+  telegram: DEFAULT_TELEGRAM,
 };
 
 /** Settings in `<root>/notify.json`; defaults for anything missing or invalid. */
@@ -79,20 +146,29 @@ export function readNotifySettings(root: string): NotifySettings {
   const file = join(root, "notify.json");
   if (!existsSync(file)) return structuredClone(DEFAULT_NOTIFY);
   try {
-    return normalizeSettings(JSON.parse(readFileSync(file, "utf8")));
+    return normalizeSettings(JSON.parse(readFileSync(file, "utf8")), DEFAULT_NOTIFY, true);
   } catch {
     return structuredClone(DEFAULT_NOTIFY);
   }
 }
 
+/** Owner-only (0600, like push.json): it holds the Telegram bot token. */
 export function writeNotifySettings(root: string, s: NotifySettings): void {
   const file = join(root, "notify.json");
-  writeFileSync(`${file}.tmp`, JSON.stringify(s, null, 2) + "\n");
-  renameSync(`${file}.tmp`, file);
+  const tmp = `${file}.tmp`;
+  // A leftover tmp (say 0644) would hold the token until the chmod below: start fresh.
+  rmSync(tmp, { force: true });
+  writeFileSync(tmp, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 });
+  // `mode` only applies when the file is new: a leftover tmp keeps its old mode otherwise.
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, file);
 }
 
-/** Merge a partial update into settings. Throws on a webhook URL that isn't http(s). */
-export function normalizeSettings(raw: any, base: NotifySettings = DEFAULT_NOTIFY): NotifySettings {
+/**
+ * Merge a partial update into settings. Throws on a webhook URL that isn't http(s) or a Telegram token that isn't one.
+ * The paired Telegram chat is read only from the file (fromFile): only pairing sets it, never the settings API.
+ */
+export function normalizeSettings(raw: any, base: NotifySettings = DEFAULT_NOTIFY, fromFile = false): NotifySettings {
   const out = structuredClone(base);
   if (!raw || typeof raw !== "object") return out;
   if (typeof raw.webhookUrl === "string") {
@@ -110,6 +186,28 @@ export function normalizeSettings(raw: any, base: NotifySettings = DEFAULT_NOTIF
   }
   if (raw.format === "auto" || raw.format === "ntfy" || raw.format === "json") out.format = raw.format;
   if (typeof raw.mac === "boolean") out.mac = raw.mac;
+  if (typeof raw.helper === "boolean") out.helper = raw.helper;
+  if (typeof raw.push === "boolean") out.push = raw.push;
+  if (typeof raw.webhookOn === "boolean") out.webhookOn = raw.webhookOn;
+  const tg = raw.telegram;
+  if (tg && typeof tg === "object") {
+    if (typeof tg.on === "boolean") out.telegram.on = tg.on;
+    if (typeof tg.token === "string") {
+      const token = tg.token.trim();
+      if (fromFile) out.telegram.token = token;
+      else if (token !== out.telegram.token) {
+        // Never echo what was typed: it may be the token.
+        if (token && !TOKEN_RE.test(token)) throw new Error("That doesn't look like a bot token from BotFather (it looks like 123456789:AAH...). Copy it again.");
+        // A new bot (or none) means pairing again.
+        out.telegram = { ...out.telegram, token, chatId: null, chatName: null, pairedAt: null };
+      }
+    }
+    if (fromFile) {
+      if (typeof tg.chatId === "number" && Number.isSafeInteger(tg.chatId)) out.telegram.chatId = tg.chatId;
+      if (typeof tg.chatName === "string") out.telegram.chatName = tg.chatName.slice(0, 120);
+      if (typeof tg.pairedAt === "string") out.telegram.pairedAt = tg.pairedAt;
+    }
+  }
   if (raw.kinds && typeof raw.kinds === "object") {
     for (const k of NOTIFY_KINDS) if (typeof raw.kinds[k] === "boolean") out.kinds[k] = raw.kinds[k];
   }
@@ -149,7 +247,7 @@ export function headerValue(s: string): string {
   return /^[\x20-\x7e]*$/.test(flat) ? flat : `=?UTF-8?B?${Buffer.from(flat, "utf8").toString("base64")}?=`;
 }
 
-const NTFY_TAGS: Record<NotifyKind, string> = {
+export const NTFY_TAGS: Record<NotifyKind, string> = {
   stalled: "warning", questions: "question", proposal: "memo", review: "eyes", failed: "x", limit: "hourglass", blocked: "no_entry", huddle: "speech_balloon", reply: "speech_balloon", message: "bell",
 };
 
@@ -187,18 +285,18 @@ export function macBanner(title: string, body: string): void {
  * kind. A new state (a kind, or not waiting) counts only once it has held for debounceMs, so flicker (a run ending
  * and the next starting, questions answered and re-asked) neither notifies twice nor misses a real change.
  */
-export class TransitionTracker {
-  private states = new Map<string, { settled: AttentionKind | null; seen: AttentionKind | null; since: number }>();
+export class TransitionTracker<T extends string = AttentionKind> {
+  private states = new Map<string, { settled: T | null; seen: T | null; since: number }>();
 
   constructor(private debounceMs: number) {}
 
   /** Record the current state without notifying (what was already waiting when the daemon started). */
-  seed(key: string, kind: AttentionKind | null, now: number): void {
+  seed(key: string, kind: T | null, now: number): void {
     this.states.set(key, { settled: kind, seen: kind, since: now });
   }
 
   /** The kind to notify about now, or null. Call again later (see unsettled) to let a pending change settle. */
-  observe(key: string, kind: AttentionKind | null, now: number): AttentionKind | null {
+  observe(key: string, kind: T | null, now: number): T | null {
     let s = this.states.get(key);
     if (!s) {
       // First sight of a ticket after startup: it's new, so it wasn't waiting before.
@@ -212,6 +310,11 @@ export class TransitionTracker {
     if (s.seen === s.settled || now - s.since < this.debounceMs) return null;
     s.settled = s.seen;
     return s.settled;
+  }
+
+  /** The settled state (undefined: never seen). */
+  settledOf(key: string): T | null | undefined {
+    return this.states.get(key)?.settled;
   }
 
   /** Tickets whose latest state hasn't settled yet. */
@@ -243,25 +346,73 @@ export interface NotifierOptions {
   now?: () => number;
   /** Phone push to the devices that turned it on; omitted: none. */
   push?: PushService;
+  /** Phone access is on (links open off this Mac). Default: baseUrl isn't this Mac's localhost. */
+  phoneAccess?: () => boolean;
+  /** Telegram's fetch (long poll; default: global fetch with a 65 s timeout). Tests pass a mock. */
+  telegramFetch?: (url: string, init: RequestInit) => Promise<Response>;
+  /** Start Telegram's long poll (default true; tests drive TelegramBot.pollOnce). */
+  telegramPoll?: boolean;
 }
 
 export class Notifier {
-  private tracker: TransitionTracker;
+  private tracker: TransitionTracker<string>;
   private dirty = new Set<string>();
   private lastSentAt: string | null = null;
   private lastError: string | null = null;
-  /** When each ticket's Claude last reached the user with notify_user (the spam guard). */
-  private lastMessage = new Map<string, number>();
   private fetch: (url: string, init: RequestInit) => Promise<Response>;
   private banner: (title: string, body: string) => void;
   private now: () => number;
+  /** Wait records, the message store, channels and the routing switch (helper/core.ts). The helper runner plugs in with helper.setSink. */
+  readonly helper: HelperCore;
+  /** The Telegram bot: sends, pairs and listens (helper/telegram.ts). */
+  readonly telegram: TelegramBot;
+  private phoneAccess: () => boolean;
+  private ntfyTopic = `https://ntfy.sh/ckanban-${randomBytes(12).toString("base64url").replace(/[-_]/g, "x")}`;
 
   constructor(private store: Store, private bus: Bus, private o: NotifierOptions) {
-    this.tracker = new TransitionTracker(o.debounceMs ?? 5000);
+    this.tracker = new TransitionTracker<string>(o.debounceMs ?? 5000);
     this.fetch = o.fetch ?? ((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(10_000) }));
     this.banner = o.banner ?? macBanner;
     this.now = o.now ?? Date.now;
+    this.phoneAccess = o.phoneAccess ?? (() => !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(o.baseUrl()));
+    const deps = {
+      fetch: (url: string, init: RequestInit) => this.fetch(url, init), banner: (t: string, b: string) => this.banner(t, b), push: o.push,
+      phoneAccess: () => this.phoneAccess(),
+    };
+    this.telegram = new TelegramBot({
+      fetch: o.telegramFetch ?? o.fetch ?? ((url, init) => fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(65_000) })),
+      settings: () => this.settings().telegram,
+      save: (patch) => {
+        const s = this.settings();
+        writeNotifySettings(this.o.root, { ...s, telegram: { ...s.telegram, ...patch } });
+      },
+      actions: () => ({
+        gotIt: (id) => this.helper.gotIt(id, "telegram"),
+        notUrgent: (id) => this.helper.notUrgent(id, "telegram"),
+        waiting: () => this.helper.waitingText(),
+      }),
+      phoneAccess: () => this.phoneAccess(),
+      boardUrl: () => `${this.o.baseUrl()}/`,
+      now: this.now,
+      autoPoll: o.telegramPoll ?? true,
+      offsetFile: join(o.root, "telegram-offset.json"),
+    });
+    this.helper = new HelperCore({
+      root: o.root, store, channels: new Channels([macChannel(deps), webhookChannel(deps), pushChannel(deps), telegramChannel(this.telegram)]),
+      settings: () => this.settings(), link: (slug, id) => this.link(slug, id), now: this.now, onResults: (r) => this.noteResults(r),
+      onMessages: (unread) => this.bus.emit({ type: "messages.updated", unread }),
+    });
     o.push?.onDropped((d) => this.dropped(d.label));
+  }
+
+  /** lastSentAt / lastError from a send's channel results (webhook and push; the banner can't tell). */
+  private noteResults(results: ChannelResult[]): void {
+    const counted = results.filter((r) => r.channel !== "mac" && !r.skipped && !r.empty);
+    const error = counted.find((r) => r.error)?.error ?? null;
+    const sent = counted.some((r) => r.ok);
+    if (error) console.warn(`notify: ${scrub(error, this.settings().telegram.token)}`);
+    if (sent || error) this.lastError = error;
+    if (sent) this.lastSentAt = nowIso();
   }
 
   /**
@@ -283,16 +434,63 @@ export class Notifier {
     return readNotifySettings(this.o.root);
   }
 
+  /** The settings API's view: the Telegram token masked, each channel's state, and the setup hints. */
   state(): NotifyState {
-    return { ...this.settings(), lastSentAt: this.lastSentAt, lastError: this.lastError, macBrowser: this.macBrowser() };
+    const { telegram: t, ...s } = this.settings();
+    const tg = this.telegram.state();
+    const telegram: TelegramPublic = {
+      on: t.on, tokenSet: !!t.token, tokenMasked: maskToken(t.token), paired: t.chatId !== null, chatName: t.chatName, pairedAt: t.pairedAt,
+      status: tg.state, error: tg.error, botName: tg.botName, pairing: tg.pairing, pairError: tg.pairError,
+    };
+    const macBrowser = this.macBrowser();
+    const phones = this.o.push?.phoneCount() ?? 0;
+    const ntfy = isNtfy(s);
+    const channels: ChannelState[] = [
+      { name: "mac", label: "This Mac", on: s.mac, ready: true, detail: macBrowser ? "Notifications in this Mac's browser; a click opens the message." : "A Mac banner that says: See Messages on the board." },
+      { name: "push", label: "Phone push", on: s.push, ready: phones > 0, detail: phones ? `${phones === 1 ? "1 phone or browser" : `${phones} phones or browsers`} get notifications; a tap opens the message.` : "No phone has notifications turned on yet (needs phone access)." },
+      {
+        name: "webhook", label: ntfy || !s.webhookUrl ? "ntfy" : "Web address (JSON)", on: s.webhookOn, ready: !!s.webhookUrl,
+        detail: !s.webhookUrl ? "Not set up: add an ntfy topic address." : ntfy ? "The ntfy app shows the full message; urgent ones at top priority." : "The board posts each message to this address.",
+      },
+      {
+        name: "telegram", label: "Telegram", on: t.on, ready: telegram.tokenSet && telegram.paired && tg.state !== "error",
+        detail: !t.token ? "Not set up: make a bot with BotFather and paste its token." : !telegram.paired ? "Not paired yet: send the pairing code to your bot." : tg.error ?? `Paired with ${t.chatName ?? "your chat"}.`,
+      },
+    ];
+    const phoneReady = channels.some((c) => c.name !== "mac" && c.on && c.ready);
+    return {
+      ...s, telegram, channels, phoneReady, reachLine: phoneReady ? null : MAC_ONLY_LINE,
+      ntfyTopicSuggestion: this.ntfyTopic, ntfyWarning: NTFY_WARNING, focusHint: FOCUS_HINT,
+      lastSentAt: this.lastSentAt, lastError: this.lastError, macBrowser,
+    };
   }
 
+  /** Saves a settings change. Turning the helper off sends what it held as one digest; on, what is open counts as told. */
   update(patch: unknown): NotifyState {
-    writeNotifySettings(this.o.root, normalizeSettings(patch, this.settings()));
+    const before = this.settings();
+    const next = normalizeSettings(patch, before);
+    writeNotifySettings(this.o.root, next);
+    if (before.helper !== next.helper) void this.helper.switched(next.helper).catch((e) => console.error("helper: switch", e));
+    if (before.telegram.token !== next.telegram.token) this.telegram.reset();
+    this.telegram.refresh();
     return this.state();
   }
 
-  /** Seeds what already waits (no notification for it), then follows ticket, session and huddle changes. */
+  /** Settings' "Pair": a fresh 6-digit code to send to the bot. Throws without a token. */
+  telegramPair(): { code: string; expiresAt: string } {
+    return this.telegram.startPairing();
+  }
+
+  /** Settings' "Unpair": forget the chat. */
+  telegramUnpair(): NotifyState {
+    this.telegram.unpair();
+    return this.state();
+  }
+
+  /**
+   * Takes stock of what already waits (reconciled with the waits file: see HelperCore.reconcile), then follows
+   * ticket, session and huddle changes.
+   */
   start(): () => void {
     let stopped = false;
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -307,12 +505,23 @@ export class Notifier {
       }
       else if (e.type === "session.updated") this.dirty.add(`${e.profile}/${e.id}`);
       else if (e.type === "huddle.updated" && e.huddle.hostTicket) this.dirty.add(`${e.profile}/${e.huddle.hostTicket}`);
-      else if (e.type === "ticket.deleted") this.tracker.forget(`${e.profile}/${e.id}`);
+      else if (e.type === "ticket.deleted") {
+        this.tracker.forget(`${e.profile}/${e.id}`);
+        this.helper.deleted(e.profile, e.id);
+      } else if (e.type === "profile.updated" && e.profile === null) this.helper.deleted(e.slug);
     });
     const follow = () => {
-      if (!stopped) timer = trackedInterval("notifier", () => this.tick(), this.o.tickMs ?? 1000);
+      if (stopped) return;
+      this.helper.started();
+      this.telegram.refresh();
+      timer = trackedInterval("notifier", () => this.tick(), this.o.tickMs ?? 1000);
     };
     const keys = () => this.store.listProfiles().flatMap((p) => this.store.listTickets(p.slug).map((t) => [p.slug, t.id] as const));
+    const stock = (slug: string, id: string, now: number) => {
+      const w = this.waitOf(slug, id);
+      this.tracker.seed(`${slug}/${id}`, w?.identity ?? null, now);
+      this.helper.reconcile(slug, id, w && this.settings().kinds[w.kind] ? w : null, w?.identity ?? null);
+    };
     if (this.o.sessionsReady) {
       // Changes seen meanwhile are kept (dirty) and looked at on the first tick.
       void track("notifier: stock-take", async () => {
@@ -322,55 +531,78 @@ export class Notifier {
         for (const [slug, id] of keys()) {
           await pause();
           if (stopped) return;
-          this.tracker.seed(`${slug}/${id}`, this.kindOf(slug, id), now);
+          stock(slug, id, now);
         }
       }).catch((e) => console.error("notifier", e)).finally(follow);
     } else {
       const now = this.now();
-      for (const [slug, id] of keys()) this.tracker.seed(`${slug}/${id}`, this.kindOf(slug, id), now);
+      for (const [slug, id] of keys()) stock(slug, id, now);
       follow();
     }
     return () => {
       stopped = true;
       off();
       if (timer) clearInterval(timer);
+      this.telegram.stop();
     };
   }
 
-  /** Look again at changed tickets and those whose change is still settling; notify the transitions. */
+  /** Look again at changed tickets and those whose change is still settling; route the transitions; run the helper's due times. */
   tick(): void {
     const keys = new Set([...this.dirty, ...this.tracker.unsettled()]);
     this.dirty.clear();
     const now = this.now();
     for (const key of keys) {
       const [slug, id] = key.split("/");
-      const kind = this.tracker.observe(key, this.kindOf(slug, id), now);
-      if (kind) this.fire(slug, id, kind);
+      const w = this.waitOf(slug, id);
+      const before = this.tracker.settledOf(key);
+      const identity = this.tracker.observe(key, w?.identity ?? null, now);
+      const after = this.tracker.settledOf(key);
+      if (before !== after && before !== undefined) this.helper.settled(slug, id, after ?? null);
+      if (identity && w) this.fire(w);
     }
+    void this.helper.tick().catch((e) => console.error("helper: tick", e));
   }
 
-  private kindOf(slug: string, id: string): AttentionKind | null {
+  /** What the ticket waits on now, as a wait the helper core can record, or null. */
+  private waitOf(slug: string, id: string): NewWait | null {
     const t = this.store.getTicket(slug, id);
     if (!t) return null;
     const s = t.sessionId ? this.o.sessionSummary(t.sessionId) : null;
-    return ticketAttention(this.store, slug, t, s, this.o.isRunning(slug, id), this.o.hostHuddles(slug).get(id), (x) => this.o.isRunning(slug, x))?.kind ?? null;
+    const att = ticketAttention(this.store, slug, t, s, this.o.isRunning(slug, id), this.o.hostHuddles(slug).get(id), (x) => this.o.isRunning(slug, x));
+    if (!att) return null;
+    const form = att.kind === "questions" && s?.openForm?.length ? s.openForm.map((q) => q.question).join("\n") : null;
+    const ask = att.kind === "questions" && form ? s?.openAsk : undefined;
+    return {
+      board: slug, ticketId: id, kind: att.kind, identity: waitIdentity(att.kind, form), question: form ?? att.label, label: att.label, since: att.since,
+      ...(ask?.urgent ? { urgent: true } : {}), why: ask?.why ?? null,
+    };
   }
 
-  private fire(slug: string, id: string, kind: AttentionKind) {
-    const settings = this.settings();
-    if (!settings.kinds[kind]) return;
-    const t = this.store.getTicket(slug, id);
-    const p = this.store.getProfile(slug);
-    if (!t || !p) return;
-    const s = t.sessionId ? this.o.sessionSummary(t.sessionId) : null;
-    const att = ticketAttention(this.store, slug, t, s, this.o.isRunning(slug, id), this.o.hostHuddles(slug).get(id), (x) => this.o.isRunning(slug, x));
-    void this.send(settings, {
-      board: slug, boardName: p.name, ticketId: id, title: t.title, kind, label: att?.label ?? kind, url: this.link(slug, id),
-    });
+  private fire(w: NewWait) {
+    // A kind turned off in the old switches stays off, also for the helper.
+    if (!this.settings().kinds[w.kind]) return;
+    if (!this.store.getTicket(w.board, w.ticketId) || !this.store.getProfile(w.board)) return;
+    void this.helper.route(w).catch((e) => console.error("helper: route", e));
+  }
+
+  /** A message's page (#/~messages/<id>): where a tap on a helper message lands. */
+  messageLink(id: string): string {
+    return `${this.o.baseUrl()}/#/~messages/${encodeURIComponent(id)}`;
   }
 
   link(slug: string, id?: string): string {
     return `${this.o.baseUrl()}/#/${encodeURIComponent(slug)}${id ? `/${encodeURIComponent(id)}` : ""}`;
+  }
+
+  /**
+   * The user opened the ticket: its wait records note it (openedAt) and their reminders stop. Returns whether a
+   * reminder was pending, so markSeen records the open even inside its 5-minute throttle.
+   */
+  opened(slug: string, id: string): boolean {
+    const pending = this.helper.waits.hasPendingReminder(slug, id);
+    this.helper.opened(slug, id);
+    return pending;
   }
 
   /**
@@ -392,44 +624,36 @@ export class Notifier {
   }
 
   /**
-   * Banner, webhook and phone push as configured. Resolves with the first error, or null. Push skips devices with
-   * the board on screen unless `everyDevice` (the test button).
+   * Banner, webhook and phone push as configured, stored as a message first. Resolves with the first error, or null.
+   * Push skips devices with the board on screen unless `everyDevice` (the test button).
    */
-  async send(settings: NotifySettings, m: NotifyMessage, everyDevice = false): Promise<string | null> {
-    if (settings.mac && !this.macBrowser()) this.banner(`${m.label}: ${m.title}`, m.boardName);
-    const [hook, push] = await Promise.all([this.sendWebhook(settings, m), this.sendPush(m, everyDevice)]);
-    const error = hook.error ?? push.error;
-    if (error) console.warn(`notify: ${error}`);
-    if (hook.sent || push.sent || error) this.lastError = error;
-    if (hook.sent || push.sent) this.lastSentAt = nowIso();
-    return error;
+  async send(_settings: NotifySettings, m: NotifyMessage, everyDevice = false): Promise<string | null> {
+    return firstError(await this.sendResults(m, everyDevice));
   }
 
-  private async sendWebhook(settings: NotifySettings, m: NotifyMessage): Promise<{ sent: boolean; error: string | null }> {
-    if (!settings.webhookUrl) return { sent: false, error: null };
-    const { url, init } = webhookRequest(settings, m);
-    try {
-      const r = await this.fetch(url, init);
-      return r.ok ? { sent: true, error: null } : { sent: false, error: `webhook answered ${r.status} ${r.statusText}`.trim() };
-    } catch (e) {
-      return { sent: false, error: `webhook failed: ${(e as Error).message}` };
-    }
+  private async sendResults(m: NotifyMessage, everyDevice: boolean, text = m.label): Promise<ChannelResult[]> {
+    const level = everyDevice ? "test" : "direct";
+    const { results } = await this.helper.send(
+      { level, oneLine: `${m.label}: ${m.title}`, text: `${m.title} (${m.boardName})\n\n${text}` },
+      { level, title: m.title, body: m.label, text, url: m.url, notify: m, everyDevice },
+    );
+    return results;
   }
 
   /**
    * notify_user: a ticket's Claude tells the user something in its own words (ticket title above, its text below; a
-   * tap opens the ticket). Same channels and on-screen skip as "needs you"; at most one per ticket per
-   * CLAUDE_MESSAGE_GAP_MS. Logged on the ticket when it reached the user.
+   * tap opens the ticket). Helper on: passed to the helper (a wait record of kind "message") instead. Otherwise the
+   * same channels and on-screen skip as "needs you". At most one per ticket per CLAUDE_MESSAGE_GAP_MS (kept on disk).
+   * Logged on the ticket when it reached the user (or the helper).
    */
-  async message(slug: string, id: string, raw: string): Promise<MessageResult> {
+  async message(slug: string, id: string, raw: string, o: { urgent?: boolean; why?: string | null } = {}): Promise<MessageResult> {
     const text = raw.replace(/\s+/g, " ").trim();
     if (!text) throw new MessageError("message is required: what you need from the user, in one short sentence");
     if (text.length > CLAUDE_MESSAGE_MAX) throw new MessageError(`message is too long (${text.length} characters, max ${CLAUDE_MESSAGE_MAX}): keep it to one short ask`);
     const t = this.store.getTicket(slug, id);
     const p = this.store.getProfile(slug);
     if (!t || !p) throw new MessageError(`ticket ${id} not found`, 404);
-    const key = `${slug}/${id}`;
-    const last = this.lastMessage.get(key);
+    const last = this.helper.waits.lastNotifyUser(slug, id);
     const now = this.now();
     if (last !== undefined && now - last < CLAUDE_MESSAGE_GAP_MS) {
       const next = new Date(last + CLAUDE_MESSAGE_GAP_MS);
@@ -440,33 +664,42 @@ export class Notifier {
     if (!settings.kinds.message) return { ...none, reason: "off" };
     // A "with you" step talks to the user in its main ticket's chat: a tap opens that chat (newest at the bottom, where its message is).
     const main = withYouTool(t) ? mainTicketOf(this.store.listTickets(slug), id) : undefined;
-    const m: NotifyMessage = main && main.id !== id
-      ? { board: slug, boardName: p.name, ticketId: main.id, title: main.title, kind: "message", label: `${t.title}: ${text}`, url: this.link(slug, main.id) }
-      : { board: slug, boardName: p.name, ticketId: id, title: t.title, kind: "message", label: text, url: this.link(slug, id) };
-    const banner = settings.mac && !this.macBrowser();
-    if (banner) this.banner(m.title, m.label);
-    const [hook, push] = await Promise.all([
-      this.sendWebhook(settings, m),
-      this.o.push ? this.o.push.send(pushPayload(m)) : Promise.resolve({ sent: 0, removed: 0, onScreen: 0, error: null }),
-    ]);
-    const error = hook.error ?? push.error;
-    if (error) console.warn(`notify: ${error}`);
-    if (hook.sent || push.sent || error) this.lastError = error;
-    if (hook.sent || push.sent) this.lastSentAt = nowIso();
-    const delivered = banner || hook.sent || push.sent > 0;
+    const target = main && main.id !== id ? main : t;
+    const label = target.id === id ? text : `${t.title}: ${text}`;
+    const why = typeof o.why === "string" && o.why.trim() ? o.why.trim() : null;
+    if (this.helper.active(settings)) {
+      await this.helper.route({
+        board: slug, ticketId: target.id, kind: "message", identity: waitIdentity("message", label), question: label, label, since: new Date(now).toISOString(),
+        ...(o.urgent ? { urgent: true } : {}), why,
+      });
+      this.helper.waits.setNotifyUser(slug, id, now);
+      this.store.addComment(slug, id, "ai", `Passed to the helper: ${text}`);
+      return { ...none, delivered: true, reason: null, helper: true };
+    }
+    const m: NotifyMessage = { board: slug, boardName: p.name, ticketId: target.id, title: target.title, kind: "message", label, url: this.link(slug, target.id) };
+    const item = { board: slug, boardName: p.name, ticketId: target.id, title: target.title, question: label };
+    const full = `${target.title} (${p.name})\n\n${label}${why ? `\n\nWhy: ${why}` : ""}`;
+    const { results } = await this.helper.send(
+      { level: o.urgent ? "urgent" : "message", oneLine: `${target.title}: ${label}`.slice(0, 240), text: full, why, items: [item] },
+      { level: o.urgent ? "urgent" : "message", title: m.title, body: label, text: full, url: m.url, notify: m, urgent: o.urgent },
+    );
+    const hook = results.find((r) => r.channel === "webhook");
+    const push = results.find((r) => r.channel === "push");
+    const mac = results.find((r) => r.channel === "mac");
+    const tg = results.find((r) => r.channel === "telegram");
+    const banner = !!mac?.ok && mac.devices === undefined;
+    const error = firstError(results);
+    const devices = (push?.devices ?? 0) + (mac?.devices ?? 0);
+    const onScreen = (push?.onScreen ?? 0) + (mac?.onScreen ?? 0);
+    const delivered = banner || !!hook?.ok || devices > 0 || !!tg?.ok;
     if (delivered) {
-      this.lastMessage.set(key, now);
+      this.helper.waits.setNotifyUser(slug, id, now);
       this.store.addComment(slug, id, "ai", `Sent you a notification: ${text}`);
     }
     return {
-      delivered, devices: push.sent, onScreen: push.onScreen, webhook: hook.sent, banner, error,
-      reason: delivered ? null : push.onScreen ? "on-screen" : error ? null : "nowhere",
+      delivered, devices, onScreen, webhook: !!hook?.ok, banner, error, ...(tg ? { telegram: tg.ok } : {}),
+      reason: delivered ? null : onScreen ? "on-screen" : error ? null : "nowhere",
     };
-  }
-
-  private async sendPush(m: NotifyMessage, everyDevice: boolean): Promise<{ sent: number; error: string | null }> {
-    if (!this.o.push) return { sent: 0, error: null };
-    return this.o.push.send(pushPayload(m), { skipVisible: !everyDevice });
   }
 
   private testMessage(slug?: string): NotifyMessage {
@@ -481,10 +714,11 @@ export class Notifier {
    * The "Send test notification" button: a sample message through banner, webhook and every phone (the board is on
    * screen there, so the visible skip doesn't apply), whatever the kind toggles say.
    */
-  async test(slug?: string): Promise<{ ok: boolean; error: string | null; webhook: boolean; devices: number }> {
+  async test(slug?: string): Promise<{ ok: boolean; error: string | null; webhook: boolean; devices: number; channels: ChannelResult[] }> {
     const settings = this.settings();
-    const error = await this.send(settings, this.testMessage(slug), true);
-    return { ok: !error, error, webhook: !!settings.webhookUrl, devices: this.o.push?.devices().length ?? 0 };
+    const results = await this.sendResults(this.testMessage(slug), true, "Test notification from ckanban: if you can read this, this channel works.");
+    const error = firstError(results);
+    return { ok: !error, error, webhook: !!settings.webhookUrl, devices: this.o.push?.devices().length ?? 0, channels: results };
   }
 
   /** A device's own "Send test": that device only. */
@@ -494,4 +728,9 @@ export class Notifier {
     const error = r.error ?? (r.removed ? "this device no longer accepts notifications: turn them on again" : r.sent ? null : "device not found");
     return { ok: !error, error };
   }
+}
+
+/** The first error worth showing (not the Mac banner, which can't tell, and not "no phone turned push on"). */
+function firstError(results: ChannelResult[]): string | null {
+  return results.find((r) => r.channel !== "mac" && !r.empty && r.error)?.error ?? null;
 }

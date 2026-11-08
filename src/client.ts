@@ -413,8 +413,8 @@ export class BoardClient {
     this.req<TicketInfo>("POST", `${this.t(slug, id)}/follow-up`, input, this.by(run));
   cancelFollowUp = (slug: string, id: string, reason: string | null, run?: string | null) =>
     this.req<TicketInfo>("DELETE", `${this.t(slug, id)}/follow-up`, { reason }, this.by(run));
-  notifyUser = (slug: string, id: string, message: string, run?: string | null) =>
-    this.req<MessageResult>("POST", `${this.t(slug, id)}/notify`, { message }, this.by(run));
+  notifyUser = (slug: string, id: string, message: string, run?: string | null, extra?: { urgent?: boolean; why?: string }) =>
+    this.req<MessageResult>("POST", `${this.t(slug, id)}/notify`, { message, ...extra }, this.by(run));
   /** Waits up to a few minutes for every named device at once (see devices.ts). */
   takeDevices = (slug: string, id: string, names: string[], run?: string | null) =>
     this.req<DeviceTake>("POST", `${this.t(slug, id)}/devices`, { action: "take", names }, this.by(run), true);

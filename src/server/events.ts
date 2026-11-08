@@ -31,6 +31,12 @@ export type BusEvent =
   | { type: "restart.updated"; pending: boolean; waiting: number }
   /** The daemon started or stopped keeping the Mac awake for active work (awake.ts). */
   | { type: "awake.updated"; held: boolean }
+  /** The helper's status, lines, settings or feedback list changed (GET /api/helper); clients refetch. */
+  | { type: "helper.updated" }
+  /** The helper sent a message (urgent ones show an in-board toast linking to its page). */
+  | { type: "helper.message"; id: string; level: string; oneLine: string }
+  /** A message was stored or read (helper/messages.ts): how many are unread now ("Messages, N new"). */
+  | { type: "messages.updated"; unread: number }
   /** What the board learned on its own changed (learn.ts): a lesson saved or noted, a tidy step, an undo. profile null: notes every board shares. */
   | { type: "learned.updated"; profile: string | null }
   /** A huddle's status, roster or findings changed. */

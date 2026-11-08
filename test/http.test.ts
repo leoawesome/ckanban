@@ -10,6 +10,7 @@ import { Store } from "../src/server/store";
 import { makeRepo, tempDir } from "./helpers";
 
 let server: ReturnType<typeof createServer>;
+let userBrowser = true;
 let store: Store;
 let board: Board;
 let base: string;
@@ -18,7 +19,8 @@ beforeAll(() => {
   store = new Store(tempDir("ck-home-"));
   const bus = new Bus();
   board = new Board(store, bus, { claudeBin: "/bin/false" });
-  server = createServer({ store, bus, board, port: 0, webDir: tempDir("ck-web-") });
+  // userOnly routes: only the browser check is stubbed (they still need the board's Origin and no run header).
+  server = createServer({ store, bus, board, port: 0, webDir: tempDir("ck-web-"), isUserBrowser: async () => userBrowser });
   base = `http://127.0.0.1:${server.port}`;
 });
 
@@ -987,20 +989,30 @@ test("spending: card cost, today's spend and caps set by the user only", async (
   expect(r.status).toBe(403);
 });
 
-test("notification settings: read, update, validate; board runs are refused", async () => {
+test("notification settings: read, update, validate; only the user's browser changes them, board runs are refused", async () => {
+  const user = (body: unknown) => ({ ...json("POST", body), headers: { "content-type": "application/json", origin: base } });
   let r = await fetch(`${base}/api/notify`);
   expect(r.status).toBe(200);
   expect(((await r.json()) as any).webhookUrl).toBe("");
-  r = await fetch(`${base}/api/notify`, json("POST", { webhookUrl: "https://ntfy.sh/abc", kinds: { review: false } }));
+  // A run's shell or another program (no Origin, a run header, or not the user's browser) can't point messages elsewhere.
+  r = await fetch(`${base}/api/notify`, json("POST", { webhookUrl: "https://evil.example/hook" }));
+  expect(r.status).toBe(403);
+  r = await fetch(`${base}/api/notify`, { ...user({ webhookUrl: "https://evil.example/hook" }), headers: { "content-type": "application/json", origin: base, "x-ckanban-run": "p/t_1" } });
+  expect(r.status).toBe(403);
+  userBrowser = false;
+  r = await fetch(`${base}/api/notify`, user({ webhookUrl: "https://evil.example/hook" }));
+  expect(r.status).toBe(403);
+  userBrowser = true;
+  r = await fetch(`${base}/api/notify`, user({ webhookUrl: "https://ntfy.sh/abc", kinds: { review: false } }));
   const s = (await r.json()) as any;
   expect(s.webhookUrl).toBe("https://ntfy.sh/abc");
   expect(s.kinds.review).toBe(false);
   expect(s.kinds.questions).toBe(true);
-  r = await fetch(`${base}/api/notify`, json("POST", { webhookUrl: "javascript:alert(1)" }));
+  r = await fetch(`${base}/api/notify`, user({ webhookUrl: "javascript:alert(1)" }));
   expect(r.status).toBe(400);
   r = await fetch(`${base}/api/notify`, { headers: { "x-ckanban-run": "p/t_1" } });
   expect(r.status).toBe(403);
-  r = await fetch(`${base}/api/notify`, json("POST", { webhookUrl: "" }));
+  r = await fetch(`${base}/api/notify`, user({ webhookUrl: "" }));
   expect(((await r.json()) as any).webhookUrl).toBe("");
 });
 
@@ -1161,10 +1173,22 @@ test("notify: only the ticket's own Claude sends it, and it is told where it wen
   expect((await send(url, { message: "Pick A or B" }, { ...run, "x-ckanban-huddle-agent": "h1/reviewer" })).status).toBe(403);
   expect((await send(url, {}, run)).status).toBe(400);
   // No real macOS banner from a test.
-  await send(`${base}/api/notify`, { mac: false });
+  await send(`${base}/api/notify`, { mac: false }, { origin: base });
   const r = await send(url, { message: "Pick A or B" }, run);
   expect(r.status).toBe(200);
   expect(((await r.json()) as any)).toMatchObject({ delivered: false, reason: "nowhere" });
+  expect((await send(`${tickets}/${other.id}/notify`, { message: "x", urgent: "yes" }, { "x-ckanban-run": `${p.slug}/${other.id}` })).status).toBe(400);
+
+  // Every message is stored before it is sent: the history lists it, one reads in full, it can be marked read.
+  const list = (await (await fetch(`${base}/api/messages`)).json()) as any;
+  const m = list.messages.find((x: any) => x.items?.[0]?.ticketId === t.id);
+  expect(m).toMatchObject({ level: "message", readAt: null, items: [{ question: "Pick A or B" }] });
+  expect(list.unread).toBeGreaterThan(0);
+  expect(((await (await fetch(`${base}/api/messages/${m.id}`)).json()) as any).text).toContain("Pick A or B");
+  const read = (await (await send(`${base}/api/messages/${m.id}/read`, {})).json()) as any;
+  expect(read.message.readAt).toBeString();
+  expect((await fetch(`${base}/api/messages/m_nope`)).status).toBe(404);
+  expect((await fetch(`${base}/api/messages`, { headers: run })).status).toBe(403);
 });
 
 test("follow-ups: a run sets and stops its own ticket's only; the user's Stop, seen and chat", async () => {

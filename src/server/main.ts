@@ -11,6 +11,8 @@ import { withUtf8Locale } from "./locale";
 import { boardToolsSource, McpManager } from "./mcp";
 import { startPoller } from "./prpoller";
 import { Notifier } from "./notify";
+import { HelperRunner } from "./helper/runner";
+import { ticketAttention, withSnooze } from "./attention";
 import { PushService } from "./push";
 import { RemoteAccess, remoteListenPort, remoteUrl } from "./remote";
 import { Passes } from "./integrations/passes";
@@ -88,12 +90,30 @@ export async function startDaemon(): Promise<void> {
   const quickChats = new QuickChats(store, bus, board, { claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude" });
   // launchd (KeepAlive) starts the daemon again once it exits.
   const restart = () => board.requestRestart(() => void shutdown());
+  // The helper (helper/runner.ts): plugged into the notifier before notifier.start, so start-up waits go to it.
+  const helper = new HelperRunner({
+    root: store.root, store, core: notifier.helper, notifySettings: () => notifier.settings(), sideCall,
+    link: (slug, id) => notifier.link(slug, id), messageLink: (id) => notifier.messageLink(id),
+    snoozedUntil: (slug, id) => {
+      const t = store.getTicket(slug, id);
+      if (!t?.snooze || Date.parse(t.snooze.until) <= Date.now()) return null;
+      const s = t.sessionId ? sessions.summary(t.sessionId) : null;
+      const h = board.hostHuddles(slug).get(id);
+      const a = ticketAttention(store, slug, t, s, board.isRunning(slug, id), h, (x) => board.isRunning(slug, x));
+      return withSnooze(t, s, a, Date.now(), h).snoozed?.until ?? null;
+    },
+    onScreen: () => push.anyVisible(), phoneDevices: () => push.phoneDevices(),
+    checkinOffer: () => mcp.state().servers.some((x) => x.status === "connected")
+      && !store.listProfiles().some((p) => store.listSchedules(p.slug).some((x) => x.quiet)),
+    emit: (e) => bus.emit(e),
+  });
+  // Runs keep the Mac awake on boards with "Keep this Mac awake" on; the helper's urgent items and due times on any board.
   const awake = new StayAwake({
-    wanted: () => board.busyBoards().some((slug) => keepAwakeOn(store.getProfile(slug))),
+    wanted: () => board.busyBoards().some((slug) => keepAwakeOn(store.getProfile(slug))) || helper.wantsAwake(),
     onChange: (held) => bus.emit({ type: "awake.updated", held }),
   });
   const remotePort = remoteListenPort(port, config.remotePort);
-  const server = createServer({ store, bus, board, port, remotePort, webDir, sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push });
+  const server = createServer({ store, bus, board, port, remotePort, webDir, sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
   console.log(`ckanban v${VERSION} listening on http://localhost:${server.port} (data: ${store.root})`);
   const stopLag = startLagMonitor();
   track("startup: board.recover", () => board.recover());
@@ -116,6 +136,7 @@ export async function startDaemon(): Promise<void> {
   const stopMcp = mcp.start();
   // After recover(): what already waits when the daemon starts doesn't notify again.
   const stopNotifier = notifier.start();
+  const stopHelper = helper.start();
   const stopAwake = awake.start();
 
   const shutdown = async () => {
@@ -136,6 +157,7 @@ export async function startDaemon(): Promise<void> {
     shells.killAll();
     stopMcp();
     stopNotifier();
+    stopHelper();
     stopAwake();
     stopLag();
     await Promise.all([board.shutdown(), huddles.shutdown(), quickChats.shutdown()]);

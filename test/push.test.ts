@@ -201,12 +201,12 @@ describe("Notifier with phone push", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(bodies.map((b) => b.url)).toEqual([phone.sub.endpoint]);
     expect(JSON.parse(decryptPayload(bodies[0].body, phone.privateKey, phone.auth).toString())).toEqual({
-      title: "Fix it", body: "Ready for review · Kanban", url: `https://mac.tail.ts.net/#/kb/${ticket.id}`, tag: `kb/${ticket.id}`,
+      title: "Fix it", body: "Ready for review · Kanban", url: expect.stringMatching(/^https:\/\/mac\.tail\.ts\.net\/#\/~messages\/m_/), messageId: expect.stringMatching(/^m_/), tag: `kb/${ticket.id}`,
     });
     expect(notifier.state().lastSentAt).not.toBeNull();
     bodies.length = 0;
     const r = await notifier.test("kb");
-    expect(r).toEqual({ ok: true, error: null, webhook: false, devices: 2 });
+    expect(r).toMatchObject({ ok: true, error: null, webhook: false, devices: 2 });
     expect(bodies).toHaveLength(2);
     bodies.length = 0;
     const one = await notifier.testDevice(push.devices().find((d) => d.label === "Mac")!.id, "kb");
@@ -241,7 +241,7 @@ describe("Notifier with phone push", () => {
     const r = await notifier.message("kb", ticket.id, "  Please pick\noption A or B  ");
     expect(r).toEqual({ delivered: true, devices: 1, onScreen: 0, webhook: false, banner: false, reason: null, error: null });
     expect(JSON.parse(decryptPayload(bodies[0].body, phone.privateKey, phone.auth).toString())).toEqual({
-      title: "Login page", body: "Please pick option A or B · Kanban", url: `https://mac.tail.ts.net/#/kb/${ticket.id}`, tag: `kb/${ticket.id}`,
+      title: "Login page", body: "Please pick option A or B · Kanban", url: expect.stringMatching(/^https:\/\/mac\.tail\.ts\.net\/#\/~messages\/m_/), messageId: expect.stringMatching(/^m_/), tag: `kb/${ticket.id}`,
     });
     expect(store.listComments("kb", ticket.id).map((c) => c.text)).toEqual(["Sent you a notification: Please pick option A or B"]);
 

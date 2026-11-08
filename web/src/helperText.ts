@@ -1,0 +1,136 @@
+// Words and routes for the helper screens (no browser APIs here, so tests can load it).
+
+export type MessageLevel = "urgent" | "reminder" | "summary" | "routine" | "pause" | "fallback" | "digest" | "hello" | "direct" | "message" | "test";
+
+export interface MessageItem {
+  key?: string | null;
+  board: string;
+  boardName: string;
+  ticketId: string;
+  title: string;
+  question: string;
+}
+
+export interface MessageSend {
+  channel: string;
+  at: string;
+  ok: boolean;
+  devices?: number;
+  error?: string | null;
+}
+
+/** One message the board sent (src/server/helper/messages.ts StoredMessage). */
+export interface Message {
+  id: string;
+  at: string;
+  level: MessageLevel;
+  oneLine: string;
+  text: string;
+  why: string | null;
+  items: MessageItem[];
+  sends: MessageSend[];
+  readAt: string | null;
+  /** Got it or Not urgent was tapped on this alert. */
+  tapped?: { how: "got-it" | "not-urgent"; at: string } | null;
+  held?: boolean;
+}
+
+// ---- words ----
+
+/** Messages pages: #/~messages and #/~messages/<id> ("~" can't start a board slug). */
+export const MESSAGES_HASH = "#/~messages";
+export const messageHash = (id: string) => `${MESSAGES_HASH}/${encodeURIComponent(id)}`;
+
+/** The message route in a hash: null when it isn't one; id null for the history. */
+export function messagesRoute(hash: string): { id: string | null } | null {
+  const m = /^#\/~messages(?:\/([^/?#]+))?\/?$/.exec(hash);
+  if (!m) return null;
+  let id: string | null = null;
+  try {
+    id = m[1] ? decodeURIComponent(m[1]) : null;
+  } catch {
+    id = m[1] ?? null;
+  }
+  return { id };
+}
+
+/** The badge word for each kind of message. */
+export function levelLabel(level: MessageLevel, held?: boolean): string {
+  if (held) return "Held";
+  switch (level) {
+    case "urgent": return "Urgent";
+    case "reminder": return "Reminder";
+    case "summary": return "Summary";
+    case "digest": return "Summary";
+    case "fallback": return "Missed";
+    case "pause": return "Helper paused";
+    case "hello": return "Hello";
+    case "test": return "Test";
+    case "message": return "From Claude";
+    default: return "Update";
+  }
+}
+
+/** Badge colour: urgent red, summaries blue, hello green, held and pause amber, the rest grey. */
+export function levelTone(level: MessageLevel, held?: boolean): "urgent" | "sum" | "ok" | "warn" | "plain" {
+  if (held) return "warn";
+  if (level === "urgent" || level === "reminder") return "urgent";
+  if (level === "summary" || level === "digest") return "sum";
+  if (level === "hello" || level === "test") return "ok";
+  if (level === "pause" || level === "fallback") return "warn";
+  return "plain";
+}
+
+const CHANNEL_WORDS: Record<string, string> = { push: "Phone", mac: "This Mac", webhook: "ntfy", telegram: "Telegram" };
+export const channelWord = (name: string) => CHANNEL_WORDS[name] ?? name;
+
+/** "2:10" in the Mac's clock, "Yesterday 4:00 pm"-style days are made by dayLabel. */
+export function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/** "Today", "Yesterday" or "Mon 3 Nov". */
+export function dayLabel(iso: string, now = Date.now()): string {
+  const d = new Date(iso);
+  const start = (t: Date) => new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+  const days = Math.round((start(new Date(now)) - start(d)) / 86_400_000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+}
+
+/** Newest first, grouped by day. */
+export function groupByDay(list: Message[], now = Date.now()): { day: string; messages: Message[] }[] {
+  const out: { day: string; messages: Message[] }[] = [];
+  for (const m of list) {
+    const day = dayLabel(m.at, now);
+    const last = out.at(-1);
+    if (last && last.day === day) last.messages.push(m);
+    else out.push({ day, messages: [m] });
+  }
+  return out;
+}
+
+/** "Got it" or "Not urgent": the button the user tapped. */
+export const tapWord = (how: "got-it" | "not-urgent") => (how === "got-it" ? "Got it" : "Not urgent");
+
+/**
+ * What the user did with a message, oldest first: "You opened it" (left out when it was only read by the tap itself)
+ * and "You tapped Got it" / "You tapped Not urgent".
+ */
+export function userTrail(m: Pick<Message, "readAt" | "tapped">): { at: string; text: string }[] {
+  const out: { at: string; text: string }[] = [];
+  if (m.readAt && !(m.tapped && m.readAt >= m.tapped.at)) out.push({ at: m.readAt, text: "You opened it" });
+  if (m.tapped) out.push({ at: m.tapped.at, text: `You tapped ${tapWord(m.tapped.how)}` });
+  return out;
+}
+
+/** "Phone 2:10 · Telegram 2:15 · opened 2:17": where a message went (one entry per channel and time). */
+export function sendTrail(m: Message): string {
+  const parts = m.sends.map((s) => `${channelWord(s.channel)} ${clock(s.at)}${s.ok ? "" : " (failed)"}`);
+  for (const u of userTrail(m)) parts.push(`${u.text === "You opened it" ? "opened" : tapWord(m.tapped!.how)} ${clock(u.at)}`);
+  return [...new Set(parts)].join(" · ");
+}
+
+/** A held item's helper line: it was kept for a later summary, so "Should have pinged me" fits. */
+export const isHeldLine = (line: string | undefined) => !!line && line.startsWith("Held for");

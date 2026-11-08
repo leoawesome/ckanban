@@ -1,0 +1,572 @@
+import { beforeEach, describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { Board } from "../src/server/board";
+import { Bus } from "../src/server/events";
+import { checkDecision, channelFor, parseDecision, type CheckContext, type ItemState } from "../src/server/helper/decide";
+import { backoffMs, HelperRunner, meetingTime } from "../src/server/helper/runner";
+import { HelperSettingsStore, inNight, nightEnd } from "../src/server/helper/settings";
+import type { Channel } from "../src/server/helper/channels";
+import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
+import type { SessionSummary } from "../src/server/session";
+import { parseSideResult, sideCallArgs, type SideCallInput, type SideCallResult } from "../src/server/side-call";
+import { SpendIndex } from "../src/server/spend";
+import { Store } from "../src/server/store";
+import type { Profile, Ticket } from "../src/server/types";
+import { tempDir } from "./helpers";
+
+const DAY = (h: number, m = 0) => new Date(2026, 10, 9, h, m).getTime();
+const NIGHT = { start: "22:00", end: "07:00" };
+
+describe("night window", () => {
+  test("wraps midnight; ends in the morning", () => {
+    expect(inNight(DAY(23), NIGHT)).toBe(true);
+    expect(inNight(DAY(3), NIGHT)).toBe(true);
+    expect(inNight(DAY(7), NIGHT)).toBe(false);
+    expect(inNight(DAY(14), NIGHT)).toBe(false);
+    expect(nightEnd(DAY(23), NIGHT)).toBe(new Date(2026, 10, 10, 7, 0).getTime());
+    expect(nightEnd(DAY(3), NIGHT)).toBe(DAY(7));
+    expect(nightEnd(DAY(14), NIGHT)).toBe(DAY(14));
+    expect(inNight(DAY(13), { start: "12:00", end: "14:00" })).toBe(true);
+  });
+
+  test("settings: defaults, checks, feedback list", () => {
+    const s = new HelperSettingsStore(tempDir());
+    expect(s.get()).toMatchObject({ model: "sonnet", night: NIGHT, nightOptIn: null, feedback: [] });
+    expect(() => s.update({ model: "opus" })).toThrow("model");
+    expect(() => s.update({ night: { start: "25:00", end: "07:00" } })).toThrow("night start");
+    expect(s.update({ model: "haiku", night: { start: "23:30", end: "6:00" }, nightOptIn: true })).toMatchObject({ model: "haiku", night: { start: "23:30", end: "06:00" }, nightOptIn: true });
+    const l = s.addFeedback("  Pricing is always urgent ");
+    expect(l.text).toBe("Pricing is always urgent");
+    expect(() => s.addFeedback("")).toThrow("required");
+    expect(s.removeFeedback(l.id)).toBe(true);
+    expect(s.get().feedback).toEqual([]);
+  });
+});
+
+test("prep items leave at their meeting time: creation day, or the next day when HH:MM is earlier", () => {
+  const created = new Date(2026, 10, 9, 9, 0).toISOString();
+  expect(meetingTime("Prep: client call at 10:30", created)).toBe(DAY(10, 30));
+  expect(meetingTime("Prep: standup at 8:15", created)).toBe(new Date(2026, 10, 10, 8, 15).getTime());
+  expect(meetingTime("Reply to Anna", created)).toBeNull();
+});
+
+describe("the board's checks on a decision (table)", () => {
+  const st = (o: Partial<ItemState> = {}): ItemState => ({ open: true, snoozed: false, checkin: false, told: false, pendingReminders: false, stopped: null, ...o });
+  const ctx = (o: Partial<CheckContext> = {}): CheckContext => ({
+    now: DAY(14, 10), night: NIGHT, nightOptIn: false, channels: ["mac", "webhook", "push", "telegram"], on: ["mac", "push", "telegram"],
+    items: new Map([["a", st()], ["b", st()], ["told", st({ told: true })], ["snz", st({ snoozed: true })], ["got", st({ told: true, stopped: "got-it" })], ["run", st({ told: true, pendingReminders: true })], ["checkin:kb/t9", st({ checkin: true })]]),
+    ...o,
+  });
+  const urgent = (o: object = {}) => ({ level: "urgent", oneLine: "Stop the webhook", why: "billed twice", itemKeys: ["a"], escalation: [{ channel: "push", afterMin: 0 }, { channel: "telegram", afterMin: 5 }], ...o });
+  const dec = (sends: object[], o: object = {}) => ({ sends, nextWakeIn: 30, notes: "n", log: "l", ...o });
+
+  const rows: [string, unknown, Partial<CheckContext>, (r: ReturnType<typeof checkDecision>) => void][] = [
+    ["bad shape fails the run", { sends: "x" }, {}, (r) => expect(r.ok).toBe(false)],
+    ["missing nextWakeIn fails the run", { sends: [] }, {}, (r) => expect(r.ok).toBe(false)],
+    ["unknown keys are dropped; a send left empty is dropped", dec([urgent({ itemKeys: ["nope"] })]), {}, (r) => expect(r.ok && r.decision.sends).toEqual([])],
+    ["snoozed keys are dropped", dec([{ ...urgent(), level: "summary", itemKeys: ["snz", "b"] }]), {}, (r) => expect(r.ok && r.decision.sends[0].keys).toEqual(["b"])],
+    ["no re-alert after Got it, none while reminders run, no urgent check-ins", dec([urgent({ itemKeys: ["got", "run", "checkin:kb/t9"] })]), {}, (r) => expect(r.ok && r.decision.sends).toEqual([])],
+    ["urgent first step moves to minute 0", dec([urgent({ escalation: [{ channel: "push", afterMin: 3 }] })]), {}, (r) => expect(r.ok && r.decision.sends[0].steps).toEqual([{ channel: "push", afterMin: 0 }])],
+    ["5-minute floor between steps", dec([urgent({ escalation: [{ channel: "push", afterMin: 0 }, { channel: "telegram", afterMin: 1 }, { channel: "push", afterMin: 2 }] })]), {},
+      (r) => expect(r.ok && r.decision.sends[0].steps.map((s) => s.afterMin)).toEqual([0, 5, 10])],
+    ["30-minute floor at night (with opt-in)", dec([urgent()]), { now: DAY(23), nightOptIn: true }, (r) => expect(r.ok && r.decision.sends[0].steps.map((s) => s.afterMin)).toEqual([0, 30])],
+    ["urgent at night without opt-in is held", dec([urgent()]), { now: DAY(23) }, (r) => expect(r.ok && r.decision.sends).toEqual([])],
+    ["off channel falls to the next one on", dec([urgent({ escalation: [{ channel: "webhook", afterMin: 0 }] })]), {}, (r) => expect(r.ok && r.decision.sends[0].steps[0].channel).toBe("push")],
+    ["empty escalation: one step on the first channel on", dec([urgent({ escalation: [] })]), {}, (r) => expect(r.ok && r.decision.sends[0].steps).toEqual([{ channel: "mac", afterMin: 0 }])],
+    ["at most 6 steps within 2 hours", dec([urgent({ escalation: Array.from({ length: 10 }, (_, i) => ({ channel: "push", afterMin: i * 20 })) })]), {},
+      (r) => expect(r.ok && r.decision.sends[0].steps.map((s) => s.afterMin)).toEqual([0, 20, 40, 60, 80, 100])],
+    ["next wake between 1 minute and 24 hours", dec([], { nextWakeIn: 0.1 }), {}, (r) => expect(r.ok && r.decision.nextWakeAt).toBe(DAY(14, 11))],
+    ["next wake at most 24 hours", dec([], { nextWakeIn: 99999 }), {}, (r) => expect(r.ok && r.decision.nextWakeAt).toBe(DAY(14, 10) + 24 * 3600_000)],
+    ["oneLine cut at about 110 characters", dec([urgent({ oneLine: "x".repeat(300) })]), {}, (r) => expect(r.ok && r.decision.sends[0].oneLine.length).toBeLessThanOrEqual(110)],
+    ["a summary with nothing new is dropped", dec([{ ...urgent(), level: "summary", itemKeys: ["told"] }]), {}, (r) => expect(r.ok && r.decision.sends).toEqual([])],
+    ["an item named twice goes with the urgent send", dec([{ ...urgent(), level: "summary", itemKeys: ["a", "b"] }, urgent()]), {},
+      (r) => expect(r.ok && r.decision.sends.map((s) => [s.level, s.keys])).toEqual([["urgent", ["a"]], ["summary", ["b"]]])],
+    ["no channel on: the alert is only stored", dec([urgent()]), { on: [] }, (r) => expect(r.ok && r.decision.sends[0].steps).toEqual([])],
+  ];
+  for (const [name, raw, o, check] of rows) test(name, () => check(checkDecision(raw, ctx(o))));
+
+  test("channel fallback order wraps; bad JSON is a failed run", () => {
+    expect(channelFor("telegram", ["mac", "webhook", "push", "telegram"], ["mac"])).toBe("mac");
+    expect(channelFor("x", ["mac"], [])).toBeNull();
+    expect(parseDecision("not json").ok).toBe(false);
+    expect(parseDecision('```json\n{"sends":[]}\n```').ok).toBe(true);
+  });
+});
+
+test("side call: --json-schema, and the answer read from structured_output", () => {
+  const args = sideCallArgs({ prompt: "p", system: "s", jsonSchema: { type: "object" } });
+  expect(args[args.indexOf("--json-schema") + 1]).toBe('{"type":"object"}');
+  expect(args[args.indexOf("--tools") + 1]).toBe("");
+  const r = parseSideResult(JSON.stringify({ result: "", structured_output: { sends: [] }, total_cost_usd: 0.02 }), 0, "", "sonnet");
+  expect(r).toEqual({ ok: true, text: '{"sends":[]}', costUsd: 0.02, model: "sonnet" });
+});
+
+describe("helper runner", () => {
+  let store: Store;
+  let bus: Bus;
+  let clock: number;
+  let hooks: { title: string; body: string; priority?: string }[];
+  let tg: { text: string; ok: boolean }[];
+  let tgOk: boolean;
+  let hookOk: boolean;
+  let snoozes: Map<string, string>;
+  let summaries: Map<string, SessionSummary>;
+  let calls: SideCallInput[];
+  let answers: (SideCallResult | ((i: SideCallInput) => SideCallResult))[];
+  let ticket: Ticket;
+  let n: Notifier;
+  let h: HelperRunner;
+
+  const telegram: Channel = {
+    name: "telegram", enabled: () => true,
+    async send(m) {
+      tg.push({ text: m.text, ok: tgOk });
+      return { channel: "telegram", ok: tgOk, error: tgOk ? null : "telegram down" };
+    },
+  };
+  const make = () => {
+    n = new Notifier(store, bus, {
+      root: store.root, sessionSummary: (id) => summaries.get(id) ?? null, isRunning: () => false, hostHuddles: () => new Map(),
+      baseUrl: () => "https://mac.ts.net", debounceMs: 1000, tickMs: 3600_000, now: () => clock,
+      fetch: async (_url, init) => {
+        const hd = init.headers as Record<string, string>;
+        hooks.push({ title: hd.Title, body: String(init.body), priority: hd.Priority });
+        return hookOk ? new Response("ok") : new Response("down", { status: 500 });
+      },
+      banner: () => {},
+    });
+    n.helper.channels.register(telegram);
+    h = new HelperRunner({
+      root: store.root, store, core: n.helper, notifySettings: () => n.settings(), link: (s, id) => n.link(s, id), messageLink: (id) => n.messageLink(id), now: () => clock,
+      snoozedUntil: (_b, id) => snoozes.get(id) ?? null,
+      sideCall: async (i) => {
+        calls.push(i);
+        const a = answers.shift();
+        if (!a) return { ok: false, error: "no answer queued" };
+        return typeof a === "function" ? a(i) : a;
+      },
+    });
+    return n.start();
+  };
+  const answer = (d: object, costUsd = 0.02): SideCallResult => ({ ok: true, text: JSON.stringify({ sends: [], nextWakeIn: 60, notes: "", log: "ok", ...d }), costUsd, model: "sonnet" });
+  const summary = (questions: string[], ask?: { urgent?: boolean; why?: string }): SessionSummary => ({
+    title: null, lastMessage: null, artifacts: [], updatedAt: "", openQuestions: questions.length,
+    openForm: questions.map((q) => ({ question: q, options: [], multiSelect: false })), ...(ask ? { openAsk: ask } : {}),
+    pendingProposal: null, pendingNewTickets: [], pendingTeammates: [], cache: null,
+  } as SessionSummary);
+  const ask = (id: string, questions: string[], extra?: { urgent?: boolean; why?: string }) => {
+    summaries.set(`s_${id}`, summary(questions, extra));
+    const t = store.updateTicket("kb", id, { status: "planning", sessionId: `s_${id}` });
+    bus.emit({ type: "ticket.updated", profile: "kb", ticket: t });
+  };
+  const settle = async () => {
+    n.tick();
+    clock += 1000;
+    n.tick();
+    await new Promise((r) => setTimeout(r, 5));
+  };
+  const keyOf = (id: string) => n.helper.waits.open().find((r) => r.ticketId === id)!.key;
+
+  beforeEach(() => {
+    store = new Store(tempDir("ck-home-"));
+    bus = new Bus();
+    clock = DAY(14, 0);
+    hooks = [];
+    tg = [];
+    tgOk = true;
+    hookOk = true;
+    snoozes = new Map();
+    summaries = new Map();
+    calls = [];
+    answers = [];
+    const p: Profile = { name: "Kanban", slug: "kb", path: tempDir(), baseBranch: "main", maxParallel: 1, model: null, createdAt: "" };
+    store.saveProfile(p);
+    ticket = store.createTicket("kb", { title: "Pricing", body: "b", status: "in_progress" });
+    writeNotifySettings(store.root, normalizeSettings({ webhookUrl: "https://ntfy.sh/topic", mac: false }));
+    // Not a first run: the hello went out before.
+    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z" }));
+  });
+
+  test("a new wait batches about a minute; nothing waiting skips the model call", async () => {
+    const stop = make();
+    await h.tick();
+    expect(calls).toHaveLength(0);
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    expect(h.dueAt()).toBe(clock + 60_000);
+    await h.tick();
+    expect(calls).toHaveLength(0);
+    clock += 60_000;
+    answers.push(answer({ nextWakeIn: 120, log: "held the copy question" }));
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ model: "sonnet", jsonSchema: expect.any(Object) });
+    const input = JSON.parse(calls[0].prompt);
+    expect(input.items[0]).toMatchObject({ key: keyOf(ticket.id), ticket: "Pricing", question: "Approve the copy?", new: true, told: "no" });
+    // Held: no send, the Inbox line says until when, the log has a held entry.
+    expect(hooks).toHaveLength(0);
+    expect(h.status().lines[`kb/${ticket.id}`]).toBe("Held for the 16:01 summary: Approve the copy?");
+    expect(n.helper.messages.listNewest({ held: true })[0]).toMatchObject({ held: true, level: "routine" });
+    // The ticket stops waiting: the next wake has nothing to look at, so no model call.
+    store.updateTicket("kb", ticket.id, { status: "done" });
+    bus.emit({ type: "ticket.updated", profile: "kb", ticket: store.getTicket("kb", ticket.id)! });
+    await settle();
+    clock += 3 * 3600_000;
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    expect(h.status().runs.at(-1)).toMatchObject({ ok: true, skipped: true });
+    stop();
+  });
+
+  test("an asker's urgent mark wakes at once; the urgent alert names its next step; reminders fire, fail over, and stop on Got it", async () => {
+    const stop = make();
+    // Loop guard: a run a moment ago holds the next wake for a minute.
+    clock += 2 * 60_000;
+    ask(ticket.id, ["Stop the old webhook?"], { urgent: true, why: "pricing data ingested twice" });
+    await settle();
+    const key = keyOf(ticket.id);
+    answers.push(answer({ sends: [{ level: "urgent", oneLine: "Pricing ingests data twice until you answer", why: "double ingestion", itemKeys: [key], escalation: [{ channel: "webhook", afterMin: 0 }, { channel: "telegram", afterMin: 5 }, { channel: "webhook", afterMin: 10 }] }] }));
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    expect(hooks).toHaveLength(1);
+    expect(hooks[0].priority).toBe("5");
+    const alert = n.helper.messages.listNewest()[0];
+    expect(alert.level).toBe("urgent");
+    expect(alert.text).toContain("Next: I'll remind you on Telegram at 14:07, until 16:02 at most, unless you open it.");
+    expect(alert.text).toContain("Right call?");
+    expect(n.helper.waits.get(key)).toMatchObject({ toldVia: "helper", messageId: alert.id });
+    expect(h.status().lines[`kb/${ticket.id}`]).toBe("Urgent: ntfy 14:02, Telegram 14:07, ntfy 14:12");
+    expect(h.wantsAwake()).toBe(true);
+    // Step 2 on Telegram, which fails: it moves on to the next channel at once.
+    tgOk = false;
+    clock += 5 * 60_000;
+    await h.tick();
+    expect(tg).toHaveLength(1);
+    expect(hooks).toHaveLength(2);
+    expect(n.helper.messages.listNewest()[0]).toMatchObject({ level: "reminder" });
+    expect(n.helper.messages.listNewest()[0].sends.map((s) => [s.channel, s.ok])).toEqual([["telegram", false], ["webhook", true]]);
+    // Got it: no more reminders, not even at the next step.
+    const r = h.gotIt(alert.id);
+    expect(r.stopped).toBe(1);
+    clock += 10 * 60_000;
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    expect(h.status().lines[`kb/${ticket.id}`]).toContain("you tapped Got it");
+    stop();
+  });
+
+  test("reminders stop on opening the ticket, on Not urgent, and expire after 2 hours with one message", async () => {
+    const stop = make();
+    const other = store.createTicket("kb", { title: "Billing", body: "b", status: "in_progress" });
+    ask(ticket.id, ["Stop the old webhook?"]);
+    ask(other.id, ["Refund the customer?"]);
+    await settle();
+    const [a, b] = [keyOf(ticket.id), keyOf(other.id)];
+    const steps = [{ channel: "webhook", afterMin: 0 }, { channel: "webhook", afterMin: 30 }, { channel: "webhook", afterMin: 200 }];
+    answers.push(answer({ sends: [
+      { level: "urgent", oneLine: "Webhook", why: "w", itemKeys: [a], escalation: steps },
+      { level: "urgent", oneLine: "Refund", why: "r", itemKeys: [b], escalation: [{ channel: "webhook", afterMin: 0 }, { channel: "webhook", afterMin: 100 }] },
+    ] }));
+    clock += 60_000;
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    // Opening the ticket stops its reminders.
+    expect(n.opened("kb", ticket.id)).toBe(true);
+    expect(n.helper.waits.get(a)?.remindersStopped).toBe("opened");
+    // Not urgent stops the other's at once.
+    const msgB = n.helper.waits.get(b)!.messageId!;
+    expect(h.notUrgent(msgB).text).toBe("Stopped reminders for Billing");
+    clock += 3 * 3600_000;
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+
+    // Expiry: an alert whose plan runs past 2 hours ends with "I've stopped reminding you".
+    const third = store.createTicket("kb", { title: "Deploy", body: "b", status: "in_progress" });
+    ask(third.id, ["Roll back?"]);
+    await settle();
+    answers.push(answer({ sends: [{ level: "urgent", oneLine: "Prod down", why: "x", itemKeys: [keyOf(third.id)], escalation: [{ channel: "webhook", afterMin: 0 }, { channel: "webhook", afterMin: 110 }] }] }));
+    clock += 61_000;
+    await h.tick();
+    expect(hooks).toHaveLength(3);
+    clock += 125 * 60_000;
+    await h.tick();
+    expect(n.helper.messages.listNewest()[0].oneLine).toBe("I've stopped reminding you: Deploy");
+    expect(n.helper.waits.get(keyOf(third.id))?.remindersStopped).toBe("expired");
+    stop();
+  });
+
+  test("summaries: New vs Still waiting, nothing new means no summary, check-in items named once, one shared tag", async () => {
+    const stop = make();
+    const other = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "1 waits: copy question", why: "", itemKeys: [keyOf(ticket.id)], escalation: [] }] }));
+    clock += 60_000;
+    await h.tick();
+    expect(hooks.map((x) => x.title)).toEqual(["1 ticket waits on you"]);
+    // A check-in raised a prep ticket; a new question arrives.
+    store.createTicket("kb", { title: "Prep: client call at 15:30", body: "b", status: "backlog", raisedBy: { scheduleId: "s1", ticketId: "x" } } as any);
+    ask(other.id, ["Which tone?"]);
+    await settle();
+    answers.push((i) => {
+      const input = JSON.parse(i.prompt);
+      const keys = input.items.filter((x: any) => x.told === "no").map((x: any) => x.key);
+      return answer({ sends: [{ level: "summary", oneLine: "2 wait: tone question on Docs", why: "", itemKeys: [...keys, keyOf(ticket.id)], escalation: [] }] });
+    });
+    clock += 2 * 60_000;
+    await h.tick();
+    const m = n.helper.messages.listNewest()[0];
+    expect(m.level).toBe("summary");
+    expect(m.text).toContain("New:\n- Docs: Which tone?");
+    expect(m.text).toContain("Still waiting: 1\n- Pricing: Approve the copy?");
+    expect(m.text).toContain("From your check-ins:\n- Prep: client call at 15:30: prep ready");
+    expect(hooks.at(-1)!.title).toBe("2 tickets wait on you");
+    // Nothing new: the helper's summary is dropped.
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "still 2", why: "", itemKeys: [keyOf(ticket.id), keyOf(other.id)], escalation: [] }] }));
+    clock += 2 * 3600_000;
+    h.requestWake(clock);
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    expect(h.status().runs.at(-1)!.fixes).toContain("dropped a summary with nothing new");
+    stop();
+  });
+
+  test("failures back off 1 to 30 minutes; after 3 the waits go out directly with one pause message", async () => {
+    expect([1, 2, 3, 4, 5, 6, 9].map((f) => backoffMs(f) / 60_000)).toEqual([1, 2, 4, 8, 16, 30, 30]);
+    const stop = make();
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    clock += 60_000;
+    answers.push({ ok: false, error: "Not logged in" });
+    await h.tick();
+    expect(h.status()).toMatchObject({ failures: 1, failReason: "Not logged in", problem: true });
+    // Backoff: not again within the minute.
+    clock += 30_000;
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    clock += 31_000;
+    answers.push({ ok: true, text: "not json", costUsd: 0.01, model: "sonnet" });
+    await h.tick();
+    expect(calls).toHaveLength(2);
+    expect(h.status().failReason).toContain("not valid JSON");
+    clock += 2 * 60_000 + 1000;
+    answers.push({ ok: false, error: "timed out" });
+    await h.tick();
+    expect(calls).toHaveLength(3);
+    expect(h.healthy()).toBe(false);
+    expect(hooks.map((x) => x.title)).toEqual(["Pricing", "ckanban helper paused"]);
+    expect(hooks[0].body).toContain("Approve the copy?");
+    expect(h.status().line).toContain("Helper paused");
+    // Meanwhile a new wait goes out directly; the pause message isn't sent again.
+    const other = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    ask(other.id, ["Which tone?"]);
+    await settle();
+    clock += 10 * 60_000;
+    answers.push({ ok: false, error: "timed out" });
+    await h.tick();
+    expect(hooks.map((x) => x.title)).toEqual(["Pricing", "ckanban helper paused", "Which tone?: Docs"]);
+    // It works again: back to the helper, nothing sent twice.
+    clock += 30 * 60_000;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "x", why: "", itemKeys: [keyOf(ticket.id)], escalation: [] }] }));
+    await h.tick();
+    expect(h.healthy()).toBe(true);
+    expect(hooks).toHaveLength(3);
+    stop();
+  });
+
+  test("first run: a hello on the channels, then a summary of the seeded waits; spend has a Helper line", async () => {
+    writeFileSync(join(store.root, "helper-state.json"), "{}");
+    summaries.set("s1", summary(["Old question?"]));
+    store.updateTicket("kb", ticket.id, { status: "planning", sessionId: "s1" });
+    const stop = make();
+    expect(n.helper.waits.firstSummaryPending).toBe(true);
+    expect(h.status().notice).toBe(true);
+    answers.push(answer({}, 0.03));
+    clock += 60_000;
+    await h.tick();
+    expect(hooks.map((x) => x.title)).toEqual(["ckanban helper", "1 ticket waits on you"]);
+    expect(tg[0].text).toContain("Hi, I'm the helper");
+    expect(tg[1].text).toContain("This is your first summary");
+    expect(n.helper.waits.firstSummaryPending).toBe(false);
+    expect(JSON.parse(calls[0].prompt).firstSummary).toBe(true);
+    h.noticeSeen();
+    expect(h.status().notice).toBe(false);
+    const spend = new SpendIndex(store, () => new Date(clock)).today();
+    expect(spend.boards.find((b) => b.name === "Helper")?.costUsd).toBeCloseTo(0.03);
+    stop();
+  });
+
+  test("a new feedback line wakes the helper (loop guard applies); Should have pinged me writes one", async () => {
+    const stop = make();
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    clock += 60_000;
+    answers.push(answer({ nextWakeIn: 600 }));
+    await h.tick();
+    clock += 1000;
+    h.shouldHavePinged("kb", ticket.id);
+    expect(h.settings.get().feedback[0]).toMatchObject({ source: "should-have-pinged", text: 'Should have pinged me about "Pricing": Approve the copy?' });
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    clock += 59_000;
+    answers.push(answer({}));
+    await h.tick();
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse(calls[1].prompt).newFeedback).toHaveLength(1);
+    stop();
+  });
+
+  test("review fixes: a slow send can't fire a step twice; overdue steps after sleep fire once; a paused helper recovers with nothing open", async () => {
+    const stop = make();
+    ask(ticket.id, ["Stop the old webhook?"]);
+    await settle();
+    const key = keyOf(ticket.id);
+    answers.push(answer({ sends: [{ level: "urgent", oneLine: "Webhook", why: "w", itemKeys: [key], escalation: [{ channel: "webhook", afterMin: 0 }, { channel: "telegram", afterMin: 10 }, { channel: "telegram", afterMin: 20 }, { channel: "telegram", afterMin: 30 }] }] }));
+    clock += 60_000;
+    await h.tick();
+    // Asleep for 35 minutes: three steps overdue, only the latest fires; a slow send overlapping the next tick doesn't repeat it.
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const send = telegram.send;
+    telegram.send = async (m, st) => {
+      await slow;
+      return send(m, st);
+    };
+    clock += 35 * 60_000;
+    const first = h.tick();
+    await h.tick();
+    await h.reminders();
+    release();
+    await first;
+    telegram.send = send;
+    expect(tg).toHaveLength(1);
+    expect(tg[0].text).toContain("Reminder 4 of 4");
+    expect(n.helper.waits.get(key)!.reminders.filter((x) => x.skipped)).toHaveLength(2);
+    await h.tick();
+    expect(tg).toHaveLength(1);
+
+    // Paused after 3 failures, then nothing is open: the retry still asks the helper, and it recovers.
+    for (let i = 0; i < 3; i++) {
+      answers.push({ ok: false, error: "down" });
+      h.requestWake(clock);
+      clock += 31 * 60_000;
+      await h.tick();
+    }
+    expect(h.healthy()).toBe(false);
+    store.updateTicket("kb", ticket.id, { status: "done" });
+    bus.emit({ type: "ticket.updated", profile: "kb", ticket: store.getTicket("kb", ticket.id)! });
+    await settle();
+    expect(n.helper.waits.open()).toEqual([]);
+    const before = calls.length;
+    answers.push(answer({}));
+    clock += 31 * 60_000;
+    await h.tick();
+    expect(calls.length).toBe(before + 1);
+    expect(h.healthy()).toBe(true);
+    stop();
+  });
+
+  test("an urgent alert that reaches no channel stays untold: the next step tells it, or the helper looks again soon", async () => {
+    const stop = make();
+    clock += 2 * 60_000;
+    ask(ticket.id, ["Stop the old webhook?"], { urgent: true });
+    await settle();
+    const key = keyOf(ticket.id);
+    hookOk = false;
+    tgOk = false;
+    // One step only: every channel fails, nothing counts as sent, the helper retries within 5 minutes.
+    answers.push(answer({ nextWakeIn: 120, sends: [{ level: "urgent", oneLine: "Webhook runs twice", why: "", itemKeys: [key], escalation: [{ channel: "webhook", afterMin: 0 }] }] }));
+    await h.tick();
+    expect(hooks).toHaveLength(1);
+    expect(tg).toHaveLength(1);
+    expect(n.helper.waits.get(key)).toMatchObject({ toldAt: null });
+    expect(h.status().lines[`kb/${ticket.id}`]).toBe("Urgent: ntfy 14:02 (didn't get through)");
+    expect(h.status().runs.at(-1)).toMatchObject({ ok: true, sends: 0 });
+    expect(Date.parse(h.status().nextWakeAt!)).toBeLessThanOrEqual(clock + 5 * 60_000);
+    expect(n.helper.messages.listNewest({ held: true }).some((m) => m.held)).toBe(false);
+    // The next wake sees it untold and sends again; now a later step is planned. Its first send fails too...
+    clock += 5 * 60_000;
+    answers.push(answer({ nextWakeIn: 120, sends: [{ level: "urgent", oneLine: "Webhook runs twice", why: "", itemKeys: [key], escalation: [{ channel: "webhook", afterMin: 0 }, { channel: "webhook", afterMin: 5 }] }] }));
+    await h.tick();
+    expect(JSON.parse(calls[1].prompt).items[0]).toMatchObject({ key, told: "no" });
+    expect(n.helper.waits.get(key)!.toldAt).toBeNull();
+    // ...and the next planned step gets through: now it is told, and nothing goes out twice.
+    hookOk = true;
+    clock += 5 * 60_000;
+    await h.tick();
+    const reminder = n.helper.messages.listNewest()[0];
+    expect(reminder.level).toBe("reminder");
+    expect(n.helper.waits.get(key)).toMatchObject({ toldVia: "helper", messageId: reminder.id });
+    const count = hooks.length;
+    clock += 3 * 3600_000;
+    await n.helper.tick();
+    expect(hooks).toHaveLength(count);
+    stop();
+  });
+
+  test("a snooze ending wakes the helper", async () => {
+    const stop = make();
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    clock += 60_000;
+    answers.push(answer({ nextWakeIn: 600, log: "held" }));
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    snoozes.set(ticket.id, new Date(clock + 30 * 60_000).toISOString());
+    await h.tick();
+    expect(h.dueAt()).toBe(clock + 30 * 60_000);
+    clock += 29 * 60_000;
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    clock += 60_000;
+    answers.push(answer({ nextWakeIn: 600 }));
+    await h.tick();
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse(calls[1].prompt).items[0]).toMatchObject({ snoozed: false });
+    stop();
+  });
+
+  test("a failed AI call's cost counts in the Helper spend line", async () => {
+    const r = parseSideResult(JSON.stringify({ is_error: true, result: "", subtype: "error_max_turns", total_cost_usd: 0.012 }), 1, "", "sonnet");
+    expect(r).toMatchObject({ ok: false, costUsd: 0.012 });
+    const stop = make();
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    clock += 60_000;
+    answers.push({ ok: false, error: "max turns", costUsd: 0.012 });
+    await h.tick();
+    expect(h.status().runs.at(-1)).toMatchObject({ ok: false, costUsd: 0.012 });
+    const spend = new SpendIndex(store, () => new Date(clock)).today();
+    expect(spend.boards.find((b) => b.name === "Helper")?.costUsd).toBeCloseTo(0.012);
+    stop();
+  });
+
+  test("the helper isn't an active run: a restart neither waits for it nor holds it", async () => {
+    const stop = make();
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    let release!: () => void;
+    answers.push(() => answer({}));
+    const board = new Board(store, bus, { claudeBin: "/bin/false" });
+    // The run hangs until released.
+    const slow = new Promise<void>((r) => (release = r));
+    const inner = (h as any).d.sideCall;
+    (h as any).d.sideCall = async (i: SideCallInput) => {
+      await slow;
+      return inner(i);
+    };
+    clock += 60_000;
+    const waking = h.tick();
+    let restarted = false;
+    expect(board.requestRestart(() => (restarted = true)).running).toBe(0);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(restarted).toBe(true);
+    // ...and a pending restart doesn't hold the helper.
+    release();
+    await waking;
+    expect(calls).toHaveLength(1);
+    expect(h.status().runs.at(-1)!.ok).toBe(true);
+    stop();
+  });
+});

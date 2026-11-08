@@ -2,6 +2,7 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, s
 import { join } from "node:path";
 import { dayKey } from "./limit";
 import { readSideSpend } from "./side-call";
+import { helperSpendFile } from "./helper/runner";
 import { atomicWrite, type Store } from "./store";
 
 // Dollars spent, at a glance: each ticket's API-equivalent cost (the same sum as its Usage tab, see ticketRuns) and
@@ -143,6 +144,9 @@ export class SpendIndex {
       }
       return { slug: p.slug, name: p.name, costUsd: cost };
     });
+    // The helper (helper/runner.ts) covers every board: its own "Helper" line.
+    const helper = readSideSpend(helperSpendFile(this.store.root)).days.get(day) ?? 0;
+    if (helper > 0) boards.push({ slug: "~helper", name: "Helper", costUsd: helper });
     return { day, costUsd: boards.reduce((s, b) => s + b.costUsd, 0), boards };
   }
 }

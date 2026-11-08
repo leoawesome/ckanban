@@ -31,7 +31,7 @@ self.addEventListener("fetch", (e) => {
   );
 });
 
-// A "needs you" message from the daemon: {title, body, url, tag}. Always show one (iOS drops silent pushes).
+// A "needs you" message from the daemon: {title, body, url, tag, messageId}. Always show one (iOS drops silent pushes).
 self.addEventListener("push", (e) => {
   let data = {};
   try {
@@ -45,17 +45,22 @@ self.addEventListener("push", (e) => {
     renotify: !!data.tag,
     icon: "/icon-192.png",
     badge: "/icon-192.png",
-    data: { url: data.url || "/" },
+    data: { url: data.url || "/", messageId: data.messageId || null },
   }));
 });
 
-// Tap: the ticket on this board's own address (the link may name another one, e.g. the Mac's localhost).
+// Tap: the message's page (its full text) when the push names a stored message, else the link's ticket, on this
+// board's own address (the link may name another one, e.g. the Mac's localhost).
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
+  const data = e.notification.data || {};
   let hash = "";
-  try {
-    hash = new URL(e.notification.data && e.notification.data.url, location.origin).hash;
-  } catch {}
+  if (data.messageId) hash = `#/~messages/${encodeURIComponent(data.messageId)}`;
+  else {
+    try {
+      hash = new URL(data.url, location.origin).hash;
+    } catch {}
+  }
   const target = `${location.origin}/${hash}`;
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (list) => {
     const open = list.find((c) => new URL(c.url).origin === location.origin);

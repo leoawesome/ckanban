@@ -38,6 +38,19 @@ export interface Question {
   multiSelect: boolean;
 }
 
+/** What the asking Claude said waiting costs (ask_questions urgent / why). */
+export interface AskMeta {
+  urgent?: boolean;
+  why?: string;
+}
+
+/** ask_questions' urgent and why, or undefined when neither is set. */
+export function parseAskMeta(v: any): AskMeta | undefined {
+  const urgent = v?.urgent === true;
+  const why = typeof v?.why === "string" && v.why.trim() ? v.why.trim().slice(0, 300) : undefined;
+  return urgent || why ? { ...(urgent ? { urgent } : {}), ...(why ? { why } : {}) } : undefined;
+}
+
 export interface TicketProposal {
   title: string;
   description: string;
@@ -74,6 +87,8 @@ export interface SessionEntry {
   workflow?: WorkflowInfo;
   /** Interview questions Claude asked (rendered as a form). */
   questions?: Question[];
+  /** ask_questions' urgent and why (what waiting costs), for the helper. */
+  ask?: AskMeta;
   /** Improved title/description Claude proposed (rendered with an Apply button). */
   proposal?: TicketProposal;
   /** New tickets Claude proposed splitting the work into (rendered with Create buttons). */
@@ -292,6 +307,8 @@ export interface ParsedSession {
   openQuestions: number;
   /** That form's questions (empty when none waits): a board wake tells Claude to ask them again. */
   openForm: Question[];
+  /** That form's urgent / why, when the asking Claude set them. */
+  openAsk?: AskMeta;
   /** Latest ticket proposal since the user's last message. */
   pendingProposal: TicketProposal | null;
   /** Latest proposed new tickets since the user's last message (some may already be created). */
@@ -313,6 +330,8 @@ export interface SessionSummary {
   openQuestions: number;
   /** See ParsedSession.openForm. */
   openForm?: Question[];
+  /** See ParsedSession.openAsk. */
+  openAsk?: AskMeta;
   pendingProposal: TicketProposal | null;
   pendingNewTickets: NewTicketDraft[];
   pendingTeammates: string[];
@@ -449,11 +468,12 @@ const TEAMMATE_TOOL = /(?:^|__)propose_teammate$/;
 const AUTOMATION_TOOL = /(?:^|__)propose_automation$/;
 
 /** The form or card a planning-chat tool call shows, or null for other tools (or input that can't be read). */
-function cardEntry(block: any): Pick<SessionEntry, "questions" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "teammate" | "automation"> | null {
+function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "teammate" | "automation"> | null {
   const name = String(block.name ?? "");
   if (QUESTIONS_TOOL.test(name)) {
     const questions = parseQuestions(block.input?.questions);
-    return questions && { questions };
+    const ask = parseAskMeta(block.input);
+    return questions && { questions, ...(ask ? { ask } : {}) };
   }
   if (PROPOSAL_TOOL.test(name)) {
     const proposal = parseProposal(block.input);
@@ -748,7 +768,7 @@ function handBack(text: string): string {
   return text.slice(m[0].length).split("\n").map((l) => l.replace(/^ {2}/, "")).join("\n").trim();
 }
 
-function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingAutomations"> {
+function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingAutomations"> {
   let lastUser = -1;
   entries.forEach((e, i) => {
     // Huddle messages don't answer what Claude asked the user (another ticket's message, e.g. the planner's answer, does).
@@ -756,10 +776,12 @@ function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestio
   });
   const after = entries.slice(lastUser + 1);
   // A form asked again (after a board wake) replaces the earlier ones: the chat shows only the newest as open.
-  const openForm = after.findLast((e) => e.questions)?.questions ?? [];
+  const form = after.findLast((e) => e.questions);
+  const openForm = form?.questions ?? [];
   return {
     openQuestions: openForm.length,
     openForm,
+    ...(form?.ask ? { openAsk: form.ask } : {}),
     pendingProposal: after.findLast((e) => e.proposal)?.proposal ?? null,
     pendingNewTickets: after.findLast((e) => e.newTickets)?.newTickets ?? [],
     pendingTeammates: after.filter((e) => e.teammate).map((e) => e.uuid),
@@ -1107,7 +1129,7 @@ export class SessionCache {
     if (!p) return null;
     const s: StoredSummary = {
       title: p.title, lastMessage: p.lastMessage, artifacts: p.artifacts,
-      openQuestions: p.openQuestions, openForm: p.openForm, pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates,
+      openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates,
       pendingAutomations: p.pendingAutomations, cache: p.cache,
     };
     if (v) this.storeSummary(sessionId, v, s);

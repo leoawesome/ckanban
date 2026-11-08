@@ -1574,12 +1574,15 @@ export class Board {
     this.patch(slug, id, { followUp: null, followUpLog: logFollowUp(logFollowUp(t.followUpLog, { at, kind: "replied" }), { at, kind: "cancelled", by: "reply" }) });
   }
 
-  /** The user opened the ticket: the follow-up wake prompt tells Claude when (at most one write per 5 minutes). */
-  markSeen(slug: string, id: string): Ticket {
+  /**
+   * The user opened the ticket: the follow-up wake prompt tells Claude when (at most one write per 5 minutes, unless
+   * `force`: a helper reminder is pending for it, so this open must count).
+   */
+  markSeen(slug: string, id: string, force = false): Ticket {
     const t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
     const now = this.now();
-    if (t.seenAt && now.getTime() - new Date(t.seenAt).getTime() < 5 * 60_000) return t;
+    if (!force && t.seenAt && now.getTime() - new Date(t.seenAt).getTime() < 5 * 60_000) return t;
     return this.patch(slug, id, { seenAt: now.toISOString() });
   }
 

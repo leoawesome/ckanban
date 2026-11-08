@@ -34,6 +34,8 @@ export interface PushPayload {
   body: string;
   url: string;
   tag?: string;
+  /** The stored message (helper/messages.ts): a tap opens its page. */
+  messageId?: string;
 }
 
 export interface PushResult {
@@ -107,6 +109,11 @@ export class PushService {
   /** Devices the board removed because they stopped accepting notifications, newest last. */
   dropped(): DroppedDevice[] {
     return this.read().dropped ?? [];
+  }
+
+  /** Devices other than this Mac's browsers (phones, other computers): what the "push" channel reaches. */
+  phoneCount(): number {
+    return this.read().devices.filter((d) => !d.thisMac).length;
   }
 
   /** Whether a browser on this Mac gets notifications (they open the ticket when clicked, unlike the macOS banner). */
@@ -188,18 +195,30 @@ export class PushService {
     else this.visibleUntil.delete(id);
   }
 
+  /** The board is on screen on some device right now (the helper's "board on screen"). */
+  anyVisible(): boolean {
+    const now = this.now();
+    for (const until of this.visibleUntil.values()) if (until > now) return true;
+    return false;
+  }
+
+  /** Devices other than this Mac's browsers: a phone (or another computer) push reaches. */
+  phoneDevices(): number {
+    return this.read().devices.filter((d) => !d.thisMac).length;
+  }
+
   isVisible(id: string): boolean {
     const until = this.visibleUntil.get(id);
     return until !== undefined && until > this.now();
   }
 
   /**
-   * Send to every device (or only one, or only this Mac's browsers), skipping those with the board on screen unless
+   * Send to every device (or only one, only this Mac's browsers, or all but those), skipping those with the board on screen unless
    * skipVisible is false.
    */
-  async send(p: PushPayload, o: { only?: string; thisMac?: boolean; skipVisible?: boolean } = {}): Promise<PushResult> {
+  async send(p: PushPayload, o: { only?: string; thisMac?: boolean; exceptThisMac?: boolean; skipVisible?: boolean } = {}): Promise<PushResult> {
     const f = this.read();
-    const wanted = f.devices.filter((d) => (o.only ? d.id === o.only || d.endpoint === o.only : true) && (!o.thisMac || d.thisMac));
+    const wanted = f.devices.filter((d) => (o.only ? d.id === o.only || d.endpoint === o.only : true) && (!o.thisMac || d.thisMac) && (!o.exceptThisMac || !d.thisMac));
     const targets = wanted.filter((d) => !(o.skipVisible !== false && this.isVisible(d.id)));
     const errors: string[] = [];
     const gone: string[] = [];

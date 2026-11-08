@@ -379,10 +379,24 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     // A card badge or Start huddle shows the current round; a dock row its own.
     setHuddlePick(tabRequest.huddleId ?? null);
   }, [tabRequest?.n]);
-  // Opening the ticket tells a follow-up's Claude the user looked (the server writes it at most every 5 minutes).
+  // Opening the ticket tells a follow-up's Claude the user looked (the server writes it at most every 5 minutes) and
+  // stops its helper reminders. Sent again whenever the drawer shows it anew: it starts waiting on the user while open
+  // (after a short wait, so the board has its wait on record), or the user comes back to the board's window.
+  const waitingSince = ticket.attention?.since ?? null;
   useEffect(() => {
-    api.markSeen(slug, ticket.id).catch(() => {});
-  }, [slug, ticket.id]);
+    const seen = () => {
+      if (document.visibilityState === "visible") api.markSeen(slug, ticket.id).catch(() => {});
+    };
+    seen();
+    const later = waitingSince ? setTimeout(seen, 3000) : null;
+    window.addEventListener("focus", seen);
+    document.addEventListener("visibilitychange", seen);
+    return () => {
+      if (later) clearTimeout(later);
+      window.removeEventListener("focus", seen);
+      document.removeEventListener("visibilitychange", seen);
+    };
+  }, [slug, ticket.id, waitingSince]);
   const huddleState = useHuddle(slug, ticket.id, huddlePick);
   const familySize = useMemo(() => familyOf(tickets, ticket.id).length, [tickets, ticket.id]);
   const huddle = huddleState.latest;

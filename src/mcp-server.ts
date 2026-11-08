@@ -270,6 +270,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 /** ISO time as local "2026-10-01 09:00" (schedules run in this computer's local time). */
 /** notify_user's answer: where the message went, or why it went nowhere. */
 export function messageResultText(r: MessageResult): string {
+  if (r.helper) return "Passed to the helper: it tells the user (at once when it is urgent, else in its next summary). It is logged on the ticket.";
   if (r.reason === "off") return "Not sent: the user turned off \"Messages from Claude\" in the board's notification settings.";
   if (r.reason === "on-screen") return `Not sent: the user has the board open on screen right now (${r.onScreen === 1 ? "1 device" : `${r.onScreen} devices`}), so they can see the ticket.`;
   if (!r.delivered) return r.error ? `Not sent: ${r.error}.` : "Not sent: the user hasn't set up any notifications (no phone or browser, webhook or Mac banner).";
@@ -613,8 +614,25 @@ function titleError(title: unknown, where: string): string | null {
   return null;
 }
 
+/** ask_questions / notify_user: whether waiting causes harm that grows (the helper interrupts the user for it). */
+const URGENT = {
+  type: "boolean",
+  description: "true only when waiting causes harm or cost that grows (customers billed twice, data ingested twice, a deadline missed). The user's helper then interrupts them at once and reminds them; otherwise it groups this with other routine items.",
+};
+const WHY = { type: "string", description: "One line: what waiting costs, e.g. \"each hour the old webhook runs, pricing data is ingested twice\"." };
+
+/** urgent / why input the board refuses; null when fine. */
+export function urgencyError(args: any): string | null {
+  if (args?.urgent !== undefined && typeof args.urgent !== "boolean") return "urgent must be true or false";
+  if (args?.why !== undefined && typeof args.why !== "string") return "why must be one line of text";
+  if (typeof args?.why === "string" && args.why.length > 300) return "why is too long: keep it to one line";
+  return null;
+}
+
 /** Checks ask_questions input; returns what's wrong, or null when it's fine. */
 export function questionsError(args: any): string | null {
+  const u = urgencyError(args);
+  if (u) return u;
   const qs = args?.questions;
   if (!Array.isArray(qs) || qs.length < 1) return "questions must be a non-empty list";
   for (const [i, q] of qs.entries()) {
@@ -730,6 +748,8 @@ const PLANNING_TOOLS: Tool[] = [
             required: ["question", "options"],
           },
         },
+        urgent: URGENT,
+        why: WHY,
       },
       required: ["questions"],
     },
@@ -1885,6 +1905,8 @@ export const TOOLS: Tool[] = [
       type: "object",
       properties: {
         message: { type: "string", description: `What you need from the user, one short sentence (max ${CLAUDE_MESSAGE_MAX} characters).` },
+        urgent: URGENT,
+        why: WHY,
         profile: PROFILE,
       },
       required: ["message"],
@@ -1897,7 +1919,12 @@ export const TOOLS: Tool[] = [
       const slug = await slugFor(args, ctx);
       const me = await Promise.resolve().then(() => ctx.client.getTicket(slug, own)).catch(() => null);
       if (hiddenTool(me) && !withYouTool(me)) throw new ClientError(TOOL_NO_NOTIFY);
-      const r = await ctx.client.notifyUser(slug, own, str(args, "message")!, ctx.env[RUN_ENV]);
+      const u = urgencyError(args);
+      if (u) throw new ClientError(u);
+      const extra = { ...(args?.urgent === true ? { urgent: true } : {}), ...(typeof args?.why === "string" && args.why.trim() ? { why: args.why.trim() } : {}) };
+      const r = Object.keys(extra).length
+        ? await ctx.client.notifyUser(slug, own, str(args, "message")!, ctx.env[RUN_ENV], extra)
+        : await ctx.client.notifyUser(slug, own, str(args, "message")!, ctx.env[RUN_ENV]);
       return messageResultText(r);
     },
   },

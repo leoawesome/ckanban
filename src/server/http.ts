@@ -37,6 +37,7 @@ import {
 import { FileError, findInRoots, listDir, openWithSystem, readFileForView, type FileRoot } from "./files";
 import { boardToolsSource, McpError, McpManager } from "./mcp";
 import { MessageError, Notifier } from "./notify";
+import { HelperError, type HelperRunner } from "./helper/runner";
 import { DeviceError, TAKE_WAIT_MS, type DeviceUser } from "./devices";
 import { PushService } from "./push";
 import { LISTENER_HEADER, LOGIN_HEADER, qrSvg, RemoteAccess, RemoteError, remoteUrl, type RemoteConfig } from "./remote";
@@ -126,6 +127,8 @@ export interface ServerDeps {
   notifier?: Notifier;
   /** Phone push devices (push.ts), shared with the notifier. */
   push?: PushService;
+  /** The helper runner (helper/runner.ts): its status, settings, feedback list and the message buttons. */
+  helper?: HelperRunner;
   /** Parent suggestions and Find links (linker.ts); tests pass one on a fake side call. */
   linker?: Pick<Linker, "suggest" | "find">;
 }
@@ -351,6 +354,20 @@ export function createServer(deps: ServerDeps) {
     root: store.root, push, sessionSummary: (id) => sessions.summary(id), isRunning: (s, id) => board.isRunning(s, id),
     hostHuddles: (s) => board.hostHuddles(s), baseUrl: () => (remote.active() ? remoteUrl(remote.active()!.host) : `http://localhost:${server.port ?? deps.port}`),
   });
+  const helperRunner = deps.helper ?? null;
+  const helperOr503 = (): HelperRunner => {
+    if (!helperRunner) throw new HttpError(503, "the helper isn't running");
+    return helperRunner;
+  };
+  const helperCall = <T>(f: () => T): T => {
+    try {
+      return f();
+    } catch (e) {
+      if (e instanceof HelperError) throw new HttpError(e.status, e.message);
+      if (e instanceof HttpError) throw e;
+      throw new HttpError(400, (e as Error).message);
+    }
+  };
   // "<profile>/<ticket>" -> jobs by output file.
   const shareJobs = new Map<string, Map<string, ShareJob>>();
 
@@ -749,8 +766,12 @@ export function createServer(deps: ServerDeps) {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "board runs can't use notification settings");
       if (parts.length === 1 && m === "GET") return json(notifier.state());
       if (parts.length === 1 && m === "POST") {
+        const patch = await body(req);
+        // Where messages go (webhook address, ntfy, the Telegram bot and its token) is the user's alone: a run's shell or
+        // another program could point every message, full text included, at its own address. Only the user's browser.
+        await userOnly(req, "Changing notification settings");
         try {
-          return json(notifier.update(await body(req)));
+          return json(notifier.update(patch));
         } catch (e) {
           throw new HttpError(400, (e as Error).message);
         }
@@ -758,6 +779,86 @@ export function createServer(deps: ServerDeps) {
       if (parts[1] === "test" && m === "POST") {
         const b = await body(req);
         return json({ ...(await notifier.test(typeof b?.profile === "string" ? b.profile : undefined)), state: notifier.state() });
+      }
+      // Telegram pairing (helper/telegram.ts): a fresh 6-digit code to send to the bot, or forget the paired chat.
+      // The code only comes back here, to the user's own browser: whoever sends it to the bot becomes the paired chat.
+      if (parts[1] === "telegram" && parts[2] === "pair" && parts.length === 3 && m === "POST") {
+        await userOnly(req, "Pairing Telegram");
+        try {
+          return json({ ...notifier.telegramPair(), state: notifier.state() });
+        } catch (e) {
+          throw new HttpError(400, (e as Error).message);
+        }
+      }
+      if (parts[1] === "telegram" && parts[2] === "unpair" && parts.length === 3 && m === "POST") {
+        await userOnly(req, "Unpairing Telegram");
+        return json(notifier.telegramUnpair());
+      }
+    }
+
+    // Messages the board sent the user (helper/messages.ts): the history, one message's full text, mark read.
+    if (parts[0] === "messages") {
+      if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "board runs can't read the user's messages");
+      const store = notifier.helper.messages;
+      if (parts.length === 1 && m === "GET") {
+        const held = url.searchParams.get("held") === "1";
+        return json({ messages: store.listNewest({ held }), unread: store.unread() });
+      }
+      const msg = parts[1] ? store.get(decodeURIComponent(parts[1])) : null;
+      if (parts.length === 2 && m === "GET") {
+        if (!msg) throw new HttpError(404, "message not found");
+        return json(msg);
+      }
+      if (parts.length === 3 && parts[2] === "read" && m === "POST") {
+        if (!msg) throw new HttpError(404, "message not found");
+        return json({ message: store.markRead(msg.id), unread: store.unread() });
+      }
+      // The message page's buttons (POST, never links): Got it and Not urgent; key: only that item of the message.
+      if (parts.length === 3 && (parts[2] === "got-it" || parts[2] === "not-urgent") && m === "POST") {
+        if (!msg) throw new HttpError(404, "message not found");
+        await userOnly(req, "Stopping reminders");
+        const b = await body(req).catch(() => null);
+        const key = typeof b?.key === "string" ? b.key : null;
+        const h = helperOr503();
+        const r = helperCall(() => (parts[2] === "got-it" ? h.gotIt(msg.id, key) : h.notUrgent(msg.id, key)));
+        return json({ ...r, message: store.get(msg.id), unread: store.unread() });
+      }
+    }
+
+    // The helper (helper/runner.ts): status and helper lines, its settings, "What the helper knows about you", taps.
+    if (parts[0] === "helper") {
+      if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "board runs can't use the helper's settings");
+      const h = helperOr503();
+      if (parts.length === 1 && m === "GET") return json(h.status());
+      // Changes are the user's own: settings (night wake-ups), the feedback the helper reads, taps.
+      if (m !== "GET") await userOnly(req, "Changing the helper");
+      if (parts[1] === "settings" && parts.length === 2 && m === "POST") {
+        const b = await body(req);
+        helperCall(() => h.settings.update(b));
+        return json(h.status());
+      }
+      if (parts[1] === "feedback") {
+        if (parts.length === 2 && m === "GET") return json({ lines: h.settings.get().feedback });
+        if (parts.length === 2 && m === "POST") {
+          const b = await body(req);
+          const line = helperCall(() => h.settings.addFeedback(b?.text));
+          h.feedbackAdded();
+          return json({ line, lines: h.settings.get().feedback });
+        }
+        if (parts.length === 3 && m === "DELETE") {
+          if (!h.settings.removeFeedback(decodeURIComponent(parts[2]))) throw new HttpError(404, "line not found");
+          bus.emit({ type: "helper.updated" });
+          return json({ lines: h.settings.get().feedback });
+        }
+      }
+      if (parts[1] === "should-have-pinged" && parts.length === 2 && m === "POST") {
+        const b = await body(req);
+        if (typeof b?.profile !== "string" || typeof b?.ticketId !== "string") throw new HttpError(400, "profile and ticketId are required");
+        return json({ ...helperCall(() => h.shouldHavePinged(b.profile, b.ticketId)), lines: h.settings.get().feedback });
+      }
+      if (parts[1] === "notice-seen" && parts.length === 2 && m === "POST") {
+        h.noticeSeen();
+        return json(h.status());
       }
     }
 
@@ -2059,8 +2160,10 @@ export function createServer(deps: ServerDeps) {
       if (hiddenTool(store.getTicket(slug, id)) && !withYouTool(store.getTicket(slug, id))) throw new HttpError(403, TOOL_NO_NOTIFY);
       const b = (await body(req)) ?? {};
       if (typeof b.message !== "string") throw new HttpError(400, "message is required");
+      if (b.urgent !== undefined && typeof b.urgent !== "boolean") throw new HttpError(400, "urgent must be true or false");
+      if (b.why !== undefined && (typeof b.why !== "string" || b.why.length > 300)) throw new HttpError(400, "why must be one line of text");
       try {
-        return json(await notifier.message(slug, id, b.message));
+        return json(await notifier.message(slug, id, b.message, { urgent: b.urgent === true, why: typeof b.why === "string" ? b.why : null }));
       } catch (e) {
         if (e instanceof MessageError) throw new HttpError(e.status, e.message);
         throw e;
@@ -2069,7 +2172,9 @@ export function createServer(deps: ServerDeps) {
     // The user opened the ticket (the follow-up wake prompt says when).
     if (action === "seen" && m === "POST") {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "only the user's board marks a ticket seen");
-      return json(view(profile, board.markSeen(slug, id)));
+      // Opening the ticket stops its helper reminders (and notes when); a pending reminder skips markSeen's throttle.
+      const reminded = notifier.opened(slug, id);
+      return json(view(profile, board.markSeen(slug, id, reminded)));
     }
     if (action === "usage" && m === "GET") {
       // The usage endpoint rate-limits: a ticket view reuses an answer up to 5 minutes old.

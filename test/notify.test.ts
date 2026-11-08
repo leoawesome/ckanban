@@ -163,7 +163,9 @@ function describeNotifier() {
     const h = sent[0].init.headers as Record<string, string>;
     expect(sent[0].url).toBe("https://ntfy.sh/topic");
     expect(h.Title).toBe("Ready for review: Fix it");
-    expect(h.Click).toBe(`https://mac.tail.ts.net/#/kb/${ticket.id}`);
+    // A tap opens the stored message's page (its full text), on the phone-access address.
+    expect(h.Click).toMatch(/^https:\/\/mac\.tail\.ts\.net\/#\/~messages\/m_[a-z0-9]+$/);
+    expect(sent[0].init.body).toBe("Fix it (Kanban)\n\nReady for review");
     expect(banners).toEqual(["Ready for review: Fix it"]);
     // Still in Review: nothing more.
     move({ title: "Fix it" });
@@ -247,8 +249,8 @@ function describeNotifier() {
     const h = sent[0].init.headers as Record<string, string>;
     expect(h.Title).toBe("Fix it");
     expect(h.Tags).toBe("bell");
-    expect(h.Click).toBe(`https://mac.tail.ts.net/#/kb/${ticket.id}`);
-    expect(sent[0].init.body).toBe("Kanban · Pick A or B so I can continue");
+    expect(h.Click).toMatch(/#\/~messages\/m_/);
+    expect(sent[0].init.body).toBe("Fix it (Kanban)\n\nPick A or B so I can continue");
     expect(banners).toEqual(["Fix it"]);
   });
 
@@ -260,8 +262,10 @@ function describeNotifier() {
     expect(r.delivered).toBe(true);
     const h = sent[0].init.headers as Record<string, string>;
     expect(h.Title).toBe("AI Outreach");
-    expect(h.Click).toBe(`https://mac.tail.ts.net/#/kb/${ticket.id}`);
-    expect(sent[0].init.body).toBe("Kanban · Staging check: Pick up the WhatsApp call");
+    expect(h.Click).toMatch(/#\/~messages\/m_/);
+    expect(sent[0].init.body).toBe("AI Outreach (Kanban)\n\nStaging check: Pick up the WhatsApp call");
+    const msg = notifier.helper.messages.listNewest()[0];
+    expect(msg.items[0].ticketId).toBe(ticket.id);
   });
 
   test("test notification goes out whatever the toggles, and webhook errors are kept", async () => {
@@ -270,7 +274,7 @@ function describeNotifier() {
       fetch: async () => new Response("nope", { status: 403, statusText: "Forbidden" }), banner: () => {},
     });
     const r = await notifier.test("kb");
-    expect(r).toEqual({ ok: false, error: "webhook answered 403 Forbidden", webhook: true, devices: 0 });
+    expect(r).toMatchObject({ ok: false, error: "webhook answered 403 Forbidden", webhook: true, devices: 0 });
     expect(notifier.state().lastError).toBe("webhook answered 403 Forbidden");
   });
 }

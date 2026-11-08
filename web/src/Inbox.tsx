@@ -10,6 +10,17 @@ import { useNow } from "./useNow";
 import { useMedia } from "./usePhone";
 import { MoreIcon } from "./icons";
 import { KeyHint } from "./KeyHint";
+import { isHeldLine, type HelperStatus } from "./helper";
+import { HelperStatusLine, MessagesEntry } from "./Messages";
+
+/** What the Inbox shows of the helper: its status line, "Messages, N new", the line per row, the one-time notice. */
+export interface InboxHelper {
+  status: HelperStatus | null;
+  unread: number;
+  onOpenMessages: () => void;
+  onShouldHavePinged: (i: InboxItem) => void;
+  onNoticeSeen: () => void;
+}
 
 const keyOf = (i: InboxItem) => `${i.profile}/${i.id}`;
 /** Touch screens have no keys to press: tooltips there leave out the "(d)"-style key text. */
@@ -62,7 +73,7 @@ export function RowMore({ label, actions }: { label: string; actions: { label: s
  * ↑↓ move, Enter opens, d marks done, s snoozes (or unsnoozes; on the Older row: snoozes them all), Esc closes.
  * I on the board opens it with the first entry focused (App.tsx, through openRequest).
  */
-export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSnoozeAll, openRequest }: {
+export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSnoozeAll, openRequest, helper }: {
   items: InboxItem[];
   snoozed?: InboxItem[];
   onPick: (i: InboxItem) => void;
@@ -70,6 +81,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
   onSnooze: (i: InboxItem, on: boolean) => void;
   onSnoozeAll: (list: InboxItem[]) => void;
   openRequest?: number;
+  helper?: InboxHelper;
 }) {
   const [open, setOpen] = useState(false);
   const [showSnoozed, setShowSnoozed] = useState(false);
@@ -146,7 +158,10 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
   };
 
   // The last entry went (done, snoozed or answered elsewhere): close, or the menu's layer would stay stacked.
-  const empty = !items.length && !snoozed.length;
+  // With unread messages the pill stays, so "Messages, N new" can be reached from here.
+  const unread = helper?.unread ?? 0;
+  // With the helper on the pill stays too: the empty Inbox shows its status line.
+  const empty = !items.length && !snoozed.length && !unread && !helper?.status?.on;
   useEffect(() => {
     if (empty) setOpen(false);
   }, [empty]);
@@ -174,7 +189,9 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
     const markDone = { label: "Mark done", title: tip("Move it to Done", "(d)"), run: done };
     const snoozeIt = { label: "Snooze", title: tip("Hide it from the Inbox and counts for a day, or until something changes", "(s)"), run: snooze };
     const primary = marksDone(i) ? markDone : open;
-    const others = marksDone(i) ? [snoozeIt] : [markDone, snoozeIt];
+    const line = helper?.status?.on ? helper.status.lines[key] : undefined;
+    const pinged = { label: "Should have pinged me", title: "Tell the helper you wanted to hear about this sooner", run: () => helper?.onShouldHavePinged(i) };
+    const others = [...(isHeldLine(line) ? [pinged] : []), ...(marksDone(i) ? [snoozeIt] : [markDone, snoozeIt])];
     return (
       <div key={key} className={`inbox-entry${leaving(key) ? " leaving" : ""}`}>
         <div className="inbox-entry-in">
@@ -185,6 +202,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
               {i.attention.label} · <time dateTime={i.attention.since} title={`Waiting since ${fullTime(i.attention.since)}`}>{waitedFor(i.attention.since, now)}</time>
               {several && <> · {i.profileName}</>}
             </span>
+            {line && <span className={`helper-line${line.startsWith("Urgent") ? " urgent" : ""}`}>{line}</span>}
           </button>
           <span className="inbox-actions">
             <button className="btn small primary" tabIndex={-1} onClick={primary.run} title={primary.title}>{primary.label}</button>
@@ -212,12 +230,25 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
           }
         }}
         title="Tickets on any board where Claude is waiting on you (I)" aria-keyshortcuts="I">
-        {items.length ? <><span className={`yt-dot ${fresh ? "pulse" : ""}`} aria-hidden /> {items.length} need you</> : <>{snoozed.length} snoozed</>}
+        {items.length ? <><span className={`yt-dot ${fresh ? "pulse" : ""}`} aria-hidden /> {items.length} need you</>
+          : snoozed.length ? <>{snoozed.length} snoozed</> : unread ? <>✉ {unread} new</> : <span className="muted">Inbox</span>}
         <KeyHint keys="I" />
       </button>
       {open && (
         <MenuSheet onClose={() => setOpen(false)}>
           <div className="inbox-menu" role="menu" ref={menu} onKeyDown={onMenuKey}>
+            {helper && (
+              <div className="inbox-helper">
+                {helper.status?.notice && (
+                  <div className="inbox-notice small">
+                    <span>Notifications now come grouped: routine waits arrive together in a summary, urgent ones interrupt you.</span>
+                    <button className="btn small ghost" onClick={helper.onNoticeSeen}>Got it</button>
+                  </div>
+                )}
+                <MessagesEntry menuItem unread={unread} onOpen={() => { setOpen(false); helper.onOpenMessages(); }} />
+                <HelperStatusLine status={helper.status} reach={false} compact />
+              </div>
+            )}
             {!items.length && <p className="inbox-empty muted small">Nothing needs you right now.</p>}
             {groups.waiting.length > 0 && <div className="inbox-board" role="presentation">Claude is waiting on you · {groups.waiting.length}</div>}
             {groups.waiting.map(row)}

@@ -20,9 +20,12 @@ export interface SideCallInput {
   tools?: string[];
   /** Folder it runs in (a reading call: the ticket's folder); default the caller's own side-calls folder. */
   cwd?: string;
+  /** Structured output: the answer must match this JSON schema (`--json-schema`); text is then that JSON. */
+  jsonSchema?: object;
 }
 
-export type SideCallResult = { ok: true; text: string; costUsd: number; model: string } | { ok: false; error: string };
+/** A failed call may still have cost money (the model answered, but with an error or nothing usable): costUsd then. */
+export type SideCallResult = { ok: true; text: string; costUsd: number; model: string } | { ok: false; error: string; costUsd?: number };
 
 export type SideCaller = (i: SideCallInput) => Promise<SideCallResult>;
 
@@ -41,6 +44,7 @@ const READ_TURNS = 20;
 export function sideCallArgs(i: SideCallInput): string[] {
   const tools = (i.tools ?? []).filter((t) => READ_TOOLS.includes(t));
   return ["-p", "--output-format", "json", "--model", i.model ?? "haiku", "--no-session-persistence", "--tools", tools.join(","),
+    ...(i.jsonSchema ? ["--json-schema", JSON.stringify(i.jsonSchema)] : []),
     ...(tools.length ? ["--max-turns", String(READ_TURNS), "--settings", JSON.stringify({ disableAllHooks: true })] : []),
     "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", "project", "--system-prompt", i.system];
 }
@@ -75,9 +79,11 @@ export function parseSideResult(out: string, code: number, err: string, model: s
   if (!r || typeof r !== "object") {
     return { ok: false, error: (err.trim() || out.trim() || `claude exited with code ${code}`).split("\n").slice(-2).join(" ") };
   }
-  const text = typeof r.result === "string" ? r.result.trim() : "";
-  if (r.is_error || !text) return { ok: false, error: text || `claude answered with an error (${r.subtype ?? "unknown"})` };
+  // With --json-schema the answer is in structured_output (result may be empty or prose).
+  const structured = r.structured_output !== undefined && r.structured_output !== null ? JSON.stringify(r.structured_output) : "";
+  const text = structured || (typeof r.result === "string" ? r.result.trim() : "");
   const costUsd = typeof r.total_cost_usd === "number" && r.total_cost_usd > 0 ? r.total_cost_usd : 0;
+  if (r.is_error || !text) return { ok: false, error: text || `claude answered with an error (${r.subtype ?? "unknown"})`, ...(costUsd ? { costUsd } : {}) };
   const used = r.modelUsage && typeof r.modelUsage === "object" ? Object.keys(r.modelUsage)[0] : undefined;
   return { ok: true, text, costUsd, model: used ?? model };
 }

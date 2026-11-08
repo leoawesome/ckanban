@@ -1209,6 +1209,9 @@ export type BusEvent =
   | { type: "job.updated"; profile: string; id: string; job: Job | null }
   | { type: "restart.updated"; pending: boolean; waiting: number }
   | { type: "awake.updated"; held: boolean }
+  | { type: "helper.updated" }
+  | { type: "helper.message"; id: string; level: string; oneLine: string }
+  | { type: "messages.updated"; unread: number }
   | { type: "learned.updated"; profile: string | null }
   | { type: "huddle.updated"; profile: string; huddle: Huddle }
   | { type: "huddle.message"; profile: string; huddleId: string; message: HuddleMessage }
@@ -1258,6 +1261,49 @@ export interface NotifyState {
   lastError: string | null;
   /** A browser on this Mac gets notifications: they replace the macOS banner. */
   macBrowser: boolean;
+  /** The helper groups routine waits and interrupts only for urgent ones (Settings → Helper). */
+  helper: boolean;
+  /** The phone push channel. */
+  push: boolean;
+  /** The web address channel (ntfy or JSON); the address is kept while it is off. */
+  webhookOn: boolean;
+  telegram: TelegramState;
+  channels: ChannelState[];
+  phoneReady: boolean;
+  /** "I can only reach you on this Mac" until a phone channel works. */
+  reachLine: string | null;
+  ntfyTopicSuggestion: string;
+  ntfyWarning: string;
+  focusHint: string;
+}
+
+/** One channel as Settings lists it (src/server/notify.ts ChannelState). */
+export interface ChannelState {
+  name: "mac" | "push" | "webhook" | "telegram";
+  label: string;
+  on: boolean;
+  ready: boolean;
+  detail: string;
+}
+
+/** Telegram, never the token itself. status: off | no-token | connecting | ok | error. */
+export interface TelegramState {
+  on: boolean;
+  tokenSet: boolean;
+  tokenMasked: string;
+  paired: boolean;
+  chatName: string | null;
+  pairedAt: string | null;
+  status: string;
+  error: string | null;
+  botName: string | null;
+  pairing: { expiresAt: string } | null;
+  pairError: string | null;
+}
+
+export type NotifyPatch = Partial<Pick<NotifyState, "webhookUrl" | "format" | "mac" | "helper" | "push" | "webhookOn">> & {
+  kinds?: Partial<Record<NotifyKind, boolean>>;
+  telegram?: { on?: boolean; token?: string };
 }
 
 export interface InboxItem {
@@ -1348,7 +1394,7 @@ export interface TicketFile {
   dir: string;
 }
 
-async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
+export async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const hasBody = method === "POST" || method === "PATCH" || method === "PUT";
   const r = await fetch(url, {
     method,
@@ -1417,7 +1463,9 @@ export const api = {
   deleteDevice: (name: string) => req<DeviceView[]>("DELETE", `/api/devices/${encodeURIComponent(name)}`),
   freeDevice: (name: string, profile: string, id: string) => req<DeviceView[]>("POST", `/api/devices/${encodeURIComponent(name)}/free`, { profile, id }),
   notify: () => req<NotifyState>("GET", "/api/notify"),
-  setNotify: (patch: Partial<Pick<NotifyState, "webhookUrl" | "format" | "mac">> & { kinds?: Partial<Record<NotifyKind, boolean>> }) => req<NotifyState>("POST", "/api/notify", patch),
+  setNotify: (patch: NotifyPatch) => req<NotifyState>("POST", "/api/notify", patch),
+  telegramPair: () => req<{ code: string; expiresAt: string; state: NotifyState }>("POST", "/api/notify/telegram/pair", {}),
+  telegramUnpair: () => req<NotifyState>("POST", "/api/notify/telegram/unpair", {}),
   testNotify: (profile: string | null) =>
     req<{ ok: boolean; error: string | null; webhook: boolean; devices: number; state: NotifyState }>("POST", "/api/notify/test", profile ? { profile } : {}),
   push: () => req<{ publicKey: string; devices: PushDevice[]; dropped: DroppedPushDevice[] }>("GET", "/api/push"),

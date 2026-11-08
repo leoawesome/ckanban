@@ -29,9 +29,12 @@ const BLOCK_RULE = "End the block with its own closing tag exactly as shown, and
 /** The planning tools may be deferred: Claude has to load them before the first call. */
 const TOOL_NOTE = "(ckanban MCP tool; if it's deferred, load it with ToolSearch first)";
 
+/** ask_questions / notify_user urgent and why: the user's helper decides from them whether to interrupt. */
+export const URGENCY_RULE = `When you ask or notify the user, say in one line what waiting costs (the tool's "why"); mark it urgent ("urgent": true) if harm grows while it waits (customers billed twice, data ingested twice, a deadline missed). Routine questions stay unmarked and reach the user in a summary.`;
+
 /** How Claude asks questions so the board can render them as a clickable form. */
 export const QUESTIONS_FORMAT = `To ask the user questions, call the \`ask_questions\` tool ${TOOL_NOTE}, e.g. questions: [{"question":"Who will read the result?","options":[{"label":"My manager","description":"decision-oriented, 1 page","recommended":true},{"label":"Engineering team","description":"technical depth"}],"multiSelect":false}]
-The board shows them as a form (the user can also add free text) and sends the answers back as the user's next message. Rules: ask every open question that matters in one round (no cap), 2-8 options each, mark exactly one option "recommended", set "multiSelect": true only when several options can apply. Keep each question to one sentence and each option description to a few words. If the tool returns an error, fix the input and call it again. Put a one-line intro in your reply; don't repeat the questions as plain text. After the call, end your turn.
+The board shows them as a form (the user can also add free text) and sends the answers back as the user's next message. Rules: ask every open question that matters in one round (no cap), 2-8 options each, mark exactly one option "recommended", set "multiSelect": true only when several options can apply. Keep each question to one sentence and each option description to a few words. If the tool returns an error, fix the input and call it again. Put a one-line intro in your reply; don't repeat the questions as plain text. After the call, end your turn. ${URGENCY_RULE}
 Only if the ckanban tools aren't available: put the same JSON array in ONE <ckanban-questions>[...]</ckanban-questions> block in your message instead. ${BLOCK_RULE}`;
 
 /** How Claude proposes an improved ticket so the board can show an Apply button. */
@@ -80,7 +83,7 @@ Claude in Chrome is available (mcp__claude-in-chrome__* tools, in the user's own
 /** What follow-ups may not do unasked: the user approves anything that goes out in their name. */
 const OUTBOUND_RULE = "During a follow-up never send an outbound message (email, chat message, post) unless the ticket or the user said you may send it yourself: draft it and end with status \"questions\" so the user can approve it.";
 /** notify_user: Claude pings the user's phone in its own words when it is stuck on them; not an outbound message. */
-const NOTIFY_USER_RULE = "If you are stuck waiting on the user and they haven't answered (they may have missed the board's notification), you may send them a notification with the ckanban `notify_user` tool: one short, specific ask, like \"Pick A or B for the login page so I can continue.\" Use it sparingly, not for progress updates or finished work. It goes only to the user, so the rule on outbound messages doesn't apply to it.";
+const NOTIFY_USER_RULE = "If you are stuck waiting on the user and they haven't answered (they may have missed the board's notification), you may send them a notification with the ckanban `notify_user` tool: one short, specific ask, like \"Pick A or B for the login page so I can continue.\" Use it sparingly, not for progress updates or finished work. It goes only to the user, so the rule on outbound messages doesn't apply to it. " + URGENCY_RULE;
 /** One-time jobs (schedule_job): the future run sees only the job's prompt. */
 /**
  * Every run that may act (not Planning chats) gets this in its system prompt: the shared device list, the ticket's

@@ -10,7 +10,7 @@ import { ThemePicker } from "./ThemePicker";
 import { boardTags, hasTags, parseSearch, tagStyle } from "./tagText";
 import { TagFilter } from "./Tags";
 import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, FolderIcon, GearIcon, KeyboardIcon, LinkIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
-import { Inbox } from "./Inbox";
+import { Inbox, type InboxHelper } from "./Inbox";
 import { NowView } from "./NowView";
 import { NotificationsDialog } from "./NotificationsDialog";
 import { DevicesDialog } from "./DevicesDialog";
@@ -56,6 +56,8 @@ import { liveHuddleCount, useBoardHuddles, useHuddleIdleTick } from "./huddle";
 import { hasOpenPr, runCounts } from "./boardStats";
 import { ParallelConfirm } from "./ParallelConfirm";
 import { closeSteps, openDepth } from "./ticketHistory";
+import { helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, useHelper } from "./helper";
+import { HelperNotice, MessagePage, MessagesHistory } from "./Messages";
 
 // xterm.js and highlight.js only load once the panel is opened. After an upgrade the old chunk is gone:
 // reload once to get the new build instead of blanking the whole page.
@@ -79,9 +81,17 @@ const LAST_PROFILE = "ckanban.profile";
 /** Board slug the sample ticket is offered on, until it is started or dismissed. */
 const SAMPLE_OFFER = "ckanban.sample-offer";
 
-/** URL hash is the source of truth for what's open: #/<profile> or #/<profile>/<ticketId>. */
+/**
+ * URL hash is the source of truth for what's open: #/<profile> or #/<profile>/<ticketId>. Pages that aren't a board
+ * start with "~" (#/~messages, helper.ts) and leave the board and ticket as they are.
+ */
 function parseHash(): { slug: string | null; ticket: string | null } {
-  const [, slug, ticket] = decodeURIComponent(location.hash.replace(/^#/, "")).split("/");
+  if (location.hash.startsWith("#/~")) return { slug: null, ticket: null };
+  let path = location.hash.replace(/^#/, "");
+  try {
+    path = decodeURIComponent(path);
+  } catch {}
+  const [, slug, ticket] = path.split("/");
   return { slug: slug || null, ticket: ticket || null };
 }
 
@@ -206,6 +216,9 @@ export function App() {
   const [chatFocus, setChatFocus] = useState(0);
   const chatWidth = useChatWidth();
   const [openId, setOpenId] = useState<string | null>(parseHash().ticket);
+  // The Messages pages (#/~messages, #/~messages/<id>): shown in place of the board, under the same top bar.
+  const [msgRoute, setMsgRoute] = useState(() => messagesRoute(location.hash));
+  const helper = useHelper();
   // Close went Back over the tickets opened in a row: if it lands on a ticket we didn't open (a pasted link), show the board instead.
   const closing = useRef(false);
   // The open ticket was reached with prev/next: the drawer stays put instead of sliding in again.
@@ -384,6 +397,8 @@ export function App() {
   // Browser Back/Forward and pasted links drive the open board and ticket.
   useEffect(() => {
     const onHash = () => {
+      setMsgRoute(messagesRoute(location.hash));
+      if (location.hash.startsWith("#/~")) return;
       const h = parseHash();
       if (h.slug) setSlug(h.slug);
       setOpenId(h.ticket);
@@ -407,7 +422,7 @@ export function App() {
 
   // Keep the URL in step with the board shown (replace, so switching boards doesn't pile up history).
   useEffect(() => {
-    if (slug && parseHash().slug !== slug) history.replaceState(null, "", hashFor(slug, openId));
+    if (slug && !location.hash.startsWith("#/~") && parseHash().slug !== slug) history.replaceState(null, "", hashFor(slug, openId));
   }, [slug]);
 
   const openTicket = useCallback((id: string, board = slug) => {
@@ -688,6 +703,13 @@ export function App() {
           setAwake(e.held);
           return;
         }
+        // An urgent message (or its reminder) from the helper: a toast on the board that opens the message.
+        if (e.type === "helper.message") {
+          if ((e.level === "urgent" || e.level === "reminder") && messagesRoute(location.hash)?.id !== e.id) {
+            toast(<><b>Urgent:</b> {e.oneLine}</>, { tone: "error", ms: 20_000, action: { label: "Open", run: () => { location.hash = messageHash(e.id); } } });
+          }
+          return;
+        }
         if (e.type === "profile.updated") {
           loadProfiles().catch(() => {});
           refreshInboxSoon();
@@ -932,7 +954,12 @@ export function App() {
           },
           ...(profile ? [{ label: "Board settings", icon: <GearIcon />, onSelect: () => setProfileDialog("edit") }] : []),
           { label: "Phone access", icon: <DeviceIcon />, onSelect: () => setPhoneAccess(true), title: "Open this board from your phone over Tailscale" },
-          { label: "Notifications", icon: <BellIcon />, onSelect: () => setNotifications(true), title: "Get told on your phone when a ticket needs you" },
+          {
+            label: "Messages", icon: <BellIcon />, onSelect: () => { location.hash = MESSAGES_HASH; },
+            title: "Everything the helper and the board told you, in full",
+            badge: helper.unread > 0 ? <span className="need-chip">{helper.unread} new</span> : null,
+          },
+          { label: "Notifications", icon: <BellIcon />, onSelect: () => setNotifications(true), title: "The helper and where it reaches you: this Mac, your phone, ntfy, Telegram" },
           { label: "Keyboard shortcuts", hint: "?", icon: <KeyboardIcon />, onSelect: () => setShortcuts(true) },
           { label: "Report a bug", icon: <BugIcon />, onSelect: () => setBugReport(true) },
   ];
@@ -1015,6 +1042,18 @@ export function App() {
     openTicket(id, board);
   };
 
+  // The helper's part of the Inbox and the phone view (helper.ts): status, "Messages, N new", Should have pinged me.
+  const inboxHelper: InboxHelper | undefined = helper.status ? {
+    status: helper.status,
+    unread: helper.unread,
+    onOpenMessages: () => { location.hash = MESSAGES_HASH; },
+    onShouldHavePinged: (i) => void helperApi.shouldHavePinged(i.profile, i.id).then(
+      () => toast("Thanks. I noted that you want to hear about these sooner.", { tone: "ok" }),
+      (e) => toast((e as Error).message, { tone: "error" }),
+    ),
+    onNoticeSeen: () => void helperApi.noticeSeen().then(setHelperStatus, () => {}),
+  } : undefined;
+
   // ⌘K actions run the same handlers as their buttons, keys and menu items. An open ticket's own entries come first
   // (ticketActions.ts); with a card focused on the board, that card's.
   const cardTicket = !openId && cmdCard ? tickets.find((t) => t.id === cmdCard) ?? null : null;
@@ -1052,6 +1091,7 @@ export function App() {
     { id: "usage", label: "Usage", run: () => setUsageRequest(Date.now()) },
     ...(profile ? [{ id: "settings", label: "Board settings", icon: <GearIcon size={14} />, run: () => setProfileDialog("edit") }] : []),
     { id: "new-board", label: "New board", run: () => setProfileDialog("new") },
+    { id: "messages", label: helper.unread ? `Messages (${helper.unread} new)` : "Messages", hint: "everything the helper told you", run: () => { location.hash = MESSAGES_HASH; } },
     { id: "notifications", label: "Notifications", icon: <BellIcon size={14} />, hint: "on your phone when a ticket needs you", run: () => setNotifications(true) },
     { id: "phone", label: "Phone access", icon: <DeviceIcon size={14} />, hint: "open the board from your phone", run: () => setPhoneAccess(true) },
     { id: "shortcuts", label: "Keyboard shortcuts", keys: ["?"], icon: <KeyboardIcon size={14} />, run: () => setShortcuts(true) },
@@ -1089,7 +1129,11 @@ export function App() {
             className="profile-select"
             ariaLabel="Board"
             value={slug ?? ""}
-            onChange={setSlug}
+            onChange={(v) => {
+              // Picking a board on a Messages page goes to that board.
+              if (msgRoute) location.hash = hashFor(v);
+              setSlug(v);
+            }}
             menuClassName="profile-menu"
             menuMaxHeight={440}
             options={profiles.map((p) => ({ value: p.slug, label: p.name, hint: tildePath(p.path) }))}
@@ -1127,7 +1171,8 @@ export function App() {
         )}
         <div className="spacer" />
         <Inbox items={inbox} snoozed={snoozed} openRequest={inboxRequest} onPick={(i) => openFrom(i.profile, i.id)}
-          onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, on) => void inboxSnooze(i, on)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} />
+          onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, on) => void inboxSnooze(i, on)} onSnoozeAll={(l) => void inboxSnoozeAll(l)}
+          helper={inboxHelper} />
         {profile && !toolsInMenu && (
           <div className="tool-group" role="group" aria-label="Tools">
             <button className={`btn ghost icon-label${shownItem === "terminal" ? " on" : ""}`} onClick={() => toggleDock("terminal")}
@@ -1221,7 +1266,16 @@ export function App() {
         </div>
       )}
 
-      {profiles === null ? (
+      {helper.status?.notice && !msgRoute && (
+        <HelperNotice status={helper.status} onSettings={() => setNotifications(true)}
+          onSeen={() => void helperApi.noticeSeen().then(setHelperStatus, () => {})} />
+      )}
+
+      {msgRoute ? (
+        msgRoute.id
+          ? <MessagePage key={msgRoute.id} id={msgRoute.id} onBack={() => { location.hash = MESSAGES_HASH; }} onOpenTicket={openFrom} />
+          : <MessagesHistory onBack={() => { location.hash = hashFor(slug); }} />
+      ) : profiles === null ? (
         <div className="empty"><span className="spinner" /> Loading boards…</div>
       ) : !profile ? (
         <div className="empty">
@@ -1242,7 +1296,7 @@ export function App() {
             </Suspense>
           </main>
         ) : phone && phoneTab === "now" ? (
-          <NowView inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i) => void inboxSnooze(i, true)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} onSwitchBoard={switchBoard}
+          <NowView helper={inboxHelper} inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i) => void inboxSnooze(i, true)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} onSwitchBoard={switchBoard}
             inboxLoaded={inboxLoaded} ticketsLoaded={ticketsLoaded} footer={<PushHint onSetup={() => setNotifications(true)} />} />
         ) : <>
           <div className="board-bar">
