@@ -2,7 +2,7 @@
 // A main ticket is the conversation the user started: it talks, decides and keeps the feature's status, and never edits
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
-import { familyState, groupSummary, hiddenTool, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
+import { familyState, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import type { Plan, Ticket } from "./types";
 
 /** Model and effort a tool ticket gets from its kind when create_ticket leaves them out. */
@@ -60,6 +60,12 @@ export function replyAsked(openForm: readonly unknown[], lastText: string): bool
  */
 export function askedNothing(t: Pick<Ticket, "main" | "tool" | "plan">, status: string | undefined, asked: boolean): boolean {
   return status === "questions" && !!t.main && !t.tool && t.plan?.state === "running" && !asked;
+}
+
+/** plannedMain (web/src/family.ts) in words, for the Planning prompt (MainRole.planned); null when not planned. */
+export function mainPlanned(tickets: Ticket[], t: Ticket): string | null {
+  const why = plannedMain(tickets, t);
+  return why === "family" ? "it already has tickets in its family" : why === "status" ? "its \"Where we are\" status is already written" : null;
 }
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);

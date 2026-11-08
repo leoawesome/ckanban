@@ -208,6 +208,17 @@ export function isFeature<T extends FeatureTicket>(tickets: T[], top: T): boolea
   return !!top.statusAt || familyOf(tickets, top.id).length >= 3;
 }
 
+/**
+ * Why a main ticket counts as already planned, or null: any other ticket in its family (steps, gathered or added
+ * tickets), or a written "Where we are" status (statusAt). Its Planning chat updates the ticket instead of rewriting
+ * it, and the update card offers Apply only, never "Apply & start work" (prompts.ts mainPlannedRule, Chat.tsx).
+ */
+export function plannedMain<T extends FeatureTicket & { main?: boolean }>(tickets: T[], t: T): "family" | "status" | null {
+  if (!t.main) return null;
+  if (familyOf(tickets, t.id).length > 1) return "family";
+  return t.statusAt ? "status" : null;
+}
+
 /** The open feature id belongs to (its family's top ticket), or null. */
 export function featureOf<T extends FeatureTicket>(tickets: T[], id: string): T | null {
   const top = familyRoot(tickets, id);

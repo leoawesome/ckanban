@@ -589,7 +589,7 @@ export function chatPrompt(t: Ticket, text: string, mode: ChatMode, outputDir: s
   if (mode === "refine") {
     const start = typed ? "" : `The user just moved this ticket to Planning and is waiting for you in the ticket chat. Start now:
 - If important things are unclear, briefly say what you understood so far and interview them.
-- If the ticket is already clear enough to work on autonomously, skip the questions: propose the polished ticket, or say it looks ready.${main && t.runCount === 0 ? `
+- If the ticket is already clear enough to work on autonomously, skip the questions: ${main?.planned ? "say where things stand and what you would do next." : "propose the polished ticket, or say it looks ready."}${main && t.runCount === 0 ? `
 - ${MAIN_FIRST_REPLY}` : ""}
 
 `;
@@ -606,7 +606,7 @@ How to help:
 - Before your first questions or proposal, restate in one sentence what the user is really after and the problem behind it.
 - ${PUSHBACK_RULE.split("\n").join(" ")}
 - Interview the user about what is still unclear: goal and why, who it is for, scope (must-haves vs nice-to-haves), constraints, how we know it's done. Ask only what matters for this ticket, in small rounds.
-- When you know enough (or the user asks), propose the improved ticket. After the user applies it they will move it to Ready and Claude will work on it autonomously, so make it self-contained. Shape it the way a top expert would: drop constraints that don't serve the goal, leave the user's choices open, and put one outside check that the result is right in Acceptance criteria. Don't narrate this framing.
+- ${main?.planned ? "When you know enough, put the plan and the decisions in the status, and update the ticket only as described below (no fresh rewrite)." : "When you know enough (or the user asks), propose the improved ticket. After the user applies it they will move it to Ready and Claude will work on it autonomously, so make it self-contained. Shape it the way a top expert would: drop constraints that don't serve the goal, leave the user's choices open, and put one outside check that the result is right in Acceptance criteria. Don't narrate this framing."}
 - ${WRITING_RULE}
 - ${FILE_LINK_RULE}
 - Otherwise reply naturally and briefly, like in a normal chat.
@@ -622,7 +622,7 @@ ${artifacts ? `${PLANNING_ARTIFACT_RULE}\n\n` : ""}${CHROME_RULE}
 
 ${QUESTIONS_FORMAT}
 
-${TICKET_FORMAT}
+${main?.planned ? mainPlannedRule(main.planned) : TICKET_FORMAT}
 
 ${main ? MAIN_PLANNING : TICKETS_FORMAT}
 
@@ -747,6 +747,16 @@ export type PlanWake = "event" | "final";
 
 /** A new main ticket's first reply: tells the user, in plain words, how working with a main ticket goes. */
 export const MAIN_FIRST_REPLY = `This is the first reply of a new main ticket: the user may not know yet how it works. In your reply, explain it in plain words: if the work needs several tasks, say in two or three short sentences that you split it into tasks that run on their own, that the user only talks to you here, and that the Tasks tab shows the progress. If it is a small job you can do in one task, say it in one sentence (for example: "I'll hand this to one task that runs on its own and tell you here when it's done."). Don't use the words "tool ticket", "main ticket" or "family" for this.`;
+
+/**
+ * Planning a main ticket that is already planned (MainRole.planned): instead of TICKET_FORMAT's "propose an improved
+ * ticket", the plan goes into the status, steps follow the go-ahead, and a proposal only updates the user's title and
+ * description (its card offers Apply only, see web/src/family.ts plannedMain).
+ */
+export function mainPlannedRule(reason: string): string {
+  return `This main ticket is already planned (${reason}). Put decisions and the plan in "Where we are" with the ckanban \`update_status\` tool (goal, nextStep and the other sections that changed). Steps start only on a go-ahead (the go-ahead rule in your instructions): then create them with \`create_ticket\`.
+When the discussion adds or changes something the ticket should say, you may call \`propose_ticket\` with an update of this ticket: keep its current title and description, word for word, and add or adjust only what changed (a new requirement, a decision, a corrected detail), not a fresh rewrite. Change the title only when it clearly no longer fits. The card changes nothing until the user clicks Apply, and applying it never starts work.`;
+}
 
 /** A main ticket's Planning chat makes no ticket cards: it creates tool tickets itself once the work starts. */
 const MAIN_PLANNING = `This ticket is a main ticket: it never proposes child-ticket cards (don't call propose_tickets). Once the user says to go ahead, you create tool tickets yourself with \`create_ticket\` (kind explore, build, test, review, fix, group or round), and the board runs them and wakes you with each result. In Planning, only create tool tickets that explore or check (kind explore or review) when the user asks you to look into something; building starts once the user agrees with the plan. You never change the project's files yourself.`;
@@ -1113,6 +1123,8 @@ export interface MainRole {
   inPlace: boolean;
   /** Its plan is paused (the user pressed Stop): new tool tickets don't start until the user acts on it again. */
   paused?: boolean;
+  /** Already planned (main-ticket.ts mainPlanned, the reason): its Planning chat updates the ticket instead of rewriting it. */
+  planned?: string | null;
 }
 
 /** The fixed header of a tool ticket's first prompt (and the rules of every run of it). */

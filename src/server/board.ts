@@ -25,7 +25,7 @@ import { canEndQuietly, quietContext } from "./quiet";
 import { addHuddleSpend } from "./spend";
 import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "./prompts";
 import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
-import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
+import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
 import { chatPrompt, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
@@ -3047,7 +3047,8 @@ export class Board {
   private roleOf(slug: string, t: Ticket, session: Pick<Session, "repo" | "inPlace">): RunRole | undefined {
     if (t.main) {
       const now = this.store.getTicket(slug, t.id) ?? t;
-      return { kind: "main", repo: session.repo, branch: session.inPlace ? null : now.branch ?? null, inPlace: session.inPlace, ...(now.plan?.state === "paused" ? { paused: true } : {}) } satisfies MainRole;
+      const planned = mainPlanned(this.store.listTickets(slug), now);
+      return { kind: "main", repo: session.repo, branch: session.inPlace ? null : now.branch ?? null, inPlace: session.inPlace, ...(now.plan?.state === "paused" ? { paused: true } : {}), ...(planned ? { planned } : {}) } satisfies MainRole;
     }
     if (!t.tool) return undefined;
     const all = this.store.listTickets(slug);

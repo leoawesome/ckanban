@@ -34,7 +34,7 @@ import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
 import { StatusNoteView, useFeatureStatus, WaitingLine } from "./StatusBlock";
 import { ResultCardView } from "./ResultCardView";
-import { hiddenTool, withYouTool } from "./family";
+import { hiddenTool, plannedMain, withYouTool } from "./family";
 import { StepBlock, type StepInfo, type StepMsg, useStepMessages } from "./StepMessages";
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
@@ -668,7 +668,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
 
   // Proposals applied with "Apply & start work" here, so their card says the ticket moved on.
   const [startedProposals, setStartedProposals] = useState<ReadonlySet<string>>(new Set());
-  const canStart = canStartFromProposal({ status: ticket.status, working: ticket.status === "in_progress" || running });
+  // An already-planned main ticket's card updates it only: steps start on the user's go-ahead in the chat, so no "Apply & start work".
+  const canStart = canStartFromProposal({ status: ticket.status, working: ticket.status === "in_progress" || running }) && !plannedMain(tickets, ticket);
   const applyProposal = async (p: Proposal, start?: { uuid: string }) => {
     const before = { title: ticket.title, body: ticket.body, important: !!ticket.important };
     try {
