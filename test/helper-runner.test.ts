@@ -72,6 +72,8 @@ describe("the board's checks on a decision (table)", () => {
       (r) => expect(r.ok && r.decision.sends[0].steps.map((s) => s.afterMin)).toEqual([0, 5, 10])],
     ["30-minute floor at night (with opt-in)", dec([urgent()]), { now: DAY(23), nightOptIn: true }, (r) => expect(r.ok && r.decision.sends[0].steps.map((s) => s.afterMin)).toEqual([0, 30])],
     ["urgent at night without opt-in is held", dec([urgent()]), { now: DAY(23) }, (r) => expect(r.ok && r.decision.sends).toEqual([])],
+    ["a summary at night is held, even with the night opt-in", dec([urgent(), { ...urgent(), level: "summary", itemKeys: ["b"] }]), { now: DAY(3), nightOptIn: true },
+      (r) => expect(r.ok && r.decision.sends.map((x) => x.level)).toEqual(["urgent"])],
     ["off channel falls to the next one on", dec([urgent({ escalation: [{ channel: "webhook", afterMin: 0 }] })]), {}, (r) => expect(r.ok && r.decision.sends[0].steps[0].channel).toBe("push")],
     ["empty escalation: one step on the first channel on", dec([urgent({ escalation: [] })]), {}, (r) => expect(r.ok && r.decision.sends[0].steps).toEqual([{ channel: "mac", afterMin: 0 }])],
     ["at most 6 steps within 2 hours", dec([urgent({ escalation: Array.from({ length: 10 }, (_, i) => ({ channel: "push", afterMin: i * 20 })) })]), {},
@@ -396,6 +398,82 @@ describe("helper runner", () => {
     expect(spend.boards.find((b) => b.name === "Helper")?.costUsd).toBeCloseTo(0.03);
     stop();
   });
+
+  test("first run at night: the hello and the first summary are stored but held until the night ends", async () => {
+    clock = DAY(4, 5);
+    writeFileSync(join(store.root, "helper-state.json"), "{}");
+    summaries.set("s1", summary(["Old question?"]));
+    store.updateTicket("kb", ticket.id, { status: "planning", sessionId: "s1" });
+    const stop = make();
+    expect(n.helper.waits.firstSummaryPending).toBe(true);
+    answers.push(answer({ nextWakeIn: 600 }));
+    clock += 60_000;
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    // Nothing reached a channel at night; the hello is stored, the first summary still pending.
+    expect(hooks).toHaveLength(0);
+    expect(tg).toHaveLength(0);
+    expect(n.helper.messages.listNewest().map((m) => m.level)).toEqual(["hello"]);
+    expect(n.helper.waits.firstSummaryPending).toBe(true);
+    // The helper looks again when the night ends, not later.
+    expect(h.dueAt()).toBe(DAY(7));
+    clock = DAY(6, 59);
+    await h.tick();
+    expect(hooks).toHaveLength(0);
+    clock = DAY(7);
+    answers.push(answer({}));
+    await h.tick();
+    expect(hooks.map((x) => x.title)).toEqual(["ckanban helper", "1 ticket waits on you"]);
+    expect(tg[0].text).toContain("Hi, I'm the helper");
+    expect(tg[1].text).toContain("This is your first summary");
+    expect(n.helper.waits.firstSummaryPending).toBe(false);
+    // Sent once only.
+    clock += 60_000;
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    stop();
+  });
+
+  test("a summary the helper sends at night is held for the morning", async () => {
+    clock = DAY(2);
+    const stop = make();
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    clock += 60_000;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "Copy waits", why: "", itemKeys: [keyOf(ticket.id)], escalation: [] }], nextWakeIn: 24 * 60 }));
+    await h.tick();
+    expect(hooks).toHaveLength(0);
+    expect(h.status().runs.at(-1)?.fixes).toContain("held a summary: it is night; it goes out when the night ends");
+    expect(h.dueAt()).toBe(DAY(7));
+    stop();
+  });
+
+  for (const recovered of [false, true]) {
+    test(`the pause notice at night waits for the morning (${recovered ? "dropped: the helper works again" : "sent: still failing"})`, async () => {
+      clock = DAY(1);
+      const stop = make();
+      ask(ticket.id, ["Approve the copy?"]);
+      await settle();
+      for (let i = 0; i < 3; i++) {
+        clock += 60_000;
+        await h.wake();
+      }
+      expect(h.healthy()).toBe(false);
+      expect(n.helper.messages.listNewest().some((m) => m.level === "pause")).toBe(true);
+      expect(hooks).toHaveLength(0);
+      if (recovered) {
+        clock += 60_000;
+        answers.push(answer({}));
+        await h.wake();
+        expect(h.healthy()).toBe(true);
+      }
+      clock = DAY(7);
+      answers.push(answer({}));
+      await h.tick();
+      expect(hooks.some((x) => x.title === "ckanban helper paused")).toBe(!recovered);
+      stop();
+    });
+  }
 
   test("a new feedback line wakes the helper (loop guard applies); Should have pinged me writes one", async () => {
     const stop = make();

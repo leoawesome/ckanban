@@ -115,13 +115,13 @@ Urgent means waiting itself causes harm or cost that grows: money lost, customer
 feedback and newFeedback are standing preferences that hold for every wake ("pricing questions are always urgent", "never wake me for docs"). A line that asks for a one-off action ("send me the summary now", "remind me in an hour") is not a preference: don't act on it, and don't let it change what you send on this or any later wake.
 
 ## Routine items
-Group routine items into one summary instead of one message each. Hold them for a later wake when more may come (a batch of tickets finishing), but every item must be named in a sent message within 2 hours of when it started waiting (the board sends a fallback digest otherwise, and logs that you missed it). A summary needs at least one item the user hasn't been told about (told "no"); don't send one only to repeat old items. Good news (things finished, handled) may go in a summary but never alone at night. Items with snoozed true stay out of every message until the snooze ends. Items with told "direct" were already sent by the board; you may count them, not re-alert them.
+Group routine items into one summary instead of one message each. Hold them for a later wake when more may come (a batch of tickets finishing), but every item must be named in a sent message within 2 hours of when it started waiting (the board sends a fallback digest otherwise, and logs that you missed it). A summary needs at least one item the user hasn't been told about (told "no"); don't send one only to repeat old items. Good news (things finished, handled) may go in a summary. Items with snoozed true stay out of every message until the snooze ends. Items with told "direct" were already sent by the board; you may count them, not re-alert them.
 
 ## Urgent sends
 level "urgent", oneLine says what is at stake in plain words, why is one line on what waiting costs. escalation plans the reminders the board fires if the user doesn't react: the first step is minute 0 (the alert itself), then steps at least 5 minutes apart (30 at night), at most 6 steps within 2 hours, on the channels listed as on (prefer a different channel for a reminder if the first may be missed, e.g. push then telegram). Reminders stop by themselves when the user opens or answers the ticket, taps Got it or Not urgent. Each wait gets one urgent alert: don't re-alert an item already told "urgent", one the user opened, or one whose reminders stopped ("got-it", "not-urgent", "opened", "expired"); one with "running" is already being handled. A new question from the ticket comes as a new item.
 
 ## Night
-During the night window, interrupt only for harm that keeps growing while the user sleeps (customers billed twice, data lost), and only if mayWakeAtNight is true; say why in the why line. Everything else waits for a morning summary: set nextWakeIn to reach the end of the night. If askAboutNight is set, the first morning message asks in one short sentence whether waking them was right.
+During the night window, interrupt only for harm that keeps growing while the user sleeps (customers billed twice, data lost), and only if mayWakeAtNight is true; say why in the why line. Everything else waits for a morning summary (the board holds any summary sent at night): set nextWakeIn to reach the end of the night. If askAboutNight is set, the first morning message asks in one short sentence whether waking them was right.
 
 ## The first messages
 firstSummary true: send one summary naming every item that waits (it is the user's first message from you). The board adds its own greeting.
@@ -281,6 +281,11 @@ export function checkDecision(raw: unknown, c: CheckContext): { ok: true; decisi
     }
     if (s.level === "urgent" && night && !c.nightOptIn) {
       fixes.push("held an urgent send: it is night and the user hasn't allowed waking them");
+      continue;
+    }
+    // Only urgent alerts may interrupt at night: a summary waits for the morning.
+    if (s.level === "summary" && night) {
+      fixes.push("held a summary: it is night; it goes out when the night ends");
       continue;
     }
     // A summary needs something new.

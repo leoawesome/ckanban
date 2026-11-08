@@ -15,7 +15,7 @@ import {
   checkDecision, DECISION_SCHEMA, HELPER_SYSTEM, parseDecision, REMIND_MAX_MIN, REMIND_MAX_STEPS, urgentRefusal, type CheckedDecision, type CheckedSend,
   type HelperInput, type InputItem, type ItemState,
 } from "./decide";
-import type { MessageItem, StoredMessage } from "./messages";
+import type { MessageItem, NewMessage, StoredMessage } from "./messages";
 import { HelperSettingsStore, inNight, nightEnd, type HelperSettings } from "./settings";
 import { pending, type WaitRecord } from "./waits";
 
@@ -77,12 +77,24 @@ interface RunnerState {
   /** The last urgent alert sent at night (the morning message asks whether it was right). */
   nightWokeAt: string | null;
   nightWokeFor: string | null;
+  /** Non-urgent board messages stored during the night: they go out when the night ends (oldest first). */
+  heldSends: HeldSend[];
   runs: RunLog[];
+}
+
+/** A stored message whose send waits for the end of the night. */
+interface HeldSend {
+  messageId: string;
+  title: string;
+  body: string;
+  tag: string;
+  /** "pause": dropped instead of sent when the helper works again by then. */
+  kind?: "pause";
 }
 
 const emptyState = (): RunnerState => ({
   nextWakeAt: null, lastRunAt: null, lastOkAt: null, lastFailAt: null, lastCheckAt: null, failures: 0, failReason: null, pauseSentAt: null,
-  notes: "", helloSentAt: null, noticeSeenAt: null, firstUrgentAsked: false, named: {}, reactions: [], nightWokeAt: null, nightWokeFor: null, runs: [],
+  notes: "", helloSentAt: null, noticeSeenAt: null, firstUrgentAsked: false, named: {}, reactions: [], nightWokeAt: null, nightWokeFor: null, heldSends: [], runs: [],
 });
 
 const ms = (iso: string | null | undefined) => (iso ? Date.parse(iso) : NaN);
@@ -284,6 +296,7 @@ export class HelperRunner implements HelperSink {
     try {
       await this.reminders();
       this.maintain();
+      await this.sendHeld();
       const due = this.dueAt();
       if (due !== null && due <= this.now()) await this.wake();
     } finally {
@@ -484,9 +497,9 @@ export class HelperRunner implements HelperSink {
         `What went wrong: ${cut(error, 200)}`,
         `It keeps trying by itself (next try in about ${next} minute${next === 1 ? "" : "s"}) and takes over again once it works.`,
       ].join("\n\n");
-      await this.d.core.send(
+      await this.sendOrHold(
         { level: "pause", oneLine: "The helper can't run right now: you get each wait directly", text, why: error },
-        { level: "pause", title: "ckanban helper paused", body: "You get each wait directly until it works again", text, url: (id) => this.d.messageLink(id), tag: "helper-pause" },
+        { title: "ckanban helper paused", body: "You get each wait directly until it works again", tag: "helper-pause", kind: "pause" },
       );
     }
     return { ...entry, ok: false, error };
@@ -519,8 +532,10 @@ export class HelperRunner implements HelperSink {
       sent++;
     }
     if (!this.active()) return sent;
-    // The first summary after an upgrade or fresh install names every seeded wait, whatever the helper chose.
-    if (first) {
+    const night = inNight(this.now(), s.night);
+    // The first summary after an upgrade or fresh install names every seeded wait, whatever the helper chose. At
+    // night it waits (still pending) for the first wake after the night ends.
+    if (first && !night) {
       const seeded = this.d.core.waits.open().filter((r) => r.seeded && !r.toldAt && !g.snoozed.has(r.key)).map((r) => r.key);
       if (seeded.length) {
         const n = seeded.length;
@@ -530,7 +545,10 @@ export class HelperRunner implements HelperSink {
       this.d.core.waits.firstSummaryPending = false;
     }
     // What it holds: until its next wake (the Inbox line says so), and one held entry in the log.
-    const nextIso = new Date(retry ? Math.min(dec.nextWakeAt, this.now() + URGENT_RETRY_MS) : dec.nextWakeAt).toISOString();
+    // At night the helper looks again by the end of the night at the latest: what it holds goes in the morning summary.
+    let next = retry ? Math.min(dec.nextWakeAt, this.now() + URGENT_RETRY_MS) : dec.nextWakeAt;
+    if (night) next = Math.min(next, nightEnd(this.now(), s.night));
+    const nextIso = new Date(next).toISOString();
     const held = this.d.core.waits.open().filter((r) => !r.toldAt && !g.snoozed.has(r.key) && !unreached.has(r.key));
     for (const r of held) this.d.core.waits.update(r.key, { heldUntil: nextIso });
     if (held.length) {
@@ -691,8 +709,7 @@ export class HelperRunner implements HelperSink {
       const items = recs.map((r) => this.d.core.item(r));
       const names = items.map((i) => i.title).join(", ");
       const text = `I've stopped reminding you about ${names}. ${recs.length === 1 ? "It's" : "They're"} still in your Inbox.`;
-      const m = this.d.core.messages.add({ level: "reminder", oneLine: cut(`I've stopped reminding you: ${names}`), text, items });
-      await this.d.core.deliver(m, this.out(m, "Reminders stopped", m.oneLine, text, false, `stopped-${m.id}`));
+      await this.sendOrHold({ level: "reminder", oneLine: cut(`I've stopped reminding you: ${names}`), text, items }, { title: "Reminders stopped", body: cut(`I've stopped reminding you: ${names}`), tag: "stopped" });
     }
     if (due.size || expired.size) this.changed();
   }
@@ -805,10 +822,48 @@ export class HelperRunner implements HelperSink {
       `My night is ${s.night.start} to ${s.night.end}; change it in Settings. Alerts need this Mac on and awake; a closed lid means no alerts.`,
       "ntfy can get through Focus if you allow the ntfy app in that Focus; for Telegram, allow Telegram in your Focus (not guaranteed).",
     ].join("\n\n");
-    await this.d.core.send(
+    await this.sendOrHold(
       { level: "hello", oneLine: "Hi, I'm the helper: routine things come grouped, urgent ones interrupt", text },
-      { level: "hello", title: "ckanban helper", body: "Routine things come grouped now; only urgent ones interrupt you", text, url: (id) => this.d.messageLink(id), tag: "helper-hello" },
+      { title: "ckanban helper", body: "Routine things come grouped now; only urgent ones interrupt you", tag: "helper-hello" },
     );
+  }
+
+  // ---------- held for the morning ----------
+
+  /**
+   * The board's own non-urgent messages (hello, pause, reminders stopped): stored now, and sent now, or during the
+   * user's night held until it ends (only urgent alerts may interrupt at night).
+   */
+  private async sendOrHold(m: NewMessage, o: Omit<HeldSend, "messageId">): Promise<void> {
+    const message = this.d.core.messages.add(m);
+    if (inNight(this.now(), this.settings.get().night)) {
+      this.state.heldSends = [...this.state.heldSends, { messageId: message.id, ...o }];
+      this.save();
+      this.requestWake(nightEnd(this.now(), this.settings.get().night));
+      return;
+    }
+    await this.d.core.deliver(message, this.heldOut(message, o));
+  }
+
+  private heldOut(message: StoredMessage, o: Omit<HeldSend, "messageId">): OutBody {
+    const tag = o.tag === "stopped" ? `stopped-${message.id}` : o.tag;
+    return { level: message.level, title: o.title, body: o.body, text: message.text, url: (id) => this.d.messageLink(id), tag };
+  }
+
+  /** The night is over: the held messages go out (a pause notice only if the helper still can't run). */
+  private async sendHeld(): Promise<void> {
+    if (!this.state.heldSends.length || inNight(this.now(), this.settings.get().night)) return;
+    const held = this.state.heldSends;
+    // Claimed before the sends: a slow send or a restart doesn't send them twice.
+    this.state.heldSends = [];
+    this.save();
+    for (const x of held) {
+      if (!this.active()) return;
+      if (x.kind === "pause" && this.healthy()) continue;
+      const message = this.d.core.messages.get(x.messageId);
+      if (message) await this.d.core.deliver(message, this.heldOut(message, x));
+    }
+    this.changed();
   }
 
   // ---------- the user's taps ----------
