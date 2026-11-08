@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boardDigit, canStartFromProposal, cardDir, cardKey, escLeavesField, inDock, isInboxKey, isUndoKey, listKey, panelBoardKey, stepIndex, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isStopKey, isTyping, newTicketKey, nextStep, panelStep, stepBoard, stepCard, stepTab } from "../web/src/keynav";
+import { boardDigit, canStartFromProposal, cardDir, cardKey, escLeavesField, inDock, isInboxKey, isUndoKey, listKey, panelBoardKey, stepIndex, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isNewChatKey, isStopKey, isTyping, newTicketKey, nextStep, panelStep, stepBoard, stepCard, stepTab } from "../web/src/keynav";
 
 test("cardDir maps J/K/H/L and arrows, ignores other keys", () => {
   expect(cardDir("j")).toBe("down");
@@ -258,4 +258,14 @@ test("listKey: arrows and J/K move, Enter picks the active row, digits pick by n
   expect(listKey(key("3", { code: "Digit3" }))).toEqual({ pick: 2 });
   expect(listKey(key("Enter", { metaKey: true }))).toBeNull();
   expect(listKey(key("x"))).toBeNull();
+});
+
+test("isNewChatKey: ⌘⇧O or Ctrl+Shift+O only", () => {
+  const k = { key: "O", metaKey: false, ctrlKey: false, altKey: false, shiftKey: true };
+  expect(isNewChatKey({ ...k, metaKey: true })).toBe(true);
+  expect(isNewChatKey({ ...k, ctrlKey: true, key: "o" })).toBe(true);
+  expect(isNewChatKey(k)).toBe(false);
+  expect(isNewChatKey({ ...k, metaKey: true, shiftKey: false })).toBe(false);
+  expect(isNewChatKey({ ...k, metaKey: true, altKey: true })).toBe(false);
+  expect(isNewChatKey({ ...k, metaKey: true, isComposing: true })).toBe(false);
 });

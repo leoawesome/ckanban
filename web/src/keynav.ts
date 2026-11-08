@@ -125,6 +125,11 @@ export function newTicketKey(e: Keys): NewTicketKey | null {
   }
 }
 
+/** ⌘⇧O (Ctrl+Shift+O off Mac) with the Claude chat open: start a new chat, even while typing. */
+export function isNewChatKey(e: Keys): boolean {
+  return (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && !e.isComposing && e.key.toLowerCase() === "o";
+}
+
 /** ⌘. / Ctrl+. in the ticket panel: stop Claude (after a confirm). */
 export function isStopKey(e: Keys): boolean {
   return (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && !e.isComposing && e.key === ".";

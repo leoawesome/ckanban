@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Huddle, RosterEntry, Ticket } from "./api";
+import { api, type Huddle, type RosterEntry, type Ticket } from "./api";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { formKey } from "./drafts";
 import { dollars, rosterNames } from "./huddleText";
 import { applyProposedTemplate, draftError, RosterEditor, rosterDraft, startFromDraft, TemplatePicker, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
@@ -40,6 +41,7 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
   }, [templates, template]);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirmSwap, setConfirmSwap] = useState(false);
   const [dismissed, setDismissed] = usePersistentState(formKey(slug, ticket.id, `huddle-${uuid}`), () => false, (v) => !v, (v) => typeof v === "boolean");
   const started = !!huddle && huddle.createdAt >= at;
   const otherOpen = !!huddle && !started && huddle.status !== "closed";
@@ -60,6 +62,20 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
     }
   };
 
+  // The ticket has another huddle still open: close it, then start this one.
+  const closeAndStart = async () => {
+    if (!huddle || err) return;
+    setBusy(true);
+    try {
+      if (huddle.status !== "closed") await api.huddleAction(slug, huddle.id, "close");
+      await startFromDraft(slug, ticket.id, draft);
+      setConfirmSwap(false);
+      onOpen();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (dismissed && !started) {
     return (
       <div className="huddle-card-dismissed muted small">
@@ -71,7 +87,7 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
   const who = draft.rows.length ? rosterNames(draft.rows) : template ? `template ${template}` : "no one yet";
   const words = <><b>{started ? "Review started" : "Proposed review"}:</b> a few Claudes check the work together · {who}
     {started ? (budget != null ? ` · ${dollars(budget)} budget` : "") : ` · up to ${dollars(old ? budget ?? draft.maxCostUsd : draft.maxCostUsd)}`}</>;
-  const note = started || old ? null : otherOpen ? "This ticket already has an open huddle." : err;
+  const note = started || old ? null : otherOpen ? "This ticket already has an open huddle. Only one runs at a time." : err;
   return (
     <div className={`huddle-card huddle-line${started ? " started" : ""}`}>
       <div className="huddle-line-row">
@@ -85,7 +101,12 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
             </>
           ) : old ? null : (
             <>
-              {otherOpen ? <button className="btn small" onClick={onOpen}>Open huddle</button> : (
+              {otherOpen ? (
+                <>
+                  <button className="btn primary small" onClick={() => setConfirmSwap(true)} disabled={busy || !!err || presets === null}>Close current and start</button>
+                  <button className="btn small" onClick={onOpen}>Open current</button>
+                </>
+              ) : (
                 <button className="btn primary small" onClick={start} disabled={busy || !!err || presets === null}>{busy ? "Starting…" : "Start"}</button>
               )}
               <button className="btn small" aria-expanded={editing} onClick={() => setEditing((e) => !e)} disabled={busy}>{editing ? "Done" : "Edit…"}</button>
@@ -101,6 +122,12 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
           <TemplatePicker templates={templates} draft={draft} setDraft={setDraft} disabled={busy} />
           <RosterEditor presets={presets} draft={draft} setDraft={setDraft} tickets={tickets} hostId={ticket.id} onEnter={start} disabled={busy} />
         </div>
+      )}
+      {confirmSwap && (
+        <ConfirmDialog title="Close the current huddle and start this one?" confirmLabel="Close and start" busyLabel="Starting…" tone="primary"
+          onCancel={() => setConfirmSwap(false)} onConfirm={closeAndStart}>
+          <p>The current huddle's runs stop and it becomes read-only; its history stays in the Huddle tab. Then this proposed huddle starts.</p>
+        </ConfirmDialog>
       )}
     </div>
   );

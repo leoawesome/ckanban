@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { Profile } from "./api";
 import { ClockIcon, CloseIcon, PlusIcon } from "./icons";
-import { isTyping } from "./keynav";
+import { isNewChatKey, isTyping } from "./keynav";
+import { KeyHint } from "./KeyHint";
+import { isMac } from "./Shortcuts";
 import { useLayer } from "./layers";
 import { QuickChatPane } from "./QuickChat";
 import { CHAT_DEFAULT, CHAT_WIDTH_KEY, clampChatWidth } from "./sideChatLayout";
@@ -125,6 +127,19 @@ export function SideChat({ profile, chat, onClose, onOpenTicket, focusRequest, c
     setHistory(false);
     requestAnimationFrame(() => section.current?.querySelector<HTMLElement>(".qc-main textarea:not([disabled])")?.focus({ preventScroll: true }));
   };
+  // ⌘⇧O: a new chat, from anywhere while the chat shows (not under a ticket panel).
+  const newChatRef = useRef(newChat);
+  newChatRef.current = newChat;
+  useEffect(() => {
+    if (covered) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !isNewChatKey(e)) return;
+      e.preventDefault();
+      newChatRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [covered]);
   // Esc from outside the chat (the board, nothing focused) hides it, after any ticket panel: it sits under that layer.
   useLayer(onClose, { base: true, under: true, skipInInputs: true });
 
@@ -178,7 +193,7 @@ export function SideChat({ profile, chat, onClose, onOpenTicket, focusRequest, c
         </button>
         <span className="side-chat-title">Claude</span>
         <div className="spacer" />
-        <button className="btn ghost small icon-label" onClick={newChat} title="Start a new chat"><PlusIcon size={14} /> New chat</button>
+        <button className="btn ghost small icon-label" onClick={newChat} title={`Start a new chat (${isMac ? "⌘⇧O" : "Ctrl+Shift+O"})`}><PlusIcon size={14} /> New chat<KeyHint keys="⌘⇧O" /></button>
         <button className="icon-btn" onClick={onClose} title="Hide the chat (C, or Esc). Claude's replies keep running." aria-label="Hide the Claude chat">
           <CloseIcon />
         </button>
