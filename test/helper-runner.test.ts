@@ -237,6 +237,45 @@ describe("helper runner", () => {
     stop();
   });
 
+  test("seenInChatAt doesn't hide an urgent alert: the wait shown in the front desk chat still alerts, and the model sees inChat", async () => {
+    const stop = make();
+    clock += 2 * 60_000;
+    ask(ticket.id, ["Stop the old webhook?"], { urgent: true, why: "pricing data ingested twice" });
+    await settle();
+    const key = keyOf(ticket.id);
+    // The front desk showed it to the user in Telegram: seenInChatAt, not toldAt.
+    n.helper.waits.update(key, { seenInChatAt: new Date(clock).toISOString() });
+    expect(n.helper.waits.get(key)!.toldAt).toBeNull();
+    expect(h.wantsAwake()).toBe(true);
+    answers.push(answer({ sends: [{ level: "urgent", oneLine: "Pricing ingests data twice", why: "double ingestion", itemKeys: [key], escalation: [{ channel: "webhook", afterMin: 0 }] }] }));
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0].prompt).items[0]).toMatchObject({ key, inChat: true, told: "no", urgent: true });
+    expect(hooks).toHaveLength(1);
+    expect(n.helper.messages.listNewest()[0].level).toBe("urgent");
+    expect(n.helper.waits.get(key)).toMatchObject({ toldVia: "helper" });
+    stop();
+  });
+
+  test("a summary lists a wait the front desk already showed under still waits, not as new", async () => {
+    const stop = make();
+    const other = store.createTicket("kb", { title: "Copy", body: "b", status: "in_progress" });
+    ask(ticket.id, ["Approve the price?"]);
+    ask(other.id, ["Approve the copy?"]);
+    await settle();
+    const a = keyOf(ticket.id), b = keyOf(other.id);
+    n.helper.waits.update(a, { seenInChatAt: new Date(clock).toISOString() });
+    clock += 60_000;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "2 tickets wait on you", why: "", itemKeys: [a, b] }] }));
+    await h.tick();
+    const m = n.helper.messages.listNewest()[0];
+    expect(m.level).toBe("summary");
+    expect(m.summary!.new.map((r) => r.ticketId)).toEqual([other.id]);
+    expect(m.summary!.still.map((r) => r.ticketId)).toEqual([ticket.id]);
+    expect(m.text).toContain("1 more still waits on you");
+    stop();
+  });
+
   test("an asker's urgent mark wakes at once; the urgent alert names its next step; reminders fire, fail over, and stop on Got it", async () => {
     const stop = make();
     // Loop guard: a run a moment ago holds the next wake for a minute.

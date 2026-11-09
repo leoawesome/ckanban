@@ -31,9 +31,13 @@ export interface TelegramSettings {
   takeMessages: boolean;
   /** When /lock turned takeMessages off (null: not locked from Telegram). Cleared when Settings turns it back on. */
   lockedAt: string | null;
+  /** "Front desk lives on": the board whose quick chats hold the front desk (null: the board paired from, else the first). */
+  frontDesk?: string | null;
+  /** When the briefing (what the bot can do) went to the paired chat; null: not yet (sent once, also to chats paired before it). */
+  briefedAt?: string | null;
 }
 
-export const DEFAULT_TELEGRAM: TelegramSettings = { on: false, token: "", chatId: null, chatName: null, pairedAt: null, askTyped: true, takeMessages: true, lockedAt: null };
+export const DEFAULT_TELEGRAM: TelegramSettings = { on: false, token: "", chatId: null, chatName: null, pairedAt: null, askTyped: true, takeMessages: true, lockedAt: null, frontDesk: null, briefedAt: null };
 
 /** The one reply to text or a tap while "Take messages from Telegram" is off. */
 export const NOT_TAKING = "I'm not taking messages right now. Turn it back on in Settings on the Mac.";
@@ -135,6 +139,29 @@ export interface TelegramDeps {
   alerted?: (m: OutMessage, tg: number, chatId: number) => Promise<void> | void;
   /** Least time between paced sends and edits (forms), ms. Telegram allows about one message a second in a chat. Default 1000. */
   paceMs?: number;
+  /** The front desk (frontdesk.ts): text that isn't a reply to an alert. Null or false back: the fixed answer. */
+  frontDesk?: () => { onText(m: { chatId: number; updateId: number; tg: number; text: string; forwarded?: string | null; quoted?: string | null }): Promise<boolean> } | null;
+  /** The briefing after pairing (frontdesk.ts FrontDesk.briefing). Default: the short "Paired" text. */
+  briefing?: (paired: boolean) => string;
+}
+
+/** The bot's command menu (setMyCommands). */
+export const COMMANDS = [
+  { command: "waiting", description: "What waits on you now" },
+  { command: "lock", description: "Stop taking messages from this chat (alerts still arrive)" },
+];
+/** Voice, photos, files and stickers. */
+export const TEXT_ONLY = "Text only for now.";
+/** An edited message. */
+export const SEND_AGAIN = "Send it again to change it.";
+
+/** Who a forwarded message came from (forward_origin), or null when it isn't forwarded. */
+export function forwardedFrom(msg: any): string | null {
+  const o = msg?.forward_origin ?? (msg?.forward_from || msg?.forward_sender_name || msg?.forward_from_chat ? { type: "legacy" } : null);
+  if (!o) return null;
+  const u = o.sender_user ?? msg?.forward_from;
+  const name = u ? [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username : o.sender_user_name ?? msg?.forward_sender_name ?? o.chat?.title ?? o.sender_chat?.title ?? msg?.forward_from_chat?.title;
+  return name ? String(name).slice(0, 80) : "someone";
 }
 
 /** A bot token's public part (the bot's id), to tell which bot a saved read position or message belongs to. */
@@ -172,6 +199,8 @@ export class TelegramBot {
   /** Paced calls (form messages and edits) run one after another, PACE_MS apart. */
   private paceChain: Promise<unknown> = Promise.resolve();
   private lastPaced = -Infinity;
+  /** The command menu was set for this bot (once per daemon run). */
+  private commandsFor: string | null = null;
 
   constructor(private d: TelegramDeps) {
     this.now = d.now ?? Date.now;
@@ -316,13 +345,18 @@ export class TelegramBot {
       }
       this.status = { ...this.status, botName: me.result?.username ? `@${me.result.username}` : null };
     }
+    // The menu of commands, once per bot: /waiting and /lock.
+    if (this.commandsFor !== botId(this.token) && this.d.settings().chatId !== null) {
+      this.commandsFor = botId(this.token);
+      void this.api("setMyCommands", { commands: COMMANDS }).then((r) => (r.ok ? undefined : console.warn(`telegram: couldn't set the command menu: ${this.explain(r)}`)));
+    }
     this.loadOffset();
     // Updates saved before a restart and not handled yet.
     this.drain();
     const abort = new AbortController();
     this.abort = abort;
     const r = await this.api("getUpdates", {
-      offset: this.offset, timeout: this.d.autoPoll === false ? 0 : POLL_TIMEOUT_S, allowed_updates: ["message", "callback_query"],
+      offset: this.offset, timeout: this.d.autoPoll === false ? 0 : POLL_TIMEOUT_S, allowed_updates: ["message", "edited_message", "callback_query"],
     }, AbortSignal.any([abort.signal, AbortSignal.timeout((POLL_TIMEOUT_S + 15) * 1000)]));
     if (gen !== this.gen) return true;
     if (!r.ok) {
@@ -507,6 +541,12 @@ export class TelegramBot {
       }
       return;
     }
+    // An edited message: the first version was already handled; editing doesn't change what was sent.
+    const edited = u?.edited_message;
+    if (edited?.chat && edited.chat.id === s.chatId && s.chatId !== null) {
+      await this.reply(edited.chat.id, SEND_AGAIN);
+      return;
+    }
     const msg = u?.message;
     if (!msg?.chat || typeof msg.chat.id !== "number") return;
     const chatId: number = msg.chat.id;
@@ -526,7 +566,8 @@ export class TelegramBot {
           const name = [from.first_name, from.last_name].filter(Boolean).join(" ") || "you";
           this.pairing = null;
           this.d.save({ chatId, chatName: from.username ? `${name} (@${from.username})` : name, pairedAt: new Date(this.now()).toISOString(), on: true, takeMessages: true, lockedAt: null });
-          await this.reply(chatId, `Paired. The ckanban helper will message you here.\n\nUrgent messages come with sound; the rest arrive silently. ${FOCUS_HINT_TELEGRAM}\n\nReply to an alert to answer that ticket. Send /waiting any time to see what waits on you.`);
+          await this.reply(chatId, this.d.briefing?.(true) ?? `Paired. The ckanban helper will message you here.\n\nUrgent messages come with sound; the rest arrive silently. ${FOCUS_HINT_TELEGRAM}\n\nReply to an alert to answer that ticket. Send /waiting any time to see what waits on you.`);
+          this.d.save({ briefedAt: new Date(this.now()).toISOString() });
           return;
         }
         p.tries++;
@@ -557,19 +598,66 @@ export class TelegramBot {
       await this.reply(chatId, NOT_TAKING);
       return;
     }
+    // Voice, photos, files, stickers: nothing is passed on.
+    if (!text) {
+      await this.reply(chatId, TEXT_ONLY);
+      return;
+    }
     const replyTo = msg.reply_to_message?.message_id;
     const replies = this.d.replies?.();
-    if (Number.isSafeInteger(replyTo) && replies) {
-      if (!text) {
-        await this.reply(chatId, "I can only pass on text for now.");
-        return;
-      }
+    // A forwarded message is quoted text for the front desk, never an answer to an alert.
+    const forwarded = forwardedFrom(msg);
+    if (Number.isSafeInteger(replyTo) && replies && !forwarded) {
       const r: IncomingReply = { chatId, updateId: u.update_id, tg: msg.message_id, replyTo, text };
       if (await replies.onReply(r, this.responder(chatId))) return;
     }
-    // Not a reply to an alert: a fixed answer; nothing is saved or passed on.
+    // Everything else goes to the front desk (a reply to a summary carries the summary's text).
+    const desk = this.d.frontDesk?.();
+    if (desk) {
+      const quoted = typeof msg.reply_to_message?.text === "string" && msg.reply_to_message.from?.is_bot ? msg.reply_to_message.text : null;
+      if (await desk.onText({ chatId, updateId: u.update_id, tg: msg.message_id, text, forwarded, quoted })) return;
+    }
+    // No front desk: a fixed answer; nothing is saved or passed on.
     const where = this.d.phoneAccess() ? `Or answer on the board: ${this.d.boardUrl()}` : "Or answer on your Mac.";
     await this.reply(chatId, `Reply to an alert to answer that ticket. ${where}\n\nSend /waiting to see what waits on you.`);
+  }
+
+  /** "typing…" in the chat (it shows about 5 seconds). */
+  async typing(chatId: number): Promise<void> {
+    await this.api("sendChatAction", { chat_id: chatId, action: "typing" });
+  }
+
+  /** Sends a file (sendDocument, multipart). Returns an error in plain words, or null when sent. */
+  async sendFile(chatId: number, file: string, caption: string, replyTo: number | null): Promise<string | null> {
+    const token = this.token;
+    if (!TOKEN_RE.test(token)) return "Telegram isn't set up.";
+    try {
+      const form = new FormData();
+      form.set("chat_id", String(chatId));
+      form.set("caption", caption.slice(0, 1024));
+      form.set("disable_notification", "true");
+      if (replyTo !== null) form.set("reply_parameters", JSON.stringify({ message_id: replyTo, allow_sending_without_reply: true }));
+      form.set("document", Bun.file(file), file.split("/").pop() ?? "file");
+      const r = await this.d.fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: "POST", body: form, signal: AbortSignal.timeout(120_000) });
+      let j: ApiReply;
+      try {
+        j = (await r.json()) as ApiReply;
+      } catch {
+        j = { ok: r.ok, error_code: r.status, description: `${r.status}` };
+      }
+      if (j.ok) return null;
+      return this.explain({ ...j, description: j.description ? scrub(j.description, token) : j.description });
+    } catch (e) {
+      return `Can't reach Telegram: ${scrub((e as Error).message ?? String(e), token)}`;
+    }
+  }
+
+  /** The briefing to a chat paired before it existed (once; briefedAt). */
+  async briefOnce(): Promise<void> {
+    const s = this.d.settings();
+    if (!s.on || s.chatId === null || s.briefedAt || !TOKEN_RE.test(s.token) || !this.d.briefing) return;
+    this.d.save({ briefedAt: new Date(this.now()).toISOString() });
+    await this.reply(s.chatId, this.d.briefing(false));
   }
 
   /** The channel's send: plain text, sound only when urgent, Got it / Not urgent on messages that remind. */

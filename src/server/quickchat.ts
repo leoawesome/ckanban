@@ -38,6 +38,8 @@ export interface QuickChat {
   pending?: string[];
   /** A reply a restart cut off: recover() continues it. prompt: Claude never got the message, so it goes again. */
   interrupted?: { prompt?: string } | null;
+  /** The Telegram front desk's chat (helper/frontdesk.ts): its runs carry the front desk identity, and it never becomes a ticket. */
+  frontDesk?: { chatId: number } | null;
 }
 
 /** What the UI gets: the chat plus its live state. */
@@ -105,6 +107,16 @@ interface ActiveChat {
   done: Promise<void>;
 }
 
+/** What the Telegram front desk adds to its chats' runs (FrontDesk.plug). */
+export interface QuickChatHooks {
+  /** Extra environment for a chat's run (the front desk identity), or null. */
+  env?: (slug: string, c: QuickChat) => Record<string, string> | null;
+  /** Extra system prompt for a chat's run, or null. */
+  note?: (slug: string, c: QuickChat) => string | null;
+  /** Every result line of a chat's run (one per answered turn). */
+  onResult?: (slug: string, c: QuickChat, ev: any) => void;
+}
+
 export interface QuickChatOptions {
   claudeBin: string;
   sessionExists?: (sessionId: string) => boolean;
@@ -118,6 +130,7 @@ export class QuickChats {
   private making = new Set<string>();
   private shuttingDown = false;
   private sessionExists: (id: string) => boolean;
+  private hooks: QuickChatHooks = {};
 
   constructor(private store: Store, private bus: Bus, private board: Board, private opts: QuickChatOptions) {
     this.sessionExists = opts.sessionExists ?? claudeSessionExists;
@@ -125,6 +138,11 @@ export class QuickChats {
   }
 
   private key = (slug: string, id: string) => `${slug}/${id}`;
+
+  /** The Telegram front desk plugs in (env, prompt and result hooks). */
+  setHooks(h: QuickChatHooks): void {
+    this.hooks = h;
+  }
 
   private dir(slug: string): string {
     return join(this.store.root, "profiles", slug, "chats");
@@ -213,7 +231,7 @@ export class QuickChats {
   }
 
   /** Send a message: in a new chat (id null), to a reply in progress, or as a new reply in the same conversation. */
-  send(slug: string, id: string | null, text: string): QuickChatView {
+  send(slug: string, id: string | null, text: string, init: Pick<QuickChat, "title" | "frontDesk"> | null = null): QuickChatView {
     const profile = this.profile(slug);
     const msg = String(text ?? "").trim();
     if (!msg) throw new QuickChatError(400, "message is empty");
@@ -221,7 +239,10 @@ export class QuickChats {
     const now = nowIso();
     let c: QuickChat;
     if (id === null) {
-      c = { id: newId(), sessionId: crypto.randomUUID(), title: null, firstMessage: msg, createdAt: now, updatedAt: now, started: false, ticketId: null, error: null };
+      c = {
+        id: newId(), sessionId: crypto.randomUUID(), title: init?.title ?? null, firstMessage: msg, createdAt: now, updatedAt: now, started: false, ticketId: null, error: null,
+        ...(init?.frontDesk ? { frontDesk: init.frontDesk } : {}),
+      };
     } else {
       c = this.getOr404(slug, id);
       if (c.ticketId) throw new QuickChatError(409, "This chat became a ticket. Continue it in the ticket's chat.");
@@ -265,11 +286,13 @@ export class QuickChats {
     let lastActivity = 0;
     const emitDraft = (text: string, final?: string) => this.bus.emit({ type: "chat.draft", profile: slug, id, text, ...(final ? { final } : {}) });
     const connectors = boardConnectorOptions(profile);
+    const extraEnv = this.hooks.env?.(slug, c) ?? null;
+    const extraNote = this.hooks.note?.(slug, c) ?? null;
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: profile.path,
-      env: connectors.env,
-      args: buildArgs(c.sessionId, resume, profile.model, connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), quickChatNote(profile), null, runOptions(null, profile, false).effort),
+      env: extraEnv ? { ...connectors.env, ...extraEnv } : connectors.env,
+      args: buildArgs(c.sessionId, resume, profile.model, connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), extraNote ? `${quickChatNote(profile)}\n\n${extraNote}` : quickChatNote(profile), null, runOptions(null, profile, false).effort),
       input: localizeAttachments(run.prompt, this.store.attachmentsDir),
       onEvent: (ev) => {
         const changed = run.draft.feed(ev);
@@ -286,7 +309,14 @@ export class QuickChats {
         if (ev?.type === "stream_event") return;
         if ((ev?.type === "system" && ev.subtype === "init") || ev?.type === "assistant") run.started = true;
         // Only result lines: they carry the cost today's spend adds up.
-        if (ev?.type === "result") this.appendActivity(slug, id, ev);
+        if (ev?.type === "result") {
+          this.appendActivity(slug, id, ev);
+          try {
+            this.hooks.onResult?.(slug, this.get(slug, id) ?? c, ev);
+          } catch (e) {
+            console.error(`quick chat ${slug}/${id}: result hook`, e);
+          }
+        }
         const s = summarizeEvent(ev);
         if (s && !run.stopRequested) run.activity = s;
         const now = Date.now();
@@ -393,6 +423,7 @@ export class QuickChats {
   /** partOf: the feature (or group) the user picked for it; the board refuses a link that would go too deep. */
   private async makeTicketNow(slug: string, id: string, partOf?: string): Promise<{ ticket: Ticket; chat: QuickChatView }> {
     const c = this.getOr404(slug, id);
+    if (c.frontDesk) throw new QuickChatError(409, "The Telegram front desk's chat can't become a ticket. Ask it to start the work: it makes a ticket for it.");
     if (c.ticketId && this.store.getTicket(slug, c.ticketId)) throw new QuickChatError(409, "This chat is already a ticket.");
     if (this.isRunning(slug, id)) throw new QuickChatError(409, "Claude is still replying. Wait for it to finish, or stop it, then try again.");
     if (!c.started && !this.sessionExists(c.sessionId)) throw new QuickChatError(409, "Send Claude a message first.");

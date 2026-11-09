@@ -436,6 +436,7 @@ export class HelperRunner implements HelperSink {
         key: r.key, type: "wait", ticket: it.title, board: it.boardName, question: r.question.slice(0, 1500), label: r.label, urgent: !!r.urgent, why: r.why ?? null,
         waitingMin: Math.max(0, Math.round((g.now - (Number.isFinite(ms(r.since)) ? ms(r.since) : ms(r.queuedAt))) / 60_000)),
         new: !Number.isFinite(lastOk) || ms(r.queuedAt) > lastOk, opened: !!r.openedAt, snoozed: g.snoozed.has(r.key), told: this.told(r),
+        ...(r.seenInChatAt ? { inChat: true } : {}),
         reminders: pending(r) ? "running" : r.remindersStopped ?? null,
       };
     });
@@ -839,9 +840,10 @@ export class HelperRunner implements HelperSink {
     const waitKeys = keys.filter((k) => !k.startsWith("checkin:"));
     const checkKeys = keys.filter((k) => k.startsWith("checkin:"));
     const named = waitKeys.map((k) => this.d.core.waits.get(k)!).filter(Boolean);
-    const fresh = named.filter((r) => !r.toldAt);
+    // Shown in the Telegram front desk chat already: counted with what still waits, never listed as new.
+    const fresh = named.filter((r) => !r.toldAt && !r.seenInChatAt);
     const freshKeys = new Set(fresh.map((r) => r.key));
-    const still = this.d.core.waits.open().filter((r) => r.toldAt && !freshKeys.has(r.key) && !g.snoozed.has(r.key));
+    const still = this.d.core.waits.open().filter((r) => (r.toldAt || r.seenInChatAt) && !freshKeys.has(r.key) && !g.snoozed.has(r.key));
     const newChecks = checkKeys.map((k) => this.checkinItem(k)).filter((x): x is MessageItem => !!x);
     if (!fresh.length && !newChecks.some((c) => !this.state.named[c.key!])) return null;
     const freshItems = fresh.map((r) => this.d.core.item(r));

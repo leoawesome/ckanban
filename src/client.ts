@@ -8,10 +8,17 @@ import type { DeviceUser } from "./server/devices";
 import type { MessageResult } from "./server/notify";
 import type { SetupOutcome } from "./server/worktree-setup";
 import { RUN_HEADER } from "./server/scheduler";
+import { CONFIRM_STATUS, FRONT_DESK_ENV, FRONT_DESK_HEADER } from "./server/helper/frontdesk-id";
 import { defaultRoot, Store } from "./server/store";
 import { STATUSES, type HandIn, type HuddleFinding, type HuddleLearning, type HuddleMessage, type HuddleMode, type Status, type TicketMode } from "./server/types";
 
 export class ClientError extends Error {}
+
+/**
+ * The Telegram front desk asked for something that starts, stops or moves work: the daemon held it and shows the user a
+ * Confirm button in Telegram. Not a failure: its message says what to tell the user.
+ */
+export class ConfirmPending extends ClientError {}
 
 /** A board pass as the daemon shows it (src/server/integrations/passes.ts PassView). */
 export interface PassInfo {
@@ -333,7 +340,9 @@ export class BoardClient {
 
   private async req<T>(method: string, path: string, body?: unknown, extra: Record<string, string> = {}, long = false): Promise<T> {
     let res: Response;
-    const headers = { ...(body === undefined ? {} : { "content-type": "application/json" }), ...extra };
+    // The Telegram front desk's runs say who they are, so the daemon can hold work-changing actions for a Confirm tap.
+    const fd = process.env[FRONT_DESK_ENV];
+    const headers = { ...(body === undefined ? {} : { "content-type": "application/json" }), ...(fd ? { [FRONT_DESK_HEADER]: fd } : {}), ...extra };
     try {
       res = await this.fetchFn(this.base + path, {
         method,
@@ -352,6 +361,7 @@ export class BoardClient {
       data = text ? JSON.parse(text) : null;
     } catch {}
     if (!res.ok) throw new ClientError(data?.error ?? `${method} ${path} failed: ${res.status}`);
+    if (res.status === CONFIRM_STATUS && typeof data?.confirmation === "string") throw new ConfirmPending(data.confirmation);
     return data as T;
   }
 
@@ -420,6 +430,8 @@ export class BoardClient {
     this.req<DeviceTake>("POST", `${this.t(slug, id)}/devices`, { action: "take", names }, this.by(run), true);
   releaseDevices = (slug: string, id: string, names: string[] | null, run?: string | null) =>
     this.req<{ released: string[] }>("POST", `${this.t(slug, id)}/devices`, { action: "release", names: names ?? [] }, this.by(run));
+  /** The Telegram front desk sends a file to the user's chat (only from the front desk; the daemon checks). */
+  sendTelegramFile = (path: string, caption: string) => this.req<{ sent: string; bytes: number }>("POST", "/api/telegram/front-desk/file", { path, caption }, {}, true);
   reportBug = (input: BugReportRequest) => this.req<BugReportReply>("POST", "/api/bug-report", input);
 
   private s(slug: string, id?: string): string {

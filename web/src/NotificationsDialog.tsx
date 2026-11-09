@@ -162,7 +162,7 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
               </ChannelRow>
               <ChannelRow ch={ch("telegram")} title="Telegram" detail={state.telegram.paired ? ch("telegram")?.detail : "Messages with Got it and Not urgent buttons. Reply to an alert to answer that ticket."}
                 onToggle={(on) => void save({ telegram: { on } })}>
-                {state.telegram.on && <TelegramSetup state={state} onState={setState} onError={setError} />}
+                {state.telegram.on && <TelegramSetup state={state} profile={profile} onState={setState} onError={setError} />}
                 {state.telegram.on && (
                   <div className="small muted">
                     Messages pass through Telegram's servers, and bot chats aren't end-to-end encrypted: Telegram can read them. Leave Telegram off if your tickets hold private things.
@@ -225,7 +225,7 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
 }
 
 /** Telegram: BotFather steps, the bot key, then the 6-digit pairing code the user sends to the bot. */
-function TelegramSetup({ state, onState, onError }: { state: NotifyState; onState: (s: NotifyState) => void; onError: (e: string | null) => void }) {
+function TelegramSetup({ state, profile, onState, onError }: { state: NotifyState; profile: string | null; onState: (s: NotifyState) => void; onError: (e: string | null) => void }) {
   const t = state.telegram;
   // Phone access: turning messages back on and pairing are for this Mac only (the server refuses them too).
   const mac = state.local !== false;
@@ -265,12 +265,12 @@ function TelegramSetup({ state, onState, onError }: { state: NotifyState; onStat
     const s = await api.setNotify({ telegram: { token: token.trim(), on: true } });
     setToken("");
     onState(s);
-    const r = await api.telegramPair();
+    const r = await api.telegramPair(profile);
     onState(r.state);
     setCode(r.code);
   });
   const pair = () => run(async () => {
-    const r = await api.telegramPair();
+    const r = await api.telegramPair(profile);
     onState(r.state);
     setCode(r.code);
   });
@@ -315,10 +315,22 @@ function TelegramSetup({ state, onState, onError }: { state: NotifyState; onStat
         <div className="ch-head tg-row">
           <div className="grow">
             <div className="small">Spent from Telegram today</div>
-            <div className="muted small">Work started from Telegram. No limit.</div>
+            <div className="muted small">Front desk and work started from Telegram. No limit.</div>
           </div>
           <b className="tg-spent">${t.spentToday.toFixed(2)}</b>
         </div>
+        {t.boards.length > 1 && (
+          <div className="ch-head tg-row">
+            <div className="grow">
+              <div className="small">Front desk lives on</div>
+              <div className="muted small">Messages that aren't replies to an alert go to its Ask tab. It can reach every board.</div>
+            </div>
+            <select className="tg-desk" aria-label="Front desk lives on" value={t.frontDesk ?? ""} disabled={busy}
+              onChange={(e) => void run(async () => onState(await api.setNotify({ telegram: { frontDesk: e.target.value } })))}>
+              {t.boards.map((b) => <option key={b.slug} value={b.slug}>{b.name}</option>)}
+            </select>
+          </div>
+        )}
         <div className="ch-head tg-row hs-stack">
           <div className="grow">
             <div className="small">Lost your phone?</div>
@@ -329,7 +341,7 @@ function TelegramSetup({ state, onState, onError }: { state: NotifyState; onStat
             <button type="button" className="btn small tg-unpair" disabled={busy} onClick={() => void unpair()}>Unpair</button>
           </div>
         </div>
-        <div className="small muted">Reply to an alert in Telegram to answer that ticket. Send /lock there to stop taking messages from your phone.</div>
+        <div className="small muted">Reply to an alert in Telegram to answer that ticket; anything else goes to the front desk, which asks you to Confirm before it starts, stops or moves work. Send /lock there to stop taking messages from your phone.</div>
         <button type="button" className="link-btn small tg-forget" disabled={busy} onClick={() => void forget()}>Remove the bot</button>
       </div>
     );

@@ -1363,11 +1363,14 @@ export interface TelegramState {
   lockedAt: string | null;
   /** "Spent from Telegram today" in USD. */
   spentToday: number;
+  /** "Front desk lives on": the board whose Ask tab holds the Telegram front desk. */
+  frontDesk: string | null;
+  boards: { slug: string; name: string }[];
 }
 
 export type NotifyPatch = Partial<Pick<NotifyState, "webhookUrl" | "format" | "mac" | "helper" | "push" | "webhookOn">> & {
   kinds?: Partial<Record<NotifyKind, boolean>>;
-  telegram?: { on?: boolean; token?: string; askTyped?: boolean; takeMessages?: boolean };
+  telegram?: { on?: boolean; token?: string; askTyped?: boolean; takeMessages?: boolean; frontDesk?: string };
 }
 
 export interface InboxItem {
@@ -1528,7 +1531,7 @@ export const api = {
   freeDevice: (name: string, profile: string, id: string) => req<DeviceView[]>("POST", `/api/devices/${encodeURIComponent(name)}/free`, { profile, id }),
   notify: () => req<NotifyState>("GET", "/api/notify"),
   setNotify: (patch: NotifyPatch) => req<NotifyState>("POST", "/api/notify", patch),
-  telegramPair: () => req<{ code: string; expiresAt: string; state: NotifyState }>("POST", "/api/notify/telegram/pair", {}),
+  telegramPair: (board?: string | null) => req<{ code: string; expiresAt: string; state: NotifyState }>("POST", "/api/notify/telegram/pair", board ? { board } : {}),
   telegramUnpair: () => req<NotifyState>("POST", "/api/notify/telegram/unpair", {}),
   testNotify: (profile: string | null) =>
     req<{ ok: boolean; error: string | null; webhook: boolean; devices: number; state: NotifyState }>("POST", "/api/notify/test", profile ? { profile } : {}),

@@ -68,6 +68,11 @@ export interface WaitRecord {
   openedAt?: string | null;
   closedAt: string | null;
   closedWhy?: CloseWhy | null;
+  /**
+   * The Telegram front desk showed this wait to the user in its chat (helper/frontdesk.ts). The helper's summaries list
+   * it under "still waits", not as new. Separate from toldAt on purpose: urgent alerts and the fallback go by toldAt.
+   */
+  seenInChatAt?: string | null;
 }
 
 export interface WaitsFile {
@@ -139,6 +144,8 @@ export class WaitStore {
   readonly start: WaitsStart;
   /** When the daemon started (fallbacks wait at least BOOT_GRACE_MS after it). */
   readonly bootAt: number;
+  /** Records just closed (Telegram edits their alerts to say so). Set by the notifier. */
+  onClosed: ((recs: WaitRecord[]) => void) | null = null;
 
   constructor(root: string, private now: () => number = Date.now) {
     this.file = join(root, "waits.json");
@@ -316,7 +323,14 @@ export class WaitStore {
       Object.assign(r, { closedAt: at, closedWhy: why, fallbackAt: null, digestAt: null });
       out.push(r);
     }
-    if (out.length) this.save();
+    if (out.length) {
+      this.save();
+      try {
+        this.onClosed?.(out);
+      } catch (e) {
+        console.warn(`helper: closed hook: ${(e as Error).message}`);
+      }
+    }
     return out;
   }
 

@@ -49,6 +49,7 @@ import { ptySupported, ShellManager, type Shell } from "./shell";
 import { AGENT_STEP_TAIL, settleAgent } from "./subagents";
 import { settleWorkflow, withRun, workflowAgentDetail, workflowScript, type WorkflowInfo } from "./workflows";
 import { QuickChatError, QuickChats } from "./quickchat";
+import { FRONT_DESK_HEADER } from "./helper/frontdesk-id";
 import type { TerminalWatcher } from "./terminals";
 import { attachmentHeader, canCopyFile, copyFileToClipboard, markdownPage, markdownTitle, revealFile, ShareError } from "./share";
 import { UpdateChecker } from "./update";
@@ -358,6 +359,24 @@ export function createServer(deps: ServerDeps) {
     hostHuddles: (s) => board.hostHuddles(s), baseUrl: () => (remote.active() ? remoteUrl(remote.active()!.host) : `http://localhost:${server.port ?? deps.port}`),
   });
   if (!deps.notifier) notifier.plugBoard(board);
+  // The front desk lives in the quick chats; a tap on its Confirm runs the held request here, as the user.
+  notifier.frontDesk.plug({
+    chats: quickChats,
+    replay: async (method, path, b) => {
+      const u = new URL(`http://127.0.0.1${path}`);
+      const r = await api(new Request(u.href, { method, ...(b === null || b === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(b) }) }), u).catch((e) => {
+        const status = e instanceof ConflictError ? 409 : typeof (e as { status?: unknown }).status === "number" ? (e as { status: number }).status : 500;
+        return json({ error: (e as Error).message }, status);
+      });
+      if (!r) return { status: 404, body: { error: "not found" } };
+      const text = await r.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {}
+      return { status: r.status, body: data };
+    },
+  });
   const helperRunner = deps.helper ?? null;
   const helperOr503 = (): HelperRunner => {
     if (!helperRunner) throw new HttpError(503, "the helper isn't running");
@@ -668,6 +687,27 @@ export function createServer(deps: ServerDeps) {
   }
 
   async function api(req: Request, url: URL): Promise<Response | undefined> {
+    // The Telegram front desk (helper/frontdesk.ts): what starts, stops or moves work is held for a Confirm tap.
+    const desk = req.headers.get(FRONT_DESK_HEADER);
+    if (desk !== null) {
+      if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "a board run can't also be the front desk");
+      if (url.pathname === "/api/telegram/front-desk/file" && req.method === "POST") {
+        const b = await body(req);
+        const r = await notifier.frontDesk.sendFile(desk, String(b?.path ?? ""), typeof b?.caption === "string" ? b.caption : "");
+        return json(r.body, r.status);
+      }
+      let b: unknown = null;
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        try {
+          const raw = await req.clone().text();
+          b = raw ? JSON.parse(raw) : null;
+        } catch {
+          b = null;
+        }
+      }
+      const held = await notifier.frontDesk.gate(desk, req.method, url.pathname, b);
+      if (held) return json(held.body, held.status);
+    } else if (url.pathname === "/api/telegram/front-desk/file") throw new HttpError(403, "send_file only works in the Telegram front desk's chat");
     const parts = url.pathname.split("/").filter(Boolean).slice(1).map(decodeURIComponent);
     const m = req.method;
     const type = (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
@@ -791,7 +831,8 @@ export function createServer(deps: ServerDeps) {
         // Whoever pairs gets to answer tickets from that chat: only this Mac, so a lost phone can't pair a new chat.
         if (listenerOf(req) !== "local") throw new HttpError(403, TG_PAIR_FROM_MAC);
         try {
-          return json({ ...notifier.telegramPair(), state: notifyView(req, notifier.state()) });
+          const b = await body(req);
+          return json({ ...notifier.telegramPair(typeof b?.board === "string" ? b.board : null), state: notifyView(req, notifier.state()) });
         } catch (e) {
           throw new HttpError(400, (e as Error).message);
         }

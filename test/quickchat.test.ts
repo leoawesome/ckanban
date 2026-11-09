@@ -281,3 +281,24 @@ test("HTTP: list, send, conversation, rename, make ticket and delete", async () 
     server.stop(true);
   }
 });
+
+test("the Telegram front desk's chat: its runs get the front desk identity and note, its result lines reach the hook, and it never becomes a ticket", async () => {
+  const results: any[] = [];
+  chats.setHooks({
+    env: (slug, c) => (c.frontDesk ? { CKANBAN_FRONTDESK: `${slug}/${c.id}/secret` } : null),
+    note: (_slug, c) => (c.frontDesk ? "FRONT DESK RULES" : null),
+    onResult: (_slug, c, ev) => results.push({ id: c.id, type: ev.type }),
+  });
+  const desk = chats.send("p", null, "what's going on?", { title: "Telegram · 9 Nov", frontDesk: { chatId: 5 } });
+  expect(desk.title).toBe("Telegram · 9 Nov");
+  await chats.idle();
+  const plain = chats.send("p", null, "hello");
+  await chats.idle();
+  const runs = args() as any[];
+  expect(runs[0].frontDesk).toBe(`p/${desk.id}/secret`);
+  expect(runs[0].args.join(" ")).toContain("FRONT DESK RULES");
+  expect(runs[1].frontDesk).toBeUndefined();
+  expect(runs[1].args.join(" ")).not.toContain("FRONT DESK RULES");
+  expect(results).toEqual([{ id: desk.id, type: "result" }, { id: plain.id, type: "result" }]);
+  await expect(chats.makeTicket("p", desk.id)).rejects.toThrow("front desk");
+});

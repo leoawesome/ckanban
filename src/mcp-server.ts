@@ -3,7 +3,7 @@
 import { hiddenTool, withYouTool } from "../web/src/family";
 import { TOOL_NO_NOTIFY } from "./server/main-ticket";
 import {
-  assertCanChange, BoardClient, bugReportText, ClientError, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
+  assertCanChange, BoardClient, bugReportText, ClientError, ConfirmPending, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
   familyLine, ticketLine, ticketText, type GatherResult, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
 } from "./client";
 import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./server/huddle-presets";
@@ -169,7 +169,7 @@ export interface ToolContext {
     | "askTicket" | "searchChat" | "readChat" | "mergeIntoMain" | "landMilestone" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
     | "huddleStatus" | "huddleCloseRequest" | "startAutoHuddle" | "huddleHandIn" | "huddleReviewHandIn" | "huddleAllowChanges"
     | "listHuddlePresets" | "saveHuddlePreset" | "deleteHuddlePreset" | "listHuddleTemplates" | "huddleBrief" | "huddleProposeTeammate" | "huddleProposeSquad"
-    | "listPasses" | "claudeServers" | "passTools" | "testAutomation">;
+    | "listPasses" | "claudeServers" | "passTools" | "testAutomation" | "sendTelegramFile">;
   cwd: string;
   env: Record<string, string | undefined>;
   main?: (dir: string) => string | null;
@@ -2260,6 +2260,25 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "send_file",
+    description:
+      "Telegram front desk only: send a file to the user's Telegram chat (50 MB at most), when the result they want is a file and the phone " +
+      "can't open the board. Only files inside a board's folder or a ticket's outputs; hidden files (.env and the like) are never sent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute path of the file." },
+        caption: { type: "string", description: "One short line shown with the file." },
+      },
+      required: ["path"],
+    },
+    changes: true,
+    async run(args, ctx) {
+      const r = await ctx.client.sendTelegramFile(str(args, "path")!, typeof args?.caption === "string" ? args.caption : "");
+      return `Sent ${r.sent} (${Math.max(1, Math.round(r.bytes / 1024))} KB) to the user's Telegram.`;
+    },
+  },
+  {
     name: "stop_ticket",
     description: "Stop the Claude run working on a ticket." + IN_RUN,
     inputSchema: { type: "object", properties: { profile: PROFILE, id: ID }, required: ["id"] },
@@ -2352,6 +2371,8 @@ export async function callTool(name: string, args: unknown, ctx: ToolContext): P
     if (tool.changes && !tool.allowInRun && !tool.plannerScope) assertCanChange(ctx.env);
     return text(await tool.run(args ?? {}, ctx));
   } catch (e) {
+    // Held for the user's Confirm tap in Telegram (the front desk): not an error, the text says what happens next.
+    if (e instanceof ConfirmPending) return text(e.message);
     return text((e as Error).message, true);
   }
 }

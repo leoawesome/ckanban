@@ -17,6 +17,7 @@ import type { WaitStore, WaitRecord } from "./waits";
 import { NOT_TAKING, TELEGRAM_MAX } from "./telegram";
 import type { LinkItem, PendingAction, PendingActions, TelegramLinks } from "./tgstores";
 import type { TelegramForms } from "./tgforms";
+import type { FrontDesk } from "./frontdesk";
 
 /** A reply to an alert older than this is refused. */
 export const STALE_REPLY_MS = 24 * 3600_000;
@@ -96,6 +97,8 @@ export interface ReplyDeps {
   ticketUrl: (board: string, id: string) => string | null;
   /** Question forms answered with buttons (tgforms.ts). */
   forms?: TelegramForms;
+  /** The front desk (frontdesk.ts): replies to summaries go there, and its Confirm cards' taps. */
+  frontDesk?: () => FrontDesk | null;
   now?: () => number;
 }
 
@@ -161,6 +164,8 @@ export class TelegramReplies {
     if (shown && (shown as { card?: number }).card !== undefined) return true;
     if (shown) this.d.pending.remove(shown.id);
     if (items.length > 1) {
+      // A summary about several tickets: the front desk reads it with the reply and routes it (asking which one if unsure).
+      if (this.d.frontDesk?.()?.ready()) return false;
       await this.pick(r, items, out);
       return true;
     }
@@ -326,6 +331,9 @@ export class TelegramReplies {
   async onTap(id: string, choice: string, chatId: number, messageId: number, out: Responder, updateId?: number): Promise<string> {
     // A form's buttons: taps change it many times; only its last step uses it up.
     if (this.d.forms && this.d.pending.peek(id)?.action.kind === "form") return this.d.forms.onTap(id, choice, chatId, messageId, out, updateId);
+    // The front desk's Confirm cards.
+    const desk = this.d.frontDesk?.();
+    if (this.d.pending.peek(id)?.action.kind === "fd") return desk ? desk.onTap(id, choice, chatId, messageId, out, updateId) : "That button no longer works.";
     // The tap's update id: a tap whose handling a restart cut off takes its action again and finishes.
     const got = this.d.pending.take<SendData | PickData>(id, updateId);
     if ("gone" in got) {

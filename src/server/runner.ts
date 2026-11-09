@@ -147,7 +147,7 @@ function userMessage(text: string): string {
 }
 
 /** A run's identity vars: each run gets its own from opts.env, never the ones of a run the daemon was started from. */
-export const RUN_IDENTITY_ENV = ["CKANBAN_TICKET", "CKANBAN_HUDDLE_AGENT", "CKANBAN_OUTPUT_DIR"] as const;
+export const RUN_IDENTITY_ENV = ["CKANBAN_TICKET", "CKANBAN_HUDDLE_AGENT", "CKANBAN_OUTPUT_DIR", "CKANBAN_FRONTDESK"] as const;
 
 /** The daemon's environment minus run identity vars, so a child can't act as a run it doesn't belong to. */
 export function inheritedEnv(env: Record<string, string | undefined> = process.env): Record<string, string | undefined> {

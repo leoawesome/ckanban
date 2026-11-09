@@ -46,6 +46,8 @@ export interface TelegramLink {
   /** The stored message's level ("urgent", "summary", ...), or "report" for a ticket's reply sent back. */
   level: string;
   items: LinkItem[];
+  /** The waits it was about closed and the message was edited to say so (front desk, f26): never edited again. */
+  closedAt?: string;
 }
 
 export const LINKS_KEEP_MS = 30 * 24 * 3600_000;
@@ -82,6 +84,23 @@ export class TelegramLinks {
   /** This bot's message with this id in this chat (the newest), or null (not sent by the board, another bot, or older than 30 days). */
   get(chatId: number, tg: number, bot: string): TelegramLink | null {
     return this.items().findLast((l) => l.bot === bot && l.chatId === chatId && l.tg === tg) ?? null;
+  }
+
+  /** Sent alerts (a stored helper message) about this wait that weren't edited to "closed" yet. */
+  openFor(key: string): TelegramLink[] {
+    return this.items().filter((l) => l.messageId && !l.closedAt && l.items.some((i) => i.key === key));
+  }
+
+  /** Notes that a message was edited to say its waits closed. */
+  markClosed(l: TelegramLink): void {
+    const x = this.items().find((y) => y.bot === l.bot && y.chatId === l.chatId && y.tg === l.tg);
+    if (!x) return;
+    x.closedAt = new Date(this.now()).toISOString();
+    try {
+      writeJson(this.file, { version: 1, links: this.items() });
+    } catch (e) {
+      console.warn(`telegram: couldn't save the message map: ${(e as Error).message}`);
+    }
   }
 
   /** Every Telegram message sent for a stored helper message (edits in later steps). */

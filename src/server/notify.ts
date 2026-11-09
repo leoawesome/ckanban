@@ -24,6 +24,8 @@ import { TelegramReplies } from "./helper/tgreply";
 import { telegramSpendToday } from "./spend";
 import { PendingActions, TelegramLinks } from "./helper/tgstores";
 import { TelegramForms } from "./helper/tgforms";
+import { FrontDesk } from "./helper/frontdesk";
+import { HelperSettingsStore } from "./helper/settings";
 
 /** What the Telegram reply router needs from the board (Board implements it; plugged in with Notifier.plugBoard). */
 export interface TelegramBoard {
@@ -124,6 +126,10 @@ export interface TelegramPublic {
   lockedAt: string | null;
   /** "Spent from Telegram today" in USD (spend.ts telegramSpendToday). No limit. */
   spentToday: number;
+  /** "Front desk lives on": the board whose quick chats hold the front desk (helper/frontdesk.ts). */
+  frontDesk: string | null;
+  /** The boards it can live on. */
+  boards: { slug: string; name: string }[];
 }
 
 /** Shown with the ntfy topic box. */
@@ -222,6 +228,7 @@ export function normalizeSettings(raw: any, base: NotifySettings = DEFAULT_NOTIF
   if (tg && typeof tg === "object") {
     if (typeof tg.on === "boolean") out.telegram.on = tg.on;
     if (typeof tg.askTyped === "boolean") out.telegram.askTyped = tg.askTyped;
+    if (tg.frontDesk === null || (typeof tg.frontDesk === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(tg.frontDesk))) out.telegram.frontDesk = tg.frontDesk;
     if (typeof tg.takeMessages === "boolean") {
       out.telegram.takeMessages = tg.takeMessages;
       // Turned back on (only Settings on the Mac can): no longer locked.
@@ -242,6 +249,7 @@ export function normalizeSettings(raw: any, base: NotifySettings = DEFAULT_NOTIF
       if (typeof tg.chatName === "string") out.telegram.chatName = tg.chatName.slice(0, 120);
       if (typeof tg.pairedAt === "string") out.telegram.pairedAt = tg.pairedAt;
       if (typeof tg.lockedAt === "string") out.telegram.lockedAt = tg.lockedAt;
+      if (typeof tg.briefedAt === "string") out.telegram.briefedAt = tg.briefedAt;
     }
   }
   if (raw.kinds && typeof raw.kinds === "object") {
@@ -390,6 +398,8 @@ export interface NotifierOptions {
   telegramPoll?: boolean;
   /** Least time between Telegram form messages and edits (ms; default about one a second). Tests pass 0. */
   telegramPaceMs?: number;
+  /** The front desk's "typing" interval (ms; default about 5 s; 0: once per message). */
+  typingMs?: number;
 }
 
 /** A main ticket's step waiting on a question it asked: its wait, recorded under the main ticket. */
@@ -421,6 +431,8 @@ export class Notifier {
   readonly telegramActions: PendingActions;
   /** Question forms answered from Telegram (helper/tgforms.ts). */
   readonly forms: TelegramForms;
+  /** The front desk: Telegram text that isn't a reply to an alert (helper/frontdesk.ts). Plugged into the quick chats by http.ts. */
+  readonly frontDesk: FrontDesk;
   private board: TelegramBoard | null = null;
   private ntfyTopic = `https://ntfy.sh/ckanban-${randomBytes(12).toString("base64url").replace(/[-_]/g, "x")}`;
 
@@ -458,6 +470,8 @@ export class Notifier {
       lock: () => this.telegramLock(),
       alerted: (m, tg, chatId) => (m.messageId ? this.forms.show(this.helper.messages.get(m.messageId)?.items.map((i) => ({ board: i.board, ticketId: i.ticketId, key: i.key ?? null })) ?? [], tg, chatId) : undefined),
       ...(o.telegramPaceMs !== undefined ? { paceMs: o.telegramPaceMs } : {}),
+      frontDesk: () => (this.frontDesk.ready() ? this.frontDesk : null),
+      briefing: (paired) => FrontDesk.briefing(paired),
     });
     this.telegramActions = new PendingActions(o.root, this.now);
     this.helper = new HelperCore({
@@ -479,13 +493,28 @@ export class Notifier {
       chat: () => (this.board ? (slug, id, text, from) => this.board!.chatFromTelegram(slug, id, text, from) : null),
       taking, isRunning: (slug, id) => o.isRunning(slug, id), now: this.now,
     });
+    const helperSettings = new HelperSettingsStore(o.root, this.now);
+    this.frontDesk = new FrontDesk({
+      root: o.root, store, waits: this.helper.waits, messages: this.helper.messages, pending: this.telegramActions, links: this.telegramLinks,
+      settings: () => this.settings().telegram, night: () => helperSettings.get().night,
+      out: (chatId, paced) => {
+        const t = this.settings().telegram;
+        return t.on && t.chatId === chatId && TOKEN_RE.test(t.token) ? this.telegram.responder(chatId, { paced: !!paced }) : null;
+      },
+      typing: (chatId) => this.telegram.typing(chatId),
+      sendFile: (chatId, file, caption, replyTo) => this.telegram.sendFile(chatId, file, caption, replyTo),
+      taking, isRunning: (slug, id) => o.isRunning(slug, id), board: () => this.board, phoneAccess: () => this.phoneAccess(), now: this.now,
+      ...(o.typingMs !== undefined ? { typingMs: o.typingMs } : {}),
+    });
+    // A wait closed: its Telegram alert says so and loses its buttons.
+    this.helper.waits.onClosed = (recs) => void this.frontDesk.closed(recs).catch((e) => console.error("telegram: closed alert", e));
     this.replies = new TelegramReplies({
       store, waits: this.helper.waits, links: this.telegramLinks, pending: this.telegramActions,
       session: (sid) => o.sessionSummary(sid), isRunning: (slug, id) => o.isRunning(slug, id), bot: () => botId(this.settings().telegram.token),
       chat: () => (this.board ? (slug, id, text, from) => this.board!.chatFromTelegram(slug, id, text, from) : null),
       patch: (slug, id, patch) => void this.board?.patchTelegram(slug, id, patch),
       askTyped: () => this.settings().telegram.askTyped,
-      taking, forms: this.forms,
+      taking, forms: this.forms, frontDesk: () => this.frontDesk,
       ticketUrl: (slug, id) => {
         const url = this.link(slug, id);
         return this.phoneAccess() && /^https:\/\//.test(url) ? url : null;
@@ -532,6 +561,7 @@ export class Notifier {
       on: t.on, tokenSet: !!t.token, tokenMasked: maskToken(t.token), paired: t.chatId !== null, chatName: t.chatName, pairedAt: t.pairedAt,
       status: tg.state, error: tg.error, botName: tg.botName, pairing: tg.pairing, pairError: tg.pairError, askTyped: t.askTyped,
       takeMessages: t.takeMessages, lockedAt: t.lockedAt, spentToday: Math.round(telegramSpendToday(this.o.root, new Date(this.now())) * 100) / 100,
+      frontDesk: this.frontDesk.board(), boards: this.store.listProfiles().map((p) => ({ slug: p.slug, name: p.name })),
     };
     const macBrowser = this.macBrowser();
     const phones = this.o.push?.phoneCount() ?? 0;
@@ -564,6 +594,9 @@ export class Notifier {
   update(patch: unknown, from: "local" | "remote" = "local"): NotifyState {
     const before = this.settings();
     const next = normalizeSettings(patch, before);
+    if (next.telegram.frontDesk && next.telegram.frontDesk !== before.telegram.frontDesk && !this.store.getProfile(next.telegram.frontDesk)) {
+      throw new Error(`board ${next.telegram.frontDesk} not found`);
+    }
     const taking = (t: TelegramSettings) => t.on && t.takeMessages && t.chatId !== null;
     if (from === "remote") {
       if (next.telegram.token && next.telegram.token !== before.telegram.token) throw new MacOnlyError(TG_PAIR_FROM_MAC);
@@ -621,8 +654,12 @@ export class Notifier {
   }
 
   /** Settings' "Pair": a fresh 6-digit code to send to the bot. Throws without a token. */
-  telegramPair(): { code: string; expiresAt: string } {
-    return this.telegram.startPairing();
+  telegramPair(board?: string | null): { code: string; expiresAt: string } {
+    const r = this.telegram.startPairing();
+    // The front desk lives on the board paired from, unless Settings already chose one.
+    const s = this.settings();
+    if (board && this.store.getProfile(board) && !s.telegram.frontDesk) writeNotifySettings(this.o.root, { ...s, telegram: { ...s.telegram, frontDesk: board } });
+    return r;
   }
 
   /** Settings' "Unpair": forget the chat, and drop its open buttons and everything it left waiting. */
@@ -669,6 +706,8 @@ export class Notifier {
       if (stopped) return;
       this.helper.started();
       this.telegram.refresh();
+      // Chats paired before the front desk existed get its briefing once.
+      void this.telegram.briefOnce().catch((e) => console.error("telegram: briefing", e));
       timer = trackedInterval("notifier", () => this.tick(), this.o.tickMs ?? 1000);
     };
     const keys = () => this.store.listProfiles().flatMap((p) => this.store.listTickets(p.slug).map((t) => [p.slug, t.id] as const));
@@ -706,6 +745,7 @@ export class Notifier {
       off();
       if (timer) clearInterval(timer);
       this.telegram.stop();
+      this.frontDesk.stop();
     };
   }
 
