@@ -124,3 +124,31 @@ export function placeByTime<T extends { at: string }>(items: readonly T[], block
   }
   return out;
 }
+
+const flat = (s: string) => s.replace(/\s+/g, " ").trim();
+
+/**
+ * Which conversation messages went through Telegram (src/server/board.ts chatFromTelegram, helper/tgreply.ts):
+ * inbound: the user's messages that came from there (the first matching text at or after it was sent); outbound: the
+ * ticket's replies sent back there (the last reply starting with that text, from before it was sent).
+ */
+export function telegramMarks(
+  entries: readonly { uuid: string; at: string; role: string; kind: string; text: string }[],
+  ins: readonly { at: string; text: string }[] = [], outs: readonly { at: string; text: string }[] = [],
+): { in: Set<string>; out: Set<string> } {
+  const inbound = new Set<string>();
+  const outbound = new Set<string>();
+  for (const m of ins) {
+    const from = new Date(Date.parse(m.at) - 60_000).toISOString();
+    const want = flat(m.text);
+    const e = entries.find((x) => x.role === "user" && x.kind === "text" && x.at >= from && !inbound.has(x.uuid) && flat(x.text) === want);
+    if (e) inbound.add(e.uuid);
+  }
+  for (const o of outs) {
+    const head = flat(o.text).slice(0, 80);
+    if (!head) continue;
+    const e = entries.findLast((x) => x.role === "assistant" && x.kind === "text" && x.at <= o.at && flat(x.text).startsWith(head));
+    if (e) outbound.add(e.uuid);
+  }
+  return { in: inbound, out: outbound };
+}

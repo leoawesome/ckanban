@@ -1,11 +1,15 @@
 // Telegram: a bot the user makes with BotFather. The board sends through it (plain text, no parse_mode) and reads
 // what comes back with one getUpdates long poll (phone access is tailnet-only, so no public webhook is possible).
 // Pairing: Settings shows a 6-digit code, the user sends it to the bot, and the board keeps that chat id. Only the
-// paired chat is listened to; nothing a chat writes is saved. The token is never logged (scrub) and never shown
-// (maskToken).
+// paired chat is listened to. A reply to an alert goes to that ticket (tgreply.ts); other text gets a fixed answer.
+// Updates are saved (tgstores.ts UpdateQueue) before the read position moves on, so a restart neither drops nor
+// doubles one. Everything the bot says besides the helper's alerts is silent. The token is never logged (scrub) and
+// never shown (maskToken).
 import { randomInt, timingSafeEqual } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { messagePageUrl, type Channel, type ChannelResult, type OutMessage } from "./channels";
+import type { IncomingReply, Responder, TelegramReplies, TgButton } from "./tgreply";
+import { UpdateQueue, type LinkItem, type TelegramLinks } from "./tgstores";
 
 export interface TelegramSettings {
   on: boolean;
@@ -16,9 +20,11 @@ export interface TelegramSettings {
   /** Who paired, e.g. "Leo (@leo)". */
   chatName: string | null;
   pairedAt: string | null;
+  /** A typed reply that answers a ticket's question is echoed with [Send] [Cancel] first ("Ask before sending typed answers"). */
+  askTyped: boolean;
 }
 
-export const DEFAULT_TELEGRAM: TelegramSettings = { on: false, token: "", chatId: null, chatName: null, pairedAt: null };
+export const DEFAULT_TELEGRAM: TelegramSettings = { on: false, token: "", chatId: null, chatName: null, pairedAt: null, askTyped: true };
 
 /** BotFather tokens look like 123456789:AAH...; nothing else is accepted (and so nothing else ends up in a URL). */
 export const TOKEN_RE = /^\d{5,15}:[A-Za-z0-9_-]{30,60}$/;
@@ -90,6 +96,14 @@ export interface TelegramDeps {
   autoPoll?: boolean;
   /** Where the read position (getUpdates offset) is kept across restarts, so the last batch isn't handled twice. */
   offsetFile?: string;
+  /** Where updates wait to be handled (the board's data folder); omitted: kept in memory only (tests). */
+  queueRoot?: string;
+  /** The message map: each sent message's Telegram id → its stored message and tickets. */
+  links?: TelegramLinks;
+  /** The tickets a stored helper message is about (for the message map). */
+  itemsOf?: (messageId: string) => LinkItem[];
+  /** Replies to alerts and their buttons (tgreply.ts); null: replies get the fixed answer. */
+  replies?: () => TelegramReplies | null;
 }
 
 /** A bot token's public part (the bot's id), to tell which bot a saved read position belongs to. */
@@ -118,10 +132,17 @@ export class TelegramBot {
   private polling = false;
   private now: () => number;
   private sleep: (ms: number) => Promise<void>;
+  readonly queue: UpdateQueue;
+  /** Updates being handled now (by update_id). */
+  private inFlight = new Set<number>();
+  /** Messages are handled one at a time, in order; button taps beside them, so a slow message never holds a tap. */
+  private msgChain: Promise<void> = Promise.resolve();
+  private taps = new Set<Promise<void>>();
 
   constructor(private d: TelegramDeps) {
     this.now = d.now ?? Date.now;
     this.sleep = d.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+    this.queue = new UpdateQueue(d.queueRoot ?? null, () => botId(this.token));
   }
 
   private get token(): string {
@@ -262,6 +283,8 @@ export class TelegramBot {
       this.status = { ...this.status, botName: me.result?.username ? `@${me.result.username}` : null };
     }
     this.loadOffset();
+    // Updates saved before a restart and not handled yet.
+    this.drain();
     const abort = new AbortController();
     this.abort = abort;
     const r = await this.api("getUpdates", {
@@ -274,18 +297,50 @@ export class TelegramBot {
     }
     this.status = { ...this.status, state: "ok", error: null };
     const updates: any[] = Array.isArray(r.result) ? r.result : [];
-    // The position is saved before the batch is handled: a restart mid-batch skips the rest rather than doing taps twice.
+    // Saved first, then the position moves on: a restart in between handles them after it (the queue skips ids
+    // already handled), so nothing is dropped or done twice.
+    try {
+      this.queue.add(updates);
+    } catch (e) {
+      console.warn(`telegram: couldn't save incoming messages, reading them again: ${(e as Error).message}`);
+      return false;
+    }
     const before = this.offset;
     for (const u of updates) if (typeof u?.update_id === "number") this.offset = Math.max(this.offset, u.update_id + 1);
     if (this.offset !== before) this.saveOffset();
-    for (const u of updates) {
-      try {
-        await this.handle(u);
-      } catch (e) {
-        console.error("telegram: update", scrub((e as Error).message ?? String(e), this.token));
-      }
-    }
+    this.drain();
+    // Tests drive one round at a time and look at what it did.
+    if (this.d.autoPoll === false) await this.idle();
     return true;
+  }
+
+  /** Starts handling what waits in the queue: messages in order, one at a time; taps at once. */
+  drain(): void {
+    for (const u of this.queue.pending()) {
+      const id: number = u.update_id;
+      if (this.inFlight.has(id)) continue;
+      this.inFlight.add(id);
+      const run = async () => {
+        try {
+          await this.handle(u);
+        } catch (e) {
+          console.error("telegram: update", scrub((e as Error).message ?? String(e), this.token));
+        } finally {
+          this.queue.done(id);
+          this.inFlight.delete(id);
+        }
+      };
+      if (u.callback_query) {
+        const p = run();
+        this.taps.add(p);
+        void p.finally(() => this.taps.delete(p));
+      } else this.msgChain = this.msgChain.then(run);
+    }
+  }
+
+  /** Resolves once everything queued so far is handled. */
+  async idle(): Promise<void> {
+    await Promise.all([this.msgChain, ...this.taps]);
   }
 
   private fail(r: ApiReply): void {
@@ -311,9 +366,42 @@ export class TelegramBot {
     this.refresh();
   }
 
+  /** The bot's own answers: always silent (only the helper's urgent alerts make a sound). */
   private async reply(chatId: number, text: string): Promise<void> {
-    const r = await this.api("sendMessage", { chat_id: chatId, text: telegramText(text), disable_web_page_preview: true });
-    if (!r.ok) console.warn(`telegram: reply failed: ${this.explain(r)}`);
+    await this.responder(chatId).say(text);
+  }
+
+  /** How the reply router (and report backs) talk in this chat. Url buttons only for https links. */
+  responder(chatId: number): Responder {
+    const markup = (buttons?: TgButton[][]) => {
+      const rows = (buttons ?? []).map((row) => row.filter((b) => (b.url ? /^https:\/\//.test(b.url) : !!b.data))
+        .map((b) => (b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data }))).filter((row) => row.length);
+      return { inline_keyboard: rows };
+    };
+    return {
+      say: async (text, o = {}) => {
+        const kb = markup(o.buttons);
+        const r = await this.api("sendMessage", {
+          chat_id: chatId, text: telegramText(text), disable_notification: true, disable_web_page_preview: true,
+          ...(o.replyTo ? { reply_parameters: { message_id: o.replyTo, allow_sending_without_reply: true } } : {}),
+          ...(kb.inline_keyboard.length ? { reply_markup: kb } : {}),
+        });
+        if (!r.ok) {
+          console.warn(`telegram: reply failed: ${this.explain(r)}`);
+          return null;
+        }
+        const tg = r.result?.message_id;
+        if (!Number.isSafeInteger(tg)) return null;
+        if (o.link?.length) this.d.links?.add({ tg, chatId, messageId: null, level: "report", items: o.link });
+        return tg;
+      },
+      edit: async (messageId, text, buttons) => {
+        const r = await this.api("editMessageText", {
+          chat_id: chatId, message_id: messageId, text: telegramText(text), disable_web_page_preview: true, reply_markup: markup(buttons),
+        });
+        if (!r.ok) console.warn(`telegram: edit failed: ${this.explain(r)}`);
+      },
+    };
   }
 
   private codeMatches(text: string): boolean {
@@ -332,13 +420,22 @@ export class TelegramBot {
         await this.api("answerCallbackQuery", { callback_query_id: cq.id, text: "This bot isn't paired with you." });
         return;
       }
-      const m = /^([gn]):(m_[a-z0-9]{1,40})$/.exec(String(cq.data ?? ""));
+      const data = String(cq.data ?? "");
+      const m = /^([gn]):(m_[a-z0-9]{1,40})$/.exec(data);
+      const p = /^p:([a-z0-9]{10}):([a-z0-9]{1,3})$/.exec(data);
+      const replies = this.d.replies?.();
       let text = "That button no longer works.";
-      if (m) {
-        const a = this.d.actions();
-        text = await (m[1] === "g" ? a.gotIt(m[2]) : a.notUrgent(m[2]));
+      try {
+        if (m) {
+          const a = this.d.actions();
+          text = await (m[1] === "g" ? a.gotIt(m[2]) : a.notUrgent(m[2]));
+        } else if (p && replies) {
+          text = await replies.onTap(p[1], p[2], chat, cq.message?.message_id ?? 0, this.responder(chat));
+        }
+      } finally {
+        // Always answered, or the button keeps spinning on the phone.
+        await this.api("answerCallbackQuery", { callback_query_id: cq.id, text: text.slice(0, 200) });
       }
-      await this.api("answerCallbackQuery", { callback_query_id: cq.id, text: text.slice(0, 200) });
       return;
     }
     const msg = u?.message;
@@ -360,7 +457,7 @@ export class TelegramBot {
           const name = [from.first_name, from.last_name].filter(Boolean).join(" ") || "you";
           this.pairing = null;
           this.d.save({ chatId, chatName: from.username ? `${name} (@${from.username})` : name, pairedAt: new Date(this.now()).toISOString(), on: true });
-          await this.reply(chatId, `Paired. The ckanban helper will message you here.\n\nUrgent messages come with sound; the rest arrive silently. ${FOCUS_HINT_TELEGRAM}\n\nSend /waiting any time to see what waits on you.`);
+          await this.reply(chatId, `Paired. The ckanban helper will message you here.\n\nUrgent messages come with sound; the rest arrive silently. ${FOCUS_HINT_TELEGRAM}\n\nReply to an alert to answer that ticket. Send /waiting any time to see what waits on you.`);
           return;
         }
         p.tries++;
@@ -379,9 +476,19 @@ export class TelegramBot {
       await this.reply(chatId, await this.d.actions().waiting());
       return;
     }
-    // Free text: a fixed reply; nothing is saved or passed on.
-    const where = this.d.phoneAccess() ? `Answer on the board: ${this.d.boardUrl()}` : "Answer on your Mac.";
-    await this.reply(chatId, `I can't pass answers to tickets yet. ${where}\n\nSend /waiting to see what waits on you.`);
+    const replyTo = msg.reply_to_message?.message_id;
+    const replies = this.d.replies?.();
+    if (Number.isSafeInteger(replyTo) && replies) {
+      if (!text) {
+        await this.reply(chatId, "I can only pass on text for now.");
+        return;
+      }
+      const r: IncomingReply = { chatId, updateId: u.update_id, tg: msg.message_id, replyTo, text };
+      if (await replies.onReply(r, this.responder(chatId))) return;
+    }
+    // Not a reply to an alert: a fixed answer; nothing is saved or passed on.
+    const where = this.d.phoneAccess() ? `Or answer on the board: ${this.d.boardUrl()}` : "Or answer on your Mac.";
+    await this.reply(chatId, `Reply to an alert to answer that ticket. ${where}\n\nSend /waiting to see what waits on you.`);
   }
 
   /** The channel's send: plain text, sound only when urgent, Got it / Not urgent on messages that remind. */
@@ -408,7 +515,17 @@ export class TelegramBot {
         r = await this.api("sendMessage", body);
       }
     }
-    if (r.ok) return { channel: "telegram", ok: true, devices: 1, error: null };
+    if (r.ok) {
+      const tg = r.result?.message_id;
+      if (Number.isSafeInteger(tg) && this.d.links) {
+        try {
+          this.d.links.add({ tg, chatId: s.chatId, messageId: m.messageId, level: m.level, items: m.messageId ? this.d.itemsOf?.(m.messageId) ?? [] : [] });
+        } catch (e) {
+          console.warn(`telegram: couldn't note the sent message: ${(e as Error).message}`);
+        }
+      }
+      return { channel: "telegram", ok: true, devices: 1, error: null };
+    }
     return { channel: "telegram", ok: false, error: r.error_code === 429 ? "Telegram is limiting messages right now" : this.explain(r) };
   }
 }

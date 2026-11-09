@@ -18,6 +18,15 @@ import { Channels, macChannel, pushChannel, webhookChannel, type ChannelResult }
 import { HelperCore } from "./helper/core";
 import { DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramSettings } from "./helper/telegram";
 import { waitIdentity, type NewWait } from "./helper/waits";
+import { TelegramReplies } from "./helper/tgreply";
+import { PendingActions, TelegramLinks } from "./helper/tgstores";
+import type { Ticket } from "./types";
+
+/** What the Telegram reply router needs from the board (Board implements it; plugged in with Notifier.plugBoard). */
+export interface TelegramBoard {
+  chatFromTelegram(slug: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null }): Promise<boolean>;
+  patchTelegram(slug: string, id: string, patch: Pick<Partial<Ticket>, "telegramIn" | "telegramOut" | "telegramReport">): unknown;
+}
 
 /** What a notification is about: a "needs you" kind, or a message a ticket's Claude wrote itself (notify_user). */
 export type NotifyKind = AttentionKind | "message";
@@ -102,6 +111,8 @@ export interface TelegramPublic {
   /** A pairing is going on until expiresAt. The code itself only comes back from POST /api/notify/telegram/pair. */
   pairing: { expiresAt: string } | null;
   pairError: string | null;
+  /** A typed answer to a ticket's question is echoed with [Send] [Cancel] first. */
+  askTyped: boolean;
 }
 
 /** Shown with the ntfy topic box. */
@@ -192,6 +203,7 @@ export function normalizeSettings(raw: any, base: NotifySettings = DEFAULT_NOTIF
   const tg = raw.telegram;
   if (tg && typeof tg === "object") {
     if (typeof tg.on === "boolean") out.telegram.on = tg.on;
+    if (typeof tg.askTyped === "boolean") out.telegram.askTyped = tg.askTyped;
     if (typeof tg.token === "string") {
       const token = tg.token.trim();
       if (fromFile) out.telegram.token = token;
@@ -367,6 +379,11 @@ export class Notifier {
   /** The Telegram bot: sends, pairs and listens (helper/telegram.ts). */
   readonly telegram: TelegramBot;
   private phoneAccess: () => boolean;
+  /** Replies to alerts (helper/tgreply.ts), with the message map and the buttons' pending actions. */
+  readonly replies: TelegramReplies;
+  readonly telegramLinks: TelegramLinks;
+  readonly telegramActions: PendingActions;
+  private board: TelegramBoard | null = null;
   private ntfyTopic = `https://ntfy.sh/ckanban-${randomBytes(12).toString("base64url").replace(/[-_]/g, "x")}`;
 
   constructor(private store: Store, private bus: Bus, private o: NotifierOptions) {
@@ -396,11 +413,28 @@ export class Notifier {
       now: this.now,
       autoPoll: o.telegramPoll ?? true,
       offsetFile: join(o.root, "telegram-offset.json"),
+      queueRoot: o.root,
+      links: this.telegramLinks = new TelegramLinks(o.root, this.now),
+      itemsOf: (id) => (this.helper.messages.get(id)?.items ?? []).map((i) => ({ board: i.board, ticketId: i.ticketId, key: i.key ?? null })),
+      replies: () => this.replies,
     });
+    this.telegramActions = new PendingActions(o.root, this.now);
     this.helper = new HelperCore({
       root: o.root, store, channels: new Channels([macChannel(deps), webhookChannel(deps), pushChannel(deps), telegramChannel(this.telegram)]),
       settings: () => this.settings(), link: (slug, id) => this.link(slug, id), now: this.now, onResults: (r) => this.noteResults(r),
       onMessages: (unread) => this.bus.emit({ type: "messages.updated", unread }),
+    });
+    this.replies = new TelegramReplies({
+      store, waits: this.helper.waits, links: this.telegramLinks, pending: this.telegramActions,
+      session: (sid) => o.sessionSummary(sid), isRunning: (slug, id) => o.isRunning(slug, id),
+      chat: () => (this.board ? (slug, id, text, from) => this.board!.chatFromTelegram(slug, id, text, from) : null),
+      patch: (slug, id, patch) => void this.board?.patchTelegram(slug, id, patch),
+      askTyped: () => this.settings().telegram.askTyped,
+      ticketUrl: (slug, id) => {
+        const url = this.link(slug, id);
+        return this.phoneAccess() && /^https:\/\//.test(url) ? url : null;
+      },
+      now: this.now,
     });
     o.push?.onDropped((d) => this.dropped(d.label));
   }
@@ -440,7 +474,7 @@ export class Notifier {
     const tg = this.telegram.state();
     const telegram: TelegramPublic = {
       on: t.on, tokenSet: !!t.token, tokenMasked: maskToken(t.token), paired: t.chatId !== null, chatName: t.chatName, pairedAt: t.pairedAt,
-      status: tg.state, error: tg.error, botName: tg.botName, pairing: tg.pairing, pairError: tg.pairError,
+      status: tg.state, error: tg.error, botName: tg.botName, pairing: tg.pairing, pairError: tg.pairError, askTyped: t.askTyped,
     };
     const macBrowser = this.macBrowser();
     const phones = this.o.push?.phoneCount() ?? 0;
@@ -474,6 +508,17 @@ export class Notifier {
     if (before.telegram.token !== next.telegram.token) this.telegram.reset();
     this.telegram.refresh();
     return this.state();
+  }
+
+  /** The board plugs in: replies to alerts go into its tickets' chats. */
+  plugBoard(board: TelegramBoard): void {
+    this.board = board;
+  }
+
+  /** A ticket's run ended (Board turnEnded): a Telegram message waiting for its reply gets it. */
+  async turnEnded(slug: string, id: string, text: string): Promise<void> {
+    const s = this.settings().telegram;
+    await this.replies.turnEnded(slug, id, text, (chatId) => (s.chatId === chatId && TOKEN_RE.test(s.token) ? this.telegram.responder(chatId) : null));
   }
 
   /** Settings' "Pair": a fresh 6-digit code to send to the bot. Throws without a token. */

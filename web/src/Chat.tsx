@@ -39,7 +39,7 @@ import { StepBlock, type StepInfo, type StepMsg, useStepMessages } from "./StepM
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
-import { fromTicket, layoutTurns, placeByTime, type TurnLayout } from "./chatTurns";
+import { fromTicket, layoutTurns, placeByTime, telegramMarks, type TurnLayout } from "./chatTurns";
 import { gapOf, jumpAfterScroll, NEAR_BOTTOM, onContentChange, stickAfterScroll, USER_CHANGE_MS } from "./chatFollow";
 import { StallActions, stallWait } from "./StallActions";
 import { useSnippetPicker } from "./SnippetPicker";
@@ -444,6 +444,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
 
   const entries = page?.entries ?? [];
   entriesRef.current = entries;
+  // Messages that came from Telegram, and replies sent back there: a small mark on each.
+  const tgMarks = useMemo(() => telegramMarks(entries, ticket.telegramIn, ticket.telegramOut), [entries, ticket.telegramIn, ticket.telegramOut]);
   // Finished replies still waiting for their saved copy; filtered here so both never show at once.
   const waitingHandoff = useMemo(() => handoff.filter((h) => !saved(entries, h)), [handoff, entries]);
   useEffect(() => {
@@ -816,6 +818,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                   {e.at && <time className="muted small" dateTime={e.at} title={fullTime(e.at)}>{timeAgo(e.at)}</time>}
                 </div>
                 {e.role === "user" ? <UserText text={e.text} commands={commands} command={e.command} /> : <Markdown text={e.text} />}
+                {tgMarks.in.has(e.uuid) && <span className="tg-mark" title="You sent this from Telegram">via Telegram</span>}
                 {e.rewind && !old && (
                   <Rewind slug={slug} ticketId={ticket.id} entry={e} running={running} queued={queued.length}
                     later={entries.slice(b.index + 1).filter((x) => x.kind === "text" && !!x.text && !x.commandOutput).length}
@@ -836,6 +839,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           return (
             <Turn key={e.uuid} start={l.start} at={e.at} className={inherited}>
               {e.text && <div className="reply-text"><Markdown text={shown()} /></div>}
+              {tgMarks.out.has(e.uuid) && <span className="tg-mark" title="This reply was sent to you in Telegram">sent to Telegram</span>}
               {e.text && replyText(e.text) && (
                 <ReplyActions text={shown} simpler={simplifiable(e) ? simpler.link(e.uuid) : undefined}
                   newest={newest} lastOfTurn={l.lastReply} active={simpler.active(e.uuid)} />

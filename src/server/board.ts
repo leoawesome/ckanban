@@ -68,6 +68,8 @@ export interface BoardOptions {
    * (default: a macOS banner, see notify.ts).
    */
   notify?: (title: string, body: string, slug: string, id: string) => void;
+  /** A ticket's run ended with this final text (Telegram sends it back to a message that came from there). */
+  turnEnded?: (slug: string, id: string, text: string) => void;
   /** Child events that arrive within this window wake the planner once (default 3s). */
   planWakeDelayMs?: number;
   /** How long ask_ticket waits for an answer (default ASK_TIMEOUT_MS; tests pass a short one). */
@@ -183,13 +185,16 @@ function chatFor(
 }
 
 /** Queued-message flags from Board.chat options. */
-function flags(o: ChatOptions): Pick<QueuedMessage, "peer" | "fromPlanner" | "from" | "slash" | "hostWake" | "followUp"> {
+function flags(o: ChatOptions): Pick<QueuedMessage, "peer" | "fromPlanner" | "from" | "slash" | "hostWake" | "followUp" | "telegram"> {
   return {
-    ...(o.from ? { from: o.from } : {}),
+    ...(o.from ? { from: o.from } : {}), ...(o.telegram ? { telegram: o.telegram } : {}),
     ...(o.peer ? { peer: true } : {}), ...(o.fromPlanner ? { fromPlanner: true } : {}), ...(o.slash ? { slash: o.slash } : {}),
     ...(o.hostWake ? { hostWake: true } : {}), ...(o.followUp ? { followUp: true } : {}),
   };
 }
+
+/** Telegram marks kept per ticket (telegramIn, telegramOut). */
+export const TELEGRAM_KEEP = 30;
 
 /** Board.chat options; hostWake: the ticket's own auto huddle (or a free auto-huddle slot) wakes it; followUp: its follow-up is due. */
 export interface ChatOptions {
@@ -202,6 +207,8 @@ export interface ChatOptions {
   followUp?: boolean;
   /** The user's "Send in a fresh chat": this message starts a new chat; the old one stays visible above it. */
   fresh?: boolean;
+  /** The user sent it from Telegram (a reply to an alert): kept on the queued message so a restart never sends it twice. */
+  telegram?: { updateId: number; tg: number };
 }
 
 /** What the card says while the ticket waits for its auto huddle. */
@@ -1237,6 +1244,13 @@ export class Board {
     // Daemon is exiting: leave the ticket in_progress so recover() resumes it on next start.
     if (this.shuttingDown) return;
     const finalText = extractFinalText(out.events);
+    if (!(run.handle.stopped && run.restartRequested && !run.stopRequested)) {
+      try {
+        this.opts.turnEnded?.(slug, id, finalText);
+      } catch (e) {
+        console.error("board: turnEnded", e);
+      }
+    }
     // A steering message can get its own turn after the result line; the ticket outcome is still the last one given.
     let result = parseResult(finalText) ?? out.events
       .filter((e) => e?.type === "result" && typeof e.result === "string")
@@ -2298,6 +2312,35 @@ export class Board {
   }
 
   /** Who started the ticket's latest run: another ticket's run (runStart), or null when the user started it. */
+  /**
+   * The user's reply from Telegram: the same as typing it in the ticket's chat (http.ts POST .../chat, as the user),
+   * carrying its Telegram update so it is sent once. Returns false when that update was already sent.
+   */
+  async chatFromTelegram(slug: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null }): Promise<boolean> {
+    const t = this.store.getTicket(slug, id);
+    if (!t) throw new Error(`ticket ${id} not found`);
+    if (t.telegramIn?.some((m) => m.updateId === from.updateId) || t.queued?.some((m) => m.telegram?.updateId === from.updateId)) return false;
+    const startedBy = this.isRunning(slug, id) ? undefined : null;
+    const after = await this.chat(slug, id, text, { telegram: { updateId: from.updateId, tg: from.tg } });
+    // Written before anything else can run: the queued message (which also carries the update) is still there.
+    const at = nowIso();
+    const now = this.store.getTicket(slug, id) ?? after;
+    this.patch(slug, id, {
+      telegramIn: [...(now.telegramIn ?? []), { updateId: from.updateId, tg: from.tg, chatId: from.chatId, at, text: text.slice(0, 2000), key: from.key ?? null }].slice(-TELEGRAM_KEEP),
+      telegramReport: { tg: from.tg, chatId: from.chatId, at },
+    });
+    if (startedBy !== undefined) this.markStartedBy(slug, id, startedBy);
+    if (!text.startsWith("/")) this.userReplied(slug, id);
+    if (after.tool && !withYouTool(after)) this.noteUserMessage(slug, id, text);
+    return true;
+  }
+
+  /** Changes a ticket's Telegram marks (telegramIn / telegramOut / telegramReport) and tells the board UI. */
+  patchTelegram(slug: string, id: string, patch: Pick<Partial<Ticket>, "telegramIn" | "telegramOut" | "telegramReport">): Ticket | null {
+    if (!this.store.getTicket(slug, id)) return null;
+    return this.patch(slug, id, patch);
+  }
+
   markStartedBy(slug: string, id: string, by: Ticket["startedBy"]): void {
     const t = this.store.getTicket(slug, id);
     if (!t || (!t.startedBy && !by)) return;

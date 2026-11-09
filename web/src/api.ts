@@ -419,6 +419,10 @@ export interface Ticket {
   plan?: Plan | null;
   /** Messages Claude has not read yet (sent while it worked, or the one that started its reply); "unsent" ones were cut off by Stop. */
   queued?: QueuedMessage[];
+  /** Chat messages that came from Telegram (a reply to an alert): the chat marks them "via Telegram". */
+  telegramIn?: { updateId: number; at: string; text: string }[];
+  /** This ticket's replies sent back to Telegram: the chat marks them "sent to Telegram". text: the reply's start. */
+  telegramOut?: { at: string; text: string }[];
   /** A reply a daemon restart cut off; the board resumes it. partial: what Claude had written so far. */
   interrupted?: { at: string; partial?: string; held?: boolean } | null;
   /** A chat reply waiting for the folder (another ticket edits it in place): shown queued in In Progress. */
@@ -1299,11 +1303,13 @@ export interface TelegramState {
   botName: string | null;
   pairing: { expiresAt: string } | null;
   pairError: string | null;
+  /** A typed reply that answers a ticket's question is shown back with Send and Cancel first. */
+  askTyped: boolean;
 }
 
 export type NotifyPatch = Partial<Pick<NotifyState, "webhookUrl" | "format" | "mac" | "helper" | "push" | "webhookOn">> & {
   kinds?: Partial<Record<NotifyKind, boolean>>;
-  telegram?: { on?: boolean; token?: string };
+  telegram?: { on?: boolean; token?: string; askTyped?: boolean };
 }
 
 export interface InboxItem {

@@ -354,6 +354,7 @@ export function createServer(deps: ServerDeps) {
     root: store.root, push, sessionSummary: (id) => sessions.summary(id), isRunning: (s, id) => board.isRunning(s, id),
     hostHuddles: (s) => board.hostHuddles(s), baseUrl: () => (remote.active() ? remoteUrl(remote.active()!.host) : `http://localhost:${server.port ?? deps.port}`),
   });
+  if (!deps.notifier) notifier.plugBoard(board);
   const helperRunner = deps.helper ?? null;
   const helperOr503 = (): HelperRunner => {
     if (!helperRunner) throw new HttpError(503, "the helper isn't running");

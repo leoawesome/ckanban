@@ -160,7 +160,7 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
                   </>
                 )}
               </ChannelRow>
-              <ChannelRow ch={ch("telegram")} title="Telegram" detail={state.telegram.paired ? ch("telegram")?.detail : "Messages with Got it and Not urgent buttons."}
+              <ChannelRow ch={ch("telegram")} title="Telegram" detail={state.telegram.paired ? ch("telegram")?.detail : "Messages with Got it and Not urgent buttons. Reply to an alert to answer that ticket."}
                 onToggle={(on) => void save({ telegram: { on } })}>
                 {state.telegram.on && <TelegramSetup state={state} onState={setState} onError={setError} />}
                 {state.telegram.on && (
@@ -283,6 +283,15 @@ function TelegramSetup({ state, onState, onError }: { state: NotifyState; onStat
       <div className="tg-setup">
         <div className="small">Paired with <b>{t.chatName ?? "your chat"}</b>{t.botName ? <> through @{t.botName}</> : null}.</div>
         {t.error && <div className="form-error small">{t.error}</div>}
+        <div className="small muted">Reply to an alert in Telegram to answer that ticket.</div>
+        <div className="ch-head">
+          <div className="grow">
+            <div className="small">Ask before sending typed answers</div>
+            <div className="muted small">Shows what you typed with Send and Cancel before it reaches the ticket.</div>
+          </div>
+          <Switch on={t.askTyped} label="Ask before sending typed answers" disabled={busy}
+            onChange={(on) => void run(async () => onState(await api.setNotify({ telegram: { askTyped: on } })))} />
+        </div>
         <div className="hs-inline">
           <button type="button" className="btn small" disabled={busy} onClick={() => void unpair()}>Unpair</button>
           <button type="button" className="btn small ghost" disabled={busy} onClick={() => void forget()}>Remove the bot</button>

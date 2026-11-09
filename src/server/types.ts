@@ -280,6 +280,12 @@ export interface Ticket {
   startSha?: string | null;
   /** Chat messages Claude has not read yet, oldest first: sent while it was working, or the one that started its reply. */
   queued?: QueuedMessage[];
+  /** Chat messages that came from Telegram (a reply to an alert), newest last, at most TELEGRAM_KEEP: the chat marks them "via Telegram". */
+  telegramIn?: TelegramIn[];
+  /** This ticket's replies sent back to Telegram, newest last: the chat marks them "sent to Telegram". */
+  telegramOut?: TelegramOut[];
+  /** A message from Telegram waits for this ticket's next reply: when its turn ends, the reply goes back as an answer to it. */
+  telegramReport?: { tg: number; chatId: number; at: string } | null;
   /** A chat reply the daemon cut off by restarting (or held back while a restart waited); recover() resumes it. */
   interrupted?: Interrupted | null;
   /**
@@ -632,6 +638,27 @@ export interface Interrupted {
   user?: boolean;
 }
 
+/** A chat message that came from Telegram. */
+export interface TelegramIn {
+  updateId: number;
+  /** The user's Telegram message (a reply to it answers them). */
+  tg: number;
+  chatId: number;
+  at: string;
+  /** What was sent (the chat matches it to the conversation's message). */
+  text: string;
+  /** The wait it answered, if any. */
+  key?: string | null;
+}
+
+/** A ticket's reply sent back to Telegram. */
+export interface TelegramOut {
+  at: string;
+  /** The start of the reply (the chat matches it to Claude's message). */
+  text: string;
+  replyTo: number;
+}
+
 export interface QueuedMessage {
   id: string;
   text: string;
@@ -656,6 +683,8 @@ export interface QueuedMessage {
   hostWake?: boolean;
   /** The board's follow-up wake (followup.ts): sent as-is; the card goes back to its column afterwards. */
   followUp?: boolean;
+  /** Came from Telegram (a reply to an alert): the update, so a restart never sends it twice. */
+  telegram?: { updateId: number; tg: number };
 }
 
 export interface Comment {

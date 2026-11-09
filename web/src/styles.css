@@ -1223,6 +1223,9 @@ body > .output-view.reader { position: fixed; }
 /* The user's bubble: soft accent tint, normal text colour (readable in light and dark, links too). */
 .conv-msg.user { background: var(--accent-soft); color: var(--text); border-radius: var(--r-md) var(--r-md) var(--r-sm) var(--r-md); padding: 9px 15px; max-width: 80%; align-self: flex-end; font-size: var(--fs-lg); line-height: 1.55; }
 .conv-msg.user .conv-head { display: none; }
+/* A message that came from Telegram, or a reply sent back there. */
+.tg-mark { display: inline-block; margin-top: 4px; padding: 1px 8px; border-radius: var(--r-sm); background: var(--info-soft); color: var(--info); font-size: var(--fs-xs); line-height: 1.6; }
+.conv-msg.user .tg-mark { display: block; width: fit-content; margin-left: auto; }
 /* Messages from other sessions (huddles): neither the user nor this ticket's own reply. */
 .conv-msg.peer { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px 14px; max-width: 86%; font-size: var(--fs-md); }
 .conv-msg.peer.in { align-self: flex-start; border-left: 3px solid var(--accent); }

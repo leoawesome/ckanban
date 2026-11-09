@@ -55,6 +55,8 @@ export async function startDaemon(): Promise<void> {
     sessionSummary: (id) => sessions.summary(id),
     findOwnedSession: (id) => shells.findSession(id),
     notify: (title, body, slug, id) => notifier.macOnly(title, body, notifier.link(slug, id)),
+    // A ticket that got a message from Telegram sends its reply back there.
+    turnEnded: (slug, id, text) => void notifier.turnEnded(slug, id, text).catch((e) => console.error("telegram: report back", e)),
   });
   // Links in notifications open the ticket on the phone when phone access is on (remote.json), else on this Mac.
   const remoteConfig = new RemoteAccess(store.root, () => 0);
@@ -67,6 +69,7 @@ export async function startDaemon(): Promise<void> {
       return r ? remoteUrl(r.host) : `http://localhost:${server.port}`;
     },
   });
+  notifier.plugBoard(board);
   const webDir = join(import.meta.dir, "..", "..", "web", "dist");
   const embedded = Object.keys(WEB_ASSETS).length > 0;
   if (!embedded && !existsSync(join(webDir, "index.html"))) console.warn("web UI not built yet: run `bun run build:web`");

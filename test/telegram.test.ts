@@ -38,7 +38,7 @@ function fakeApi(script: Record<string, (body: any) => any> = {}) {
 }
 
 function makeBot(o: { settings?: Partial<TelegramSettings>; script?: Record<string, (b: any) => any>; phone?: boolean; actions?: Partial<TelegramActions>; now?: () => number } = {}) {
-  let settings: TelegramSettings = { on: true, token: TOKEN, chatId: null, chatName: null, pairedAt: null, ...o.settings };
+  let settings: TelegramSettings = { on: true, token: TOKEN, chatId: null, chatName: null, pairedAt: null, askTyped: true, ...o.settings } as TelegramSettings;
   const api = fakeApi(o.script);
   const did: string[] = [];
   const sleeps: number[] = [];
@@ -147,12 +147,13 @@ describe("receiving", () => {
     expect(api.calls.filter((c) => c.method === "answerCallbackQuery").map((c) => c.body.text).slice(2)).toEqual(["This bot isn't paired with you.", "That button no longer works."]);
   });
 
-  test("/waiting is answered from the summary; other text gets a fixed reply and nothing is kept", async () => {
+  test("/waiting is answered from the summary; other text gets a fixed, silent reply and nothing is kept", async () => {
     const { bot, api } = makeBot({ settings: { chatId: ME } });
     await bot.handle(msgUpdate(1, ME, "/waiting@my_ck_bot"));
     expect(api.sent().at(-1)!.body.text).toBe("2 tickets wait on you:\n- A\n- B");
     await bot.handle(msgUpdate(2, ME, "yes stop the webhook"));
-    expect(api.sent().at(-1)!.body.text).toContain("I can't pass answers to tickets yet. Answer on your Mac.");
+    expect(api.sent().at(-1)!.body.text).toContain("Reply to an alert to answer that ticket. Or answer on your Mac.");
+    expect(api.sent().every((c) => c.body.disable_notification === true)).toBe(true);
     const phone = makeBot({ settings: { chatId: ME }, phone: true });
     await phone.bot.handle(msgUpdate(3, ME, "hello"));
     expect(phone.api.sent().at(-1)!.body.text).toContain("https://mac.tail.ts.net/");
@@ -414,7 +415,7 @@ test("a poller stopped during getMe sends no getUpdates (never two pollers on th
 test("the read position is saved: after a restart the last batch isn't handled again; another bot starts from 0", async () => {
   const file = join(tempDir("ck-tg-"), "telegram-offset.json");
   const make = (token = TOKEN) => {
-    let settings: TelegramSettings = { on: true, token, chatId: ME, chatName: null, pairedAt: null };
+    let settings: TelegramSettings = { on: true, token, chatId: ME, chatName: null, pairedAt: null, askTyped: true };
     const api = fakeApi({ getUpdates: (b) => ({ ok: true, result: b.offset > 41 ? [] : [msgUpdate(41, ME, "/waiting")] }) });
     const bot = new TelegramBot({
       fetch: api.fetch, settings: () => settings, save: (p) => (settings = { ...settings, ...p }),
