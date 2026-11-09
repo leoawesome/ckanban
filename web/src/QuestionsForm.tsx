@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Question } from "./api";
 import { autoGrow } from "./autoGrow";
 import { browserStore, forget, loadSaved } from "./drafts";
@@ -41,13 +41,14 @@ function AnswerBox({ value, onChange, onEnter, autoFocus, disabled, placeholder,
  * Claude's interview questions, one at a time (like Claude Code's question picker).
  * Keys: 1-9 pick an option, Enter goes next, Backspace/← goes back when not typing.
  */
-export function QuestionsForm({ questions, answered, replaced, disabled, onSubmit, storageKey, onPreview }: {
+export function QuestionsForm({ questions, answered, replaced, disabled: off, onSubmit, storageKey, onPreview }: {
   questions: Question[];
   answered: boolean;
   /** Asked again further down (after a board update); same: with the same questions. Its progress lives on there. */
   replaced?: { same: boolean };
   disabled: boolean;
-  onSubmit: (text: string) => void;
+  /** Sends the answers; while its promise is pending the form can't send again (a double tap sends once). */
+  onSubmit: (text: string) => void | Promise<unknown>;
   /** Open an option's mockup (file name in outputs/mockups); options with one get a Preview link. */
   onPreview?: (mockup: string) => void;
   /** Where to keep unsent progress so it survives leaving the ticket; omit to not save. */
@@ -96,9 +97,19 @@ export function QuestionsForm({ questions, answered, replaced, disabled, onSubmi
   const focusOther = () =>
     update(step, (x) => (x.other.trim() && !x.otherOn ? { ...x, otherOn: true, picked: q.multiSelect ? x.picked : [] } : x));
 
+  // A send in flight: the buttons and keys are off until it is done (the ref also stops a second tap in the same tick).
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const disabled = off || sending;
   const send = () => {
+    if (sendingRef.current || disabled) return;
+    sendingRef.current = true;
+    setSending(true);
     if (storageKey) forget(browserStore(), storageKey);
-    onSubmit(answersMessage(questions, answers, note));
+    void Promise.resolve().then(() => onSubmit(answersMessage(questions, answers, note))).catch(() => {}).finally(() => {
+      sendingRef.current = false;
+      setSending(false);
+    });
   };
 
   const next = () => (step < total - 1 || (total > 1 && step === total - 1) ? setStep(step + 1) : send());

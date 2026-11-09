@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Bus } from "../src/server/events";
 import { Board } from "../src/server/board";
 import { reportParts } from "../src/server/helper/tgreply";
+import { LOCKED_NOTE, LOCKED_NOTE_MS, safeCut, telegramText } from "../src/server/helper/telegram";
 import { ACTION_TTL_MS, PendingActions, UpdateQueue } from "../src/server/helper/tgstores";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/server/session";
@@ -445,8 +446,30 @@ describe("report back", () => {
     expect(parts.length).toBe(3);
     for (const p of parts) expect(p.length).toBeLessThan(4096);
     expect(parts[0].startsWith("T (B):\n\nxxx")).toBe(true);
-    expect(parts[2]).toContain("read the rest on the board");
+    // Phone access off (no link): no "read" invitation, only where the rest is.
+    expect(parts[2].endsWith("… (cut: the rest is on the board)")).toBe(true);
+    const linked = reportParts("T (B):", Array(15).fill(line).join("\n"), 3, 4096, "https://mac.tail.ts.net/#/kb/t1");
+    expect(linked[2].endsWith("… (cut: read the rest on the board: https://mac.tail.ts.net/#/kb/t1)")).toBe(true);
     expect(reportParts("T", "CKANBAN_RESULT: {}")).toEqual([]);
+  });
+
+  test("a long reply is never split inside an emoji (surrogate pair), on a long line or at the cut", () => {
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    // One line of emoji longer than several messages, starting at an odd offset so a plain cut lands mid-pair.
+    const text = `x${"😀".repeat(6000)}`;
+    const parts = reportParts("", text, 10);
+    expect(parts.length).toBeGreaterThan(2);
+    for (const p of parts) {
+      expect(p.length).toBeLessThan(4096);
+      expect(lone.test(p)).toBe(false);
+    }
+    expect(parts.join("")).toBe(text);
+    // Cut at the parts limit: the last part's cut is whole too.
+    const cut = reportParts("", text, 2);
+    for (const p of cut) expect(lone.test(p)).toBe(false);
+    expect(safeCut("a😀", 2)).toBe(1);
+    expect(safeCut("a😀", 3)).toBe(3);
+    expect(lone.test(telegramText(`x${"😀".repeat(3000)}`))).toBe(false);
   });
 });
 
@@ -630,16 +653,29 @@ describe("off switch, Pause, /lock and Unpair", () => {
     expect(api.last().disable_notification).toBe(true);
     const st = notifier.state().telegram;
     expect(st.takeMessages).toBe(false);
-    expect(st.lockedAt).toBe(new Date(clock).toISOString());
+    const lockedAt = new Date(clock).toISOString();
+    expect(st.lockedAt).toBe(lockedAt);
     expect(board.dropped).toBe(1);
     api.queue(reply(3, tg, "8080"), msg(4, "/unlock"), msg(5, "/start"));
     await notifier.telegram.pollOnce();
     expect(board.sent).toHaveLength(0);
-    expect(api.sent().slice(-3).map((c) => c.body.text)).toEqual([NOT_TAKING, NOT_TAKING, NOT_TAKING]);
+    // Locked: one silent note says why nothing happens (not one per message), again after 10 minutes.
+    expect(api.sent().slice(-1).map((c) => c.body.text)).toEqual([LOCKED_NOTE]);
+    expect(api.last().disable_notification).toBe(true);
+    const before = api.sent().length;
+    api.queue(msg(6, "hello?"));
+    await notifier.telegram.pollOnce();
+    expect(api.sent().length).toBe(before);
+    clock += LOCKED_NOTE_MS;
+    api.queue(msg(7, "hello again"));
+    await notifier.telegram.pollOnce();
+    expect(api.sent().length).toBe(before + 1);
+    expect(api.last().text).toBe(LOCKED_NOTE);
+    expect(board.sent).toHaveLength(0);
     expect(notifier.settings().telegram.takeMessages).toBe(false);
     // The settings API can't set lockedAt; turning it on clears it.
     notifier.update({ telegram: { lockedAt: "2020-01-01T00:00:00Z" } });
-    expect(notifier.state().telegram.lockedAt).toBe(new Date(clock).toISOString());
+    expect(notifier.state().telegram.lockedAt).toBe(lockedAt);
     const on = notifier.update({ telegram: { takeMessages: true } });
     expect(on.telegram.takeMessages).toBe(true);
     expect(on.telegram.lockedAt).toBeNull();

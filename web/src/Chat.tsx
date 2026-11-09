@@ -590,6 +590,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     setAskOld(false);
     send(draft);
   };
+  const sendingNow = useRef(new Set<string>());
   const sendFresh = () => {
     if (old) oldChatOk.set(okKey, old.at);
     setAskOld(false);
@@ -600,6 +601,16 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     // A command goes as `/name args`, the way the server queues it and the session shows it.
     const t = messageCommand(text, commands) ? text.trim().replace(/^(\S+)\s+/, "$1 ") : text.trim();
     if (!t || stopping || images.uploading) return;
+    // The same text already on its way (a double tap on a form's Send): sent once.
+    if (sendingNow.current.has(t)) return;
+    sendingNow.current.add(t);
+    try {
+      await sendOnce(t, fresh);
+    } finally {
+      sendingNow.current.delete(t);
+    }
+  };
+  const sendOnce = async (t: string, fresh: boolean) => {
     images.clearError();
     stickToBottom.current = true;
     const steer = running;

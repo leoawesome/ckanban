@@ -45,6 +45,10 @@ export const NOT_TAKING = "I'm not taking messages right now. Turn it back on in
 /** The answer to /lock. */
 export const LOCKED = "🔒 Locked. I won't take messages from this chat until you unlock it on the Mac (Settings, Telegram). Alerts still arrive.";
 
+/** The answer to a message while locked from Telegram (/lock): at most once per LOCKED_NOTE_MS, silent. */
+export const LOCKED_NOTE = "Telegram is locked. Turn on 'Take messages from Telegram' on the Mac to use it again.";
+export const LOCKED_NOTE_MS = 10 * 60_000;
+
 /** "/lock" (or "/lock@mybot"): handled at once, beside the messages in line. */
 export const isLock = (text: unknown) => typeof text === "string" && /^\/lock(@\S+)?$/i.test(text.trim().split(/\s+/)[0] ?? "");
 
@@ -78,10 +82,17 @@ export function scrub(text: string, token: string): string {
   return out.replace(/bot\d{5,15}:[A-Za-z0-9_-]{20,}/g, "bot<token>");
 }
 
+/** Where a cut ends so it never splits a surrogate pair (an emoji): n, or n - 1 when n falls inside one. */
+export function safeCut(s: string, n: number): number {
+  if (n <= 0 || n >= s.length) return Math.max(0, Math.min(n, s.length));
+  const c = s.charCodeAt(n - 1);
+  return c >= 0xd800 && c <= 0xdbff ? n - 1 : n;
+}
+
 /** Cut to Telegram's limit, keeping the tail (the "Answer on your Mac" line). */
 export function telegramText(body: string, tail = ""): string {
   const room = TELEGRAM_MAX - tail.length;
-  const b = body.length <= room ? body : `${body.slice(0, room - 1)}…`;
+  const b = body.length <= room ? body : `${body.slice(0, safeCut(body, room - 1))}…`;
   return b + tail;
 }
 
@@ -189,6 +200,8 @@ export class TelegramBot {
   private gen = 0;
   private abort: AbortController | null = null;
   private polling = false;
+  /** When the last LOCKED_NOTE went out (a fresh /lock clears it). */
+  private lockedToldAt = -Infinity;
   private now: () => number;
   private sleep: (ms: number) => Promise<void>;
   readonly queue: UpdateQueue;
@@ -608,6 +621,7 @@ export class TelegramBot {
       // Saved before the answer goes out; there is no /unlock: only Settings on the Mac turns it back on.
       if (this.d.lock) this.d.lock();
       else this.d.save({ takeMessages: false, lockedAt: new Date(this.now()).toISOString() });
+      this.lockedToldAt = -Infinity;
       await this.reply(chatId, LOCKED);
       return;
     }
@@ -616,8 +630,15 @@ export class TelegramBot {
       return;
     }
     // Read again: a /lock handled meanwhile counts for the messages behind it.
-    if (this.d.settings().takeMessages === false) {
-      await this.reply(chatId, NOT_TAKING);
+    const cur = this.d.settings();
+    if (cur.takeMessages === false) {
+      // Locked from Telegram: one silent note per LOCKED_NOTE_MS, so the user knows why nothing happens without a reply
+      // to every message. Paused from Settings: NOT_TAKING each time. Nothing is acted on either way.
+      if (!cur.lockedAt) await this.reply(chatId, NOT_TAKING);
+      else if (this.now() - this.lockedToldAt >= LOCKED_NOTE_MS) {
+        this.lockedToldAt = this.now();
+        await this.reply(chatId, LOCKED_NOTE);
+      }
       return;
     }
     // Voice, photos, files, stickers: nothing is passed on.

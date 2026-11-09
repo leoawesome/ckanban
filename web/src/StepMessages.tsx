@@ -147,7 +147,7 @@ export function StepBlock({ slug, step, msgs, newest, onOpenTicket, onError, onS
           {m.text && <div className="reply-text"><Markdown text={m.text} /></div>}
           {m.questions && (
             <QuestionsForm questions={m.questions as Question[]} answered={!m.form?.open} disabled={step.running}
-              onSubmit={(text) => void send(text).catch(() => {})} onPreview={onPreview}
+              onSubmit={(text) => send(text).catch(() => {})} onPreview={onPreview}
               storageKey={formKey(slug, step.id, m.form?.key ?? m.uuid)} />
           )}
         </div>

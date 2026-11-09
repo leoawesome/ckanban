@@ -504,6 +504,10 @@ export class Notifier {
       typing: (chatId) => this.telegram.typing(chatId),
       sendFile: (chatId, file, caption, replyTo) => this.telegram.sendFile(chatId, file, caption, replyTo),
       taking, isRunning: (slug, id) => o.isRunning(slug, id), board: () => this.board, phoneAccess: () => this.phoneAccess(), now: this.now,
+      boardUrl: (slug) => {
+        const url = this.link(slug);
+        return this.phoneAccess() && /^https:\/\//.test(url) ? url : null;
+      },
       ...(o.typingMs !== undefined ? { typingMs: o.typingMs } : {}),
     });
     // A wait closed: its Telegram alert says so and loses its buttons.

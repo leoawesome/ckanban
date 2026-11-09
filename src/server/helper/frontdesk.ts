@@ -107,6 +107,8 @@ export interface FrontDeskDeps {
   isRunning: (slug: string, id: string) => boolean;
   board: () => DeskBoard | null;
   phoneAccess: () => boolean;
+  /** The board's address for a cut answer's last line, only when phone access is on (else null: "the rest is on the board"). */
+  boardUrl?: (slug: string) => string | null;
   now?: () => number;
   /** "typing" interval (ms); 0: only once per message (tests). */
   typingMs?: number;
@@ -124,8 +126,11 @@ interface DeskState {
   /** The secret in the front desk's CKANBAN_FRONTDESK. A new one each daemon start is fine: runs read it when they start. */
   token: string;
   current: DeskChat | null;
-  /** Per chat (`<board>/<id>`): the user's Telegram message its next answer replies to. */
-  replyTo: Record<string, number>;
+  /**
+   * Per chat (`<board>/<id>`): the user's Telegram messages still waiting for an answer, oldest first. Each answer
+   * replies to the first and takes it off, so a message sent while a turn runs gets its own answer under it.
+   */
+  replyTo: Record<string, number[]>;
   /** The user's last messages (for "the same text within 60 s"). */
   recent: { key: string; text: string; at: string }[];
   /** Per Claude session: its running total at the last result line (spend adds the growth). */
@@ -206,6 +211,17 @@ export function heldKind(method: string, path: string, body: any): { kind: DeskA
   return { kind: "other", slug, ticketId: null };
 }
 
+/** replyTo as saved: a list per chat (a single number from before the list is kept as one). */
+function readReplyTo(v: Record<string, unknown>): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
+  for (const [k, x] of Object.entries(v)) {
+    const list = Array.isArray(x) ? x : [x];
+    const ok = list.filter((n): n is number => Number.isSafeInteger(n));
+    if (ok.length) out[k] = ok;
+  }
+  return out;
+}
+
 export class FrontDesk {
   private now: () => number;
   private state: DeskState;
@@ -229,7 +245,7 @@ export class FrontDesk {
         // Never read from disk (ticket runs can read the data folder): a restart makes a new one, and resumed runs get it.
         token: fresh.token,
         current: v?.current && typeof v.current.slug === "string" && typeof v.current.id === "string" ? v.current : null,
-        replyTo: v?.replyTo && typeof v.replyTo === "object" ? v.replyTo : {},
+        replyTo: v?.replyTo && typeof v.replyTo === "object" ? readReplyTo(v.replyTo) : {},
         recent: Array.isArray(v?.recent) ? v.recent : [],
         cost: v?.cost && typeof v.cost === "object" ? v.cost : {},
         seen: Array.isArray(v?.seen) ? v.seen.filter(Number.isSafeInteger) : [],
@@ -301,6 +317,7 @@ export class FrontDesk {
       void this.typing(same.slug, same.id, m.chatId);
       return true;
     }
+    const wasRunning = !!same && this.chats.isRunning(same.slug, same.id);
     let view: QuickChatView;
     try {
       view = this.chats.send(slug, same?.id ?? null, this.prompt(m, now), same ? null : { title: dayTitle(now), frontDesk: { chatId: m.chatId } });
@@ -312,7 +329,11 @@ export class FrontDesk {
     const key = `${slug}/${view.id}`;
     const at = new Date(now).toISOString();
     this.state.current = { slug, id: view.id, chatId: m.chatId, startedAt: same?.startedAt ?? at, lastAt: at };
-    this.state.replyTo[key] = m.tg;
+    // A new turn (nothing running before this message): nothing older waits for an answer any more. While a turn runs,
+    // the message waits behind the ones before it.
+    const queued = wasRunning ? (this.state.replyTo[key] ?? []) : [];
+    delete this.state.replyTo[key];
+    this.state.replyTo[key] = [...queued, m.tg].slice(-20);
     // A forwarded message is never the "same text again" of the user's own words.
     this.state.recent = [...this.state.recent.filter((r) => now - Date.parse(r.at) < DUPLICATE_MS), ...(m.forwarded ? [] : [{ key, text: norm, at }])].slice(-20);
     // Old chats' reply targets go (only the current day's is needed; a restart's resumed turn reads its own).
@@ -421,14 +442,24 @@ export class FrontDesk {
       }
     }
     const chatId = c.frontDesk!.chatId;
+    // This answer is for the oldest message still waiting; it comes off the line even if nothing can be sent.
+    const waiting = this.state.replyTo[key] ?? [];
+    const replyTo = waiting[0];
+    if (waiting.length) {
+      this.state.replyTo[key] = waiting.slice(1);
+      this.save();
+    }
     const out = this.d.out(chatId);
     if (!out) return;
-    const replyTo = this.state.replyTo[key];
     let text = typeof ev?.result === "string" ? ev.result : "";
-    if (ev?.is_error || (ev?.subtype && ev.subtype !== "success")) text = `I couldn't finish that${text ? `: ${short(text, 300)}` : "."}`;
-    const parts = reportParts("", text, ANSWER_PARTS);
+    const failed = !!ev?.is_error || (!!ev?.subtype && ev.subtype !== "success");
+    if (failed) text = text.trim() ? `I couldn't finish that: ${short(text, 300)}` : "No answer came back, try again.";
+    const link = this.d.boardUrl?.(slug) ?? null;
+    const parts = reportParts("", text, ANSWER_PARTS, undefined, link);
+    // A turn that ends with no text still says so (the user isn't left waiting).
+    if (!parts.length) parts.push("Done.");
     for (const p of parts) await out.say(p, replyTo !== undefined ? { replyTo } : {});
-    if (parts.length) this.markSeen(text);
+    if (text.trim()) this.markSeen(text);
   }
 
   /** Waits whose ticket the answer named: the user saw them in this chat (the helper won't list them as new). */
@@ -475,7 +506,7 @@ export class FrontDesk {
     if (held.ticketId && !t) return { status: 404, body: { error: `ticket ${held.ticketId} not found` } };
     const out = this.d.out(who.chatId);
     if (!out) return { status: 409, body: { error: "Telegram can't be reached right now, so the Confirm button couldn't be shown. Nothing was done." } };
-    const replyTo = this.state.replyTo[`${who.slug}/${who.id}`] ?? null;
+    const replyTo = this.state.replyTo[`${who.slug}/${who.id}`]?.[0] ?? null;
     const a: DeskAction = { kind: held.kind, method, path, body, slug: held.slug, ticketId: held.ticketId, chatId: who.chatId, replyTo };
     if (held.kind === "chat") {
       const text = typeof body?.text === "string" ? body.text : "";
@@ -712,7 +743,7 @@ export class FrontDesk {
     const st = statSync(real);
     if (!st.isFile()) return { status: 400, body: { error: "That is a folder, not a file." } };
     if (st.size > FILE_MAX_BYTES) return { status: 413, body: { error: `The file is ${(st.size / 1048576).toFixed(1)} MB; Telegram takes 50 MB at most.` } };
-    const err = await this.d.sendFile(who.chatId, real, short(caption || basename(real), 1000), this.state.replyTo[`${who.slug}/${who.id}`] ?? null);
+    const err = await this.d.sendFile(who.chatId, real, short(caption || basename(real), 1000), this.state.replyTo[`${who.slug}/${who.id}`]?.[0] ?? null);
     if (err) return { status: 502, body: { error: err } };
     return { status: 200, body: { sent: basename(real), bytes: st.size } };
   }

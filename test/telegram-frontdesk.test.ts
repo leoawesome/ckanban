@@ -294,6 +294,59 @@ describe("messages and answers", () => {
   });
 });
 
+describe("polish: reply targets, empty answers, cut answers", () => {
+  test("a message sent while a turn runs gets its own answer under it (oldest first); a new turn starts the line over", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "what's going on?"));
+    await notifier.telegram.pollOnce();
+    // Still running: the second message joins the same chat and waits behind the first.
+    api.queue(msg(2, "and the shop?"));
+    await notifier.telegram.pollOnce();
+    const c = chats.get("kb", chats.sent[0].id)!;
+    await notifier.frontDesk.onResult("kb", c, { type: "result", subtype: "success", result: "All quiet.", session_id: "s1" });
+    await notifier.frontDesk.onResult("kb", c, { type: "result", subtype: "success", result: "The shop is fine.", session_id: "s1" });
+    const answers = api.sent().filter((x) => x.body.text === "All quiet." || x.body.text === "The shop is fine.");
+    expect(answers.map((x) => [x.body.text, x.body.reply_parameters?.message_id])).toEqual([["All quiet.", 9001], ["The shop is fine.", 9002]]);
+    // A message the user sent while a turn ran but that got no answer of its own (the turn ended) doesn't hold the line:
+    // the next new turn answers the message that started it.
+    api.queue(msg(3, "one more"));
+    await notifier.telegram.pollOnce();
+    api.queue(msg(4, "and another"));
+    await notifier.telegram.pollOnce();
+    chats.running.clear();
+    api.queue(msg(5, "new question"));
+    await notifier.telegram.pollOnce();
+    await notifier.frontDesk.onResult("kb", c, { type: "result", subtype: "success", result: "Answer five.", session_id: "s1" });
+    expect(api.last().reply_parameters.message_id).toBe(9005);
+  });
+
+  test("a turn with no text says 'Done.' (silent, under the message); an error with no text says to try again", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "tidy up the backlog"));
+    await notifier.telegram.pollOnce();
+    const c = chats.get("kb", chats.sent[0].id)!;
+    await notifier.frontDesk.onResult("kb", c, { type: "result", subtype: "success", result: "", session_id: "s1" });
+    expect(api.last()).toMatchObject({ text: "Done.", disable_notification: true, reply_parameters: { message_id: 9001 } });
+    chats.running.clear();
+    api.queue(msg(2, "again"));
+    await notifier.telegram.pollOnce();
+    await notifier.frontDesk.onResult("kb", c, { type: "result", subtype: "error_during_execution", is_error: true, session_id: "s1" });
+    expect(api.last()).toMatchObject({ text: "No answer came back, try again.", disable_notification: true, reply_parameters: { message_id: 9002 } });
+  });
+
+  test("a cut answer with phone access off says the rest is on the board (no 'read' link)", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "list everything"));
+    await notifier.telegram.pollOnce();
+    const c = chats.get("kb", chats.sent[0].id)!;
+    const long = Array.from({ length: 2000 }, (_, i) => `line ${i} ${"x".repeat(40)}`).join("\n");
+    await notifier.frontDesk.onResult("kb", c, { type: "result", subtype: "success", result: long, session_id: "s1" });
+    const last = api.last().text as string;
+    expect(last.endsWith("… (cut: the rest is on the board)")).toBe(true);
+    expect(api.sent().some((x) => /read the rest/.test(x.body.text))).toBe(false);
+  });
+});
+
 describe("Confirm", () => {
   test("the routes held for Confirm", () => {
     expect(heldKind("POST", "/api/profiles/kb/tickets", { status: "ready" })?.kind).toBe("create");

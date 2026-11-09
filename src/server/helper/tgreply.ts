@@ -14,7 +14,7 @@ import type { SessionSummary } from "../session";
 import type { Store } from "../store";
 import type { Ticket } from "../types";
 import type { WaitStore, WaitRecord } from "./waits";
-import { NOT_TAKING, TELEGRAM_MAX } from "./telegram";
+import { NOT_TAKING, TELEGRAM_MAX, safeCut } from "./telegram";
 import type { LinkItem, PendingAction, PendingActions, TelegramLinks } from "./tgstores";
 import type { TelegramForms } from "./tgforms";
 import type { FrontDesk } from "./frontdesk";
@@ -111,8 +111,14 @@ const short = (s: string, max: number) => {
   return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`;
 };
 
-/** A ticket's reply in Telegram-sized parts: the result line dropped, split at line breaks, at most `parts` parts. */
-export function reportParts(head: string, text: string, parts = REPORT_PARTS, max = TELEGRAM_MAX): string[] {
+/** The last line of a reply cut at `parts` messages: a link to the board only when phone access is on (link not null). */
+export const cutTail = (link: string | null) => (link ? `\n\n… (cut: read the rest on the board: ${link})` : "\n\n… (cut: the rest is on the board)");
+
+/**
+ * A ticket's reply in Telegram-sized parts: the result line dropped, split at line breaks (a longer line on code
+ * points, never inside an emoji), at most `parts` parts. link: the board's address when phone access is on, else null.
+ */
+export function reportParts(head: string, text: string, parts = REPORT_PARTS, max = TELEGRAM_MAX, link: string | null = null): string[] {
   const body = text.split("\n").filter((l) => !/^\s*CKANBAN_RESULT:/.test(l)).join("\n").replace(/\n{3,}/g, "\n\n").trim();
   if (!body) return [];
   const out: string[] = [];
@@ -125,8 +131,9 @@ export function reportParts(head: string, text: string, parts = REPORT_PARTS, ma
     while (line.length > max - 1) {
       // A line longer than a whole message: cut it.
       push();
-      out.push(line.slice(0, max - 1));
-      line = line.slice(max - 1);
+      const at = safeCut(line, max - 1);
+      out.push(line.slice(0, at));
+      line = line.slice(at);
     }
     if (cur.length + line.length + 1 > max) push();
     cur += `${line}\n`;
@@ -134,8 +141,9 @@ export function reportParts(head: string, text: string, parts = REPORT_PARTS, ma
   push();
   if (out.length <= parts) return out;
   const kept = out.slice(0, parts);
-  const tail = "\n\n… (cut: read the rest on the board)";
-  kept[parts - 1] = `${kept[parts - 1].slice(0, max - tail.length)}${tail}`;
+  const tail = cutTail(link);
+  const last = kept[parts - 1];
+  kept[parts - 1] = `${last.slice(0, safeCut(last, max - tail.length))}${tail}`;
   return kept;
 }
 
@@ -394,7 +402,7 @@ export class TelegramReplies {
       return;
     }
     const boardName = this.d.store.getProfile(board)?.name ?? board;
-    const parts = reportParts(`${t.title} (${boardName}):`, text);
+    const parts = reportParts(`${t.title} (${boardName}):`, text, REPORT_PARTS, TELEGRAM_MAX, this.d.ticketUrl(board, id));
     // No text (a stop or an error): nothing goes back (the helper tells about failures), and a later turn, which
     // may come from the board, isn't sent there either.
     if (!parts.length) {

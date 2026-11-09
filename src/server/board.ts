@@ -257,6 +257,9 @@ function takesSlot(chat?: ActiveRun["chat"], noEdit?: boolean): boolean {
 export const RESTART_HOLD_TEXT = "The board restarts soon; your message is sent right after (at most 10 minutes).";
 
 const ACTIVITY_THROTTLE_MS = 1000;
+/** A form answer ("My answers: …") identical to one taken this recently isn't sent again (two tabs, a double tap). */
+export const ANSWER_REPEAT_MS = 30_000;
+const ANSWER_PREFIX = "My answers:";
 /** How long a board folder's cached version history (see Board.repoState) is trusted. */
 const REPO_TTL_MS = 10_000;
 /** How long a feature's saved changes list (see Board.savedChanges) is trusted when its family didn't change. */
@@ -387,6 +390,8 @@ export function sigChanges(before: string, after: string, rows: Ticket[]): strin
 
 export class Board {
   private runs = new Map<string, ActiveRun>();
+  /** Per ticket: the last form answer taken and when (repeatedAnswer). */
+  private recentAnswers = new Map<string, { text: string; at: number }>();
   /** Latest live progress of each workflow (stream task_progress: every agent, waiting ones too), by ticket and Workflow call. */
   private workflowLive = new Map<string, any[]>();
   /** Shared devices every board's runs take and let go (devices.ts); a run's end frees what it still holds. */
@@ -634,6 +639,9 @@ export class Board {
       if (slash && BOARD_COMMANDS.has(slash.command.name)) return this.boardCommand(slug, id, slash.command.name, slash.args);
       if (slash) [text, opts] = [slash.text, { ...opts, slash: slash.command.local ? "local" : "prompt" }];
     }
+    // The same form answer twice (two tabs, or a second tap while the board was slow): the first one counts. Only form
+    // answers; ordinary chat text the user repeats is sent again.
+    if (this.repeatedAnswer(slug, id, t, text, opts)) return t;
     // The user writes (or answers a form) in a main ticket parked in Done, or in Backlog after its family started: they
     // want more from it, so it is back in Review and stays there (only the user's own move parks it again). A follow-up
     // brings it back only while its tool tickets are still at work; otherwise it rests where the user put it.
@@ -847,6 +855,25 @@ export class Board {
   private dropQueued(slug: string, id: string, ids: string[]): Ticket {
     const t = this.store.getTicket(slug, id)!;
     return this.patch(slug, id, { queued: (t.queued ?? []).filter((m) => !ids.includes(m.id)) });
+  }
+
+  /**
+   * A form answer ("My answers: …") identical to one already waiting on the ticket, on its way to Claude, or taken in
+   * the last ANSWER_REPEAT_MS: true (it isn't sent again). Otherwise it is noted as taken now.
+   */
+  private repeatedAnswer(slug: string, id: string, t: Ticket, text: string, opts: ChatOptions): boolean {
+    if (opts.peer || opts.hostWake || opts.followUp || opts.fromPlanner || !text.startsWith(ANSWER_PREFIX)) return false;
+    const key = this.key(slug, id);
+    const now = this.now().getTime();
+    for (const [k, v] of this.recentAnswers) if (now - v.at >= ANSWER_REPEAT_MS) this.recentAnswers.delete(k);
+    const norm = text.trim();
+    const recent = this.recentAnswers.get(key);
+    if ((recent && recent.text === norm) || (t.queued ?? []).some((m) => m.state === "queued" && m.text.trim() === norm)) {
+      console.log(`board: ${slug}/${id}: the same form answer came again within ${ANSWER_REPEAT_MS / 1000}s; sent once`);
+      return true;
+    }
+    this.recentAnswers.set(key, { text: norm, at: now });
+    return false;
   }
 
   /** Hand a queued message to the live claude process; false when there is none to take it yet. */

@@ -476,3 +476,27 @@ test("Stop on a run with nothing behind it clears it at once", async () => {
   expect(got.status).toBe("review");
   expect(got.outcome).toBe("stopped");
 });
+
+test("the same form answer twice (two tabs, a double tap) is sent once; ordinary text and a different answer are sent again", async () => {
+  await setup();
+  process.env.FAKE_STEP_MS = "300";
+  try {
+    const t = await board.createTicket("p", { title: "x", body: "", status: "backlog" });
+    const answer = "My answers:\n- Which colour? → Blue";
+    await board.chat("p", t.id, answer);
+    await board.chat("p", t.id, answer);
+    await board.chat("p", t.id, "hello");
+    await board.chat("p", t.id, "hello");
+    await board.whenIdle();
+    // What Claude read: each message it was given, once.
+    const read = () => replays(t.id).join("\n\n");
+    expect(read().split("My answers:").length - 1).toBe(1);
+    expect(read().split("hello").length - 1).toBe(2);
+    // A different answer goes.
+    await board.chat("p", t.id, "My answers:\n- Which colour? → Red");
+    await board.whenIdle();
+    expect(read().includes("→ Red")).toBe(true);
+  } finally {
+    delete process.env.FAKE_STEP_MS;
+  }
+}, 60_000);
