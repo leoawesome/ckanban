@@ -83,7 +83,7 @@ export interface ReplyDeps {
   /** The bot's public id (message ids are per bot). */
   bot: () => string;
   /** Board.chatFromTelegram (null until the board is plugged in): false when the update was already sent. */
-  chat: () => ((board: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null }) => Promise<boolean>) | null;
+  chat: () => ((board: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null; still?: () => boolean }) => Promise<boolean>) | null;
   /** Board.patchTelegram. */
   patch: (board: string, id: string, patch: Pick<Partial<Ticket>, "telegramOut" | "telegramReport">) => void;
   /** The echo before a typed answer (Settings: "Ask before sending typed answers"). */
@@ -295,12 +295,18 @@ export class TelegramReplies {
     }
     const ticket = this.d.store.getTicket(t.board, t.ticketId)!;
     try {
-      const sent = await chat(t.board, t.ticketId, r.text, { updateId: r.updateId, tg: r.tg, chatId: r.chatId, key: t.key });
+      // Checked again right before it is queued: a /lock, Pause or Unpair while the board waits refuses it.
+      const still = this.d.taking ? () => this.d.taking!() : undefined;
+      const sent = await chat(t.board, t.ticketId, r.text, { updateId: r.updateId, tg: r.tg, chatId: r.chatId, key: t.key, ...(still ? { still } : {}) });
       if (!sent) {
         await tell(`Already sent to "${ticket.title}".`);
         return "Already sent";
       }
     } catch (e) {
+      if ((e as Error).name === "StillRefused") {
+        await tell(NOT_TAKING);
+        return "Not sent";
+      }
       await tell(`Couldn't send this to "${ticket.title}": ${(e as Error).message}`);
       return "Not sent";
     }

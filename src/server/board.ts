@@ -200,11 +200,24 @@ function flags(o: ChatOptions): Pick<QueuedMessage, "peer" | "fromPlanner" | "fr
   };
 }
 
+/** ChatOptions.still said no: nothing was queued. */
+export class StillRefused extends Error {
+  constructor() {
+    super("not taking this message any more");
+    this.name = "StillRefused";
+  }
+}
+
 /** Telegram marks kept per ticket (telegramIn, telegramOut). */
 export const TELEGRAM_KEEP = 30;
 
 /** Board.chat options; hostWake: the ticket's own auto huddle (or a free auto-huddle slot) wakes it; followUp: its follow-up is due. */
 export interface ChatOptions {
+  /**
+   * Checked right before the message is queued (after any wait, such as the rewind snapshot): false refuses it with a
+   * StillRefused error and nothing is queued (Telegram: "Take messages" turned off meanwhile).
+   */
+  still?: () => boolean;
   peer?: boolean;
   fromPlanner?: boolean;
   /** Sent by another ticket's Claude: which one (shown with the message instead of "You"). */
@@ -602,6 +615,7 @@ export class Board {
   }
 
   private async chatNow(slug: string, id: string, text: string, opts: ChatOptions): Promise<Ticket> {
+    if (opts.still && !opts.still()) throw new StillRefused();
     let t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
     if (!text.trim()) throw new Error("message is empty");
@@ -2341,12 +2355,12 @@ export class Board {
    * The user's reply from Telegram: the same as typing it in the ticket's chat (http.ts POST .../chat, as the user),
    * carrying its Telegram update so it is sent once. Returns false when that update was already sent.
    */
-  async chatFromTelegram(slug: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null }): Promise<boolean> {
+  async chatFromTelegram(slug: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null; still?: () => boolean }): Promise<boolean> {
     const t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
     if (t.telegramIn?.some((m) => m.updateId === from.updateId) || t.queued?.some((m) => m.telegram?.updateId === from.updateId)) return false;
     const startedBy = this.isRunning(slug, id) ? undefined : null;
-    const after = await this.chat(slug, id, text, { telegram: { updateId: from.updateId, tg: from.tg } });
+    const after = await this.chat(slug, id, text, { telegram: { updateId: from.updateId, tg: from.tg }, ...(from.still ? { still: from.still } : {}) });
     // Written before anything else can run: the queued message (which also carries the update) is still there.
     const at = nowIso();
     const now = this.store.getTicket(slug, id) ?? after;

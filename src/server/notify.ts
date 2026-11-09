@@ -25,7 +25,7 @@ import type { Ticket } from "./types";
 
 /** What the Telegram reply router needs from the board (Board implements it; plugged in with Notifier.plugBoard). */
 export interface TelegramBoard {
-  chatFromTelegram(slug: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null }): Promise<boolean>;
+  chatFromTelegram(slug: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null; still?: () => boolean }): Promise<boolean>;
   patchTelegram(slug: string, id: string, patch: Pick<Partial<Ticket>, "telegramIn" | "telegramOut" | "telegramReport">): unknown;
   /** Drops messages from Telegram still waiting in tickets' queues (Pause, /lock, Unpair). */
   dropTelegramQueued(): number;
