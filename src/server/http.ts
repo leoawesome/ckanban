@@ -28,7 +28,7 @@ import { HuddleError, Huddles, type Caller } from "./huddle";
 import { HuddleSessionCache, participantSession, participantTool } from "./huddle-session";
 import { HUDDLE_HEADER, SOURCE_HEADER } from "./huddle-roster";
 import { NOTES_CAP } from "./huddle-notes";
-import { byWaitingAge, huddleAsk, huddleBusy, SNOOZE_MS, snoozeKey, ticketAttention, userWaitReason, withSnooze } from "./attention";
+import { byWaitingAge, huddleAsk, huddleBusy, SNOOZE_FOREVER, SNOOZE_MS, snoozeKey, ticketAttention, userWaitReason, withSnooze } from "./attention";
 import { isComplete, MAX_RETRIES, planActive } from "./plan";
 import { BugReportError, draftReport, submitReport, type BugBlockId, type BugSource, type GhRunner } from "./bugreport";
 import {
@@ -2093,19 +2093,21 @@ export function createServer(deps: ServerDeps) {
         throw new HttpError(400, (e as Error).message);
       }
     }
-    // Inbox Snooze: hide what the ticket waits for now (1 day, or { hours }); DELETE unsnoozes.
+    // Inbox Snooze: hide what the ticket waits for now (1 day, { hours }, or { forever: true } until unsnoozed); DELETE unsnoozes.
+    // Any of them ends when what the ticket waits for changes.
     if (action === "snooze" && (m === "POST" || m === "DELETE")) {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "snoozing is the user's, not a board run's");
       if (m === "DELETE") return json(view(profile, board.setSnooze(slug, id, null)));
       const b = (await body(req)) ?? {};
+      const forever = b.forever === true;
       const hours = b.hours === undefined ? SNOOZE_MS / 3600_000 : Number(b.hours);
-      if (!(hours > 0 && hours <= 24 * 30)) throw new HttpError(400, "hours must be between 0 and 720");
+      if (!forever && !(hours > 0 && hours <= 24 * 30)) throw new HttpError(400, "hours must be between 0 and 720");
       const t = store.getTicket(slug, id)!;
       const session = t.sessionId ? sessions.summary(t.sessionId) : null;
       const huddle = board.hostHuddles(slug).get(id);
       const att = ticketAttention(store, slug, t, session, board.isRunning(slug, id), huddle, (x) => board.isRunning(slug, x));
       if (!att) throw new HttpError(409, "this ticket doesn't need you, nothing to snooze");
-      const until = new Date(Date.now() + hours * 3600_000).toISOString();
+      const until = forever ? SNOOZE_FOREVER : new Date(Date.now() + hours * 3600_000).toISOString();
       return json(view(profile, board.setSnooze(slug, id, { until, key: snoozeKey(t, session, att, huddle) })));
     }
     // Follow-ups (followup.ts): a ticket's own Claude sets one (follow_up) or stops it (cancel_follow_up, with a reason);

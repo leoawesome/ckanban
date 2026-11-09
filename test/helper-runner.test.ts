@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
 import { checkDecision, channelFor, parseDecision, type CheckContext, type ItemState } from "../src/server/helper/decide";
-import { backoffMs, HelperRunner, meetingTime } from "../src/server/helper/runner";
-import { HelperSettingsStore, inNight, nightEnd } from "../src/server/helper/settings";
+import { backoffMs, HelperRunner, lookBeforeDigest, meetingTime } from "../src/server/helper/runner";
+import { HelperSettingsStore, inNight, morningDigestAt, nightEnd } from "../src/server/helper/settings";
 import type { Channel } from "../src/server/helper/channels";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/server/session";
@@ -28,6 +28,19 @@ describe("night window", () => {
     expect(nightEnd(DAY(3), NIGHT)).toBe(DAY(7));
     expect(nightEnd(DAY(14), NIGHT)).toBe(DAY(14));
     expect(inNight(DAY(13), { start: "12:00", end: "14:00" })).toBe(true);
+  });
+
+  test("a digest the night holds goes 30 minutes after it ends; the look before it is at the night's end", () => {
+    const next7 = new Date(2026, 10, 10, 7, 0).getTime();
+    expect(morningDigestAt(DAY(23), NIGHT)).toBe(next7 + 30 * 60_000);
+    expect(morningDigestAt(DAY(3), NIGHT)).toBe(DAY(7, 30));
+    expect(morningDigestAt(DAY(14), NIGHT)).toBe(DAY(14));
+    // 5 minutes before a 7:30 digest is 7:25: the helper looks at 7:00 instead, so its morning summary goes first.
+    expect(lookBeforeDigest(DAY(7, 25), NIGHT)).toBe(DAY(7));
+    expect(lookBeforeDigest(DAY(3), NIGHT)).toBe(DAY(7));
+    expect(lookBeforeDigest(DAY(23), NIGHT)).toBe(next7);
+    expect(lookBeforeDigest(DAY(7, 40), NIGHT)).toBe(DAY(7, 40));
+    expect(lookBeforeDigest(DAY(14), NIGHT)).toBe(DAY(14));
   });
 
   test("settings: defaults, checks, feedback list", () => {
@@ -298,39 +311,204 @@ describe("helper runner", () => {
     stop();
   });
 
-  test("summaries: New vs Still waiting, nothing new means no summary, check-in items named once, one shared tag", async () => {
+  test("summaries: short (new rows, still waiting counted), at most every 3 hours, nothing new means no summary, check-ins named once", async () => {
     const stop = make();
     const other = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
     ask(ticket.id, ["Approve the copy?"]);
     await settle();
-    answers.push(answer({ sends: [{ level: "summary", oneLine: "1 waits: copy question", why: "", itemKeys: [keyOf(ticket.id)], escalation: [] }] }));
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "1 waits: copy question", why: "the copy question is new", itemKeys: [keyOf(ticket.id)], escalation: [] }] }));
     clock += 60_000;
     await h.tick();
     expect(hooks.map((x) => x.title)).toEqual(["1 ticket waits on you"]);
+    const first = n.helper.messages.listNewest()[0];
+    // No "Why now", no links in the text; the page gets rows.
+    expect(first.text).toBe("1 waits on you: copy question\n\n- Pricing: Approve the copy?");
+    expect(first.why).toBeNull();
+    expect(first.summary).toMatchObject({ new: [{ ticketId: ticket.id, label: "Approve the copy?" }], stillCount: 0 });
     // A check-in raised a prep ticket; a new question arrives.
-    store.createTicket("kb", { title: "Prep: client call at 15:30", body: "b", status: "backlog", raisedBy: { scheduleId: "s1", ticketId: "x" } } as any);
+    store.createTicket("kb", { title: "Prep: client call at 18:30", body: "b", status: "backlog", raisedBy: { scheduleId: "s1", ticketId: "x" } } as any);
     ask(other.id, ["Which tone?"]);
     await settle();
-    answers.push((i) => {
+    const all = (i: SideCallInput) => {
       const input = JSON.parse(i.prompt);
       const keys = input.items.filter((x: any) => x.told === "no").map((x: any) => x.key);
-      return answer({ sends: [{ level: "summary", oneLine: "2 wait: tone question on Docs", why: "", itemKeys: [...keys, keyOf(ticket.id)], escalation: [] }] });
+      return answer({ sends: [{ level: "summary", oneLine: "2 wait: tone question on Docs", why: "", itemKeys: [...keys, keyOf(ticket.id)], escalation: [] }], nextWakeIn: 600 });
+    };
+    // 2 minutes after the last summary: the board holds it, and the helper hears when the next may go.
+    let seen: any = null;
+    answers.push((i) => {
+      seen = JSON.parse(i.prompt);
+      return all(i);
     });
     clock += 2 * 60_000;
     await h.tick();
+    expect(hooks).toHaveLength(1);
+    const gapEnd = Date.parse(first.at) + 3 * 3600_000;
+    expect(seen.nextSummaryAt).toBe(new Date(gapEnd).toString());
+    expect(h.status().runs.at(-1)!.fixes!.some((f) => f.startsWith("held a summary: the last one went out under 3 hours ago"))).toBe(true);
+    // It looks again when the gap ends (not at its own 10 hours), and the items are held until then.
+    expect(h.dueAt()).toBe(gapEnd);
+    expect(n.helper.waits.get(keyOf(other.id))).toMatchObject({ toldAt: null, heldUntil: new Date(gapEnd).toISOString() });
+    clock = gapEnd;
+    answers.push(all);
+    await h.tick();
+    expect(hooks).toHaveLength(2);
     const m = n.helper.messages.listNewest()[0];
     expect(m.level).toBe("summary");
-    expect(m.text).toContain("New:\n- Docs: Which tone?");
-    expect(m.text).toContain("Still waiting: 1\n- Pricing: Approve the copy?");
-    expect(m.text).toContain("From your check-ins:\n- Prep: client call at 15:30: prep ready");
+    expect(m.text).toBe("2 wait on you: tone question on Docs\n\n- Docs: Which tone?\n\n1 more still waits on you, oldest from 9 Nov.\n\nFrom your check-ins:\n- Prep: client call at 18:30: prep ready");
+    expect(m.summary).toMatchObject({ stillCount: 1, still: [{ ticketId: ticket.id }], checkins: [{ title: "Prep: client call at 18:30" }] });
     expect(hooks.at(-1)!.title).toBe("2 tickets wait on you");
     // Nothing new: the helper's summary is dropped.
     answers.push(answer({ sends: [{ level: "summary", oneLine: "still 2", why: "", itemKeys: [keyOf(ticket.id), keyOf(other.id)], escalation: [] }] }));
-    clock += 2 * 3600_000;
+    clock += 3 * 3600_000;
     h.requestWake(clock);
     await h.tick();
     expect(hooks).toHaveLength(2);
     expect(h.status().runs.at(-1)!.fixes).toContain("dropped a summary with nothing new");
+    stop();
+  });
+
+  test("the 3-hour summary gap never holds an urgent alert, and a morning summary isn't held", async () => {
+    const stop = make();
+    const other = store.createTicket("kb", { title: "Deploy", body: "b", status: "in_progress" });
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "copy question", why: "", itemKeys: [keyOf(ticket.id)], escalation: [] }] }));
+    clock += 60_000;
+    await h.tick();
+    expect(hooks).toHaveLength(1);
+    // Minutes later an urgent one: it goes out at once, with its plan.
+    ask(other.id, ["Production is down: roll back?"], { urgent: true, why: "customers can't log in" });
+    await settle();
+    answers.push(answer({ sends: [{ level: "urgent", oneLine: "Production is down", why: "customers can't log in", itemKeys: [keyOf(other.id)], escalation: [{ channel: "webhook", afterMin: 0 }] }] }));
+    clock += 2 * 60_000;
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    expect(n.helper.messages.listNewest()[0].level).toBe("urgent");
+    expect(n.helper.waits.get(keyOf(other.id))!.toldAt).not.toBeNull();
+    stop();
+  });
+
+  test("a summary held by the 3-hour gap keeps its wake at the gap's end, even after a later wake asks for 24 hours", async () => {
+    const stop = make();
+    const b = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    const c = store.createTicket("kb", { title: "Deploy", body: "b", status: "in_progress" });
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "copy", why: "", itemKeys: [keyOf(ticket.id)], escalation: [] }] }));
+    clock += 60_000;
+    await h.tick();
+    const gapEnd = Date.parse(n.helper.messages.listNewest()[0].at) + 3 * 3600_000;
+    ask(b.id, ["Which tone?"]);
+    await settle();
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "tone", why: "", itemKeys: [keyOf(b.id)], escalation: [] }], nextWakeIn: 1440 }));
+    clock += 61_000;
+    await h.tick();
+    expect(hooks).toHaveLength(1);
+    // An urgent one comes; the helper asks to look again in 24 hours.
+    ask(c.id, ["Production is down: roll back?"], { urgent: true, why: "customers can't log in" });
+    await settle();
+    answers.push(answer({ sends: [{ level: "urgent", oneLine: "Production is down", why: "customers", itemKeys: [keyOf(c.id)], escalation: [{ channel: "webhook", afterMin: 0 }] }], nextWakeIn: 1440 }));
+    clock += 61_000;
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    expect(h.dueAt()).toBe(gapEnd);
+    expect(n.helper.waits.get(keyOf(b.id))!.heldUntil).toBe(new Date(gapEnd).toISOString());
+    // At the gap's end the held summary goes out (not the board's "didn't tell you in time" digest later).
+    clock = gapEnd;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "tone", why: "", itemKeys: [keyOf(b.id)], escalation: [] }] }));
+    await h.tick();
+    expect(n.helper.messages.listNewest()[0]).toMatchObject({ level: "summary", items: [expect.objectContaining({ ticketId: b.id }), expect.anything(), expect.anything()] });
+    expect(n.helper.waits.get(keyOf(b.id))!.toldVia).toBe("helper");
+    stop();
+  });
+
+  test("a held item gets a look shortly before the 4-hour digest would send it", async () => {
+    const stop = make();
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    answers.push(answer({ nextWakeIn: 1440, log: "held" }));
+    clock += 61_000;
+    await h.tick();
+    const digest = Date.parse(n.helper.waits.get(keyOf(ticket.id))!.digestAt!);
+    expect(h.dueAt()).toBe(digest - 5 * 60_000);
+    stop();
+  });
+
+  // Items held overnight: one from the evening (its 4-hour digest falls in the night), one from the night.
+  const holdOvernight = async () => {
+    clock = DAY(19);
+    const other = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    answers.push(answer({ nextWakeIn: 24 * 60, log: "held" }));
+    clock += 61_000;
+    await h.tick();
+    const morning = new Date(2026, 10, 10, 7, 0).getTime();
+    clock = DAY(23);
+    ask(other.id, ["Which tone?"]);
+    await settle();
+    answers.push(answer({ nextWakeIn: 24 * 60, log: "night: held for the morning" }));
+    clock += 61_000;
+    await h.tick();
+    const keys = [keyOf(ticket.id), keyOf(other.id)];
+    for (const k of keys) expect(n.helper.waits.get(k)).toMatchObject({ toldAt: null, digestAt: new Date(morning + 30 * 60_000).toISOString() });
+    // The helper looks again when the night ends, before the digests.
+    expect(h.dueAt()).toBe(morning);
+    expect(hooks).toHaveLength(0);
+    return { keys, morning };
+  };
+
+  test("morning: the helper's summary goes first, even when its call takes a few seconds; no digest", async () => {
+    const stop = make();
+    const { keys, morning } = await holdOvernight();
+    clock = morning;
+    // The board checks once a second while the helper's call runs.
+    answers.push((async () => {
+      for (let i = 0; i < 5; i++) await settle();
+      return answer({ sends: [{ level: "summary", oneLine: "2 wait on you", why: "", itemKeys: keys, escalation: [] }], nextWakeIn: 600 });
+    }) as any);
+    await settle();
+    await h.tick();
+    // Later in the morning: nothing more.
+    for (const t of [7 * 60 + 30, 7 * 60 + 31, 9 * 60]) {
+      clock = morning + (t - 7 * 60) * 60_000;
+      await settle();
+    }
+    const sent = n.helper.messages.listNewest().filter((m) => !m.held);
+    expect(sent.map((m) => m.level)).toEqual(["summary"]);
+    expect(hooks).toHaveLength(1);
+    for (const k of keys) expect(n.helper.waits.get(k)!.toldVia).toBe("helper");
+    stop();
+  });
+
+  test("morning: the helper's call hangs; the digest still goes out 30 minutes after the night ends", async () => {
+    const stop = make();
+    const { keys, morning } = await holdOvernight();
+    clock = morning;
+    answers.push((() => new Promise(() => {})) as any);
+    void h.tick();
+    await settle();
+    clock = morning + 29 * 60_000;
+    await settle();
+    expect(hooks).toHaveLength(0);
+    clock = morning + 30 * 60_000;
+    await settle();
+    expect(n.helper.messages.listNewest().filter((m) => !m.held).map((m) => m.level)).toEqual(["fallback"]);
+    expect(hooks).toHaveLength(1);
+    for (const k of keys) expect(n.helper.waits.get(k)!.toldVia).toBe("digest");
+    stop();
+  });
+
+  test("morning: the helper keeps failing; both items still reach the user", async () => {
+    const stop = make();
+    const { keys, morning } = await holdOvernight();
+    for (clock = morning; clock <= morning + 31 * 60_000; clock += 30_000) {
+      answers.push({ ok: false, error: "Not logged in" });
+      await h.tick();
+      await settle();
+    }
+    for (const k of keys) expect(n.helper.waits.get(k)!.toldAt).not.toBeNull();
     stop();
   });
 
@@ -602,6 +780,43 @@ describe("helper runner", () => {
     await h.tick();
     expect(calls).toHaveLength(2);
     expect(JSON.parse(calls[1].prompt).items[0]).toMatchObject({ snoozed: false });
+    stop();
+  });
+
+  test("a snooze until unsnoozed keeps the wait out of summaries and safety nets, with no wake for its end; unsnoozing gives the 4-hour digest back", async () => {
+    const stop = make();
+    const other = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    snoozes.set(ticket.id, "9999-12-31T23:59:59.000Z");
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    await h.tick();
+    const key = keyOf(ticket.id);
+    expect(n.helper.waits.get(key)!.digestAt).toBe("9999-12-31T23:59:59.000Z");
+    // A new wait elsewhere still gets the 1-minute batch wake (the far-off end doesn't block it).
+    ask(other.id, ["Which tone?"]);
+    await settle();
+    let seen: any = null;
+    answers.push((i) => {
+      seen = JSON.parse(i.prompt);
+      return answer({ sends: [{ level: "summary", oneLine: "tone", why: "", itemKeys: [key, keyOf(other.id)], escalation: [] }], nextWakeIn: 1440 });
+    });
+    clock += 61_000;
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    expect(seen.items.find((x: any) => x.key === key)).toMatchObject({ snoozed: true });
+    // The board drops the snoozed one from the summary.
+    const m = n.helper.messages.listNewest()[0];
+    expect(m.items.map((i) => i.ticketId)).toEqual([other.id]);
+    expect(n.helper.waits.get(key)!.toldAt).toBeNull();
+    // Weeks later nothing has gone out about it.
+    clock += 30 * 24 * 3600_000;
+    await h.tick();
+    await settle();
+    expect(n.helper.messages.listNewest().filter((x) => x.items.some((i) => i.ticketId === ticket.id))).toEqual([]);
+    // Unsnoozed: its safety net comes back from now.
+    snoozes.delete(ticket.id);
+    await h.tick();
+    expect(Date.parse(n.helper.waits.get(key)!.digestAt!)).toBe(clock + 4 * 3600_000);
     stop();
   });
 

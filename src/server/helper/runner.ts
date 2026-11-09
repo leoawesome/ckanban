@@ -12,12 +12,14 @@ import { addSideSpend, type SideCaller } from "../side-call";
 import { atomicWrite, type Store } from "../store";
 import { clockTime, cut, directLabel, type HelperCore, type HelperSink, type OutBody, type WaitEventReason } from "./core";
 import {
-  checkDecision, DECISION_SCHEMA, HELPER_SYSTEM, parseDecision, REMIND_MAX_MIN, REMIND_MAX_STEPS, urgentRefusal, type CheckedDecision, type CheckedSend,
+  checkDecision, DECISION_SCHEMA, HELPER_SYSTEM, parseDecision, REMIND_MAX_MIN, REMIND_MAX_STEPS, summaryAllowedAt, urgentRefusal, type CheckedDecision, type CheckedSend,
   type HelperInput, type InputItem, type ItemState,
 } from "./decide";
 import type { MessageItem, NewMessage, StoredMessage } from "./messages";
-import { HelperSettingsStore, inNight, nightEnd, type HelperSettings } from "./settings";
-import { pending, type WaitRecord } from "./waits";
+import { buildSummary, type SummaryInput } from "./summary";
+import { HelperSettingsStore, inNight, MORNING_GRACE_MS, morningDigestAt, nightEnd, type HelperSettings, type Night } from "./settings";
+import { snoozeForever } from "../attention";
+import { DIGEST_MS, FALLBACK_MS, pending, type WaitRecord } from "./waits";
 
 /** A new wait waits this long for others before the helper wakes (an asker's urgent mark wakes it at once). */
 export const BATCH_MS = 60_000;
@@ -34,6 +36,21 @@ export const AWAKE_AHEAD_MS = 15 * 60_000;
 /** An urgent alert that reached no channel and has no later step: the helper looks again this soon. */
 export const URGENT_RETRY_MS = 5 * 60_000;
 export const RUNS_KEEP = 50;
+/** A wait whose snooze ended early with its safety-net times further off than this gets them back from now. */
+export const UNSNOOZED_MAX_MS = 24 * 3600_000;
+/** The helper looks at held items this long before the board's 4-hour digest would send them. */
+export const DIGEST_LEAD_MS = 5 * 60_000;
+
+/**
+ * When the helper looks at held items due a digest soon (`before`: 5 minutes before it). At night, or within the
+ * morning grace after a night (a digest the night moved), it looks when the night ends: the morning summary goes
+ * first, and the user isn't woken.
+ */
+export function lookBeforeDigest(before: number, night: Night): number {
+  if (inNight(before, night)) return nightEnd(before, night);
+  const graceStart = before - MORNING_GRACE_MS;
+  return inNight(graceStart, night) ? nightEnd(graceStart, night) : before;
+}
 export const REACTIONS_KEEP = 20;
 /** The helper's spend, for the "Helper" line in today's spend (spend.ts). */
 export const helperSpendFile = (root: string) => join(root, "helper-spend.jsonl");
@@ -252,17 +269,19 @@ export class HelperRunner implements HelperSink {
 
   onWait(rec: WaitRecord, reason: WaitEventReason): void {
     const now = this.now();
-    // At night the fallback digest waits for the morning.
+    // At night the fallback digest waits for the morning, with a grace after the night ends: the helper's morning
+    // summary goes first.
     const night = this.settings.get().night;
-    if (rec.digestAt && inNight(ms(rec.digestAt), night)) this.d.core.waits.update(rec.key, { digestAt: new Date(nightEnd(ms(rec.digestAt), night)).toISOString() });
+    if (rec.digestAt && inNight(ms(rec.digestAt), night)) this.d.core.waits.update(rec.key, { digestAt: new Date(morningDigestAt(ms(rec.digestAt), night)).toISOString() });
     if (reason === "urgent" || rec.urgent) this.requestWake(now);
-    else if (this.batchAt === null) this.batchAt = now + BATCH_MS;
+    // Not "only when no wake is set": a far-off wake (a snooze's end) must not hold the batch back.
+    else this.requestWake(now + BATCH_MS);
     this.d.emit?.({ type: "helper.updated" });
   }
 
   morning(now: number): number | null {
     const night = this.settings.get().night;
-    return inNight(now, night) ? nightEnd(now, night) : null;
+    return inNight(now, night) ? morningDigestAt(now, night) : null;
   }
 
   /** Wake at this time (or sooner if already due sooner). The loop guard and the failure backoff still apply. */
@@ -319,11 +338,27 @@ export class HelperRunner implements HelperSink {
    * (re-set every tick, so a wake during the snooze or a restart doesn't lose it).
    */
   private maintain(): void {
+    const now = this.now();
     for (const r of this.d.core.waits.open()) {
       const until = this.snoozed(r);
-      if (!until) continue;
+      if (!until) {
+        // Unsnoozed (or the ticket changed) before the end: the safety nets come back from now, not from the old end
+        // (a snooze "until I unsnooze" would otherwise leave no digest at all).
+        if (r.toldAt) continue;
+        const patch: Partial<WaitRecord> = {};
+        // Only ends over a day away (a week, no end): a digest moved to the morning stays where the night put it.
+        if (r.digestAt && ms(r.digestAt) > now + UNSNOOZED_MAX_MS) patch.digestAt = new Date(now + DIGEST_MS).toISOString();
+        if (r.fallbackAt && ms(r.fallbackAt) > now + UNSNOOZED_MAX_MS) patch.fallbackAt = new Date(now + FALLBACK_MS).toISOString();
+        if (Object.keys(patch).length) {
+          this.d.core.waits.update(r.key, patch);
+          // The helper looks at it again soon, before the fallbacks would send it.
+          this.requestWake(now + BATCH_MS);
+        }
+        continue;
+      }
       const u = ms(until);
-      this.requestWake(u);
+      // No end ("until I unsnooze"): nothing to wake for.
+      if (!snoozeForever(until)) this.requestWake(u);
       if (r.toldAt) continue;
       const patch: Partial<WaitRecord> = {};
       if (r.fallbackAt && ms(r.fallbackAt) < u) patch.fallbackAt = until;
@@ -413,7 +448,20 @@ export class HelperRunner implements HelperSink {
       channels: this.d.core.channels.enabled(this.d.notifySettings()).map((c) => c.name),
       feedback: s.feedback.map((f) => f.text), newFeedback: g.newFeedback, reactions: this.state.reactions.map((r) => r.text),
       notes: this.state.notes, firstSummary: this.d.core.waits.firstSummaryPending, askAboutNight,
+      nextSummaryAt: this.nextSummaryAt(g.now, s),
     };
+  }
+
+  /** When the last routine summary reached the user (ms), or null. */
+  lastSummaryAt(): number | null {
+    const m = this.d.core.messages.listNewest().find((x) => x.level === "summary" && x.sends.some((r) => r.ok));
+    return m ? Date.parse(m.at) : null;
+  }
+
+  /** The next routine summary may go out then (local time text for the helper), or null: one may go now. */
+  private nextSummaryAt(now: number, s: HelperSettings): string | null {
+    const at = summaryAllowedAt(this.lastSummaryAt(), now, s.night);
+    return at === null ? null : new Date(at).toString();
   }
 
   // ---------- a wake ----------
@@ -513,6 +561,8 @@ export class HelperRunner implements HelperSink {
     /** Urgent alerts that reached no channel: not held, and the helper looks again soon unless a later step retries. */
     const unreached = new Set<string>();
     let retry = false;
+    /** A routine summary held by the 3-hour gap: the helper looks again when the gap ends. */
+    let gapEnds: number | null = null;
     for (const raw of dec.sends) {
       // Turned off during an earlier send: the off digest took over.
       if (!this.active()) return sent;
@@ -527,8 +577,17 @@ export class HelperRunner implements HelperSink {
           if (r.tried.length && r.steps < 2) retry = true;
           continue;
         }
-      } else if (await this.sendSummary(send, keys, g, first && !firstDone)) firstDone = first;
-      else continue;
+      } else {
+        // At most one routine summary every 3 hours in the daytime (not the first one, not the morning one).
+        const allowed = first && !firstDone ? null : summaryAllowedAt(this.lastSummaryAt(), this.now(), s.night);
+        if (allowed !== null) {
+          gapEnds = gapEnds === null ? allowed : Math.min(gapEnds, allowed);
+          dec.fixes.push(`held a summary: the last one went out under 3 hours ago; the next may go at ${clockTime(new Date(allowed).toISOString())}`);
+          continue;
+        }
+        if (await this.sendSummary(send, keys, g, first && !firstDone)) firstDone = first;
+        else continue;
+      }
       sent++;
     }
     if (!this.active()) return sent;
@@ -548,8 +607,18 @@ export class HelperRunner implements HelperSink {
     // At night the helper looks again by the end of the night at the latest: what it holds goes in the morning summary.
     let next = retry ? Math.min(dec.nextWakeAt, this.now() + URGENT_RETRY_MS) : dec.nextWakeAt;
     if (night) next = Math.min(next, nightEnd(this.now(), s.night));
-    const nextIso = new Date(next).toISOString();
+    if (gapEnds !== null) next = Math.min(next, gapEnds);
     const held = this.d.core.waits.open().filter((r) => !r.toldAt && !g.snoozed.has(r.key) && !unreached.has(r.key));
+    if (held.length) {
+      // Whatever this wake was for (an urgent alert, a new item), held items get their look: when the 3-hour gap
+      // ends, and before the board's own digest would send them.
+      const gap = summaryAllowedAt(this.lastSummaryAt(), this.now(), s.night);
+      if (gap !== null) next = Math.min(next, gap);
+      const digests = held.map((r) => ms(r.digestAt)).filter((t) => Number.isFinite(t));
+      const before = digests.length ? Math.min(...digests) - DIGEST_LEAD_MS : NaN;
+      if (Number.isFinite(before) && before > this.now()) next = Math.min(next, lookBeforeDigest(before, s.night));
+    }
+    const nextIso = new Date(next).toISOString();
     for (const r of held) this.d.core.waits.update(r.key, { heldUntil: nextIso });
     if (held.length) {
       const items = held.map((r) => this.d.core.item(r));
@@ -592,15 +661,11 @@ export class HelperRunner implements HelperSink {
     return new Set(items.map((i) => i.board)).size > 1 || this.d.store.listProfiles().length > 1;
   }
 
-  private row(it: MessageItem, what: string, boards: boolean): string {
-    return `- ${it.title}${boards ? ` (${it.boardName})` : ""}: ${what}\n  ${this.d.link(it.board, it.ticketId)}`;
-  }
-
   // ---------- urgent ----------
 
   /**
    * Sends an urgent alert along its step chain. ok: a channel reached the user. When none did, the records stay untold
-   * (so a later step, the next wake or the 2-hour digest still reaches the user) and the failure is logged.
+   * (so a later step, the next wake or the 4-hour digest still reaches the user) and the failure is logged.
    * One alert per wait: the 2-hour / 6-step cap counts every alert on the wait (a retry after one that reached no one
    * gets what is left of it); a wait past its cap stops as "expired" and isn't sent.
    * The plan and the told mark are written before the send, so Got it, Not urgent or opening the ticket while it is
@@ -746,7 +811,7 @@ export class HelperRunner implements HelperSink {
     if (ok) this.d.core.markTold(untold, "helper", message.id);
     else {
       console.warn(`helper: reminder ${message.id} reached no channel (${failures(results)})`);
-      // Nothing told yet and no step left: the helper looks again soon (the 2-hour digest is the backstop).
+      // Nothing told yet and no step left: the helper looks again soon (the 4-hour digest is the backstop).
       if (untold.length && !later.length) this.requestWake(now + URGENT_RETRY_MS);
     }
     for (const r of recs) {
@@ -780,19 +845,21 @@ export class HelperRunner implements HelperSink {
     send = { ...send, oneLine: summaryLine(total, send.oneLine) };
     const offer = first && this.d.checkinOffer?.()
       ? "Want me to watch your calendar and messages too? Set up a check-in in Schedules → Proactive check-ins (one tap: Set up check-ins)." : null;
-    const text = [
-      send.oneLine, send.why ? `Why now: ${send.why}` : null,
-      fresh.length ? `New:\n${fresh.map((r, i) => this.row(freshItems[i], directLabel(r), boards)).join("\n")}` : null,
-      still.length ? `Still waiting: ${still.length}\n${still.map((r, i) => this.row(stillItems[i], directLabel(r), boards)).join("\n")}` : null,
-      newChecks.length || g.olderCheckins
-        ? `From your check-ins:\n${[...newChecks.map((c) => this.row(c, c.title.toLowerCase().startsWith("prep:") ? "prep ready" : "raised for you", boards)), ...(g.olderCheckins ? [`+${g.olderCheckins} older from check-ins`] : [])].join("\n")}`
-        : null,
-      first ? "This is your first summary from the helper. Routine things come grouped like this; only urgent ones interrupt you." : null,
-      offer,
-    ].filter(Boolean).join("\n\n");
+    const input = (it: MessageItem, r: WaitRecord): SummaryInput => ({ ...it, label: directLabel(r), since: r.since || r.queuedAt });
+    const checkinSince = (c: MessageItem) => this.d.store.getTicket(c.board, c.ticketId)?.createdAt ?? new Date(this.now()).toISOString();
+    const { text, view } = buildSummary({
+      headline: send.oneLine,
+      fresh: fresh.map((r, i) => input(freshItems[i], r)),
+      still: still.map((r, i) => input(stillItems[i], r)),
+      checkins: newChecks.map((c) => ({ ...c, label: c.title.toLowerCase().startsWith("prep:") ? "prep ready" : "raised for you", since: checkinSince(c) })),
+      olderCheckins: g.olderCheckins,
+      notes: [first ? "This is your first summary from the helper. Routine things come grouped like this; only urgent ones interrupt you." : null, offer].filter((x): x is string => !!x),
+      boards, now: this.now(),
+    });
     const title = total ? (total === 1 ? "1 ticket waits on you" : `${total} tickets wait on you`) : "From your check-ins";
-    const message = this.d.core.messages.add({ level: "summary", oneLine: send.oneLine, text, why: send.why || null, items: [...freshItems, ...newChecks, ...stillItems] });
-    // Told before the send (a claim): the 2-hour digest or a restart meanwhile doesn't send these again. Given back
+    // A summary's why is the helper's own reasoning: it stays out of the text and the page.
+    const message = this.d.core.messages.add({ level: "summary", oneLine: send.oneLine, text, why: null, items: [...freshItems, ...newChecks, ...stillItems], summary: view });
+    // Told before the send (a claim): the 4-hour digest or a restart meanwhile doesn't send these again. Given back
     // when the send reached no channel, so the next message or the digest still tells them.
     const claims = fresh.map(claimOf);
     this.d.core.markTold(fresh.map((r) => r.key), "helper", message.id);

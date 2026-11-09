@@ -1634,6 +1634,9 @@ button.your-turn.go:focus-visible { outline: 2px solid currentColor; outline-off
 /* ⋯ with a row's other actions (RowMore in Inbox.tsx): Now cards always, Inbox rows only on touch screens. */
 .row-more { position: relative; display: inline-flex; flex: none; }
 .inbox-actions .row-more { display: none; }
+/* Desktop: the longer snoozes sit behind a small ⋯ with the hover actions. */
+.inbox-secondary .row-more { display: inline-flex; }
+.inbox-secondary .row-more-btn { width: 28px; }
 .row-more-btn { width: 40px; padding: 0; justify-content: center; align-items: center; color: var(--muted); }
 .row-more-menu { width: auto; min-width: 160px; }
 .inbox-entry.snoozed .inbox-title { color: var(--muted); }
@@ -3906,6 +3909,16 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .msg-ticket { display: flex; gap: 10px; align-items: center; padding: 4px 0; }
 .msg-ticket + .msg-ticket { border-top: 1px solid var(--border); padding-top: 8px; }
 .msg-question { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-nav { justify-self: end; gap: 4px; }
+.msg-nav .icon-btn { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+.msg-sum { gap: 8px; }
+.msg-sum .msg-ttl { font-size: var(--fs-lg); }
+.msg-sum-label { font-size: var(--fs-lg); color: var(--muted); line-height: 1.4; overflow-wrap: anywhere; }
+.msg-sum-still { font-size: var(--fs-lg); line-height: 1.45; }
+.msg-sum-toggle { align-self: flex-start; font-size: var(--fs-md); padding: 6px 0; }
+.msg-group + .msg-group { border-top: 1px solid var(--border); padding-top: 8px; }
+.msg-group > .msg-label { margin-top: 2px; }
+.msg-note { margin: 0; }
 .msg-trail { list-style: none; margin: 0 0 0 6px; padding: 0 0 0 14px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
 .msg-trail li { position: relative; font-size: var(--fs-sm); }
 .msg-trail li::before { content: ""; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }

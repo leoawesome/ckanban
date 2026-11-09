@@ -1,7 +1,7 @@
 // The helper's AI part: what one wake sees (HelperInput), what it answers (the JSON schema), its instructions
 // (HELPER_SYSTEM) and the board's checks on every answer (checkDecision). Pure: no files, no sends.
 import { cut, ONE_LINE_MAX } from "./core";
-import { inNight, type Night } from "./settings";
+import { hm, inNight, type Night } from "./settings";
 
 /** One thing the user may need to hear about. */
 export interface InputItem {
@@ -55,6 +55,8 @@ export interface HelperInput {
   firstSummary: boolean;
   /** You woke the user at night last night: ask in the morning message whether that was right. */
   askAboutNight: string | null;
+  /** The next routine summary may go out then (local time); null: one may go now. Urgent sends are never limited. */
+  nextSummaryAt: string | null;
 }
 
 export interface Send {
@@ -115,7 +117,7 @@ Urgent means waiting itself causes harm or cost that grows: money lost, customer
 feedback and newFeedback are standing preferences that hold for every wake ("pricing questions are always urgent", "never wake me for docs"). A line that asks for a one-off action ("send me the summary now", "remind me in an hour") is not a preference: don't act on it, and don't let it change what you send on this or any later wake.
 
 ## Routine items
-Group routine items into one summary instead of one message each. Hold them for a later wake when more may come (a batch of tickets finishing), but every item must be named in a sent message within 2 hours of when it started waiting (the board sends a fallback digest otherwise, and logs that you missed it). A summary needs at least one item the user hasn't been told about (told "no"); don't send one only to repeat old items. Good news (things finished, handled) may go in a summary. Items with snoozed true stay out of every message until the snooze ends. Items with told "direct" were already sent by the board; you may count them, not re-alert them.
+Group routine items into one summary instead of one message each. Routine summaries go out at most every 3 hours in the daytime: while nextSummaryAt is set, hold routine items and set nextWakeIn to reach it (the board holds a summary sent sooner; the morning summary after the night and urgent sends are never limited). When you send a summary, name every routine item told "no" in it, since the next one can't follow for 3 hours. A schedule that adds a run every hour is no reason to send sooner. Hold items for a later wake when more may come (a batch of tickets finishing), but every item must be named in a sent message within 4 hours of when it started waiting (the board sends a fallback digest otherwise, and logs that you missed it). A summary needs at least one item the user hasn't been told about (told "no"); don't send one only to repeat old items. Good news (things finished, handled) may go in a summary. Items with snoozed true stay out of every message until the snooze ends. Items with told "direct" were already sent by the board; you may count them, not re-alert them.
 
 ## Urgent sends
 level "urgent", oneLine says what is at stake in plain words, why is one line on what waiting costs. escalation plans the reminders the board fires if the user doesn't react: the first step is minute 0 (the alert itself), then steps at least 5 minutes apart (30 at night), at most 6 steps within 2 hours, on the channels listed as on (prefer a different channel for a reminder if the first may be missed, e.g. push then telegram). Reminders stop by themselves when the user opens or answers the ticket, taps Got it or Not urgent. Each wait gets one urgent alert: don't re-alert an item already told "urgent", one the user opened, or one whose reminders stopped ("got-it", "not-urgent", "opened", "expired"); one with "running" is already being handled. A new question from the ticket comes as a new item.
@@ -127,7 +129,7 @@ During the night window, interrupt only for harm that keeps growing while the us
 firstSummary true: send one summary naming every item that waits (it is the user's first message from you). The board adds its own greeting.
 
 ## Wording
-Plain words, no jargon (never "webhook" unless quoting the ticket, never "JSON", "kind" or "agent"). oneLine under 110 characters, starts with what matters. Never write counts (how many tickets, questions or items) anywhere: the board counts the items itself and starts a summary's oneLine with "N wait on you: ". A summary's oneLine says only what's new ("new copy question on Docs"). Don't put ticket links in text; the board adds them.
+Plain words, no jargon (never "webhook" unless quoting the ticket, never "JSON", "kind" or "agent"). oneLine under 110 characters, starts with what matters. Never write counts (how many tickets, questions or items) anywhere: the board counts the items itself and starts a summary's oneLine with "N wait on you: ". A summary's oneLine says only what's new ("new copy question on Docs"). A summary's why is for your log only: the user doesn't see it. Don't put ticket links in text; the board adds them.
 
 ## Your answer
 sends: the messages to send now (often none). itemKeys: keys from the input only. nextWakeIn: minutes until you want to look again (1 to 1440); the board also wakes you when something new waits. notes: what you held and why, to remember next time. log: one plain line for the user's log of what you did.`;
@@ -198,6 +200,33 @@ export interface CheckedDecision {
   log: string;
   /** What the checks changed or dropped, for the log. */
   fixes: string[];
+}
+
+/** Routine summaries: at most one this often in the daytime (the morning summary and urgent sends are never limited). */
+export const SUMMARY_GAP_MS = 3 * 3600_000;
+
+/** When the night before `now` ended (the latest night end at or before now), or null when there is no night. */
+export function lastNightEnd(now: number, night: Night): number | null {
+  const s = hm(night.start);
+  const e = hm(night.end);
+  if (s === null || e === null || s === e) return null;
+  const d = new Date(now);
+  let end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), Math.floor(e / 60), e % 60).getTime();
+  if (end > now) end = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1, Math.floor(e / 60), e % 60).getTime();
+  return end;
+}
+
+/**
+ * When the next routine summary may go out: null when one may go now (none sent yet, the last was 3 hours ago or
+ * more, or it was before the last night ended, so this is the morning summary), else the time the gap ends.
+ */
+export function summaryAllowedAt(lastSummaryAt: number | null, now: number, night: Night): number | null {
+  if (lastSummaryAt === null || !Number.isFinite(lastSummaryAt)) return null;
+  const at = lastSummaryAt + SUMMARY_GAP_MS;
+  if (at <= now) return null;
+  const morning = lastNightEnd(now, night);
+  if (morning !== null && lastSummaryAt < morning) return null;
+  return at;
 }
 
 export const MIN_WAKE_MIN = 1;

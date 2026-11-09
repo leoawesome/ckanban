@@ -20,7 +20,7 @@ test("the same question, re-asked with other spacing or case, keeps its identity
 });
 
 test("pushes carry the question's first line, never only 'Answer 1 question'", () => {
-  expect(directLabel({ kind: "questions", question: "Stop the old webhook?\nAnd the cron?", label: "Answer 2 questions" })).toBe("Stop the old webhook? (+1 more)");
+  expect(directLabel({ kind: "questions", question: "Stop the old webhook?\nAnd the cron?", label: "Answer 2 questions" })).toBe("Stop the old webhook?");
   expect(directLabel({ kind: "questions", question: "Answer Claude", label: "Answer Claude" })).toBe("Answer Claude");
   expect(directLabel({ kind: "review", question: "Ready for review", label: "Ready for review" })).toBe("Ready for review");
   expect(directLabel({ kind: "questions", question: "x".repeat(300), label: "Answer 1 question" }).length).toBeLessThanOrEqual(110);
@@ -175,7 +175,7 @@ describe("Notifier with the helper core", () => {
     stop();
   });
 
-  test("helper on: waits go to the runner, not out; the 5-minute fallback and the 2-hour digest send what it missed", async () => {
+  test("helper on: waits go to the runner, not out; the 5-minute fallback and the 4-hour digest send what it missed", async () => {
     const n = make();
     const heard: [string, string][] = [];
     let last: number | null = null;
@@ -195,12 +195,16 @@ describe("Notifier with the helper core", () => {
     await settle(n);
     expect(sent).toHaveLength(1);
 
-    // A second ticket: the helper ran after it was queued but held it; after 2 hours it goes out in a digest.
+    // A second ticket: the helper ran after it was queued but held it; after 4 hours it goes out in a digest.
     const other = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
     ask(n, other.id, ["Which tone?"]);
     await settle(n);
     last = clock;
     clock += 10 * 60_000;
+    await settle(n);
+    expect(sent).toHaveLength(1);
+    // Not at 2 hours any more: the safety net waits 4.
+    clock += 2 * 3600_000;
     await settle(n);
     expect(sent).toHaveLength(1);
     clock += 2 * 3600_000;

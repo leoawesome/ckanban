@@ -14,7 +14,7 @@ export type WaitEventReason = "new" | "urgent" | "seeded" | "restart" | "message
 /**
  * The helper runner plugs in here (Notifier.helper.setSink). While a sink is set, healthy and the helper is on,
  * waits go to it instead of straight out; the board still sends a wait itself if no run succeeded within 5 minutes
- * of it (fallbackAt) or no message named it within 2 hours (digestAt).
+ * of it (fallbackAt) or no message named it within 4 hours (digestAt).
  */
 export interface HelperSink {
   /** False while runs keep failing (3 in a row): waits go out directly meanwhile. */
@@ -23,7 +23,10 @@ export interface HelperSink {
   lastSuccessAt(): number | null;
   /** A record opened (or turned urgent). The runner batches and wakes. */
   onWait(rec: WaitRecord, reason: WaitEventReason): void;
-  /** When the user's night ends (ms) if `now` is inside it, else null. Direct sends because the helper failed hold non-urgent waits until then. */
+  /**
+   * If `now` is inside the user's night: when its held digest goes (ms), the night's end plus a grace so the helper's
+   * morning summary goes first; else null. Direct sends because the helper failed hold non-urgent waits until then.
+   */
   morning?(now: number): number | null;
 }
 
@@ -57,8 +60,7 @@ export function directLabel(rec: Pick<WaitRecord, "kind" | "question" | "label">
   if (rec.kind !== "questions" || !rec.question || rec.question === rec.label) return rec.label;
   const lines = rec.question.split("\n").map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return rec.label;
-  const more = lines.length > 1 ? ` (+${lines.length - 1} more)` : "";
-  return `${cut(lines[0], ONE_LINE_MAX - more.length)}${more}`;
+  return cut(lines[0], ONE_LINE_MAX);
 }
 
 /** What a send carries; url may be built from the stored message's id. */
@@ -387,7 +389,7 @@ export class HelperCore {
 
   /**
    * Once a second: the merged usage-limit line, the 5-minute fallback (no helper run succeeded since the record was
-   * queued) and the 2-hour fallback digest (no message named it).
+   * queued) and the 4-hour fallback digest (no message named it).
    */
   async tick(): Promise<void> {
     await this.flushLimits();
@@ -401,7 +403,7 @@ export class HelperCore {
     }
     const digest = this.holdForMorning(this.waits.open().filter((r) => !r.toldAt && r.digestAt && Date.parse(r.digestAt) <= now));
     if (digest.length) {
-      console.warn(`helper: helper missed ${digest.length} waits for 2 hours, sending a digest`);
+      console.warn(`helper: helper missed ${digest.length} waits for 4 hours, sending a digest`);
       await this.digest(digest, "fallback", "The helper didn't tell you about these in time, so the board sends them itself.");
     }
   }

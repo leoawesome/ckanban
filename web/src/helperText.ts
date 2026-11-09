@@ -11,6 +11,31 @@ export interface MessageItem {
   question: string;
 }
 
+/** One row of a summary's page (src/server/helper/messages.ts SummaryRow). */
+export interface SummaryRow {
+  key?: string | null;
+  board: string;
+  boardName: string;
+  ticketId: string;
+  title: string;
+  label: string;
+  since?: string;
+  /** Runs of one repeating schedule merged into this row. */
+  count?: number;
+}
+
+/** A summary's rows; older summaries have none (their page shows the text). */
+export interface SummaryView {
+  new: SummaryRow[];
+  still: SummaryRow[];
+  stillCount: number;
+  oldestAt: string | null;
+  checkins: SummaryRow[];
+  olderCheckins: number;
+  notes: string[];
+  grouped: boolean;
+}
+
 export interface MessageSend {
   channel: string;
   at: string;
@@ -33,6 +58,7 @@ export interface Message {
   /** Got it or Not urgent was tapped on this alert. */
   tapped?: { how: "got-it" | "not-urgent"; at: string } | null;
   held?: boolean;
+  summary?: SummaryView;
 }
 
 // ---- words ----
@@ -134,3 +160,49 @@ export function sendTrail(m: Message): string {
 
 /** A held item's helper line: it was kept for a later summary, so "Should have pinged me" fits. */
 export const isHeldLine = (line: string | undefined) => !!line && line.startsWith("Held for");
+
+/** A board link on a line of its own ("  https://mac.ts.net/#/kanban/t_1"): left out on the page, where Open buttons do that. */
+const LINK_LINE = /^\s*https?:\/\/\S*#\/\S*\s*$/;
+
+/** A message's stored text without the board links it carried for phones (older messages keep one per ticket). */
+export function withoutLinks(text: string): string {
+  return text.split("\n").filter((l) => !LINK_LINE.test(l)).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Rows under board headings, in first-seen order. */
+export function rowsByBoard<T extends { board: string; boardName: string }>(rows: T[]): { board: string; boardName: string; rows: T[] }[] {
+  const out: { board: string; boardName: string; rows: T[] }[] = [];
+  for (const r of rows) {
+    const g = out.find((x) => x.board === r.board);
+    if (g) g.rows.push(r);
+    else out.push({ board: r.board, boardName: r.boardName, rows: [r] });
+  }
+  return out;
+}
+
+/** "27 more still wait on you, oldest from 12 Oct." (as the summary's text says it). */
+export function stillWaitingLine(v: Pick<SummaryView, "stillCount" | "oldestAt" | "new">): string {
+  const n = v.stillCount;
+  const d = v.oldestAt ? new Date(v.oldestAt) : null;
+  const day = d ? `${d.getDate()} ${d.toLocaleString("en-GB", { month: "short" })}` : null;
+  return `${n}${v.new.length ? " more" : ""} still ${n === 1 ? "waits" : "wait"} on you${day ? `, oldest from ${day}` : ""}.`;
+}
+
+/** The newer and older message next to this one in a newest-first list (null at either end or when it isn't there). */
+export function messageNeighbours(list: Pick<Message, "id">[], id: string): { newer: string | null; older: string | null } {
+  const i = list.findIndex((m) => m.id === id);
+  if (i < 0) return { newer: null, older: null };
+  return { newer: list[i - 1]?.id ?? null, older: list[i + 1]?.id ?? null };
+}
+
+/** What next/previous carried from the message page it stepped from: the page it went to and that page's list. */
+export interface Stepping { to: string; withHeld: boolean }
+
+/**
+ * Whether a message page's next/previous walks the list with held items: the list carried while stepping, else the
+ * history's "Show held items" choice, or yes when this message is held.
+ */
+export function listWithHeld(stepping: Stepping | null, id: string, historyHeld: boolean, messageHeld: boolean): boolean {
+  if (stepping?.to === id) return stepping.withHeld;
+  return historyHeld || messageHeld;
+}

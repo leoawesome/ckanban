@@ -1645,7 +1645,8 @@ export const api = {
   followUpNow: (slug: string, id: string) => req<Ticket>("POST", `${t(slug, id)}/follow-up/now`, {}),
   stopFollowUp: (slug: string, id: string) => req<Ticket>("DELETE", `${t(slug, id)}/follow-up`, {}),
   markSeen: (slug: string, id: string) => req<Ticket>("POST", `${t(slug, id)}/seen`, {}),
-  snooze: (slug: string, id: string) => req<Ticket>("POST", `${t(slug, id)}/snooze`, {}),
+  /** body: {} for a day, { hours } (a week: 168), { forever: true } until unsnoozed (snoozeBody in snooze.ts). */
+  snooze: (slug: string, id: string, body: Record<string, unknown> = {}) => req<Ticket>("POST", `${t(slug, id)}/snooze`, body),
   unsnooze: (slug: string, id: string) => req<Ticket>("DELETE", `${t(slug, id)}/snooze`),
   /** The user answered a teammate card (saved it, or dismissed it). */
   answerTeammateCard: (slug: string, id: string, uuid: string, card: Omit<TeammateCardState, "at">) =>

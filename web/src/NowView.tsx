@@ -1,3 +1,4 @@
+import type { SnoozeLength } from "./snooze";
 import { useState, type ReactNode } from "react";
 import type { InboxItem, Ticket } from "./api";
 import { answers, groupInbox, marksDone } from "./inboxOrder";
@@ -22,7 +23,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
   slug: string;
   onOpen: (profile: string, id: string) => void;
   onMarkDone: (i: InboxItem) => void;
-  onSnooze: (i: InboxItem) => void;
+  onSnooze: (i: InboxItem, len?: SnoozeLength) => void;
   onSnoozeAll: (list: InboxItem[]) => void;
   onSwitchBoard: (slug: string) => void;
   inboxLoaded?: boolean;
@@ -51,7 +52,11 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
     const done = marksDone(i);
     const snooze = { label: "Snooze", title: "Hide it for a day, or until something changes", run: () => clear(key, () => onSnooze(i)) };
     const line = helper?.status?.on ? helper.status.lines[key] : undefined;
-    const more = [...(isHeldLine(line) ? [{ label: "Should have pinged me", title: "Tell the helper you wanted to hear about this sooner", run: () => helper?.onShouldHavePinged(i) }] : []), snooze];
+    const longer = [
+      { label: "Snooze for a week", title: "Hide it for a week, or until something changes", run: () => clear(key, () => onSnooze(i, "week")) },
+      { label: "Snooze until I unsnooze", title: "Hide it until you unsnooze it, or until something changes", run: () => clear(key, () => onSnooze(i, "forever")) },
+    ];
+    const more = [...(isHeldLine(line) ? [{ label: "Should have pinged me", title: "Tell the helper you wanted to hear about this sooner", run: () => helper?.onShouldHavePinged(i) }] : []), snooze, ...longer];
     return (
       <div key={key} className={`now-card need att-${i.attention.kind}${leaving(key) ? " leaving" : ""}`}>
         <div className="now-card-in">

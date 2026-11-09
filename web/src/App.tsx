@@ -58,6 +58,7 @@ import { ParallelConfirm } from "./ParallelConfirm";
 import { closeSteps, openDepth } from "./ticketHistory";
 import { helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, useHelper } from "./helper";
 import { HelperNotice, MessagePage, MessagesHistory } from "./Messages";
+import { snoozeBody, snoozeUntil, snoozeWords, type SnoozeLength } from "./snooze";
 
 // xterm.js and highlight.js only load once the panel is opened. After an upgrade the old chunk is gone:
 // reload once to get the new build instead of blanking the whole page.
@@ -985,8 +986,8 @@ export function App() {
       loadInbox();
     }
   };
-  const inboxSnooze = async (i: InboxItem, on: boolean) => {
-    const until = new Date(Date.now() + 24 * 3600_000).toISOString();
+  const inboxSnooze = async (i: InboxItem, on: boolean, len: SnoozeLength = "day") => {
+    const until = snoozeUntil(len);
     if (on) {
       setInbox((l) => l.filter((x) => x !== i));
       setSnoozed((l) => [...l, { ...i, snoozedUntil: until }]);
@@ -996,9 +997,9 @@ export function App() {
     }
     if (i.profile === slug) setTickets((ts) => ts.map((t) => (t.id === i.id ? { ...t, attention: on ? null : i.attention, snoozed: on ? { attention: i.attention, until } : null } : t)));
     try {
-      const t = await (on ? api.snooze(i.profile, i.id) : api.unsnooze(i.profile, i.id));
+      const t = await (on ? api.snooze(i.profile, i.id, snoozeBody(len)) : api.unsnooze(i.profile, i.id));
       const merge = (t: Ticket) => { if (i.profile === slugRef.current) setTickets((ts) => ts.map((x) => (x.id === t.id ? { ...x, ...t } : x))); };
-      if (on) toast(<>Snoozed <b>{i.title}</b> for a day</>, { action: { label: "Undo", run: () => void api.unsnooze(i.profile, i.id).then((t) => { merge(t); loadInbox(); }, () => {}) } });
+      if (on) toast(<>Snoozed <b>{i.title}</b> {snoozeWords(len)}</>, { action: { label: "Undo", run: () => void api.unsnooze(i.profile, i.id).then((t) => { merge(t); loadInbox(); }, () => {}) } });
       merge(t);
     } catch (e: any) {
       setError(`Couldn't ${on ? "snooze" : "unsnooze"} the ticket: ${e.message}`);
@@ -1171,7 +1172,7 @@ export function App() {
         )}
         <div className="spacer" />
         <Inbox items={inbox} snoozed={snoozed} openRequest={inboxRequest} onPick={(i) => openFrom(i.profile, i.id)}
-          onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, on) => void inboxSnooze(i, on)} onSnoozeAll={(l) => void inboxSnoozeAll(l)}
+          onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, on, len) => void inboxSnooze(i, on, len)} onSnoozeAll={(l) => void inboxSnoozeAll(l)}
           helper={inboxHelper} />
         {profile && !toolsInMenu && (
           <div className="tool-group" role="group" aria-label="Tools">
@@ -1296,7 +1297,7 @@ export function App() {
             </Suspense>
           </main>
         ) : phone && phoneTab === "now" ? (
-          <NowView helper={inboxHelper} inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i) => void inboxSnooze(i, true)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} onSwitchBoard={switchBoard}
+          <NowView helper={inboxHelper} inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, len) => void inboxSnooze(i, true, len)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} onSwitchBoard={switchBoard}
             inboxLoaded={inboxLoaded} ticketsLoaded={ticketsLoaded} footer={<PushHint onSetup={() => setNotifications(true)} />} />
         ) : <>
           <div className="board-bar">

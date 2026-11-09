@@ -5,7 +5,8 @@ import { useLayer } from "./layers";
 import { MenuSheet } from "./MenuSheet";
 import { answers, groupInbox, marksDone } from "./inboxOrder";
 import { useSafeClear } from "./useSafeClear";
-import { fullTime, timeUntil, waitedFor } from "./time";
+import { fullTime, waitedFor } from "./time";
+import { snoozeEndText, snoozeForever, type SnoozeLength } from "./snooze";
 import { useNow } from "./useNow";
 import { useMedia } from "./usePhone";
 import { MoreIcon } from "./icons";
@@ -78,7 +79,8 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
   snoozed?: InboxItem[];
   onPick: (i: InboxItem) => void;
   onMarkDone: (i: InboxItem) => void;
-  onSnooze: (i: InboxItem, on: boolean) => void;
+  /** len: how long (Snooze and the s key: a day). */
+  onSnooze: (i: InboxItem, on: boolean, len?: SnoozeLength) => void;
   onSnoozeAll: (list: InboxItem[]) => void;
   openRequest?: number;
   helper?: InboxHelper;
@@ -188,6 +190,10 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
     const open = { label: answers(i) ? "Answer" : "Open", title: tip("Open the ticket", "(Enter)"), run: () => pick(i) };
     const markDone = { label: "Mark done", title: tip("Move it to Done", "(d)"), run: done };
     const snoozeIt = { label: "Snooze", title: tip("Hide it from the Inbox and counts for a day, or until something changes", "(s)"), run: snooze };
+    const longer = [
+      { label: "Snooze for a week", title: "Hide it for a week, or until something changes", run: () => clear(key, () => onSnooze(i, true, "week")) },
+      { label: "Snooze until I unsnooze", title: "Hide it until you unsnooze it, or until something changes", run: () => clear(key, () => onSnooze(i, true, "forever")) },
+    ];
     const primary = marksDone(i) ? markDone : open;
     const line = helper?.status?.on ? helper.status.lines[key] : undefined;
     const pinged = { label: "Should have pinged me", title: "Tell the helper you wanted to hear about this sooner", run: () => helper?.onShouldHavePinged(i) };
@@ -208,8 +214,9 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
             <button className="btn small primary" tabIndex={-1} onClick={primary.run} title={primary.title}>{primary.label}</button>
             <span className="inbox-secondary">
               {others.map((a) => <button key={a.label} className="btn small ghost" tabIndex={-1} onClick={a.run} title={a.title}>{a.label}</button>)}
+              <RowMore label={i.title} actions={longer} />
             </span>
-            <RowMore label={i.title} actions={others} />
+            <RowMore label={i.title} actions={[...others, ...longer]} />
           </span>
         </div>
       </div>
@@ -277,7 +284,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
                     <button role="menuitem" data-entry={keyOf(i)} className="inbox-item" onClick={() => pick(i)} title={touch ? undefined : "Enter opens · s unsnoozes · d marks done"}>
                       <span className="inbox-title">{i.title}</span>
                       <span className="inbox-why">
-                        {i.attention.label} · <time dateTime={i.snoozedUntil} title={`Snoozed until ${fullTime(i.snoozedUntil!)}`}>back {timeUntil(i.snoozedUntil!)}</time>
+                        {i.attention.label} · <time dateTime={i.snoozedUntil} title={snoozeForever(i.snoozedUntil) ? "Snoozed until you unsnooze it, or until something changes" : `Snoozed until ${fullTime(i.snoozedUntil!)}`}>{snoozeEndText(i.snoozedUntil!, now)}</time>
                         {several && <> · {i.profileName}</>}
                       </span>
                     </button>

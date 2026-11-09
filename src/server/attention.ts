@@ -187,6 +187,12 @@ export function oldestStep(tickets: Ticket[], mainId: string, running: (id: stri
 
 /** How long Snooze in the Inbox hides a ticket. */
 export const SNOOZE_MS = 24 * 3600_000;
+/** "Snooze for a week". */
+export const SNOOZE_WEEK_MS = 7 * 24 * 3600_000;
+/** "Snooze until I unsnooze": no end (it still ends when the ticket changes). Stored as a far-off end so every check stays the same. */
+export const SNOOZE_FOREVER = "9999-12-31T23:59:59.000Z";
+/** A snooze end that means "until you unsnooze". */
+export const snoozeForever = (until: string | null | undefined) => !!until && Date.parse(until) >= Date.parse("9000-01-01T00:00:00.000Z");
 
 /**
  * What a snooze holds on to: the reason and the last thing that happened (Claude's last word, the last run).

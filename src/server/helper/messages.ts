@@ -19,6 +19,37 @@ export interface MessageItem {
   question: string;
 }
 
+/** One row of a summary's page: a ticket (or several runs of one schedule) and what it needs. */
+export interface SummaryRow {
+  key?: string | null;
+  board: string;
+  boardName: string;
+  /** The ticket Open goes to (the newest run when count is set). */
+  ticketId: string;
+  title: string;
+  /** What it needs, short: "Ready for review", the question's first line, "4 runs ready for review". */
+  label: string;
+  /** When it started waiting. */
+  since?: string;
+  /** Runs of one repeating schedule merged into this row. */
+  count?: number;
+}
+
+/** What a summary's page shows instead of its text (summaries from before this have none: the page shows the text). */
+export interface SummaryView {
+  new: SummaryRow[];
+  /** Everything still waiting (counted in the text; the page lists them behind "Show all"). */
+  still: SummaryRow[];
+  stillCount: number;
+  oldestAt: string | null;
+  checkins: SummaryRow[];
+  olderCheckins: number;
+  /** Closing lines: the first summary's greeting, the check-in offer. */
+  notes: string[];
+  /** Rows go under board headings. */
+  grouped: boolean;
+}
+
 /** How sending to one channel went. */
 export interface ChannelSendRecord {
   channel: string;
@@ -45,12 +76,14 @@ export interface StoredMessage {
   tapped?: { how: "got-it" | "not-urgent"; at: string } | null;
   /** Held by the helper, never sent (the log's "Show held items"). */
   held?: boolean;
+  /** A summary's rows (the page renders these, not the text). */
+  summary?: SummaryView;
 }
 
 export const MESSAGES_KEEP_MS = 30 * 24 * 3600_000;
 export const MESSAGES_MAX = 500;
 
-export type NewMessage = Pick<StoredMessage, "level" | "oneLine" | "text"> & Partial<Pick<StoredMessage, "why" | "items" | "held">>;
+export type NewMessage = Pick<StoredMessage, "level" | "oneLine" | "text"> & Partial<Pick<StoredMessage, "why" | "items" | "held" | "summary">>;
 
 export class MessageStore {
   readonly file: string;
@@ -92,7 +125,7 @@ export class MessageStore {
     const msg: StoredMessage = {
       id: `m_${this.now().toString(36)}${randomBytes(3).toString("hex")}`, at: new Date(this.now()).toISOString(),
       level: m.level, oneLine: m.oneLine, text: m.text, why: m.why ?? null, items: m.items ?? [], sends: [], readAt: null,
-      ...(m.held ? { held: true } : {}),
+      ...(m.held ? { held: true } : {}), ...(m.summary ? { summary: m.summary } : {}),
     };
     const list = this.items();
     list.push(msg);

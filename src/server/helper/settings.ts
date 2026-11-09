@@ -77,6 +77,17 @@ export function nightEnd(ms: number, night: Night): number {
   return end > ms ? end : new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, Math.floor(e / 60), e % 60).getTime();
 }
 
+/**
+ * A safety-net digest held by the night goes this long after the night ends: the helper wakes at the night's end and
+ * its morning summary goes first; if the helper fails, the digest still goes out.
+ */
+export const MORNING_GRACE_MS = 30 * 60_000;
+
+/** When a digest due at `ms` may go: `ms` itself in the daytime, or the night's end plus the morning grace. */
+export function morningDigestAt(ms: number, night: Night): number {
+  return inNight(ms, night) ? nightEnd(ms, night) + MORNING_GRACE_MS : ms;
+}
+
 export class HelperSettingsStore {
   readonly file: string;
 

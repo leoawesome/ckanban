@@ -89,7 +89,7 @@ export const FALLBACK_MS = 5 * 60_000;
 /** ...and never sooner than this after the daemon started (the helper needs a moment to run after a restart). */
 export const BOOT_GRACE_MS = 2 * 60_000;
 /** A wait no message named this long goes into one fallback digest. */
-export const DIGEST_MS = 2 * 3600_000;
+export const DIGEST_MS = 4 * 3600_000;
 
 /** Lower case, spacing collapsed: the same question asked again (a re-asked form) keeps its record. */
 export function normalizeQuestion(text: string): string {
@@ -262,7 +262,7 @@ export class WaitStore {
 
   /**
    * Gives back a claim (markTold before a send) when the send reached no one: the records are untold again, with the
-   * fallback and digest times they had, so a later message or the 2-hour digest still tells them.
+   * fallback and digest times they had, so a later message or the 4-hour digest still tells them.
    */
   unclaim(prev: Pick<WaitRecord, "key" | "toldAt" | "toldVia" | "fallbackAt" | "digestAt">[]): void {
     let changed = false;

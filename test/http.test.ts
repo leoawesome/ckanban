@@ -317,6 +317,25 @@ test("snoozing an Inbox entry hides it from counts until it is unsnoozed or move
   expect(store.getTicket("snooze", t.id)!.snooze).toBeNull();
 });
 
+test("Inbox snooze for a week and until unsnoozed: both end when the ticket changes", async () => {
+  await fetch(`${base}/api/profiles`, json("POST", { name: "Snooze long", path: tempDir("ck-snooze-") }));
+  const t = (await (await fetch(`${base}/api/profiles/snooze-long/tickets`, json("POST", { title: "later", status: "backlog" }))).json()) as any;
+  const url = `${base}/api/profiles/snooze-long/tickets/${t.id}`;
+  store.updateTicket("snooze-long", t.id, { status: "review", outcome: "done" });
+  const week = (await (await fetch(`${url}/snooze`, json("POST", { hours: 168 }))).json()) as any;
+  expect(Math.round((Date.parse(week.snoozed.until) - Date.now()) / 3600_000)).toBe(168);
+  const forever = (await (await fetch(`${url}/snooze`, json("POST", { forever: true }))).json()) as any;
+  expect(forever.attention).toBeNull();
+  expect(forever.snoozed.until).toBe("9999-12-31T23:59:59.000Z");
+  const inbox = ((await (await fetch(`${base}/api/inbox`)).json()) as any[]).filter((i) => i.profile === "snooze-long");
+  expect(inbox[0].snoozedUntil).toBe("9999-12-31T23:59:59.000Z");
+  // Still ends when what the ticket waits for changes.
+  store.updateTicket("snooze-long", t.id, { lastRunAt: new Date(Date.now() + 1000).toISOString() } as any);
+  const after = (await (await fetch(url)).json()) as any;
+  expect(after.snoozed ?? null).toBeNull();
+  expect(after.attention).not.toBeNull();
+});
+
 test("tickets lists a light row for every ticket on every board", async () => {
   const a = tempDir("ck-plain-");
   const b = tempDir("ck-plain-");
