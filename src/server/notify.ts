@@ -23,7 +23,6 @@ import { waitIdentity, type NewWait } from "./helper/waits";
 import { TelegramReplies } from "./helper/tgreply";
 import { telegramSpendToday } from "./spend";
 import { PendingActions, TelegramLinks } from "./helper/tgstores";
-import type { Ticket } from "./types";
 
 /** What the Telegram reply router needs from the board (Board implements it; plugged in with Notifier.plugBoard). */
 export interface TelegramBoard {

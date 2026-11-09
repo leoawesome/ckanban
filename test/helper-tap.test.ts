@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { Channels, ntfyRequest, pushChannel, tapTicket, tapUrl, type Channel, type OutMessage } from "../src/server/helper/channels";
 import { HelperCore } from "../src/server/helper/core";
 import type { MessageItem, MessageLevel } from "../src/server/helper/messages";
-import { TelegramBot, type TelegramSettings } from "../src/server/helper/telegram";
+import { DEFAULT_TELEGRAM, TelegramBot, type TelegramSettings } from "../src/server/helper/telegram";
 import { normalizeSettings } from "../src/server/notify";
 import { Store } from "../src/server/store";
 import { readFromHash } from "../web/src/helperText";
@@ -80,7 +80,7 @@ describe("every channel uses the same tap URL", () => {
     expect(payloads[0]).toMatchObject({ url: want, messageId: id });
 
     const calls: any[] = [];
-    let tg: TelegramSettings = { on: true, token: "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234", chatId: 5, chatName: null, pairedAt: null };
+    let tg: TelegramSettings = { ...DEFAULT_TELEGRAM, on: true, token: "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234", chatId: 5 };
     const bot = new TelegramBot({
       fetch: async (_u, init) => (calls.push(JSON.parse(String(init.body))), new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }))),
       settings: () => tg, save: (p) => (tg = { ...tg, ...p }), actions: () => ({ gotIt: () => "", notUrgent: () => "", waiting: () => "" }),
@@ -93,7 +93,7 @@ describe("every channel uses the same tap URL", () => {
   test("Telegram without phone access: still no Open link", async () => {
     const { m } = await deliver("urgent", [item("kb", "t_1")]);
     const calls: any[] = [];
-    const tg: TelegramSettings = { on: true, token: "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234", chatId: 5, chatName: null, pairedAt: null };
+    const tg: TelegramSettings = { ...DEFAULT_TELEGRAM, on: true, token: "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234", chatId: 5 };
     const bot = new TelegramBot({
       fetch: async (_u, init) => (calls.push(JSON.parse(String(init.body))), new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }))),
       settings: () => tg, save: () => {}, actions: () => ({ gotIt: () => "", notUrgent: () => "", waiting: () => "" }),
