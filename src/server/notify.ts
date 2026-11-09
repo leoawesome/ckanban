@@ -130,6 +130,13 @@ export const NTFY_WARNING = "Anyone who knows the topic name can read these mess
 export const FOCUS_HINT = "Focus mode on your phone can hold notifications back. ntfy can get through Focus if you allow the ntfy app in that Focus. For Telegram, allow Telegram in your Focus (not guaranteed). Phone push from the board can't get through Focus.";
 /** The status line until a phone channel works. */
 export const MAC_ONLY_LINE = "I can only reach you on this Mac";
+/** What phone access (the remote listener) gets for turning Telegram messages back on: only the Mac may undo /lock or Pause. */
+export const TG_ON_FROM_MAC = "Turn this back on from the Mac.";
+/** What phone access gets for pairing Telegram or giving it a new bot key. */
+export const TG_PAIR_FROM_MAC = "Pair Telegram from the Mac.";
+
+/** A settings change only this Mac may make (not phone access). The settings API answers 403 with the message. */
+export class MacOnlyError extends Error {}
 
 /** What the settings dialog shows besides the settings: how the last send went. */
 export interface NotifyState extends Omit<NotifySettings, "telegram"> {
@@ -521,14 +528,24 @@ export class Notifier {
   }
 
   /** Saves a settings change. Turning the helper off sends what it held as one digest; on, what is open counts as told. */
-  update(patch: unknown): NotifyState {
+  /**
+   * from "remote" (phone access): anything that turns Telegram messages back on, or sets a new bot key, is refused with
+   * a MacOnlyError, so a lost phone with board access can't undo /lock or Pause. Turning things off stays allowed.
+   */
+  update(patch: unknown, from: "local" | "remote" = "local"): NotifyState {
     const before = this.settings();
     const next = normalizeSettings(patch, before);
+    const taking = (t: TelegramSettings) => t.on && t.takeMessages && t.chatId !== null;
+    if (from === "remote") {
+      if (next.telegram.token && next.telegram.token !== before.telegram.token) throw new MacOnlyError(TG_PAIR_FROM_MAC);
+      if ((next.telegram.takeMessages && !before.telegram.takeMessages) || (taking(next.telegram) && !taking(before.telegram))) {
+        throw new MacOnlyError(TG_ON_FROM_MAC);
+      }
+    }
     writeNotifySettings(this.o.root, next);
     if (before.helper !== next.helper) void this.helper.switched(next.helper).catch((e) => console.error("helper: switch", e));
     if (before.telegram.token !== next.telegram.token) this.telegram.reset();
     // Stopped taking messages (Pause, the channel off, a new bot): nothing Telegram left waiting reaches a ticket.
-    const taking = (t: TelegramSettings) => t.on && t.takeMessages && t.chatId !== null;
     if (taking(before.telegram) && !taking(next.telegram)) this.dropTelegramWork();
     this.telegram.refresh();
     return this.state();

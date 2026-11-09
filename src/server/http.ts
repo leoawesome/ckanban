@@ -36,7 +36,7 @@ import {
 } from "./attachments";
 import { FileError, findInRoots, listDir, openWithSystem, readFileForView, type FileRoot } from "./files";
 import { boardToolsSource, McpError, McpManager } from "./mcp";
-import { MessageError, Notifier } from "./notify";
+import { MacOnlyError, MessageError, Notifier, TG_PAIR_FROM_MAC } from "./notify";
 import { HelperError, type HelperRunner } from "./helper/runner";
 import { DeviceError, TAKE_WAIT_MS, type DeviceUser } from "./devices";
 import { PushService } from "./push";
@@ -349,6 +349,8 @@ export function createServer(deps: ServerDeps) {
   // The listener each request came in on, for the routes that care (WebSocket upgrades, /api/remote).
   const via = new WeakMap<Request, { listener: Listener; srv: import("bun").Server<ShellSocket> }>();
   const listenerOf = (req: Request): Listener => via.get(req)?.listener ?? "local";
+  /** Notification settings plus whether this request is from this Mac (phone access can't turn Telegram back on or pair). */
+  const notifyView = <T extends object>(req: Request, st: T): T & { local: boolean } => ({ ...st, local: listenerOf(req) === "local" });
   const push = deps.push ?? new PushService(store.root);
   const notifier = deps.notifier ?? new Notifier(store, bus, {
     root: store.root, push, sessionSummary: (id) => sessions.summary(id), isRunning: (s, id) => board.isRunning(s, id),
@@ -765,35 +767,37 @@ export function createServer(deps: ServerDeps) {
     // "Needs you" notifications (notify.ts). Runs can't read or change them: the webhook URL is the user's channel.
     if (parts[0] === "notify") {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "board runs can't use notification settings");
-      if (parts.length === 1 && m === "GET") return json(notifier.state());
+      if (parts.length === 1 && m === "GET") return json(notifyView(req, notifier.state()));
       if (parts.length === 1 && m === "POST") {
         const patch = await body(req);
         // Where messages go (webhook address, ntfy, the Telegram bot and its token) is the user's alone: a run's shell or
         // another program could point every message, full text included, at its own address. Only the user's browser.
         await userOnly(req, "Changing notification settings");
         try {
-          return json(notifier.update(patch));
+          return json(notifyView(req, notifier.update(patch, listenerOf(req))));
         } catch (e) {
-          throw new HttpError(400, (e as Error).message);
+          throw new HttpError(e instanceof MacOnlyError ? 403 : 400, (e as Error).message);
         }
       }
       if (parts[1] === "test" && m === "POST") {
         const b = await body(req);
-        return json({ ...(await notifier.test(typeof b?.profile === "string" ? b.profile : undefined)), state: notifier.state() });
+        return json({ ...(await notifier.test(typeof b?.profile === "string" ? b.profile : undefined)), state: notifyView(req, notifier.state()) });
       }
       // Telegram pairing (helper/telegram.ts): a fresh 6-digit code to send to the bot, or forget the paired chat.
       // The code only comes back here, to the user's own browser: whoever sends it to the bot becomes the paired chat.
       if (parts[1] === "telegram" && parts[2] === "pair" && parts.length === 3 && m === "POST") {
         await userOnly(req, "Pairing Telegram");
+        // Whoever pairs gets to answer tickets from that chat: only this Mac, so a lost phone can't pair a new chat.
+        if (listenerOf(req) !== "local") throw new HttpError(403, TG_PAIR_FROM_MAC);
         try {
-          return json({ ...notifier.telegramPair(), state: notifier.state() });
+          return json({ ...notifier.telegramPair(), state: notifyView(req, notifier.state()) });
         } catch (e) {
           throw new HttpError(400, (e as Error).message);
         }
       }
       if (parts[1] === "telegram" && parts[2] === "unpair" && parts.length === 3 && m === "POST") {
         await userOnly(req, "Unpairing Telegram");
-        return json(notifier.telegramUnpair());
+        return json(notifyView(req, notifier.telegramUnpair()));
       }
     }
 

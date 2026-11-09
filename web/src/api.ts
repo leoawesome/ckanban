@@ -1265,6 +1265,8 @@ export interface NotifyState {
   lastError: string | null;
   /** A browser on this Mac gets notifications: they replace the macOS banner. */
   macBrowser: boolean;
+  /** This request came from this Mac, not phone access: only the Mac turns Telegram messages back on or pairs. */
+  local?: boolean;
   /** The helper groups routine waits and interrupts only for urgent ones (Settings → Helper). */
   helper: boolean;
   /** The phone push channel. */
