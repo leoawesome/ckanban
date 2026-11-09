@@ -46,13 +46,15 @@ export async function connectFromClaude(server: { name: string; transport: strin
 }
 
 /** Paste a key: for a service without its own sign-in, or an MCP server that can't sign the board in by itself. */
-export function KeyForm({ name, claudeName, url, envName, help, onSaved, onCancel }: {
+export function KeyForm({ name, claudeName, url, envName, help, board, onSaved, onCancel }: {
   name: string;
   claudeName?: string | null;
   /** The MCP server the key is for; missing: scripts get it as an environment variable. */
   url?: string | null;
   envName?: string;
   help?: string;
+  /** Save it as this board's key: the board's Claude runs get it too, and it shows under Connections → Keys. */
+  board?: string;
   onSaved: (p: Pass) => void;
   onCancel?: () => void;
 }) {
@@ -64,7 +66,7 @@ export function KeyForm({ name, claudeName, url, envName, help, onSaved, onCance
     setBusy(true);
     setErr(null);
     try {
-      onSaved(await api.addPass({ kind: "key", name, claudeName: claudeName ?? null, ...(url ? { url } : { envName }), secret }));
+      onSaved(await api.addPass({ kind: "key", name, claudeName: claudeName ?? null, ...(url ? { url } : { envName, ...(board ? { board } : {}) }), secret }));
     } catch (e: any) {
       setErr(e.message);
     } finally {
@@ -73,7 +75,7 @@ export function KeyForm({ name, claudeName, url, envName, help, onSaved, onCance
   };
   return (
     <form className="mcp-manual auto-pass" onSubmit={save}>
-      <span className="muted small">{help ?? `Paste a key for ${name}.`} It stays on this computer and only the automations that use it get it.</span>
+      <span className="muted small">{help ?? `Paste a key for ${name}.`} {board ? "It is saved on this Mac for this board: its automations and Claude's runs here get it, without seeing it." : "It stays on this computer and only the automations that use it get it."}</span>
       <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={`${name} key`} aria-label={`${name} key`} autoComplete="off" />
       <button className="btn small primary" disabled={busy || !secret.trim()}>{busy ? "Saving…" : "Save key"}</button>
       {onCancel && <button type="button" className="btn small ghost" onClick={onCancel}>Cancel</button>}

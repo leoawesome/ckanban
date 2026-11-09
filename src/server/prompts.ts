@@ -124,7 +124,17 @@ export const FOLLOW_UP_RULE = "If the work ends waiting on someone or something 
 export const LENGTH_RULE = "Keep every message the user reads short: replies, the summary, question forms, notifications and drafts you write for them (messages, posts). Lead with the answer: the yes or no, the number, the recommendation or what changed. Most messages are one or two sentences, and two short paragraphs is already long; go longer only when the user asks for detail or the task truly needs it. Match the user's length: a few words from them get a few words back. Short means fewer ideas, not clipped ones: leave out side points, background and recaps nobody asked for, but write whole sentences, not fragments, \"label: value\" lines or arrows, even if other instructions ask for a terse style. Prefer a few plain sentences to a list: use a list only for separate items the user must pick from or act on, and never start items with bold labels. No restated question, no opener like \"Here's the summary\" and no closing offer.";
 export const WRITING_RULE = `${LENGTH_RULE} Use plain words. No AI filler (crucial, leverage, ensure, seamless), no em dashes, arrows or made-up abbreviations, and no hashes, paths or tool names unless the user must act on them. Proposed ticket descriptions are the exception to the length: keep them complete, since another Claude works from them, but in the same plain words.`;
 
-const PLAIN_WORDS = `The user may not be technical: explain results in plain words; if there's no git, just edit the files and list what changed. ${WRITING_RULE}`;
+/**
+ * Keys and tokens the user gives: through the ask_keys box, never pasted in the chat or a file. The board keeps them
+ * for the board and every later run gets them as environment variables, so Claude places them without reading them.
+ */
+export const KEYS_RULE = "When you need a key or token from the user (an API key, a personal access token), don't ask them to paste it in the chat or into a file: call the ckanban `ask_keys` tool with a name for it (like SENTRY_AUTH_TOKEN), a plain label, and where to create one, then end your turn. " +
+  "The board keeps it on this Mac for this board, and every later run here gets it as an environment variable under that name (a tool ticket can't show the box: it ends with status \"questions\" naming the key, and its parent asks). " +
+  "Put a key where it belongs with shell commands that use the variable, for example write \"$SENTRY_AUTH_TOKEN\" into the config file, or `gh secret set NAME --body \"$NAME\"`. Never print, echo, cat or log a value, and don't read back a file you wrote one into. " +
+  "Before putting a key into a file that already exists, call the ckanban `backup_file` tool with its path, so the board keeps a private copy; then change only that key's line (add it if it is missing) instead of rewriting the file, and never print the file. " +
+  "If the user pastes a key in the chat anyway, use it as they asked, and suggest the key box next time.";
+
+const PLAIN_WORDS = `The user may not be technical: explain results in plain words; if there's no git, just edit the files and list what changed. ${WRITING_RULE} ${KEYS_RULE}`;
 
 /** The folder has commits to branch from, snapshot and land: a run there commits its work. */
 const canCommit = (repo: RepoKind) => repo === "local" || repo === "remote";
@@ -628,6 +638,7 @@ How to help:
 - ${main?.planned ? "When you know enough, put the plan and the decisions in the status, and update the ticket only as described below (no fresh rewrite)." : "When you know enough (or the user asks), propose the improved ticket. After the user applies it they will move it to Ready and Claude will work on it autonomously, so make it self-contained. Shape it the way a top expert would: drop constraints that don't serve the goal, leave the user's choices open, and put one outside check that the result is right in Acceptance criteria. Don't narrate this framing."}
 - ${WRITING_RULE}
 - ${FILE_LINK_RULE}
+- ${KEYS_RULE}
 - Otherwise reply naturally and briefly, like in a normal chat.
 - Tags: if the ticket has none and one clearly fits (prefer tags the board already uses), you may suggest 1-3 with \`suggest_tags\`; the user keeps or drops them.
 - Managing the board: ONLY when the user asks for it in their message (never on your own initiative), you may change other tickets on this board with the ckanban tools: move_ticket, update_ticket, comment_ticket, create_ticket, chat_ticket, stop_ticket, and adopt_tickets / plan_control to manage or run tickets from this ticket's plan. The same tools (not adopt_tickets or plan_control) work on another board's tickets when the user asks: pass that board's \`profile\` (\`list_profiles\` lists the boards); new tickets there go to Backlog unless the user asks to start them. When the user asks, update_status, gather_tickets and the chat search tools (read_chat) also work on any feature or ticket, on this board or another (pass its \`profile\`). Every change is logged on the changed ticket. Say in your reply what you changed. ${FEATURE_RULE} ${NEW_MAIN_RULE}

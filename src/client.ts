@@ -28,6 +28,8 @@ export interface PassInfo {
   claudeName: string | null;
   url: string | null;
   envName: string | null;
+  /** A key saved for this board only (its runs get it as $envName); null: a pass for automations on any board. */
+  board: string | null;
   status: "pending" | "connected" | "needs_reconnect";
   error: string | null;
   usedBy: number;

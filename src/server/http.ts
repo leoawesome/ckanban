@@ -19,6 +19,8 @@ import { applyRewind, previewRewind } from "./rewind";
 import { cronError, describeCron, nextRuns, parseCron } from "./cron";
 import { fromUserBrowser } from "./integrations/guard";
 import { PassError, Passes } from "./integrations/passes";
+import { keysAnswerText } from "./ask-keys";
+import { maskSavedJson } from "./board-keys";
 import { ckanbanShim } from "./integrations/script";
 import { LoopError, LoopManager } from "./loops";
 import { RUN_HEADER, ScheduleError, Scheduler } from "./scheduler";
@@ -274,6 +276,12 @@ export function refuseSharedFolder(others: Profile[], path: string) {
 
 export function createServer(deps: ServerDeps) {
   const { store, bus, board } = deps;
+  // Every JSON reply hides the keys saved on this Mac (a run that printed one, a pasted key): tool rows, subagents,
+  // workflows, chat search and the rest, not only the conversation.
+  /** Key boxes being saved right now ("<board>/<ticket>/<box>"). */
+  const keyCardsInFlight = new Set<string>();
+  const json = (data: unknown, status = 200): Response =>
+    new Response(maskSavedJson(store.root, JSON.stringify(data)), { status, headers: { "content-type": "application/json" } });
   const sessions = deps.sessions ?? new SessionCache();
   const huddleSessions = new HuddleSessionCache();
   const updates = deps.updates ?? new UpdateChecker();
@@ -1168,11 +1176,20 @@ export function createServer(deps: ServerDeps) {
         const all = passes.list();
         const used = new Map<string, number>();
         for (const p of store.listProfiles()) for (const l of store.listLoops(p.slug)) for (const id of l.passes ?? []) used.set(id, (used.get(id) ?? 0) + 1);
-        return json({ passes: all.map((p) => ({ ...passes.view(p), usedBy: used.get(p.id) ?? 0 })), automations: loops.count() });
+        // Which automations use each pass (by name), and the board name of a board's key, for Connections' Keys list.
+        const usedNames = new Map<string, string[]>();
+        for (const p of store.listProfiles()) for (const l of store.listLoops(p.slug)) for (const id of l.passes ?? []) usedNames.set(id, [...(usedNames.get(id) ?? []), l.name]);
+        const boardName = (s: string | undefined) => (s ? store.getProfile(s)?.name || s : null);
+        return json({
+          passes: all.map((p) => ({ ...passes.view(p), usedBy: used.get(p.id) ?? 0, usedByNames: usedNames.get(p.id) ?? [], boardName: boardName(p.board) })),
+          automations: loops.count(),
+        });
       }
       if (parts.length === 1 && m === "POST") {
         await userOnly(req, "Connecting a service for automations");
-        return json(passes.view(await passes.add((await body(req)) ?? {})), 201);
+        const b = (await body(req)) ?? {};
+        if (b.board !== undefined && b.board !== null && (typeof b.board !== "string" || !store.getProfile(b.board))) throw new HttpError(400, "That board doesn't exist");
+        return json(passes.view(await passes.add(b)), 201);
       }
       // The service sends the user's browser here after they approve the board. Only on this Mac, and only with a
       // state that authorize made (so a page that makes the browser open this URL can't connect a stranger's account).
@@ -2353,6 +2370,7 @@ export function createServer(deps: ServerDeps) {
         const agent = settleAgent(e.agent, active);
         return { ...e, agent: { ...agent, steps: agent.steps.slice(-AGENT_STEP_TAIL) } };
       });
+      // A saved key that shows in the chat (Claude printed one, or the user pasted it) is hidden in what the UI gets.
       return json({ entries, start, total: all.length, title: parsed?.title ?? null });
     }
     if (action === "rewind" && (m === "GET" || m === "POST")) {
@@ -2539,6 +2557,54 @@ export function createServer(deps: ServerDeps) {
       store.updateTicket(slug, id, { automationCards: { ...t.automationCards, [parts[5]]: { loopId, at: nowIso() } } });
       emitTicket(slug, id);
       return json(view(profile, store.getTicket(slug, id)!));
+    }
+    // A key box in the chat (ask_keys) was answered: POST .../key-cards/<entry uuid> { keys: { NAME: "value" } } saves the
+    // keys for this board, or { self: true } for "I'll do it myself". Then the ticket goes on in a new run (it has the
+    // keys in its environment) with a message that names what was saved. Values never go into the reply, the ticket,
+    // the chat, the activity log or a bus event.
+    if (action === "key-cards" && parts.length === 6 && m === "POST") {
+      await userOnly(req, "Saving keys");
+      const uuid = parts[5];
+      // One answer per box, even when Save is pressed twice: the second request waits for none and is refused.
+      const flight = `${slug}/${id}/${uuid}`;
+      if (keyCardsInFlight.has(flight)) throw new HttpError(409, "These keys are being saved already");
+      // Claimed before any await, so a second request sent at once is refused here.
+      keyCardsInFlight.add(flight);
+      try {
+        const t = store.getTicket(slug, id)!;
+        if (t.keyCards?.[uuid]) throw new HttpError(409, "This key box was already answered");
+        const ask = chatEntries(t).find((e) => e.uuid === uuid && e.keys)?.keys;
+        if (!ask) throw new HttpError(404, "That key box isn't in this chat any more");
+        const b = (await body(req)) ?? {};
+        const self = b.self === true;
+        const given = b.keys && typeof b.keys === "object" && !Array.isArray(b.keys) ? b.keys as Record<string, unknown> : {};
+        // Only the names the box asked for: anything else in the request is ignored.
+        const input = self ? [] : ask.keys.flatMap((k) => {
+          const v = given[k.envName];
+          return typeof v === "string" && v.trim() ? [{ envName: k.envName, name: k.label, secret: v }] : [];
+        });
+        if (!self && !input.length) throw new HttpError(400, "Paste at least one key, or pick \"I'll do it myself\"");
+        const saved = passes.saveBoardKeys(slug, input);
+        const mark = () => {
+          const now = store.getTicket(slug, id)!;
+          store.updateTicket(slug, id, { keyCards: { ...now.keyCards, [uuid]: { saved, ...(self ? { self: true } : {}), at: nowIso() } } });
+          emitTicket(slug, id);
+        };
+        // A new run, never the one going: a running claude keeps the environment it started with.
+        try {
+          await board.chat(slug, id, keysAnswerText(ask, saved, self), { nextRun: true });
+        } catch (e) {
+          // Nothing saved ("I'll do it myself"): the box stays open, so the user can answer again.
+          if (!saved.length) throw e;
+          // The keys are saved either way; only the message to Claude didn't go (it is stopping, say).
+          mark();
+          throw new HttpError(409, `The ${saved.length === 1 ? "key is" : "keys are"} saved, but Claude couldn't be told right now (${(e as Error).message}). Send it a message to carry on.`);
+        }
+        mark();
+        return json(view(profile, store.getTicket(slug, id)!), 202);
+      } finally {
+        keyCardsInFlight.delete(flight);
+      }
     }
     // A squad card in the chat (propose_squad) was dismissed: PUT .../squad-cards/<entry uuid> { state: "dismissed" }.
     // Saving goes through POST /profiles/:p/squads with the card, which marks it; { state: "saved", name, scope } here
@@ -3012,6 +3078,8 @@ export function createServer(deps: ServerDeps) {
       const t = p && store.getTicket(changed.profile, changed.id);
       if (p && t) msg += `data: ${JSON.stringify({ type: "ticket.updated", profile: changed.profile, ticket: view(p, t) })}\n\n`;
     }
+    // Live events (run activity, drafts, huddle messages) carry run output: saved keys are hidden there too.
+    msg = maskSavedJson(store.root, msg);
     ssePayloads.set(e, msg);
     return msg;
   };

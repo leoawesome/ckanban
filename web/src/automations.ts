@@ -48,8 +48,10 @@ export function boardCell(s: ClaudeServer, passes: Pass[]): BoardCell {
 }
 
 /** A proposed connection resolved against the board's passes: the pass it is, or what the card must still do. */
-export function resolveProposedPass(p: AutomationProposal["passes"][number], passes: Pass[]): { pass: Pass | null; need: "connect" | "key" | "missing" | null } {
+export function resolveProposedPass(p: AutomationProposal["passes"][number], all: Pass[], board?: string): { pass: Pass | null; need: "connect" | "key" | "missing" | null } {
   const name = p.name.toLowerCase();
+  // A key saved for this board serves its automations; another board's keys never do.
+  const passes = board === undefined ? all : all.filter((x) => !x.board || x.board === board);
   const pass = passes.find((x) => (p.from && x.claudeName === p.from) || (p.envName && x.envName === p.envName) || (p.url && x.url === p.url))
     ?? passes.find((x) => x.name.toLowerCase() === name || x.claudeName?.toLowerCase() === name) ?? null;
   if (pass?.status === "connected") return { pass, need: null };

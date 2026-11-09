@@ -335,6 +335,11 @@ export interface Ticket {
   squadCards?: Record<string, SquadCardState>;
   /** Automation cards in this ticket's chat (propose_automation) the user saved, by entry uuid: the automation made. */
   automationCards?: Record<string, { loopId: string; at: string }>;
+  /**
+   * Key boxes in this ticket's chat (ask_keys) the user answered, by entry uuid (the tool_use id): the names saved, or
+   * self when they chose to do it themselves. Never the values.
+   */
+  keyCards?: Record<string, KeyCardState>;
   /** Made by Automations → Set up with Claude: its Planning chat sets up an automation instead of shaping a ticket. */
   automationSetup?: boolean;
   /** Made by Schedules → Proactive check-ins: its Planning chat sets up a quiet check-in schedule (checkin-guides.ts). */
@@ -664,6 +669,14 @@ export interface TelegramOut {
   replyTo: number;
 }
 
+/** A key box (ask_keys) the user answered: what was saved (names only). */
+export interface KeyCardState {
+  saved: string[];
+  /** "I'll do it myself". */
+  self?: boolean;
+  at: string;
+}
+
 export interface QueuedMessage {
   id: string;
   text: string;
@@ -690,6 +703,11 @@ export interface QueuedMessage {
   followUp?: boolean;
   /** Came from Telegram (a reply to an alert): the update, so a restart never sends it twice. */
   telegram?: { updateId: number; tg: number };
+  /**
+   * Never handed to a run already going: it starts the next one (a new claude process). Keys saved in the ask_keys box
+   * reach Claude this way, since a running process keeps the environment it started with.
+   */
+  nextRun?: boolean;
 }
 
 export interface Comment {

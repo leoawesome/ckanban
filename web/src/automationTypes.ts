@@ -14,8 +14,16 @@ export interface Pass {
   status: "pending" | "connected" | "needs_reconnect";
   error: string | null;
   createdAt: string;
+  /** When the key was last saved (replaced keys keep their createdAt). */
+  savedAt?: string;
+  /** A key saved for one board only (its Claude runs get it as $envName); null: a pass for automations on any board. */
+  board?: string | null;
+  /** That board's name. */
+  boardName?: string | null;
   /** Automations (all boards) that use it. */
   usedBy: number;
+  /** Their names. */
+  usedByNames?: string[];
 }
 
 export interface LoopSeenItem {

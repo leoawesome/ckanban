@@ -12,6 +12,7 @@ import { cleanTemplates, type HuddleTemplate } from "./huddle-templates";
 import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "./huddle-notes";
 import { newId, newTicketId, nowIso } from "./util";
 import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "./board-tools";
+import { maskSaved, maskSavedJson } from "./board-keys";
 
 /** Dependency, build and version-history folders: never deliverables, and they can hold tens of thousands of files. */
 const SKIPPED_OUTPUT_DIRS = new Set(["node_modules", ".git", ".next", ".nuxt", ".turbo", ".cache", ".venv", "venv", "__pycache__"]);
@@ -492,14 +493,16 @@ export class Store {
   }
 
   addComment(slug: string, id: string, author: Comment["author"], text: string, from?: string): Comment {
-    const c: Comment = { id: newId(), author, text, at: nowIso(), ...(from ? { from } : {}) };
+    // A saved key never lands in the ticket's files, even if a run's summary or a message quotes one.
+    const c: Comment = { id: newId(), author, text: maskSaved(this.root, text), at: nowIso(), ...(from ? { from } : {}) };
     appendFileSync(join(this.ticketDir(slug, id), "comments.jsonl"), JSON.stringify(c) + "\n");
     return c;
   }
 
   appendActivity(slug: string, id: string, run: number, event: unknown): void {
     const e: ActivityEntry = { run, at: nowIso(), event };
-    appendFileSync(join(this.ticketDir(slug, id), "activity.jsonl"), JSON.stringify(e) + "\n");
+    // Run output that shows a saved key (a command that printed it) is stored with the key hidden.
+    appendFileSync(join(this.ticketDir(slug, id), "activity.jsonl"), maskSavedJson(this.root, JSON.stringify(e)) + "\n");
   }
 
   activityPath(slug: string, id: string): string {
@@ -807,7 +810,7 @@ export class Store {
   /** The message log is append-only: messages are never edited or removed. */
   appendHuddleMessage(slug: string, id: string, m: HuddleMessage): void {
     mkdirSync(this.huddlesDir(slug), { recursive: true });
-    appendFileSync(join(this.huddlesDir(slug), `${id}.messages.jsonl`), JSON.stringify(m) + "\n");
+    appendFileSync(join(this.huddlesDir(slug), `${id}.messages.jsonl`), maskSavedJson(this.root, JSON.stringify(m)) + "\n");
   }
 
   /**

@@ -9,6 +9,7 @@ import type { TeamRequest } from "./Team";
 import { TeammateCard } from "./TeammateCard";
 import { SquadCard } from "./SquadCard";
 import { AutomationCard } from "./AutomationCard";
+import { KeysBox } from "./KeysBox";
 import { oldChat } from "./cacheNote";
 import { autoGrow } from "./autoGrow";
 import { branchTicket } from "./branch";
@@ -892,6 +893,10 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               )}
               {e.automation && (
                 <AutomationCard slug={slug} ticketId={ticket.id} uuid={e.uuid} proposal={e.automation} saved={ticket.automationCards?.[e.uuid]} onError={onError} />
+              )}
+              {e.keys && (
+                <KeysBox slug={slug} ticketId={ticket.id} uuid={e.uuid} ask={e.keys} answered={ticket.keyCards?.[e.uuid]}
+                  old={entries.slice(b.index + 1).some((x) => x.role === "user" && x.kind === "text" && !x.huddleId)} onError={onError} />
               )}
               {e.huddle && (
                 <HuddleCard slug={slug} ticket={ticket} tickets={tickets} uuid={e.uuid} at={e.at} roster={e.huddle.roster} reason={e.huddle.reason} template={e.huddle.template} maxCostUsd={e.huddle.maxCostUsd} topic={e.huddle.topic}

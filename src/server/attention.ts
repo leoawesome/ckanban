@@ -125,6 +125,8 @@ function ownAttention(
   if (t.outcome === "blocked") return { kind: "blocked", label: t.capHit ? `Stopped at $${t.capHit.capUsd.toFixed(2)} cap` : "Blocked", since };
   const q = s?.openQuestions ?? 0;
   if (q > 0) return { kind: "questions", label: `Answer ${q} question${q === 1 ? "" : "s"}`, since };
+  // A key box (ask_keys) waits for the user's Save or "I'll do it myself".
+  if (s?.pendingKeys?.some((id) => !t.keyCards?.[id])) return { kind: "questions", label: "Add keys", since };
   if (t.outcome === "needs_input") return { kind: "questions", label: "Answer Claude", since };
   const p = s?.pendingProposal;
   if (p && !((!p.title || p.title === t.title) && (!p.description || p.description.trim() === t.body.trim()))) {

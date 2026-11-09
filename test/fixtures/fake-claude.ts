@@ -74,7 +74,12 @@ function drain() {
 
 const first = streamIn ? await nextMessage() : null;
 if (process.env.FAKE_ARGS_FILE) {
-  appendFileSync(process.env.FAKE_ARGS_FILE, JSON.stringify({ args, cwd: process.cwd(), prompt: first, ...(process.env.CKANBAN_FRONTDESK ? { frontDesk: process.env.CKANBAN_FRONTDESK } : {}) }) + "\n");
+  // FAKE_ENV_KEYS=A,B: also records those environment variables (null when unset), to check what a run was given.
+  const envKeys = (process.env.FAKE_ENV_KEYS ?? "").split(",").filter(Boolean);
+  appendFileSync(process.env.FAKE_ARGS_FILE, JSON.stringify({
+    args, cwd: process.cwd(), prompt: first, ...(process.env.CKANBAN_FRONTDESK ? { frontDesk: process.env.CKANBAN_FRONTDESK } : {}),
+    ...(envKeys.length ? { env: Object.fromEntries(envKeys.map((k) => [k, process.env[k] ?? null])) } : {}),
+  }) + "\n");
 }
 // FAKE_BLOCK_MATCH: runs whose first prompt contains this text end "blocked" (per-ticket behaviour in one test).
 const mode = process.env.FAKE_BLOCK_MATCH && first?.includes(process.env.FAKE_BLOCK_MATCH) ? "blocked" : process.env.FAKE_MODE ?? "ok";

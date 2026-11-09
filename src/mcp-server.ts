@@ -14,8 +14,10 @@ import { CLAUDE_MESSAGE_GAP_MS, CLAUDE_MESSAGE_MAX, type MessageResult } from ".
 import { normalizeTags } from "./server/tags";
 import { teammateProposal } from "./server/teammate-proposal";
 import { automationProposal } from "./server/automation-proposal";
+import { keysAsk, MAX_ASKED_KEYS } from "./server/ask-keys";
+import { backupFile, backupText } from "./server/file-backup";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ArtifactJob, type ArtifactOutcome, runArtifactJob } from "./server/artifact";
 import { AUTO_HUDDLE_TRIGGERS, STATUSES, USER_HUDDLE_TRIGGER } from "./server/types";
@@ -174,6 +176,8 @@ export interface ToolContext {
   env: Record<string, string | undefined>;
   main?: (dir: string) => string | null;
   now?: () => number;
+  /** The board's data folder (backup_file). Default: $CKANBAN_HOME or ~/.claude-kanban. */
+  dataRoot?: string;
   /** Runs an artifact publish/read (tests pass a fake). Default: runArtifactJob. */
   artifact?: (job: ArtifactJob, timeoutMs: number) => Promise<ArtifactOutcome>;
 }
@@ -741,6 +745,9 @@ const PRESET_FIELDS = {
 const PROPOSE_INSTEAD = "Nothing was saved: inside a board or huddle run only the user saves teammates. Call propose_teammate with the same fields and a one-line why; " +
   "the user saves it with one click (in a ticket chat it shows as a card, in a huddle under Learnings).";
 
+/** ask_keys inside a tool ticket's run: the user never sees a tool ticket's chat. */
+export const TOOL_NO_KEYS = "This is a tool ticket: the user doesn't see its chat, so it can't show a key box. End your run with status \"questions\" and name each key you need in your summary (its variable name like SENTRY_AUTH_TOKEN, what it is for and where to create it): your parent asks the user for it with ask_keys, and your next run has it as that variable.";
+
 /** ask_questions inside a tool ticket's run. */
 export const TOOL_NO_QUESTIONS = "This is a tool ticket: it never asks the user. End your run with status \"questions\" and put the question in your summary instead; your parent ticket answers it with a message that resumes you.";
 
@@ -796,6 +803,100 @@ const PLANNING_TOOLS: Tool[] = [
       const e = questionsError(args);
       if (e) throw new ClientError(`${e}. Fix it and call ask_questions again.`);
       return SHOWN.replace("a card", "a form");
+    },
+  },
+  {
+    name: "ask_keys",
+    description:
+      "Board ticket chat (any column): ask the user for keys or tokens (an API key, a personal access token) by name, instead of asking them to paste one in the chat or into a file. " +
+      "The chat shows a box with one password field per key, a \"create one\" link when you give createUrl, Save and \"I'll do it myself\". " +
+      "The board keeps the keys on this Mac for this board; every later run on the board (this ticket's next run too) gets each one as an environment variable under its envName. " +
+      "You never see the values: place a key with shell commands that use the variable (write \"$SENTRY_AUTH_TOKEN\" into the config file, `gh secret set NAME --body \"$NAME\"`), " +
+      "and never print, echo, cat or log one. A key already saved for this board is not asked again (the reply says so) unless replace is true. " +
+      "After the call, end your turn: the board resumes you with a message naming the keys saved (never their values), or saying the user will do it themselves.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        keys: {
+          type: "array", minItems: 1, maxItems: MAX_ASKED_KEYS,
+          items: {
+            type: "object",
+            properties: {
+              envName: { type: "string", description: "The environment variable name runs get it as: capital letters, digits and _, e.g. SENTRY_AUTH_TOKEN." },
+              label: { type: "string", description: "What it is, in plain words, e.g. \"Sentry auth token\"." },
+              help: { type: "string", description: "Short hint: the access it needs or where to find it, e.g. \"needs project:releases\"." },
+              createUrl: { type: "string", description: "https address where the user creates one." },
+            },
+            required: ["envName", "label"],
+          },
+        },
+        reason: { type: "string", description: "One line: what you will do with them, e.g. \"to upload source maps from the build\"." },
+        replace: { type: "boolean", description: "Ask again for keys already saved for this board, to replace them (only when the user asks, or the saved one is refused). Default false." },
+      },
+      required: ["keys", "reason"],
+    },
+    annotations: { readOnlyHint: true },
+    changes: false,
+    async run(args, ctx) {
+      const own = ctx.env[RUN_ENV]?.split("/");
+      if (!own?.[0] || !own[1] || ctx.env[HUDDLE_AGENT_ENV]) {
+        throw new ClientError("ask_keys works only in a board ticket's chat, where the user sees the box. Ask the user to add the key in the ticket chat instead, and never ask them to paste it in a message.");
+      }
+      const t = await Promise.resolve().then(() => ctx.client.getTicket(own[0], own[1])).catch(() => null);
+      if (hiddenTool(t)) throw new ClientError(TOOL_NO_KEYS);
+      let ask;
+      try {
+        ask = keysAsk(args);
+      } catch (e) {
+        throw new ClientError(`${(e as Error).message}. Fix it and call ask_keys again.`);
+      }
+      // Always the run's own board: keys are kept per board.
+      const { passes } = await ctx.client.listPasses();
+      const saved = new Set(passes.filter((p) => p.kind === "key" && p.board === own[0] && p.envName).map((p) => p.envName!));
+      const already = ask.keys.filter((k) => saved.has(k.envName)).map((k) => k.envName);
+      if (already.length && !ask.replace) {
+        const here = already.filter((n) => ctx.env[n] !== undefined);
+        const later = already.filter((n) => ctx.env[n] === undefined);
+        const names = (ns: string[]) => ns.map((n) => `$${n}`).join(", ");
+        const status = (here.length ? `${names(here)} ${here.length === 1 ? "is" : "are"} already saved for this board and in your environment now. ` : "") +
+          (later.length ? `${names(later)} ${later.length === 1 ? "was" : "were"} saved for this board after this run started: ${later.length === 1 ? "it reaches" : "they reach"} the next run, not this one. ` : "");
+        const rest = ask.keys.filter((k) => !saved.has(k.envName));
+        // An error result: the chat draws no box for this call (session.ts drops cards whose call failed).
+        throw new ClientError(`No box shown. ${status}` + (rest.length
+          ? `Call ask_keys again with only the keys not saved yet (${names(rest.map((k) => k.envName))}), or with replace: true to replace the saved ones.`
+          : "Use them through the variables (never print a value). To replace a saved key, call ask_keys again with replace: true."));
+      }
+      return "Shown to the user as a key box" + (already.length ? " (it says it replaces the saved key)" : "") +
+        ". End your turn now and wait: the board resumes you with a message naming the keys saved (they are then in your environment under those names) or saying the user will do it themselves.";
+    },
+  },
+  {
+    name: "backup_file",
+    description:
+      "Before you put a saved key into an existing file (a .env, a tool's config file in the home folder), call this with the file's path: " +
+      "the board saves a private copy of it in its own data folder on this Mac (owner-only, never in the project or the ticket's outputs; 5 copies per file are kept: the first and the newest; deleting the board deletes them). " +
+      "It answers with where the copy went, never with the file's contents. If the file doesn't exist yet it says so and copies nothing. " +
+      "Then change only the key's line, using the variable.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The file you are about to change: absolute, ~/... or $HOME/..., or relative to your working folder." },
+        profile: { ...PROFILE, description: "Outside a board run only: the board whose private folder keeps the copy. Default: the board of your working folder." },
+      },
+      required: ["path"],
+    },
+    // Writes only into the board's own private folder: allowed in every run.
+    changes: false,
+    async run(args, ctx) {
+      // Inside a run, always the run's own board (like its keys); outside, the board of the folder or `profile`.
+      const slug = runProfile(ctx.env) ?? await slugFor(args, ctx);
+      const root = ctx.dataRoot ?? ctx.env.CKANBAN_HOME ?? join(homedir(), ".claude-kanban");
+      try {
+        return backupText(backupFile(root, slug, str(args, "path")!, ctx.cwd, ctx.now ? new Date(ctx.now()) : new Date()));
+      } catch (e) {
+        if (e instanceof ClientError) throw e;
+        throw new ClientError(`No copy made: ${(e as Error).message}. Don't change the file until a copy is saved.`);
+      }
     },
   },
   {
@@ -957,7 +1058,9 @@ const PLANNING_TOOLS: Tool[] = [
     annotations: { readOnlyHint: true },
     changes: false,
     async run(_args, ctx) {
-      const [{ passes }, claude] = await Promise.all([ctx.client.listPasses(), ctx.client.claudeServers().catch(() => ({ servers: [] }))]);
+      const [{ passes: all }, claude, slug] = await Promise.all([ctx.client.listPasses(), ctx.client.claudeServers().catch(() => ({ servers: [] })), slugFor(_args ?? {}, ctx).catch(() => null)]);
+      // Keys saved for another board aren't this board's to use.
+      const passes = all.filter((p) => !p.board || p.board === slug);
       const linked = new Set(passes.map((p) => p.claudeName).filter(Boolean));
       const own = passes.map((p) => `- ${p.name} (${p.kind === "local" ? "program on this computer" : p.kind === "mcp" ? "signed in" : p.url ? "key for an MCP server" : `key, scripts read it from $${p.envName}`}): ${p.status}${p.error ? ` (${p.error})` : ""}${p.claudeName ? `, from Connections server "${p.claudeName}"` : ""}`);
       const can = claude.servers.filter((s) => !linked.has(s.name) && s.scope !== "claude.ai" && (s.scope === "user" || s.scope === "local"))
@@ -965,7 +1068,7 @@ const PLANNING_TOOLS: Tool[] = [
       const claudeOnly = claude.servers.filter((s: any) => s.scope === "claude.ai").map((s: any) => `${s.name}${s.target ? ` (${s.target})` : ""}`);
       return `Connected for automations:\n${own.join("\n") || "(none yet)"}\n\nIn Connections, can be connected for automations (propose them in passes with from: "<name>"):\n${can.join("\n") || "(none)"}` +
         (claudeOnly.length ? `\n\nclaude.ai connectors (automations can't use Claude's sign-in; for an online server the board can sign in by itself: propose {name, url} with its address): ${claudeOnly.join(", ")}` : "") +
-        "\n\nA service with none of these: a key the user pastes (passes entry with envName; the script reads $ENV_NAME).";
+        "\n\nA service with none of these: a key the user pastes (passes entry with envName; the script reads $ENV_NAME). A key saved for this board with ask_keys can be listed by its name the same way.";
     },
   },
   {
@@ -1018,7 +1121,7 @@ const PLANNING_TOOLS: Tool[] = [
       "only the user's click saves it. Test the script with test_automation_script first. Its tickets land in Backlog (the user can change that in the editor). " +
       "passes: each connection the script uses: {name} for one already connected, {name, from: \"<Connections server>\"} to connect from Connections in one click, " +
       "{name, url: \"https://<online MCP server>\"} when its online MCP server isn't in the user's own Claude settings (e.g. a claude.ai connector's address): the board signs in to it by itself, " +
-      "or {name, envName, keyHelp} for a key the user pastes (keyHelp says where to find it). Nothing is saved by the call.",
+      "or {name, envName, keyHelp} for a key the user pastes (keyHelp says where to find it; a key already saved for this board under that envName is used as is, and ask_keys asks for one in a box). Nothing is saved by the call.",
     inputSchema: {
       type: "object",
       properties: {

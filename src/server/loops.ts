@@ -165,20 +165,21 @@ export class LoopManager {
   }
 
   /** Pass ids from ids or names; throws on one the board doesn't have. */
-  private passIds(v: unknown): string[] {
+  private passIds(v: unknown, slug: string): string[] {
     if (!Array.isArray(v)) throw new LoopError(400, "passes must be a list");
     return [...new Set(v.map((ref) => {
-      const p = this.passes.find(String(ref ?? ""));
+      // Keys saved for another board never reach this board's automations.
+      const p = this.passes.find(String(ref ?? ""), undefined, slug);
       if (!p) throw new LoopError(400, `"${String(ref)}" isn't connected for automations yet: connect it in Connections first`);
       return p.id;
     }))];
   }
 
-  private validate(input: LoopInput, base?: Loop): { fields: Omit<Loop, "version" | "id" | "createdAt" | "updatedAt" | "lastCheckedAt" | "lastFiredAt" | "lastError" | "scriptHash" | "allowedTools">; script: string | null } {
+  private validate(slug: string, input: LoopInput, base?: Loop): { fields: Omit<Loop, "version" | "id" | "createdAt" | "updatedAt" | "lastCheckedAt" | "lastFiredAt" | "lastError" | "scriptHash" | "allowedTools">; script: string | null } {
     const str = (v: unknown, fallback: string) => (v === undefined ? fallback : String(v ?? ""));
     const name = str(input.name, base?.name ?? "").trim().slice(0, 80);
     if (!name) throw new LoopError(400, "Give the automation a name");
-    const passes = input.passes === undefined ? base?.passes ?? [] : this.passIds(input.passes);
+    const passes = input.passes === undefined ? base?.passes ?? [] : this.passIds(input.passes, slug);
     const service = (str(input.service, base?.service ?? "").trim() || this.passes.get(passes[0] ?? "")?.name || "a script").slice(0, 60);
 
     let script: string | null = null;
@@ -214,7 +215,7 @@ export class LoopManager {
 
   async create(slug: string, input: LoopInput): Promise<LoopView> {
     if (!this.store.getProfile(slug)) throw new LoopError(404, `board ${slug} not found`);
-    const { fields, script } = this.validate(input);
+    const { fields, script } = this.validate(slug, input);
     const id = newId();
     return this.lock(`${slug}/${id}`, () => {
       const at = this.deps.now().toISOString();
@@ -241,7 +242,7 @@ export class LoopManager {
         this.emit(slug, next);
         return this.view(slug, next);
       }
-      const { fields, script } = this.validate(input, current);
+      const { fields, script } = this.validate(slug, input, current);
       const next: Loop = { ...current, ...fields, updatedAt: this.deps.now().toISOString() };
       const state = this.store.getLoopState(slug, id);
       let restart = false;
@@ -317,12 +318,12 @@ export class LoopManager {
   }
 
   /** Runs a script with a grant for its passes. The grant ends with the run. */
-  private async runWith(file: string, cwd: string, passIds: string[], allowed: string[] | null): Promise<{ run: ScriptRun; grant: Grant }> {
+  private async runWith(slug: string, file: string, cwd: string, passIds: string[], allowed: string[] | null): Promise<{ run: ScriptRun; grant: Grant }> {
     const token = randomBytes(24).toString("base64url");
     const grant: Grant = { passes: passIds, allowed: allowed ? new Set(allowed) : null, used: new Set(), expires: Date.now() + 10 * 60_000, rateLimitMs: 0 };
     this.grants.set(token, grant);
     try {
-      const env = scriptEnv({ shimDir: this.deps.shimDir(), port: this.deps.port(), callToken: token, keys: this.passes.envFor(passIds) });
+      const env = scriptEnv({ shimDir: this.deps.shimDir(), port: this.deps.port(), callToken: token, keys: this.passes.envFor(passIds, slug) });
       const run = await this.run(file, cwd, env);
       return { run: { ...run, error: run.error && this.passes.mask(run.error), stderr: this.passes.mask(run.stderr) }, grant };
     } finally {
@@ -342,13 +343,13 @@ export class LoopManager {
     const script = String(input.script ?? "");
     if (!script.trim()) throw new LoopError(400, "There is no script to test");
     if (script.length > SCRIPT_MAX) throw new LoopError(400, "The check script is too long");
-    const passIds = input.passes === undefined ? [] : this.passIds(input.passes);
+    const passIds = input.passes === undefined ? [] : this.passIds(input.passes, slug);
     const dir = join(this.store.root, "automation-tests");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, `${newId()}.sh`);
     writeFileSync(file, script);
     try {
-      const { run, grant } = await this.runWith(file, profile.path, passIds, null);
+      const { run, grant } = await this.runWith(slug, file, profile.path, passIds, null);
       const items = (run.items ?? []).map((i) => this.maskItem(i));
       return {
         items: items.slice(0, PREVIEW), found: items.length, error: run.error, stderr: run.stderr, durationMs: run.durationMs,
@@ -420,7 +421,7 @@ export class LoopManager {
       save({ lastCheckedAt: now.toISOString(), lastError: message }, { failures, backoffUntil: new Date(now.getTime() + wait).toISOString() });
     };
 
-    const { run, grant } = await this.runWith(this.store.loopScriptFile(slug, id), profile.path, loop.passes, loop.allowedTools);
+    const { run, grant } = await this.runWith(slug, this.store.loopScriptFile(slug, id), profile.path, loop.passes, loop.allowedTools);
     if (!run.items) return fail(run.error ?? "The check failed", grant.rateLimitMs);
     const learned = loop.allowedTools ?? [...grant.used].sort();
     const items = run.items.map((i) => this.maskItem(i));

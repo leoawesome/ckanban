@@ -1,7 +1,7 @@
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, type Stats } from "node:fs";
 import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { withoutAttachmentNote } from "./attachments";
 import { commandText, localCommandOutput, TERMINAL_COMMANDS } from "./commands";
 import type { Bus } from "./events";
@@ -16,6 +16,8 @@ import { parseTeammateProposal, type TeammateProposal } from "./teammate-proposa
 import { parseSquadProposal, type SquadProposal } from "./squad";
 import { TOPIC_MAX } from "./huddle-templates";
 import { parseAutomationProposal, type AutomationProposal } from "./automation-proposal";
+import { parseKeysAsk, type KeysAsk } from "./ask-keys";
+import { maskSaved } from "./board-keys";
 import type { Store } from "./store";
 import type { Ticket } from "./types";
 import { normalizeTags } from "./tags";
@@ -107,6 +109,8 @@ export interface SessionEntry {
   squad?: SquadProposal;
   /** Claude proposed an automation (propose_automation; rendered with Connect buttons and Save automation). */
   automation?: AutomationProposal;
+  /** Claude asked for keys (ask_keys; rendered as a key box with Save and "I'll do it myself"). Names only. */
+  keys?: KeysAsk;
   /** Mockups Claude sent as blocks (saved to outputs/mockups; the chat links to them). */
   mockups?: string[];
   /** Claude asked the board to move the ticket (a planning-only request arrived in Review). */
@@ -323,6 +327,8 @@ export interface ParsedSession {
   pendingSquads?: string[];
   /** Automation cards (entry uuids) since the user's last message; Ticket.automationCards says which were saved. */
   pendingAutomations: string[];
+  /** Key boxes (entry uuids) since the user's last message; Ticket.keyCards says which were answered. */
+  pendingKeys: string[];
   /** Conversation size and cache time at Claude's last reply (chat-cache.ts); null before any reply with usage. */
   cache: ChatCache | null;
 }
@@ -344,6 +350,8 @@ export interface SessionSummary {
   /** Squad cards (entry uuids) since the user's last message; Ticket.squadCards says which were answered. */
   pendingSquads?: string[];
   pendingAutomations?: string[];
+  /** See ParsedSession.pendingKeys. */
+  pendingKeys?: string[];
   /** See ParsedSession.cache: the ticket chat's "gone cold" note. */
   cache?: ChatCache | null;
 }
@@ -475,10 +483,15 @@ const DELETE_TOOL = /(?:^|__)propose_delete$/;
 const TEAMMATE_TOOL = /(?:^|__)propose_teammate$/;
 const SQUAD_TOOL = /(?:^|__)propose_squad$/;
 const AUTOMATION_TOOL = /(?:^|__)propose_automation$/;
+const KEYS_TOOL = /(?:^|__)ask_keys$/;
 
 /** The form or card a planning-chat tool call shows, or null for other tools (or input that can't be read). */
-function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "teammate" | "squad" | "automation"> | null {
+function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "teammate" | "squad" | "automation" | "keys"> | null {
   const name = String(block.name ?? "");
+  if (KEYS_TOOL.test(name)) {
+    const keys = parseKeysAsk(block.input);
+    return keys && { keys };
+  }
   if (QUESTIONS_TOOL.test(name)) {
     const questions = parseQuestions(block.input?.questions);
     const ask = parseAskMeta(block.input);
@@ -727,7 +740,7 @@ export class SessionParser {
       return c;
     });
     dropBlockedMoves(entries);
-    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.teammate || e.squad || e.automation));
+    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.teammate || e.squad || e.automation || e.keys));
     const lastText = !last ? "" : last.text
       || (last.questions ? `Asked ${last.questions.length} question${last.questions.length > 1 ? "s" : ""}`
         : last.newTickets ? `Proposed ${last.newTickets.length} new ticket${last.newTickets.length > 1 ? "s" : ""}`
@@ -786,7 +799,7 @@ function handBack(text: string): string {
   return text.slice(m[0].length).split("\n").map((l) => l.replace(/^ {2}/, "")).join("\n").trim();
 }
 
-function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations"> {
+function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys"> {
   let lastUser = -1;
   entries.forEach((e, i) => {
     // Huddle messages don't answer what Claude asked the user (another ticket's message, e.g. the planner's answer, does).
@@ -805,6 +818,7 @@ function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestio
     pendingTeammates: after.filter((e) => e.teammate).map((e) => e.uuid),
     pendingSquads: after.filter((e) => e.squad).map((e) => e.uuid),
     pendingAutomations: after.filter((e) => e.automation).map((e) => e.uuid),
+    pendingKeys: after.filter((e) => e.keys).map((e) => e.uuid),
   };
 }
 
@@ -1147,9 +1161,10 @@ export class SessionCache {
     const p = this.parsed(sessionId);
     if (!p) return null;
     const s: StoredSummary = {
-      title: p.title, lastMessage: p.lastMessage, artifacts: p.artifacts,
+      // The preview is stored and sent to the UI: a saved key in Claude's last message is hidden there.
+      title: p.title, lastMessage: p.lastMessage && this.summaryFile ? { ...p.lastMessage, text: maskSaved(dirname(this.summaryFile), p.lastMessage.text) } : p.lastMessage, artifacts: p.artifacts,
       openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates, pendingSquads: p.pendingSquads,
-      pendingAutomations: p.pendingAutomations, cache: p.cache,
+      pendingAutomations: p.pendingAutomations, ...(p.pendingKeys.length ? { pendingKeys: p.pendingKeys } : {}), cache: p.cache,
     };
     if (v) this.storeSummary(sessionId, v, s);
     return { ...s, updatedAt };

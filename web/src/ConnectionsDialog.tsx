@@ -93,7 +93,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
   /** Opens the board's terminal and runs the command there. Missing when there's no terminal (no profile). */
   onRunInTerminal?: (command: string) => void;
 }) {
-  const [tab, setTab] = useState<"claude" | "automations">("claude");
+  const [tab, setTab] = useState<"claude" | "automations" | "keys">("claude");
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -382,7 +382,29 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
 
   // For automations: Claude's servers with the board's pass state, plus passes not made from a Claude server.
   const known = new Set(servers.map((s) => s.name));
-  const own = passes.filter((p) => !p.claudeName || !known.has(p.claudeName));
+  // A key saved for one board (ask_keys) is listed under Keys, not here.
+  const own = passes.filter((p) => !p.board && (!p.claudeName || !known.has(p.claudeName)));
+  // Keys saved per board: this board's first, then the others by name.
+  const boardKeys = passes.filter((p) => !!p.board && p.kind === "key");
+  const keyBoards = [...new Set(boardKeys.map((p) => p.board!))].sort((a, b) =>
+    (a === thisBoard?.slug ? -1 : b === thisBoard?.slug ? 1 : 0) || (boardKeys.find((p) => p.board === a)?.boardName ?? a).localeCompare(boardKeys.find((p) => p.board === b)?.boardName ?? b));
+  const keyRow = (p: Pass) => (
+    <div key={p.id} className="conn-card">
+      <div className="conn-top">
+        <div className="conn-title">
+          <span className="conn-name">{p.name}</span>
+          <code className="muted small">${p.envName}</code>
+        </div>
+        <div className="conn-actions">
+          <span className="muted small">Saved {timeAgo(p.savedAt ?? p.createdAt)}</span>
+          <button className="btn small ghost danger" onClick={() => setRemovePass(p)}>Delete</button>
+        </div>
+      </div>
+      <span className="muted small">
+        {p.usedByNames?.length ? `Used by ${p.usedByNames.length === 1 ? "the automation" : "the automations"} ${p.usedByNames.join(", ")}, and by Claude's runs on this board.` : "Claude's runs on this board get it under this name."}
+      </span>
+    </div>
+  );
   const fromClaude = servers.filter((s) => s.status === "connected" || s.scope !== "claude.ai").map((s) => ({ s, c: boardCell(s, passes) }));
   const ready = fromClaude.filter((x) => x.c.kind === "ok");
   const addable = fromClaude.filter((x) => x.c.kind === "connect");
@@ -473,6 +495,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             For Claude{attention.length > 0 && <span className="conn-count" aria-label={`${attention.length} need attention`}>{attention.length}</span>}
           </button>
           <button role="tab" aria-selected={tab === "automations"} className={tab === "automations" ? "active" : ""} onClick={() => setTab("automations")}>For automations</button>
+          <button role="tab" aria-selected={tab === "keys"} className={tab === "keys" ? "active" : ""} onClick={() => setTab("keys")}>Keys</button>
         </div>
         {err && <div className="form-error" role="alert">{err}</div>}
         {tab === "claude" && (
@@ -509,6 +532,21 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             <AgentsSection />
           </>
         )}
+        {tab === "keys" && (
+          <>
+            <span className="muted small">
+              Keys you saved when Claude asked for them. They are saved on this Mac only, for one board: Claude's runs on that board get each one under its name, without seeing it. Delete one and new runs no longer get it.
+            </span>
+            {!board && <div className="muted"><span className="spinner" /> Loading…</div>}
+            {board && !boardKeys.length && <div className="muted">No keys saved yet. When Claude needs one, it asks in the ticket's chat with a key box.</div>}
+            {keyBoards.map((slug) => (
+              <div key={slug} className="conn-section">
+                <div className="inbox-board">{slug === thisBoard?.slug ? "This board" : boardKeys.find((p) => p.board === slug)?.boardName ?? slug}</div>
+                {boardKeys.filter((p) => p.board === slug).map(keyRow)}
+              </div>
+            ))}
+          </>
+        )}
         {tab === "automations" && (
           <>
             <span className="muted small">{BOARD_TIP}</span>
@@ -540,14 +578,17 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
         )}
       </div>
       {removePass && (
-        <ConfirmDialog title={`Remove ${removePass.name} from automations?`} confirmLabel="Remove" busyLabel="Removing…"
+        <ConfirmDialog title={removePass.board ? `Delete the key ${removePass.name}?` : `Remove ${removePass.name} from automations?`}
+          confirmLabel={removePass.board ? "Delete" : "Remove"} busyLabel={removePass.board ? "Deleting…" : "Removing…"}
           onCancel={() => setRemovePass(null)}
           onConfirm={async () => {
             await api.deletePass(removePass.id);
             setRemovePass(null);
             await loadBoard();
           }}>
-          <p>The board forgets its own sign-in or key for {removePass.name}. Claude's connection stays.{removePass.usedBy ? ` ${removePass.usedBy} automation${removePass.usedBy === 1 ? "" : "s"} using it will wait until you connect it again.` : ""}</p>
+          {removePass.board
+            ? <p>The board forgets this key. New Claude runs no longer get ${removePass.envName}; a run already going keeps it until it ends. Anywhere Claude already put it (a settings file, a GitHub secret) stays as it is.{removePass.usedBy ? ` ${removePass.usedBy} automation${removePass.usedBy === 1 ? "" : "s"} using it will wait until you add it again.` : ""}</p>
+            : <p>The board forgets its own sign-in or key for {removePass.name}. Claude's connection stays.{removePass.usedBy ? ` ${removePass.usedBy} automation${removePass.usedBy === 1 ? "" : "s"} using it will wait until you connect it again.` : ""}</p>}
         </ConfirmDialog>
       )}
       {confirm && (

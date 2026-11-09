@@ -48,6 +48,7 @@ import { BOARD_COMMANDS, commandText, EFFORT_HELP, runOptions, ultracodeOn, vali
 import { mcpConfig } from "./agents";
 import type { OwnedSession } from "./shell";
 import type { Store } from "./store";
+import { boardKeyEnv, maskSaved } from "./board-keys";
 import { normalizeTags } from "./tags";
 import { autoHuddlesOn, runCapFor, workspaceOf, BOARD_NOTES_KEEP, type BoardNote, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "./types";
 import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TIMEOUT_MS, withBoardText, type SetupOutcome, type SetupResult } from "./worktree-setup";
@@ -192,8 +193,9 @@ function chatFor(
 }
 
 /** Queued-message flags from Board.chat options. */
-function flags(o: ChatOptions): Pick<QueuedMessage, "peer" | "fromPlanner" | "from" | "slash" | "hostWake" | "followUp" | "telegram"> {
+function flags(o: ChatOptions): Pick<QueuedMessage, "peer" | "fromPlanner" | "from" | "slash" | "hostWake" | "followUp" | "telegram" | "nextRun"> {
   return {
+    ...(o.nextRun ? { nextRun: true } : {}),
     ...(o.from ? { from: o.from } : {}), ...(o.telegram ? { telegram: o.telegram } : {}),
     ...(o.peer ? { peer: true } : {}), ...(o.fromPlanner ? { fromPlanner: true } : {}), ...(o.slash ? { slash: o.slash } : {}),
     ...(o.hostWake ? { hostWake: true } : {}), ...(o.followUp ? { followUp: true } : {}),
@@ -229,6 +231,8 @@ export interface ChatOptions {
   fresh?: boolean;
   /** The user sent it from Telegram (a reply to an alert): kept on the queued message so a restart never sends it twice. */
   telegram?: { updateId: number; tg: number };
+  /** Start a new run for it rather than steering a run already going (see QueuedMessage.nextRun). */
+  nextRun?: boolean;
 }
 
 /** What the card says while the ticket waits for its auto huddle. */
@@ -674,7 +678,8 @@ export class Board {
       // Saved on the ticket until Claude reads it, so closing the chat, Stop or a restart can't lose it.
       const msg: QueuedMessage = { id: crypto.randomUUID(), text, at: nowIso(), state: "queued", ...flags(opts) };
       this.patch(slug, id, { queued: [...(t.queued ?? []), msg] });
-      this.steer(active, msg);
+      // A nextRun message waits for this run to end: drainQueue then starts a new run with it.
+      if (!msg.nextRun) this.steer(active, msg);
       return this.store.getTicket(slug, id)!;
     }
     if (this.restartPending) {
@@ -822,7 +827,7 @@ export class Board {
     if (!msg) throw new Error("message not found");
     if (msg.state !== "unsent") throw new ConflictError("message is already on its way to Claude");
     this.dropQueued(slug, id, [msgId]);
-    return this.chat(slug, id, msg.text, { peer: msg.peer, fromPlanner: msg.fromPlanner, from: msg.from, slash: msg.slash, hostWake: msg.hostWake, followUp: msg.followUp });
+    return this.chat(slug, id, msg.text, { peer: msg.peer, fromPlanner: msg.fromPlanner, from: msg.from, slash: msg.slash, hostWake: msg.hostWake, followUp: msg.followUp, nextRun: msg.nextRun });
   }
 
   discardQueued(slug: string, id: string, msgId: string): Ticket {
@@ -1194,7 +1199,7 @@ export class Board {
     let draftTimer: ReturnType<typeof setTimeout> | null = null;
     const emitDraft = () => {
       draftTimer = null;
-      this.bus.emit({ type: "draft", profile: slug, id, text: draft.text });
+      this.bus.emit({ type: "draft", profile: slug, id, text: maskSaved(this.store.root, draft.text) });
     };
     // The spending cap applies to the ticket's own work (not Planning chats or replies to other tickets).
     const cap = refine || quiet ? null : runCapFor(t, profile);
@@ -1229,7 +1234,8 @@ export class Board {
       inputLocal: run.chat?.slash === "local" && !resume,
       planning: refine,
       // CKANBAN_TICKET marks board runs: the ckanban MCP/CLI refuses board changes there (no runs starting runs).
-      env: { ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${id}` },
+      // The board's saved keys (ask_keys) come first, so the board's own variables always win.
+      env: { ...boardKeyEnv(this.store.root, slug), ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${id}` },
       onEvent: (ev) => {
         const changed = draft.feed(ev);
         if (changed !== null) {
@@ -1238,7 +1244,7 @@ export class Board {
           if (changed === "") {
             if (draftTimer) clearTimeout(draftTimer);
             draftTimer = null;
-            this.bus.emit({ type: "draft", profile: slug, id, text: "", ...(draft.finished ? { final: draft.finished } : {}) });
+            this.bus.emit({ type: "draft", profile: slug, id, text: "", ...(draft.finished ? { final: maskSaved(this.store.root, draft.finished) } : {}) });
           } else if (!draftTimer) draftTimer = setTimeout(emitDraft, DRAFT_THROTTLE_MS);
         }
         if (ev?.type === "stream_event") return;
@@ -1306,13 +1312,13 @@ export class Board {
     }
     if (draftTimer) clearTimeout(draftTimer);
     // A reply cut off before its message ended (Stop, a crash): the chat keeps it until it knows what was saved.
-    if (draft.text) this.bus.emit({ type: "draft", profile: slug, id, text: "", final: draft.text });
+    if (draft.text) this.bus.emit({ type: "draft", profile: slug, id, text: "", final: maskSaved(this.store.root, draft.text) });
     // Daemon is exiting: leave the ticket in_progress so recover() resumes it on next start.
     if (this.shuttingDown) return;
     const finalText = extractFinalText(out.events);
     if (!(run.handle.stopped && run.restartRequested && !run.stopRequested)) {
       try {
-        this.opts.turnEnded?.(slug, id, finalText);
+        this.opts.turnEnded?.(slug, id, maskSaved(this.store.root, finalText));
       } catch (e) {
         console.error("board: turnEnded", e);
       }
@@ -1398,7 +1404,7 @@ export class Board {
     // A working main ticket's reply that only answered or reported progress isn't waiting on the user: "done".
     if (result) {
       const t = this.store.getTicket(slug, id);
-      if (t && askedNothing(t, result.status, replyAsked(this.openForm(t), body))) result = { ...result, status: "done" };
+      if (t && askedNothing(t, result.status, replyAsked(this.openForm(t), body) || this.keysOpen(t))) result = { ...result, status: "done" };
     }
     // A reply to the ticket's huddle can land the work and report it: keep its PRs, summary and outcome. The card
     // stays where it is, and a ticket waiting for its auto huddle keeps waiting.
@@ -2622,6 +2628,12 @@ export class Board {
   /** The questions form in the ticket's chat still waiting for the user's answers (empty when none). */
   private openForm(t: Ticket): Question[] {
     return (t.sessionId ? this.sessionSummary(t.sessionId)?.openForm : undefined) ?? [];
+  }
+
+  /** A key box (ask_keys) in the ticket's chat still waits for the user. */
+  private keysOpen(t: Ticket): boolean {
+    const pending = t.sessionId ? this.sessionSummary(t.sessionId)?.pendingKeys : undefined;
+    return !!pending?.some((id) => !t.keyCards?.[id]);
   }
 
   /** Resume the planner's session with what happened; several events arrive as one message. */

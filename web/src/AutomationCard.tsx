@@ -43,7 +43,7 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
     );
   }
 
-  const resolved = proposal.passes.map((p) => ({ p, ...resolveProposedPass(p, passes ?? []) }));
+  const resolved = proposal.passes.map((p) => ({ p, ...resolveProposedPass(p, passes ?? [], slug) }));
   const ready = passes !== null && resolved.every((r) => r.need === null);
 
   const run = async (key: string, fn: () => Promise<void>) => {
@@ -113,7 +113,7 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
                 {r.need === "key" && keyFor !== r.p.name && <button className="btn small primary" onClick={() => setKeyFor(r.p.name)}>Paste a key</button>}
                 {r.need === "missing" && <span className="badge blocked">not connected: connect it in Connections</span>}
                 {keyFor === r.p.name && (
-                  <KeyForm name={r.p.name} claudeName={r.p.from ?? null} url={r.p.envName ? null : r.pass?.url ?? r.p.url ?? null} envName={r.p.envName} help={r.p.keyHelp}
+                  <KeyForm name={r.p.name} claudeName={r.p.from ?? null} url={r.p.envName ? null : r.pass?.url ?? r.p.url ?? null} envName={r.p.envName} help={r.p.keyHelp} board={r.p.envName && !r.pass ? slug : undefined}
                     onCancel={() => setKeyFor(null)} onSaved={() => { setKeyFor(null); load(); }} />
                 )}
               </div>

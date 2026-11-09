@@ -478,6 +478,8 @@ export interface Ticket {
   squadCards?: Record<string, SquadCardState>;
   /** Automation cards in the chat the user saved (by entry uuid). */
   automationCards?: Record<string, { loopId: string; at: string }>;
+  /** Key boxes (ask_keys) answered, by entry uuid: the names saved, or self for "I'll do it myself". */
+  keyCards?: Record<string, { saved: string[]; self?: boolean; at: string }>;
   /** Made by Automations → Set up with Claude. */
   automationSetup?: boolean;
   /** Share menu publishes in progress (or the last one's error), per output file. */
@@ -628,6 +630,8 @@ export interface SessionEntry {
   squad?: SquadProposal;
   /** Claude proposed an automation (propose_automation): the card with Connect and Save automation. */
   automation?: AutomationProposal;
+  /** Claude asked for keys (ask_keys): a key box. Names only, never values. */
+  keys?: KeysAsk;
   /** Mockups Claude sent in this reply, saved as outputs/mockups/<name>. */
   mockups?: string[];
   moved?: "planning";
@@ -1152,6 +1156,13 @@ const query = (q: Record<string, number | undefined>) => {
 const hud = (slug: string, id?: string) => `/api/profiles/${encodeURIComponent(slug)}/huddles${id ? `/${encodeURIComponent(id)}` : ""}`;
 
 export type { AutomationProposal, Loop, LoopColumn, LoopInput, LoopSeenItem, LoopTest, Pass } from "./automationTypes";
+
+/** ask_keys' input as the chat shows it (src/server/ask-keys.ts). */
+export interface KeysAsk {
+  keys: { envName: string; label: string; help?: string; createUrl?: string }[];
+  reason: string;
+  replace: boolean;
+}
 import type { AutomationProposal, Loop, LoopInput, LoopTest, Pass } from "./automationTypes";
 
 export interface Schedule {
@@ -1791,7 +1802,7 @@ export const api = {
   updateSnippet: (id: string, patch: Partial<SnippetInput>) => req<Snippet>("PATCH", `/api/snippets/${encodeURIComponent(id)}`, patch),
   deleteSnippet: (id: string) => req<void>("DELETE", `/api/snippets/${encodeURIComponent(id)}`),
   passes: () => req<{ passes: Pass[]; automations: number }>("GET", "/api/passes"),
-  addPass: (input: { kind: Pass["kind"]; name?: string; claudeName?: string | null; url?: string; envName?: string; secret?: string }) =>
+  addPass: (input: { kind: Pass["kind"]; name?: string; claudeName?: string | null; url?: string; envName?: string; secret?: string; board?: string }) =>
     req<Pass>("POST", "/api/passes", input),
   replacePassKey: (id: string, secret: string) => req<Pass>("PATCH", `/api/passes/${encodeURIComponent(id)}`, { secret }),
   deletePass: (id: string) => req<void>("DELETE", `/api/passes/${encodeURIComponent(id)}`),
@@ -1800,6 +1811,9 @@ export const api = {
   automationSetup: (slug: string) => req<Ticket>("POST", `/api/profiles/${encodeURIComponent(slug)}/automation-setup`),
   /** Schedules → Proactive check-ins: a Planning chat that sets up a quiet check-in schedule. */
   checkinSetup: (slug: string) => req<Ticket>("POST", `/api/profiles/${encodeURIComponent(slug)}/checkin-setup`),
+  /** A key box's Save ({ keys: { NAME: value } }) or "I'll do it myself" ({ self: true }). */
+  answerKeyCard: (slug: string, ticketId: string, uuid: string, answer: { keys: Record<string, string> } | { self: true }) =>
+    req<Ticket>("POST", `/api/profiles/${encodeURIComponent(slug)}/tickets/${encodeURIComponent(ticketId)}/key-cards/${encodeURIComponent(uuid)}`, answer),
   answerAutomationCard: (slug: string, ticketId: string, uuid: string, loopId: string) =>
     req<Ticket>("PUT", `/api/profiles/${encodeURIComponent(slug)}/tickets/${encodeURIComponent(ticketId)}/automation-cards/${encodeURIComponent(uuid)}`, { loopId }),
   loops: (slug: string) => req<Loop[]>("GET", lp(slug)),

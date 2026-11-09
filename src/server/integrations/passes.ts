@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { keyNameError, PASSES_FILE } from "../board-keys";
 import type { Bus } from "../events";
 import { maskSecrets, readMcpConfig } from "../mcp";
 import { inheritedEnv } from "../runner";
@@ -33,6 +34,13 @@ export interface Pass {
   url?: string;
   envName?: string;
   secret?: string;
+  /**
+   * A key saved for one board (the ask_keys box, or a key an automation on that board needs): that board's runs get it
+   * as $envName. Missing: a pass for automations on any board (the older kind).
+   */
+  board?: string;
+  /** When the key was last saved (a replaced key keeps its createdAt). */
+  savedAt?: string;
   oauth?: Client;
   tokens?: Tokens;
   status: PassStatus;
@@ -48,9 +56,19 @@ export interface PassView {
   claudeName: string | null;
   url: string | null;
   envName: string | null;
+  board: string | null;
   status: PassStatus;
   error: string | null;
   createdAt: string;
+  savedAt: string;
+}
+
+/** One key to save for a board (from the ask_keys box). */
+export interface BoardKeyInput {
+  envName: string;
+  /** What it is, in the user's words ("Sentry auth token"). */
+  name: string;
+  secret: string;
 }
 
 export class PassError extends Error {
@@ -66,6 +84,8 @@ export interface AddPassInput {
   url?: unknown;
   envName?: unknown;
   secret?: unknown;
+  /** A key for one board's runs (a board slug the caller checked). */
+  board?: unknown;
 }
 
 interface File {
@@ -102,7 +122,7 @@ export class Passes {
   private home: string;
 
   constructor(root: string, private bus: Bus, private deps: Deps, private callbackUrl: () => string, private o: PassOptions = {}) {
-    this.file = join(root, "automation-passes.json");
+    this.file = join(root, PASSES_FILE);
     this.configFile = o.configFile ?? join(process.env.CLAUDE_CONFIG_DIR ?? homedir(), ".claude.json");
     this.home = o.home ?? homedir();
   }
@@ -147,18 +167,21 @@ export class Passes {
     return p;
   }
 
-  /** A pass by id, Claude server name or display name (any case): how scripts and the setup chat name one. */
-  find(ref: string, among?: string[]): Pass | null {
+  /**
+   * A pass by id, Claude server name or display name (any case): how scripts and the setup chat name one. With board:
+   * another board's keys are left out (a board's keys reach only its own runs and automations).
+   */
+  find(ref: string, among?: string[], board?: string): Pass | null {
     const r = ref.trim().toLowerCase();
-    const list = this.list().filter((p) => !among || among.includes(p.id));
+    const list = this.list().filter((p) => (!among || among.includes(p.id)) && (board === undefined || !p.board || p.board === board));
     return list.find((p) => p.id === ref) ?? list.find((p) => p.claudeName?.toLowerCase() === r) ?? list.find((p) => p.name.toLowerCase() === r)
       ?? list.find((p) => p.envName?.toLowerCase() === r) ?? null;
   }
 
   view(p: Pass): PassView {
     return {
-      id: p.id, kind: p.kind, name: p.name, claudeName: p.claudeName, url: p.url ?? null, envName: p.envName ?? null,
-      status: p.status, error: p.error ? this.mask(p.error) : null, createdAt: p.createdAt,
+      id: p.id, kind: p.kind, name: p.name, claudeName: p.claudeName, url: p.url ?? null, envName: p.envName ?? null, board: p.board ?? null,
+      status: p.status, error: p.error ? this.mask(p.error) : null, createdAt: p.createdAt, savedAt: p.savedAt ?? p.createdAt,
     };
   }
 
@@ -197,13 +220,17 @@ export class Passes {
       const url = input.url ? httpUrl(input.url) : undefined;
       const name = nameOr(input.name, claudeName ?? "");
       if (!name) throw new PassError(400, "Give the key a name, e.g. Jira");
+      const board = typeof input.board === "string" && input.board ? input.board : undefined;
+      if (board && url) throw new PassError(400, "A key for one board is for its runs and scripts, not for an online server");
       let envName: string | undefined;
       if (!url) {
         envName = typeof input.envName === "string" && input.envName.trim() ? input.envName.trim() : envNameFor(name);
         if (!ENV_NAME.test(envName) || RESERVED_ENV.has(envName)) throw new PassError(400, `"${envName}" can't be used as the key's name for scripts: use capital letters, digits and _`);
-        if (this.list().some((x) => x.envName === envName)) throw new PassError(409, `A key named ${envName} already exists: replace that one instead`);
+        const bad = board ? keyNameError(envName) : null;
+        if (bad) throw new PassError(400, bad);
+        if (this.list().some((x) => x.envName === envName && (x.board ?? null) === (board ?? null))) throw new PassError(409, `A key named ${envName} already exists: replace that one instead`);
       }
-      const p: Pass = { ...base, kind: "key", name, ...(url ? { url } : {}), ...(envName ? { envName } : {}), secret, status: "connected" };
+      const p: Pass = { ...base, kind: "key", name, ...(url ? { url } : {}), ...(envName ? { envName } : {}), ...(board ? { board } : {}), secret, status: "connected" };
       this.save(p);
       return p;
     }
@@ -216,9 +243,42 @@ export class Passes {
     if (p.kind !== "key") throw new PassError(400, "Only a key can be replaced");
     const s = typeof secret === "string" ? secret.trim() : "";
     if (!s || /[\r\n\0]/.test(s)) throw new PassError(400, "Paste the new key on one line");
-    const next: Pass = { ...p, secret: s, status: "connected", error: null };
+    const next: Pass = { ...p, secret: s, status: "connected", error: null, savedAt: this.deps.now().toISOString() };
     this.save(next);
     return next;
+  }
+
+  /** The keys saved for a board (values included: daemon use only, never sent anywhere as is). */
+  boardKeys(slug: string): Pass[] {
+    return this.list().filter((p) => p.kind === "key" && p.board === slug && !p.url && !!p.envName);
+  }
+
+  /**
+   * Saves keys for a board (the ask_keys box): a new board key each, or a new value for the board's key of that name.
+   * All or nothing: every input is checked before anything is written. Returns the names saved, never the values.
+   */
+  saveBoardKeys(slug: string, keys: BoardKeyInput[]): string[] {
+    if (!slug) throw new PassError(400, "Which board are the keys for?");
+    const clean = keys.map((k) => {
+      const envName = String(k.envName ?? "").trim();
+      const bad = keyNameError(envName);
+      if (bad) throw new PassError(400, bad);
+      const secret = typeof k.secret === "string" ? k.secret.trim() : "";
+      if (!secret) throw new PassError(400, `Paste the key for ${envName}`);
+      if (/[\r\n\0]/.test(secret)) throw new PassError(400, `The key for ${envName} must be on one line`);
+      return { envName, secret, name: nameOr(k.name, envName) };
+    });
+    if (!clean.length) return [];
+    const f = this.read();
+    const now = this.deps.now().toISOString();
+    for (const k of clean) {
+      const i = f.passes.findIndex((p) => p.kind === "key" && p.board === slug && p.envName === k.envName && !p.url);
+      if (i >= 0) f.passes[i] = { ...f.passes[i], secret: k.secret, name: k.name, status: "connected", error: null, savedAt: now };
+      else f.passes.push({ id: newId(), kind: "key", name: k.name, claudeName: null, envName: k.envName, board: slug, secret: k.secret, status: "connected", error: null, createdAt: now, savedAt: now });
+    }
+    this.write(f);
+    this.bus.emit({ type: "integration.updated" });
+    return clean.map((k) => k.envName);
   }
 
   remove(id: string): void {
@@ -357,10 +417,16 @@ export class Passes {
     return this.withClient(id, async (c) => (await c.listTools()).map((t) => ({ name: t.name, ...(t.description ? { description: t.description.slice(0, 300) } : {}) })));
   }
 
-  /** The environment variables a script gets for these passes: the keys meant for scripts, nothing else. */
-  envFor(ids: string[]): Record<string, string> {
+  /**
+   * The environment variables a script gets for these passes: the keys meant for scripts, nothing else. With board:
+   * another board's keys are left out even if listed.
+   */
+  envFor(ids: string[], board?: string): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const p of this.list()) if (ids.includes(p.id) && p.kind === "key" && !p.url && p.envName && p.secret) out[p.envName] = p.secret;
+    for (const p of this.list()) {
+      if (board !== undefined && p.board && p.board !== board) continue;
+      if (ids.includes(p.id) && p.kind === "key" && !p.url && p.envName && p.secret) out[p.envName] = p.secret;
+    }
     return out;
   }
 }

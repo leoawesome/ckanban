@@ -86,6 +86,7 @@ import type {
   HandIn, Huddle, HuddleFinding, HuddleLearning, HuddleMessage, HuddleMessageKind, HuddleMode, HuddleParticipant, HuddleSource, HuddleStopReason, Profile, Ticket,
 } from "./types";
 import { newId, nowIso } from "./util";
+import { boardKeyEnv } from "./board-keys";
 
 export class HuddleError extends Error {
   constructor(readonly status: number, message: string) {
@@ -2189,7 +2190,8 @@ export class Huddles {
     run.handle = startRun({
       bin: this.opts.claudeBin, cwd: dir, args, input,
       // Huddle agents have no board slot: CKANBAN_TICKET is the host (its board and outputs), CKANBAN_HUDDLE_AGENT who they are.
-      env: { ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${h.hostTicket}`, [HUDDLE_AGENT_ENV]: `${hid}/${handle}/${p.token}` },
+      // The board's saved keys (ask_keys) first, so the board's own variables always win.
+      env: { ...boardKeyEnv(this.store.root, slug), ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${h.hostTicket}`, [HUDDLE_AGENT_ENV]: `${hid}/${handle}/${p.token}` },
       idleMs: p.mode === "monitor" ? this.opts.idleMs ?? MONITOR_IDLE_MS : undefined,
       onEvent: (ev) => {
         if (ev?.type === "stream_event" || this.shuttingDown) return;
