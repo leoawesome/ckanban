@@ -18,7 +18,7 @@ function folderName(path: string): string {
 export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam }: {
   profile: Profile | null;
   onClose: () => void;
-  /** Close and open the dock's Team tab (teammates and templates live there). */
+  /** Close and open the dock's Team tab (teammates and squads live there). */
   onOpenTeam?: () => void;
   onSaved: (p: Profile) => void;
   onDeleted: () => void;
@@ -420,7 +420,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               <span className="muted small setup-hint">Runs in the ticket's copy before the board removes it.</span>
             </label>
             <span className="muted small">
-              Teammates and templates moved to the Team tab{onOpenTeam && <> · <button type="button" className="link-btn" onClick={onOpenTeam}>Open Team</button></>}
+              Teammates and squads moved to the Team tab{onOpenTeam && <> · <button type="button" className="link-btn" onClick={onOpenTeam}>Open Team</button></>}
             </span>
           </>
         )}

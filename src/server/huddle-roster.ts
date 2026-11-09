@@ -62,7 +62,7 @@ export const REVIEW_HUDDLE_HEADING = "## Review huddle";
 /**
  * The huddle a ticket asks for: its `## Review huddle` section, written in Planning instead of a huddle that starts
  * before the work. The ticket's run starts it with start_huddle once the work is done (even with Auto huddles off).
- * template: a `Template: x` line; maxCostUsd: a `Budget: ~$40` line. Null when the ticket has no such section.
+ * template: a `Squad: x` (or older `Template: x`) line; maxCostUsd: a `Budget: ~$40` line. Null when the ticket has no such section.
  */
 export function reviewHuddleRequest(body: string): { text: string; template?: string; maxCostUsd?: number } | null {
   const lines = body.split("\n");
@@ -71,8 +71,8 @@ export function reviewHuddleRequest(body: string): { text: string; template?: st
   const level = lines[start].trim().match(/^#+/)![0].length;
   const end = lines.findIndex((l, i) => i > start && /^#{1,6}\s/.test(l.trim()) && l.trim().match(/^#+/)![0].length <= level);
   const text = lines.slice(start + 1, end < 0 ? undefined : end).join("\n").trim();
-  // Only a line labelled "Template:" / "Budget:" (list markers and bold allowed), not the word inside the check text.
-  const template = text.match(/^[\s>*-]*\**template\**\s*:\**\s*`?([a-z0-9][\w-]*)`?/im)?.[1];
+  // Only a line labelled "Squad:" / "Template:" / "Budget:" (list markers and bold allowed), not the word inside the check text.
+  const template = text.match(/^[\s>*-]*\**(?:template|squad)\**\s*:\**\s*`?([a-z0-9][\w-]*)`?/im)?.[1];
   const budget = Number(text.match(/^[\s>*-]*\**budget\b[^:\n]*:\**[^$\n]*\$\s*(\d[\d,]*(?:\.\d+)?)/im)?.[1]?.replace(/,/g, ""));
   return { text, ...(template ? { template } : {}), ...(budget > 0 ? { maxCostUsd: budget } : {}) };
 }

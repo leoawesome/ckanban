@@ -13,6 +13,8 @@ import { atomicWrite } from "./store";
 import { ChatCacheTracker, type ChatCache } from "./chat-cache";
 import { VERSION } from "./version";
 import { parseTeammateProposal, type TeammateProposal } from "./teammate-proposal";
+import { parseSquadProposal, type SquadProposal } from "./squad";
+import { TOPIC_MAX } from "./huddle-templates";
 import { parseAutomationProposal, type AutomationProposal } from "./automation-proposal";
 import type { Store } from "./store";
 import type { Ticket } from "./types";
@@ -96,11 +98,13 @@ export interface SessionEntry {
   /** Claude offered to branch this ticket (rendered with a Branch button). */
   branch?: { reason: string };
   /** Claude proposed a huddle roster (propose_huddle; rendered with a Start button). */
-  huddle?: { roster: RosterEntry[]; reason: string; template?: string; maxCostUsd?: number };
+  huddle?: { roster: RosterEntry[]; reason: string; template?: string; maxCostUsd?: number; topic?: string };
   /** Claude asked to delete tickets (propose_delete; rendered with Cancel / Delete buttons). */
   deletion?: { ids: string[]; reason: string };
   /** Claude proposed a teammate (propose_teammate; rendered with Save teammate / Edit first / Dismiss). */
   teammate?: TeammateProposal;
+  /** Claude proposed a squad (propose_squad; rendered with Save for this board / Save for all boards / Edit first / Dismiss). */
+  squad?: SquadProposal;
   /** Claude proposed an automation (propose_automation; rendered with Connect buttons and Save automation). */
   automation?: AutomationProposal;
   /** Mockups Claude sent as blocks (saved to outputs/mockups; the chat links to them). */
@@ -315,6 +319,8 @@ export interface ParsedSession {
   pendingNewTickets: NewTicketDraft[];
   /** Teammate cards (their entry uuids) since the user's last message; Ticket.teammateCards says which were answered. */
   pendingTeammates: string[];
+  /** Squad cards (entry uuids) since the user's last message; Ticket.squadCards says which were answered. */
+  pendingSquads?: string[];
   /** Automation cards (entry uuids) since the user's last message; Ticket.automationCards says which were saved. */
   pendingAutomations: string[];
   /** Conversation size and cache time at Claude's last reply (chat-cache.ts); null before any reply with usage. */
@@ -335,6 +341,8 @@ export interface SessionSummary {
   pendingProposal: TicketProposal | null;
   pendingNewTickets: NewTicketDraft[];
   pendingTeammates: string[];
+  /** Squad cards (entry uuids) since the user's last message; Ticket.squadCards says which were answered. */
+  pendingSquads?: string[];
   pendingAutomations?: string[];
   /** See ParsedSession.cache: the ticket chat's "gone cold" note. */
   cache?: ChatCache | null;
@@ -465,10 +473,11 @@ const BRANCH_TOOL = /(?:^|__)propose_branch$/;
 const HUDDLE_TOOL = /(?:^|__)propose_huddle$/;
 const DELETE_TOOL = /(?:^|__)propose_delete$/;
 const TEAMMATE_TOOL = /(?:^|__)propose_teammate$/;
+const SQUAD_TOOL = /(?:^|__)propose_squad$/;
 const AUTOMATION_TOOL = /(?:^|__)propose_automation$/;
 
 /** The form or card a planning-chat tool call shows, or null for other tools (or input that can't be read). */
-function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "teammate" | "automation"> | null {
+function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "teammate" | "squad" | "automation"> | null {
   const name = String(block.name ?? "");
   if (QUESTIONS_TOOL.test(name)) {
     const questions = parseQuestions(block.input?.questions);
@@ -492,19 +501,27 @@ function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "propos
     const teammate = parseTeammateProposal(block.input);
     return teammate && { teammate };
   }
+  if (SQUAD_TOOL.test(name)) {
+    const squad = parseSquadProposal(block.input);
+    return squad && { squad };
+  }
   if (AUTOMATION_TOOL.test(name)) {
     const automation = parseAutomationProposal(block.input);
     return automation && { automation };
   }
   if (HUDDLE_TOOL.test(name)) {
-    const template = typeof block.input?.template === "string" && block.input.template.trim() ? block.input.template.trim() : undefined;
-    // With a template the roster is optional: the card fills in the template's.
+    // `squad` is the name Claude is told; older calls say `template`.
+    const named = [block.input?.squad, block.input?.template].find((v) => typeof v === "string" && v.trim()) as string | undefined;
+    const template = named?.trim();
+    // With a squad the roster is optional: the card fills in the squad's.
     const roster = template && block.input?.roster === undefined ? [] : block.input?.roster;
     if (!(template && Array.isArray(roster) && !roster.length) && rosterError(roster)) return null;
     const reason = typeof block.input?.reason === "string" ? block.input.reason.trim() : "";
     // A budget Claude was asked for (capped); one that isn't a positive amount is left out, the card's default applies.
     const maxCostUsd = proposedBudget(block.input?.maxCostUsd);
-    return { huddle: { roster, reason, ...(template ? { template } : {}), ...(typeof maxCostUsd === "number" ? { maxCostUsd } : {}) } };
+    // What this run of the squad is about; carried to Start (cut to the limit the start route takes).
+    const topic = typeof block.input?.topic === "string" ? block.input.topic.trim().slice(0, TOPIC_MAX) : "";
+    return { huddle: { roster, reason, ...(template ? { template } : {}), ...(typeof maxCostUsd === "number" ? { maxCostUsd } : {}), ...(topic ? { topic } : {}) } };
   }
   return null;
 }
@@ -710,13 +727,14 @@ export class SessionParser {
       return c;
     });
     dropBlockedMoves(entries);
-    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.teammate || e.automation));
+    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.teammate || e.squad || e.automation));
     const lastText = !last ? "" : last.text
       || (last.questions ? `Asked ${last.questions.length} question${last.questions.length > 1 ? "s" : ""}`
         : last.newTickets ? `Proposed ${last.newTickets.length} new ticket${last.newTickets.length > 1 ? "s" : ""}`
         : last.branch ? "Offered to branch this ticket"
         : last.deletion ? `Asked to delete ${last.deletion.ids.length} ticket${last.deletion.ids.length > 1 ? "s" : ""}`
         : last.teammate ? `Proposed teammate @${last.teammate.name}`
+        : last.squad ? `Proposed squad "${last.squad.squad.label}"`
         : last.automation ? `Proposed automation "${last.automation.name}"` : "Proposed an updated ticket");
     const asked = last?.role === "assistant" ? entries.findLast((e, i) => i < entries.indexOf(last) && e.role === "user" && e.kind === "text") : undefined;
     return (this.snapshot = {
@@ -768,7 +786,7 @@ function handBack(text: string): string {
   return text.slice(m[0].length).split("\n").map((l) => l.replace(/^ {2}/, "")).join("\n").trim();
 }
 
-function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingAutomations"> {
+function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations"> {
   let lastUser = -1;
   entries.forEach((e, i) => {
     // Huddle messages don't answer what Claude asked the user (another ticket's message, e.g. the planner's answer, does).
@@ -785,6 +803,7 @@ function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestio
     pendingProposal: after.findLast((e) => e.proposal)?.proposal ?? null,
     pendingNewTickets: after.findLast((e) => e.newTickets)?.newTickets ?? [],
     pendingTeammates: after.filter((e) => e.teammate).map((e) => e.uuid),
+    pendingSquads: after.filter((e) => e.squad).map((e) => e.uuid),
     pendingAutomations: after.filter((e) => e.automation).map((e) => e.uuid),
   };
 }
@@ -1129,7 +1148,7 @@ export class SessionCache {
     if (!p) return null;
     const s: StoredSummary = {
       title: p.title, lastMessage: p.lastMessage, artifacts: p.artifacts,
-      openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates,
+      openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates, pendingSquads: p.pendingSquads,
       pendingAutomations: p.pendingAutomations, cache: p.cache,
     };
     if (v) this.storeSummary(sessionId, v, s);

@@ -56,7 +56,7 @@ import { liveHuddleCount, useBoardHuddles, useHuddleIdleTick } from "./huddle";
 import { hasOpenPr, runCounts } from "./boardStats";
 import { ParallelConfirm } from "./ParallelConfirm";
 import { closeSteps, openDepth } from "./ticketHistory";
-import { helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, useHelper } from "./helper";
+import { helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, takeReadFromHash, useHelper } from "./helper";
 import { HelperNotice, MessagePage, MessagesHistory } from "./Messages";
 import { snoozeBody, snoozeUntil, snoozeWords, type SnoozeLength } from "./snooze";
 
@@ -88,13 +88,16 @@ const SAMPLE_OFFER = "ckanban.sample-offer";
  */
 function parseHash(): { slug: string | null; ticket: string | null } {
   if (location.hash.startsWith("#/~")) return { slug: null, ticket: null };
-  let path = location.hash.replace(/^#/, "");
+  let path = location.hash.replace(/^#/, "").replace(/\?.*$/, "");
   try {
     path = decodeURIComponent(path);
   } catch {}
   const [, slug, ticket] = path.split("/");
   return { slug: slug || null, ticket: ticket || null };
 }
+
+// Opened from a tap on an urgent alert about one ticket: mark that message read before the first parseHash.
+takeReadFromHash();
 
 function hashFor(slug: string | null, ticket?: string | null): string {
   if (!slug) return "#/";
@@ -398,6 +401,7 @@ export function App() {
   // Browser Back/Forward and pasted links drive the open board and ticket.
   useEffect(() => {
     const onHash = () => {
+      takeReadFromHash();
       setMsgRoute(messagesRoute(location.hash));
       if (location.hash.startsWith("#/~")) return;
       const h = parseHash();
@@ -775,7 +779,7 @@ export function App() {
     let id = open?.id;
     if (!id) {
       try {
-        const what = "preset" in seed ? `@${seed.preset}` : `the ${seed.template} template`;
+        const what = "preset" in seed ? `@${seed.preset}` : `the ${seed.template} squad`;
         const t = await api.createTicket(profile.slug, {
           title: "preset" in seed ? `Huddle with @${seed.preset}` : `Huddle: ${seed.template}`,
           body: `Started from the Team tab: a huddle with ${what}. Say what it should work on.`, status: "planning",
@@ -1075,7 +1079,7 @@ export function App() {
       { id: "chat", label: "Quick Claude chat", keys: ["C"], icon: <ChatIcon size={14} />, run: () => openChat() },
     ] : []),
     ...(profile ? [
-      { id: "team", label: "Open Team", keys: ["T"], icon: <TeamIcon size={14} />, hint: "teammates, templates, huddles", run: () => openDockOn("team") },
+      { id: "team", label: "Open Team", keys: ["T"], icon: <TeamIcon size={14} />, hint: "teammates, squads, huddles", run: () => openDockOn("team") },
       { id: "huddles", label: liveHuddles ? `Huddles (${liveHuddles} live)` : "Huddles", icon: <TeamIcon size={14} />, hint: "in Team", run: () => openDockOn("team", { action: "huddles" }) },
       { id: "new-teammate", label: "New teammate…", run: () => openDockOn("team", { action: "new" }) },
     ] : []),

@@ -3,7 +3,8 @@ import { api, type Huddle, type RosterEntry, type Ticket } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { formKey } from "./drafts";
 import { dollars, rosterNames } from "./huddleText";
-import { applyProposedTemplate, draftError, RosterEditor, rosterDraft, startFromDraft, TemplatePicker, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
+import { applyProposedTemplate, draftError, RosterEditor, rosterDraft, SquadPicker, startFromDraft, TopicBox, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
+import { ticketTopicText } from "./squadText";
 import { usePersistentState } from "./usePersistentState";
 import { CloseIcon, HuddleIcon } from "./icons";
 import { TapTip } from "./TapTip";
@@ -13,7 +14,7 @@ import { TapTip } from "./TapTip";
  * The roster editor opens only after Edit…; nothing runs before Start. Once started it is one line again.
  * `huddle`: the ticket's current huddle, to tell whether this proposal was started.
  */
-export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, template, maxCostUsd, huddle, old, onOpen, onError }: {
+export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, template, maxCostUsd, topic, huddle, old, onOpen, onError }: {
   slug: string;
   ticket: Ticket;
   tickets: Ticket[];
@@ -21,10 +22,12 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
   at: string;
   roster: RosterEntry[];
   reason: string;
-  /** Template Claude proposed (its roster when `roster` is empty, its budget and rules). */
+  /** Squad Claude proposed (its people when `roster` is empty, its budget and rules). */
   template?: string;
-  /** Budget Claude proposed (already capped); wins over the template's. */
+  /** Budget Claude proposed (already capped); wins over the squad's. */
   maxCostUsd?: number;
+  /** What a squad works on (propose_huddle topic), passed on to Start. */
+  topic?: string;
   huddle: Huddle | null;
   /** Copied history of a branched ticket: read-only. */
   old?: boolean;
@@ -34,12 +37,16 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
   const presets = usePresets(slug);
   const templates = useTemplates(slug);
   const [draft, setDraft] = useState<RosterDraft>(() => rosterDraft(roster, maxCostUsd));
-  // The proposed template, once the board's templates are in: its roster and budget, unless Claude gave them.
+  // The proposed squad, once the board's squads are in: its people and budget, unless Claude gave them.
   useEffect(() => {
     const t = template && templates?.find((x) => x.name === template);
     if (t) setDraft((d) => (d.template ? d : applyProposedTemplate(d, t, roster, maxCostUsd)));
   }, [templates, template]);
   const [busy, setBusy] = useState(false);
+  // What this run works on: Claude's topic, else (a squad picked) the ticket's; editable under Edit….
+  const [topicText, setTopicText] = useState(() => topic ?? ticketTopicText(ticket));
+  const withTopic = !!topic || !!draft.template;
+  const sendTopic = withTopic ? topicText : undefined;
   const [editing, setEditing] = useState(false);
   const [confirmSwap, setConfirmSwap] = useState(false);
   const [dismissed, setDismissed] = usePersistentState(formKey(slug, ticket.id, `huddle-${uuid}`), () => false, (v) => !v, (v) => typeof v === "boolean");
@@ -53,7 +60,7 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
     if (busy || err || started || otherOpen) return;
     setBusy(true);
     try {
-      await startFromDraft(slug, ticket.id, draft);
+      await startFromDraft(slug, ticket.id, draft, sendTopic);
       onOpen();
     } catch (e) {
       onError((e as Error).message);
@@ -68,7 +75,7 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
     setBusy(true);
     try {
       if (huddle.status !== "closed") await api.huddleAction(slug, huddle.id, "close");
-      await startFromDraft(slug, ticket.id, draft);
+      await startFromDraft(slug, ticket.id, draft, sendTopic);
       setConfirmSwap(false);
       onOpen();
     } finally {
@@ -83,8 +90,8 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
       </div>
     );
   }
-  // Who would join (the draft: Claude's roster, or its template's once loaded, plus any edits).
-  const who = draft.rows.length ? rosterNames(draft.rows) : template ? `template ${template}` : "no one yet";
+  // Who would join (the draft: Claude's roster, or its squad's once loaded, plus any edits).
+  const who = draft.rows.length ? rosterNames(draft.rows) : template ? `squad ${template}` : "no one yet";
   const words = <><b>{started ? "Review started" : "Proposed review"}:</b> a few Claudes check the work together · {who}
     {started ? (budget != null ? ` · ${dollars(budget)} budget` : "") : ` · up to ${dollars(old ? budget ?? draft.maxCostUsd : draft.maxCostUsd)}`}</>;
   const note = started || old ? null : otherOpen ? "This ticket already has an open huddle. Only one runs at a time." : err;
@@ -117,10 +124,12 @@ export function HuddleCard({ slug, ticket, tickets, uuid, at, roster, reason, te
       </div>
       {old && <div className="huddle-line-note muted small">From the conversation this ticket was copied from.</div>}
       {note && <div className="huddle-line-note muted small">{note}</div>}
+      {withTopic && !editing && !started && topicText.trim() && <div className="huddle-line-topic" title={topicText}><b>Topic:</b> {topicText}</div>}
       {editing && !started && !old && (
         <div className="huddle-line-edit">
-          <TemplatePicker templates={templates} draft={draft} setDraft={setDraft} disabled={busy} />
+          <SquadPicker templates={templates} draft={draft} setDraft={setDraft} disabled={busy} />
           <RosterEditor presets={presets} draft={draft} setDraft={setDraft} tickets={tickets} hostId={ticket.id} onEnter={start} disabled={busy} />
+          {withTopic && <TopicBox value={topicText} onChange={setTopicText} filled={topic ? "claude" : "ticket"} disabled={busy} />}
         </div>
       )}
       {confirmSwap && (

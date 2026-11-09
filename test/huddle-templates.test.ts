@@ -107,7 +107,7 @@ test("templates: saved and listed over HTTP (the user only), and listed for Clau
   const r = await postJson("/huddle-templates", { name: "bug-bash", label: "Bug bash", roster: [{ preset: "qa", count: 2 }], rounds: 1, maxCostUsd: 8 });
   expect(r.status).toBe(201);
   expect(store.listHuddleTemplates("p")).toEqual([
-    { name: "bug-bash", label: "Bug bash", description: "", roster: [{ preset: "qa", count: 2 }], rounds: 1, maxCostUsd: 8, report: "" },
+    { name: "bug-bash", label: "Bug bash", description: "", roster: [{ preset: "qa", count: 2 }], rounds: 1, maxCostUsd: 8, report: "", hostRules: "" },
   ]);
   const list = (await (await api("/huddle-templates")).json()) as { name: string }[];
   expect(list.map((x) => x.name)).toEqual(["design-review", "plan-review", "auto-review", "auto-review-important", "bug-bash"]);
@@ -116,7 +116,7 @@ test("templates: saved and listed over HTTP (the user only), and listed for Clau
   expect((await postJson("/huddle-templates", { name: "bad", roster: [{ preset: "nope" }] })).status).toBe(400);
   const ctx: ToolContext = { client, cwd: "/", env: { CKANBAN_TICKET: `p/${t.id}` } };
   const listed = text(await callTool("list_huddle_presets", {}, ctx));
-  expect(listed).toContain("Huddle templates");
+  expect(listed).toContain("Squads (saved huddles");
   expect(listed).toContain("- bug-bash: Bug bash (2× qa; 1 rounds, $8 budget)");
   // propose_huddle takes a template, with or without a roster.
   expect((await callTool("propose_huddle", { template: "bug-bash" }, ctx)).isError).toBeUndefined();
@@ -143,7 +143,7 @@ test("starting from a template: its roster, budget and rules (as the pinned brie
   expect(h).toMatchObject({ template: "design-review", maxCostUsd: 20 });
   expect(h.brief!.text).toContain("Rounds: at most 2");
   expect(h.brief!.text).toContain("Report format: One finding per line");
-  expect(messages(h)[0].text).toContain("from template Design review");
+  expect(messages(h)[0].text).toContain("from squad Design review");
   await until(() => heardBy("ux").length > 0);
   expect(heardBy("ux")[0]).toContain("Pinned brief");
   await huddles.stopAll("p", h.id);

@@ -7,6 +7,7 @@ import { HuddleDigest } from "./HuddleDigest";
 import { usePresets } from "./HuddleRoster";
 import type { TeamRequest } from "./Team";
 import { TeammateCard } from "./TeammateCard";
+import { SquadCard } from "./SquadCard";
 import { AutomationCard } from "./AutomationCard";
 import { oldChat } from "./cacheNote";
 import { autoGrow } from "./autoGrow";
@@ -873,11 +874,16 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                   onDismiss={() => dismissTeammate(e.uuid)}
                   onOpenTeam={onOpenTeam && ((name) => onOpenTeam({ action: "open", name }))} />
               )}
+              {e.squad && (
+                <SquadCard slug={slug} ticketId={ticket.id} uuid={e.uuid} proposal={e.squad} presets={presets} answered={ticket.squadCards?.[e.uuid]} old={old}
+                  onEdit={onOpenTeam && ((draft, card) => onOpenTeam({ action: "squad", draft, card }))}
+                  onOpenTeam={onOpenTeam && (() => onOpenTeam({ action: "squads" }))} onSaved={() => setPresetsVersion((n) => n + 1)} onError={onError} />
+              )}
               {e.automation && (
                 <AutomationCard slug={slug} ticketId={ticket.id} uuid={e.uuid} proposal={e.automation} saved={ticket.automationCards?.[e.uuid]} onError={onError} />
               )}
               {e.huddle && (
-                <HuddleCard slug={slug} ticket={ticket} tickets={tickets} uuid={e.uuid} at={e.at} roster={e.huddle.roster} reason={e.huddle.reason} template={e.huddle.template} maxCostUsd={e.huddle.maxCostUsd}
+                <HuddleCard slug={slug} ticket={ticket} tickets={tickets} uuid={e.uuid} at={e.at} roster={e.huddle.roster} reason={e.huddle.reason} template={e.huddle.template} maxCostUsd={e.huddle.maxCostUsd} topic={e.huddle.topic}
                   huddle={huddle} old={old} onOpen={() => onOpenHuddle?.()} onError={onError} />
               )}
               {e.mockups && (

@@ -32,11 +32,11 @@ test("lockCardTabs takes the card's controls out of the Tab order and unlock giv
 });
 
 test("teamButtonText puts the counts in the name and writes the tooltip without a double full stop", () => {
-  expect(teamButtonText(0, 0)).toEqual({ label: "Team", title: "Teammates, templates and huddles (T)" });
+  expect(teamButtonText(0, 0)).toEqual({ label: "Team", title: "Teammates, squads and huddles (T)" });
   expect(teamButtonText(1, 1)).toEqual({
     label: "Team, 1 huddle live, 1 new lesson",
-    title: "Teammates, templates and huddles (T). 1 huddle live. 1 new lesson.",
+    title: "Teammates, squads and huddles (T). 1 huddle live. 1 new lesson.",
   });
   expect(teamButtonText(2, 0).label).toBe("Team, 2 huddles live");
-  expect(teamButtonText(0, 3).title).toBe("Teammates, templates and huddles (T). 3 new lessons.");
+  expect(teamButtonText(0, 3).title).toBe("Teammates, squads and huddles (T). 3 new lessons.");
 });

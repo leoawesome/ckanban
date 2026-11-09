@@ -36,7 +36,7 @@ import {
 } from "./attachments";
 import { FileError, findInRoots, listDir, openWithSystem, readFileForView, type FileRoot } from "./files";
 import { boardToolsSource, McpError, McpManager } from "./mcp";
-import { MessageError, Notifier } from "./notify";
+import { MacOnlyError, MessageError, Notifier, TG_PAIR_FROM_MAC } from "./notify";
 import { HelperError, type HelperRunner } from "./helper/runner";
 import { DeviceError, TAKE_WAIT_MS, type DeviceUser } from "./devices";
 import { PushService } from "./push";
@@ -55,6 +55,7 @@ import { UpdateChecker } from "./update";
 import { SpendIndex } from "./spend";
 import { quietPerDay, scheduleSpend } from "./quiet";
 import { makeSideCaller, readSideSpend, type SideCaller } from "./side-call";
+import type { SquadCardState } from "./squad";
 import { LearnError, Learner } from "./learner";
 import { Simplifier, SimplifyError } from "./simplify";
 import { changesPrompt, HELP_KINDS, Helper, HelpError, newId, recapAvailable, recapPrompt, type HelpKind } from "./explain";
@@ -349,6 +350,8 @@ export function createServer(deps: ServerDeps) {
   // The listener each request came in on, for the routes that care (WebSocket upgrades, /api/remote).
   const via = new WeakMap<Request, { listener: Listener; srv: import("bun").Server<ShellSocket> }>();
   const listenerOf = (req: Request): Listener => via.get(req)?.listener ?? "local";
+  /** Notification settings plus whether this request is from this Mac (phone access can't turn Telegram back on or pair). */
+  const notifyView = <T extends object>(req: Request, st: T): T & { local: boolean } => ({ ...st, local: listenerOf(req) === "local" });
   const push = deps.push ?? new PushService(store.root);
   const notifier = deps.notifier ?? new Notifier(store, bus, {
     root: store.root, push, sessionSummary: (id) => sessions.summary(id), isRunning: (s, id) => board.isRunning(s, id),
@@ -765,35 +768,37 @@ export function createServer(deps: ServerDeps) {
     // "Needs you" notifications (notify.ts). Runs can't read or change them: the webhook URL is the user's channel.
     if (parts[0] === "notify") {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "board runs can't use notification settings");
-      if (parts.length === 1 && m === "GET") return json(notifier.state());
+      if (parts.length === 1 && m === "GET") return json(notifyView(req, notifier.state()));
       if (parts.length === 1 && m === "POST") {
         const patch = await body(req);
         // Where messages go (webhook address, ntfy, the Telegram bot and its token) is the user's alone: a run's shell or
         // another program could point every message, full text included, at its own address. Only the user's browser.
         await userOnly(req, "Changing notification settings");
         try {
-          return json(notifier.update(patch));
+          return json(notifyView(req, notifier.update(patch, listenerOf(req))));
         } catch (e) {
-          throw new HttpError(400, (e as Error).message);
+          throw new HttpError(e instanceof MacOnlyError ? 403 : 400, (e as Error).message);
         }
       }
       if (parts[1] === "test" && m === "POST") {
         const b = await body(req);
-        return json({ ...(await notifier.test(typeof b?.profile === "string" ? b.profile : undefined)), state: notifier.state() });
+        return json({ ...(await notifier.test(typeof b?.profile === "string" ? b.profile : undefined)), state: notifyView(req, notifier.state()) });
       }
       // Telegram pairing (helper/telegram.ts): a fresh 6-digit code to send to the bot, or forget the paired chat.
       // The code only comes back here, to the user's own browser: whoever sends it to the bot becomes the paired chat.
       if (parts[1] === "telegram" && parts[2] === "pair" && parts.length === 3 && m === "POST") {
         await userOnly(req, "Pairing Telegram");
+        // Whoever pairs gets to answer tickets from that chat: only this Mac, so a lost phone can't pair a new chat.
+        if (listenerOf(req) !== "local") throw new HttpError(403, TG_PAIR_FROM_MAC);
         try {
-          return json({ ...notifier.telegramPair(), state: notifier.state() });
+          return json({ ...notifier.telegramPair(), state: notifyView(req, notifier.state()) });
         } catch (e) {
           throw new HttpError(400, (e as Error).message);
         }
       }
       if (parts[1] === "telegram" && parts[2] === "unpair" && parts.length === 3 && m === "POST") {
         await userOnly(req, "Unpairing Telegram");
-        return json(notifier.telegramUnpair());
+        return json(notifyView(req, notifier.telegramUnpair()));
       }
     }
 
@@ -1588,7 +1593,7 @@ export function createServer(deps: ServerDeps) {
     // reads; only the user changes them.
     if (parts[2] === "huddle-templates") {
       if (parts.length === 3 && m === "GET") return json(huddles.templates(slug));
-      if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user changes huddle templates (the Team tab)");
+      if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user changes squads (the Team tab); propose one with propose_squad and the user saves it with one click");
       if (parts.length === 3 && m === "POST") {
         const b = await body(req);
         return json(huddles.saveTemplate(slug, b, b?.scope ?? "board"), 201);
@@ -1599,6 +1604,31 @@ export function createServer(deps: ServerDeps) {
       }
       if (parts.length === 4 && m === "DELETE") return json(huddles.deleteTemplate(slug, parts[3], url.searchParams.get("scope") ?? undefined));
       throw new HttpError(404, "not found");
+    }
+
+    // POST /profiles/:p/squads — the user saves a squad card (propose_squad, "Save as squad…", or Edit first): body
+    // { squad, scope: "board" | "global", replace?, card?: { ticketId, uuid } | { huddleId, learningId } }. People with
+    // no preset are saved as teammates at the same scope (an existing teammate of that name is used as is); a squad of
+    // the same name is only replaced with replace: true (else 409). The card, when given, is marked saved. Only the user.
+    if (parts[2] === "squads" && parts.length === 3 && m === "POST") {
+      if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) {
+        throw new HttpError(403, "a board or huddle run can't save squads or teammates; propose one with propose_squad and the user saves it with one click");
+      }
+      const b = await body(req);
+      const scope = b?.scope ?? "board";
+      const card = b?.card && typeof b.card === "object" ? b.card : null;
+      const ticketCard = card && typeof card.ticketId === "string" && typeof card.uuid === "string" && card.uuid ? card as { ticketId: string; uuid: string } : null;
+      const huddleCard = card && typeof card.huddleId === "string" && typeof card.learningId === "string" ? card as { huddleId: string; learningId: string } : null;
+      if (card && !ticketCard && !huddleCard) throw new HttpError(400, "card must be { ticketId, uuid } or { huddleId, learningId }");
+      if (ticketCard && !store.getTicket(slug, ticketCard.ticketId)) throw new HttpError(404, `ticket ${ticketCard.ticketId} not found`);
+      const out = huddles.saveSquad(slug, b?.squad, scope, huddleCard ?? undefined, b?.replace === true);
+      if (ticketCard) {
+        const t = store.getTicket(slug, ticketCard.ticketId)!;
+        const state: SquadCardState = { state: "saved", name: out.squad.name, scope: scope === "global" ? "global" : "board", teammates: out.teammates, at: nowIso() };
+        store.updateTicket(slug, t.id, { squadCards: { ...t.squadCards, [ticketCard.uuid]: state } });
+        emitTicket(slug, t.id);
+      }
+      return json(out, 201);
     }
 
     // /profiles/:p/learned — what the board learned on its own (learner.ts). Anyone reads; only the user undoes,
@@ -2465,6 +2495,24 @@ export function createServer(deps: ServerDeps) {
       emitTicket(slug, id);
       return json(view(profile, store.getTicket(slug, id)!));
     }
+    // A squad card in the chat (propose_squad) was dismissed: PUT .../squad-cards/<entry uuid> { state: "dismissed" }.
+    // Saving goes through POST /profiles/:p/squads with the card, which marks it; { state: "saved", name, scope } here
+    // only records a save made elsewhere (Edit first in the Team tab).
+    if (action === "squad-cards" && parts.length === 6 && m === "PUT") {
+      if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user answers squad cards");
+      const b = await body(req);
+      if (b.state !== "saved" && b.state !== "dismissed") throw new HttpError(400, "state must be saved or dismissed");
+      if (b.scope !== undefined && b.scope !== "global" && b.scope !== "board") throw new HttpError(400, "scope must be global or board");
+      const t = store.getTicket(slug, id)!;
+      const card: SquadCardState = {
+        state: b.state, at: nowIso(),
+        ...(b.state === "saved" && typeof b.name === "string" && b.name.trim() ? { name: b.name.trim() } : {}),
+        ...(b.state === "saved" && b.scope ? { scope: b.scope } : {}),
+      };
+      store.updateTicket(slug, id, { squadCards: { ...t.squadCards, [parts[5]]: card } });
+      emitTicket(slug, id);
+      return json(view(profile, store.getTicket(slug, id)!));
+    }
     if (action === "teammate-cards" && parts.length === 6 && m === "PUT") {
       if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user answers teammate cards");
       const b = await body(req);
@@ -2733,9 +2781,10 @@ export function createServer(deps: ServerDeps) {
       const out = huddles.startAuto(slug, ticketId, {
         reason: typeof b.reason === "string" ? b.reason : "",
         trigger: typeof b.trigger === "string" ? b.trigger : undefined,
-        template: typeof b.template === "string" && b.template.trim() ? b.template.trim() : undefined,
+        template: ([b.squad, b.template].find((v) => typeof v === "string" && v.trim()) as string | undefined)?.trim(),
         roster: Array.isArray(b.roster) ? b.roster : undefined,
         maxCostUsd: b.maxCostUsd === undefined || b.maxCostUsd === null ? undefined : Number(b.maxCostUsd),
+        topic: typeof b.topic === "string" ? b.topic : undefined,
       });
       return json({ waiting: out.waiting, template: out.template, huddle: out.huddle ? huddles.view(slug, out.huddle) : null }, out.waiting ? 202 : 201);
     }
@@ -2749,10 +2798,12 @@ export function createServer(deps: ServerDeps) {
         // The ticket's run is doing the work (not a chat reply in Planning or Review): a huddle now would work alongside it.
         const host = store.getTicket(slug, ticketId);
         if (host && (host.status === "ready" || host.status === "in_progress") && board.isRunning(slug, ticketId)) parallelWork(req, b, "run-active");
+        const squad = [b.squad, b.template].find((v) => typeof v === "string" && v.trim()) as string | undefined;
         const h = huddles.create(slug, ticketId, Array.isArray(b.roster) ? b.roster : [], {
           maxParticipants: Number(b.maxParticipants) || undefined,
           maxCostUsd: b.maxCostUsd === undefined || b.maxCostUsd === null ? undefined : Number(b.maxCostUsd),
-          template: typeof b.template === "string" && b.template.trim() ? b.template : undefined,
+          template: squad,
+          topic: b.topic,
         });
         return json(huddles.view(slug, h), 201);
       }
@@ -2843,6 +2894,14 @@ export function createServer(deps: ServerDeps) {
     }
     // A huddle agent proposes a teammate (propose_teammate): it waits under Learnings for the user.
     if (m === "POST" && action === "teammates" && !handle) return json(huddles.proposeTeammate(slug, h.id, me, await body(req)), 201);
+    // A huddle agent proposes a squad (propose_squad): it waits under Learnings for the user.
+    if (m === "POST" && action === "squads" && !handle) return json(huddles.proposeSquad(slug, h.id, me, await body(req)), 201);
+    // "Save as squad…": a generic squad written from this huddle (running or closed) by one side call, as a squad card.
+    // Saves nothing (the user saves the card with POST /profiles/:p/squads). Always 200: { proposal, error, setup, costUsd }.
+    if (m === "POST" && action === "generic-squad" && !handle) {
+      userOnly("make a squad from a huddle");
+      return json(await huddles.genericSquad(slug, h.id, sideCall));
+    }
     // Lessons agents proposed: only the user edits, saves (as role notes) or discards them.
     if (action === "learnings" && handle) {
       userOnly("save, edit or discard learnings");
@@ -2855,7 +2914,7 @@ export function createServer(deps: ServerDeps) {
         } catch {
           throw new HttpError(400, "invalid JSON body");
         }
-        return { text: b.text, scope: b.scope, target: b.target };
+        return { text: b.text, scope: b.scope, target: b.target, replace: b.replace };
       };
       if (m === "PATCH" && !sub) return json(huddles.editLearning(slug, h.id, handle, await patch()));
       if (m === "POST" && sub === "save") return json(huddles.saveLearning(slug, h.id, handle, await patch()));

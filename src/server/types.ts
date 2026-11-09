@@ -1,4 +1,5 @@
 import type { TeammateProposal } from "./teammate-proposal";
+import type { SquadCardState, SquadProposal } from "./squad";
 
 import type { TicketKind } from "../../web/src/family";
 export type { TicketKind };
@@ -107,6 +108,8 @@ export interface AutoHuddle {
   huddleId?: string | null;
   /** Budget the run asked for (already capped); the slot wake passes it back to start_huddle. */
   maxCostUsd?: number;
+  /** Topic the run asked for (a waiting request keeps it); the slot wake passes it back to start_huddle. */
+  topic?: string;
 }
 
 /** Worktree setup values detected from the board folder (see worktree-setup.ts). */
@@ -328,6 +331,8 @@ export interface Ticket {
   shareLinks?: ShareLink[];
   /** Teammate cards in this ticket's chat (propose_teammate) the user answered, by entry uuid (the tool_use id). */
   teammateCards?: Record<string, TeammateCardState>;
+  /** Squad cards in this ticket's chat (propose_squad) the user answered, by entry uuid (the tool_use id). */
+  squadCards?: Record<string, SquadCardState>;
   /** Automation cards in this ticket's chat (propose_automation) the user saved, by entry uuid: the automation made. */
   automationCards?: Record<string, { loopId: string; at: string }>;
   /** Made by Automations → Set up with Claude: its Planning chat sets up an automation instead of shaping a ticket. */
@@ -902,8 +907,12 @@ export interface Huddle {
   closeRequest?: { by: string; at: string; reason: string } | null;
   /** Pinned brief (goal, decisions) the leads, @main and the user keep current; it heads every digest. */
   brief?: { text: string; by: string; at: string } | null;
-  /** Template the huddle was started from (see huddle-templates.ts). */
+  /** Template (squad) the huddle was started from (see huddle-templates.ts). */
   template?: string | null;
+  /** What this huddle is about, as given when a squad was started (else the host ticket's title and description). */
+  topic?: string | null;
+  /** The squad's host rules when it started (later edits to the squad don't change a running huddle). */
+  hostRules?: string | null;
   /** Started by the host ticket's unattended run (start_huddle), with its reason; @main may close it itself. */
   auto?: { reason: string } | null;
   /**
@@ -943,6 +952,8 @@ export interface HuddleLearning {
    * all boards, repo for this board; once saved, target is its name.
    */
   teammate?: TeammateProposal;
+  /** A squad the agent proposed (propose_squad): text is its why; once saved, target is the squad's name. */
+  squad?: SquadProposal;
 }
 
 /** handin: a helper handed in changes (handIn: its id); the chat shows it as a card. */

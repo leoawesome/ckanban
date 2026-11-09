@@ -1,7 +1,10 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import {
-  api, type HandIn, type Huddle, type HuddleLearning, type HuddleMessage, type HuddleMode, type HuddleParticipant, type HuddlePreset, type Level, type TeammateProposal, type Ticket,
+  api, type HandIn, type Huddle, type HuddleLearning, type HuddleMessage, type HuddleMode, type HuddleParticipant, type HuddlePreset, type Level, type SquadDraft,
+  type SquadProposal, type TeammateProposal, type Ticket,
 } from "./api";
+import { Modal } from "./Modal";
+import { SquadCardView, SquadSavedView, useSquadSave } from "./SquadCard";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { draftKey, formKey } from "./drafts";
 import {
@@ -9,7 +12,8 @@ import {
   type HuddleState,
   huddleIdle, keepHuddleOpen, keptOpenAt, useHuddleIdleTick,
 } from "./huddle";
-import { DEFAULT_MAX, draftError, RosterEditor, rosterDraft, startFromDraft, TemplatePicker, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
+import { DEFAULT_MAX, draftError, RosterEditor, rosterDraft, SquadPeople, SquadPicker, startFromDraft, TopicBox, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
+import { ticketTopicText } from "./squadText";
 import { autoGrow } from "./autoGrow";
 import {
   applyTemplate, brakeHeadline, BRIEF_MAX, handInLine, rosterNoise, budgetRaise, BUDGET_STEPS, clampSideWidth, clause, DEFAULT_BUDGET, handInGroups, handInStatus, participantRole, POST_MAX, SIDE_DEFAULT, stoppedWhenDone,
@@ -178,7 +182,7 @@ function StartHuddle({ slug, ticket, tickets, onError, onBack, onStarted, seed }
   const presets = usePresets(slug);
   const templates = useTemplates(slug);
   const [draft, setDraft] = useState<RosterDraft>(() => rosterDraft(seed && "preset" in seed.seed ? [{ preset: seed.seed.preset }] : [{ preset: "reviewer" }, { preset: "qa" }]));
-  // Start huddle from the Team tab: that teammate alone, or the template's roster and rules (once they load).
+  // Start huddle from the Team tab: that teammate alone, or the squad's people and rules (once they load).
   const seeded = useRef(0);
   useEffect(() => {
     if (!seed || seeded.current === seed.n) return;
@@ -192,9 +196,13 @@ function StartHuddle({ slug, ticket, tickets, onError, onBack, onStarted, seed }
     const name = seed.seed.template;
     const t = templates.find((x) => x.name === name);
     if (t) setDraft((d) => applyTemplate(d, t));
-    else onError(`No template "${name}" on this board.`);
+    else onError(`No squad "${name}" on this board.`);
   }, [seed?.n, templates]);
   const [busy, setBusy] = useState(false);
+  // A squad picked: its people as chips and the topic box (filled in from the ticket); Edit people opens the table.
+  const [topic, setTopic] = useState(() => ticketTopicText(ticket));
+  const [editPeople, setEditPeople] = useState(false);
+  const squad = !!draft.template;
   const err = draftError(draft);
   // Built-ins renamed or removed on this board: drop rows whose preset doesn't exist.
   useEffect(() => {
@@ -206,7 +214,7 @@ function StartHuddle({ slug, ticket, tickets, onError, onBack, onStarted, seed }
     if (busy || err) return;
     setBusy(true);
     try {
-      await startFromDraft(slug, ticket.id, draft);
+      await startFromDraft(slug, ticket.id, draft, squad ? topic : undefined);
       onStarted();
     } catch (e) {
       onError((e as Error).message);
@@ -217,12 +225,15 @@ function StartHuddle({ slug, ticket, tickets, onError, onBack, onStarted, seed }
   return (
     <div className="panel-scroll panel-huddle-start">
       <p className="huddle-intro"><HuddleIcon /> A few Claudes look at this together and agree on a list.</p>
-      <TemplatePicker templates={templates} draft={draft} setDraft={setDraft} disabled={busy} />
-      <RosterEditor presets={presets} draft={draft} setDraft={setDraft} tickets={tickets} hostId={ticket.id} onEnter={start} disabled={busy} />
+      <SquadPicker templates={templates} draft={draft} setDraft={setDraft} disabled={busy} quiet={squad && !editPeople} />
+      {squad && !editPeople && <SquadPeople draft={draft} />}
+      {(!squad || editPeople) && <RosterEditor presets={presets} draft={draft} setDraft={setDraft} tickets={tickets} hostId={ticket.id} onEnter={start} disabled={busy} />}
+      {squad && <TopicBox value={topic} onChange={setTopic} filled="ticket" disabled={busy} />}
       <div className="huddle-card-actions">
         <span className="muted small">{err ?? "Agents start as soon as you press Start."}</span>
         <span className="spacer" />
         {onBack && <button className="btn small" onClick={onBack}>Back to the huddle</button>}
+        {squad && <button className="btn small" aria-expanded={editPeople} onClick={() => setEditPeople((e) => !e)}>{editPeople ? "Hide people" : "Edit people"}</button>}
         <button className="btn primary small" onClick={start} disabled={busy || !!err || presets === null}>{busy ? "Starting…" : "Start huddle"}</button>
       </div>
     </div>
@@ -267,13 +278,16 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
   useEffect(() => {
     if (!seed || h.status === "closed") return;
     if ("preset" in seed.seed) setAdding(true);
-    else onError("This ticket already has an open huddle. Close it to start one from a template.");
+    else onError("This ticket already has an open huddle. Close it to start one from a squad.");
   }, [seed?.n]);
   const log = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const side = useSideWidth(body);
-  // Only proposed teammates wait here: lessons go to the board's pile and show in Team, Learned once they come back.
-  const learnings = (h.learnings ?? []).filter((l) => l.status !== "discarded" && !!l.teammate);
+  // Only proposed teammates and squads wait here: lessons go to the board's pile and show in Team, Learned once they come back.
+  const learnings = (h.learnings ?? []).filter((l) => l.status !== "discarded" && (!!l.teammate || !!l.squad));
+  // "Save as squad…": Claude writes this huddle up as a generic squad, shown as a squad card in a dialog.
+  const [savingSquad, setSavingSquad] = useState(false);
+  const squadable = members(h).some((p) => p.kind === "agent");
   const pending = learnings.filter((l) => l.status === "pending");
   // The learnings drawer: closed by default, open/closed remembered per huddle.
   const [learningsOpen, setLearningsOpen] = usePersistentState(formKey(slug, ticket.id, `huddle-learnings-${h.id}`), () => false, (v) => !v, (v) => typeof v === "boolean");
@@ -353,6 +367,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
     actions.push({ label: "Learnings", icon: <CapIcon />, onSelect: () => setLearningsOpen(true),
       badge: pending.length ? <span className="for-you-pill">{pending.length}</span> : <span className="hd-learn-done">✓ all reviewed</span> });
   }
+  if (squadable) actions.push({ label: "Save as squad…", title: SAVE_SQUAD_TIP, onSelect: () => setSavingSquad(true) });
   if (rounds) actions.push({ label: roundLabel(state.list, h), onSelect: () => setSheet("rounds"), badge: <span className="muted small">Rounds ›</span> });
   else if (closed) actions.push({ label: "New huddle", onSelect: onNew });
   if (h.summary) actions.push({ label: "Read the summary", onSelect: () => onOpenOutput(h.summary!) });
@@ -406,6 +421,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
         {head}
         {forYou > 0 && <button className="link-btn hd-jump" onClick={jump} title={`${forYou} ${forYou === 1 ? "message tags" : "messages tag"} you`}>↓ next for you</button>}
         <span className="spacer" />
+        {squadable && <button className="btn small ghost" onClick={() => setSavingSquad(true)} title={SAVE_SQUAD_TIP}>Save as squad…</button>}
         {learnings.length > 0 && (
           <button className={`btn small hd-learn-btn${pending.length ? " pending" : ""}`} aria-expanded={showLearnings} onClick={() => setLearningsOpen(!showLearnings)}
             title={pending.length ? `${pending.length} proposal${pending.length === 1 ? "" : "s"} from agents to review (lessons, teammates)` : "Everything is reviewed"}>
@@ -511,6 +527,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
         )}
         {showLearnings && <Learnings slug={slug} huddle={h} onClose={() => setLearningsOpen(false)} onError={onError} onOpenTeam={onOpenTeam} />}
       </div>
+      {savingSquad && <SaveAsSquad slug={slug} huddle={h} onClose={() => setSavingSquad(false)} onOpenTeam={onOpenTeam} />}
       {confirm === "stop" && (
         <ConfirmDialog title="Stop agents?" confirmLabel="Stop agents" busyLabel="Stopping…" onCancel={() => setConfirm(null)}
           onConfirm={async () => { await api.huddleAction(slug, h.id, "stop"); setConfirm(null); }}>
@@ -547,11 +564,11 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
 function Learnings({ slug, huddle: h, onClose, onError, onOpenTeam }: {
   slug: string; huddle: Huddle; onClose: () => void; onError: (m: string) => void; onOpenTeam?: (r: TeamRequest) => void;
 }) {
-  // Reloaded when a proposed teammate is saved, so the other cards see it.
-  const saved = (h.learnings ?? []).filter((l) => l.teammate && l.status === "saved").length;
+  // Reloaded when a proposed teammate or squad is saved, so the other cards see it.
+  const saved = (h.learnings ?? []).filter((l) => (l.teammate || l.squad) && l.status === "saved").length;
   const presets = usePresets(slug, saved);
   useLayer(onClose, { skipInInputs: true });
-  const shown = (h.learnings ?? []).filter((l) => l.status !== "discarded" && !!l.teammate);
+  const shown = (h.learnings ?? []).filter((l) => l.status !== "discarded" && (!!l.teammate || !!l.squad));
   const pending = shown.filter((l) => l.status === "pending");
   return (
     <section className="hd-learnings" aria-label="Learnings to review">
@@ -562,14 +579,137 @@ function Learnings({ slug, huddle: h, onClose, onError, onOpenTeam }: {
         <button className="icon-btn" onClick={onClose} aria-label="Close learnings" title="Close (Esc)"><CloseIcon size={12} /><KeyHint keys="Esc" /></button>
       </div>
       <div className="hd-learnings-sub muted small">
-        {!pending.length ? "Every teammate proposed in this huddle is saved or discarded." : "Proposed by agents · nothing is saved until you choose."}
+        {!pending.length ? "Every teammate and squad proposed in this huddle is saved or discarded." : "Proposed by agents · nothing is saved until you choose."}
       </div>
       <div className="hd-learnings-list">
-        {shown.map((l) => l.teammate && (
+        {shown.map((l) => l.squad ? (
+          <SquadLearning key={l.id} slug={slug} huddle={h} l={l} squad={l.squad} presets={presets} onError={onError} onOpenTeam={onOpenTeam} />
+        ) : l.teammate && (
           <TeammateLearning key={l.id} slug={slug} huddle={h} l={l} teammate={l.teammate} presets={presets} onError={onError} onOpenTeam={onOpenTeam} />
         ))}
       </div>
     </section>
+  );
+}
+
+/** A squad an agent proposed (propose_squad): the squad card, saved for this board or all boards with its new teammates. */
+function SquadLearning({ slug, huddle: h, l, squad, presets, onError, onOpenTeam }: {
+  slug: string; huddle: Huddle; l: HuddleLearning; squad: SquadProposal; presets: HuddlePreset[] | null; onError: (m: string) => void;
+  onOpenTeam?: (r: TeamRequest) => void;
+}) {
+  const card = { huddleId: h.id, learningId: l.id };
+  const { busy, save, confirm } = useSquadSave(slug, card, () => {}, onError);
+  const [discarding, setDiscarding] = useState(false);
+  return (
+    <div className={`hd-learning ${l.status}`}>
+      <div className="hd-learning-who"><b>@{l.from}</b> · {l.role}</div>
+      <div className="hd-learning-main">
+        {l.status === "saved" ? (
+          <SquadSavedView label={squad.squad.label || l.target} scope={l.scope === "general" ? "global" : "board"}
+            onOpenTeam={onOpenTeam && (() => onOpenTeam({ action: "squads" }))} />
+        ) : (
+          <SquadCardView proposal={squad} presets={presets} kicker={`Squad proposed by @${l.from}`} busy={busy || discarding} dismissLabel="Discard"
+            onSave={(scope) => save(squad.squad, scope)}
+            onEdit={onOpenTeam && (() => onOpenTeam({ action: "squad", draft: squad.squad, card }))}
+            onDismiss={() => {
+              setDiscarding(true);
+              api.discardLearning(slug, h.id, l.id).catch((e) => onError((e as Error).message)).finally(() => setDiscarding(false));
+            }} />
+        )}
+        {confirm}
+      </div>
+    </div>
+  );
+}
+
+const SAVE_SQUAD_TIP = "Claude writes this huddle up as a squad (its people, their focus, how the host ran it, the budget) that you can start on any ticket. Nothing is saved until you choose.";
+
+/** The huddle's setup as it is, for the editor when Claude couldn't write the squad and the daemon sent none. */
+function setupOf(h: Huddle): SquadDraft {
+  const roster = members(h).filter((p) => p.kind === "agent").map((p) => ({
+    ...(p.preset ? { preset: p.preset } : { role: p.role }), handle: p.handle, focus: p.focus || undefined, model: p.model, mode: p.mode,
+    ...(h.host === p.handle ? { host: true } : {}),
+  }));
+  return { name: "", label: "", description: "", roster, rounds: null, maxCostUsd: h.maxCostUsd ?? null, report: "", hostRules: h.hostRules ?? "" };
+}
+
+type SquadStep =
+  | { kind: "writing" }
+  | { kind: "failed"; error: string; setup: SquadDraft }
+  | { kind: "card"; proposal: SquadProposal }
+  | { kind: "saved"; label: string; scope: Level; teammates: { created: string[]; reused: string[] } };
+
+/**
+ * "Save as squad…": one call has Claude write the huddle up as a generic squad ("Writing the squad…"), then the squad
+ * card. On failure: the error, Retry, and Open the editor (filled in with the huddle's setup as it was).
+ */
+function SaveAsSquad({ slug, huddle: h, onClose, onOpenTeam }: { slug: string; huddle: Huddle; onClose: () => void; onOpenTeam?: (r: TeamRequest) => void }) {
+  const [step, setStep] = useState<SquadStep>({ kind: "writing" });
+  const [err, setErr] = useState<string | null>(null);
+  const [savedN, setSavedN] = useState(0);
+  const presets = usePresets(slug, savedN);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => { live.current = false; };
+  }, []);
+  const write = () => {
+    setErr(null);
+    setStep({ kind: "writing" });
+    api.genericSquad(slug, h.id).then(
+      (r) => live.current && setStep(r.proposal ? { kind: "card", proposal: r.proposal } : { kind: "failed", error: r.error ?? "Claude didn't write a squad.", setup: r.setup }),
+      (e) => live.current && setStep({ kind: "failed", error: (e as Error).message, setup: setupOf(h) }),
+    );
+  };
+  useEffect(write, [h.id]);
+  const { busy, save, confirm } = useSquadSave(slug, undefined, (out, scope) => {
+    setSavedN((n) => n + 1);
+    setStep({ kind: "saved", label: out.squad.label, scope, teammates: out.teammates });
+  }, setErr);
+  const openEditor = (draft: SquadDraft) => {
+    onClose();
+    onOpenTeam?.({ action: "squad", draft });
+  };
+  return (
+    <Modal title="Save as squad" onClose={onClose}>
+      <div className="form save-squad">
+        {step.kind === "writing" && (
+          <div className="save-squad-writing">
+            <div><span className="spinner" /> <b>Writing the squad…</b></div>
+            <p className="muted small">Claude turns this huddle into a squad you can start on any ticket: its people and their focus, how the host ran it, and the budget, without this ticket's details. It takes up to a few minutes. Nothing is saved until you choose.</p>
+          </div>
+        )}
+        {step.kind === "failed" && (
+          <>
+            <div className="banner error inline" role="alert">{step.error}</div>
+            <p className="muted small">Try again, or open the squad editor filled in with this huddle's setup as it was and make it general yourself.</p>
+            <div className="form-actions">
+              <span className="spacer" />
+              {onOpenTeam && <button className="btn small" onClick={() => openEditor(step.setup)}>Open the editor</button>}
+              <button className="btn small primary" onClick={write}>Retry</button>
+            </div>
+          </>
+        )}
+        {step.kind === "card" && (
+          <>
+            {err && <div className="banner error inline" role="alert">{err}</div>}
+            <SquadCardView proposal={step.proposal} presets={presets} kicker="Squad from this huddle" busy={busy}
+              onSave={(scope) => { setErr(null); save(step.proposal.squad, scope); }}
+              onEdit={onOpenTeam && (() => openEditor(step.proposal.squad))}
+              onDismiss={onClose} />
+          </>
+        )}
+        {step.kind === "saved" && (
+          <>
+            <SquadSavedView label={step.label} scope={step.scope} teammates={step.teammates}
+              onOpenTeam={onOpenTeam && (() => { onClose(); onOpenTeam({ action: "squads" }); })} />
+            <p className="muted small">Start it on any ticket: Huddle tab, pick the squad, check the topic, Start.</p>
+            <div className="form-actions"><span className="spacer" /><button className="btn small" onClick={onClose}>Done</button></div>
+          </>
+        )}
+        {confirm}
+      </div>
+    </Modal>
   );
 }
 

@@ -995,6 +995,46 @@ body > .output-view.reader { position: fixed; }
 .tmc-diff .add { color: var(--ok); }
 .tmc-actions { border-top: 1px solid var(--border); padding-top: 8px; gap: 8px; }
 .hd-learning .teammate-card { margin-top: 0; }
+/* Squad cards (propose_squad, "Save as squad…"): accent left edge, people as chips, a fold-out with the host rules and each focus. */
+.squad-card { border-left-width: 4px; }
+.squad-card.done { border-color: var(--border); }
+.squad-card.done .proposal-tag { color: var(--muted); }
+.hd-learning .squad-card, .save-squad .squad-card { margin-top: 0; }
+.sqc-why { font-size: var(--fs-sm); color: var(--muted); }
+.sqc-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.sqc-chip { background: var(--surface-2); border-radius: var(--r-pill); padding: 3px 10px; font-size: var(--fs-sm); max-width: 100%; overflow-wrap: anywhere; }
+.sqc-chip.host { background: var(--accent-soft); color: var(--accent-text); }
+.sqc-chip.new { background: var(--info-soft); color: var(--info); }
+.sqc-extra { color: var(--muted); font-size: var(--fs-xs); }
+.sqc-chip.new .sqc-extra { color: inherit; }
+.sqc-more { font-size: var(--fs-sm); }
+.sqc-more summary { cursor: pointer; color: var(--muted); }
+.sqc-rules { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: var(--r-sm); padding: 8px 10px; margin-top: 6px; }
+.sqc-focus { margin: 6px 0 0; padding-left: 18px; overflow-wrap: anywhere; }
+.sqc-report { margin-top: 6px; overflow-wrap: anywhere; }
+.sqc-note { font-size: var(--fs-xs); color: var(--muted); }
+.sqc-actions { border-top: 1px solid var(--border); padding-top: 8px; gap: 8px; }
+.save-squad-writing { display: flex; flex-direction: column; gap: 6px; }
+.save-squad-writing p, .save-squad > p { margin: 0; }
+/* "Topic for this huddle" (starting a squad). */
+.topic-box { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.topic-label { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.topic-box textarea { font-size: var(--fs-sm); min-height: 96px; }
+.topic-note { font-size: var(--fs-xs); color: var(--muted); }
+.panel-huddle-start .sqc-chips { margin-top: 10px; }
+.huddle-line-edit .topic-box { padding: 0 14px; }
+.huddle-line-topic { padding: 4px 0 0 22px; font-size: var(--fs-xs); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+/* The squad editor: a focus box per person. */
+.tt-focus { display: flex; flex-direction: column; gap: 8px; }
+.form label.tt-focus-row { display: grid; grid-template-columns: minmax(0, 160px) minmax(0, 1fr); gap: 8px; align-items: start; font-weight: 400; }
+.tt-focus-row > span { padding-top: 7px; font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.tt-focus-row textarea { font-size: var(--fs-sm); }
+.tt-edit-note { margin: 0; }
+@media (max-width: 720px) {
+  .form label.tt-focus-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .tt-focus-row > span { padding-top: 0; }
+  .sqc-actions .btn { flex: 1 1 auto; }
+}
 .new-ticket { border-top: 1px solid var(--border); padding-top: 6px; display: flex; flex-direction: column; gap: 6px; }
 .new-ticket-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .new-ticket-title { font-weight: 600; text-align: left; color: var(--text); }

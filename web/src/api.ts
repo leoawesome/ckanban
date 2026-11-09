@@ -471,6 +471,8 @@ export interface Ticket {
   links?: TicketLink[];
   /** Teammate cards in the chat the user answered, by entry uuid (src/server/types.ts). */
   teammateCards?: Record<string, TeammateCardState>;
+  /** Squad cards in the chat the user answered, by entry uuid. */
+  squadCards?: Record<string, SquadCardState>;
   /** Automation cards in the chat the user saved (by entry uuid). */
   automationCards?: Record<string, { loopId: string; at: string }>;
   /** Made by Automations → Set up with Claude. */
@@ -553,6 +555,8 @@ export interface SessionSummary {
   pendingProposal: { title: string; description: string } | null;
   pendingNewTickets?: { title: string; description: string }[];
   pendingTeammates?: string[];
+  /** Squad cards since the user's last message (Ticket.squadCards says which were answered). */
+  pendingSquads?: string[];
   /** Conversation size and cache time at Claude's last reply, for the old-chat line and Send ask (cacheNote.ts). */
   cache?: ChatCacheInfo | null;
 }
@@ -612,11 +616,13 @@ export interface SessionEntry {
   /** Claude offered to branch this ticket (Branch button). */
   branch?: { reason: string };
   /** Claude proposed a huddle (propose_huddle): the roster card with Start. */
-  huddle?: { roster: RosterEntry[]; reason: string; template?: string; maxCostUsd?: number };
+  huddle?: { roster: RosterEntry[]; reason: string; template?: string; maxCostUsd?: number; topic?: string };
   /** Claude asked to delete tickets (propose_delete): the card with Cancel / Delete. */
   deletion?: { ids: string[]; reason: string };
   /** Claude proposed a teammate (propose_teammate): the card with Save teammate / Edit first / Dismiss. */
   teammate?: TeammateProposal;
+  /** Claude proposed a squad (propose_squad): the card with Save for this board / Save for all boards / Edit first / Dismiss. */
+  squad?: SquadProposal;
   /** Claude proposed an automation (propose_automation): the card with Connect and Save automation. */
   automation?: AutomationProposal;
   /** Mockups Claude sent in this reply, saved as outputs/mockups/<name>. */
@@ -872,7 +878,46 @@ export interface HuddleTemplate extends LayerInfo {
   maxCostUsd: number | null;
   /** Report format ("" for none). */
   report: string;
+  /** The host's process rules ("" for none; older daemons leave it out). */
+  hostRules?: string;
 }
+
+/** A squad's fields (a template without its level info), as cards carry and the save route takes. */
+export type SquadDraft = Omit<HuddleTemplate, keyof LayerInfo>;
+
+/** A squad card's data (src/server/squad.ts): from propose_squad or "Save as squad…". */
+export interface SquadProposal {
+  squad: SquadDraft & { hostRules: string };
+  /** One line: why this squad, or where it came from. */
+  why: string;
+  /**
+   * People with no preset, by roster index: saving saves each as a teammate `name` at the same scope, unless a
+   * teammate of that name exists (then it is used as is). Check the board's teammates to mark the new ones.
+   */
+  newTeammates: { index: number; name: string; role: string }[];
+}
+
+/** What the user did with a squad card. */
+export interface SquadCardState {
+  state: "saved" | "dismissed";
+  name?: string;
+  scope?: Level;
+  /** Teammates the save made, and existing ones it used as they are. */
+  teammates?: { created: string[]; reused: string[] };
+  at: string;
+}
+
+/** "Save as squad…" (POST .../huddles/:id/generic-squad): the card, or the error and the setup for the filled-in editor. */
+export interface GenericSquadResult {
+  proposal: SquadProposal | null;
+  error: string | null;
+  /** The huddle's roster as it was (nothing made generic). */
+  setup: SquadDraft & { hostRules: string };
+  costUsd: number;
+}
+
+/** Where a saved squad card goes: a ticket chat's card, or a huddle agent's proposal under Learnings. */
+export type SquadCardRef = { ticketId: string; uuid: string } | { huddleId: string; learningId: string };
 
 /** What every board spent today (src/server/spend.ts). */
 export interface TodaySpend {
@@ -1035,8 +1080,11 @@ export interface Huddle {
   forYouSince?: number;
   /** Pinned brief (goal, decisions) at the head of every digest. */
   brief?: { text: string; by: string; at: string } | null;
-  /** Template it was started from. */
+  /** Squad (template) it was started from. */
   template?: string | null;
+  /** What it was started on (a squad's topic), and the squad's host rules then. */
+  topic?: string | null;
+  hostRules?: string | null;
   /** Lessons agents proposed when they turned done; only the user saves them as role notes. */
   learnings?: HuddleLearning[];
   /** Learnings waiting for review (they count in forYou). */
@@ -1065,6 +1113,8 @@ export interface HuddleLearning {
   newRole?: boolean;
   /** A teammate the agent proposed instead of a lesson (text: its why; scope general: all boards, repo: this board). */
   teammate?: TeammateProposal;
+  /** A squad the agent proposed (propose_squad; text: its why). Save it with api.saveSquad and card { huddleId, learningId }, or discardLearning. */
+  squad?: SquadProposal;
 }
 
 /** A role note (src/server/huddle-notes.ts): by "you" or the agent's handle. */
@@ -1265,6 +1315,8 @@ export interface NotifyState {
   lastError: string | null;
   /** A browser on this Mac gets notifications: they replace the macOS banner. */
   macBrowser: boolean;
+  /** This request came from this Mac, not phone access: only the Mac turns Telegram messages back on or pairs. */
+  local?: boolean;
   /** The helper groups routine waits and interrupts only for urgent ones (Settings → Helper). */
   helper: boolean;
   /** The phone push channel. */
@@ -1516,9 +1568,21 @@ export const api = {
   huddle: (slug: string, id: string, q: { before?: number; since?: number; limit?: number } = {}) =>
     req<{ huddle: Huddle; you: string; messages: HuddleMessage[]; hasMore: boolean }>("GET",
       `${hud(slug, id)}${query(q)}`),
-  /** template: a template's name (its roster when `roster` is empty, its budget unless given, its rules as the brief). */
-  startHuddle: (slug: string, ticketId: string, roster: RosterEntry[], maxParticipants?: number, maxCostUsd?: number, template?: string) =>
-    req<Huddle>("POST", hud(slug), { ticketId, roster, maxParticipants, maxCostUsd, template }),
+  /**
+   * template: a squad's name (its roster when `roster` is empty, its budget unless given, its rules as the brief).
+   * topic: what this run of the squad works on (default: the ticket's title and description).
+   */
+  startHuddle: (slug: string, ticketId: string, roster: RosterEntry[], maxParticipants?: number, maxCostUsd?: number, template?: string, topic?: string) =>
+    req<Huddle>("POST", hud(slug), { ticketId, roster, maxParticipants, maxCostUsd, template, ...(topic?.trim() ? { topic: topic.trim() } : {}) }),
+  /** "Save as squad…": Claude writes a generic squad from a huddle (running or closed). Saves nothing; always resolves unless the request fails. */
+  genericSquad: (slug: string, id: string) => req<GenericSquadResult>("POST", `${hud(slug, id)}/generic-squad`, {}),
+  /**
+   * Save a squad (a card's, or edited first): people with no preset become teammates at the same scope (existing ones
+   * are used as they are). A squad of the same name: 409 unless replace. card: the card it came from, marked saved.
+   */
+  saveSquad: (slug: string, squad: SquadDraft, scope: Level, card?: SquadCardRef, replace = false) =>
+    req<{ squad: HuddleTemplate; teammates: { created: string[]; reused: string[] } }>("POST", `/api/profiles/${encodeURIComponent(slug)}/squads`,
+      { squad, scope, ...(card ? { card } : {}), ...(replace ? { replace } : {}) }),
   setHuddleBrief: (slug: string, id: string, text: string) => req<Huddle>("PUT", `${hud(slug, id)}/brief`, { text }),
   huddleTemplates: (slug: string) => req<HuddleTemplate[]>("GET", `/api/profiles/${encodeURIComponent(slug)}/huddle-templates`),
   saveHuddleTemplate: (slug: string, t: Omit<HuddleTemplate, keyof LayerInfo>, scope: Level) =>
@@ -1663,6 +1727,9 @@ export const api = {
   /** The user answered a teammate card (saved it, or dismissed it). */
   answerTeammateCard: (slug: string, id: string, uuid: string, card: Omit<TeammateCardState, "at">) =>
     req<Ticket>("PUT", `${t(slug, id)}/teammate-cards/${encodeURIComponent(uuid)}`, card),
+  /** The user dismissed a squad card (saving goes through saveSquad with the card). */
+  answerSquadCard: (slug: string, id: string, uuid: string, card: Omit<SquadCardState, "at" | "teammates">) =>
+    req<Ticket>("PUT", `${t(slug, id)}/squad-cards/${encodeURIComponent(uuid)}`, card),
   comments: (slug: string, id: string) => req<Comment[]>("GET", `${t(slug, id)}/comments`),
   addComment: (slug: string, id: string, text: string) => req<Comment>("POST", `${t(slug, id)}/comments`, { text }),
   diff: (slug: string, id: string, ignoreWhitespace: boolean) =>

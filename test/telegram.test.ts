@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Bus } from "../src/server/events";
 import { cutBytes, macChannel, messagePageUrl, ntfyRequest, pushChannel, type OutMessage } from "../src/server/helper/channels";
@@ -392,6 +392,81 @@ test("settings API: token masked; pairing only from the user's browser and its c
   } finally {
     notifier.telegram.stop();
     server.stop(true);
+  }
+});
+
+test("phone access can't turn Telegram messages back on or pair; Pause and Unpair still work; this Mac can do all", async () => {
+  const store = new Store(tempDir("ck-home-"));
+  const bus = new Bus();
+  const board = new Board(store, bus, { claudeBin: "false" });
+  const api = fakeApi();
+  const HOST = "leos-mbp.tail1234.ts.net";
+  const LOGIN = "leo@example.com";
+  writeFileSync(join(store.root, "remote.json"), JSON.stringify({ enabled: true, host: HOST, allowedLogin: LOGIN, updatedAt: "" }));
+  const paired = (o: { takeMessages: boolean; lockedAt?: string | null; on?: boolean }) => {
+    const s = readNotifySettings(store.root);
+    writeNotifySettings(store.root, { ...s, telegram: { ...s.telegram, on: o.on ?? true, token: TOKEN, chatId: ME, chatName: "Leo", pairedAt: "x", takeMessages: o.takeMessages, lockedAt: o.lockedAt ?? null } });
+  };
+  const notifier = new Notifier(store, bus, {
+    root: store.root, sessionSummary: () => null, isRunning: () => false, hostHuddles: () => new Map(),
+    baseUrl: () => "http://localhost:3000", telegramFetch: api.fetch, telegramPoll: false, banner: () => {},
+  });
+  const server = createServer({ store, bus, board, port: 0, remotePort: 0, webDir: tempDir("ck-web-"), notifier, isUserBrowser: async () => true });
+  const base = `http://localhost:${server.port}`;
+  const tailnet = `http://127.0.0.1:${server.remoteServer!.port}`;
+  const phone = { host: HOST, "tailscale-user-login": LOGIN, origin: `https://${HOST}` };
+  const post = (url: string, path: string, body: unknown, headers: Record<string, string>) =>
+    fetch(`${url}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const fromPhone = (path: string, body: unknown) => post(tailnet, path, body, phone);
+  const fromMac = (path: string, body: unknown) => post(base, path, body, { origin: base });
+  const tg = () => readNotifySettings(store.root).telegram;
+  try {
+    // Locked from Telegram: the phone can't undo it, by the switch or by turning the channel off and on.
+    paired({ takeMessages: false, lockedAt: "2026-11-09T09:00:00.000Z" });
+    let r = await fetch(`${tailnet}/api/notify`, { headers: phone });
+    expect(((await r.json()) as any).local).toBe(false);
+    r = await fromPhone("/api/notify", { telegram: { takeMessages: true } });
+    expect(r.status).toBe(403);
+    expect(await r.text()).toContain("Turn this back on from the Mac.");
+    expect(tg()).toMatchObject({ takeMessages: false, lockedAt: "2026-11-09T09:00:00.000Z" });
+    paired({ takeMessages: true, on: false });
+    r = await fromPhone("/api/notify", { telegram: { on: true } });
+    expect(r.status).toBe(403);
+    expect(tg().on).toBe(false);
+    // Pairing, or a new bot key (the first step of pairing), only from the Mac.
+    r = await fromPhone("/api/notify/telegram/pair", {});
+    expect(r.status).toBe(403);
+    expect(await r.text()).toContain("Pair Telegram from the Mac.");
+    r = await fromPhone("/api/notify", { telegram: { token: "987654321:AAHotherOTHERotherOTHERother_9999" } });
+    expect(r.status).toBe(403);
+    expect(tg().token).toBe(TOKEN);
+    // Turning things off from the phone works: Pause, the channel off, Unpair; other settings too.
+    paired({ takeMessages: true });
+    r = await fromPhone("/api/notify", { telegram: { takeMessages: false } });
+    expect(r.status).toBe(200);
+    expect(tg().takeMessages).toBe(false);
+    r = await fromPhone("/api/notify", { telegram: { askTyped: true }, mac: false });
+    expect(r.status).toBe(200);
+    r = await fromPhone("/api/notify/telegram/unpair", {});
+    expect(r.status).toBe(200);
+    expect(tg().chatId).toBe(null);
+    // This Mac: pairs, and turns messages back on (which clears the lock).
+    r = await fetch(`${base}/api/notify`);
+    expect(((await r.json()) as any).local).toBe(true);
+    r = await fromMac("/api/notify/telegram/pair", {});
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as any).code).toMatch(/^\d{6}$/);
+    paired({ takeMessages: false, lockedAt: "2026-11-09T09:00:00.000Z" });
+    r = await fromMac("/api/notify", { telegram: { takeMessages: true } });
+    expect(r.status).toBe(200);
+    expect(tg()).toMatchObject({ takeMessages: true, lockedAt: null });
+    // Already on: the phone saving the same value is not a change, so it isn't refused.
+    r = await fromPhone("/api/notify", { telegram: { takeMessages: true, on: true } });
+    expect(r.status).toBe(200);
+  } finally {
+    notifier.telegram.stop();
+    server.stop(true);
+    server.remoteServer?.stop(true);
   }
 });
 

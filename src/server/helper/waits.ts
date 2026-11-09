@@ -238,6 +238,24 @@ export class WaitStore {
     return rec;
   }
 
+  /**
+   * Moves an open record to the key of `w` (same wait, now known by its real question), keeping what was told and
+   * planned; the question, urgent mark and why come from `w`. Returns it, or undefined when there is nothing to move
+   * (no open record under `from`, or one is already open under the new key).
+   */
+  rekey(from: string, w: NewWait): WaitRecord | undefined {
+    const r = this.data.records[from];
+    const key = recordKey(w.board, w.ticketId, w.identity);
+    if (!r || r.closedAt || key === from || this.data.records[key]?.closedAt === null) return undefined;
+    const prev = this.data.records[key];
+    if (prev) this.data.records[`${key}#${prev.since}`] = { ...prev, key: `${key}#${prev.since}` };
+    delete this.data.records[from];
+    const moved: WaitRecord = { ...r, key, question: w.question, label: w.label, ...(w.urgent ? { urgent: true } : {}), why: w.why ?? r.why ?? null };
+    this.data.records[key] = moved;
+    this.save();
+    return moved;
+  }
+
   /** Changes a record (by key) and saves; returns it, or undefined when there is none. */
   update(key: string, patch: Partial<WaitRecord>): WaitRecord | undefined {
     const r = this.data.records[key];

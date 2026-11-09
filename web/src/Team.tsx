@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
-import { api, subscribe, type Huddle, type HuddleNote, type HuddleNotes, type HuddlePreset, type HuddleTemplate, type LearnedView, type Level, type TeamUsage } from "./api";
+import { api, subscribe, type Huddle, type HuddleNote, type HuddleNotes, type HuddlePreset, type HuddleTemplate, type LearnedView, type Level, type SquadCardRef, type SquadDraft, type TeamUsage } from "./api";
 import { LearnedPane } from "./Learned";
 import { avatarColor, avatarLetter } from "./avatar";
 import { Select } from "./Select";
-import { TeamTemplates } from "./HuddleTemplates";
+import { TeamSquads } from "./HuddleTemplates";
 import { HuddleList } from "./HuddleList";
 import { fullTime, timeAgo } from "./time";
 import { plural, resetTitle, scopeChip, usageText } from "./teamText";
@@ -20,13 +20,18 @@ type View = "teammates" | "templates" | "huddles" | "notes" | "learned";
 type Draft = Pick<HuddlePreset, "name" | "role" | "prompt" | "model" | "mode" | "lead" | "canEdit" | "workspace">;
 const EMPTY: Draft = { name: "", role: "", prompt: "", model: null, mode: "tagged", lead: false, canEdit: false, workspace: "shared" };
 
-/** What Start huddle opens: a roster with one teammate, or a template. */
+/** What Start huddle opens: a roster with one teammate, or a squad (`template`: its name). */
 export type HuddleSeed = { preset: string } | { template: string };
 
 export type UsageMap = Record<string, TeamUsage>;
 
-/** What the Team tab is asked to show: the new-teammate editor, the editor prefilled (a proposal's Edit first), a teammate, or the huddles. */
-export type TeamRequest = { action: "new" } | ({ action: "edit" } & TeammateEditRequest) | { action: "open"; name: string } | { action: "huddles" } | { action: "learned" };
+/**
+ * What the Team tab is asked to show: the new-teammate editor, the editor prefilled (a proposal's Edit first), a teammate,
+ * the huddles, the squads, or the squad editor filled in (a squad card's Edit first, "Save as squad…"'s Open the editor;
+ * card: the card its save answers).
+ */
+export type TeamRequest = { action: "new" } | ({ action: "edit" } & TeammateEditRequest) | { action: "open"; name: string } | { action: "huddles" } | { action: "learned" }
+  | { action: "squads" } | { action: "squad"; draft: SquadDraft; card?: SquadCardRef };
 
 /** Enter in these inputs must not submit anything around them. */
 const noSubmit = (e: KeyboardEvent) => {
@@ -52,7 +57,7 @@ export function TeammateAvatar({ name, big }: { name: string; big?: boolean }) {
 }
 
 /**
- * The dock's Team tab: teammates (huddle role presets), templates, the notes every teammate gets, and what the board
+ * The dock's Team tab: teammates (huddle role presets), squads (saved huddles), the notes every teammate gets, and what the board
  * learned on its own, in one place.
  * Teammates are saved for all boards by default, or for this board only; a board's own version overrides the other.
  */
@@ -89,8 +94,9 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   const [learned, setLearned] = useState<LearnedView | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ draft: Draft; isNew: boolean; scope: Level; card?: TeammateEditRequest["card"] } | null>(null);
-  /** Templates view: open the new-template editor; n changes per request. */
+  /** Squads view: open the new-squad editor, or the editor filled in from a card; n changes per request. */
   const [newTemplate, setNewTemplate] = useState(0);
+  const [squadEdit, setSquadEdit] = useState<{ draft: SquadDraft; card?: SquadCardRef; n: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const fail = (e: unknown) => setErr((e as Error).message);
 
@@ -134,6 +140,13 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
     if (request.action === "new") return newTeammate();
     if (request.action === "huddles") return setView("huddles");
     if (request.action === "learned") return setView("learned");
+    if (request.action === "squads" || request.action === "squad") {
+      setView("templates");
+      setFilter("");
+      if (request.action === "squad") setSquadEdit({ draft: request.draft, card: request.card, n: request.n });
+      loadTemplates();
+      return;
+    }
     setView("teammates");
     setFilter("");
     if (request.action === "edit") return setEditing({ draft: { ...request.draft }, isNew: request.isNew, scope: request.scope, card: request.card });
@@ -167,7 +180,7 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
     <div className="team">
       <div className="team-bar">
         <div className="segmented" role="tablist" aria-label="Team">
-          {([["teammates", "Teammates", presets?.length], ["templates", "Templates", templates?.length], ["huddles", "Huddles", undefined], ["notes", "Notes for all", noteCount(ALL_ROLES)], ["learned", "Learned", undefined]] as const).map(([id, label, n]) => (
+          {([["teammates", "Teammates", presets?.length], ["templates", "Squads", templates?.length], ["huddles", "Huddles", undefined], ["notes", "Notes for all", noteCount(ALL_ROLES)], ["learned", "Learned", undefined]] as const).map(([id, label, n]) => (
             <button key={id} role="tab" aria-selected={view === id} className={view === id ? "on" : undefined} onClick={() => { setView(id); setErr(null); }}>
               {label}{n !== undefined ? ` · ${n}` : ""}
               {id === "huddles" && liveCount > 0 && <span className="tab-count ok">{liveCount} live</span>}
@@ -176,13 +189,13 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
           ))}
         </div>
         {(view === "teammates" || view === "templates") && (
-          <input className="team-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={view === "templates" ? "Filter templates…" : "Filter teammates…"}
+          <input className="team-filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={view === "templates" ? "Filter squads…" : "Filter teammates…"}
             aria-label="Filter" onKeyDown={(e) => { if (e.key === "Escape" && filter) { e.stopPropagation(); setFilter(""); } }} />
         )}
         <span className="spacer" />
         {err && <span className="team-err" role="alert" title={err}>{err}</span>}
         {view === "teammates" && <button className="btn small ghost" onClick={newTeammate}>+ New teammate</button>}
-        {view === "templates" && <button className="btn small ghost" onClick={() => setNewTemplate(Date.now())}>+ New template</button>}
+        {view === "templates" && <button className="btn small ghost" onClick={() => setNewTemplate(Date.now())}>+ New squad</button>}
       </div>
 
       {view === "teammates" && (
@@ -252,8 +265,8 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
 
       {view === "templates" && (
         <div className="team-body single">
-          <TeamTemplates slug={slug} templates={shownTemplates} loading={templates === null} filtered={!!q} presets={presets} usage={usage?.templates ?? null}
-            startHint={startHint} newRequest={newTemplate} onChanged={loadTemplates} onError={setErr}
+          <TeamSquads slug={slug} squads={shownTemplates} loading={templates === null} filtered={!!q} presets={presets} usage={usage?.templates ?? null}
+            startHint={startHint} newRequest={newTemplate} editRequest={squadEdit} onChanged={() => { loadTemplates(); loadPresets(); }} onError={setErr}
             onStart={(name) => onStartHuddle({ template: name })} />
         </div>
       )}

@@ -227,6 +227,8 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
 /** Telegram: BotFather steps, the bot key, then the 6-digit pairing code the user sends to the bot. */
 function TelegramSetup({ state, onState, onError }: { state: NotifyState; onState: (s: NotifyState) => void; onError: (e: string | null) => void }) {
   const t = state.telegram;
+  // Phone access: turning messages back on and pairing are for this Mac only (the server refuses them too).
+  const mac = state.local !== false;
   const [token, setToken] = useState("");
   const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -295,11 +297,12 @@ function TelegramSetup({ state, onState, onError }: { state: NotifyState; onStat
             <div className="small">Take messages from Telegram</div>
             <div className="muted small">
               {t.lockedAt && !t.takeMessages
-                ? <>Locked from Telegram {timeAgo(t.lockedAt)}. Alerts still arrive. Turn it on to take messages again.</>
+                ? <>Locked from Telegram {timeAgo(t.lockedAt)}. Alerts still arrive. {mac ? "Turn it on to take messages again." : "Turn this back on from the Mac."}</>
+                : !t.takeMessages && !mac ? "Off: alerts still arrive, but your messages are ignored. Turn this back on from the Mac."
                 : "Off: alerts still arrive, but your messages are ignored."}
             </div>
           </div>
-          <Switch on={t.takeMessages} label="Take messages from Telegram" disabled={busy} onChange={(on) => void setTaking(on)} />
+          <Switch on={t.takeMessages} label="Take messages from Telegram" disabled={busy || (!mac && !t.takeMessages)} onChange={(on) => void setTaking(on)} />
         </div>
         <div className="ch-head tg-row">
           <div className="grow">
@@ -328,6 +331,15 @@ function TelegramSetup({ state, onState, onError }: { state: NotifyState; onStat
         </div>
         <div className="small muted">Reply to an alert in Telegram to answer that ticket. Send /lock there to stop taking messages from your phone.</div>
         <button type="button" className="link-btn small tg-forget" disabled={busy} onClick={() => void forget()}>Remove the bot</button>
+      </div>
+    );
+  }
+  if (!mac) {
+    return (
+      <div className="tg-setup">
+        <div className="small">Pair Telegram from the Mac.</div>
+        {t.error && <div className="form-error small">{t.error}</div>}
+        {t.tokenSet && <button type="button" className="link-btn small" disabled={busy} onClick={() => void forget()}>Remove the key</button>}
       </div>
     );
   }

@@ -52,7 +52,7 @@ const storedHeight = (tab: DockTab) => clampHeight(Number(stored(`${HEIGHT_KEY}.
 
 /**
  * Bottom panel for the selected profile's folder. It shows one item at a time, picked by the header buttons:
- * an interactive shell, a read-only file browser or the Team (teammates, templates, huddles). The quick Claude
+ * an interactive shell, a read-only file browser or the Team (teammates, squads, huddles). The quick Claude
  * chat is a side panel (SideChat.tsx). Hiding an item or the panel never stops it: the shell keeps running on the server.
  */
 export default function Dock({ profile, pty, onClose, command, onCommandSent, tabRequest, onTabChange, onOpenTicket, huddles = [], onOpenHuddle, openTicket = null, onStartHuddle }: {
@@ -73,7 +73,7 @@ export default function Dock({ profile, pty, onClose, command, onCommandSent, ta
   onOpenHuddle?: (ticketId: string, huddleId?: string) => void;
   /** The ticket open in the drawer (the Team's Start huddle goes there). */
   openTicket?: { id: string; title: string } | null;
-  /** The Team's Start huddle: a roster with a teammate, or a template. */
+  /** The Team's Start huddle: a roster with a teammate, or a squad. */
   onStartHuddle?: (seed: HuddleSeed) => void;
 }) {
   const [tab, setTab] = useState<DockTab>(() => tabRequest?.tab ?? lastDockTab());
