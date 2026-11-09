@@ -89,6 +89,24 @@ const REUSE_CHECK =
   "Before accepting a new function, module or component, search the project for an existing one (git grep for its likely names and for the job it does); " +
   "when one fits, name it (file:line) and say to use or extend it instead. ";
 
+/** A squad for stress-testing any plan or design before building it: a hosted debate that ends with a verdict and one ranked list. */
+export const PLAN_CRITIQUE = "plan-critique-debate";
+/** Every participant of the plan critique debate keeps debating until the host's final call. */
+const DEBATE_RULE = "Reply to others by name. Don't concede unless an argument beats yours with evidence. Don't mark yourself done until the host's final call.";
+const PLAN_CRITIQUE_HOST_RULES = [
+  "1. Post the plan under review to everyone first (the huddle's topic, or the file or ticket it points to), as numbered points with no author names attached: nobody knows or cares who raised what. Treat the points as accepted unless a concrete reason overturns them.",
+  "2. Round 1: each participant posts independently what is wrong, missing or weak in the plan, without reading others' posts first.",
+  "3. Then open free debate by name, as many rounds as needed. Nobody concedes without a concrete reason (a code line, a link or a user path). Post settlements as numbered messages so people can refer to them.",
+  "4. Nobody marks themselves done before your final call. Reviews end too early when people mark done while discussion is still going, so tell everyone this at the start and repeat it before the last round.",
+  "5. Before the end, run an explicit 'anything still missing?' round. Every participant must answer yes with items, or no. If anyone answers yes, take the items into the debate and run the round again. If a 'no' depends on bookkeeping fixes, apply those fixes before you count it.",
+  "6. Only when every participant has said no, write the report. Then make the final call and tell people they may mark done.",
+  "7. Check the work is grounded: if the plan has no code yet, say so and make sure the review is grounded in the existing code the plan touches.",
+  "8. The report goes into the huddle summary, in this order: the process followed, the effort estimate, the changes to the starting plan (each with its concrete reason), hand-ins, what is left to do for the host ticket, " +
+    "then one complete ranked list (top items marked MUST, then an appendix of every other finding with why it ranks lower, nothing dropped), " +
+    "and last the verdict on the plan's core design choice (keep, change or replace) with each participant's vote and reason.",
+  "9. Keep the pinned brief short: verdict, top items, cuts, effort, and any decision the user already made.",
+].join("\n");
+
 /** Pinned brief of an auto huddle the run built its own roster for (no template): its budget and report format. */
 export function customReviewBrief(budget: number): string {
   return [
@@ -193,6 +211,45 @@ export const BUILTIN_TEMPLATES: HuddleTemplate[] = [
       { handle: "blast-radius", preset: "blast-radius", prompt: AUTO_REVIEW_READ + "Find what the change breaks outside the diff and prove the fact it is safe because of." },
       { preset: "qa", count: 2, prompt: AUTO_REVIEW_READ + "Test the change: run the tests and try the paths it touches; the QA lead splits the areas." },
       { preset: "qa-lead", host: true, prompt: AUTO_REVIEW_LEAD },
+    ],
+  },
+  {
+    name: PLAN_CRITIQUE,
+    label: "Plan critique debate",
+    description: "Stress-test a plan or design before you build it: a host runs a debate between a skeptic, a product visionary and a user journey walker " +
+      "(a researcher and an engineer join when tagged), checked against the real code and real user paths. Ends with an 'anything still missing?' round, " +
+      "one complete ranked list and a verdict on the plan's core design choice. Use it for bigger plans where a wrong turn is expensive; for a quick check of a ticket, use Plan review.",
+    rounds: null,
+    maxCostUsd: 60,
+    report: "Each participant posts findings as numbered items with a short reason and, where possible, a code line, link or user path as evidence. " +
+      "Detailed walks go to the participant's outputs folder with the path posted. The host merges everything into one ranked list in the huddle summary.",
+    hostRules: PLAN_CRITIQUE_HOST_RULES,
+    roster: [
+      {
+        handle: "facilitator", preset: "facilitator", mode: "monitor", lead: true, host: true,
+        focus: "Run the review process, keep the debate going until every participant has answered the final 'anything still missing?' round, and write the final report.",
+      },
+      {
+        handle: "skeptic", preset: "breaker", mode: "monitor", prompt: DEBATE_RULE,
+        focus: "Attack the plan as it stands: what still breaks, what is over-built, what will annoy or fail a real user, and whether the core design is still the right one.",
+      },
+      {
+        handle: "visionary", preset: "visionary", mode: "monitor", prompt: DEBATE_RULE,
+        focus: "What is still missing for this to feel like a complete product rather than a bare feature? First day, first week, the moments that build trust.",
+      },
+      {
+        handle: "journey", preset: "journey", mode: "monitor", prompt: DEBATE_RULE,
+        focus: "Walk every user path against the current plan: first use and first day, daily use, urgent and routine cases, mistakes, errors and recovery, " +
+          "turning it off or pausing it, edge cases (empty, huge, many at once, offline), and the case where nothing is wrong.",
+      },
+      {
+        handle: "research", preset: "researcher", mode: "tagged", model: "sonnet", prompt: "Don't mark yourself done until the host's final call.",
+        focus: "Back up or knock down points with how real products do it, with links to sources, for each area the plan covers.",
+      },
+      {
+        handle: "builder", preset: "engineer", mode: "tagged", prompt: "Don't mark yourself done until the host's final call.",
+        focus: "Ground every point in the real code the plan touches. Say what each point costs, what is missing technically, and give an effort estimate for the whole plan. " + REUSE_CHECK.trim(),
+      },
     ],
   },
 ];
