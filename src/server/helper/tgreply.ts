@@ -6,6 +6,8 @@
 // - an old alert (its question was answered, or it is over a day old, or the ticket is done, moved or deleted):
 //   nothing is sent; an answered one offers "Send anyway", which goes through the Confirm above;
 // - a summary about several tickets: "Which one?" buttons, one per ticket.
+// - a reply to a form's question (or its "Type my own" prompt) is that question's answer (tgforms.ts); other text
+//   for a ticket whose form is half answered sends the collected answers first.
 // Buttons are PendingActions (single-use, ~10 minutes); every tap checks the ticket again before acting.
 // When a ticket that got a message from Telegram ends its turn, its reply goes back as an answer to that message.
 import type { SessionSummary } from "../session";
@@ -14,6 +16,7 @@ import type { Ticket } from "../types";
 import type { WaitStore, WaitRecord } from "./waits";
 import { NOT_TAKING, TELEGRAM_MAX } from "./telegram";
 import type { LinkItem, PendingAction, PendingActions, TelegramLinks } from "./tgstores";
+import type { TelegramForms } from "./tgforms";
 
 /** A reply to an alert older than this is refused. */
 export const STALE_REPLY_MS = 24 * 3600_000;
@@ -28,7 +31,6 @@ const ANSWER_KINDS = new Set(["questions"]);
 const BOARD_KINDS = new Set(["limit", "proposal", "huddle"]);
 
 export const NEEDS_BOARD = "This needs the board.";
-export const FORM_ON_BOARD = "This question has a form; answer it on the board for now.";
 
 /** One button: data is the full callback_data. */
 export interface TgButton {
@@ -40,7 +42,7 @@ export interface TgButton {
 /** How the router talks back (TelegramBot implements it). Every send is silent. */
 export interface Responder {
   /** Sends a message (a reply to replyTo when given); returns Telegram's message_id, or null when it failed. */
-  say(text: string, o?: { replyTo?: number; buttons?: TgButton[][]; link?: LinkItem[] }): Promise<number | null>;
+  say(text: string, o?: { replyTo?: number; buttons?: TgButton[][]; link?: LinkItem[]; level?: string; forceReply?: string }): Promise<number | null>;
   /** Changes a message's text and buttons (none: the buttons go). */
   edit(messageId: number, text: string, buttons?: TgButton[][]): Promise<void>;
 }
@@ -92,6 +94,8 @@ export interface ReplyDeps {
   taking?: () => boolean;
   /** The ticket's address on the board when phone access is on (an Open button), else null. */
   ticketUrl: (board: string, id: string) => string | null;
+  /** Question forms answered with buttons (tgforms.ts). */
+  forms?: TelegramForms;
   now?: () => number;
 }
 
@@ -141,6 +145,8 @@ export class TelegramReplies {
 
   /** A reply to one of the board's messages. Not a reply to the board, or about no ticket: the fixed answer (false). */
   async onReply(r: IncomingReply, out: Responder): Promise<boolean> {
+    // A reply to a form's question or "Type my own" prompt: that question's answer.
+    if (this.d.forms && (await this.d.forms.onReply(r, out))) return true;
     const link = this.d.links.get(r.chatId, r.replyTo, this.d.bot());
     if (!link) return false;
     const seen = new Set<string>();
@@ -210,11 +216,6 @@ export class TelegramReplies {
     if (!rec) rec = open.find((w) => ANSWER_KINDS.has(w.kind)) ?? open.find((w) => BOARD_KINDS.has(w.kind));
     if (rec && BOARD_KINDS.has(rec.kind)) return { stop: NEEDS_BOARD, url };
     if (rec && ANSWER_KINDS.has(rec.kind)) {
-      if (rec.kind === "questions") {
-        const form = ticket.sessionId ? this.d.session(ticket.sessionId)?.openForm ?? [] : [];
-        // A form with several questions (or several choices at once) is answered on the board for now.
-        if (form.length > 1 || form.some((q) => q.multiSelect)) return { stop: FORM_ON_BOARD, url };
-      }
       // A failed or blocked ticket starts working again: always confirmed.
       if (ticket.outcome === "failed" || ticket.outcome === "blocked" || ticket.stalled) return { mode: "steer", key: rec.key };
       return { mode: "answer", key: rec.key };
@@ -297,6 +298,11 @@ export class TelegramReplies {
     try {
       // Checked again right before it is queued: a /lock, Pause or Unpair while the board waits refuses it.
       const still = this.d.taking ? () => this.d.taking!() : undefined;
+      // A form half answered from Telegram: its answers go first, or this text would close it and lose them.
+      if (this.d.forms && !(await this.d.forms.flushBefore(t.board, t.ticketId, r.updateId, r.tg))) {
+        await tell(`Couldn't send your form answers to "${ticket.title}" first, so I didn't send this either. Answer on the board.`);
+        return "Not sent";
+      }
       const sent = await chat(t.board, t.ticketId, r.text, { updateId: r.updateId, tg: r.tg, chatId: r.chatId, key: t.key, ...(still ? { still } : {}) });
       if (!sent) {
         await tell(`Already sent to "${ticket.title}".`);
@@ -310,12 +316,16 @@ export class TelegramReplies {
       await tell(`Couldn't send this to "${ticket.title}": ${(e as Error).message}`);
       return "Not sent";
     }
+    // The text answered the ticket: its form's buttons on Telegram stop.
+    await this.d.forms?.closedByText(t.board, t.ticketId);
     await tell(`✓ Sent to "${ticket.title}". I'll reply here when it has news.`);
     return "Sent";
   }
 
   /** A tap on one of the router's buttons ("p:<id>:<choice>"). Returns the short answer for answerCallbackQuery. */
   async onTap(id: string, choice: string, chatId: number, messageId: number, out: Responder, updateId?: number): Promise<string> {
+    // A form's buttons: taps change it many times; only its last step uses it up.
+    if (this.d.forms && this.d.pending.peek(id)?.action.kind === "form") return this.d.forms.onTap(id, choice, chatId, messageId, out, updateId);
     // The tap's update id: a tap whose handling a restart cut off takes its action again and finishes.
     const got = this.d.pending.take<SendData | PickData>(id, updateId);
     if ("gone" in got) {

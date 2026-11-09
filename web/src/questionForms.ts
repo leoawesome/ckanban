@@ -99,3 +99,16 @@ export function formStates(entries: SessionEntry[], replying = false): Map<numbe
   if (chain && replying) out.set(chain.last, { state: "answered" });
   return out;
 }
+
+/** One answer as the sent message shows it: the picked options, then the typed text, joined with "; ". */
+export function answerText(a: Answer): string {
+  const parts = [...a.picked, ...(a.otherOn && a.other.trim() ? [a.other.trim()] : [])];
+  // Indent extra lines so a multi-line answer stays inside its list item.
+  return parts.length ? parts.join("; ").replace(/\n/g, "\n  ") : "(no preference)";
+}
+
+/** The one chat message a form sends (the board's form and Telegram's both use this). */
+export function answersMessage(questions: Pick<Question, "question">[], answers: Answer[], note = ""): string {
+  const lines = questions.map((q, i) => `- ${q.question} → ${answerText(answers[i] ?? { picked: [], otherOn: false, other: "" })}`);
+  return `My answers:\n${lines.join("\n")}${note.trim() ? `\n\n${note.trim()}` : ""}`;
+}

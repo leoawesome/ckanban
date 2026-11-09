@@ -217,20 +217,16 @@ describe("a reply to an alert", () => {
     expect(board.sent).toHaveLength(0);
   });
 
-  test("a form with several questions is answered on the board for now; a single question passes", async () => {
+  test("a typed reply to a ticket with a form passes as its answer (the form's buttons are in tgforms; no 'answer on the board' stopgap)", async () => {
     const { notifier, api, board } = setup({ askTyped: false });
     const t = store.createTicket("kb", { title: "Form", body: "b", status: "review" });
     store.updateTicket("kb", t.id, { sessionId: "s1" });
     const q = (question: string) => ({ question, options: [{ label: "a" }, { label: "b" }], multiSelect: false });
     sessions.set("s1", { openForm: [q("One?"), q("Two?")] } as any);
     const tg = await alert(notifier, [wait(t.id, "questions").key]);
-    api.queue(reply(1, tg, "a"));
+    api.queue(reply(1, tg, "a for both"));
     await notifier.telegram.pollOnce();
-    expect(api.last().text).toBe("This question has a form; answer it on the board for now.");
-    sessions.set("s1", { openForm: [q("One?")] } as any);
-    api.queue(reply(2, tg, "b please"));
-    await notifier.telegram.pollOnce();
-    expect(board.sent.map((s) => s.text)).toEqual(["b please"]);
+    expect(board.sent.map((s) => s.text)).toEqual(["a for both"]);
   });
 
   test("a summary about several tickets asks which one, one button per ticket naming its board", async () => {

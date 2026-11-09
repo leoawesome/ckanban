@@ -54,6 +54,8 @@ export const PAIR_MS = 10 * 60_000;
 export const PAIR_TRIES = 10;
 /** Longest wait on a 429 before trying once more; longer than this fails at once so the next channel gets it. */
 export const RETRY_AFTER_MAX_S = 30;
+/** Telegram allows about one message a second in one chat: form messages and their edits are spaced this far. */
+export const PACE_MS = 1000;
 /** Long-poll length (seconds). */
 export const POLL_TIMEOUT_S = 50;
 
@@ -126,6 +128,13 @@ export interface TelegramDeps {
    * Default: only the setting is saved.
    */
   lock?: () => void;
+  /**
+   * An alert reached the chat (its Telegram message_id): forms the tickets in it wait on are shown under it
+   * (tgforms.ts). Runs in the background; idle() waits for it.
+   */
+  alerted?: (m: OutMessage, tg: number, chatId: number) => Promise<void> | void;
+  /** Least time between paced sends and edits (forms), ms. Telegram allows about one message a second in a chat. Default 1000. */
+  paceMs?: number;
 }
 
 /** A bot token's public part (the bot's id), to tell which bot a saved read position or message belongs to. */
@@ -160,6 +169,9 @@ export class TelegramBot {
   /** Messages are handled one at a time, in order; button taps beside them, so a slow message never holds a tap. */
   private msgChain: Promise<void> = Promise.resolve();
   private taps = new Set<Promise<void>>();
+  /** Paced calls (form messages and edits) run one after another, PACE_MS apart. */
+  private paceChain: Promise<unknown> = Promise.resolve();
+  private lastPaced = -Infinity;
 
   constructor(private d: TelegramDeps) {
     this.now = d.now ?? Date.now;
@@ -361,9 +373,40 @@ export class TelegramBot {
     }
   }
 
-  /** Resolves once everything queued so far is handled. */
+  /** Resolves once everything queued so far is handled (and background work such as showing a form is done). */
   async idle(): Promise<void> {
     await Promise.all([this.msgChain, ...this.taps]);
+    if (this.taps.size) await this.idle();
+  }
+
+  /** Background work idle() waits for (showing a form after an alert). */
+  private track(p: Promise<void>): void {
+    const q = p.catch((e) => console.error("telegram:", scrub((e as Error).message ?? String(e), this.token)));
+    this.taps.add(q);
+    void q.finally(() => this.taps.delete(q));
+  }
+
+  /**
+   * A Bot API call spaced at least paceMs after the last paced one (Telegram allows about one message a second in a
+   * chat); a 429 waits retry_after (up to RETRY_AFTER_MAX_S) and tries again, twice at most.
+   */
+  paced(method: string, body: Record<string, unknown>): Promise<ApiReply> {
+    const run = async () => {
+      const gap = this.lastPaced + (this.d.paceMs ?? PACE_MS) - this.now();
+      if (gap > 0) await this.sleep(gap);
+      let r = await this.api(method, body);
+      for (let i = 0; i < 2 && !r.ok && r.error_code === 429; i++) {
+        const wait = r.parameters?.retry_after ?? 1;
+        if (wait > RETRY_AFTER_MAX_S) break;
+        await this.sleep(wait * 1000);
+        r = await this.api(method, body);
+      }
+      this.lastPaced = this.now();
+      return r;
+    };
+    const p = this.paceChain.then(run, run);
+    this.paceChain = p.catch(() => {});
+    return p;
   }
 
   private fail(r: ApiReply): void {
@@ -394,8 +437,9 @@ export class TelegramBot {
     await this.responder(chatId).say(text);
   }
 
-  /** How the reply router (and report backs) talk in this chat. Url buttons only for https links. */
-  responder(chatId: number): Responder {
+  /** How the reply router (and report backs) talk in this chat. Url buttons only for https links. paced: forms (see paced()). */
+  responder(chatId: number, o: { paced?: boolean } = {}): Responder {
+    const call = (method: string, body: Record<string, unknown>) => (o.paced ? this.paced(method, body) : this.api(method, body));
     const markup = (buttons?: TgButton[][]) => {
       const rows = (buttons ?? []).map((row) => row.filter((b) => (b.url ? /^https:\/\//.test(b.url) : !!b.data))
         .map((b) => (b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data }))).filter((row) => row.length);
@@ -404,10 +448,10 @@ export class TelegramBot {
     return {
       say: async (text, o = {}) => {
         const kb = markup(o.buttons);
-        const r = await this.api("sendMessage", {
+        const r = await call("sendMessage", {
           chat_id: chatId, text: telegramText(text), disable_notification: true, disable_web_page_preview: true,
           ...(o.replyTo ? { reply_parameters: { message_id: o.replyTo, allow_sending_without_reply: true } } : {}),
-          ...(kb.inline_keyboard.length ? { reply_markup: kb } : {}),
+          ...(o.forceReply ? { reply_markup: { force_reply: true, input_field_placeholder: o.forceReply.slice(0, 64) } } : kb.inline_keyboard.length ? { reply_markup: kb } : {}),
         });
         if (!r.ok) {
           console.warn(`telegram: reply failed: ${this.explain(r)}`);
@@ -415,11 +459,11 @@ export class TelegramBot {
         }
         const tg = r.result?.message_id;
         if (!Number.isSafeInteger(tg)) return null;
-        if (o.link?.length) this.d.links?.add({ bot: botId(this.token), tg, chatId, messageId: null, level: "report", items: o.link });
+        if (o.link?.length) this.d.links?.add({ bot: botId(this.token), tg, chatId, messageId: null, level: o.level ?? "report", items: o.link });
         return tg;
       },
       edit: async (messageId, text, buttons) => {
-        const r = await this.api("editMessageText", {
+        const r = await call("editMessageText", {
           chat_id: chatId, message_id: messageId, text: telegramText(text), disable_web_page_preview: true, reply_markup: markup(buttons),
         });
         if (!r.ok) console.warn(`telegram: edit failed: ${this.explain(r)}`);
@@ -560,6 +604,10 @@ export class TelegramBot {
         } catch (e) {
           console.warn(`telegram: couldn't note the sent message: ${(e as Error).message}`);
         }
+      }
+      if (Number.isSafeInteger(tg) && this.d.alerted) {
+        const chatId = s.chatId;
+        this.track((async () => this.d.alerted!(m, tg, chatId))());
       }
       return { channel: "telegram", ok: true, devices: 1, error: null };
     }

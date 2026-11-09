@@ -21,6 +21,7 @@ import { waitIdentity, type NewWait } from "./helper/waits";
 import { TelegramReplies } from "./helper/tgreply";
 import { telegramSpendToday } from "./spend";
 import { PendingActions, TelegramLinks } from "./helper/tgstores";
+import { TelegramForms } from "./helper/tgforms";
 import type { Ticket } from "./types";
 
 /** What the Telegram reply router needs from the board (Board implements it; plugged in with Notifier.plugBoard). */
@@ -379,6 +380,8 @@ export interface NotifierOptions {
   telegramFetch?: (url: string, init: RequestInit) => Promise<Response>;
   /** Start Telegram's long poll (default true; tests drive TelegramBot.pollOnce). */
   telegramPoll?: boolean;
+  /** Least time between Telegram form messages and edits (ms; default about one a second). Tests pass 0. */
+  telegramPaceMs?: number;
 }
 
 export class Notifier {
@@ -398,6 +401,8 @@ export class Notifier {
   readonly replies: TelegramReplies;
   readonly telegramLinks: TelegramLinks;
   readonly telegramActions: PendingActions;
+  /** Question forms answered from Telegram (helper/tgforms.ts). */
+  readonly forms: TelegramForms;
   private board: TelegramBoard | null = null;
   private ntfyTopic = `https://ntfy.sh/ckanban-${randomBytes(12).toString("base64url").replace(/[-_]/g, "x")}`;
 
@@ -433,6 +438,8 @@ export class Notifier {
       itemsOf: (id) => (this.helper.messages.get(id)?.items ?? []).map((i) => ({ board: i.board, ticketId: i.ticketId, key: i.key ?? null })),
       replies: () => this.replies,
       lock: () => this.telegramLock(),
+      alerted: (m, tg, chatId) => (m.messageId ? this.forms.show(this.helper.messages.get(m.messageId)?.items.map((i) => ({ board: i.board, ticketId: i.ticketId, key: i.key ?? null })) ?? [], tg, chatId) : undefined),
+      ...(o.telegramPaceMs !== undefined ? { paceMs: o.telegramPaceMs } : {}),
     });
     this.telegramActions = new PendingActions(o.root, this.now);
     this.helper = new HelperCore({
@@ -440,16 +447,27 @@ export class Notifier {
       settings: () => this.settings(), link: (slug, id) => this.link(slug, id), now: this.now, onResults: (r) => this.noteResults(r),
       onMessages: (unread) => this.bus.emit({ type: "messages.updated", unread }),
     });
+    const taking = () => {
+      const t = this.settings().telegram;
+      return t.on && t.takeMessages && t.chatId !== null;
+    };
+    this.forms = new TelegramForms({
+      store, waits: this.helper.waits, links: this.telegramLinks, pending: this.telegramActions,
+      session: (sid) => o.sessionSummary(sid), bot: () => botId(this.settings().telegram.token),
+      out: (chatId) => {
+        const t = this.settings().telegram;
+        return t.on && t.chatId === chatId && TOKEN_RE.test(t.token) ? this.telegram.responder(chatId, { paced: true }) : null;
+      },
+      chat: () => (this.board ? (slug, id, text, from) => this.board!.chatFromTelegram(slug, id, text, from) : null),
+      taking, isRunning: (slug, id) => o.isRunning(slug, id), now: this.now,
+    });
     this.replies = new TelegramReplies({
       store, waits: this.helper.waits, links: this.telegramLinks, pending: this.telegramActions,
       session: (sid) => o.sessionSummary(sid), isRunning: (slug, id) => o.isRunning(slug, id), bot: () => botId(this.settings().telegram.token),
       chat: () => (this.board ? (slug, id, text, from) => this.board!.chatFromTelegram(slug, id, text, from) : null),
       patch: (slug, id, patch) => void this.board?.patchTelegram(slug, id, patch),
       askTyped: () => this.settings().telegram.askTyped,
-      taking: () => {
-        const t = this.settings().telegram;
-        return t.on && t.takeMessages && t.chatId !== null;
-      },
+      taking, forms: this.forms,
       ticketUrl: (slug, id) => {
         const url = this.link(slug, id);
         return this.phoneAccess() && /^https:\/\//.test(url) ? url : null;
@@ -659,6 +677,8 @@ export class Notifier {
       const after = this.tracker.settledOf(key);
       if (before !== after && before !== undefined) this.helper.settled(slug, id, after ?? null);
       if (identity && w) this.fire(w);
+      // A form shown on Telegram that the ticket no longer asks (answered on the board): its taps go, its messages say so.
+      void this.forms.sync(slug, id).catch((e) => console.error("telegram: form", e));
     }
     void this.helper.tick().catch((e) => console.error("helper: tick", e));
   }

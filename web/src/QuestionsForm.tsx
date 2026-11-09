@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import type { Question } from "./api";
 import { autoGrow } from "./autoGrow";
 import { browserStore, forget, loadSaved } from "./drafts";
-import { type Answer, fresh, type Progress, signature, startProgress } from "./questionForms";
+import { type Answer, answersMessage, answerText, fresh, type Progress, signature, startProgress } from "./questionForms";
 import { CheckIcon } from "./icons";
 import { usePersistentState } from "./usePersistentState";
 import { enterSends } from "./enterSends";
@@ -35,12 +35,6 @@ function AnswerBox({ value, onChange, onEnter, autoFocus, disabled, placeholder,
         }
       }} />
   );
-}
-
-function answerText(a: Answer): string {
-  const parts = [...a.picked, ...(a.otherOn && a.other.trim() ? [a.other.trim()] : [])];
-  // Indent extra lines so a multi-line answer stays inside its list item.
-  return parts.length ? parts.join("; ").replace(/\n/g, "\n  ") : "(no preference)";
 }
 
 /**
@@ -104,8 +98,7 @@ export function QuestionsForm({ questions, answered, replaced, disabled, onSubmi
 
   const send = () => {
     if (storageKey) forget(browserStore(), storageKey);
-    const lines = questions.map((qq, i) => `- ${qq.question} → ${answerText(answers[i])}`);
-    onSubmit(`My answers:\n${lines.join("\n")}${note.trim() ? `\n\n${note.trim()}` : ""}`);
+    onSubmit(answersMessage(questions, answers, note));
   };
 
   const next = () => (step < total - 1 || (total > 1 && step === total - 1) ? setStep(step + 1) : send());

@@ -169,6 +169,30 @@ export class PendingActions {
     return { action: a };
   }
 
+  /**
+   * The action as it is now, without using it up (a form's taps change it many times; only its final send takes it).
+   * state: open, used (with the update that used it) or expired.
+   */
+  peek<T = any>(id: string): { action: PendingAction<T>; state: "open" | "used" | "expired"; usedBy?: number } | null {
+    const a = this.items()[id] as (PendingAction<T> & { used?: string; usedBy?: number }) | undefined;
+    if (!a) return null;
+    if (a.used) return { action: a, state: "used", ...(a.usedBy !== undefined ? { usedBy: a.usedBy } : {}) };
+    return { action: a, state: Date.parse(a.expiresAt) <= this.now() ? "expired" : "open" };
+  }
+
+  /** Every action kept (open, used or expired), e.g. to find the form a Telegram message belongs to. */
+  all<T = any>(kind?: string): (PendingAction<T> & { used?: string; usedBy?: number })[] {
+    return (Object.values(this.items()) as any[]).filter((a) => !kind || a.kind === kind);
+  }
+
+  /** Saves a changed action's data (still open or not). */
+  update<T>(id: string, data: T): void {
+    const a = this.items()[id];
+    if (!a) return;
+    a.data = data;
+    this.save();
+  }
+
   /** Notes the Telegram message that shows the action's buttons (it was shown: a replay needn't show it again). */
   shown(id: string, card: number): void {
     const a = this.items()[id] as (PendingAction & { card?: number }) | undefined;
