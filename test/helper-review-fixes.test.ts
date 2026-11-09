@@ -133,7 +133,7 @@ describe("helper runner", () => {
     store.saveProfile(p);
     ticket = store.createTicket("kb", { title: "Pricing", body: "b", status: "in_progress" });
     writeNotifySettings(store.root, normalizeSettings({ webhookUrl: "https://ntfy.sh/topic", mac: false }));
-    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z" }));
+    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z", nightNoticeAt: "2026-11-01T00:00:00Z" }));
   });
 
   // Finding 1: the plan was written after the send from a stale copy, undoing what the user did meanwhile.
@@ -173,11 +173,56 @@ describe("helper runner", () => {
     await h.tick();
     expect(n.helper.waits.get(key)!.remindersStopped).toBe("expired");
     const sent = tg.length + hooks.length;
+    // Told and expired: nothing left for the helper, so the wake makes no model call and sends nothing.
+    const queued = answers.length;
     answers.push(urgentAns(key));
     await wakeNow();
     expect(stillPending(key)).toBe(false);
     expect(tg.length + hooks.length).toBe(sent);
+    expect(answers.length).toBe(queued + 1);
+    expect(h.status().runs.at(-1)).toMatchObject({ ok: true, skipped: true });
+    // With something else to look at, the helper is asked, and the board still refuses to alert the expired wait.
+    const other = store.createTicket("kb", { title: "Other", body: "b", status: "in_progress" });
+    ask(other.id, ["Ship it?"]);
+    await settle();
+    await wakeNow();
+    expect(answers.length).toBe(queued);
+    expect(tg.length + hooks.length).toBe(sent);
     expect(h.status().runs.at(-1)!.fixes!.join(" ")).toContain("expired");
+    stop();
+  });
+
+  test("an urgent alert on a wait a summary already told that reaches no channel is retried by the next wake", async () => {
+    const stop = make();
+    clock += 2 * 60_000;
+    ask(ticket.id, ["Stop the old webhook?"]);
+    await settle();
+    const key = keyOf(ticket.id);
+    clock += 60_000;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "1 waits", why: "", itemKeys: [key], escalation: [] }], nextWakeIn: 24 * 60 }));
+    await h.tick();
+    expect(n.helper.waits.get(key)!.toldVia).toBe("helper");
+    // A new question wakes the helper, which escalates the told wait; every channel fails.
+    const other = store.createTicket("kb", { title: "Other", body: "b", status: "in_progress" });
+    ask(other.id, ["Ship it?"]);
+    await settle();
+    tgOk = false;
+    writeNotifySettings(store.root, normalizeSettings({ webhookUrl: "", mac: false }));
+    answers.push(urgentAns(key, [{ channel: "telegram", afterMin: 0 }]));
+    await wakeNow();
+    expect(n.helper.waits.get(key)!.reminders.some((x) => x.failed)).toBe(true);
+    // The other ticket stops waiting; the retry wake still asks the helper (the told wait isn't "nothing to do").
+    store.updateTicket("kb", other.id, { status: "done" });
+    bus.emit({ type: "ticket.updated", profile: "kb", ticket: store.getTicket("kb", other.id)! });
+    await settle();
+    tgOk = true;
+    const reached = tg.filter((x) => x.ok).length;
+    const queued = answers.length;
+    answers.push(urgentAns(key, [{ channel: "telegram", afterMin: 0 }]));
+    await wakeNow();
+    expect(answers.length).toBe(queued);
+    expect(tg.filter((x) => x.ok)).toHaveLength(reached + 1);
+    expect(n.helper.messages.listNewest()[0].level).toBe("urgent");
     stop();
   });
 
@@ -282,7 +327,7 @@ describe("helper runner", () => {
     expect(r.toldAt).toBeNull();
     expect(r.digestAt).toBe(digestAt);
     // The empty oneLine got the board's own line (after the board's count).
-    expect(n.helper.messages.listNewest().find((m) => m.level === "summary")!.oneLine).toBe("1 waits on you: Approve the copy?: Pricing");
+    expect(n.helper.messages.listNewest().find((m) => m.level === "summary")!.oneLine).toBe("1 new for you: Approve the copy?: Pricing");
     stop();
   });
 

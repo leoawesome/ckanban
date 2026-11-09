@@ -94,6 +94,8 @@ export interface SideSpend {
   costUsd: number;
   /** Cost by local day (YYYY-MM-DD). */
   days: Map<string, number>;
+  /** Paid calls by local day (the helper card's "Today: N checks"). */
+  calls?: Map<string, number>;
 }
 
 /** Records a side call's cost on the ticket (file: the ticket's side-spend.jsonl). */
@@ -112,11 +114,11 @@ export function readSideSpend(file: string): SideSpend {
     version = `${s.size}:${s.mtimeMs}`;
   } catch {
     cache.delete(file);
-    return { costUsd: 0, days: new Map() };
+    return { costUsd: 0, days: new Map(), calls: new Map() };
   }
   const hit = cache.get(file);
   if (hit?.version === version) return hit.spend;
-  const spend: SideSpend = { costUsd: 0, days: new Map() };
+  const spend: SideSpend = { costUsd: 0, days: new Map(), calls: new Map() };
   for (const line of readFileSync(file, "utf8").split("\n")) {
     if (!line.trim()) continue;
     try {
@@ -127,6 +129,7 @@ export function readSideSpend(file: string): SideSpend {
       const at = new Date(e.at);
       const day = Number.isNaN(at.getTime()) ? "" : dayKey(at);
       spend.days.set(day, (spend.days.get(day) ?? 0) + cost);
+      spend.calls!.set(day, (spend.calls!.get(day) ?? 0) + 1);
     } catch {}
   }
   cache.set(file, { version, spend });

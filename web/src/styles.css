@@ -3911,6 +3911,11 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .helper-line { display: block; font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .helper-line.urgent { color: var(--err); font-weight: 600; }
 .now-card .helper-line { white-space: normal; margin-top: 2px; }
+/* The ticket page's helper line, under its title and tags; wraps (a phone shows all of it). */
+.ticket-helper-line { white-space: normal; font-size: var(--fs-sm); padding: 0 20px 8px; text-decoration: none; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .ticket-helper-line { padding: 0 14px 8px; } }
+.ticket-helper-line::before { content: "✦ "; }
+a.ticket-helper-line:hover { text-decoration: underline; }
 
 .inbox-helper, .now-helper { display: flex; flex-direction: column; gap: 6px; padding: 4px 4px 8px; }
 .now-helper { padding: 0 0 6px; }
@@ -3952,9 +3957,16 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .msg-text { font-size: var(--fs-lg); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg-why { background: var(--warn-soft); border-color: transparent; font-size: var(--fs-md); }
 .msg-why .msg-label { color: var(--warn); }
+.night-ask { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-md); }
+.night-ask-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .msg-ticket { display: flex; gap: 10px; align-items: center; padding: 4px 0; }
 .msg-ticket + .msg-ticket { border-top: 1px solid var(--border); padding-top: 8px; }
 .msg-question { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* An old message's ticket: "Answered 14:02" (green tick) or "Ticket removed" (muted, no Open). */
+.msg-item-state { margin-top: 2px; font-weight: 600; }
+.msg-item-state.s-answered { color: var(--ok); }
+.msg-item-state.s-answered::before { content: "✓ "; }
+.msg-item-state.s-removed { color: var(--muted); }
 .msg-nav { justify-self: end; gap: 4px; }
 .msg-nav .icon-btn { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
 .msg-sum { gap: 8px; }
@@ -4028,6 +4040,8 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .helper-settings .tg-state { font-weight: 600; color: var(--warn); flex: none; }
 .helper-settings .tg-state.ok { color: var(--ok); }
 .helper-settings .tg-spent { flex: none; font-variant-numeric: tabular-nums; }
+.helper-settings .tg-cap { flex: none; display: inline-flex; align-items: center; gap: 4px; }
+.helper-settings .tg-cap > .input { width: 72px; font-variant-numeric: tabular-nums; }
 .helper-settings .tg-actions { display: flex; gap: 6px; flex: none; }
 .helper-settings .btn.tg-unpair { color: var(--err); }
 .helper-settings .tg-forget { align-self: flex-start; margin-top: 6px; }

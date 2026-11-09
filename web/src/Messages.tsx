@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  clock, dayLabel, groupByDay, helperApi, levelLabel, levelTone, listWithHeld, messageHash, messageNeighbours, rowsByBoard, sendTrail, setUnread, stillWaitingLine,
-  tapWord, useHelper, userTrail, withoutLinks, type HelperStatus, type Message, type Stepping, type SummaryRow, type SummaryView,
+  anyItemOpen, asksNight, clock, dayLabel, groupByDay, helperApi, levelLabel, levelTone, listWithHeld, messageHash, messageNeighbours, nightQuestion, rowsByBoard, sendTrail,
+  itemStateKey, itemStateLabel, setHelperStatus, setUnread, stillWaitingLine, tapWord, useHelper, userTrail, withoutLinks, type HelperStatus, type ItemState, type Message, type Stepping, type SummaryRow, type SummaryView,
 } from "./helper";
 import { ChevronDownIcon, ChevronUpIcon } from "./icons";
 import { KeyHint } from "./KeyHint";
@@ -133,7 +133,7 @@ export function MessagesHistory({ onBack }: { onBack: () => void }) {
               {g.messages.map((m) => (
                 <a key={m.id} href={messageHash(m.id)} className={`msg-row${m.held ? " held" : ""}${!m.readAt && !m.held ? " new" : ""}`}>
                   <span className="msg-row-head">
-                    <span className={`msg-badge b-${levelTone(m.level, m.held)}`}>{levelLabel(m.level, m.held)}</span>
+                    <span className={`msg-badge b-${levelTone(m.level, m.held, m.practice)}`}>{levelLabel(m.level, m.held, m.practice)}</span>
                     {!m.readAt && !m.held && <span className="msg-badge b-new">New</span>}
                     <span className="grow" />
                     <span className="muted small">{clock(m.at)}{m.readAt ? " · read" : ""}</span>
@@ -246,12 +246,14 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
   }
   if (!m) return <main className="messages-page"><div className="messages-body"><span className="spinner" /> Loading…</div></main>;
 
-  const text = withoutLinks(m.text);
+  // The morning's "Held overnight" line has its own card at the top.
+  const raw = withoutLinks(m.text);
+  const text = m.heldOvernight && raw.startsWith(m.heldOvernight) ? raw.slice(m.heldOvernight.length).trim() : raw;
   const body = text.startsWith(m.oneLine) ? text.slice(m.oneLine.length).trim() : text;
   const view = m.level === "summary" ? m.summary ?? null : null;
   const open = (r: SummaryRow) => onOpenTicket(r.board, r.ticketId);
   const boards = [...new Set(m.items.map((i) => i.boardName))];
-  const alert = m.level === "urgent" || m.level === "reminder";
+  const alert = m.level === "urgent" || m.level === "reminder" || !!m.practice;
   return (
     <main className="messages-page message-page">
       <div className="messages-top">
@@ -261,11 +263,17 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
       </div>
       <div className="messages-body">
         <div className="msg-row-head">
-          <span className={`msg-badge b-${levelTone(m.level, m.held)}`}>{levelLabel(m.level, m.held)}</span>
+          <span className={`msg-badge b-${levelTone(m.level, m.held, m.practice)}`}>{levelLabel(m.level, m.held, m.practice)}</span>
           <span className="muted small">{dayLabel(m.at, now)} {clock(m.at)}{boards.length ? ` · ${boards.join(", ")}` : ""}</span>
         </div>
+        {m.heldOvernight && (
+          <div className="msg-card msg-why">
+            <div className="msg-label">While you slept</div>
+            <div>{m.heldOvernight}</div>
+          </div>
+        )}
         <h1 className="msg-big">{m.oneLine}</h1>
-        {view ? <SummaryBody view={view} onOpen={open} /> : body && <div className="msg-text">{body}</div>}
+        {view ? <SummaryBody view={view} states={m.itemState} onOpen={open} /> : body && <div className="msg-text">{body}</div>}
         {m.why && !view && m.level !== "summary" && (
           <div className="msg-card msg-why">
             <div className="msg-label">{alert ? "Why I'm interrupting" : "Why"}</div>
@@ -276,15 +284,18 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
           <div className="msg-card">
             <div className="msg-label">{m.items.length === 1 ? "Ticket" : `Tickets · ${m.items.length}`}</div>
             {m.items.map((i) => {
-              const line = status?.lines[`${i.board}/${i.ticketId}`];
+              const st = m.itemState?.[itemStateKey(i)];
+              const state = itemStateLabel(st);
+              const line = state ? null : status?.lines[`${i.board}/${i.ticketId}`];
               return (
                 <div key={`${i.board}/${i.ticketId}/${i.key ?? ""}`} className="msg-ticket">
                   <div className="grow">
                     <div className="msg-ttl">{i.title}</div>
                     {i.question && <div className="small msg-question">{i.question}</div>}
                     <div className="muted small">{i.boardName}{line ? ` · ${line}` : ""}</div>
+                    {state && <div className={`small msg-item-state s-${st!.state}`}>{state}</div>}
                   </div>
-                  <button className="btn primary small" onClick={() => onOpenTicket(i.board, i.ticketId)}>Open</button>
+                  {st?.state !== "removed" && <button className="btn primary small" onClick={() => onOpenTicket(i.board, i.ticketId)}>Open</button>}
                 </div>
               );
             })}
@@ -303,13 +314,15 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
             </ol>
           </div>
         )}
+        {m.level === "hello" && <PracticeAlert />}
+        {status && asksNight(m, status.nightOptIn) && <NightQuestion night={status.night} />}
         <TellHelper multiline />
         {alert && m.tapped && (
           <div className="msg-actions">
-            <p className="msg-done small" role="status">{done ?? `You tapped ${tapWord(m.tapped.how)}: no more reminders for this.`}</p>
+            <p className="msg-done small" role="status">{done ?? (m.practice ? "That stopped the reminder. Real alerts work the same way." : `You tapped ${tapWord(m.tapped.how)}: no more reminders for this.`)}</p>
           </div>
         )}
-        {alert && !m.tapped && (
+        {alert && !m.tapped && anyItemOpen(m) && (
           <div className="msg-actions">
             {done && <p className="msg-done small" role="status">{done}</p>}
             <button className="btn primary big" disabled={!!busy} onClick={() => void stop("got-it")}>{busy === "got-it" ? "Stopping…" : "Got it"}</button>
@@ -321,29 +334,90 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
   );
 }
 
+/** The night question with Yes / Not at night (shown while the user hasn't chosen). Saves the setting at once. */
+export function NightQuestion({ night }: { night: { start: string; end: string } }) {
+  const [busy, setBusy] = useState(false);
+  const answer = async (allow: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      setHelperStatus(await helperApi.settings({ nightOptIn: allow }));
+      toast(allow ? `Done: urgent alerts may wake you at night (${night.start}-${night.end}).` : "Done: nothing wakes you at night; urgent things wait for the morning.", { tone: "ok" });
+    } catch (e) {
+      toast((e as Error).message, { tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="msg-card night-ask">
+      <div className="msg-label">At night</div>
+      <div>{nightQuestion(night)}</div>
+      <div className="muted small">Until you choose, nothing wakes you at night. You can change it any time in Settings.</div>
+      <div className="night-ask-btns">
+        <button className="btn primary" disabled={busy} onClick={() => void answer(true)}>Yes</button>
+        <button className="btn" disabled={busy} onClick={() => void answer(false)}>Not at night</button>
+      </div>
+    </div>
+  );
+}
+
+/** "Try a pretend urgent alert": one alert now, one reminder a minute later, stopped by Got it (Settings, the hello page). */
+export function PracticeAlert({ compact }: { compact?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await helperApi.practice();
+      toast("Pretend alert sent. Leave it unanswered for a minute to get its reminder, then tap Got it.", { tone: "ok" });
+      location.hash = messageHash(r.messageId);
+    } catch (e) {
+      toast((e as Error).message, { tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const button = <button type="button" className="btn small" disabled={busy} onClick={() => void run()}>{busy ? "Sending…" : "Try a pretend urgent alert"}</button>;
+  if (compact) return button;
+  return (
+    <div className="msg-card">
+      <div className="msg-ttl">See what an urgent alert looks like</div>
+      <div className="muted small">Sends a pretend alert now and one reminder a minute later, like a real one. Tap Got it to stop it. Nothing real changes.</div>
+      <div>{button}</div>
+    </div>
+  );
+}
+
 /** A summary's page: new rows (under board headings when there are several boards), what still waits behind "Show all". */
-function SummaryBody({ view, onOpen }: { view: SummaryView; onOpen: (r: SummaryRow) => void }) {
+function SummaryBody({ view, states, onOpen }: { view: SummaryView; states?: Record<string, ItemState>; onOpen: (r: SummaryRow) => void }) {
   const [all, setAll] = useState(false);
   const rows = (list: SummaryRow[]) => (view.grouped ? rowsByBoard(list) : [{ board: "", boardName: "", rows: list }]).map((g) => (
     <div key={g.board || "all"} className="msg-group">
       {g.boardName && <div className="msg-label">{g.boardName}</div>}
-      {g.rows.map((r) => (
-        <div key={`${r.board}/${r.ticketId}/${r.key ?? ""}`} className="msg-ticket">
-          <div className="grow">
-            <div className="msg-ttl">{r.title}</div>
-            <div className="msg-sum-label">{r.label}</div>
+      {g.rows.map((r) => {
+        const st = states?.[itemStateKey(r)];
+        const state = itemStateLabel(st);
+        return (
+          <div key={`${r.board}/${r.ticketId}/${r.key ?? ""}`} className="msg-ticket">
+            <div className="grow">
+              <div className="msg-ttl">{r.title}</div>
+              <div className="msg-sum-label">{r.label}</div>
+              {state && <div className={`small msg-item-state s-${st!.state}`}>{state}</div>}
+            </div>
+            {st?.state !== "removed" && <button className="btn primary small" onClick={() => onOpen(r)} aria-label={`Open ${r.title}`}>Open</button>}
           </div>
-          <button className="btn primary small" onClick={() => onOpen(r)} aria-label={`Open ${r.title}`}>Open</button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   ));
   return (
     <>
       {view.new.length > 0 && <div className="msg-card msg-sum">{rows(view.new)}</div>}
-      {view.stillCount > 0 && (
+      {(view.stillCount > 0 || (view.olderCount ?? 0) > 0) && (
         <div className="msg-card msg-sum">
-          <div className="msg-sum-still">{stillWaitingLine(view)}</div>
+          {view.stillCount > 0 && <div className="msg-sum-still">{stillWaitingLine(view)}</div>}
+          {(view.olderCount ?? 0) > 0 && <div className="msg-sum-still">+{view.olderCount} older in Inbox</div>}
           {view.still.length > 0 && (
             <button className="link-btn msg-sum-toggle" aria-expanded={all} onClick={() => setAll(!all)}>
               {all ? "Hide the list" : `Show all ${view.stillCount} still waiting`}

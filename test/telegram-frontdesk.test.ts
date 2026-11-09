@@ -2,18 +2,19 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Bus } from "../src/server/events";
-import { dayEnded, dayTitle, DUPLICATE_MS, FrontDesk, heldKind, type DeskChats } from "../src/server/helper/frontdesk";
+import { dayEnded, dayTitle, DESK_CAP_DEFAULT, DESK_UNMEASURED_USD, DUPLICATE_MS, FrontDesk, heldKind, type DeskChats } from "../src/server/helper/frontdesk";
 import { FRONT_DESK_ENV } from "../src/server/helper/frontdesk-id";
 import { ACTION_TTL_MS } from "../src/server/helper/tgstores";
 import { SEND_AGAIN, TEXT_ONLY } from "../src/server/helper/telegram";
-import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
+import { describeAt } from "../src/server/jobs";
+import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../src/server/notify";
 import type { QuickChat, QuickChatHooks, QuickChatView } from "../src/server/quickchat";
-import { telegramSpendToday } from "../src/server/spend";
+import { addDeskSpend, addTelegramSpend, deskSpendToday, telegramSpendToday } from "../src/server/spend";
 import { Store } from "../src/server/store";
 import type { Profile } from "../src/server/types";
 import { BoardClient, ConfirmPending } from "../src/client";
 import { callTool } from "../src/mcp-server";
-import { tempDir } from "./helpers";
+import { tempDir, until } from "./helpers";
 
 const TOKEN = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
 const ME = 555;
@@ -440,7 +441,8 @@ describe("Confirm", () => {
     await notifier.frontDesk.gate(id, "POST", "/api/profiles/kb/jobs", { at: "2026-11-10T09:00:00Z", action: { kind: "command", command: "echo hi" } });
     const card = api.last();
     expect(card.text).toContain("Set up this one-time job on Kanban?");
-    expect(card.text).toContain("It runs a command on this Mac.");
+    expect(card.text).toContain("It runs this command on this Mac");
+    expect(card.text).toEndWith("\n\necho hi");
     const data = button(card, "Confirm");
     const aid = data.split(":")[1];
     // As if the daemon died mid-replay: the action is used by update 2 and marked running, with no result saved.
@@ -643,5 +645,174 @@ describe("through the board's HTTP API", () => {
     expect(made.telegramReport).toMatchObject({ tg: 9001, chatId: ME });
     expect(store.listTickets("shop").filter((t) => t.title === "Resize photos")).toHaveLength(1);
     await board.shutdown?.();
+  });
+});
+
+describe("limits and the daily cap", () => {
+  test("a desk chat's run: no shell, edits, subagents or Chrome; .env, SSH keys and the board's settings files denied to Read, Grep and Glob; attachments readable; a normal chat gets none", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "what's going on?"));
+    await notifier.telegram.pollOnce();
+    const c = chats.get("kb", chats.sent[0].id)!;
+    const l = chats.hooks().limits!("kb", c)!;
+    for (const t of ["Bash", "Monitor", "Edit", "Write", "NotebookEdit", "Agent", "Task", "SendMessage", "ListAgents", "mcp__claude-in-chrome"]) expect(l.disallowed).toContain(t);
+    expect(l.tools).not.toContain("Bash");
+    expect(l.tools).not.toContain("SendMessage");
+    expect(l.strictMcp).toBe(true);
+    const deny = (l.settings as any).permissions.deny as string[];
+    // Read rules: Claude Code applies them to Grep and Glob too (a folder search skips the files).
+    for (const p of ["**/.env*", "//**/.env*", "**/.ssh/**", "//**/.ssh/**", "~/.claude-kanban/*.json", `/${root}/*.json`, `/${root}/profiles/*/board-tools.json`]) expect(deny).toContain(`Read(${p})`);
+    // Only the data folder's own files: attachments and tickets' outputs are in subfolders and stay readable.
+    expect(deny.some((r) => r.includes("attachments") || r.includes(`${root}/**`))).toBe(false);
+    expect(l.maxBudgetUsd).toBe(DESK_CAP_DEFAULT);
+    expect(chats.hooks().limits!("kb", { ...c, frontDesk: null })).toBeNull();
+  });
+
+  test("over today's cap a message gets the paused reply and starts no run; ticket runs from Telegram don't count; raising the cap lets it answer again", async () => {
+    const { notifier, api, chats } = setup();
+    // Work Telegram started on tickets counts in "Spent from Telegram", not in the front desk's cap.
+    addTelegramSpend(root, 5, new Date(clock));
+    api.queue(msg(1, "hi"));
+    await notifier.telegram.pollOnce();
+    expect(chats.sent).toHaveLength(1);
+    const c = chats.get("kb", chats.sent[0].id)!;
+    await notifier.frontDesk.onResult("kb", c, { type: "result", subtype: "success", result: "hello", session_id: "s1", total_cost_usd: 2.05 });
+    expect(deskSpendToday(root, new Date(clock))).toBeCloseTo(2.05);
+    expect(telegramSpendToday(root, new Date(clock))).toBeCloseTo(7.05);
+    api.queue(msg(2, "and now?"));
+    await notifier.telegram.pollOnce();
+    expect(chats.sent).toHaveLength(1);
+    expect(api.last().text).toBe("Front desk paused for today (spent $2.05); alerts still come.");
+    expect(api.last().reply_parameters.message_id).toBe(9002);
+    // A message that joined the last turn starts no run either: the run's limits refuse. The user was just told, so
+    // no second "paused" within a minute; after that they hear it again.
+    const before = api.sent().length;
+    expect(() => chats.hooks().limits!("kb", c)).toThrow("Front desk paused for today");
+    await Bun.sleep(5);
+    expect(api.sent().length).toBe(before);
+    clock += 61_000;
+    expect(() => chats.hooks().limits!("kb", c)).toThrow("Front desk paused for today");
+    await until(() => api.sent().length === before + 1);
+    // Settings: a higher cap; what is left is the next run's budget.
+    const s = readNotifySettings(root);
+    writeNotifySettings(root, { ...s, telegram: { ...s.telegram, deskCapUsd: 5 } });
+    expect(notifier.state().telegram.deskCapUsd).toBe(5);
+    expect(notifier.state().telegram.deskSpentToday).toBe(2.05);
+    api.queue(msg(3, "and now?"));
+    await notifier.telegram.pollOnce();
+    expect(chats.sent).toHaveLength(2);
+    expect(chats.hooks().limits!("kb", c)!.maxBudgetUsd).toBe(2.95);
+    // The next day starts at zero.
+    clock = AT(10, 10);
+    expect(notifier.frontDesk.spentToday()).toBe(0);
+  });
+
+  test("a turn stopped by its budget says the front desk paused; the cap setting is kept in cents between $0 and $100", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "hi"));
+    await notifier.telegram.pollOnce();
+    const c = chats.get("kb", chats.sent[0].id)!;
+    addDeskSpend(root, 1.2, new Date(clock));
+    await notifier.frontDesk.onResult("kb", c, { type: "result", subtype: "error_max_budget_usd", is_error: true, session_id: "s1", total_cost_usd: 0.8 });
+    expect(api.last().text).toBe("Front desk paused for today (spent $2.00); alerts still come.");
+    const base = normalizeSettings({}, undefined, false);
+    expect(base.telegram.deskCapUsd).toBe(2);
+    expect(normalizeSettings({ telegram: { deskCapUsd: 3.456 } }, base, false).telegram.deskCapUsd).toBe(3.46);
+    expect(normalizeSettings({ telegram: { deskCapUsd: 500 } }, base, false).telegram.deskCapUsd).toBe(100);
+    expect(normalizeSettings({ telegram: { deskCapUsd: -1 } }, base, false).telegram.deskCapUsd).toBe(2);
+    expect(normalizeSettings({ telegram: { deskCapUsd: "9" } }, base, false).telegram.deskCapUsd).toBe(2);
+  });
+});
+
+describe("stopped runs and what the Confirm card shows", () => {
+  test("a desk run that ends without a result line (Stop, crash) counts toward today's cap: its usage, or a safe estimate", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "hi"));
+    await notifier.telegram.pollOnce();
+    const c = chats.get("kb", chats.sent[0].id)!;
+    const unbilled = chats.hooks().onUnbilled!;
+    unbilled("kb", c, { costUsd: 0.4, started: true });
+    expect(deskSpendToday(root, new Date(clock))).toBeCloseTo(0.4);
+    expect(telegramSpendToday(root, new Date(clock))).toBeCloseTo(0.4);
+    // No usage record came at all: a model call may have been under way.
+    unbilled("kb", c, { costUsd: 0, started: true });
+    expect(deskSpendToday(root, new Date(clock))).toBeCloseTo(0.4 + DESK_UNMEASURED_USD);
+    // Claude never began (it failed to start): nothing.
+    unbilled("kb", c, { costUsd: 0, started: false });
+    expect(deskSpendToday(root, new Date(clock))).toBeCloseTo(0.4 + DESK_UNMEASURED_USD);
+    // A normal quick chat on the board isn't the desk's.
+    unbilled("kb", { ...c, frontDesk: null }, { costUsd: 1, started: true });
+    expect(deskSpendToday(root, new Date(clock))).toBeCloseTo(0.4 + DESK_UNMEASURED_USD);
+    // Stopped runs fill the cap like answered ones: the next message is refused.
+    unbilled("kb", c, { costUsd: 1.6, started: true });
+    api.queue(msg(2, "still there?"));
+    await notifier.telegram.pollOnce();
+    expect(chats.sent).toHaveLength(1);
+    expect(api.last().text).toMatch(/^Front desk paused for today/);
+  });
+
+  test("the Confirm card for a command job shows the whole command, where and when it runs; the tool's answer shows the card", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "back up the db tomorrow morning"));
+    await notifier.telegram.pollOnce();
+    const command = "pg_dump shop > backups/shop.sql && rm -rf /tmp/old-dumps/*";
+    const r = await notifier.frontDesk.gate(identity(chats, chats.sent[0].id), "POST", "/api/profiles/kb/jobs", { name: "Back up the database", at: "2026-11-10 08:30", action: { kind: "command", command } });
+    const card = api.last();
+    const folder = store.getProfile("kb")!.path;
+    expect(card.text).toBe(`Set up this one-time job on Kanban?\n"Back up the database"\nWhen: ${describeAt(new Date(2026, 10, 10, 8, 30).toISOString(), new Date(clock))}\nIt runs this command on this Mac, in ${folder}, with no Claude and no ticket:\n\n${command}`);
+    expect(r!.status).toBe(202);
+    expect(r!.body.confirmation).toContain(`The card they see:\n${card.text}`);
+  });
+
+  test("the Confirm card for a schedule shows when it runs in plain words and the whole prompt; a change shows it as it will be", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "check the site every weekday"));
+    await notifier.telegram.pollOnce();
+    const id = identity(chats, chats.sent[0].id);
+    const prompt = "Open the shop site, check checkout works on Safari and Chrome.\nReport anything broken.";
+    await notifier.frontDesk.gate(id, "POST", "/api/profiles/kb/schedules", { name: "Site check", title: "Site check {date}", body: prompt, cron: "30 8 * * 1-5" });
+    expect(api.last().text).toBe(`Set up this schedule on Kanban?\n"Site check"\nWhen: Weekdays at 08:30 (30 8 * * 1-5)\nEach time, it makes the ticket "Site check {date}" and starts it, with this prompt:\n\n${prompt}`);
+    // A change to only the time: the card still shows what it will run.
+    const at = new Date(clock).toISOString();
+    store.saveSchedule("kb", { id: "s1", name: "Site check", title: "Site check {date}", body: prompt, mode: "auto", cron: "30 8 * * 1-5", enabled: true, skipIfRunning: true, createdAt: at, updatedAt: at, lastFiredAt: null, lastError: null, nextRunAt: null } as any);
+    await notifier.frontDesk.gate(id, "PATCH", "/api/profiles/kb/schedules/s1", { cron: "0 9 * * *" });
+    expect(api.last().text).toBe(`Change this schedule on Kanban?\n"Site check"\nWhen: Every day at 09:00 (0 9 * * *)\nEach time, it makes the ticket "Site check {date}" and starts it, with this prompt:\n\n${prompt}`);
+    // Run now: what it runs, from the saved schedule.
+    await notifier.frontDesk.gate(id, "POST", "/api/profiles/kb/schedules/s1/run", {});
+    expect(api.last().text).toBe(`Run this schedule on Kanban now?\n"Site check"\nEach time, it makes the ticket "Site check {date}" and starts it, with this prompt:\n\n${prompt}`);
+  });
+
+  test("Run now on a saved command job shows its command; a command too long to show in full isn't held", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "run the cleanup now"));
+    await notifier.telegram.pollOnce();
+    const id = identity(chats, chats.sent[0].id);
+    const at = new Date(clock).toISOString();
+    store.saveJob("kb", { id: "j1", name: "Cleanup", at: "2026-11-12T08:00:00.000Z", action: { kind: "command", command: "bun scripts/cleanup.ts --all" }, state: "scheduled", sourceTicketId: null, createdAt: at, updatedAt: at, firedAt: null, result: null });
+    await notifier.frontDesk.gate(id, "POST", "/api/profiles/kb/jobs/j1/run", {});
+    expect(api.last().text).toBe(`Run this job on Kanban now?\n"Cleanup"\nIt runs this command on this Mac, in ${store.getProfile("kb")!.path}, with no Claude and no ticket:\n\nbun scripts/cleanup.ts --all`);
+    const before = api.sent().length;
+    const r = await notifier.frontDesk.gate(id, "POST", "/api/profiles/kb/jobs", { name: "Long", at: "2026-11-10 08:30", action: { kind: "command", command: `echo ${"x".repeat(5000)}` } });
+    expect(r!.status).toBe(413);
+    expect(r!.body.error).toMatch(/too long to show in full/);
+    expect(api.sent().length).toBe(before);
+    expect(notifier.telegramActions.all("fd").filter((a) => (a.data as any).body?.name === "Long")).toHaveLength(0);
+  });
+
+  test("a budget stop with messages queued behind it says 'paused' once", async () => {
+    const { notifier, api, chats } = setup();
+    api.queue(msg(1, "hi"));
+    await notifier.telegram.pollOnce();
+    const c = chats.get("kb", chats.sent[0].id)!;
+    addDeskSpend(root, 1.98, new Date(clock));
+    await notifier.frontDesk.onResult("kb", c, { type: "result", subtype: "error_max_budget_usd", is_error: true, session_id: "s1", total_cost_usd: 0.02 });
+    const paused = () => api.sent().filter((x) => x.body.text.startsWith("Front desk paused for today")).length;
+    expect(paused()).toBe(1);
+    // The queued messages' run is refused by its limits: no second "paused".
+    expect(() => chats.hooks().limits!("kb", c)).toThrow("Front desk paused for today");
+    api.queue(msg(2, "hello?"), msg(3, "hello??"));
+    await notifier.telegram.pollOnce();
+    await Bun.sleep(5);
+    expect(paused()).toBe(1);
   });
 });

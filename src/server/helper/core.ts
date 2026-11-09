@@ -28,6 +28,8 @@ export interface HelperSink {
    * morning summary goes first; else null. Direct sends because the helper failed hold non-urgent waits until then.
    */
   morning?(now: number): number | null;
+  /** The user allowed urgent alerts to wake them at night (settings nightAllowed). Missing: not allowed. */
+  nightAllowed?(): boolean;
 }
 
 /** An urgent message about a ticket within this long counts as "urgent" for night-time direct sends. */
@@ -44,6 +46,21 @@ export const cut = (s: string, max = ONE_LINE_MAX) => {
 };
 
 /** "3:00" or "15:30" in this Mac's time: the way the board writes a reset time. */
+/**
+ * Where a message's ticket stands now: still open, answered (or seen, or no longer waiting: how), or removed (the
+ * ticket or its board is gone). at: when it closed.
+ */
+export interface ItemState {
+  state: "open" | "answered" | "removed";
+  at?: string | null;
+  how?: "answered" | "seen" | "done";
+}
+
+/** The itemState key of a message item or summary row: its wait's key, else "<board>/<ticketId>". */
+export function itemStateKey(i: { key?: string | null; board: string; ticketId: string }): string {
+  return i.key || `${i.board}/${i.ticketId}`;
+}
+
 export function clockTime(iso: string): string {
   const d = new Date(iso);
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -77,6 +94,10 @@ export interface HelperActions {
   notUrgent(messageId: string, via: string): Promise<string> | string;
   /** What waits on the user now, as plain text (Telegram's /waiting). */
   waiting(): Promise<string> | string;
+  /** Yes / Not at night on a message that asks the night question; returns the reply. */
+  night(messageId: string, allow: boolean, via: string): Promise<string> | string;
+  /** After Got it / Not urgent on this message: the night question to offer next, or null. */
+  nightAfter(messageId: string): string | null;
 }
 
 export interface HelperCoreDeps {
@@ -146,6 +167,17 @@ export class HelperCore {
     this.messages.markTapped(messageId, "not-urgent");
     const titles = msg.items.map((i) => i.title);
     return titles.length ? cut(`Stopped reminders for ${titles.join(", ")}`, 190) : "Noted: not urgent.";
+  }
+
+  /** Yes / Not at night (Telegram's buttons; the page saves the setting itself). */
+  async nightAnswer(messageId: string, allow: boolean, via = "board"): Promise<string> {
+    if (this.actions.night) return this.actions.night(messageId, allow, via);
+    return "That button no longer works.";
+  }
+
+  /** The night question to offer after a tap on this message, or null. */
+  nightAfter(messageId: string): string | null {
+    return this.actions.nightAfter?.(messageId) ?? null;
   }
 
   /** What waits on the user now, one line per ticket (Telegram's /waiting). */
@@ -295,6 +327,33 @@ export class HelperCore {
   }
 
   /**
+   * Where each ticket of a message stands now (its page shows "Answered 14:02" or "Ticket removed"), keyed by
+   * itemStateKey: the wait it told about, closed or not, or removed when the ticket (or its board) is gone.
+   */
+  itemStates(m: StoredMessage): Record<string, ItemState> {
+    const out: Record<string, ItemState> = {};
+    const rows: { key?: string | null; board: string; ticketId: string }[] = [
+      ...m.items, ...(m.summary ? [...m.summary.new, ...m.summary.still, ...m.summary.checkins] : []),
+    ];
+    for (const i of rows) {
+      const k = itemStateKey(i);
+      if (out[k]) continue;
+      const rec = i.key ? this.waits.forMessage(i.key, m) : undefined;
+      if (!this.d.store.getTicket(i.board, i.ticketId) || rec?.closedWhy === "deleted") {
+        out[k] = { state: "removed", at: rec?.closedWhy === "deleted" ? rec.closedAt : null };
+      } else if (rec?.closedAt) {
+        out[k] = { state: "answered", at: rec.closedAt, how: rec.closedWhy === "opened" ? "seen" : rec.closedWhy === "answered" ? "answered" : "done" };
+      } else out[k] = { state: "open" };
+    }
+    return out;
+  }
+
+  /** A message with its tickets' states (GET /api/messages/:id and the page's buttons). */
+  withStates(m: StoredMessage): StoredMessage & { itemState: Record<string, ItemState> } {
+    return { ...m, itemState: this.itemStates(m) };
+  }
+
+  /**
    * Stores the message, sends it to the channels (default: every one that is on) and records how that went. url may be
    * a function of the stored message's id (a link to its message page).
    */
@@ -346,25 +405,40 @@ export class HelperCore {
   }
 
   /**
-   * Direct sends because the helper failed: during the user's night only urgent records go out now (returned); the
-   * rest stay untold, their fallback dropped and their digest moved to the morning, so the morning digest (or the
-   * helper, once it works again) takes them. Nothing is dropped. Outside the night: all of them.
+   * Night: during the user's night only urgent records go out now (returned), and only if the user allowed night
+   * wake-ups; the rest stay untold, their fallback dropped and their digest moved to the morning, so the helper's
+   * morning message (or the morning digest, if the helper fails) takes them. Nothing is dropped. A held record that
+   * counts as urgent is marked (nightHeldAt) so the morning message says so. Outside the night: all of them.
    */
   holdForMorning(recs: WaitRecord[]): WaitRecord[] {
     const morning = this.sink?.morning?.(this.now()) ?? null;
     if (morning === null) return recs;
+    const allowed = this.sink?.nightAllowed?.() === true;
     const at = new Date(morning).toISOString();
+    const nowIso = new Date(this.now()).toISOString();
     const now: WaitRecord[] = [];
     let held = 0;
     for (const r of recs) {
-      if (this.urgentForNight(r)) now.push(r);
+      const urgent = this.urgentForNight(r);
+      if (urgent && allowed) now.push(r);
       else {
-        this.waits.update(r.key, { fallbackAt: null, digestAt: at });
+        this.waits.update(r.key, { fallbackAt: null, digestAt: at, ...(urgent && !r.nightHeldAt ? { nightHeldAt: nowIso } : {}) });
         held++;
       }
     }
-    if (held) console.warn(`helper: night, helper failing: holding ${held} wait${held === 1 ? "" : "s"} for the ${clockTime(at)} digest`);
+    if (held) console.warn(`helper: night: holding ${held} wait${held === 1 ? "" : "s"} for the morning (${clockTime(at)} at the latest)`);
     return now;
+  }
+
+  /**
+   * The morning message's first line for records held overnight while urgent: "Held overnight: Billing, marked
+   * urgent 22:35" (several joined with "; "), or null.
+   */
+  heldOvernightLine(recs: WaitRecord[]): string | null {
+    // Only waits not told yet: a wait the morning message already told doesn't carry the line into a later alert.
+    const held = recs.filter((r) => r.nightHeldAt && !r.toldAt);
+    if (!held.length) return null;
+    return `Held overnight: ${held.map((r) => `${this.item(r).title}, marked urgent ${clockTime(r.nightHeldAt!)}`).join("; ")}`;
   }
 
   /** Marks records told by a message (the runner calls this for what its message named). */
@@ -450,15 +524,17 @@ export class HelperCore {
   async digest(recs: WaitRecord[], level: "fallback" | "digest", why: string): Promise<StoredMessage | null> {
     const fresh = recs.filter((r) => !r.closedAt && !r.toldAt);
     if (!fresh.length) return null;
+    // Before the told mark: the line names waits held overnight that no message told yet.
+    const overnight = this.heldOvernightLine(fresh);
     this.waits.markTold(fresh.map((r) => r.key), "digest");
     const items = fresh.map((r) => this.item(r));
     const oneLine = fresh.length === 1 ? cut(`${directLabel(fresh[0])}: ${items[0].title}`) : `${fresh.length} tickets wait on you`;
-    const text = [oneLine, ...items.map((it, i) => `- ${it.title} (${it.boardName}): ${directLabel(fresh[i])}`)].join("\n");
+    const text = [...(overnight ? [overnight] : []), oneLine, ...items.map((it, i) => `- ${it.title} (${it.boardName}): ${directLabel(fresh[i])}`)].join("\n");
     const url = fresh.length === 1 ? this.d.link(fresh[0].board, fresh[0].ticketId) : this.d.link(fresh[0].board);
     const notify: NotifyMessage = { board: fresh[0].board, boardName: items[0].boardName, ticketId: fresh.length === 1 ? fresh[0].ticketId : "", title: fresh.length === 1 ? items[0].title : "ckanban", kind: "message", label: fresh.length === 1 ? directLabel(fresh[0]) : oneLine, url };
     const urgent = fresh.some((r) => r.urgent);
     const { message } = await this.send(
-      { level, oneLine, text, why, items },
+      { level, oneLine, text, why, items, ...(overnight ? { heldOvernight: overnight, nightAsk: this.sink?.nightAllowed?.() !== true } : {}) },
       { level, title: notify.title, body: notify.label, text, url, tag: "ckanban-digest", notify, urgent },
     );
     for (const r of fresh) this.waits.update(r.key, { messageId: message.id });

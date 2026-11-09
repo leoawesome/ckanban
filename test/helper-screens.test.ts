@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MessageStore } from "../src/server/helper/messages";
-import { groupByDay, isHeldLine, levelLabel, levelTone, messageHash, messagesRoute, sendTrail, type Message } from "../web/src/helperText";
+import { asksNight, groupByDay, isHeldLine, levelLabel, levelTone, messageHash, messagesRoute, nightQuestion, sendTrail, type Message } from "../web/src/helperText";
+import { nightQuestion as serverNightQuestion } from "../src/server/helper/settings";
 
 const msg = (over: Partial<Message>): Message => ({
   id: "m_1", at: "2026-11-09T14:10:00", level: "urgent", oneLine: "Stop the old webhook?", text: "full", why: null, items: [], sends: [], readAt: null, ...over,
@@ -86,4 +87,24 @@ test("helper screens use plain words: no watcher agent, no webhook outside the J
   // Text the user reads (between > and <, or in quotes after label=/title=/placeholder=) never says webhook.
   const shown = [...settings.matchAll(/>([^<>{}]+)</g)].map((m) => m[1]).join(" ");
   expect(shown).not.toMatch(/webhook|watcher/i);
+});
+
+test("the night question on a message page: only while the user hasn't chosen; practice alerts badge as Practice", () => {
+  const night = { start: "22:00", end: "07:00" };
+  expect(nightQuestion(night)).toBe(serverNightQuestion(night));
+  expect(asksNight({ nightAsk: true }, null)).toBe(true);
+  expect(asksNight({ nightAsk: true }, false)).toBe(false);
+  expect(asksNight({ heldOvernight: "Held overnight: Billing, marked urgent 22:35" }, null)).toBe(true);
+  expect(asksNight({ practice: true }, null)).toBe(false);
+  expect(asksNight({ practice: true, tapped: { how: "got-it", at: "x" } }, null)).toBe(true);
+  expect(asksNight({}, null)).toBe(false);
+  expect(levelLabel("test", false, true)).toBe("Practice");
+  expect(levelTone("test", false, true)).toBe("urgent");
+});
+
+test("a practice message never counts as new", () => {
+  const s = new MessageStore(mkdtempSync(join(tmpdir(), "ck-msg-")));
+  s.add({ level: "test", oneLine: "Practice alert", text: "x", practice: true });
+  s.add({ level: "summary", oneLine: "1 new", text: "y" });
+  expect(s.unread()).toBe(1);
 });

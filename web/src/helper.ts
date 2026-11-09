@@ -28,6 +28,10 @@ export interface HelperStatus {
   waiting: number;
   /** The helper line per waiting ticket, keyed "<board>/<ticketId>". */
   lines: Record<string, string>;
+  /** The message each line is about (same keys), when there is one: the line links to its page. */
+  lineMsg?: Record<string, string>;
+  /** The helper's paid checks today and what they cost. */
+  today?: { checks: number; costUsd: number };
 }
 
 import { readFromHash, type Message } from "./helperText";
@@ -48,6 +52,8 @@ export const helperApi = {
   removeFeedback: (id: string) => req<{ lines: FeedbackLine[] }>("DELETE", `/api/helper/feedback/${encodeURIComponent(id)}`),
   shouldHavePinged: (profile: string, ticketId: string) => req<{ text: string }>("POST", "/api/helper/should-have-pinged", { profile, ticketId }),
   noticeSeen: () => req<HelperStatus>("POST", "/api/helper/notice-seen", {}),
+  /** A pretend urgent alert: one now, one reminder a minute later unless Got it stops it. */
+  practice: () => req<{ messageId: string }>("POST", "/api/helper/practice", {}),
   messages: (held = false) => req<{ messages: Message[]; unread: number }>("GET", `/api/messages${held ? "?held=1" : ""}`),
   message: (id: string) => req<Message>("GET", `/api/messages/${encodeURIComponent(id)}`),
   markRead: (id: string) => req<{ message: Message; unread: number }>("POST", `/api/messages/${encodeURIComponent(id)}/read`, {}),

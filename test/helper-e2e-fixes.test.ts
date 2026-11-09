@@ -38,10 +38,11 @@ describe("pure parts", () => {
     expect(sendTrail({ ...base, readAt: "2026-11-09T14:05:00Z", tapped: { how: "got-it", at: "2026-11-09T14:05:00Z" } })).toMatch(/^Got it /);
   });
   test("D: a summary's count is the board's own; the helper's count is dropped", () => {
-    expect(summaryLine(5, "6 tickets wait on you: new copy question on Docs")).toBe("5 wait on you: new copy question on Docs");
-    expect(summaryLine(7, "5 routine questions wait on you - pricing is new")).toBe("7 wait on you: pricing is new");
-    expect(summaryLine(1, "New copy question on Docs")).toBe("1 waits on you: New copy question on Docs");
-    expect(summaryLine(3, "3 wait on you")).toBe("3 wait on you");
+    expect(summaryLine(5, "6 tickets wait on you: new copy question on Docs")).toBe("5 new for you: new copy question on Docs");
+    expect(summaryLine(7, "5 routine questions wait on you - pricing is new")).toBe("7 new for you: pricing is new");
+    expect(summaryLine(1, "New copy question on Docs")).toBe("1 new for you: New copy question on Docs");
+    expect(summaryLine(3, "3 wait on you")).toBe("3 new for you");
+    expect(summaryLine(2, "2 new for you: pricing")).toBe("2 new for you: pricing");
     expect(summaryLine(0, "Prep ready for your 3pm call")).toBe("Prep ready for your 3pm call");
   });
   test("D: the helper is told feedback lines are standing preferences, and not to count", () => {
@@ -137,7 +138,7 @@ describe("helper runner", () => {
     store.saveProfile(p);
     ticket = store.createTicket("kb", { title: "Pricing", body: "b", status: "in_progress" });
     writeNotifySettings(store.root, normalizeSettings({ webhookUrl: "https://ntfy.sh/topic", mac: false }));
-    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z" }));
+    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z", nightNoticeAt: "2026-11-01T00:00:00Z" }));
   });
 
 
@@ -225,8 +226,8 @@ describe("helper runner", () => {
     answers.push(answer({ sends: [{ level: "summary", oneLine: "6 tickets wait on you: tone question on Pricing", why: "", itemKeys: [key], escalation: [] }] }));
     await wakeNow();
     const m = n.helper.messages.listNewest().find((x) => x.level === "summary")!;
-    expect(m.oneLine).toBe("1 waits on you: tone question on Pricing");
-    expect(m.text.startsWith("1 waits on you: tone question on Pricing")).toBe(true);
+    expect(m.oneLine).toBe("1 new for you: tone question on Pricing");
+    expect(m.text.startsWith("1 new for you: tone question on Pricing")).toBe(true);
     stop();
   });
 });

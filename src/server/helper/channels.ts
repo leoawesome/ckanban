@@ -28,6 +28,10 @@ export interface OutMessage {
   notify?: NotifyMessage;
   /** Push to every device, also where the board is on screen (the test button; urgent sends). */
   everyDevice?: boolean;
+  /** A pretend urgent alert or its reminder: Telegram shows Got it / Not urgent on it. */
+  practice?: boolean;
+  /** Asks the night question: Telegram takes it (even when not urgent) with Yes / Not at night buttons. */
+  nightAsk?: boolean;
 }
 
 export interface ChannelResult {
@@ -201,11 +205,12 @@ export function webhookChannel(d: BuiltinDeps): Channel {
 }
 
 /**
- * Telegram gets only urgent alerts and their reminder steps (urgent: also direct sends in fallback and at night), and
- * the Settings test. Summaries, digests, hello, pause and other routine messages go to the other channels only.
+ * Telegram gets only urgent alerts and their reminder steps (urgent: also direct sends in fallback and at night), the
+ * Settings test and practice alert, and the one-time night question. Summaries, digests, hello, pause and other
+ * routine messages go to the other channels only.
  */
-export function telegramTakes(m: Pick<OutMessage, "urgent" | "level">): boolean {
-  return !!m.urgent || m.level === "test";
+export function telegramTakes(m: Pick<OutMessage, "urgent" | "level" | "nightAsk">): boolean {
+  return !!m.urgent || m.level === "test" || !!m.nightAsk;
 }
 
 /** The channels in fallback order; sendAll sends to every one that is on. */

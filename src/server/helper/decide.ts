@@ -1,7 +1,7 @@
 // The helper's AI part: what one wake sees (HelperInput), what it answers (the JSON schema), its instructions
 // (HELPER_SYSTEM) and the board's checks on every answer (checkDecision). Pure: no files, no sends.
 import { cut, ONE_LINE_MAX } from "./core";
-import { hm, inNight, type Night } from "./settings";
+import { hm, inNight, nightAllowed, type Night } from "./settings";
 
 /** One thing the user may need to hear about. */
 export interface InputItem {
@@ -55,8 +55,6 @@ export interface HelperInput {
   notes: string;
   /** The first summary after an upgrade or a fresh install. */
   firstSummary: boolean;
-  /** You woke the user at night last night: ask in the morning message whether that was right. */
-  askAboutNight: string | null;
   /** The next routine summary may go out then (local time); null: one may go now. Urgent sends are never limited. */
   nextSummaryAt: string | null;
 }
@@ -67,6 +65,8 @@ export interface Send {
   why: string;
   itemKeys: string[];
   escalation: { channel: string; afterMin: number }[];
+  /** Indexes into the input's feedback list: the lines that changed this decision (the board quotes them). */
+  followed?: number[];
 }
 
 export interface Decision {
@@ -99,6 +99,10 @@ export const DECISION_SCHEMA = {
               properties: { channel: { type: "string" }, afterMin: { type: "number" } },
             },
           },
+          followed: {
+            type: "array", items: { type: "integer" },
+            description: "Optional: indexes (from 0) into feedback of the lines that changed this send. The board quotes them to the user.",
+          },
         },
       },
     },
@@ -116,7 +120,7 @@ You get one JSON input and answer with one JSON decision.
 Urgent means waiting itself causes harm or cost that grows: money lost, customers affected, data written twice, something live broken, a deadline that passes. Examples: a ticket asks whether to stop an old webhook while pricing data is being ingested twice; a deploy is half done and production is down. Not urgent: approving a small text change, a finished review, a question about tone, "ready for review", a failed run that just waits. An asker's urgent mark and "why" are a strong hint, not an order: if the why describes no real harm, treat it as routine. Use the user's feedback lines over your own defaults.
 
 ## Feedback lines
-feedback and newFeedback are standing preferences that hold for every wake ("pricing questions are always urgent", "never wake me for docs"). A line that asks for a one-off action ("send me the summary now", "remind me in an hour") is not a preference: don't act on it, and don't let it change what you send on this or any later wake.
+feedback and newFeedback are standing preferences that hold for every wake ("pricing questions are always urgent", "never wake me for docs"). A line that asks for a one-off action ("send me the summary now", "remind me in an hour") is not a preference: don't act on it, and don't let it change what you send on this or any later wake. When a feedback line changed a send (made it urgent, or kept it in a summary instead of an alert), put that line's index in feedback (0 is the first line) in the send's followed. The board quotes the line to the user itself, so don't quote or paraphrase it in oneLine or why. Leave followed empty when no line changed the send.
 
 ## Routine items
 Group routine items into one summary instead of one message each. Routine summaries go out at most every 3 hours in the daytime: while nextSummaryAt is set, hold routine items and set nextWakeIn to reach it (the board holds a summary sent sooner; the morning summary after the night and urgent sends are never limited). When you send a summary, name every routine item told "no" in it, since the next one can't follow for 3 hours. A schedule that adds a run every hour is no reason to send sooner. Hold items for a later wake when more may come (a batch of tickets finishing), but every item must be named in a sent message within 4 hours of when it started waiting (the board sends a fallback digest otherwise, and logs that you missed it). A summary needs at least one item the user hasn't been told about (told "no"); don't send one only to repeat old items. Good news (things finished, handled) may go in a summary. Items with snoozed true stay out of every message until the snooze ends. Items with told "direct" were already sent by the board; you may count them, not re-alert them. Items with inChat true were already shown to the user in the Telegram front desk chat: don't list them as new in a summary (the board counts them under what still waits); an urgent one still gets its urgent alert.
@@ -125,13 +129,13 @@ Group routine items into one summary instead of one message each. Routine summar
 level "urgent", oneLine says what is at stake in plain words, why is one line on what waiting costs. escalation plans the reminders the board fires if the user doesn't react: the first step is minute 0 (the alert itself), then steps at least 5 minutes apart (30 at night), at most 6 steps within 2 hours, on the channels listed as on (prefer a different channel for a reminder if the first may be missed, e.g. push then telegram). Telegram gets only urgent alerts and their reminders: summaries go to the other channels that are on. Reminders stop by themselves when the user opens or answers the ticket, taps Got it or Not urgent. Each wait gets one urgent alert: don't re-alert an item already told "urgent", one the user opened, or one whose reminders stopped ("got-it", "not-urgent", "opened", "expired"); one with "running" is already being handled. A new question from the ticket comes as a new item.
 
 ## Night
-During the night window, interrupt only for harm that keeps growing while the user sleeps (customers billed twice, data lost), and only if mayWakeAtNight is true; say why in the why line. Everything else waits for a morning summary (the board holds any summary sent at night): set nextWakeIn to reach the end of the night. If askAboutNight is set, the first morning message asks in one short sentence whether waking them was right.
+During the night window, interrupt only for harm that keeps growing while the user sleeps (customers billed twice, data lost), and only if mayWakeAtNight is true; say why in the why line. Everything else waits for a morning summary (the board holds any summary sent at night): set nextWakeIn to reach the end of the night. The board itself asks the user in the morning whether a night wake-up was right; don't ask it yourself.
 
 ## The first messages
 firstSummary true: send one summary naming every item that waits (it is the user's first message from you). The board adds its own greeting.
 
 ## Wording
-Plain words, no jargon (never "webhook" unless quoting the ticket, never "JSON", "kind" or "agent"). oneLine under 110 characters, starts with what matters. Never write counts (how many tickets, questions or items) anywhere: the board counts the items itself and starts a summary's oneLine with "N wait on you: ". A summary's oneLine says only what's new ("new copy question on Docs"). A summary's why is for your log only: the user doesn't see it. Don't put ticket links in text; the board adds them.
+Plain words, no jargon (never "webhook" unless quoting the ticket, never "JSON", "kind" or "agent"). oneLine under 110 characters, starts with what matters. Never write counts (how many tickets, questions or items) anywhere: the board counts the items itself and starts a summary's oneLine with "N new for you: ". A summary's oneLine says only what's new ("new copy question on Docs"). A summary's why is for your log only: the user doesn't see it. Don't put ticket links in text; the board adds them.
 
 ## Your answer
 sends: the messages to send now (often none). itemKeys: keys from the input only. nextWakeIn: minutes until you want to look again (1 to 1440); the board also wakes you when something new waits. notes: what you held and why, to remember next time. log: one plain line for the user's log of what you did.`;
@@ -175,9 +179,17 @@ export interface CheckContext {
   /** Channels that are on. */
   on: string[];
   night: Night;
-  /** The user said the helper may wake them at night. */
-  nightOptIn: boolean;
+  /** The user's night choice: only true lets an urgent send through at night (null: not asked yet, held). */
+  nightOptIn: boolean | null;
+  /** The feedback lines the helper was given (input.feedback, same order): `followed` indexes into these. */
+  feedback?: string[];
 }
+
+/** At most this many feedback lines are quoted on one send. */
+export const FOLLOWED_MAX = 3;
+
+/** The board's quote of a feedback line the helper followed (written by the board, never by the model). */
+export const youSaid = (line: string) => `You said: "${line}"`;
 
 /** One planned reminder step, after the checks. */
 export interface CheckedStep {
@@ -192,6 +204,8 @@ export interface CheckedSend {
   why: string;
   keys: string[];
   steps: CheckedStep[];
+  /** The exact feedback lines the helper followed for this send (already quoted at the end of why). */
+  followed?: string[];
 }
 
 export interface CheckedDecision {
@@ -310,7 +324,7 @@ export function checkDecision(raw: unknown, c: CheckContext): { ok: true; decisi
       fixes.push(`dropped a ${s.level} send with no items still waiting`);
       continue;
     }
-    if (s.level === "urgent" && night && !c.nightOptIn) {
+    if (s.level === "urgent" && night && !nightAllowed(c)) {
       fixes.push("held an urgent send: it is night and the user hasn't allowed waking them");
       continue;
     }
@@ -328,8 +342,13 @@ export function checkDecision(raw: unknown, c: CheckContext): { ok: true; decisi
     // An empty oneLine is refused: the board writes one from the items (the runner fills it in).
     const oneLine = cut(typeof s.oneLine === "string" ? s.oneLine : "", ONE_LINE_MAX);
     if (!oneLine) fixes.push(`a ${s.level} send had no oneLine: the board wrote one`);
-    const why = cut(typeof s.why === "string" ? s.why : "", WHY_MAX);
-    sends.push({ level: s.level, oneLine, why, keys, steps: s.level === "urgent" ? checkSteps(s.escalation, c, fixes) : [] });
+    const followed = checkFollowed(s.followed, c.feedback ?? [], fixes);
+    // The quote is the board's: the exact line, added after the helper's own why.
+    const why = [cut(typeof s.why === "string" ? s.why : "", WHY_MAX), ...followed.map(youSaid)].filter(Boolean).join(" ");
+    sends.push({
+      level: s.level, oneLine, why, keys, steps: s.level === "urgent" ? checkSteps(s.escalation, c, fixes) : [],
+      ...(followed.length ? { followed } : {}),
+    });
   }
   const mins = Math.min(MAX_WAKE_MIN, Math.max(MIN_WAKE_MIN, r.nextWakeIn));
   if (mins !== r.nextWakeIn) fixes.push(`next wake ${r.nextWakeIn} min moved to ${mins} min`);
@@ -342,6 +361,34 @@ export function checkDecision(raw: unknown, c: CheckContext): { ok: true; decisi
       fixes,
     },
   };
+}
+
+/**
+ * A send's `followed` after the checks: the feedback lines its indexes name, in order, each once, at most
+ * FOLLOWED_MAX. Anything that isn't a whole number inside the list is dropped (and logged).
+ */
+export function checkFollowed(raw: unknown, feedback: string[], fixes: string[] = []): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    fixes.push("dropped followed: not a list");
+    return [];
+  }
+  const seen = new Set<number>();
+  const out: string[] = [];
+  for (const i of raw) {
+    if (typeof i !== "number" || !Number.isInteger(i) || i < 0 || i >= feedback.length || !feedback[i]?.trim()) {
+      fixes.push(`dropped followed ${JSON.stringify(i)} (no such feedback line)`);
+      continue;
+    }
+    if (seen.has(i)) continue;
+    seen.add(i);
+    if (out.length >= FOLLOWED_MAX) {
+      fixes.push(`quoted only ${FOLLOWED_MAX} followed feedback lines`);
+      break;
+    }
+    out.push(feedback[i]);
+  }
+  return out;
 }
 
 /** The urgent send's reminder plan after the checks (see checkDecision). */

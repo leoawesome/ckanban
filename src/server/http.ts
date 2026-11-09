@@ -866,11 +866,11 @@ export function createServer(deps: ServerDeps) {
       const msg = parts[1] ? store.get(decodeURIComponent(parts[1])) : null;
       if (parts.length === 2 && m === "GET") {
         if (!msg) throw new HttpError(404, "message not found");
-        return json(msg);
+        return json(notifier.helper.withStates(msg));
       }
       if (parts.length === 3 && parts[2] === "read" && m === "POST") {
         if (!msg) throw new HttpError(404, "message not found");
-        return json({ message: store.markRead(msg.id), unread: store.unread() });
+        return json({ message: notifier.helper.withStates(store.markRead(msg.id) ?? msg), unread: store.unread() });
       }
       // The message page's buttons (POST, never links): Got it and Not urgent; key: only that item of the message.
       if (parts.length === 3 && (parts[2] === "got-it" || parts[2] === "not-urgent") && m === "POST") {
@@ -880,7 +880,8 @@ export function createServer(deps: ServerDeps) {
         const key = typeof b?.key === "string" ? b.key : null;
         const h = helperOr503();
         const r = helperCall(() => (parts[2] === "got-it" ? h.gotIt(msg.id, key) : h.notUrgent(msg.id, key)));
-        return json({ ...r, message: store.get(msg.id), unread: store.unread() });
+        const after = store.get(msg.id);
+        return json({ ...r, message: after ? notifier.helper.withStates(after) : null, unread: store.unread() });
       }
     }
 
@@ -914,6 +915,14 @@ export function createServer(deps: ServerDeps) {
         const b = await body(req);
         if (typeof b?.profile !== "string" || typeof b?.ticketId !== "string") throw new HttpError(400, "profile and ticketId are required");
         return json({ ...helperCall(() => h.shouldHavePinged(b.profile, b.ticketId)), lines: h.settings.get().feedback });
+      }
+      // A pretend urgent alert (Settings, the hello page): sent like a real one, one reminder after a minute, never a wait.
+      if (parts[1] === "practice" && parts.length === 2 && m === "POST") {
+        try {
+          return json(await h.practice());
+        } catch (e) {
+          return helperCall(() => { throw e; });
+        }
       }
       if (parts[1] === "notice-seen" && parts.length === 2 && m === "POST") {
         h.noticeSeen();
@@ -2269,6 +2278,8 @@ export function createServer(deps: ServerDeps) {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "only the user's board marks a ticket seen");
       // Opening the ticket stops its helper reminders (and notes when); a pending reminder skips markSeen's throttle.
       const reminded = notifier.opened(slug, id);
+      // Its helper line now says the reminders stopped (Inbox, ticket page).
+      if (reminded) bus.emit({ type: "helper.updated" });
       return json(view(profile, board.markSeen(slug, id, reminded)));
     }
     if (action === "usage" && m === "GET") {

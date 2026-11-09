@@ -511,3 +511,51 @@ test("the read position is saved: after a restart the last batch isn't handled a
   await other.bot.pollOnce();
   expect(other.api.calls.find((c) => c.method === "getUpdates")!.body.offset).toBe(0);
 });
+
+describe("the night question and the practice alert on Telegram", () => {
+  const cb = (data: string, buttons: any[][] = []) => ({
+    update_id: 1, callback_query: { id: "cq1", from: { id: ME }, message: { chat: { id: ME }, message_id: 9, reply_markup: { inline_keyboard: buttons } }, data },
+  });
+
+  test("a practice alert gets Got it / Not urgent; the night question gets Yes / Not at night and Telegram takes it", async () => {
+    const { bot, api } = makeBot({ settings: { chatId: ME } });
+    await bot.send(out({ level: "test", practice: true }));
+    expect(api.sent().at(-1)!.body.reply_markup.inline_keyboard[0].map((b: any) => b.callback_data)).toEqual(["g:m_abc123", "n:m_abc123"]);
+    await bot.send(out({ level: "hello", urgent: false, nightAsk: true }));
+    const night = api.sent().at(-1)!.body;
+    expect(night.reply_markup.inline_keyboard[0]).toEqual([{ text: "Yes", callback_data: "y:m_abc123" }, { text: "Not at night", callback_data: "x:m_abc123" }]);
+    expect(night.disable_notification).toBe(true);
+    // A plain hello carries no night buttons.
+    await bot.send(out({ level: "hello", urgent: false }));
+    expect(api.sent().at(-1)!.body.reply_markup).toBeUndefined();
+    const { telegramTakes } = await import("../src/server/helper/channels");
+    expect(telegramTakes({ level: "hello", urgent: false, nightAsk: true })).toBe(true);
+    expect(telegramTakes({ level: "hello", urgent: false })).toBe(false);
+  });
+
+  test("Yes / Not at night call the board; Got it on a practice alert offers the night question with its buttons", async () => {
+    const said: string[] = [];
+    const { bot, api } = makeBot({
+      settings: { chatId: ME },
+      actions: {
+        night: (id, allow) => (said.push(`${id}:${allow}`), allow ? "Done: yes" : "Done: no"),
+        nightAfter: (id) => (id === "m_prac1" ? "Should urgent alerts wake you at night (22:00-07:00)?" : null),
+      },
+    });
+    await bot.handle(cb("y:m_note1", [[{ text: "Yes", callback_data: "y:m_note1" }, { text: "Not at night", callback_data: "x:m_note1" }]]));
+    await bot.handle(cb("x:m_note1"));
+    expect(said).toEqual(["m_note1:true", "m_note1:false"]);
+    const answers = api.calls.filter((c) => c.method === "answerCallbackQuery").map((c) => c.body.text);
+    expect(answers).toEqual(["Done: yes", "Done: no"]);
+    // The tapped message loses its buttons and a reply says what happened.
+    expect(api.calls.find((c) => c.method === "editMessageReplyMarkup")!.body.reply_markup.inline_keyboard).toEqual([]);
+    expect(api.sent().at(-1)!.body.text).toBe("Done: no");
+    await bot.handle(cb("g:m_prac1"));
+    const reply = api.sent().at(-1)!.body;
+    expect(reply.text).toBe("Got it.\n\nShould urgent alerts wake you at night (22:00-07:00)?");
+    expect(reply.reply_markup.inline_keyboard[0].map((b: any) => b.callback_data)).toEqual(["y:m_prac1", "x:m_prac1"]);
+    // Got it on a real alert: no night question.
+    await bot.handle(cb("g:m_real1"));
+    expect(api.sent().at(-1)!.body.reply_markup).toBeUndefined();
+  });
+});

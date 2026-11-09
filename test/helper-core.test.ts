@@ -266,10 +266,10 @@ describe("Notifier with the helper core", () => {
     stop();
   });
 
-  test("night, helper failing: only urgent waits go out directly; the rest wait for the morning digest", async () => {
+  test("night, helper failing: only urgent waits go out directly (night wake-ups allowed); the rest wait for the morning digest", async () => {
     const n = make();
     let morning: number | null = clock + 8 * 3600_000;
-    n.helper.setSink({ healthy: () => false, lastSuccessAt: () => null, onWait: () => {}, morning: () => morning });
+    n.helper.setSink({ healthy: () => false, lastSuccessAt: () => null, onWait: () => {}, morning: () => morning, nightAllowed: () => true });
     const stop = n.start();
     const urgent = store.createTicket("kb", { title: "Billing", body: "b", status: "in_progress" });
     const recent = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });

@@ -8,21 +8,26 @@ import { join } from "node:path";
 import type { BusEvent } from "../events";
 import { trackedInterval } from "../lag";
 import type { NotifySettings } from "../notify";
-import { addSideSpend, type SideCaller } from "../side-call";
+import { addSideSpend, readSideSpend, type SideCaller } from "../side-call";
+import { dayKey } from "../limit";
 import { atomicWrite, type Store } from "../store";
 import { clockTime, cut, directLabel, type HelperCore, type HelperSink, type OutBody, type WaitEventReason } from "./core";
 import {
-  checkDecision, DECISION_SCHEMA, HELPER_SYSTEM, parseDecision, REMIND_MAX_MIN, REMIND_MAX_STEPS, summaryAllowedAt, urgentRefusal, type CheckedDecision, type CheckedSend,
+  checkDecision, DECISION_SCHEMA, HELPER_SYSTEM, parseDecision, REMIND_MAX_MIN, REMIND_MAX_STEPS, summaryAllowedAt, urgentRefusal, youSaid, type CheckedDecision, type CheckedSend,
   type HelperInput, type InputItem, type ItemState,
 } from "./decide";
 import type { MessageItem, NewMessage, StoredMessage } from "./messages";
-import { buildSummary, type SummaryInput } from "./summary";
-import { HelperSettingsStore, inNight, MORNING_GRACE_MS, morningDigestAt, nightEnd, type HelperSettings, type Night } from "./settings";
+import { buildSummary, weekRecapLine, weekStart, type SummaryInput } from "./summary";
+import {
+  HelperSettingsStore, inNight, MORNING_GRACE_MS, morningDigestAt, nightAllowed, nightAnswerText, nightEnd, nightQuestion, type HelperSettings, type Night,
+} from "./settings";
 import { snoozeForever } from "../attention";
 import { DIGEST_MS, FALLBACK_MS, pending, type WaitRecord } from "./waits";
 
 /** A new wait waits this long for others before the helper wakes (an asker's urgent mark wakes it at once). */
 export const BATCH_MS = 60_000;
+/** Waits the helper can only put in a summary unless the asker marks them urgent: no paid wake while it can't send one. */
+export const ROUTINE_KINDS: ReadonlySet<string> = new Set(["review", "reply", "proposal", "huddle"]);
 /** No wake sooner than this after the last run. */
 export const LOOP_GUARD_MS = 60_000;
 /** Failed runs in a row before waits go out directly with one pause message. */
@@ -52,8 +57,21 @@ export function lookBeforeDigest(before: number, night: Night): number {
   return inNight(graceStart, night) ? nightEnd(graceStart, night) : before;
 }
 export const REACTIONS_KEEP = 20;
+/** The practice alert's one reminder comes this long after it. */
+export const PRACTICE_REMIND_MS = 60_000;
+/** A night wake-up older than this isn't asked about any more. */
+export const NIGHT_ASK_MAX_MS = 24 * 3600_000;
+/** What Got it / Not urgent on a practice alert says. */
+export const PRACTICE_STOPPED = "That stopped the reminder. Real alerts work the same way.";
 /** The helper's spend, for the "Helper" line in today's spend (spend.ts). */
 export const helperSpendFile = (root: string) => join(root, "helper-spend.jsonl");
+
+/** The helper's paid checks on the local day of `at` and what they cost (failed calls that cost money count too). */
+export function helperSpendOn(root: string, at: Date): { checks: number; costUsd: number } {
+  const s = readSideSpend(helperSpendFile(root));
+  const day = dayKey(at);
+  return { checks: s.calls?.get(day) ?? 0, costUsd: s.days.get(day) ?? 0 };
+}
 
 /** Why an item's reminders had stopped before a Got it, in plain words. */
 const STOPPED_WHY: Record<string, string> = {
@@ -100,8 +118,14 @@ interface RunnerState {
   /** The last urgent alert sent at night (the morning message asks whether it was right). */
   nightWokeAt: string | null;
   nightWokeFor: string | null;
+  /** The one-time night question went out (the hello asks new installs; an existing install gets its own message). */
+  nightNoticeAt: string | null;
+  /** The practice alert running now: its one reminder is due at dueAt (reminderId once sent). Never a wait. */
+  practice: { messageId: string; dueAt: string; reminderId?: string | null } | null;
   /** Non-urgent board messages stored during the night: they go out when the night ends (oldest first). */
   heldSends: HeldSend[];
+  /** The week (its Monday, local day) whose first summary carried the "Last week: ..." recap line. */
+  recapWeek?: string | null;
   runs: RunLog[];
 }
 
@@ -113,11 +137,13 @@ interface HeldSend {
   tag: string;
   /** "pause": dropped instead of sent when the helper works again by then. */
   kind?: "pause";
+  /** Carries the night question: Telegram takes it with Yes / Not at night. */
+  nightAsk?: boolean;
 }
 
 const emptyState = (): RunnerState => ({
   nextWakeAt: null, lastRunAt: null, lastOkAt: null, lastFailAt: null, lastCheckAt: null, failures: 0, failReason: null, pauseSentAt: null,
-  notes: "", helloSentAt: null, noticeSeenAt: null, firstUrgentAsked: false, named: {}, reactions: [], nightWokeAt: null, nightWokeFor: null, heldSends: [], runs: [],
+  notes: "", helloSentAt: null, noticeSeenAt: null, firstUrgentAsked: false, named: {}, reactions: [], nightWokeAt: null, nightWokeFor: null, nightNoticeAt: null, practice: null, heldSends: [], runs: [],
 });
 
 const ms = (iso: string | null | undefined) => (iso ? Date.parse(iso) : NaN);
@@ -225,6 +251,10 @@ export interface HelperStatus {
   waiting: number;
   /** A helper line per waiting ticket, keyed "<board>/<ticketId>". */
   lines: Record<string, string>;
+  /** The message a ticket's line is about (its alert, newest reminder or summary), same keys: the line links to it. */
+  lineMsg: Record<string, string>;
+  /** What the helper's paid checks cost today (local day): the helper card's "Today: 12 checks, $0.21". */
+  today: { checks: number; costUsd: number };
   runs: RunLog[];
 }
 
@@ -249,6 +279,8 @@ export class HelperRunner implements HelperSink {
     d.core.setActions({
       gotIt: (id) => this.tap(() => this.gotIt(id)),
       notUrgent: (id) => this.tap(() => this.notUrgent(id)),
+      night: (id, allow) => this.tap(() => this.nightAnswer(id, allow)),
+      nightAfter: (id) => this.nightAfter(id),
     });
   }
 
@@ -286,15 +318,63 @@ export class HelperRunner implements HelperSink {
     // summary goes first.
     const night = this.settings.get().night;
     if (rec.digestAt && inNight(ms(rec.digestAt), night)) this.d.core.waits.update(rec.key, { digestAt: new Date(morningDigestAt(ms(rec.digestAt), night)).toISOString() });
-    if (reason === "urgent" || rec.urgent) this.requestWake(now);
-    // Not "only when no wake is set": a far-off wake (a snooze's end) must not hold the batch back.
-    else this.requestWake(now + BATCH_MS);
+    // At night without the user's yes to night wake-ups the helper could send nothing: each wait is held for the
+    // morning as it arrives, with no paid call and no fallback.
+    if (inNight(now, night) && !this.nightAllowed()) {
+      if (!rec.toldAt && !rec.closedAt) this.holdNight([rec], now, night);
+    } else if (reason === "urgent" || rec.urgent) this.requestWake(now);
+    else {
+      const hold = this.routineHold(rec, reason, now, night);
+      if (hold !== null) {
+        // The helper could only hold it now: no paid wake until the summary may go. While runs succeed, the 5-minute
+        // fallback isn't needed (the 4-hour digest and the failure digest at FAIL_LIMIT stay as the safety nets).
+        this.d.core.waits.update(rec.key, { heldUntil: new Date(hold).toISOString(), fallbackAt: null });
+        this.requestWake(hold);
+      }
+      // Not "only when no wake is set": a far-off wake (a snooze's end) must not hold the batch back.
+      else this.requestWake(now + BATCH_MS);
+    }
     this.d.emit?.({ type: "helper.updated" });
+  }
+
+  /**
+   * A routine wait (review, reply, proposal, huddle) the helper could only hold: while the 3-hour summary gap is
+   * closed, or at night. Returns when the helper should look at it (the gap's end, or the night's end when that falls
+   * in the night), or null: wake as usual. Only while runs succeed (failures === 0); a failing helper keeps the
+   * 60-second wake and the 5-minute fallback. Questions, blocked, failed, limit and messages always wake as usual.
+   */
+  private routineHold(rec: WaitRecord, reason: WaitEventReason, now: number, night: Night): number | null {
+    if (!ROUTINE_KINDS.has(rec.kind) || rec.urgent || rec.toldAt || rec.closedAt || rec.seeded) return null;
+    if (reason !== "new" && reason !== "restart") return null;
+    if (this.state.failures !== 0) return null;
+    if (inNight(now, night)) return nightEnd(now, night);
+    const gap = summaryAllowedAt(this.lastSummaryAt(), now, night);
+    return gap === null ? null : nightEnd(gap, night);
   }
 
   morning(now: number): number | null {
     const night = this.settings.get().night;
     return inNight(now, night) ? morningDigestAt(now, night) : null;
+  }
+
+  nightAllowed(): boolean {
+    return nightAllowed(this.settings.get());
+  }
+
+  /**
+   * Night, not allowed to wake the user: these untold waits wait for the morning. The helper looks when the night
+   * ends (its morning message names them); the 5-minute fallback is dropped and the digest waits for the night's end
+   * plus the grace (core.holdForMorning, which also marks the urgent ones for the morning's "Held overnight" line).
+   */
+  private holdNight(recs: WaitRecord[], now: number, night: Night): void {
+    if (!recs.length) return;
+    const end = nightEnd(now, night);
+    // A digest already due after the morning keeps its time: a working helper's morning look may hold a routine wait
+    // for later without the board calling it missed at 7:30.
+    const later = new Map(recs.map((r) => [r.key, r.digestAt && !inNight(ms(r.digestAt), night) && ms(r.digestAt) > end ? r.digestAt : null]));
+    this.d.core.holdForMorning(recs);
+    for (const r of recs) this.d.core.waits.update(r.key, { heldUntil: new Date(end).toISOString(), ...(later.get(r.key) ? { digestAt: later.get(r.key)! } : {}) });
+    this.requestWake(end);
   }
 
   /** Wake at this time (or sooner if already due sooner). The loop guard and the failure backoff still apply. */
@@ -329,6 +409,9 @@ export class HelperRunner implements HelperSink {
       await this.reminders();
       this.maintain();
       await this.sendHeld();
+      await this.practiceReminder();
+      await this.nightNotice();
+      await this.askAboutNightWake();
       const due = this.dueAt();
       if (due !== null && due <= this.now()) await this.wake();
     } finally {
@@ -339,8 +422,16 @@ export class HelperRunner implements HelperSink {
   start(intervalMs = 10_000): () => void {
     // First start with the helper: the hello (and the first summary) go out on the first wake.
     // A restart inside a batch: what is open and untold gets its wake (the batch was in memory).
-    const untold = this.d.core.waits.open().some((r) => !r.toldAt);
-    if (!this.state.helloSentAt || this.d.core.waits.firstSummaryPending || untold) this.requestWake(this.now() + BATCH_MS);
+    // A routine wait held for the summary (no fallback) keeps its time: the restart doesn't buy a paid wake for it.
+    const now = this.now();
+    let untold = false;
+    for (const r of this.d.core.waits.open()) {
+      if (r.toldAt) continue;
+      const held = ms(r.heldUntil);
+      if (!r.fallbackAt && !r.seeded && !r.urgent && Number.isFinite(held) && held > now) this.requestWake(held);
+      else untold = true;
+    }
+    if (!this.state.helloSentAt || this.d.core.waits.firstSummaryPending || untold) this.requestWake(now + BATCH_MS);
     const run = () => this.tick().catch((e) => console.error("helper: tick", e));
     const timer = trackedInterval("helper", run, intervalMs);
     return () => clearInterval(timer);
@@ -419,7 +510,13 @@ export class HelperRunner implements HelperSink {
     for (const c of checkins) states.set(c.key, { open: true, snoozed: false, checkin: true, told: !!this.state.named[c.key], pendingReminders: false, stopped: null });
     const seen = this.state.lastOkAt ?? "";
     const newFeedback = s.feedback.filter((f) => f.at > seen).map((f) => f.text);
-    const anything = open.some((r) => !snoozed.has(r.key)) || checkins.some((c) => !this.state.named[c.key]) || newFeedback.length > 0;
+    // Only what the helper could act on: untold waits (one shown in the front desk chat only if urgent), check-ins not
+    // named yet, new feedback. Waits it already told keep no paid wakes going.
+    const untold = open.some((r) => !snoozed.has(r.key) && !r.toldAt && (!r.seenInChatAt || r.urgent));
+    // An urgent alert that reached no channel on a wait already told by a summary stays told: the retry still looks.
+    const unreached = open.some((r) => !snoozed.has(r.key) && !r.remindersStopped && !pending(r) && !alerted(r) && r.reminders.some((x) => x.failed)
+      && stepsUsed(r) < REMIND_MAX_STEPS && (!r.remindUntil || ms(r.remindUntil) > now));
+    const anything = untold || unreached || checkins.some((c) => !this.state.named[c.key]) || newFeedback.length > 0;
     return { now, open, snoozed, checkins, olderCheckins: older, states, newFeedback, anything };
   }
 
@@ -454,14 +551,13 @@ export class HelperRunner implements HelperSink {
       });
     }
     const night = inNight(g.now, s.night);
-    const askAboutNight = this.state.nightWokeAt && !night ? `You woke the user at ${clockTime(this.state.nightWokeAt)} for: ${this.state.nightWokeFor ?? "an urgent item"}` : null;
     return {
       now: new Date(g.now).toISOString(), localTime: new Date(g.now).toString(),
-      night: { start: s.night.start, end: s.night.end, nowIsNight: night, mayWakeAtNight: s.nightOptIn === true },
+      night: { start: s.night.start, end: s.night.end, nowIsNight: night, mayWakeAtNight: nightAllowed(s) },
       boardOnScreen: this.d.onScreen?.() ?? false, items, olderCheckins: g.olderCheckins,
       channels: this.d.core.channels.enabled(this.d.notifySettings()).map((c) => c.name),
       feedback: s.feedback.map((f) => f.text), newFeedback: g.newFeedback, reactions: this.state.reactions.map((r) => r.text),
-      notes: this.state.notes, firstSummary: this.d.core.waits.firstSummaryPending, askAboutNight,
+      notes: this.state.notes, firstSummary: this.d.core.waits.firstSummaryPending,
       nextSummaryAt: this.nextSummaryAt(g.now, s),
     };
   }
@@ -491,19 +587,34 @@ export class HelperRunner implements HelperSink {
     try {
       this.state.lastCheckAt = entry.at;
       await this.hello(s);
+      if (inNight(started, s.night) && !nightAllowed(s)) {
+        // Nothing the helper decides at night can go out without the user's yes: no paid call. What waits untold is
+        // held for the morning; lastOkAt stays (a broken helper isn't hidden), and the failure count stays as it is.
+        const untold = this.d.core.waits.open().filter((r) => !r.toldAt);
+        this.holdNight(untold, started, s.night);
+        const end = nightEnd(started, s.night);
+        this.state.nextWakeAt = new Date(end).toISOString();
+        const n = untold.length;
+        entry = { ...entry, ok: true, skipped: true, log: `Night: ${n ? `holding ${n === 1 ? "1 ticket" : `${n} tickets`} for the morning` : "nothing to do"}; waking you at night is off.` };
+        return entry;
+      }
       const g = this.gather(started, s);
       // While runs fail, the retry asks the helper even with nothing waiting: it is how the helper gets healthy again
       // (waits go out directly meanwhile and never wake it).
       if (!g.anything && this.state.failures === 0) {
         // Nothing waiting, due or new: no model call.
         this.state.nextWakeAt = null;
+        // A routine wait only the front desk chat showed: the helper looked and had nothing to do, so the 5-minute
+        // fallback (which waits for a successful look) must not send it as missed.
+        for (const r of g.open) if (!r.toldAt && r.seenInChatAt && !r.urgent && r.fallbackAt) this.d.core.waits.update(r.key, { fallbackAt: null });
         if (this.d.core.waits.firstSummaryPending) this.d.core.waits.firstSummaryPending = false;
         entry = { ...entry, ok: true, skipped: true, log: "Nothing waits on you." };
         return entry;
       }
       this.state.lastRunAt = entry.at;
       this.save();
-      const res = await this.d.sideCall({ system: HELPER_SYSTEM, prompt: JSON.stringify(this.input(g, s)), model: s.model, jsonSchema: DECISION_SCHEMA, timeoutMs: RUN_TIMEOUT_MS });
+      const input = this.input(g, s);
+      const res = await this.d.sideCall({ system: HELPER_SYSTEM, prompt: JSON.stringify(input), model: s.model, jsonSchema: DECISION_SCHEMA, timeoutMs: RUN_TIMEOUT_MS });
       if (!res.ok) {
         // A failed call may still have cost money: it counts in the Helper spend line too.
         if (res.costUsd) {
@@ -523,7 +634,9 @@ export class HelperRunner implements HelperSink {
       const fresh = this.gather(now, s);
       const checked = checkDecision(parsed.raw, {
         now, items: fresh.states, channels: this.d.core.channels.names(), on: this.d.core.channels.enabled(this.d.notifySettings()).map((c) => c.name),
-        night: s.night, nightOptIn: s.nightOptIn === true,
+        night: s.night, nightOptIn: s.nightOptIn,
+        // The list the helper saw (a line removed meanwhile can't shift its indexes onto another line).
+        feedback: input.feedback,
       });
       if (!checked.ok) return (entry = await this.failed(entry, checked.error));
       Object.assign(this.state, { failures: 0, failReason: null, pauseSentAt: null, lastOkAt: entry.at, notes: checked.decision.notes });
@@ -643,7 +756,6 @@ export class HelperRunner implements HelperSink {
       });
     }
     this.state.nextWakeAt = nextIso;
-    if (sent && this.state.nightWokeAt && !inNight(this.now(), s.night)) this.state.nightWokeAt = this.state.nightWokeFor = null;
     return sent;
   }
 
@@ -713,12 +825,15 @@ export class HelperRunner implements HelperSink {
       : NO_REMINDERS;
     const ask = !this.state.firstUrgentAsked ? `${ASK_PREFIX} Tap Got it if this was worth interrupting you, or Not urgent if it wasn't.` : null;
     const boards = this.boards(items);
+    const overnight = this.d.core.heldOvernightLine(recs);
     const text = [
-      send.oneLine, send.why ? `Why: ${send.why}` : null,
+      overnight, send.oneLine, send.why ? `Why: ${send.why}` : null,
       ...items.map((it, i) => `${it.title}${boards ? ` (${it.boardName})` : ""}\n${recs[i].question}\n${this.d.link(it.board, it.ticketId)}`),
       nextLine, ask,
     ].filter(Boolean).join("\n\n");
-    const message = this.d.core.messages.add({ level: "urgent", oneLine: send.oneLine, text, why: send.why || null, items });
+    const message = this.d.core.messages.add({
+      level: "urgent", oneLine: send.oneLine, text, why: send.why || null, items, ...(overnight ? { heldOvernight: overnight, nightAsk: s.nightOptIn === null } : {}),
+    });
     const out = this.out(message, items.length === 1 ? items[0].title : "Urgent", send.oneLine, text, true, `urgent-${message.id}`);
     const on = this.d.core.channels.enabled(this.d.notifySettings()).map((c) => c.name);
     const chain = steps.length ? stepChain(steps[0].channel, steps.slice(1).map((x) => x.channel), on) : on;
@@ -763,6 +878,9 @@ export class HelperRunner implements HelperSink {
     const now = this.now();
     const due = new Map<string, { recs: WaitRecord[]; index: number }>();
     const expired = new Map<string, WaitRecord[]>();
+    // An alert from the evening doesn't keep reminding into the night unless the user allowed night wake-ups.
+    const s = this.settings.get();
+    const quiet = inNight(now, s.night) && !nightAllowed(s);
     for (const r of this.d.core.waits.open()) {
       if (!pending(r)) continue;
       if (r.remindUntil && ms(r.remindUntil) <= now) {
@@ -770,7 +888,7 @@ export class HelperRunner implements HelperSink {
         expired.set(k, [...(expired.get(k) ?? []), r]);
         continue;
       }
-      if (this.snoozed(r)) continue;
+      if (this.snoozed(r) || quiet) continue;
       // After sleep or a snooze several steps may be overdue: fire only the latest, skip the ones before it.
       const index = r.reminders.findLastIndex((x) => !x.sentAt && ms(x.dueAt) <= now);
       if (index < 0) continue;
@@ -857,36 +975,50 @@ export class HelperRunner implements HelperSink {
     const freshItems = fresh.map((r) => this.d.core.item(r));
     const stillItems = still.map((r) => this.d.core.item(r));
     const boards = this.boards([...freshItems, ...stillItems, ...newChecks]);
-    const total = fresh.length + still.length;
+    // The headline counts only what is new since the last summary; what still waits is counted in the body.
+    const total = fresh.length;
     // The board writes the count itself (the helper's own count can be off).
     send = { ...send, oneLine: summaryLine(total, send.oneLine) };
     const offer = first && this.d.checkinOffer?.()
       ? "Want me to watch your calendar and messages too? Set up a check-in in Schedules → Proactive check-ins (one tap: Set up check-ins)." : null;
     const input = (it: MessageItem, r: WaitRecord): SummaryInput => ({ ...it, label: directLabel(r), since: r.since || r.queuedAt });
     const checkinSince = (c: MessageItem) => this.d.store.getTicket(c.board, c.ticketId)?.createdAt ?? new Date(this.now()).toISOString();
+    // The week's first summary: a "Last week: ..." line from waits.json and the helper's spend (no model call).
+    const week = dayKey(new Date(weekStart(this.now())));
+    const recap = this.state.recapWeek !== week
+      ? weekRecapLine(this.d.core.waits.all(), readSideSpend(helperSpendFile(this.d.root)).days, this.now()) : null;
     const { text, view } = buildSummary({
       headline: send.oneLine,
       fresh: fresh.map((r, i) => input(freshItems[i], r)),
       still: still.map((r, i) => input(stillItems[i], r)),
       checkins: newChecks.map((c) => ({ ...c, label: c.title.toLowerCase().startsWith("prep:") ? "prep ready" : "raised for you", since: checkinSince(c) })),
       olderCheckins: g.olderCheckins,
-      notes: [first ? "This is your first summary from the helper. Routine things come grouped like this; only urgent ones interrupt you." : null, offer].filter((x): x is string => !!x),
+      notes: [
+        first ? "This is your first summary from the helper. Routine things come grouped like this; only urgent ones interrupt you." : null, offer,
+        ...(send.followed ?? []).map(youSaid), recap,
+      ].filter((x): x is string => !!x),
       boards, now: this.now(),
     });
-    const title = total ? (total === 1 ? "1 ticket waits on you" : `${total} tickets wait on you`) : "From your check-ins";
+    const title = total ? (total === 1 ? "1 new ticket waits on you" : `${total} new tickets wait on you`) : "From your check-ins";
+    // Urgent waits held overnight (no night wake-ups allowed): the morning message says so first.
+    const overnight = this.d.core.heldOvernightLine(fresh);
+    const nightAsk = !!overnight && this.settings.get().nightOptIn === null;
     // A summary's why is the helper's own reasoning: it stays out of the text and the page.
-    const message = this.d.core.messages.add({ level: "summary", oneLine: send.oneLine, text, why: null, items: [...freshItems, ...newChecks, ...stillItems], summary: view });
+    const message = this.d.core.messages.add({
+      level: "summary", oneLine: send.oneLine, text: overnight ? `${overnight}\n\n${text}` : text, why: null, items: [...freshItems, ...newChecks, ...stillItems], summary: view,
+      ...(overnight ? { heldOvernight: overnight, nightAsk } : {}),
+    });
     // Told before the send (a claim): the 4-hour digest or a restart meanwhile doesn't send these again. Given back
     // when the send reached no channel, so the next message or the digest still tells them.
     const claims = fresh.map(claimOf);
     this.d.core.markTold(fresh.map((r) => r.key), "helper", message.id);
     for (const r of fresh) this.d.core.waits.update(r.key, { heldUntil: null, messageId: message.id });
-    const results = await this.d.core.deliver(message, this.out(message, title, send.oneLine, text, false, "helper-summary"));
+    const results = await this.d.core.deliver(message, this.out(message, title, send.oneLine, message.text, false, "helper-summary"));
     const tried = results.filter((r) => !r.skipped);
     if (tried.length && !tried.some((r) => r.ok)) {
       this.d.core.waits.unclaim(claims);
       console.warn(`helper: summary ${message.id} reached no channel (${failures(results)}); its new items stay untold`);
-    }
+    } else this.state.recapWeek = week;
     const at = new Date(this.now()).toISOString();
     for (const c of newChecks) this.state.named[c.key!] = at;
     this.d.emit?.({ type: "helper.message", id: message.id, level: "summary", oneLine: send.oneLine });
@@ -905,9 +1037,14 @@ export class HelperRunner implements HelperSink {
       "Tap any message to read it in full. If you got this, this channel works.",
       `My night is ${s.night.start} to ${s.night.end}; change it in Settings. Alerts need this Mac on and awake; a closed lid means no alerts.`,
       "ntfy can get through Focus if you allow the ntfy app in that Focus; for Telegram, allow Telegram in your Focus (not guaranteed).",
+      "Want to see what an urgent alert looks like? Open this message on the board and tap Try a pretend urgent alert.",
+      ...(s.nightOptIn === null ? [`${nightQuestion(s.night)} Until you choose, nothing wakes you at night. Answer on this message's page or in Settings.`] : []),
     ].join("\n\n");
+    // New installs get the night question in the hello; the separate notice is for installs that had their hello before.
+    if (!this.state.nightNoticeAt) this.state.nightNoticeAt = this.state.helloSentAt;
+    this.save();
     await this.sendOrHold(
-      { level: "hello", oneLine: "Hi, I'm the helper: routine things come grouped, urgent ones interrupt", text },
+      { level: "hello", oneLine: "Hi, I'm the helper: routine things come grouped, urgent ones interrupt", text, ...(s.nightOptIn === null ? { nightAsk: true } : {}) },
       { title: "ckanban helper", body: "Routine things come grouped now; only urgent ones interrupt you", tag: "helper-hello" },
     );
   }
@@ -931,7 +1068,7 @@ export class HelperRunner implements HelperSink {
 
   private heldOut(message: StoredMessage, o: Omit<HeldSend, "messageId">): OutBody {
     const tag = o.tag === "stopped" ? `stopped-${message.id}` : o.tag;
-    return { level: message.level, title: o.title, body: o.body, text: message.text, url: (id) => this.d.messageLink(id), tag };
+    return { level: message.level, title: o.title, body: o.body, text: message.text, url: (id) => this.d.messageLink(id), tag, ...(o.nightAsk ? { nightAsk: true } : {}) };
   }
 
   /** The night is over: the held messages go out (a pause notice only if the helper still can't run). */
@@ -948,6 +1085,132 @@ export class HelperRunner implements HelperSink {
       if (message) await this.d.core.deliver(message, this.heldOut(message, x));
     }
     this.changed();
+  }
+
+  // ---------- the night question ----------
+
+  /**
+   * Installs that had their hello before the night question existed: one daytime message asks it (Yes / Not at
+   * night on its page, and as Telegram buttons when Telegram is paired). Once only; never once the user chose.
+   */
+  private async nightNotice(): Promise<void> {
+    const s = this.settings.get();
+    if (this.state.nightNoticeAt || !this.state.helloSentAt || s.nightOptIn !== null || inNight(this.now(), s.night)) return;
+    // Claimed before the send: a slow send or a restart doesn't ask twice.
+    this.state.nightNoticeAt = new Date(this.now()).toISOString();
+    this.save();
+    const text = [
+      nightQuestion(s.night),
+      "Until you choose, nothing wakes you at night: urgent things wait for the morning, and the morning message says what was held. You can change it any time in Settings.",
+    ].join("\n\n");
+    const message = this.d.core.messages.add({ level: "hello", oneLine: "Should urgent alerts wake you at night?", text, nightAsk: true });
+    await this.d.core.deliver(message, this.heldOut(message, { title: "ckanban helper", body: "Should urgent alerts wake you at night?", tag: "helper-night", nightAsk: true }));
+    this.changed();
+  }
+
+  /**
+   * After a night wake-up, the board asks in the morning whether it was right: its own message once the night is
+   * over, no paid call. Asked once (cleared before the send); one older than a day is dropped.
+   */
+  private async askAboutNightWake(): Promise<void> {
+    const at = this.state.nightWokeAt;
+    if (!at) return;
+    const now = this.now();
+    const s = this.settings.get();
+    if (inNight(now, s.night)) return;
+    const what = this.state.nightWokeFor ?? "an urgent alert";
+    this.state.nightWokeAt = this.state.nightWokeFor = null;
+    this.save();
+    if (now - ms(at) > NIGHT_ASK_MAX_MS) return;
+    const text = [
+      `Last night at ${clockTime(at)} I woke you for: ${what}`,
+      "Was that worth waking you for? If it could have waited, open that alert and tap Not urgent, or tell me under What the helper knows about you. I'll go by it next time.",
+    ].join("\n\n");
+    const message = this.d.core.messages.add({ level: "direct", oneLine: cut(`Was it right to wake you at ${clockTime(at)}?`), text });
+    await this.d.core.deliver(message, this.heldOut(message, { title: "ckanban helper", body: cut(`Was it right to wake you at ${clockTime(at)}? ${what}`), tag: "helper-night-ask" }));
+    this.changed();
+  }
+
+  /** Yes / Not at night (Telegram's buttons): saves the user's choice. */
+  nightAnswer(_messageId: string, allow: boolean): { text: string } {
+    // An old button tapped after the user chose (here or in Settings) doesn't overwrite that choice.
+    const cur = this.settings.get();
+    if (cur.nightOptIn !== null) {
+      const now = cur.nightOptIn ? "urgent alerts may wake you at night" : "nothing wakes you at night";
+      return { text: `You already chose: ${now}. Change it in Settings.` };
+    }
+    const s = this.settings.update({ nightOptIn: allow });
+    this.react(allow ? "Said yes to urgent alerts at night" : "Said not at night");
+    this.changed();
+    return { text: nightAnswerText(allow, s.night) };
+  }
+
+  /** After Got it / Not urgent on a practice alert, the night question comes next while the user hasn't chosen. */
+  nightAfter(messageId: string): string | null {
+    const m = this.d.core.messages.get(messageId);
+    const s = this.settings.get();
+    return m?.practice && s.nightOptIn === null ? nightQuestion(s.night) : null;
+  }
+
+  // ---------- the practice alert ----------
+
+  /**
+   * A pretend urgent alert the user asked for (Settings, the hello page): stored at level test with practice, sent
+   * like an urgent alert, one reminder a minute later unless Got it or Not urgent stops it. It never opens a wait, so
+   * it never reaches gather, summaries, the Inbox or the counts.
+   */
+  async practice(): Promise<{ messageId: string }> {
+    if (!this.active()) throw new HelperError("Turn the helper on first", 409);
+    const now = this.now();
+    const due = new Date(now + PRACTICE_REMIND_MS).toISOString();
+    const oneLine = "Practice alert: tap Got it to stop the reminder";
+    const why = "Nothing is wrong: you asked to see what an urgent alert looks like.";
+    const text = [
+      oneLine, `Why: ${why}`,
+      "A real alert names the ticket and what waiting costs, like customers billed twice, and keeps reminding you until you open it or tap Got it or Not urgent.",
+      `${NEXT_PREFIX} once at ${clockTime(due)}, unless you tap Got it or Not urgent.`,
+    ].join("\n\n");
+    const message = this.d.core.messages.add({ level: "test", oneLine, text, why, practice: true });
+    this.state.practice = { messageId: message.id, dueAt: due, reminderId: null };
+    this.changed();
+    await this.d.core.deliver(message, { ...this.out(message, "Practice alert", oneLine, text, true, `urgent-${message.id}`), practice: true });
+    return { messageId: message.id };
+  }
+
+  /** The practice alert's one reminder, when due and not stopped. */
+  private async practiceReminder(): Promise<void> {
+    const p = this.state.practice;
+    if (!p || p.reminderId || ms(p.dueAt) > this.now()) return;
+    const orig = this.d.core.messages.get(p.messageId);
+    if (!orig || orig.tapped) {
+      this.state.practice = null;
+      this.save();
+      return;
+    }
+    const oneLine = cut(`Reminder: ${orig.oneLine}`);
+    const text = ["Reminder 1 of 1, not opened yet.", reminderBody(orig.text), "This is the last reminder."].join("\n\n");
+    const message = this.d.core.messages.add({ level: "test", oneLine, text, why: orig.why, practice: true });
+    // Claimed before the send: the next tick doesn't send it again.
+    this.state.practice = { ...p, reminderId: message.id };
+    this.save();
+    await this.d.core.deliver(message, { ...this.out(message, "Practice alert", oneLine, text, true, `urgent-${orig.id}`), practice: true });
+    this.changed();
+  }
+
+  /** Got it / Not urgent on a practice alert or its reminder: the reminder stops; nothing else changes. */
+  private practiceTap(message: StoredMessage, how: "got-it" | "not-urgent"): { stopped: number; text: string } {
+    const p = this.state.practice;
+    const ids = new Set([message.id]);
+    let stopped = 0;
+    if (p && (p.messageId === message.id || p.reminderId === message.id)) {
+      ids.add(p.messageId);
+      if (p.reminderId) ids.add(p.reminderId);
+      else stopped = 1;
+      this.state.practice = null;
+    }
+    for (const id of ids) this.d.core.messages.markTapped(id, how);
+    this.changed();
+    return { stopped, text: PRACTICE_STOPPED };
   }
 
   // ---------- the user's taps ----------
@@ -988,6 +1251,8 @@ export class HelperRunner implements HelperSink {
 
   /** Got it: reminders for this message's items stop, and don't come back. */
   gotIt(messageId: string, key?: string | null): { stopped: number; text: string } {
+    const practice = this.d.core.messages.get(messageId);
+    if (practice?.practice) return this.practiceTap(practice, "got-it");
     const { message, recs } = this.tapped(messageId, key);
     this.markTapped(message, recs, "got-it");
     // Why reminders had already stopped before this tap (opened, answered...), to say so instead of a bare "Got it".
@@ -1008,6 +1273,8 @@ export class HelperRunner implements HelperSink {
 
   /** Not urgent: that item's reminders stop at once. */
   notUrgent(messageId: string, key?: string | null): { stopped: number; text: string } {
+    const practice = this.d.core.messages.get(messageId);
+    if (practice?.practice) return this.practiceTap(practice, "not-urgent");
     const { message, recs } = this.tapped(messageId, key);
     this.markTapped(message, recs, "not-urgent");
     let stopped = 0;
@@ -1073,6 +1340,7 @@ export class HelperRunner implements HelperSink {
       const trail = r.reminders.filter((x) => !x.skipped).map((x) => `${label(x.channel)} ${clockTime(x.sentAt ?? x.dueAt)}${x.failed ? " (didn't get through)" : ""}`).join(", ");
       if (r.remindersStopped === "got-it") return `Urgent: ${trail}; you tapped Got it`;
       if (r.remindersStopped === "not-urgent") return `Urgent: ${trail}; you said not urgent`;
+      if (r.remindersStopped === "opened") return `Urgent: ${trail}; reminders stopped when you opened this`;
       if (r.remindersStopped === "expired") return `Urgent: ${trail}; reminders stopped`;
       return `Urgent: ${trail}`;
     }
@@ -1091,6 +1359,7 @@ export class HelperRunner implements HelperSink {
     const on = this.d.core.plugged(ns);
     const open = this.d.core.waits.open();
     const lines: Record<string, string> = {};
+    const lineMsg: Record<string, string> = {};
     let waiting = 0;
     if (on) {
       // Urgent and untold records first: the most telling line wins per ticket.
@@ -1100,7 +1369,10 @@ export class HelperRunner implements HelperSink {
         const k = `${r.board}/${r.ticketId}`;
         if (lines[k]) continue;
         const l = this.lineFor(r);
-        if (l) lines[k] = l;
+        if (!l) continue;
+        lines[k] = l;
+        const msg = lineMessage(r);
+        if (msg && this.d.core.messages.get(msg)) lineMsg[k] = msg;
       }
     }
     const enabled = this.d.core.channels.enabled(ns).map((c) => c.name);
@@ -1118,7 +1390,7 @@ export class HelperRunner implements HelperSink {
       on, model: s.model, night: s.night, nightOptIn: s.nightOptIn, lastCheckAt: this.state.lastCheckAt, lastOkAt: this.state.lastOkAt,
       nextWakeAt: on && this.dueAt() !== null ? new Date(this.dueAt()!).toISOString() : null,
       failures: this.state.failures, failReason: this.state.failReason, paused, onlyMac, notice: !this.state.noticeSeenAt, line,
-      problem: on && this.state.failures > 0, waiting, lines, runs: this.state.runs.slice(-10),
+      problem: on && this.state.failures > 0, waiting, lines, lineMsg, today: helperSpendOn(this.d.root, new Date(this.now())), runs: this.state.runs.slice(-10),
     };
   }
 }
@@ -1131,17 +1403,23 @@ export class HelperError extends Error {
 
 const unique = (xs: string[]) => [...new Set(xs)];
 
-/** A count the helper put at the start of a summary line: "6 tickets wait on you: ", "5 wait on you - ", "3 need you, ". */
-const LEADING_COUNT = /^\s*\d+\s+(?:[\p{L}-]+\s+){0,3}?(?:waits?|are\s+waiting|is\s+waiting|needs?\s+you|need\s+your\s+\w+)(?:\s+on\s+you|\s+for\s+you)?\s*(?:[:,.;\u2014\u2013-]\s*)?/iu;
+/** The message a wait's helper line is about: its newest sent reminder, else the alert or summary that told it. */
+export function lineMessage(r: Pick<WaitRecord, "messageId" | "reminders">): string | null {
+  const sent = r.reminders.filter((x) => x.messageId && x.sentAt && !x.skipped);
+  return sent.at(-1)?.messageId ?? r.messageId ?? null;
+}
+
+/** A count the helper put at the start of a summary line: "6 tickets wait on you: ", "5 wait on you - ", "3 need you, ", "2 new for you: ". */
+const LEADING_COUNT = /^\s*\d+\s+(?:[\p{L}-]+\s+){0,3}?(?:waits?|are\s+waiting|is\s+waiting|needs?\s+you|need\s+your\s+\w+|new\s+for\s+you)(?:\s+on\s+you|\s+for\s+you)?\s*(?:[:,.;\u2014\u2013-]\s*)?/iu;
 
 /**
- * A summary's one line with the board's own count: "N wait on you", then what the helper said is new (its own
- * leading count, if any, dropped). No count when nothing waits (check-ins only).
+ * A summary's one line with the board's own count of new items: "N new for you", then what the helper said is new
+ * (its own leading count, if any, dropped). No count when nothing new waits (check-ins only).
  */
 export function summaryLine(total: number, line: string): string {
   const rest = line.replace(LEADING_COUNT, "").trim();
   if (!total) return cut(rest || line.trim());
-  const head = `${total} ${total === 1 ? "waits" : "wait"} on you`;
+  const head = `${total} new for you`;
   return cut(rest ? `${head}: ${rest}` : head);
 }
 

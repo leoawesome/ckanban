@@ -72,6 +72,11 @@ export function buildArgs(
   effort?: string | null,
   /** Ultracode on for this session (the `ultracode` settings key): a workflow for every substantial task. */
   ultracode = false,
+  /**
+   * Narrower runs (the front desk): more --settings (permission deny rules, merged with ultracode's), an allow-list of
+   * built-in tools (--tools) and only the board's MCP servers (--strict-mcp-config).
+   */
+  more: { settings?: Record<string, unknown> | null; tools?: string[] | null; strictMcp?: boolean } | null = null,
 ): string[] {
   // Prompts go in on stdin (see startRun) so more messages can follow while Claude works;
   // --replay-user-messages echoes each one back when Claude picks it up.
@@ -82,7 +87,9 @@ export function buildArgs(
   args.push(resume ? "--resume" : "--session-id", sessionId);
   if (model) args.push("--model", model);
   if (effort) args.push("--effort", effort);
-  if (ultracode) args.push("--settings", JSON.stringify({ ultracode: true }));
+  if (ultracode || more?.settings) args.push("--settings", JSON.stringify({ ...(more?.settings ?? {}), ...(ultracode ? { ultracode: true } : {}) }));
+  if (more?.tools) args.push("--tools", more.tools.join(","));
+  if (more?.strictMcp) args.push("--strict-mcp-config");
   if (mcp) args.push("--mcp-config", mcp);
   if (systemPrompt) args.push("--append-system-prompt", systemPrompt);
   if (maxBudgetUsd) args.push("--max-budget-usd", String(maxBudgetUsd));

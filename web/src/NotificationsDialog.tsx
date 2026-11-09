@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type ChannelState, type NotifyKind, type NotifyPatch, type NotifyState } from "./api";
-import { helperApi, setHelperStatus, useHelper, type FeedbackLine } from "./helper";
-import { HelperStatusLine } from "./Messages";
+import { helperApi, setHelperStatus, spendLine, useHelper, type FeedbackLine } from "./helper";
+import { HelperStatusLine, PracticeAlert } from "./Messages";
 import { Modal } from "./Modal";
 import { PUSH_CHANGED } from "./push";
 import { PushSection } from "./PushSection";
@@ -133,6 +133,15 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
               </div>
               <HelperStatusLine status={status} reach={false} />
               <div className="hs-warn small">Alerts need this Mac on and awake. A closed lid means no alerts.</div>
+              {status?.on && (
+                <div className="ch-head hs-sep hs-stack">
+                  <div className="grow">
+                    <div className="ch-ttl">See what an urgent alert looks like</div>
+                    <div className="muted small">Sends a pretend alert now and one reminder a minute later, like a real one. Tap Got it to stop it.</div>
+                  </div>
+                  <PracticeAlert compact />
+                </div>
+              )}
             </section>
 
             <h3 className="hs-head">Channels</h3>
@@ -235,6 +244,8 @@ function TelegramSetup({ state, profile, onState, onError }: { state: NotifyStat
   const [token, setToken] = useState("");
   const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cap, setCap] = useState(String(t.deskCapUsd));
+  useEffect(() => setCap(String(t.deskCapUsd)), [t.deskCapUsd]);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // While a code is shown, look every 3 s whether the bot got it.
@@ -317,8 +328,25 @@ function TelegramSetup({ state, profile, onState, onError }: { state: NotifyStat
         </div>
         <div className="ch-head tg-row">
           <div className="grow">
+            <div className="small">Front desk limit a day</div>
+            <div className="muted small">
+              Spent today ${t.deskSpentToday.toFixed(2)}. Past the limit it pauses until tomorrow and says so; alerts still come.
+            </div>
+          </div>
+          <label className="tg-cap">
+            $<input className="input" type="number" inputMode="decimal" min={0} max={100} step={0.5} value={cap} disabled={busy} aria-label="Front desk limit a day, in dollars"
+              onChange={(e) => setCap(e.target.value)}
+              onBlur={() => {
+                const v = Number(cap);
+                if (cap.trim() === "" || !Number.isFinite(v) || v < 0) return setCap(String(t.deskCapUsd));
+                if (v !== t.deskCapUsd) void run(async () => onState(await api.setNotify({ telegram: { deskCapUsd: v } })));
+              }} />
+          </label>
+        </div>
+        <div className="ch-head tg-row">
+          <div className="grow">
             <div className="small">Spent from Telegram today</div>
-            <div className="muted small">Front desk and work started from Telegram. No limit.</div>
+            <div className="muted small">Front desk and work started from Telegram.</div>
           </div>
           <b className="tg-spent">${t.spentToday.toFixed(2)}</b>
         </div>
@@ -500,7 +528,7 @@ function ModelRow() {
     <div className="ch-head hs-more-row hs-stack">
       <div className="grow">
         <div className="ch-ttl">Helper's model</div>
-        <div className="muted small">Sonnet costs about 1 to 3 cents a check.</div>
+        {spendLine(status.today) && <div className="muted small">{spendLine(status.today)}</div>}
       </div>
       <Select ariaLabel="Helper's model" value={status.model}
         onChange={(model) => void helperApi.settings({ model }).then(setHelperStatus, (e) => toast((e as Error).message, { tone: "error" }))}

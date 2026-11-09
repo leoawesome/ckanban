@@ -132,7 +132,7 @@ describe("Got it from Telegram, end to end", () => {
     store.saveProfile(p);
     ticket = store.createTicket("kb", { title: "Pricing", body: "b", status: "in_progress" });
     writeNotifySettings(store.root, { ...normalizeSettings({ webhookUrl: "https://ntfy.sh/topic", mac: false }), telegram: { ...DEFAULT_TELEGRAM, on: true, token: TOKEN, chatId: ME } });
-    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z" }));
+    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z", nightNoticeAt: "2026-11-01T00:00:00Z" }));
   });
 
   test("Got it on the reminder stops the alert's later steps, answers the tap, drops the buttons and replies", async () => {

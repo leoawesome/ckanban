@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
 import { checkDecision, channelFor, parseDecision, type CheckContext, type ItemState } from "../src/server/helper/decide";
-import { backoffMs, HelperRunner, keptQuietLine, lookBeforeDigest, meetingTime, reminderCount } from "../src/server/helper/runner";
+import { backoffMs, HelperRunner, keptQuietLine, lookBeforeDigest, meetingTime, PRACTICE_STOPPED, reminderCount } from "../src/server/helper/runner";
 import { HelperSettingsStore, inNight, morningDigestAt, nightEnd } from "../src/server/helper/settings";
 import type { Channel } from "../src/server/helper/channels";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
@@ -85,6 +85,7 @@ describe("the board's checks on a decision (table)", () => {
       (r) => expect(r.ok && r.decision.sends[0].steps.map((s) => s.afterMin)).toEqual([0, 5, 10])],
     ["30-minute floor at night (with opt-in)", dec([urgent()]), { now: DAY(23), nightOptIn: true }, (r) => expect(r.ok && r.decision.sends[0].steps.map((s) => s.afterMin)).toEqual([0, 30])],
     ["urgent at night without opt-in is held", dec([urgent()]), { now: DAY(23) }, (r) => expect(r.ok && r.decision.sends).toEqual([])],
+    ["urgent at night with the opt-in not asked yet (null) is held", dec([urgent()]), { now: DAY(23), nightOptIn: null }, (r) => expect(r.ok && r.decision.sends).toEqual([])],
     ["a summary at night is held, even with the night opt-in", dec([urgent(), { ...urgent(), level: "summary", itemKeys: ["b"] }]), { now: DAY(3), nightOptIn: true },
       (r) => expect(r.ok && r.decision.sends.map((x) => x.level)).toEqual(["urgent"])],
     ["off channel falls to the next one on", dec([urgent({ escalation: [{ channel: "webhook", afterMin: 0 }] })]), {}, (r) => expect(r.ok && r.decision.sends[0].steps[0].channel).toBe("push")],
@@ -200,7 +201,7 @@ describe("helper runner", () => {
     ticket = store.createTicket("kb", { title: "Pricing", body: "b", status: "in_progress" });
     writeNotifySettings(store.root, normalizeSettings({ webhookUrl: "https://ntfy.sh/topic", mac: false }));
     // Not a first run: the hello went out before.
-    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z" }));
+    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z", nightNoticeAt: "2026-11-01T00:00:00Z" }));
   });
 
   test("a new wait batches about a minute; nothing waiting skips the model call", async () => {
@@ -380,10 +381,10 @@ describe("helper runner", () => {
     answers.push(answer({ sends: [{ level: "summary", oneLine: "1 waits: copy question", why: "the copy question is new", itemKeys: [keyOf(ticket.id)], escalation: [] }] }));
     clock += 60_000;
     await h.tick();
-    expect(hooks.map((x) => x.title)).toEqual(["1 ticket waits on you"]);
+    expect(hooks.map((x) => x.title)).toEqual(["1 new ticket waits on you"]);
     const first = n.helper.messages.listNewest()[0];
     // No "Why now", no links in the text; the page gets rows.
-    expect(first.text).toBe("1 waits on you: copy question\n\n- Pricing: Approve the copy?");
+    expect(first.text).toBe("1 new for you: copy question\n\n- Pricing: Approve the copy?");
     expect(first.why).toBeNull();
     expect(first.summary).toMatchObject({ new: [{ ticketId: ticket.id, label: "Approve the copy?" }], stillCount: 0 });
     // A check-in raised a prep ticket; a new question arrives.
@@ -416,16 +417,56 @@ describe("helper runner", () => {
     expect(hooks).toHaveLength(2);
     const m = n.helper.messages.listNewest()[0];
     expect(m.level).toBe("summary");
-    expect(m.text).toBe("2 wait on you: tone question on Docs\n\n- Docs: Which tone?\n\n1 more still waits on you, oldest from 9 Nov.\n\nFrom your check-ins:\n- Prep: client call at 18:30: prep ready");
+    expect(m.text).toBe("1 new for you: tone question on Docs\n\n- Docs: Which tone?\n\n1 more still waits on you, oldest from 9 Nov.\n\nFrom your check-ins:\n- Prep: client call at 18:30: prep ready");
     expect(m.summary).toMatchObject({ stillCount: 1, still: [{ ticketId: ticket.id }], checkins: [{ title: "Prep: client call at 18:30" }] });
-    expect(hooks.at(-1)!.title).toBe("2 tickets wait on you");
-    // Nothing new: the helper's summary is dropped.
-    answers.push(answer({ sends: [{ level: "summary", oneLine: "still 2", why: "", itemKeys: [keyOf(ticket.id), keyOf(other.id)], escalation: [] }] }));
+    expect(hooks.at(-1)!.title).toBe("1 new ticket waits on you");
+    // Nothing new: only told waits are left, so the wake makes no model call (and no summary goes).
+    const before = calls.length;
     clock += 3 * 3600_000;
     h.requestWake(clock);
     await h.tick();
     expect(hooks).toHaveLength(2);
-    expect(h.status().runs.at(-1)!.fixes).toContain("dropped a summary with nothing new");
+    expect(calls.length).toBe(before);
+    expect(h.status().runs.at(-1)).toMatchObject({ ok: true, skipped: true });
+    stop();
+  });
+
+  test("the headline counts only what is new; old told waits are '+N older in Inbox' and stay open; nothing new sends no summary", async () => {
+    const stop = make();
+    // 18 waits already told in an earlier summary: 2 from yesterday, 16 from mid-October.
+    const olds = Array.from({ length: 18 }, (_, i) => store.createTicket("kb", { title: `Old ${i}`, body: "b", status: "in_progress" }));
+    for (const t of olds) ask(t.id, ["Still?"]);
+    await settle();
+    olds.forEach((t, i) => {
+      const k = keyOf(t.id);
+      n.helper.waits.update(k, { since: new Date(i < 2 ? clock - 24 * 3600_000 : new Date(2026, 9, 14, 9).getTime()).toISOString() });
+      n.helper.markTold([k], "helper", "m_old");
+    });
+    // One new question.
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    clock += 60_000;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "19 tickets wait on you: copy question", why: "", itemKeys: [keyOf(ticket.id)], escalation: [] }] }));
+    await h.tick();
+    const m = n.helper.messages.listNewest()[0];
+    expect(m.level).toBe("summary");
+    expect(m.oneLine).toBe("1 new for you: copy question");
+    expect(m.oneLine.length).toBeLessThanOrEqual(110);
+    expect(hooks.at(-1)!.title).toBe("1 new ticket waits on you");
+    expect(m.text).toBe("1 new for you: copy question\n\n- Pricing: Approve the copy?\n\n2 more still wait on you, oldest from 8 Nov.\n+16 older in Inbox");
+    expect(m.summary).toMatchObject({ stillCount: 2, olderCount: 16 });
+    // Nothing is closed or hidden: all 19 still wait in the Inbox.
+    expect(n.helper.waits.open()).toHaveLength(19);
+    expect(h.status().waiting).toBe(19);
+    // After the gap, the helper names only already-told waits: nothing new, so no summary goes.
+    const sent = hooks.length, stored = n.helper.messages.listNewest().length;
+    clock += 3 * 3600_000 + 60_000;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "19 wait on you", why: "", itemKeys: [keyOf(olds[0].id), keyOf(ticket.id)], escalation: [] }] }));
+    h.requestWake(clock);
+    await h.tick();
+    expect(hooks).toHaveLength(sent);
+    expect(n.helper.messages.listNewest()).toHaveLength(stored);
+    expect(n.helper.waits.open()).toHaveLength(19);
     stop();
   });
 
@@ -509,9 +550,10 @@ describe("helper runner", () => {
     clock = DAY(23);
     ask(other.id, ["Which tone?"]);
     await settle();
-    answers.push(answer({ nextWakeIn: 24 * 60, log: "night: held for the morning" }));
+    // Night wake-ups not allowed (not asked yet): no call at night.
     clock += 61_000;
     await h.tick();
+    expect(calls).toHaveLength(1);
     const keys = [keyOf(ticket.id), keyOf(other.id)];
     for (const k of keys) expect(n.helper.waits.get(k)).toMatchObject({ toldAt: null, digestAt: new Date(morning + 30 * 60_000).toISOString() });
     // The helper looks again when the night ends, before the digests.
@@ -626,7 +668,7 @@ describe("helper runner", () => {
     answers.push(answer({}, 0.03));
     clock += 60_000;
     await h.tick();
-    expect(hooks.map((x) => x.title)).toEqual(["ckanban helper", "1 ticket waits on you"]);
+    expect(hooks.map((x) => x.title)).toEqual(["ckanban helper", "1 new ticket waits on you"]);
     expect(tg[0].text).toContain("Hi, I'm the helper");
     expect(tg[1].text).toContain("This is your first summary");
     expect(n.helper.waits.firstSummaryPending).toBe(false);
@@ -645,14 +687,14 @@ describe("helper runner", () => {
     store.updateTicket("kb", ticket.id, { status: "planning", sessionId: "s1" });
     const stop = make();
     expect(n.helper.waits.firstSummaryPending).toBe(true);
-    answers.push(answer({ nextWakeIn: 600 }));
     clock += 60_000;
     await h.tick();
-    expect(calls).toHaveLength(1);
-    // Nothing reached a channel at night; the hello is stored, the first summary still pending.
+    // Night wake-ups not allowed yet: no paid call at night.
+    expect(calls).toHaveLength(0);
+    // Nothing reached a channel at night (the seeded wait waits for the night's end); the first summary still pending.
     expect(hooks).toHaveLength(0);
     expect(tg).toHaveLength(0);
-    expect(n.helper.messages.listNewest().map((m) => m.level)).toEqual(["hello"]);
+    expect(n.helper.messages.listNewest().filter((m) => m.level !== "hello").map((m) => m.level)).toEqual([]);
     expect(n.helper.waits.firstSummaryPending).toBe(true);
     // The helper looks again when the night ends, not later.
     expect(h.dueAt()).toBe(DAY(7));
@@ -662,7 +704,7 @@ describe("helper runner", () => {
     clock = DAY(7);
     answers.push(answer({}));
     await h.tick();
-    expect(hooks.map((x) => x.title)).toEqual(["ckanban helper", "1 ticket waits on you"]);
+    expect(hooks.map((x) => x.title)).toEqual(["ckanban helper", "1 new ticket waits on you"]);
     expect(tg[0].text).toContain("Hi, I'm the helper");
     expect(tg[1].text).toContain("This is your first summary");
     expect(n.helper.waits.firstSummaryPending).toBe(false);
@@ -676,6 +718,7 @@ describe("helper runner", () => {
   test("a summary the helper sends at night is held for the morning", async () => {
     clock = DAY(2);
     const stop = make();
+    h.settings.update({ nightOptIn: true });
     ask(ticket.id, ["Approve the copy?"]);
     await settle();
     clock += 60_000;
@@ -691,6 +734,8 @@ describe("helper runner", () => {
     test(`the pause notice at night waits for the morning (${recovered ? "dropped: the helper works again" : "sent: still failing"})`, async () => {
       clock = DAY(1);
       const stop = make();
+      // Night wake-ups allowed: the helper runs at night (and fails).
+      h.settings.update({ nightOptIn: true });
       ask(ticket.id, ["Approve the copy?"]);
       await settle();
       for (let i = 0; i < 3; i++) {
@@ -764,7 +809,11 @@ describe("helper runner", () => {
     await h.tick();
     expect(tg).toHaveLength(1);
 
-    // Paused after 3 failures, then nothing is open: the retry still asks the helper, and it recovers.
+    // Paused after 3 failures (a new wait gives the helper something to do), then nothing is open: the retry still
+    // asks the helper, and it recovers.
+    const other = store.createTicket("kb", { title: "Other", body: "b", status: "in_progress" });
+    ask(other.id, ["Ship it?"]);
+    await settle();
     for (let i = 0; i < 3; i++) {
       answers.push({ ok: false, error: "down" });
       h.requestWake(clock);
@@ -772,8 +821,10 @@ describe("helper runner", () => {
       await h.tick();
     }
     expect(h.healthy()).toBe(false);
-    store.updateTicket("kb", ticket.id, { status: "done" });
-    bus.emit({ type: "ticket.updated", profile: "kb", ticket: store.getTicket("kb", ticket.id)! });
+    for (const id of [ticket.id, other.id]) {
+      store.updateTicket("kb", id, { status: "done" });
+      bus.emit({ type: "ticket.updated", profile: "kb", ticket: store.getTicket("kb", id)! });
+    }
     await settle();
     expect(n.helper.waits.open()).toEqual([]);
     const before = calls.length;
@@ -924,6 +975,496 @@ describe("helper runner", () => {
     expect(h.status().runs.at(-1)!.ok).toBe(true);
     stop();
   });
+
+  // ---------- routine waits don't wake the paid helper while it could only hold them ----------
+
+  const toReview = (id: string) => {
+    const t = store.updateTicket("kb", id, { status: "review" });
+    bus.emit({ type: "ticket.updated", profile: "kb", ticket: t });
+  };
+  /** A question goes out in a summary now; returns when the 3-hour gap ends. */
+  const summaryNow = async () => {
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    clock += 60_000;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "1 waits on you", why: "", itemKeys: [keyOf(ticket.id)], escalation: [] }], nextWakeIn: 24 * 60 }));
+    await h.tick();
+    const m = n.helper.messages.listNewest()[0];
+    expect(m.level).toBe("summary");
+    return Date.parse(m.at) + 3 * 3600_000;
+  };
+
+  test("a review wait 10 minutes after a summary: no model call, no direct send at +5 minutes, in the summary at the gap's end", async () => {
+    const stop = make();
+    const gapEnd = await summaryNow();
+    expect(calls).toHaveLength(1);
+    const sentBefore = hooks.length;
+    const other = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    clock += 10 * 60_000;
+    toReview(other.id);
+    await settle();
+    const key = keyOf(other.id);
+    expect(n.helper.waits.get(key)).toMatchObject({ kind: "review", toldAt: null, fallbackAt: null, heldUntil: new Date(gapEnd).toISOString() });
+    expect(n.helper.waits.get(key)!.digestAt).not.toBeNull();
+    expect(h.dueAt()).toBe(gapEnd);
+    for (const step of [60_000, 5 * 60_000, 30 * 60_000]) {
+      clock += step;
+      await n.helper.tick();
+      await h.tick();
+    }
+    expect(calls).toHaveLength(1);
+    expect(hooks).toHaveLength(sentBefore);
+    expect(n.helper.waits.get(key)!.toldAt).toBeNull();
+    // The gap ends: one wake, and the review is in the summary.
+    clock = gapEnd;
+    answers.push((i) => {
+      const keys = JSON.parse(i.prompt).items.filter((x: any) => x.told === "no").map((x: any) => x.key);
+      return answer({ sends: [{ level: "summary", oneLine: "Docs is ready for review", why: "", itemKeys: keys, escalation: [] }], nextWakeIn: 24 * 60 });
+    });
+    await h.tick();
+    expect(calls).toHaveLength(2);
+    const m = n.helper.messages.listNewest()[0];
+    expect(m.level).toBe("summary");
+    expect(m.items.map((i) => i.key)).toContain(key);
+    expect(n.helper.waits.get(key)).toMatchObject({ toldVia: "helper", messageId: m.id });
+    stop();
+  });
+
+  test("a question during the summary gap still makes one call after 60 s", async () => {
+    const stop = make();
+    await summaryNow();
+    const other = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    clock += 10 * 60_000;
+    ask(other.id, ["Which tone?"]);
+    await settle();
+    const key = keyOf(other.id);
+    expect(n.helper.waits.get(key)!.fallbackAt).not.toBeNull();
+    expect(h.dueAt()!).toBeGreaterThan(clock);
+    expect(h.dueAt()!).toBeLessThanOrEqual(clock + 60_000);
+    clock += 60_000;
+    answers.push(answer({ nextWakeIn: 24 * 60 }));
+    await h.tick();
+    expect(calls).toHaveLength(2);
+    await h.tick();
+    expect(calls).toHaveLength(2);
+    stop();
+  });
+
+  test("a routine wait at 23:00 makes no call and is in the summary after the night ends", async () => {
+    const stop = make();
+    const morning = new Date(2026, 10, 10, 7, 0).getTime();
+    clock = DAY(23);
+    toReview(ticket.id);
+    await settle();
+    const key = keyOf(ticket.id);
+    expect(n.helper.waits.get(key)).toMatchObject({ toldAt: null, fallbackAt: null, heldUntil: new Date(morning).toISOString() });
+    expect(h.dueAt()).toBe(morning);
+    for (clock = DAY(23, 2); clock < morning; clock += 20 * 60_000) {
+      await n.helper.tick();
+      await h.tick();
+    }
+    expect(calls).toHaveLength(0);
+    expect(hooks).toHaveLength(0);
+    expect(n.helper.messages.listNewest().filter((m) => !m.held)).toHaveLength(0);
+    clock = morning;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "Pricing is ready for review", why: "", itemKeys: [key], escalation: [] }], nextWakeIn: 24 * 60 }));
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    expect(n.helper.messages.listNewest()[0]).toMatchObject({ level: "summary", items: [expect.objectContaining({ key })] });
+    expect(n.helper.waits.get(key)!.toldVia).toBe("helper");
+    stop();
+  });
+
+  test("a held routine wait still reaches the user when the helper fails: the failure digest takes it", async () => {
+    const stop = make();
+    await summaryNow();
+    const docs = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    const ops = store.createTicket("kb", { title: "Ops", body: "b", status: "in_progress" });
+    clock += 10 * 60_000;
+    toReview(docs.id);
+    await settle();
+    const key = keyOf(docs.id);
+    expect(n.helper.waits.get(key)!.fallbackAt).toBeNull();
+    // A question wakes the helper, which keeps failing.
+    ask(ops.id, ["Restart the server?"]);
+    await settle();
+    for (let i = 0; i < 40 && h.healthy(); i++) {
+      clock += 60_000;
+      await n.helper.tick();
+      await h.tick();
+    }
+    expect(h.healthy()).toBe(false);
+    expect(n.helper.waits.get(key)!.toldAt).not.toBeNull();
+    const told = n.helper.messages.get(n.helper.waits.get(key)!.messageId!)!;
+    expect(told.items.map((i) => i.key)).toContain(key);
+    expect(["fallback", "direct"]).toContain(told.level);
+    // Sent once only.
+    expect(n.helper.messages.listNewest().filter((m) => !m.held && m.items.some((i) => i.key === key))).toHaveLength(1);
+    stop();
+  });
+
+  test("the helper never runs again after holding a routine wait: the 4-hour digest still sends it once", async () => {
+    const stop = make();
+    await summaryNow();
+    const docs = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    clock += 10 * 60_000;
+    toReview(docs.id);
+    await settle();
+    const key = keyOf(docs.id);
+    const digestAt = Date.parse(n.helper.waits.get(key)!.digestAt!);
+    clock = digestAt;
+    await n.helper.tick();
+    await n.helper.tick();
+    const sent = n.helper.messages.listNewest().filter((m) => !m.held && m.items.some((i) => i.key === key));
+    expect(sent.map((m) => m.level)).toEqual(["fallback"]);
+    expect(n.helper.waits.get(key)!.toldVia).toBe("digest");
+    stop();
+  });
+
+  test("a restart keeps a held routine wait's time: no wake a minute after start", async () => {
+    const stop = make();
+    const gapEnd = await summaryNow();
+    const docs = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    clock += 10 * 60_000;
+    toReview(docs.id);
+    await settle();
+    const h2 = new HelperRunner({
+      root: store.root, store, core: n.helper, notifySettings: () => n.settings(), link: (s, id) => n.link(s, id), messageLink: (id) => n.messageLink(id), now: () => clock,
+      sideCall: async (i) => {
+        calls.push(i);
+        return { ok: false, error: "no answer queued" };
+      },
+    });
+    const stop2 = h2.start(3600_000);
+    expect(h2.dueAt()).toBe(gapEnd);
+    stop2();
+    stop();
+  });
+
+  test("a failing helper keeps the minute wake and the 5-minute fallback for routine waits", async () => {
+    const stop = make();
+    await summaryNow();
+    // One failed run (not yet paused).
+    ask(ticket.id, ["Approve the copy?", "And the price?"]);
+    await settle();
+    clock += 60_000;
+    answers.push({ ok: false, error: "down" });
+    await h.tick();
+    expect(h.status().failures).toBe(1);
+    const docs = store.createTicket("kb", { title: "Docs", body: "b", status: "in_progress" });
+    toReview(docs.id);
+    await settle();
+    expect(n.helper.waits.get(keyOf(docs.id))!.fallbackAt).not.toBeNull();
+    stop();
+  });
+
+  // ---------- night: ask once before waking the user ----------
+
+  /** Ticks the board and the runner every 10 minutes from now until `until` (exclusive). */
+  const nightTicks = async (until: number) => {
+    for (; clock < until; clock += 10 * 60_000) {
+      await n.helper.tick();
+      await h.tick();
+      await settle();
+    }
+  };
+  const sentNow = () => n.helper.messages.listNewest().filter((m) => !m.held);
+
+  test("night, opt-in not asked yet: a review and an asker-urgent wait make no call, nothing goes out before 7:00, both are in the morning message", async () => {
+    const stop = make();
+    const billing = store.createTicket("kb", { title: "Billing", body: "b", status: "in_progress" });
+    const morning = new Date(2026, 10, 10, 7, 0).getTime();
+    clock = DAY(23);
+    toReview(ticket.id);
+    ask(billing.id, ["Refund the double charge?"], { urgent: true, why: "customers billed twice" });
+    await settle();
+    const review = keyOf(ticket.id), urgent = keyOf(billing.id);
+    // (A copy: toMatchObject with a matcher would write into the live record.)
+    expect({ ...n.helper.waits.get(urgent)! }).toMatchObject({ toldAt: null, fallbackAt: null, heldUntil: new Date(morning).toISOString() });
+    expect(n.helper.waits.get(urgent)!.nightHeldAt).toBe(new Date(DAY(23) + 1000).toISOString());
+    expect(n.helper.waits.get(review)!.nightHeldAt).toBeFalsy();
+    await nightTicks(morning);
+    expect(calls).toHaveLength(0);
+    expect(hooks).toHaveLength(0);
+    expect(tg).toHaveLength(0);
+    expect(sentNow()).toHaveLength(0);
+    // No paid call means no success: lastOkAt isn't moved by the night.
+    expect(h.status().lastOkAt).toBeNull();
+    clock = morning;
+    answers.push(answer({ sends: [{ level: "summary", oneLine: "Billing refund and Pricing review", why: "", itemKeys: [urgent, review], escalation: [] }], nextWakeIn: 24 * 60 }));
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    const m = sentNow()[0];
+    expect(m.level).toBe("summary");
+    expect(m.text.split("\n")[0]).toBe("Held overnight: Billing, marked urgent 23:00");
+    expect(m).toMatchObject({ heldOvernight: "Held overnight: Billing, marked urgent 23:00", nightAsk: true });
+    expect(m.items.map((i) => i.key)).toEqual(expect.arrayContaining([urgent, review]));
+    expect(hooks).toHaveLength(1);
+    expect(hooks[0].body.split("\n")[0]).toBe("Held overnight: Billing, marked urgent 23:00");
+    // Sent once: the 7:30 digest finds nothing untold.
+    clock = morning + 31 * 60_000;
+    await settle();
+    await n.helper.tick();
+    expect(sentNow()).toHaveLength(1);
+    stop();
+  });
+
+  test("night, opt-in not asked yet: a restart at night still holds, and the helper failing in the morning still sends both once in the 7:30 digest", async () => {
+    let stop = make();
+    const billing = store.createTicket("kb", { title: "Billing", body: "b", status: "in_progress" });
+    const morning = new Date(2026, 10, 10, 7, 0).getTime();
+    clock = DAY(23, 30);
+    toReview(ticket.id);
+    ask(billing.id, ["Refund the double charge?"], { urgent: true, why: "customers billed twice" });
+    await settle();
+    stop();
+    // Restart at 2:00: nothing is sent, no call.
+    clock = new Date(2026, 10, 10, 2, 0).getTime();
+    stop = make();
+    h.start(3600_000)();
+    await nightTicks(morning);
+    expect(calls).toHaveLength(0);
+    expect(hooks).toHaveLength(0);
+    // Morning: every call fails; the digest 30 minutes after the night ends takes both, once.
+    for (clock = morning; clock <= morning + 31 * 60_000; clock += 30_000) {
+      await h.tick();
+      await settle();
+    }
+    const told = sentNow().filter((m) => m.items.some((i) => i.ticketId === billing.id));
+    expect(told).toHaveLength(1);
+    expect(told[0].text.split("\n")[0]).toBe("Held overnight: Billing, marked urgent 23:30");
+    for (const id of [ticket.id, billing.id]) expect(n.helper.waits.get(keyOf(id))!.toldAt).not.toBeNull();
+    expect(sentNow().filter((m) => m.items.some((i) => i.ticketId === ticket.id))).toHaveLength(1);
+    stop();
+  });
+
+  test("night, opt-in yes: the asker-urgent wait alerts at once on the helper path", async () => {
+    const stop = make();
+    h.settings.update({ nightOptIn: true });
+    clock = DAY(23);
+    ask(ticket.id, ["Refund the double charge?"], { urgent: true, why: "customers billed twice" });
+    await settle();
+    const key = keyOf(ticket.id);
+    expect(h.dueAt()).toBeLessThanOrEqual(clock);
+    answers.push(answer({ sends: [{ level: "urgent", oneLine: "Customers are billed twice", why: "every hour adds refunds", itemKeys: [key], escalation: [{ channel: "webhook", afterMin: 0 }] }] }));
+    await h.tick();
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0].prompt).night).toMatchObject({ nowIsNight: true, mayWakeAtNight: true });
+    expect(sentNow()[0].level).toBe("urgent");
+    expect(hooks).toHaveLength(1);
+    stop();
+  });
+
+  for (const allow of [true, false]) {
+    test(`night, helper failing (paused), opt-in ${allow ? "yes: the urgent wait goes out directly at once" : "no: nothing goes out before 7:00"}`, async () => {
+      writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({
+        helloSentAt: "2026-11-01T00:00:00Z", nightNoticeAt: "2026-11-01T00:00:00Z", failures: 3, failReason: "Not logged in",
+        lastFailAt: new Date(DAY(22, 50)).toISOString(), pauseSentAt: new Date(DAY(22, 50)).toISOString(),
+      }));
+      const stop = make();
+      h.settings.update({ nightOptIn: allow });
+      expect(h.healthy()).toBe(false);
+      const billing = store.createTicket("kb", { title: "Billing", body: "b", status: "in_progress" });
+      const morning = new Date(2026, 10, 10, 7, 0).getTime();
+      clock = DAY(23);
+      toReview(ticket.id);
+      ask(billing.id, ["Refund the double charge?"], { urgent: true, why: "customers billed twice" });
+      await settle();
+      if (allow) {
+        expect(hooks.map((x) => x.title)).toEqual(["Refund the double charge?: Billing"]);
+        expect(hooks[0].priority).toBe("5");
+        stop();
+        return;
+      }
+      await nightTicks(morning);
+      expect(hooks).toHaveLength(0);
+      expect(tg).toHaveLength(0);
+      expect(calls).toHaveLength(0);
+      // Morning: still failing; the digest takes both, the urgent one first-lined.
+      for (clock = morning; clock <= morning + 31 * 60_000; clock += 30_000) {
+        await h.tick();
+        await settle();
+      }
+      expect(hooks).toHaveLength(1);
+      expect(hooks[0].body.split("\n")[0]).toBe("Held overnight: Billing, marked urgent 23:00");
+      stop();
+    });
+  }
+
+  test("night, opt-in not asked yet: an evening alert's reminders pause for the night", async () => {
+    const stop = make();
+    clock = DAY(21, 50);
+    ask(ticket.id, ["Refund the double charge?"], { urgent: true, why: "customers billed twice" });
+    await settle();
+    const key = keyOf(ticket.id);
+    answers.push(answer({ sends: [{ level: "urgent", oneLine: "Customers are billed twice", why: "refunds grow", itemKeys: [key], escalation: [{ channel: "webhook", afterMin: 0 }, { channel: "webhook", afterMin: 5 }, { channel: "webhook", afterMin: 20 }] }] }));
+    await h.tick();
+    expect(hooks).toHaveLength(1);
+    clock = DAY(21, 56);
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    // 22:11: the third step is due, but it is night and waking isn't allowed.
+    clock = DAY(22, 11);
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    stop();
+  });
+
+  test("an existing install gets the night question once, in the daytime, on Telegram too; a new install gets it in the hello", async () => {
+    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z" }));
+    clock = DAY(23);
+    let stop = make();
+    await h.tick();
+    expect(hooks).toHaveLength(0);
+    clock = DAY(14);
+    await h.tick();
+    await h.tick();
+    const asks = () => n.helper.messages.listNewest().filter((m) => m.nightAsk);
+    expect(asks()).toHaveLength(1);
+    expect(asks()[0]).toMatchObject({ level: "hello", oneLine: "Should urgent alerts wake you at night?" });
+    expect(asks()[0].text).toContain("Should urgent alerts wake you at night (22:00-07:00)? I'd only do it when harm keeps growing, like customers billed twice.");
+    expect(tg).toHaveLength(1);
+    expect(hooks).toHaveLength(1);
+    expect(calls).toHaveLength(0);
+    stop();
+    // A restart doesn't ask again.
+    stop = make();
+    clock += 60_000;
+    await h.tick();
+    expect(asks()).toHaveLength(1);
+    // Telegram's Yes saves the choice and answers in plain words.
+    expect(await n.helper.nightAnswer(asks()[0].id, true, "telegram")).toContain("Done: urgent alerts may wake you at night (22:00-07:00)");
+    expect(h.settings.get().nightOptIn).toBe(true);
+    stop();
+  });
+
+  test("review fixes: an old Yes doesn't overwrite a choice; a 6:50 review keeps its own digest; a stale held-overnight line isn't repeated", async () => {
+    const stop = make();
+    // An old Telegram Yes after the user chose "Not at night" in Settings: the choice stays.
+    h.settings.update({ nightOptIn: false });
+    expect(await n.helper.nightAnswer("m_old", true, "telegram")).toBe("You already chose: nothing wakes you at night. Change it in Settings.");
+    expect(h.settings.get().nightOptIn).toBe(false);
+    // A review at 6:50: held to 7:00, but its 4-hour digest (10:50) isn't pulled to 7:30.
+    clock = new Date(2026, 10, 10, 6, 50).getTime();
+    toReview(ticket.id);
+    await settle();
+    const key = keyOf(ticket.id);
+    expect(n.helper.waits.get(key)!.digestAt).toBe(new Date(2026, 10, 10, 10, 50, 1).toISOString());
+    // A told wait doesn't carry the held-overnight line.
+    n.helper.waits.update(key, { nightHeldAt: new Date(DAY(23)).toISOString() });
+    expect(n.helper.heldOvernightLine([n.helper.waits.get(key)!])).toContain("Held overnight");
+    n.helper.markTold([key], "helper", null);
+    expect(n.helper.heldOvernightLine([n.helper.waits.get(key)!])).toBeNull();
+    stop();
+  });
+
+  test("a new install: the hello asks the night question, and no separate notice follows", async () => {
+    writeFileSync(join(store.root, "helper-state.json"), "{}");
+    const stop = make();
+    clock += 60_000;
+    await h.wake();
+    await h.tick();
+    const hello = n.helper.messages.listNewest().filter((m) => m.level === "hello");
+    expect(hello).toHaveLength(1);
+    expect(hello[0].nightAsk).toBe(true);
+    expect(hello[0].text).toContain("Should urgent alerts wake you at night (22:00-07:00)?");
+    expect(hello[0].text).toContain("Try a pretend urgent alert");
+    stop();
+  });
+
+  test("no night question once the user chose", async () => {
+    writeFileSync(join(store.root, "helper-state.json"), JSON.stringify({ helloSentAt: "2026-11-01T00:00:00Z" }));
+    const stop = make();
+    h.settings.update({ nightOptIn: false });
+    await h.tick();
+    expect(n.helper.messages.listNewest().filter((m) => m.nightAsk)).toHaveLength(0);
+    stop();
+  });
+
+  test("a practice alert: sent like an urgent one, one reminder a minute later, Got it stops it; never a wait, never counted", async () => {
+    const stop = make();
+    const { messageId } = await h.practice();
+    const m = n.helper.messages.get(messageId)!;
+    expect(m).toMatchObject({ level: "test", practice: true, items: [] });
+    expect(hooks).toHaveLength(1);
+    expect(hooks[0].priority).toBe("5");
+    expect(tg).toHaveLength(1);
+    expect(n.helper.waits.open()).toHaveLength(0);
+    expect(n.helper.messages.unread()).toBe(0);
+    clock += 59_000;
+    await h.tick();
+    expect(hooks).toHaveLength(1);
+    clock += 1000;
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    const reminder = n.helper.messages.listNewest()[0];
+    expect(reminder).toMatchObject({ level: "test", practice: true });
+    expect(reminder.text).toContain("Reminder 1 of 1");
+    // Once only.
+    clock += 10 * 60_000;
+    await h.tick();
+    expect(hooks).toHaveLength(2);
+    // Got it on the reminder: the reply, and both marked tapped; the night question follows while unset.
+    expect(await n.helper.gotIt(reminder.id)).toBe(PRACTICE_STOPPED);
+    expect(n.helper.messages.get(messageId)!.tapped?.how).toBe("got-it");
+    expect(n.helper.nightAfter(messageId)).toContain("Should urgent alerts wake you at night");
+    // It never reached the helper, a summary or the Inbox.
+    expect(calls).toHaveLength(0);
+    expect(n.helper.waits.open()).toHaveLength(0);
+    expect(h.status().waiting).toBe(0);
+    // Got it before the minute: no reminder at all.
+    const second = await h.practice();
+    expect(await n.helper.notUrgent(second.messageId)).toBe(PRACTICE_STOPPED);
+    clock += 2 * 60_000;
+    await h.tick();
+    expect(hooks).toHaveLength(3);
+    h.settings.update({ nightOptIn: false });
+    expect(n.helper.nightAfter(messageId)).toBeNull();
+    stop();
+  });
+
+  test("a practice alert while real waits are open changes nothing about them", async () => {
+    const stop = make();
+    ask(ticket.id, ["Approve the copy?"]);
+    await settle();
+    const key = keyOf(ticket.id);
+    const before = JSON.stringify(n.helper.waits.get(key));
+    const { messageId } = await h.practice();
+    clock += 61_000;
+    answers.push(answer({ nextWakeIn: 600 }));
+    await h.tick();
+    expect(JSON.parse(calls[0].prompt).items.map((i: any) => i.key)).toEqual([key]);
+    expect(await n.helper.gotIt(messageId)).toBe(PRACTICE_STOPPED);
+    const after = n.helper.waits.get(key)!;
+    expect(after.remindersStopped ?? null).toBeNull();
+    expect(after.toldAt).toBeNull();
+    expect(JSON.parse(before).key).toBe(after.key);
+    stop();
+  });
+
+  test("after a night wake-up the board asks once in the morning whether it was right, with no extra paid call", async () => {
+    const stop = make();
+    h.settings.update({ nightOptIn: true });
+    clock = new Date(2026, 10, 10, 2, 14).getTime();
+    ask(ticket.id, ["Refund the double charge?"], { urgent: true, why: "customers billed twice" });
+    await settle();
+    const key = keyOf(ticket.id);
+    answers.push(answer({ sends: [{ level: "urgent", oneLine: "Customers are billed twice", why: "refunds grow", itemKeys: [key], escalation: [{ channel: "webhook", afterMin: 0 }] }], nextWakeIn: 24 * 60 }));
+    await h.tick();
+    expect(hooks).toHaveLength(1);
+    await n.helper.gotIt(sentNow()[0].id);
+    const before = calls.length;
+    for (clock = new Date(2026, 10, 10, 6, 50).getTime(); clock < new Date(2026, 10, 10, 9, 0).getTime(); clock += 5 * 60_000) await h.tick();
+    expect(calls).toHaveLength(before);
+    const asked = sentNow().filter((m) => m.oneLine.startsWith("Was it right to wake you"));
+    expect(asked).toHaveLength(1);
+    expect(asked[0].oneLine).toBe("Was it right to wake you at 2:14?");
+    expect(asked[0].text).toContain("Customers are billed twice");
+    expect(Date.parse(asked[0].at)).toBeGreaterThanOrEqual(new Date(2026, 10, 10, 7, 0).getTime());
+    expect(hooks).toHaveLength(2);
+    stop();
+  });
+
 });
 
 test("the kept-quiet note reads plainly and stays short", () => {

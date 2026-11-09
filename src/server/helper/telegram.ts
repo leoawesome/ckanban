@@ -36,9 +36,11 @@ export interface TelegramSettings {
   frontDesk?: string | null;
   /** When the briefing (what the bot can do) went to the paired chat; null: not yet (sent once, also to chats paired before it). */
   briefedAt?: string | null;
+  /** The front desk's daily spending cap in USD (frontdesk.ts; default DESK_CAP_DEFAULT). Past it, it pauses until tomorrow. */
+  deskCapUsd?: number;
 }
 
-export const DEFAULT_TELEGRAM: TelegramSettings = { on: false, token: "", chatId: null, chatName: null, pairedAt: null, askTyped: true, takeMessages: true, lockedAt: null, frontDesk: null, briefedAt: null };
+export const DEFAULT_TELEGRAM: TelegramSettings = { on: false, token: "", chatId: null, chatName: null, pairedAt: null, askTyped: true, takeMessages: true, lockedAt: null, frontDesk: null, briefedAt: null, deskCapUsd: 2 };
 
 /** The one reply to text or a tap while "Take messages from Telegram" is off. */
 export const NOT_TAKING = "I'm not taking messages right now. Turn it back on in Settings on the Mac.";
@@ -104,6 +106,10 @@ export interface TelegramActions {
   notUrgent(messageId: string): Promise<string> | string;
   /** /waiting: what waits on the user now (the summary builder). */
   waiting(): Promise<string> | string;
+  /** Yes / Not at night on the night question; returns the reply. */
+  night?(messageId: string, allow: boolean): Promise<string> | string;
+  /** After Got it / Not urgent on this message: the night question to offer next (with its buttons), or null. */
+  nightAfter?(messageId: string): string | null;
 }
 
 export type TelegramState = "off" | "no-token" | "connecting" | "ok" | "error";
@@ -523,7 +529,7 @@ export class TelegramBot {
    * After Got it / Not urgent: the tapped message loses those two buttons (Open stays), and a silent reply under it
    * says what happened, so the tap shows on the phone (the callback answer is only a short-lived toast).
    */
-  private async tapped(chatId: number, msg: any, text: string): Promise<void> {
+  private async tapped(chatId: number, msg: any, text: string, buttons?: { text: string; callback_data: string }[][]): Promise<void> {
     const messageId = msg?.message_id;
     if (typeof messageId !== "number") return;
     const rows: any[][] = Array.isArray(msg.reply_markup?.inline_keyboard) ? msg.reply_markup.inline_keyboard : [];
@@ -533,6 +539,7 @@ export class TelegramBot {
     const r = await this.api("sendMessage", {
       chat_id: chatId, text: telegramText(text), disable_notification: true, disable_web_page_preview: true,
       reply_parameters: { message_id: messageId, allow_sending_without_reply: true },
+      ...(buttons?.length ? { reply_markup: { inline_keyboard: buttons } } : {}),
     });
     if (!r.ok) console.warn(`telegram: reply failed: ${this.explain(r)}`);
   }
@@ -555,6 +562,7 @@ export class TelegramBot {
       }
       const data = String(cq.data ?? "");
       const m = /^([gn]):(m_[a-z0-9]{1,40})$/.exec(data);
+      const night = /^([yx]):(m_[a-z0-9]{1,40})$/.exec(data);
       const p = /^p:([a-z0-9]{10}):([a-z0-9]{1,3})$/.exec(data);
       const replies = this.d.replies?.();
       let text = "That button no longer works.";
@@ -564,6 +572,10 @@ export class TelegramBot {
           text = await (m[1] === "g" ? a.gotIt(m[2]) : a.notUrgent(m[2]));
           // The tap leaves a trace in the daemon log (message id and result only, never the chat's text or the token).
           console.log(`telegram: ${m[1] === "g" ? "Got it" : "Not urgent"} on ${m[2]}: ${scrub(text, this.token)}`);
+        } else if (night) {
+          const a = this.d.actions();
+          if (a.night) text = await a.night(night[2], night[1] === "y");
+          console.log(`telegram: night question on ${night[2]}: ${night[1] === "y" ? "yes" : "not at night"}`);
         } else if (p && s.takeMessages === false) {
           text = NOT_TAKING;
         } else if (p && replies) {
@@ -573,7 +585,14 @@ export class TelegramBot {
         // Always answered, or the button keeps spinning on the phone.
         await this.api("answerCallbackQuery", { callback_query_id: cq.id, text: text.slice(0, 200) });
       }
-      if (m) await this.tapped(chat, cq.message, text);
+      if (m) {
+        // After Got it on a practice alert: offer the night question next, with its own buttons.
+        let ask: string | null = null;
+        try {
+          ask = this.d.actions().nightAfter?.(m[2]) ?? null;
+        } catch {}
+        await this.tapped(chat, cq.message, ask ? `${text}\n\n${ask}` : text, ask ? nightButtons(m[2]) : undefined);
+      } else if (night) await this.tapped(chat, cq.message, text);
       return;
     }
     // An edited message: the first version was already handled; editing doesn't change what was sent.
@@ -711,9 +730,10 @@ export class TelegramBot {
     const head = m.text.startsWith(m.title) ? m.text : `${m.title}\n\n${m.text}`;
     const text = telegramText(head, link ? "" : "\n\nAnswer on your Mac.");
     const rows: { text: string; callback_data?: string; url?: string }[][] = [];
-    if (m.messageId && (m.level === "urgent" || m.level === "reminder")) {
+    if (m.messageId && (m.level === "urgent" || m.level === "reminder" || m.practice)) {
       rows.push([{ text: "Got it", callback_data: `g:${m.messageId}` }, { text: "Not urgent", callback_data: `n:${m.messageId}` }]);
     }
+    if (m.messageId && m.nightAsk) rows.push(...nightButtons(m.messageId));
     if (link && /^https:\/\//.test(link)) rows.push([{ text: "Open", url: link }]);
     const body = {
       chat_id: s.chatId, text, disable_notification: !m.urgent, disable_web_page_preview: true,
@@ -744,6 +764,11 @@ export class TelegramBot {
     }
     return { channel: "telegram", ok: false, error: r.error_code === 429 ? "Telegram is limiting messages right now" : this.explain(r) };
   }
+}
+
+/** The night question's buttons: Yes / Not at night. */
+export function nightButtons(messageId: string): { text: string; callback_data: string }[][] {
+  return [[{ text: "Yes", callback_data: `y:${messageId}` }, { text: "Not at night", callback_data: `x:${messageId}` }]];
 }
 
 export function telegramChannel(bot: TelegramBot): Channel {

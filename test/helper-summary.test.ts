@@ -37,11 +37,25 @@ describe("summary text", () => {
       still: [item({ ticketId: "s1", title: "S1", since: iso(new Date(2026, 9, 12, 9).getTime()) }), item({ ticketId: "s2", title: "S2" })],
       checkins: [], olderCheckins: 0, notes: [], boards: false, now,
     });
-    expect(text).toBe("4 wait on you: new review\n\n- Docs: Which tone?\n\n3 more still wait on you, oldest from 12 Oct.");
+    expect(text).toBe("4 wait on you: new review\n\n- Docs: Which tone?\n\n1 more still waits on you, oldest from 9 Nov.\n+2 older in Inbox");
     expect(text).not.toContain("http");
     expect(view.new.map((r) => r.ticketId)).toEqual(["n"]);
-    expect(view.still.map((r) => r.ticketId)).toEqual(["s1", "o", "s2"]);
-    expect(view).toMatchObject({ stillCount: 3, oldestAt: iso(new Date(2026, 9, 12, 9).getTime()), grouped: false });
+    // Older than 3 days: counted only, never listed (they stay in the Inbox).
+    expect(view.still.map((r) => r.ticketId)).toEqual(["s2"]);
+    expect(view).toMatchObject({ stillCount: 1, olderCount: 2, oldestAt: iso(DAY(10)), grouped: false });
+  });
+
+  test("only older waits besides the new ones: no still line, just '+N older in Inbox'", () => {
+    const now = DAY(11, 22);
+    const old = (id: string) => item({ ticketId: id, title: id, since: iso(now - STALE_MS - 3600_000) });
+    const { text, view } = buildSummary({
+      headline: "1 new for you: copy question",
+      fresh: [item({ ticketId: "n", title: "Pricing", label: "Approve the copy?" })],
+      still: Array.from({ length: 17 }, (_, i) => old(`o${i}`)),
+      checkins: [], olderCheckins: 0, notes: [], boards: false, now,
+    });
+    expect(text).toBe("1 new for you: copy question\n\n- Pricing: Approve the copy?\n\n+17 older in Inbox");
+    expect(view).toMatchObject({ stillCount: 0, still: [], olderCount: 17, oldestAt: null });
   });
 
   test("two or more boards: rows under a board heading, not a board name on every row", () => {

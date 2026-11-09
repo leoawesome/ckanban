@@ -183,10 +183,12 @@ export function addHuddleSpend(root: string, slug: string, costUsd: number, at =
 // Spent from Telegram: model spend of turns that Telegram started (a ticket's run started or steered by a Telegram
 // message; the front desk's chats add to the same number). Settings shows today's total, with no limit.
 const telegramLedgerFile = (root: string) => join(root, "telegram-spend.json");
+// The front desk's own share of it (its daily cap counts only this, not ticket runs Telegram started).
+const deskLedgerFile = (root: string) => join(root, "telegram-desk-spend.json");
 
-function readTelegramLedger(root: string): Record<string, number> {
+function readTelegramLedger(root: string, file = telegramLedgerFile(root)): Record<string, number> {
   try {
-    const v = JSON.parse(readFileSync(telegramLedgerFile(root), "utf8"));
+    const v = JSON.parse(readFileSync(file, "utf8"));
     if (!v || typeof v !== "object" || Array.isArray(v)) return {};
     return Object.fromEntries(Object.entries(v).filter(([k, n]) => /^\d{4}-\d{2}-\d{2}$/.test(k) && num(n) > 0)) as Record<string, number>;
   } catch {
@@ -195,13 +197,24 @@ function readTelegramLedger(root: string): Record<string, number> {
 }
 
 /** Adds what a turn Telegram started cost (USD) to that local day's Telegram total. The one helper every Telegram path calls. */
-export function addTelegramSpend(root: string, costUsd: number, at = new Date()): void {
+export function addTelegramSpend(root: string, costUsd: number, at = new Date(), file = telegramLedgerFile(root)): void {
   if (!(costUsd > 0) || !Number.isFinite(costUsd)) return;
-  const ledger = readTelegramLedger(root);
+  const ledger = readTelegramLedger(root, file);
   const day = dayKey(at);
   ledger[day] = (ledger[day] ?? 0) + costUsd;
   const keep = Object.keys(ledger).sort().slice(-KEEP_DAYS);
-  atomicWrite(telegramLedgerFile(root), JSON.stringify(Object.fromEntries(keep.map((k) => [k, ledger[k]]))) + "\n");
+  atomicWrite(file, JSON.stringify(Object.fromEntries(keep.map((k) => [k, ledger[k]]))) + "\n");
+}
+
+/** Adds a front desk turn's cost to today's front desk total (and, like every Telegram turn, to "Spent from Telegram today"). */
+export function addDeskSpend(root: string, costUsd: number, at = new Date()): void {
+  addTelegramSpend(root, costUsd, at);
+  addTelegramSpend(root, costUsd, at, deskLedgerFile(root));
+}
+
+/** What the front desk's chats cost today (local day), in USD: what its daily cap is checked against. */
+export function deskSpendToday(root: string, now = new Date()): number {
+  return readTelegramLedger(root, deskLedgerFile(root))[dayKey(now)] ?? 0;
 }
 
 /** What turns Telegram started cost today (local day), in USD. */

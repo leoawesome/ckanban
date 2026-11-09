@@ -57,6 +57,7 @@ import { toast } from "./toast";
 import { FollowUpChip } from "./FollowUpChip";
 import { PartOfField } from "./FamilyPanel";
 import { FileLinksProvider } from "./FileViewer";
+import { messageHash, useHelper } from "./helper";
 
 // v2: widths saved under the old 80% default are dropped once so the new default shows.
 const WIDTH_KEY = "ckanban.panelWidth.v2";
@@ -1078,6 +1079,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               else if (e.key === "Escape") { revertTitle.current = true; setTitle(ticket.title); e.currentTarget.blur(); }
             }} />
         </div>
+        <HelperLine slug={slug} ticketId={ticket.id} />
         {/* Tags, model and effort share one row. */}
         <div className="panel-meta">
           <TagEditor tags={ticket.tags ?? []} suggested={ticket.suggestedTags ?? []} known={boardTags(tickets)}
@@ -1217,4 +1219,20 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     </div>
     </FileLinksProvider>
   );
+}
+
+/**
+ * What the helper did about this ticket's open wait ("Urgent: Phone 14:02; reminders stopped when you opened this",
+ * "In the 16:00 summary: ..."), the same line as the Inbox's, while the helper is on. It links to the alert's page.
+ */
+function HelperLine({ slug, ticketId }: { slug: string; ticketId: string }) {
+  const { status } = useHelper();
+  const key = `${slug}/${ticketId}`;
+  const line = status?.on ? status.lines[key] : undefined;
+  if (!line) return null;
+  const msg = status?.lineMsg?.[key];
+  const cls = `helper-line ticket-helper-line${line.startsWith("Urgent") ? " urgent" : ""}`;
+  return msg
+    ? <a className={cls} href={messageHash(msg)} title="Open the message">{line} ›</a>
+    : <div className={cls}>{line}</div>;
 }

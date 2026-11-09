@@ -1377,6 +1377,9 @@ export interface TelegramState {
   lockedAt: string | null;
   /** "Spent from Telegram today" in USD. */
   spentToday: number;
+  /** The front desk's daily limit (USD) and what it spent today. */
+  deskCapUsd: number;
+  deskSpentToday: number;
   /** "Front desk lives on": the board whose Ask tab holds the Telegram front desk. */
   frontDesk: string | null;
   boards: { slug: string; name: string }[];
@@ -1384,7 +1387,7 @@ export interface TelegramState {
 
 export type NotifyPatch = Partial<Pick<NotifyState, "webhookUrl" | "format" | "mac" | "helper" | "push" | "webhookOn">> & {
   kinds?: Partial<Record<NotifyKind, boolean>>;
-  telegram?: { on?: boolean; token?: string; askTyped?: boolean; takeMessages?: boolean; frontDesk?: string };
+  telegram?: { on?: boolean; token?: string; askTyped?: boolean; takeMessages?: boolean; frontDesk?: string; deskCapUsd?: number };
 }
 
 export interface InboxItem {

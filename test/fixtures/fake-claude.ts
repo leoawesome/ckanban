@@ -193,6 +193,14 @@ if (mode === "partial") {
   await Bun.sleep(30000);
 }
 
+// Makes a model call (its usage record comes), then hangs with no result line (Stop or a crash ends it).
+if (mode === "usage-hang") {
+  emit({ type: "stream_event", event: { type: "message_start", message: { id: "msg_hang", model: "claude-opus-5-5", usage: { input_tokens: 1000, output_tokens: 1 } } } });
+  emit({ type: "assistant", message: { id: "msg_hang", model: "claude-opus-5-5", content: [{ type: "text", text: "Looking" }], usage: { input_tokens: 1000, output_tokens: 200 } } });
+  if (process.env.FAKE_MARK_FILE) appendFileSync(process.env.FAKE_MARK_FILE, "sent\n");
+  await Bun.sleep(30000);
+}
+
 // Asks the host for permission like the real CLI does with --permission-prompt-tool stdio.
 const decisions: string[] = [];
 if (mode === "asks") {

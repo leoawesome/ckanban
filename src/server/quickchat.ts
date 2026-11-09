@@ -10,6 +10,7 @@ import { DraftTracker } from "./draft";
 import type { Bus } from "./events";
 import { WRITING_RULE } from "./prompts";
 import { buildArgs, startRun, type RunHandle } from "./runner";
+import { messageCost } from "./ticket-usage";
 import { atomicWrite, type Store } from "./store";
 import type { ActivityEntry, Profile, Ticket } from "./types";
 import { newId, nowIso } from "./util";
@@ -113,8 +114,64 @@ export interface QuickChatHooks {
   env?: (slug: string, c: QuickChat) => Record<string, string> | null;
   /** Extra system prompt for a chat's run, or null. */
   note?: (slug: string, c: QuickChat) => string | null;
+  /**
+   * Narrower rights for a chat's run (the front desk: no shell or file edits, no secret files, a spending cap), or null
+   * for a normal chat. Asked each time a run starts.
+   */
+  limits?: (slug: string, c: QuickChat) => RunLimits | null;
   /** Every result line of a chat's run (one per answered turn). */
   onResult?: (slug: string, c: QuickChat, ev: any) => void;
+  /**
+   * A run ended (Stop, crash, kill, restart) after model calls that no result line covered, so their cost was never
+   * reported. costUsd: those calls priced from their usage records (0: none came); started: Claude had begun the turn.
+   */
+  onUnbilled?: (slug: string, c: QuickChat, u: { costUsd: number; started: boolean }) => void;
+}
+
+/**
+ * What the model calls since the last result line cost, from their usage records (assistant messages, and the
+ * message_start of one still streaming). A result line covers everything before it, so it clears the list.
+ */
+export class UnbilledUsage {
+  private calls = new Map<string, number>();
+  private began = false;
+
+  feed(ev: any): void {
+    if (ev?.type === "result") {
+      this.calls.clear();
+      this.began = false;
+      return;
+    }
+    if (ev?.type === "system" && ev.subtype === "init") this.began = true;
+    const m = ev?.type === "assistant" ? ev.message : ev?.type === "stream_event" && ev.event?.type === "message_start" ? ev.event.message : null;
+    // Subagents' calls count too (they are in the result line's total as well).
+    if (!m?.usage) return;
+    this.began = true;
+    const id = typeof m.id === "string" ? m.id : `#${this.calls.size}`;
+    // The same message comes once per content block: keep its largest count (the last has the output so far).
+    this.calls.set(id, Math.max(this.calls.get(id) ?? 0, messageCost(String(m.model ?? ""), m.usage)));
+  }
+
+  /** Cost not covered by a result line, and whether a turn had begun since the last one. */
+  open(): { costUsd: number; started: boolean } {
+    let costUsd = 0;
+    for (const c of this.calls.values()) costUsd += c;
+    return { costUsd, started: this.began || this.calls.size > 0 };
+  }
+}
+
+/** What a hook narrows for one chat's run (QuickChatHooks.limits). */
+export interface RunLimits {
+  /** More tools the run can't use (added to the connectors' list). */
+  disallowed: string[];
+  /** More --settings (e.g. permissions.deny rules). */
+  settings: Record<string, unknown> | null;
+  /** The only built-in tools the run gets (--tools), or null for the default set. */
+  tools?: string[] | null;
+  /** Only the board's MCP servers (--strict-mcp-config): no user, project or plugin servers. */
+  strictMcp?: boolean;
+  /** --max-budget-usd for the run, or null. */
+  maxBudgetUsd: number | null;
 }
 
 export interface QuickChatOptions {
@@ -284,17 +341,22 @@ export class QuickChats {
     const resume = c.started || this.sessionExists(c.sessionId);
     let draftTimer: ReturnType<typeof setTimeout> | null = null;
     let lastActivity = 0;
+    const unbilled = new UnbilledUsage();
     const emitDraft = (text: string, final?: string) => this.bus.emit({ type: "chat.draft", profile: slug, id, text, ...(final ? { final } : {}) });
     const connectors = boardConnectorOptions(profile);
     const extraEnv = this.hooks.env?.(slug, c) ?? null;
     const extraNote = this.hooks.note?.(slug, c) ?? null;
+    const limits = this.hooks.limits?.(slug, c) ?? null;
+    // A front desk chat never runs with a normal chat's rights (shell, file edits), even if the front desk isn't plugged in.
+    if (c.frontDesk && !limits) throw new Error("The Telegram front desk isn't set up on this board right now, so nothing was run.");
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: profile.path,
       env: extraEnv ? { ...connectors.env, ...extraEnv } : connectors.env,
-      args: buildArgs(c.sessionId, resume, profile.model, connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), extraNote ? `${quickChatNote(profile)}\n\n${extraNote}` : quickChatNote(profile), null, runOptions(null, profile, false).effort),
+      args: buildArgs(c.sessionId, resume, profile.model, limits ? [...connectors.disallowed, ...limits.disallowed] : connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), extraNote ? `${quickChatNote(profile)}\n\n${extraNote}` : quickChatNote(profile), limits?.maxBudgetUsd ?? null, runOptions(null, profile, false).effort, false, limits ? { settings: limits.settings, tools: limits.tools ?? null, strictMcp: !!limits.strictMcp } : null),
       input: localizeAttachments(run.prompt, this.store.attachmentsDir),
       onEvent: (ev) => {
+        unbilled.feed(ev);
         const changed = run.draft.feed(ev);
         if (changed === "") {
           if (draftTimer) clearTimeout(draftTimer);
@@ -328,6 +390,15 @@ export class QuickChats {
     });
     const out = await run.handle.done;
     if (draftTimer) clearTimeout(draftTimer);
+    // Stopped, crashed or cut off before its result line: what it spent is still spent (the front desk's daily cap).
+    const open = unbilled.open();
+    if (open.started && this.hooks.onUnbilled) {
+      try {
+        this.hooks.onUnbilled(slug, this.get(slug, id) ?? c, open);
+      } catch (e) {
+        console.error(`quick chat ${slug}/${id}: unbilled hook`, e);
+      }
+    }
     if (run.draft.text) emitDraft("", run.draft.text);
     if (this.shuttingDown) return;
     const started = resume || run.started || this.sessionExists(c.sessionId);

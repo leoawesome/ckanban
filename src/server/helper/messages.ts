@@ -43,6 +43,8 @@ export interface SummaryView {
   still: SummaryRow[];
   stillCount: number;
   oldestAt: string | null;
+  /** Waits older than the stale cut-off: counted only ("+N older in Inbox"), not listed. Missing on older summaries. */
+  olderCount?: number;
   checkins: SummaryRow[];
   olderCheckins: number;
   /** Closing lines: the first summary's greeting, the check-in offer. */
@@ -79,6 +81,12 @@ export interface StoredMessage {
   held?: boolean;
   /** A summary's rows (the page renders these, not the text). */
   summary?: SummaryView;
+  /** A pretend urgent alert (or its reminder) the user asked for: Got it buttons, never a wait, never counted as new. */
+  practice?: boolean;
+  /** Carries the night question (Yes / Not at night) while the user hasn't chosen. */
+  nightAsk?: boolean;
+  /** The morning message's first line: "Held overnight: <title>, marked urgent 22:35". */
+  heldOvernight?: string;
 }
 
 export const MESSAGES_KEEP_MS = 30 * 24 * 3600_000;
@@ -110,7 +118,7 @@ export function trimMessages(list: StoredMessage[], now: number): StoredMessage[
   return list.filter((m) => keep.has(m));
 }
 
-export type NewMessage = Pick<StoredMessage, "level" | "oneLine" | "text"> & Partial<Pick<StoredMessage, "why" | "items" | "held" | "summary">>;
+export type NewMessage = Pick<StoredMessage, "level" | "oneLine" | "text"> & Partial<Pick<StoredMessage, "why" | "items" | "held" | "summary" | "practice" | "nightAsk" | "heldOvernight">>;
 
 export class MessageStore {
   readonly file: string;
@@ -153,6 +161,7 @@ export class MessageStore {
       id: `m_${this.now().toString(36)}${randomBytes(3).toString("hex")}`, at: new Date(this.now()).toISOString(),
       level: m.level, oneLine: m.oneLine, text: m.text, why: m.why ?? null, items: m.items ?? [], sends: [], readAt: null,
       ...(m.held ? { held: true } : {}), ...(m.summary ? { summary: m.summary } : {}),
+      ...(m.practice ? { practice: true } : {}), ...(m.nightAsk ? { nightAsk: true } : {}), ...(m.heldOvernight ? { heldOvernight: m.heldOvernight } : {}),
     };
     const list = this.items();
     list.push(msg);
@@ -181,9 +190,9 @@ export class MessageStore {
     return o.limit ? out.slice(0, o.limit) : out;
   }
 
-  /** Sent messages not read yet ("Messages, N new"). */
+  /** Sent messages not read yet ("Messages, N new"). A practice alert never counts. */
   unread(): number {
-    return this.items().filter((m) => !m.held && !m.readAt).length;
+    return this.items().filter((m) => !m.held && !m.practice && !m.readAt).length;
   }
 
   /** Records Got it or Not urgent on a message (the latest tap counts); it counts as read too. */

@@ -126,6 +126,9 @@ export interface TelegramPublic {
   lockedAt: string | null;
   /** "Spent from Telegram today" in USD (spend.ts telegramSpendToday). No limit. */
   spentToday: number;
+  /** The front desk's daily cap (USD) and what its chats cost today. */
+  deskCapUsd: number;
+  deskSpentToday: number;
   /** "Front desk lives on": the board whose quick chats hold the front desk (helper/frontdesk.ts). */
   frontDesk: string | null;
   /** The boards it can live on. */
@@ -228,6 +231,8 @@ export function normalizeSettings(raw: any, base: NotifySettings = DEFAULT_NOTIF
   if (tg && typeof tg === "object") {
     if (typeof tg.on === "boolean") out.telegram.on = tg.on;
     if (typeof tg.askTyped === "boolean") out.telegram.askTyped = tg.askTyped;
+    // The front desk's daily cap: $0 to $100, in cents (0 keeps it paused).
+    if (typeof tg.deskCapUsd === "number" && Number.isFinite(tg.deskCapUsd) && tg.deskCapUsd >= 0) out.telegram.deskCapUsd = Math.min(100, Math.round(tg.deskCapUsd * 100) / 100);
     if (tg.frontDesk === null || (typeof tg.frontDesk === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(tg.frontDesk))) out.telegram.frontDesk = tg.frontDesk;
     if (typeof tg.takeMessages === "boolean") {
       out.telegram.takeMessages = tg.takeMessages;
@@ -457,6 +462,8 @@ export class Notifier {
         gotIt: (id) => this.helper.gotIt(id, "telegram"),
         notUrgent: (id) => this.helper.notUrgent(id, "telegram"),
         waiting: () => this.helper.waitingText(),
+        night: (id, allow) => this.helper.nightAnswer(id, allow, "telegram"),
+        nightAfter: (id) => this.helper.nightAfter(id),
       }),
       phoneAccess: () => this.phoneAccess(),
       boardUrl: () => `${this.o.baseUrl()}/`,
@@ -565,6 +572,7 @@ export class Notifier {
       on: t.on, tokenSet: !!t.token, tokenMasked: maskToken(t.token), paired: t.chatId !== null, chatName: t.chatName, pairedAt: t.pairedAt,
       status: tg.state, error: tg.error, botName: tg.botName, pairing: tg.pairing, pairError: tg.pairError, askTyped: t.askTyped,
       takeMessages: t.takeMessages, lockedAt: t.lockedAt, spentToday: Math.round(telegramSpendToday(this.o.root, new Date(this.now())) * 100) / 100,
+      deskCapUsd: this.frontDesk.cap(), deskSpentToday: Math.round(this.frontDesk.spentToday() * 100) / 100,
       frontDesk: this.frontDesk.board(), boards: this.store.listProfiles().map((p) => ({ slug: p.slug, name: p.name })),
     };
     const macBrowser = this.macBrowser();

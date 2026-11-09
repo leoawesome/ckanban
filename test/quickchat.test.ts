@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus, type BusEvent } from "../src/server/events";
 import { createServer } from "../src/server/http";
-import { autoTitle, CONTINUE_TEXT, QuickChats, quickChatNote } from "../src/server/quickchat";
+import { DESK_DISALLOWED, DESK_TOOLS, deskDenyRules } from "../src/server/helper/frontdesk";
+import { autoTitle, CONTINUE_TEXT, QuickChats, quickChatNote, UnbilledUsage } from "../src/server/quickchat";
+import { messageCost } from "../src/server/ticket-usage";
+import { buildArgs } from "../src/server/runner";
 import { SessionCache } from "../src/server/session";
 import { SpendIndex } from "../src/server/spend";
 import { Store } from "../src/server/store";
@@ -39,7 +43,7 @@ beforeEach(() => {
 afterEach(async () => {
   await chats.shutdown();
   await board.shutdown();
-  for (const k of ["FAKE_MODE", "CLAUDE_CONFIG_DIR", "FAKE_ARGS_FILE", "FAKE_TOTAL_COST"]) delete process.env[k];
+  for (const k of ["FAKE_MODE", "CLAUDE_CONFIG_DIR", "FAKE_ARGS_FILE", "FAKE_TOTAL_COST", "FAKE_MARK_FILE"]) delete process.env[k];
 }, 60_000);
 
 test("autoTitle takes the first line of the first message, without images or markdown", () => {
@@ -287,6 +291,7 @@ test("the Telegram front desk's chat: its runs get the front desk identity and n
   chats.setHooks({
     env: (slug, c) => (c.frontDesk ? { CKANBAN_FRONTDESK: `${slug}/${c.id}/secret` } : null),
     note: (_slug, c) => (c.frontDesk ? "FRONT DESK RULES" : null),
+    limits: (_slug, c) => (c.frontDesk ? { disallowed: [], settings: null, maxBudgetUsd: null } : null),
     onResult: (_slug, c, ev) => results.push({ id: c.id, type: ev.type }),
   });
   const desk = chats.send("p", null, "what's going on?", { title: "Telegram · 9 Nov", frontDesk: { chatId: 5 } });
@@ -301,4 +306,91 @@ test("the Telegram front desk's chat: its runs get the front desk identity and n
   expect(runs[1].args.join(" ")).not.toContain("FRONT DESK RULES");
   expect(results).toEqual([{ id: desk.id, type: "result" }, { id: plain.id, type: "result" }]);
   await expect(chats.makeTicket("p", desk.id)).rejects.toThrow("front desk");
+});
+
+test("a front desk chat's run gets the desk's limits (no shell or edits, deny rules, budget); a normal chat in the same place keeps its tools", async () => {
+  const deny = deskDenyRules(store.root);
+  chats.setHooks({
+    limits: (_slug, c) => (c.frontDesk ? { disallowed: DESK_DISALLOWED, tools: DESK_TOOLS, strictMcp: true, settings: { permissions: { deny } }, maxBudgetUsd: 1.5 } : null),
+  });
+  chats.send("p", null, "what's going on?", { title: "Telegram · 9 Nov", frontDesk: { chatId: 5 } });
+  await chats.idle();
+  chats.send("p", null, "hello");
+  await chats.idle();
+  const [desk, plain] = args();
+  const off = (a: string[]) => a[a.indexOf("--disallowedTools") + 1].split(",");
+  for (const t of ["Bash", "Edit", "Write", "NotebookEdit", "Monitor", "Agent", "Task", "SendMessage", "ListAgents", "mcp__claude-in-chrome", "mcp__ckanban__test_automation_script"]) expect(off(desk.args)).toContain(t);
+  // An allow-list of built-in tools: nothing that runs commands, edits or messages other sessions.
+  const allowed = desk.args[desk.args.indexOf("--tools") + 1].split(",");
+  expect(allowed.sort()).toEqual(["Glob", "Grep", "Read", "ToolSearch", "WebFetch", "WebSearch"]);
+  expect(desk.args).toContain("--strict-mcp-config");
+  expect(desk.args).toContain("bypassPermissions");
+  const settings = JSON.parse(desk.args[desk.args.indexOf("--settings") + 1]);
+  expect(settings.permissions.deny).toEqual(deny);
+  for (const r of ["Read(//**/.env*)", "Read(**/.env*)", "Read(//**/.ssh/**)", "Read(~/.claude-kanban/*.json)", `Read(/${store.root}/*.json)`, `Read(/${store.root}/profiles/*/board-tools.json)`]) {
+    expect(settings.permissions.deny).toContain(r);
+  }
+  expect(desk.args[desk.args.indexOf("--max-budget-usd") + 1]).toBe("1.5");
+  // A normal quick chat: unchanged (no Bash or Edit off, no extra settings, no budget).
+  expect(off(plain.args)).not.toContain("Bash");
+  expect(off(plain.args)).not.toContain("Edit");
+  expect(plain.args).not.toContain("--settings");
+  expect(plain.args).not.toContain("--max-budget-usd");
+  expect(plain.args).not.toContain("--tools");
+  expect(plain.args).not.toContain("--strict-mcp-config");
+});
+
+test("a front desk chat never runs without the desk's limits plugged in", async () => {
+  const v = chats.send("p", null, "what's going on?", { title: "Telegram · 9 Nov", frontDesk: { chatId: 5 } });
+  await chats.idle();
+  expect(args()).toHaveLength(0);
+  expect(chats.get("p", v.id)!.error).toContain("front desk");
+});
+
+test("buildArgs merges extra settings with ultracode's into one --settings", () => {
+  const a = buildArgs("s", false, null, [], undefined, undefined, null, null, true, { settings: { permissions: { deny: ["Read(**/.env*)"] } }, tools: ["Read", "Grep"], strictMcp: true });
+  expect(a.filter((x) => x === "--settings")).toHaveLength(1);
+  expect(JSON.parse(a[a.indexOf("--settings") + 1])).toEqual({ permissions: { deny: ["Read(**/.env*)"] }, ultracode: true });
+  expect(a[a.indexOf("--tools") + 1]).toBe("Read,Grep");
+  expect(a).toContain("--strict-mcp-config");
+  const plain = buildArgs("s", false);
+  for (const f of ["--settings", "--tools", "--strict-mcp-config"]) expect(plain).not.toContain(f);
+});
+
+test("a run stopped before its result line reports what its model calls cost; a run with a result line reports nothing", async () => {
+  const unbilled: { id: string; costUsd: number; started: boolean }[] = [];
+  chats.setHooks({
+    limits: (_slug, c) => (c.frontDesk ? { disallowed: [], settings: null, maxBudgetUsd: null } : null),
+    onUnbilled: (_slug, c, u) => void unbilled.push({ id: c.id, ...u }),
+  });
+  const done = chats.send("p", null, "hi", { title: "Telegram", frontDesk: { chatId: 1 } });
+  await chats.idle();
+  expect(unbilled).toHaveLength(0);
+  process.env.FAKE_MODE = "usage-hang";
+  const mark = join(tempDir("ck-mark-"), "sent");
+  process.env.FAKE_MARK_FILE = mark;
+  const v = chats.send("p", done.id, "and this?");
+  // The fake has written its usage records (stdout is read as it comes; a moment for the pipe).
+  await until(() => existsSync(mark));
+  await Bun.sleep(100);
+  chats.stop("p", v.id);
+  await chats.idle();
+  expect(unbilled).toEqual([{ id: v.id, costUsd: messageCost("claude-opus-5-5", { input_tokens: 1000, output_tokens: 200 }), started: true }]);
+  expect(unbilled[0].costUsd).toBeGreaterThan(0);
+});
+
+test("unbilled usage: each message counts once at its largest record, subagents count, a result line clears it", () => {
+  const u = new UnbilledUsage();
+  expect(u.open()).toEqual({ costUsd: 0, started: false });
+  u.feed({ type: "system", subtype: "init" });
+  expect(u.open()).toEqual({ costUsd: 0, started: true });
+  const a = { input_tokens: 100, output_tokens: 10 };
+  const b = { input_tokens: 100, output_tokens: 50 };
+  u.feed({ type: "stream_event", event: { type: "message_start", message: { id: "m1", model: "claude-opus-5-5", usage: a } } });
+  u.feed({ type: "assistant", message: { id: "m1", model: "claude-opus-5-5", usage: b } });
+  u.feed({ type: "assistant", message: { id: "m1", model: "claude-opus-5-5", usage: a } });
+  u.feed({ type: "assistant", parent_tool_use_id: "t1", message: { id: "m2", model: "claude-opus-5-5", usage: a } });
+  expect(u.open().costUsd).toBeCloseTo(messageCost("claude-opus-5-5", b) + messageCost("claude-opus-5-5", a), 10);
+  u.feed({ type: "result", total_cost_usd: 1 });
+  expect(u.open()).toEqual({ costUsd: 0, started: false });
 });

@@ -30,6 +30,8 @@ export interface SummaryView {
   still: SummaryRow[];
   stillCount: number;
   oldestAt: string | null;
+  /** Waits older than the stale cut-off, counted only (missing on older summaries). */
+  olderCount?: number;
   checkins: SummaryRow[];
   olderCheckins: number;
   notes: string[];
@@ -59,6 +61,38 @@ export interface Message {
   tapped?: { how: "got-it" | "not-urgent"; at: string } | null;
   held?: boolean;
   summary?: SummaryView;
+  /** A pretend urgent alert (or its reminder) the user asked for. */
+  practice?: boolean;
+  /** Carries the night question while the user hasn't chosen. */
+  nightAsk?: boolean;
+  /** The morning message's first line: "Held overnight: <title>, marked urgent 22:35". */
+  heldOvernight?: string;
+  /** Where each ticket stands now, keyed by itemStateKey (one message's GET; lists leave it out). */
+  itemState?: Record<string, ItemState>;
+}
+
+/** src/server/helper/core.ts ItemState: still open, answered (seen, no longer waiting) or the ticket was removed. */
+export interface ItemState {
+  state: "open" | "answered" | "removed";
+  at?: string | null;
+  how?: "answered" | "seen" | "done";
+}
+
+/** The itemState key of a message item or summary row: its wait's key, else "<board>/<ticketId>". */
+export const itemStateKey = (i: { key?: string | null; board: string; ticketId: string }) => i.key || `${i.board}/${i.ticketId}`;
+
+/** What an old message's ticket shows instead of its helper line: "Answered 14:02", "Ticket removed"; null while open. */
+export function itemStateLabel(st: ItemState | undefined, time: (iso: string) => string = clock): string | null {
+  if (!st || st.state === "open") return null;
+  if (st.state === "removed") return "Ticket removed";
+  const at = st.at ? ` ${time(st.at)}` : "";
+  return st.how === "seen" ? `Seen${at}` : st.how === "done" ? `No longer waiting${at}` : `Answered${at}`;
+}
+
+/** Got it / Not urgent show while some ticket of the alert is still open (or the page doesn't know: no states, no tickets). */
+export function anyItemOpen(m: Pick<Message, "items" | "itemState">): boolean {
+  if (!m.itemState || !m.items.length) return true;
+  return m.items.some((i) => (m.itemState![itemStateKey(i)]?.state ?? "open") === "open");
 }
 
 // ---- words ----
@@ -95,8 +129,9 @@ export function messagesRoute(hash: string): { id: string | null } | null {
 }
 
 /** The badge word for each kind of message. */
-export function levelLabel(level: MessageLevel, held?: boolean): string {
+export function levelLabel(level: MessageLevel, held?: boolean, practice?: boolean): string {
   if (held) return "Kept quiet";
+  if (practice) return "Practice";
   switch (level) {
     case "urgent": return "Urgent";
     case "reminder": return "Reminder";
@@ -112,8 +147,9 @@ export function levelLabel(level: MessageLevel, held?: boolean): string {
 }
 
 /** Badge colour: urgent red, summaries blue, hello green, held and pause amber, the rest grey. */
-export function levelTone(level: MessageLevel, held?: boolean): "urgent" | "sum" | "ok" | "warn" | "plain" {
+export function levelTone(level: MessageLevel, held?: boolean, practice?: boolean): "urgent" | "sum" | "ok" | "warn" | "plain" {
   if (held) return "warn";
+  if (practice) return "urgent";
   if (level === "urgent" || level === "reminder") return "urgent";
   if (level === "summary" || level === "digest") return "sum";
   if (level === "hello" || level === "test") return "ok";
@@ -222,4 +258,22 @@ export interface Stepping { to: string; withHeld: boolean }
 export function listWithHeld(stepping: Stepping | null, id: string, historyHeld: boolean, messageHeld: boolean): boolean {
   if (stepping?.to === id) return stepping.withHeld;
   return historyHeld || messageHeld;
+}
+
+/** The night question, as the board asks it (src/server/helper/settings.ts nightQuestion). */
+export function nightQuestion(night: { start: string; end: string }): string {
+  return `Should urgent alerts wake you at night (${night.start}-${night.end})? I'd only do it when harm keeps growing, like customers billed twice.`;
+}
+
+/** The message page asks the night question: the user hasn't chosen, and the message carries it (or is a tapped practice alert). */
+export function asksNight(m: Pick<Message, "nightAsk" | "heldOvernight" | "practice" | "tapped">, nightOptIn: boolean | null | undefined): boolean {
+  return nightOptIn === null && (!!m.nightAsk || !!m.heldOvernight || (!!m.practice && !!m.tapped));
+}
+
+/** The helper card's spend: "Today: 12 checks, $0.21", "Today: no checks yet". */
+export function spendLine(today: { checks: number; costUsd: number } | undefined): string | null {
+  if (!today) return null;
+  if (!today.checks) return "Today: no checks yet";
+  const usd = today.costUsd > 0 && today.costUsd < 0.01 ? "<$0.01" : `$${today.costUsd.toFixed(2)}`;
+  return `Today: ${today.checks} check${today.checks === 1 ? "" : "s"}, ${usd}`;
 }

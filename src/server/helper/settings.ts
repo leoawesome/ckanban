@@ -38,6 +38,26 @@ export const FEEDBACK_LINES_MAX = 100;
 
 const HM = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 
+/**
+ * The helper may wake the user at night: only once they said yes. null (not asked yet) holds like false, so a working
+ * helper, a failing one and the board's fallbacks all keep the night quiet until the user chooses.
+ */
+export function nightAllowed(s: Pick<HelperSettings, "nightOptIn">): boolean {
+  return s.nightOptIn === true;
+}
+
+/** The night question, asked once in plain words (hello, the one-time notice, the morning message, after a practice alert). */
+export function nightQuestion(night: Night): string {
+  return `Should urgent alerts wake you at night (${night.start}-${night.end})? I'd only do it when harm keeps growing, like customers billed twice.`;
+}
+
+/** What the user hears after answering it. */
+export function nightAnswerText(allow: boolean, night: Night): string {
+  return allow
+    ? `Done: urgent alerts may wake you at night (${night.start}-${night.end}). Change it any time in Settings.`
+    : `Done: nothing wakes you at night (${night.start}-${night.end}); urgent things wait for the morning. Change it any time in Settings.`;
+}
+
 export const defaultHelperSettings = (): HelperSettings => ({ model: "sonnet", night: { ...DEFAULT_NIGHT }, nightOptIn: null, feedback: [] });
 
 /** Minutes after midnight of "HH:MM", or null. */

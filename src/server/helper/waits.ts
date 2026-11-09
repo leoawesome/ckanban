@@ -50,6 +50,11 @@ export interface WaitRecord {
   toldVia: ToldVia | null;
   /** The message that told it. */
   messageId?: string | null;
+  /**
+   * Counted as urgent but held at night because the user hasn't allowed night wake-ups (when): the morning message
+   * starts "Held overnight: <title>, marked urgent 22:35".
+   */
+  nightHeldAt?: string | null;
   /** The helper holds it until then (for a summary); informational for the board. */
   heldUntil?: string | null;
   /** Due times. fallbackAt: direct send if no helper run succeeded since queuedAt. digestAt: fallback digest if still untold. */
