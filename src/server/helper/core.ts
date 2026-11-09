@@ -126,7 +126,10 @@ export class HelperCore {
     const msg = this.messages.get(messageId);
     if (!msg) return "That message is gone.";
     let stopped = 0;
-    for (const it of msg.items) if (it.key && this.waits.stopReminders(it.key, "got-it")) stopped++;
+    for (const it of msg.items) {
+      const r = it.key ? this.waits.forMessage(it.key, msg) : undefined;
+      if (r && this.waits.stopReminders(r.key, "got-it")) stopped++;
+    }
     this.messages.markTapped(messageId, "got-it");
     return stopped ? "Got it. No more reminders for this." : "Got it.";
   }
@@ -136,7 +139,10 @@ export class HelperCore {
     if (this.actions.notUrgent) return this.actions.notUrgent(messageId, via);
     const msg = this.messages.get(messageId);
     if (!msg) return "That message is gone.";
-    for (const it of msg.items) if (it.key) this.waits.stopReminders(it.key, "not-urgent");
+    for (const it of msg.items) {
+      const r = it.key ? this.waits.forMessage(it.key, msg) : undefined;
+      if (r) this.waits.stopReminders(r.key, "not-urgent");
+    }
     this.messages.markTapped(messageId, "not-urgent");
     const titles = msg.items.map((i) => i.title);
     return titles.length ? cut(`Stopped reminders for ${titles.join(", ")}`, 190) : "Noted: not urgent.";

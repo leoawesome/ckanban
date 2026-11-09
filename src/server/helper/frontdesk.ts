@@ -757,7 +757,7 @@ export class FrontDesk {
   static briefing(paired: boolean): string {
     return [
       paired ? "Paired. Here's what I can do from Telegram:" : "New: here's what I can do from Telegram now:",
-      "• Alerts: urgent ones come with sound, the rest arrive silently. Reply to an alert to answer that ticket.",
+      "• Alerts: only urgent ones and their reminders come here, with sound. Reply to an alert to answer that ticket.",
       "• Ask me anything else right here: what's going on, send an answer, or start work on any board. Starting, stopping or moving work always asks you to Confirm first.",
       "• /waiting shows what waits on you. /lock stops me taking messages until you turn it back on from the Mac.",
       FOCUS_HINT_TELEGRAM,

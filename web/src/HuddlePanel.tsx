@@ -226,7 +226,7 @@ function StartHuddle({ slug, ticket, tickets, onError, onBack, onStarted, seed }
     <div className="panel-scroll panel-huddle-start">
       <p className="huddle-intro"><HuddleIcon /> A few Claudes look at this together and agree on a list.</p>
       <SquadPicker templates={templates} draft={draft} setDraft={setDraft} disabled={busy} quiet={squad && !editPeople} />
-      {squad && !editPeople && <SquadPeople draft={draft} />}
+      {squad && !editPeople && <SquadPeople draft={draft} presets={presets} />}
       {(!squad || editPeople) && <RosterEditor presets={presets} draft={draft} setDraft={setDraft} tickets={tickets} hostId={ticket.id} onEnter={start} disabled={busy} />}
       {squad && <TopicBox value={topic} onChange={setTopic} filled="ticket" disabled={busy} />}
       <div className="huddle-card-actions">

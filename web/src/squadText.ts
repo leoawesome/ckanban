@@ -32,13 +32,17 @@ export function personHandle(e: SquadPerson): string {
   return e.handle?.trim() || e.preset || (e.role ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "helper";
 }
 
+/** How a person takes part, as its chip says it: every person shows one, so the card tells who only joins when mentioned. */
+const PERSON_MODE: Record<string, string> = { tagged: "joins when tagged", monitor: "reads everything" };
+export const personModeLabel = (mode: string | null | undefined) => PERSON_MODE[mode || "tagged"] ?? mode!;
+
 export interface PersonChip {
   key: string;
   handle: string;
   host: boolean;
   /** Saved as a new teammate when the squad is saved. */
   isNew: boolean;
-  /** "×2", mode and model, when they are set. */
+  /** "×2" when set, the mode (always) and the model when set. */
   extra: string;
   /** Everything in one line, for the chip's tooltip. */
   title: string;
@@ -47,20 +51,23 @@ export interface PersonChip {
 /**
  * The people of a squad as chips. A person is a new teammate when it has no preset and no teammate of its name
  * exists yet (`teammates`: the board's teammate names; null while loading: then the card's own list decides).
+ * A person without its own mode takes its teammate's (`presetMode`), else joins when tagged.
  */
-export function personChips(roster: SquadPerson[], newTeammates: { index: number; name: string }[] = [], teammates: Set<string> | null = null): PersonChip[] {
+export function personChips(roster: SquadPerson[], newTeammates: { index: number; name: string }[] = [], teammates: Set<string> | null = null,
+  presetMode: (preset: string) => string | undefined = () => undefined): PersonChip[] {
   const proposed = new Map(newTeammates.map((n) => [n.index, n.name]));
   return roster.map((e, i) => {
     const name = proposed.get(i);
     const handle = e.preset ? personHandle(e) : name ?? personHandle(e);
     const isNew = !e.preset && (teammates ? !teammates.has(name ?? handle) : proposed.has(i));
     const count = e.count && e.count > 1 ? `×${e.count}` : "";
-    const extra = [count, e.mode === "monitor" ? "reads everything" : "", e.model ?? ""].filter(Boolean).join(" · ");
+    const mode = e.mode ?? (e.preset ? presetMode(e.preset) : undefined) ?? "tagged";
+    const extra = [count, personModeLabel(mode), e.model ?? ""].filter(Boolean).join(" · ");
     const title = [
       `@${handle}${e.host ? " hosts the huddle" : ""}`,
       e.role && !e.preset ? e.role : e.preset ? `teammate ${e.preset}` : "",
       isNew ? "saved as a new teammate" : "",
-      e.mode === "monitor" ? "reads every message" : "wakes when @mentioned",
+      mode === "monitor" ? "reads every message" : mode === "tagged" ? "wakes when @mentioned" : personModeLabel(mode),
       e.model ? `model ${e.model}` : "board's model",
       e.focus ? `focus: ${e.focus}` : "",
     ].filter(Boolean).join(" · ");

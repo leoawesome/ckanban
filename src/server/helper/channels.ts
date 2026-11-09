@@ -22,7 +22,7 @@ export interface OutMessage {
   ticket?: { board: string; ticketId: string } | null;
   /** Phone push tag: a new message with the same tag replaces the old one. */
   tag?: string;
-  /** Interrupt: ntfy priority 5, Telegram with sound (routine Telegram is silent). */
+  /** Interrupt: ntfy priority 5, Telegram with sound. Only urgent messages (and the test) go to Telegram: telegramTakes. */
   urgent?: boolean;
   /** The legacy "needs you" shape: the built-in channels format exactly as before when given. */
   notify?: NotifyMessage;
@@ -47,6 +47,8 @@ export interface Channel {
   name: string;
   /** On and set up. */
   enabled(settings: NotifySettings): boolean;
+  /** Whether this message goes to the channel at all (default: every message). A message it doesn't take skips it. */
+  takes?(m: OutMessage): boolean;
   send(m: OutMessage, settings: NotifySettings): Promise<ChannelResult>;
 }
 
@@ -198,6 +200,14 @@ export function webhookChannel(d: BuiltinDeps): Channel {
   };
 }
 
+/**
+ * Telegram gets only urgent alerts and their reminder steps (urgent: also direct sends in fallback and at night), and
+ * the Settings test. Summaries, digests, hello, pause and other routine messages go to the other channels only.
+ */
+export function telegramTakes(m: Pick<OutMessage, "urgent" | "level">): boolean {
+  return !!m.urgent || m.level === "test";
+}
+
 /** The channels in fallback order; sendAll sends to every one that is on. */
 export class Channels {
   private list: Channel[] = [];
@@ -226,9 +236,13 @@ export class Channels {
     return this.list.filter((c) => c.enabled(settings));
   }
 
-  /** Sends to the named channels (default: every one that is on), all at once. */
+  /**
+   * Sends to the named channels (default: every one that is on), all at once. A channel that doesn't take this message
+   * (Telegram for a routine one) is left out, so a send chain moves on to the next channel.
+   */
   async sendAll(m: OutMessage, settings: NotifySettings, only?: string[]): Promise<ChannelResult[]> {
-    const targets = only ? only.map((n) => this.get(n)).filter((c): c is Channel => !!c && c.enabled(settings)) : this.enabled(settings);
+    const on = only ? only.map((n) => this.get(n)).filter((c): c is Channel => !!c && c.enabled(settings)) : this.enabled(settings);
+    const targets = on.filter((c) => !c.takes || c.takes(m));
     return Promise.all(targets.map((c) => c.send(m, settings).catch((e) => ({ channel: c.name, ok: false, error: `${c.name} failed: ${(e as Error).message}` }))));
   }
 }
