@@ -126,6 +126,7 @@ function ownAttention(
   }
   if (s?.pendingNewTickets?.some((n) => !o.createdTitles?.has(titleKey(n.title)) && !(n.key && o.createdKeys?.has(n.key)))) return { kind: "proposal", label: "Review proposed tickets", since };
   if (s?.pendingTeammates?.some((id) => !t.teammateCards?.[id])) return { kind: "proposal", label: "Review proposed teammate", since };
+  if (s?.pendingSquads?.some((id) => !t.squadCards?.[id])) return { kind: "proposal", label: "Review proposed squad", since };
   if (s?.pendingAutomations?.some((id) => !t.automationCards?.[id])) return { kind: "proposal", label: "Review proposed automation", since };
   if (t.status === "review") return { kind: "review", label: "Ready for review", since };
   // A reply cut off by a restart isn't a reply yet: recover() resumes it.

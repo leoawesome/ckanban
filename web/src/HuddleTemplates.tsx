@@ -1,64 +1,85 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { api, type HuddlePreset, type HuddleTemplate, type Level, type TeamUsage } from "./api";
+import { api, type HuddlePreset, type HuddleTemplate, type Level, type SquadCardRef, type SquadDraft, type TeamUsage } from "./api";
 import { RosterEditor, rosterDraft, templateRules, type RosterDraft } from "./HuddleRoster";
 import { DEFAULT_BUDGET } from "./huddleText";
+import { useSquadSave } from "./SquadCard";
+import { personHandle } from "./squadText";
 import { resetTitle, scopeChip, usageText } from "./teamText";
 
-type Draft = { name: string; label: string; description: string; rounds: string; budget: string; report: string; roster: RosterDraft };
+type Draft = { name: string; label: string; description: string; rounds: string; budget: string; report: string; hostRules: string; roster: RosterDraft };
 
 /** Enter in these inputs must not submit anything around them. */
 const noSubmit = (e: KeyboardEvent) => {
   if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement)) e.preventDefault();
 };
 
-const toDraft = (t: HuddleTemplate | null): Draft => ({
+const toDraft = (t: SquadDraft | null): Draft => ({
   name: t?.name ?? "", label: t?.label ?? "", description: t?.description ?? "",
-  rounds: t?.rounds ? String(t.rounds) : "", budget: String(t?.maxCostUsd ?? DEFAULT_BUDGET), report: t?.report ?? "",
+  rounds: t?.rounds ? String(t.rounds) : "", budget: String(t?.maxCostUsd ?? DEFAULT_BUDGET), report: t?.report ?? "", hostRules: t?.hostRules ?? "",
   roster: rosterDraft(t?.roster ?? [{ preset: "reviewer" }]),
 });
 
+const fromDraft = (d: Draft): SquadDraft => ({
+  name: d.name.trim(), label: d.label.trim(), description: d.description, report: d.report, hostRules: d.hostRules,
+  rounds: d.rounds.trim() ? Number(d.rounds) : null,
+  maxCostUsd: d.budget.trim() ? Number(d.budget) : null,
+  roster: d.roster.rows.map(({ key: _k, ...e }) => ({ ...e, focus: e.focus?.trim() || undefined })),
+});
+
+type Editing = {
+  draft: Draft; isNew: boolean; scope: Level; current: HuddleTemplate | null;
+  /** Opened from a squad card or "Save as squad…": saved like the card (people with no teammate become teammates). */
+  fromCard: boolean;
+  card?: SquadCardRef;
+};
+
 /**
- * The Team tab's Templates view: whole huddles to start from (a roster plus rounds, budget and report format), each with
- * Start huddle. Saved for all boards (default) or this board only, like teammates. Saves right away.
+ * The Team tab's Squads view: saved huddles to start on any ticket (people with their focus, how the host runs it,
+ * rounds, budget and report format), each with Start huddle. Saved for all boards (default) or this board only, like
+ * teammates. Saves right away.
  */
-export function TeamTemplates({ slug, templates, loading, filtered, presets, usage, startHint, newRequest, onChanged, onError, onStart }: {
+export function TeamSquads({ slug, squads, loading, filtered, presets, usage, startHint, newRequest, editRequest, onChanged, onError, onStart }: {
   slug: string;
-  /** The templates to list (filtered). */
-  templates: HuddleTemplate[];
+  /** The squads to list (filtered). */
+  squads: HuddleTemplate[];
   loading: boolean;
   filtered: boolean;
   presets: HuddlePreset[] | null;
   usage: Record<string, TeamUsage> | null;
   startHint: string;
-  /** Changes when "+ New template" is pressed. */
+  /** Changes when "+ New squad" is pressed. */
   newRequest: number;
+  /** The editor filled in from a squad card (Edit first, or "Save as squad…"'s Open the editor); n changes per request. */
+  editRequest?: { draft: SquadDraft; card?: SquadCardRef; n: number } | null;
   onChanged: () => void;
   onError: (m: string | null) => void;
   onStart: (name: string) => void;
 }) {
-  const [editing, setEditing] = useState<{ draft: Draft; isNew: boolean; scope: Level; current: HuddleTemplate | null } | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState(false);
+  const cardSave = useSquadSave(slug, editing?.card, () => { setEditing(null); onChanged(); }, (m) => onError(m));
 
   const edit = (t: HuddleTemplate | null) => {
     onError(null);
-    setEditing({ draft: toDraft(t), isNew: !t, scope: t?.source === "board" ? "board" : "global", current: t });
+    setEditing({ draft: toDraft(t), isNew: !t, scope: t?.source === "board" ? "board" : "global", current: t, fromCard: false });
   };
   useEffect(() => {
     if (newRequest) edit(null);
   }, [newRequest]);
+  useEffect(() => {
+    if (!editRequest) return;
+    onError(null);
+    setEditing({ draft: toDraft(editRequest.draft), isNew: true, scope: "board", current: null, fromCard: true, card: editRequest.card });
+  }, [editRequest?.n]);
 
   const save = async () => {
     if (!editing) return;
     const { draft, scope } = editing;
-    setBusy(true);
     onError(null);
+    if (editing.fromCard) return cardSave.save(fromDraft(draft), scope);
+    setBusy(true);
     try {
-      await api.saveHuddleTemplate(slug, {
-        name: draft.name, label: draft.label, description: draft.description, report: draft.report,
-        rounds: draft.rounds.trim() ? Number(draft.rounds) : null,
-        maxCostUsd: draft.budget.trim() ? Number(draft.budget) : null,
-        roster: draft.roster.rows.map(({ key: _k, ...e }) => ({ ...e, focus: e.focus?.trim() || undefined })),
-      }, scope);
+      await api.saveHuddleTemplate(slug, fromDraft(draft), scope);
       setEditing(null);
       onChanged();
     } catch (e) {
@@ -83,10 +104,13 @@ export function TeamTemplates({ slug, templates, loading, filtered, presets, usa
 
   if (editing) {
     const { draft, isNew, scope } = editing;
+    const working = busy || cardSave.busy;
     const set = (patch: Partial<Draft>) => setEditing((x) => x && { ...x, draft: { ...x.draft, ...patch } });
+    const title = editing.fromCard ? `Save the squad${draft.label ? ` ${draft.label}` : ""}` : isNew ? "New squad" : editing.current?.source === "builtin" ? `Customise ${draft.label}` : `Edit ${draft.label}`;
     return (
       <div className="tm-pane tm-edit tt-edit form" onKeyDown={noSubmit}>
-        <div className="tm-head"><h3>{isNew ? "New template" : editing.current?.source === "builtin" ? `Customise ${draft.label}` : `Edit ${draft.label}`}</h3></div>
+        <div className="tm-head"><h3>{title}</h3></div>
+        {editing.fromCard && <p className="muted small tt-edit-note">People with no teammate of their name are saved as new teammates with the squad.</p>}
         <div className="row two">
           <label>
             Name
@@ -112,13 +136,28 @@ export function TeamTemplates({ slug, templates, loading, filtered, presets, usa
           </label>
         </div>
         <label>
+          How the host runs it
+          <textarea rows={4} value={draft.hostRules} onChange={(e) => set({ hostRules: e.target.value })}
+            placeholder={"The steps the host follows each time, e.g.\n1. Post the topic's points, no names.\n2. Everyone posts on their own first.\n3. Debate by name; report only when nobody has anything missing."} />
+        </label>
+        <label>
           Report format
           <textarea rows={2} value={draft.report} onChange={(e) => set({ report: e.target.value })}
             placeholder="How teammates report, e.g. one finding per line: [MUST|SHOULD|COULD] file:line - problem - fix. Report to @facilitator." />
         </label>
         <div className="hp-roster">
-          <span className="small">Teammates</span>
-          <RosterEditor presets={presets} draft={draft.roster} setDraft={(roster) => set({ roster })} tickets={[]} hostId="" hideMain disabled={busy} />
+          <span className="small">People</span>
+          <RosterEditor presets={presets} draft={draft.roster} setDraft={(roster) => set({ roster })} tickets={[]} hostId="" hideMain pickHost noFocus disabled={working} />
+        </div>
+        <div className="tt-focus">
+          <span className="small">Each person's focus</span>
+          {draft.roster.rows.map((r) => (
+            <label key={r.key} className="tt-focus-row">
+              <span className="mono">@{personHandle(r)}</span>
+              <textarea rows={2} value={r.focus ?? ""} placeholder="What this person looks at, in any ticket" disabled={working}
+                onChange={(e) => set({ roster: { ...draft.roster, rows: draft.roster.rows.map((x) => (x.key === r.key ? { ...x, focus: e.target.value } : x)) } })} />
+            </label>
+          ))}
         </div>
         <div className="tm-scope">
           <span className="small">Use on</span>
@@ -133,19 +172,26 @@ export function TeamTemplates({ slug, templates, loading, filtered, presets, usa
           <div className="spacer" />
           <button type="button" className="btn ghost small" onClick={() => { setEditing(null); onError(null); }}>Cancel</button>
           <button type="button" className="btn primary small" onClick={save}
-            disabled={busy || !draft.name.trim() || !draft.roster.rows.length || draft.roster.rows.some((r) => !r.preset && !r.role?.trim())}>
-            {busy ? "Saving…" : isNew ? "Add template" : "Save template"}
+            disabled={working || !draft.name.trim() || !draft.roster.rows.length || draft.roster.rows.some((r) => !r.preset && !r.role?.trim())}>
+            {working ? "Saving…" : isNew ? "Save squad" : "Save changes"}
           </button>
         </div>
+        {cardSave.confirm}
       </div>
     );
   }
 
   if (loading) return <div className="muted small tm-empty">Loading…</div>;
-  if (!templates.length) return <div className="muted small tm-empty">{filtered ? "No template matches." : "No templates yet."}</div>;
+  if (!squads.length) {
+    return (
+      <div className="muted small tm-empty">
+        {filtered ? "No squad matches." : "No squads yet. Save a huddle that worked with Save as squad… in its ⋯ menu, or press + New squad."}
+      </div>
+    );
+  }
   return (
     <div className="tt-list">
-      {templates.map((t) => {
+      {squads.map((t) => {
         const chip = scopeChip(t);
         const changed = t.source !== "builtin";
         return (
@@ -157,7 +203,9 @@ export function TeamTemplates({ slug, templates, loading, filtered, presets, usa
               <span className="tm-stats">{usage ? usageText(usage[t.name]) : ""}</span>
             </div>
             {t.description && <div className="tt-desc">{t.description}</div>}
-            <div className="tt-meta">{[t.roster.map((e) => `@${e.handle ?? e.preset ?? e.role}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`).join(", "), templateRules(t)].filter(Boolean).join(" · ")}</div>
+            <div className="tt-meta">
+              {[t.roster.map((e) => `@${e.handle ?? e.preset ?? e.role}${e.host ? " (host)" : ""}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`).join(", "), templateRules(t), t.hostRules?.trim() && "host rules"].filter(Boolean).join(" · ")}
+            </div>
             <div className="tt-actions">
               <button className="btn small primary" onClick={() => onStart(t.name)} title={startHint} disabled={busy}>Start huddle…</button>
               <button className="btn small" onClick={() => edit(t)} disabled={busy}>{changed ? "Edit" : "Copy to customise"}</button>
@@ -167,7 +215,7 @@ export function TeamTemplates({ slug, templates, loading, filtered, presets, usa
           </div>
         );
       })}
-      <div className="tm-hint tt-foot">Start huddle… {startHint}</div>
+      <div className="tm-hint tt-foot">Start huddle… {startHint} You can change the topic before it starts.</div>
     </div>
   );
 }

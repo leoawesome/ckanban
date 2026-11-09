@@ -165,7 +165,7 @@ export function mentionQuery(text: string, caret: number): { start: number; quer
 export const DEFAULT_MAX = 8;
 /** Longest huddle post (the daemon's POST_MAX) and pinned brief (BRIEF_MAX). */
 export const POST_MAX = 2000;
-export const BRIEF_MAX = 2000;
+export const BRIEF_MAX = 8000;
 /** A huddle's default spending limit (the daemon's DEFAULT_MAX_COST_USD). */
 export const DEFAULT_BUDGET = 20;
 
@@ -421,7 +421,7 @@ export function teamButtonText(live: number, lessons: number): { label: string; 
   if (lessons > 0) parts.push(`${lessons} new ${lessons === 1 ? "lesson" : "lessons"}`);
   return {
     label: ["Team", ...parts].join(", "),
-    title: ["Teammates, templates and huddles (T)", ...parts].join(". ") + (parts.length ? "." : ""),
+    title: ["Teammates, squads and huddles (T)", ...parts].join(". ") + (parts.length ? "." : ""),
   };
 }
 

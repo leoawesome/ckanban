@@ -779,7 +779,7 @@ export function App() {
     let id = open?.id;
     if (!id) {
       try {
-        const what = "preset" in seed ? `@${seed.preset}` : `the ${seed.template} template`;
+        const what = "preset" in seed ? `@${seed.preset}` : `the ${seed.template} squad`;
         const t = await api.createTicket(profile.slug, {
           title: "preset" in seed ? `Huddle with @${seed.preset}` : `Huddle: ${seed.template}`,
           body: `Started from the Team tab: a huddle with ${what}. Say what it should work on.`, status: "planning",
@@ -1079,7 +1079,7 @@ export function App() {
       { id: "chat", label: "Quick Claude chat", keys: ["C"], icon: <ChatIcon size={14} />, run: () => openChat() },
     ] : []),
     ...(profile ? [
-      { id: "team", label: "Open Team", keys: ["T"], icon: <TeamIcon size={14} />, hint: "teammates, templates, huddles", run: () => openDockOn("team") },
+      { id: "team", label: "Open Team", keys: ["T"], icon: <TeamIcon size={14} />, hint: "teammates, squads, huddles", run: () => openDockOn("team") },
       { id: "huddles", label: liveHuddles ? `Huddles (${liveHuddles} live)` : "Huddles", icon: <TeamIcon size={14} />, hint: "in Team", run: () => openDockOn("team", { action: "huddles" }) },
       { id: "new-teammate", label: "New teammate…", run: () => openDockOn("team", { action: "new" }) },
     ] : []),

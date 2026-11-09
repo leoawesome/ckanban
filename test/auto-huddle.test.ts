@@ -299,6 +299,38 @@ test("a ticket waiting for the slot keeps the budget it asked for in its wake", 
   expect(wake).toContain("trigger data, the same roster you built before");
 });
 
+test("a ticket waiting for the slot keeps its topic in its wake, and the huddle it starts gets it", async () => {
+  const a = await inProgress("A");
+  const b = await inProgress("B");
+  unattended(a.id, b.id);
+  await callTool("start_huddle", risky("upload route"), runCtx(a.id));
+  const ha = ticket(a.id).autoHuddle!.huddleId!;
+  const topic = "The CSV import, rows over 10k";
+  await callTool("start_huddle", { trigger: "data", reason: "data migration", roster: SQUAD, topic: `  ${topic} ` }, runCtx(b.id));
+  expect(ticket(b.id).autoHuddle).toMatchObject({ state: "waiting", topic });
+  writeSummary(a.id, ha);
+  await callTool("huddle_close", { reason: "landed" }, runCtx(a.id));
+  await until(() => sent.some((m) => m.id === b.id));
+  expect(sent.find((m) => m.id === b.id)!.text).toContain(`topic ${JSON.stringify(topic)}`);
+  // The woken run passes it back: the huddle starts with it.
+  expect(text(await callTool("start_huddle", { trigger: "data", reason: "data migration", roster: SQUAD, topic }, runCtx(b.id)))).toContain("started");
+  expect(store.getHuddle("p", ticket(b.id).autoHuddle!.huddleId!)!.topic).toBe(topic);
+});
+
+test("a waiting request without a topic keeps none, and a too-long topic is refused before it waits", async () => {
+  const a = await inProgress("A");
+  const b = await inProgress("B");
+  unattended(a.id, b.id);
+  await callTool("start_huddle", risky("upload route"), runCtx(a.id));
+  const r = await callTool("start_huddle", { trigger: "data", reason: "data migration", roster: SQUAD, topic: "x".repeat(5000) }, runCtx(b.id));
+  expect(r.isError).toBe(true);
+  expect(text(r)).toContain("topic is too long");
+  expect(ticket(b.id).autoHuddle ?? null).toBeNull();
+  await callTool("start_huddle", { trigger: "data", reason: "data migration", roster: SQUAD, topic: "  " }, runCtx(b.id));
+  expect(ticket(b.id).autoHuddle).toMatchObject({ state: "waiting" });
+  expect(ticket(b.id).autoHuddle!.topic).toBeUndefined();
+});
+
 test("one auto huddle per board: the second ticket waits for the slot and is woken when it frees", async () => {
   const a = await inProgress("A");
   const b = await inProgress("B");
@@ -456,7 +488,7 @@ test("Planning: the chat writes the huddle into the ticket; a plan review only w
   // The plan review is only for when the user asks, never offered unprompted.
   expect(refine).toContain("only when the user's own message in this chat asks for the plan to be reviewed");
   expect(refine).toContain("Never offer or propose one on your own initiative");
-  expect(refine).toContain("template `plan-review`");
+  expect(refine).toContain("squad `plan-review`");
   expect((await callTool("propose_huddle", { template: "plan-review", reason: "review the plan" }, runCtx(t.id))).isError).toBeUndefined();
   // Backlog chats are refused: the work hasn't started there and the user hasn't shaped the plan yet.
   store.updateTicket("p", t.id, { status: "backlog" });

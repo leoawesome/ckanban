@@ -64,7 +64,7 @@ import {
   ALL_ROLES, cleanLessons, cleanNotes, type HuddleNote, lessonsSection, type LessonInput, NOTE_MAX, noteRole, noteText, type NoteScope, type RoleNotes,
 } from "./huddle-notes";
 import {
-  BUILTIN_TEMPLATES, customReviewBrief, deleteTemplate, type HuddleTemplate, type HuddleTemplateView, mergeTemplates, saveTemplate, templateBrief,
+  BUILTIN_TEMPLATES, customReviewBrief, deleteTemplate, type HuddleTemplate, type HuddleTemplateView, mergeTemplates, saveTemplate, templateBrief, topicInput,
 } from "./huddle-templates";
 import type { HostHuddle } from "./attention";
 import { huddleUsage, type Usage } from "./huddle-usage";
@@ -76,6 +76,11 @@ import { addHuddleSpend } from "./spend";
 import type { Store } from "./store";
 import { contextTokens, messageCost } from "./ticket-usage";
 import { proposalPreset, teammateProposal, type TeammateProposal } from "./teammate-proposal";
+import { addSideSpend, type SideCaller } from "./side-call";
+import {
+  chatTail, GENERIC_SQUAD_MODEL, GENERIC_SQUAD_SYSTEM, GENERIC_SQUAD_TIMEOUT_MS, genericSquadPrompt, parseGenericSquad, squadProposal, ticketTopic,
+  type SquadProposal, squadSavePlan, squadSetup, withNewTeammates,
+} from "./squad";
 import { AUTO_HUDDLE_TRIGGERS, autoHuddlesOn, isAutoHuddleTrigger, USER_HUDDLE_TRIGGER } from "./types";
 import type {
   HandIn, Huddle, HuddleFinding, HuddleLearning, HuddleMessage, HuddleMessageKind, HuddleMode, HuddleParticipant, HuddleSource, HuddleStopReason, Profile, Ticket,
@@ -93,7 +98,7 @@ const DIGEST_MAX = 40;
 /** Longest message anyone can post: longer reports go in a file. */
 export const POST_MAX = 2000;
 /** Longest pinned brief. */
-export const BRIEF_MAX = 2000;
+export const BRIEF_MAX = 8000;
 /** A finding's title as system lines show it (the findings list has the whole text). */
 const FINDING_TITLE = 100;
 const ACTIVITY_THROTTLE_MS = 1000;
@@ -161,8 +166,17 @@ export type HuddleView = Omit<Huddle, "participants"> & {
   summary: string | null;
 };
 
-/** Teammates agents proposed, waiting for the user (lessons no longer wait: they go to the board's pile, learner.ts). */
-export const pendingLearnings = (h: Huddle) => (h.learnings ?? []).filter((l) => l.status === "pending" && !!l.teammate);
+/** Teammates and squads agents proposed, waiting for the user (lessons no longer wait: they go to the board's pile, learner.ts). */
+export const pendingLearnings = (h: Huddle) => (h.learnings ?? []).filter((l) => l.status === "pending" && (!!l.teammate || !!l.squad));
+
+/** What "Save as squad…" returns: the card (null when the call failed, with error), and the huddle's setup as it was. */
+export interface GenericSquadResult {
+  proposal: SquadProposal | null;
+  error: string | null;
+  /** The roster as it was (nothing made generic), for the filled-in editor. */
+  setup: HuddleTemplate;
+  costUsd: number;
+}
 
 /** The seq the user has seen up to: their last post or action (Stop, Resume, restart…). */
 export function userSeenSeq(h: Huddle, msgs: HuddleMessage[]): number {
@@ -490,6 +504,9 @@ export class Huddles {
     // So do hand-ins: an agent can't accept its own changes or edit what it handed in.
     h.handIns = was.handIns;
     h.host = was.host;
+    // The host's rules and topic are the user's: an agent can't rewrite its host's instructions by editing the file.
+    h.hostRules = was.hostRules;
+    h.topic = was.topic;
     for (const k of ["posts", "sinceUser", "idleNudged"] as const) {
       if ((was[k] ?? 0) > (h[k] ?? 0)) h[k] = was[k];
     }
@@ -801,10 +818,11 @@ export class Huddles {
     this.opts.learn?.(slug, this.get(slug, hid), p, target, lessons);
   }
 
-  private learning(h: Huddle, id: string): HuddleLearning {
+  /** anyState: also one already saved or discarded. */
+  private learning(h: Huddle, id: string, anyState = false): HuddleLearning {
     const l = (h.learnings ?? []).find((x) => x.id === id);
     if (!l) throw new HuddleError(404, `no learning ${id} in huddle ${h.id}`);
-    if (l.status !== "pending") throw new HuddleError(409, `learning ${id} was already ${l.status}`);
+    if (!anyState && l.status !== "pending") throw new HuddleError(409, `learning ${id} was already ${l.status}`);
     return l;
   }
 
@@ -821,7 +839,7 @@ export class Huddles {
       if (patch.scope !== "general" && patch.scope !== "repo") throw new HuddleError(400, "scope must be general or repo");
       out.scope = patch.scope;
     }
-    if (patch.target !== undefined && l.teammate) throw new HuddleError(400, "a proposed teammate is saved as itself; pick all boards or this board with scope");
+    if (patch.target !== undefined && (l.teammate || l.squad)) throw new HuddleError(400, `a proposed ${l.squad ? "squad" : "teammate"} is saved as itself; pick all boards or this board with scope`);
     if (patch.target !== undefined) {
       const t = String(patch.target);
       if (t !== ALL_ROLES && t !== "new" && (t === MAIN_PRESET || !this.presetMap(slug).has(t))) {
@@ -845,9 +863,14 @@ export class Huddles {
    * board), with where it came from. Target "new" first makes a board preset from the agent's ad-hoc role (its label
    * and prompt). Only the user gets here (the HTTP route refuses runs and huddle agents).
    */
-  saveLearning(slug: string, hid: string, id: string, patch: { text?: unknown; scope?: unknown; target?: unknown } = {}): HuddleLearning {
+  saveLearning(slug: string, hid: string, id: string, patch: { text?: unknown; scope?: unknown; target?: unknown; replace?: unknown } = {}): HuddleLearning {
     const h = this.get(slug, hid);
     const l = this.patched(slug, this.learning(h, id), patch);
+    if (l.squad) {
+      // A proposed squad: saved as proposed for all boards (scope general) or this board (repo), its new teammates with it.
+      this.saveSquad(slug, l.squad.squad, l.scope === "general" ? "global" : "board", { huddleId: hid, learningId: id }, patch.replace === true);
+      return this.learning(this.get(slug, hid), id, true);
+    }
     if (l.teammate) {
       // A proposed teammate: saved (or an existing one changed) for all boards (scope general) or this board (repo).
       const p = this.savePreset(slug, proposalPreset(l.teammate), l.scope === "general" ? "global" : "board");
@@ -902,6 +925,118 @@ export class Huddles {
     const known = this.presets(slug).some((p) => p.name === t.name);
     this.system(slug, hid, `@${by.handle} proposed ${known ? `a change to teammate @${t.name}` : `a new teammate @${t.name}`}; the user reviews it under Learnings.`);
     return out;
+  }
+
+  // ---- Squads (huddle templates to the user; see squad.ts) ----
+
+  /**
+   * A huddle agent proposes a squad (propose_squad): it waits under Learnings (scope general: all boards) until the
+   * user saves or discards it. Nothing is saved here.
+   */
+  proposeSquad(slug: string, hid: string, by: HuddleParticipant, input: unknown): HuddleLearning {
+    const h = this.get(slug, hid);
+    this.assertOpen(h);
+    if (by.kind !== "agent") throw new HuddleError(400, "only huddle agents propose squads to the huddle; a ticket chat's propose_squad shows a card in its chat");
+    let s: SquadProposal;
+    try {
+      s = squadProposal(input, this.presets(slug).map((p) => p.name));
+    } catch (e) {
+      throw new HuddleError(400, `${(e as Error).message}. Nothing was changed.`);
+    }
+    if (pendingLearnings(h).some((l) => l.from === by.handle && l.squad)) {
+      throw new HuddleError(400, "you already have a proposed squad waiting for the user; one can wait at once. Nothing was changed.");
+    }
+    let out!: HuddleLearning;
+    this.update(slug, hid, (x) => {
+      x.learnings ??= [];
+      out = {
+        id: `l${x.learnings.length + 1}`, from: by.handle, role: by.role, preset: by.preset ?? null, text: s.why, evidence: "", scope: "general",
+        status: "pending", target: s.squad.name, at: nowIso(), squad: s,
+      };
+      x.learnings.push(out);
+    });
+    this.system(slug, hid, `@${by.handle} proposed a squad "${s.squad.label}"; the user reviews it under Learnings.`);
+    return out;
+  }
+
+  /**
+   * The user saves a squad (a squad card, or a huddle's proposed squad): first each person with no preset as a
+   * teammate at the same level (an existing teammate of that name is used as is, never changed), then the squad with
+   * those people pointed at their teammates. Everything is checked before anything is written. `learning`: the
+   * huddle's proposed squad this saves, marked saved. Only the user gets here (the HTTP routes refuse runs and agents).
+   */
+  saveSquad(slug: string, input: unknown, level: unknown = "board", learning?: { huddleId: string; learningId: string }, replace = false): {
+    squad: HuddleTemplateView; teammates: { created: string[]; reused: string[] };
+  } {
+    if (!this.store.getProfile(slug)) throw new HuddleError(404, `board ${slug} not found`);
+    if (!isLevel(level)) throw new HuddleError(400, "scope must be board or global");
+    if (learning) this.learning(this.get(slug, learning.huddleId), learning.learningId);
+    // A card never replaces a squad by surprise: the user renames it, or confirms (replace).
+    const name = presetName(typeof (input as any)?.name === "string" ? (input as any).name : "");
+    const existing = this.templates(slug).find((t) => t.name === name);
+    if (existing && !replace) throw new HuddleError(409, `a squad named "${name}" already exists (${existing.label}); rename this one, or save with replace to change that one`);
+    let plan: ReturnType<typeof squadSavePlan>;
+    try {
+      // A squad for all boards may only point at teammates every board has (built-in and global); a new one never takes a name this board has.
+      const reach = level === "global" ? new Map(lowerLevels(BUILTIN_PRESETS, this.store.listHuddlePresets(null), "board").map((p) => [p.name, p])) : this.presetMap(slug);
+      plan = squadSavePlan(input, reach, this.presetMap(slug).keys());
+    } catch (e) {
+      throw new HuddleError(400, (e as Error).message);
+    }
+    for (const p of plan.create) this.savePreset(slug, p, level);
+    const squad = this.saveTemplate(slug, plan.squad, level);
+    const teammates = { created: plan.create.map((p) => p.name), reused: plan.reused };
+    if (learning) {
+      this.update(slug, learning.huddleId, (x) => void Object.assign(this.learning(x, learning.learningId), {
+        status: "saved" as const, target: squad.name, scope: level === "global" ? "general" as const : "repo" as const,
+      }));
+    }
+    return { squad, teammates };
+  }
+
+  /**
+   * "Save as squad…": one side call writes a generic squad from a huddle (running or closed) and returns it as a squad
+   * card, saving nothing. Its cost goes on the host ticket's side ledger. On a bad answer it asks once more, then
+   * returns the error with the huddle's setup as it was (for the filled-in editor).
+   */
+  async genericSquad(slug: string, hid: string, call: SideCaller): Promise<GenericSquadResult> {
+    const h = this.get(slug, hid);
+    const presets = this.presetMap(slug);
+    const tpl = h.template ? this.templates(slug).find((t) => t.name === h.template) : undefined;
+    const setup = squadSetup(h, presets, tpl);
+    if (!setup.roster.length) throw new HuddleError(400, "this huddle has no helpers to make a squad from");
+    const summary = this.summaryOf(slug, h);
+    let source: { kind: "summary" | "chat"; text: string } | null = null;
+    if (summary) {
+      try {
+        source = { kind: "summary", text: readFileSync(join(this.store.outputsPath(slug, h.hostTicket), summary), "utf8") };
+      } catch {}
+    }
+    source ??= { kind: "chat", text: chatTail(this.store.readHuddleMessages(slug, hid)) };
+    const learnings = (h.learnings ?? []).map((l) => `${l.teammate ? "Proposed teammate: " : l.squad ? "Proposed squad: " : ""}${l.text} (from @${l.from}, ${l.role})`);
+    // Process lessons often come back as a participant's reason for its status ("not done until the host's call").
+    for (const p of h.participants) if (p.kind === "agent" && p.statusReason?.trim()) learnings.push(`@${p.handle} (${p.role}) ended ${p.status}: ${p.statusReason.trim()}`);
+    const prompt = genericSquadPrompt({ setup, brief: h.brief?.text ?? null, learnings, source });
+    const names = [...presets.keys()];
+    let costUsd = 0;
+    let error = "";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await call({
+        system: GENERIC_SQUAD_SYSTEM, model: GENERIC_SQUAD_MODEL, timeoutMs: GENERIC_SQUAD_TIMEOUT_MS,
+        prompt: attempt ? `${prompt}\n\nYour last answer couldn't be used: ${error}. Answer with the JSON object only.` : prompt,
+      });
+      const cost = r.costUsd ?? 0;
+      costUsd += cost;
+      addSideSpend(this.store.sideSpendPath(slug, h.hostTicket), "squad", cost);
+      if (!r.ok) return { proposal: null, error: `Claude couldn't write the squad: ${r.error}`, setup, costUsd };
+      try {
+        const squad = parseGenericSquad(r.text, names);
+        return { proposal: withNewTeammates(squad, `Made from huddle ${h.id}.`), error: null, setup, costUsd };
+      } catch (e) {
+        error = (e as Error).message;
+      }
+    }
+    return { proposal: null, error: `Claude's squad couldn't be read twice (${error}); open the filled-in editor instead.`, setup, costUsd };
   }
 
   /** The user discards a learning: it is never saved. */
@@ -1018,6 +1153,8 @@ export class Huddles {
       maxParticipants?: number; maxCostUsd?: number; template?: string; auto?: { reason: string; askedCostUsd?: number; trigger?: string };
       /** The ticket's run started it because the user asked in its chat (see startForUser). */
       byUser?: { reason: string; askedCostUsd?: number };
+      /** What this run of the squad is about (the start route, propose_huddle's card); default: the host ticket. */
+      topic?: string | null;
     } = {},
   ): Huddle {
     const host = this.store.getTicket(slug, hostId);
@@ -1042,13 +1179,26 @@ export class Huddles {
     const err = rosterError(roster, max, [...presets.keys()]);
     if (err) throw new HuddleError(400, err);
     const at = nowIso();
+    let topic: string | null;
+    try {
+      topic = topicInput(opts.topic);
+    } catch (e) {
+      throw new HuddleError(400, (e as Error).message);
+    }
+    const hostRules = tpl?.hostRules?.trim() || null;
+    // A squad with host rules is about a topic: with none given, the host ticket's.
+    const briefTopic = topic ?? (hostRules ? ticketTopic(host) : null);
     const main = presets.get(MAIN_PRESET)!;
     const base = { prompt: "", focus: undefined, sessionId: null, status: "idle" as const, cursor: 0, joinedAt: at, workspace: "shared" as const, preset: null };
     const h: Huddle = {
       id: `h_${newId()}`, hostTicket: hostId, status: "live", maxParticipants: max, findings: [], invited: [], seq: 0,
       maxCostUsd, posts: 0, sinceUser: 0, stopReason: null, createdAt: at, updatedAt: at,
       template: tpl?.name ?? null,
-      brief: tpl ? { text: templateBrief(tpl, maxCostUsd), by: USER_HANDLE, at } : opts.auto ? { text: customReviewBrief(maxCostUsd), by: USER_HANDLE, at } : null,
+      ...(topic ? { topic } : {}),
+      ...(hostRules ? { hostRules } : {}),
+      brief: tpl ? { text: templateBrief(tpl, maxCostUsd, briefTopic), by: USER_HANDLE, at }
+        : opts.auto ? { text: [customReviewBrief(maxCostUsd), topic ? `Topic: ${topic}` : ""].filter(Boolean).join("\n"), by: USER_HANDLE, at }
+        : topic ? { text: `Topic: ${topic}`, by: USER_HANDLE, at } : null,
       ...(opts.auto ? { auto: { reason: opts.auto.reason } } : {}),
       participants: [
         { ...base, handle: USER_HANDLE, role: "User", model: null, mode: "monitor", lead: true, canEdit: false, kind: "human" },
@@ -1070,7 +1220,7 @@ export class Huddles {
     this.save(slug, h);
     if (host.status === "planning") this.writeProposal(slug, h.id, host);
     this.bus.emit({ type: "huddle.updated", profile: slug, huddle: this.view(slug, h) });
-    this.system(slug, h.id, `${opts.auto ? "Auto huddle" : "Huddle"} started on ticket ${hostId} "${host.title}"${opts.auto ? ` by its own run (${opts.auto.trigger ? `${opts.auto.trigger}: ` : ""}${opts.auto.reason})` : opts.byUser ? ` by its own session because the user asked in the chat (${opts.byUser.reason})` : ""}${tpl ? ` from template ${tpl.label}` : ""} with ${agents.map((p) => `@${p.handle} (${p.role})`).join(", ")}. ${h.host ? `@${h.host} hosts: it hands out the tasks, accepts the hand-ins and sends @main the final report.` : "@main coordinates."} Budget ${money(maxCostUsd)}${budgetNote}.`);
+    this.system(slug, h.id, `${opts.auto ? "Auto huddle" : "Huddle"} started on ticket ${hostId} "${host.title}"${opts.auto ? ` by its own run (${opts.auto.trigger ? `${opts.auto.trigger}: ` : ""}${opts.auto.reason})` : opts.byUser ? ` by its own session because the user asked in the chat (${opts.byUser.reason})` : ""}${tpl ? ` from squad ${tpl.label}` : ""} with ${agents.map((p) => `@${p.handle} (${p.role})`).join(", ")}. ${h.host ? `@${h.host} hosts: it hands out the tasks, accepts the hand-ins and sends @main the final report.` : "@main coordinates."} Budget ${money(maxCostUsd)}${budgetNote}.`);
     for (const p of agents) this.kickoff(slug, h.id, p.handle);
     return this.get(slug, h.id);
   }
@@ -1102,7 +1252,7 @@ export class Huddles {
    * the card stays In Progress and freeSlot() wakes it when that one ends. Trigger "user" goes to startForUser.
    */
   startAuto(
-    slug: string, hostId: string, input: { reason: string; trigger?: string; template?: string; roster?: RosterEntry[]; maxCostUsd?: number },
+    slug: string, hostId: string, input: { reason: string; trigger?: string; template?: string; roster?: RosterEntry[]; maxCostUsd?: number; topic?: string },
   ): { huddle: Huddle | null; waiting: boolean; template: string } {
     const profile = this.store.getProfile(slug);
     const host = this.store.getTicket(slug, hostId);
@@ -1139,17 +1289,26 @@ export class Huddles {
     if (template && !this.templates(slug).some((t) => t.name === template)) {
       throw new HuddleError(404, `no huddle template "${template}" (templates: ${this.templates(slug).map((t) => t.name).join(", ")})`);
     }
+    let topic: string | null;
+    try {
+      topic = topicInput(input.topic);
+    } catch (e) {
+      throw new HuddleError(400, (e as Error).message);
+    }
     const busy = this.liveAuto(slug).find((h) => h.hostTicket !== hostId);
     if (busy) {
       const at = host.autoHuddle?.state === "waiting" ? host.autoHuddle.at : nowIso();
-      this.board.setAutoHuddle(slug, hostId, { state: "waiting", reason, trigger, template: template || "custom", at, huddleId: null, ...(maxCostUsd !== undefined ? { maxCostUsd } : {}) });
+      this.board.setAutoHuddle(slug, hostId, {
+        state: "waiting", reason, trigger, template: template || "custom", at, huddleId: null,
+        ...(maxCostUsd !== undefined ? { maxCostUsd } : {}), ...(topic ? { topic } : {}),
+      });
       if (host.autoHuddle?.state !== "waiting") this.store.addComment(slug, hostId, "ai", `Auto huddle wanted (${trigger}: ${reason}); waiting for huddle slot: ticket ${busy.hostTicket} has the board's auto huddle.`);
       return { huddle: null, waiting: true, template: template || "custom" };
     }
     if (!this.board.claimAutoHuddle(slug, hostId)) {
       throw new HuddleError(409, "this run already started an auto huddle (one per run); finish with the findings you have");
     }
-    const h = this.create(slug, hostId, roster ?? [], { template: template || undefined, maxCostUsd, auto: { reason, askedCostUsd: asked, trigger } });
+    const h = this.create(slug, hostId, roster ?? [], { template: template || undefined, maxCostUsd, topic, auto: { reason, askedCostUsd: asked, trigger } });
     if (this.slotWoken.get(slug) === hostId) this.slotWoken.delete(slug);
     this.board.setAutoHuddle(slug, hostId, { state: "live", reason, trigger, template: template || "custom", at: h.createdAt, huddleId: h.id });
     this.store.addComment(slug, hostId, "ai", `Auto huddle started (${template || "custom roster"}, ${trigger}): ${reason}`);
@@ -1162,7 +1321,7 @@ export class Huddles {
    * slot, the user closes it). The board decides the message was the user's (Board.userAskedRun), not Claude.
    * Planning and Backlog keep the click: there a huddle would work the ticket before its run does.
    */
-  private startForUser(slug: string, host: Ticket, input: { reason: string; template?: string; roster?: RosterEntry[]; maxCostUsd?: number }): Huddle {
+  private startForUser(slug: string, host: Ticket, input: { reason: string; template?: string; roster?: RosterEntry[]; maxCostUsd?: number; topic?: string }): Huddle {
     const propose = "; call propose_huddle instead so the user can press Start on the card";
     if (host.status === "planning" || host.status === "backlog") {
       throw new HuddleError(403, `in ${host.status === "planning" ? "Planning" : "Backlog"} a huddle only starts when the user presses Start on a proposal card${propose}`);
@@ -1173,7 +1332,7 @@ export class Huddles {
     const template = input.template?.trim() || undefined;
     if (!input.roster?.length && !template) throw new HuddleError(400, "pass a template or a roster: the roles the user asked for, each prompt saying what to do, plus a lead (e.g. qa-lead) when there are 2 or more");
     const maxCostUsd = input.maxCostUsd === undefined ? undefined : Math.min(input.maxCostUsd, AUTO_MAX_COST_USD);
-    const h = this.create(slug, host.id, input.roster ?? [], { template, maxCostUsd, byUser: { reason: input.reason, askedCostUsd: input.maxCostUsd } });
+    const h = this.create(slug, host.id, input.roster ?? [], { template, maxCostUsd, topic: input.topic, byUser: { reason: input.reason, askedCostUsd: input.maxCostUsd } });
     this.store.addComment(slug, host.id, "ai", `Huddle started because the user asked in the chat (${template ?? "custom roster"}): ${input.reason}`);
     return h;
   }

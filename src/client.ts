@@ -497,7 +497,7 @@ export class BoardClient {
   huddleStatus = (slug: string, hid: string, status: HuddleStatusChange, reason: string | undefined, c: HuddleCaller, lessons?: HuddleLesson[]) =>
     this.req<HuddleParticipantInfo>("POST", `${this.h(slug, hid)}/status`, { status, reason, ...(lessons?.length ? { lessons } : {}) }, this.as(c));
   /** start_huddle: the host ticket's own unattended run starts its auto huddle, or waits for the board's slot. */
-  startAutoHuddle = (slug: string, input: { reason: string; trigger?: string; template?: string; roster?: RosterEntry[]; maxCostUsd?: number }, c: HuddleCaller) =>
+  startAutoHuddle = (slug: string, input: { reason: string; trigger?: string; template?: string; roster?: RosterEntry[]; maxCostUsd?: number; topic?: string }, c: HuddleCaller) =>
     this.req<{ waiting: boolean; template: string; huddle: HuddleInfo | null }>("POST", `/api/profiles/${encodeURIComponent(slug)}/huddles/auto`, input, this.as(c));
   huddleCloseRequest = (slug: string, hid: string, reason: string, c: HuddleCaller) =>
     this.req<HuddleInfo>("POST", `${this.h(slug, hid)}/close-request`, { reason }, this.as(c));
@@ -508,6 +508,9 @@ export class BoardClient {
   huddleFindings = (slug: string, hid: string, action: "add" | "resolve" | "list", arg: { text?: string; id?: string }, c: HuddleCaller) =>
     this.req<HuddleFinding[]>("POST", `${this.h(slug, hid)}/findings`, { action, ...arg }, this.as(c));
   /** A huddle agent proposes a teammate: it waits under the huddle's Learnings until the user saves it. */
+  /** A huddle agent proposes a squad (propose_squad): it waits under the huddle's Learnings. */
+  huddleProposeSquad = (slug: string, hid: string, input: Record<string, unknown>, c: HuddleCaller) =>
+    this.req<HuddleLearning>("POST", `${this.h(slug, hid)}/squads`, input, this.as(c));
   huddleProposeTeammate = (slug: string, hid: string, input: Record<string, unknown>, c: HuddleCaller) =>
     this.req<HuddleLearning>("POST", `${this.h(slug, hid)}/teammates`, input, this.as(c));
   /** A helper hands in what it changed in its own copy of the folder. */
