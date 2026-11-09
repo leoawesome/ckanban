@@ -185,7 +185,7 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
             <details className="hs-card hs-more">
               <summary>More</summary>
               <ModelRow />
-              <div className="ch-head hs-more-row">
+              <div className="ch-head hs-more-row hs-stack">
                 <div className="grow">
                   <div className="ch-ttl">Send to a web address as JSON</div>
                   <div className="muted small">For your own tools: the address above gets each message as JSON instead of ntfy text.</div>
@@ -351,14 +351,16 @@ function NightSection() {
   if (!status) return null;
   return (
     <section className="hs-card">
-      <div className="ch-head">
+      <div className="ch-head hs-stack">
         <div className="grow">
           <div className="ch-ttl">Quiet hours</div>
           <div className="muted small">In this Mac's time zone.</div>
         </div>
-        <input type="time" className="hs-time" value={start} onChange={(e) => setStart(e.target.value)} onBlur={saveNight} aria-label="Night starts" />
-        <span className="muted">to</span>
-        <input type="time" className="hs-time" value={end} onChange={(e) => setEnd(e.target.value)} onBlur={saveNight} aria-label="Night ends" />
+        <div className="hs-times">
+          <input type="time" className="hs-time" value={start} onChange={(e) => setStart(e.target.value)} onBlur={saveNight} aria-label="Night starts" />
+          <span className="muted">to</span>
+          <input type="time" className="hs-time" value={end} onChange={(e) => setEnd(e.target.value)} onBlur={saveNight} aria-label="Night ends" />
+        </div>
       </div>
       <div className="ch-head hs-sep">
         <div className="grow">
@@ -427,7 +429,7 @@ function ModelRow() {
   const { status } = useHelper();
   if (!status) return null;
   return (
-    <div className="ch-head hs-more-row">
+    <div className="ch-head hs-more-row hs-stack">
       <div className="grow">
         <div className="ch-ttl">Helper's model</div>
         <div className="muted small">Sonnet costs about 1 to 3 cents a check.</div>
