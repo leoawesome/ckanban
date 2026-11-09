@@ -136,7 +136,7 @@ interface DeskState {
 
 /** What a Confirm card holds (PendingActions kind "fd"). */
 export interface DeskAction {
-  kind: "create" | "move" | "stop" | "chat" | "delete" | "plan" | "run";
+  kind: "create" | "move" | "stop" | "chat" | "delete" | "plan" | "run" | "schedule";
   method: string;
   path: string;
   body: any;
@@ -150,6 +150,8 @@ export interface DeskAction {
   text?: string;
   /** What the card said once it ran (a replayed tap shows it again instead of running twice). */
   done?: string;
+  /** The held request was being run when the daemon stopped: a replayed tap doesn't run it again. */
+  running?: boolean;
 }
 
 const STARTS_RUN = new Set(["ready", "in_progress", "planning"]);
@@ -177,6 +179,10 @@ export function heldKind(method: string, path: string, body: any): { kind: DeskA
   }
   const r = /^\/api\/profiles\/([^/]+)\/(schedules|jobs)\/([^/]+)\/run\/?$/.exec(path);
   if (r && method === "POST") return { kind: "run", slug: decodeURIComponent(r[1]), ticketId: null };
+  // Schedules and one-time jobs start tickets (or commands) later: making or changing one needs a Confirm too.
+  // Cancelling a job or deleting a schedule only stops work, so it passes.
+  const sj = /^\/api\/profiles\/([^/]+)\/(schedules|jobs)(?:\/([^/]+))?(?:\/([a-z-]+))?\/?$/.exec(path);
+  if (sj && ((method === "POST" && !sj[3]) || (method === "PATCH" && sj[3] && !sj[4]))) return { kind: "schedule", slug: decodeURIComponent(sj[1]), ticketId: null };
   return null;
 }
 
@@ -411,7 +417,9 @@ export class FrontDesk {
       const t = this.d.store.getTicket(r.board, r.ticketId);
       if (!t) continue;
       const title = t.title.trim().toLowerCase();
-      if ((title.length >= 4 && low.includes(title)) || low.includes(r.ticketId.toLowerCase())) this.d.waits.update(r.key, { seenInChatAt: at });
+      // The whole title as words (a short or one-word title like "Tests" doesn't count), or the ticket id.
+      const named = title.length >= 8 && title.includes(" ") && new RegExp(`(^|[^\\p{L}\\p{N}])${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "u").test(low);
+      if (named || low.includes(r.ticketId.toLowerCase())) this.d.waits.update(r.key, { seenInChatAt: at });
     }
   }
 
@@ -503,6 +511,17 @@ export class FrontDesk {
         return { text: `Start the plan of "${title}" (${board})? Its tickets start running.`, buttons: yes("Confirm") };
       case "run":
         return { text: `Run this ${a.path.includes("/jobs/") ? "job" : "schedule"} on ${board} now?`, buttons: yes("Confirm") };
+      case "schedule": {
+        const job = a.path.includes("/jobs");
+        const what = job ? "one-time job" : "schedule";
+        const b = a.body ?? {};
+        const act = b.action ?? {};
+        const name = short(b.name ?? b.title ?? act.title ?? act.command ?? "", 120);
+        const when = short(job ? b.at ?? "" : b.cron ?? "", 60);
+        const verb = a.method === "PATCH" ? `Change this ${what}` : `Set up this ${what}`;
+        const runs = act.kind === "command" || b.command ? " It runs a command on this Mac." : " It starts work on its own.";
+        return { text: `${verb} on ${board}?${name ? `\n"${name}"` : ""}${when ? `\nWhen: ${when}` : ""}\n${runs.trim()}`, buttons: yes("Confirm") };
+      }
       case "chat": {
         const targets = a.targets ?? [];
         const words = short(a.text ?? "", 300);
@@ -541,6 +560,11 @@ export class FrontDesk {
       await out.edit(messageId, a.done);
       return "Done";
     }
+    // Cut off by a restart while it ran: it may have happened, so it never runs a second time.
+    if (got.replay && a.running) {
+      await out.edit(messageId, "This may already have happened before the board restarted. Check the board before asking again.");
+      return "Check the board";
+    }
     if (choice === "x") {
       await out.edit(messageId, "Cancelled. Nothing was done.");
       return "Cancelled";
@@ -559,10 +583,13 @@ export class FrontDesk {
       if (!t || !(choice === "y" || /^\d$/.test(choice))) return "That button no longer works.";
       const ticket = this.d.store.getTicket(t.slug, t.id);
       if (!ticket) return finish("That ticket was deleted or moved, so I didn't send this.", "Gone");
+      if (ticket.status === "done") return finish(`"${ticket.title}" is done, so I didn't send this. Open it on the board to pick it up again.`, "Not sent");
       const board = this.d.board();
       if (!board) return finish("The board isn't ready yet. Try again in a minute.", "Not sent");
       try {
-        const sent = await board.chatFromTelegram(t.slug, t.id, a.text ?? "", { updateId: updateId ?? -Date.now(), tg: a.replyTo ?? messageId, chatId, still: () => this.d.taking() });
+        // The question it answers, so its alert later says "Answered from Telegram".
+        const key = this.d.waits.openFor(t.slug, t.id).find((w) => w.kind === "questions")?.key ?? null;
+        const sent = await board.chatFromTelegram(t.slug, t.id, a.text ?? "", { updateId: updateId ?? -Date.now(), tg: a.replyTo ?? messageId, chatId, key, still: () => this.d.taking() });
         if (!sent) return finish(`Already sent to "${ticket.title}".`, "Already sent");
       } catch (e) {
         if ((e as Error).name === "StillRefused") return finish(NOT_TAKING, "Not sent");
@@ -580,6 +607,7 @@ export class FrontDesk {
     if (a.kind === "move" && t!.status === a.body?.status) return finish(`"${t!.title}" is already in ${STATUS_WORDS[a.body.status] ?? a.body.status}.`, "Nothing to do");
     if (!this.replay) return finish("The board isn't ready yet. Try again in a minute.", "Not done");
     let r: { status: number; body: any };
+    this.d.pending.update(id, { ...a, running: true });
     try {
       r = await this.replay(a.method, a.path, a.body);
     } catch (e) {
@@ -609,6 +637,8 @@ export class FrontDesk {
         return finish(`✓ Stopped "${t!.title}".`, "Done");
       case "delete":
         return finish(`✓ Deleted "${t!.title}".`, "Done");
+      case "schedule":
+        return finish(`✓ ${a.method === "PATCH" ? "Changed" : "Set up"} on ${p.name}.`, "Done");
       default:
         return finish(`✓ Started on ${p.name}.`, "Done");
     }

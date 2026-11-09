@@ -306,6 +306,13 @@ describe("Confirm", () => {
     expect(heldKind("DELETE", "/api/profiles/kb/tickets/t_1", null)?.kind).toBe("delete");
     expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/plan", { action: "start" })?.kind).toBe("plan");
     expect(heldKind("POST", "/api/profiles/kb/schedules/s1/run", {})?.kind).toBe("run");
+    // Schedules and one-time jobs start work later: making or changing one is held; cancelling or deleting isn't.
+    expect(heldKind("POST", "/api/profiles/kb/jobs", { at: "x", action: { kind: "ticket", title: "t" } })?.kind).toBe("schedule");
+    expect(heldKind("POST", "/api/profiles/kb/schedules", { cron: "* * * * *" })?.kind).toBe("schedule");
+    expect(heldKind("PATCH", "/api/profiles/kb/schedules/s1", { enabled: true })?.kind).toBe("schedule");
+    expect(heldKind("PATCH", "/api/profiles/kb/jobs/j1", { at: "x" })?.kind).toBe("schedule");
+    expect(heldKind("POST", "/api/profiles/kb/jobs/j1/cancel", {})).toBeNull();
+    expect(heldKind("DELETE", "/api/profiles/kb/schedules/s1", null)).toBeNull();
     expect(heldKind("GET", "/api/profiles/kb/tickets", null)).toBeNull();
     expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/comments", { text: "x" })).toBeNull();
   });
@@ -358,6 +365,39 @@ describe("Confirm", () => {
     await notifier.telegram.pollOnce();
     expect(replayed).toHaveLength(0);
     expect(api.edits().at(-1)!.body.text).toBe("Cancelled. Nothing was done.");
+  });
+
+  test("a tap a restart cut off while it ran isn't run a second time when Telegram sends it again", async () => {
+    const { notifier, api, chats, replayed } = setup();
+    api.queue(msg(1, "schedule a daily check"));
+    await notifier.telegram.pollOnce();
+    const id = identity(chats, chats.sent[0].id);
+    await notifier.frontDesk.gate(id, "POST", "/api/profiles/kb/jobs", { at: "2026-11-10T09:00:00Z", action: { kind: "command", command: "echo hi" } });
+    const card = api.last();
+    expect(card.text).toContain("Set up this one-time job on Kanban?");
+    expect(card.text).toContain("It runs a command on this Mac.");
+    const data = button(card, "Confirm");
+    const aid = data.split(":")[1];
+    // As if the daemon died mid-replay: the action is used by update 2 and marked running, with no result saved.
+    notifier.telegramActions.take(aid, 2);
+    notifier.telegramActions.update(aid, { ...notifier.telegramActions.peek<any>(aid)!.action.data, running: true });
+    api.queue(tap(2, data, api.lastId()));
+    await notifier.telegram.pollOnce();
+    expect(replayed).toHaveLength(0);
+    expect(api.edits().at(-1)!.body.text).toMatch(/^This may already have happened/);
+  });
+
+  test("a steer to a ticket that is done by the time of the tap isn't sent", async () => {
+    const { notifier, api, chats, board } = setup();
+    const t = store.createTicket("kb", { title: "Finished", body: "b", status: "review" });
+    api.queue(msg(1, "tell finished to add a test"));
+    await notifier.telegram.pollOnce();
+    await notifier.frontDesk.gate(identity(chats, chats.sent[0].id), "POST", `/api/profiles/kb/tickets/${t.id}/chat`, { text: "add a test" });
+    store.updateTicket("kb", t.id, { status: "done" });
+    api.queue(tap(2, button(api.last(), "Confirm"), api.lastId()));
+    await notifier.telegram.pollOnce();
+    expect(board.sent).toHaveLength(0);
+    expect(api.edits().at(-1)!.body.text).toMatch(/is done, so I didn't send this/);
   });
 
   test("the state is checked again on the tap: a ticket that stopped meanwhile isn't stopped again", async () => {
