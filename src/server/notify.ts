@@ -19,6 +19,7 @@ import { HelperCore } from "./helper/core";
 import { botId, DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramSettings } from "./helper/telegram";
 import { waitIdentity, type NewWait } from "./helper/waits";
 import { TelegramReplies } from "./helper/tgreply";
+import { telegramSpendToday } from "./spend";
 import { PendingActions, TelegramLinks } from "./helper/tgstores";
 import type { Ticket } from "./types";
 
@@ -26,6 +27,8 @@ import type { Ticket } from "./types";
 export interface TelegramBoard {
   chatFromTelegram(slug: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null }): Promise<boolean>;
   patchTelegram(slug: string, id: string, patch: Pick<Partial<Ticket>, "telegramIn" | "telegramOut" | "telegramReport">): unknown;
+  /** Drops messages from Telegram still waiting in tickets' queues (Pause, /lock, Unpair). */
+  dropTelegramQueued(): number;
 }
 
 /** What a notification is about: a "needs you" kind, or a message a ticket's Claude wrote itself (notify_user). */
@@ -113,6 +116,12 @@ export interface TelegramPublic {
   pairError: string | null;
   /** A typed answer to a ticket's question is echoed with [Send] [Cancel] first. */
   askTyped: boolean;
+  /** "Take messages from Telegram" (off: Pause in Settings, or /lock in Telegram). */
+  takeMessages: boolean;
+  /** When /lock turned it off, or null. */
+  lockedAt: string | null;
+  /** "Spent from Telegram today" in USD (spend.ts telegramSpendToday). No limit. */
+  spentToday: number;
 }
 
 /** Shown with the ntfy topic box. */
@@ -204,6 +213,11 @@ export function normalizeSettings(raw: any, base: NotifySettings = DEFAULT_NOTIF
   if (tg && typeof tg === "object") {
     if (typeof tg.on === "boolean") out.telegram.on = tg.on;
     if (typeof tg.askTyped === "boolean") out.telegram.askTyped = tg.askTyped;
+    if (typeof tg.takeMessages === "boolean") {
+      out.telegram.takeMessages = tg.takeMessages;
+      // Turned back on (only Settings on the Mac can): no longer locked.
+      if (tg.takeMessages && !fromFile) out.telegram.lockedAt = null;
+    }
     if (typeof tg.token === "string") {
       const token = tg.token.trim();
       if (fromFile) out.telegram.token = token;
@@ -218,6 +232,7 @@ export function normalizeSettings(raw: any, base: NotifySettings = DEFAULT_NOTIF
       if (typeof tg.chatId === "number" && Number.isSafeInteger(tg.chatId)) out.telegram.chatId = tg.chatId;
       if (typeof tg.chatName === "string") out.telegram.chatName = tg.chatName.slice(0, 120);
       if (typeof tg.pairedAt === "string") out.telegram.pairedAt = tg.pairedAt;
+      if (typeof tg.lockedAt === "string") out.telegram.lockedAt = tg.lockedAt;
     }
   }
   if (raw.kinds && typeof raw.kinds === "object") {
@@ -417,6 +432,7 @@ export class Notifier {
       links: this.telegramLinks = new TelegramLinks(o.root, this.now),
       itemsOf: (id) => (this.helper.messages.get(id)?.items ?? []).map((i) => ({ board: i.board, ticketId: i.ticketId, key: i.key ?? null })),
       replies: () => this.replies,
+      lock: () => this.telegramLock(),
     });
     this.telegramActions = new PendingActions(o.root, this.now);
     this.helper = new HelperCore({
@@ -430,6 +446,10 @@ export class Notifier {
       chat: () => (this.board ? (slug, id, text, from) => this.board!.chatFromTelegram(slug, id, text, from) : null),
       patch: (slug, id, patch) => void this.board?.patchTelegram(slug, id, patch),
       askTyped: () => this.settings().telegram.askTyped,
+      taking: () => {
+        const t = this.settings().telegram;
+        return t.on && t.takeMessages && t.chatId !== null;
+      },
       ticketUrl: (slug, id) => {
         const url = this.link(slug, id);
         return this.phoneAccess() && /^https:\/\//.test(url) ? url : null;
@@ -475,6 +495,7 @@ export class Notifier {
     const telegram: TelegramPublic = {
       on: t.on, tokenSet: !!t.token, tokenMasked: maskToken(t.token), paired: t.chatId !== null, chatName: t.chatName, pairedAt: t.pairedAt,
       status: tg.state, error: tg.error, botName: tg.botName, pairing: tg.pairing, pairError: tg.pairError, askTyped: t.askTyped,
+      takeMessages: t.takeMessages, lockedAt: t.lockedAt, spentToday: Math.round(telegramSpendToday(this.o.root, new Date(this.now())) * 100) / 100,
     };
     const macBrowser = this.macBrowser();
     const phones = this.o.push?.phoneCount() ?? 0;
@@ -488,7 +509,7 @@ export class Notifier {
       },
       {
         name: "telegram", label: "Telegram", on: t.on, ready: telegram.tokenSet && telegram.paired && tg.state !== "error",
-        detail: !t.token ? "Not set up: make a bot with BotFather and paste its token." : !telegram.paired ? "Not paired yet: send the pairing code to your bot." : tg.error ?? `Paired with ${t.chatName ?? "your chat"}.`,
+        detail: !t.token ? "Not set up: make a bot with BotFather and paste its token." : !telegram.paired ? "Not paired yet: send the pairing code to your bot." : tg.error ?? (t.takeMessages ? `Paired with ${t.chatName ?? "your chat"}.` : `Paired with ${t.chatName ?? "your chat"}. ${t.lockedAt ? "Locked from Telegram" : "Paused"}: not taking messages; alerts still arrive.`),
       },
     ];
     const phoneReady = channels.some((c) => c.name !== "mac" && c.on && c.ready);
@@ -506,8 +527,40 @@ export class Notifier {
     writeNotifySettings(this.o.root, next);
     if (before.helper !== next.helper) void this.helper.switched(next.helper).catch((e) => console.error("helper: switch", e));
     if (before.telegram.token !== next.telegram.token) this.telegram.reset();
+    // Stopped taking messages (Pause, the channel off, a new bot): nothing Telegram left waiting reaches a ticket.
+    const taking = (t: TelegramSettings) => t.on && t.takeMessages && t.chatId !== null;
+    if (taking(before.telegram) && !taking(next.telegram)) this.dropTelegramWork();
     this.telegram.refresh();
     return this.state();
+  }
+
+  /**
+   * Telegram stopped taking messages: open buttons expire, updates waiting to be handled are dropped, and messages
+   * from Telegram that wait in a ticket's queue (not handed to Claude yet) are taken out.
+   */
+  private dropTelegramWork(): void {
+    try {
+      this.telegramActions.expireAll();
+    } catch (e) {
+      console.warn(`telegram: couldn't drop pending buttons: ${(e as Error).message}`);
+    }
+    try {
+      this.telegram.queue.clear();
+    } catch (e) {
+      console.warn(`telegram: couldn't drop queued updates: ${(e as Error).message}`);
+    }
+    try {
+      this.board?.dropTelegramQueued();
+    } catch (e) {
+      console.warn(`telegram: couldn't drop queued ticket messages: ${(e as Error).message}`);
+    }
+  }
+
+  /** /lock from the paired chat: "Take messages from Telegram" off at once; only Settings on the Mac turns it back on. */
+  telegramLock(): void {
+    const s = this.settings();
+    writeNotifySettings(this.o.root, { ...s, telegram: { ...s.telegram, takeMessages: false, lockedAt: new Date(this.now()).toISOString() } });
+    this.dropTelegramWork();
   }
 
   /** The board plugs in: replies to alerts go into its tickets' chats. */
@@ -526,9 +579,10 @@ export class Notifier {
     return this.telegram.startPairing();
   }
 
-  /** Settings' "Unpair": forget the chat. */
+  /** Settings' "Unpair": forget the chat, and drop its open buttons and everything it left waiting. */
   telegramUnpair(): NotifyState {
     this.telegram.unpair();
+    this.dropTelegramWork();
     return this.state();
   }
 

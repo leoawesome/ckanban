@@ -12,7 +12,7 @@ import type { SessionSummary } from "../session";
 import type { Store } from "../store";
 import type { Ticket } from "../types";
 import type { WaitStore, WaitRecord } from "./waits";
-import { TELEGRAM_MAX } from "./telegram";
+import { NOT_TAKING, TELEGRAM_MAX } from "./telegram";
 import type { LinkItem, PendingAction, PendingActions, TelegramLinks } from "./tgstores";
 
 /** A reply to an alert older than this is refused. */
@@ -88,6 +88,8 @@ export interface ReplyDeps {
   patch: (board: string, id: string, patch: Pick<Partial<Ticket>, "telegramOut" | "telegramReport">) => void;
   /** The echo before a typed answer (Settings: "Ask before sending typed answers"). */
   askTyped: () => boolean;
+  /** "Take messages from Telegram" is on (checked again right before anything reaches a ticket). Default: on. */
+  taking?: () => boolean;
   /** The ticket's address on the board when phone access is on (an Open button), else null. */
   ticketUrl: (board: string, id: string) => string | null;
   now?: () => number;
@@ -281,6 +283,11 @@ export class TelegramReplies {
   /** Into the ticket's chat. edit: the card to change into the outcome (else a new message). Returns the tap's short answer. */
   private async deliver(r: IncomingReply, t: Target, out: Responder, edit: number | null): Promise<string> {
     const tell = async (text: string) => (edit !== null ? out.edit(edit, text) : void (await out.say(text, { replyTo: r.tg })));
+    // Paused or locked meanwhile (a tap or reply already on its way): nothing reaches the ticket.
+    if (this.d.taking && !this.d.taking()) {
+      await tell(NOT_TAKING);
+      return "Not sent";
+    }
     const chat = this.d.chat();
     if (!chat) {
       await tell("The board isn't ready yet. Try again in a minute.");

@@ -6,6 +6,7 @@ import { ACTION_TTL_MS, PendingActions, UpdateQueue } from "../src/server/helper
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/server/session";
 import { Store } from "../src/server/store";
+import { addTelegramSpend } from "../src/server/spend";
 import type { Profile } from "../src/server/types";
 import { tempDir } from "./helpers";
 
@@ -64,6 +65,8 @@ function fakeBoard(store: Store) {
       return true;
     },
     patchTelegram: (slug: string, id: string, p: any) => store.updateTicket(slug, id, p),
+    dropped: 0,
+    dropTelegramQueued: () => (o.dropped++, 0),
   };
   return o;
 }
@@ -76,7 +79,7 @@ const sessions = new Map<string, SessionSummary>();
 function makeNotifier(o: { askTyped?: boolean; phone?: boolean } = {}) {
   const api = fakeApi();
   const s = normalizeSettings({}, undefined, false);
-  writeNotifySettings(root, { ...s, telegram: { on: true, token: TOKEN, chatId: ME, chatName: "Leo", pairedAt: "x", askTyped: o.askTyped ?? true } });
+  writeNotifySettings(root, { ...s, telegram: { on: true, token: TOKEN, chatId: ME, chatName: "Leo", pairedAt: "x", askTyped: o.askTyped ?? true, takeMessages: true, lockedAt: null } });
   const notifier = new Notifier(store, new Bus(), {
     root, sessionSummary: (id) => sessions.get(id) ?? null, isRunning: () => false, hostHuddles: () => new Map(),
     baseUrl: () => (o.phone ? "https://mac.tail.ts.net" : "http://localhost:3000"), fetch: async () => new Response("ok"), telegramFetch: api.fetch,
@@ -565,4 +568,160 @@ describe("review fixes", () => {
     await notifier.turnEnded("kb", t.id, "done");
     expect(api.sent()).toHaveLength(n);
   });
+});
+
+describe("off switch, Pause, /lock and Unpair", () => {
+  const NOT_TAKING = "I'm not taking messages right now. Turn it back on in Settings on the Mac.";
+  const LOCKED = "🔒 Locked. I won't take messages from this chat until you unlock it on the Mac (Settings, Telegram). Alerts still arrive.";
+  const msg = (updateId: number, text: string, chat = ME) => ({
+    update_id: updateId, message: { message_id: 9000 + updateId, chat: { id: chat, type: "private" }, from: { id: chat }, date: Math.floor(clock / 1000), text },
+  });
+
+  test("off: replies and taps that would send are refused with one short reply; alerts, Got it and /waiting still work", async () => {
+    const { notifier, api, board } = setup();
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const rec = wait(t.id, "questions");
+    const tg = await alert(notifier, [rec.key]);
+    api.queue(reply(1, tg, "port 8080"));
+    await notifier.telegram.pollOnce();
+    const send = button(api.last(), "Send");
+    const echoId = api.sent().length + 999;
+    // Pause (Settings): the echo shown before it no longer sends.
+    const s = notifier.update({ telegram: { takeMessages: false } });
+    expect(s.telegram.takeMessages).toBe(false);
+    expect(s.telegram.lockedAt).toBeNull();
+    expect(board.dropped).toBe(1);
+    api.queue(tap(2, send, echoId), reply(3, tg, "port 9090"), msg(4, "hello"));
+    await notifier.telegram.pollOnce();
+    expect(board.sent).toHaveLength(0);
+    expect(api.answers()).toEqual([NOT_TAKING]);
+    expect(api.sent().slice(-2).map((c) => c.body.text)).toEqual([NOT_TAKING, NOT_TAKING]);
+    // Alerts still go out; Got it still works; /waiting still answers.
+    const before = api.sent().length;
+    await alert(notifier, [rec.key]);
+    expect(api.sent().length).toBe(before + 1);
+    let got = 0;
+    (notifier.telegram as any).d.actions = () => ({ gotIt: () => (got++, "Got it."), notUrgent: () => "x", waiting: () => "Nothing waits." });
+    api.queue(tap(5, "g:m_abc", 1), msg(6, "/waiting"));
+    await notifier.telegram.pollOnce();
+    expect(got).toBe(1);
+    expect(api.last().text).toBe("Nothing waits.");
+    // Back on: the old echo stays dead (expired), a new reply works.
+    notifier.update({ telegram: { takeMessages: true } });
+    api.queue(tap(7, send, echoId));
+    await notifier.telegram.pollOnce();
+    expect(api.answers().at(-1)).toBe("This button expired.");
+    expect(board.sent).toHaveLength(0);
+    api.queue(reply(8, tg, "port 8080"));
+    await notifier.telegram.pollOnce();
+    api.queue(tap(9, button(api.last(), "Send"), 1));
+    await notifier.telegram.pollOnce();
+    expect(board.sent.map((m) => m.text)).toEqual(["port 8080"]);
+  });
+
+  test("/lock: off at once, saved with the time; cannot be undone from Telegram; Settings turns it back on", async () => {
+    const { notifier, api, board } = setup({ askTyped: false });
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const tg = await alert(notifier, [wait(t.id, "questions").key]);
+    // A stranger's /lock does nothing.
+    api.queue(msg(1, "/lock", 999));
+    await notifier.telegram.pollOnce();
+    expect(notifier.settings().telegram.takeMessages).toBe(true);
+    api.queue(msg(2, "/lock@my_ck_bot"));
+    await notifier.telegram.pollOnce();
+    expect(api.last().text).toBe(LOCKED);
+    expect(api.last().disable_notification).toBe(true);
+    const st = notifier.state().telegram;
+    expect(st.takeMessages).toBe(false);
+    expect(st.lockedAt).toBe(new Date(clock).toISOString());
+    expect(board.dropped).toBe(1);
+    api.queue(reply(3, tg, "8080"), msg(4, "/unlock"), msg(5, "/start"));
+    await notifier.telegram.pollOnce();
+    expect(board.sent).toHaveLength(0);
+    expect(api.sent().slice(-3).map((c) => c.body.text)).toEqual([NOT_TAKING, NOT_TAKING, NOT_TAKING]);
+    expect(notifier.settings().telegram.takeMessages).toBe(false);
+    // The settings API can't set lockedAt; turning it on clears it.
+    notifier.update({ telegram: { lockedAt: "2020-01-01T00:00:00Z" } });
+    expect(notifier.state().telegram.lockedAt).toBe(new Date(clock).toISOString());
+    const on = notifier.update({ telegram: { takeMessages: true } });
+    expect(on.telegram.takeMessages).toBe(true);
+    expect(on.telegram.lockedAt).toBeNull();
+  });
+
+  test("/lock isn't held behind a slow message, and the messages behind it are refused", async () => {
+    const { notifier, api, board } = setup({ askTyped: false });
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const tg = await alert(notifier, [wait(t.id, "questions").key]);
+    board.hang = "before";
+    const bot = notifier.telegram as any;
+    bot.queue.add([reply(1, tg, "slow"), msg(2, "/lock")]);
+    bot.drain();
+    for (let i = 0; i < 50 && notifier.settings().telegram.takeMessages; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(notifier.settings().telegram.takeMessages).toBe(false);
+    expect(api.last().text).toBe(LOCKED);
+  });
+
+  test("a tap already on its way when Telegram stops taking messages doesn't reach the ticket", async () => {
+    const { notifier, api, board } = setup();
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const tg = await alert(notifier, [wait(t.id, "questions").key]);
+    api.queue(reply(1, tg, "8080"));
+    await notifier.telegram.pollOnce();
+    const id = /^p:([a-z0-9]{10}):y$/.exec(button(api.last(), "Send"))![1];
+    // Turned off behind the bot's back (the check at handling time already passed).
+    const s = notifier.settings();
+    writeNotifySettings(root, { ...s, telegram: { ...s.telegram, takeMessages: false } });
+    const answer = await notifier.replies.onTap(id, "y", ME, 1, notifier.telegram.responder(ME), 2);
+    expect(answer).toBe("Not sent");
+    expect(board.sent).toHaveLength(0);
+    expect(api.edits().at(-1)!.body.text).toBe(NOT_TAKING);
+  });
+
+  test("Unpair forgets the chat, expires open buttons and drops the queue; pairing again turns taking messages on", async () => {
+    const { notifier, api, board } = setup();
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const tg = await alert(notifier, [wait(t.id, "questions").key]);
+    api.queue(reply(1, tg, "8080"));
+    await notifier.telegram.pollOnce();
+    const send = button(api.last(), "Send");
+    notifier.update({ telegram: { takeMessages: false } });
+    const bot = notifier.telegram as any;
+    bot.queue.add([reply(2, tg, "later")]);
+    expect(bot.queue.pending()).toHaveLength(1);
+    const s = notifier.telegramUnpair();
+    expect(s.telegram.paired).toBe(false);
+    expect(bot.queue.pending()).toHaveLength(0);
+    expect(bot.queue.seen(2)).toBe(true);
+    expect(board.dropped).toBe(2);
+    expect(notifier.telegramActions.find(() => true)).toBeNull();
+    // A tap from the old chat: not paired.
+    api.queue(tap(3, send, 1));
+    await notifier.telegram.pollOnce();
+    expect(board.sent).toHaveLength(0);
+    // Pairing again: on by default.
+    const { code } = notifier.telegramPair();
+    api.queue(msg(4, code));
+    await notifier.telegram.pollOnce();
+    expect(notifier.state().telegram).toMatchObject({ paired: true, takeMessages: true, lockedAt: null });
+  });
+
+  test("Settings shows today's Telegram spend", () => {
+    const { notifier } = setup();
+    expect(notifier.state().telegram.spentToday).toBe(0);
+    addTelegramSpend(root, 1.234, new Date(clock));
+    expect(notifier.state().telegram.spentToday).toBe(1.23);
+  });
+});
+
+test("Board.dropTelegramQueued drops Telegram messages not handed to Claude yet, and only those", () => {
+  const board = new Board(store, new Bus(), { claudeBin: "false" });
+  const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+  const at = new Date().toISOString();
+  store.updateTicket("kb", t.id, { queued: [
+    { id: "a", text: "from phone", at, state: "queued", telegram: { updateId: 1, tg: 2 } },
+    { id: "b", text: "typed", at, state: "queued" },
+    { id: "c", text: "from phone, unsent", at, state: "unsent", telegram: { updateId: 3, tg: 4 } },
+  ] });
+  expect(board.dropTelegramQueued()).toBe(2);
+  expect(store.getTicket("kb", t.id)!.queued!.map((m) => m.id)).toEqual(["b"]);
 });

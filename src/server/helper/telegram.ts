@@ -2,6 +2,8 @@
 // what comes back with one getUpdates long poll (phone access is tailnet-only, so no public webhook is possible).
 // Pairing: Settings shows a 6-digit code, the user sends it to the bot, and the board keeps that chat id. Only the
 // paired chat is listened to. A reply to an alert goes to that ticket (tgreply.ts); other text gets a fixed answer.
+// "Take messages from Telegram" off (Pause, or /lock from the chat): alerts, Got it, Not urgent and /waiting still
+// work; everything that would reach a ticket gets NOT_TAKING. Only the Mac's Settings turns it back on.
 // Updates are saved (tgstores.ts UpdateQueue) before the read position moves on, so a restart neither drops nor
 // doubles one. Everything the bot says besides the helper's alerts is silent. The token is never logged (scrub) and
 // never shown (maskToken).
@@ -22,9 +24,24 @@ export interface TelegramSettings {
   pairedAt: string | null;
   /** A typed reply that answers a ticket's question is echoed with [Send] [Cancel] first ("Ask before sending typed answers"). */
   askTyped: boolean;
+  /**
+   * "Take messages from Telegram": off (Pause in Settings, or /lock in Telegram), alerts still go out and Got it /
+   * Not urgent still work, but text and taps that would send to a ticket are refused. Only the Mac turns it back on.
+   */
+  takeMessages: boolean;
+  /** When /lock turned takeMessages off (null: not locked from Telegram). Cleared when Settings turns it back on. */
+  lockedAt: string | null;
 }
 
-export const DEFAULT_TELEGRAM: TelegramSettings = { on: false, token: "", chatId: null, chatName: null, pairedAt: null, askTyped: true };
+export const DEFAULT_TELEGRAM: TelegramSettings = { on: false, token: "", chatId: null, chatName: null, pairedAt: null, askTyped: true, takeMessages: true, lockedAt: null };
+
+/** The one reply to text or a tap while "Take messages from Telegram" is off. */
+export const NOT_TAKING = "I'm not taking messages right now. Turn it back on in Settings on the Mac.";
+/** The answer to /lock. */
+export const LOCKED = "🔒 Locked. I won't take messages from this chat until you unlock it on the Mac (Settings, Telegram). Alerts still arrive.";
+
+/** "/lock" (or "/lock@mybot"): handled at once, beside the messages in line. */
+export const isLock = (text: unknown) => typeof text === "string" && /^\/lock(@\S+)?$/i.test(text.trim().split(/\s+/)[0] ?? "");
 
 /** BotFather tokens look like 123456789:AAH...; nothing else is accepted (and so nothing else ends up in a URL). */
 export const TOKEN_RE = /^\d{5,15}:[A-Za-z0-9_-]{30,60}$/;
@@ -104,6 +121,11 @@ export interface TelegramDeps {
   itemsOf?: (messageId: string) => LinkItem[];
   /** Replies to alerts and their buttons (tgreply.ts); null: replies get the fixed answer. */
   replies?: () => TelegramReplies | null;
+  /**
+   * /lock: turn "Take messages from Telegram" off now and drop what Telegram left waiting (buttons, queued messages).
+   * Default: only the setting is saved.
+   */
+  lock?: () => void;
 }
 
 /** A bot token's public part (the bot's id), to tell which bot a saved read position or message belongs to. */
@@ -330,7 +352,8 @@ export class TelegramBot {
           this.inFlight.delete(id);
         }
       };
-      if (u.callback_query) {
+      // Taps and /lock go at once: a slow message in line never holds them (/lock: the messages behind it are refused).
+      if (u.callback_query || isLock(u.message?.text)) {
         const p = run();
         this.taps.add(p);
         void p.finally(() => this.taps.delete(p));
@@ -429,6 +452,8 @@ export class TelegramBot {
         if (m) {
           const a = this.d.actions();
           text = await (m[1] === "g" ? a.gotIt(m[2]) : a.notUrgent(m[2]));
+        } else if (p && s.takeMessages === false) {
+          text = NOT_TAKING;
         } else if (p && replies) {
           text = await replies.onTap(p[1], p[2], chat, cq.message?.message_id ?? 0, this.responder(chat), u.update_id);
         }
@@ -456,7 +481,7 @@ export class TelegramBot {
           const from = msg.from ?? msg.chat;
           const name = [from.first_name, from.last_name].filter(Boolean).join(" ") || "you";
           this.pairing = null;
-          this.d.save({ chatId, chatName: from.username ? `${name} (@${from.username})` : name, pairedAt: new Date(this.now()).toISOString(), on: true });
+          this.d.save({ chatId, chatName: from.username ? `${name} (@${from.username})` : name, pairedAt: new Date(this.now()).toISOString(), on: true, takeMessages: true, lockedAt: null });
           await this.reply(chatId, `Paired. The ckanban helper will message you here.\n\nUrgent messages come with sound; the rest arrive silently. ${FOCUS_HINT_TELEGRAM}\n\nReply to an alert to answer that ticket. Send /waiting any time to see what waits on you.`);
           return;
         }
@@ -472,8 +497,20 @@ export class TelegramBot {
     }
     if (s.chatId === null || chatId !== s.chatId) return;
     const cmd = text.split(/\s+/)[0]?.replace(/@\S+$/, "").toLowerCase();
+    if (cmd === "/lock") {
+      // Saved before the answer goes out; there is no /unlock: only Settings on the Mac turns it back on.
+      if (this.d.lock) this.d.lock();
+      else this.d.save({ takeMessages: false, lockedAt: new Date(this.now()).toISOString() });
+      await this.reply(chatId, LOCKED);
+      return;
+    }
     if (cmd === "/waiting") {
       await this.reply(chatId, await this.d.actions().waiting());
+      return;
+    }
+    // Read again: a /lock handled meanwhile counts for the messages behind it.
+    if (this.d.settings().takeMessages === false) {
+      await this.reply(chatId, NOT_TAKING);
       return;
     }
     const replyTo = msg.reply_to_message?.message_id;

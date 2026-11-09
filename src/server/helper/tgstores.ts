@@ -177,6 +177,22 @@ export class PendingActions {
     this.save();
   }
 
+  /**
+   * Every open button stops working now (Pause, /lock, Unpair): they count as expired, so a late tap says so and its
+   * card changes to "This expired". Returns how many.
+   */
+  expireAll(): number {
+    const now = this.now();
+    let n = 0;
+    for (const a of Object.values(this.items()) as (PendingAction & { used?: string })[]) {
+      if (a.used || Date.parse(a.expiresAt) <= now) continue;
+      a.expiresAt = new Date(now - 1).toISOString();
+      n++;
+    }
+    if (n) this.save();
+    return n;
+  }
+
   /** Drops an action (its card never reached the user). */
   remove(id: string): void {
     if (!this.items()[id]) return;
@@ -240,6 +256,17 @@ export class UpdateQueue {
     } catch (e) {
       console.warn(`telegram: couldn't save the update queue: ${(e as Error).message}`);
     }
+  }
+
+  /** Drops every update still waiting (Pause, /lock, Unpair): marked handled, so none is handled later. Returns how many. */
+  clear(): number {
+    const d = this.load();
+    const n = d.items.length;
+    if (!n) return 0;
+    d.seen = [...d.seen, ...d.items.map((u) => u.update_id).filter((id) => !d.seen.includes(id))].slice(-SEEN_MAX);
+    d.items = [];
+    this.save();
+    return n;
   }
 
   seen(updateId: number): boolean {

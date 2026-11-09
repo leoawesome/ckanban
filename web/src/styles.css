@@ -3977,6 +3977,18 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .helper-settings .tg-code-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 .helper-settings .tg-code { font-family: var(--mono); font-size: var(--fs-xl); font-weight: 700; letter-spacing: 0.08em; padding: 4px 12px; border-radius: var(--r-sm); background: var(--surface-2); }
 .helper-settings .tg-setup { display: flex; flex-direction: column; gap: 6px; }
+/* Paired Telegram (Settings · Telegram): rows split by a line, each a title, a muted hint and its control. */
+.helper-settings .tg-paired { gap: 0; }
+.helper-settings .tg-paired > .tg-row { padding: 8px 0; border-top: 1px solid var(--border); }
+.helper-settings .tg-paired > .tg-row:first-child { border-top: 0; padding-top: 0; }
+.helper-settings .tg-paired > .tg-row + :not(.tg-row) { border-top: 1px solid var(--border); padding-top: 8px; }
+.helper-settings .tg-paired > .form-error { margin: 4px 0; }
+.helper-settings .tg-state { font-weight: 600; color: var(--warn); flex: none; }
+.helper-settings .tg-state.ok { color: var(--ok); }
+.helper-settings .tg-spent { flex: none; font-variant-numeric: tabular-nums; }
+.helper-settings .tg-actions { display: flex; gap: 6px; flex: none; }
+.helper-settings .btn.tg-unpair { color: var(--err); }
+.helper-settings .tg-forget { align-self: flex-start; margin-top: 6px; }
 .helper-notice { flex-wrap: wrap; }
 .helper-settings .ch-head > .select { flex: 0 0 auto; width: auto; max-width: 280px; }
 .helper-settings .ch-head > .grow { flex: 1 1 200px; }
@@ -4001,4 +4013,6 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
   .helper-settings .hs-time { max-width: none; padding-left: 8px; padding-right: 6px; }
   .helper-settings .hs-stack > .select { flex: 1 1 100%; max-width: none; }
   .helper-settings .hs-stack > .select .select-trigger { width: 100%; }
+  .helper-settings .tg-actions { flex: 1 1 100%; }
+  .helper-settings .tg-actions .btn { flex: 1 1 0; min-height: 40px; }
 }

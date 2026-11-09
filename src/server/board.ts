@@ -22,7 +22,7 @@ import { followUpFor, followUpPlace } from "../../web/src/followUp";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
 import { canEndQuietly, quietContext } from "./quiet";
-import { addHuddleSpend } from "./spend";
+import { addHuddleSpend, addTelegramSpend } from "./spend";
 import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "./prompts";
 import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
 import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
@@ -125,6 +125,13 @@ interface ActiveRun {
   };
   /** This message's run already got its one automatic retry after a passing API error. */
   retried?: boolean;
+  /** The current attempt's spending so far (executeOnce), so a steer can note where Telegram's part starts. */
+  spend?: RunSpend;
+  /**
+   * A Telegram message started this run or was steered into it: what the attempt had spent by then (0: Telegram
+   * started it). At the attempt's end the rest counts as "Spent from Telegram today" (spend.ts addTelegramSpend).
+   */
+  telegramFrom?: number;
   /** The user chose Restart on a stalled run: once it is stopped, it resumes in the same session. */
   restartRequested?: boolean;
   /** Workflows pushed this run past its spending cap: the board stopped it (what the run had spent, in $). */
@@ -270,7 +277,9 @@ function planningDisallowed(t: Ticket): string[] {
   return PLANNING_DISALLOWED_TOOLS.filter((x) => x !== "mcp__ckanban__create_schedule" && x !== "mcp__ckanban__update_schedule");
 }
 
-function spentWith(spend: { main: Map<string, number>; workflowDirs: Set<string>; files: Map<string, { key: string; cost: number }> }): number {
+type RunSpend = { main: Map<string, number>; workflowDirs: Set<string>; files: Map<string, { key: string; cost: number }> };
+
+function spentWith(spend: RunSpend): number {
   let total = 0;
   for (const c of spend.main.values()) total += c;
   for (const dir of spend.workflowDirs) total += workflowDirCost(dir, spend.files);
@@ -836,6 +845,8 @@ export class Board {
     if (msg.slash === "local") this.dropQueued(run.slug, run.id, [msg.id]);
     else run.inFlight.set(msg.id, text);
     if (!msg.peer && !msg.fromPlanner && !msg.hostWake && !msg.followUp && !msg.slash) run.userSteered = true;
+    // From Telegram: the rest of this attempt counts as Telegram's.
+    if (msg.telegram && run.telegramFrom === undefined) run.telegramFrom = run.spend ? spentWith(run.spend) : 0;
     return true;
   }
 
@@ -997,6 +1008,7 @@ export class Board {
       run.retried = false;
       run.restartRequested = false;
       run.promptMsgId = next.id;
+      run.telegramFrom = undefined;
       run.inFlight = new Map();
       run.handle = null;
       this.begin(run);
@@ -1148,7 +1160,10 @@ export class Board {
     if (!refine && !quiet && t.capNextUsd) this.patch(slug, id, { capNextUsd: null });
     // Workflow helper agents' spending doesn't count toward claude's own --max-budget-usd: the board adds it up
     // (this run's messages + its workflows' agents) and stops the run once the total reaches the cap.
-    const spend = { main: new Map<string, number>(), workflowDirs: new Set<string>(), files: new Map<string, { key: string; cost: number }>() };
+    const spend: RunSpend = { main: new Map<string, number>(), workflowDirs: new Set<string>(), files: new Map<string, { key: string; cost: number }>() };
+    run.spend = spend;
+    // Its prompt is a message from Telegram: the whole attempt counts as Telegram's.
+    if (run.promptMsgId && t.queued?.some((m) => m.id === run.promptMsgId && m.telegram)) run.telegramFrom = 0;
     const capWatch = cap === null ? null : setInterval(() => {
       if (!spend.workflowDirs.size || run.stopRequested || run.workflowCapHit !== undefined || !run.handle) return;
       const total = spentWith(spend);
@@ -1238,6 +1253,16 @@ export class Board {
 
     const out = await run.handle.done;
     if (capWatch) clearInterval(capWatch);
+    run.spend = undefined;
+    if (run.telegramFrom !== undefined) {
+      try {
+        addTelegramSpend(this.store.root, spentWith(spend) - run.telegramFrom);
+      } catch (e) {
+        console.error("board: telegram spend", e);
+      }
+      // A retry of the same message (a fresh attempt) is Telegram's too.
+      run.telegramFrom = 0;
+    }
     if (draftTimer) clearTimeout(draftTimer);
     // A reply cut off before its message ended (Stop, a crash): the chat keeps it until it knows what was saved.
     if (draft.text) this.bus.emit({ type: "draft", profile: slug, id, text: "", final: draft.text });
@@ -2333,6 +2358,24 @@ export class Board {
     if (!text.startsWith("/")) this.userReplied(slug, id);
     if (after.tool && !withYouTool(after)) this.noteUserMessage(slug, id, text);
     return true;
+  }
+
+  /**
+   * Telegram stopped taking messages (Pause, /lock, Unpair): messages from Telegram that wait in a ticket's queue and
+   * Claude hasn't been handed yet are dropped, so none of them reaches a ticket afterwards. Returns how many.
+   */
+  dropTelegramQueued(): number {
+    let dropped = 0;
+    for (const p of this.store.listProfiles()) {
+      for (const t of this.store.listTickets(p.slug)) {
+        const run = this.runs.get(this.key(p.slug, t.id));
+        const drop = (t.queued ?? []).filter((m) => m.telegram && !run?.inFlight.has(m.id) && run?.promptMsgId !== m.id);
+        if (!drop.length) continue;
+        this.dropQueued(p.slug, t.id, drop.map((m) => m.id));
+        dropped += drop.length;
+      }
+    }
+    return dropped;
   }
 
   /** Changes a ticket's Telegram marks (telegramIn / telegramOut / telegramReport) and tells the board UI. */

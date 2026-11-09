@@ -38,7 +38,7 @@ function fakeApi(script: Record<string, (body: any) => any> = {}) {
 }
 
 function makeBot(o: { settings?: Partial<TelegramSettings>; script?: Record<string, (b: any) => any>; phone?: boolean; actions?: Partial<TelegramActions>; now?: () => number } = {}) {
-  let settings: TelegramSettings = { on: true, token: TOKEN, chatId: null, chatName: null, pairedAt: null, askTyped: true, ...o.settings } as TelegramSettings;
+  let settings: TelegramSettings = { on: true, token: TOKEN, chatId: null, chatName: null, pairedAt: null, askTyped: true, takeMessages: true, lockedAt: null, ...o.settings } as TelegramSettings;
   const api = fakeApi(o.script);
   const did: string[] = [];
   const sleeps: number[] = [];
@@ -415,7 +415,7 @@ test("a poller stopped during getMe sends no getUpdates (never two pollers on th
 test("the read position is saved: after a restart the last batch isn't handled again; another bot starts from 0", async () => {
   const file = join(tempDir("ck-tg-"), "telegram-offset.json");
   const make = (token = TOKEN) => {
-    let settings: TelegramSettings = { on: true, token, chatId: ME, chatName: null, pairedAt: null, askTyped: true };
+    let settings: TelegramSettings = { on: true, token, chatId: ME, chatName: null, pairedAt: null, askTyped: true, takeMessages: true, lockedAt: null };
     const api = fakeApi({ getUpdates: (b) => ({ ok: true, result: b.offset > 41 ? [] : [msgUpdate(41, ME, "/waiting")] }) });
     const bot = new TelegramBot({
       fetch: api.fetch, settings: () => settings, save: (p) => (settings = { ...settings, ...p }),

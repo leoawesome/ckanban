@@ -1305,11 +1305,17 @@ export interface TelegramState {
   pairError: string | null;
   /** A typed reply that answers a ticket's question is shown back with Send and Cancel first. */
   askTyped: boolean;
+  /** "Take messages from Telegram" (off: Pause here, or /lock in Telegram; only this Mac turns it back on). */
+  takeMessages: boolean;
+  /** When /lock in Telegram turned it off, or null. */
+  lockedAt: string | null;
+  /** "Spent from Telegram today" in USD. */
+  spentToday: number;
 }
 
 export type NotifyPatch = Partial<Pick<NotifyState, "webhookUrl" | "format" | "mac" | "helper" | "push" | "webhookOn">> & {
   kinds?: Partial<Record<NotifyKind, boolean>>;
-  telegram?: { on?: boolean; token?: string; askTyped?: boolean };
+  telegram?: { on?: boolean; token?: string; askTyped?: boolean; takeMessages?: boolean };
 }
 
 export interface InboxItem {

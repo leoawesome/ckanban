@@ -279,23 +279,55 @@ function TelegramSetup({ state, onState, onError }: { state: NotifyState; onStat
   });
 
   if (t.paired && t.tokenSet) {
+    const setTaking = (on: boolean) => run(async () => onState(await api.setNotify({ telegram: { takeMessages: on } })));
     return (
-      <div className="tg-setup">
-        <div className="small">Paired with <b>{t.chatName ?? "your chat"}</b>{t.botName ? <> through @{t.botName}</> : null}.</div>
+      <div className="tg-setup tg-paired">
+        <div className="ch-head tg-row">
+          <div className="grow">
+            <div className="small">Paired with <b>{t.chatName ?? "your chat"}</b>{t.botName ? <> through {t.botName}</> : null}</div>
+            <div className="muted small">Messages from this chat can answer tickets and start work.</div>
+          </div>
+          <span className={`tg-state small${t.takeMessages ? " ok" : ""}`}>{t.takeMessages ? "On" : t.lockedAt ? "Locked" : "Paused"}</span>
+        </div>
         {t.error && <div className="form-error small">{t.error}</div>}
-        <div className="small muted">Reply to an alert in Telegram to answer that ticket.</div>
-        <div className="ch-head">
+        <div className="ch-head tg-row">
+          <div className="grow">
+            <div className="small">Take messages from Telegram</div>
+            <div className="muted small">
+              {t.lockedAt && !t.takeMessages
+                ? <>Locked from Telegram {timeAgo(t.lockedAt)}. Alerts still arrive. Turn it on to take messages again.</>
+                : "Off: alerts still arrive, but your messages are ignored."}
+            </div>
+          </div>
+          <Switch on={t.takeMessages} label="Take messages from Telegram" disabled={busy} onChange={(on) => void setTaking(on)} />
+        </div>
+        <div className="ch-head tg-row">
           <div className="grow">
             <div className="small">Ask before sending typed answers</div>
-            <div className="muted small">Shows what you typed with Send and Cancel before it reaches the ticket.</div>
+            <div className="muted small">Shows Send / Cancel before a typed reply goes to a ticket.</div>
           </div>
           <Switch on={t.askTyped} label="Ask before sending typed answers" disabled={busy}
             onChange={(on) => void run(async () => onState(await api.setNotify({ telegram: { askTyped: on } })))} />
         </div>
-        <div className="hs-inline">
-          <button type="button" className="btn small" disabled={busy} onClick={() => void unpair()}>Unpair</button>
-          <button type="button" className="btn small ghost" disabled={busy} onClick={() => void forget()}>Remove the bot</button>
+        <div className="ch-head tg-row">
+          <div className="grow">
+            <div className="small">Spent from Telegram today</div>
+            <div className="muted small">Work started from Telegram. No limit.</div>
+          </div>
+          <b className="tg-spent">${t.spentToday.toFixed(2)}</b>
         </div>
+        <div className="ch-head tg-row hs-stack">
+          <div className="grow">
+            <div className="small">Lost your phone?</div>
+            <div className="muted small">Unpair stops everything at once. Also turn on Telegram's passcode.</div>
+          </div>
+          <div className="tg-actions">
+            <button type="button" className="btn small" disabled={busy || !t.takeMessages} onClick={() => void setTaking(false)}>{t.takeMessages ? "Pause" : "Paused"}</button>
+            <button type="button" className="btn small tg-unpair" disabled={busy} onClick={() => void unpair()}>Unpair</button>
+          </div>
+        </div>
+        <div className="small muted">Reply to an alert in Telegram to answer that ticket. Send /lock there to stop taking messages from your phone.</div>
+        <button type="button" className="link-btn small tg-forget" disabled={busy} onClick={() => void forget()}>Remove the bot</button>
       </div>
     );
   }
