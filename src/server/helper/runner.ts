@@ -800,13 +800,14 @@ export class HelperRunner implements HelperSink {
     const orig = first.messageId ? this.d.core.messages.get(first.messageId) : null;
     const items = recs.map((r) => this.d.core.item(r));
     const step = first.reminders[index];
-    const total = first.reminders.length;
+    // Re-read: the steps reminders() just skipped (overdue after sleep) are marked on the stored record.
+    const { n, of } = reminderCount((this.d.core.waits.get(first.key) ?? first).reminders, index);
     const later = first.reminders.slice(index + 1);
     const nextLine = later.length
       ? `Next reminder on ${label(later[0].channel)} at ${clockTime(later[0].dueAt)}${first.remindUntil ? `, until ${clockTime(first.remindUntil)} at most` : ""}.`
       : "This is the last reminder.";
     const oneLine = cut(`Reminder: ${orig?.oneLine ?? items.map((i) => i.title).join(", ")}`);
-    const text = [`Reminder ${index + 1} of ${total}, not opened yet.`, (orig ? reminderBody(orig.text) : null) ?? items.map((i) => `${i.title}\n${this.d.link(i.board, i.ticketId)}`).join("\n\n"), nextLine].join("\n\n");
+    const text = [`Reminder ${n} of ${of}, not opened yet.`, (orig ? reminderBody(orig.text) : null) ?? items.map((i) => `${i.title}\n${this.d.link(i.board, i.ticketId)}`).join("\n\n"), nextLine].join("\n\n");
     const message = this.d.core.messages.add({ level: "reminder", oneLine, text, why: orig?.why ?? null, items });
     // Claim the step before sending: nothing fires it a second time while the send is under way.
     const claimed = new Date(now).toISOString();
@@ -1148,6 +1149,15 @@ export function summaryLine(total: number, line: string): string {
 const NEXT_PREFIX = "Next: I'll remind you";
 const NO_REMINDERS = "No reminders planned: this is the only alert.";
 const ASK_PREFIX = "Right call?";
+
+/**
+ * "Reminder n of of" for the step at index: step 0 is the alert itself, not a reminder, and steps skipped (overdue
+ * after sleep, never sent) don't count. of = reminders sent or about to be, plus the ones still planned after it.
+ */
+export function reminderCount(steps: { sentAt?: string | null; skipped?: boolean }[], index: number): { n: number; of: number } {
+  const n = steps.slice(1, index + 1).filter((x) => !x.skipped).length;
+  return { n: Math.max(1, n), of: Math.max(1, n) + Math.max(0, steps.length - index - 1) };
+}
 
 /** A reminder's text from the alert's: the alert without its closing "Next: ..." and "Right call?" lines. */
 export function reminderBody(text: string): string {

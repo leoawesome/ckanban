@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
 import { checkDecision, channelFor, parseDecision, type CheckContext, type ItemState } from "../src/server/helper/decide";
-import { backoffMs, HelperRunner, keptQuietLine, lookBeforeDigest, meetingTime } from "../src/server/helper/runner";
+import { backoffMs, HelperRunner, keptQuietLine, lookBeforeDigest, meetingTime, reminderCount } from "../src/server/helper/runner";
 import { HelperSettingsStore, inNight, morningDigestAt, nightEnd } from "../src/server/helper/settings";
 import type { Channel } from "../src/server/helper/channels";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
@@ -758,7 +758,8 @@ describe("helper runner", () => {
     await first;
     telegram.send = send;
     expect(tg).toHaveLength(1);
-    expect(tg[0].text).toContain("Reminder 4 of 4");
+    // Two overdue steps were skipped (never sent): the only reminder the user gets is "1 of 1".
+    expect(tg[0].text).toContain("Reminder 1 of 1,");
     expect(n.helper.waits.get(key)!.reminders.filter((x) => x.skipped)).toHaveLength(2);
     await h.tick();
     expect(tg).toHaveLength(1);
@@ -929,4 +930,20 @@ test("the kept-quiet note reads plainly and stays short", () => {
   expect(keptQuietLine(2, "12:41")).toBe("Kept quiet: 2 tickets, nothing urgent. They'll be in the next summary, by 12:41.");
   expect(keptQuietLine(1, "9:05")).toBe("Kept quiet: 1 ticket, nothing urgent. It'll be in the next summary, by 9:05.");
   expect(keptQuietLine(120, "23:59").length).toBeLessThanOrEqual(110);
+});
+
+describe("reminderCount", () => {
+  const sent = { sentAt: "x" };
+  const planned = {};
+  const skipped = { sentAt: "x", skipped: true };
+  test("the alert (step 0) is not a reminder", () => {
+    expect(reminderCount([sent, sent], 1)).toEqual({ n: 1, of: 1 });
+    expect(reminderCount([sent, sent, planned, planned], 1)).toEqual({ n: 1, of: 3 });
+    expect(reminderCount([sent, sent, sent, planned], 2)).toEqual({ n: 2, of: 3 });
+    expect(reminderCount([sent, sent, sent, sent], 3)).toEqual({ n: 3, of: 3 });
+  });
+  test("skipped steps don't count, before or in the total", () => {
+    expect(reminderCount([sent, skipped, skipped, sent], 3)).toEqual({ n: 1, of: 1 });
+    expect(reminderCount([sent, sent, skipped, sent, planned], 3)).toEqual({ n: 2, of: 3 });
+  });
 });

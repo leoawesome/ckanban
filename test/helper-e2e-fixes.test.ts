@@ -197,6 +197,8 @@ describe("helper runner", () => {
     expect(reminder.text).not.toContain("Right call?");
     expect(reminder.text).toContain("Stop the old webhook?");
     expect(reminder.text).toMatch(/This is the last reminder\.$/);
+    // The alert is not a reminder: the one step after it is "1 of 1".
+    expect(reminder.text).toMatch(/^Reminder 1 of 1, not opened yet\./);
     stop();
   });
 
