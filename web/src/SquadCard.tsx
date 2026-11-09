@@ -55,7 +55,8 @@ export function SquadCardView({ proposal, presets, kicker, busy, dismissed, dism
 }) {
   const s = proposal.squad;
   const names = presets ? new Set(presets.map((p) => p.name)) : null;
-  const chips = personChips(s.roster, proposal.newTeammates, names);
+  const modes = new Map((presets ?? []).map((p) => [p.name, p.mode]));
+  const chips = personChips(s.roster, proposal.newTeammates, names, (n) => modes.get(n));
   const focus = s.roster.filter((e) => e.focus?.trim());
   const summary = squadSummary(s);
   return (
