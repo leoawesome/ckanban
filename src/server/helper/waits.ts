@@ -183,6 +183,21 @@ export class WaitStore {
     return this.data.records[key];
   }
 
+  /**
+   * The record a message's item meant: the wait under `key` (or one archived from it as `<key>#<since>`) that this
+   * message told or reminded about, else the one that was live when the message went out. A wait that closed and came
+   * back reuses its key, so a tap on an old message must not reach the newer wait (or one opened after the message).
+   */
+  forMessage(key: string, message: { id: string; at: string }): WaitRecord | undefined {
+    const recs = Object.values(this.data.records).filter((r) => r.key === key || r.key.startsWith(`${key}#`));
+    const linked = recs.find((r) => r.messageId === message.id || r.reminders.some((s) => s.messageId === message.id));
+    if (linked) return linked;
+    const at = Date.parse(message.at);
+    return recs
+      .filter((r) => !(Date.parse(r.queuedAt) > at))
+      .sort((a, b) => Date.parse(b.queuedAt) - Date.parse(a.queuedAt))[0];
+  }
+
   /** Every record, open and closed. */
   all(): WaitRecord[] {
     return Object.values(this.data.records);

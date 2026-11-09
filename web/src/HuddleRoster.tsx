@@ -2,7 +2,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, type Huddle, type HuddleMode, type HuddlePreset, type HuddleTemplate, type RosterEntry, type Ticket } from "./api";
 import { CloseIcon } from "./icons";
 import { Select } from "./Select";
-import { personModeLabel, TOPIC_MAX } from "./squadText";
+import { TOPIC_MAX } from "./squadText";
 import { applyProposedTemplate, applyTemplate, DEFAULT_MAX, draftError, draftSize, dollars, handleBase, rosterDraft, rowHandle, rowKey as key, MODE_LABEL, type Draft } from "./huddleText";
 
 const MODELS = ["opus", "sonnet", "haiku"];
@@ -80,14 +80,12 @@ export function SquadPicker({ templates, draft, setDraft, disabled, quiet }: {
 }
 
 /** The people a draft would start with, as chips (the host marked), and the budget (mockup c-start-topic). */
-export function SquadPeople({ draft, presets }: { draft: RosterDraft; presets: HuddlePreset[] | null }) {
-  const modes = new Map((presets ?? []).map((p) => [p.name, p.mode]));
+export function SquadPeople({ draft }: { draft: RosterDraft }) {
   return (
     <div className="sqc-chips">
       {draft.rows.map((r) => (
         <span key={r.key} className={`sqc-chip${r.host ? " host" : ""}`} title={r.focus ? `Focus: ${r.focus}` : undefined}>
-          @{rowHandle(r)}{r.host && " (host)"}
-          <span className="sqc-extra">{(r.count ?? 1) > 1 && ` ×${r.count}`} · {personModeLabel(r.mode ?? (r.preset ? modes.get(r.preset) : undefined))}</span>
+          @{rowHandle(r)}{r.host && " (host)"}{(r.count ?? 1) > 1 && <span className="sqc-extra"> ×{r.count}</span>}
         </span>
       ))}
       <span className="sqc-chip">{dollars(draft.maxCostUsd)}</span>

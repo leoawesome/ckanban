@@ -605,7 +605,8 @@ describe("off switch, Pause, /lock and Unpair", () => {
     api.queue(tap(5, "g:m_abc", 1), msg(6, "/waiting"));
     await notifier.telegram.pollOnce();
     expect(got).toBe(1);
-    expect(api.last().text).toBe("Nothing waits.");
+    // The tap runs beside the message line, so its "Got it." reply may come before or after the /waiting answer.
+    expect(api.sent().slice(-2).map((c) => c.body.text).sort()).toEqual(["Got it.", "Nothing waits."]);
     // Back on: the old echo stays dead (expired), a new reply works.
     notifier.update({ telegram: { takeMessages: true } });
     api.queue(tap(7, send, echoId));

@@ -427,6 +427,24 @@ export class TelegramBot {
     };
   }
 
+  /**
+   * After Got it / Not urgent: the tapped message loses those two buttons (Open stays), and a silent reply under it
+   * says what happened, so the tap shows on the phone (the callback answer is only a short-lived toast).
+   */
+  private async tapped(chatId: number, msg: any, text: string): Promise<void> {
+    const messageId = msg?.message_id;
+    if (typeof messageId !== "number") return;
+    const rows: any[][] = Array.isArray(msg.reply_markup?.inline_keyboard) ? msg.reply_markup.inline_keyboard : [];
+    const keep = rows.map((row) => (Array.isArray(row) ? row.filter((b) => typeof b?.text === "string" && typeof b.url === "string" && /^https:\/\//.test(b.url)).map((b) => ({ text: b.text, url: b.url })) : [])).filter((row) => row.length);
+    const edit = await this.api("editMessageReplyMarkup", { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: keep } });
+    if (!edit.ok && !/not modified/i.test(edit.description ?? "")) console.warn(`telegram: couldn't update the buttons: ${this.explain(edit)}`);
+    const r = await this.api("sendMessage", {
+      chat_id: chatId, text: telegramText(text), disable_notification: true, disable_web_page_preview: true,
+      reply_parameters: { message_id: messageId, allow_sending_without_reply: true },
+    });
+    if (!r.ok) console.warn(`telegram: reply failed: ${this.explain(r)}`);
+  }
+
   private codeMatches(text: string): boolean {
     if (!this.pairing) return false;
     const a = Buffer.from(text), b = Buffer.from(this.pairing.code);
@@ -452,6 +470,8 @@ export class TelegramBot {
         if (m) {
           const a = this.d.actions();
           text = await (m[1] === "g" ? a.gotIt(m[2]) : a.notUrgent(m[2]));
+          // The tap leaves a trace in the daemon log (message id and result only, never the chat's text or the token).
+          console.log(`telegram: ${m[1] === "g" ? "Got it" : "Not urgent"} on ${m[2]}: ${scrub(text, this.token)}`);
         } else if (p && s.takeMessages === false) {
           text = NOT_TAKING;
         } else if (p && replies) {
@@ -461,6 +481,7 @@ export class TelegramBot {
         // Always answered, or the button keeps spinning on the phone.
         await this.api("answerCallbackQuery", { callback_query_id: cq.id, text: text.slice(0, 200) });
       }
+      if (m) await this.tapped(chat, cq.message, text);
       return;
     }
     const msg = u?.message;

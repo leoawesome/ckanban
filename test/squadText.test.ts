@@ -1,6 +1,6 @@
 // Squad helpers in the web UI: the topic box's text, the people chips, the card's lines.
 import { expect, test } from "bun:test";
-import { isNameTaken, personChips, personModeLabel, squadSavedText, squadSummary, ticketTopicText, TOPIC_MAX } from "../web/src/squadText";
+import { isNameTaken, personChips, squadSavedText, squadSummary, ticketTopicText, TOPIC_MAX } from "../web/src/squadText";
 
 test("the topic box starts with the ticket's title and the start of its description", () => {
   expect(ticketTopicText({ title: " Fix login ", body: "" })).toBe("Fix login");
@@ -19,22 +19,12 @@ test("people chips mark the host and the people saved as new teammates", () => {
   const fresh = [{ index: 1, name: "visionary" }, { index: 2, name: "skeptic" }];
   const chips = personChips(roster, fresh, null);
   expect(chips.map((c) => [c.handle, c.host, c.isNew, c.extra])).toEqual([
-    ["facilitator", true, false, "joins when tagged"],
+    ["facilitator", true, false, ""],
     ["visionary", false, true, "reads everything · opus"],
-    ["skeptic", false, true, "×2 · joins when tagged"],
+    ["skeptic", false, true, "×2"],
   ]);
-  // Without its own mode, a person takes its teammate's.
-  expect(personChips(roster, fresh, null, (n) => (n === "facilitator" ? "monitor" : undefined))[0].extra).toBe("reads everything");
-  expect(chips[2].title).toContain("wakes when @mentioned");
   // The board already has a skeptic: it is used as is, not new.
   expect(personChips(roster, fresh, new Set(["facilitator", "skeptic"])).map((c) => c.isNew)).toEqual([false, true, false]);
-});
-
-test("every person's chip names its mode", () => {
-  expect(personModeLabel("tagged")).toBe("joins when tagged");
-  expect(personModeLabel(undefined)).toBe("joins when tagged");
-  expect(personModeLabel("monitor")).toBe("reads everything");
-  expect(personModeLabel("silent")).toBe("silent");
 });
 
 test("card lines", () => {

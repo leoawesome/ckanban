@@ -55,6 +55,12 @@ export const REACTIONS_KEEP = 20;
 /** The helper's spend, for the "Helper" line in today's spend (spend.ts). */
 export const helperSpendFile = (root: string) => join(root, "helper-spend.jsonl");
 
+/** Why an item's reminders had stopped before a Got it, in plain words. */
+const STOPPED_WHY: Record<string, string> = {
+  opened: "you opened it", answered: "it was answered", "got-it": "you tapped Got it", "not-urgent": "you tapped Not urgent",
+  expired: "their time ran out", off: "the helper was turned off", deleted: "the ticket was deleted", cleared: "it no longer waits on you", closed: "it no longer waits on you",
+};
+
 /** Plain names of channels, for the user. */
 export const CHANNEL_LABEL: Record<string, string> = { mac: "this Mac", push: "phone", webhook: "ntfy", telegram: "Telegram" };
 const label = (c: string) => CHANNEL_LABEL[c] ?? c;
@@ -950,7 +956,7 @@ export class HelperRunner implements HelperSink {
     const message = this.d.core.messages.get(messageId);
     if (!message) throw new HelperError("message not found", 404);
     const keys = message.items.map((i) => i.key).filter((k): k is string => !!k && (!key || k === key));
-    const recs = keys.map((k) => this.d.core.waits.get(k)).filter((r): r is WaitRecord => !!r);
+    const recs = keys.map((k) => this.d.core.waits.forMessage(k, message)).filter((r): r is WaitRecord => !!r);
     this.d.core.messages.markRead(message.id);
     return { message, recs };
   }
@@ -969,7 +975,10 @@ export class HelperRunner implements HelperSink {
     try {
       return f().text;
     } catch (e) {
-      return e instanceof HelperError && e.status === 404 ? "That message is gone." : `That didn't work: ${(e as Error).message}`;
+      if (e instanceof HelperError && e.status === 404) return "That message is gone.";
+      // The detail goes to the log only: this text can end up on the phone (Telegram's reply).
+      console.error("helper: tap", (e as Error).message);
+      return "That didn't work. Try again on the board.";
     }
   }
 
@@ -977,6 +986,8 @@ export class HelperRunner implements HelperSink {
   gotIt(messageId: string, key?: string | null): { stopped: number; text: string } {
     const { message, recs } = this.tapped(messageId, key);
     this.markTapped(message, recs, "got-it");
+    // Why reminders had already stopped before this tap (opened, answered...), to say so instead of a bare "Got it".
+    const before = recs.map((r) => (r.reminders.length ? r.remindersStopped ?? (r.closedAt ? r.closedWhy ?? "closed" : null) : null));
     let stopped = 0;
     for (const r of recs) {
       if (this.d.core.waits.stopReminders(r.key, "got-it")) stopped++;
@@ -986,7 +997,9 @@ export class HelperRunner implements HelperSink {
     const names = recs.map((r) => this.d.core.item(r).title).join(", ") || "this";
     this.react(`Got it on "${names}" at ${clockTime(new Date(this.now()).toISOString())}`);
     this.changed();
-    return { stopped, text: stopped ? `Got it: no more reminders for ${names}` : `Got it: ${names}` };
+    if (stopped) return { stopped, text: `Got it: no more reminders for ${names}` };
+    const why = before.find((w): w is string => !!w);
+    return { stopped, text: why ? `Got it: reminders for ${names} had already stopped (${STOPPED_WHY[why] ?? why})` : `Got it: ${names}` };
   }
 
   /** Not urgent: that item's reminders stop at once. */
