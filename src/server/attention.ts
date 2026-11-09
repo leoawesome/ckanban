@@ -30,6 +30,12 @@ export interface HostHuddle {
   working: number;
   /** A wake is on its way to a participant (starting, or waiting for its run's turn to end). */
   queued: boolean;
+  /** Helpers in the huddle (everyone but the user and the host's @main), working or not: the card's huddle line. */
+  helpers?: number;
+  /** Of them, mid-turn now. */
+  helpersWorking?: number;
+  /** Findings still open: the card's huddle line. */
+  findings?: number;
   /** Messages tagging @you the user hasn't seen yet. */
   tagged: number;
   /** Learnings waiting for the user to save or discard them. */
@@ -42,7 +48,7 @@ export interface HostHuddle {
   latest?: string | null;
 }
 
-/** The huddle works on its own: the card shows "Huddle · n working" and it doesn't need the user. */
+/** The huddle works on its own: the card shows its huddle line (huddleLine) and it doesn't need the user. */
 export const huddleBusy = (h: HostHuddle | null | undefined): boolean => !!h && (h.working > 0 || h.queued);
 
 /** What the ticket's huddle asks of the user, or null: tags for @you, a close request or learnings to review. */

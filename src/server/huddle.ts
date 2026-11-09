@@ -586,9 +586,14 @@ export class Huddles {
         return !!run && !run.stopRequested && (!run.handle || run.pending || run.again);
       });
       const times = [...tagged.map((m) => m.ts), ...learnings.map((l) => l.at), h.closeRequest?.at].filter((t): t is string => !!t);
+      // Helpers: everyone but the user and the host's own session (@main).
+      const helpers = agents.filter((p) => !isCoordinator(h, p));
       out.set(h.hostTicket, {
         working: live ? agents.filter((p) => this.working(slug, h, p)).length : 0,
         queued,
+        helpers: helpers.length,
+        helpersWorking: live ? helpers.filter((p) => this.working(slug, h, p)).length : 0,
+        findings: h.findings.filter((f) => f.status === "open").length,
         tagged: tagged.length,
         learnings: learnings.length,
         closeRequest: !!h.closeRequest,

@@ -583,6 +583,8 @@ export function createServer(deps: ServerDeps) {
     const session = t.sessionId ? sessions.summary(t.sessionId) : null;
     const huddle = hosts.get(t.id);
     const { attention, snoozed } = attentionOf(p, t, hosts, running, session);
+    // Its own huddle works on it while its own run doesn't, and asks nothing of the user ("Needs you" wins).
+    const huddleWorks = !running && t.status !== "in_progress" && huddleBusy(huddle) && !huddleAsk(huddle);
     return {
       ...t,
       running,
@@ -609,8 +611,10 @@ export function createServer(deps: ServerDeps) {
       attention,
       /** Snoozed from the Inbox: what it waits for and until when (attention is null meanwhile). */
       snoozed,
-      /** Its own huddle is working on it: the card shows "Huddle · n working" instead of an outcome badge. */
-      huddleBusy: !running && t.status !== "in_progress" && huddleBusy(huddle) && !huddleAsk(huddle),
+      /** Its own huddle is working on it: the card shows its huddle line instead of an outcome badge. */
+      huddleBusy: huddleWorks,
+      /** What the card's huddle line counts while huddleBusy (helpers working and in the huddle, open findings); null otherwise. */
+      huddleLine: huddleWorks && huddle ? { working: huddle.helpersWorking ?? huddle.working, helpers: huddle.helpers ?? huddle.working, findings: huddle.findings ?? 0 } : null,
       /** API-equivalent $ so far (the Usage tab's total: its runs and its huddles' teammates), for In Progress and Review cards. */
       costUsd: running || t.status === "in_progress" || t.status === "review" ? spend.ticket(p.slug, t.id).costUsd + huddles.ticketSpend(p.slug, t.id).costUsd : null,
       /** Spending cap its next work run gets (null: none). */

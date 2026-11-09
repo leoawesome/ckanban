@@ -143,3 +143,30 @@ export function overCap(t: { capHit?: { capUsd: number; at: string } | null }): 
 export function previewShown(column: string): boolean {
   return column !== "backlog" && column !== "done";
 }
+
+/** A ticket's own huddle at work (http.ts huddleLine): helpers working now and in the huddle, and its open findings. */
+export interface HuddleLine { working: number; helpers: number; findings: number }
+
+/** The short label a working huddle gets where there is room for one word or two: the phone status and the panel header. */
+export const HUDDLE_WORKING = "Huddle working";
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * The card's huddle line: "Huddle: 6 helpers working, 4 findings so far", or "2 of 6 helpers working" when only some
+ * are mid-reply. With nobody mid-reply yet (a wake on its way), it counts the helpers in the huddle.
+ */
+export function huddleLineText(h: HuddleLine): string {
+  const helpers = Math.max(h.helpers, h.working);
+  const who = h.working > 0 && h.working < helpers ? `${h.working} of ${helpers} helpers working` : `${plural(helpers || 1, "helper")} working`;
+  return `Huddle: ${who}${h.findings > 0 ? `, ${plural(h.findings, "finding")} so far` : ""}`;
+}
+
+/**
+ * The huddle line a card shows, or null: only while its huddle works, its own run doesn't, nothing needs the user and
+ * no feature line takes the spot. The card then gets the blue stripe of a working card.
+ */
+export function cardHuddleLine(t: { huddleBusy?: boolean; huddleLine?: HuddleLine | null }, o: { working: boolean; needsYou: boolean }): string | null {
+  if (!t.huddleBusy || o.working || o.needsYou) return null;
+  return huddleLineText(t.huddleLine ?? { working: 0, helpers: 0, findings: 0 });
+}

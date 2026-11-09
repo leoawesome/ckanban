@@ -1,5 +1,5 @@
 import { COLUMNS, waitsForSlot, type Status } from "./columns";
-import type { FinishMark } from "./cardState";
+import { HUDDLE_WORKING, type FinishMark } from "./cardState";
 
 /** The colour of the phone header's status button. */
 export type StatusTone = "ok" | "warn" | "err" | "info" | "neutral";
@@ -37,7 +37,7 @@ export function phoneStatus(t: StatusTicket, finish: FinishMark | null, att: { k
   if (finish) return { label: finish.label, tone: finish.tone === "failed" ? "err" : finish.tone, icon: finish.icon };
   if (att) return { label: att.kind === "limit" ? "Limit hit" : att.label, tone: attTone(att.kind) };
   const column = { label: columnLabel(t.status), tone: "neutral" as const };
-  if (t.huddleBusy) return column;
+  if (t.huddleBusy) return { label: HUDDLE_WORKING, tone: "info", busy: true };
   if (t.autoHuddle && !t.running) return t.autoHuddle.state === "waiting" ? { label: "Waiting for huddle", tone: "warn" } : { label: "Auto huddle", tone: "info", busy: true };
   if (waitsForSlot({ id: "", order: 0, ...t })) return { label: "Queued", tone: "warn" };
   if (t.status === "in_progress") return { label: "Running", tone: "info", busy: true };

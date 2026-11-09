@@ -1,6 +1,6 @@
 // Card state rules (web/src/cardState.ts): which "Your turn" dots pulse, sign-in errors, finish marks, chip folding.
 import { expect, test } from "bun:test";
-import { finishMark, foldChips, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown } from "../web/src/cardState";
+import { cardHuddleLine, finishMark, foldChips, huddleLineText, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown } from "../web/src/cardState";
 
 const now = Date.parse("2026-11-01T12:00:00Z");
 const ago = (min: number) => new Date(now - min * 60_000).toISOString();
@@ -90,4 +90,27 @@ test("Backlog and Done cards skip the Claude preview; Planning and Review keep i
   expect(previewShown("planning")).toBe(true);
   expect(previewShown("review")).toBe(true);
   expect(previewShown("in_progress")).toBe(true);
+});
+
+test("huddle line: helpers working and open findings, in plain words", () => {
+  expect(huddleLineText({ working: 6, helpers: 6, findings: 4 })).toBe("Huddle: 6 helpers working, 4 findings so far");
+  expect(huddleLineText({ working: 2, helpers: 6, findings: 1 })).toBe("Huddle: 2 of 6 helpers working, 1 finding so far");
+  expect(huddleLineText({ working: 1, helpers: 1, findings: 0 })).toBe("Huddle: 1 helper working");
+  // A wake on its way, nobody mid-reply yet: the helpers in the huddle.
+  expect(huddleLineText({ working: 0, helpers: 3, findings: 0 })).toBe("Huddle: 3 helpers working");
+  expect(huddleLineText({ working: 0, helpers: 0, findings: 0 })).toBe("Huddle: 1 helper working");
+});
+
+test("huddle line on the card: only while the huddle works, its own run doesn't and nothing needs the user", () => {
+  const line = { working: 6, helpers: 6, findings: 4 };
+  expect(cardHuddleLine({ huddleBusy: true, huddleLine: line }, { working: false, needsYou: false })).toBe("Huddle: 6 helpers working, 4 findings so far");
+  // Asks the user something: "Needs you" wins.
+  expect(cardHuddleLine({ huddleBusy: true, huddleLine: line }, { working: false, needsYou: true })).toBeNull();
+  // Its own run (or its feature) working: that line wins.
+  expect(cardHuddleLine({ huddleBusy: true, huddleLine: line }, { working: true, needsYou: false })).toBeNull();
+  // Idle or closed huddle: back to normal.
+  expect(cardHuddleLine({ huddleBusy: false, huddleLine: null }, { working: false, needsYou: false })).toBeNull();
+  expect(cardHuddleLine({}, { working: false, needsYou: false })).toBeNull();
+  // An older server without the counts still shows a line.
+  expect(cardHuddleLine({ huddleBusy: true }, { working: false, needsYou: false })).toBe("Huddle: 1 helper working");
 });
