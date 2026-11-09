@@ -1,5 +1,6 @@
 // Every message the board sends the user (helper or direct) is stored here before it goes out, so a tap always
-// finds the full text: `<root>/messages.json`, newest last, 30 days or 500 entries.
+// finds the full text: `<root>/messages.json`, newest last. Sent messages keep 30 days or 500 entries; the helper's
+// held log rows ("Kept quiet") have their own, smaller cap (7 days or 200), so they never push real alerts out.
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -82,6 +83,32 @@ export interface StoredMessage {
 
 export const MESSAGES_KEEP_MS = 30 * 24 * 3600_000;
 export const MESSAGES_MAX = 500;
+/** Held log rows (never sent) keep less, on their own count. */
+export const HELD_KEEP_MS = 7 * 24 * 3600_000;
+export const HELD_MAX = 200;
+
+/** Keeps sent messages for 30 days / 500 rows and held log rows for 7 days / 200 rows, each counted on its own; order is kept. */
+export function trimMessages(list: StoredMessage[], now: number): StoredMessage[] {
+  const cut = now - MESSAGES_KEEP_MS;
+  const heldCut = now - HELD_KEEP_MS;
+  const keep = new Set<StoredMessage>();
+  let sent = 0;
+  let held = 0;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const m = list[i];
+    const at = Date.parse(m.at);
+    if (m.held === true) {
+      if (held < HELD_MAX && at >= heldCut) {
+        keep.add(m);
+        held++;
+      }
+    } else if (sent < MESSAGES_MAX && at >= cut) {
+      keep.add(m);
+      sent++;
+    }
+  }
+  return list.filter((m) => keep.has(m));
+}
 
 export type NewMessage = Pick<StoredMessage, "level" | "oneLine" | "text"> & Partial<Pick<StoredMessage, "why" | "items" | "held" | "summary">>;
 
@@ -129,9 +156,7 @@ export class MessageStore {
     };
     const list = this.items();
     list.push(msg);
-    const cut = this.now() - MESSAGES_KEEP_MS;
-    const keep = list.filter((x) => Date.parse(x.at) >= cut).slice(-MESSAGES_MAX);
-    this.list = keep;
+    this.list = trimMessages(list, this.now());
     this.save();
     this.changed();
     return msg;
