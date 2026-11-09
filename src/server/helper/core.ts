@@ -4,7 +4,7 @@
 // message and its record marked told, so nothing goes out twice.
 import type { NotifyMessage, NotifySettings } from "../notify";
 import type { Store } from "../store";
-import { Channels, type ChannelResult, type OutMessage } from "./channels";
+import { Channels, tapTicket, type ChannelResult, type OutMessage } from "./channels";
 import { MessageStore, type MessageItem, type NewMessage, type StoredMessage } from "./messages";
 import { pending, WaitStore, type NewWait, type ToldVia, type WaitRecord } from "./waits";
 
@@ -208,14 +208,35 @@ export class HelperCore {
     return rec;
   }
 
-  /** Start-up for one ticket: what waits now (or null), given how the waits file was found. */
-  reconcile(board: string, ticketId: string, w: NewWait | null, identity: string | null): void {
+  /**
+   * Start-up for one ticket: what waits now (or null), given how the waits file was found. steps: on a main ticket,
+   * the questions its steps wait on (one wait each, see Notifier.stepAsks); their records stay open and missing ones
+   * open like `w`. fromStep: `w` is a step's question shown on the main ticket.
+   */
+  reconcile(board: string, ticketId: string, w: NewWait | null, identity: string | null, o: { steps?: NewWait[]; fromStep?: boolean } = {}): void {
     const plugged = this.plugged();
+    // A step's question recorded before the board knew its text (kept under its main ticket as plain "questions"): the
+    // same wait, so it moves to its real key, told state kept, instead of closing and alerting again.
+    if (w && o.fromStep && w.identity !== "questions") {
+      const from = this.waits.get(`${board}/${ticketId}|questions`);
+      const moved = this.waits.rekey(`${board}/${ticketId}|questions`, w);
+      if (moved && plugged && moved.urgent && !from?.urgent && !moved.toldAt) this.emit(moved, "urgent");
+    }
+    const keep = new Set([identity, ...(o.steps ?? []).map((s) => s.identity)].filter(Boolean).map((i) => `${board}/${ticketId}|${i}`));
     for (const r of this.waits.openFor(board, ticketId)) {
       if (r.kind === "message") continue;
-      if (!identity || r.key !== `${board}/${ticketId}|${identity}`) this.waits.close([r.key], r.kind === "questions" ? "answered" : "cleared");
+      if (!keep.has(r.key)) this.waits.close([r.key], r.kind === "questions" ? "answered" : "cleared");
     }
-    if (!w || this.waits.get(`${board}/${ticketId}|${w.identity}`)?.closedAt === null) return;
+    const seen = new Set<string>();
+    for (const x of [w, ...(o.steps ?? [])]) {
+      if (!x || seen.has(x.identity)) continue;
+      seen.add(x.identity);
+      this.openAtStart(x, plugged);
+    }
+  }
+
+  private openAtStart(w: NewWait, plugged: boolean): void {
+    if (this.waits.get(`${w.board}/${w.ticketId}|${w.identity}`)?.closedAt === null) return;
     if (this.waits.start === "missing") {
       // Fresh install or upgrade: no fallback; the helper's first summary takes them (or, without a helper, they count as told).
       const rec = this.waits.add(w, plugged ? { seeded: true } : { told: "seed" });
@@ -237,10 +258,17 @@ export class HelperCore {
   }
 
   /** The ticket no longer waits on these (answered, cleared). Passed-on messages close only when nothing waits any more. */
-  settled(board: string, ticketId: string, identity: string | null): void {
-    const keep = identity ? `${board}/${ticketId}|${identity}` : null;
-    const recs = this.waits.openFor(board, ticketId).filter((r) => r.key !== keep && (r.kind !== "message" || !identity));
+  settled(board: string, ticketId: string, identity: string | null, steps: string[] = []): void {
+    // A main ticket's steps that still wait on a question keep their records (steps: their identities).
+    const keep = new Set([identity, ...steps].filter(Boolean).map((i) => `${board}/${ticketId}|${i}`));
+    const recs = this.waits.openFor(board, ticketId).filter((r) => !keep.has(r.key) && (r.kind !== "message" || !identity));
     for (const r of recs) this.waits.close([r.key], r.kind === "questions" ? "answered" : "cleared");
+  }
+
+  /** A main ticket's step no longer waits on its question (answered, or the main ticket dealt with it): its record closes. */
+  stepSettled(board: string, ticketId: string, identity: string, current: string | null): void {
+    if (identity === current) return;
+    this.waits.close([`${board}/${ticketId}|${identity}`], "answered");
   }
 
   /** The ticket (or, without ticketId, the board) was deleted: its records close and reminders stop at once. */
@@ -275,7 +303,9 @@ export class HelperCore {
    * once when a send fails (0 devices or an error), until one reaches the user.
    */
   async deliver(message: StoredMessage, out: OutBody, only?: string[], chain?: string[]): Promise<ChannelResult[]> {
-    const full: OutMessage = { ...out, url: typeof out.url === "function" ? out.url(message.id) : out.url, messageId: message.id };
+    const full: OutMessage = {
+      ...out, url: typeof out.url === "function" ? out.url(message.id) : out.url, messageId: message.id, ticket: tapTicket(message),
+    };
     const record = (results: ChannelResult[]) => {
       const at = new Date(this.now()).toISOString();
       this.messages.recordSends(message.id, results.filter((r) => !r.skipped).map((r) => ({

@@ -49,18 +49,17 @@ self.addEventListener("push", (e) => {
   }));
 });
 
-// Tap: the message's page (its full text) when the push names a stored message, else the link's ticket, on this
-// board's own address (the link may name another one, e.g. the Mac's localhost).
+// Tap: the link's page (the message's page, or for an urgent alert about one ticket that ticket with "?read=<id>"),
+// on this board's own address (the link may name another one, e.g. the Mac's localhost). A stored message whose link
+// has no page falls back to the message's page.
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const data = e.notification.data || {};
   let hash = "";
-  if (data.messageId) hash = `#/~messages/${encodeURIComponent(data.messageId)}`;
-  else {
-    try {
-      hash = new URL(data.url, location.origin).hash;
-    } catch {}
-  }
+  try {
+    hash = new URL(data.url, location.origin).hash;
+  } catch {}
+  if (data.messageId && !/^#\/~messages\/|\?read=/.test(hash)) hash = `#/~messages/${encodeURIComponent(data.messageId)}`;
   const target = `${location.origin}/${hash}`;
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(async (list) => {
     const open = list.find((c) => new URL(c.url).origin === location.origin);

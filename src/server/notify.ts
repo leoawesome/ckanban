@@ -6,13 +6,15 @@ import { chmodSync, existsSync, rmSync, readFileSync, renameSync, writeFileSync 
 import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mainTicketOf, withYouTool } from "../../web/src/family";
+import { familyOf, hiddenTool, mainTicketOf, withYouTool } from "../../web/src/family";
 import { type AttentionKind, type HostHuddle, ticketAttention } from "./attention";
+import { stepWait } from "./main-ticket";
 import type { Bus } from "./events";
 import { run as runCmd } from "./git";
 import type { PushPayload, PushService } from "./push";
 import type { SessionSummary } from "./session";
 import type { Store } from "./store";
+import type { Ticket } from "./types";
 import { nowIso } from "./util";
 import { Channels, macChannel, pushChannel, webhookChannel, type ChannelResult } from "./helper/channels";
 import { HelperCore } from "./helper/core";
@@ -388,8 +390,18 @@ export interface NotifierOptions {
   telegramPoll?: boolean;
 }
 
+/** A main ticket's step waiting on a question it asked: its wait, recorded under the main ticket. */
+interface StepAsk {
+  stepId: string;
+  wait: NewWait;
+  /** A "with you" step: only the user answers it, so its question goes to the helper even when not shown on the card. */
+  withYou: boolean;
+}
+
 export class Notifier {
   private tracker: TransitionTracker<string>;
+  /** Per main ticket (`<board>/<main>`): the steps whose question waits are tracked (keys `<board>/<main>~<step>`). */
+  private stepKeys = new Map<string, Set<string>>();
   private dirty = new Set<string>();
   private lastSentAt: string | null = null;
   private lastError: string | null = null;
@@ -619,10 +631,20 @@ export class Notifier {
           if (main) this.dirty.add(`${e.profile}/${main.id}`);
         }
       }
-      else if (e.type === "session.updated") this.dirty.add(`${e.profile}/${e.id}`);
+      else if (e.type === "session.updated") {
+        this.dirty.add(`${e.profile}/${e.id}`);
+        // A step's question (form, urgent mark) is read from its own session: its main ticket looks again too.
+        const t = this.store.getTicket(e.profile, e.id);
+        const main = t?.tool ? mainTicketOf(this.store.listTickets(e.profile), e.id) : undefined;
+        if (main) this.dirty.add(`${e.profile}/${main.id}`);
+      }
       else if (e.type === "huddle.updated" && e.huddle.hostTicket) this.dirty.add(`${e.profile}/${e.huddle.hostTicket}`);
       else if (e.type === "ticket.deleted") {
         this.tracker.forget(`${e.profile}/${e.id}`);
+        for (const sid of this.stepKeys.get(`${e.profile}/${e.id}`) ?? []) this.tracker.forget(`${e.profile}/${e.id}~${sid}`);
+        this.stepKeys.delete(`${e.profile}/${e.id}`);
+        // A deleted step: its main ticket looks again, so the step's wait closes.
+        for (const [k, ids] of this.stepKeys) if (k.startsWith(`${e.profile}/`) && ids.has(e.id)) this.dirty.add(k);
         this.helper.deleted(e.profile, e.id);
       } else if (e.type === "profile.updated" && e.profile === null) this.helper.deleted(e.slug);
     });
@@ -635,8 +657,15 @@ export class Notifier {
     const keys = () => this.store.listProfiles().flatMap((p) => this.store.listTickets(p.slug).map((t) => [p.slug, t.id] as const));
     const stock = (slug: string, id: string, now: number) => {
       const w = this.waitOf(slug, id);
+      const asks = this.stepAsks(slug, id);
       this.tracker.seed(`${slug}/${id}`, w?.identity ?? null, now);
-      this.helper.reconcile(slug, id, w && this.settings().kinds[w.kind] ? w : null, w?.identity ?? null);
+      for (const a of asks) this.tracker.seed(`${slug}/${id}~${a.stepId}`, a.wait.identity, now);
+      if (asks.length) this.stepKeys.set(`${slug}/${id}`, new Set(asks.map((a) => a.stepId)));
+      const on = this.settings().kinds.questions;
+      this.helper.reconcile(slug, id, w && this.settings().kinds[w.kind] ? w : null, w?.identity ?? null, {
+        steps: on ? asks.filter((a) => a.withYou || a.wait.identity === w?.identity).map((a) => a.wait) : [],
+        fromStep: !!w && asks.some((a) => a.wait.identity === w.identity),
+      });
     };
     if (this.o.sessionsReady) {
       // Changes seen meanwhile are kept (dirty) and looked at on the first tick.
@@ -665,19 +694,80 @@ export class Notifier {
 
   /** Look again at changed tickets and those whose change is still settling; route the transitions; run the helper's due times. */
   tick(): void {
-    const keys = new Set([...this.dirty, ...this.tracker.unsettled()]);
+    // A step's tracker key (`<board>/<main>~<step>`) is looked at with its main ticket.
+    const keys = new Set([...this.dirty, ...this.tracker.unsettled()].map((k) => k.split("~")[0]));
     this.dirty.clear();
     const now = this.now();
     for (const key of keys) {
       const [slug, id] = key.split("/");
       const w = this.waitOf(slug, id);
+      const asks = this.stepAsks(slug, id);
       const before = this.tracker.settledOf(key);
       const identity = this.tracker.observe(key, w?.identity ?? null, now);
       const after = this.tracker.settledOf(key);
-      if (before !== after && before !== undefined) this.helper.settled(slug, id, after ?? null);
+      const stepIds = asks.map((a) => a.wait.identity);
+      if (before !== after && before !== undefined) this.helper.settled(slug, id, after ?? null, stepIds);
       if (identity && w) this.fire(w);
+      this.observeSteps(key, slug, id, asks, after ?? null, now);
     }
     void this.helper.tick().catch((e) => console.error("helper: tick", e));
+  }
+
+  /**
+   * A main ticket's steps' questions, one wait each: a step's question is its own wait from when it settles until the
+   * step stops waiting, whichever step the card shows. "With you" ones go to the helper; others only when shown.
+   */
+  private observeSteps(key: string, slug: string, id: string, asks: StepAsk[], current: string | null, now: number): void {
+    const known = this.stepKeys.get(key) ?? new Set<string>();
+    for (const a of asks) known.add(a.stepId);
+    for (const sid of [...known]) {
+      const sk = `${key}~${sid}`;
+      const a = asks.find((x) => x.stepId === sid);
+      const before = this.tracker.settledOf(sk);
+      const identity = this.tracker.observe(sk, a?.wait.identity ?? null, now);
+      const after = this.tracker.settledOf(sk);
+      if (before && before !== after) this.helper.stepSettled(slug, id, before, current);
+      if (identity && a?.withYou) this.fire(a.wait);
+      if (!a && !after && !this.tracker.unsettled().includes(sk)) {
+        this.tracker.forget(sk);
+        known.delete(sid);
+      }
+    }
+    if (known.size) this.stepKeys.set(key, known);
+    else this.stepKeys.delete(key);
+  }
+
+  /** On a main ticket: each of its tool tickets that waits on a question (stepWait), as a wait under the main ticket. */
+  private stepAsks(slug: string, id: string): StepAsk[] {
+    const t = this.store.getTicket(slug, id);
+    if (!t?.main || t.status === "done" || t.status === "backlog") return [];
+    const tickets = this.store.listTickets(slug);
+    // A tool step's question (not "with you") is the main ticket's to handle: it is the user's only while the main
+    // ticket hasn't seen it and won't be woken for it (attentionFor's rule).
+    const handling = this.o.isRunning(slug, id) || ((t.plan?.state === "running" || t.plan?.state === "finishing") && (!!t.plan.awaiting || !!t.plan.inbox?.length));
+    const out: StepAsk[] = [];
+    for (const r of familyOf(tickets, id)) {
+      if (r.ticket.id === id || !hiddenTool(r.ticket)) continue;
+      const sw = stepWait(r.ticket, this.o.isRunning(slug, r.ticket.id));
+      if (sw?.attention !== "questions") continue;
+      if (!sw.withYou && (handling || sw.since <= (t.runEndedAt ?? ""))) continue;
+      out.push({ stepId: r.ticket.id, wait: this.stepQuestion(slug, id, r.ticket, sw.label, sw.since), withYou: !!sw.withYou });
+    }
+    return out;
+  }
+
+  /**
+   * A step's question as a wait under its main ticket: the step asked it, so its form, urgent mark and why are in the
+   * step's own session. Its identity names the step, so another step's question is its own wait.
+   */
+  private stepQuestion(slug: string, mainId: string, step: Ticket, label: string, since: string): NewWait {
+    const s = step.sessionId ? this.o.sessionSummary(step.sessionId) : null;
+    const form = s?.openForm?.length ? s.openForm.map((q) => q.question).join("\n") : null;
+    const ask = form ? s?.openAsk : undefined;
+    return {
+      board: slug, ticketId: mainId, kind: "questions", identity: waitIdentity("questions", `${step.id}\n${form ?? ""}`), question: form ?? label, label, since,
+      ...(ask?.urgent ? { urgent: true } : {}), why: ask?.why ?? null,
+    };
   }
 
   /** What the ticket waits on now, as a wait the helper core can record, or null. */
@@ -687,6 +777,9 @@ export class Notifier {
     const s = t.sessionId ? this.o.sessionSummary(t.sessionId) : null;
     const att = ticketAttention(this.store, slug, t, s, this.o.isRunning(slug, id), this.o.hostHuddles(slug).get(id), (x) => this.o.isRunning(slug, x));
     if (!att) return null;
+    // A step's question shown on its main ticket: the step's own wait (stepQuestion), with the card's label.
+    const step = att.kind === "questions" && att.stepId ? this.store.getTicket(slug, att.stepId) : undefined;
+    if (step) return { ...this.stepQuestion(slug, id, step, att.label, att.since), label: att.label };
     const form = att.kind === "questions" && s?.openForm?.length ? s.openForm.map((q) => q.question).join("\n") : null;
     const ask = att.kind === "questions" && form ? s?.openAsk : undefined;
     return {

@@ -33,7 +33,7 @@ const GROUPS: { title: string; keys: [string[], string][] }[] = [
       [["Ctrl", "`"], "Terminal (again to hide)"],
       [["F"], "Files"],
       [["C"], "Quick Claude chat beside the board, no ticket (again to hide)"],
-      [["T"], "Team: teammates, templates, huddles"],
+      [["T"], "Team: teammates, squads, huddles"],
       [["Esc"], "In the bottom panel: leave a text box, again to hide the panel (not in the Terminal)"],
       [[MOD, "Shift", "O"], "In the Claude chat: start a new chat (even while typing)"],
       [["Esc"], "In the Claude chat: close its past chats list, leave a text box, again to hide the chat"],

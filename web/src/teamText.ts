@@ -1,4 +1,4 @@
-// Plain helpers for the Team tab (teammates and templates), kept apart from the components so tests can import them.
+// Plain helpers for the Team tab (teammates and squads), kept apart from the components so tests can import them.
 import { timeAgo } from "./time";
 
 export const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;

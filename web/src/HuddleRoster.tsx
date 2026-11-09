@@ -2,6 +2,7 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, type Huddle, type HuddleMode, type HuddlePreset, type HuddleTemplate, type RosterEntry, type Ticket } from "./api";
 import { CloseIcon } from "./icons";
 import { Select } from "./Select";
+import { TOPIC_MAX } from "./squadText";
 import { applyProposedTemplate, applyTemplate, DEFAULT_MAX, draftError, draftSize, dollars, handleBase, rosterDraft, rowHandle, rowKey as key, MODE_LABEL, type Draft } from "./huddleText";
 
 const MODELS = ["opus", "sonnet", "haiku"];
@@ -24,7 +25,7 @@ export function usePresets(slug: string, reload: unknown = 0): HuddlePreset[] | 
   return presets;
 }
 
-/** The board's whole-huddle templates (null while loading). */
+/** The board's squads (saved huddles; null while loading). */
 export function useTemplates(slug: string): HuddleTemplate[] | null {
   const [templates, setTemplates] = useState<HuddleTemplate[] | null>(null);
   useEffect(() => {
@@ -37,42 +38,71 @@ export function useTemplates(slug: string): HuddleTemplate[] | null {
   return templates;
 }
 
-/** Start the huddle a draft describes: create it (with its template's rules), invite the tickets, set @main's mode. */
-export async function startFromDraft(slug: string, ticketId: string, d: RosterDraft): Promise<Huddle> {
+/** Start the huddle a draft describes: create it (with its squad's rules and the topic), invite the tickets, set @main's mode. */
+export async function startFromDraft(slug: string, ticketId: string, d: RosterDraft, topic?: string): Promise<Huddle> {
   const roster = d.rows.map(({ key: _k, ...e }) => ({ ...e, ...(e.focus?.trim() ? { focus: e.focus.trim() } : { focus: undefined }) }));
-  let h = await api.startHuddle(slug, ticketId, roster, undefined, d.maxCostUsd, d.template ?? undefined);
+  let h = await api.startHuddle(slug, ticketId, roster, undefined, d.maxCostUsd, d.template ?? undefined, topic);
   for (const t of d.invites) await api.inviteToHuddle(slug, h.id, t);
   const main = h.participants.find((p) => p.handle === "main");
   if (d.mainMode && main && main.mode !== d.mainMode) h = await api.setHuddleMode(slug, h.id, "main", d.mainMode);
   return h;
 }
 
-/** A template's rules in one line: "2 rounds · $20 budget · report format". */
+/** A squad's rules in one line: "2 rounds · $20 budget · report format". */
 export const templateRules = (t: HuddleTemplate) =>
   [t.rounds && `${t.rounds} round${t.rounds === 1 ? "" : "s"}`, t.maxCostUsd && `${dollars(t.maxCostUsd)} budget`, t.report && "report format"].filter(Boolean).join(" · ");
 
-/** Start from a template: fills in its roster and budget; its rules become the huddle's pinned brief. */
-export function TemplatePicker({ templates, draft, setDraft, disabled }: {
+/** Start from a squad: fills in its people and budget; its rules become the huddle's pinned brief. */
+export function SquadPicker({ templates, draft, setDraft, disabled, quiet }: {
   templates: HuddleTemplate[] | null;
   draft: RosterDraft;
   setDraft: (d: RosterDraft) => void;
   disabled?: boolean;
+  /** No description line under the picker (the start screen shows the squad's people instead). */
+  quiet?: boolean;
 }) {
   if (!templates?.length) return null;
   const cur = templates.find((t) => t.name === draft.template);
   return (
     <div className="roster-template">
-      <Select ariaLabel="Template" className="roster-select" value={draft.template ?? ""}
-        renderValue={() => (cur ? `Template: ${cur.label}` : "No template")}
-        options={[{ value: "", label: "No template", hint: "your own roster" },
-          ...templates.map((t) => ({ value: t.name, label: t.label, hint: `${t.roster.length} roles${templateRules(t) ? ` · ${templateRules(t)}` : ""}` }))]}
+      <Select ariaLabel="Squad" className="roster-select" value={draft.template ?? ""}
+        renderValue={() => (cur ? `Squad: ${cur.label}` : "No squad")}
+        options={[{ value: "", label: "No squad", hint: "pick people yourself" },
+          ...templates.map((t) => ({ value: t.name, label: t.label, hint: `${t.roster.length} ${t.roster.length === 1 ? "person" : "people"}${templateRules(t) ? ` · ${templateRules(t)}` : ""}` }))]}
         onChange={(v) => !disabled && setDraft(applyTemplate(draft, templates.find((t) => t.name === v) ?? null))} />
-      {cur && (
+      {cur && !quiet && (
         <span className="muted small" title={cur.report ? `Report format: ${cur.report}` : undefined}>
           {cur.description}{templateRules(cur) ? ` (${templateRules(cur)}; the rules become the huddle's pinned brief)` : ""}
         </span>
       )}
     </div>
+  );
+}
+
+/** The people a draft would start with, as chips (the host marked), and the budget (mockup c-start-topic). */
+export function SquadPeople({ draft }: { draft: RosterDraft }) {
+  return (
+    <div className="sqc-chips">
+      {draft.rows.map((r) => (
+        <span key={r.key} className={`sqc-chip${r.host ? " host" : ""}`} title={r.focus ? `Focus: ${r.focus}` : undefined}>
+          @{rowHandle(r)}{r.host && " (host)"}{(r.count ?? 1) > 1 && <span className="sqc-extra"> ×{r.count}</span>}
+        </span>
+      ))}
+      <span className="sqc-chip">{dollars(draft.maxCostUsd)}</span>
+    </div>
+  );
+}
+
+/** "Topic for this huddle": what this run of a squad works on, filled in from the ticket (mockup c-start-topic). */
+export function TopicBox({ value, onChange, filled, disabled }: { value: string; onChange: (v: string) => void; filled: "ticket" | "claude"; disabled?: boolean }) {
+  return (
+    <label className="topic-box">
+      <span className="topic-label">Topic for this huddle</span>
+      <textarea rows={4} value={value} maxLength={TOPIC_MAX} disabled={disabled} onChange={(e) => onChange(e.target.value)} />
+      <span className="topic-note">
+        {filled === "ticket" ? "Filled in from this ticket." : "Written by Claude for this ticket."} The host posts it as the starting position, then runs the squad's rules.
+      </span>
+    </label>
   );
 }
 
@@ -82,7 +112,7 @@ const MODE_OPTIONS = [
 ];
 
 /** Roster table: role, count, mode, model and focus per line; add and remove roles; invite tickets. */
-export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = DEFAULT_MAX, onEnter, disabled, hideMain }: {
+export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = DEFAULT_MAX, onEnter, disabled, hideMain, pickHost, noFocus }: {
   presets: HuddlePreset[] | null;
   draft: RosterDraft;
   setDraft: (d: RosterDraft) => void;
@@ -95,6 +125,10 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
   disabled?: boolean;
   /** Adding to a running huddle: no @main line, no participant count. */
   hideMain?: boolean;
+  /** With hideMain, still let a lead be made the host (the squad editor). */
+  pickHost?: boolean;
+  /** No focus column (the squad editor has a focus box per person below). */
+  noFocus?: boolean;
 }) {
   const byName = new Map((presets ?? []).map((p) => [p.name, p]));
   const main = byName.get("main");
@@ -118,7 +152,7 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
     <div className="roster">
       <table className="roster-table">
         <thead>
-          <tr><th>Role</th><th>#</th><th>Mode</th><th>Model</th><th>Focus</th><th aria-label="Remove" /></tr>
+          <tr><th>Role</th><th>#</th><th>Mode</th><th>Model</th>{!noFocus && <th>Focus</th>}<th aria-label="Remove" /></tr>
         </thead>
         <tbody>
           {!hideMain && <tr>
@@ -132,7 +166,7 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
                 onChange={(v) => setDraft({ ...draft, mainMode: v })} />
             </td>
             <td><span className="pill">current</span></td>
-            <td className="roster-desc">Fixes what the team reports</td>
+            {!noFocus && <td className="roster-desc">Fixes what the team reports</td>}
             <td />
           </tr>}
           {draft.rows.map((r) => {
@@ -151,7 +185,7 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
                       onChange={(e) => setRow(r.key, { role: e.target.value })} onKeyDown={enter} aria-label="Role" />
                   )}
                   {lead && !r.host && <> <span className="pill lead">lead</span></>}
-                  {!hideMain && count === 1 && (lead || r.host) && (
+                  {(!hideMain || pickHost) && count === 1 && (lead || r.host) && (
                     <> <button type="button" className={`pill ${r.host ? "host" : "host-off"}`} disabled={disabled} aria-pressed={!!r.host}
                       title={r.host ? "Runs the huddle instead of @main. Click to let @main run it." : "Make this lead the host: it runs the huddle, so @main is only woken for decisions and the final report"}
                       onClick={() => setHost(r.key)}>{r.host ? "host" : "make host"}</button></>
@@ -176,10 +210,10 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
                     options={[{ value: "", label: p?.model ?? "default" }, ...MODELS.filter((m) => m !== p?.model).map((m) => ({ value: m, label: m })),
                       ...(r.model && !MODELS.includes(r.model) ? [{ value: r.model, label: r.model }] : [])]} />
                 </td>
-                <td>
+                {!noFocus && <td>
                   <input className="roster-focus" value={r.focus ?? ""} placeholder="What to look at" disabled={disabled} aria-label="Focus"
                     onChange={(e) => setRow(r.key, { focus: e.target.value })} onKeyDown={enter} />
-                </td>
+                </td>}
                 <td>
                   <button className="icon-btn tiny" aria-label={`Remove ${handle}`} title="Remove" disabled={disabled}
                     onClick={() => setDraft({ ...draft, rows: draft.rows.filter((x) => x.key !== r.key) })}><CloseIcon size={12} /></button>
@@ -191,7 +225,7 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
             const t = tickets.find((x) => x.id === id);
             return (
               <tr key={id}>
-                <td colSpan={5}>
+                <td colSpan={noFocus ? 4 : 5}>
                   <b>Ticket</b> {t?.title ?? id}
                   <div className="roster-desc">invited: its own Claude joins as @{handleBase(`${t?.planKey || t?.title.split(/\s+/)[0] || "ticket"}-main`)}</div>
                 </td>

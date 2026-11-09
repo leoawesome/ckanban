@@ -67,6 +67,20 @@ export interface Message {
 export const MESSAGES_HASH = "#/~messages";
 export const messageHash = (id: string) => `${MESSAGES_HASH}/${encodeURIComponent(id)}`;
 
+/**
+ * A tap on an urgent alert about one ticket opens #/<board>/<ticketId>?read=<messageId>: the message to mark read and
+ * the address without "?read=…". null when the hash has none.
+ */
+export function readFromHash(hash: string): { id: string; hash: string } | null {
+  const m = /^(#\/[^?]*)\?(?:.*&)?read=([^&]+)/.exec(hash);
+  if (!m) return null;
+  let id = m[2];
+  try {
+    id = decodeURIComponent(id);
+  } catch {}
+  return id ? { id, hash: m[1] } : null;
+}
+
 /** The message route in a hash: null when it isn't one; id null for the history. */
 export function messagesRoute(hash: string): { id: string | null } | null {
   const m = /^#\/~messages(?:\/([^/?#]+))?\/?$/.exec(hash);

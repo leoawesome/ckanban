@@ -1,4 +1,5 @@
-// Whole-huddle templates: a named roster plus the rules the huddle runs by (rounds, budget, report format).
+// Whole-huddle templates ("squads" to the user and to Claude): a named roster plus the rules the huddle runs by
+// (rounds, budget, report format, the host's process rules). Internal names and the file name stay "template".
 // Built-ins ship here; the user's global ones live in <home>/huddle-templates.json and a board's own in
 // profiles/<slug>/huddle-templates.json, merged the same way as role presets (built-in -> global -> board, see layers.ts). Starting a huddle from a template uses its roster and budget, and its rules
 // become the huddle's pinned brief. Plain helpers shared by the daemon and the MCP server (no file access here).
@@ -20,11 +21,19 @@ export interface HuddleTemplate {
   maxCostUsd: number | null;
   /** How participants report (format of findings, who to send them to); "" for none. */
   report: string;
+  /**
+   * The host's process rules (how the huddle runs: rounds, who marks done when, how the final call goes), kept apart
+   * from each person's focus; "" for none. Older files have no such field: it loads as "".
+   */
+  hostRules: string;
 }
 
 export type HuddleTemplateView = Layered<HuddleTemplate>;
 
-const MAX_TEXT = 4000;
+/** Longest text field (label, description, report, host rules). */
+export const MAX_TEXT = 4000;
+/** Longest topic a squad starts with (start route, propose_huddle). */
+export const TOPIC_MAX = 2000;
 const MAX_ROUNDS = 20;
 
 const DESIGN_REVIEW_READ =
@@ -97,6 +106,7 @@ export const BUILTIN_TEMPLATES: HuddleTemplate[] = [
     description: "Several critics review a feature from different angles; a facilitator de-duplicates and ranks their findings for @main.",
     rounds: 2,
     maxCostUsd: 20,
+    hostRules: "",
     report: "One finding per line: [MUST|SHOULD|COULD][S|M|L] file:line - problem - concrete fix. MUST = bug, safety hole or cost leak; evidence required. " +
       "Don't repeat another participant's point: +1 it by #seq. Post findings with kind=finding and report to @facilitator, not @main.",
     roster: [
@@ -134,6 +144,7 @@ export const BUILTIN_TEMPLATES: HuddleTemplate[] = [
     description: "Before any work starts, a small read-only squad checks the proposed ticket or child tickets against the real project: what's missing, what's risky, whether the checks can be tested. Findings go back to the planning chat.",
     rounds: null,
     maxCostUsd: 5,
+    hostRules: "",
     report: "One finding per line: [MUST|SHOULD|COULD] ticket key (for child tickets) and plan section - problem - the change to make in the ticket. MUST = the plan as written would build the wrong thing, " +
       "miss something that has to change, or can't be checked; give evidence (file:line, or the line of the plan). Workers report to @skeptic, who sends @main one list.",
     roster: [
@@ -161,6 +172,7 @@ export const BUILTIN_TEMPLATES: HuddleTemplate[] = [
     rounds: null,
     maxCostUsd: 20,
     report: AUTO_REVIEW_REPORT,
+    hostRules: "",
     roster: [
       { preset: "reviewer", prompt: AUTO_REVIEW_READ + "Review the change for correctness: bugs, edge cases, missing tests." },
       { preset: "qa", prompt: AUTO_REVIEW_READ + "Test the change: run the tests and try the user-facing paths it touches." },
@@ -174,6 +186,7 @@ export const BUILTIN_TEMPLATES: HuddleTemplate[] = [
     rounds: null,
     maxCostUsd: 20,
     report: AUTO_REVIEW_REPORT,
+    hostRules: "",
     roster: [
       { handle: "reviewer", preset: "reviewer", prompt: AUTO_REVIEW_READ + "Review the change for correctness: bugs, edge cases, missing tests." },
       { handle: "security", preset: "security", prompt: AUTO_REVIEW_READ + "Review the change for security and data risks." },
@@ -223,6 +236,7 @@ export function templateFromInput(input: any, base?: HuddleTemplate, presets?: s
     roster: (roster as RosterEntry[]).map((e) => ({ ...e })),
     rounds, maxCostUsd: cost,
     report: text("report") ?? base?.report ?? "",
+    hostRules: text("hostRules") ?? base?.hostRules ?? "",
   };
 }
 
@@ -260,19 +274,30 @@ export function cleanTemplates(v: unknown): HuddleTemplate[] {
   return out;
 }
 
-/** The template's rules as the huddle's pinned brief. `budget`: the huddle's actual budget. */
-export function templateBrief(t: HuddleTemplate, budget: number): string {
+/** The squad's rules as the huddle's pinned brief. `budget`: the huddle's actual budget; `topic`: what this run is about. */
+export function templateBrief(t: HuddleTemplate, budget: number, topic?: string | null): string {
   return [
-    `${t.label} (template ${t.name})${t.description ? `: ${t.description}` : ""}`,
+    `${t.label} (squad ${t.name})${t.description ? `: ${t.description}` : ""}`,
+    topic?.trim() ? `Topic: ${topic.trim()}` : "",
+    t.hostRules?.trim() ? `Host rules (how this huddle runs):\n${t.hostRules.trim()}` : "",
     t.rounds ? `Rounds: at most ${t.rounds}. A round: everyone posts, the lead challenges and de-duplicates, each answers once. After the last round the lead wraps up.` : "",
     `Budget: $${budget}.`,
     t.report ? `Report format: ${t.report}` : "",
   ].filter(Boolean).join("\n");
 }
 
-/** One line per template, for list_huddle_presets and tool descriptions. */
+/** A topic from a request or tool call: trimmed, null when empty; throws when it isn't text or is too long. */
+export function topicInput(v: unknown): string | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "string") throw new Error("topic must be text");
+  const t = v.trim();
+  if (t.length > TOPIC_MAX) throw new Error(`topic is too long (max ${TOPIC_MAX} characters)`);
+  return t || null;
+}
+
+/** One line per squad, for list_huddle_presets and tool descriptions. */
 export function templateLine(t: HuddleTemplateView): string {
   const who = t.roster.map((e) => `${e.count && e.count > 1 ? `${e.count}× ` : ""}${e.handle ?? e.preset ?? e.role}`).join(", ");
-  const rules = [t.rounds && `${t.rounds} rounds`, t.maxCostUsd && `$${t.maxCostUsd} budget`].filter(Boolean).join(", ");
+  const rules = [t.rounds && `${t.rounds} rounds`, t.maxCostUsd && `$${t.maxCostUsd} budget`, t.hostRules?.trim() && "host rules"].filter(Boolean).join(", ");
   return `- ${t.name}: ${t.label} (${who}${rules ? `; ${rules}` : ""}${t.source === "builtin" ? "; built-in" : ""})${t.description ? `\n  ${t.description}` : ""}`;
 }

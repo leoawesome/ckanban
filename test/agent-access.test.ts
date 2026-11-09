@@ -234,11 +234,11 @@ test("inside a board run, changing tools are refused and read tools work", async
 
 test("every tool advertises a profile argument; change tools are flagged", () => {
   // The planning chat tools (forms, cards, artifacts) don't touch the board: no profile.
-  const PLANNING = ["ask_questions", "propose_automation", "propose_branch", "propose_delete", "propose_huddle", "propose_teammate", "propose_ticket", "propose_tickets", "publish_artifact", "read_artifact"];
+  const PLANNING = ["ask_questions", "propose_automation", "propose_branch", "propose_delete", "propose_huddle", "propose_squad", "propose_teammate", "propose_ticket", "propose_tickets", "publish_artifact", "read_artifact"];
   for (const t of TOOLS.filter((t) => t.name !== "list_profiles" && !PLANNING.includes(t.name))) expect(t.inputSchema.properties.profile).toBeDefined();
   expect(TOOLS.filter((t) => !t.changes).map((t) => t.name).sort()).toEqual([
     "ask_questions", "connection_tools", "get_family", "get_ticket", "huddle_read", "list_connections", "list_huddle_presets", "list_jobs", "list_profiles", "list_schedules", "list_tickets",
-    "propose_automation", "propose_branch", "propose_delete", "propose_huddle",
+    "propose_automation", "propose_branch", "propose_delete", "propose_huddle", "propose_squad",
     "propose_teammate", "propose_ticket", "propose_tickets", "publish_artifact", "read_artifact", "read_chat", "report_bug", "schedule_history", "search_chat", "test_automation_script",
   ]);
   // Read tools run in a Planning chat (plan mode) without a permission ask; report_bug files an issue, so it asks.
