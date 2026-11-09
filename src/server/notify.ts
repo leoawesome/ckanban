@@ -16,7 +16,7 @@ import type { Store } from "./store";
 import { nowIso } from "./util";
 import { Channels, macChannel, pushChannel, webhookChannel, type ChannelResult } from "./helper/channels";
 import { HelperCore } from "./helper/core";
-import { DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramSettings } from "./helper/telegram";
+import { botId, DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramSettings } from "./helper/telegram";
 import { waitIdentity, type NewWait } from "./helper/waits";
 import { TelegramReplies } from "./helper/tgreply";
 import { PendingActions, TelegramLinks } from "./helper/tgstores";
@@ -426,7 +426,7 @@ export class Notifier {
     });
     this.replies = new TelegramReplies({
       store, waits: this.helper.waits, links: this.telegramLinks, pending: this.telegramActions,
-      session: (sid) => o.sessionSummary(sid), isRunning: (slug, id) => o.isRunning(slug, id),
+      session: (sid) => o.sessionSummary(sid), isRunning: (slug, id) => o.isRunning(slug, id), bot: () => botId(this.settings().telegram.token),
       chat: () => (this.board ? (slug, id, text, from) => this.board!.chatFromTelegram(slug, id, text, from) : null),
       patch: (slug, id, patch) => void this.board?.patchTelegram(slug, id, patch),
       askTyped: () => this.settings().telegram.askTyped,
@@ -518,7 +518,7 @@ export class Notifier {
   /** A ticket's run ended (Board turnEnded): a Telegram message waiting for its reply gets it. */
   async turnEnded(slug: string, id: string, text: string): Promise<void> {
     const s = this.settings().telegram;
-    await this.replies.turnEnded(slug, id, text, (chatId) => (s.chatId === chatId && TOKEN_RE.test(s.token) ? this.telegram.responder(chatId) : null));
+    await this.replies.turnEnded(slug, id, text, (chatId) => (s.on && s.chatId === chatId && TOKEN_RE.test(s.token) ? this.telegram.responder(chatId) : null));
   }
 
   /** Settings' "Pair": a fresh 6-digit code to send to the bot. Throws without a token. */

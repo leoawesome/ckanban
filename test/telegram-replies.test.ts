@@ -476,3 +476,93 @@ test("the board chat marks messages that came from Telegram and replies sent bac
   expect([...m.in]).toEqual(["u2"]);
   expect([...m.out]).toEqual(["a1"]);
 });
+
+describe("review fixes", () => {
+  test("f1: a Send tap cut off by a restart is finished when it is replayed, once", async () => {
+    const first = setup();
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const tg = await alert(first.notifier, [wait(t.id, "questions").key]);
+    first.api.queue(reply(1, tg, "8080"));
+    await first.notifier.telegram.pollOnce();
+    const send = button(first.api.last(), "Send");
+    first.board.hang = "before";
+    first.api.queue(tap(2, send, 1001));
+    void first.notifier.telegram.pollOnce();
+    for (let i = 0; i < 50 && !first.board.called; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(first.board.sent).toHaveLength(0);
+    first.notifier.telegram.stop();
+    // Restart: the tap is replayed from the saved queue and sends the reply.
+    const second = setup();
+    await second.notifier.telegram.pollOnce();
+    expect(second.board.sent.map((s) => s.text)).toEqual(["8080"]);
+    expect(second.api.answers()).toEqual(["Sent"]);
+    // Replayed once more (crash after sending): no double, the card keeps saying it was sent.
+    const third = setup();
+    (third.notifier.telegram as any).queue.data = { bot: "123456789", items: [tap(2, send, 1001)], seen: [] };
+    await third.notifier.telegram.pollOnce();
+    expect(third.board.sent).toHaveLength(0);
+    expect(third.api.edits().at(-1)!.body.text).toContain('✓ Sent to "Deploy"');
+    // A different (second) tap on the used button changes nothing on the card.
+    third.api.queue(tap(3, send, 1001));
+    await third.notifier.telegram.pollOnce();
+    expect(third.api.answers().at(-1)).toBe("This button was already used.");
+    expect(third.api.edits()).toHaveLength(1);
+  });
+
+  test("f2: a reply to a notify_user message (not a question) is steering: Confirm even with the echo off", async () => {
+    const { notifier, api, board } = setup({ askTyped: false });
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const tg = await alert(notifier, [notifier.helper.waits.add({ board: "kb", ticketId: t.id, kind: "message", identity: "m:x", question: "Merged and deployed", label: "x", since: new Date(clock).toISOString() }).key]);
+    api.queue(reply(1, tg, "great, now delete prod"));
+    await notifier.telegram.pollOnce();
+    expect(api.last().text).toContain("Confirm: send this to");
+    expect(board.sent).toHaveLength(0);
+    // A question on a failed ticket is confirmed too.
+    const f = store.createTicket("kb", { title: "Broken", body: "b", status: "review" });
+    store.updateTicket("kb", f.id, { outcome: "failed" });
+    const tg2 = await alert(notifier, [wait(f.id, "questions").key]);
+    api.queue(reply(2, tg2, "8080"));
+    await notifier.telegram.pollOnce();
+    expect(api.last().text).toContain("Its run failed");
+    expect(board.sent).toHaveLength(0);
+  });
+
+  test("f3: an echo that never reached the phone is shown again after a restart, not dropped", async () => {
+    const { notifier, api } = setup();
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const tg = await alert(notifier, [wait(t.id, "questions").key]);
+    // The action was saved but the daemon died before the card went out.
+    notifier.telegramActions.create("send", { r: { chatId: ME, updateId: 1, tg: 9001, replyTo: tg, text: "8080" }, t: {}, mode: "answer" });
+    api.queue(reply(1, tg, "8080"));
+    await notifier.telegram.pollOnce();
+    expect(api.last().text).toBe('Send this to "Deploy" (Kanban)?\n\n"8080"');
+  });
+
+  test("f8: after a new bot token, a reply never matches the old bot's message with the same id", async () => {
+    const { notifier, api, board } = setup({ askTyped: false });
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const tg = await alert(notifier, [wait(t.id, "questions").key]);
+    notifier.telegramLinks.add({ bot: "987654321", tg: tg + 50, chatId: ME, messageId: null, level: "urgent", items: [] });
+    expect(notifier.telegramLinks.get(ME, tg, "987654321")).toBeNull();
+    expect(notifier.telegramLinks.get(ME, tg, "123456789")?.items[0].ticketId).toBe(t.id);
+    void api;
+    void board;
+  });
+
+  test("f4/f5: a turn with no text ends the wait for a reply; report back needs Telegram on", async () => {
+    const { notifier, api } = setup({ askTyped: false });
+    const t = store.createTicket("kb", { title: "Deploy", body: "b", status: "review" });
+    const tg = await alert(notifier, [wait(t.id, "questions").key]);
+    api.queue(reply(1, tg, "8080"));
+    await notifier.telegram.pollOnce();
+    await notifier.turnEnded("kb", t.id, "");
+    expect(store.getTicket("kb", t.id)!.telegramReport).toBeNull();
+    const n = api.sent().length;
+    await notifier.turnEnded("kb", t.id, "typed on the board");
+    expect(api.sent()).toHaveLength(n);
+    store.updateTicket("kb", t.id, { telegramReport: { tg: 9001, chatId: ME, at: new Date(clock).toISOString() } });
+    notifier.update({ telegram: { on: false } });
+    await notifier.turnEnded("kb", t.id, "done");
+    expect(api.sent()).toHaveLength(n);
+  });
+});

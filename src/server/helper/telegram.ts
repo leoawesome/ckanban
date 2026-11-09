@@ -106,8 +106,8 @@ export interface TelegramDeps {
   replies?: () => TelegramReplies | null;
 }
 
-/** A bot token's public part (the bot's id), to tell which bot a saved read position belongs to. */
-const botId = (token: string) => token.split(":")[0] ?? "";
+/** A bot token's public part (the bot's id), to tell which bot a saved read position or message belongs to. */
+export const botId = (token: string) => token.split(":")[0] ?? "";
 
 const CONFLICT = "Another program is reading this bot's messages, or the bot has a web address (webhook) set. Only one can: close the other program or remove its webhook, or make a new bot with BotFather just for ckanban.";
 const BAD_TOKEN = "Telegram doesn't accept this bot token. Copy it again from BotFather.";
@@ -392,7 +392,7 @@ export class TelegramBot {
         }
         const tg = r.result?.message_id;
         if (!Number.isSafeInteger(tg)) return null;
-        if (o.link?.length) this.d.links?.add({ tg, chatId, messageId: null, level: "report", items: o.link });
+        if (o.link?.length) this.d.links?.add({ bot: botId(this.token), tg, chatId, messageId: null, level: "report", items: o.link });
         return tg;
       },
       edit: async (messageId, text, buttons) => {
@@ -430,7 +430,7 @@ export class TelegramBot {
           const a = this.d.actions();
           text = await (m[1] === "g" ? a.gotIt(m[2]) : a.notUrgent(m[2]));
         } else if (p && replies) {
-          text = await replies.onTap(p[1], p[2], chat, cq.message?.message_id ?? 0, this.responder(chat));
+          text = await replies.onTap(p[1], p[2], chat, cq.message?.message_id ?? 0, this.responder(chat), u.update_id);
         }
       } finally {
         // Always answered, or the button keeps spinning on the phone.
@@ -519,7 +519,7 @@ export class TelegramBot {
       const tg = r.result?.message_id;
       if (Number.isSafeInteger(tg) && this.d.links) {
         try {
-          this.d.links.add({ tg, chatId: s.chatId, messageId: m.messageId, level: m.level, items: m.messageId ? this.d.itemsOf?.(m.messageId) ?? [] : [] });
+          this.d.links.add({ bot: botId(s.token), tg, chatId: s.chatId, messageId: m.messageId, level: m.level, items: m.messageId ? this.d.itemsOf?.(m.messageId) ?? [] : [] });
         } catch (e) {
           console.warn(`telegram: couldn't note the sent message: ${(e as Error).message}`);
         }

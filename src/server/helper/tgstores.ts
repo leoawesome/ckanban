@@ -35,6 +35,8 @@ export interface LinkItem {
 
 /** A message the board sent to Telegram. */
 export interface TelegramLink {
+  /** The bot that sent it (the token's public id): message ids start again with a new bot. */
+  bot: string;
   /** Telegram's message_id. */
   tg: number;
   chatId: number;
@@ -77,9 +79,9 @@ export class TelegramLinks {
     return link;
   }
 
-  /** The board's message with this id in this chat, or null (not sent by the board, or older than 30 days). */
-  get(chatId: number, tg: number): TelegramLink | null {
-    return this.items().find((l) => l.chatId === chatId && l.tg === tg) ?? null;
+  /** This bot's message with this id in this chat (the newest), or null (not sent by the board, another bot, or older than 30 days). */
+  get(chatId: number, tg: number, bot: string): TelegramLink | null {
+    return this.items().findLast((l) => l.bot === bot && l.chatId === chatId && l.tg === tg) ?? null;
   }
 
   /** Every Telegram message sent for a stored helper message (edits in later steps). */
@@ -103,7 +105,8 @@ export const ACTION_TTL_MS = 10 * 60_000;
 /** Short ids for callback_data ("p:<id>:<choice>" stays far below 64 bytes). */
 export const ACTION_ID_RE = /^[a-z0-9]{10}$/;
 
-export type TakeResult<T> = { action: PendingAction<T> } | { gone: "expired" | "unknown" };
+/** replay: the same tap (update) took it before a restart cut its handling off: finish it (the send itself is checked for doubles). */
+export type TakeResult<T> = { action: PendingAction<T>; replay?: boolean } | { gone: "expired" | "unknown" };
 
 /** Pending button actions: single-use, expiring, on disk so a restart doesn't break a button shown before it. */
 export class PendingActions {
@@ -154,14 +157,31 @@ export class PendingActions {
    * Uses the action up (saved before anything acts on it, so a second tap or a restart can't run it twice). Expired
    * or already used: gone.
    */
-  take<T = any>(id: string): TakeResult<T> {
+  take<T = any>(id: string, by?: number): TakeResult<T> {
     const map = this.items();
-    const a = map[id] as (PendingAction<T> & { used?: string }) | undefined;
-    if (!a || a.used) return { gone: "unknown" };
+    const a = map[id] as (PendingAction<T> & { used?: string; usedBy?: number }) | undefined;
+    if (!a) return { gone: "unknown" };
+    if (a.used) return by !== undefined && a.usedBy === by ? { action: a, replay: true } : { gone: "unknown" };
     if (Date.parse(a.expiresAt) <= this.now()) return { gone: "expired" };
     a.used = new Date(this.now()).toISOString();
+    if (by !== undefined) a.usedBy = by;
     this.save();
     return { action: a };
+  }
+
+  /** Notes the Telegram message that shows the action's buttons (it was shown: a replay needn't show it again). */
+  shown(id: string, card: number): void {
+    const a = this.items()[id] as (PendingAction & { card?: number }) | undefined;
+    if (!a) return;
+    a.card = card;
+    this.save();
+  }
+
+  /** Drops an action (its card never reached the user). */
+  remove(id: string): void {
+    if (!this.items()[id]) return;
+    delete this.items()[id];
+    this.save();
   }
 }
 

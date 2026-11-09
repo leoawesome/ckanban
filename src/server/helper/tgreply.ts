@@ -23,7 +23,7 @@ export const REPORT_MS = 24 * 3600_000;
 export const REPORT_PARTS = 3;
 
 /** Wait kinds a typed answer is meant for (the ticket asked something). */
-const ANSWER_KINDS = new Set(["questions", "message"]);
+const ANSWER_KINDS = new Set(["questions"]);
 /** Wait kinds Telegram can't settle: they need the board's own buttons. */
 const BOARD_KINDS = new Set(["limit", "proposal", "huddle"]);
 
@@ -80,6 +80,8 @@ export interface ReplyDeps {
   pending: PendingActions;
   session: (sessionId: string) => SessionSummary | null;
   isRunning: (board: string, id: string) => boolean;
+  /** The bot's public id (message ids are per bot). */
+  bot: () => string;
   /** Board.chatFromTelegram (null until the board is plugged in): false when the update was already sent. */
   chat: () => ((board: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null }) => Promise<boolean>) | null;
   /** Board.patchTelegram. */
@@ -137,7 +139,7 @@ export class TelegramReplies {
 
   /** A reply to one of the board's messages. Not a reply to the board, or about no ticket: the fixed answer (false). */
   async onReply(r: IncomingReply, out: Responder): Promise<boolean> {
-    const link = this.d.links.get(r.chatId, r.replyTo);
+    const link = this.d.links.get(r.chatId, r.replyTo, this.d.bot());
     if (!link) return false;
     const seen = new Set<string>();
     const items: Target[] = link.items
@@ -146,7 +148,10 @@ export class TelegramReplies {
     if (!items.length) return false;
     // Handled before a restart (sent, or its question already shown): nothing again.
     if (items.some((i) => this.sentAlready(i, r.updateId))) return true;
-    if (this.d.pending.find<{ r?: IncomingReply }>((a) => a.data?.r?.updateId === r.updateId && a.data?.r?.chatId === r.chatId)) return true;
+    // Its card was shown before a restart: not again. A card that never got out (crash mid-send) is made again.
+    const shown = this.d.pending.find<{ r?: IncomingReply }>((a) => a.data?.r?.updateId === r.updateId && a.data?.r?.chatId === r.chatId);
+    if (shown && (shown as { card?: number }).card !== undefined) return true;
+    if (shown) this.d.pending.remove(shown.id);
     if (items.length > 1) {
       await this.pick(r, items, out);
       return true;
@@ -174,7 +179,7 @@ export class TelegramReplies {
       return [{ text: short(`${t.title} (${board})`, 60), data: `p:${a.id}:${n}` }];
     });
     rows.push([{ text: "Cancel", data: `p:${a.id}:x` }]);
-    await out.say("That message was about several tickets. Which one is this for?", { replyTo: r.tg, buttons: rows });
+    this.card(a.id, await out.say("That message was about several tickets. Which one is this for?", { replyTo: r.tg, buttons: rows }));
   }
 
   /**
@@ -191,7 +196,9 @@ export class TelegramReplies {
     const url = this.d.ticketUrl(t.board, t.ticketId);
     let rec: WaitRecord | undefined = t.key ? this.d.waits.get(t.key) : undefined;
     if (rec && BOARD_KINDS.has(rec.kind)) return { stop: NEEDS_BOARD, url };
-    if (t.key && (!rec || rec.closedAt)) {
+    // An answered message (not a question) is just over: a reply to it is steering.
+    if (rec?.closedAt && !ANSWER_KINDS.has(rec.kind) && rec.closedWhy !== "deleted") rec = undefined;
+    else if (t.key && (!rec || rec.closedAt)) {
       if (rec?.closedWhy === "deleted") return { stop: "That ticket was deleted, so I didn't send this." };
       // Answered or cleared: the answer we know of is the last one sent from Telegram for this wait.
       return { stale: ticket.telegramIn?.findLast((m) => m.key === t.key)?.text ?? null };
@@ -206,6 +213,8 @@ export class TelegramReplies {
         // A form with several questions (or several choices at once) is answered on the board for now.
         if (form.length > 1 || form.some((q) => q.multiSelect)) return { stop: FORM_ON_BOARD, url };
       }
+      // A failed or blocked ticket starts working again: always confirmed.
+      if (ticket.outcome === "failed" || ticket.outcome === "blocked" || ticket.stalled) return { mode: "steer", key: rec.key };
       return { mode: "answer", key: rec.key };
     }
     return { mode: "steer", key: rec?.key ?? null };
@@ -235,9 +244,9 @@ export class TelegramReplies {
     if ("stale" in c) {
       const a = this.d.pending.create<SendData>("anyway", { r, t: { ...t, key: null }, mode: "steer" });
       const said = c.stale ? ` You answered: "${short(c.stale, 300)}"` : "";
-      await out.say(`${named(ticket, board)}: that question was already answered.${said}\n\nI didn't send this.`, {
+      this.card(a.id, await out.say(`${named(ticket, board)}: that question was already answered.${said}\n\nI didn't send this.`, {
         replyTo: r.tg, buttons: [[{ text: "Send anyway", data: `p:${a.id}:y` }, { text: "Cancel", data: `p:${a.id}:x` }]],
-      });
+      }));
       return;
     }
     const target = { ...t, key: c.key };
@@ -257,8 +266,16 @@ export class TelegramReplies {
       ? `Send this to ${named(ticket, board)}?\n\n"${short(r.text, 3000)}"`
       : `Confirm: send this to ${named(ticket, board)}?\n${this.stateLine(t)}\n\n"${short(r.text.split("\n").find((l) => l.trim()) ?? r.text, 300)}"`;
     const buttons = [[{ text: mode === "answer" ? "Send" : "Confirm", data: `p:${a.id}:y` }, { text: "Cancel", data: `p:${a.id}:x` }]];
-    if (editId !== undefined) await out.edit(editId, text, buttons);
-    else await out.say(text, { replyTo: r.tg, buttons });
+    if (editId !== undefined) {
+      await out.edit(editId, text, buttons);
+      this.card(a.id, editId);
+    } else this.card(a.id, await out.say(text, { replyTo: r.tg, buttons }));
+  }
+
+  /** The card with an action's buttons went out (noted), or didn't (the action goes). */
+  private card(id: string, tg: number | null): void {
+    if (tg === null) this.d.pending.remove(id);
+    else this.d.pending.shown(id, tg);
   }
 
   /** Into the ticket's chat. edit: the card to change into the outcome (else a new message). Returns the tap's short answer. */
@@ -285,10 +302,12 @@ export class TelegramReplies {
   }
 
   /** A tap on one of the router's buttons ("p:<id>:<choice>"). Returns the short answer for answerCallbackQuery. */
-  async onTap(id: string, choice: string, chatId: number, messageId: number, out: Responder): Promise<string> {
-    const got = this.d.pending.take<SendData | PickData>(id);
+  async onTap(id: string, choice: string, chatId: number, messageId: number, out: Responder, updateId?: number): Promise<string> {
+    // The tap's update id: a tap whose handling a restart cut off takes its action again and finishes.
+    const got = this.d.pending.take<SendData | PickData>(id, updateId);
     if ("gone" in got) {
-      if (messageId) await out.edit(messageId, got.gone === "expired" ? "This expired. Reply to the alert again to send it." : "This was already handled.");
+      // An earlier tap used it: its card already says how that went, so it stays.
+      if (got.gone === "expired" && messageId) await out.edit(messageId, "This expired. Reply to the alert again to send it.");
       return got.gone === "expired" ? "This button expired." : "This button was already used.";
     }
     const a = got.action as PendingAction<any>;
@@ -309,7 +328,8 @@ export class TelegramReplies {
     const d = a.data as SendData;
     if (choice !== "y") return "That button no longer works.";
     if (this.sentAlready(d.t, d.r.updateId)) {
-      await out.edit(messageId, "Already sent.");
+      const title = this.d.store.getTicket(d.t.board, d.t.ticketId)?.title ?? "the ticket";
+      await out.edit(messageId, `✓ Sent to "${title}". I'll reply here when it has news.`);
       return "Already sent";
     }
     // The state may have changed since the card was shown: check again (a steer only needs the ticket still open).
@@ -344,8 +364,12 @@ export class TelegramReplies {
     }
     const boardName = this.d.store.getProfile(board)?.name ?? board;
     const parts = reportParts(`${t.title} (${boardName}):`, text);
-    // No text (a stop or an error): the next turn reports; the helper tells about failures.
-    if (!parts.length) return;
+    // No text (a stop or an error): nothing goes back (the helper tells about failures), and a later turn, which
+    // may come from the board, isn't sent there either.
+    if (!parts.length) {
+      this.d.patch(board, id, { telegramReport: null });
+      return;
+    }
     const o = out(rep.chatId);
     if (!o) {
       this.d.patch(board, id, { telegramReport: null });
