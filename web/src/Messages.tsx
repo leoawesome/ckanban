@@ -216,7 +216,7 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
         const r = await helperApi.markRead(id).catch(() => null);
         if (r && live) { setM(r.message); setUnread(r.unread); }
       }
-    }, (e) => live && setError(/not found/i.test(e.message) ? "This message is gone: messages are kept for 30 days." : e.message));
+    }, (e) => live && setError(/not found/i.test(e.message) ? "This message is gone: messages are kept for 30 days (the last 500), and what the helper kept quiet for 7 days (the last 200)." : e.message));
     return () => { live = false; };
   }, [id]);
 

@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Bus } from "../src/server/events";
 import { directLabel, usageLimitLine, type HelperSink } from "../src/server/helper/core";
-import { MessageStore, MESSAGES_MAX } from "../src/server/helper/messages";
+import { HELD_MAX, MessageStore, MESSAGES_MAX } from "../src/server/helper/messages";
 import { questionHash, waitIdentity, WaitStore, type WaitRecord } from "../src/server/helper/waits";
 import { messageResultText, questionsError } from "../src/mcp-server";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
@@ -60,11 +60,52 @@ describe("message store", () => {
     expect(again.get(a.id)?.sends).toHaveLength(1);
     expect(again.unread()).toBe(0);
     for (let i = 0; i < MESSAGES_MAX + 5; i++) again.add({ level: "direct", oneLine: `${i}`, text: "" });
-    expect(again.listNewest({ held: true })).toHaveLength(MESSAGES_MAX);
+    expect(again.listNewest()).toHaveLength(MESSAGES_MAX);
+    expect(again.get(b.id)).not.toBeNull();
     clock += 31 * 24 * 3600_000;
     again.add({ level: "direct", oneLine: "new", text: "" });
     expect(again.listNewest({ held: true }).map((m) => m.oneLine)).toEqual(["new"]);
     expect(existsSync(join(root, "messages.json.tmp"))).toBe(false);
+  });
+
+  test("600 held log rows don't push out 5 alerts; held rows keep 200 and 7 days, alerts 30 days", () => {
+    let clock = Date.parse("2026-11-01T00:00:00Z");
+    const s = new MessageStore(tempDir(), () => clock);
+    const alerts: string[] = [];
+    for (let i = 0; i < 600; i++) {
+      if (i % 120 === 0) alerts.push(s.add({ level: "urgent", oneLine: `alert ${i}`, text: "" }).id);
+      s.add({ level: "routine", oneLine: `held ${i}`, text: "", held: true });
+      clock += 60_000;
+    }
+    expect(alerts).toHaveLength(5);
+    expect(s.listNewest().map((m) => m.id)).toEqual(alerts.slice().reverse());
+    const all = s.listNewest({ held: true });
+    expect(all.filter((m) => m.held)).toHaveLength(HELD_MAX);
+    expect(all[0].oneLine).toBe("held 599");
+    // 8 days on: held rows are gone, the alerts stay.
+    clock += 8 * 24 * 3600_000;
+    s.add({ level: "summary", oneLine: "later", text: "" });
+    expect(s.listNewest({ held: true }).filter((m) => m.held)).toHaveLength(0);
+    expect(s.listNewest()).toHaveLength(6);
+  });
+
+  test("an existing messages.json loads unchanged", () => {
+    const root = tempDir();
+    const old = {
+      version: 1,
+      messages: [
+        { id: "m_a", at: "2026-11-08T09:00:00.000Z", level: "urgent", oneLine: "Stop it?", text: "Stop the webhook?", why: "billed", items: [], sends: [{ channel: "push", at: "2026-11-08T09:00:01.000Z", ok: true, devices: 1 }], readAt: null, tapped: { how: "got-it", at: "2026-11-08T09:01:00.000Z" } },
+        { id: "m_b", at: "2026-11-08T10:00:00.000Z", level: "routine", oneLine: "Kept quiet", text: "", why: null, items: [], sends: [], readAt: null, held: true },
+      ],
+    };
+    writeFileSync(join(root, "messages.json"), JSON.stringify(old));
+    const s = new MessageStore(root, () => Date.parse("2026-11-09T00:00:00Z"));
+    expect(s.listNewest({ held: true })).toEqual(old.messages.slice().reverse() as any);
+    expect(s.unread()).toBe(1);
+    const c = s.add({ level: "direct", oneLine: "c", text: "" });
+    const saved = JSON.parse(readFileSync(join(root, "messages.json"), "utf8"));
+    expect(saved.messages.slice(0, 2)).toEqual(old.messages);
+    expect(saved.messages[2].id).toBe(c.id);
   });
 });
 
