@@ -82,7 +82,7 @@ export function messagesRoute(hash: string): { id: string | null } | null {
 
 /** The badge word for each kind of message. */
 export function levelLabel(level: MessageLevel, held?: boolean): string {
-  if (held) return "Held";
+  if (held) return "Kept quiet";
   switch (level) {
     case "urgent": return "Urgent";
     case "reminder": return "Reminder";
@@ -158,8 +158,11 @@ export function sendTrail(m: Message): string {
   return [...new Set(parts)].join(" · ");
 }
 
-/** A held item's helper line: it was kept for a later summary, so "Should have pinged me" fits. */
-export const isHeldLine = (line: string | undefined) => !!line && line.startsWith("Held for");
+/**
+ * A held item's helper line ("In the 4 pm summary: ..."; older daemons: "Held for the ..."): it was kept for a later
+ * summary, so "Should have pinged me" fits. A told item's "In the 4 pm summary" has no colon and doesn't match.
+ */
+export const isHeldLine = (line: string | undefined) => !!line && (line.startsWith("Held for") || /^In the \S+ summary: /.test(line));
 
 /** A board link on a line of its own ("  https://mac.ts.net/#/kanban/t_1"): left out on the page, where Open buttons do that. */
 const LINK_LINE = /^\s*https?:\/\/\S*#\/\S*\s*$/;

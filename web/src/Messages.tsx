@@ -9,7 +9,7 @@ import { isTyping, panelStep } from "./keynav";
 import { useNow } from "./useNow";
 import { toast } from "./toast";
 
-/** "Show held items" on the history, kept for this tab so a message page's up/down walks the same list. */
+/** "Show what the helper kept quiet" on the history, kept for this tab so a message page's up/down walks the same list. */
 const HELD_KEY = "ck.messages.held";
 const readHeld = () => {
   try {
@@ -90,7 +90,7 @@ export function TellHelper({ hint = TELL_HINT, multiline }: { hint?: string; mul
   );
 }
 
-/** #/~messages: every message, newest first, grouped by day; "Show held items" adds what the helper held (its log). */
+/** #/~messages: every message, newest first, grouped by day; "Show what the helper kept quiet" adds what the helper held (its log). */
 export function MessagesHistory({ onBack }: { onBack: () => void }) {
   const { status, messagesRev } = useHelper();
   // Back on the history: a message opened from here picks its list afresh.
@@ -118,10 +118,11 @@ export function MessagesHistory({ onBack }: { onBack: () => void }) {
       </div>
       <div className="messages-body">
         <HelperStatusLine status={status} />
-        <label className="msg-switch-row">
-          <span>Show held items</span>
+        <label className="msg-switch-row" title="Only changes what you see here; the helper works the same.">
+          <span>Show what the helper kept quiet</span>
           <input type="checkbox" role="switch" className="switch" checked={held} onChange={(e) => setHeld(e.target.checked)} />
         </label>
+        <div className="muted small msg-switch-hint">Only changes what you see here; the helper works the same.</div>
         {error && <div className="form-error" role="alert">{error}</div>}
         {!list && !error && <div className="muted small"><span className="spinner" /> Loading…</div>}
         {list && !list.length && <p className="muted">No messages yet. When the helper tells you something, it shows here.</p>}

@@ -116,6 +116,13 @@ const emptyState = (): RunnerState => ({
 
 const ms = (iso: string | null | undefined) => (iso ? Date.parse(iso) : NaN);
 
+/** The helper's log note for what it kept quiet: "Kept quiet: 2 tickets, nothing urgent. They'll be in the next summary, by 12:41." */
+export function keptQuietLine(n: number, by: string): string {
+  return n === 1
+    ? `Kept quiet: 1 ticket, nothing urgent. It'll be in the next summary, by ${by}.`
+    : `Kept quiet: ${n} tickets, nothing urgent. They'll be in the next summary, by ${by}.`;
+}
+
 /** An urgent alert or one of its reminder steps reached the user about this wait. */
 /** What a told mark replaces, to give it back (WaitStore.unclaim). */
 const claimOf = (r: WaitRecord) => ({ key: r.key, toldAt: r.toldAt, toldVia: r.toldVia, fallbackAt: r.fallbackAt, digestAt: r.digestAt });
@@ -623,7 +630,7 @@ export class HelperRunner implements HelperSink {
     if (held.length) {
       const items = held.map((r) => this.d.core.item(r));
       this.d.core.messages.add({
-        level: "routine", held: true, oneLine: cut(`Held ${held.length} until ${clockTime(nextIso)}: ${dec.log || "waiting for the next summary"}`),
+        level: "routine", held: true, oneLine: cut(keptQuietLine(held.length, clockTime(nextIso))),
         text: [dec.log, ...items.map((it, i) => `- ${it.title} (${it.boardName}): ${directLabel(held[i])}`)].filter(Boolean).join("\n"), items,
       });
     }
@@ -1055,7 +1062,7 @@ export class HelperRunner implements HelperSink {
       if (r.toldVia === "direct" || r.toldVia === "digest") return `Sent directly at ${clockTime(r.toldAt)}`;
       return null;
     }
-    if (r.heldUntil) return `Held for the ${clockTime(r.heldUntil)} summary: ${directLabel(r)}`;
+    if (r.heldUntil) return `In the ${clockTime(r.heldUntil)} summary: ${directLabel(r)}`;
     return "With the helper: it looks within a minute or two";
   }
 

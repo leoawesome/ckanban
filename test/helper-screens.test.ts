@@ -37,7 +37,7 @@ test("badges name each kind of message in plain words", () => {
   expect(levelLabel("urgent")).toBe("Urgent");
   expect(levelLabel("summary")).toBe("Summary");
   expect(levelLabel("hello")).toBe("Hello");
-  expect(levelLabel("summary", true)).toBe("Held");
+  expect(levelLabel("summary", true)).toBe("Kept quiet");
   expect(levelTone("reminder")).toBe("urgent");
   expect(levelTone("digest")).toBe("sum");
   expect(levelTone("urgent", true)).toBe("warn");
@@ -58,6 +58,9 @@ test("the trail lists each channel and when it was opened, without repeats", () 
 
 test("Should have pinged me only on items the helper held for a summary", () => {
   expect(isHeldLine("Held for the 16:00 summary: small text change")).toBe(true);
+  expect(isHeldLine("In the 16:00 summary: small text change")).toBe(true);
+  // A told item's line has no colon after "summary": it went out, so no "Should have pinged me".
+  expect(isHeldLine("In the 16:00 summary")).toBe(false);
   expect(isHeldLine("Urgent: Phone 14:10, Telegram 14:15")).toBe(false);
   expect(isHeldLine("With the helper: it looks within a minute or two")).toBe(false);
   expect(isHeldLine(undefined)).toBe(false);

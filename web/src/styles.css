@@ -3892,6 +3892,7 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .msg-ttl { font-weight: 600; font-size: var(--fs-sm); }
 .msg-label { font-size: var(--fs-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .msg-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-sm); cursor: pointer; }
+.msg-switch-hint { margin-top: -6px; }
 .msg-day { margin: 6px 0 6px; font-size: var(--fs-xs); font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .msg-list { padding: 0; gap: 0; overflow: hidden; }
 .msg-row { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); text-decoration: none; }

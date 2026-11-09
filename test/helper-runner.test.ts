@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
 import { checkDecision, channelFor, parseDecision, type CheckContext, type ItemState } from "../src/server/helper/decide";
-import { backoffMs, HelperRunner, lookBeforeDigest, meetingTime } from "../src/server/helper/runner";
+import { backoffMs, HelperRunner, keptQuietLine, lookBeforeDigest, meetingTime } from "../src/server/helper/runner";
 import { HelperSettingsStore, inNight, morningDigestAt, nightEnd } from "../src/server/helper/settings";
 import type { Channel } from "../src/server/helper/channels";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
@@ -221,8 +221,11 @@ describe("helper runner", () => {
     expect(input.items[0]).toMatchObject({ key: keyOf(ticket.id), ticket: "Pricing", question: "Approve the copy?", new: true, told: "no" });
     // Held: no send, the Inbox line says until when, the log has a held entry.
     expect(hooks).toHaveLength(0);
-    expect(h.status().lines[`kb/${ticket.id}`]).toBe("Held for the 16:01 summary: Approve the copy?");
-    expect(n.helper.messages.listNewest({ held: true })[0]).toMatchObject({ held: true, level: "routine" });
+    expect(h.status().lines[`kb/${ticket.id}`]).toBe("In the 16:01 summary: Approve the copy?");
+    const note = n.helper.messages.listNewest({ held: true })[0];
+    expect(note).toMatchObject({ held: true, level: "routine", oneLine: "Kept quiet: 1 ticket, nothing urgent. It'll be in the next summary, by 16:01." });
+    // The helper's own log line stays in the full text, not the one-liner.
+    expect(note.text.split("\n")[0]).toBe("held the copy question");
     // The ticket stops waiting: the next wake has nothing to look at, so no model call.
     store.updateTicket("kb", ticket.id, { status: "done" });
     bus.emit({ type: "ticket.updated", profile: "kb", ticket: store.getTicket("kb", ticket.id)! });
@@ -862,4 +865,10 @@ describe("helper runner", () => {
     expect(h.status().runs.at(-1)!.ok).toBe(true);
     stop();
   });
+});
+
+test("the kept-quiet note reads plainly and stays short", () => {
+  expect(keptQuietLine(2, "12:41")).toBe("Kept quiet: 2 tickets, nothing urgent. They'll be in the next summary, by 12:41.");
+  expect(keptQuietLine(1, "9:05")).toBe("Kept quiet: 1 ticket, nothing urgent. It'll be in the next summary, by 9:05.");
+  expect(keptQuietLine(120, "23:59").length).toBeLessThanOrEqual(110);
 });
