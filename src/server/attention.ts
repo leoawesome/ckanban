@@ -17,6 +17,11 @@ export interface Attention {
   since: string;
   /** On a main ticket: it comes from this kind of step wait (the card says "Step failed" for "failed"). */
   step?: StepWait["attention"];
+  /**
+   * The wait is the step's own (its question, failure or block, not the main ticket's): that tool ticket's id. The
+   * question it asked (text, urgent mark, why) is in its own session, not the main ticket's.
+   */
+  stepId?: string;
 }
 
 /** The ticket's own open huddle, as far as "needs you" goes (Huddles.hostStates). */
@@ -76,14 +81,14 @@ export function attentionFor(
   if (!t.main || !step || t.status === "done" || t.status === "backlog") return own;
   // A "with you" step waits for the user's answer (in this chat): the main card says so until the user answers it,
   // also while the main ticket works. Its own asks come first.
-  if (step.withYou) return own && own.kind !== "review" && own.kind !== "reply" ? own : { kind: "questions", label: step.label, since: step.since, step: step.attention };
+  if (step.withYou) return own && own.kind !== "review" && own.kind !== "reply" ? own : { kind: "questions", label: step.label, since: step.since, step: step.attention, stepId: step.id };
   // The main ticket passes a step's question on (or its plan stopped there): name the step.
   if (own && (own.kind === "questions" || own.kind === "blocked" || own.kind === "failed")) return { ...own, label: step.label, step: step.attention };
   if (running || (own && own.kind !== "review" && own.kind !== "reply")) return own;
   // A step ended and the main ticket hasn't run since (and won't be woken for it): the main card names it until it does.
   const unseen = step.since > (t.runEndedAt ?? "");
   const willWake = (t.plan?.state === "running" || t.plan?.state === "finishing") && (!!t.plan.awaiting || !!t.plan.inbox?.length);
-  if (unseen && !willWake) return { kind: step.attention, label: step.label, since: step.since, step: step.attention };
+  if (unseen && !willWake) return { kind: step.attention, label: step.label, since: step.since, step: step.attention, stepId: step.id };
   return own;
 }
 
