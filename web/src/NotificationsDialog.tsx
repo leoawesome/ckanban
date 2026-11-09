@@ -35,6 +35,9 @@ function Switch({ on, label, onChange, disabled }: { on: boolean; label: string;
 }
 
 /** One channel row: a dot (green when it can reach you), its name, one plain line and the switch; setup below when open. */
+/** What Telegram gets: summaries and other routine messages skip it (helper/channels.ts telegramTakes). */
+const TELEGRAM_URGENT_ONLY = "Telegram gets only urgent alerts and their reminders.";
+
 function ChannelRow({ ch, title, detail, onToggle, children }: {
   ch: ChannelState | undefined; title: string; detail?: string; onToggle: (on: boolean) => void; children?: ReactNode;
 }) {
@@ -160,7 +163,7 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
                   </>
                 )}
               </ChannelRow>
-              <ChannelRow ch={ch("telegram")} title="Telegram" detail={state.telegram.paired ? ch("telegram")?.detail : "Messages with Got it and Not urgent buttons. Reply to an alert to answer that ticket."}
+              <ChannelRow ch={ch("telegram")} title="Telegram" detail={`${TELEGRAM_URGENT_ONLY} ${state.telegram.paired ? ch("telegram")?.detail ?? "" : "Alerts come with Got it and Not urgent buttons. Reply to an alert to answer that ticket."}`.trim()}
                 onToggle={(on) => void save({ telegram: { on } })}>
                 {state.telegram.on && <TelegramSetup state={state} onState={setState} onError={setError} />}
                 {state.telegram.on && (
