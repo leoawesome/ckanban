@@ -30,7 +30,7 @@ export interface HelperStatus {
   lines: Record<string, string>;
 }
 
-import type { Message } from "./helperText";
+import { readFromHash, type Message } from "./helperText";
 export type { Message, MessageItem, MessageLevel, MessageSend } from "./helperText";
 
 export interface FeedbackLine {
@@ -86,6 +86,17 @@ export function reloadHelper(): Promise<void> {
 /** Put a status the server just returned in place (after a settings change). */
 export function setHelperStatus(status: HelperStatus) {
   set({ status });
+}
+
+/**
+ * The address came from a tap on an urgent alert about one ticket (#/<board>/<ticketId>?read=<id>): marks that
+ * message read and drops "?read=…" from the address (same history entry). The ticket view opening stops its reminders.
+ */
+export function takeReadFromHash() {
+  const r = readFromHash(location.hash);
+  if (!r) return;
+  history.replaceState(history.state, "", r.hash);
+  helperApi.markRead(r.id).then((x) => setUnread(x.unread), () => {});
 }
 
 /** The server said how many messages are unread now (mark read, Got it). */

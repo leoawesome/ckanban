@@ -56,7 +56,7 @@ import { liveHuddleCount, useBoardHuddles, useHuddleIdleTick } from "./huddle";
 import { hasOpenPr, runCounts } from "./boardStats";
 import { ParallelConfirm } from "./ParallelConfirm";
 import { closeSteps, openDepth } from "./ticketHistory";
-import { helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, useHelper } from "./helper";
+import { helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, takeReadFromHash, useHelper } from "./helper";
 import { HelperNotice, MessagePage, MessagesHistory } from "./Messages";
 import { snoozeBody, snoozeUntil, snoozeWords, type SnoozeLength } from "./snooze";
 
@@ -88,13 +88,16 @@ const SAMPLE_OFFER = "ckanban.sample-offer";
  */
 function parseHash(): { slug: string | null; ticket: string | null } {
   if (location.hash.startsWith("#/~")) return { slug: null, ticket: null };
-  let path = location.hash.replace(/^#/, "");
+  let path = location.hash.replace(/^#/, "").replace(/\?.*$/, "");
   try {
     path = decodeURIComponent(path);
   } catch {}
   const [, slug, ticket] = path.split("/");
   return { slug: slug || null, ticket: ticket || null };
 }
+
+// Opened from a tap on an urgent alert about one ticket: mark that message read before the first parseHash.
+takeReadFromHash();
 
 function hashFor(slug: string | null, ticket?: string | null): string {
   if (!slug) return "#/";
@@ -398,6 +401,7 @@ export function App() {
   // Browser Back/Forward and pasted links drive the open board and ticket.
   useEffect(() => {
     const onHash = () => {
+      takeReadFromHash();
       setMsgRoute(messagesRoute(location.hash));
       if (location.hash.startsWith("#/~")) return;
       const h = parseHash();

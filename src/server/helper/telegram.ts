@@ -5,7 +5,7 @@
 // (maskToken).
 import { randomInt, timingSafeEqual } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { messagePageUrl, type Channel, type ChannelResult, type OutMessage } from "./channels";
+import { tapUrl, type Channel, type ChannelResult, type OutMessage } from "./channels";
 
 export interface TelegramSettings {
   on: boolean;
@@ -388,7 +388,7 @@ export class TelegramBot {
   async send(m: OutMessage): Promise<ChannelResult> {
     const s = this.d.settings();
     if (!TOKEN_RE.test(s.token) || s.chatId === null) return { channel: "telegram", ok: false, skipped: true, error: null };
-    const link = this.d.phoneAccess() ? (m.messageId ? messagePageUrl(m.url, m.messageId) : m.url) : null;
+    const link = this.d.phoneAccess() ? tapUrl(m) : null;
     const head = m.text.startsWith(m.title) ? m.text : `${m.title}\n\n${m.text}`;
     const text = telegramText(head, link ? "" : "\n\nAnswer on your Mac.");
     const rows: { text: string; callback_data?: string; url?: string }[][] = [];

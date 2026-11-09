@@ -4,7 +4,7 @@
 // message and its record marked told, so nothing goes out twice.
 import type { NotifyMessage, NotifySettings } from "../notify";
 import type { Store } from "../store";
-import { Channels, type ChannelResult, type OutMessage } from "./channels";
+import { Channels, tapTicket, type ChannelResult, type OutMessage } from "./channels";
 import { MessageStore, type MessageItem, type NewMessage, type StoredMessage } from "./messages";
 import { pending, WaitStore, type NewWait, type ToldVia, type WaitRecord } from "./waits";
 
@@ -275,7 +275,9 @@ export class HelperCore {
    * once when a send fails (0 devices or an error), until one reaches the user.
    */
   async deliver(message: StoredMessage, out: OutBody, only?: string[], chain?: string[]): Promise<ChannelResult[]> {
-    const full: OutMessage = { ...out, url: typeof out.url === "function" ? out.url(message.id) : out.url, messageId: message.id };
+    const full: OutMessage = {
+      ...out, url: typeof out.url === "function" ? out.url(message.id) : out.url, messageId: message.id, ticket: tapTicket(message),
+    };
     const record = (results: ChannelResult[]) => {
       const at = new Date(this.now()).toISOString();
       this.messages.recordSends(message.id, results.filter((r) => !r.skipped).map((r) => ({

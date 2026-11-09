@@ -18,6 +18,8 @@ export interface OutMessage {
   text: string;
   /** Where a tap goes. */
   url: string;
+  /** The one ticket an urgent alert or reminder is about (tapOpensTicket): a tap opens it instead of the message page. */
+  ticket?: { board: string; ticketId: string } | null;
   /** Phone push tag: a new message with the same tag replaces the old one. */
   tag?: string;
   /** Interrupt: ntfy priority 5, Telegram with sound (routine Telegram is silent). */
@@ -65,8 +67,39 @@ export function messagePageUrl(url: string, messageId: string): string {
   }
 }
 
-/** What a tap opens: the message's page (full text) when it is stored, else the link. */
-export const tapUrl = (m: OutMessage) => (m.messageId ? messagePageUrl(m.url, m.messageId) : m.url);
+/**
+ * A ticket's page that also marks the message read: #/<board>/<ticketId>?read=<messageId> (the web app marks it
+ * read, then drops "?read=…" from the address).
+ */
+export function ticketTapUrl(url: string, board: string, ticketId: string, messageId: string): string {
+  try {
+    return `${new URL(url).origin}/#/${encodeURIComponent(board)}/${encodeURIComponent(ticketId)}?read=${encodeURIComponent(messageId)}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * The ticket a tap on this message opens directly: an urgent alert or reminder about exactly one ticket. Everything
+ * else (summaries, digests, pause, hello, test, 0 or 2+ tickets) opens the message page.
+ */
+export function tapTicket(m: { level: MessageLevel; items?: { board: string; ticketId: string }[] }): { board: string; ticketId: string } | null {
+  if (m.level !== "urgent" && m.level !== "reminder") return null;
+  const seen = new Map((m.items ?? []).map((it) => [`${it.board}/${it.ticketId}`, it]));
+  if (seen.size !== 1) return null;
+  const [it] = seen.values();
+  return { board: it.board, ticketId: it.ticketId };
+}
+
+/**
+ * What a tap opens (phone push, ntfy Click, Telegram Open): the one ticket an urgent alert or reminder is about
+ * (marking the message read), else the message's page (full text) when it is stored, else the link.
+ */
+export function tapUrl(m: Pick<OutMessage, "messageId" | "url" | "ticket">): string {
+  if (!m.messageId) return m.url;
+  if (m.ticket) return ticketTapUrl(m.url, m.ticket.board, m.ticket.ticketId, m.messageId);
+  return messagePageUrl(m.url, m.messageId);
+}
 
 /** The Mac banner can't open a page, so it points the user at the board. */
 export const MAC_BANNER_HINT = "See Messages on the board";
@@ -111,7 +144,7 @@ export function macChannel(d: BuiltinDeps): Channel {
   };
 }
 
-/** The phone push payload: a tap opens the message page (sw.js), the one line below the title. */
+/** The phone push payload: a tap opens tapUrl's page (sw.js), the one line below the title. */
 function payloadOf(m: OutMessage) {
   const p = m.notify ? pushPayload(m.notify) : { title: m.title, body: m.body, url: m.url, tag: m.tag ?? "ckanban" };
   if (m.tag) p.tag = m.tag;
