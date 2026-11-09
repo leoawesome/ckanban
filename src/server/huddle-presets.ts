@@ -92,6 +92,19 @@ export const BUILTIN_PRESETS: HuddlePreset[] = [
       "Propose concrete changes (what, where, why), ranked by user impact; prefer removing over adding.",
   },
   {
+    name: "visionary", role: "Product visionary", model: null, mode: "tagged", lead: false, canEdit: false, workspace: "shared",
+    prompt: "Think about what would make a user say \"wow\" on day one. Look past the plan or feature as written: what should it notice or do that nobody has asked for yet? " +
+      "Compare it with the best products in the space and how they handle the same job. Propose bold, concrete ideas: what the user would see, when, and why it matters to them. " +
+      "Defend your ideas when others push back, and drop them only when a counter-argument actually beats them. Answer the other participants by name. " +
+      "End with your top 3 ideas, ranked by user impact, each with its main cost.",
+  },
+  {
+    name: "journey", role: "User journey walker", model: null, mode: "monitor", lead: false, canEdit: false, workspace: "shared",
+    prompt: "Walk every path a real user takes, step by step (assume they aren't technical unless the plan says otherwise): first use, daily use, " +
+      "mistakes, errors and recovery, edge cases, and the case where nothing is wrong. List each step where the plan doesn't say what happens. " +
+      "Write the full walk to your outputs folder and post the path with the gaps you found. Reply to others by name.",
+  },
+  {
     name: "facilitator", role: "Facilitator", model: null, mode: "monitor", lead: true, canEdit: false, workspace: "shared",
     prompt: "Drive a study with several critics: make sure every participant posts, challenge weak or duplicate findings, ask follow-ups and settle disagreements. " +
       "Keep the pinned findings list with huddle_findings: de-duplicate, tag each MUST / SHOULD / COULD with effort S/M/L. Don't add participants unless a clear gap appears. " +

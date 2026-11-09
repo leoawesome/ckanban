@@ -1,3 +1,4 @@
+import type { HuddleLine } from "./cardState";
 import { isImageFile } from "./attachText";
 import type { ChatCacheInfo } from "./cacheNote";
 import type { SlashCommand } from "./slashText";
@@ -463,8 +464,10 @@ export interface Ticket {
   attention?: Attention | null;
   /** Snoozed from the Inbox: what it waits for and until when (attention is null meanwhile). */
   snoozed?: { attention: Attention; until: string } | null;
-  /** Its own huddle is working: the card shows the huddle badge instead of an outcome badge. */
+  /** Its own huddle is working (its own run isn't, and it asks nothing of the user): the card shows its huddle line. */
   huddleBusy?: boolean;
+  /** While huddleBusy: helpers working now and in the huddle, and its open findings (cardState.ts huddleLineText). */
+  huddleLine?: HuddleLine | null;
   /** Output files published as claude.ai pages from the Share menu, one link per file. */
   shareLinks?: ShareLink[];
   /** Artifacts and share links, newest first (src/server/links.ts). */

@@ -17,7 +17,7 @@ import { elapsed, fullTime, plainPreview, timeAgo } from "./time";
 import { costText } from "./usage";
 import { useNow } from "./useNow";
 import { clearArrival, useArrival } from "./arrivals";
-import { attentionLabel, cardFamily, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
+import { attentionLabel, cardFamily, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
 import { boardColumnOf } from "./columns";
 
 /** Live running time: ticks every second for the first minute, then every 30s. */
@@ -45,9 +45,9 @@ function useStepAge(at: string | null | undefined) {
   return age;
 }
 
-function workingBadge(label: string, since?: string | null) {
+function workingBadge(label: string, since?: string | null, title = label) {
   // The label hides in a phone's ticket header (just spinner and time there); the title keeps it.
-  return <span className="badge running" title={label}><span className="spinner" /> <span className="badge-label">{label}</span>{since && <Elapsed since={since} />}</span>;
+  return <span className="badge running" title={title}><span className="spinner" /> <span className="badge-label">{label}</span>{since && <Elapsed since={since} />}</span>;
 }
 
 // Whether each ticket was working when last drawn, and the mark its last run left. Kept outside the components:
@@ -101,6 +101,11 @@ export function autoHuddleChip(a: NonNullable<Ticket["autoHuddle"]>) {
       <span className="live-dot" /> Auto huddle<span className="ah-reason"> · {a.reason}</span>
     </span>
   );
+}
+
+/** The panel header's pill while the ticket's own huddle works: "Huddle working", its counts in the tooltip. */
+export function huddleBadge(t: Ticket) {
+  return workingBadge(HUDDLE_WORKING, null, huddleLineText(t.huddleLine ?? { working: 0, helpers: 0, findings: 0 }));
 }
 
 /** In Progress only because it waits for its auto huddle (no run right now). */
@@ -172,6 +177,8 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
       : <span className="badge queued" title="Starts as soon as nothing else holds it back (another ticket editing the folder, or a restart)">Queued · #{queued}</span>)
     : ownWorking ? null : outcomeBadge(ticket);
   const showActivity = ownWorking && ticket.lastActivity && !QUIET_ACTIVITY.has(ticket.lastActivity);
+  // Its own huddle working while its own run isn't: a blue working line in place of the last message ("Needs you" wins).
+  const huddleLine = cardHuddleLine(ticket, { working, needsYou: !!att });
   // How long since the run's last step; amber and a slower spinner once it has been quiet for 3 minutes.
   const step = useStepAge(ownWorking ? ticket.lastActivityAt : null);
   const quiet = ownWorking && !!step?.quiet;
@@ -235,7 +242,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   const pill = signInChip || (finish ? finishBadge(finish) : badge) || (ticket.autoHuddle && ownWorking && autoHuddleChip(ticket.autoHuddle)) || planPill || null;
   return (
     <article
-      className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working ? "is-running" : ""} ${quiet ? "is-quiet" : ""} ${att ? `needs-you att-${att.kind}` : ""}${arrival.ring ? " just-arrived" : ""}`}
+      className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working || huddleLine ? "is-running" : ""} ${quiet ? "is-quiet" : ""} ${att ? `needs-you att-${att.kind}` : ""}${arrival.ring ? " just-arrived" : ""}`}
       onClick={() => { clearArrival(ticket.id); onClick?.(); }} onMouseEnter={arrival.isNew ? () => clearArrival(ticket.id) : undefined}>
       {att && (
         <div className={`your-turn att-${att.kind}`} id={a11yId && `${a11yId}-turn`}>
@@ -252,6 +259,11 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
       {via && <div className="card-via" title={`Found in the step “${via}”`}>via {via}</div>}
       {!showActivity && fc?.line && !att ? (
         <FamilyLineView line={fc.line} id={a11yId && `${a11yId}-line`} />
+      ) : huddleLine ? (
+        <div id={a11yId && `${a11yId}-line`} className="card-family-line card-huddle-line" title={huddleLine}>
+          <span className="spinner" aria-hidden />
+          <span className="activity-text">{huddleLine}</span>
+        </div>
       ) : showActivity ? (
         // Keyed on the text, so each new step fades in instead of swapping.
         <div key={ticket.lastActivity!} id={a11yId && `${a11yId}-line`} className="card-activity" title={step ? `${ticket.lastActivity!}\n${step.quiet ? "No new step" : "Last step"} ${step.text} ago` : ticket.lastActivity!}>

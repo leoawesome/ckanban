@@ -344,9 +344,10 @@ test("needs you: a working huddle hides its host from the Inbox until it tags @y
   const h = huddles.create("p", t.id, [{ preset: "reviewer" }]);
   await idle();
   const inbox = async () => (await (await fetch(`${client.url}/api/inbox`)).json()) as { id: string; attention: { kind: string; label: string; since: string } }[];
-  const card = async () => (await (await fetch(`${client.url}/api/profiles/p/tickets/${t.id}`)).json()) as { attention: { kind: string } | null; huddleBusy: boolean };
+  const card = async () => (await (await fetch(`${client.url}/api/profiles/p/tickets/${t.id}`)).json()) as { attention: { kind: string } | null; huddleBusy: boolean; huddleLine: unknown };
   // Idle huddle: the ticket's own state shows.
-  expect(huddles.hostStates("p").get(t.id)).toMatchObject({ working: 0, queued: false, tagged: 0 });
+  expect(huddles.hostStates("p").get(t.id)).toMatchObject({ working: 0, queued: false, tagged: 0, helpers: 1, helpersWorking: 0, findings: 0 });
+  expect(await card()).toMatchObject({ huddleBusy: false, huddleLine: null });
   expect((await inbox()).find((i) => i.id === t.id)?.attention.kind).toBe("blocked");
   // Waking the reviewer: the huddle works, the host doesn't need the user and isn't Blocked.
   process.env.FAKE_STEP_MS = "400";
@@ -354,7 +355,7 @@ test("needs you: a working huddle hides its host from the Inbox until it tags @y
   const busy = huddles.hostStates("p").get(t.id)!;
   expect(busy.working > 0 || busy.queued).toBe(true);
   expect((await inbox()).some((i) => i.id === t.id)).toBe(false);
-  expect(await card()).toMatchObject({ attention: null, huddleBusy: true });
+  expect(await card()).toMatchObject({ attention: null, huddleBusy: true, huddleLine: { helpers: 1, findings: 0 } });
   expect(board.waitsOnUser("p", t.id)).toBe(false);
   await idle();
   delete process.env.FAKE_STEP_MS;
@@ -362,7 +363,7 @@ test("needs you: a working huddle hides its host from the Inbox until it tags @y
   huddles.post("p", h.id, participant(h, "reviewer"), "@you which provider?");
   const row = (await inbox()).find((i) => i.id === t.id)!;
   expect(row.attention).toMatchObject({ kind: "huddle", label: "Huddle: 1 for you", since: messages(h).at(-1)!.ts });
-  expect(await card()).toMatchObject({ attention: { kind: "huddle" }, huddleBusy: false });
+  expect(await card()).toMatchObject({ attention: { kind: "huddle" }, huddleBusy: false, huddleLine: null });
 }, 60_000);
 
 test("restart: a failed or stopped agent is idle again and wakes now on a live huddle", async () => {

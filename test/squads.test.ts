@@ -21,7 +21,7 @@ const squadInput = {
   roster: [
     { handle: "facilitator", preset: "facilitator", host: true, mode: "monitor", focus: "Run the steps." },
     { handle: "skeptic", preset: "breaker", mode: "monitor", focus: "What breaks." },
-    { handle: "journey", role: "User journey walker", prompt: "Walk every path a real user takes, step by step.", mode: "monitor" },
+    { handle: "wanderer", role: "User journey walker", prompt: "Walk every path a real user takes, step by step.", mode: "monitor" },
     { handle: "research", preset: "researcher", model: "sonnet", mode: "tagged" },
   ],
 };
@@ -110,7 +110,7 @@ async function sourceHuddle(): Promise<Huddle> {
   process.env.FAKE_STEP_MS = "50";
   const h = huddles.create("p", t.id, [
     { handle: "facilitator", preset: "facilitator", host: true, focus: "People marked done too early. (1) Post the point list P1-P17 about src/server/notify.ts. (2) Round 1." },
-    { handle: "journey", role: "User journey walker", prompt: "Walk every path a real user takes. Don't mark yourself done until the host's final call.", focus: "Walk Telegram setup.", mode: "monitor" },
+    { handle: "wanderer", role: "User journey walker", prompt: "Walk every path a real user takes. Don't mark yourself done until the host's final call.", focus: "Walk Telegram setup.", mode: "monitor" },
     { handle: "research", preset: "researcher", model: "sonnet", focus: "How alert tools do it." },
   ], { maxCostUsd: 60 });
   await huddles.stopAll("p", h.id);
@@ -123,16 +123,16 @@ test("generic squad: the setup leaves out @main and @you and keeps each person's
   const presets = new Map(huddles.presets("p").map((p) => [p.name, p]));
   const setup = squadSetup(h, presets);
   expect(setup.maxCostUsd).toBe(60);
-  expect(setup.roster.map((e) => e.handle)).toEqual(["facilitator", "journey", "research"]);
+  expect(setup.roster.map((e) => e.handle)).toEqual(["facilitator", "wanderer", "research"]);
   expect(setup.roster[0]).toMatchObject({ preset: "facilitator", host: true, lead: true, mode: "monitor" });
   // A preset's own prompt isn't repeated; a role with no preset keeps its whole prompt.
   expect(setup.roster[0].prompt).toBeUndefined();
   expect(setup.roster[1]).toMatchObject({ role: "User journey walker", prompt: expect.stringContaining("Walk every path"), mode: "monitor" });
   expect(setup.roster[2]).toMatchObject({ preset: "researcher", model: "sonnet" });
-  const prompt = genericSquadPrompt({ setup, brief: "VERDICT: 5/5", learnings: ["@journey ended done: walked every path"], source: { kind: "chat", text: "[#1] @facilitator: P1..." } });
-  expect(prompt).toContain("\"handle\": \"journey\"");
+  const prompt = genericSquadPrompt({ setup, brief: "VERDICT: 5/5", learnings: ["@wanderer ended done: walked every path"], source: { kind: "chat", text: "[#1] @facilitator: P1..." } });
+  expect(prompt).toContain("\"handle\": \"wanderer\"");
   expect(prompt).toContain("# Pinned brief at the end\nVERDICT: 5/5");
-  expect(prompt).toContain("- @journey ended done");
+  expect(prompt).toContain("- @wanderer ended done");
   expect(prompt).toContain("# The end of the huddle's chat");
   expect(GENERIC_SQUAD_SYSTEM).toContain("Make it generic");
   expect(GENERIC_SQUAD_SYSTEM).toContain("hostRules");
@@ -158,8 +158,8 @@ test("generic squad: one side call (summary file first), retried once on bad JSO
   expect(r.error).toBeNull();
   expect(r.costUsd).toBeCloseTo(0.03);
   expect(r.proposal!.squad).toMatchObject({ name: "plan-critique", hostRules: RULES, maxCostUsd: 60 });
-  expect(r.proposal!.newTeammates).toEqual([{ index: 2, name: "journey", role: "User journey walker" }]);
-  expect(r.setup.roster.map((e) => e.handle)).toEqual(["facilitator", "journey", "research"]);
+  expect(r.proposal!.newTeammates).toEqual([{ index: 2, name: "wanderer", role: "User journey walker" }]);
+  expect(r.setup.roster.map((e) => e.handle)).toEqual(["facilitator", "wanderer", "research"]);
   // Charged to the host ticket's side ledger; nothing saved.
   expect(store.listHuddleTemplates("p").length).toBe(before);
   const ledger = await Bun.file(store.sideSpendPath("p", h.hostTicket)).text();
@@ -187,13 +187,13 @@ test("generic squad route: the user only; runs and huddle agents are refused", a
 test("save plan: a person with no preset becomes a new teammate; an existing one of that name is used as is", () => {
   const presets = new Map(huddles.presets("p").map((p) => [p.name, p]));
   const plan = squadSavePlan(squadInput, presets);
-  expect(plan.create.map((p) => p.name)).toEqual(["journey"]);
+  expect(plan.create.map((p) => p.name)).toEqual(["wanderer"]);
   expect(plan.create[0]).toMatchObject({ role: "User journey walker", prompt: "Walk every path a real user takes, step by step.", mode: "monitor" });
-  expect(plan.squad.roster[2]).toEqual({ handle: "journey", preset: "journey", mode: "monitor" });
-  const taken = new Map<string, { name: string }>([...presets, ["journey", { name: "journey" }]]);
+  expect(plan.squad.roster[2]).toEqual({ handle: "wanderer", preset: "wanderer", mode: "monitor" });
+  const taken = new Map<string, { name: string }>([...presets, ["wanderer", { name: "wanderer" }]]);
   const plan2 = squadSavePlan(squadInput, taken);
   expect(plan2.create).toEqual([]);
-  expect(plan2.reused).toEqual(["journey"]);
+  expect(plan2.reused).toEqual(["wanderer"]);
 });
 
 test("save plan: two different people with the same name get two teammates; the same person twice shares one", () => {
@@ -233,23 +233,23 @@ test("propose_squad: a card in a ticket chat; saving it makes new teammates, nev
   const line = JSON.stringify({ type: "assistant", uuid: "a1", timestamp: "2026-11-09T00:00:00Z", message: { content: [{ type: "tool_use", id: "tu9", name: "mcp__ckanban__propose_squad", input: { ...squadInput, why: "reuse it" } }] } });
   const parsed = parseSession(line);
   const card = parsed.entries.find((e) => e.squad)!;
-  expect(card.squad!.newTeammates).toEqual([{ index: 2, name: "journey", role: "User journey walker" }]);
+  expect(card.squad!.newTeammates).toEqual([{ index: 2, name: "wanderer", role: "User journey walker" }]);
   expect(parsed.pendingSquads).toEqual(["tu9"]);
   // Runs and huddle agents can't save squads (or the teammates in them).
   const body = { squad: card.squad!.squad, scope: "board", card: { ticketId: t.id, uuid: "tu9" } };
   expect((await postJson("/squads", body, { "x-ckanban-run": `p/${t.id}` })).status).toBe(403);
   expect((await postJson("/squads", body, { "x-ckanban-huddle-agent": "h_x/qa/token" })).status).toBe(403);
   expect((await postJson("/huddle-templates", squadInput, { "x-ckanban-run": `p/${t.id}` })).status).toBe(403);
-  expect(store.listHuddlePresets("p").some((p) => p.name === "journey")).toBe(false);
-  // An existing teammate "journey" is used as is, never overwritten.
-  store.saveHuddlePresets("p", [{ name: "journey", role: "Mine", prompt: "My own journey prompt.", model: null, mode: "tagged", lead: false, canEdit: false, workspace: "shared" }]);
+  expect(store.listHuddlePresets("p").some((p) => p.name === "wanderer")).toBe(false);
+  // An existing teammate "wanderer" is used as is, never overwritten.
+  store.saveHuddlePresets("p", [{ name: "wanderer", role: "Mine", prompt: "My own wanderer prompt.", model: null, mode: "tagged", lead: false, canEdit: false, workspace: "shared" }]);
   const r = await postJson("/squads", body);
   expect(r.status).toBe(201);
   const out = (await r.json()) as { squad: { name: string; roster: { preset?: string }[] }; teammates: { created: string[]; reused: string[] } };
-  expect(out.teammates).toEqual({ created: [], reused: ["journey"] });
-  expect(out.squad.roster[2].preset).toBe("journey");
-  expect(store.listHuddlePresets("p").find((p) => p.name === "journey")!.prompt).toBe("My own journey prompt.");
-  expect(store.getTicket("p", t.id)!.squadCards!.tu9).toMatchObject({ state: "saved", name: "plan-critique", scope: "board", teammates: { created: [], reused: ["journey"] } });
+  expect(out.teammates).toEqual({ created: [], reused: ["wanderer"] });
+  expect(out.squad.roster[2].preset).toBe("wanderer");
+  expect(store.listHuddlePresets("p").find((p) => p.name === "wanderer")!.prompt).toBe("My own wanderer prompt.");
+  expect(store.getTicket("p", t.id)!.squadCards!.tu9).toMatchObject({ state: "saved", name: "plan-critique", scope: "board", teammates: { created: [], reused: ["wanderer"] } });
   // Same name again: refused unless replace.
   expect((await postJson("/squads", { ...body, card: undefined })).status).toBe(409);
   // A new name with a new role: the teammate is made at the same scope (all boards here).
@@ -283,7 +283,7 @@ test("propose_squad from a huddle agent waits under Learnings; only the user sav
   const saved = await postJson(`/huddles/${h.id}/learnings/${l.id}/save`, {});
   expect(saved.status).toBe(200);
   expect(store.listHuddleTemplates(null).some((s) => s.name === "agent-squad")).toBe(true);
-  expect(store.listHuddlePresets(null).some((p) => p.name === "journey")).toBe(true);
+  expect(store.listHuddlePresets(null).some((p) => p.name === "wanderer")).toBe(true);
   expect(store.getHuddle("p", h.id)!.learnings!.find((x) => x.id === l.id)!.status).toBe("saved");
   await huddles.stopAll("p", h.id);
 }, 60_000);

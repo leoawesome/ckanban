@@ -372,6 +372,8 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .card-family-line .spinner { flex: none; }
 .card-family-line.warn { color: var(--warn); font-weight: 600; }
 .card-family-line.fail { color: var(--err); font-weight: 600; }
+/* Its own huddle working (cardState.ts cardHuddleLine): blue, like a working card's stripe. */
+.card-family-line.card-huddle-line { color: var(--info); }
 .card-via { margin-top: 3px; font-size: var(--fs-2xs); color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A tool ticket's chat: its feature is in charge. */
 .tool-note { margin: 8px 12px 0; padding: 6px 10px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); }
