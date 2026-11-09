@@ -106,9 +106,12 @@ describe("Got it from Telegram, end to end", () => {
     await h.tick();
     clock += 5 * 60_000 + 1000;
     await h.tick();
-    const sent = tgSends().at(-1)!;
+    // The reminder itself (the ticket's question form follows it as its own message).
+    const sends = tgSends();
+    const at = sends.findIndex((c) => JSON.stringify(c.body.reply_markup ?? null).includes('"Got it"'));
+    const sent = sends[at]!;
     const reminder = n.helper.messages.listNewest().find((m) => m.level === "reminder")!;
-    return { key, reminder, sent, telegramMessageId: msgNo };
+    return { key, reminder, sent, telegramMessageId: msgNo - (sends.length - 1 - at) };
   };
   const tap = (updateId: number, telegramMessageId: number, markup: any, data: string, from = ME) => ({
     update_id: updateId,
@@ -172,7 +175,7 @@ describe("Got it from Telegram, end to end", () => {
     calls = [];
     stop = make();
     expect(await n.telegram.pollOnce()).toBe(true);
-    expect(calls.find((c) => c.method === "getUpdates")!.body).toMatchObject({ offset: 501, allowed_updates: ["message", "callback_query"] });
+    expect(calls.find((c) => c.method === "getUpdates")!.body).toMatchObject({ offset: 501, allowed_updates: ["message", "edited_message", "callback_query"] });
     expect(calls.filter((c) => c.method === "answerCallbackQuery")).toHaveLength(0);
     stop();
   });
