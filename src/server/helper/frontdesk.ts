@@ -136,11 +136,12 @@ interface DeskState {
 
 /** What a Confirm card holds (PendingActions kind "fd"). */
 export interface DeskAction {
-  kind: "create" | "move" | "stop" | "chat" | "delete" | "plan" | "run" | "schedule";
+  kind: "create" | "move" | "edit" | "stop" | "chat" | "delete" | "plan" | "run" | "schedule" | "comment" | "other";
   method: string;
   path: string;
   body: any;
-  slug: string;
+  /** The board it acts on (null: not a board's route). */
+  slug: string | null;
   ticketId: string | null;
   chatId: number;
   /** The user's message the work answers: report-back replies to it. */
@@ -162,28 +163,47 @@ const STATUS_WORDS: Record<string, string> = {
 const short = (s: string, max: number) => cut(String(s ?? ""), max);
 const firstLine = (s: string) => String(s ?? "").split("\n").map((l) => l.replace(/^[#>*\-\s`]+/, "").trim()).find((l) => l) ?? "";
 
-/** The routes a front desk request is held for. */
-export function heldKind(method: string, path: string, body: any): { kind: DeskAction["kind"]; slug: string; ticketId: string | null } | null {
-  const t = /^\/api\/profiles\/([^/]+)\/tickets(?:\/([^/]+))?(?:\/([a-z-]+))?\/?$/.exec(path);
-  if (t) {
-    const slug = decodeURIComponent(t[1]);
-    const id = t[2] ? decodeURIComponent(t[2]) : null;
-    const sub = t[3] ?? null;
-    if (!id && method === "POST") return body?.status && body.status !== "backlog" ? { kind: "create", slug, ticketId: null } : null;
-    if (id && !sub && method === "PATCH") return body && typeof body === "object" && "status" in body ? { kind: "move", slug, ticketId: id } : null;
+/** The path as the router reads it: segments without "api", decoded, empty ones dropped (null: it can't be read). */
+function routeParts(path: string): string[] | null {
+  try {
+    return path.split("/").filter(Boolean).slice(1).map(decodeURIComponent);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a front desk request is held for the user's tap, and as what. An allow-list: reads (GET) and making a plain
+ * Backlog ticket pass; every other change is held, so a route added later can't start work without a Confirm. Decided
+ * on the same decoded path parts the router uses (http.ts api()), so "//" or "%74ickets" can't slip past.
+ */
+export function heldKind(method: string, path: string, body: any): { kind: DeskAction["kind"]; slug: string | null; ticketId: string | null } | null {
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return null;
+  const parts = routeParts(path);
+  if (!parts) return { kind: "other", slug: null, ticketId: null };
+  const slug = parts[0] === "profiles" && parts[1] ? parts[1] : null;
+  const area = slug ? parts[2] : undefined;
+  const id = slug && parts.length >= 4 ? parts[3] : null;
+  const sub = slug ? parts.slice(4).join("/") : "";
+  if (area === "tickets") {
+    if (!id && method === "POST" && parts.length === 3) {
+      const plain = (!body?.status || body.status === "backlog") && !body?.main && !(Array.isArray(body?.gather) && body.gather.length);
+      return plain ? null : { kind: "create", slug, ticketId: null };
+    }
+    if (id && !sub && method === "PATCH") return { kind: body && typeof body === "object" && "status" in body ? "move" : "edit", slug, ticketId: id };
     if (id && !sub && method === "DELETE") return { kind: "delete", slug, ticketId: id };
     if (id && method === "POST" && sub === "stop") return { kind: "stop", slug, ticketId: id };
     if (id && method === "POST" && sub === "chat") return { kind: "chat", slug, ticketId: id };
     if (id && method === "POST" && sub === "plan") return { kind: "plan", slug, ticketId: id };
-    return null;
+    if (id && method === "POST" && sub === "comments") return { kind: "comment", slug, ticketId: id };
+    return { kind: "other", slug, ticketId: id };
   }
-  const r = /^\/api\/profiles\/([^/]+)\/(schedules|jobs)\/([^/]+)\/run\/?$/.exec(path);
-  if (r && method === "POST") return { kind: "run", slug: decodeURIComponent(r[1]), ticketId: null };
-  // Schedules and one-time jobs start tickets (or commands) later: making or changing one needs a Confirm too.
-  // Cancelling a job or deleting a schedule only stops work, so it passes.
-  const sj = /^\/api\/profiles\/([^/]+)\/(schedules|jobs)(?:\/([^/]+))?(?:\/([a-z-]+))?\/?$/.exec(path);
-  if (sj && ((method === "POST" && !sj[3]) || (method === "PATCH" && sj[3] && !sj[4]))) return { kind: "schedule", slug: decodeURIComponent(sj[1]), ticketId: null };
-  return null;
+  // Cancelling a one-time job or deleting a schedule only stops work that hasn't started: it passes.
+  if ((area === "schedules" || area === "jobs") && id && ((method === "POST" && sub === "cancel") || (method === "DELETE" && !sub))) return null;
+  if ((area === "schedules" || area === "jobs") && method === "POST" && id && sub === "run") return { kind: "run", slug, ticketId: null };
+  // Schedules and one-time jobs start tickets (or commands) later.
+  if ((area === "schedules" || area === "jobs") && ((method === "POST" && !id) || (method === "PATCH" && id && !sub))) return { kind: "schedule", slug, ticketId: null };
+  return { kind: "other", slug, ticketId: null };
 }
 
 export class FrontDesk {
@@ -206,8 +226,8 @@ export class FrontDesk {
     try {
       const v = JSON.parse(readFileSync(this.file, "utf8"));
       return {
-        // A token saved before keeps working for runs a restart resumes.
-        token: typeof v?.token === "string" && v.token.length >= 16 ? v.token : fresh.token,
+        // Never read from disk (ticket runs can read the data folder): a restart makes a new one, and resumed runs get it.
+        token: fresh.token,
         current: v?.current && typeof v.current.slug === "string" && typeof v.current.id === "string" ? v.current : null,
         replyTo: v?.replyTo && typeof v.replyTo === "object" ? v.replyTo : {},
         recent: Array.isArray(v?.recent) ? v.recent : [],
@@ -221,7 +241,8 @@ export class FrontDesk {
 
   private save(): void {
     try {
-      atomicWrite(this.file, JSON.stringify(this.state) + "\n");
+      const { token: _secret, ...rest } = this.state;
+      atomicWrite(this.file, JSON.stringify(rest) + "\n");
     } catch (e) {
       console.warn(`telegram: couldn't save the front desk: ${(e as Error).message}`);
     }
@@ -271,7 +292,8 @@ export class FrontDesk {
     const night = this.d.night();
     const cur = this.state.current;
     const same = cur && cur.slug === slug && cur.chatId === m.chatId && !dayEnded(Date.parse(cur.lastAt), now, night) && this.chats.get(cur.slug, cur.id) ? cur : null;
-    const norm = m.text.replace(/\s+/g, " ").trim().toLowerCase();
+    // What the message replies to is part of it: "yes" to two different messages isn't a repeat.
+    const norm = `${m.quoted ? `${m.quoted.slice(0, 200)}\u0000` : ""}${m.text.replace(/\s+/g, " ").trim().toLowerCase()}`;
     this.state.seen = [...this.state.seen, m.updateId].slice(-500);
     // The same text again while its turn runs: it joins that turn (no second answer, no second spend).
     if (same && !m.forwarded && this.chats.isRunning(same.slug, same.id) && this.state.recent.some((r) => r.key === `${same.slug}/${same.id}` && r.text === norm && now - Date.parse(r.at) < DUPLICATE_MS)) {
@@ -291,7 +313,8 @@ export class FrontDesk {
     const at = new Date(now).toISOString();
     this.state.current = { slug, id: view.id, chatId: m.chatId, startedAt: same?.startedAt ?? at, lastAt: at };
     this.state.replyTo[key] = m.tg;
-    this.state.recent = [...this.state.recent.filter((r) => now - Date.parse(r.at) < DUPLICATE_MS), { key, text: norm, at }].slice(-20);
+    // A forwarded message is never the "same text again" of the user's own words.
+    this.state.recent = [...this.state.recent.filter((r) => now - Date.parse(r.at) < DUPLICATE_MS), ...(m.forwarded ? [] : [{ key, text: norm, at }])].slice(-20);
     // Old chats' reply targets go (only the current day's is needed; a restart's resumed turn reads its own).
     const keep = Object.entries(this.state.replyTo).slice(-10);
     this.state.replyTo = Object.fromEntries(keep);
@@ -445,9 +468,10 @@ export class FrontDesk {
     const held = heldKind(method, path, body);
     if (!held) return null;
     if (!this.d.taking()) return { status: 403, body: { error: "Telegram isn't taking messages right now (paused or locked), so nothing can be started from here. The user can turn it back on from the Mac." } };
-    const p = this.d.store.getProfile(held.slug);
-    if (!p) return { status: 404, body: { error: `board ${held.slug} not found` } };
-    const t = held.ticketId ? this.d.store.getTicket(held.slug, held.ticketId) : null;
+    // A main ticket that gathers others is the board's to make: the card can't show all that.
+    if (held.kind === "create" && (a_main(body))) return { status: 403, body: { error: "A new main ticket (or one that gathers other tickets) is made on the board, not from Telegram. Make a plain ticket instead, or ask the user to do it on the board." } };
+    if (held.slug !== null && !this.d.store.getProfile(held.slug)) return { status: 404, body: { error: `board ${held.slug} not found` } };
+    const t = held.ticketId && held.slug ? this.d.store.getTicket(held.slug, held.ticketId) : null;
     if (held.ticketId && !t) return { status: 404, body: { error: `ticket ${held.ticketId} not found` } };
     const out = this.d.out(who.chatId);
     if (!out) return { status: 409, body: { error: "Telegram can't be reached right now, so the Confirm button couldn't be shown. Nothing was done." } };
@@ -462,14 +486,14 @@ export class FrontDesk {
       if (open) {
         const targets = open.data.targets ?? [];
         if (!targets.some((x) => x.slug === held.slug && x.id === held.ticketId)) {
-          const next = { ...open.data, targets: [...targets, { slug: held.slug, id: held.ticketId! }].slice(0, 6) };
+          const next = { ...open.data, targets: [...targets, { slug: held.slug!, id: held.ticketId! }].slice(0, 6) };
           this.d.pending.update(open.id, next);
           const card = this.card(next, open.id);
           await out.edit((open as { card?: number }).card!, card.text, card.buttons);
         }
         return { status: 202, body: { confirmation: "Sent for confirmation: the user now picks the ticket with one button each in Telegram. Nothing is sent until they tap; tell them that in one line." } };
       }
-      a.targets = [{ slug: held.slug, id: held.ticketId! }];
+      a.targets = [{ slug: held.slug!, id: held.ticketId! }];
       a.text = text;
     }
     const action = this.d.pending.create<DeskAction>("fd", a);
@@ -483,7 +507,8 @@ export class FrontDesk {
     return { status: 202, body: { confirmation: `Sent for confirmation: the user sees ${held.kind === "chat" ? "a Send" : "a Confirm"} button in Telegram. Nothing happened yet and it runs only if they tap within 10 minutes; tell them that in one line and don't call this again.` } };
   }
 
-  private name(slug: string, id: string | null): { board: string; title: string } {
+  private name(slug: string | null, id: string | null): { board: string; title: string } {
+    if (!slug) return { board: "the board", title: id ?? "" };
     const board = this.d.store.getProfile(slug)?.name ?? slug;
     const title = id ? this.d.store.getTicket(slug, id)?.title ?? id : "";
     return { board, title };
@@ -505,6 +530,16 @@ export class FrontDesk {
       }
       case "stop":
         return { text: `Stop the work on "${title}" (${board})?`, buttons: yes("Confirm") };
+      case "edit": {
+        const fields = Object.keys(a.body ?? {}).slice(0, 6).join(", ");
+        return { text: `Change "${title}" (${board})${fields ? ` (${fields})` : ""}?`, buttons: yes("Confirm") };
+      }
+      case "comment":
+        return { text: `Add this note to "${title}" (${board})? Its next run reads it.\n\n"${short(a.body?.text ?? "", 300)}"`, buttons: yes("Confirm") };
+      case "other": {
+        const what = (routeParts(a.path) ?? []).slice(a.slug ? 2 : 0).filter((x) => x !== a.ticketId).join(" ").replace(/[-_]/g, " ");
+        return { text: `Let the front desk change this on ${board}${title ? `, on "${title}"` : ""}: ${short(what || a.path, 80)}?`, buttons: yes("Confirm") };
+      }
       case "delete":
         return { text: `Delete "${title}" (${board})? This can't be undone.`, buttons: yes("Confirm") };
       case "plan":
@@ -599,11 +634,13 @@ export class FrontDesk {
     }
     if (choice !== "y") return "That button no longer works.";
     // The state may have changed in the minutes since the card: check again.
-    const p = this.d.store.getProfile(a.slug);
-    if (!p) return finish("That board is gone, so nothing was done.", "Not done");
-    const t = a.ticketId ? this.d.store.getTicket(a.slug, a.ticketId) : null;
+    const slug = a.slug ?? "";
+    const p = a.slug ? this.d.store.getProfile(a.slug) : null;
+    if (a.slug && !p) return finish("That board is gone, so nothing was done.", "Not done");
+    const where = p?.name ?? "the board";
+    const t = a.ticketId && a.slug ? this.d.store.getTicket(a.slug, a.ticketId) : null;
     if (a.ticketId && !t) return finish("That ticket was deleted or moved, so nothing was done.", "Not done");
-    if (a.kind === "stop" && !this.d.isRunning(a.slug, a.ticketId!)) return finish(`"${t!.title}" had already stopped.`, "Already stopped");
+    if (a.kind === "stop" && !this.d.isRunning(slug, a.ticketId!)) return finish(`"${t!.title}" had already stopped.`, "Already stopped");
     if (a.kind === "move" && t!.status === a.body?.status) return finish(`"${t!.title}" is already in ${STATUS_WORDS[a.body.status] ?? a.body.status}.`, "Nothing to do");
     if (!this.replay) return finish("The board isn't ready yet. Try again in a minute.", "Not done");
     let r: { status: number; body: any };
@@ -622,25 +659,29 @@ export class FrontDesk {
       case "create": {
         const nid = typeof r.body?.id === "string" ? r.body.id : null;
         const starts = STARTS_RUN.has(String(a.body?.status));
-        if (nid && starts) report(a.slug, nid);
-        return finish(`✓ ${starts ? "Started" : "Created"} "${r.body?.title ?? a.body?.title}" on ${p.name}.${starts && a.replyTo !== null ? " I'll reply here when it's done." : ""}`, "Done");
+        if (nid && starts) report(slug, nid);
+        return finish(`✓ ${starts ? "Started" : "Created"} "${r.body?.title ?? a.body?.title}" on ${where}.${starts && a.replyTo !== null ? " I'll reply here when it's done." : ""}`, "Done");
       }
       case "move": {
         const starts = STARTS_RUN.has(String(a.body?.status));
-        if (starts) report(a.slug, a.ticketId!);
+        if (starts) report(slug, a.ticketId!);
         return finish(`✓ Moved "${t!.title}" to ${STATUS_WORDS[a.body.status] ?? a.body.status}.${starts && a.replyTo !== null ? " I'll reply here when it has news." : ""}`, "Done");
       }
       case "plan":
-        report(a.slug, a.ticketId!);
+        report(slug, a.ticketId!);
         return finish(`✓ Started the plan of "${t!.title}".`, "Done");
       case "stop":
         return finish(`✓ Stopped "${t!.title}".`, "Done");
       case "delete":
         return finish(`✓ Deleted "${t!.title}".`, "Done");
       case "schedule":
-        return finish(`✓ ${a.method === "PATCH" ? "Changed" : "Set up"} on ${p.name}.`, "Done");
+        return finish(`✓ ${a.method === "PATCH" ? "Changed" : "Set up"} on ${where}.`, "Done");
+      case "run":
+        return finish(`✓ Started on ${where}.`, "Done");
+      case "comment":
+        return finish(`✓ Added the note to "${t!.title}".`, "Done");
       default:
-        return finish(`✓ Started on ${p.name}.`, "Done");
+        return finish(`✓ Done on ${where}.`, "Done");
     }
   }
 
@@ -704,6 +745,7 @@ export class FrontDesk {
     const line = r.closedWhy === "deleted" ? `✓ Ticket deleted ${at}`
       : r.closedWhy === "expired" ? `✓ No longer waiting ${at}`
       : r.closedWhy === "opened" ? `✓ Seen on the Mac ${at}`
+      : r.closedWhy === "cleared" ? `✓ No longer waiting ${at}`
       : fromTelegram ? `✓ Answered from Telegram ${at}` : `✓ Answered on the Mac ${at}`;
     this.d.links.markClosed(l);
     await out.edit(l.tg, `${m ? m.oneLine : "ckanban"}\n\n${line}`);
@@ -724,3 +766,6 @@ export class FrontDesk {
 }
 
 const quote = (s: string) => s.split("\n").map((l) => `> ${l}`).join("\n");
+
+/** A create that makes a main ticket or gathers existing tickets. */
+const a_main = (body: any) => body?.main === true || (Array.isArray(body?.gather) && body.gather.length > 0);

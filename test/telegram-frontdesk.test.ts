@@ -300,7 +300,7 @@ describe("Confirm", () => {
     expect(heldKind("POST", "/api/profiles/kb/tickets", { status: "backlog" })).toBeNull();
     expect(heldKind("POST", "/api/profiles/kb/tickets", {})).toBeNull();
     expect(heldKind("PATCH", "/api/profiles/kb/tickets/t_1", { status: "ready" })?.kind).toBe("move");
-    expect(heldKind("PATCH", "/api/profiles/kb/tickets/t_1", { title: "x" })).toBeNull();
+    expect(heldKind("PATCH", "/api/profiles/kb/tickets/t_1", { title: "x" })?.kind).toBe("edit");
     expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/stop", {})?.kind).toBe("stop");
     expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/chat", { text: "x" })?.kind).toBe("chat");
     expect(heldKind("DELETE", "/api/profiles/kb/tickets/t_1", null)?.kind).toBe("delete");
@@ -314,7 +314,19 @@ describe("Confirm", () => {
     expect(heldKind("POST", "/api/profiles/kb/jobs/j1/cancel", {})).toBeNull();
     expect(heldKind("DELETE", "/api/profiles/kb/schedules/s1", null)).toBeNull();
     expect(heldKind("GET", "/api/profiles/kb/tickets", null)).toBeNull();
-    expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/comments", { text: "x" })).toBeNull();
+    // A note steers the next run: held too.
+    expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/comments", { text: "x" })?.kind).toBe("comment");
+    // Read the way the router reads it: "//" and encoded letters don't slip past.
+    expect(heldKind("POST", "/api/profiles/kb//tickets", { status: "ready" })?.kind).toBe("create");
+    expect(heldKind("POST", "/api/profiles/kb/%74ickets", { status: "ready" })?.kind).toBe("create");
+    expect(heldKind("POST", "/api/profiles/kb/tickets//t_1/stop", {})).toMatchObject({ kind: "stop", ticketId: "t_1" });
+    expect(heldKind("POST", "/api/profiles/kb/tickets/%zz", {})?.kind).toBe("other");
+    // An allow-list: any other change (a route added later too) is held.
+    expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/follow-up-work", {})?.kind).toBe("other");
+    expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/move", { to: "shop" })?.kind).toBe("other");
+    expect(heldKind("PATCH", "/api/notify", { telegram: { on: false } })?.kind).toBe("other");
+    expect(heldKind("POST", "/api/profiles/kb/tickets", { title: "x", main: true })?.kind).toBe("create");
+    expect(heldKind("POST", "/api/profiles/kb/tickets", { title: "x", partOf: "t_9" })).toBeNull();
   });
 
   test("create_ticket that starts work: 'sent for confirmation', the card, Confirm runs it once as the user and saves the origin for report-back; a second tap does nothing", async () => {
@@ -547,7 +559,9 @@ describe("through the board's HTTP API", () => {
     api.queue(msg(1, "start a ticket on the shop"));
     await notifier.telegram.pollOnce();
     const cur = notifier.frontDesk.current()!;
-    const token = JSON.parse(await Bun.file(join(root, "telegram-frontdesk.json")).text()).token;
+    // The secret stays in memory: never in the data folder ticket runs can read.
+    expect(await Bun.file(join(root, "telegram-frontdesk.json")).text()).not.toContain("token");
+    const token = (notifier.frontDesk as any).state.token as string;
     const header = { "content-type": "application/json", "x-ckanban-frontdesk": `${cur.slug}/${cur.id}/${token}` };
     const r = await fetch(`${base}/api/profiles/shop/tickets`, { method: "POST", headers: header, body: JSON.stringify({ title: "Resize photos", body: "Smaller on phones.", status: "ready" }) });
     expect(r.status).toBe(202);
@@ -556,6 +570,15 @@ describe("through the board's HTTP API", () => {
     // Backlog needs no Confirm.
     const b = await fetch(`${base}/api/profiles/shop/tickets`, { method: "POST", headers: header, body: JSON.stringify({ title: "Later", body: "" }) });
     expect(b.status).toBe(201);
+    // Tricky paths reach the same gate: "//" with status ready is held, nothing created.
+    const sneaky = await fetch(`${base}/api/profiles/shop//tickets`, { method: "POST", headers: header, body: JSON.stringify({ title: "Sneaky", status: "ready" }) });
+    expect(sneaky.status).toBe(202);
+    expect(store.listTickets("shop").some((t) => t.title === "Sneaky")).toBe(false);
+    // A note to a ticket waits for a tap too.
+    const later = store.listTickets("shop").find((t) => t.title === "Later")!;
+    const note = await fetch(`${base}/api/profiles/shop/tickets/${later.id}/comments`, { method: "POST", headers: header, body: JSON.stringify({ text: "do it differently" }) });
+    expect(note.status).toBe(202);
+    expect(store.listComments("shop", later.id)).toHaveLength(0);
     // A wrong secret is refused outright.
     const bad = await fetch(`${base}/api/profiles/shop/tickets`, { method: "POST", headers: { ...header, "x-ckanban-frontdesk": `${cur.slug}/${cur.id}/nope` }, body: JSON.stringify({ title: "x", status: "ready" }) });
     expect(bad.status).toBe(403);

@@ -616,7 +616,8 @@ export class HelperRunner implements HelperSink {
     let next = retry ? Math.min(dec.nextWakeAt, this.now() + URGENT_RETRY_MS) : dec.nextWakeAt;
     if (night) next = Math.min(next, nightEnd(this.now(), s.night));
     if (gapEnds !== null) next = Math.min(next, gapEnds);
-    const held = this.d.core.waits.open().filter((r) => !r.toldAt && !g.snoozed.has(r.key) && !unreached.has(r.key));
+    // Shown in the front desk chat (seenInChatAt): not held for a summary, so it doesn't keep the helper waking.
+    const held = this.d.core.waits.open().filter((r) => !r.toldAt && !r.seenInChatAt && !g.snoozed.has(r.key) && !unreached.has(r.key));
     if (held.length) {
       // Whatever this wake was for (an urgent alert, a new item), held items get their look: when the 3-hour gap
       // ends, and before the board's own digest would send them.
@@ -1044,7 +1045,9 @@ export class HelperRunner implements HelperSink {
       if (pending(r)) return true;
       const stopped = r.remindersStopped === "got-it" || r.remindersStopped === "not-urgent";
       if (r.urgent && !r.toldAt && !stopped) return true;
-      if (!r.toldAt && ((r.fallbackAt && ms(r.fallbackAt) <= soon) || (r.digestAt && ms(r.digestAt) <= soon))) return true;
+      // A wait the front desk showed: no digest for it, and a fallback time already past only matters while it was due.
+      const seen = !!r.seenInChatAt;
+      if (!r.toldAt && ((r.fallbackAt && ms(r.fallbackAt) <= soon && !(seen && ms(r.fallbackAt) < now)) || (!seen && r.digestAt && ms(r.digestAt) <= soon))) return true;
     }
     return false;
   }

@@ -257,6 +257,25 @@ describe("helper runner", () => {
     stop();
   });
 
+  test("a routine wait the front desk showed isn't sent 4 hours later as missed, and doesn't keep the Mac awake", async () => {
+    const stop = make();
+    ask(ticket.id, ["Approve the price?"]);
+    await settle();
+    const key = keyOf(ticket.id);
+    // The front desk showed the wait in its chat; the helper ran after it (no 5-minute fallback).
+    n.helper.waits.update(key, { seenInChatAt: new Date(clock).toISOString() });
+    answers.push(answer({ nextWakeIn: 600 }));
+    clock += 60_000;
+    await h.tick();
+    clock += 4 * 3600_000 + 60_000;
+    await n.helper.tick();
+    expect(n.helper.messages.listNewest().filter((m) => m.level === "fallback" || m.level === "digest")).toHaveLength(0);
+    expect(hooks).toHaveLength(0);
+    expect(n.helper.waits.get(key)!.toldAt).toBeNull();
+    expect(h.wantsAwake()).toBe(false);
+    stop();
+  });
+
   test("a summary lists a wait the front desk already showed under still waits, not as new", async () => {
     const stop = make();
     const other = store.createTicket("kb", { title: "Copy", body: "b", status: "in_progress" });

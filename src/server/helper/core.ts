@@ -431,7 +431,9 @@ export class HelperCore {
       console.warn(`helper: no helper run in 5 minutes, sending ${fallback.length} directly`);
       await this.sendDirect(fallback.map((r) => r.key), "fallback");
     }
-    const digest = this.holdForMorning(this.waits.open().filter((r) => !r.toldAt && r.digestAt && Date.parse(r.digestAt) <= now));
+    // A wait the Telegram front desk already showed the user (seenInChatAt) isn't missed: no digest for it. Its urgent
+    // alert and the 5-minute fallback still go by toldAt.
+    const digest = this.holdForMorning(this.waits.open().filter((r) => !r.toldAt && !r.seenInChatAt && r.digestAt && Date.parse(r.digestAt) <= now));
     if (digest.length) {
       console.warn(`helper: helper missed ${digest.length} waits for 4 hours, sending a digest`);
       await this.digest(digest, "fallback", "The helper didn't tell you about these in time, so the board sends them itself.");
