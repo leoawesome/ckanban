@@ -4,6 +4,7 @@ import { createLive, LIVE_NAME, type ChannelLike, type LocksLike, type SourceLik
 import type { ChatCacheInfo } from "./cacheNote";
 import type { SlashCommand } from "./slashText";
 import type { TicketUsage, UsageResult } from "./usage";
+import type { ContextView } from "./contextText";
 import type { Status } from "./columns";
 import type { TicketKind } from "./family";
 import type { PrStatus, TicketPr } from "./prText";
@@ -1295,7 +1296,8 @@ export type BusEvent =
   | { type: "huddle.session"; profile: string; huddleId: string; handle: string }
   | { type: "chat.updated"; profile: string; id: string; chat: QuickChat | null }
   | { type: "chat.draft"; profile: string; id: string; text: string; final?: string }
-  | { type: "chat.activity"; profile: string; id: string; activity: string | null };
+  | { type: "chat.activity"; profile: string; id: string; activity: string | null }
+  | { type: "context.updated"; profile: string; kind: "ticket" | "chat"; id: string };
 
 /** Phone access over Tailscale (src/server/remote.ts). local: this page is open on the Mac, not the phone. */
 export interface RemoteState {
@@ -1822,6 +1824,9 @@ export const api = {
     req<{ entries: ActivityEntry[]; before: number | null }>("GET", `${t(slug, id)}/activity${before === undefined ? "" : `?before=${before}`}`),
   /** Cost, tokens and ≈ share of the 5h plan window per run. */
   ticketUsage: (slug: string, id: string) => req<TicketUsage>("GET", `${t(slug, id)}/usage`),
+  /** The Context panel (GET: the last check, POST: check now; answered once the check is over). */
+  ticketContext: (slug: string, id: string, check = false) => req<ContextView>(check ? "POST" : "GET", `${t(slug, id)}/context`),
+  chatContext: (slug: string, id: string, check = false) => req<ContextView>(check ? "POST" : "GET", `${chatsUrl(slug, id)}/context`),
   inbox: () => req<InboxItem[]>("GET", "/api/inbox"),
   allTickets: () => req<TicketRow[]>("GET", "/api/tickets"),
   snippets: (slug: string) => req<Snippet[]>("GET", `/api/snippets?profile=${encodeURIComponent(slug)}`),

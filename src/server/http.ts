@@ -4,7 +4,8 @@ import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:pa
 import { routeLabel, track } from "./lag";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "./artifact";
 import { profileFor } from "./cpuprof";
-import { ConflictError, recoveryFor, type Board } from "./board";
+import { claudeSessionFile, ConflictError, recoveryFor, type Board } from "./board";
+import { ContextUsage, type ContextSpec } from "./context-usage";
 import { FollowUpError } from "./followup";
 import { claudeDefaults, findClaude, listClaudeProjects, listSessions, liveSessionMatch, pickFolder, processCommands } from "./claude";
 import type { Bus, BusEvent } from "./events";
@@ -109,6 +110,8 @@ export interface ServerDeps {
   /** What the board learns on its own (learner.ts); the daemon passes its started one. */
   learner?: Learner;
   quickChats?: QuickChats;
+  /** The Context panel's checks (tests pass one on a fake claude). */
+  contexts?: ContextUsage;
   /** Restart the daemon once no run is active (POST /api/restart); missing when not running as the daemon. */
   restart?: () => { running: number; alreadyPending: boolean };
   /** The daemon keeps the Mac awake for active work now (GET /api/awake); missing: never. */
@@ -315,6 +318,46 @@ export function createServer(deps: ServerDeps) {
     entries: (t) => (t.sessionId ? sessions.get(t.sessionId)?.entries : null) ?? [],
   });
   const quickChats = deps.quickChats ?? new QuickChats(store, bus, board, { claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude" });
+  // The Context panel (context-usage.ts): `/context` on a throwaway copy of the chat's session, cached per chat.
+  const contexts = deps.contexts ?? new ContextUsage({
+    claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude", sessionFile: claudeSessionFile,
+    changed: (key) => {
+      const [kind, profile, id] = key.split("/") as ["ticket" | "chat", string, string];
+      bus.emit({ type: "context.updated", profile, kind, id });
+    },
+  });
+  /** After a run of a chat that was checked before, the panel's numbers are refreshed (never for a chat nobody opened it on). */
+  const contextAfterRun = (kind: "ticket" | "chat", spec: (slug: string, id: string) => ContextSpec | null) => (slug: string, id: string) => {
+    const key = `${kind}/${slug}/${id}`;
+    if (!contexts.checked(key)) return;
+    let s: ContextSpec | null = null;
+    try {
+      s = spec(slug, id);
+    } catch {}
+    if (s) void contexts.refresh(key, s);
+  };
+  board.onRunEnd(contextAfterRun("ticket", (s, id) => board.contextSpec(s, id)));
+  quickChats.onRunEnd(contextAfterRun("chat", (s, id) => quickChats.contextSpec(s, id)));
+  /** GET: the cached result; POST: a fresh check (shared with one already running), answered once it is over. */
+  const contextRoute = async (req: Request, kind: "ticket" | "chat", slug: string, id: string, spec: () => ContextSpec | null, what: string): Promise<Response> => {
+    const key = `${kind}/${slug}/${id}`;
+    if (req.method === "POST") {
+      await userOnly(req, what);
+      let s: ContextSpec | null;
+      try {
+        s = spec();
+      } catch (e) {
+        throw new HttpError(409, (e as Error).message);
+      }
+      if (s) await contexts.refresh(key, s);
+      return json(contexts.view(key, s?.sessionId ?? null));
+    }
+    let sessionId: string | null = null;
+    try {
+      sessionId = spec()?.sessionId ?? null;
+    } catch {}
+    return json(contexts.view(key, sessionId));
+  };
   const snippets = new Snippets(store, bus);
   const windowsFile = join(store.root, "usage-windows.json");
   const usage = new UsageCache(deps.usage ?? fetchUsage, (r) => recordWindow(windowsFile, r));
@@ -1415,6 +1458,10 @@ export function createServer(deps: ServerDeps) {
       const chat = quickChats.get(slug, cid);
       if (!chat) throw new HttpError(404, "chat not found");
       if (parts.length === 4 && m === "GET") return json(quickChats.view(slug, chat));
+      // The Context panel: how much of Claude's memory the chat fills (GET cached, POST checks now).
+      if (parts.length === 5 && parts[4] === "context" && (m === "GET" || m === "POST")) {
+        return contextRoute(req, "chat", slug, cid, () => quickChats.contextSpec(slug, cid), "Checking a chat's context");
+      }
       if (parts.length === 4 && m === "PATCH") {
         await userAsks();
         const b = (await body(req)) ?? {};
@@ -2102,6 +2149,10 @@ export function createServer(deps: ServerDeps) {
     }
 
     const action = parts[4];
+    // The Context panel: how much of Claude's memory the ticket's chat fills (GET cached, POST checks now).
+    if (action === "context" && parts.length === 5 && (m === "GET" || m === "POST")) {
+      return contextRoute(req, "ticket", slug, id, () => board.contextSpec(slug, id), "Checking a chat's context");
+    }
     // The log's newest page; `?before=` (the previous answer's `before`) pages back, null once the first entry is in.
     if (action === "activity" && m === "GET") {
       const raw = url.searchParams.get("before");

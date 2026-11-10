@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { copy, type Ticket } from "./api";
-import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, MoreIcon, MoveIcon, RefreshIcon, TerminalIcon, TrashIcon } from "./icons";
+import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, InfoIcon, MoreIcon, MoveIcon, RefreshIcon, TerminalIcon, TrashIcon } from "./icons";
 import { capInputText, parseCap } from "./capText";
 import { useLayer } from "./layers";
 import { MenuSheet } from "./MenuSheet";
@@ -10,7 +10,9 @@ import { costText } from "./usage";
  * "⋯" menu in the ticket panel header: the session (resume command, branch, ID, linked session),
  * then Report a bug and Delete. ↑↓ move, Esc closes only the menu.
  */
-export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap, onBranch, onMoveToBoard, onPickSession, onUnlink, onCheckPr, onReportBug, onDelete, onHuddle }: {
+export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap, onBranch, onMoveToBoard, onPickSession, onUnlink, onCheckPr, onReportBug, onDelete, onHuddle, onContext }: {
+  /** Open the chat's Context panel (how much Claude is holding in mind). */
+  onContext?: () => void;
   ticket: Ticket;
   working: boolean;
   /** The session is open in a terminal right now. */
@@ -147,6 +149,13 @@ export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap
               <button role="menuitem" className="menu-item" onClick={pick(onCheckPr)}>
                 <span className="menu-icon" aria-hidden><RefreshIcon size={14} /></span>
                 <span className="menu-label">Check PR status now</span>
+              </button>
+            )}
+            {onContext && (
+              <button role="menuitem" className="menu-item" onClick={pick(onContext)}>
+                <span className="menu-icon" aria-hidden><InfoIcon size={14} /></span>
+                <span className="menu-label">Context</span>
+                <span className="menu-hint">how much Claude is holding in mind</span>
               </button>
             )}
             {onHuddle && (

@@ -459,6 +459,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /** The ⋯ menu's Context item: a stamp the chat's Context chip opens on. */
+  const [contextRequest, setContextRequest] = useState(0);
   const [reportingBug, setReportingBug] = useState(false);
   const [confirmStart, setConfirmStart] = useState(false);
   const [confirmBranch, setConfirmBranch] = useState(false);
@@ -1062,6 +1064,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             onCheckPr={() => act(() => api.checkPr(slug, ticket.id))}
             onReportBug={() => setReportingBug(true)}
             onHuddle={tabs.includes("huddle") ? undefined : () => setTab("huddle")}
+            onContext={() => { setTab("chat"); setContextRequest(Date.now()); }}
             onDelete={() => setConfirmDelete(true)} />
           {!phone && <button className="icon-btn" onClick={onClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>}
         </header>
@@ -1143,7 +1146,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             ) : tab === "outputs" ? (
               <div className="panel-scroll panel-outputs"><Outputs slug={slug} ticket={ticket} onCount={setOutputCount} focus={outputFocus} /></div>
             ) : (
-              <Chat slug={slug} ticket={ticket} tickets={tickets} onOpenTicket={onOpenTicket} onError={onError} onPendingProposal={onPendingProposal} onFilesChanged={diffState.reload}
+              <Chat slug={slug} ticket={ticket} tickets={tickets} contextRequest={contextRequest} onOpenTicket={onOpenTicket} onError={onError} onPendingProposal={onPendingProposal} onFilesChanged={diffState.reload}
                 onOpenTasks={tabs.includes("family") ? () => openTab("family") : undefined}
                 huddle={huddle} onOpenHuddle={() => setTab("huddle")} onOpenTeam={onOpenTeam} help={help}
                 onOpenOutput={(name) => { setOutputFocus(name); setTab("outputs"); }} />

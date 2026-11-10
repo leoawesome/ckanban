@@ -350,17 +350,12 @@ export class QuickChats {
     let lastActivity = 0;
     const unbilled = new UnbilledUsage();
     const emitDraft = (text: string, final?: string) => this.bus.emit({ type: "chat.draft", profile: slug, id, text, ...(final ? { final } : {}) });
-    const connectors = boardConnectorOptions(profile);
-    const extraEnv = this.hooks.env?.(slug, c) ?? null;
-    const extraNote = this.hooks.note?.(slug, c) ?? null;
-    const limits = this.hooks.limits?.(slug, c) ?? null;
-    // A front desk chat never runs with a normal chat's rights (shell, file edits), even if the front desk isn't plugged in.
-    if (c.frontDesk && !limits) throw new Error("The Telegram front desk isn't set up on this board right now, so nothing was run.");
+    const { env, args } = this.runSetup(slug, profile, c, resume);
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: profile.path,
-      env: extraEnv ? { ...connectors.env, ...extraEnv } : connectors.env,
-      args: buildArgs(c.sessionId, resume, profile.model, limits ? [...connectors.disallowed, ...limits.disallowed] : connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), extraNote ? `${quickChatNote(profile)}\n\n${extraNote}` : quickChatNote(profile), limits?.maxBudgetUsd ?? null, runOptions(null, profile, false).effort, false, limits ? { settings: limits.settings, tools: limits.tools ?? null, strictMcp: !!limits.strictMcp } : null),
+      env,
+      args,
       input: localizeAttachments(run.prompt, this.store.attachmentsDir),
       onEvent: (ev) => {
         unbilled.feed(ev);
@@ -426,12 +421,46 @@ export class QuickChats {
     this.patch(slug, id, patch);
   }
 
+  /** The environment and flags a run of the chat gets; contextSpec copies them for the Context panel. */
+  private runSetup(slug: string, profile: Profile, c: QuickChat, resume: boolean): { env: Record<string, string>; args: string[] } {
+    const connectors = boardConnectorOptions(profile);
+    const extraEnv = this.hooks.env?.(slug, c) ?? null;
+    const extraNote = this.hooks.note?.(slug, c) ?? null;
+    const limits = this.hooks.limits?.(slug, c) ?? null;
+    // A front desk chat never runs with a normal chat's rights (shell, file edits), even if the front desk isn't plugged in.
+    if (c.frontDesk && !limits) throw new Error("The Telegram front desk isn't set up on this board right now, so nothing was run.");
+    return {
+      env: extraEnv ? { ...connectors.env, ...extraEnv } : connectors.env,
+      args: buildArgs(c.sessionId, resume, profile.model, limits ? [...connectors.disallowed, ...limits.disallowed] : connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), extraNote ? `${quickChatNote(profile)}\n\n${extraNote}` : quickChatNote(profile), limits?.maxBudgetUsd ?? null, runOptions(null, profile, false).effort, false, limits ? { settings: limits.settings, tools: limits.tools ?? null, strictMcp: !!limits.strictMcp } : null),
+    };
+  }
+
+  /** What the Context panel needs to run `/context` like this chat's runs, or null before Claude saved its session. */
+  contextSpec(slug: string, id: string): { sessionId: string; cwd: string; args: string[]; env: Record<string, string> } | null {
+    const c = this.get(slug, id);
+    const profile = this.store.getProfile(slug);
+    if (!c || !profile || !this.sessionExists(c.sessionId)) return null;
+    const { env, args } = this.runSetup(slug, profile, c, true);
+    return { sessionId: c.sessionId, cwd: profile.path, args, env };
+  }
+
+  private runEnded: ((slug: string, id: string) => void)[] = [];
+  /** Called after each run of a chat ends (the Context panel refreshes then). */
+  onRunEnd(fn: (slug: string, id: string) => void): void {
+    this.runEnded.push(fn);
+  }
+
   private finished(run: ActiveChat): void {
     const k = this.key(run.slug, run.id);
     if (this.runs.get(k) !== run) return;
     this.runs.delete(k);
     this.board.restartWorkChanged();
     if (this.shuttingDown) return;
+    for (const fn of this.runEnded) {
+      try {
+        fn(run.slug, run.id);
+      } catch {}
+    }
     const c = this.get(run.slug, run.id);
     if (!c) return;
     // Messages that came in as the run was ending get their own reply now (or after a pending restart).

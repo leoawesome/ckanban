@@ -1037,6 +1037,11 @@ export class Board {
         // When the user moved the card, updateTicket() writes the new status and dispatches itself.
         if (!this.shuttingDown && !run.targetStatus) this.dispatch(slug);
         if (!this.shuttingDown) this.advancePlans(slug);
+        if (!this.shuttingDown) for (const fn of this.runEnded) {
+          try {
+            fn(slug, id);
+          } catch {}
+        }
       });
     return null;
   }
@@ -1285,21 +1290,16 @@ export class Board {
     // Marks where this run starts in the log and what it was (the Usage tab lists runs by kind).
     // A resumed attempt (retry, stall restart) continues the same run in the log.
     if (!resumeText) this.store.appendActivity(slug, id, runNo, { type: "ckanban_run", kind: refine ? "planning" : quiet ? "reply" : run.chat?.followUp ? "follow-up" : run.chat ? "chat" : "work" });
-    const effortNow = runOptions(t, profile, !refine);
-    // The board's claude.ai connector setting: hidden connectors join --disallowedTools, "none" turns them all off.
-    const connectors = boardConnectorOptions(profile);
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: session.dir,
-      args: buildArgs(session.sessionId, session.existed, t.model ?? (t.main ? profile.mainModel : null) ?? profile.model,
-        // A main ticket never edits: every change goes to a tool ticket.
-        [...(refine ? planningDisallowed(t) : []), ...(t.main ? NO_EDIT_TOOLS.split(",") : []), ...connectors.disallowed], mcpConfig(undefined, this.store.boardTools(slug)), systemPrompt, cap, effortNow.effort, effortNow.ultracode),
+      args: this.chatArgs(slug, t, profile, refine, session.sessionId, session.existed, systemPrompt, cap),
       input: prompt,
       inputLocal: run.chat?.slash === "local" && !resume,
       planning: refine,
       // CKANBAN_TICKET marks board runs: the ckanban MCP/CLI refuses board changes there (no runs starting runs).
       // The board's saved keys (ask_keys) come first, so the board's own variables always win.
-      env: { ...boardKeyEnv(this.store.root, slug), ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${id}` },
+      env: this.chatEnv(slug, id, outputDir),
       onEvent: (ev) => {
         const changed = draft.feed(ev);
         if (changed !== null) {
@@ -3305,6 +3305,44 @@ export class Board {
    */
   stepsRunning(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
     return familyOf(tickets, id).filter((r) => r.ticket.id !== id && r.ticket.tool && this.isRunning(slug, r.ticket.id)).length;
+  }
+
+  /** The flags a run of the ticket's chat gets (see executeOnce); contextSpec copies them for the Context panel. */
+  private chatArgs(slug: string, t: Ticket, profile: Profile, refine: boolean, sessionId: string, resume: boolean, systemPrompt?: string, cap?: number | null): string[] {
+    const effortNow = runOptions(t, profile, !refine);
+    // The board's claude.ai connector setting: hidden connectors join --disallowedTools, "none" turns them all off.
+    const connectors = boardConnectorOptions(profile);
+    return buildArgs(sessionId, resume, t.model ?? (t.main ? profile.mainModel : null) ?? profile.model,
+      // A main ticket never edits: every change goes to a tool ticket.
+      [...(refine ? planningDisallowed(t) : []), ...(t.main ? NO_EDIT_TOOLS.split(",") : []), ...connectors.disallowed], mcpConfig(undefined, this.store.boardTools(slug)), systemPrompt, cap ?? null, effortNow.effort, effortNow.ultracode);
+  }
+
+  /** The environment a run of the ticket gets. */
+  private chatEnv(slug: string, id: string, outputDir: string): Record<string, string> {
+    const connectors = boardConnectorOptions(this.store.getProfile(slug)!);
+    // CKANBAN_TICKET marks board runs: the ckanban MCP/CLI refuses board changes there (no runs starting runs).
+    // The board's saved keys (ask_keys) come first, so the board's own variables always win.
+    return { ...boardKeyEnv(this.store.root, slug), ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${id}` };
+  }
+
+  /**
+   * What the Context panel needs to run `/context` like the ticket's chat runs (same folder, flags and environment), or
+   * null when the ticket has no saved Claude session yet. The per-run system prompt and spending cap are left out.
+   */
+  contextSpec(slug: string, id: string): { sessionId: string; cwd: string; args: string[]; env: Record<string, string> } | null {
+    const t = this.store.getTicket(slug, id);
+    const profile = this.store.getProfile(slug);
+    if (!t || !profile || !t.sessionId || !this.sessionExists(t.sessionId)) return null;
+    const cwd = t.workdir ?? t.worktree ?? profile.path;
+    if (!existsSync(cwd)) return null;
+    const refine = chatModeFor(t.status) === "refine";
+    return { sessionId: t.sessionId, cwd, args: this.chatArgs(slug, t, profile, refine, t.sessionId, true), env: this.chatEnv(slug, id, this.store.outputsDir(slug, id)) };
+  }
+
+  private runEnded: ((slug: string, id: string) => void)[] = [];
+  /** Called after each run of a ticket ends (the Context panel refreshes then). */
+  onRunEnd(fn: (slug: string, id: string) => void): void {
+    this.runEnded.push(fn);
   }
 
   /** The main or tool rules a run of t gets, or undefined for other tickets. */
