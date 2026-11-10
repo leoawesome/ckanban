@@ -15,7 +15,7 @@ export function attentionGoal(att: { kind: string; label: string } | null | unde
   if (!att) return null;
   switch (att.kind) {
     case "questions":
-      return { button: att.label === "Answer Claude" ? "Answer Claude" : "Answer questions", tab: "chat", targets: [".qcard:not(.answered)", ".reply-text"] };
+      return { button: att.label === "Answer Claude" ? "Answer Claude" : "Answer questions", tab: "chat", targets: [".qcard:not(.answered)", ".task-card", ".reply-text"] };
     case "proposal":
       return { button: att.label, tab: "chat", targets: [".proposal:not(.applied)", ".reply-text"] };
     case "blocked":

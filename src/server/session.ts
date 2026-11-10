@@ -38,6 +38,8 @@ export interface QuestionOption {
 
 export interface Question {
   question: string;
+  /** Background, folded under the question as "Details" (markdown). Older forms have none. */
+  context?: string;
   options: QuestionOption[];
   multiSelect: boolean;
 }
@@ -200,6 +202,7 @@ export function parseQuestions(v: any): Question[] | null {
   if (!Array.isArray(v) || !v.length) return null;
   const qs = v.map((q: any) => ({
     question: String(q?.question ?? "").trim(),
+    ...(typeof q?.context === "string" && q.context.trim() ? { context: q.context.trim() } : {}),
     multiSelect: !!q?.multiSelect,
     options: (Array.isArray(q?.options) ? q.options : []).map((o: any) => ({
       label: String(o?.label ?? "").trim(),

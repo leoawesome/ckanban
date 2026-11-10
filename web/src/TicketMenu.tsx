@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { copy, type Ticket } from "./api";
-import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, InfoIcon, MoreIcon, MoveIcon, RefreshIcon, TerminalIcon, TrashIcon } from "./icons";
+import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, InfoIcon, MoreIcon, MoveIcon, RefreshIcon, SparkIcon, TerminalIcon, TrashIcon } from "./icons";
 import { capInputText, parseCap } from "./capText";
 import { useLayer } from "./layers";
 import { MenuSheet } from "./MenuSheet";
@@ -10,7 +10,9 @@ import { costText } from "./usage";
  * "⋯" menu in the ticket panel header: the session (resume command, branch, ID, linked session),
  * then Report a bug and Delete. ↑↓ move, Esc closes only the menu.
  */
-export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap, onBranch, onMoveToBoard, onPickSession, onUnlink, onCheckPr, onReportBug, onDelete, onHuddle, onContext }: {
+export function TicketMenu({ runSettings, ticket, working, live, linkedLabel, boardCap, onCap, onBranch, onMoveToBoard, onPickSession, onUnlink, onCheckPr, onReportBug, onDelete, onHuddle, onContext }: {
+  /** "Model and effort" with the current choice under it; picking it opens the dropdowns. */
+  runSettings?: { value: string; onOpen: () => void };
   /** Open the chat's Context panel (how much Claude is holding in mind). */
   onContext?: () => void;
   ticket: Ticket;
@@ -90,6 +92,16 @@ export function TicketMenu({ ticket, working, live, linkedLabel, boardCap, onCap
       {open && (
         <MenuSheet onClose={() => close(false)}>
           <div className="inbox-menu ticket-menu" role="menu" aria-label="Ticket actions" ref={menu} onKeyDown={onKey}>
+            {runSettings && (
+              <>
+                <button role="menuitem" className="menu-item run-settings-item" onClick={pick(runSettings.onOpen)}
+                  title="Change the model and effort for this ticket's next runs">
+                  <span className="menu-icon" aria-hidden><SparkIcon size={14} /></span>
+                  <span className="menu-label">Model and effort<small className="menu-sub">{runSettings.value}</small></span>
+                </button>
+                <div className="menu-sep" role="separator" />
+              </>
+            )}
             <div className="menu-heading">
               Claude Code
               {live && <span className="badge ok live-badge"><span className="live-dot" /> open in terminal</span>}

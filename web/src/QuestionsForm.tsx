@@ -6,6 +6,8 @@ import { type Answer, answersMessage, answerText, fresh, type Progress, signatur
 import { CheckIcon } from "./icons";
 import { usePersistentState } from "./usePersistentState";
 import { enterSends } from "./enterSends";
+import { QuestionText } from "./QuestionText";
+import { plainMarkdown } from "./miniMarkdown";
 
 /**
  * A free-text answer box: grows to about 6 lines, then scrolls. Enter runs `onEnter`, Shift+Enter adds a new
@@ -163,7 +165,12 @@ export function QuestionsForm({ questions, answered, replaced, disabled: off, on
 
       {!summary ? (
         <div className="qbody">
-          <div className="qquestion">{q.question}{q.multiSelect && <span className="muted small"> · pick any</span>}</div>
+          <div className="qhead">
+            <div className="qquestion"><QuestionText as="span" text={q.question} />{q.multiSelect && <span className="muted small"> · pick any</span>}</div>
+            {q.context?.trim() && (
+              <details key={step} className="qcontext"><summary>Details</summary><QuestionText text={q.context} /></details>
+            )}
+          </div>
           <div className="qopts" role={q.multiSelect ? "group" : "radiogroup"}>
             {q.options.map((o, i) => {
               const on = a.picked.includes(o.label);
@@ -177,7 +184,7 @@ export function QuestionsForm({ questions, answered, replaced, disabled: off, on
                       {o.label}
                       {o.recommended && <span className="qrec">Recommended</span>}
                     </span>
-                    {o.description && <span className="qdesc" title={o.description}>{o.description}</span>}
+                    {o.description && <QuestionText as="span" className="qdesc" text={o.description} title={plainMarkdown(o.description)} />}
                   </span>
                   <kbd className="qkey">{i + 1}</kbd>
                 </button>
@@ -201,7 +208,7 @@ export function QuestionsForm({ questions, answered, replaced, disabled: off, on
           <ol className="qsummary">
             {questions.map((qq, i) => (
               <li key={i}>
-                <button className="link-btn" onClick={() => setStep(i)}>{qq.question}</button>
+                <button className="link-btn" onClick={() => setStep(i)}>{plainMarkdown(qq.question)}</button>
                 <span>{answerText(answers[i])}</span>
               </li>
             ))}

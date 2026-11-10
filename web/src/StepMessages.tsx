@@ -1,17 +1,10 @@
-// "With you" steps in a main ticket's chat: a with_you tool ticket talks to the user itself, and everything it shows
-// them (its replies and question forms, and the user's answers) appears inline in the main ticket's chat as its own
-// labelled block, in the order it happened. The user answers right there: the answer goes straight to the step's
-// session (api.chat on the step), never through the main ticket's Claude.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, subscribe, type Question, type SessionEntry, type Ticket } from "./api";
-import { autoGrow } from "./autoGrow";
-import { formKey } from "./drafts";
-import { enterSends } from "./enterSends";
+// "With you" steps in a main ticket's chat: a with_you tool ticket talks to the user itself. What it shows them (its
+// replies and question forms, and the user's answers) is loaded here; the main chat shows a short card or line for it
+// (TaskSheet.tsx) and the step's own chat opens in a side sheet, where answers go straight to the step's session.
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, subscribe, type SessionEntry, type Ticket } from "./api";
 import { familyOf, withYouTool } from "./family";
-import { QuestionsForm } from "./QuestionsForm";
 import { stepMessages, type StepMsg } from "./stepTalk";
-import { fullTime, timeAgo } from "./time";
-import { Markdown } from "./Transcript";
 
 export type { StepMsg };
 
@@ -72,87 +65,4 @@ export function useStepMessages(slug: string, ticket: Ticket, tickets: Ticket[])
   const loadedFor = useRef<string | null>(null);
   if (steps.every((s) => s.id in byStep)) loadedFor.current = ticket.id;
   return { steps, messages, reload, loaded: loadedFor.current === ticket.id };
-}
-
-/** A reply box tied to one step: what the user types goes straight to that step. */
-function StepReply({ step, onSend }: { step: StepInfo; onSend: (text: string) => Promise<void> }) {
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => autoGrow(ref.current, 6), [text]);
-  const send = async () => {
-    const t = text.trim();
-    if (!t || busy) return;
-    setBusy(true);
-    try {
-      await onSend(t);
-      setText("");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="step-reply">
-      <textarea ref={ref} rows={1} value={text} disabled={busy} placeholder={`Reply to ${step.title}…`} aria-label={`Reply to ${step.title}`}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (enterSends(e)) {
-            e.preventDefault();
-            void send();
-          }
-        }} />
-      <button className="btn small" disabled={busy || !text.trim()} onClick={() => void send()}>Send</button>
-    </div>
-  );
-}
-
-/**
- * One step's messages at one point of the main chat, under its label ("Staging check asks:"). The newest open form is
- * answered right here; while the step waits without a form, a reply box goes to it.
- */
-export function StepBlock({ slug, step, msgs, newest, onOpenTicket, onError, onSent, onPreview }: {
-  slug: string;
-  step: StepInfo;
-  msgs: StepMsg[];
-  /** This block holds the step's newest message: its reply box shows here. */
-  newest: boolean;
-  onOpenTicket: (id: string) => void;
-  onError: (msg: string) => void;
-  onSent: (stepId: string) => void;
-  onPreview?: (mockup: string) => void;
-}) {
-  const send = async (text: string) => {
-    try {
-      await api.chat(slug, step.id, text);
-      onSent(step.id);
-    } catch (e: any) {
-      onError(e.message);
-      throw e;
-    }
-  };
-  const asks = msgs.some((m) => m.role === "reply");
-  const openForm = msgs.some((m) => m.form?.open);
-  return (
-    <div className="step-block" role="group" aria-label={`${step.title}${asks ? " asks" : ""}`}>
-      <div className="step-head">
-        <button className="link-btn" title="Open this step's own chat" onClick={() => onOpenTicket(step.id)}>{step.title}</button>
-        {asks ? " asks:" : ":"}
-        {step.waiting && newest && <span className="badge step-waiting">needs you</span>}
-        {step.running && newest && <span className="muted"> · working</span>}
-      </div>
-      {msgs.map((m) => m.role === "user" ? (
-        <div key={m.uuid} className="step-msg user"><span className="who">You:</span> {m.text}<span className="muted" title={fullTime(m.at)}> · {timeAgo(m.at)}</span></div>
-      ) : (
-        <div key={m.uuid} className="step-msg reply">
-          {m.text && <div className="reply-text"><Markdown text={m.text} /></div>}
-          {m.questions && (
-            <QuestionsForm questions={m.questions as Question[]} answered={!m.form?.open} disabled={step.running}
-              onSubmit={(text) => send(text).catch(() => {})} onPreview={onPreview}
-              storageKey={formKey(slug, step.id, m.form?.key ?? m.uuid)} />
-          )}
-        </div>
-      ))}
-      {newest && step.waiting && !openForm && <StepReply step={step} onSend={send} />}
-    </div>
-  );
 }

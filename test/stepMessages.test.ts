@@ -43,3 +43,13 @@ test("an unanswered form is open, keyed like the step's own chat so typed answer
   expect(m.form).toEqual({ open: true, key: m.uuid });
   expect(m.questions).toEqual(q);
 });
+
+test("a last word that only repeats the form above it doesn't show again under the form", () => {
+  n = 0;
+  const form = [{ question: "Ready for the call?", context: "I take the phone for ten minutes.", options: [{ label: "Yes" }, { label: "Not now" }], multiSelect: false }];
+  const out = stepMessages("S", [
+    e("assistant", "text", "", { questions: form }),
+    e("assistant", "text", "Ready for the call? I take the phone for ten minutes.\nCKANBAN_RESULT: {\"status\":\"questions\"}"),
+  ], false);
+  expect(out.map((m: StepMsg) => [m.role, m.text])).toEqual([["reply", ""]]);
+});

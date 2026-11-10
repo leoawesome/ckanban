@@ -2,6 +2,7 @@ import { useContext } from "react";
 import type { ResultCard } from "./api";
 import { FileLinkContext } from "./fileLinkContext";
 import { requestTab } from "./pendingTab";
+import { QuestionText } from "./QuestionText";
 
 /** Short model name for the card's head ("Opus 5.5"). */
 export function modelLabel(m: string | null | undefined): string | null {
@@ -32,7 +33,7 @@ export function ResultCardView({ r, onOpenTicket }: { r: ResultCard; onOpenTicke
         <span className={`r-state ${badge.tone}`}>{badge.text}</span>
         {meta && <span className="muted">{meta}</span>}
       </div>
-      {r.summary && <p className="r-summary">{r.summary}</p>}
+      {r.summary && <QuestionText className="r-summary" text={r.summary} />}
       {r.folderFiles ? <p className="r-folder muted small">Changed {r.folderFiles} file{r.folderFiles === 1 ? "" : "s"} in your folder</p> : null}
       <div className="r-links">
         {r.report && files && <button className="link-btn" onClick={() => files.open(r.report!)}>Read report</button>}

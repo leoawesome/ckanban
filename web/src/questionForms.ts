@@ -2,8 +2,9 @@
 // Only the fields used here (structurally the same as api.ts's), so server tests can import this file.
 interface Question {
   question: string;
+  context?: string;
   multiSelect?: boolean;
-  options: { label: string; recommended?: boolean }[];
+  options: { label: string; description?: string; recommended?: boolean }[];
 }
 interface SessionEntry {
   uuid: string;
@@ -111,4 +112,25 @@ export function answerText(a: Answer): string {
 export function answersMessage(questions: Pick<Question, "question">[], answers: Answer[], note = ""): string {
   const lines = questions.map((q, i) => `- ${q.question} → ${answerText(answers[i] ?? { picked: [], otherOn: false, other: "" })}`);
   return `My answers:\n${lines.join("\n")}${note.trim() ? `\n\n${note.trim()}` : ""}`;
+}
+
+/** Words only: lower case, no marks, punctuation or extra spaces (so "**Pick one?**" matches "pick one"). */
+const words = (s: string) => s.toLowerCase().replace(/\]\([^)\s]*\)/g, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+/**
+ * Whether a reply only repeats a questions form it follows (its questions, context or options): the chat then
+ * shows the form alone, not the same report twice. Each line (or sentence) of the reply counts as repeated when the
+ * form says it too; the reply repeats the form when it repeats a question or context and at least 80% of its text is
+ * in such lines.
+ */
+export function repeatsForm(text: string, questions: Question[]): boolean {
+  const form = ` ${words(questions.flatMap((q) => [q.question, q.context ?? "", ...q.options.flatMap((o) => [o.label, o.description ?? ""])]).join("\n"))} `;
+  const parts = text.split(/\n+|(?<=[.!?:])\s+/).map(words).filter(Boolean);
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  if (!total) return false;
+  const repeated = parts.filter((p) => form.includes(` ${p} `));
+  // It must repeat a question or its context, not only an option label like "Yes".
+  const asked = ` ${words(questions.flatMap((q) => [q.question, q.context ?? ""]).join("\n"))} `;
+  if (!repeated.some((p) => p.includes(" ") && asked.includes(` ${p} `))) return false;
+  return repeated.reduce((n, p) => n + p.length, 0) / total >= 0.8;
 }

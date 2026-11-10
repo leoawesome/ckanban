@@ -2,14 +2,14 @@
 // "N of M done" with a thin bar, then one line each for Waiting on you, Now (what runs), Next and Broken / Paused (each
 // failed or paused task says why, with one button to move it on: Try again, Resume). Goal, what is done, groups, pull
 // requests and "Add a note" sit behind "More". Counts, test results and pull requests come from the board; goal, done,
-// broken, waiting on you and next step from Claude's update_status. The chat shows only one line, while something
-// waits on the user (WaitingLine).
+// broken, waiting on you and next step from Claude's update_status. The chat lists what waits on the user in its
+// "N waiting on you" button (TaskSheet.tsx).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, type FeatureStatus, type Ticket } from "./api";
 import { familyOf, isFeature, workingInFamily } from "./family";
-import { ChevronRightIcon, InfoIcon } from "./icons";
+import { InfoIcon } from "./icons";
 import { pausedLine } from "./limitText";
-import { namesText, taskProgress, waitingLine } from "./tasksText";
+import { namesText, taskProgress } from "./tasksText";
 import { toast } from "./toast";
 import { timeAgo } from "./time";
 
@@ -259,20 +259,6 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
       ) : <button className="ws-act ts-note" onClick={() => setNoting(true)}>Add a note</button>)}
       <button className="ws-act ts-more" aria-expanded={more} onClick={() => setMore(!more)}>{more ? "Less" : "More"}</button>
     </section>
-  );
-}
-
-/**
- * The chat's one orange line while the status says something waits on the user: "Waiting on you: pick a chat style".
- * Tapping it opens the Tasks tab, where the full text shows. Nothing shows when nothing waits.
- */
-export function WaitingLine({ status, onOpen }: { status: FeatureStatus; onOpen: () => void }) {
-  const text = waitingLine(status.saved);
-  if (!text) return null;
-  return (
-    <button className="chat-waiting" onClick={onOpen} title={`${text}\n\nOpen the Tasks tab`}>
-      <span className="cw-text">{text}</span><ChevronRightIcon size={14} />
-    </button>
   );
 }
 

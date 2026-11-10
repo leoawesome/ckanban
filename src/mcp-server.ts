@@ -634,6 +634,10 @@ export function urgencyError(args: any): string | null {
   return null;
 }
 
+/** How long a question should be; a longer one without context is refused (its background belongs in context). */
+const SHORT_QUESTION = 120;
+const MAX_BARE_QUESTION = 200;
+
 /** Checks ask_questions input; returns what's wrong, or null when it's fine. */
 export function questionsError(args: any): string | null {
   const u = urgencyError(args);
@@ -643,6 +647,10 @@ export function questionsError(args: any): string | null {
   for (const [i, q] of qs.entries()) {
     const at = `question ${i + 1}: `;
     if (!isText(q?.question)) return `${at}question text is required`;
+    if (q.context !== undefined && typeof q.context !== "string") return `${at}context must be text`;
+    if (q.question.trim().length > MAX_BARE_QUESTION && !isText(q.context)) {
+      return `${at}the question has ${q.question.trim().length} characters: keep it to one sentence (about ${SHORT_QUESTION} characters) and move the background into its "context" (what the user should do after picking an option goes in that option's description)`;
+    }
     const opts = q.options;
     if (!Array.isArray(opts) || opts.length < 2 || opts.length > 8) return `${at}give 2-8 options`;
     if (opts.some((o: any) => !isText(o?.label))) return `${at}every option needs a label`;
@@ -757,7 +765,9 @@ const PLANNING_TOOLS: Tool[] = [
     description:
       "Board planning chat only: ask the user questions as a form in the board's ticket chat (they can also add free text). " +
       "Their answers come back as the user's next message. Ask every open question that matters, 2-8 options each, exactly one option recommended; " +
-      "multiSelect true only when several options can apply. Put a one-line intro in your reply; don't repeat the questions as text. " +
+      "multiSelect true only when several options can apply. Each question is one short sentence (about 120 characters at most): put background in its context " +
+      "(shown folded under the question as Details), and what the user should do after picking an option in that option's description. " +
+      "Text may use simple markdown (bold, italic, `code`, links, lists). Put a one-line intro in your reply; don't repeat the questions or their context as text, before or after the call. " +
       "Nothing is created or changed. After the call, end your turn and wait for the answers.",
     inputSchema: {
       type: "object",
@@ -767,14 +777,18 @@ const PLANNING_TOOLS: Tool[] = [
           items: {
             type: "object",
             properties: {
-              question: { type: "string" },
+              question: { type: "string", description: "One short sentence, about 120 characters at most; no background here (that goes in context)." },
+              context: { type: "string", description: "Optional background the user may need to decide (markdown), shown folded under the question as \"Details\"." },
               options: {
                 type: "array", minItems: 2, maxItems: 8,
                 items: {
                   type: "object",
                   properties: {
                     label: { type: "string" },
-                    description: { type: "string", description: "Short note on what this option means." },
+                    description: {
+                      type: "string",
+                      description: "Short note on what this option means. If the user has something to do after picking it, put it here, e.g. \"What you say on call 5: 1. … 2. …\".",
+                    },
                     recommended: { type: "boolean", description: "true on exactly one option." },
                     mockup: { type: "string", description: "File name of the mockup this option stands for (e.g. a-two-buttons.html); the form links to its preview." },
                   },

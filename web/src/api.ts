@@ -586,6 +586,8 @@ export interface QuestionOption {
 
 export interface Question {
   question: string;
+  /** Background, folded under the question as "Details" (markdown). Older forms have none. */
+  context?: string;
   options: QuestionOption[];
   multiSelect: boolean;
 }
@@ -1708,6 +1710,8 @@ export const api = {
   branchTicket: (slug: string, id: string) => req<{ ticket: Ticket; warning: string | null }>("POST", `${t(slug, id)}/branch`),
   /** external: the session is open in a terminal the board can't close (nothing changed). */
   freshSession: (slug: string, id: string) => req<{ ticket: Ticket; external: boolean }>("POST", `${t(slug, id)}/fresh-session`),
+  /** "Fresh chat (keeps status)": the next message starts a new Claude session; chat history, status and outputs stay. */
+  freshChat: (slug: string, id: string) => req<Ticket>("POST", `${t(slug, id)}/fresh-chat`),
   takeOver: (slug: string, id: string) => req<{ ticket: Ticket; external: boolean }>("POST", `${t(slug, id)}/take-over`),
   linkSession: (slug: string, id: string, sessionId: string | null) =>
     req<Ticket>("POST", `${t(slug, id)}/link-session`, { sessionId }),

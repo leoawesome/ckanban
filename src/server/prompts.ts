@@ -34,8 +34,8 @@ const TOOL_NOTE = "(ckanban MCP tool; if it's deferred, load it with ToolSearch 
 export const URGENCY_RULE = `When you ask or notify the user, say in one line what waiting costs (the tool's "why"); mark it urgent ("urgent": true) if harm grows while it waits (customers billed twice, data ingested twice, a deadline missed). Routine questions stay unmarked and reach the user in a summary.`;
 
 /** How Claude asks questions so the board can render them as a clickable form. */
-export const QUESTIONS_FORMAT = `To ask the user questions, call the \`ask_questions\` tool ${TOOL_NOTE}, e.g. questions: [{"question":"Who will read the result?","options":[{"label":"My manager","description":"decision-oriented, 1 page","recommended":true},{"label":"Engineering team","description":"technical depth"}],"multiSelect":false}]
-The board shows them as a form (the user can also add free text) and sends the answers back as the user's next message. Rules: ask every open question that matters in one round (no cap), 2-8 options each, mark exactly one option "recommended", set "multiSelect": true only when several options can apply. Keep each question to one sentence and each option description to a few words. If the tool returns an error, fix the input and call it again. Put a one-line intro in your reply; don't repeat the questions as plain text. After the call, end your turn. ${URGENCY_RULE}
+export const QUESTIONS_FORMAT = `To ask the user questions, call the \`ask_questions\` tool ${TOOL_NOTE}, e.g. questions: [{"question":"Who will read the result?","context":"The length and tone depend on it.","options":[{"label":"My manager","description":"decision-oriented, 1 page","recommended":true},{"label":"Engineering team","description":"technical depth"}],"multiSelect":false}]
+The board shows them as a form (the user can also add free text) and sends the answers back as the user's next message. Rules: ask every open question that matters in one round (no cap), 2-8 options each, mark exactly one option "recommended", set "multiSelect": true only when several options can apply. Keep each question to one sentence of at most about 120 characters. Put background in the question's "context" (the form folds it under the question as Details), and what the user should do after picking an option (e.g. "What you say on call 5: 1. … 2. …") in that option's "description", not in the question; keep other option descriptions to a few words. Questions, context and descriptions may use simple markdown (**bold**, *italic*, \`code\`, links, "- " lists). If the tool returns an error, fix the input and call it again. Put a one-line intro in your reply; don't repeat the questions or their context as plain text, before or after the call. After the call, end your turn. ${URGENCY_RULE}
 Only if the ckanban tools aren't available: put the same JSON array in ONE <ckanban-questions>[...]</ckanban-questions> block in your message instead. ${BLOCK_RULE}`;
 
 /** How Claude proposes an improved ticket so the board can show an Apply button. */
@@ -755,7 +755,7 @@ ${context("Status refresh from the board", `Read ${statusPath}, then call the ck
 export function openQuestionsRule(open: Question[]): string {
   if (!open.length) return "";
   const qs = open.map((q) => ({
-    question: q.question, ...(q.multiSelect ? { multiSelect: true } : {}),
+    question: q.question, ...(q.context ? { context: q.context } : {}), ...(q.multiSelect ? { multiSelect: true } : {}),
     options: q.options.map((o) => ({ label: o.label, ...(o.description ? { description: o.description } : {}), ...(o.recommended ? { recommended: true } : {}), ...(o.mockup ? { mockup: o.mockup } : {}) })),
   }));
   return `

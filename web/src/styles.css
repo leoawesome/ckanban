@@ -906,15 +906,58 @@ body > .output-view.reader { position: fixed; }
 .wake-note summary::before { content: "▸ "; }
 .wake-note[open] summary::before { content: "▾ "; }
 .wake-note[open] { align-self: stretch; border-radius: var(--r-md); padding: 6px 10px; }
-/* A "with you" step talking to the user in its main ticket's chat: its own labelled block, answered right there. */
-.step-block { border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: var(--r-md); padding: 8px 14px; max-width: 90%; background: var(--surface); margin: 6px 0; display: flex; flex-direction: column; gap: 6px; }
-.step-head { font-size: var(--fs-xs); color: var(--muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.step-head .link-btn { font-weight: 600; color: var(--text); font-size: var(--fs-sm); }
-.step-head .step-waiting { margin-left: 6px; border: 1px solid var(--warn); color: var(--warn); background: transparent; }
-.step-msg.user { font-size: var(--fs-sm); color: var(--muted); }
-.step-msg.user .who { font-weight: 600; color: var(--text); }
-.step-reply { display: flex; gap: 6px; align-items: flex-end; }
-.step-reply textarea { flex: 1; resize: none; font: inherit; font-size: var(--fs-sm); padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); }
+/* A "with you" task in its main ticket's chat: a short card while it waits on the user (TaskSheet.tsx), else one line
+   per message; its own chat opens in the side sheet. */
+.task-card { border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: var(--r-md); padding: 10px 12px; max-width: 640px; background: var(--surface); margin: 4px 0 8px; }
+.task-card-who { font-size: var(--fs-xs); color: var(--muted); }
+.task-card-q { font-weight: 600; margin: 2px 0 8px; }
+.task-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.btn.task-card-ok { background: var(--ok-soft); border-color: transparent; color: var(--ok); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-trail { font-size: var(--fs-sm); color: var(--muted); border-left: 2px solid var(--border); padding: 2px 0 2px 10px; max-width: 640px; display: flex; flex-direction: column; gap: 2px; }
+.task-trail-head .link-btn { font-weight: 600; color: var(--text); }
+.task-trail-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-trail-line b { color: var(--text); font-weight: 600; }
+/* "N waiting on you" above the message box, and its list. */
+.waiting-wrap { position: relative; flex: none; margin: 0 max(28px, calc((100% - var(--read-max)) / 2)) 6px; }
+.waiting-btn {
+  display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: var(--r-pill); padding: 3px 10px; cursor: pointer;
+  background: var(--warn-soft); color: var(--warn); font: inherit; font-size: var(--fs-sm); font-weight: 600;
+}
+.waiting-btn:hover { filter: brightness(0.97); }
+.waiting-list {
+  position: absolute; left: 0; bottom: calc(100% + 4px); z-index: 30; width: min(520px, 100%); max-height: 50vh; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-pop);
+}
+.waiting-list button {
+  display: flex; gap: 8px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--border); background: none;
+  padding: 7px 10px; font: inherit; font-size: var(--fs-sm); color: var(--text); cursor: pointer; min-width: 0;
+}
+.waiting-list button:last-child { border-bottom: 0; }
+.waiting-list button:hover, .waiting-list button:focus-visible { background: var(--surface-2); }
+.waiting-list b { white-space: nowrap; flex: none; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
+.waiting-list span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* The side sheet: a task's own chat over the right side of the page (full width on a phone). */
+.task-sheet-scrim { position: fixed; inset: 0; z-index: 45; background: rgba(20, 18, 15, 0.18); animation: fade-in 140ms ease-out; }
+.task-sheet {
+  position: fixed; top: 0; bottom: 0; right: 0; z-index: 46; width: min(560px, 92%); display: flex; flex-direction: column;
+  background: var(--surface); box-shadow: var(--shadow-panel); animation: sheet-in 220ms ease-out;
+}
+.task-sheet:focus { outline: none; }
+/* Revealed from the right edge rather than slid in: its buttons sit still from the first frame, so a quick click on ✕
+   lands on ✕ (or on the dimmed area, which also closes), never on "Open full" passing under the pointer. */
+@keyframes sheet-in { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 -40px); } }
+@media (prefers-reduced-motion: reduce) { .task-sheet, .task-sheet-scrim { animation: none; } }
+.task-sheet-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.task-sheet-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-sheet-head .btn { display: inline-flex; align-items: center; gap: 4px; }
+.task-sheet-body { flex: 1; min-height: 0; }
+.task-sheet-body .chat-log { padding: 14px 14px 10px; }
+.task-sheet-body .composer { margin: 0 14px 14px; }
+@media (max-width: 720px) {
+  .waiting-wrap { margin: 0 8px 6px; }
+  .task-sheet { width: 100%; }
+  .task-sheet-head { padding-top: max(10px, env(safe-area-inset-top)); }
+}
 .wake-body { margin-top: 6px; color: var(--text); font-size: var(--fs-xs); max-height: 320px; overflow: auto; }
 .chat-typing { align-self: flex-start; display: flex; gap: 8px; align-items: center; max-width: 100%; font-size: var(--fs-sm); color: var(--accent-text); padding: 4px 6px; font-family: var(--mono); }
 /* What Claude is doing can be one long word (a tool's input): wrap it instead of widening the chat. */
@@ -1089,25 +1132,66 @@ body > .output-view.reader { position: fixed; }
 .ticket-nav .icon-btn:disabled { opacity: 0.35; cursor: default; background: none; }
 .panel.resizing * { cursor: col-resize !important; }
 .panel .drawer-resize { position: absolute; left: -5px; top: 0; bottom: 0; margin: 0; }
-.panel-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px 0 20px; }
+/* Ticket header, two rows: title, tags and buttons; then the tabs with the short status and the cost on the right. */
+.panel-head { display: flex; flex-direction: column; padding: 6px 12px 0 14px; border-bottom: 1px solid var(--border); }
+.head-row1 { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 32px; }
+.head-row1 > * { flex-shrink: 0; }
 .head-spacer { flex: 1; }
-/* The whole title under the buttons: a one-row textarea that grows with the text (TicketDrawer.tsx growTitle). */
-.panel-title { padding: 2px 20px 4px; }
-.panel-title .title-input { display: block; margin: 0 -6px; width: calc(100% + 12px); resize: none; overflow: hidden; line-height: 1.3; }
-/* Tags, model and effort in one row; the model and effort chips sit at the right end. */
-.panel-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 0 20px 10px; border-bottom: 1px solid var(--border); }
-.panel-meta .tag-editor { min-width: 0; }
-/* The header shrinks to one line while the chat or huddle feed scrolls down (useShrinkHeader): title and tags fold away. */
-.panel-top { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.22s ease, opacity 0.18s ease; }
-.panel-top-in { min-height: 0; }
-.panel.head-slim .panel-top { grid-template-rows: 0fr; opacity: 0; }
-.panel.head-slim .panel-top-in { overflow: hidden; }
-.head-title { display: none; flex: 1 1 0; min-width: 0; font-weight: 600; font-size: var(--fs-md); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.panel.head-slim .head-title { display: block; }
-.panel.head-slim .head-spacer { display: none; }
+.head-row1 > .head-spacer { flex: 1 1 0; min-width: 0; }
+.head-row1 .title-input {
+  flex: 0 1 auto; min-width: 8ch; field-sizing: content; max-width: 100%;
+  font-size: var(--fs-lg); font-weight: 700; line-height: 1.3; padding: 2px 6px; margin-left: -2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Tags as small chips that give way to the title; "+ tag" shows on hover or keyboard focus. */
+.head-row1 .tag-editor { flex: 0 0 auto; max-width: 40%; min-width: 0; flex-wrap: nowrap; gap: 4px; padding: 2px; }
+.head-row1 .tag-editor:not(:has(.tag-input-wrap)) { overflow: hidden; }
+.head-row1 .tag-editor .tag-chip { font-size: var(--fs-2xs); padding: 1px 7px; white-space: nowrap; flex: none; }
+/* ✕ folds away (still reachable by Tab) until the chip is hovered or has the keyboard. */
+.head-row1 .tag-editor .tag-x { max-width: 0; padding: 0; overflow: hidden; }
+.head-row1 .tag-editor .tag-chip:hover .tag-x, .head-row1 .tag-editor .tag-chip:focus-within .tag-x { max-width: 20px; }
+/* Folded to nothing (but still in the Tab order) until the row is hovered or it has the keyboard. */
+.head-row1 .tag-add { flex: none; font-size: var(--fs-2xs); padding: 0; max-width: 0; opacity: 0; overflow: hidden; border-width: 0; white-space: nowrap; transition: opacity 0.12s; }
+.head-row1:hover .tag-add, .head-row1 .tag-add:focus-visible, .head-row1 .tag-editor:focus-within .tag-add { max-width: 80px; opacity: 1; padding: 0 6px; border-width: 1px; }
+@media (hover: none) { .head-row1 .tag-add { max-width: 80px; opacity: 1; padding: 0 6px; border-width: 1px; } }
+/* Help is the bulb alone here; its name is in its label and tooltip. */
+.head-row1 .help-btn-label { display: none; }
+.head-row1 .help-btn { border: 0; background: transparent; color: var(--muted); }
+.head-row1 .help-btn.on, .head-row1 .help-btn:hover { background: var(--surface-2); color: var(--text); }
+.helper-icon { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; color: var(--muted); border-radius: var(--r-sm); }
+.helper-icon:hover, .helper-icon:focus-visible { background: var(--surface-2); color: var(--text); }
+.helper-icon.urgent { color: var(--err); }
+.run-popover { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 6px 0 4px; }
+.menu-label .menu-sub { display: block; color: var(--muted); font-size: var(--fs-2xs); font-weight: 400; }
+.head-row2-wrap { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr; transition: grid-template-rows 0.22s ease, opacity 0.18s ease; }
+.head-row2 { min-height: 0; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.panel.head-slim .head-row2-wrap { grid-template-rows: 0fr; opacity: 0; }
+.panel.head-slim .head-row2 { overflow: hidden; }
+.panel.head-slim .panel-head { padding-bottom: 6px; }
 .panel-head { transition: padding 0.22s ease; }
-.panel.head-slim .panel-head { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-@media (prefers-reduced-motion: reduce) { .panel-top, .panel-head { transition: none; } }
+.head-row2 .tabs { padding: 0; box-shadow: none; flex: 0 1 auto; min-width: 0; margin-left: -10px; }
+.head-row2 .tabs button { padding: 6px 10px 7px; }
+.head-row2 > :not(.tabs):not(.head-spacer) { flex-shrink: 0; }
+.head-row2 .your-turn.inline { padding: 2px 9px; background: var(--warn-soft); font-weight: 600; }
+.head-row2 .your-turn.inline.att-failed, .head-row2 .your-turn.inline.att-blocked { background: var(--err-soft); }
+.head-row2 .your-turn.inline.att-review { background: var(--ok-soft); }
+.head-cost { border: 0; background: none; padding: 2px 4px; color: var(--muted); font-size: var(--fs-xs); cursor: pointer; border-radius: var(--r-sm); font-variant-numeric: tabular-nums; }
+.head-cost:hover, .head-cost:focus-visible { color: var(--text); background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) { .head-row2-wrap, .panel-head { transition: none; } }
+/* The sidebar's main-ticket parts: "Where we are" first, the original brief folded, the old-chat note. */
+.where-we-are .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.where-we-are h4 { margin: 0; }
+.wwa-line { margin: 4px 0 0; font-size: var(--fs-sm); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.details-desc.brief-folded { flex: none; }
+.details-desc.brief-folded .section-head { padding-bottom: 10px; }
+.panel-details:has(.brief-folded) .details-pinned { max-height: none; flex: 0 1 auto; }
+.brief-toggle h4 { margin: 0; }
+.brief-toggle:disabled { cursor: default; }
+.fold-chev.side { transition: transform 0.15s; font-size: var(--fs-xs); }
+.brief-toggle[aria-expanded="true"] .fold-chev.side, .pr-list:not(.folded) > .pr-list-head .fold-chev.side { transform: rotate(90deg); }
+.pr-list.folded > .pr-list-head .fold-chev.side { transform: none; }
+.pr-done-toggle { display: block; }
+.old-chat-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: var(--fs-xs); color: var(--muted); background: var(--surface-2); border-radius: var(--r-md); padding: 8px 10px; }
 .panel-body {
   flex: 1; min-height: 0; display: grid; position: relative;
   grid-template-columns: var(--side-w, 340px) minmax(0, 1fr); transition: grid-template-columns 0.18s ease;
@@ -1148,7 +1232,6 @@ body > .output-view.reader { position: fixed; }
 .sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: none; }
 .sidebar-toggle.on { color: var(--text); }
 .panel-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.panel-main .tabs { padding: 0 28px; }
 .panel-scroll { flex: 1; overflow-y: auto; padding: 16px 24px; }
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .field-key { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
@@ -1531,6 +1614,17 @@ body > .output-view.reader { position: fixed; }
 .qstep.on { background: var(--accent); width: 18px; border-radius: var(--r-sm); }
 .qbody { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .qquestion { font-size: var(--fs-lg); font-weight: 600; }
+/* Background under the question, folded: "Details ▸". */
+.qhead { display: flex; flex-direction: column; gap: 4px; }
+.qcontext { font-size: var(--fs-sm); color: var(--muted); }
+.qcontext summary { cursor: pointer; width: fit-content; }
+.qcontext > .qmd { margin-top: 6px; }
+/* Question-form markdown (miniMarkdown.ts): bold, italic, code, links, lists. */
+.qmd p { margin: 0; }
+.qmd p + p, .qmd p + ul, .qmd p + ol, .qmd ul + p, .qmd ol + p { margin-top: 0.4em; }
+.qmd ul, .qmd ol { margin: 0.2em 0 0; padding-left: 1.3em; }
+.qmd code { font-family: var(--mono); font-size: var(--fs-xs); background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 0 4px; }
+.qmd a { color: var(--accent-text); text-decoration: underline; }
 .qopts { display: flex; flex-direction: column; gap: 6px; }
 .qopt {
   display: flex; align-items: flex-start; gap: 10px; text-align: left; width: 100%; padding: 9px 12px; border-radius: var(--r-md);
@@ -3115,41 +3209,23 @@ button.hd-mode:disabled { cursor: default; }
 
   /* ticket: full screen */
   .panel { border-left: 0; animation: none; }
-  .panel-head { gap: 6px; padding: calc(8px + env(safe-area-inset-top)) 10px 8px 6px; flex-wrap: wrap; }
-  .panel-head { padding-bottom: 0; flex-wrap: nowrap; }
-  .panel-title { padding: 2px 14px 4px; }
-  .panel-title .title-input { font-size: var(--fs-lg); }
-  /* Compact header (every tab but Ticket): status row, then the title on up to two lines; no tag row. */
-  .panel.head-compact .panel-top { display: none; }
-  .panel.head-compact:not(.head-slim) .panel-head { flex-wrap: wrap; row-gap: 0; padding-bottom: 6px; }
-  /* Up to two lines, so a long title can be read; longer ones end in "…" (the full title is on the Ticket tab). */
-  .panel.head-compact:not(.head-slim) .panel-head > .head-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; order: 99; flex: 1 0 100%; padding: 2px 8px 0; font-size: var(--fs-lg); }
-  .panel-meta { padding: 0 14px 8px; }
+  .panel-head { padding: calc(2px + env(safe-area-inset-top)) 8px 0 4px; }
+  .head-row1 { gap: 2px; }
+  .head-row1 .title-input { flex: 1 1 0; min-width: 0; field-sizing: fixed; font-size: var(--fs-md); }
   .panel-head .star-toggle, .panel-head .ticket-nav, .panel-head .save-state { display: none; }
-  /* One compact row: the status chip keeps only its short part (spinner and time, "Your turn",
-     "Auto huddle"); the rest stays in its title. */
-  .panel-head .badge.running:has(.badge-time) .badge-label, .panel-head .badge-sep,
-  .panel-head .badge .ah-reason, .panel-head .your-turn.inline .yt-label, .panel-head .badge:has(.badge-short) .badge-label { display: none; }
-  /* The reason itself ("Answer 4 questions"), not a bare "Your turn"; cut short when the row is tight. */
-  .panel-head .your-turn.inline { flex-shrink: 1 !important; min-width: 0; }
-  .panel-head .your-turn.inline .yt-why { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .panel-head .badge-short { display: inline; }
-  .panel-head .your-turn.inline, .panel-head .badge { font-size: var(--fs-xs); padding: 3px 9px; }
-  .panel-head .head-spacer { flex: 1 0 0; }
-  /* Shrunk: back, the title cut short, the status chip as a dot, ⋯. */
-  .panel.head-slim .panel-head .help-menu-wrap, .panel.head-slim .panel-head .job-chip,
-  .panel.head-slim .panel-head .phone-status .ps-label, .panel.head-slim .panel-head .phone-status .select-chevron,
-  .panel.head-slim .panel-head .your-turn.inline .yt-label, .panel.head-slim .panel-head .your-turn.inline .yt-why, .panel.head-slim .panel-head .your-turn.inline .yt-go, .panel.head-slim .panel-head .badge-label, .panel.head-slim .panel-head .badge-short { display: none; }
-  .panel.head-slim .panel-head .your-turn.inline { padding: 3px 7px; }
-  .panel.head-slim .panel-head > .head-title { flex: 1 1 0; }
-  .panel-head > :not(.head-spacer) { flex-shrink: 0; }
-  /* Every button in the row is 40px tall, borderless, like the back and ⋯ buttons. */
-  .panel-head .phone-back, .panel-head .more-btn, .panel-head .help-btn { width: 40px; height: 40px; }
+  .panel-head .job-chip .job-chip-word { display: none; }
+  .panel-head .phone-back, .panel-head .more-btn, .panel-head .help-btn { width: 32px; height: 32px; }
   .panel-head .help-btn { border: 0; background: transparent; color: var(--muted); border-radius: var(--r-sm); }
   .panel-head .help-btn.on, .panel-head .help-btn:hover { background: var(--surface-2); color: var(--text); }
+  .head-row2 { gap: 4px; }
+  .head-row2 .tabs { margin-left: 0; }
+  .head-row2 .tabs button { padding: 5px 8px 6px; }
+  .head-row2 .phone-status .ps-label { max-width: 40vw; }
+  .phone-tags { justify-content: flex-start; }
+  .phone-tags .tag-editor { min-width: 0; }
   /* The status button: what the ticket waits on, in its colour; tapping it moves the ticket. */
   .panel-head > .phone-status { flex-shrink: 1; min-width: 0; }
-  .phone-status .select-trigger { min-height: 40px; padding: 0 12px; gap: 6px; border: 0; border-radius: var(--r-pill); font-weight: 600; font-size: var(--fs-sm); background: var(--surface-2); color: var(--text); }
+  .phone-status .select-trigger { min-height: 26px; padding: 0 10px; gap: 6px; border: 0; border-radius: var(--r-pill); font-weight: 600; font-size: var(--fs-sm); background: var(--surface-2); color: var(--text); }
   .phone-status .select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
   .phone-status .ps-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .phone-status .select-chevron { color: currentColor; opacity: 0.7; }
@@ -3163,9 +3239,6 @@ button.hd-mode:disabled { cursor: default; }
   .phone-status.tone-err .select-trigger { background: var(--err-soft); color: var(--err); }
   .phone-status.tone-info .select-trigger { background: var(--info-soft); color: var(--info); }
   .phone-status.open .select-trigger, .phone-status .select-trigger:focus-visible { box-shadow: 0 0 0 2px currentColor; }
-  .panel.head-slim .panel-head .phone-status .select-trigger { padding: 0 14px; }
-  /* Room for every button: the scheduled chip keeps its clock and count, the status button shrinks last. */
-  .panel-head .job-chip .job-chip-word { display: none; }
   .panel-body.details-closed { grid-template-rows: minmax(0, 1fr); }
   /* Ticket tab (phones): the details sidebar as one full-height page that scrolls as a whole */
   .panel-ticket { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
@@ -3185,9 +3258,7 @@ button.hd-mode:disabled { cursor: default; }
   .panel-ticket.editing .panel-details { flex: 1; min-height: 0; }
   .panel-ticket.editing .details-pinned { display: none; }
   .panel-ticket.editing .details-desc { border-top: 0; }
-  .tabs { padding: 0 8px; }
   .tabs::-webkit-scrollbar, .col-jump::-webkit-scrollbar, .board::-webkit-scrollbar { display: none; }
-  .tabs button { padding: 10px 10px; }
   .chat .composer { margin-bottom: env(safe-area-inset-bottom); }
   .composer-keys { display: none; }
   .qopt { min-height: 44px; }
@@ -3462,7 +3533,6 @@ button.tag-chip:hover { border-color: currentColor; }
 .run-chip .chip-set .select-trigger { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); }
 .run-key { margin-right: 4px; opacity: 0.75; }
 .run-key::after { content: ":"; }
-.usage-inline { font-size: inherit; color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
 @media (max-width: 720px) {
   /* Phones: just the values, after a thin divider next to the tags. */
   .run-settings { margin-left: 0; padding-left: 10px; border-left: 1px solid var(--border); }
@@ -3764,16 +3834,6 @@ button.tag-chip:hover { border-color: currentColor; }
 .ws-note-actions .muted { margin-right: auto; }
 .status-note { align-self: flex-start; font-size: var(--fs-xs); color: var(--muted); border-left: 3px solid var(--warn); padding: 2px 10px; }
 @media (pointer: coarse) { .ws-act { min-height: 40px; padding: 0 6px; margin: 0 -6px; } .ws-act.ws-more { display: flex; align-items: center; width: fit-content; margin: -11px -6px -12px; } }
-/* The chat's one line while something waits on the user: tap opens the Tasks tab. */
-.chat-waiting {
-  flex: none; display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; cursor: pointer;
-  /* Stays in view on phones, where the whole chat scrolls. */
-  position: sticky; top: 0; z-index: 2; box-shadow: var(--shadow-sm);
-  border: 0; border-radius: var(--r-md); padding: 8px 12px; background: var(--accent-soft); color: var(--accent-text);
-  font: inherit; font-size: var(--fs-sm); font-weight: 600;
-}
-.chat-waiting:hover { filter: brightness(0.97); }
-.cw-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .family-tab { display: flex; flex-direction: column; gap: 8px; }
 .family-tab-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
@@ -3862,7 +3922,7 @@ button.fc-chip:hover, button.fc-chip[aria-expanded="true"] { color: var(--text);
 .result-card .r-state { font-size: var(--fs-2xs); font-weight: 600; padding: 1px 7px; border-radius: var(--r-pill); }
 .result-card .r-state.done { background: var(--ok-soft); color: var(--ok); }
 .result-card .r-state.fail { background: var(--err-soft); color: var(--err); }
-.result-card .r-summary { margin: 6px 0; font-size: var(--fs-md); line-height: 1.5; white-space: pre-wrap; }
+.result-card .r-summary { margin: 6px 0; font-size: var(--fs-md); line-height: 1.5; overflow-wrap: anywhere; }
 .result-card .r-folder { margin: 4px 0; }
 .result-card .r-links { display: flex; gap: 12px; font-size: var(--fs-xs); }
 .result-card .r-links .link-btn { font-weight: 600; }
@@ -3994,10 +4054,6 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .helper-line.urgent { color: var(--err); font-weight: 600; }
 .now-card .helper-line { white-space: normal; margin-top: 2px; }
 /* The ticket page's helper line, under its title and tags; wraps (a phone shows all of it). */
-.ticket-helper-line { white-space: normal; font-size: var(--fs-sm); padding: 0 20px 8px; text-decoration: none; overflow-wrap: anywhere; }
-@media (max-width: 720px) { .ticket-helper-line { padding: 0 14px 8px; } }
-.ticket-helper-line::before { content: "✦ "; }
-a.ticket-helper-line:hover { text-decoration: underline; }
 
 .inbox-helper, .now-helper { display: flex; flex-direction: column; gap: 6px; padding: 4px 4px 8px; }
 .now-helper { padding: 0 0 6px; }

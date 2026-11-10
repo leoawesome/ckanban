@@ -34,7 +34,7 @@ test("finished children in Review read as to check, not Done", () => {
 });
 
 test("Your turn leads to the thing to do, and the main button says so", () => {
-  expect(attentionGoal({ kind: "questions", label: "Answer 4 questions" })).toMatchObject({ button: "Answer questions", tab: "chat", targets: [".qcard:not(.answered)", ".reply-text"] });
+  expect(attentionGoal({ kind: "questions", label: "Answer 4 questions" })).toMatchObject({ button: "Answer questions", tab: "chat", targets: [".qcard:not(.answered)", ".task-card", ".reply-text"] });
   expect(attentionGoal({ kind: "proposal", label: "Review proposed tickets" })).toMatchObject({ button: "Review proposed tickets", tab: "chat" });
   expect(attentionGoal({ kind: "blocked", label: "Blocked" })).toMatchObject({ button: "See what Claude needs", tab: "chat" });
   expect(attentionGoal({ kind: "blocked", label: "Stopped at $1.00 cap" }, { capHit: { capUsd: 1 } })!.targets[0]).toBe(".cap-banner");

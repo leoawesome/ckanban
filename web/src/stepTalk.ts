@@ -1,11 +1,12 @@
 // What a "with you" step showed the user, for its main ticket's chat (StepMessages.tsx). No React and no api.ts, so
 // tests can import it.
-import { formStates } from "./questionForms";
+import { formStates, repeatsForm } from "./questionForms";
 import { replyText } from "./simplifyText";
 
 // Only the fields used here (structurally the same as api.ts's).
 interface Question {
   question: string;
+  context?: string;
   multiSelect?: boolean;
   options: { label: string; recommended?: boolean; description?: string; mockup?: string }[];
 }
@@ -53,8 +54,12 @@ export function stepMessages(stepId: string, entries: StepEntry[], running: bool
     });
     last = null;
   };
+  let form: Question[] | undefined;
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
+    if (e.questions) form = e.questions;
+    // A last word that only repeats the form above it in this turn: the form already says it.
+    else if (form && e.role === "assistant" && e.kind === "text" && repeatsForm(replyText(e.text), form)) continue;
     if (e.role === "assistant" && e.kind === "text" && (e.questions || replyText(e.text))) {
       // A form always shows; plain text only as the turn's last word.
       if (last !== null && entries[last].questions) flush();
@@ -62,6 +67,7 @@ export function stepMessages(stepId: string, entries: StepEntry[], running: bool
       continue;
     }
     if (e.role === "user" && (e.kind === "text" || e.kind === "board")) {
+      form = undefined;
       flush();
       if (userTyped(e) && e.text.trim()) out.push({ stepId, uuid: e.uuid, at: e.at, role: "user", text: e.text.trim() });
     }

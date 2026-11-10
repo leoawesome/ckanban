@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { callTool, proposalError, questionsError, ticketsError, type ToolContext } from "../src/mcp-server";
+import { callTool, proposalError, questionsError, ticketsError, TOOLS, type ToolContext } from "../src/mcp-server";
 
 const opt = (label: string, recommended?: boolean) => ({ label, ...(recommended ? { recommended } : {}) });
 const q = (options = [opt("Red", true), opt("Blue")], extra = {}) => ({ question: "Color?", options, ...extra });
@@ -59,4 +59,18 @@ test("the tools return an error Claude can fix, or tell it to wait; nothing touc
   expect((await callTool("propose_branch", { reason: "try B" }, ctx)).content[0].text).toContain("End your turn");
   expect((await callTool("propose_branch", {}, ctx)).isError).toBeUndefined();
   expect((await callTool("propose_branch", { reason: 3 }, ctx)).isError).toBe(true);
+});
+
+test("ask_questions: an optional context per question; a long question without context is sent back", () => {
+  expect(questionsError({ questions: [q(undefined, { context: "Background: **why** it matters." })] })).toBeNull();
+  expect(questionsError({ questions: [q(undefined, { context: 3 })] })).toBe("question 1: context must be text");
+  const long = "Why ".repeat(60).trim() + "?";
+  expect(questionsError({ questions: [q(undefined, { question: long })] })).toContain('move the background into its "context"');
+  expect(questionsError({ questions: [q(undefined, { question: long, context: "The background." })] })).toBeNull();
+  expect(questionsError({ questions: [q(undefined, { question: "x".repeat(200) })] })).toBeNull();
+  const tool = TOOLS.find((t) => t.name === "ask_questions")!;
+  const item = (tool.inputSchema as any).properties.questions.items;
+  expect(item.properties.context.type).toBe("string");
+  expect(item.required).toEqual(["question", "options"]);
+  expect(tool.description).toContain("Each question is one short sentence (about 120 characters at most): put background in its context");
 });

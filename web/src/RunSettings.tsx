@@ -10,7 +10,17 @@ const NEXT_RUN = "applies from the next run";
  * default; otherwise one quiet "Model and effort" button opens them. The dropdowns list "Board default (x)" and every
  * option. Ultracode is a switch next to the effort level, like Claude Code's.
  */
-export function RunSettings({ profile, ticket, onError }: { profile: Profile; ticket: Ticket; onError: (msg: string) => void }) {
+/** "Opus · medium" (the ticket's own or the board's), under "Model and effort" in the ticket's ⋯ menu. */
+export function runSettingsText(profile: Profile, ticket: Ticket): string {
+  const level = (e: string | null | undefined) => (e === "ultracode" ? "xhigh" : e ?? "");
+  const model = ticket.model || profile.model || "Default model";
+  const effort = level(ticket.effort) || level(profile.effort) || "default effort";
+  const ultra = ticket.ultracode ?? (ticket.effort === "ultracode" ? true : null) ?? (!!profile.ultracode || profile.effort === "ultracode");
+  return `${model} · ${effort}${ultra ? " · ultracode" : ""}`;
+}
+
+/** startOpen: show every dropdown at once (opened from the ⋯ menu). */
+export function RunSettings({ profile, ticket, onError, startOpen = false }: { profile: Profile; ticket: Ticket; onError: (msg: string) => void; startOpen?: boolean }) {
   const slug = profile.slug;
   const save = (patch: { model?: string | null; effort?: string | null; ultracode?: boolean | null }) =>
     api.updateTicket(slug, ticket.id, patch).catch((e) => onError(`Not saved: ${e.message}`));
@@ -23,7 +33,7 @@ export function RunSettings({ profile, ticket, onError }: { profile: Profile; ti
   const ultra = ticket.ultracode ?? (ticket.effort === "ultracode" ? true : null);
   const ultraValue = ultra === null ? "" : ultra ? "on" : "off";
   const customModel = model && !MODELS.includes(model) ? model : null;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const differs = (v: string, board: string | null | undefined) => !!v && v !== (board ?? "");
   const showModel = open || differs(model, profile.model);
   const showEffort = open || differs(effort, boardEffort);

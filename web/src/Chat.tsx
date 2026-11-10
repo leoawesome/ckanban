@@ -36,10 +36,13 @@ import { draftAfterUndo } from "./messageText";
 import { restoredDraft, rewindOff } from "./rewindText";
 import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
-import { StatusNoteView, useFeatureStatus, WaitingLine } from "./StatusBlock";
+import { StatusNoteView, useFeatureStatus } from "./StatusBlock";
 import { ResultCardView } from "./ResultCardView";
-import { hiddenTool, plannedMain, withYouTool } from "./family";
-import { StepBlock, type StepInfo, type StepMsg, useStepMessages } from "./StepMessages";
+import { familyOf, hiddenTool, plannedMain, withYouTool } from "./family";
+import { type StepInfo, type StepMsg, useStepMessages } from "./StepMessages";
+import { QuestionText } from "./QuestionText";
+import { TaskCard, TaskSheet, TaskTrail, useSheet, WaitingButton } from "./TaskSheet";
+import { shortNote, waitingItems, type WaitingItem } from "./taskCards";
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
@@ -55,7 +58,7 @@ import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, t
 import { heldByReply, inSession, liveProgress, norm, unsentNow, userAfterSaved, type Pending } from "./pendingBubbles";
 import { baseName, copyFile, dirName, downloadFile } from "./share";
 import { browserStore, draftKey, formKey, save } from "./drafts";
-import { type FormState, formStates } from "./questionForms";
+import { type FormState, formStates, repeatsForm } from "./questionForms";
 import { elapsed, fullTime, timeAgo } from "./time";
 import { stepsLine, stepsLineText, stepsWorking } from "./stepsLive";
 import { useNow } from "./useNow";
@@ -143,10 +146,19 @@ const OLD_LINE_MIN_TOKENS = 100_000;
 
 const before = (e: SessionEntry, at: string | undefined) => !!at && !!e.at && e.at < at;
 
-/** Tool calls (and subagents) in a row fold into one block; a branch point (splitAt) starts a new one. */
+const CARDS = ["questions", "proposal", "newTickets", "branch", "huddle", "deletion", "teammate", "squad", "automation", "keys"] as const;
+
+/**
+ * Tool calls (and subagents) in a row fold into one block; a branch point (splitAt) starts a new one. A reply that
+ * only repeats the questions form just above it in the same run is left out: the form already says it.
+ */
 function group(entries: SessionEntry[], splitAt?: string): Block[] {
   const out: Block[] = [];
+  let form: SessionEntry["questions"] = undefined;
   entries.forEach((e, index) => {
+    if (e.role === "user" || e.kind === "board") form = undefined;
+    if (e.questions) form = e.questions;
+    else if (form && e.role === "assistant" && e.kind === "text" && !e.commandOutput && !CARDS.some((k) => e[k]) && repeatsForm(replyText(e.text), form)) return;
     const prev = out.at(-1);
     if (e.kind === "tool" || e.kind === "agent" || e.kind === "workflow") {
       const kind = e.kind === "tool" ? "tools" : e.kind === "agent" ? "agents" : "workflows";
@@ -316,6 +328,22 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   const feature = useFeatureStatus(slug, ticket, tickets);
   // A main ticket's "with you" steps talk to the user here: their messages and forms show inline, answered right here.
   const stepTalk = useStepMessages(slug, ticket, tickets);
+  // A task opened in the side sheet (from its card, the waiting list or the URL): only one of this ticket's own tasks.
+  const sheet = useSheet(ticket.id);
+  const sheetTask = sheet.id && sheet.id !== ticket.id && familyOf(tickets, ticket.id).some((r) => r.ticket.id === sheet.id)
+    ? tickets.find((t) => t.id === sheet.id) ?? null : null;
+  // What opened the sheet gets the focus back when it closes (Safari doesn't focus a clicked button).
+  const sheetOpener = useRef<HTMLElement | null>(null);
+  const openSheet = (id: string, opener: HTMLElement) => {
+    sheetOpener.current = opener;
+    sheet.open(id);
+  };
+  useEffect(() => {
+    if (sheetTask) return;
+    const el = sheetOpener.current;
+    sheetOpener.current = null;
+    if (el?.isConnected) el.focus({ preventScroll: true });
+  }, [!!sheetTask]);
   // A slow step chat or status doesn't hold the notes back for long once the conversation is in.
   const [sideWaited, setSideWaited] = useState(false);
   const pageIn = page !== null;
@@ -1043,7 +1071,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     const list: Side[] = [];
     for (const it of items) {
       if (it.kind === "note") {
-        list.push(it);
+        // The board's note comes when a task's run ends, just after the message it is about: it goes before that
+        // task's card, as its heading.
+        const prev = list.at(-1);
+        if (prev?.kind === "step" && prev.step.id === it.ticketId) list.splice(list.length - 1, 0, it);
+        else list.push(it);
         continue;
       }
       const step = stepTalk.steps.find((x) => x.id === it.m.stepId);
@@ -1055,10 +1087,43 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     sideAt.set(i, list);
   }
   const newestOf = new Map(stepTalk.messages.map((m) => [m.stepId, m.uuid]));
-  const sideView = (i: number) => sideAt.get(i)?.map((x) => x.kind === "note"
-    ? <div key={`note-${x.ticketId}-${x.at}`} className="chat-note board-note">{x.text}<span title={fullTime(x.at)}> · {timeAgo(x.at)}</span></div>
-    : <StepBlock key={`step-${x.msgs[0].uuid}`} slug={slug} step={x.step} msgs={x.msgs} newest={x.msgs.some((m) => newestOf.get(x.step.id) === m.uuid)}
-        onOpenTicket={onOpenTicket} onError={onError} onSent={stepTalk.reload} onPreview={onOpenOutput && ((m) => onOpenOutput(`mockups/${m}`))} />);
+  // A task waiting on the user shows one short card where its newest message is; its earlier messages are one line each.
+  // The task's chat itself opens in the side sheet.
+  const sideView = (i: number) => sideAt.get(i)?.map((x) => {
+    if (x.kind === "note") {
+      return <div key={`note-${x.ticketId}-${x.at}`} className="chat-note board-note"><QuestionText as="span" text={shortNote(x.text, tickets.find((t) => t.id === x.ticketId)?.title)} /><span title={fullTime(x.at)}> · {timeAgo(x.at)}</span></div>;
+    }
+    const newest = x.msgs.some((m) => newestOf.get(x.step.id) === m.uuid);
+    const open = (el: HTMLElement) => openSheet(x.step.id, el);
+    return newest && x.step.waiting
+      ? <TaskCard key={`step-${x.msgs[0].uuid}`} slug={slug} step={x.step} msgs={stepTalk.messages.filter((m) => m.stepId === x.step.id)} onOpen={open} onError={onError} onSent={stepTalk.reload} />
+      : <TaskTrail key={`step-${x.msgs[0].uuid}`} step={x.step} msgs={x.msgs} newest={newest} onOpen={open} />;
+  });
+  // "N waiting on you" above the message box: waiting tasks, other tasks the status says need the user, this chat's form.
+  const selfForm = (() => {
+    for (const [i, f] of forms) if (f.state === "open" && entries[i]?.questions?.length) return { question: entries[i].questions![0].question };
+    return null;
+  })();
+  const waiting: WaitingItem[] = ticket.main || feature.status ? waitingItems({
+    steps: stepTalk.steps, messages: stepTalk.messages,
+    needsYou: (feature.status?.facts.needsYou ?? []).map((n) => {
+      const t = tickets.find((x) => x.id === n.id);
+      return { id: n.id, title: t?.title ?? n.title, why: t?.userWait };
+    }),
+    selfForm, statusWaiting: feature.status?.saved?.waiting,
+  }) : [];
+  const pickWaiting = (it: WaitingItem, opener: HTMLElement) => {
+    if (it.kind === "task") return openSheet(it.id, opener);
+    if (it.kind === "status") return onOpenTasks?.();
+    const form = [...(scroller.current?.querySelectorAll<HTMLElement>(".qcard:not(.answered)") ?? [])].at(-1);
+    if (!form) return;
+    form.scrollIntoView({ block: "center", behavior: "smooth" });
+    form.classList.remove("attn-flash");
+    void form.offsetWidth;
+    form.classList.add("attn-flash");
+    setTimeout(() => form.classList.remove("attn-flash"), 2200);
+    form.querySelector<HTMLElement>("input, textarea, button")?.focus({ preventScroll: true });
+  };
   // Turns: avatar and name line on the first row of each; time dividers after long pauses.
   const layout = layoutTurns(blocks.map((b) => {
     const first = b.kind === "entry" ? b.e : b.items[0];
@@ -1144,7 +1209,6 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
 
   return (
     <div className="chat">
-      {feature.status && onOpenTasks && <WaitingLine status={feature.status} onOpen={onOpenTasks} />}
       <div className="chat-log" ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -1344,6 +1408,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           undo={(files) => api.undoRewind(slug, ticket.id, files)} />
       )}
       {undone && !undo && <UndoneNote line={undone} onClose={() => setUndone(null)} />}
+      {waiting.length > 0 && <WaitingButton items={waiting} onPick={pickWaiting} />}
       <div className="composer">
         <textarea ref={composer} rows={phone ? 1 : 2} value={draft} disabled={stopping} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
           placeholder={formWaiting && !running ? "Or type a note to Claude…" : phone
@@ -1401,6 +1466,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           </span>
         </div>
       </div>
+      {sheetTask && (
+        <TaskSheet title={sheetTask.title} onClose={sheet.close} onOpenFull={() => onOpenTicket(sheetTask.id)}>
+          <Chat key={sheetTask.id} slug={slug} ticket={sheetTask} tickets={tickets} onOpenTicket={onOpenTicket} onError={onError} />
+        </TaskSheet>
+      )}
     </div>
   );
 }

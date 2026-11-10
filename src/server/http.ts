@@ -2832,6 +2832,16 @@ export function createServer(deps: ServerDeps) {
         throw new HttpError(400, (e as Error).message);
       }
     }
+    // "Fresh chat (keeps status)": the next message starts a new Claude session; history, status and outputs stay.
+    if (m === "POST" && action === "fresh-chat") {
+      if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "a fresh chat is the user's call, not a run's");
+      try {
+        return json(view(profile, board.freshChat(slug, id)));
+      } catch (e) {
+        if (e instanceof ConflictError) throw e;
+        throw new HttpError(400, (e as Error).message);
+      }
+    }
     // Installs the worktree's dependencies (the board's setup command) when the ticket's Claude needs them; waits for it.
     if (m === "POST" && action === "setup") {
       // A run may only install its own ticket's dependencies (the command runs the branch's install scripts).

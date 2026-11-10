@@ -3909,6 +3909,19 @@ export class Board {
   }
 
   /**
+   * "Fresh chat (keeps status)" in the ticket panel: like "Send in a fresh chat" without a message. The next message
+   * starts a new Claude session; the chat history, the feature status, outputs and the card's column stay as they are.
+   */
+  freshChat(slug: string, id: string): Ticket {
+    const t = this.store.getTicket(slug, id);
+    if (!t) throw new Error(`ticket ${id} not found`);
+    if (t.error?.startsWith("corrupt")) throw new Error("ticket file is corrupt");
+    if (this.runs.get(this.key(slug, id))) throw new ConflictError("Claude is working on this ticket; start a fresh chat once Claude is done");
+    if (t.freshSession) return t;
+    return this.startFreshChat(slug, id);
+  }
+
+  /**
    * "Send in a fresh chat" (an old chat would be re-read in full): the next message starts a new session that gets the
    * ticket, its last result and recent comments instead of the old conversation. Unlike startFresh, nothing is queued
    * and the card stays where it is; the old session is kept so the ticket chat still shows it.

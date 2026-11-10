@@ -208,7 +208,14 @@ test("summaries, report openings and question forms are short", () => {
   const p = firstRunPrompt(ticket, { repo: "remote" as const, outputDir: "/o" });
   expect(p).toContain("<1-2 sentence summary for the user, outcome first>");
   expect(p).toContain("Start with a TL;DR of one or two sentences");
-  expect(QUESTIONS_FORMAT).toContain("each option description to a few words");
+  expect(QUESTIONS_FORMAT).toContain("option descriptions to a few words");
+});
+
+test("question forms: one short sentence per question, background in context, follow-up steps in the option's description", () => {
+  expect(QUESTIONS_FORMAT).toContain("Keep each question to one sentence of at most about 120 characters");
+  expect(QUESTIONS_FORMAT).toContain(`Put background in the question's "context"`);
+  expect(QUESTIONS_FORMAT).toContain(`in that option's "description", not in the question`);
+  expect(QUESTIONS_FORMAT).toContain("don't repeat the questions or their context as plain text, before or after the call");
 });
 
 test("runs copy files they ask the user to review into Outputs; every prompt asks for paths in backticks", () => {
