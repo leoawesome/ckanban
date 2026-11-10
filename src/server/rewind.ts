@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { atomicWrite } from "./store";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { hasCommits, run } from "./git";
@@ -77,6 +78,11 @@ async function currentTree(dir: string, env: Record<string, string>, timeoutMs?:
  * Null when there is no version history (nothing to undo later) or the snapshot failed: rewind then leaves files alone.
  */
 export async function takeSnapshot(dir: string, ticketId: string, text: string, at = Date.now(), limitMs = SNAPSHOT_LIMIT_MS): Promise<string | null> {
+  return saveFolder(dir, `${REWIND_REFS}/${ticketId}/${at}-${textKey(text)}`, `ckanban rewind snapshot for ${ticketId}`, limitMs);
+}
+
+/** Saves the folder as it is right now under `ref`. Null when there is no version history or the save failed. */
+async function saveFolder(dir: string, ref: string, message: string, limitMs: number): Promise<string | null> {
   // Each git step gets what is left of the limit (at least 1ms, so a spent limit stops it at once).
   const end = Date.now() + limitMs;
   const left = () => Math.max(1, end - Date.now());
@@ -85,9 +91,8 @@ export async function takeSnapshot(dir: string, ticketId: string, text: string, 
     return await withIndex(async (env) => {
       const tree = await currentTree(dir, env, left);
       if (!tree) return null;
-      const commit = await run([...GIT, "commit-tree", tree, "-m", `ckanban rewind snapshot for ${ticketId}`], dir, env, left());
+      const commit = await run([...GIT, "commit-tree", tree, "-m", message], dir, env, left());
       if (commit.code !== 0 || Date.now() >= end) return null;
-      const ref = `${REWIND_REFS}/${ticketId}/${at}-${textKey(text)}`;
       const set = await run(["git", "update-ref", ref, commit.stdout.trim()], dir);
       return set.code === 0 ? ref : null;
     }, dir);
@@ -187,10 +192,11 @@ export async function restoreSnapshot(dir: string, ref: string): Promise<FileCha
   return changes;
 }
 
-/** Drops every saved copy of one ticket (it is done or deleted). Never touches other tickets' copies. */
+/** Drops every saved copy of one ticket (it is done or deleted), Undo's too. Never touches other tickets' copies. */
 export async function deleteSnapshots(dir: string, ticketId: string): Promise<void> {
   if (!/^[\w-]+$/.test(ticketId)) return;
   await pruneSnapshots(dir, ticketId, null);
+  await dropUndoRefs(dir, ticketId);
 }
 
 /** Drops the snapshots newer than `keep` (they belonged to messages that are gone now). */
@@ -263,17 +269,197 @@ export async function previewRewind(dir: string | null, ticketId: string, entry:
   return { files: null, filesReason: dir && (await hasCommits(dir)) ? "no-snapshot" : "no-history" };
 }
 
+/** Where Undo keeps the folder as it was before and right after a rewind, and the snapshots the rewind set aside. */
+export const UNDO_REFS = "refs/ckanban/rewind-undo";
+
+/** How long saving the folder before a rewind may take (the user clicked and waits; no message is held up). */
+export const UNDO_SAVE_LIMIT_MS = Number(process.env.CKANBAN_UNDO_SAVE_LIMIT_MS) || 60_000;
+
+/**
+ * What Undo needs to put a rewind back, kept on the ticket (or quick chat) until the next rewind.
+ * Undo is allowed only while the chat is exactly as the rewind left it (see undoBlocked).
+ */
+export interface RewindUndo {
+  at: string;
+  /** The session the rewind cut; its file has a `.before-rewind` copy beside it. */
+  sessionId: string;
+  /** sha1 of the session file right after the cut: any later change (a message, a reply) means the chat moved on. */
+  hash: string;
+  /** The cut left nothing, so the chat went on in this new session: undo only while it hasn't started. */
+  newSessionId: string | null;
+  /** Chat messages (yours and Claude's) the rewind took away. */
+  messages: number;
+  /** The folder the files went back in, and how many changed. */
+  dir: string | null;
+  files: number;
+  /** Saved folder before the rewind (undo puts it back) and right after (undo checks nothing changed since). Null: chat only. */
+  before: string | null;
+  after: string | null;
+  /** Snapshots of the removed messages, set aside under UNDO_REFS so undo can bring them back. */
+  kept: string[];
+}
+
+/** A rewind or undo stopped because the chat got busy or moved on while it ran (callers answer 409). */
+export class RewindRefused extends Error {}
+
+export const hashText = (s: string) => createHash("sha1").update(s).digest("hex");
+
+const validId = (id: string) => /^[\w-]+$/.test(id);
+
+async function refExists(dir: string, ref: string): Promise<boolean> {
+  return (await run(["git", "rev-parse", "--verify", "--quiet", `${ref}^{commit}`], dir)).code === 0;
+}
+
+async function moveRef(dir: string, from: string, to: string): Promise<boolean> {
+  const sha = await run(["git", "rev-parse", "--verify", "--quiet", from], dir);
+  if (sha.code !== 0 || !sha.stdout.trim()) return false;
+  if ((await run(["git", "update-ref", to, sha.stdout.trim()], dir)).code !== 0) return false;
+  await run(["git", "update-ref", "-d", from], dir);
+  return true;
+}
+
+/** Drops what Undo kept for one ticket (a new rewind replaces it, or the ticket is done). */
+export async function dropUndoRefs(dir: string, ticketId: string): Promise<void> {
+  if (!validId(ticketId) || !existsSync(dir)) return;
+  const r = await run(["git", "for-each-ref", "--format=%(refname)", `${UNDO_REFS}/${ticketId}/`], dir);
+  if (r.code !== 0) return;
+  for (const ref of r.stdout.split("\n").map((x) => x.trim()).filter(Boolean)) await run(["git", "update-ref", "-d", ref], dir);
+}
+
 /**
  * Goes back to the message: files first (when asked and a saved copy exists, so a failure leaves the chat whole),
- * then the chat is cut before it. Returns how many files changed back and what is left of the conversation.
+ * then the chat is cut before it. Before files change, the folder is saved as it is, so Undo can put it back.
+ * Returns how many files changed back, what is left of the conversation, and what Undo needs (newSessionId and
+ * messages are the caller's to fill in).
  */
 export async function applyRewind(
-  o: { dir: string | null; ticketId: string; entry: { uuid: string; text: string; at: string }; sessionFile: string; files: boolean },
-): Promise<{ restored: number; cut: Cut }> {
-  const snap = o.dir ? snapshotFor(await listSnapshots(o.dir, o.ticketId), o.entry.text, o.entry.at) : null;
+  o: {
+    dir: string | null; ticketId: string; entry: { uuid: string; text: string; at: string }; sessionFile: string; files: boolean; sessionId?: string;
+    /** Asked again right before the chat is cut (the folder saves take a while): a reason stops the rewind and puts the files back. */
+    still?: () => string | null;
+  },
+): Promise<{ restored: number; cut: Cut; undo: RewindUndo }> {
+  // A message that can't be cut to is refused before anything changes.
+  const raw = readFileSync(o.sessionFile, "utf8");
+  if (!cutSession(raw, o.entry.uuid)) throw new Error("This message can't be rewound to.");
+  const dir = o.dir && validId(o.ticketId) ? o.dir : null;
+  const snap = dir ? snapshotFor(await listSnapshots(dir, o.ticketId), o.entry.text, o.entry.at) : null;
+  // One level of undo: what an earlier rewind kept goes.
+  if (dir) await dropUndoRefs(dir, o.ticketId);
   let restored = 0;
-  if (o.files && o.dir && snap) restored = (await restoreSnapshot(o.dir, snap.ref)).length;
-  const cut = rewindSessionFile(o.sessionFile, o.entry.uuid);
-  if (o.dir && snap) await pruneSnapshots(o.dir, o.ticketId, snap).catch(() => {});
-  return { restored, cut };
+  let before: string | null = null;
+  let after: string | null = null;
+  // Something went wrong after files started changing: they go back to the save, and this call's refs go.
+  const putBack = async () => {
+    if (dir && before) await restoreSnapshot(dir, before).catch(() => {});
+    for (const ref of [before, after]) if (dir && ref) await run(["git", "update-ref", "-d", ref], dir).catch(() => {});
+  };
+  if (o.files && dir && snap) {
+    before = await saveFolder(dir, `${UNDO_REFS}/${o.ticketId}/before`, `ckanban folder before rewind for ${o.ticketId}`, UNDO_SAVE_LIMIT_MS);
+    try {
+      restored = (await restoreSnapshot(dir, snap.ref)).length;
+    } catch (e) {
+      await putBack();
+      throw e;
+    }
+    if (before) after = await saveFolder(dir, `${UNDO_REFS}/${o.ticketId}/after`, `ckanban folder after rewind for ${o.ticketId}`, UNDO_SAVE_LIMIT_MS);
+    if (before && !after) {
+      // Without the after copy undo can't tell whether files changed since, so it restores the chat only.
+      await run(["git", "update-ref", "-d", before], dir);
+      before = null;
+    }
+  }
+  let cut: Cut;
+  try {
+    const stop = o.still?.();
+    if (stop) throw new RewindRefused(stop);
+    cut = rewindSessionFile(o.sessionFile, o.entry.uuid);
+  } catch (e) {
+    // The chat stays whole, so the files go back to how they were too.
+    await putBack();
+    throw e;
+  }
+  // The removed messages' snapshots are set aside (undo brings them back), not deleted.
+  const kept: string[] = [];
+  if (dir && snap) {
+    for (const s of await listSnapshots(dir, o.ticketId)) {
+      if (s.at <= snap.at) continue;
+      const to = `${UNDO_REFS}/${o.ticketId}/kept/${s.at}-${s.key}`;
+      if (await moveRef(dir, s.ref, to)) kept.push(to);
+      else await run(["git", "update-ref", "-d", s.ref], dir).catch(() => {});
+    }
+  }
+  const undo: RewindUndo = {
+    at: new Date().toISOString(), sessionId: o.sessionId ?? "", hash: hashText(readFileSync(o.sessionFile, "utf8")), newSessionId: null,
+    messages: 0, dir, files: restored, before, after, kept,
+  };
+  return { restored, cut, undo };
+}
+
+/**
+ * Why the rewind can't be undone now, or null when it can. `sessionFile` is the file of u.sessionId; `current` the
+ * chat's session id now and whether that session has a transcript. Safe rule: the chat must be exactly as the rewind
+ * left it (same session, file unchanged byte for byte, the new session of an emptied chat not started), and with
+ * files, the folder must still be as the rewind left it; otherwise undo would lose what came after.
+ */
+export async function undoBlocked(
+  u: RewindUndo | null | undefined, sessionFile: string | null, current: { sessionId: string | null; started: boolean }, files: boolean,
+): Promise<string | null> {
+  if (!u) return "There is no rewind to undo.";
+  if (!sessionFile || !existsSync(sessionFile) || !existsSync(`${sessionFile}.before-rewind`)) return "The chat from before the rewind is gone, so it can't come back.";
+  const moved = "The chat has moved on since the rewind (a message was sent), so it can't be undone without losing that.";
+  if (u.newSessionId ? current.sessionId !== u.newSessionId || current.started : current.sessionId !== u.sessionId) return moved;
+  if (hashText(readFileSync(sessionFile, "utf8")) !== u.hash) return moved;
+  if (files && u.dir && u.before && u.after) {
+    if (!existsSync(u.dir) || !(await refExists(u.dir, u.before)) || !(await refExists(u.dir, u.after))) {
+      return "The saved files from before the rewind are gone. Undo the chat only?";
+    }
+    const since = await changesSince(u.dir, u.after);
+    if (!since) return "Couldn't compare the files with how the rewind left them.";
+    if (since.length) return `${since.length === 1 ? "A file has" : `${since.length} files have`} changed since the rewind, and undo would overwrite ${since.length === 1 ? "it" : "them"}. Undo the chat only?`;
+  }
+  return null;
+}
+
+export interface UndoResult {
+  /** Chat messages that came back. */
+  messages: number;
+  /** Files that went back to how they were before the rewind. */
+  files: number;
+  filesRestored: boolean;
+  /** Why files didn't come back: the rewind didn't change any, it couldn't save them first, or undo was asked for the chat only. */
+  filesReason: "unchanged" | "not-saved" | "skipped" | null;
+}
+
+/** Undoes the rewind (check undoBlocked first): files first, then the chat comes back from its `.before-rewind` copy. */
+export async function applyUndo(u: RewindUndo, sessionFile: string, ticketId: string, files: boolean, still?: () => string | null): Promise<UndoResult> {
+  const backup = `${sessionFile}.before-rewind`;
+  const saved = readFileSync(backup, "utf8");
+  let back = 0;
+  const withFiles = files && !!u.dir && !!u.before && !!u.after;
+  if (withFiles) back = (await restoreSnapshot(u.dir!, u.before!)).length;
+  // Checked again right before the chat is written back: a message that started meanwhile must not be overwritten.
+  const stop = still?.() ?? (hashText(readFileSync(sessionFile, "utf8")) !== u.hash ? "The chat has moved on since the rewind." : null);
+  if (stop) {
+    if (withFiles && u.after) await restoreSnapshot(u.dir!, u.after).catch(() => {});
+    throw new RewindRefused(stop);
+  }
+  atomicWrite(sessionFile, saved);
+  rmSync(backup, { force: true });
+  if (u.dir && validId(ticketId) && existsSync(u.dir)) {
+    // The removed messages' snapshots come back, so rewinding to them later still restores files.
+    for (const ref of u.kept) {
+      const m = ref.match(/\/kept\/(\d+-[0-9a-f]{12})$/);
+      if (m && ref.startsWith(`${UNDO_REFS}/${ticketId}/`)) await moveRef(u.dir, ref, `${REWIND_REFS}/${ticketId}/${m[1]}`);
+    }
+    await dropUndoRefs(u.dir, ticketId);
+  }
+  const reason: UndoResult["filesReason"] = withFiles ? null : !files && u.before ? "skipped" : u.files ? "not-saved" : "unchanged";
+  return { messages: u.messages, files: back, filesRestored: withFiles, filesReason: reason };
+}
+
+/** Chat messages (yours and Claude's replies) from the entry with `uuid` on: what a rewind to it takes away. */
+export function messagesFrom(entries: { uuid: string; kind: string; role: string }[], uuid: string): number {
+  const i = entries.findIndex((e) => e.uuid === uuid);
+  return i < 0 ? 0 : entries.slice(i).filter((e) => e.kind === "text" && (e.role === "user" || e.role === "assistant")).length;
 }

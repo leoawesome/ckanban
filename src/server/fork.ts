@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { encodeProjectDir } from "./claude";
+import { cutSession } from "./rewind";
 import { atomicWrite } from "./store";
 
 export interface ForkOptions {
@@ -54,10 +55,24 @@ function real(path: string): string {
  * output) when there is one. Returns the new transcript file.
  */
 export function forkSessionFile(srcFile: string, o: ForkOptions, configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude")): string {
+  return writeFork(srcFile, readFileSync(srcFile, "utf8"), o, configDir);
+}
+
+/**
+ * Like forkSessionFile, but the copy ends just before the user message `uuid` (Fork from here); the source file is
+ * only read. Null when nothing of the conversation comes before it (the fork starts a new session). Throws when the
+ * message isn't one the chat can be cut at (see cutSession).
+ */
+export function forkSessionBefore(srcFile: string, uuid: string, o: ForkOptions, configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude")): string | null {
+  const c = cutSession(readFileSync(srcFile, "utf8"), uuid);
+  if (!c) throw new Error("The chat can't be forked from this message.");
+  return c.cut.empty ? null : writeFork(srcFile, c.text, o, configDir);
+}
+
+function writeFork(srcFile: string, raw: string, o: ForkOptions, configDir: string): string {
   const toCwd = real(o.toCwd);
   const dest = join(configDir, "projects", encodeProjectDir(toCwd), `${o.toId}.jsonl`);
   if (existsSync(dest)) throw new Error(`a Claude session ${o.toId} already exists`);
-  const raw = readFileSync(srcFile, "utf8");
   mkdirSync(dirname(dest), { recursive: true });
   atomicWrite(dest, rewriteSession(raw, { ...o, fromCwd: real(o.fromCwd), toCwd }));
   const side = join(dirname(srcFile), o.fromId);
@@ -67,4 +82,16 @@ export function forkSessionFile(srcFile: string, o: ForkOptions, configDir = pro
     } catch {}
   }
   return dest;
+}
+
+/** Fork titles: "<title> (fork)", then "(fork 2)", "(fork 3)"… An earlier " (fork N)" is dropped first, so they don't pile up. */
+export function forkTitle(title: string, taken: Iterable<string>, max = Infinity): string {
+  const base = title.replace(/\s*\(fork(?: \d+)?\)\s*$/i, "").trim() || title.trim();
+  const used = new Set([...taken].map((t) => t.trim().toLowerCase()));
+  for (let n = 1; ; n++) {
+    const tail = n === 1 ? " (fork)" : ` (fork ${n})`;
+    const head = base.length + tail.length > max ? `${base.slice(0, Math.max(1, max - tail.length - 1)).trimEnd()}…` : base;
+    const t = `${head}${tail}`;
+    if (!used.has(t.toLowerCase())) return t;
+  }
 }

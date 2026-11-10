@@ -1,5 +1,6 @@
 import type { TeammateProposal } from "./teammate-proposal";
 import type { SquadCardState, SquadProposal } from "./squad";
+import type { RewindUndo } from "./rewind";
 
 import type { TicketKind } from "../../web/src/family";
 export type { TicketKind };
@@ -148,6 +149,8 @@ export interface Ticket {
    * note), but Claude doesn't see them.
    */
   earlierSessions?: { sessionId: string; endedAt: string }[];
+  /** What the last Rewind changed, so Undo can put it back (rewind.ts undoBlocked says when it may). */
+  rewindUndo?: RewindUndo | null;
   /** True once a refine conversation began (auto-start on entering Planning happens only once). */
   refineStarted?: boolean;
   order: number;

@@ -179,6 +179,13 @@ export interface QuickChat {
   waiting: number;
 }
 
+/** What a rewind did: messages and files feed "Rewound: N messages and M files went back."; undo: it can be undone. */
+export interface RewindResult { text: string; restored: number; messages: number; files: number; undo: boolean; filesSaved?: boolean }
+/** Whether the last rewind can be undone (blocked: why not) and what it would bring back. */
+export interface RewindUndoState { available: boolean; blocked: string | null; messages: number; files: number; filesSaved: boolean }
+/** What Undo rewind brought back. filesReason: why files didn't come back (the rewind changed none, couldn't save them first, or chat only was asked). */
+export interface UndoRewindResult { messages: number; files: number; filesRestored: boolean; filesReason: "unchanged" | "not-saved" | "skipped" | null }
+
 export interface FollowUp { dueAt: string; note: string; cancelOnReply: boolean; setAt: string; missedAt?: string | null }
 export interface FollowUpLogEntry {
   at: string;
@@ -1678,6 +1685,14 @@ export const api = {
   /** partOf: the open feature (or one of its groups) the new ticket joins. */
   chatTicket: (slug: string, id: string, partOf?: string) =>
     req<{ ticket: Ticket; chat: QuickChat }>("POST", `${chatsUrl(slug, id)}/ticket`, partOf ? { partOf } : {}),
+  /** Quick chat rewind: the chat only (files are never changed back in quick chats). */
+  chatRewindPreview: (slug: string, id: string, uuid: string) =>
+    req<{ blocked: string | null; files: null; filesReason: "quick-chat" }>("GET", `${chatsUrl(slug, id)}/rewind?uuid=${encodeURIComponent(uuid)}`),
+  chatRewind: (slug: string, id: string, uuid: string) => req<RewindResult>("POST", `${chatsUrl(slug, id)}/rewind`, { uuid }),
+  chatRewindUndoState: (slug: string, id: string) => req<RewindUndoState>("GET", `${chatsUrl(slug, id)}/rewind-undo`),
+  chatUndoRewind: (slug: string, id: string) => req<UndoRewindResult>("POST", `${chatsUrl(slug, id)}/rewind-undo`, {}),
+  /** Fork from here in a quick chat: a new chat "<title> (fork)" ending just before the message. */
+  chatFork: (slug: string, id: string, uuid: string) => req<{ id: string; text: string; chat: QuickChat }>("POST", `${chatsUrl(slug, id)}/fork`, { uuid }),
   chatConversation: (slug: string, id: string, before?: number) =>
     req<{ entries: SessionEntry[]; start: number; total: number }>("GET", `${chatsUrl(slug, id)}/conversation${before !== undefined ? `?before=${before}` : ""}`),
   chatTool: (slug: string, id: string, toolUseId: string) => req<ToolDetail>("GET", `${chatsUrl(slug, id)}/tool/${encodeURIComponent(toolUseId)}`),
@@ -1769,7 +1784,15 @@ export const api = {
       "GET", `${t(slug, id)}/rewind?uuid=${encodeURIComponent(uuid)}`),
   /** Rewind: cut the chat before the message and, with files, put the project files back. Returns the message text. */
   rewind: (slug: string, id: string, uuid: string, files: boolean) =>
-    req<{ text: string; restored: number }>("POST", `${t(slug, id)}/rewind`, { uuid, files }),
+    req<RewindResult>("POST", `${t(slug, id)}/rewind`, { uuid, files }),
+  /** Undo rewind: can the last rewind be put back (blocked says why not; files false: asking about the chat only). */
+  rewindUndoState: (slug: string, id: string, files = true) =>
+    req<RewindUndoState>("GET", `${t(slug, id)}/rewind-undo${files ? "" : "?files=0"}`),
+  /** Undo rewind: the chat, and with files the project files, come back as they were just before the last rewind. */
+  undoRewind: (slug: string, id: string, files = true) => req<UndoRewindResult>("POST", `${t(slug, id)}/rewind-undo`, { files }),
+  /** Fork from here: a new ticket (own card, like Branch) whose chat ends just before the message; text goes in its box. */
+  forkTicket: (slug: string, id: string, uuid: string) =>
+    req<{ id: string; text: string; ticket: Ticket; warning: string | null }>("POST", `${t(slug, id)}/fork`, { uuid }),
   /** Saved plain-words versions of the ticket's Claude replies, by message uuid. */
   simplified: (slug: string, id: string) => req<Record<string, string>>("GET", `${t(slug, id)}/simplified`),
   /** "Say it simpler": one reply rewritten in plain words (a side call; saved, so the second time is free). */

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { api, onReconnect, subscribe, type Profile, type QuickChat, type SessionEntry, type Ticket } from "./api";
+import { api, onReconnect, subscribe, type Profile, type QuickChat, type RewindResult, type SessionEntry, type Ticket } from "./api";
 import { openFeatures } from "./family";
 import { AttachmentChips } from "./AttachmentChips";
 import { autoGrow } from "./autoGrow";
@@ -15,7 +15,10 @@ import { KeyHint } from "./KeyHint";
 import { useLayer } from "./layers";
 import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, type Handoff } from "./liveReply";
 import { norm } from "./pendingBubbles";
+import { UndoBar, UndoneNote, UserMessage, undoFromRewind, undoFromState, type UndoInfo } from "./MessageActions";
+import { draftAfterUndo } from "./messageText";
 import { MoreSheet } from "./PhoneNav";
+import { restoredDraft, rewindOff } from "./rewindText";
 import { fullTime, timeAgo } from "./time";
 import { toast } from "./toast";
 import { ToolRows } from "./ToolRows";
@@ -175,7 +178,10 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
     : "Turn this chat into a Backlog ticket that carries on the conversation";
 
   const thread = (
-    <ChatThread key={`${slug}:${threadKey}`} slug={slug} chat={current} phone={phone} onCreated={created} onOpenTicket={onOpenTicket} onNew={() => pick(null)} />
+    <ChatThread key={`${slug}:${threadKey}`} slug={slug} chat={current} phone={phone} onCreated={created} onForked={(c) => {
+      setChats((cs) => [c, ...(cs ?? []).filter((x) => x.id !== c.id)]);
+      pick(c.id);
+    }} onOpenTicket={onOpenTicket} onNew={() => pick(null)} />
   );
   const dialogs = (
     <>
@@ -353,11 +359,13 @@ function group(entries: SessionEntry[]): Block[] {
 const delivered = (entries: SessionEntry[], text: string) => entries.some((e) => e.role === "user" && norm(e.text) === norm(text));
 
 /** One chat's conversation and message box (chat null: a new chat, made by its first message). */
-function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
+function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNew }: {
   slug: string;
   chat: QuickChat | null;
   phone: boolean;
   onCreated: (c: QuickChat) => void;
+  /** Fork from here made this chat: open it. */
+  onForked: (c: QuickChat) => void;
   onOpenTicket: (id: string) => void;
   onNew: () => void;
 }) {
@@ -388,6 +396,24 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
   const [replyStartedAt, setReplyStartedAt] = useState<string | null>(running ? chat?.updatedAt ?? null : null);
   useEffect(() => setReplyStartedAt(running ? (s) => s ?? new Date().toISOString() : null), [running]);
   useNow();
+  // The last rewind while it can be undone (the Undo bar), and what the last Undo did.
+  const [undo, setUndo] = useState<UndoInfo | null>(null);
+  const [undone, setUndone] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  useEffect(() => {
+    if (!id || running) return;
+    let live = true;
+    api.chatRewindUndoState(slug, id).then((s) => live && setUndo((u) => u ?? undoFromState(s)), () => {});
+    return () => {
+      live = false;
+    };
+  }, [slug, id]);
+  useEffect(() => {
+    if (!running) return;
+    setUndo(null);
+    setUndone(null);
+  }, [running]);
 
   const loadTail = useCallback(async () => {
     if (!id) return null;
@@ -489,6 +515,8 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
     stickToBottom.current = true;
     setPending((ps) => [...ps, { text, steer: running }]);
     if (given === undefined) setDraft("");
+    setUndo(null);
+    setUndone(null);
     setSending(true);
     try {
       const c = id ? await api.chatSend(slug, id, text) : await api.newChat(slug, text);
@@ -522,6 +550,36 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
     } finally {
       setLoadingEarlier(false);
     }
+  };
+
+  // Fork from here, Rewind and Undo rewind wait while Claude replies or a message waits for the board.
+  const actionsOff = rewindOff(running, chat?.waiting ?? 0);
+  const rewound = (r: RewindResult) => {
+    const before = draftRef.current;
+    const filled = restoredDraft(r.text, before);
+    setDraft(filled);
+    setUndone(null);
+    setUndo(r.undo ? undoFromRewind(r, filled, before) : null);
+    stickToBottom.current = true;
+    setPage(null);
+    loadTail().catch(() => setPage((p) => p ?? { entries: [], start: 0 }));
+    composer.current?.focus();
+  };
+  const undoRewound = (_r: unknown, line: string) => {
+    const d = undo?.draft;
+    if (d) setDraft((cur) => draftAfterUndo(cur, d.filled, d.before));
+    setUndo(null);
+    setUndone(line);
+    stickToBottom.current = true;
+    setPage(null);
+    loadTail().catch(() => setPage((p) => p ?? { entries: [], start: 0 }));
+  };
+  // Fork from here: a new chat that ends before the message, with the message in its box.
+  const forkFrom = async (uuid: string) => {
+    const r = await api.chatFork(slug, id!, uuid);
+    save(browserStore(), draftKey(slug, `chat-${r.id}`), r.text);
+    onForked(r.chat);
+    return `Forked into "${r.chat.title}". It is open now.`;
   };
 
   const loadTool = (toolUseId: string) => api.chatTool(slug, id!, toolUseId);
@@ -589,13 +647,31 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
                 }
                 const e = b.e;
                 if (e.kind === "board") return <Fragment key={e.uuid}>{divider}<div className="chat-note">{e.text}</div></Fragment>;
-                if (e.role === "user" || e.commandOutput) {
+                if (e.role === "user") {
+                  const canGo = !!id && !!e.rewind && !closed;
                   return (
                     <Fragment key={e.uuid}>
                       {divider}
-                      <div className={`conv-msg ${e.role}${e.commandOutput ? " command-output" : ""}`}>
+                      <UserMessage at={e.at} text={e.text} off={actionsOff} onError={(m) => toast(m, { tone: "error" })}
+                        fork={canGo ? { title: chat!.title, chat: true, run: () => forkFrom(e.uuid) } : undefined}
+                        rewind={canGo ? {
+                          later: entries.slice(entries.indexOf(e) + 1).filter((x) => x.kind === "text" && !!x.text && !x.commandOutput).length,
+                          preview: () => api.chatRewindPreview(slug, id!, e.uuid),
+                          apply: () => api.chatRewind(slug, id!, e.uuid),
+                          onDone: rewound,
+                        } : undefined}>
+                        <Markdown text={e.text} />
+                      </UserMessage>
+                    </Fragment>
+                  );
+                }
+                if (e.commandOutput) {
+                  return (
+                    <Fragment key={e.uuid}>
+                      {divider}
+                      <div className="conv-msg assistant command-output">
                         <div className="conv-head">
-                          <b>{e.role === "user" ? "You" : "Claude Code"}</b>
+                          <b>Claude Code</b>
                           {e.at && <time className="muted small" dateTime={e.at} title={fullTime(e.at)}>{timeAgo(e.at)}</time>}
                         </div>
                         <Markdown text={e.text} />
@@ -618,7 +694,7 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
                 );
               })}
               {pending.filter((p) => !p.steer).map((p, i) => (
-                <div key={i} className="conv-msg user"><Markdown text={p.text} /></div>
+                <UserMessage key={i} text={p.text} sending off={null} onError={() => {}}><Markdown text={p.text} /></UserMessage>
               ))}
               {waitingHandoff.map((h) => (
                 <Turn key={h.at} start={tailStart()} className="live">
@@ -661,6 +737,11 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
           </button>
         )}
       </div>
+      {!closed && undo && !running && (
+        <UndoBar info={undo} off={actionsOff} onError={(m) => toast(m, { tone: "error" })} onUndone={undoRewound}
+          undo={() => api.chatUndoRewind(slug, id!)} />
+      )}
+      {!closed && undone && !undo && <UndoneNote line={undone} onClose={() => setUndone(null)} />}
       {!closed && (
         <div className="composer">
           <textarea ref={composer} rows={phone ? 1 : 2} value={draft} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}

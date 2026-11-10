@@ -57,20 +57,26 @@ export function Turn({ start, avatar = <ClaudeAvatar />, name = "Claude", sub, a
   );
 }
 
-/** Copies the reply as shown; ✓ for a moment after. */
-function CopyButton({ text }: { text: () => string }) {
+/** Copies the reply as shown (or a message: label, onCopied); ✓ for a moment after. icon false: words only, "✓ Copied". */
+export function CopyButton({ text, label = "Copy this reply", icon = true, onCopied }: {
+  text: () => string;
+  label?: string;
+  icon?: boolean;
+  onCopied?: () => void;
+}) {
   const [done, setDone] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(timer.current), []);
   return (
-    <button type="button" className="act-btn" aria-label={done ? "Copied" : "Copy this reply"}
+    <button type="button" className={`act-btn${done ? " copied" : ""}`} aria-label={done ? "Copied" : label}
       onClick={async () => {
         if (!(await copy(text()))) return void toast("Couldn't copy: select the text and copy it instead", { tone: "error" });
         setDone(true);
+        onCopied?.();
         clearTimeout(timer.current);
         timer.current = setTimeout(() => setDone(false), 1500);
       }}>
-      {done ? <CheckIcon size={14} /> : <CopyIcon size={14} />} {done ? "Copied" : "Copy"}
+      {icon ? <>{done ? <CheckIcon size={14} /> : <CopyIcon size={14} />} {done ? "Copied" : "Copy"}</> : done ? "✓ Copied" : "Copy"}
     </button>
   );
 }

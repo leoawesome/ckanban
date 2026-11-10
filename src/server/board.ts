@@ -8,7 +8,7 @@ import type { Bus } from "./events";
 import { isSessionLive as psSessionLive, sessionTitle } from "./claude";
 import { addWorktree, branchesWithPrefix, branchExists, FetchError, isGitRepo, latestBase, listWorktrees, removeWorktree, repoKind, resolveBaseBranch, worktreeDir, type RepoKind } from "./git";
 import { MOVE_TO_PLANNING_RE, STAY_RE } from "./session";
-import { forkSessionFile } from "./fork";
+import { forkSessionBefore, forkSessionFile, forkTitle } from "./fork";
 import { saveMockups } from "./mockups";
 import { Devices, type DeviceTicketState } from "./devices";
 import { macBanner } from "./notify";
@@ -34,7 +34,7 @@ import {
 } from "./plan";
 import { run as runCmd } from "./git";
 import { addPrs, ticketPrs } from "./prs";
-import { deleteSnapshots, takeSnapshot } from "./rewind";
+import { applyUndo, cutSession, RewindRefused, deleteSnapshots, takeSnapshot, undoBlocked, type RewindUndo, type UndoResult } from "./rewind";
 import { parseResult } from "./result";
 import { FOLLOW_UP_LATE_MS, FOLLOW_UP_NOTE_MAX, FOLLOW_UP_REASON_MAX, FollowUpError, followUpTime, logFollowUp } from "./followup";
 import { formatAt } from "./jobs";
@@ -327,6 +327,9 @@ export function claudeSessionExists(sessionId: string): boolean {
   return claudeSessionFile(sessionId) !== null;
 }
 
+/** Why a message or a second rewind waits while a rewind, undo or fork runs. */
+export const REWINDING = "The chat is being rewound, undone or forked right now. Try again in a moment.";
+
 /** Claude's answer to `--resume` with a session it has no transcript for. */
 export function sessionMissing(error: string, events: any[]): boolean {
   const re = /No conversation found with session ID/i;
@@ -612,6 +615,8 @@ export class Board {
    * peer: the message comes from another session (a huddle) and is already a full prompt.
    */
   async chat(slug: string, id: string, text: string, opts: ChatOptions = {}): Promise<Ticket> {
+    // A rewind, undo or fork is cutting or copying the chat right now: a message must not start a run on it.
+    if (this.rewinding.has(this.key(slug, id))) throw new ConflictError(REWINDING);
     // Rewind needs the folder as it is right before this message: saved quietly, the user's own history is untouched.
     // Done first, so everything below still runs in one go (a message can't slip in between the checks and the start).
     // Only when Claude is idle: a message sent while it works steers the run and can't be rewound to anyway, and
@@ -624,6 +629,8 @@ export class Board {
   }
 
   private async chatNow(slug: string, id: string, text: string, opts: ChatOptions): Promise<Ticket> {
+    // Checked again after the snapshot wait: a rewind may have started meanwhile.
+    if (this.rewinding.has(this.key(slug, id))) throw new ConflictError(REWINDING);
     if (opts.still && !opts.still()) throw new StillRefused();
     let t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
@@ -742,10 +749,14 @@ export class Board {
     return t.baseSha ? profile.path : null;
   }
 
-  /** Why the chat can't be rewound right now, or null when it can. */
-  rewindBlocked(slug: string, id: string): string | null {
+  /** Tickets with a rewind, undo or fork under way: one at a time, and no message starts meanwhile. */
+  private rewinding = new Set<string>();
+
+  /** Why the chat can't be rewound right now, or null when it can. held: asked from inside withRewind (the lock is ours). */
+  rewindBlocked(slug: string, id: string, held = false): string | null {
     const t = this.store.getTicket(slug, id);
     if (!t) return "ticket not found";
+    if (!held && this.rewinding.has(this.key(slug, id))) return REWINDING;
     if (this.isRunning(slug, id)) return "Claude is working. Stop it or wait until it has replied.";
     if (t.queued?.length) return "A message is still waiting to be sent. Send or discard it first.";
     // In the project folder itself, another ticket's run edits the same files: putting them back would undo its work too.
@@ -753,12 +764,65 @@ export class Board {
     return null;
   }
 
-  /** The conversation was cut by a rewind: with nothing left of it, the next message starts a new session. */
-  rewound(slug: string, id: string, emptied: boolean): Ticket {
+  /**
+   * The conversation was cut by a rewind: with nothing left of it, the next message starts a new session.
+   * undo: what Undo needs to put it back (its newSessionId is filled in here).
+   */
+  rewound(slug: string, id: string, emptied: boolean, undo: RewindUndo | null = null): Ticket {
     this.recoverable(slug, id);
-    return this.patch(slug, id, emptied
-      ? { sessionId: crypto.randomUUID(), sessionStarted: false, freshSession: true, lastActivity: null }
-      : { lastActivity: null });
+    const sessionId = emptied ? crypto.randomUUID() : null;
+    const rewindUndo = undo ? { ...undo, newSessionId: sessionId } : null;
+    return this.patch(slug, id, sessionId
+      ? { sessionId, sessionStarted: false, freshSession: true, lastActivity: null, rewindUndo }
+      : { lastActivity: null, rewindUndo });
+  }
+
+  /** Runs a rewind, undo or fork of the ticket's chat, refused while another one or a run is under way. */
+  async withRewind<T>(slug: string, id: string, f: () => Promise<T>): Promise<T> {
+    const blocked = this.rewindBlocked(slug, id);
+    if (blocked) throw new ConflictError(blocked);
+    const k = this.key(slug, id);
+    this.rewinding.add(k);
+    try {
+      return await f();
+    } finally {
+      this.rewinding.delete(k);
+    }
+  }
+
+  /** Why the last rewind can't be undone now (rewindBlocked, then rewind.ts undoBlocked), or null. */
+  async undoRewindBlocked(slug: string, id: string, files: boolean, held = false): Promise<string | null> {
+    const t = this.store.getTicket(slug, id);
+    if (!t) return "ticket not found";
+    const busy = this.rewindBlocked(slug, id, held);
+    if (busy) return busy;
+    const u = t.rewindUndo;
+    const started = !!t.sessionId && t.sessionId !== u?.sessionId && (!!t.sessionStarted || this.sessionExists(t.sessionId));
+    return undoBlocked(u, u ? claudeSessionFile(u.sessionId) : null, { sessionId: t.sessionId ?? null, started }, files);
+  }
+
+  /** Undo the last rewind: files (unless files is false) and the chat come back as they were just before it. */
+  async undoRewind(slug: string, id: string, files: boolean): Promise<UndoResult> {
+    return this.withRewind(slug, id, () => this.undoRewindNow(slug, id, files));
+  }
+
+  private async undoRewindNow(slug: string, id: string, files: boolean): Promise<UndoResult> {
+    const blocked = await this.undoRewindBlocked(slug, id, files, true);
+    if (blocked) throw new ConflictError(blocked);
+    const t = this.store.getTicket(slug, id)!;
+    const u = t.rewindUndo!;
+    let r: UndoResult;
+    try {
+      r = await applyUndo(u, claudeSessionFile(u.sessionId)!, id, files, () => this.rewindBlocked(slug, id, true));
+    } catch (e) {
+      throw e instanceof RewindRefused ? new ConflictError(e.message) : e;
+    }
+    this.recoverable(slug, id);
+    this.patch(slug, id, {
+      rewindUndo: null, lastActivity: null,
+      ...(u.newSessionId ? { sessionId: u.sessionId, sessionStarted: true, freshSession: false } : {}),
+    });
+    return r;
   }
 
   /** What `/` can run in this ticket's chat (the composer's picker lists the same). */
@@ -2853,16 +2917,37 @@ export class Board {
    * warning: something the user should know (uncommitted changes weren't copied, the source branch was gone).
    */
   async branchTicket(slug: string, id: string): Promise<{ ticket: Ticket; warning: string | null }> {
+    const src = this.store.getTicket(slug, id);
+    if (src && this.isRunning(slug, id)) throw new ConflictError("Claude is working on this ticket; branch it once Claude is done");
+    return this.copyTicket(slug, id, { title: `Branch: ${src?.title ?? ""}`, before: null });
+  }
+
+  /**
+   * Fork from here: like Branch, but the copied conversation ends just before the user message `uuid` (the UI puts
+   * its text back in the new chat's box). Titled "<title> (fork)", "(fork 2)"… (forkTitle). Refused while Rewind
+   * would be (a run, a waiting message). The first message forks to an empty chat that starts a new session.
+   */
+  async forkTicket(slug: string, id: string, uuid: string): Promise<{ ticket: Ticket; warning: string | null }> {
+    const src = this.store.getTicket(slug, id);
+    if (!src) throw new Error(`ticket ${id} not found`);
+    return this.withRewind(slug, id, async () => {
+      const title = forkTitle(src.title, this.store.listTickets(slug).map((t) => t.title));
+      return this.copyTicket(slug, id, { title, before: uuid });
+    });
+  }
+
+  private async copyTicket(slug: string, id: string, o: { title: string; before: string | null }): Promise<{ ticket: Ticket; warning: string | null }> {
     const profile = this.store.getProfile(slug);
     const src = this.store.getTicket(slug, id);
     if (!profile || !src) throw new Error(`ticket ${id} not found`);
     if (src.error?.startsWith("corrupt")) throw new Error("ticket file is corrupt");
-    if (this.isRunning(slug, id)) throw new ConflictError("Claude is working on this ticket; branch it once Claude is done");
     const srcFile = src.sessionId ? claudeSessionFile(src.sessionId) : null;
-    if (!src.sessionId || !srcFile) throw new Error("this ticket has no Claude conversation to branch yet");
+    if (!src.sessionId || !srcFile) throw new Error(`this ticket has no Claude conversation to ${o.before ? "fork" : "branch"} yet`);
     if (src.workdir && !existsSync(src.workdir)) throw new Error(`linked session folder no longer exists: ${src.workdir}`);
+    // Checked before anything is made: a message the chat can't be cut at is refused.
+    if (o.before && !cutSession(readFileSync(srcFile, "utf8"), o.before)) throw new Error("The chat can't be forked from this message.");
 
-    const title = `Branch: ${src.title}`;
+    const title = o.title;
     const t = this.store.createTicket(slug, { title, body: src.body, status: "planning", mode: src.mode });
     const warnings: string[] = [];
     let worktree: string | null = null;
@@ -2902,7 +2987,12 @@ export class Board {
       // The branch gets its own copies of pasted images, so deleting either ticket can't break the other.
       const rename = copyAttachments(this.store.attachmentsDir, referencedAttachments(src.body, readFileSync(srcFile, "utf8")));
       for (const [from, to] of Object.entries(rename)) patch.body = (patch.body ?? src.body).split(from).join(to);
-      forkSessionFile(srcFile, { fromId: src.sessionId, toId: patch.sessionId!, fromCwd, toCwd, rename });
+      const fo = { fromId: src.sessionId, toId: patch.sessionId!, fromCwd, toCwd, rename };
+      if (!o.before) forkSessionFile(srcFile, fo);
+      else if (!forkSessionBefore(srcFile, o.before, fo)) {
+        // Forked from the first message: nothing to copy, the first message starts a new session.
+        Object.assign(patch, { sessionStarted: false, freshSession: true });
+      }
       this.store.copyOutputs(slug, src.id, t.id);
       const out = this.patch(slug, t.id, patch);
       return { ticket: out, warning: warnings.join(" ") || null };

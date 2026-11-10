@@ -15,7 +15,7 @@ import { DiffError, folderDiff, ticketDiff } from "./diff";
 import { detectBaseBranch, enableVersionHistory, hasUncommittedChanges, isGitRepo, repoKind, resolveBaseBranch, which } from "./git";
 import { checkPr, mergePr, PrError, REFRESH_MIN_MS, refreshPr, resolveConflicts, sendFailures, type PrDeps } from "./prpoller";
 import { resumeCommand } from "./prompts";
-import { applyRewind, previewRewind } from "./rewind";
+import { applyRewind, messagesFrom, previewRewind, RewindRefused } from "./rewind";
 import { cronError, describeCron, nextRuns, parseCron } from "./cron";
 import { fromUserBrowser } from "./integrations/guard";
 import { PassError, Passes } from "./integrations/passes";
@@ -1480,6 +1480,32 @@ export function createServer(deps: ServerDeps) {
           throw err;
         }
       }
+      // Rewind (chat only: quick chats never change files back), Undo rewind and Fork from here, like a ticket's.
+      if (parts.length === 5 && parts[4] === "rewind" && (m === "GET" || m === "POST")) {
+        const b = m === "POST" ? ((await userAsks(), await body(req)) ?? {}) : {};
+        const uuid = m === "POST" ? String(b.uuid ?? "") : url.searchParams.get("uuid") ?? "";
+        const entries = sessions.get(chat.sessionId)?.entries ?? [];
+        const entry = entries.find((e) => e.uuid === uuid && e.rewind);
+        if (!entry) throw new HttpError(404, "This message can't be rewound to.");
+        if (m === "GET") return json({ blocked: quickChats.rewindBlocked(slug, cid), files: null, filesReason: "quick-chat" });
+        return json(await quickChats.rewind(slug, cid, entry, entries));
+      }
+      if (parts.length === 5 && parts[4] === "rewind-undo" && (m === "GET" || m === "POST")) {
+        if (m === "GET") {
+          const u = chat.rewindUndo ?? null;
+          return json({ available: !!u, blocked: await quickChats.undoRewindBlocked(slug, cid), messages: u?.messages ?? 0, files: 0, filesSaved: false });
+        }
+        await userAsks();
+        return json(await quickChats.undoRewind(slug, cid));
+      }
+      if (parts.length === 5 && parts[4] === "fork" && m === "POST") {
+        await userAsks();
+        const uuid = String((await body(req))?.uuid ?? "");
+        const entry = sessions.get(chat.sessionId)?.entries.find((e) => e.uuid === uuid && e.rewind);
+        if (!entry) throw new HttpError(404, "The chat can't be forked from this message.");
+        const next = quickChats.fork(slug, cid, uuid);
+        return json({ id: next.id, text: entry.text, chat: next }, 201);
+      }
       if (parts.length === 6 && parts[4] === "tool" && m === "GET") {
         const d = sessions.toolDetail(chat.sessionId, parts[5]);
         if (!d) throw new HttpError(404, "tool call not found");
@@ -2399,9 +2425,49 @@ export function createServer(deps: ServerDeps) {
       if (blocked) throw new ConflictError(blocked);
       const file = sessions.file(t.sessionId);
       if (!file) throw new HttpError(404, "The conversation file is missing.");
-      const { restored, cut } = await applyRewind({ dir, ticketId: id, entry, sessionFile: file, files: b.files !== false });
-      board.rewound(slug, id, cut.empty);
-      return json({ text: entry.text, restored });
+      const sessionId = t.sessionId;
+      const messages = messagesFrom(sessions.get(sessionId)?.entries ?? [], entry.uuid);
+      // One rewind, undo or fork at a time; messages wait, and the run state is checked again right before the cut.
+      const { restored, cut, undo } = await board.withRewind(slug, id, async () => {
+        const r = await applyRewind({ dir, ticketId: id, entry, sessionFile: file, files: b.files !== false, sessionId, still: () => board.rewindBlocked(slug, id, true) })
+          .catch((e) => { throw e instanceof RewindRefused ? new ConflictError(e.message) : e; });
+        board.rewound(slug, id, r.cut.empty, { ...r.undo, messages });
+        return r;
+      });
+      // messages/files: for "Rewound: N messages and M files went back."; undo: Undo can put it back (rewind-undo).
+      // filesSaved false: files went back but the folder couldn't be saved first, so Undo brings back the chat only.
+      return json({ text: entry.text, restored, messages, files: restored, undo: true, filesSaved: !restored || !!undo.before });
+    }
+    if (action === "rewind-undo" && (m === "GET" || m === "POST")) {
+      // Undo the last rewind: the chat (and the files it changed back) as they were just before it.
+      // GET ?files=0 says whether it can (blocked: why not) and what would come back; POST { files } does it.
+      if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "Undo rewind is the user's click, not a board run's");
+      if (m === "POST") await userOnly(req, "Undo rewind");
+      const b = m === "POST" ? await body(req) : {};
+      const files = m === "POST" ? b.files !== false : url.searchParams.get("files") !== "0";
+      if (m === "GET") {
+        const u = store.getTicket(slug, id)!.rewindUndo ?? null;
+        const blocked = await board.undoRewindBlocked(slug, id, files);
+        return json({ available: !!u, blocked, messages: u?.messages ?? 0, files: u?.files ?? 0, filesSaved: !!u?.before });
+      }
+      return json(await board.undoRewind(slug, id, files));
+    }
+    if (action === "fork" && m === "POST") {
+      // Fork from here: a new ticket like Branch whose chat ends just before this message of the user's; text goes
+      // back in the new chat's box. The original chat and files are only read.
+      if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "Fork is the user's click, not a board run's");
+      await userOnly(req, "Fork from here");
+      const t = store.getTicket(slug, id)!;
+      const uuid = String((await body(req))?.uuid ?? "");
+      const entry = (t.sessionId ? sessions.get(t.sessionId)?.entries : null)?.find((e) => e.uuid === uuid && e.rewind);
+      if (!t.sessionId || !entry) throw new HttpError(404, "The chat can't be forked from this message.");
+      try {
+        const r = await board.forkTicket(slug, id, uuid);
+        return json({ id: r.ticket.id, text: entry.text, ticket: view(profile, r.ticket), warning: r.warning }, 201);
+      } catch (e) {
+        if (e instanceof ConflictError) throw e;
+        throw new HttpError(400, (e as Error).message);
+      }
     }
     if (action === "simplified" && m === "GET") {
       // Saved plain-words versions of this ticket's Claude replies, by message.

@@ -60,3 +60,23 @@ export function plainPreview(md: string, max = 160): string {
     .trim()
     .slice(0, max);
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const two = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * When a message was sent, short (local time): "14:32" today, "9 Nov, 16:05" another day this year, "9 Nov 2025, 16:05"
+ * another year. title: the full date and time, "Monday 9 November 2026, 16:05:12".
+ */
+export function sentTime(iso: string, now = new Date()): { text: string; title: string } {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { text: "", title: "" };
+  const hm = `${two(d.getHours())}:${two(d.getMinutes())}`;
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const today = sameYear && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  const text = today ? hm : `${d.getDate()} ${MONTHS[d.getMonth()]}${sameYear ? "" : ` ${d.getFullYear()}`}, ${hm}`;
+  const title = `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS_LONG[d.getMonth()]} ${d.getFullYear()}, ${hm}:${two(d.getSeconds())}`;
+  return { text, title };
+}

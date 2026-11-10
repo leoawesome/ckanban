@@ -19,7 +19,8 @@ export function filesLine(changes: Change[]): string {
 }
 
 /** Why files can't be changed back for this message. */
-export function noFilesLine(reason: "no-history" | "no-snapshot" | null): string {
+export function noFilesLine(reason: "no-history" | "no-snapshot" | "quick-chat" | null): string {
+  if (reason === "quick-chat") return "Files stay as they are: a quick chat only goes back in the chat.";
   return reason === "no-snapshot"
     ? "Files can't be changed back for this message: no copy of the folder was saved at that point."
     : "Files can't be changed back here: this folder has no version history.";

@@ -5,7 +5,9 @@ import { summarizeEvent } from "./activity";
 import { runOptions } from "./commands";
 import { mcpConfig } from "./agents";
 import { localizeAttachments } from "./attachments";
-import { claudeSessionExists, sessionMissing, type Board } from "./board";
+import { claudeSessionExists, claudeSessionFile, sessionMissing, type Board } from "./board";
+import { forkSessionBefore, forkTitle } from "./fork";
+import { applyRewind, applyUndo, cutSession, RewindRefused, messagesFrom, undoBlocked, type RewindUndo, type UndoResult } from "./rewind";
 import { DraftTracker } from "./draft";
 import type { Bus } from "./events";
 import { WRITING_RULE } from "./prompts";
@@ -41,6 +43,8 @@ export interface QuickChat {
   interrupted?: { prompt?: string } | null;
   /** The Telegram front desk's chat (helper/frontdesk.ts): its runs carry the front desk identity, and it never becomes a ticket. */
   frontDesk?: { chatId: number } | null;
+  /** What the last Rewind changed, so Undo can put it back (chat only: quick chats never change files back). */
+  rewindUndo?: RewindUndo | null;
 }
 
 /** What the UI gets: the chat plus its live state. */
@@ -185,6 +189,8 @@ export class QuickChats {
   private runs = new Map<string, ActiveChat>();
   /** Chats Make ticket is turning into tickets right now: no second ticket, no new reply on that conversation. */
   private making = new Set<string>();
+  /** Chats with a rewind, undo or fork under way: one at a time, and no message starts meanwhile. */
+  private rewinding = new Set<string>();
   private shuttingDown = false;
   private sessionExists: (id: string) => boolean;
   private hooks: QuickChatHooks = {};
@@ -304,6 +310,7 @@ export class QuickChats {
       c = this.getOr404(slug, id);
       if (c.ticketId) throw new QuickChatError(409, "This chat became a ticket. Continue it in the ticket's chat.");
       if (this.making.has(this.key(slug, c.id))) throw new QuickChatError(409, "This chat is being made into a ticket. Continue it in the ticket's chat.");
+      if (this.rewinding.has(this.key(slug, c.id))) throw new QuickChatError(409, "The chat is being rewound, undone or forked right now. Try again in a moment.");
       c = { ...c, firstMessage: c.firstMessage ?? msg, updatedAt: now, error: null };
     }
     const run = this.runs.get(this.key(slug, c.id));
@@ -518,6 +525,116 @@ export class QuickChats {
     // Deleted meanwhile: the ticket stays, the chat is gone.
     const chat = this.patch(slug, id, { ticketId: t.id, started: true }) ?? { ...c, ticketId: t.id, started: true };
     return { ticket: t, chat: this.view(slug, chat) };
+  }
+
+  /** Why the chat can't be rewound or forked right now (the same rules as a ticket's), or null when it can. */
+  rewindBlocked(slug: string, id: string, held = false): string | null {
+    const c = this.get(slug, id);
+    if (!c) return "chat not found";
+    if (!held && this.rewinding.has(this.key(slug, id))) return "The chat is being rewound, undone or forked right now. Try again in a moment.";
+    if (c.ticketId) return "This chat became a ticket. Continue it in the ticket's chat.";
+    if (this.making.has(this.key(slug, id))) return "This chat is being made into a ticket.";
+    if (this.isRunning(slug, id)) return "Claude is working. Stop it or wait until it has replied.";
+    if (c.pending?.length) return "A message is still waiting to be sent. Try again once it has gone.";
+    return null;
+  }
+
+  /**
+   * Rewind a quick chat to one of the user's messages: the chat only. Quick chats run in the board's folder, which
+   * tickets edit too, and no copy of it is saved per message, so files are never changed back.
+   * entries: the chat's conversation as the UI shows it (to count what goes).
+   */
+  async rewind(slug: string, id: string, entry: { uuid: string; text: string; at: string }, entries: { uuid: string; kind: string; role: string }[]): Promise<{ text: string; restored: number; messages: number; files: number; undo: boolean }> {
+    return this.withRewind(slug, id, () => this.rewindNow(slug, id, entry, entries));
+  }
+
+  /** Runs a rewind or undo of the chat, refused while another one, a reply or a waiting message is under way. */
+  private async withRewind<T>(slug: string, id: string, f: () => Promise<T>): Promise<T> {
+    const blocked = this.rewindBlocked(slug, id);
+    if (blocked) throw new QuickChatError(409, blocked);
+    const k = this.key(slug, id);
+    this.rewinding.add(k);
+    try {
+      return await f();
+    } catch (e) {
+      throw e instanceof RewindRefused ? new QuickChatError(409, e.message) : e;
+    } finally {
+      this.rewinding.delete(k);
+    }
+  }
+
+  private async rewindNow(slug: string, id: string, entry: { uuid: string; text: string; at: string }, entries: { uuid: string; kind: string; role: string }[]): Promise<{ text: string; restored: number; messages: number; files: number; undo: boolean }> {
+    const c = this.getOr404(slug, id);
+    const file = claudeSessionFile(c.sessionId);
+    if (!file) throw new QuickChatError(404, "The conversation file is missing.");
+    const messages = messagesFrom(entries, entry.uuid);
+    let r: Awaited<ReturnType<typeof applyRewind>>;
+    try {
+      r = await applyRewind({ dir: null, ticketId: c.id, entry, sessionFile: file, files: false, sessionId: c.sessionId, still: () => this.rewindBlocked(slug, id, true) });
+    } catch (e) {
+      if (e instanceof RewindRefused) throw e;
+      throw new QuickChatError(400, (e as Error).message);
+    }
+    const sessionId = r.cut.empty ? crypto.randomUUID() : null;
+    this.patch(slug, id, {
+      rewindUndo: { ...r.undo, messages, newSessionId: sessionId },
+      ...(sessionId ? { sessionId, started: false } : {}),
+    });
+    return { text: entry.text, restored: 0, messages, files: 0, undo: true };
+  }
+
+  /** Why the last rewind of the chat can't be undone now, or null. */
+  async undoRewindBlocked(slug: string, id: string, held = false): Promise<string | null> {
+    const blocked = this.rewindBlocked(slug, id, held);
+    if (blocked) return blocked;
+    const c = this.getOr404(slug, id);
+    const u = c.rewindUndo;
+    const started = c.sessionId !== u?.sessionId && (c.started || this.sessionExists(c.sessionId));
+    return undoBlocked(u, u ? claudeSessionFile(u.sessionId) : null, { sessionId: c.sessionId, started }, false);
+  }
+
+  /** Undo the last rewind: the chat comes back as it was just before it. */
+  async undoRewind(slug: string, id: string): Promise<UndoResult> {
+    return this.withRewind(slug, id, () => this.undoRewindNow(slug, id));
+  }
+
+  private async undoRewindNow(slug: string, id: string): Promise<UndoResult> {
+    const blocked = await this.undoRewindBlocked(slug, id, true);
+    if (blocked) throw new QuickChatError(409, blocked);
+    const c = this.getOr404(slug, id);
+    const u = c.rewindUndo!;
+    const r = await applyUndo(u, claudeSessionFile(u.sessionId)!, c.id, false, () => this.rewindBlocked(slug, id, true));
+    this.patch(slug, id, { rewindUndo: null, ...(u.newSessionId ? { sessionId: u.sessionId, started: true } : {}) });
+    return { ...r, filesReason: "unchanged" };
+  }
+
+  /**
+   * Fork from here: a new quick chat titled "<title> (fork)" whose conversation ends just before the user message
+   * `uuid`; the source chat is only read. Forked from the first message, the new chat starts empty.
+   */
+  fork(slug: string, id: string, uuid: string): QuickChatView {
+    const profile = this.profile(slug);
+    const blocked = this.rewindBlocked(slug, id);
+    if (blocked) throw new QuickChatError(409, blocked);
+    const c = this.getOr404(slug, id);
+    const file = claudeSessionFile(c.sessionId);
+    if (!file) throw new QuickChatError(404, "The conversation file is missing.");
+    if (!cutSession(readFileSync(file, "utf8"), uuid)) throw new QuickChatError(400, "The chat can't be forked from this message.");
+    const now = nowIso();
+    const title = forkTitle(c.title ?? autoTitle(c.firstMessage), this.list(slug).map((x) => x.title ?? autoTitle(x.firstMessage)), TITLE_MAX);
+    const next: QuickChat = {
+      id: newId(), sessionId: crypto.randomUUID(), title, firstMessage: null, createdAt: now, updatedAt: now, started: false, ticketId: null, error: null,
+    };
+    let dest: string | null;
+    try {
+      dest = forkSessionBefore(file, uuid, { fromId: c.sessionId, toId: next.sessionId, fromCwd: profile.path, toCwd: profile.path });
+    } catch (e) {
+      throw new QuickChatError(400, (e as Error).message);
+    }
+    if (dest) Object.assign(next, { started: true, firstMessage: c.firstMessage });
+    this.save(slug, next);
+    this.emit(slug, next);
+    return this.view(slug, next);
   }
 
   /** Daemon exiting: replies in progress are marked so recover() continues them; every run is stopped. */

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  api, NotStarted, subscribe, type Huddle, type Level, type NewTicketDraft, type OutputFile, type Proposal, type QueuedMessage, type SessionEntry, type TeammateProposal, type Ticket,
+  api, NotStarted, subscribe, type Huddle, type Level, type NewTicketDraft, type OutputFile, type Proposal, type QueuedMessage, type RewindResult, type SessionEntry, type TeammateProposal, type Ticket,
 } from "./api";
 import { HuddleCard } from "./HuddleCard";
 import { HuddleDigest } from "./HuddleDigest";
@@ -30,8 +30,9 @@ import { parentLink } from "./family";
 import { ProposalCard, type FollowUp } from "./ProposalCard";
 import { QuestionsForm } from "./QuestionsForm";
 import { RecoveryBanner } from "./RecoveryBanner";
-import { Rewind } from "./Rewind";
-import { restoredDraft } from "./rewindText";
+import { UndoBar, UndoneNote, UserMessage, undoFromRewind, undoFromState, type UndoInfo } from "./MessageActions";
+import { draftAfterUndo } from "./messageText";
+import { restoredDraft, rewindOff } from "./rewindText";
 import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
 import { StatusNoteView, useFeatureStatus, WaitingLine } from "./StatusBlock";
@@ -52,7 +53,7 @@ import { filesByReply, STATUS_FILES } from "./fileCards";
 import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, type Handoff } from "./liveReply";
 import { heldByReply, inSession, liveProgress, norm, unsentNow, userAfterSaved, type Pending } from "./pendingBubbles";
 import { baseName, copyFile, dirName, downloadFile } from "./share";
-import { draftKey, formKey } from "./drafts";
+import { browserStore, draftKey, formKey, save } from "./drafts";
 import { type FormState, formStates } from "./questionForms";
 import { elapsed, fullTime, timeAgo } from "./time";
 import { stepsLine, stepsLineText, stepsWorking } from "./stepsLive";
@@ -345,6 +346,62 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
       setPage((p) => p ?? { entries: [], start: 0 });
     });
   }, [loadTail]);
+
+  // Fork from here, Rewind and Undo rewind wait while Claude works or a message waits to be sent.
+  const actionsOff = rewindOff(running, queued.length);
+  // The last rewind while it can be undone (the Undo bar under the chat), and what the last Undo did.
+  const [undo, setUndo] = useState<UndoInfo | null>(null);
+  const [undone, setUndone] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  // Opening the chat: a rewind that can still be undone (nothing sent or run since) shows its bar again.
+  useEffect(() => {
+    setUndo(null);
+    setUndone(null);
+    if (running) return;
+    let live = true;
+    api.rewindUndoState(slug, ticket.id, false).then((s) => live && setUndo((u) => u ?? undoFromState(s)), () => {});
+    return () => {
+      live = false;
+    };
+  }, [slug, ticket.id]);
+  // A run starting (the user's message or the board's) ends the chance to undo.
+  useEffect(() => {
+    if (!running) return;
+    setUndo(null);
+    setUndone(null);
+  }, [running]);
+  const rewound = (r: RewindResult) => {
+    const before = draftRef.current;
+    const filled = restoredDraft(r.text, before);
+    setDraft(filled);
+    setUndone(null);
+    setUndo(r.undo ? undoFromRewind(r, filled, before) : null);
+    stickToBottom.current = true;
+    setPage(null);
+    reload();
+    onFilesChanged?.();
+    composer.current?.focus();
+  };
+  const undoRewound = (r: { files: number }, line: string) => {
+    const d = undo?.draft;
+    if (d) setDraft((cur) => draftAfterUndo(cur, d.filled, d.before));
+    setUndo(null);
+    setUndone(line);
+    stickToBottom.current = true;
+    setPage(null);
+    reload();
+    if (r.files) onFilesChanged?.();
+  };
+  // Fork from here: a new ticket whose chat ends before the message; the message waits in its box.
+  const forkFrom = async (uuid: string) => {
+    const r = await api.forkTicket(slug, ticket.id, uuid);
+    save(browserStore(), draftKey(slug, r.id), r.text);
+    onOpenTicket(r.id);
+    toast(r.warning ? <>Forked into <b>{r.ticket.title}</b>. {r.warning}</> : <>Forked into <b>{r.ticket.title}</b></>,
+      { tone: r.warning ? "info" : "ok", ...(r.warning ? { ms: 9000 } : {}) });
+    return `Forked into "${r.ticket.title}". It is open now.`;
+  };
   useEffect(() => {
     setPage(null);
     setHandoff([]);
@@ -617,6 +674,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     const steer = running;
     setPending((ps) => [...ps, { text: t, steer }]);
     setDraft("");
+    setUndo(null);
+    setUndone(null);
     try {
       const r = await api.chat(slug, ticket.id, t, fresh);
       // Steering or waiting for a slot: the server queue now shows it. A reply it started keeps its plain bubble while the
@@ -823,28 +882,30 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               </Turn>
             );
           }
-          if (e.role === "user" || e.commandOutput) {
+          if (e.role === "user") {
+            const canGo = !!e.rewind && !old;
             return (
-              <div key={e.uuid} className={`conv-msg ${e.role}${e.commandOutput ? " command-output" : ""}${old ? " inherited" : ""}`}>
+              <UserMessage key={e.uuid} at={e.at} text={e.text} className={old ? "inherited" : undefined} off={actionsOff} onError={onError}
+                fork={canGo ? { title: ticket.title, run: () => forkFrom(e.uuid) } : undefined}
+                rewind={canGo ? {
+                  later: entries.slice(b.index + 1).filter((x) => x.kind === "text" && !!x.text && !x.commandOutput).length,
+                  preview: () => api.rewindPreview(slug, ticket.id, e.uuid),
+                  apply: (files) => api.rewind(slug, ticket.id, e.uuid, files),
+                  onDone: rewound,
+                } : undefined}>
+                <UserText text={e.text} commands={commands} command={e.command} />
+                {tgMarks.in.has(e.uuid) && <span className="tg-mark" title="You sent this from Telegram">via Telegram</span>}
+              </UserMessage>
+            );
+          }
+          if (e.commandOutput) {
+            return (
+              <div key={e.uuid} className={`conv-msg ${e.role} command-output${old ? " inherited" : ""}`}>
                 <div className="conv-head">
-                  <b>{e.role === "user" ? "You" : "Claude Code"}</b>
+                  <b>Claude Code</b>
                   {e.at && <time className="muted small" dateTime={e.at} title={fullTime(e.at)}>{timeAgo(e.at)}</time>}
                 </div>
-                {e.role === "user" ? <UserText text={e.text} commands={commands} command={e.command} /> : <Markdown text={e.text} />}
-                {tgMarks.in.has(e.uuid) && <span className="tg-mark" title="You sent this from Telegram">via Telegram</span>}
-                {e.rewind && !old && (
-                  <Rewind slug={slug} ticketId={ticket.id} entry={e} running={running} queued={queued.length}
-                    later={entries.slice(b.index + 1).filter((x) => x.kind === "text" && !!x.text && !x.commandOutput).length}
-                    onError={onError}
-                    onDone={(text) => {
-                      setDraft((d) => restoredDraft(text, d));
-                      stickToBottom.current = true;
-                      setPage(null);
-                      reload();
-                      onFilesChanged?.();
-                      composer.current?.focus();
-                    }} />
-                )}
+                <Markdown text={e.text} />
               </div>
             );
           }
@@ -1146,9 +1207,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         {pending.filter((p) => !p.steer).map((p, i) => {
           tail = "user";
           return (
-            <div key={i} className="conv-msg user">
+            <UserMessage key={i} text={p.text} sending off={null} onError={onError}>
               <UserText text={p.text} commands={commands} />
-            </div>
+            </UserMessage>
           );
         })}
         {ticket.interrupted?.partial && (
@@ -1273,6 +1334,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
             : "What you say here is passed to it."}
         </div>
       )}
+      {undo && !running && (
+        <UndoBar info={undo} off={actionsOff} onError={onError} onUndone={undoRewound}
+          undo={(files) => api.undoRewind(slug, ticket.id, files)} />
+      )}
+      {undone && !undo && <UndoneNote line={undone} onClose={() => setUndone(null)} />}
       <div className="composer">
         <textarea ref={composer} rows={phone ? 1 : 2} value={draft} disabled={stopping} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
           placeholder={formWaiting && !running ? "Or type a note to Claude…" : phone
