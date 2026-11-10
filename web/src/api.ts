@@ -1,5 +1,6 @@
 import type { HuddleLine } from "./cardState";
 import { isImageFile } from "./attachText";
+import { createLive, LIVE_NAME, type ChannelLike, type LocksLike, type SourceLike } from "./liveEvents";
 import type { ChatCacheInfo } from "./cacheNote";
 import type { SlashCommand } from "./slashText";
 import type { TicketUsage, UsageResult } from "./usage";
@@ -1896,42 +1897,20 @@ export const api = {
   },
 };
 
-type Listener = (e: BusEvent) => void;
-const listeners = new Set<Listener>();
-const reconnectListeners = new Set<() => void>();
-let source: EventSource | null = null;
-let lostConnection = false;
+// One live connection per browser, shared across board tabs (see liveEvents.ts).
+const live = createLive<BusEvent>({
+  makeSource: () => new EventSource("/api/events") as unknown as SourceLike,
+  locks: typeof navigator !== "undefined" && navigator.locks ? (navigator.locks as unknown as LocksLike) : null,
+  makeChannel: typeof BroadcastChannel !== "undefined" ? () => new BroadcastChannel(LIVE_NAME) as unknown as ChannelLike : null,
+});
 
-function connect() {
-  source = new EventSource("/api/events");
-  source.onmessage = (m) => {
-    try {
-      const e = JSON.parse(m.data) as BusEvent;
-      for (const l of listeners) l(e);
-    } catch {}
-  };
-  source.onerror = () => {
-    // EventSource retries on its own; remember that we missed events meanwhile.
-    lostConnection = true;
-  };
-  source.onopen = () => {
-    if (!lostConnection) return;
-    lostConnection = false;
-    for (const fn of reconnectListeners) fn();
-  };
+export function subscribe(fn: (e: BusEvent) => void): () => void {
+  return live.subscribe(fn);
 }
 
-export function subscribe(fn: Listener): () => void {
-  listeners.add(fn);
-  if (!source) connect();
-  return () => listeners.delete(fn);
-}
-
-/** Called after the live connection comes back (daemon restart, laptop sleep): refetch state. */
+/** Called after the live connection comes back (daemon restart, laptop sleep, leader tab closed): refetch state. */
 export function onReconnect(fn: () => void): () => void {
-  reconnectListeners.add(fn);
-  if (!source) connect();
-  return () => reconnectListeners.delete(fn);
+  return live.onReconnect(fn);
 }
 
 /** Only allow https links from untrusted data (e.g. PR URLs reported by Claude). */

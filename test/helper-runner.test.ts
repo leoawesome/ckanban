@@ -6,6 +6,7 @@ import { Bus } from "../src/server/events";
 import { checkDecision, channelFor, parseDecision, type CheckContext, type ItemState } from "../src/server/helper/decide";
 import { backoffMs, HelperRunner, keptQuietLine, lookBeforeDigest, meetingTime, PRACTICE_STOPPED, reminderCount } from "../src/server/helper/runner";
 import { HelperSettingsStore, inNight, morningDigestAt, nightEnd } from "../src/server/helper/settings";
+import { shortDate } from "../src/server/helper/summary";
 import type { Channel } from "../src/server/helper/channels";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/server/session";
@@ -417,7 +418,9 @@ describe("helper runner", () => {
     expect(hooks).toHaveLength(2);
     const m = n.helper.messages.listNewest()[0];
     expect(m.level).toBe("summary");
-    expect(m.text).toBe("1 new for you: tone question on Docs\n\n- Docs: Which tone?\n\n1 more still waits on you, oldest from 9 Nov.\n\nFrom your check-ins:\n- Prep: client call at 18:30: prep ready");
+    // The wait's start comes from the store's real clock, so the date follows it (not a fixed day).
+    expect(m.summary!.oldestAt).toBeTruthy();
+    expect(m.text).toBe(`1 new for you: tone question on Docs\n\n- Docs: Which tone?\n\n1 more still waits on you, oldest from ${shortDate(m.summary!.oldestAt!)}.\n\nFrom your check-ins:\n- Prep: client call at 18:30: prep ready`);
     expect(m.summary).toMatchObject({ stillCount: 1, still: [{ ticketId: ticket.id }], checkins: [{ title: "Prep: client call at 18:30" }] });
     expect(hooks.at(-1)!.title).toBe("1 new ticket waits on you");
     // Nothing new: only told waits are left, so the wake makes no model call (and no summary goes).
