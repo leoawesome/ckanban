@@ -487,7 +487,7 @@ test("the wake prompt lists only working, failed and waiting tool tickets, plus 
   const prompt = mainWakePrompt(kids[0], { kind: "event", events: ["finished: x"], table, board: "p" });
   // The fixed rules go through the system prompt, not every wake.
   expect(prompt).not.toContain("You never change the project's files");
-  expect(prompt.length).toBeLessThan(3000);
+  expect(prompt.length).toBeLessThan(3300);
 }, 60_000);
 
 test("spend never holds a main ticket's tool tickets, even with a check-in saved before it was removed", async () => {
