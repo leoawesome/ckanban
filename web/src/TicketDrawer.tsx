@@ -21,7 +21,7 @@ import { DescriptionEditor, useDescriptionCommands } from "./DescriptionEditor";
 import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, LinkIcon, SparkIcon } from "./icons";
 import { useImagePaste } from "./imagePaste";
 import { useFocusTrap, useLayer } from "./layers";
-import { BOARD_KEEP } from "./sideChatLayout";
+import { ticketBeside } from "./sideChatLayout";
 import { takeTab } from "./pendingTab";
 import { drawerTabs, escLeavesField, inDock, isStopKey, isTyping, nextStep, panelStep, stepTab, type DrawerTab } from "./keynav";
 import { afterBar, provideTicketActions } from "./ticketActions";
@@ -68,11 +68,11 @@ const BACKDROP_MIN = 64;
 /** Artifact and share link chips in the header; the rest are behind "+N more" (the Outputs tab). */
 const LINK_CHIPS = 3;
 
-/** The width the panel may use (the window, or the window minus the side chat beside it) and what it leaves on its left. */
+/** The width the panel may use (the window, or the window minus the side panel column beside it) and what it leaves on its left. */
 type Room = { width: number; keep: number };
 const windowRoom = (): Room => ({ width: window.innerWidth, keep: BACKDROP_MIN });
-/** Beside the side chat: the room left of the chat, and the board keeps about a column (sideChatLayout.ts). */
-const besideRoom = (chatWidth: number): Room => ({ width: window.innerWidth - chatWidth, keep: BOARD_KEEP });
+/** Beside the side panel column: the room left of it; whether the board shows beside the ticket is ticketBeside's call (sideChatLayout.ts). */
+const besideRoom = (columnWidth: number): Room => ({ width: window.innerWidth - columnWidth, keep: 0 });
 
 const defaultWidth = (room: Room) => Math.round(Math.min(1120, room.width * 0.72));
 
@@ -298,7 +298,7 @@ function usePanelWidth(fit: number, room: Room) {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  return { width, custom: pref !== null, dragging, handle: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onDoubleClick: reset, onKeyDown } };
+  return { width, want: pref ?? Math.min(defaultWidth(room), fit), custom: pref !== null, dragging, handle: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onDoubleClick: reset, onKeyDown } };
 }
 
 /** Ticket view: details on the left, the chat with Claude filling the right side. */
@@ -333,7 +333,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   nav?: { prev: string | null; next: string | null; go: (id: string) => void };
   /** Slide in when opened; off when stepping from the neighbouring ticket. */
   slideIn?: boolean;
-  /** The side chat is open on a wide window: the panel sits between the board and the chat (right: the chat's width, top: below the header). */
+  /** The side panel column is open: the panel sits between the board and the column (right: the column's width, top: below the header). */
   beside?: { right: number; top: number } | null;
   /** Show this tab (e.g. a card's huddle badge); `n` changes for each new request. */
   tabRequest?: { tab: "huddle"; n: number; huddleId?: string } | null;
@@ -551,7 +551,11 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const room = beside ? besideRoom(beside.right) : windowRoom();
   const panel = usePanelWidth((detailsShown ? side.pref : 0) + CHAT_ROOM, room);
   const { dragging, handle } = panel;
-  const width = (tab === "changes" || tab === "huddle") && !panel.custom ? clampWidth(CHANGES_WIDTH, room) : panel.width;
+  const wide = (tab === "changes" || tab === "huddle") && !panel.custom;
+  // Beside the column the board gives way first, then hides behind the ticket (ticketBeside).
+  const fitted = beside ? ticketBeside(room.width, wide ? CHANGES_WIDTH : panel.want, panel.custom) : null;
+  const width = fitted ? fitted.width : wide ? clampWidth(CHANGES_WIDTH, room) : panel.width;
+  const boardHidden = !!fitted?.boardHidden;
   const [descScrolled, setDescScrolled] = useState(false);
   // The tab bar scrolls sideways on narrow screens: fade its right edge while tabs are hidden there,
   // and keep the open tab in view.
@@ -995,7 +999,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   };
   return (
     <FileLinksProvider slug={slug} ticketId={ticket.id} panel={panelRef}>
-    <div className={`drawer-wrap${slideIn ? "" : " no-fade"}${leaving ? " leaving" : ""}${beside ? " beside-chat" : ""}`}
+    <div className={`drawer-wrap${slideIn ? "" : " no-fade"}${leaving ? " leaving" : ""}${beside ? " beside-panels" : ""}`}
       style={beside ? { right: beside.right, top: beside.top } : undefined} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside ref={panelRef} className={`panel ${dragging ? "resizing" : ""} ${slideIn ? "" : "no-slide"}${slim ? " head-slim" : ""}${compactHead ? " head-compact" : ""}${leaving ? " leaving" : ""}`} role="dialog" aria-modal="true" aria-label={ticket.title} style={{ width }} tabIndex={-1}>
         <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabIndex={0}
@@ -1003,6 +1007,11 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
 
         <header className="panel-head">
           {phone && <button className="icon-btn phone-back" onClick={onClose} aria-label="Back to the board"><ChevronLeftIcon size={20} /></button>}
+          {!phone && boardHidden && (
+            <button className="btn ghost small icon-label board-back" onClick={onClose} title="The window is too narrow for the board beside this ticket and the side panels: close the ticket to see the board">
+              <ChevronLeftIcon size={14} /> Board
+            </button>
+          )}
           {!phone && <button className={`icon-btn sidebar-toggle ${detailsShown ? "on" : ""}`} onClick={() => setDetailsOpen((v) => !v)}
             aria-label={detailsShown ? "Hide details" : "Show details"} aria-pressed={detailsShown}
             title={`${detailsShown ? "Hide" : "Show"} details (⌘\\)`}>

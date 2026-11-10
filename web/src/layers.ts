@@ -13,9 +13,9 @@ function onKey(e: KeyboardEvent) {
   const top = stack[stack.length - 1];
   const target = e.target as HTMLElement | null;
   if (top.skipInInputs && target?.closest?.("input, textarea, [contenteditable='true']")) return;
-  // Esc in the bottom panel or the side chat belongs to it (Dock.tsx, SideChat.tsx), not to the ticket panel; a card
-  // picked up on the board (Space) drops it.
-  if (top.base && target?.closest?.(".dock, .side-chat, .sortable-card[aria-pressed='true']")) return;
+  // Esc in the side panels belongs to them (SidePanels.tsx), not to the ticket panel; a card picked up on the board
+  // (Space) drops it.
+  if (top.base && target?.closest?.(".side-panels, .sortable-card[aria-pressed='true']")) return;
   e.preventDefault();
   e.stopPropagation();
   top.close();
@@ -23,9 +23,8 @@ function onKey(e: KeyboardEvent) {
 
 /**
  * Returns isTop(): true while this layer is the topmost one (nothing opened above it).
- * `base`: the ticket panel or the side chat, which the board's own keys (⌘K, ⌘B, N, ?, B) may open things over.
- * `under`: joins at the bottom of the stack, so whatever opens later or earlier closes first (the side chat sits
- * under the ticket panel: Esc closes the ticket, then the chat).
+ * `base`: the ticket panel, which the board's own keys (⌘K, ⌘B, N, ?, B) may open things over.
+ * `under`: joins at the bottom of the stack, so whatever opens later or earlier closes first.
  */
 export function useLayer(onEscape: () => void, opts: { active?: boolean; skipInInputs?: boolean; base?: boolean; under?: boolean } = {}) {
   const fn = useRef(onEscape);

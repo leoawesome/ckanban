@@ -161,17 +161,23 @@ const plain = (e: PlainKeys) => !e.metaKey && !e.ctrlKey && !e.altKey && !e.isCo
 /** Focus is inside the bottom panel (Terminal, Files, Team) or the side chat: the board's single keys stay quiet there. */
 export function inDock(e: { target: EventTarget | null }): boolean {
   const el = e.target as { closest?: (sel: string) => unknown } | null;
-  return !!el?.closest?.(".dock, .side-chat");
+  return !!el?.closest?.(".side-panels, .phone-panels");
 }
 
-/** N, ? and B also work while a ticket panel has the keyboard (not while typing): new ticket, this list, board picker. */
-export type PanelBoardKey = "new" | "shortcuts" | "boards";
+/**
+ * N, ? and B also work while a ticket panel has the keyboard (not while typing): new ticket, this list, board picker;
+ * and F, C and T open the Files, Claude and Team side panels beside the ticket.
+ */
+export type PanelBoardKey = "new" | "shortcuts" | "boards" | "files" | "claude" | "team";
 export function panelBoardKey(e: PlainKeys): PanelBoardKey | null {
   if (!plain(e)) return null;
   switch (e.key) {
     case "n": case "N": return "new";
     case "?": return "shortcuts";
     case "b": case "B": return "boards";
+    case "f": case "F": return "files";
+    case "c": case "C": return "claude";
+    case "t": case "T": return "team";
     default: return null;
   }
 }

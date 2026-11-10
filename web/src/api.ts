@@ -154,9 +154,10 @@ export interface FileContent {
   tooLarge: boolean;
 }
 
-/** WebSocket URL of the profile's interactive shell. */
-export const shellSocketUrl = (slug: string, cols: number, rows: number) =>
-  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/profiles/${encodeURIComponent(slug)}/shell?cols=${cols}&rows=${rows}`;
+/** WebSocket URL of the interactive shell in the board folder, or with `ticket` in that ticket's copy of the folder. */
+export const shellSocketUrl = (slug: string, cols: number, rows: number, ticket?: string | null) =>
+  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/profiles/${encodeURIComponent(slug)}/shell?cols=${cols}&rows=${rows}${ticket ? `&ticket=${encodeURIComponent(ticket)}` : ""}`;
+const inTicket = (ticket?: string | null) => (ticket ? `&ticket=${encodeURIComponent(ticket)}` : "");
 
 /** A quick chat with Claude in the board's folder, no ticket (src/server/quickchat.ts QuickChatView). */
 export interface QuickChat {
@@ -1672,10 +1673,11 @@ export const api = {
   inviteToHuddle: (slug: string, id: string, ticketId: string) => req<HuddleParticipant>("POST", `${hud(slug, id)}/invite`, { ticketId }),
   huddleFindings: (slug: string, id: string, action: "add" | "resolve", arg: { text?: string; id?: string }) =>
     req<HuddleFinding[]>("POST", `${hud(slug, id)}/findings`, { action, ...arg }),
-  files: (slug: string, path: string) =>
-    req<{ path: string; entries: FileEntry[] }>("GET", `/api/profiles/${encodeURIComponent(slug)}/files?path=${encodeURIComponent(path)}`),
-  file: (slug: string, path: string) =>
-    req<FileContent>("GET", `/api/profiles/${encodeURIComponent(slug)}/file?path=${encodeURIComponent(path)}`),
+  /** ticket: in that ticket's copy of the folder (the board folder when it has none). */
+  files: (slug: string, path: string, ticket?: string | null) =>
+    req<{ path: string; entries: FileEntry[] }>("GET", `/api/profiles/${encodeURIComponent(slug)}/files?path=${encodeURIComponent(path)}${inTicket(ticket)}`),
+  file: (slug: string, path: string, ticket?: string | null) =>
+    req<FileContent>("GET", `/api/profiles/${encodeURIComponent(slug)}/file?path=${encodeURIComponent(path)}${inTicket(ticket)}`),
   ticket: (slug: string, id: string) => req<Ticket>("GET", t(slug, id)),
   chats: (slug: string) => req<QuickChat[]>("GET", chatsUrl(slug)),
   /** A new chat starts with its first message. */
@@ -1883,7 +1885,8 @@ export const api = {
   agents: () => req<AgentStatus[]>("GET", "/api/agents"),
   agentInstall: (id: AgentStatus["id"]) => req<AgentStatus[]>("POST", `/api/agents/${id}/install`),
   agentUninstall: (id: AgentStatus["id"]) => req<AgentStatus[]>("POST", `/api/agents/${id}/uninstall`),
-  openFile: (slug: string, path: string) => req<{ ok: true }>("POST", `/api/profiles/${encodeURIComponent(slug)}/open-file`, { path }),
+  openFile: (slug: string, path: string, ticket?: string | null) =>
+    req<{ ok: true }>("POST", `/api/profiles/${encodeURIComponent(slug)}/open-file`, ticket ? { path, ticket } : { path }),
   stop: (slug: string, id: string) => req<{ stopped: boolean }>("POST", `${t(slug, id)}/stop`).then((r) => {
     if (!r.stopped) throw new Error("Claude is not running on this ticket.");
     return r;

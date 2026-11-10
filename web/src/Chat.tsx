@@ -254,7 +254,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   /** The ticket's huddle, to tell whether a proposed one was started. */
   huddle?: Huddle | null;
   onOpenHuddle?: () => void;
-  /** Open the dock's Team tab: a proposed teammate's editor (Edit first) or a saved one (Open in Team). */
+  /** Open the Team side panel: a proposed teammate's editor (Edit first) or a saved one (Open in Team). */
   onOpenTeam?: (r: TeamRequest) => void;
   /** "Help me understand" answers, shown as cards in the timeline by time. */
   help?: HelpState;

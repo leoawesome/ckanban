@@ -37,7 +37,7 @@ import { BugReportError, draftReport, submitReport, type BugBlockId, type BugSou
 import {
   AttachmentError, attachmentFile, attachmentType, cleanFileName, IMAGE_TYPES, opensInline, saveAttachment, UNSUPPORTED, uploadExt,
 } from "./attachments";
-import { FileError, findInRoots, listDir, openWithSystem, readFileForView, type FileRoot } from "./files";
+import { FileError, findInRoots, listDir, openWithSystem, readFileForView, ticketFolder, type FileRoot } from "./files";
 import { boardToolsSource, McpError, McpManager } from "./mcp";
 import { MacOnlyError, MessageError, Notifier, TG_PAIR_FROM_MAC } from "./notify";
 import { HelperError, type HelperRunner } from "./helper/runner";
@@ -150,6 +150,8 @@ interface ShareJob {
 
 interface ShellSocket {
   slug: string;
+  /** The ticket whose copy of the folder the shell runs in; null: the board folder. */
+  folder: string | null;
   cwd: string;
   cols: number;
   rows: number;
@@ -1411,12 +1413,14 @@ export function createServer(deps: ServerDeps) {
       })));
     }
 
-    // /profiles/:p/files?path= (one directory level) and /profiles/:p/file?path= (read-only contents)
+    // /profiles/:p/files?path= (one directory level) and /profiles/:p/file?path= (read-only contents). With &ticket=<id>:
+    // in that ticket's copy of the folder (panelFolder), else the board folder.
     if ((parts[2] === "files" || parts[2] === "file") && parts.length === 3 && m === "GET") {
       const rel = url.searchParams.get("path") ?? "";
+      const { root } = panelFolder(slug, profile.path, url.searchParams.get("ticket"));
       try {
-        if (parts[2] === "files") return json({ path: rel, entries: await listDir(profile.path, rel) });
-        return json(readFileForView(profile.path, rel));
+        if (parts[2] === "files") return json({ path: rel, entries: await listDir(root, rel) });
+        return json(readFileForView(root, rel));
       } catch (e) {
         if (e instanceof FileError) throw new HttpError(e.status, e.message);
         throw e;
@@ -1424,9 +1428,11 @@ export function createServer(deps: ServerDeps) {
     }
     // /profiles/:p/open-file { path } — open a file from the explorer in its default app
     if (parts[2] === "open-file" && parts.length === 3 && m === "POST") {
-      const rel = String((await body(req)).path ?? "");
+      const b = (await body(req)) ?? {};
+      const rel = String(b.path ?? "");
+      const { root } = panelFolder(slug, profile.path, typeof b.ticket === "string" ? b.ticket : null);
       try {
-        openWithSystem(profile.path, rel, process.env.CKANBAN_OPEN_BIN);
+        openWithSystem(root, rel, process.env.CKANBAN_OPEN_BIN);
       } catch (e) {
         if (e instanceof FileError) throw new HttpError(e.status, e.message);
         throw e;
@@ -1434,12 +1440,13 @@ export function createServer(deps: ServerDeps) {
       return json({ ok: true });
     }
 
-    // /profiles/:p/shell — WebSocket to the profile's interactive shell
+    // /profiles/:p/shell[?ticket=<id>] — WebSocket to the interactive shell of the board folder, or of that ticket's copy
     if (parts[2] === "shell" && parts.length === 3 && m === "GET") {
       if (!ptySupported()) throw new HttpError(501, `terminal needs Bun 1.3.5 or newer (running ${Bun.version})`);
       if (!isAllowedSocket(req, server.port ?? deps.port, remote.active(), listenerOf(req))) throw new HttpError(403, "forbidden");
       const dim = (k: string, d: number) => Math.min(1000, Math.max(1, Number(url.searchParams.get(k)) || d));
-      const data: ShellSocket = { slug, cwd: profile.path, cols: dim("cols", 80), rows: dim("rows", 24) };
+      const where = panelFolder(slug, profile.path, url.searchParams.get("ticket"));
+      const data: ShellSocket = { slug, folder: where.ticket, cwd: where.root, cols: dim("cols", 80), rows: dim("rows", 24) };
       if ((via.get(req)?.srv ?? server).upgrade(req, { data })) return undefined;
       throw new HttpError(400, "expected a WebSocket upgrade");
     }
@@ -3244,6 +3251,18 @@ export function createServer(deps: ServerDeps) {
     });
   }
 
+  /**
+   * The folder a Terminal or Files panel works in: with a ticket id, that board ticket's own copy of the folder when it
+   * still exists, else the board folder. The path always comes from the board's records, never from the request.
+   */
+  function panelFolder(slug: string, boardPath: string, ticketId: string | null): { root: string; ticket: string | null } {
+    if (!ticketId) return { root: boardPath, ticket: null };
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(ticketId)) throw new HttpError(400, "invalid ticket");
+    const t = store.getTicket(slug, ticketId);
+    if (!t) throw new HttpError(404, "ticket not found");
+    return ticketFolder(boardPath, t);
+  }
+
   function staticFile(url: URL): Response {
     const assets = deps.assets ?? {};
     if (Object.keys(assets).length) {
@@ -3264,7 +3283,7 @@ export function createServer(deps: ServerDeps) {
     d.unsubscribe?.();
     let shell: Shell;
     try {
-      shell = shells.get(d.slug, d.cwd, d.cols, d.rows, restart);
+      shell = shells.get(d.slug, d.cwd, d.cols, d.rows, restart, d.folder);
     } catch (e) {
       ws.send(JSON.stringify({ type: "error", message: (e as Error).message }));
       return;
@@ -3332,7 +3351,7 @@ export function createServer(deps: ServerDeps) {
       } else if (msg.type === "restart") {
         // Another tab may already have restarted it: then just join the new shell.
         ws.send(JSON.stringify({ type: "reset" }));
-        attachShell(ws, shells.current(ws.data.slug) === shell);
+        attachShell(ws, shells.current(ws.data.slug, ws.data.folder) === shell);
       }
     },
     close: (ws) => ws.data.unsubscribe?.(),

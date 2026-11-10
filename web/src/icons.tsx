@@ -41,7 +41,7 @@ export const MoreIcon = (p: IconProps) => svg(<><circle cx="3.5" cy="8" r=".9" f
 export const SearchIcon = (p: IconProps) => svg(<><circle cx="7" cy="7" r="4.2" /><path d="M10.2 10.2L13.5 13.5" /></>, p);
 export const TerminalIcon = (p: IconProps) => svg(<><rect x="2" y="3" width="12" height="10" rx="1.8" /><path d="M5 6.5L7 8.3 5 10M8.5 10.5H11" /></>, p);
 export const ChatIcon = (p: IconProps) => svg(<path d="M3.8 2.8h8.4c.7 0 1.3.6 1.3 1.3v5.6c0 .7-.6 1.3-1.3 1.3H7.5L4.5 13.5V11h-.7c-.7 0-1.3-.6-1.3-1.3V4.1c0-.7.6-1.3 1.3-1.3z" />, p);
-/** Teammates (the dock's Team tab). */
+/** Teammates (the Team side panel). */
 export const TeamIcon = (p: IconProps) => svg(<><circle cx="6" cy="5.4" r="2.2" /><path d="M2 13.2c0-2.2 1.8-3.9 4-3.9s4 1.7 4 3.9" /><path d="M10.4 3.4a2.1 2.1 0 0 1 0 4.1M11.6 9.5c1.4.4 2.4 1.9 2.4 3.7" /></>, p);
 export const RefreshIcon = (p: IconProps) => svg(<><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M13 2.5v3h-3" /></>, p);
 export const KeyboardIcon = (p: IconProps) => svg(<><rect x="1.8" y="4" width="12.4" height="8" rx="1.5" /><path d="M4.5 6.6h.01M7 6.6h.01M9.5 6.6h.01M12 6.6h.01M5 9.4h6" /></>, p);
@@ -100,3 +100,10 @@ export function Logo({ size = 22 }: { size?: number }) {
   );
 }
 export const LoopIcon = (p: IconProps) => svg(<path d="M3 8a5 5 0 0 1 8.6-3.4M13 8a5 5 0 0 1-8.6 3.4M11.8 2v3h-3M4.2 14v-3h3" />, p);
+/** Fill the side column with one panel, and back. */
+export const MaximizeIcon = (p: IconProps) => svg(<path d="M9.5 2.5h4v4M13.5 2.5L9 7M6.5 13.5h-4v-4M2.5 13.5L7 9" />, p);
+export const RestoreIcon = (p: IconProps) => svg(<path d="M13.5 6.5h-4v-4M9.5 6.5L14 2M2.5 9.5h4v4M6.5 9.5L2 14" />, p);
+/** The side panel column (the Panels button). */
+export const PanelsIcon = (p: IconProps) => svg(<><rect x="2" y="2.5" width="12" height="11" rx="1.8" /><path d="M9.5 2.5v11M9.5 8H14" /></>, p);
+/** A ticket's changes (the Changes panel). */
+export const DiffIcon = (p: IconProps) => svg(<path d="M5 2.5v6M2 5.5h6M2 12.5h6M11.5 2.5v11M9.5 11.5l2 2 2-2" />, p);

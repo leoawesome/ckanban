@@ -47,13 +47,16 @@ const hasChanges = (t: Ticket) => !!t.worktree || (!!t.baseSha && !t.workdir);
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 /**
- * Changes tab: changed files on the left (grouped by folder once there are many), the selected file's diff with line
- * comments on the right. On a phone one pane at a time: the list, then the tapped file's diff with Back.
+ * The ticket's Changes tab, and the Changes panel in the side column: changed files on the left (grouped by folder once
+ * there are many), the selected file's diff with line comments on the right. On a phone, or `compact` (the side column),
+ * one pane at a time: the list, then the tapped file's diff with Back.
  */
-export function Changes({ slug, ticket, state, onSent, onError }: {
+export function Changes({ slug, ticket, state, onSent, onError, compact = false }: {
   slug: string;
   ticket: Ticket;
   state: DiffState;
+  /** One pane at a time, as on a phone (the side panel column). */
+  compact?: boolean;
   /** The comments went to Claude as one chat message. */
   onSent: () => void;
   onError: (msg: string) => void;
@@ -61,8 +64,8 @@ export function Changes({ slug, ticket, state, onSent, onError }: {
   const { diff, error, loading, ignoreWs, setIgnoreWs, reload } = state;
   const [comments, setComments] = usePersistentState<ReviewComment[]>(reviewKey(slug, ticket.id), () => [], (v) => !v.length, isReviewComments);
   const [picked, setPicked] = useState<string | null>(null);
-  const phone = usePhone();
-  // Phone: the diff covers the list after a tap on a file.
+  const phone = usePhone() || compact;
+  // Phone (or compact): the diff covers the list after a tap on a file.
   const [reading, setReading] = useState(false);
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);

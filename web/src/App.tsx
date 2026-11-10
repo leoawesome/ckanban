@@ -9,7 +9,7 @@ import { HeaderMenu, type MenuItem } from "./HeaderMenu";
 import { ThemePicker } from "./ThemePicker";
 import { boardTags, hasTags, parseSearch, tagStyle } from "./tagText";
 import { TagFilter } from "./Tags";
-import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, FolderIcon, GearIcon, KeyboardIcon, LinkIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
+import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, DiffIcon, FolderIcon, PanelsIcon, GearIcon, KeyboardIcon, LinkIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
 import { Inbox, type InboxHelper } from "./Inbox";
 import { NowView } from "./NowView";
 import { NotificationsDialog } from "./NotificationsDialog";
@@ -19,7 +19,7 @@ import { startPushClient } from "./push";
 import { PhoneAccessDialog } from "./PhoneAccessDialog";
 import { MoreSheet, PhoneNav, type PhoneTab } from "./PhoneNav";
 import { askInChat, QuickChatPane } from "./QuickChat";
-import { TOOLS_IN_MENU_QUERY, useMedia, usePhone } from "./usePhone";
+import { usePhone } from "./usePhone";
 import { StatusPill, UsageBox } from "./UsagePill";
 import { useUsage } from "./useUsage";
 import { onlyBaseLayers } from "./layers";
@@ -44,13 +44,14 @@ import { boardDigit, cardDir, cardKey, inDock, isBoardPickerKey, isInboxKey, isT
 import { HintLegend, KeyHint, useHintReveal } from "./KeyHint";
 import { teamButtonText } from "./huddleText";
 import { TicketDrawer } from "./TicketDrawer";
-import { SideChat, useChatWidth } from "./SideChat";
-import { CHAT_OPEN_KEY, initialChatOpen, ticketPlacement } from "./sideChatLayout";
+import { clampChatWidth, COLUMN_DEFAULT } from "./sideChatLayout";
+import type { PanelId } from "./panelState";
+import { usePanels, useWindowWidth } from "./usePanels";
+import { PanelsButton } from "./PanelsButton";
 import { toast, Toaster, undoLatest } from "./toast";
 import { clearArrival, noteServerMove } from "./arrivals";
 import { SampleOffer } from "./SampleOffer";
 
-import type { DockTab } from "./Dock";
 import type { HuddleSeed, TeamRequest } from "./Team";
 import { liveHuddleCount, useBoardHuddles, useHuddleIdleTick } from "./huddle";
 import { hasOpenPr, runCounts } from "./boardStats";
@@ -66,7 +67,8 @@ import { snoozeBody, snoozeUntil, snoozeWords, type SnoozeLength } from "./snooz
 const PhoneTeam = lazy(() => import("./Team").then((m) => ({ default: m.TeamTab }), () => ({
   default: () => <div className="empty">Couldn't load Team. Reload the page.</div>,
 })));
-const Dock = lazy(() => import("./Dock").then((m) => {
+type PanelsModule = Pick<typeof import("./SidePanels"), "default" | "PhonePanels">;
+const panelsModule = (): Promise<PanelsModule> => import("./SidePanels").then((m) => {
   sessionStorage.removeItem("ckanban.chunkReload");
   return m;
 }, () => {
@@ -74,9 +76,11 @@ const Dock = lazy(() => import("./Dock").then((m) => {
     sessionStorage.setItem("ckanban.chunkReload", "1");
     location.reload();
   }
-  return { default: () => <div className="dock dock-failed">Couldn't load the terminal panel. Reload the page.</div> };
-}));
-const DOCK_OPEN = "ckanban.dock.open";
+  const Failed = () => <aside className="side-panels sp-failed">Couldn't load the side panels. Reload the page.</aside>;
+  return { default: Failed as unknown as PanelsModule["default"], PhonePanels: Failed as unknown as PanelsModule["PhonePanels"] };
+});
+const SidePanels = lazy(panelsModule);
+const PhonePanels = lazy(() => panelsModule().then((m) => ({ default: m.PhonePanels })));
 
 const LAST_PROFILE = "ckanban.profile";
 /** Board slug the sample ticket is offered on, until it is started or dismissed. */
@@ -201,24 +205,8 @@ export function App() {
   // The board whose tickets are in `tickets`: until it matches the board shown, the list is still loading (not empty).
   const [loadedSlug, setLoadedSlug] = useState<string | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
-  const [dockOpen, setDockOpen] = useState(() => {
-    try {
-      // A panel left on the old Claude item opens as the side chat instead (initialChatOpen).
-      return localStorage.getItem(DOCK_OPEN) === "1" && localStorage.getItem("ckanban.dock.tab") !== "claude";
-    } catch {
-      return false;
-    }
-  });
-  // The quick Claude chat on computers: a side panel on the right (SideChat.tsx); chatFocus: put the keyboard in it.
-  const [chatOpen, setChatOpen] = useState(() => {
-    try {
-      return initialChatOpen((k) => localStorage.getItem(k));
-    } catch {
-      return false;
-    }
-  });
-  const [chatFocus, setChatFocus] = useState(0);
-  const chatWidth = useChatWidth();
+  // The side panel column on the right (SidePanels.tsx): Terminal, Files, Changes, Team and Claude, kept per board.
+  const panels = usePanels(slug);
   const [openId, setOpenId] = useState<string | null>(parseHash().ticket);
   // The Messages pages (#/~messages, #/~messages/<id>): shown in place of the board, under the same top bar.
   const [msgRoute, setMsgRoute] = useState(() => messagesRoute(location.hash));
@@ -263,28 +251,25 @@ export function App() {
   // Plan usage and today's spend: the header pill on computers, the More sheet on phones.
   const usage = useUsage();
   const [boardSwitcher, setBoardSwitcher] = useState(false);
-  // Command to type into the dock's terminal (e.g. "claude mcp login x"); n makes repeats count.
-  const [dockCommand, setDockCommand] = useState<{ text: string; n: number } | null>(null);
-  // Item the bottom panel should show (Terminal, Files, Claude or Team); n makes repeats count.
-  const [dockTab, setDockTab] = useState<{ tab: DockTab; n: number; team?: TeamRequest } | null>(null);
-  // Item the open panel shows (reported by the panel), for the header buttons' on state.
-  const [dockShown, setDockShown] = useState<DockTab | null>(null);
-  const shownItem = dockOpen ? dockShown : null;
-  /** team: what the Team shows (the new-teammate editor, a proposal to edit, a teammate, the huddles). */
-  const openDockOn = (tab: DockTab, team?: TeamRequest) => {
-    setDockOpen(true);
-    setDockTab({ tab, n: Date.now(), ...(team ? { team } : {}) });
+  // Command to type into the Terminal panel (e.g. "claude mcp login x"); n makes repeats count.
+  const [panelCommand, setPanelCommand] = useState<{ text: string; n: number } | null>(null);
+  // The panel to put the keyboard in, and what the Team panel should show; n makes repeats count.
+  const [panelFocus, setPanelFocus] = useState<{ id: PanelId; n: number } | null>(null);
+  const [teamRequest, setTeamRequest] = useState<{ team: TeamRequest; n: number } | null>(null);
+  // Phones have no column: the panel shown full screen (PhonePanels), or null.
+  const [phonePanel, setPhonePanel] = useState<PanelId | null>(null);
+  /**
+   * Opens a panel in the column (shows the column, unfolds the panel) and puts the keyboard in it; on a phone, shows
+   * it full screen. team: what the Team shows (the new-teammate editor, a proposal to edit, a teammate, the huddles).
+   */
+  const openPanel = (id: PanelId, team?: TeamRequest) => {
+    panels.open(id);
+    if (team) setTeamRequest({ team, n: Date.now() });
+    if (phoneRef.current) setPhonePanel(id);
+    else setPanelFocus({ id, n: Date.now() });
   };
-  /** A header button or its key: shows that item in the panel, or hides the panel when it already shows it. */
-  const toggleDock = (tab: DockTab) => (shownItem === tab ? setDockOpen(false) : openDockOn(tab));
-  /** The quick chats with Claude: the Ask tab on phones, the side chat on computers. */
-  const openChat = () => {
-    if (phoneRef.current) return setPhoneTab("ask");
-    setChatOpen(true);
-    setChatFocus(Date.now());
-  };
-  /** C and the header's Claude button: open the side chat, or hide it when it is open. */
-  const toggleChat = () => (chatOpen ? setChatOpen(false) : openChat());
+  /** The quick chats with Claude: the Ask tab on phones, the Claude panel on computers. */
+  const openChat = () => (phoneRef.current ? setPhoneTab("ask") : openPanel("claude"));
   const [mcp, setMcp] = useState<McpState | null>(null);
   const [connections, setConnections] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[] | null>(null);
@@ -446,7 +431,7 @@ export function App() {
     setOpenId(id);
   }, [slug]);
 
-  // A huddle badge or the dock's Huddles list: open the ticket on its Huddle tab.
+  // A huddle badge or the Team panel's Huddles list: open the ticket on its Huddle tab.
   const [huddleTab, setHuddleTab] = useState<{ id: string; n: number; huddleId?: string } | null>(null);
   const openHuddle = useCallback((id: string, huddleId?: string) => {
     setHuddleTab({ id, n: Date.now(), huddleId });
@@ -518,20 +503,8 @@ export function App() {
     document.title = `${ranOut ? "✓ " : ""}${needYou ? `(${needYou}) ` : ""}ckanban`;
   }, [needYou, ranOut]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(DOCK_OPEN, dockOpen ? "1" : "0");
-    } catch {}
-  }, [dockOpen]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(CHAT_OPEN_KEY, chatOpen ? "1" : "0");
-    } catch {}
-  }, [chatOpen]);
-  // An item request is one-shot: reopening the panel later shows the user's last item.
-  useEffect(() => {
-    if (!dockOpen) setDockTab(null);
-  }, [dockOpen]);
+  // Another board: its own panels; a phone's full-screen panel closes.
+  useEffect(() => setPhonePanel(null), [slug]);
 
   // Board switching (B picker, [ ] prev/next, 1…9) leaves the open ticket: it belongs to the old board.
   const switchBoard = useCallback((to: string) => {
@@ -542,17 +515,17 @@ export function App() {
   // Latest values for the window key handler below, which is bound once per dialog state.
   const live = useRef({ profiles, tickets, markDone: (_id: string) => {}, toggleStar: (_id: string) => {}, inboxCount: 0 });
 
-  // Shortcuts: N new ticket, / search, ? cheatsheet, Ctrl+` Terminal, F Files, C Claude, T Team (each toggles its item in the bottom panel),
+  // Shortcuts: N new ticket, / search, ? cheatsheet, Ctrl+` Terminal, F Files, C Claude, T Team (each opens or focuses its side panel),
   // ⌘K command bar (tickets on every board, actions, boards), I the Inbox, U the newest toast's Undo,
   // B or ⌘B board picker, [ ] previous / next board, 1…9 board N, J/K/H/L or arrows select a card;
   // on a focused card S stars, M moves to a column, D marks a Review card done.
-  // With a ticket panel open (and it has the keyboard) only N, ?, B, U, ⌘K and ⌘B; single keys stay quiet while typing
-  // and inside the bottom panel. Esc is handled by the panel and dialogs (one layer at a time, see layers.ts).
+  // With a ticket panel open (and it has the keyboard) only N, ?, B, F, C, T, U, ⌘K and ⌘B; single keys stay quiet while
+  // typing and inside the side panels. Esc is handled by the panel and dialogs (one layer at a time, see layers.ts).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "`") {
         e.preventDefault();
-        if (slug) toggleDock("terminal");
+        if (slug) openPanel("terminal");
         return;
       }
       if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
@@ -588,6 +561,8 @@ export function App() {
         e.preventDefault();
         if (k === "new") { if (slug) setNewTicket(true); }
         else if (k === "shortcuts") setShortcuts(true);
+        else if (k === "files" || k === "team") { if (slug) openPanel(k); }
+        else if (k === "claude") { if (slug) openChat(); }
         else if (boards.length) setBoardSwitcher(true);
         return;
       }
@@ -638,14 +613,14 @@ export function App() {
         setShortcuts(true);
       } else if (e.key === "c" || e.key === "C") {
         e.preventDefault();
-        if (slug) (phoneRef.current ? openChat() : toggleChat());
+        if (slug) openChat();
       } else if (e.key === "f" || e.key === "F") {
-        if (!slug || phoneRef.current) return;
+        if (!slug) return;
         e.preventDefault();
-        toggleDock("files");
+        openPanel("files");
       } else if (e.key === "t" || e.key === "T") {
         e.preventDefault();
-        if (slug) toggleDock("team");
+        if (slug) openPanel("team");
       } else if (e.key === "b" || e.key === "B") {
         e.preventDefault();
         if (boards.length) setBoardSwitcher(true);
@@ -658,12 +633,12 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openId, profileDialog, newTicket, connections, schedulesOpen, automationsOpen, slug, switchBoard, dockOpen, dockShown, chatOpen]);
+  }, [openId, profileDialog, newTicket, connections, schedulesOpen, automationsOpen, slug, switchBoard]);
 
-  const runInTerminal = useCallback((text: string) => {
-    setDockOpen(true);
-    setDockCommand({ text, n: Date.now() });
-  }, []);
+  const runInTerminal = (text: string) => {
+    openPanel("terminal");
+    setPanelCommand({ text, n: Date.now() });
+  };
 
   const dismiss = (key: string) => setDismissed((d) => {
     const next = new Set(d).add(key);
@@ -751,10 +726,16 @@ export function App() {
 
   const profile = useMemo(() => profiles?.find((p) => p.slug === slug) ?? null, [profiles, slug]);
   const open = tickets.find((t) => t.id === openId) ?? null;
-  // The side chat (computers): the board and the bottom panel get narrower. A ticket opens between the board and the
-  // chat on wide windows, over the chat on narrow ones; the chat stays mounted either way (ticketPlacement).
-  const sideChat = chatOpen && !phone && !!profile;
-  const besideTicket = sideChat && ticketPlacement(chatWidth.windowWidth, chatWidth.width) === "beside";
+  // The side panel column (computers): the board gets narrower; an open ticket sits between the board and the column
+  // (sideChatLayout.ts: the board gives way first, then hides; the column narrows before the ticket does).
+  const windowWidth = useWindowWidth();
+  const columnShown = panels.state.shown && !phone && !!profile;
+  const columnWidth = clampChatWidth(panels.state.width ?? COLUMN_DEFAULT, windowWidth, !!open);
+  // Mounted from the first time it shows, then only hidden, so shells, drafts and scroll survive hiding it.
+  const [columnSeen, setColumnSeen] = useState<string | null>(null);
+  useEffect(() => {
+    if (columnShown && profile) setColumnSeen(profile.slug);
+  }, [columnShown, profile?.slug]);
   const topbarRef = useRef<HTMLElement>(null);
   const [topbarBottom, setTopbarBottom] = useState(0);
   useEffect(() => {
@@ -794,6 +775,12 @@ export function App() {
     setHuddleSeed({ id, seed, n: Date.now() });
     openHuddle(id);
   };
+  /** What the side column and the phone's panel screen show: they follow the open ticket. */
+  const panelProps = (p: Profile) => ({
+    profile: p, pty: health?.pty ?? true, panels, ticket: open, focus: panelFocus,
+    command: panelCommand, onCommandSent: () => setPanelCommand(null), teamRequest, huddles,
+    onOpenHuddle: openHuddle, onOpenTicket: (id: string) => openTicket(id), onStartHuddle: (seed: HuddleSeed) => void startHuddle(seed),
+  });
   // The drawer has taken the Huddle tab request (as its first tab, or switched to it): forget it.
   useEffect(() => {
     if (huddleTab && open?.id === huddleTab.id) setHuddleTab(null);
@@ -910,8 +897,6 @@ export function App() {
   }, [slug]);
   const queued = visibleTickets.filter((t) => t.status === "ready" || waitsForSlot(t)).length;
   const ticketsLoaded = !!slug && loadedSlug === slug;
-  // Mid width (not a phone): the tool buttons live in ⋯ so New ticket always fits.
-  const toolsInMenu = useMedia(TOOLS_IN_MENU_QUERY) && !phone;
 
   const updateKey = `update:${version?.latest}`;
   const pathKey = `path:${missing.join(",")}`;
@@ -923,15 +908,10 @@ export function App() {
     return next;
   });
 
-  const toolItems: MenuItem[] = toolsInMenu && profile ? [
-    { label: "Terminal", icon: <TerminalIcon size={14} />, onSelect: () => openDockOn("terminal") },
-    { label: "Files", icon: <FolderIcon size={14} />, onSelect: () => openDockOn("files") },
-    { label: "Quick Claude chat", icon: <ChatIcon size={14} />, onSelect: () => openChat() },
-    {
-      label: "Team", icon: <TeamIcon size={14} />, separator: true,
-      onSelect: () => (learnedNew ? openDockOn("team", { action: "learned" }) : openDockOn("team")),
-      badge: liveHuddles > 0 ? <span className="tab-count ok">{liveHuddles} live</span> : learnedNew > 0 ? <span className="tab-count">{learnedNew} new</span> : undefined,
-    },
+  // Phones have no Panels button: Terminal and Files open full screen from More (Changes, Team and Claude from + Add there).
+  const toolItems: MenuItem[] = phone && profile ? [
+    { label: "Terminal", icon: <TerminalIcon size={14} />, onSelect: () => openPanel("terminal") },
+    { label: "Files", icon: <FolderIcon size={14} />, separator: true, onSelect: () => openPanel("files") },
   ] : [];
   const menuItems: MenuItem[] = [
     ...toolItems,
@@ -968,7 +948,7 @@ export function App() {
           { label: "Keyboard shortcuts", hint: "?", icon: <KeyboardIcon />, onSelect: () => setShortcuts(true) },
           { label: "Report a bug", icon: <BugIcon />, onSelect: () => setBugReport(true) },
   ];
-  const menuAlert = scheduleFails > 0 || mcpAttention > 0 || (toolItems.length > 0 && learnedNew > 0);
+  const menuAlert = scheduleFails > 0 || mcpAttention > 0;
   const menuFooter = version && version.version !== "dev" ? `ckanban v${version.version} · by Leo` : "by Leo";
   // Inbox triage on any board: the entry leaves the list (and the counts) at once, the server confirms.
   const inboxDone = async (i: InboxItem) => {
@@ -1074,14 +1054,18 @@ export function App() {
     ...cardActions,
     ...(profile ? [
       { id: "new", label: "New ticket", keys: ["N"], run: () => setNewTicket(true) },
-      { id: "dock", label: "Open terminal", keys: ["Ctrl", "`"], icon: <TerminalIcon size={14} />, run: () => openDockOn("terminal") },
-      { id: "files", label: "Open files", keys: ["F"], icon: <FolderIcon size={14} />, hint: "browse this folder", run: () => openDockOn("files") },
+      { id: "dock", label: "Open terminal", keys: ["Ctrl", "`"], icon: <TerminalIcon size={14} />, hint: open?.worktree ? "in this ticket's copy" : "in the board folder", run: () => openPanel("terminal") },
+      { id: "files", label: "Open files", keys: ["F"], icon: <FolderIcon size={14} />, hint: open?.worktree ? "this ticket's copy" : "browse this folder", run: () => openPanel("files") },
+      { id: "changes", label: "Open changes", icon: <DiffIcon size={14} />, hint: open ? "this ticket's changes" : "of the open ticket", run: () => openPanel("changes") },
       { id: "chat", label: "Quick Claude chat", keys: ["C"], icon: <ChatIcon size={14} />, run: () => openChat() },
+      ...(!phone && panels.state.open.length ? [{
+        id: "panels", label: panels.state.shown ? "Hide the side panels" : "Show the side panels", icon: <PanelsIcon size={14} />, run: () => panels.toggleColumn(),
+      }] : []),
     ] : []),
     ...(profile ? [
-      { id: "team", label: "Open Team", keys: ["T"], icon: <TeamIcon size={14} />, hint: "teammates, squads, huddles", run: () => openDockOn("team") },
-      { id: "huddles", label: liveHuddles ? `Huddles (${liveHuddles} live)` : "Huddles", icon: <TeamIcon size={14} />, hint: "in Team", run: () => openDockOn("team", { action: "huddles" }) },
-      { id: "new-teammate", label: "New teammate…", run: () => openDockOn("team", { action: "new" }) },
+      { id: "team", label: "Open Team", keys: ["T"], icon: <TeamIcon size={14} />, hint: "teammates, squads, huddles", run: () => openPanel("team") },
+      { id: "huddles", label: liveHuddles ? `Huddles (${liveHuddles} live)` : "Huddles", icon: <TeamIcon size={14} />, hint: "in Team", run: () => openPanel("team", { action: "huddles" }) },
+      { id: "new-teammate", label: "New teammate…", run: () => openPanel("team", { action: "new" }) },
     ] : []),
     ...(inbox.length || snoozed.length ? [{
       id: "inbox", label: inbox.length ? `Open inbox (${inbox.length} need you)` : `Open inbox (${snoozed.length} snoozed)`, keys: ["I"],
@@ -1178,32 +1162,16 @@ export function App() {
         <Inbox items={inbox} snoozed={snoozed} openRequest={inboxRequest} onPick={(i) => openFrom(i.profile, i.id)}
           onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, on, len) => void inboxSnooze(i, on, len)} onSnoozeAll={(l) => void inboxSnoozeAll(l)}
           helper={inboxHelper} />
-        {profile && !toolsInMenu && (
-          <div className="tool-group" role="group" aria-label="Tools">
-            <button className={`btn ghost icon-label${shownItem === "terminal" ? " on" : ""}`} onClick={() => toggleDock("terminal")}
-              aria-pressed={shownItem === "terminal"} title="A terminal in this folder (Ctrl+`). Hiding it keeps the shell running." aria-label="Terminal">
-              <TerminalIcon /><span className="label">Terminal</span><KeyHint keys="Ctrl+`" />
-            </button>
-            <button className={`btn ghost icon-label${shownItem === "files" ? " on" : ""}`} onClick={() => toggleDock("files")}
-              aria-pressed={shownItem === "files"} title="Browse the files in this folder (F)" aria-label="Files">
-              <FolderIcon /><span className="label">Files</span><KeyHint keys="F" />
-            </button>
-            <button className={`btn ghost icon-label${sideChat ? " on" : ""}`} onClick={toggleChat}
-              aria-pressed={sideChat} title="Quick chat with Claude in this folder, no ticket needed, in a panel beside the board (C)" aria-label="Quick Claude chat">
-              <ChatIcon /><span className="label">Claude</span><KeyHint keys="C" />
-            </button>
-            <button className={`btn ghost icon-label${shownItem === "team" ? " on" : ""}`} onClick={() => (learnedNew && shownItem !== "team" ? openDockOn("team", { action: "learned" }) : toggleDock("team"))}
-              aria-pressed={shownItem === "team"} title={teamButtonText(liveHuddles, learnedNew).title} aria-label={teamButtonText(liveHuddles, learnedNew).label}>
-              <TeamIcon /><span className="label">Team</span>
-              {(liveHuddles > 0 || learnedNew > 0) && (
-                <span className="tab-counts">
+        {profile && !phone && (
+          <PanelsButton panels={panels} onOpen={(id) => (id === "team" && learnedNew ? openPanel("team", { action: "learned" }) : openPanel(id))}
+            badges={liveHuddles > 0 || learnedNew > 0 ? {
+              team: (
+                <span className="tab-counts" title={teamButtonText(liveHuddles, learnedNew).title}>
                   {liveHuddles > 0 && <span className="tab-count ok">{liveHuddles} live</span>}
                   {learnedNew > 0 && <span className="tab-count">{learnedNew} new</span>}
                 </span>
-              )}
-              <KeyHint keys="T" />
-            </button>
-          </div>
+              ),
+            } : {}} />
         )}
         {profile && (
           <button className="btn primary phone-only topbar-icon" aria-label="New ticket" onClick={() => setNewTicket(true)}><PlusIcon size={20} /></button>
@@ -1216,7 +1184,7 @@ export function App() {
         <HeaderMenu alert={menuAlert} items={menuItems} footer={menuFooter} />
       </header>
 
-      {/* Below the header: the board column (banners, board, bottom panel) and, on computers, the side chat. */}
+      {/* Below the header: the board column (banners, board) and, on computers, the side panel column. */}
       <div className="app-row">
       <div className="app-col">
 
@@ -1380,17 +1348,16 @@ export function App() {
       )}
       {notifications && <NotificationsDialog profile={profile?.slug ?? null} onClose={() => setNotifications(false)} />}
 
-      {dockOpen && profile && (
+      {phone && profile && phonePanel && (
         <Suspense fallback={null}>
-          <Dock profile={profile} pty={health?.pty ?? true} onClose={() => setDockOpen(false)} command={dockCommand}
-            onCommandSent={() => setDockCommand(null)} tabRequest={dockTab} onTabChange={setDockShown} onOpenTicket={(id) => openTicket(id)}
-            huddles={huddles} onOpenHuddle={openHuddle} openTicket={open ? { id: open.id, title: open.title } : null} onStartHuddle={startHuddle} />
+          <PhonePanels {...panelProps(profile)} shown={phonePanel} onShow={setPhonePanel} />
         </Suspense>
       )}
       </div>
-      {sideChat && profile && (
-        <SideChat profile={profile} chat={chatWidth} onClose={() => setChatOpen(false)} onOpenTicket={(id) => openTicket(id)}
-          focusRequest={chatFocus} covered={!!open && !besideTicket} />
+      {profile && !phone && columnSeen === profile.slug && (
+        <Suspense fallback={null}>
+          <SidePanels key={profile.slug} {...panelProps(profile)} width={columnWidth} ticketOpen={!!open} />
+        </Suspense>
       )}
       </div>
 
@@ -1469,15 +1436,15 @@ export function App() {
       {open && profile && <TicketDrawer key={open.id} profile={profile} ticket={open} tickets={tickets} onOpenTicket={openTicket} onClose={closeTicket} moveTo={moveTo}
         jobs={jobs ?? []} onOpenJobs={openSchedules}
         nav={{ prev: prevId, next: nextId, go: stepTicket }} slideIn={!stepped.current}
-        beside={besideTicket ? { right: chatWidth.width, top: topbarBottom } : null}
+        beside={columnShown ? { right: columnWidth, top: topbarBottom } : null}
         tabRequest={huddleTab?.id === open.id ? { tab: "huddle", n: huddleTab.n, huddleId: huddleTab.huddleId } : null}
         huddleSeed={huddleSeed?.id === open.id ? { seed: huddleSeed.seed, n: huddleSeed.n } : null}
-        onOpenTeam={(r) => { closeTicket(); openDockOn("team", r); }} />}
+        onOpenTeam={(r) => openPanel("team", r)} />}
       {profileDialog && (
         <ProfileDialog
           profile={profileDialog === "edit" ? profile : null}
           onClose={() => setProfileDialog(null)}
-          onOpenTeam={() => { setProfileDialog(null); openDockOn("team"); }}
+          onOpenTeam={() => { setProfileDialog(null); openPanel("team"); }}
           onSaved={(p) => {
             // The first board gets the sample ticket offer.
             if (profileDialog === "new" && profiles?.length === 0) { setSampleFor(p.slug); setPhoneTab("board"); }

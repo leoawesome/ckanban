@@ -1,4 +1,4 @@
-import { closeSync, openSync, readdirSync, readSync, realpathSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 
@@ -34,6 +34,14 @@ export function resolveInside(root: string, rel: string): string {
   }
   if (real !== realRoot && !real.startsWith(realRoot + sep)) throw new FileError(403, "path is outside the board folder");
   return real;
+}
+
+/**
+ * Where a ticket's Terminal and Files panels work: its own copy of the folder (worktree) while that exists on disk,
+ * else the board folder. `ticket` is null for the board folder.
+ */
+export function ticketFolder(boardPath: string, t: { id: string; worktree: string | null }, exists: (p: string) => boolean = existsSync): { root: string; ticket: string | null } {
+  return t.worktree && exists(t.worktree) ? { root: t.worktree, ticket: t.id } : { root: boardPath, ticket: null };
 }
 
 /**

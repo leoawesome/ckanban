@@ -191,7 +191,7 @@ test("isBoardPickerKey: ⌘B or Ctrl+B only", () => {
 const key = (k: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "isComposing", boolean>> & { code?: string } = {}) =>
   ({ key: k, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, isComposing: false, ...mods });
 
-test("panelBoardKey: plain N, ? and B only", () => {
+test("panelBoardKey: plain N, ?, B, and F, C, T for the side panels", () => {
   expect(panelBoardKey(key("n"))).toBe("new");
   expect(panelBoardKey(key("N", { shiftKey: true }))).toBe("new");
   expect(panelBoardKey(key("?", { shiftKey: true }))).toBe("shortcuts");
@@ -199,6 +199,10 @@ test("panelBoardKey: plain N, ? and B only", () => {
   expect(panelBoardKey(key("b", { metaKey: true }))).toBeNull();
   expect(panelBoardKey(key("n", { ctrlKey: true }))).toBeNull();
   expect(panelBoardKey(key("n", { isComposing: true }))).toBeNull();
+  expect(panelBoardKey(key("f"))).toBe("files");
+  expect(panelBoardKey(key("C", { shiftKey: true }))).toBe("claude");
+  expect(panelBoardKey(key("t"))).toBe("team");
+  expect(panelBoardKey(key("t", { metaKey: true }))).toBeNull();
   expect(panelBoardKey(key("e"))).toBeNull();
   expect(panelBoardKey(key("1"))).toBeNull();
 });
@@ -232,11 +236,12 @@ test("escLeavesField: Esc in a text field nobody used yet", () => {
   expect(escLeavesField({ key: "Enter", defaultPrevented: false, target: box })).toBe(false);
 });
 
-test("inDock: true only inside the bottom panel or the side chat", () => {
+test("inDock: true only inside the side panels (column or phone screen)", () => {
   // A tiny closest(): matches when one of the selector's parts is the element's class.
   const at = (cls: string | null) => ({ target: { closest: (sel: string) => (cls && sel.split(",").map((s) => s.trim()).includes(cls) ? {} : null) } as unknown as EventTarget });
-  expect(inDock(at(".dock"))).toBe(true);
-  expect(inDock(at(".side-chat"))).toBe(true);
+  expect(inDock(at(".side-panels"))).toBe(true);
+  expect(inDock(at(".phone-panels"))).toBe(true);
+  expect(inDock(at(".dock"))).toBe(false);
   expect(inDock(at(".board"))).toBe(false);
   expect(inDock(at(null))).toBe(false);
   expect(inDock({ target: null })).toBe(false);

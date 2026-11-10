@@ -179,39 +179,64 @@ export function defaultSpawn() {
   return (r: SpawnRequest): Shell => new Shell(r.cwd, r.cols, r.rows);
 }
 
-/** One shell per profile, kept alive across page reloads until restarted, the profile is deleted or the daemon stops. */
+/**
+ * One shell per folder a board's Terminal panel works in: the board folder (key: the slug) and each ticket's own copy
+ * of it (key: `<slug>/<ticket id>`). Kept alive across page reloads and ticket switches until restarted, the profile is
+ * deleted, its folder goes away or the daemon stops.
+ */
 export class ShellManager {
-  private shells = new Map<string, Shell>();
+  private shells = new Map<string, { shell: Shell; cwd: string }>();
 
-  constructor(private spawn: (r: SpawnRequest) => Shell = defaultSpawn()) {}
+  constructor(private spawn: (r: SpawnRequest) => Shell = defaultSpawn(), private exists: (path: string) => boolean = existsSync) {}
 
-  /** The profile's shell, starting one if there is none. `restart` replaces the current one. */
-  get(slug: string, cwd: string, cols = 80, rows = 24, restart = false): Shell {
-    let s = this.shells.get(slug);
-    if (s && restart) {
-      s.kill();
-      s = undefined;
-    }
-    if (!s) {
-      s = this.spawn({ cwd, cols, rows });
-      this.shells.set(slug, s);
-    }
-    return s;
+  private static key(slug: string, folder?: string | null) {
+    return folder ? `${slug}/${folder}` : slug;
   }
 
-  current(slug: string): Shell | undefined {
-    return this.shells.get(slug);
+  /**
+   * The shell of the board (no `folder`) or of a ticket's copy (`folder`: the ticket id, `cwd` its copy), starting one
+   * if there is none. `restart` replaces the current one. Shells whose folder is gone (a removed ticket copy) are stopped.
+   */
+  get(slug: string, cwd: string, cols = 80, rows = 24, restart = false, folder?: string | null): Shell {
+    this.sweep();
+    const key = ShellManager.key(slug, folder);
+    let entry = this.shells.get(key);
+    if (entry && (restart || entry.cwd !== cwd)) {
+      entry.shell.kill();
+      entry = undefined;
+    }
+    if (!entry) {
+      entry = { shell: this.spawn({ cwd, cols, rows }), cwd };
+      this.shells.set(key, entry);
+    }
+    return entry.shell;
   }
 
-  /** Stops the profile's shell. */
+  current(slug: string, folder?: string | null): Shell | undefined {
+    return this.shells.get(ShellManager.key(slug, folder))?.shell;
+  }
+
+  /** Stops the profile's shells: the board folder's and every ticket copy's. */
   kill(slug: string) {
-    this.shells.get(slug)?.kill();
-    this.shells.delete(slug);
+    for (const [key, e] of this.shells) {
+      if (key !== slug && !key.startsWith(`${slug}/`)) continue;
+      e.shell.kill();
+      this.shells.delete(key);
+    }
+  }
+
+  /** Ticket copies are removed when a ticket is done or deleted: their shells stop with them. */
+  private sweep() {
+    for (const [key, e] of this.shells) {
+      if (!key.includes("/") || this.exists(e.cwd)) continue;
+      e.shell.kill();
+      this.shells.delete(key);
+    }
   }
 
   /** A Claude session running in one of the board's PTYs (e.g. `claude --resume <id>` typed into the dock shell). */
   async findSession(sessionId: string, procs: () => Promise<ProcRow[]> = processTable): Promise<OwnedSession | null> {
-    const live = [...this.shells.values()].filter((s) => !s.exited);
+    const live = [...this.shells.values()].map((e) => e.shell).filter((s) => !s.exited);
     if (!live.length) return null;
     const rows = await procs();
     for (const s of live) {
@@ -222,7 +247,7 @@ export class ShellManager {
   }
 
   killAll() {
-    for (const s of this.shells.values()) s.kill();
+    for (const e of this.shells.values()) e.shell.kill();
     this.shells.clear();
   }
 }

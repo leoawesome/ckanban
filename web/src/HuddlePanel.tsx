@@ -142,7 +142,7 @@ export function HuddlePanel({ slug, ticket, tickets, state, onError, onOpenChat,
   /** The session viewer's link for @main (the ticket's own chat) and for invited tickets. */
   onOpenChat: () => void;
   onOpenTicket: (id: string) => void;
-  /** Show a teammate in the dock's Team tab (a saved proposal's Open in Team). */
+  /** Show a teammate in the Team side panel (a saved proposal's Open in Team). */
   onOpenTeam?: (r: TeamRequest) => void;
 }) {
   // Starting a new huddle after the last one closed (the earlier rounds stay a click away).

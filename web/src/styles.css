@@ -109,8 +109,8 @@ a { color: var(--info); }
 button, input, select, textarea { font: inherit; color: inherit; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
-/* Below the header: the board column and, on computers, the side chat (SideChat.tsx). */
-.app-row { flex: 1; display: flex; min-height: 0; }
+/* Below the header: the board column and, on computers, the side panel column (SidePanels.tsx). Never scrolls sideways. */
+.app-row { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .app-col { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
 
 /* scrollbars: thin, themed, light and dark (tokens only) */
@@ -158,7 +158,7 @@ body.show-hints .key-hint.kh-split { display: flex; }
 .hint-legend .kh-combo, .hint-legend .kh-plain { box-shadow: none; }
 body.show-hints .hint-legend { display: flex; animation: key-hint-in 0.12s ease-out; }
 /* Only the topmost layer shows its keys: a dialog over the ticket panel over the board. */
-body.show-hints:has(.drawer-wrap) .key-hint:not(.drawer-wrap .key-hint):not(.overlay .key-hint):not(.side-chat .key-hint) { display: none; }
+body.show-hints:has(.drawer-wrap) .key-hint:not(.drawer-wrap .key-hint):not(.overlay .key-hint):not(.side-panels .key-hint) { display: none; }
 body.show-hints:has(.overlay) .key-hint:not(.overlay .key-hint) { display: none; }
 /* A card's keys only show on the focused card. */
 body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; }
@@ -450,7 +450,7 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .form label.board-switch .muted { font-weight: 400; }
 .form label.cap-field .muted { font-weight: 400; }
 .form label.cap-field input { max-width: 160px; }
-/* Messages waiting for the user: card badge, dock row, Huddle tab. */
+/* Messages waiting for the user: card badge, Team huddle row, Huddle tab. */
 .for-you-pill { display: inline-block; background: var(--accent-strong); color: var(--on-accent); border-radius: var(--r-pill); padding: 0 6px; font-size: var(--fs-2xs); font-weight: 700; line-height: 16px; margin-left: 4px; white-space: nowrap; }
 .badge .spinner { width: 9px; height: 9px; border-width: 1.5px; flex: none; }
 .badge-short { display: none; }
@@ -1766,22 +1766,9 @@ textarea.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--
 @media (prefers-reduced-motion: reduce) { .file-bar i { animation: none; width: 60%; } }
 .composer:has(textarea.drop-target) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
-/* bottom panel: terminal, files or Team, one at a time (the quick Claude chat is the side panel, .side-chat) */
 .btn.ghost.on { background: var(--surface-2); }
-.dock {
-  position: relative; flex: none; display: flex; flex-direction: column; min-height: 0;
-  border-top: 1px solid var(--border); background: var(--surface);
-}
-.dock-resize { position: absolute; top: -4px; left: 0; right: 0; height: 8px; cursor: row-resize; z-index: 2; touch-action: none; }
-.dock-resize:hover, .dock-resize:focus-visible { background: linear-gradient(transparent 3px, var(--accent) 3px, var(--accent) 5px, transparent 5px); outline: none; }
-.dock-head { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 2px 8px 2px 14px; border-bottom: 1px solid var(--border); }
-.dock-title { font-weight: 600; font-size: var(--fs-sm); flex: none; }
-.dock-path { color: var(--muted); font-family: var(--mono); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.dock-body { flex: 1; min-height: 0; position: relative; }
-.dock-pane { position: absolute; inset: 0; display: flex; }
-.dock-pane[hidden] { display: none; }
-.dock-huddles { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 4px; }
-.dock-huddles .empty { padding: 24px; font-size: var(--fs-sm); }
+.team-huddles { flex: 1; overflow: auto; padding: 4px 14px 12px; display: flex; flex-direction: column; gap: 4px; }
+.team-huddles .empty { padding: 24px; font-size: var(--fs-sm); }
 .hr-sec { margin: 10px 0 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
 .hr-list { display: flex; flex-direction: column; gap: 6px; }
 /* Two lines: the full title (wraps, up to 2 lines), then faces · when · flags … cost. */
@@ -2121,8 +2108,7 @@ input[aria-invalid="true"] { border-color: var(--err); }
   /* A still, full bar: Undo is there, with no countdown motion. */
   .toast-life { animation: none; }
 }
-.panel:focus, .modal:focus, .dock:focus { outline: none; }
-.dock-failed { height: 120px; align-items: center; justify-content: center; color: var(--muted); }
+.panel:focus, .modal:focus { outline: none; }
 
 /* Report bug dialog */
 .bug-form textarea { font-family: var(--mono); font-size: var(--fs-sm); }
@@ -3202,8 +3188,6 @@ button.hd-mode:disabled { cursor: default; }
   .tabs { padding: 0 8px; }
   .tabs::-webkit-scrollbar, .col-jump::-webkit-scrollbar, .board::-webkit-scrollbar { display: none; }
   .tabs button { padding: 10px 10px; }
-  /* The panel's head can't push the page sideways. */
-  .dock { overflow-x: clip; }
   .chat .composer { margin-bottom: env(safe-area-inset-bottom); }
   .composer-keys { display: none; }
   .qopt { min-height: 44px; }
@@ -3883,34 +3867,113 @@ button.fc-chip:hover, button.fc-chip[aria-expanded="true"] { color: var(--text);
 .result-card .r-links { display: flex; gap: 12px; font-size: var(--fs-xs); }
 .result-card .r-links .link-btn { font-weight: 600; }
 
-/* Quick Claude chat as a side panel on the right, below the header (SideChat.tsx), in the page's own colours. It pushes
-   the board narrower; a ticket opens beside it on wide windows (.drawer-wrap.beside-chat) and over it on narrow ones. */
-.side-chat {
+/* ---- Side panel column on the right (SidePanels.tsx): Terminal, Files, Changes, Team and Claude stacked top to bottom.
+   It pushes the board narrower; an open ticket sits between the board and the column (.drawer-wrap.beside-panels). ---- */
+.side-panels {
   position: relative; flex: none; display: flex; flex-direction: column; min-height: 0; max-width: 100%;
   background: var(--surface); color: var(--text); border-left: 1px solid var(--border);
 }
-.side-chat:focus { outline: none; }
-.side-chat.resizing { user-select: none; }
-.side-chat.resizing * { cursor: col-resize !important; }
-.side-chat-resize { position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 6; touch-action: none; }
-.side-chat-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; transition: background 0.12s; }
-.side-chat-resize:hover::after, .side-chat-resize:focus-visible::after, .side-chat.resizing .side-chat-resize::after { background: var(--accent); }
-.side-chat-resize:focus-visible { outline: none; }
-.side-chat-head { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
-.side-chat-title { font-weight: 600; font-size: var(--fs-sm); margin-left: 4px; }
-.side-chat-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
-.side-chat .qc { position: relative; }
-/* Past chats: the chat list slides in from the panel's left edge over the conversation, only when asked (Chats). */
-.side-chat .qc-list {
+.side-panels[hidden] { display: none; }
+.side-panels:focus { outline: none; }
+.side-panels.resizing { user-select: none; }
+.side-panels.resizing * { cursor: col-resize !important; }
+.side-panels-resize { position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 6; touch-action: none; }
+.side-panels-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: transparent; transition: background 0.12s; }
+.side-panels-resize:hover::after, .side-panels-resize:focus-visible::after, .side-panels.resizing .side-panels-resize::after { background: var(--accent); }
+.side-panels-resize:focus-visible { outline: none; }
+.sp-failed { width: 320px; padding: 24px; color: var(--muted); font-size: var(--fs-sm); }
+/* A panel: grows by its share of the height (flex-grow set inline); folded, only its header; [hidden] behind a maximised one. */
+.sp-panel { display: flex; flex-direction: column; flex: 1 1 0px; min-height: 36px; border-bottom: 1px solid var(--border); }
+.sp-panel:last-child { border-bottom: 0; }
+.sp-panel.folded { flex: none; }
+.sp-panel.maxed { flex: 1 1 0px; }
+.sp-panel[hidden] { display: none; }
+.sp-head { height: 36px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 4px 0 2px; background: var(--surface-2); }
+.sp-panel:not(.folded) .sp-head { border-bottom: 1px solid var(--border); }
+.sp-title {
+  flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 6px; padding: 0 6px; border: 0; background: none;
+  color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer; border-radius: var(--r-sm);
+}
+.sp-title .icon { color: var(--muted); flex: none; }
+.sp-title:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sp-label { font-weight: 600; flex: none; }
+.sp-where { color: var(--muted); font-size: var(--fs-xs); font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-icon { width: 26px; height: 26px; display: inline-grid; place-items: center; color: var(--muted); }
+.sp-icon:hover, .sp-icon[aria-expanded="true"], .sp-icon[aria-pressed="true"] { color: var(--text); background: var(--surface); }
+.sp-more { position: relative; }
+.sp-menu {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 80; width: 200px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--shadow-pop);
+}
+.menu-sheet .sp-menu { position: static; width: auto; }
+.sp-body { flex: 1; min-height: 0; display: flex; position: relative; overflow: hidden; }
+.sp-body[hidden] { display: none; }
+.sp-body > * { flex: 1; min-width: 0; }
+/* The line between two panels: drag (or ↑↓) to share their height. */
+.sp-divider { position: relative; height: 0; flex: none; z-index: 5; }
+.sp-divider::before { content: ""; position: absolute; left: 0; right: 0; top: -4px; height: 8px; cursor: row-resize; touch-action: none; }
+.sp-divider:hover::before, .sp-divider:focus-visible::before { background: linear-gradient(transparent 3px, var(--accent) 3px, var(--accent) 5px, transparent 5px); }
+.sp-divider:focus-visible { outline: none; }
+.sp-empty { flex: 1; padding: 24px 18px; color: var(--muted); font-size: var(--fs-sm); line-height: 1.5; }
+.sp-terminals, .sp-terminal { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.sp-terminal[hidden] { display: none; }
+.sp-changes { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.sp-changes .changes { flex: 1; min-height: 0; }
+/* One pane at a time in the column (Changes compact), as on a phone. */
+.sp-changes .changes-side { width: auto; flex: 1; border-right: 0; }
+.sp-changes .changes-files { flex: 1; }
+.sp-changes .changes-bar { padding-left: 12px; padding-right: 4px; }
+.sp-changes .changes-tray { flex-wrap: wrap; padding: 8px 12px; }
+/* Files in a narrow column: the tree, then the picked file (with ‹ back). */
+.files-view [hidden] { display: none !important; }
+.files-view.narrow .file-side { width: auto; flex: 1; border-right: 0; }
+/* The Claude panel: a slim bar (Chats, New chat) over the chat; past chats slide in from the left only when asked. */
+.claude-panel { display: flex; flex-direction: column; min-height: 0; }
+.claude-panel-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.claude-panel-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.claude-panel .qc { position: relative; }
+.claude-panel .qc-list {
   position: absolute; top: 0; bottom: 0; left: 0; z-index: 5; width: min(300px, 85%);
   background: var(--surface); border-right: 1px solid var(--border); box-shadow: var(--shadow-pop);
   transform: translateX(-100%); visibility: hidden; transition: transform 0.16s ease-out, visibility 0s linear 0.16s;
 }
-.side-chat.history-open .qc-list { transform: none; visibility: visible; transition: transform 0.16s ease-out, visibility 0s; }
-@media (prefers-reduced-motion: reduce) { .side-chat .qc-list, .side-chat.history-open .qc-list { transition: none; } }
-/* Beside the chat the ticket panel starts below the header and ends at the chat; the board behind it dims less. */
-.drawer-wrap.beside-chat { background: rgba(20, 18, 15, 0.16); }
-.drawer-wrap.beside-chat .panel { border-right: 1px solid var(--border); }
+.claude-panel.history-open .qc-list { transform: none; visibility: visible; transition: transform 0.16s ease-out, visibility 0s; }
+@media (prefers-reduced-motion: reduce) { .claude-panel .qc-list, .claude-panel.history-open .qc-list { transition: none; } }
+/* Beside the column the ticket panel starts below the header and ends at the column; the board behind it dims less. */
+.drawer-wrap.beside-panels { background: rgba(20, 18, 15, 0.16); }
+.drawer-wrap.beside-panels .panel { border-right: 1px solid var(--border); }
+.board-back { flex: none; margin-right: 2px; }
+/* The top bar's Panels button: show or hide the column (count of open panels), ▾ picks the panels. */
+.panels-btn { position: relative; }
+.panels-btn .panels-caret { padding: 4px 6px; color: var(--muted); }
+.panels-count {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); display: inline-grid; place-items: center;
+  font-size: var(--fs-2xs); font-weight: 700; background: var(--surface-2); color: var(--muted);
+}
+.panels-btn .btn.on .panels-count { background: var(--accent-soft); color: var(--accent-text); }
+.panels-menu { width: 240px; }
+.panels-menu .menu-item:disabled { opacity: 0.5; cursor: default; }
+.panels-check {
+  width: 16px; height: 16px; flex: none; border: 1.5px solid var(--border); border-radius: var(--r-sm); display: inline-grid; place-items: center;
+}
+.panels-check.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.panels-menu .menu-item:last-child .panels-check { border: 0; }
+/* Phones: the open panel fills the screen, chips switch between the open ones. */
+.phone-panels {
+  position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--surface); color: var(--text);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+.pp-top { height: 52px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-bottom: 1px solid var(--border); }
+.pp-title { flex: 1; text-align: center; font-size: var(--fs-md); }
+.pp-btn { width: 44px; height: 44px; display: inline-grid; place-items: center; color: var(--muted); }
+.pp-chips { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--border); overflow-x: auto; flex: none; }
+.pp-chips .chip { min-height: 36px; white-space: nowrap; }
+.pp-add { position: relative; }
+.pp-where { padding: 6px 12px; font-size: var(--fs-xs); color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-body { flex: 1; min-height: 0; display: flex; padding-bottom: env(safe-area-inset-bottom); }
+.pp-pane { flex: 1; min-width: 0; display: flex; }
+.pp-pane[hidden] { display: none; }
+.pp-pane > * { flex: 1; min-width: 0; }
 
 /* ---- The helper: status line, Messages pages, Inbox helper line, Settings (helper.ts, Messages.tsx, NotificationsDialog.tsx) ---- */
 input.switch { appearance: none; -webkit-appearance: none; width: 40px; height: 24px; border-radius: var(--r-pill); background: var(--border); position: relative; cursor: pointer; flex: none; margin: 0; transition: background 0.15s; }

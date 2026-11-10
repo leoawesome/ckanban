@@ -13,7 +13,7 @@ export function HuddleList({ huddles, onOpen }: { huddles: Huddle[]; onOpen?: (t
   const now = useNow();
   const list = sortHuddles(huddles);
   if (!list.length) {
-    return <div className="dock-huddles"><div className="empty">No huddles on this board yet. Start one from a ticket's Huddle tab.</div></div>;
+    return <div className="team-huddles"><div className="empty">No huddles on this board yet. Start one from a ticket's Huddle tab.</div></div>;
   }
   const live = list.filter((h) => h.status === "live");
   const earlier = list.filter((h) => h.status !== "live");
@@ -45,7 +45,7 @@ export function HuddleList({ huddles, onOpen }: { huddles: Huddle[]; onOpen?: (t
     );
   };
   return (
-    <div className="dock-huddles">
+    <div className="team-huddles">
       {([["Live", live], ["Earlier", earlier]] as const).map(([label, rows]) => rows.length > 0 && (
         <section key={label} className="hr-group">
           <h3 className="hr-sec">{label}</h3>

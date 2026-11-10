@@ -438,6 +438,30 @@ test("files API lists and reads inside the profile, rejects escapes", async () =
   expect(r.status).toBe(404);
 });
 
+test("files API with a ticket: its own copy of the folder, else the board folder; never a path from the request", async () => {
+  const path = tempDir("ck-files-t-");
+  const copy = tempDir("ck-files-copy-");
+  writeFileSync(join(path, "board.md"), "board");
+  writeFileSync(join(copy, "copy.md"), "copy");
+  const { slug } = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Files ticket", path }))).json()) as any;
+  const t = (await (await fetch(`${base}/api/profiles/${slug}/tickets`, json("POST", { title: "t" }))).json()) as any;
+  const list = async (q: string) => ((await (await fetch(`${base}/api/profiles/${slug}/files?path=${q}`)).json()) as any).entries?.map((e: any) => e.name);
+  // No copy yet: the board folder.
+  expect(await list(`&ticket=${t.id}`)).toEqual(["board.md"]);
+  store.updateTicket(slug, t.id, { worktree: copy });
+  expect(await list(`&ticket=${t.id}`)).toEqual(["copy.md"]);
+  expect(((await (await fetch(`${base}/api/profiles/${slug}/file?path=copy.md&ticket=${t.id}`)).json()) as any).content).toBe("copy");
+  // The same path checks inside the copy.
+  expect((await fetch(`${base}/api/profiles/${slug}/file?path=${encodeURIComponent("../x")}&ticket=${t.id}`)).status).toBe(400);
+  expect((await fetch(`${base}/api/profiles/${slug}/open-file`, json("POST", { path: "../x", ticket: t.id }))).status).toBe(400);
+  // Unknown or malformed ticket ids are refused, not resolved.
+  expect((await fetch(`${base}/api/profiles/${slug}/files?path=&ticket=t_nope`)).status).toBe(404);
+  expect((await fetch(`${base}/api/profiles/${slug}/files?path=&ticket=${encodeURIComponent("../x")}`)).status).toBe(400);
+  // A copy that is gone (ticket done): back to the board folder.
+  store.updateTicket(slug, t.id, { worktree: join(copy, "gone") });
+  expect(await list(`&ticket=${t.id}`)).toEqual(["board.md"]);
+});
+
 const openSocket = (url: string, origin: string) =>
   new Promise<{ ok: boolean; ws: WebSocket }>((resolve) => {
     const ws = new WebSocket(url, { headers: { origin } } as any);

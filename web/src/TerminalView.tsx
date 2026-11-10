@@ -22,12 +22,16 @@ function themeFromCss(): ITheme {
 type State = "connecting" | "open" | "exited" | "closed";
 
 /**
- * xterm.js wired to the profile's shell over a WebSocket.
- * Binary frames are output; JSON text frames are control.
+ * xterm.js wired over a WebSocket to the shell of the board folder, or with `ticket` of that ticket's copy of it.
+ * Binary frames are output; JSON text frames are control. Unmounting only disconnects: the shell keeps running on the
+ * server, and connecting again replays its recent output.
  */
-export function TerminalView({ slug, active, restartSignal, command, onCommandSent }: {
+export function TerminalView({ slug, ticket = null, active, focusSignal = 0, restartSignal, command, onCommandSent }: {
   slug: string;
+  ticket?: string | null;
   active: boolean;
+  /** Put the keyboard in the terminal; changes for each request. */
+  focusSignal?: number;
   restartSignal: number;
   command: { text: string; n: number } | null;
   /** Called once the command was typed into the shell, so it isn't replayed on remount. */
@@ -110,7 +114,7 @@ export function TerminalView({ slug, active, restartSignal, command, onCommandSe
     const t = term.current!;
     t.reset();
     setState("connecting");
-    const sock = new WebSocket(shellSocketUrl(slug, t.cols, t.rows));
+    const sock = new WebSocket(shellSocketUrl(slug, t.cols, t.rows, ticket));
     sock.binaryType = "arraybuffer";
     ws.current = sock;
     sock.onopen = () => {
@@ -146,7 +150,7 @@ export function TerminalView({ slug, active, restartSignal, command, onCommandSe
       ws.current = null;
       sock.close();
     };
-  }, [slug, attempt]);
+  }, [slug, ticket, attempt]);
 
   useEffect(() => {
     if (state !== "closed") return;
@@ -182,16 +186,25 @@ export function TerminalView({ slug, active, restartSignal, command, onCommandSe
     term.current?.focus();
   }, [restartSignal]);
 
-  // Hidden panes have no size; refit and focus when the tab is shown again.
+  // Hidden panes have no size: refit when shown again. The keyboard moves in only when asked (focusSignal), so showing
+  // another folder's terminal (a ticket switch) never takes it from the ticket panel.
   useEffect(() => {
     if (!active) return;
     requestAnimationFrame(() => {
       try {
         fit.current?.fit();
       } catch {}
-      term.current?.focus();
     });
   }, [active]);
+  useEffect(() => {
+    if (!focusSignal) return;
+    requestAnimationFrame(() => {
+      try {
+        fit.current?.fit();
+      } catch {}
+      term.current?.focus();
+    });
+  }, [focusSignal]);
 
   return (
     <div className="terminal-view">

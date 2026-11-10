@@ -40,6 +40,38 @@ test("a profile keeps one shell until it is restarted or killed", () => {
   expect(m.current("q")).toBeUndefined();
 });
 
+test("each ticket copy keeps its own shell beside the board's; killing the board stops them all", () => {
+  const gone = new Set<string>();
+  const spawned: FakeShell[] = [];
+  const m = new ShellManager((r) => {
+    const s = new FakeShell(r);
+    spawned.push(s);
+    return s as unknown as Shell;
+  }, (p) => !gone.has(p));
+  const board = m.get("p", "/board");
+  const a = m.get("p", "/copies/a", 80, 24, false, "t_a");
+  // Switching between folders and back finds the same shells.
+  expect(m.get("p", "/board")).toBe(board);
+  expect(m.get("p", "/copies/a", 80, 24, false, "t_a")).toBe(a);
+  expect(m.current("p", "t_a")).toBe(a);
+  expect(m.current("p")).toBe(board);
+  // A copy that moved gets a new shell there.
+  const moved = m.get("p", "/copies/a2", 80, 24, false, "t_a");
+  expect((a as unknown as FakeShell).killed).toBe(true);
+  // A removed copy's shell stops at the next request.
+  const b = m.get("p", "/copies/b", 80, 24, false, "t_b");
+  gone.add("/copies/b");
+  m.get("p", "/board");
+  expect((b as unknown as FakeShell).killed).toBe(true);
+  expect(m.current("p", "t_b")).toBeUndefined();
+  const other = m.get("pq", "/pq");
+  m.kill("p");
+  expect((board as unknown as FakeShell).killed).toBe(true);
+  expect((moved as unknown as FakeShell).killed).toBe(true);
+  expect(m.current("pq")).toBe(other);
+  expect(spawned.map((s) => s.req.cwd)).toEqual(["/board", "/copies/a", "/copies/a2", "/copies/b", "/pq"]);
+});
+
 test("sessionProcessUnder finds the claude process with the session inside the board's PTY only", () => {
   const id = "11111111-2222-3333-4444-555555555555";
   const rows: ProcRow[] = [

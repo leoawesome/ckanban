@@ -2,7 +2,7 @@ import hljs from "highlight.js/lib/common";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, copy, type FileContent, type FileEntry } from "./api";
 import {
-  CheckIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, CopyIcon, ExternalIcon, FileCodeIcon, FileIcon, FileImageIcon,
+  CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, ExternalIcon, FileCodeIcon, FileIcon, FileImageIcon,
   FileTextIcon, FolderIcon, FolderOpenIcon,
 } from "./icons";
 import { toast } from "./toast";
@@ -70,29 +70,34 @@ function CodeView({ file, scroller }: { file: FileContent; scroller: React.RefOb
   );
 }
 
-/** Read-only tree of the profile folder (gitignored entries hidden) with a file viewer. */
-export function FilesView({ slug, refreshSignal }: { slug: string; refreshSignal: number }) {
+/**
+ * Read-only tree of the board folder, or with `ticket` of that ticket's copy of it (gitignored entries hidden), with a
+ * file viewer. `narrow`: the tree above the file instead of beside it (the side panel column).
+ */
+export function FilesView({ slug, ticket = null, refreshSignal, narrow = false }: { slug: string; ticket?: string | null; refreshSignal: number; narrow?: boolean }) {
   const [dirs, setDirs] = useState<Map<string, Dir>>(new Map());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
   const [file, setFile] = useState<FileContent | { error: string } | "loading" | null>(null);
   const [filter, setFilter] = useState("");
   const [copied, setCopied] = useState(false);
+  // Narrow: one pane at a time, the tree, then the picked file with a way back.
+  const [reading, setReading] = useState(false);
   const body = useRef<HTMLDivElement>(null);
 
   const load = useCallback((path: string) => {
     setDirs((m) => new Map(m).set(path, "loading"));
-    api.files(slug, path)
+    api.files(slug, path, ticket)
       .then((r) => setDirs((m) => new Map(m).set(path, r.entries)))
       .catch((e) => setDirs((m) => new Map(m).set(path, { error: e.message })));
-  }, [slug]);
+  }, [slug, ticket]);
 
   const openFile = useCallback((path: string) => {
     setSelected(path);
     setFile("loading");
     setCopied(false);
-    api.file(slug, path).then(setFile).catch((e) => setFile({ error: e.message }));
-  }, [slug]);
+    api.file(slug, path, ticket).then(setFile).catch((e) => setFile({ error: e.message }));
+  }, [slug, ticket]);
 
   // Initial load, and Refresh: reload the root and every open folder, and the open file.
   useEffect(() => {
@@ -153,7 +158,10 @@ export function FilesView({ slug, refreshSignal }: { slug: string; refreshSignal
         if (e.type === "dir") {
           if (flat) setFilter("");
           if (!flat || !expanded.has(e.path)) toggle(e.path);
-        } else openFile(e.path);
+        } else {
+          openFile(e.path);
+          setReading(true);
+        }
       }}
     >
       <span className="tree-caret" aria-hidden>
@@ -183,8 +191,8 @@ export function FilesView({ slug, refreshSignal }: { slug: string; refreshSignal
   const current = file && file !== "loading" && !("error" in file) ? file : null;
 
   return (
-    <div className="files-view">
-      <div className="file-side">
+    <div className={`files-view${narrow ? " narrow" : ""}`}>
+      <div className="file-side" hidden={narrow && reading && !!selected}>
         <div className="file-filter">
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter files…" aria-label="Filter files"
             onKeyDown={(e) => { if (e.key === "Escape" && filter) { e.preventDefault(); e.stopPropagation(); setFilter(""); } }} />
@@ -203,9 +211,15 @@ export function FilesView({ slug, refreshSignal }: { slug: string; refreshSignal
           ) : renderDir("", 0)}
         </nav>
       </div>
-      <div className="file-viewer">
+      <div className="file-viewer" hidden={narrow && !(reading && selected)}>
         {selected && (
           <div className="file-viewer-head">
+            {narrow && (
+              <button className="icon-btn tiny" aria-label="Back to the files" title="Back to the files"
+                onClick={() => { setReading(false); requestAnimationFrame(() => document.querySelector<HTMLElement>(`.files-view .tree-row[data-path="${CSS.escape(selected)}"]`)?.focus()); }}>
+                <ChevronLeftIcon size={12} />
+              </button>
+            )}
             <span className="file-viewer-path" title={selected}>{selected}</span>
             {current && <span className="muted">{formatSize(current.size)}</span>}
             <button className="icon-btn tiny" aria-label="Copy path" title="Copy path (relative to the folder)"
@@ -213,7 +227,7 @@ export function FilesView({ slug, refreshSignal }: { slug: string; refreshSignal
               {copied ? <CheckIcon size={12} /> : <CopyIcon size={12} />}
             </button>
             <button className="icon-btn tiny" aria-label="Open in default app" title="Open in its default app"
-              onClick={() => api.openFile(slug, selected).catch((e) => toast(`Couldn't open it: ${e.message}`, { tone: "error" }))}>
+              onClick={() => api.openFile(slug, selected, ticket).catch((e) => toast(`Couldn't open it: ${e.message}`, { tone: "error" }))}>
               <ExternalIcon size={12} />
             </button>
           </div>
