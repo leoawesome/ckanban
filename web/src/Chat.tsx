@@ -11,6 +11,7 @@ import { SquadCard } from "./SquadCard";
 import { AutomationCard } from "./AutomationCard";
 import { KeysBox } from "./KeysBox";
 import { oldChat } from "./cacheNote";
+import { ContextChip } from "./ContextPanel";
 import { autoGrow } from "./autoGrow";
 import { branchTicket } from "./branch";
 import { BranchCard } from "./BranchCard";
@@ -233,7 +234,9 @@ export function useStop(slug: string, ticket: Ticket, working: boolean, onError:
 /** A queued peer message that carries huddle messages (see the server's huddleMainPrompt). */
 const HUDDLE_TAG = /<ckanban-context[^>]* huddle="/;
 
-export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help, onFilesChanged }: {
+export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help, onFilesChanged, contextRequest = 0 }: {
+  /** A Date.now() stamp: a new one opens the Context panel (the ticket ⋯ menu's Context item). */
+  contextRequest?: number;
   slug: string;
   ticket: Ticket;
   /** The board's tickets, to tell which proposed new tickets already exist. */
@@ -264,6 +267,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   const [showWarnDetails, setShowWarnDetails] = useState(false);
   const composer = useRef<HTMLTextAreaElement>(null);
   const phone = usePhone();
+  /** The old-chat line opens the Context panel too. */
+  const [contextLocal, setContextLocal] = useState(0);
   useNow();
   // Sent messages not yet in the session file (the server's queue covers ones Claude hasn't read).
   // steer: sent while Claude was working, so it waits for the server queue instead of joining the timeline.
@@ -1311,14 +1316,18 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         )}
         <div className="composer-foot">
           {/* The old-chat line only for a big re-read (over 100k tokens); Send still asks for any old chat. */}
-          {old && old.tokens > OLD_LINE_MIN_TOKENS ? (
-            <span className="muted small composer-hint composer-old" title={old.title}>{phone ? old.phoneLine : old.line}</span>
-          ) : (
-            <span className="muted small composer-hint">
-              {refine && "Refine mode: Claude won't change files."}
-              <span className="composer-keys"> Enter to send · Shift+Enter for a new line · Esc to leave the box{queued.some((q) => fromUser(q) && editable(q)) && " · ↑ to edit your queued message"}</span>
-            </span>
-          )}
+          <span className="composer-meta">
+            <ContextChip slug={slug} kind="ticket" id={ticket.id} openRequest={Math.max(contextRequest, contextLocal)} />
+            {old && old.tokens > OLD_LINE_MIN_TOKENS ? (
+              <button className="muted small composer-hint composer-old" title={`${old.title} Click to see what fills Claude's memory.`}
+                onClick={() => setContextLocal(Date.now())}>{phone ? old.phoneLine : old.line}</button>
+            ) : (
+              <span className="muted small composer-hint">
+                {refine && "Refine mode: Claude won't change files."}
+                <span className="composer-keys"> Enter to send · Shift+Enter for a new line · Esc to leave the box{queued.some((q) => fromUser(q) && editable(q)) && " · ↑ to edit your queued message"}</span>
+              </span>
+            )}
+          </span>
           <span className="composer-actions">
             <ImagePickButton images={images} target={composer} disabled={stopping} merged />
             <SendOrStop running={running} hasDraft={!!draft.trim()} stopping={stopping} onStop={stop}

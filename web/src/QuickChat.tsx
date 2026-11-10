@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ContextChip } from "./ContextPanel";
 import { api, onReconnect, subscribe, type Profile, type QuickChat, type SessionEntry, type Ticket } from "./api";
 import { openFeatures } from "./family";
 import { AttachmentChips } from "./AttachmentChips";
@@ -676,8 +677,11 @@ function ChatThread({ slug, chat, phone, onCreated, onOpenTicket, onNew }: {
           <AttachmentChips text={draft} images={images} />
           {images.error && <div className="form-error">{images.error}</div>}
           <div className="composer-foot">
-            <span className="muted small composer-hint">
-              Claude works in this board's folder.<span className="composer-keys"> Enter to send · Shift+Enter for a new line</span>
+            <span className="composer-meta">
+              {chat && <ContextChip slug={slug} kind="chat" id={chat.id} />}
+              <span className="muted small composer-hint">
+                Claude works in this board's folder.<span className="composer-keys"> Enter to send · Shift+Enter for a new line</span>
+              </span>
             </span>
             <span className="composer-actions">
               <ImagePickButton images={images} target={composer} />

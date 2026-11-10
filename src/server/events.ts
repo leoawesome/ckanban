@@ -52,7 +52,9 @@ export type BusEvent =
   /** Text Claude is writing right now in a quick chat; same rules as "draft". */
   | { type: "chat.draft"; profile: string; id: string; text: string; final?: string }
   /** A quick chat's run moved on (its conversation may have grown); activity: what Claude does now. */
-  | { type: "chat.activity"; profile: string; id: string; activity: string | null };
+  | { type: "chat.activity"; profile: string; id: string; activity: string | null }
+  /** A Context panel check for a ticket chat (kind "ticket") or quick chat ("chat") finished or failed; clients refetch. */
+  | { type: "context.updated"; profile: string; kind: "ticket" | "chat"; id: string };
 
 export class Bus {
   private listeners = new Set<(e: BusEvent) => void>();
