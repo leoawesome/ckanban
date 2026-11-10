@@ -27,6 +27,10 @@ test("plan critique debate: built in with six people, the right modes, a Sonnet 
   expect(JSON.stringify(squad)).not.toMatch(/point list|ckanban|channel/i);
   expect(squad.hostRules).toContain("anything still missing?");
   expect(squad.hostRules).toContain("Nobody marks themselves done before your final call");
+  // A silent participant can't stall the debate: one reminder, then it counts as no and is named in the report.
+  expect(squad.hostRules).toContain("doesn't answer one reminder counts as no");
+  expect(squad.hostRules).toContain("don't release anyone");
+  expect(squad.hostRules).toContain("tags at the start of the message");
   expect(mergeTemplates([]).find((t) => t.name === PLAN_CRITIQUE)?.source).toBe("builtin");
 });
 

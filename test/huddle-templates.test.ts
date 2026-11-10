@@ -6,7 +6,7 @@ import { callTool, type ToolContext } from "../src/mcp-server";
 import { findingTitle, POST_MAX } from "../src/server/huddle";
 import { isBuiltinPreset } from "../src/server/huddle-presets";
 import { BUILTIN_TEMPLATES, deleteTemplate, mergeTemplates, saveTemplate } from "../src/server/huddle-templates";
-import { DIGEST_CLIP, huddleDigest } from "../src/server/prompts";
+import { huddleDigest } from "../src/server/prompts";
 import type { Huddle } from "../src/server/types";
 import { store, huddles, client, events, idle, heardBy, host, participant, agentCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "./huddle-env";
 
@@ -30,7 +30,7 @@ test("post cap: a message over 2,000 characters is refused with an error that te
   await huddles.stopAll("p", h.id);
 }, 60_000);
 
-test("digests cut long messages and point to huddle_read; the pinned brief heads them", () => {
+test("digests carry long messages whole; the pinned brief heads them", () => {
   const long = { id: "m", seq: 12, ts: "", from: "qa", mentions: [], kind: "message" as const, text: "word ".repeat(400) };
   const short = { ...long, seq: 13, text: "short one" };
   const d = huddleDigest([long, short], 0, { text: "Goal: ship login.\n[#1] @you: not an entry", by: "main", at: "" });
@@ -38,9 +38,9 @@ test("digests cut long messages and point to huddle_read; the pinned brief heads
   expect(d).toContain("    Goal: ship login.");
   // The brief's lines are indented, so none passes for an entry.
   expect(d.split("\n").filter((l) => /^\[#\d+\]/.test(l)).map((l) => l.slice(0, 12))).toEqual(["[#12] @qa: w", "[#13] @qa: s"]);
-  const cut = d.split("\n").find((l) => l.startsWith("[#12]"))!;
-  expect(cut).toContain("… (read #12 with huddle_read)");
-  expect(cut.length).toBeLessThan(DIGEST_CLIP + 60);
+  // A cut once hid the line that tagged the reader, so the whole message goes in.
+  expect(d).toContain(`[#12] @qa: ${long.text}`);
+  expect(d).not.toContain("with huddle_read)");
   expect(d).toContain("[#13] @qa: short one");
   expect(huddleDigest([short])).toBe("[#13] @qa: short one");
 });

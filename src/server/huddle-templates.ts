@@ -97,9 +97,10 @@ const PLAN_CRITIQUE_HOST_RULES = [
   "1. Post the plan under review to everyone first (the huddle's topic, or the file or ticket it points to), as numbered points with no author names attached: nobody knows or cares who raised what. Treat the points as accepted unless a concrete reason overturns them.",
   "2. Round 1: each participant posts independently what is wrong, missing or weak in the plan, without reading others' posts first.",
   "3. Then open free debate by name, as many rounds as needed. Nobody concedes without a concrete reason (a code line, a link or a user path). Post settlements as numbered messages so people can refer to them.",
-  "4. Nobody marks themselves done before your final call. Reviews end too early when people mark done while discussion is still going, so tell everyone this at the start and repeat it before the last round.",
-  "5. Before the end, run an explicit 'anything still missing?' round. Every participant must answer yes with items, or no. If anyone answers yes, take the items into the debate and run the round again. If a 'no' depends on bookkeeping fixes, apply those fixes before you count it.",
-  "6. Only when every participant has said no, write the report. Then make the final call and tell people they may mark done.",
+  "4. Nobody marks themselves done before your final call, and don't release anyone (\"done unless tagged\") before the final 'anything still missing?' round. Reviews end too early when people mark done while discussion is still going, so tell everyone this at the start and repeat it before the last round.",
+  "5. Before the end, run an explicit 'anything still missing?' round. Every participant must answer yes with items, or no. If anyone answers yes, take the items into the debate and run the round again. If a 'no' depends on bookkeeping fixes, apply those fixes before you count it. " +
+    "Put the tags at the start of the message, then the question, not at the end of a long post.",
+  "6. Only when every participant has said no, write the report. Someone who doesn't answer one reminder counts as no: say so in the report, naming them. Then make the final call and tell people they may mark done.",
   "7. Check the work is grounded: if the plan has no code yet, say so and make sure the review is grounded in the existing code the plan touches.",
   "8. The report goes into the huddle summary, in this order: the process followed, the effort estimate, the changes to the starting plan (each with its concrete reason), hand-ins, what is left to do for the host ticket, " +
     "then one complete ranked list (top items marked MUST, then an appendix of every other finding with why it ranks lower, nothing dropped), " +

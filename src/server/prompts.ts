@@ -850,18 +850,6 @@ function rosterLines(h: Huddle): string {
     .join("\n");
 }
 
-/** A message longer than this is cut in a digest; huddle_read has it whole. */
-export const DIGEST_CLIP = 800;
-
-/** The message as a digest shows it: a long one is cut (at a word when it can be) and points to huddle_read. */
-function clipForDigest(m: HuddleMessage): HuddleMessage {
-  if (m.text.length <= DIGEST_CLIP) return m;
-  let cut = m.text.slice(0, DIGEST_CLIP);
-  const space = cut.search(/\s\S*$/);
-  if (space > DIGEST_CLIP * 0.8) cut = cut.slice(0, space);
-  return { ...m, text: `${cut.trimEnd()}… (read #${m.seq} with huddle_read)` };
-}
-
 /** The pinned brief as the head of a digest; its lines are indented so none can pass for an entry. */
 export function briefBlock(brief: Huddle["brief"]): string {
   if (!brief?.text.trim()) return "";
@@ -870,14 +858,14 @@ export function briefBlock(brief: Huddle["brief"]): string {
 
 /**
  * Messages a participant hasn't seen, oldest first, under the huddle's pinned brief. omitted: older unread ones left
- * out (huddle_read has them). Each message's text is escaped so it can't pass for another entry (see huddleLine), and
- * a long one is cut.
+ * out (huddle_read has them). Each message's text is escaped so it can't pass for another entry (see huddleLine) and
+ * shown whole: a cut once hid the line that tagged the reader, so it ignored the tag.
  */
 export function huddleDigest(msgs: HuddleMessage[], omitted = 0, brief?: Huddle["brief"]): string {
   return [
     ...(briefBlock(brief) ? [briefBlock(brief)] : []),
     ...(omitted ? [`(${omitted} earlier unread message${omitted === 1 ? "" : "s"} left out; read them with huddle_read)`] : []),
-    ...msgs.map((m) => huddleLine(clipForDigest(m))),
+    ...msgs.map((m) => huddleLine(m)),
   ].join("\n\n");
 }
 

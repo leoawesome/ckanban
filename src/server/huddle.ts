@@ -94,8 +94,21 @@ export class HuddleError extends Error {
   }
 }
 
-/** Unread messages handed to a session at once; older ones are left to huddle_read. */
-const DIGEST_MAX = 40;
+/**
+ * Most message text one wake hands a session. Normally every unread message goes in whole; only a session that slept
+ * through far more than this gets the newest ones that fit, the older ones left to huddle_read, so one huge digest
+ * doesn't make it compress its own memory.
+ */
+export const DIGEST_MAX_CHARS = 100_000;
+
+/** The newest unread messages whose text fits in DIGEST_MAX_CHARS (always at least the newest one). */
+export function digestWindow<M extends { text: string }>(unread: M[], max = DIGEST_MAX_CHARS): M[] {
+  let total = 0;
+  let i = unread.length;
+  while (i > 0 && (i === unread.length || total + unread[i - 1].text.length <= max)) total += unread[--i].text.length;
+  return unread.slice(i);
+}
+
 /** Longest message anyone can post: longer reports go in a file. */
 export const POST_MAX = 2000;
 /** Longest pinned brief. */
@@ -1904,7 +1917,13 @@ export class Huddles {
     const msgs = this.store.readHuddleMessages(slug, hid);
     const last = msgs.findLast((m) => m.kind !== "system");
     const to = activeHost(h);
-    if (!last || last.from === MAIN_HANDLE || last.from === USER_HANDLE || last.from === to || last.seq <= (h.idleNudged ?? 0)) return;
+    if (!last || last.from === MAIN_HANDLE || last.from === USER_HANDLE || last.seq <= (h.idleNudged ?? 0)) return;
+    // The host speaking last is normally the host waiting on nobody, but when it tagged helpers and none of them has
+    // answered since, the huddle would sit idle forever (the host's rules have it wait for every answer).
+    const silent = last.from === to
+      ? h.participants.filter((p) => p.kind !== "human" && p.handle !== to && p.status !== "stopped" && last.mentions.includes(p.handle)).map((p) => p.handle)
+      : [];
+    if (last.from === to && !silent.length) return;
     const times = [h.updatedAt, msgs.at(-1)?.ts, ...h.participants.map((p) => p.idleAt)].filter((t): t is string => !!t).map((t) => Date.parse(t));
     if (now - Math.max(...times) < HUDDLE_IDLE_MS) return;
     const ps = h.participants.filter((p) => p.kind !== "human");
@@ -1916,6 +1935,12 @@ export class Huddles {
     }
     this.update(slug, hid, (x) => void (x.idleNudged = last.seq));
     const mins = Math.round(HUDDLE_IDLE_MS / 60_000);
+    if (silent.length) {
+      const who = silent.map((x) => `@${x}`).join(", ").replace(/, ([^,]*)$/, " and $1");
+      const one = silent.length === 1;
+      this.system(slug, hid, `Huddle idle for ${mins} min: ${who} ${one ? "hasn't" : "haven't"} answered your #${last.seq}. Count ${one ? "that answer" : "their answers"} as "no" and name ${one ? "it" : "them"} in the report, or tag ${one ? "it" : "them"} once more.`, [to]);
+      return;
+    }
     this.system(slug, hid, `Huddle idle for ${mins} min since #${last.seq} (last: @${last.from}). Check who should act, or ask the user to close it.`, [to]);
   }
 
@@ -1969,7 +1994,7 @@ export class Huddles {
     // A system message only counts when it tags this participant (the brakes' warnings).
     const tags = (m: HuddleMessage) => m.mentions.includes(handle) || m.mentions.includes("all");
     if (!unread.length || (!withSystem && !unread.some((m) => m.kind !== "system" || tags(m)))) return null;
-    const shown = unread.slice(-DIGEST_MAX);
+    const shown = digestWindow(unread);
     return { digest: huddleDigest(shown, unread.length - shown.length, h.brief), tagged: unread.some(tags), undo: () => this.updateP(slug, hid, handle, { cursor: prev }) };
   }
 
