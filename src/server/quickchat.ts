@@ -89,7 +89,7 @@ export function quickChatNote(profile: Pick<Profile, "name" | "slug" | "path">):
     `Use profile "${profile.slug}" unless the user names another board. New tickets land in Backlog. The user can also turn this whole chat into a ticket with the Make ticket button.`,
     `When the conversation turns up a real problem or a piece of work (a bug, a change to make), offer once, in one short sentence, to wrap this chat up into a ticket: the user can press Make ticket, or say yes and you make it with create_ticket. If the work belongs to an open feature (list_tickets marks them), add the ticket to that feature with partOf. Don't offer a ticket for a plain question you have answered, and don't offer again once the user has said no.`,
     `If you use Claude in Chrome, open your own new tab and don't take over the user's tabs.`,
-    `The user may not be technical and may read this on a phone: answer in plain words, short and to the point. ${WRITING_RULE}`,
+    `The user may not be technical and may read this on a phone: answer in plain words. ${WRITING_RULE}`,
   ].join(" ");
 }
 

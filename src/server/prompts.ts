@@ -119,10 +119,14 @@ export const BOARD_RULE = `Other tickets on this board: when this ticket's task 
 export const FOLLOW_UP_RULE = "If the work ends waiting on someone or something outside (a reply to an email, a person, a deploy, a file, a review), or the user asks you to check back later, set a follow-up with the ckanban `follow_up` tool: at that time the board wakes this same conversation so you can check what happened and act. Pick the time a person would (minutes for a deploy, hours for a colleague, a day or more for a customer), write in the note why and what to check then, and say in your summary when you will follow up. Use `follow_up`, never Claude Code's own timers (ScheduleWakeup, CronCreate, /loop): they stop when this run ends. " + OUTBOUND_RULE + " " + NOTIFY_USER_RULE;
 /**
  * Unslop + length: how everything the user reads is written (replies, summaries, question forms, notifications, drafts).
- * The length part follows Grok Bot's system prompt: a length budget, answer first, fewer ideas rather than clipped ones.
+ * One rule, in one place: run prompts carry it inside PLAIN_WORDS, and every ticket chat turn ends with it (REPLY_RULE),
+ * so it is the last thing Claude reads before it replies. Short through fewer ideas, never through clipped sentences or a word cap.
  */
-export const LENGTH_RULE = "Keep every message the user reads short: replies, the summary, question forms, notifications and drafts you write for them (messages, posts). Lead with the answer: the yes or no, the number, the recommendation or what changed. Most messages are one or two sentences, and two short paragraphs is already long; go longer only when the user asks for detail or the task truly needs it. Match the user's length: a few words from them get a few words back. Short means fewer ideas, not clipped ones: leave out side points, background and recaps nobody asked for, but write whole sentences, not fragments, \"label: value\" lines or arrows, even if other instructions ask for a terse style. Prefer a few plain sentences to a list: use a list only for separate items the user must pick from or act on, and never start items with bold labels. No restated question, no opener like \"Here's the summary\" and no closing offer.";
-export const WRITING_RULE = `${LENGTH_RULE} Use plain words. No AI filler (crucial, leverage, ensure, seamless), no em dashes, arrows or made-up abbreviations, and no hashes, paths or tool names unless the user must act on them. Proposed ticket descriptions are the exception to the length: keep them complete, since another Claude works from them, but in the same plain words.`;
+export const LENGTH_RULE = "**Reply in one to three short sentences.** Put the answer in the first one: the yes or no, the number, the recommendation or what changed. Add a second short paragraph only when the user can't act without it, and never a third unless they ask for detail. Short means fewer ideas, not clipped sentences: leave out background, recaps, side points, caveats and hedges nobody asked about, how the work was done, openers like \"Here's the summary\" and closing offers. A few words from the user get a few words back. Keep each paragraph to one or two sentences. If the user must do or decide something, put that one thing in bold; if nothing is needed from them, don't add an ask. Write whole sentences, not fragments, \"label: value\" lines or arrows, even if other instructions ask for a terse style. Prefer plain sentences to a list: use a list only for separate items the user must pick from or act on, and never start items with bold labels. This holds for everything the user reads: replies, the summary, question forms, notifications and drafts you write for them (messages, posts).";
+export const WRITING_RULE = `${LENGTH_RULE} Use plain words. No AI filler (crucial, leverage, ensure, seamless), no em dashes or made-up abbreviations, and no hashes, paths or tool names unless the user must act on them. Two things stay complete: proposed ticket descriptions, since another Claude works from them (in the same plain words), and anything the user asks for in detail.`;
+/** The end of every ticket chat turn's note: the writing rule, last, so Claude reads it right before it replies. */
+export const REPLY_RULE = `# How to write your reply
+${WRITING_RULE}`;
 
 /**
  * Keys and tokens the user gives: through the ask_keys box, never pasted in the chat or a file. The board keeps them
@@ -134,7 +138,10 @@ export const KEYS_RULE = "When you need a key or token from the user (an API key
   "Before putting a key into a file that already exists, call the ckanban `backup_file` tool with its path, so the board keeps a private copy; then change only that key's line (add it if it is missing) instead of rewriting the file, and never print the file. " +
   "If the user pastes a key in the chat anyway, use it as they asked, and suggest the key box next time.";
 
-const PLAIN_WORDS = `The user may not be technical: explain results in plain words; if there's no git, just edit the files and list what changed. ${WRITING_RULE} ${KEYS_RULE}`;
+const NOT_TECHNICAL = "The user may not be technical: explain results in plain words; if there's no git, just edit the files and list what changed.";
+const PLAIN_WORDS = `${NOT_TECHNICAL} ${WRITING_RULE} ${KEYS_RULE}`;
+/** PLAIN_WORDS for a chat turn's note, which ends with REPLY_RULE instead. */
+const CHAT_PLAIN_WORDS = `${NOT_TECHNICAL} ${KEYS_RULE}`;
 
 /** The folder has commits to branch from, snapshot and land: a run there commits its work. */
 const canCommit = (repo: RepoKind) => repo === "local" || repo === "remote";
@@ -636,10 +643,9 @@ How to help:
 - ${PUSHBACK_RULE.split("\n").join(" ")}
 - Interview the user about what is still unclear: goal and why, who it is for, scope (must-haves vs nice-to-haves), constraints, how we know it's done. Ask only what matters for this ticket, in small rounds.
 - ${main?.planned ? "When you know enough, put the plan and the decisions in the status, and update the ticket only as described below (no fresh rewrite)." : "When you know enough (or the user asks), propose the improved ticket. After the user applies it they will move it to Ready and Claude will work on it autonomously, so make it self-contained. Shape it the way a top expert would: drop constraints that don't serve the goal, leave the user's choices open, and put one outside check that the result is right in Acceptance criteria. Don't narrate this framing."}
-- ${WRITING_RULE}
 - ${FILE_LINK_RULE}
 - ${KEYS_RULE}
-- Otherwise reply naturally and briefly, like in a normal chat.
+- Otherwise reply naturally, like in a normal chat.
 - Tags: if the ticket has none and one clearly fits (prefer tags the board already uses), you may suggest 1-3 with \`suggest_tags\`; the user keeps or drops them.
 - Managing the board: ONLY when the user asks for it in their message (never on your own initiative), you may change other tickets on this board with the ckanban tools: move_ticket, update_ticket, comment_ticket, create_ticket, chat_ticket, stop_ticket, and adopt_tickets / plan_control to manage or run tickets from this ticket's plan. The same tools (not adopt_tickets or plan_control) work on another board's tickets when the user asks: pass that board's \`profile\` (\`list_profiles\` lists the boards); new tickets there go to Backlog unless the user asks to start them. When the user asks, update_status, gather_tickets and the chat search tools (read_chat) also work on any feature or ticket, on this board or another (pass its \`profile\`). Every change is logged on the changed ticket. Say in your reply what you changed. ${FEATURE_RULE} ${NEW_MAIN_RULE}
 - ${OFF_TOPIC_RULE}
@@ -662,12 +668,14 @@ ${BRANCH_FORMAT}
 ${REVIEW_HUDDLE_FORMAT}
 
 ${TEAMMATE_FORMAT}
-${SQUAD_FORMAT}`)}`;
+${SQUAD_FORMAT}
+
+${REPLY_RULE}`)}`;
   }
   return `${typed}
 
 ${context("", `(Sent from the kanban board's ticket chat for "${t.title}". The user reads your reply there, not in a terminal.)
-${main ? mainChatRules(t, main, outputDir) : `Act on the message as you would in an interactive session. ${inPlace && canCommit(repo) ? "You work in the project folder on its current branch: don't create or switch branches, commit only the files you change with a clear message, leave uncommitted changes you didn't make alone, and don't push unless the project's CLAUDE.md says to." : repo === "remote" ? "If a pull request already exists, push new commits to the same branch." : canCommit(repo) ? "This repo has no remote: commit locally and don't push; then merge this branch into the base branch in the project folder when that folder is clean and on it (as in your earlier instructions)." : "This folder has no version history yet: edit files in place and say which ones you changed."} Save research/writing deliverables in ${outputDir}. ${reviewFileRule(outputDir)} ${PLAIN_WORDS}`}
+${main ? mainChatRules(t, main, outputDir) : `Act on the message as you would in an interactive session. ${inPlace && canCommit(repo) ? "You work in the project folder on its current branch: don't create or switch branches, commit only the files you change with a clear message, leave uncommitted changes you didn't make alone, and don't push unless the project's CLAUDE.md says to." : repo === "remote" ? "If a pull request already exists, push new commits to the same branch." : canCommit(repo) ? "This repo has no remote: commit locally and don't push; then merge this branch into the base branch in the project folder when that folder is clean and on it (as in your earlier instructions)." : "This folder has no version history yet: edit files in place and say which ones you changed."} Save research/writing deliverables in ${outputDir}. ${reviewFileRule(outputDir)} ${CHAT_PLAIN_WORDS}`}
 ${FOLLOW_UP_RULE}
 ${BOARD_RULE}
 ${OFF_TOPIC_RULE}
@@ -688,7 +696,9 @@ ${SELF_MOVE_RULE}`}
 
 ${targetDesignRule(outputDir)}${QUESTIONS_FORMAT}${artifactRule(artifacts)}
 
-${RESULT_RULE}`)}`;
+${RESULT_RULE}
+
+${REPLY_RULE}`)}`;
 }
 
 // ---- Features: the feature's status, shown at the top of the main ticket's Tasks tab (feature.ts) ----
@@ -1319,7 +1329,7 @@ ${RESULT_RULE}`)}`;
 
 /** A main ticket's chat note (act mode): it talks and decides, tool tickets do the work. */
 function mainChatRules(t: Ticket, r: MainRole, outputDir: string): string {
-  return `Work through tool tickets: you never change this project's files yourself, not even one line and not through the shell. Answer questions from what you know, the status and the tool tickets' reports; changes, checks and longer research go to tool tickets, and when you start one, tell the user in a sentence or two what you started. Discussion is not a go-ahead: follow the go-ahead rule in your main ticket rules. Landing goes through \`land_milestone\`. Save research or writing you produce yourself in ${outputDir}. ${reviewFileRule(outputDir)} ${PLAIN_WORDS}
+  return `Work through tool tickets: you never change this project's files yourself, not even one line and not through the shell. Answer questions from what you know, the status and the tool tickets' reports; changes, checks and longer research go to tool tickets, and when you start one, tell the user in a sentence or two what you started. Discussion is not a go-ahead: follow the go-ahead rule in your main ticket rules. Landing goes through \`land_milestone\`. Save research or writing you produce yourself in ${outputDir}. ${reviewFileRule(outputDir)} ${CHAT_PLAIN_WORDS}
 If you need decisions from the user, ask with the ask_questions tool.
 ${bugReportRule(t)}
 ${SELF_MOVE_RULE}`;
@@ -1349,7 +1359,7 @@ ${o.table}
 
 End with status "blocked" (or "questions" after asking with ask_questions) only when the user must decide or fix something; otherwise "done".${openQuestionsRule(o.open ?? [])}
 
-${WRITING_RULE}
+${RESULT_RULE}
 
-${RESULT_RULE}`, { wake: wakeSummary(o.kind, o.events.length, !!o.group, "tool") })}`;
+${REPLY_RULE}`, { wake: wakeSummary(o.kind, o.events.length, !!o.group, "tool") })}`;
 }

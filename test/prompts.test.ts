@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { extractFinalText, summarizeEvent } from "../src/server/activity";
-import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, LENGTH_RULE, orchestratorPrompt, planningCommand, planningPrompt, QUESTIONS_FORMAT, resumeCommand, resumePrompt, WRITING_RULE } from "../src/server/prompts";
+import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, LENGTH_RULE, orchestratorPrompt, planningCommand, planningPrompt, QUESTIONS_FORMAT, REPLY_RULE, resumeCommand, resumePrompt, WRITING_RULE } from "../src/server/prompts";
 import { parseResult } from "../src/server/result";
 import type { Ticket } from "../src/server/types";
 
@@ -159,13 +159,19 @@ test("planning chats reach artifacts through the MCP tools, not the Bash helper 
 });
 
 test("every prompt the user reads replies from asks for short, plain, filler-free text", () => {
-  expect(WRITING_RULE).toContain("No AI filler (crucial, leverage, ensure, seamless), no em dashes, arrows or made-up abbreviations");
+  expect(WRITING_RULE).toContain("No AI filler (crucial, leverage, ensure, seamless), no em dashes or made-up abbreviations");
   expect(WRITING_RULE).toContain(LENGTH_RULE);
-  expect(LENGTH_RULE).toContain("Most messages are one or two sentences, and two short paragraphs is already long");
-  expect(LENGTH_RULE).toContain("Lead with the answer");
-  expect(LENGTH_RULE).toContain("Short means fewer ideas, not clipped ones");
+  expect(LENGTH_RULE).toContain("Short means fewer ideas, not clipped sentences");
+  expect(LENGTH_RULE).toContain("leave out background, recaps, side points, caveats and hedges nobody asked about, how the work was done");
+  expect(LENGTH_RULE).toContain("**Reply in one to three short sentences.** Put the answer in the first one");
+  expect(LENGTH_RULE).toContain("Add a second short paragraph only when the user can't act without it");
+  expect(LENGTH_RULE).toContain("Keep each paragraph to one or two sentences");
+  expect(LENGTH_RULE).toContain("If the user must do or decide something, put that one thing in bold");
+  expect(LENGTH_RULE).toContain("Write whole sentences, not fragments");
   expect(LENGTH_RULE).toContain("drafts you write for them");
-  expect(WRITING_RULE).toContain("Proposed ticket descriptions are the exception to the length");
+  expect(WRITING_RULE).toContain("Two things stay complete: proposed ticket descriptions");
+  expect(WRITING_RULE).toContain("anything the user asks for in detail");
+  expect(LENGTH_RULE).not.toMatch(/\d+ words/);
   const fresh = { repo: "remote" as const, linked: false, baseBranch: "main", lastResult: null, comments: [], outputDir: "/o" };
   const followUp = { followUp: { setAt: "2026-11-01T10:00:00.000Z", dueAt: "2026-11-02T10:00:00.000Z", note: "check the reply" }, followUpLog: [], seenAt: null } as unknown as Parameters<typeof followUpWakePrompt>[0];
   for (const p of [
@@ -180,6 +186,21 @@ test("every prompt the user reads replies from asks for short, plain, filler-fre
     followUpWakePrompt(followUp, new Date("2026-11-02T10:00:00.000Z")),
   ]) {
     expect(p).toContain(WRITING_RULE);
+  }
+});
+
+test("every ticket chat turn ends with the writing rule, and states it only once", () => {
+  const mainRole = { kind: "main" as const, repo: "remote" as const, branch: null, inPlace: false };
+  const turns = [
+    chatPrompt(ticket, "hi", "refine", "/o"),
+    chatPrompt(ticket, "", "refine", "/o"),
+    chatPrompt(ticket, "hi", "act", "/o"),
+    chatPrompt(ticket, "hi", "refine", "/o", false, "remote", false, "", mainRole),
+    chatPrompt(ticket, "hi", "act", "/o", false, "remote", false, "", mainRole),
+  ];
+  for (const p of turns) {
+    expect(p.trimEnd().endsWith(`${REPLY_RULE}\n</ckanban-context>`)).toBe(true);
+    expect(p.split(LENGTH_RULE).length - 1).toBe(1);
   }
 });
 
