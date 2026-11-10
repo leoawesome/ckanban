@@ -395,3 +395,19 @@ test("work in the project folder on a git repo: commit to the current branch, no
     expect(c).not.toContain("push new commits");
   }
 });
+
+test("planning go-ahead on a stale ticket shows the proposal card; running chats don't get that line", () => {
+  const line = "don't call `move_ticket`: call `propose_ticket` with the updated ticket";
+  const planning = chatPrompt(ticket, "Do it", "refine", "/o");
+  expect(planning).toContain(line);
+  expect(planning).toContain('"Apply & start work" button on the card');
+  expect(planning).toContain("only when its title and description already match the plan, or when the user explicitly asks you to just start it or move it");
+  expect(planning).not.toContain("After the user applies it they will move it to Ready");
+  expect(planning).toContain("Moving this ticket's own card: only when the user asks for it");
+  expect(chatPrompt(ticket, "Do it", "act", "/o")).not.toContain(line);
+  const main = { kind: "main" as const, repo: "remote" as const, branch: null, inPlace: false };
+  expect(chatPrompt(ticket, "Do it", "refine", "/o", false, "remote", false, "", main)).not.toContain(line);
+  expect(chatPrompt(ticket, "Do it", "refine", "/o", false, "remote", false, "", { ...main, planned: "plan" })).not.toContain(line);
+  const ran = { ...ticket, status: "done", runCount: 1 } as Ticket;
+  expect(chatPrompt(ran, "Do it", "refine", "/o", false, "remote", false, "", undefined, { as: "main" })).not.toContain(line);
+});
