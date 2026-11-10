@@ -1876,7 +1876,8 @@ export const TOOLS: Tool[] = [
           type: "boolean",
           description: "true makes a new main ticket, like the user's own New ticket: it talks and decides, and tool tickets in its family do the work. " +
             "Only when the user asks, in a message they typed in this chat, for a new main ticket or a new feature they will follow as its own piece of work. " +
-            "Top level only: no partOf or partOfThisTicket. Other new work that belongs to an open feature still joins it with partOf.",
+            "Top level, or a sub-feature: with partOf (or partOfThisTicket) it is part of another main ticket's feature and keeps its own card, chat and tasks " +
+            "(its tasks report to it). A sub-feature can't hold another one. Other new work that belongs to an open feature still joins it with partOf and no main.",
         },
         gather: {
           type: "array",
@@ -1903,7 +1904,6 @@ export const TOOLS: Tool[] = [
       const needs = needsList(args);
       const tags = tagsList(args);
       const main = args?.main === true;
-      if (main && args?.partOfThisTicket === true) throw new ClientError("a main ticket is top level: leave out partOfThisTicket and partOf");
       if (!main && Array.isArray(args?.gather) && args.gather.length) throw new ClientError("gather only works with main: true (use gather_tickets to add tickets to an existing feature)");
       const t = await ctx.client.createTicket(slug, {
         title: str(args, "title")!.trim(),
@@ -1948,7 +1948,8 @@ export const TOOLS: Tool[] = [
     description:
       "Edit a ticket's title, description, column, mode, dependsOn, needs, tags or ⭐ important. Moving it to ready starts a Claude run, " +
       "moving it to planning starts the interview in the board chat (same as dragging it on the board). " +
-      "A planner can take one of its children out of its plan with release: true." + IN_RUN,
+      "A planner can take one of its children out of its plan with release: true. showOnBoard gives a task (tool ticket) its own card on the board, " +
+      "when the user asks for it." + IN_RUN,
     inputSchema: {
       type: "object",
       properties: {
@@ -1960,6 +1961,11 @@ export const TOOLS: Tool[] = [
             "a ticket's own run (its chat included) may set it on that ticket.",
         },
         release: { type: "boolean", description: "true: take the ticket out of its plan (it keeps its column; its dependsOn and key are cleared)." },
+        showOnBoard: {
+          type: "boolean",
+          description: "Tasks (tool tickets) only, when the user asks: true shows the task's card on the board, false hides it again. " +
+            "Its questions still go to its main ticket's chat.",
+        },
       },
       required: ["id"],
     },
@@ -1980,7 +1986,8 @@ export const TOOLS: Tool[] = [
       if (tags) patch.tags = tags;
       if (args?.release === true) patch.parentId = null;
       if (typeof args?.important === "boolean") patch.important = args.important;
-      if (!Object.keys(patch).length) throw new ClientError("nothing to change: pass title, body, status, mode, dependsOn, needs, tags, important or release");
+      if (typeof args?.showOnBoard === "boolean") patch.showOnBoard = args.showOnBoard;
+      if (!Object.keys(patch).length) throw new ClientError("nothing to change: pass title, body, status, mode, dependsOn, needs, tags, important, release or showOnBoard");
       const t = await ctx.client.updateTicket(slug, str(args, "id")!, patch, ctx.env[RUN_ENV]);
       return `Updated ${t.id}: ${ticketLine(t)}`;
     },
@@ -2218,7 +2225,8 @@ export const TOOLS: Tool[] = [
     description:
       "Gather existing tickets into a feature (when the user asks, in a message they typed in this chat): each one links under one of the feature's groups, " +
       "a new group, or the feature itself. They keep their chats, work and pull requests, and running ones keep running. " +
-      "A ticket's own tickets that would sit deeper than 2 levels move up beside it. Find tickets with list_tickets first. " +
+      "A ticket's own tickets that would sit deeper than 2 levels move up beside it. A main ticket gathered in becomes a sub-feature: it keeps its own card, " +
+      "chat and tasks (they report to it); a sub-feature can't hold another one, so a main ticket can't go into a sub-feature. Find tickets with list_tickets first. " +
       "Works on any feature, also on another board (pass its profile and the feature's id); outside the feature's own chat it is logged on the changed tickets.",
     inputSchema: {
       type: "object",

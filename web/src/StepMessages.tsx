@@ -3,7 +3,7 @@
 // (TaskSheet.tsx) and the step's own chat opens in a side sheet, where answers go straight to the step's session.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, subscribe, type SessionEntry, type Ticket } from "./api";
-import { familyOf, withYouTool } from "./family";
+import { featureRows, withYouTool } from "./family";
 import { stepMessages, type StepMsg } from "./stepTalk";
 
 export type { StepMsg };
@@ -20,7 +20,7 @@ export interface StepInfo {
 /** The main ticket's "with you" steps and what each showed the user, kept fresh as their chats change. */
 export function useStepMessages(slug: string, ticket: Ticket, tickets: Ticket[]): { steps: StepInfo[]; messages: StepMsg[]; reload: (id: string) => void; loaded: boolean } {
   const steps: StepInfo[] = ticket.main
-    ? familyOf(tickets, ticket.id).map((r) => r.ticket).filter((t) => withYouTool(t) && !!t.sessionId).map((t) => ({
+    ? featureRows(tickets, ticket.id).map((r) => r.ticket).filter((t) => withYouTool(t) && !!t.sessionId).map((t) => ({
       id: t.id, title: t.title, running: !!t.running,
       waiting: !t.running && t.outcome === "needs_input" && t.status !== "done" && t.status !== "ready" && t.status !== "in_progress" && !(t.queued?.length),
     }))

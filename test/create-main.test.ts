@@ -81,14 +81,22 @@ test("main: true is refused outside a reply to the user's typed message, and no 
       expect(r.status).toBe(403);
       expect(await errorOf(r)).toContain("main: true needs a message the user typed in this chat");
     }
-    // Not top level: partOf (also what partOfThisTicket sends), parentId, sessionId.
+    // Not in a plan (parentId), not from a linked session.
     const asChat = { "x-ckanban-run": `${p.slug}/${chat.id}` };
-    for (const extra of [{ partOf: chat.id }, { partOf: work.id }, { parentId: work.id }]) {
-      const r = await send(tickets, { title: "Nope", main: true, ...extra }, asChat);
-      expect(r.status).toBe(400);
-      expect(await errorOf(r)).toContain("a main ticket is top level");
-    }
-    let r = await send(tickets, { title: "Nope", main: true, sessionId: "abc" }, asChat);
+    let r = await send(tickets, { title: "Nope", main: true, parentId: work.id }, asChat);
+    expect(r.status).toBe(400);
+    expect(await errorOf(r)).toContain("a main ticket isn't part of a plan");
+    // With partOf it is a sub-feature of a top-level main ticket; a sub-feature can't hold another one.
+    r = await send(tickets, { title: "Sub", main: true, partOf: chat.id }, asChat);
+    expect(r.status).toBe(201);
+    const sub = (await r.json()) as any;
+    expect(sub.main).toBe(true);
+    expect(sub.partOf).toBe(chat.id);
+    expect(sub.subFeatureOf).toEqual({ id: chat.id, title: "Chat" });
+    r = await send(tickets, { title: "Nope", main: true, partOf: sub.id }, asChat);
+    expect(r.status).toBe(400);
+    expect(await errorOf(r)).toBe(`"Sub" is already part of "Chat"; a sub-feature can't hold another sub-feature.`);
+    r = await send(tickets, { title: "Nope", main: true, sessionId: "abc" }, asChat);
     expect(r.status).toBe(400);
     // gather needs main.
     r = await send(tickets, { title: "Nope", gather: [{ id: work.id }] }, asChat);

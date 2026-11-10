@@ -237,6 +237,8 @@ export interface TicketPatch {
   important?: boolean;
   /** null takes the ticket out of its plan. */
   parentId?: null;
+  /** A task (tool ticket): true gives it a card on the board, false hides it again. */
+  showOnBoard?: boolean;
 }
 
 export interface AdoptReply {

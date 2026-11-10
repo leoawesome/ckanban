@@ -271,6 +271,11 @@ export interface Ticket {
   main?: boolean;
   /** A tool ticket: made by Claude inside a main ticket's family; runs unattended and reports to its parent. */
   tool?: boolean;
+  /**
+   * "Show on board": a tool ticket (task) that also gets a card on the board. Its Your turn and needs-you still go to its
+   * main ticket's chat. Old tickets have none: hidden.
+   */
+  showOnBoard?: boolean | null;
   /** Tool tickets' results, shown in this ticket's chat as result cards (oldest first, the last RESULTS_KEEP kept). */
   results?: ResultCard[];
   /** Board notes in this (main) ticket's chat, e.g. a "with you" step started waiting (oldest first, the last BOARD_NOTES_KEEP kept). */

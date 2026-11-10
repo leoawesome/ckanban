@@ -28,7 +28,7 @@ import { boardColumnOf, columnNeighbours, columnOrder, STATUS_MENU } from "./col
 import { ColumnPicker } from "./ColumnPicker";
 import { setThemeChoice, type ThemeChoice } from "./theme";
 import { afterBar, ticketActions } from "./ticketActions";
-import { hiddenTool } from "./family";
+import { onBoard } from "./family";
 import { searchBoard } from "./toolTickets";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, toolCount } from "./familyActions";
@@ -490,7 +490,7 @@ export function App() {
   const workingIds = useRef<Set<string>>(new Set());
   const ranOutTimer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
-    const now = new Set(tickets.filter((t) => !hiddenTool(t) && (t.status === "in_progress" || t.running)).map((t) => t.id));
+    const now = new Set(tickets.filter((t) => onBoard(t) && (t.status === "in_progress" || t.running)).map((t) => t.id));
     const ended = [...workingIds.current].some((id) => !now.has(id) && tickets.some((t) => t.id === id));
     workingIds.current = now;
     if (!ended || !document.hidden) return;
@@ -789,8 +789,8 @@ export function App() {
   const q = search.text;
   const tagsWanted = [...new Set([...tagFilter, ...search.tags])];
   const activeFilters = FILTERS.filter((f) => filters.has(f.id));
-  // Tool tickets have no card: a search that finds one shows its main ticket's card, "via" the tool ticket.
-  const visibleTickets = useMemo(() => tickets.filter((t) => !hiddenTool(t)), [tickets]);
+  // Tasks have no card unless shown on the board: a search that finds a hidden one shows its main ticket's card, "via" the task.
+  const visibleTickets = useMemo(() => tickets.filter((t) => onBoard(t)), [tickets]);
   const { shown: shownTickets, via: searchVia } = useMemo(() => searchBoard(tickets, (t) => !q || `${t.title}\n${t.body}`.toLowerCase().includes(q),
     (t) => hasTags(t, tagsWanted) && (!activeFilters.length || activeFilters.some((f) => f.test(t))), !!q),
   [tickets, query, tagFilter, filters]);

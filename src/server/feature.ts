@@ -5,7 +5,7 @@
 // are saved in the top ticket's outputs folder: status.json (what the block renders from) and status.md (to read).
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { childrenByParent, familyOf, familyState, settled, STATE_WORDS, type FamilyState } from "../../web/src/family";
+import { childrenByParent, familyState, featureRows, settled, STATE_WORDS, type FamilyState } from "../../web/src/family";
 import { ticketPrs } from "./prs";
 import type { Ticket } from "./types";
 
@@ -103,6 +103,11 @@ export interface StatusFacts {
   paused: { id: string; title: string; resumeAt: string | null; auto: boolean }[];
   needsYou: { id: string; title: string }[];
   prs: PrFact[];
+  /**
+   * Sub-features in this feature (main tickets linked under it), one line each: its own state (working while it or
+   * anything under it works) and its own status headline (its "Next step", when it wrote one). Their tasks never count here.
+   */
+  subFeatures?: { id: string; title: string; state: FamilyState; headline?: string }[];
   /** Filled in by the board (Board.savedChanges); missing or null when there are none yet. */
   changes?: SavedChanges | null;
 }
@@ -151,19 +156,30 @@ export function brokenReason(t: Ticket, results: { ticketId: string; summary: st
 
 const prNumber = (url: string) => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? NaN) || null;
 
-/** The board's facts for the feature topId (its family from tickets). needsYou: the board's attention says Your turn. */
-export function statusFacts(tickets: Ticket[], topId: string, needsYou: (t: Ticket) => boolean, prNotes: Record<string, string> = {}): StatusFacts {
-  const rows = familyOf(tickets, topId);
+/**
+ * The board's facts for the feature topId (its own feature from tickets: featureRows, so a sub-feature is one row and
+ * its tickets are its own). needsYou: the board's attention says Your turn. sub: a sub-feature's own facts (working:
+ * it or anything under it works; headline: its status's next step).
+ */
+export function statusFacts(
+  tickets: Ticket[], topId: string, needsYou: (t: Ticket) => boolean, prNotes: Record<string, string> = {},
+  sub: (t: Ticket) => { working: boolean; headline?: string | null } = () => ({ working: false }),
+): StatusFacts {
+  const rows = featureRows(tickets, topId);
   const kids = childrenByParent(tickets);
-  const stateOf = new Map(rows.map((r) => [r.ticket.id, familyState(r.ticket, needsYou(r.ticket))]));
+  const isSub = (t: Ticket) => t.id !== topId && !!t.main;
+  const subFacts = new Map(rows.filter((r) => isSub(r.ticket)).map((r) => [r.ticket.id, sub(r.ticket)]));
+  const stateOf = new Map(rows.map((r) => [r.ticket.id, subFacts.get(r.ticket.id)?.working ? "working" as FamilyState : familyState(r.ticket, needsYou(r.ticket))]));
   const counts: StatusFacts["counts"] = {};
   const groups: GroupFacts[] = [];
   const loose: StatusFacts["loose"] = { total: 0, counts: {} };
   const rounds: StatusFacts["rounds"] = [];
-  const below = (id: string): Ticket[] => (kids.get(id) ?? []).flatMap((c) => [c.ticket, ...below(c.ticket.id)]);
+  // A sub-feature's tickets are its own: the walk stops at it.
+  const below = (id: string): Ticket[] => (kids.get(id) ?? []).flatMap((c) => [c.ticket, ...(isSub(c.ticket) ? [] : below(c.ticket.id))]);
   for (const r of rows.slice(1)) add(counts, stateOf.get(r.ticket.id)!);
   for (const r of rows.filter((x) => x.depth === 1)) {
     const t = r.ticket;
+    if (isSub(t)) continue;
     const inside = below(t.id);
     if (!inside.length && t.kind !== "group" && t.kind !== "round") {
       loose.total++;
@@ -187,24 +203,30 @@ export function statusFacts(tickets: Ticket[], topId: string, needsYou: (t: Tick
   // A problem an earlier round found is history (later work fixed it or not; the newest round tells): only the newest
   // round's problems, tests outside rounds and failed tickets count as broken now.
   const newest = rounds.at(-1)?.id;
-  const results = rows.flatMap((r) => r.ticket.results ?? []).sort((a, b) => a.at.localeCompare(b.at));
+  // Sub-features speak for themselves (subFeatures): their results, failures and pull requests stay in their own status.
+  const own = rows.filter((r) => !isSub(r.ticket));
+  const results = own.flatMap((r) => r.ticket.results ?? []).sort((a, b) => a.at.localeCompare(b.at));
   const roundOf = new Map<string, string>();
   for (const g of rounds) for (const k of below(g.id)) roundOf.set(k.id, g.id);
-  const broken = rows.slice(1)
+  const broken = own.slice(1)
     .filter((r) => stateOf.get(r.ticket.id) === "failed" || (stateOf.get(r.ticket.id) === "problem" && (!roundOf.has(r.ticket.id) || roundOf.get(r.ticket.id) === newest)))
     .map((r) => {
       const reason = brokenReason(r.ticket, results);
       return { id: r.ticket.id, title: r.ticket.title, state: stateOf.get(r.ticket.id)!, ...(reason ? { reason } : {}) };
     });
-  const paused = rows.slice(1)
+  const paused = own.slice(1)
     .filter((r) => stateOf.get(r.ticket.id) === "paused" && r.ticket.status !== "ready" && r.ticket.status !== "in_progress")
     .map((r) => ({ id: r.ticket.id, title: r.ticket.title, resumeAt: r.ticket.limit?.resetAt ?? null, auto: !!r.ticket.limit?.auto }));
-  const waiting = rows.slice(1).filter((r) => stateOf.get(r.ticket.id) === "needs_you").map((r) => ({ id: r.ticket.id, title: r.ticket.title }));
-  const prs: PrFact[] = rows.flatMap((r) => ticketPrs(r.ticket).map((p) => ({
+  const waiting = own.slice(1).filter((r) => stateOf.get(r.ticket.id) === "needs_you").map((r) => ({ id: r.ticket.id, title: r.ticket.title }));
+  const prs: PrFact[] = own.flatMap((r) => ticketPrs(r.ticket).map((p) => ({
     url: p.url, number: prNumber(p.url), state: (p.state?.toLowerCase() ?? "unknown") as PrFact["state"], ticketId: r.ticket.id, ticketTitle: r.ticket.title,
     ...(prNotes[p.url] ? { note: prNotes[p.url] } : {}),
   })));
-  return { size: rows.length, counts, groups, loose, rounds, broken, paused, needsYou: waiting, prs };
+  const subFeatures = rows.filter((r) => isSub(r.ticket)).map((r) => {
+    const headline = subFacts.get(r.ticket.id)?.headline?.trim();
+    return { id: r.ticket.id, title: r.ticket.title, state: stateOf.get(r.ticket.id)!, ...(headline ? { headline: clip(headline.replace(/\s+/g, " "), 160) } : {}) };
+  });
+  return { size: rows.length, counts, groups, loose, rounds, broken, paused, needsYou: waiting, prs, ...(subFeatures.length ? { subFeatures } : {}) };
 }
 
 /** Applies Claude's update: only the sections it names change (null or "" clears one). */
@@ -265,6 +287,7 @@ export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key
   const looseActive = (["working", "waiting", "needs_you", "paused"] as FamilyState[]).some((x) => f.loose.counts[x]);
   if (looseActive) running.push(`Other tickets: ${countWords(f.loose.counts, f.loose.total)}.`);
   push("running", "Running", running.join(" "));
+  push("subfeatures", "Sub-features", (f.subFeatures ?? []).map((x) => `${x.title}: ${STATE_WORDS[x.state]}${x.headline ? ` · ${x.headline}` : ""}`).join("\n"));
   const brokenFacts = f.broken.length ? `[${f.broken.length}: ${f.broken.map((b) => `${b.title} (${STATE_WORDS[b.state].toLowerCase()}${b.reason ? `: ${b.reason}` : ""})`).join("; ")}]` : null;
   push("broken", "Broken", brokenFacts, saved?.broken);
   const youFacts = f.needsYou.length ? `[${f.needsYou.length}: ${f.needsYou.map((b) => b.title).join("; ")}]` : null;
@@ -286,7 +309,7 @@ export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key
 export function statusMarkdown(top: Pick<Ticket, "id" | "title">, saved: SavedStatus | null, f: StatusFacts): string {
   const lines = [`# Where we are: ${top.title}`, "", `Feature ticket ${top.id}, ${f.size} tickets. Updated ${saved?.updatedAt ?? "never"}.`, ""];
   for (const s of statusSections(saved, f)) {
-    lines.push(`## ${s.label}`, "", s.key === "prs" || s.key === "milestones" || s.key === "changes" ? s.text.split("\n").map((l) => `- ${l}`).join("\n") : s.text, "");
+    lines.push(`## ${s.label}`, "", s.key === "prs" || s.key === "milestones" || s.key === "changes" || s.key === "subfeatures" ? s.text.split("\n").map((l) => `- ${l}`).join("\n") : s.text, "");
   }
   if (saved?.notes?.length) {
     lines.push("## Notes from the user", "", ...saved.notes.map((n) => `- ${n.at.slice(0, 10)}: ${n.text}`), "");

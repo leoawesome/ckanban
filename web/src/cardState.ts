@@ -170,3 +170,33 @@ export function cardHuddleLine(t: { huddleBusy?: boolean; huddleLine?: HuddleLin
   if (!t.huddleBusy || o.working || o.needsYou) return null;
   return huddleLineText(t.huddleLine ?? { working: 0, helpers: 0, findings: 0 });
 }
+
+interface PartLike {
+  main?: boolean; tool?: boolean; showOnBoard?: boolean | null;
+  subFeatureOf?: { id: string; title: string } | null; mainTicket?: { id: string; title: string } | null;
+}
+
+/**
+ * The chip on top of a card: "Part of <feature>" on a sub-feature, "Task of <feature>" on a task shown on the board
+ * (with its note "Shown on board · questions go to <feature>"). null on any other card.
+ */
+export function partChip(t: PartLike): { kind: "sub" | "task"; text: string; parent: { id: string; title: string }; note?: string } | null {
+  if (t.main && t.subFeatureOf) return { kind: "sub", text: `Part of ${t.subFeatureOf.title}`, parent: t.subFeatureOf };
+  if (t.tool && t.showOnBoard && t.mainTicket) {
+    return { kind: "task", text: `Task of ${t.mainTicket.title}`, parent: t.mainTicket, note: `Shown on board · questions go to ${t.mainTicket.title}` };
+  }
+  return null;
+}
+
+const subFeatureWords = (n: number) => `${n} sub-feature${n === 1 ? "" : "s"} running`;
+
+/**
+ * A main card's working line with its sub-features: "· 1 sub-feature running" added while any work. When only
+ * sub-features work (the line would just name one), the line says "2 sub-features running" instead.
+ */
+export function familyLineText(line: { text: string; tone: string }, f: { subFeaturesRunning?: number; working?: string[]; running: string[] }): string {
+  const subs = f.subFeaturesRunning ?? 0;
+  if (!subs) return line.text;
+  if (line.tone === "work" && (f.working ?? f.running).length <= subs) return subFeatureWords(subs);
+  return `${line.text} · ${subFeatureWords(subs)}`;
+}

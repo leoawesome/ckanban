@@ -2,7 +2,8 @@
 // tab (FamilyTab.tsx).
 import { useMemo, useState } from "react";
 import { api, COLUMNS, type Ticket } from "./api";
-import { LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
+import { featureRows, LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
+import { linkHints } from "./linkHints";
 
 const columnLabel = (status: string) => COLUMNS.find((c) => c.id === status)?.label ?? status;
 
@@ -65,11 +66,6 @@ const PARENT_ROW: Record<LinkHow | "none", { key: string; title: string; gone: s
   none: { key: "Part of", title: "The ticket this one belongs to: the tickets of one piece of work sit under one main ticket", gone: "" },
 };
 
-/** What Unlink also ends, so the user knows before clicking. */
-const UNLINK_NOTE: Partial<Record<LinkHow, string>> = {
-  plan: "Takes it out of that piece of work and out of that ticket's plan",
-};
-
 /**
  * The ticket this one hangs under ("Part of", or "From" for plan tickets) with Change and
  * Unlink, or the board's suggestion with Link, Not related and Pick another. Moving a plan ticket
@@ -89,14 +85,15 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
   const suggested = !current && ticket.parentSuggestion ? tickets.find((t) => t.id === ticket.parentSuggestion!.id) : undefined;
   const act = (p: Promise<unknown>) => {
     setBusy(true);
-    p.then(() => setPicking(false), (e) => onError(`Couldn't change the link: ${(e as Error).message}`)).finally(() => setBusy(false));
+    // The server's refusal (too deep, a sub-feature under a sub-feature) is already in plain words.
+    p.then(() => setPicking(false), (e) => onError((e as Error).message)).finally(() => setBusy(false));
   };
   const link = (id: string | null) => act(api.setPartOf(slug, ticket.id, id));
+  const hints = linkHints(ticket, current?.how ?? null, ticket.main ? Math.max(0, featureRows(tickets, ticket.id).length - 1) : 0);
   const changeUnlink = (
     <>
-      <button className="mini-link" disabled={busy} onClick={() => setPicking(true)}
-        title={current && UNLINK_NOTE[current.how] ? `Put it under another ticket. ${UNLINK_NOTE[current.how]}` : "Put it under another ticket"}>Change</button>
-      <button className="mini-link" disabled={busy} onClick={() => link(null)} title={(current && UNLINK_NOTE[current.how]) ?? "Takes it out of that piece of work"}>Unlink</button>
+      <button className="mini-link" disabled={busy} onClick={() => setPicking(true)} title={hints.change}>Change</button>
+      <button className="mini-link" disabled={busy} onClick={() => link(null)} title={hints.unlink}>Unlink</button>
     </>
   );
   return (
@@ -132,9 +129,18 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
             )}
           </span>
         ) : (
-          <button className="mini-link" disabled={busy} onClick={() => setPicking(true)}>Link to a ticket…</button>
+          <button className="mini-link" disabled={busy} onClick={() => setPicking(true)} title={hints.link}>Link to a ticket…</button>
         )}
       </div>
+      {ticket.tool && (
+        <div className="field-row">
+          <span className="field-key" title="A task has no card of its own unless you show it; its questions still go to its feature's chat">Board</span>
+          <label className="show-on-board" title={ticket.showOnBoard ? "Hide its card again; it stays in its feature's task list" : `Give it its own card on the board; its questions still go to ${ticket.mainTicket?.title ?? "its feature"}`}>
+            <input type="checkbox" checked={!!ticket.showOnBoard} disabled={busy}
+              onChange={(e) => act(api.setShowOnBoard(slug, ticket.id, e.target.checked))} /> Show on board
+          </label>
+        </div>
+      )}
       {picking && <ParentPicker ticket={ticket} tickets={tickets} onPick={link} onCancel={() => setPicking(false)} />}
       {suggested && !picking && !declining && why && ticket.parentSuggestion!.reason && (
         <div className="parent-suggest-why">{ticket.parentSuggestion!.reason} <span className="muted">({columnLabel(suggested.status)})</span></div>

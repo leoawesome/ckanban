@@ -1,4 +1,4 @@
-import { familyOf, hiddenTool } from "../../web/src/family";
+import { featureRows, hiddenTool } from "../../web/src/family";
 import { stepWait, type StepWait } from "./main-ticket";
 import { childrenOf, isComplete, planActive } from "./plan";
 import type { SessionSummary } from "./session";
@@ -186,7 +186,8 @@ export function ticketAttention(
 export function oldestStep(tickets: Ticket[], mainId: string, running: (id: string) => boolean): StepWait | null {
   let best: StepWait | null = null;
   const you: StepWait[] = [];
-  for (const r of familyOf(tickets, mainId)) {
+  // Its own tasks only: a sub-feature's tasks wait on the sub-feature (featureRows stops there).
+  for (const r of featureRows(tickets, mainId)) {
     if (r.ticket.id === mainId || !hiddenTool(r.ticket)) continue;
     const w = stepWait(r.ticket, running(r.ticket.id));
     if (w?.withYou) you.push(w);

@@ -1,8 +1,9 @@
-// Tool tickets (a main ticket's hidden helpers) have no card: the board shows one card per feature. Search still finds
-// them and shows their main ticket's card with "via <tool ticket title>". No imports from api.ts, so tests load it.
-import { hiddenTool, mainTicketOf, type FamilyTicket } from "./family";
+// Tasks (a main ticket's helpers) have no card unless shown on the board: the board shows one card per feature. Search
+// still finds a hidden task and shows its main ticket's card with "via <task title>"; a task shown on the board is a
+// card like any other (onBoard). No imports from api.ts, so tests load it.
+import { mainTicketOf, onBoard, type FamilyTicket } from "./family";
 
-type Searchable = FamilyTicket & { body: string; main?: boolean; tool?: boolean; kind?: string | null };
+type Searchable = FamilyTicket & { body: string; main?: boolean; tool?: boolean; kind?: string | null; showOnBoard?: boolean | null };
 
 /**
  * The cards a board search shows. hit: the text match (empty query: every ticket); keep: tags and filter chips.
@@ -12,11 +13,11 @@ export function searchBoard<T extends Searchable>(tickets: T[], hit: (t: T) => b
   const via = new Map<string, string>();
   if (query) {
     for (const t of tickets) {
-      if (!hiddenTool(t) || !hit(t)) continue;
+      if (onBoard(t) || !hit(t)) continue;
       const main = mainTicketOf(tickets, t.id);
-      if (main && !hiddenTool(main) && !hit(main) && !via.has(main.id)) via.set(main.id, t.title);
+      if (main && onBoard(main) && !hit(main) && !via.has(main.id)) via.set(main.id, t.title);
     }
   }
-  const shown = tickets.filter((t) => !hiddenTool(t) && (hit(t) || via.has(t.id)) && keep(t));
+  const shown = tickets.filter((t) => onBoard(t) && (hit(t) || via.has(t.id)) && keep(t));
   return { shown, via };
 }

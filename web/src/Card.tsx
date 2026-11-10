@@ -17,7 +17,7 @@ import { elapsed, fullTime, plainPreview, timeAgo } from "./time";
 import { costText } from "./usage";
 import { useNow } from "./useNow";
 import { clearArrival, useArrival } from "./arrivals";
-import { attentionLabel, cardFamily, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
+import { attentionLabel, cardFamily, familyLineText, partChip, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
 import { boardColumnOf } from "./columns";
 
 /** Live running time: ticks every second for the first minute, then every 30s. */
@@ -143,8 +143,9 @@ function lastWho(m: SessionMessage): string {
  * run's Stop / Keep waiting / Restart.
  */
 /** The main card's working line (familyCard.line): the current step, Paused / Stuck / a step that needs you in amber, a failed step in red. */
-function FamilyLineView({ line, id }: { line: NonNullable<NonNullable<Ticket["familyCard"]>["line"]>; id?: string }) {
-  const text = line.until ? `${line.text}, resumes at ${clockTime(line.until)}` : line.text;
+function FamilyLineView({ line, fc, id }: { line: NonNullable<NonNullable<Ticket["familyCard"]>["line"]>; fc: NonNullable<Ticket["familyCard"]>; id?: string }) {
+  const base = familyLineText(line, fc);
+  const text = line.until ? `${base}, resumes at ${clockTime(line.until)}` : base;
   return (
     <div id={id} className={`card-family-line ${line.tone}`} title={text}>
       {line.tone === "work" && <span className="spinner" aria-hidden />}
@@ -239,6 +240,8 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
     </span>
   );
   // At most one pill: Sign-in needed, then the end-of-run mark, then what needs the user, then its auto huddle or a stopped plan.
+  // A sub-feature's "Part of …" or a shown task's "Task of …" chip on top.
+  const part = partChip(ticket);
   const pill = signInChip || (finish ? finishBadge(finish) : badge) || (ticket.autoHuddle && ownWorking && autoHuddleChip(ticket.autoHuddle)) || planPill || null;
   return (
     <article
@@ -251,14 +254,22 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
           <span className="yt-why" title={ticket.error ?? undefined}>{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
         </div>
       )}
+      {part && (
+        <div className="card-part">
+          <span className={`part-chip ${part.kind}`} title={part.kind === "sub"
+            ? `A sub-feature of ${part.parent.title}: it keeps its own card, chat and tasks`
+            : `A task of ${part.parent.title}, shown on the board`}>{part.text}</span>
+        </div>
+      )}
       <KeyHint inset className="card-keys" keys={doneHint ? "↵ open · S star · M move · D done · Space drag" : "↵ open · S star · M move · Space drag"} />
       <div className="card-title" title={ticket.title} id={a11yId && `${a11yId}-title`}>
         {arrival.isNew && <span className="arrived-dot" role="img" aria-label="New here" title="Claude moved this card here" />}
         {ticket.important && <ImportantStar />}{ticket.title}
       </div>
+      {part?.note && <div className="card-shown-note" title={part.note}>{part.note}</div>}
       {via && <div className="card-via" title={`Found in the step “${via}”`}>via {via}</div>}
       {!showActivity && fc?.line && !att ? (
-        <FamilyLineView line={fc.line} id={a11yId && `${a11yId}-line`} />
+        <FamilyLineView line={fc.line} fc={fc} id={a11yId && `${a11yId}-line`} />
       ) : huddleLine ? (
         <div id={a11yId && `${a11yId}-line`} className="card-family-line card-huddle-line" title={huddleLine}>
           <span className="spinner" aria-hidden />

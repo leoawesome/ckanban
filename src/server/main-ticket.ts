@@ -2,7 +2,7 @@
 // A main ticket is the conversation the user started: it talks, decides and keeps the feature's status, and never edits
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
-import { familyState, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
+import { familyBelow, familyState, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import type { Plan, Ticket } from "./types";
 
 /** Model and effort a tool ticket gets from its kind when create_ticket leaves them out. */
@@ -198,8 +198,12 @@ export interface FamilyCard {
    * itself left out). Non-empty: the card shows the working stripe and line (board.familyWorking moves it).
    */
   working: string[];
-  /** What the whole family spent so far (main ticket included). */
+  /** What the whole family spent so far (main ticket and sub-features included). */
   costUsd: number;
+  /** Its sub-features (main tickets linked under it), oldest first: each has its own card and chat. */
+  subFeatures: { id: string; title: string; working: boolean }[];
+  /** How many of them are working now (it or anything under it): the card's "· 1 sub-feature running". */
+  subFeaturesRunning: number;
   line: FamilyLine | null;
   /** The oldest step waiting on a decision the main ticket hasn't made yet (or passes on to the user). */
   waiting: StepWait | null;
@@ -208,15 +212,17 @@ export interface FamilyCard {
 }
 
 /**
- * The main card's summary. family: every ticket below the main one (familyOf order); all: the board, for groups'
- * children. The working line names the current step: one that needs the user, then failed or stuck, then paused, then
+ * The main card's summary. family: every ticket of its own feature below the main one (featureRows order: a
+ * sub-feature is one ticket, its tasks are its own); all: the board, for groups' children and what sub-features do. The working line names the current step: one that needs the user, then failed or stuck, then paused, then
  * the most recently started working group or ticket ("Testing round 2: 4 of 6 done").
  */
 export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], running: (id: string) => boolean, costUsd: number): FamilyCard {
   const tools = family.filter((t) => t.tool);
   const startedAt = (t: Ticket) => t.runStartedAt ?? t.lastRunAt ?? t.updatedAt;
   // Any family ticket counts (tool tickets and tickets the user added), so the card never moves without a working line.
-  const working = workingInFamily(family, main.id, (t) => running(t.id));
+  // A sub-feature counts once while it or anything under it works (its tasks are in all, not in family).
+  const pool = [...new Map([...family, ...familyBelow(all, main.id)].map((t) => [t.id, t])).values()];
+  const working = workingInFamily(pool, main.id, (t) => running(t.id));
   const newestStart = working.reduce((m, t) => (startedAt(t) > m ? startedAt(t) : m), "");
   // Steps the main ticket hasn't seen yet (it ran before they ended), or any when it passes a question on to the user.
   const seenUntil = main.runEndedAt ?? "";
@@ -264,5 +270,7 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
   return {
     tools: tools.length, open, toolsDone: tools.filter((t) => t.status === "done").length,
     running: working.filter((t) => t.tool).map((t) => stepName(t)), working: working.map((t) => stepName(t)), costUsd, line, waiting, needsYou,
+    subFeatures: family.filter((t) => t.main).map((t) => ({ id: t.id, title: t.title, working: working.some((w) => w.id === t.id) })),
+    subFeaturesRunning: working.filter((t) => t.main).length,
   };
 }

@@ -6,7 +6,7 @@
 // "N waiting on you" button (TaskSheet.tsx).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, type FeatureStatus, type Ticket } from "./api";
-import { familyOf, isFeature, workingInFamily } from "./family";
+import { familyOf, featureRows, isFeature, STATE_WORDS, workingInFamily, type FamilyState } from "./family";
 import { InfoIcon } from "./icons";
 import { pausedLine } from "./limitText";
 import { namesText, taskProgress } from "./tasksText";
@@ -18,7 +18,8 @@ const CHANGES_SHOWN = 30;
 
 /** The feature status when ticket is a feature's top ticket (its main chat), reloaded as the family changes. */
 export function useFeatureStatus(slug: string, ticket: Ticket, tickets: Ticket[]): { status: FeatureStatus | null; reload: () => void; loaded: boolean } {
-  const rows = useMemo(() => familyOf(tickets, ticket.id), [tickets, ticket.id]);
+  // Its own feature: a sub-feature has its own status (its parent's shows it as one line).
+  const rows = useMemo(() => featureRows(tickets, ticket.id), [tickets, ticket.id]);
   const main = rows[0]?.ticket.id === ticket.id && isFeature(tickets, ticket);
   const key = rows.map((r) => `${r.ticket.id}:${r.ticket.status}:${r.ticket.outcome}:${r.ticket.verdict ?? ""}:${(r.ticket.prs ?? []).map((p) => p.state).join(",")}:${r.ticket.running ? 1 : 0}`).join("|");
   const [status, setStatus] = useState<FeatureStatus | null>(null);
@@ -154,6 +155,16 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
   }
   if (working.length) {
     rows.push({ label: "Now", body: <span title={working.map((t) => t.title).join("\n")}>{namesText(working.map((t) => t.title))}</span> });
+  }
+  // Each sub-feature in one line: its own state and its status's next step (its tasks are its own).
+  if (f.subFeatures?.length) {
+    rows.push({
+      label: "Sub-features", body: <div className="ws-lines">
+        {f.subFeatures.map((s) => (
+          <span key={s.id}>{link(s.id, s.title)} · {STATE_WORDS[s.state as FamilyState] ?? s.state}{s.headline ? ` · ${s.headline}` : ""}</span>
+        ))}
+      </div>,
+    });
   }
   if (saved?.next) rows.push({ label: "Next", body: <span className="ws-next">{saved.next}</span> });
   if (f.broken.length || saved?.broken) {

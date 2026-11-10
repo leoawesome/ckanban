@@ -374,6 +374,12 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .card-family-line.fail { color: var(--err); font-weight: 600; }
 /* Its own huddle working (cardState.ts cardHuddleLine): blue, like a working card's stripe. */
 .card-family-line.card-huddle-line { color: var(--info); }
+/* A sub-feature's "Part of …" and a shown task's "Task of …" chip on top of its card; the Family tab's "Sub-feature" chip. */
+.card-part { margin-bottom: 4px; min-width: 0; }
+.part-chip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+  font-size: var(--fs-2xs); font-weight: 600; line-height: 1.5; border-radius: var(--r-pill); padding: 0 8px; background: var(--accent-soft); color: var(--accent-text); }
+.part-chip.task { background: var(--warn-soft); color: var(--warn); }
+.card-shown-note { margin-top: 3px; font-size: var(--fs-2xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-via { margin-top: 3px; font-size: var(--fs-2xs); color: var(--muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A tool ticket's chat: its feature is in charge. */
 .tool-note { margin: 8px 12px 0; padding: 6px 10px; border-radius: var(--r-sm); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); }
@@ -3851,6 +3857,10 @@ button.tag-chip:hover { border-color: currentColor; }
 .ft-title { line-height: 1.35; overflow-wrap: anywhere; }
 .ft-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; font-size: var(--fs-2xs); color: var(--muted); }
 .ft-sum { font-weight: 500; }
+.ft-actions { flex: none; display: flex; align-items: center; gap: 8px; font-size: var(--fs-2xs); color: var(--muted); cursor: default; }
+.show-on-board { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: var(--fs-sm); }
+.ft-show { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap; }
+.ft-sub { margin-right: 6px; }
 .ft-cost { margin-left: auto; font-variant-numeric: tabular-nums; }
 .ft-st { flex: none; font-size: var(--fs-2xs); font-weight: 600; padding: 0 7px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .ft-st.done { background: var(--ok-soft); color: var(--ok); }

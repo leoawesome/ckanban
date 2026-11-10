@@ -6,7 +6,7 @@ import { chmodSync, existsSync, rmSync, readFileSync, renameSync, writeFileSync 
 import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { familyOf, hiddenTool, mainTicketOf, withYouTool } from "../../web/src/family";
+import { featureRows, hiddenTool, mainTicketOf, withYouTool } from "../../web/src/family";
 import { type AttentionKind, type HostHuddle, ticketAttention } from "./attention";
 import { stepWait } from "./main-ticket";
 import type { Bus } from "./events";
@@ -817,7 +817,8 @@ export class Notifier {
     // ticket hasn't seen it and won't be woken for it (attentionFor's rule).
     const handling = this.o.isRunning(slug, id) || ((t.plan?.state === "running" || t.plan?.state === "finishing") && (!!t.plan.awaiting || !!t.plan.inbox?.length));
     const out: StepAsk[] = [];
-    for (const r of familyOf(tickets, id)) {
+    // Its own tasks only: a sub-feature's tasks ask in the sub-feature's chat (featureRows stops there).
+    for (const r of featureRows(tickets, id)) {
       if (r.ticket.id === id || !hiddenTool(r.ticket)) continue;
       const sw = stepWait(r.ticket, this.o.isRunning(slug, r.ticket.id));
       if (sw?.attention !== "questions") continue;

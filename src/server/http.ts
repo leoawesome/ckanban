@@ -66,7 +66,7 @@ import { changesPrompt, HELP_KINDS, Helper, HelpError, newId, recapAvailable, re
 import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, UsageCache, windowsNeeded } from "./ticket-usage";
 import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
-import { familyOf, familyRoot, fitParent, groupsOf, hiddenTool, levelOf, MAX_LEVEL, withYouTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
+import { familyOf, familyRoot, featureRoot, fitParent, groupsOf, hiddenTool, levelOf, MAX_LEVEL, withYouTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
 import { STATUS_FIELDS, type StatusPatch } from "./feature";
 import { createdFromDraft } from "../../web/src/proposalMatch";
 import type { Store } from "./store";
@@ -674,6 +674,12 @@ export function createServer(deps: ServerDeps) {
       runCap: runCapFor(t, p),
       /** A main ticket: its tool tickets working now (the card shows In progress meanwhile, wherever the user put it). */
       ...(t.main ? { familyWorking: board.familyWorking(p.slug, t.id), stepsRunning: board.stepsRunning(p.slug, t.id), familyCard: board.familyCard(p.slug, t.id) } : {}),
+      /** A sub-feature (a main ticket linked under another): the feature it is part of, for its "Part of …" chip. */
+      ...(t.main && parentLink(t) ? { subFeatureOf: (() => {
+        const up = store.getTicket(p.slug, parentLink(t)!.id);
+        const top = up ? featureRoot(store.listTickets(p.slug), up.id) : undefined;
+        return top ? { id: top.id, title: top.title } : null;
+      })() } : {}),
       /** A "with you" tool ticket's main ticket: its card's "↳ feature" chip; any tool ticket's chat names it. */
       ...(t.tool ? { mainTicket: (() => {
         const m = board.mainOf(p.slug, t);
@@ -1063,7 +1069,7 @@ export function createServer(deps: ServerDeps) {
             running: board.isRunning(p.slug, t.id), updatedAt: t.updatedAt,
             body: cap(t.body), summary: cap(store.lastAiComment(p.slug, t.id)), prUrl: t.prUrl,
             ...(hiddenTool(t) ? { mainTicket: (() => {
-              const main = board.mainOf(p.slug, t) ?? familyRoot(store.listTickets(p.slug), t.id);
+              const main = board.mainOf(p.slug, t) ?? featureRoot(store.listTickets(p.slug), t.id);
               return main && main.id !== t.id ? { id: main.id, title: main.title } : null;
             })() } : {}),
           });
@@ -1833,11 +1839,12 @@ export function createServer(deps: ServerDeps) {
         if (!title) throw new HttpError(400, "title is required");
         const fromRun = req.headers.get(RUN_HEADER)?.split("/");
         // create_ticket's main: true: a new main ticket, like the user's own New ticket, made because the user asked for
-        // it in a message they typed in the calling chat (on its own board, or this one). Top level only.
+        // it in a message they typed in the calling chat (on its own board, or this one). Top level, or with partOf a
+        // sub-feature of another main ticket (the family rules decide where: Board.createTicket, linkProblem).
         const wantMain = b.main === true;
         if (b.main !== undefined && b.main !== null && typeof b.main !== "boolean") throw new HttpError(400, "main must be true or false");
         if (wantMain) {
-          if (b.partOf || b.parentId) throw new HttpError(400, "a main ticket is top level: leave out partOf, partOfThisTicket and parentId");
+          if (b.parentId) throw new HttpError(400, "a main ticket isn't part of a plan: leave out parentId (use partOf to make it a sub-feature)");
           if (b.sessionId) throw new HttpError(400, "a main ticket can't be made from a linked session: leave out sessionId");
           if (fromRun && (req.headers.get(HUDDLE_HEADER) || !fromRun[1] || !board.userAskedRun(fromRun[0], fromRun[1]))) {
             throw new HttpError(403, "main: true needs a message the user typed in this chat: work runs, follow-ups, plan wake-ups, " +
@@ -1865,10 +1872,11 @@ export function createServer(deps: ServerDeps) {
         const placed: string[] = [];
         if (partOf && fromRun && !wantMain) {
           const all = store.listTickets(slug);
-          const top = familyRoot(all, partOf);
-          // From a run, partOf is any ticket of the run's own family (its feature at any depth: groups, rounds, other
-          // tool tickets, also while its main ticket sits in Done), or another open feature's top ticket or group.
-          const ownFamily = !!ownRun && !!top && familyRoot(all, ownRun.id)?.id === top.id;
+          const top = featureRoot(all, partOf);
+          // From a run, partOf is any ticket of the run's own feature (at any depth: groups, rounds, other tool tickets,
+          // also while its main ticket sits in Done; a sub-feature's runs stay in it), or another open feature's top
+          // ticket or group.
+          const ownFamily = !!ownRun && !!top && featureRoot(all, ownRun.id)?.id === top.id;
           const feature = !!top && isFeature(all, top) && (top.id === partOf || groupsOf(all, top.id).some((g) => g.id === partOf));
           if (!partOfVia && !ownFamily && !feature) {
             // Anything else never blocks the work: it goes where partOfThisTicket puts it (a chat from another board: top level).
@@ -2039,7 +2047,9 @@ export function createServer(deps: ServerDeps) {
         // Family: partOf a ticket id links it (null unlinks); parentSuggestion null is Not related.
         if (b.partOf !== undefined && b.partOf !== null && (typeof b.partOf !== "string" || !b.partOf)) throw new HttpError(400, "partOf must be a ticket id or null");
         if (b.parentSuggestion !== undefined && b.parentSuggestion !== null) throw new HttpError(400, "parentSuggestion can only be cleared (null)");
-        const linkOnly = Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "partOf" || k === "parentSuggestion");
+        // Show on board: a task (tool ticket) also gets a card; false hides it again.
+        if (b.showOnBoard !== undefined && typeof b.showOnBoard !== "boolean") throw new HttpError(400, "showOnBoard must be true or false");
+        const linkOnly = Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "partOf" || k === "parentSuggestion" || k === "showOnBoard");
         if (b.mode === "auto" || b.mode === "interview") patch.mode = b.mode;
         if (typeof b.expectedBody === "string") patch.expectedBody = b.expectedBody;
         if (typeof b.title === "string") patch.title = b.title;
@@ -2113,6 +2123,7 @@ export function createServer(deps: ServerDeps) {
         try {
           if (b.partOf !== undefined) t = await board.setPartOf(slug, id, b.partOf);
           else if (b.parentSuggestion === null) t = board.dismissParentSuggestion(slug, id);
+          if (typeof b.showOnBoard === "boolean" && (b.partOf === undefined || t.tool)) t = board.setShowOnBoard(slug, id, b.showOnBoard);
           if (!linkOnly) t = await board.updateTicket(slug, id, patch, { byUser: !req.headers.get(RUN_HEADER) });
         } catch (e) {
           if (e instanceof ConflictError) throw e;
@@ -2171,6 +2182,7 @@ export function createServer(deps: ServerDeps) {
     if (action === "family" && m === "GET") {
       return json(familyOf(store.listTickets(slug), id).map(({ ticket: t, depth, how }) => ({
         id: t.id, title: t.title, status: t.status, depth, how: how && LINK_WORDS[how], parent: depth ? parentLink(t)?.id ?? null : null,
+        ...(depth && t.main ? { subFeature: true } : t.tool ? { task: true, ...(t.showOnBoard ? { showOnBoard: true } : {}) } : {}),
         sessionId: t.sessionId, resumeCommand: t.sessionId ? resumeCommand(t.workdir ?? t.worktree ?? profile.path, t.sessionId) : null,
         prUrl: t.prUrl, updatedAt: t.updatedAt, result: store.lastAiComment(slug, t.id),
       })));
@@ -2185,6 +2197,8 @@ export function createServer(deps: ServerDeps) {
         const out = store.outputsPath(slug, t.id);
         return {
           id: t.id, depth, parent: depth ? parentLink(t)?.id ?? null : null,
+          // A sub-feature row (a main ticket under another): its own card and chat; its tasks are its own.
+          ...(depth && t.main ? { subFeature: true, tasks: board.toolTickets(slug, t.id, tickets).length } : {}),
           model: t.model ?? profile.model ?? null, effort: t.effort ?? profile.effort ?? null,
           costUsd: spend.ticket(slug, t.id).costUsd + huddles.ticketSpend(slug, t.id).costUsd,
           needsYou: !!v.attention && v.attention.kind !== "review",
@@ -2206,7 +2220,7 @@ export function createServer(deps: ServerDeps) {
       const caller = ownRun(req, slug);
       const all = store.listTickets(slug);
       let by: string | null = null;
-      if (from !== null && !(caller && familyRoot(all, caller)?.id === familyRoot(all, id)?.id)) {
+      if (from !== null && !(caller && featureRoot(all, caller)?.id === featureRoot(all, id)?.id)) {
         by = askedBy(req, slug);
         if (!by && from !== slug) throw otherBoard("updating a feature's status", slug, from);
         if (!by) {
@@ -2233,7 +2247,7 @@ export function createServer(deps: ServerDeps) {
         if (!Array.isArray(b.prs) || b.prs.some((u: unknown) => typeof u !== "string" || !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+$/.test(u))) {
           throw new HttpError(400, "prs must be a list of GitHub pull request URLs, e.g. https://github.com/owner/repo/pull/12");
         }
-        const top = familyRoot(store.listTickets(slug), id);
+        const top = featureRoot(store.listTickets(slug), id);
         if (top && b.prs.length) {
           const add = addPrs(top, b.prs.slice(0, 20));
           if ("prs" in add) board.patchPrs(slug, top.id, add as Pick<Ticket, "prs" | "prUrl">);
@@ -2255,6 +2269,20 @@ export function createServer(deps: ServerDeps) {
         throw new HttpError(400, (e as Error).message);
       }
     }
+    // "Make it its own work": a task (tool ticket) becomes a main ticket with its own card and chat; still linked, it is a
+    // sub-feature (Board.makeOwnWork). The user, or a chat answering the user's own message (askedBy).
+    if (action === "own-work" && m === "POST") {
+      const from = runBoard(req);
+      if (from !== null && !askedBy(req, slug)) {
+        if (from !== slug) throw otherBoard("making a task its own work", slug, from);
+        throw new HttpError(403, "making a task its own work works from a chat, in a reply to a message the user typed there");
+      }
+      try {
+        return json(view(profile, await board.makeOwnWork(slug, id)));
+      } catch (e) {
+        throw new HttpError(400, (e as Error).message);
+      }
+    }
     // Gather tickets into a feature: the user (Family tab), or a chat answering the user's own message (askedBy): the
     // feature's own, another one on this board or one on another board. Credited when it isn't the feature's own.
     if (action === "gather" && m === "POST") {
@@ -2266,7 +2294,7 @@ export function createServer(deps: ServerDeps) {
         by = askedBy(req, slug);
         if (!by && from !== slug) throw otherBoard("gathering tickets", slug, from);
         if (!by) throw new HttpError(403, "gathering tickets works from a chat, in a reply to a message the user typed there");
-        if (caller && familyRoot(all, caller)?.id === familyRoot(all, id)?.id) by = null;
+        if (caller && featureRoot(all, caller)?.id === featureRoot(all, id)?.id) by = null;
       }
       const b = await body(req);
       if (!Array.isArray(b.tickets) || !b.tickets.length) throw new HttpError(400, "tickets must list { id, group } entries");

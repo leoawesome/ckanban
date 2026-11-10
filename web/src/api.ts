@@ -296,6 +296,8 @@ export interface FeatureStatus {
     prs: { url: string; number: number | null; state: "open" | "merged" | "closed" | "unknown"; ticketId: string; ticketTitle: string; note?: string }[];
     /** The feature's saved changes, newest first (history), or the files changed in a folder without one; file: the full list. */
     changes?: { kind: "history" | "files"; items: { id?: string; text: string }[]; file?: string } | null;
+    /** Sub-features of this feature, one line each: their own state and status headline. */
+    subFeatures?: { id: string; title: string; state: string; headline?: string }[];
   };
   sections: { key: string; label: string; text: string }[];
   path: string;
@@ -378,6 +380,8 @@ export interface Ticket {
   main?: boolean;
   /** A tool ticket: made by Claude inside a main ticket's family; reports to its parent. */
   tool?: boolean;
+  /** "Show on board": a task that also gets a card (its Your turn and needs-you still go to its main ticket's chat). */
+  showOnBoard?: boolean | null;
   /** Tool tickets' results, shown in this chat as cards. */
   results?: ResultCard[];
   /** Grey board notes in this chat (a "with you" step started waiting); they never wake Claude. */
@@ -390,6 +394,8 @@ export interface Ticket {
   familyCard?: FamilyCardInfo | null;
   /** A tool ticket: the main ticket it works for (a "with you" card's chip, the chat's note). */
   mainTicket?: { id: string; title: string } | null;
+  /** A sub-feature (a main ticket linked under another ticket): the feature it is part of, for its "Part of …" chip. */
+  subFeatureOf?: { id: string; title: string } | null;
   /** A test ticket's result. */
   verdict?: "passed" | "problem" | null;
   /** On a feature's top ticket: when its "Where we are" status last changed. */
@@ -1429,6 +1435,10 @@ export interface FamilyCardInfo {
   waiting: { id: string; label: string; attention: string; since: string } | null;
   /** "With you" steps waiting for the user's answer in this chat, oldest first. */
   needsYou?: { id: string; label: string; attention: string; since: string }[];
+  /** Its sub-features (main tickets linked under it), oldest first; working: it or anything under it works. Missing from an older server. */
+  subFeatures?: { id: string; title: string; working: boolean }[];
+  /** How many sub-features are working now: "· 1 sub-feature running". Counted once each in working. */
+  subFeaturesRunning?: number;
 }
 
 /** A ticket on any board, as the ⌘K command bar lists it. */
@@ -1754,6 +1764,10 @@ export const api = {
   deleteTicket: (slug: string, id: string) => req<void>("DELETE", t(slug, id)),
   /** Part of parent's family (null unlinks). */
   setPartOf: (slug: string, id: string, parent: string | null) => req<Ticket>("PATCH", t(slug, id), { partOf: parent }),
+  /** "Show on board" for a task: it gets a card (true) or lives in its feature only again (false). */
+  setShowOnBoard: (slug: string, id: string, on: boolean) => req<Ticket>("PATCH", t(slug, id), { showOnBoard: on }),
+  /** "Make it its own work": a task becomes its own main ticket (a sub-feature while it stays linked). */
+  makeOwnWork: (slug: string, id: string) => req<Ticket>("POST", `${t(slug, id)}/own-work`),
   /** Not related: the board doesn't suggest a parent for this ticket again. */
   dismissParentSuggestion: (slug: string, id: string) => req<Ticket>("PATCH", t(slug, id), { parentSuggestion: null }),
   /** Find links: Claude's suggested parents for tickets without one (nothing changes until each is set). */

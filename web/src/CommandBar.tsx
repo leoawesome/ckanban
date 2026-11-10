@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, COLUMNS, type Profile, type Ticket, type TicketRow } from "./api";
 import { avatarColor, avatarLetter } from "./avatar";
-import { hiddenTool, mainTicketOf } from "./family";
+import { mainTicketOf, onBoard } from "./family";
 import { fuzzyMatch, highlightRuns, rankTickets, type Snippet } from "./fuzzy";
 import { CheckIcon, SearchIcon } from "./icons";
 import { useFocusTrap, useLayer } from "./layers";
@@ -69,9 +69,9 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
     const summaries = new Map((others ?? []).filter((r) => r.profile === current).map((r) => [r.id, r.summary]));
     return [
       ...(here ? tickets.map((t) => {
-        // A hidden tool ticket stands for its main ticket's card.
-        const main = hiddenTool(t) ? mainTicketOf(tickets, t.id) : undefined;
-        return rowOf(here, t, summaries.get(t.id) ?? "", main ? { id: main.id, title: main.title } : hiddenTool(t) ? null : undefined);
+        // A hidden task stands for its main ticket's card; one shown on the board is its own card.
+        const main = !onBoard(t) ? mainTicketOf(tickets, t.id) : undefined;
+        return rowOf(here, t, summaries.get(t.id) ?? "", main ? { id: main.id, title: main.title } : !onBoard(t) ? null : undefined);
       }) : []),
       ...(others ?? []).filter((r) => r.profile !== current),
     ];

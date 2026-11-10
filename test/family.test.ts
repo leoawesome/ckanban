@@ -170,7 +170,7 @@ test("a failing or unknown suggestion shows nothing; linking refuses loops and m
   expect((await patch(t.id, { partOf: u.id })).status).toBe(200);
   const loop = await patch(u.id, { partOf: t.id });
   expect(loop.status).toBe(400);
-  expect(((await loop.json()) as any).error).toContain("loop");
+  expect(((await loop.json()) as any).error).toBe(`"Lonely" is already inside "Also lonely", so "Also lonely" can't go under it.`);
   expect((await patch(u.id, { partOf: "t_missing" })).status).toBe(400);
   expect((await patch(u.id, { partOf: 5 })).status).toBe(400);
 });

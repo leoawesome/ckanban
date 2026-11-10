@@ -2,7 +2,7 @@
 // status, a short view of the clicked row, the plan controls of a planner, and "Add tickets…" (GatherDialog).
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Ticket } from "./api";
-import { childrenByParent, familyOf, familyState, groupsOf, groupSummary, MAX_LEVEL, matchWords, settled, STATE_WORDS, type FamilyRow, type FamilyState } from "./family";
+import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, MAX_LEVEL, matchWords, settled, STATE_WORDS, subFeatureState, type FamilyRow, type FamilyState } from "./family";
 import { familyText } from "./FamilyPanel";
 import { Modal } from "./Modal";
 import { copyText } from "./share";
@@ -34,8 +34,13 @@ export const STATE_CLASS: Record<FamilyState, string> = {
   waiting: "wait", working: "work", done: "done", passed: "done", problem: "prob", failed: "prob", needs_you: "you", paused: "wait",
 };
 
-/** A row that holds others: a group or round, or any ticket with children. */
-const holds = (r: FamilyRow<Ticket>, kids: Map<string, unknown[]>) => (kids.get(r.ticket.id)?.length ?? 0) > 0 || r.ticket.kind === "group" || r.ticket.kind === "round";
+/** A sub-feature's row: one line with its task count and Open; its tasks are its own (featureRows leaves them out). */
+const subRow = (r: FamilyRow<Ticket>) => r.depth > 0 && !!r.ticket.main;
+
+/** A row that holds others: a group or round, or any ticket with children (never a sub-feature: it opens on its own). */
+const holds = (r: FamilyRow<Ticket>, kids: Map<string, unknown[]>) => !subRow(r) && ((kids.get(r.ticket.id)?.length ?? 0) > 0 || r.ticket.kind === "group" || r.ticket.kind === "round");
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, onError, onMoveToDone, onAddMore }: {
   slug: string;
@@ -48,7 +53,8 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
   onMoveToDone: () => void;
   onAddMore: () => void;
 }) {
-  const rows = useMemo(() => familyOf(tickets, ticket.id), [tickets, ticket.id]);
+  // Its own feature: a sub-feature is one row here, and opened it shows its own tasks.
+  const rows = useMemo(() => featureRows(tickets, ticket.id), [tickets, ticket.id]);
   const kids = useMemo(() => childrenByParent(tickets), [tickets]);
   const top = rows[0]?.ticket;
   const feature = useFeatureStatus(slug, ticket, tickets);
@@ -69,7 +75,12 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
   const [gathering, setGathering] = useState(false);
   const [report, setReport] = useState<{ title: string; text: string } | null>(null);
   if (!top) return null;
-  const below = (id: string): Ticket[] => (kids.get(id) ?? []).flatMap((c) => [c.ticket, ...below(c.ticket.id)]);
+  const below = (id: string): Ticket[] => (kids.get(id) ?? []).flatMap((c) => [c.ticket, ...(c.ticket.main ? [] : below(c.ticket.id))]);
+  const [acting, setActing] = useState<string | null>(null);
+  const act = (id: string, p: Promise<unknown>, done?: string) => {
+    setActing(id);
+    p.then(() => done && toast(done), (e) => onError((e as Error).message)).finally(() => setActing(null));
+  };
   const path = new Set<string>();
   {
     const at = rows.findIndex((r) => r.ticket.id === ticket.id);
@@ -129,7 +140,7 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
           const group = holds(r, kids) && r.depth > 0;
           const st = stateOf(t);
           const inside = group ? below(t.id) : [];
-          const groupState: FamilyState = group ? (inside.every((k) => settled(stateOf(k))) ? "done" : inside.some((k) => stateOf(k) === "needs_you") ? "needs_you" : "working") : st;
+          const groupState: FamilyState = subRow(r) ? subFeatureState(tickets, t.id, st) : group ? (inside.every((k) => settled(stateOf(k))) ? "done" : inside.some((k) => stateOf(k) === "needs_you") ? "needs_you" : "working") : st;
           const v = view.get(t.id);
           return (
             <div key={t.id} role="treeitem" aria-current={t.id === ticket.id ? "true" : undefined}
@@ -141,15 +152,34 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
                   if (holds(r, kids) && r.depth > 0) setOpen((o) => ({ ...o, [t.id]: !isOpen(r) }));
                 }}>{holds(r, kids) ? (isOpen(r) || r.depth === 0 ? "▾" : "▸") : ""}</button>
               <span className="ft-body">
-                <span className="ft-title">{t.important && <ImportantStar />}{t.title}</span>
+                <span className="ft-title">{subRow(r) && <span className="part-chip ft-sub">Sub-feature</span>}{t.important && <ImportantStar />}{t.title}</span>
                 <span className="ft-meta">
-                  {group
+                  {subRow(r)
+                    ? <span className="ft-sum">{plural(featureRows(tickets, t.id).length - 1, "task")}</span>
+                    : group
                     ? <span className="ft-sum">{groupSummary(inside.map((k) => ({ kind: k.kind, state: stateOf(k) })))}</span>
                     : <span className="ft-model">{[t.kind ? KIND_WORDS[t.kind] : null, modelLabel(v?.model ?? t.model)].filter(Boolean).join(" · ")}</span>}
                   <span className={`ft-st ${STATE_CLASS[groupState]}`}>{STATE_WORDS[groupState]}</span>
                   {v && cost(r) > 0 && <span className="ft-cost">{money(cost(r))}</span>}
                 </span>
               </span>
+              {(subRow(r) || (t.tool && r.depth > 0)) && (
+                <span className="ft-actions" onClick={(e) => e.stopPropagation()}>
+                  {subRow(r) ? (
+                    <button className="mini-link" onClick={() => onOpenTicket(t.id)} title={`Open ${t.title}: its own chat and tasks`}>Open</button>
+                  ) : (
+                    <>
+                      <label className="ft-show" title={t.showOnBoard ? "Hide its card again; it stays in this list" : "Give it its own card on the board; its questions still come to this chat"}>
+                        <input type="checkbox" checked={!!t.showOnBoard} disabled={acting === t.id}
+                          onChange={(e) => act(t.id, api.setShowOnBoard(slug, t.id, e.target.checked))} /> Show on board
+                      </label>
+                      <button className="mini-link" disabled={acting === t.id || !!t.running}
+                        title={t.running ? "Wait until it stops working" : `Becomes its own work with its own card, chat and tasks, still part of ${rows[0]?.ticket.title ?? "this feature"}`}
+                        onClick={() => act(t.id, api.makeOwnWork(slug, t.id), `${t.title} is now its own work`)}>Make it its own work</button>
+                    </>
+                  )}
+                </span>
+              )}
             </div>
           );
         })}

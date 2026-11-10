@@ -13,6 +13,8 @@ export interface FamilyTicket {
   partOf?: string | null;
   partOfVia?: "chat" | null;
   parentId?: string | null;
+  /** A main ticket: linked under another ticket, it is a sub-feature (its own card, chat and tasks). */
+  main?: boolean;
 }
 
 /** How a ticket hangs on its parent; partOf wins over a plan. null: no parent link. */
@@ -101,12 +103,48 @@ export function familyNearby<T extends FamilyTicket>(rows: FamilyRow<T>[], id: s
 }
 
 /**
- * The tickets of a main ticket's family working now: running, or Ready / In progress (queued or about to run). Tool
- * tickets and tickets the user added count; the main ticket itself never does. One rule for the server's card
- * (main-ticket.ts familyCard, board.familyWorking) and the main ticket's chat (its "Working:" line).
+ * The items of a main ticket's family working now: running, or Ready / In progress (queued or about to run). Tool
+ * tickets and tickets the user added count; the main ticket itself never does. A sub-feature (a main ticket below it)
+ * counts as one item while it or anything under it works; its own tasks never count apart. family: tickets of the
+ * family with their links (familyOf or familyBelow rows; tickets not under mainId are left out). One rule for the
+ * server's card (main-ticket.ts familyCard, board.familyWorking) and the main ticket's chat (its "Working:" line).
  */
-export function workingInFamily<T extends { id: string; status: string }>(family: T[], mainId: string, running: (t: T) => boolean): T[] {
-  return family.filter((t) => t.id !== mainId && (running(t) || t.status === "ready" || t.status === "in_progress"));
+export function workingInFamily<T extends FamilyTicket & { status: string }>(family: T[], mainId: string, running: (t: T) => boolean): T[] {
+  const byId = new Map(family.map((t) => [t.id, t]));
+  // What t counts as under mainId: itself, or the outermost sub-feature it sits in; undefined when it isn't under mainId.
+  const itemOf = (t: T): T | undefined => {
+    let sub: T | undefined;
+    const seen = new Set<string>();
+    for (let cur: T | undefined = t; cur && !seen.has(cur.id);) {
+      seen.add(cur.id);
+      if (cur.main) sub = cur;
+      const up = parentLink(cur)?.id;
+      if (!up) return undefined;
+      if (up === mainId) return sub ?? t;
+      cur = byId.get(up);
+    }
+    return undefined;
+  };
+  const out = new Map<string, T>();
+  for (const t of family) {
+    if (t.id === mainId || !(running(t) || t.status === "ready" || t.status === "in_progress")) continue;
+    const item = itemOf(t);
+    if (item && !out.has(item.id)) out.set(item.id, item);
+  }
+  return [...out.values()];
+}
+
+/** The sub-features of mainId working now (workingInFamily's sub-feature items): the card's "· 1 sub-feature running". */
+export function subFeaturesWorking<T extends FamilyTicket & { status: string }>(family: T[], mainId: string, running: (t: T) => boolean): T[] {
+  return workingInFamily(family, mainId, running).filter((t) => t.main);
+}
+
+/**
+ * A sub-feature's row in its parent's Tasks tab: Working while it or anything of its own works (its tasks too, like
+ * the parent's status says), else its own state.
+ */
+export function subFeatureState<T extends FamilyTicket & { status: string; running?: boolean | null }>(tickets: T[], subId: string, own: FamilyState): FamilyState {
+  return workingInFamily(familyBelow(tickets, subId), subId, (t) => !!t.running).length ? "working" : own;
 }
 
 /** Linking id under parent would make a ticket its own ancestor. */
@@ -131,11 +169,18 @@ export type TicketKind = "explore" | "build" | "test" | "review" | "fix" | "grou
 export const TICKET_KINDS: TicketKind[] = ["explore", "build", "test", "review", "fix", "group", "round", "with_you"];
 
 /**
- * A tool ticket the board hides: no card, no column count, no Your turn; it lives in its main ticket's Family tab and
- * reports there. "With you" tool tickets are hidden too: their messages and questions show in the main ticket's chat
- * and their "needs you" on its card. Old plan children have no tool flag.
+ * A tool ticket ("task"): no Your turn of its own; it lives in its main ticket's Family tab and reports there. "With
+ * you" tool tickets too: their messages and questions show in the main ticket's chat and their "needs you" on its card.
+ * Old plan children have no tool flag. A task shown on the board (showOnBoard) is still one: its Your turn and needs-you
+ * go to its main ticket's chat; only its card shows (onBoard).
  */
 export const hiddenTool = (t: { tool?: boolean; kind?: string | null } | null | undefined): boolean => !!t?.tool;
+
+/** A task the user gave a card ("Show on board"). Old tickets have no flag: hidden as before. */
+export const shownTool = (t: { tool?: boolean; showOnBoard?: boolean | null } | null | undefined): boolean => !!t?.tool && !!t?.showOnBoard;
+
+/** The board shows a card for t (columns, counts, search, filters): any ticket but a task that isn't shown on the board. */
+export const onBoard = (t: { tool?: boolean; showOnBoard?: boolean | null } | null | undefined): boolean => !!t && (!t.tool || !!t.showOnBoard);
 
 /** A "with you" tool ticket: a step that needs the user live; it may ask and notify the user (in its main ticket's chat). */
 export const withYouTool = (t: { tool?: boolean; kind?: string | null } | null | undefined): boolean => !!t?.tool && t?.kind === "with_you";
@@ -169,13 +214,17 @@ export interface FeatureTicket extends FamilyTicket {
   running?: boolean;
 }
 
-/** id's level in its family: 0 for the top ticket (or a ticket that isn't on the board). */
+/**
+ * id's level in its own feature: 0 for the top ticket and for any main ticket (a sub-feature starts its own count), 1
+ * for a ticket right under one, and so on. 0 for a ticket that isn't on the board.
+ */
 export function levelOf<T extends FamilyTicket>(tickets: T[], id: string): number {
   const byId = new Map(tickets.map((t) => [t.id, t]));
   let n = 0;
   const seen = new Set<string>();
   for (let cur = byId.get(id); cur && !seen.has(cur.id); n++) {
     seen.add(cur.id);
+    if (cur.main) return n;
     const p = parentIn(byId, cur);
     if (!p) return n;
     cur = p.parent;
@@ -184,8 +233,9 @@ export function levelOf<T extends FamilyTicket>(tickets: T[], id: string): numbe
 }
 
 /**
- * Where a new ticket linked under id may hang so its family stays at most MAX_LEVEL deep: id itself, or its nearest
- * ancestor that leaves room. A run's partOf too deep in its own feature moves up instead of failing.
+ * Where a new ticket linked under id may hang so its feature stays at most MAX_LEVEL deep: id itself, or its nearest
+ * ancestor that leaves room. A run's partOf too deep in its own feature moves up instead of failing; it never climbs
+ * past a main ticket (a sub-feature's tickets stay in it).
  */
 export function fitParent<T extends FamilyTicket>(tickets: T[], id: string): string {
   const byId = new Map(tickets.map((t) => [t.id, t]));
@@ -200,10 +250,13 @@ export function fitParent<T extends FamilyTicket>(tickets: T[], id: string): str
   return cur?.id ?? id;
 }
 
-/** A family's top ticket is a feature: not Done, and 2 or more other tickets in its family or a status already. */
+/**
+ * A feature's top ticket (a family's top ticket, or a sub-feature) is a feature: not Done, and 2 or more other tickets
+ * in its own feature (featureRows) or a status already.
+ */
 export function isFeature<T extends FeatureTicket>(tickets: T[], top: T): boolean {
-  if (top.status === "done" || familyRoot(tickets, top.id)?.id !== top.id) return false;
-  return !!top.statusAt || familyOf(tickets, top.id).length >= 3;
+  if (top.status === "done" || featureRoot(tickets, top.id)?.id !== top.id) return false;
+  return !!top.statusAt || featureRows(tickets, top.id).length >= 3;
 }
 
 /**
@@ -213,29 +266,30 @@ export function isFeature<T extends FeatureTicket>(tickets: T[], top: T): boolea
  */
 export function plannedMain<T extends FeatureTicket & { main?: boolean }>(tickets: T[], t: T): "family" | "status" | null {
   if (!t.main) return null;
-  if (familyOf(tickets, t.id).length > 1) return "family";
+  if (featureRows(tickets, t.id).length > 1) return "family";
   return t.statusAt ? "status" : null;
 }
 
-/** The open feature id belongs to (its family's top ticket), or null. */
+/** The open feature id belongs to (its own feature's top: featureRoot), or null. */
 export function featureOf<T extends FeatureTicket>(tickets: T[], id: string): T | null {
-  const top = familyRoot(tickets, id);
+  const top = featureRoot(tickets, id);
   return top && isFeature(tickets, top) ? top : null;
 }
 
-/** Every open feature with its family (familyOf order), working out the families once. */
+/** Every open feature (sub-features too) with its own rows (featureRows order), working out the families once. */
 export function openFeatures<T extends FeatureTicket>(tickets: T[]): { top: T; rows: FamilyRow<T>[] }[] {
   const byId = new Map(tickets.map((t) => [t.id, t]));
   const kids = childrenByParent(tickets);
   const out: { top: T; rows: FamilyRow<T>[] }[] = [];
   for (const top of tickets) {
-    if (top.status === "done" || parentIn(byId, top)) continue;
+    if (top.status === "done" || (parentIn(byId, top) && !top.main)) continue;
     const rows: FamilyRow<T>[] = [];
     const seen = new Set<string>();
     const walk = (t: T, depth: number, how: LinkHow | null) => {
       if (seen.has(t.id)) return;
       seen.add(t.id);
       rows.push({ ticket: t, depth, how });
+      if (depth > 0 && t.main) return;
       for (const c of kids.get(t.id) ?? []) walk(c.ticket, depth + 1, c.how);
     };
     walk(top, 0, null);
@@ -253,19 +307,137 @@ const ROUND_RE = /^testing round (\d+)\b/i;
 
 /** "Testing round N" for a new round in the family of topId: one more than the highest round number there. */
 export function nextRoundTitle<T extends FeatureTicket>(tickets: T[], topId: string | null): string {
-  const rows = topId ? familyOf(tickets, topId) : [];
+  const rows = topId ? featureRows(tickets, topId) : [];
   const n = rows.reduce((m, r) => Math.max(m, Number(ROUND_RE.exec(r.ticket.title)?.[1] ?? 0)), 0);
   return `Testing round ${n + 1}`;
 }
 
-/** The refusal for a link that would go below MAX_LEVEL: where to put the ticket instead. */
-export function tooDeepMessage<T extends FeatureTicket>(tickets: T[], parentId: string): string {
-  const top = familyRoot(tickets, parentId);
+/** Where a ticket fits instead: its feature's top ticket or one of its groups. */
+function whereInstead<T extends FeatureTicket>(tickets: T[], parentId: string): string {
+  const top = featureRoot(tickets, parentId);
   const groups = top ? groupsOf(tickets, top.id) : [];
-  const where = top
+  return top
     ? `under the feature "${top.title}" (${top.id})${groups.length ? ` or one of its groups: ${groups.map((g) => `"${g.title}" (${g.id})`).join(", ")}` : ""}`
     : "under the feature's top ticket or one of its groups";
-  return `That would put the ticket ${levelOf(tickets, parentId) + 1} levels deep; a feature keeps its tickets at most ${MAX_LEVEL} levels deep. Put it ${where}.`;
+}
+
+/** The refusal for a link that would go below MAX_LEVEL: where to put the ticket instead. */
+export function tooDeepMessage<T extends FeatureTicket>(tickets: T[], parentId: string): string {
+  return `That would put the ticket ${levelOf(tickets, parentId) + 1} levels deep; a feature keeps its tickets at most ${MAX_LEVEL} levels deep. Put it ${whereInstead(tickets, parentId)}.`;
+}
+
+// ---- Sub-features: a main ticket linked under another ticket ----
+
+/** A sub-feature: a main ticket linked under another ticket on the board. It keeps its card, chat, tasks and status. */
+export function isSubFeature<T extends FamilyTicket>(tickets: T[], t: T): boolean {
+  return !!t.main && !!parentIn(new Map(tickets.map((o) => [o.id, o])), t);
+}
+
+/**
+ * The top of id's own feature: up its links to the nearest main ticket (a sub-feature, for its own tickets), else the
+ * family's top ticket. A family walk for a main ticket starts and stops here.
+ */
+export function featureRoot<T extends FamilyTicket>(tickets: T[], id: string): T | undefined {
+  const byId = new Map(tickets.map((t) => [t.id, t]));
+  let cur = byId.get(id);
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    if (cur.main) return cur;
+    const p = parentIn(byId, cur);
+    if (!p || seen.has(p.parent.id)) break;
+    cur = p.parent;
+  }
+  return cur;
+}
+
+/**
+ * id's own feature from its top (featureRoot) down, in familyOf order with depth counted from that top. A sub-feature
+ * inside it is one row, without the tickets under it (those are the sub-feature's). Every walk for a main ticket uses
+ * this (its status, card, needs-you, Stop, Delete), so a parent never answers for a sub-feature's tasks.
+ */
+export function featureRows<T extends FamilyTicket>(tickets: T[], id: string): FamilyRow<T>[] {
+  const root = featureRoot(tickets, id);
+  if (!root) return [];
+  const kids = childrenByParent(tickets);
+  const out: FamilyRow<T>[] = [];
+  const seen = new Set<string>();
+  const walk = (t: T, depth: number, how: LinkHow | null) => {
+    if (seen.has(t.id)) return;
+    seen.add(t.id);
+    out.push({ ticket: t, depth, how });
+    if (depth > 0 && t.main) return;
+    for (const c of kids.get(t.id) ?? []) walk(c.ticket, depth + 1, c.how);
+  };
+  walk(root, 0, null);
+  return out;
+}
+
+/** The sub-features in id's own feature, at any level of it (familyOrder). */
+export function subFeaturesOf<T extends FamilyTicket>(tickets: T[], id: string): T[] {
+  return featureRows(tickets, id).filter((r) => r.depth > 0 && r.ticket.main).map((r) => r.ticket);
+}
+
+/** id and every ticket below it at any depth (sub-features and their tickets too), in familyOf order. */
+export function familyBelow<T extends FamilyTicket>(tickets: T[], id: string): T[] {
+  const kids = childrenByParent(tickets);
+  const out: T[] = [];
+  const seen = new Set<string>();
+  const walk = (t: T | undefined) => {
+    if (!t || seen.has(t.id)) return;
+    seen.add(t.id);
+    out.push(t);
+    for (const c of kids.get(t.id) ?? []) walk(c.ticket);
+  };
+  walk(tickets.find((t) => t.id === id));
+  return out;
+}
+
+/**
+ * Why linking `moved` (with every ticket under it) under parentId breaks the family rules, in plain words, or null when
+ * it may go there. moved: the ticket as it would be (a new ticket isn't on the board yet; main: true for a main ticket).
+ * The rules: one sub-feature level only (no main ticket under a sub-feature or anything inside one, and a main ticket
+ * that holds a sub-feature can't become one); a sub-feature sits at most MAX_LEVEL deep in its parent's feature; every
+ * other ticket at most MAX_LEVEL deep in its own feature (a sub-feature's tickets count from it, levelOf). subtree
+ * false: only the moved ticket's own depth (gather moves deeper ones up itself, and says so). One helper for every
+ * path: link, create, gather, plans and the "Moved up" fix. Loops are wouldLoop's.
+ */
+export function linkProblem<T extends FeatureTicket>(tickets: T[], moved: Pick<T, "id" | "title"> & { main?: boolean }, parentId: string, opts: { subtree?: boolean } = {}): string | null {
+  const known = tickets.some((t) => t.id === moved.id);
+  const sim: T[] = tickets.map((t) => (t.id === moved.id ? { ...t, ...moved, partOf: parentId, parentId: null } : t));
+  if (!known) sim.push({ status: "backlog", createdAt: "9999", ...moved, partOf: parentId, parentId: null } as unknown as T);
+  const byId = new Map(sim.map((t) => [t.id, t]));
+  if (!byId.has(parentId) || parentId === moved.id) return null;
+  const below = familyBelow(sim, moved.id);
+  const top = familyRoot(sim, moved.id);
+  // One sub-feature level: a main ticket in the moved part has no main ticket above it but its family's top one.
+  for (const m of below.filter((t) => t.main)) {
+    const seen = new Set<string>([m.id]);
+    for (let cur = parentIn(byId, m)?.parent; cur && !seen.has(cur.id); cur = parentIn(byId, cur)?.parent) {
+      seen.add(cur.id);
+      if (!cur.main || cur.id === top?.id) continue;
+      const holder = familyRoot(sim, cur.id) ?? cur;
+      return cur.id === moved.id
+        ? `"${moved.title}" has its own sub-feature "${m.title}", so it can't become part of "${holder.title}"; a sub-feature can't hold another sub-feature.`
+        : `"${cur.title}" is already part of "${holder.title}"; a sub-feature can't hold another sub-feature.`;
+    }
+  }
+  // Depth: a sub-feature's own place counts in its parent's feature, every other ticket in its own feature (levelOf).
+  const levelIn = (t: T) => {
+    const p = t.main ? parentIn(byId, t) : null;
+    return p ? levelOf(sim, p.parent.id) + 1 : levelOf(sim, t.id);
+  };
+  let deepest: { t: T; level: number } | null = null;
+  for (const t of opts.subtree === false ? below.slice(0, 1) : below) {
+    const level = levelIn(t);
+    if (level > MAX_LEVEL && (!deepest || level > deepest.level)) deepest = { t, level };
+  }
+  if (!deepest) return null;
+  if (deepest.t.id === moved.id) {
+    return `That would put "${moved.title}" ${deepest.level} levels deep; a feature keeps its tickets at most ${MAX_LEVEL} levels deep. Put it ${whereInstead(sim, parentId)}.`;
+  }
+  return `That would put "${deepest.t.title}" (under "${moved.title}") ${deepest.level} levels deep; a feature keeps its tickets at most ${MAX_LEVEL} levels deep. ` +
+    `Put "${moved.title}" higher up, ${whereInstead(sim, parentId)}, or move its deepest tickets up first.`;
 }
 
 /** How a family row reads: the words the Family tab and the status counts use. */

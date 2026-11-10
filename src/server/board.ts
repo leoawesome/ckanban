@@ -15,7 +15,7 @@ import { macBanner } from "./notify";
 import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
 import { recallBlock } from "./recall";
-import { familyOf, familyRoot, groupsOf, isFeature, levelOf, MAX_LEVEL, nextRoundTitle, parentLink, tooDeepMessage, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
+import { familyBelow, familyOf, featureRoot, featureRows, groupsOf, isFeature, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { followUpFor, followUpPlace } from "../../web/src/followUp";
@@ -2104,16 +2104,18 @@ export class Board {
    * Where a new ticket goes in its family: a round is titled "Testing round N" by the board and always hangs right under
    * the feature's top ticket (also when created under a group); any other link below level 2 is refused with a hint.
    */
-  private placeInFeature<T extends { title: string; kind?: TicketKind | null; partOf?: string; partOfVia?: "chat"; parentId?: string }>(slug: string, input: T): T {
+  private placeInFeature<T extends { title: string; kind?: TicketKind | null; partOf?: string; partOfVia?: "chat"; parentId?: string; main?: boolean }>(slug: string, input: T): T {
     const tickets = this.store.listTickets(slug);
     const parent = input.partOf ?? input.parentId ?? null;
     if (input.kind === "round") {
-      const top = parent ? familyRoot(tickets, parent) : undefined;
+      const top = parent ? featureRoot(tickets, parent) : undefined;
       const out = { ...input, title: nextRoundTitle(tickets, top?.id ?? null) };
       if (top && top.id !== parent) Object.assign(out, { partOf: top.id, partOfVia: undefined });
       return out;
     }
-    if (parent && tickets.some((t) => t.id === parent) && levelOf(tickets, parent) + 1 > MAX_LEVEL) throw new Error(tooDeepMessage(tickets, parent));
+    // A new main ticket under another is a sub-feature: the same rules as a link (linkProblem).
+    const problem = parent ? linkProblem(tickets, { id: "\u0000new", title: input.title, main: !!input.main }, parent) : null;
+    if (problem) throw new Error(problem);
     return input;
   }
 
@@ -2521,7 +2523,9 @@ export class Board {
         : t.parentId ? `belongs to plan ${t.parentId}`
         : t.status === "done" ? "already done"
         : t.error?.startsWith("corrupt") ? "its ticket file is corrupt"
-        : !t.partOf && levelOf(this.store.listTickets(slug), plannerId) + 1 > MAX_LEVEL ? tooDeepMessage(this.store.listTickets(slug), plannerId)
+        // A sub-feature keeps its own chat and tasks: a plan never takes it in (that would make it a normal ticket).
+        : t.main && parentLink(t) ? `"${t.title}" is a sub-feature with its own chat and tasks; a plan can't take it in`
+        : !t.partOf ? linkProblem(this.store.listTickets(slug), { id: t.id, title: t.title, main: false }, plannerId)
         : null;
       if (reason) {
         skipped.push({ id, reason });
@@ -3078,26 +3082,80 @@ export class Board {
    * while siblings depend on it), and a ticket made from another's card stops building on that ticket's work if it
    * hasn't started, so the family shows where the user put it.
    */
-  async setPartOf(slug: string, id: string, parent: string | null, via: "chat" | null = null): Promise<Ticket> {
+  async setPartOf(slug: string, id: string, parent: string | null, via: "chat" | null = null, opts: { subtree?: boolean } = {}): Promise<Ticket> {
     let t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
     if (parent !== null) {
       if (!this.store.getTicket(slug, parent)) throw new Error(`ticket ${parent} not found`);
       const without = this.store.listTickets(slug).map((o) => (o.id === id ? { ...o, parentId: null } : o));
       if (wouldLoop(without, id, parent)) {
-        throw new Error(parent === id ? "a ticket can't be part of itself" : `${parent} is already part of ${id}'s family below it; linking would make a loop`);
+        const p = this.store.getTicket(slug, parent)!;
+        throw new Error(parent === id ? `"${t.title}" can't be part of itself` : `"${p.title}" is already inside "${t.title}", so "${t.title}" can't go under it.`);
       }
-      if (levelOf(without, parent) + 1 > MAX_LEVEL) throw new Error(tooDeepMessage(without, parent));
+      // Depth (the whole part that moves) and one sub-feature level: never adjusted, refused with the reason.
+      const problem = linkProblem(without, t, parent, opts);
+      if (problem) throw new Error(problem);
     }
     if (t.parentId && t.parentId !== parent) t = await this.updateTicket(slug, id, { parentId: null });
     const patch: Partial<Ticket> = { partOf: parent, partOfVia: parent ? via : null, parentSuggestion: null, parentChecked: true };
-    // Linked under another ticket, it is no longer a main ticket of its own: it becomes a normal ticket there.
-    if (parent && t.main) patch.main = false;
+    // A main ticket linked under another stays a main ticket: a sub-feature with its own card, chat, tasks and schedules.
+    // A task unlinked from its feature never stays hidden without a main ticket: it becomes its own work on the board
+    // (a main ticket when tasks of its own hang under it, so they keep reporting to it).
+    if (!parent && t.tool) Object.assign(patch, this.ownWorkPatch(slug, t));
     // A ticket made from another's card that builds on its work in Review stops doing so once it moves away (not started yet).
     if (!t.tool && t.madeFrom && t.partOf === t.madeFrom && parent !== t.madeFrom && t.startFrom && !t.worktree) patch.startFrom = null;
     // Still in the same plan: that link already says it.
     if (parent && t.parentId === parent) Object.assign(patch, { partOf: null, partOfVia: null });
     return this.patch(slug, id, patch);
+  }
+
+  /** What a task becomes when it stops being one: its own work on the board (a main ticket when tasks hang under it, or always with main). */
+  private ownWorkPatch(slug: string, t: Ticket, main = false): Partial<Ticket> {
+    const hasTasks = familyBelow(this.store.listTickets(slug), t.id).some((o) => o.id !== t.id && o.tool);
+    return { tool: false, showOnBoard: null, ...(main || hasTasks ? { main: true } : {}) };
+  }
+
+  /**
+   * "Make it its own work": a task (tool ticket) becomes a main ticket with its own card and chat. Linked, it stays where
+   * it is as a sub-feature (refused with the reason when the family rules don't allow one there; unlinking always
+   * works); its plan link becomes a plain "part of" link, so its parent's plan no longer runs it or hears its results.
+   * Not while it runs.
+   */
+  async makeOwnWork(slug: string, id: string): Promise<Ticket> {
+    const t = this.store.getTicket(slug, id);
+    if (!t) throw new Error(`ticket ${id} not found`);
+    if (!t.tool) throw new Error(`"${t.title}" is already its own work`);
+    if (this.isRunning(slug, id)) throw new Error(`"${t.title}" is working right now: make it its own work once its run ends`);
+    const all = this.store.listTickets(slug);
+    const was = this.mainOf(slug, t);
+    const link = parentLink(t);
+    const parent = link ? all.find((o) => o.id === link.id) ?? null : null;
+    if (parent) {
+      const problem = linkProblem(all.map((o) => (o.id === id ? { ...o, parentId: null } : o)), { ...t, main: true }, parent.id);
+      if (problem) {
+        // Inside a sub-feature: say so about the task itself (linkProblem names the sub-feature).
+        const sub = featureRoot(all, parent.id);
+        if (sub?.main && parentLink(sub)) {
+          throw new Error(`"${t.title}" can't become its own work here: it is inside the sub-feature "${sub.title}", and a sub-feature can't hold another sub-feature. Unlink it first to make it top-level work.`);
+        }
+        throw new Error(`${problem} Unlink it instead to make it its own work at the top of the board.`);
+      }
+      if (t.parentId) await this.updateTicket(slug, id, { parentId: null });
+    }
+    const out = this.patch(slug, id, { ...this.ownWorkPatch(slug, t, true), ...(parent ? { partOf: parent.id, partOfVia: null } : {}) });
+    this.store.addComment(slug, id, "ai", parent
+      ? `Made its own work: a sub-feature of "${parent.title}" with its own card and chat. Tasks under it report here.`
+      : "Made its own work: its own card and chat on the board.");
+    if (was && was.id !== id) this.store.addComment(slug, was.id, "ai", `"${t.title}" (${t.id}) is now its own work${parent ? `, a sub-feature of "${parent.title}"` : ""}: its results go to its own chat.`);
+    return out;
+  }
+
+  /** "Show on board": a task gets a card like any ticket (on) or goes back to living in its feature only (off). */
+  setShowOnBoard(slug: string, id: string, on: boolean): Ticket {
+    const t = this.store.getTicket(slug, id);
+    if (!t) throw new Error(`ticket ${id} not found`);
+    if (!t.tool) throw new Error(`"${t.title}" already has its own card: only a task can be shown on the board`);
+    return this.patch(slug, id, { showOnBoard: on ? true : null });
   }
 
   /** Not related: the suggestion goes and the board doesn't suggest a parent for this ticket again. */
@@ -3281,9 +3339,9 @@ export class Board {
     const all = this.store.listTickets(slug);
     const main = all.find((t) => t.id === id);
     if (!main?.main) return null;
-    const family = familyOf(all, id).map((r) => r.ticket).filter((t) => t.id !== id);
+    const family = featureRows(all, id).map((r) => r.ticket).filter((t) => t.id !== id);
     let cost = 0;
-    for (const t of [main, ...family]) {
+    for (const t of familyBelow(all, id)) {
       try {
         cost += this.costOf(slug, t.id);
       } catch {}
@@ -3296,7 +3354,7 @@ export class Board {
    * ticket itself left out). Its card shows In progress meanwhile (columns.ts familyBusy) with familyCard's working line.
    */
   familyWorking(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
-    return workingInFamily(familyOf(tickets, id).map((r) => r.ticket), id, (t) => this.isRunning(slug, t.id)).length;
+    return workingInFamily(familyBelow(tickets, id), id, (t) => this.isRunning(slug, t.id)).length;
   }
 
   /**
@@ -3304,7 +3362,7 @@ export class Board {
    * Done or Backlog shows In progress meanwhile (columns.ts familyBusy); queued steps don't count there (parked, they wait).
    */
   stepsRunning(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
-    return familyOf(tickets, id).filter((r) => r.ticket.id !== id && r.ticket.tool && this.isRunning(slug, r.ticket.id)).length;
+    return featureRows(tickets, id).filter((r) => r.ticket.id !== id && r.ticket.tool && this.isRunning(slug, r.ticket.id)).length;
   }
 
   /** The flags a run of the ticket's chat gets (see executeOnce); contextSpec copies them for the Context panel. */
@@ -3350,11 +3408,16 @@ export class Board {
     if (t.main) {
       const now = this.store.getTicket(slug, t.id) ?? t;
       const planned = mainPlanned(this.store.listTickets(slug), now);
-      return { kind: "main", repo: session.repo, branch: session.inPlace ? null : now.branch ?? null, inPlace: session.inPlace, ...(now.plan?.state === "paused" ? { paused: true } : {}), ...(planned ? { planned } : {}) } satisfies MainRole;
+      const up = parentLink(now);
+      const above = up && this.store.getTicket(slug, up.id) ? featureRoot(this.store.listTickets(slug), up.id) : undefined;
+      return {
+        kind: "main", repo: session.repo, branch: session.inPlace ? null : now.branch ?? null, inPlace: session.inPlace, ...(now.plan?.state === "paused" ? { paused: true } : {}), ...(planned ? { planned } : {}),
+        ...(above ? { subFeatureOf: { id: above.id, title: above.title } } : {}),
+      } satisfies MainRole;
     }
     if (!t.tool) return undefined;
     const all = this.store.listTickets(slug);
-    const main = this.mainOf(slug, t) ?? familyRoot(all, t.id) ?? t;
+    const main = this.mainOf(slug, t) ?? featureRoot(all, t.id) ?? t;
     const parent = (t.parentId ? all.find((o) => o.id === t.parentId) : null) ?? main;
     const saved = readStatus(this.store.outputsPath(slug, main.id));
     let statusPath: string | null = null;
@@ -3538,7 +3601,18 @@ export class Board {
 
   /** The board's facts for a feature's status, its saved changes included (from the cache). */
   private facts(slug: string, tickets: Ticket[], topId: string, prNotes?: Record<string, string>): StatusFacts {
-    return { ...statusFacts(tickets, topId, (t) => this.waitsOnUser(slug, t.id), prNotes), changes: this.savedChanges(slug, tickets, topId) };
+    // A sub-feature is one line: working while it or anything under it works, with its own status's next step.
+    const sub = (t: Ticket) => ({
+      working: this.isRunning(slug, t.id) || t.status === "ready" || t.status === "in_progress" || this.familyWorking(slug, t.id, tickets) > 0,
+      headline: (() => {
+        try {
+          return readStatus(this.store.outputsPath(slug, t.id))?.next ?? null;
+        } catch {
+          return null;
+        }
+      })(),
+    });
+    return { ...statusFacts(tickets, topId, (t) => this.waitsOnUser(slug, t.id), prNotes, sub), changes: this.savedChanges(slug, tickets, topId) };
   }
 
   /** Each feature's saved changes as last built, by slug and top ticket id (see savedChanges). */
@@ -3554,7 +3628,7 @@ export class Board {
     const top = tickets.find((t) => t.id === topId);
     if (!top || !(isFeature(tickets, top) || top.statusAt)) return null;
     const key = `${slug}\u0000${topId}`;
-    const sig = familySig(familyOf(tickets, topId).map((r) => r.ticket));
+    const sig = familySig(featureRows(tickets, topId).map((r) => r.ticket));
     const c = this.changesCache.get(key);
     if (!c || c.sig !== sig || Date.now() - c.at > CHANGES_TTL_MS) void this.buildChanges(slug, topId, key, sig);
     return c?.value ?? null;
@@ -3612,7 +3686,7 @@ export class Board {
       return items.length ? withFile({ kind: "history", items }) : null;
     }
     const files = new Set<string>();
-    for (const r of familyOf(tickets, topId)) for (const f of this.editedFiles(slug, r.ticket.id)) files.add(f);
+    for (const r of featureRows(tickets, topId)) if (r.depth === 0 || !r.ticket.main) for (const f of this.editedFiles(slug, r.ticket.id)) files.add(f);
     const root = profile.path.endsWith("/") ? profile.path : `${profile.path}/`;
     const items = [...files].map((f) => (f.startsWith(root) ? f.slice(root.length) : f)).sort().map((text) => ({ text }));
     return items.length ? withFile({ kind: "files", items }) : null;
@@ -3644,10 +3718,10 @@ export class Board {
   }
 
 
-  /** The family's top ticket for id, its saved status and the board's facts. */
+  /** The top ticket of id's own feature (featureRoot: a sub-feature for its tickets), its saved status and the board's facts. */
   featureStatus(slug: string, id: string): { top: Ticket; feature: boolean; saved: SavedStatus | null; facts: StatusFacts; sections: ReturnType<typeof statusSections>; path: string } {
     const tickets = this.store.listTickets(slug);
-    const top = familyRoot(tickets, id);
+    const top = featureRoot(tickets, id);
     if (!top) throw new Error(`ticket ${id} not found`);
     const dir = this.store.outputsDir(slug, top.id);
     const saved = readStatus(dir);
@@ -3666,11 +3740,11 @@ export class Board {
   /** update_status: replaces only the sections the patch names, on the top ticket of id's family (making it a feature). */
   updateStatus(slug: string, id: string, patch: StatusPatch): ReturnType<Board["featureStatus"]> & { markdown: string } {
     const tickets = this.store.listTickets(slug);
-    const top = familyRoot(tickets, id);
+    const top = featureRoot(tickets, id);
     if (!top) throw new Error(`ticket ${id} not found`);
     const dir = this.store.outputsDir(slug, top.id);
     const now = nowIso();
-    const saved = applyPatch(readStatus(dir), patch, now, familySig(familyOf(tickets, top.id).slice(1).map((r) => r.ticket)));
+    const saved = applyPatch(readStatus(dir), patch, now, familySig(featureRows(tickets, top.id).slice(1).map((r) => r.ticket)));
     const facts = this.facts(slug, tickets, top.id, saved.prNotes);
     const markdown = writeStatus(dir, top, saved, facts, true);
     this.patch(slug, top.id, { statusAt: now });
@@ -3682,7 +3756,7 @@ export class Board {
     const note = text.trim().slice(0, STATUS_NOTE_MAX);
     if (!note) throw new Error("the note is empty");
     const tickets = this.store.listTickets(slug);
-    const top = familyRoot(tickets, id);
+    const top = featureRoot(tickets, id);
     if (!top) throw new Error(`ticket ${id} not found`);
     const dir = this.store.outputsDir(slug, top.id);
     const now = nowIso();
@@ -3709,7 +3783,7 @@ export class Board {
   /** What a run in a feature is told about the status: the main chat reads and keeps it; family runs may update it. */
   private featureNote(slug: string, t: Ticket): string | null {
     const tickets = this.store.listTickets(slug);
-    const top = familyRoot(tickets, t.id);
+    const top = featureRoot(tickets, t.id);
     if (!top || !isFeature(tickets, top)) return null;
     const path = this.refreshStatusFile(slug, top.id);
     if (!path) return null;
@@ -3724,11 +3798,11 @@ export class Board {
     if (run.nudged || !run.statusEligible || run.stopRequested || this.shuttingDown || this.restartPending) return false;
     if (this.waiting(run.slug, run.id).length) return false;
     const tickets = this.store.listTickets(run.slug);
-    const top = familyRoot(tickets, run.id);
+    const top = featureRoot(tickets, run.id);
     if (!top || top.id !== run.id || !isFeature(tickets, top)) return false;
     const saved = readStatus(this.store.outputsPath(run.slug, run.id));
     if (!saved || (saved.claudeAt && saved.claudeAt >= startedAt)) return false;
-    const rows = familyOf(tickets, top.id).slice(1).map((r) => r.ticket);
+    const rows = featureRows(tickets, top.id).slice(1).map((r) => r.ticket);
     const sig = familySig(rows);
     if (saved.familySig === sig) return false;
     run.nudged = true;
@@ -3756,7 +3830,7 @@ export class Board {
   async gather(slug: string, featureId: string, items: { id: string; group?: string | null }[], newGroup?: string | null, by?: string | null): Promise<{
     gathered: Ticket[]; movedUp: { id: string; title: string; to: string }[]; skipped: { id: string; reason: string }[]; group: Ticket | null;
   }> {
-    const top = familyRoot(this.store.listTickets(slug), featureId);
+    const top = featureRoot(this.store.listTickets(slug), featureId);
     if (!top) throw new Error(`ticket ${featureId} not found`);
     let group: Ticket | null = null;
     if (items.some((i) => i.group === "new")) {
@@ -3784,16 +3858,18 @@ export class Board {
       // Its own tickets (all levels), to keep within the depth limit once it has moved.
       const own = new Set(subtreeIds(this.store.listTickets(slug), t.id));
       try {
-        if (parentLink(t)?.id !== target) await this.setPartOf(slug, t.id, target);
+        // Its own depth and the sub-feature rule are checked; deeper tickets of its own move up below (and say so).
+        if (parentLink(t)?.id !== target) await this.setPartOf(slug, t.id, target, null, { subtree: false });
         gathered.push(this.store.getTicket(slug, t.id)!);
         this.store.addComment(slug, t.id, "ai", `Gathered into the feature "${top.title}" (${top.id})${target !== top.id ? `, under "${this.store.getTicket(slug, target)?.title}"` : ""}${by ? ` ${by}` : ""}.`);
       } catch (e) {
         skipped.push({ id: t.id, reason: (e as Error).message });
         continue;
       }
-      // Its own tickets deeper than level 2 move up beside it: linked to its ancestor at level 1.
+      // Its own tickets deeper than level 2 move up beside it: linked to its ancestor at level 1. Only inside this
+      // feature (featureRows): a sub-feature's tickets count from it and never move across its edge.
       for (let guard = 0; guard < 500; guard++) {
-        const rows = familyOf(this.store.listTickets(slug), top.id);
+        const rows = featureRows(this.store.listTickets(slug), top.id);
         const deep = rows.findIndex((r) => own.has(r.ticket.id) && r.depth > MAX_LEVEL);
         if (deep < 0) break;
         const anc = rows.slice(0, deep).findLast((r) => r.depth === 1)!;
@@ -3986,15 +4062,16 @@ export class Board {
     this.setups.get(this.key(run.slug, run.id))?.abort.abort();
   }
 
-  /** A main ticket's tool tickets (hidden and with you), from familyOf. */
+  /** A main ticket's own tool tickets (hidden, shown on the board and with you), from featureRows: not a sub-feature's. */
   toolTickets(slug: string, mainId: string, tickets = this.store.listTickets(slug)): Ticket[] {
-    return familyOf(tickets, mainId).map((r) => r.ticket).filter((t) => t.id !== mainId && t.tool);
+    return featureRows(tickets, mainId).map((r) => r.ticket).filter((t) => t.id !== mainId && t.tool);
   }
 
   /** Stop a main ticket and its running tool tickets (other family members are left alone). How many tool tickets stopped. */
   stopFamily(slug: string, id: string): { stopped: boolean; tools: number } {
     const stopped = this.stop(slug, id);
     let tools = 0;
+    let subStopped = false;
     const t = this.store.getTicket(slug, id);
     if (t?.main) {
       let queued = 0;
@@ -4015,8 +4092,19 @@ export class Board {
         this.patch(slug, id, { plan: { ...now.plan, state: "paused", awaiting: null } });
         this.store.addComment(slug, id, "ai", `Stopped by you with ${tools} running tool ticket${tools === 1 ? "" : "s"}; new tasks wait until you move this ticket to ready, write in its chat or press Resume.`);
       }
+      // Stop reaches into its sub-features too (each stops like its own Stop and resumes on its own).
+      for (const sub of subFeaturesOf(this.store.listTickets(slug), id)) {
+        const was = sub.plan?.state;
+        const r = this.stopFamily(slug, sub.id);
+        const paused = was !== "paused" && this.store.getTicket(slug, sub.id)?.plan?.state === "paused";
+        if (r.stopped || paused) {
+          tools += r.tools;
+          subStopped ||= r.stopped;
+          this.store.addComment(slug, sub.id, "ai", `Stopped with the feature "${t.title}" it is part of.`);
+        }
+      }
     }
-    return { stopped: stopped || tools > 0, tools };
+    return { stopped: stopped || tools > 0 || subStopped, tools };
   }
 
   /** A merge_into_main into this main ticket's copy is running. */
