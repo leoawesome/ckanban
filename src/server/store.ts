@@ -519,6 +519,11 @@ export class Store {
     return join(this.ticketDir(slug, id), "simplified.json");
   }
 
+  /** The Context panel's last `/context` result for the ticket's chat (context-usage.ts). */
+  contextPath(slug: string, id: string): string {
+    return join(this.ticketDir(slug, id), "context.json");
+  }
+
   /** "Help me understand" answers shown as cards in the ticket's chat (explain.ts). */
   helpPath(slug: string, id: string): string {
     return join(this.ticketDir(slug, id), "help.json");

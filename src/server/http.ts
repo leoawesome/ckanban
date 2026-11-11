@@ -324,20 +324,25 @@ export function createServer(deps: ServerDeps) {
   // The Context panel (context-usage.ts): `/context` on a throwaway copy of the chat's session, cached per chat.
   const contexts = deps.contexts ?? new ContextUsage({
     claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude", sessionFile: claudeSessionFile,
+    // Saved next to the ticket's or chat's own files, only while it exists (a delete takes the file with it).
+    file: (key) => {
+      const [kind, profile, id] = key.split("/") as ["ticket" | "chat", string, string];
+      if (kind === "chat") return quickChats.exists(profile, id) ? quickChats.contextPath(profile, id) : null;
+      return store.getTicket(profile, id) ? store.contextPath(profile, id) : null;
+    },
     changed: (key) => {
       const [kind, profile, id] = key.split("/") as ["ticket" | "chat", string, string];
       bus.emit({ type: "context.updated", profile, kind, id });
     },
   });
-  /** After a run of a chat that was checked before, the panel's numbers are refreshed (never for a chat nobody opened it on). */
+  /** After every run of a chat with a session, the panel's numbers are checked in the background (a few at a time). */
   const contextAfterRun = (kind: "ticket" | "chat", spec: (slug: string, id: string) => ContextSpec | null) => (slug: string, id: string) => {
     const key = `${kind}/${slug}/${id}`;
-    if (!contexts.checked(key)) return;
     let s: ContextSpec | null = null;
     try {
       s = spec(slug, id);
     } catch {}
-    if (s) void contexts.refresh(key, s);
+    if (s) contexts.schedule(key, s);
   };
   board.onRunEnd(contextAfterRun("ticket", (s, id) => board.contextSpec(s, id)));
   quickChats.onRunEnd(contextAfterRun("chat", (s, id) => quickChats.contextSpec(s, id)));

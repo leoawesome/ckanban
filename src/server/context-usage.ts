@@ -5,7 +5,7 @@
  * resumes. So it never runs on a chat's own session: the session file is copied (forkSessionFile), `/context` runs
  * on the copy, and the copy is deleted afterwards. The copy gives the same numbers.
  */
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { forkSessionFile } from "./fork";
@@ -182,6 +182,8 @@ export interface ContextView {
   result: ContextResult | null;
   /** The last check failed (plain words); the previous result, if any, stays. */
   error: string | null;
+  /** The result is from the chat's earlier Claude session (shown until the next run end refreshes it). */
+  stale?: boolean;
 }
 
 export interface ContextUsageOptions {
@@ -193,6 +195,19 @@ export interface ContextUsageOptions {
   sessionFile: (sessionId: string) => string | null;
   /** A check finished (or failed) for this chat key: tell the UI. */
   changed?: (key: string) => void;
+  /**
+   * Where a chat's last result is saved, so it survives a restart; null: don't save (the chat is gone). Its folder must
+   * already exist: a write never creates folders, so a check that ends after a delete leaves nothing behind.
+   */
+  file?: (key: string) => string | null;
+  /** Background checks (schedule()) running at once across the board (default 2). */
+  maxBackground?: number;
+}
+
+/** What is saved per chat: only the parsed result, when it was checked, and the session it belongs to. */
+interface Saved {
+  sessionId: string;
+  result: ContextResult;
 }
 
 interface Entry {
@@ -214,6 +229,10 @@ function plain(e: unknown): string {
 export class ContextUsage {
   private cache = new Map<string, Entry>();
   private inflight = new Map<string, Promise<void>>();
+  /** Background checks waiting for a slot, one per chat (a newer one replaces the queued one). */
+  private queue = new Map<string, ContextSpec>();
+  private background = 0;
+  private waiters = new Set<() => void>();
 
   constructor(private opts: ContextUsageOptions) {}
 
@@ -224,14 +243,80 @@ export class ContextUsage {
   /** The cached view for the chat (spec null: no session yet). Never starts a check. */
   view(key: string, sessionId: string | null): ContextView {
     if (!sessionId) return { state: "none", result: null, error: null };
-    const e = this.cache.get(key);
-    const mine = e && e.sessionId === sessionId ? e : null;
-    return { state: this.inflight.has(sessionId) ? "running" : "idle", result: mine?.result ?? null, error: mine?.error ?? null };
+    const e = this.entry(key);
+    const state = this.inflight.has(sessionId) ? "running" : "idle";
+    if (!e) return { state, result: null, error: null };
+    if (e.sessionId === sessionId) return { state, result: e.result, error: e.error };
+    // An earlier session's numbers: shown, marked stale, refreshed when the next run ends.
+    return { state, result: e.result, error: null, stale: true };
   }
 
-  /** The chat was checked before (so a run ending refreshes it). */
+  /** The chat has a result (in memory or saved on disk). */
   checked(key: string): boolean {
-    return this.cache.has(key);
+    return this.entry(key) !== undefined;
+  }
+
+  /** The cached entry, read from the saved file the first time (so results survive a restart). */
+  private entry(key: string): Entry | undefined {
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+    const saved = this.load(key);
+    if (!saved) return undefined;
+    const e: Entry = { sessionId: saved.sessionId, result: saved.result, error: null };
+    this.cache.set(key, e);
+    return e;
+  }
+
+  private load(key: string): Saved | null {
+    let f: string | null = null;
+    try {
+      f = this.opts.file?.(key) ?? null;
+      if (!f || !existsSync(f)) return null;
+      const s = JSON.parse(readFileSync(f, "utf8")) as Saved;
+      if (typeof s?.sessionId !== "string" || typeof s.result?.checkedAt !== "string" || !s.result.report) return null;
+      return s;
+    } catch {
+      return null;
+    }
+  }
+
+  private save(key: string, saved: Saved): void {
+    try {
+      const f = this.opts.file?.(key);
+      if (!f || !existsSync(dirname(f))) return;
+      const tmp = `${f}.tmp-${crypto.randomUUID()}`;
+      writeFileSync(tmp, JSON.stringify(saved));
+      renameSync(tmp, f);
+    } catch {}
+  }
+
+  /**
+   * A check in the background (a run of the chat ended): waits for one of the board's few slots. A chat already
+   * waiting keeps one place in the queue, with the newest spec.
+   */
+  schedule(key: string, spec: ContextSpec): void {
+    this.queue.delete(key);
+    this.queue.set(key, spec);
+    this.pump();
+  }
+
+  private pump(): void {
+    const max = Math.max(1, this.opts.maxBackground ?? 2);
+    while (this.background < max && this.queue.size) {
+      const [key, spec] = this.queue.entries().next().value as [string, ContextSpec];
+      this.queue.delete(key);
+      this.background++;
+      this.refresh(key, spec).finally(() => {
+        this.background--;
+        this.pump();
+        if (!this.background && !this.queue.size) for (const w of this.waiters) w();
+      });
+    }
+  }
+
+  /** Background checks running and waiting (tests). */
+  get pending(): { running: number; queued: number } {
+    return { running: this.background, queued: this.queue.size };
   }
 
   /** Starts a check (or joins the one running for this session); resolves when it is over. */
@@ -239,9 +324,12 @@ export class ContextUsage {
     const running = this.inflight.get(spec.sessionId);
     if (running) return running;
     const p = this.run(spec).then(
-      (result) => void this.cache.set(key, { sessionId: spec.sessionId, result, error: null }),
+      (result) => {
+        this.cache.set(key, { sessionId: spec.sessionId, result, error: null });
+        this.save(key, { sessionId: spec.sessionId, result });
+      },
       (e) => {
-        const prev = this.cache.get(key);
+        const prev = this.entry(key);
         this.cache.set(key, { sessionId: spec.sessionId, result: prev?.sessionId === spec.sessionId ? prev.result : null, error: plain(e) });
       },
     ).finally(() => {
@@ -252,13 +340,21 @@ export class ContextUsage {
     return p;
   }
 
-  /** Forget a chat (deleted, or its session changed). */
+  /** Forget a chat (deleted): its cached result and any queued check. The saved file goes with the chat's own files. */
   drop(key: string): void {
     this.cache.delete(key);
+    this.queue.delete(key);
   }
 
-  /** Waits for every check that is running (shutdown, tests). */
+  /** Waits for every check that is running or queued (shutdown, tests). */
   async idle(): Promise<void> {
+    if (this.background || this.queue.size) await new Promise<void>((r) => {
+      const w = () => {
+        this.waiters.delete(w);
+        r();
+      };
+      this.waiters.add(w);
+    });
     await Promise.all([...this.inflight.values()]);
   }
 

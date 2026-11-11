@@ -20,6 +20,8 @@ export interface ContextView {
   state: "none" | "idle" | "running";
   result: { report: ContextReport; checkedAt: string } | null;
   error: string | null;
+  /** From the chat's earlier session: still shown, refreshed when the next run ends. */
+  stale?: boolean;
 }
 
 export interface ContextRow {

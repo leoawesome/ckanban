@@ -229,6 +229,16 @@ export class QuickChats {
     return join(this.dir(slug), `${id}.side-spend.jsonl`);
   }
 
+  /** The Context panel's last `/context` result for the chat (context-usage.ts). */
+  contextPath(slug: string, id: string): string {
+    return join(this.dir(slug), `${id}.context.json`);
+  }
+
+  /** The chat is on the board (its file exists). */
+  exists(slug: string, id: string): boolean {
+    return existsSync(this.file(slug, id));
+  }
+
   private profile(slug: string): Profile {
     const p = this.store.getProfile(slug);
     if (!p) throw new QuickChatError(404, `board ${slug} not found`);
@@ -509,6 +519,7 @@ export class QuickChats {
     rmSync(this.activityPath(slug, id), { force: true });
     rmSync(this.simplifiedPath(slug, id), { force: true });
     rmSync(this.sideSpendPath(slug, id), { force: true });
+    rmSync(this.contextPath(slug, id), { force: true });
     this.bus.emit({ type: "chat.updated", profile: slug, id, chat: null });
   }
 

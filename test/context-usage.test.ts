@@ -98,7 +98,7 @@ const sessionFile = (id: string): string | null => {
   return d ? join(root, d, `${id}.jsonl`) : null;
 };
 const sha = (f: string) => createHash("sha256").update(readFileSync(f)).digest("hex");
-const newUsage = (o: { timeoutMs?: number; changed?: (k: string) => void } = {}) =>
+const newUsage = (o: { timeoutMs?: number; changed?: (k: string) => void; file?: (k: string) => string | null; maxBackground?: number } = {}) =>
   new ContextUsage({ claudeBin: FAKE, sessionFile, configDir: () => config, ...o });
 const spec = () => ({ sessionId: SID, cwd, args: ["--model", "opus", "--resume", SID, "--chrome"], env: { CLAUDE_CONFIG_DIR: config, FAKE_CTX_ARGS: argsFile } });
 
@@ -183,7 +183,55 @@ test("no session: the 'no chat yet' state; a missing file is a plain error", asy
   expect(u.view("ticket/p/t1", null)).toEqual({ state: "none", result: null, error: null });
   await u.refresh("ticket/p/t2", { ...spec(), sessionId: "nope" });
   expect(u.view("ticket/p/t2", "nope").error).toBe("This chat has no saved conversation yet.");
-  // A result belongs to its session: a new session shows nothing until checked.
+  // A result belongs to its session: a new session shows it marked stale until the next check.
   await u.refresh("ticket/p/t1", spec());
-  expect(u.view("ticket/p/t1", "other-session").result).toBeNull();
+  expect(u.view("ticket/p/t1", "other-session").stale).toBe(true);
+});
+
+test("results are saved and a new ContextUsage reads them; another session's result shows as stale", async () => {
+  const dir = tempDir("ck-saved-");
+  const file = (k: string) => join(dir, `${k.replace(/\//g, "_")}.json`);
+  const u = newUsage({ file });
+  await u.refresh("ticket/p/t1", spec());
+  const saved = JSON.parse(readFileSync(file("ticket/p/t1"), "utf8"));
+  expect(Object.keys(saved).sort()).toEqual(["result", "sessionId"]);
+  // A failure isn't saved and keeps the saved result.
+  process.env.FAKE_CTX_MODE = "error";
+  await u.refresh("ticket/p/t1", spec());
+  expect(JSON.parse(readFileSync(file("ticket/p/t1"), "utf8"))).toEqual(saved);
+  const fresh = newUsage({ file });
+  expect(fresh.checked("ticket/p/t1")).toBe(true);
+  expect(fresh.view("ticket/p/t1", SID)).toEqual({ state: "idle", result: saved.result, error: null });
+  expect(fresh.view("ticket/p/t1", "newer-session")).toEqual({ state: "idle", result: saved.result, error: null, stale: true });
+  // No folder for it (the chat was deleted): nothing is written.
+  const gone = newUsage({ file: () => join(dir, "deleted", "x.json") });
+  delete process.env.FAKE_CTX_MODE;
+  await gone.refresh("ticket/p/t2", spec());
+  expect(existsSync(join(dir, "deleted"))).toBe(false);
+  // A file that isn't a result is ignored.
+  writeFileSync(file("ticket/p/t3"), "{not json");
+  expect(fresh.view("ticket/p/t3", SID).result).toBeNull();
+});
+
+test("background checks: at most maxBackground at once, one queued per chat with the newest spec", async () => {
+  process.env.FAKE_CTX_MODE = "slow";
+  const u = newUsage({ maxBackground: 2 });
+  const ids = ["a", "b", "c", "d"].map((x) => `${x}${SID.slice(1)}`);
+  const dir = join(config, "projects", encodeProjectDir(cwd));
+  for (const id of ids) writeFileSync(join(dir, `${id}.jsonl`), readFileSync(srcFile));
+  const s = (id: string) => ({ ...spec(), sessionId: id });
+  for (const id of ids) u.schedule(`chat/p/${id}`, s(id));
+  expect(u.pending).toEqual({ running: 2, queued: 2 });
+  // The same chat again while it waits: still one place in the queue.
+  u.schedule(`chat/p/${ids[3]}`, s(ids[3]));
+  u.schedule(`chat/p/${ids[3]}`, s(ids[3]));
+  expect(u.pending).toEqual({ running: 2, queued: 2 });
+  let peak = 0;
+  const timer = setInterval(() => (peak = Math.max(peak, u.pending.running)), 5);
+  await u.idle();
+  clearInterval(timer);
+  expect(peak).toBeLessThanOrEqual(2);
+  expect(u.pending).toEqual({ running: 0, queued: 0 });
+  expect(readJsonl(argsFile)).toHaveLength(4);
+  for (const id of ids) expect(u.view(`chat/p/${id}`, id).result?.report.used).toBe(22_200);
 });
