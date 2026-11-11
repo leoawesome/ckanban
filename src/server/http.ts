@@ -42,6 +42,7 @@ import { boardToolsSource, McpError, McpManager } from "./mcp";
 import { MacOnlyError, MessageError, Notifier, TG_PAIR_FROM_MAC } from "./notify";
 import { HelperError, type HelperRunner } from "./helper/runner";
 import { DeviceError, TAKE_WAIT_MS, type DeviceUser } from "./devices";
+import { ChromeError, chromeSetting, resolveChromeSetting } from "./chromes";
 import { PushService } from "./push";
 import { LISTENER_HEADER, LOGIN_HEADER, qrSvg, RemoteAccess, RemoteError, remoteUrl, type RemoteConfig } from "./remote";
 import { AGENT_IDS, AgentError, AgentRegistry, type AgentId } from "./agents";
@@ -657,6 +658,8 @@ export function createServer(deps: ServerDeps) {
       recovery: running ? null : recoveryFor(t.error),
       /** Shared devices its run uses now, and the ones it waits for (devices.ts); Ticket.needs is only a hint. */
       devices: board.deviceState(p.slug, t.id),
+      /** The Chrome a ticket above it picked (a tool step follows its main ticket's), shown as its default; null: the board's. */
+      chromeAbove: t.parentId ? resolveChromeSetting({ id: t.id, parentId: t.parentId }, store.listTickets(p.slug), null) : null,
       /** It would start now but another ticket is editing the board's folder in place (see Board.folderBusy). */
       folderWait: board.folderWait(p.slug, t),
       /** A plan child waiting on the user (never started by the plan until then). */
@@ -836,6 +839,29 @@ export function createServer(deps: ServerDeps) {
         if (typeof b?.enabled !== "boolean") throw new HttpError(400, "enabled must be true or false");
         const st = b.enabled ? await remote.on() : await remote.off();
         return json({ ...st, qrSvg: st.url ? qrSvg(st.url) : null, local: true });
+      }
+    }
+
+    // Named Chromes (chromes.ts): the Chromes runs have listed on this Mac, the user's names, and each board's default.
+    if (parts[0] === "browsers") {
+      try {
+        const view = () => ({ ...board.chromes.view(), boards: store.listProfiles().map((p) => ({ slug: p.slug, name: p.name, chrome: p.chrome ?? null })) });
+        if (parts.length === 1 && m === "GET") return json(view());
+        if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user names or removes Chromes (More, Browsers)");
+        const deviceId = decodeURIComponent(parts[1] ?? "");
+        if (parts.length === 2 && m === "PATCH") {
+          const b = (await body(req)) ?? {};
+          if (typeof b.name !== "string") throw new HttpError(400, "name must be text");
+          board.chromes.rename(deviceId, b.name);
+          return json(view());
+        }
+        if (parts.length === 2 && m === "DELETE") {
+          board.chromes.remove(deviceId);
+          return json(view());
+        }
+      } catch (e) {
+        if (e instanceof ChromeError) throw new HttpError(e.status, e.message);
+        throw e;
       }
     }
 
@@ -1344,6 +1370,15 @@ export function createServer(deps: ServerDeps) {
           const v = b.freshChatTokens;
           if (v !== null && (typeof v !== "number" || !(v > 0) || v > 10_000_000)) throw new HttpError(400, "freshChatTokens must be a positive number, or null for the default");
           next.freshChatTokens = v === null ? null : Math.round(v);
+        }
+        if (b.chrome !== undefined) {
+          if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user picks the board's Chrome");
+          try {
+            next.chrome = chromeSetting(b.chrome, (id) => !!board.chromes.get(id));
+          } catch (e) {
+            if (e instanceof ChromeError) throw new HttpError(e.status, e.message);
+            throw e;
+          }
         }
         if (b.checkinOfferDismissed !== undefined) next.checkinOfferDismissed = b.checkinOfferDismissed === true;
         if (b.effort !== undefined) {
@@ -2076,6 +2111,16 @@ export function createServer(deps: ServerDeps) {
           if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "only the user can change a ticket's model or effort");
         }
         // Ultracode for this ticket's runs: on, off, or null for the board's.
+        // Chrome for this ticket's runs: a named Chrome's deviceId, "ask", or null for its main ticket's or the board's.
+        if (b.chrome !== undefined) {
+          if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user picks a ticket's Chrome");
+          try {
+            patch.chrome = chromeSetting(b.chrome, (cid) => !!board.chromes.get(cid));
+          } catch (e) {
+            if (e instanceof ChromeError) throw new HttpError(e.status, e.message);
+            throw e;
+          }
+        }
         if (b.ultracode !== undefined) {
           if (b.ultracode !== null && typeof b.ultracode !== "boolean") throw new HttpError(400, "ultracode must be true, false or null");
           patch.ultracode = b.ultracode;

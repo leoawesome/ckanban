@@ -48,6 +48,7 @@ export const KeyboardIcon = (p: IconProps) => svg(<><rect x="1.8" y="4" width="1
 /** A shared device or other exclusive resource a ticket needs (Ticket.needs). */
 export const NowIcon = (p: IconProps) => svg(<><circle cx="8" cy="8" r="6.2" /><circle cx="8" cy="8" r="2.2" fill="currentColor" /></>, p);
 export const BoardIcon = (p: IconProps) => svg(<><rect x="2" y="2.5" width="3.4" height="11" rx="1" /><rect x="6.3" y="2.5" width="3.4" height="7.5" rx="1" /><rect x="10.6" y="2.5" width="3.4" height="9" rx="1" /></>, p);
+export const GlobeIcon = (p: IconProps) => svg(<><circle cx="8" cy="8" r="5.8" /><path d="M2.2 8h11.6M8 2.2c1.6 1.6 2.4 3.5 2.4 5.8S9.6 12.2 8 13.8M8 2.2C6.4 3.8 5.6 5.7 5.6 8s.8 4.2 2.4 5.8" /></>, p);
 export const DeviceIcon = (p: IconProps) => svg(<><rect x="4.5" y="1.8" width="7" height="12.4" rx="1.6" /><path d="M7.2 11.8h1.6" /></>, p);
 export const BellIcon = (p: IconProps) => svg(<path d="M4 11.2V7.4a4 4 0 0 1 8 0v3.8l1.2 1.3H2.8L4 11.2zM6.6 14h2.8" />, p);
 export const GearIcon = (p: IconProps) => svg(<><circle cx="8" cy="8" r="2.2" /><path d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7L3.6 3.6" /></>, p);

@@ -9,11 +9,12 @@ import { HeaderMenu, type MenuItem } from "./HeaderMenu";
 import { ThemePicker } from "./ThemePicker";
 import { boardTags, hasTags, parseSearch, tagStyle } from "./tagText";
 import { TagFilter } from "./Tags";
-import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, DiffIcon, FolderIcon, PanelsIcon, GearIcon, KeyboardIcon, LinkIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
+import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, DiffIcon, GlobeIcon, FolderIcon, PanelsIcon, GearIcon, KeyboardIcon, LinkIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
 import { Inbox, type InboxHelper } from "./Inbox";
 import { NowView } from "./NowView";
 import { NotificationsDialog } from "./NotificationsDialog";
 import { DevicesDialog } from "./DevicesDialog";
+import { BrowsersDialog } from "./BrowsersDialog";
 import { PushHint } from "./PushHint";
 import { startPushClient } from "./push";
 import { PhoneAccessDialog } from "./PhoneAccessDialog";
@@ -298,6 +299,7 @@ export function App() {
   const [phoneAccess, setPhoneAccess] = useState(false);
   const [notifications, setNotifications] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
+  const [browsersOpen, setBrowsersOpen] = useState(false);
   // Phone notifications: tell the daemon while the board is on screen here, open tapped notifications' tickets.
   useEffect(() => startPushClient(), []);
   const [version, setVersion] = useState<{ version: string; latest: string | null; updateAvailable: boolean } | null>(null);
@@ -932,6 +934,7 @@ export function App() {
             title: "Claude suggests which tickets belong together (part of one piece of work); you pick the links to make",
           }] : []),
           { label: "Devices", icon: <DeviceIcon />, onSelect: () => setDevicesOpen(true), title: "Shared devices (a phone, a WhatsApp Web tab): who uses each one and who waits" },
+          { label: "Browsers", icon: <GlobeIcon />, onSelect: () => setBrowsersOpen(true), title: "Name your Chromes and pick which one each board uses" },
           {
             label: "Connections", icon: <PlugIcon />, onSelect: () => setConnections(true), separator: true,
             title: mcpAttention ? `${mcpAttention} MCP server${mcpAttention === 1 ? "" : "s"} failed or need you to log in again` : "Claude Code MCP servers",
@@ -1075,6 +1078,7 @@ export function App() {
     ...(profile ? [{ id: "automations", label: "Automations", icon: <LoopIcon size={14} />, run: () => setAutomationsOpen(true) }] : []),
     { id: "connections", label: "Connections", icon: <PlugIcon size={14} />, run: () => setConnections(true) },
     { id: "devices", label: "Devices", icon: <DeviceIcon size={14} />, hint: "who uses each shared device", run: () => setDevicesOpen(true) },
+    { id: "browsers", label: "Browsers", icon: <GlobeIcon size={14} />, hint: "name your Chromes, pick each board's", run: () => setBrowsersOpen(true) },
     ...(profile ? [{ id: "snippets", label: "Snippets", icon: <AtIcon size={14} />, run: () => setSnippetsOpen(true) }] : []),
     ...(profile ? [{ id: "find-links", label: "Find links", icon: <LinkIcon size={14} />, hint: "tickets that belong together", run: () => setFindLinksOpen(true) }] : []),
     { id: "usage", label: "Usage", run: () => setUsageRequest(Date.now()) },
@@ -1338,6 +1342,7 @@ export function App() {
       {moreOpen && <MoreSheet items={menuItems.filter((i) => i.label !== "Keyboard shortcuts")} footer={menuFooter} onClose={() => setMoreOpen(false)}
         top={<UsageBox state={usage} />} bottom={<ThemePicker />} />}
       {phoneAccess && <PhoneAccessDialog onClose={() => setPhoneAccess(false)} />}
+      {browsersOpen && <BrowsersDialog onClose={() => setBrowsersOpen(false)} />}
       {devicesOpen && (
         <DevicesDialog board={profile?.slug ?? null} onClose={() => setDevicesOpen(false)}
           onOpenTicket={(board, id) => {

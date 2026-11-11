@@ -11,6 +11,7 @@ import { MOVE_TO_PLANNING_RE, STAY_RE } from "./session";
 import { forkSessionBefore, forkSessionFile, forkTitle } from "./fork";
 import { saveMockups } from "./mockups";
 import { Devices, type DeviceTicketState } from "./devices";
+import { ChromeWatch, Chromes, resolveChromeSetting, type ChromeChoice } from "./chromes";
 import { macBanner } from "./notify";
 import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
@@ -27,7 +28,7 @@ import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt
 import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
 import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
-import { chatPrompt, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
+import { chatPrompt, chromeChoiceNote, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
   childrenOf, DEFAULT_MAX_CONCURRENT, findCycle, isComplete, MAX_RUN_CHAIN, MAX_RUN_STARTS, normalizeNeeds, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
@@ -403,6 +404,8 @@ export class Board {
   private workflowLive = new Map<string, any[]>();
   /** Shared devices every board's runs take and let go (devices.ts); a run's end frees what it still holds. */
   readonly devices: Devices;
+  /** Named Chromes (More → Browsers), learned from runs' list_connected_browsers results (chromes.ts). */
+  readonly chromes: Chromes;
   /** Setup commands running now (`ckanban ticket setup`; stopping the ticket's run aborts them), per ticket key. */
   private setups = new Map<string, { done: Promise<SetupOutcome>; abort: AbortController }>();
   private shuttingDown = false;
@@ -425,6 +428,13 @@ export class Board {
     this.notify = opts.notify ?? ((title, body) => macBanner(title, body));
     useBundledFile(join(store.root, "claude-commands.json"));
     this.devices = new Devices(store.root, (owners) => this.devicesChanged(owners));
+    this.chromes = new Chromes(store.root, () => this.bus.emit({ type: "browsers.updated" }));
+  }
+
+  /** The Chrome a ticket's runs use: its own pick, else the nearest ticket above it with one, else the board's default. */
+  chromeChoice(slug: string, t: Ticket): ChromeChoice {
+    const setting = resolveChromeSetting(t, this.store.listTickets(slug), this.store.getProfile(slug)?.chrome);
+    return this.chromes.choice(setting);
   }
 
   private key(slug: string, id: string) {
@@ -1242,6 +1252,15 @@ export class Board {
     // Runs that may act learn the shared device list here, so it is current on every turn (Planning chats don't use devices).
     const deviceNote = refine ? null : devicesNote(this.devices.devices(), t.needs);
     if (deviceNote) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${deviceNote}` : deviceNote;
+    // The Chrome this ticket uses (More → Browsers), on every turn; nothing when no Chrome is chosen.
+    let chromeNote: string | null = null;
+    try {
+      chromeNote = chromeChoiceNote(this.chromeChoice(slug, t));
+    } catch (e) {
+      console.error(`chrome choice for ${slug}/${id}:`, e);
+    }
+    if (chromeNote) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${chromeNote}` : chromeNote;
+    const chromeWatch = new ChromeWatch(this.chromes);
     // A main ticket's fixed rules go once per run here, not in every message the chat shows.
     if (role?.kind === "main" && !quiet) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${mainTicketRules(role)}` : mainTicketRules(role);
     // A feature's main chat reads its status first and keeps it current; the family's other runs may update it too.
@@ -1313,6 +1332,7 @@ export class Board {
         }
         if (ev?.type === "stream_event") return;
         this.watchWorkflows(slug, id, ev, spend);
+        chromeWatch.feed(ev);
         rememberInit(session.dir, ev, { projects: [profile.path] });
         if (refine && ev?.type === "assistant") this.saveMockups(slug, id, outputDir, ev);
         if (showsInterrupted && !this.shuttingDown && hasText(ev)) {
@@ -2122,7 +2142,7 @@ export class Board {
   async updateTicket(
     slug: string,
     id: string,
-    patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "dependsOn" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode">> & {
+    patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "dependsOn" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome">> & {
       expectedBody?: string;
       /** null: take the ticket out of its plan (only clearing is allowed here; adoptTickets sets it). */
       parentId?: null;
@@ -2149,6 +2169,7 @@ export class Board {
     if (patch.model !== undefined) clean.model = patch.model;
     if (patch.effort !== undefined) clean.effort = patch.effort;
     if (patch.ultracode !== undefined) clean.ultracode = patch.ultracode;
+    if (patch.chrome !== undefined) clean.chrome = patch.chrome;
     if (patch.needs !== undefined) clean.needs = normalizeNeeds(patch.needs);
     if (patch.tags !== undefined) clean.tags = normalizeTags(patch.tags);
     if (patch.suggestedTags !== undefined || patch.tags !== undefined) {
