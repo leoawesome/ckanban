@@ -27,6 +27,8 @@ export interface Profile {
   effort?: string | null;
   /** Ultracode by default: tickets' work runs plan a workflow (many helper agents) for every substantial task. */
   ultracode?: boolean;
+  /** Default Chrome for this board's runs: a deviceId from More → Browsers (chromes.ts), "ask" (ask each time), or none. */
+  chrome?: string | null;
   createdAt: string;
   /** Git-ignored files (paths or globs relative to the board folder) copied into each new worktree. */
   copyFiles?: string[];
@@ -195,6 +197,8 @@ export interface Ticket {
   effort?: string | null;
   /** Ultracode for this ticket's work runs (/effort ultracode, or the Ultracode chip); null: the board's. */
   ultracode?: boolean | null;
+  /** Chrome for this ticket's runs: a deviceId from More → Browsers, "ask", or null: its main ticket's, else the board's. */
+  chrome?: string | null;
   /** Set on tickets created by a schedule (see Schedule). */
   scheduleId?: string | null;
   /**

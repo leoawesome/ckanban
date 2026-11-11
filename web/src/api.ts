@@ -224,6 +224,8 @@ export interface Profile {
   effort?: string | null;
   /** Ultracode by default: tickets' work runs plan a workflow of helper agents for every substantial task. */
   ultracode?: boolean;
+  /** Default Chrome for its runs: a deviceId from More → Browsers, "ask", or none. */
+  chrome?: string | null;
   createdAt: string;
   /** Git-ignored files copied into each new worktree (paths or globs relative to the folder). */
   copyFiles?: string[];
@@ -262,6 +264,26 @@ export interface TicketDevices {
 export interface DeviceUser { slug: string; id: string; since: string; title: string | null; board: string }
 
 /** More, Devices: a shared device with who uses it and who waits. */
+/** A Chrome a run listed on this Mac (server: chromes.ts). Keyed by deviceId; name is the user's ("" until named). */
+export interface ChromeBrowser {
+  deviceId: string;
+  name: string;
+  /** Claude in Chrome's own display name when last listed ("Browser 1"); it changes on reconnect. */
+  label: string;
+  osPlatform?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  hint?: { site: string; at: string } | null;
+}
+
+export interface BrowsersState {
+  browsers: ChromeBrowser[];
+  /** When a run last listed the connected Chromes, and which were connected then. */
+  listedAt: string | null;
+  connected: string[];
+  boards: { slug: string; name: string; chrome: string | null }[];
+}
+
 export interface DeviceView {
   name: string;
   description: string;
@@ -358,6 +380,10 @@ export interface Ticket {
   effort?: string | null;
   /** Ultracode for this ticket (true/false), or null for the board's. */
   ultracode?: boolean | null;
+  /** Chrome for its runs: a deviceId from More → Browsers, "ask", or null (the ticket above it, else the board). */
+  chrome?: string | null;
+  /** The Chrome a ticket above it picked (a tool step follows its main ticket's); null: the board's. */
+  chromeAbove?: string | null;
   /** Created by this schedule. */
   scheduleId?: string | null;
   /** Created by this one-time scheduled job. */
@@ -1289,6 +1315,7 @@ export type BusEvent =
   | { type: "mcp.updated"; state: McpState }
   | { type: "snippets.updated" }
   | { type: "devices.updated" }
+  | { type: "browsers.updated" }
   | { type: "schedule.updated"; profile: string; id: string; schedule: Omit<Schedule, "summary" | "active"> | null }
   | { type: "loop.updated"; profile: string; id: string; loop: Loop | null }
   | { type: "integration.updated" }
@@ -1565,6 +1592,9 @@ export const api = {
   /** pending: a daemon restart holds new runs until the `waiting` active runs finish. */
   remote: () => req<RemoteState>("GET", "/api/remote"),
   setRemote: (enabled: boolean) => req<RemoteState>("POST", "/api/remote", { enabled }),
+  browsers: () => req<BrowsersState>("GET", "/api/browsers"),
+  renameBrowser: (deviceId: string, name: string) => req<BrowsersState>("PATCH", `/api/browsers/${encodeURIComponent(deviceId)}`, { name }),
+  removeBrowser: (deviceId: string) => req<BrowsersState>("DELETE", `/api/browsers/${encodeURIComponent(deviceId)}`),
   devices: () => req<DeviceView[]>("GET", "/api/devices"),
   saveDevice: (input: { name: string; description?: string; capacity?: number }) => req<DeviceView[]>("POST", "/api/devices", input),
   deleteDevice: (name: string) => req<DeviceView[]>("DELETE", `/api/devices/${encodeURIComponent(name)}`),
@@ -1759,7 +1789,7 @@ export const api = {
       "POST", `${t(slug, id)}/gather`, { tickets, newGroup }),
   plan: (slug: string, id: string, action: "start" | "pause" | "resume" | "done" | "concurrency", maxConcurrent?: number) =>
     req<Ticket>("POST", `${t(slug, id)}/plan`, { action, maxConcurrent }),
-  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode">> & { expectedBody?: string }) =>
+  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome">> & { expectedBody?: string }) =>
     req<Ticket>("PATCH", t(slug, id), patch),
   deleteTicket: (slug: string, id: string) => req<void>("DELETE", t(slug, id)),
   /** Part of parent's family (null unlinks). */

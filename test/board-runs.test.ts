@@ -277,3 +277,28 @@ test("each new activity line is stamped with lastActivityAt, cleared with it", a
   expect(got.lastActivity).toBe("Finished");
   expect(Date.parse(got.lastActivityAt!)).toBeGreaterThanOrEqual(before - 1000);
 });
+
+test("a run gets its Chrome in the system prompt: the board's default, a tool step its main ticket's, a ticket its own", async () => {
+  const p = await setup();
+  const WORK = "d4a71199-fd4a-427d-a310-bee508a721c5", PERSONAL = "8e20160c-5cb5-4f7e-b037-33523d4791f8";
+  board.chromes.listed([{ deviceId: WORK, name: "Browser 1", isLocal: true }, { deviceId: PERSONAL, name: "Browser 2", isLocal: true }]);
+  board.chromes.rename(WORK, "Work");
+  board.chromes.rename(PERSONAL, "Personal");
+  const noteOf = (i: number) => { const a = readArgs()[i].args as string[]; return a.includes("--append-system-prompt") ? a[a.indexOf("--append-system-prompt") + 1] : ""; };
+  // Nothing chosen: no Chrome note.
+  await board.createTicket("p", { title: "plain", body: "", status: "ready" });
+  await board.whenIdle();
+  expect(noteOf(0)).not.toContain("# Which Chrome");
+  store.saveProfile({ ...p, chrome: PERSONAL });
+  const main = await board.createTicket("p", { title: "main", body: "", status: "backlog" });
+  await board.updateTicket("p", main.id, { chrome: WORK });
+  const tool = store.createTicket("p", { title: "tool", body: "", status: "backlog" });
+  store.updateTicket("p", tool.id, { parentId: main.id });
+  const other = await board.createTicket("p", { title: "other", body: "", status: "backlog" });
+  for (const id of [tool.id, other.id]) {
+    await board.updateTicket("p", id, { status: "ready" });
+    await board.whenIdle();
+  }
+  expect(noteOf(1)).toContain(`deviceId \`${WORK}\` (named "Work")`);
+  expect(noteOf(2)).toContain(`deviceId \`${PERSONAL}\` (named "Personal")`);
+});

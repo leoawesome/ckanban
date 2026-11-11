@@ -6,6 +6,7 @@ import { activeHost, huddleLine, REVIEW_HUDDLE_HEADING, reviewHuddleRequest, sum
 import { AUTO_REVIEW_READ_ONLY, FRESH_HELPER_CHECK, PLAN_REVIEW } from "./huddle-templates";
 import { ticketTopic } from "./squad";
 import { MOCKUPS_DIR } from "./mockups";
+import type { ChromeChoice } from "./chromes";
 import type { Device } from "./devices";
 import type { RepoKind } from "./git";
 import { FEATURE_TRAILER } from "./feature";
@@ -80,6 +81,27 @@ function context(note: string, body: string, attrs: Record<string, string> = {})
 /** Runs start with --chrome and share the user's Chrome, so each works in tabs of its own. */
 const CHROME_RULE = `# Browser
 Claude in Chrome is available (mcp__claude-in-chrome__* tools, in the user's own Chrome). Open your own new tab and don't close or take over the user's tabs. If it isn't connected, say so and carry on without it.`;
+
+/**
+ * Which Chrome a run uses (More → Browsers, the board's default, the ticket's pick; see chromes.ts). It adds to
+ * CHROME_RULE and goes in every run's system prompt, so it holds on every turn. Null (nothing set): CHROME_RULE alone.
+ */
+export function chromeChoiceNote(choice: ChromeChoice): string | null {
+  if (!choice) return null;
+  if (choice.kind === "device") {
+    const { deviceId: id, name } = choice;
+    return `# Which Chrome
+The user has more than one Chrome connected to Claude in Chrome. This run uses only the Chrome named "${name}" (deviceId \`${id}\`).
+- Before your first browser step, call \`list_connected_browsers\`, then \`select_browser\` with deviceId \`${id}\` (named "${name}"). Do it again if a browser tool reports another browser or the connection drops. Display names like "Browser 1" change when a browser reconnects: go by the deviceId only.
+- Never use another Chrome, even if a site you need is logged in there too. Don't use \`switch_browser\`.
+- If deviceId \`${id}\` isn't in the list, wait a few seconds and call \`list_connected_browsers\` once more. If it still isn't there, stop and ask the user (end with status "questions"): say the Chrome named "${name}" isn't connected and ask them to open it and connect Claude in Chrome there. Don't fall back to another Chrome.`;
+  }
+  const names = choice.named.map((b) => `"${b.name}" (deviceId \`${b.deviceId}\`)`).join(", ");
+  return `# Which Chrome
+The user has more than one Chrome connected to Claude in Chrome (named ones: ${names}) and wants to be asked which one a task uses.
+- Before your first browser step, call \`list_connected_browsers\`. If only one Chrome is connected, \`select_browser\` with its deviceId. If more than one is connected and the ticket or the user hasn't said which, stop and ask the user which Chrome to use (end with status "questions"), naming them as above; don't pick one yourself.
+- Once you know which, \`select_browser\` with its deviceId and never use another Chrome in this task. Go by the deviceId, not display names like "Browser 1": they change when a browser reconnects.`;
+}
 
 /** Every run's Claude adapts to users who may not know git (see CLAUDE.md, "Users may not be technical"). */
 /** What follow-ups may not do unasked: the user approves anything that goes out in their name. */

@@ -27,6 +27,7 @@ export type BusEvent =
   | { type: "snippets.updated" }
   /** The shared device list, or who uses or waits for a device, changed (devices.ts); clients refetch. */
   | { type: "devices.updated" }
+  | { type: "browsers.updated" }
   /** A daemon restart is waiting for `waiting` active runs; nothing new starts until then. */
   | { type: "restart.updated"; pending: boolean; waiting: number }
   /** The daemon started or stopped keeping the Mac awake for active work (awake.ts). */
