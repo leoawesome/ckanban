@@ -12,6 +12,7 @@ import type { Bus, BusEvent } from "./events";
 import { EFFORT_HELP, listCommands, MODEL_HELP, validEffort, validModel } from "./commands";
 import { isManager, kindDefaults, parseTaskModels, TOOL_NO_NOTIFY } from "./main-ticket";
 import { learnedVersions } from "./model-versions";
+import { resolveRun } from "../../web/src/models";
 import { addPrs } from "./prs";
 import { DiffError, folderDiff, ticketDiff } from "./diff";
 import { detectBaseBranch, enableVersionHistory, hasUncommittedChanges, isGitRepo, repoKind, resolveBaseBranch, which } from "./git";
@@ -2270,7 +2271,8 @@ export function createServer(deps: ServerDeps) {
           id: t.id, depth, parent: depth ? parentLink(t)?.id ?? null : null,
           // A sub-feature row (a main ticket under another): its own card and chat; its tasks are its own.
           ...(depth && t.main ? { subFeature: true, tasks: board.toolTickets(slug, t.id, tickets).length } : {}),
-          model: t.model ?? profile.model ?? null, effort: t.effort ?? profile.effort ?? null,
+          // What its runs use (the same order as board.ts chatArgs), for the Tasks tab.
+          model: resolveRun(t, profile).model, effort: resolveRun(t, profile).effort,
           costUsd: spend.ticket(slug, t.id).costUsd + huddles.ticketSpend(slug, t.id).costUsd,
           needsYou: !!v.attention && v.attention.kind !== "review",
           summary: store.lastAiComment(slug, t.id), finishedAt: v.running ? null : t.runEndedAt ?? t.doneAt ?? null,

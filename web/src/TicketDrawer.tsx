@@ -1207,7 +1207,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               <div className={`panel-ticket ${editing ? "editing" : ""}`}>{details}</div>
             ) : tab === "family" ? (
               <div className="panel-scroll panel-plan">
-                <FamilyTab slug={slug} ticket={ticket} tickets={tickets} planChildren={children} onOpenTicket={onOpenTicket} onError={onError}
+                <FamilyTab slug={slug} profile={profile} ticket={ticket} tickets={tickets} planChildren={children} onOpenTicket={onOpenTicket} onError={onError}
                   onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />
               </div>
             ) : tab === "huddle" ? (

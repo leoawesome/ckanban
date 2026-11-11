@@ -1,8 +1,8 @@
 // The Tasks tab (DrawerTab "family"): on a feature's top ticket its status on top (StatusBlock), then the whole feature from its top ticket down, grouped and folded, with each ticket's model, cost and
 // status, a short view of the clicked row, the plan controls of a planner, and "Add tickets…" (GatherDialog).
-import { aliasLabel } from "./models";
+import { resolveRun, runText } from "./models";
 import { useEffect, useMemo, useState } from "react";
-import { api, COLUMNS, type FamilyViewRow, type Ticket } from "./api";
+import { api, COLUMNS, type FamilyViewRow, type Profile, type Ticket } from "./api";
 import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, MAX_LEVEL, matchWords, settled, STATE_WORDS, subFeatureState, type FamilyRow, type FamilyState } from "./family";
 import { familyText } from "./FamilyPanel";
 import { Modal } from "./Modal";
@@ -17,18 +17,6 @@ import { MenuSheet } from "./MenuSheet";
 import { usePhone } from "./usePhone";
 
 const columnLabel = (status: string) => COLUMNS.find((c) => c.id === status)?.label ?? status;
-
-/** "Opus", "Sonnet 5.5"…: the model as people say it. */
-export function modelLabel(m: string | null | undefined): string {
-  if (!m) return "default";
-  // An alias ("fable") means the newest version: say which one it is today.
-  const alias = aliasLabel(m);
-  if (alias) return alias;
-  const x = /(opus|sonnet|haiku|fable)(?:[-\s]?(\d+)[-.](\d+))?/i.exec(m);
-  if (!x) return m;
-  const name = x[1][0].toUpperCase() + x[1].slice(1).toLowerCase();
-  return x[2] ? `${name} ${x[2]}.${x[3]}` : name;
-}
 
 /** A step's kind as a word on its detail line. */
 const KIND_WORDS: Record<string, string> = { explore: "Explore", build: "Build", test: "Test", review: "Review", fix: "Fix", with_you: "With you" };
@@ -48,8 +36,10 @@ const holds = (r: FamilyRow<Ticket>, kids: Map<string, unknown[]>) => !subRow(r)
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, onError, onMoveToDone, onAddMore }: {
+export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpenTicket, onError, onMoveToDone, onAddMore }: {
   slug: string;
+  /** The board: its model, Main ticket model and effort fill in what a ticket leaves unset. */
+  profile: Profile;
   ticket: Ticket;
   tickets: Ticket[];
   /** Children of the opened ticket's plan (its plan controls show when there are any). */
@@ -74,6 +64,11 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
       live = false;
     };
   }, [slug, ticket.id, key]);
+  // With no model or effort on the board, runs use Claude Code's own defaults: name them instead of "Default model".
+  const [claude, setClaude] = useState<{ model: string | null; effort?: string | null } | null>(null);
+  useEffect(() => {
+    if (!profile.model || !profile.effort) api.claudeDefaults().then(setClaude, () => {});
+  }, [profile.model, profile.effort]);
   const stateOf = (t: Ticket): FamilyState => familyState(t, view.get(t.id)?.needsYou ?? (!!t.attention && t.attention.kind !== "review"));
   // Folded: groups whose children are all settled, unless the user opened them (and the one holding the opened ticket).
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -165,7 +160,7 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
                     ? <span className="ft-sum">{plural(featureRows(tickets, t.id).length - 1, "task")}</span>
                     : group
                     ? <span className="ft-sum">{groupSummary(inside.map((k) => ({ kind: k.kind, state: stateOf(k) })))}</span>
-                    : <span className="ft-model">{[t.kind ? KIND_WORDS[t.kind] : null, modelLabel(v?.model ?? t.model)].filter(Boolean).join(" · ")}</span>}
+                    : <span className="ft-model">{[t.kind ? KIND_WORDS[t.kind] : null, runText(resolveRun(t, profile, claude))].filter(Boolean).join(" · ")}</span>}
                   <span className={`ft-st ${STATE_CLASS[groupState]}`}>{STATE_WORDS[groupState]}</span>
                   {v && cost(r) > 0 && <span className="ft-cost">{money(cost(r))}</span>}
                 </span>
@@ -196,7 +191,7 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
         <div className="ft-peek" role={phone ? "dialog" : undefined} aria-label={phone ? peeked.ticket.title : undefined}>
           <h3>{peeked.ticket.title}</h3>
           <div className="muted small">
-            {[groupOf(peeked.ticket.id), `${modelLabel(pv?.model ?? peeked.ticket.model)}${pv?.effort ? `, ${pv.effort}` : ""}`,
+            {[groupOf(peeked.ticket.id), runText(resolveRun(peeked.ticket, profile, claude)),
               pv?.finishedAt ? `finished ${timeAgo(pv.finishedAt)}` : peeked.ticket.running ? "working now" : columnLabel(peeked.ticket.status)].filter(Boolean).join(" · ")}
           </div>
           {pv?.summary ? <div className="ft-peek-sum"><Markdown text={pv.summary} /></div> : <p className="muted small">No result yet.</p>}

@@ -119,3 +119,48 @@ export function modelOptions(current?: string | null, skip?: string | null): { v
     ...(current && !MODELS.includes(current) ? [{ value: current, label: current }] : []),
   ];
 }
+
+/** What a ticket's runs use: its model, effort level (null: Claude Code's default) and whether ultracode is on. */
+export interface RunPick {
+  model: string | null;
+  effort: string | null;
+  ultracode: boolean;
+}
+
+/**
+ * The model and effort a ticket runs on, in the order the server picks them (board.ts chatArgs, commands.ts runOptions):
+ * the ticket's own; for a main ticket the board's Main ticket model; then the board's model and effort; then the model
+ * and effort Claude Code itself defaults to (its settings.json, from /api/claude/defaults). A tool ticket's kind (Task models) is
+ * written onto the ticket when it is made, so it shows as the ticket's own. "ultracode" saved as the effort reads as
+ * xhigh with ultracode on.
+ */
+export function resolveRun(
+  t: { model?: string | null; effort?: string | null; ultracode?: boolean | null; main?: boolean | null },
+  p: { model?: string | null; mainModel?: string | null; effort?: string | null; ultracode?: boolean | null } | null | undefined,
+  claude?: { model?: string | null; effort?: string | null } | null,
+): RunPick {
+  const level = (e: string | null | undefined) => (e === "ultracode" ? "xhigh" : e || null);
+  const legacy = (e: string | null | undefined) => (e === "ultracode" ? true : undefined);
+  return {
+    model: t.model || (t.main ? p?.mainModel : null) || p?.model || claude?.model || null,
+    effort: level(t.effort) ?? level(p?.effort) ?? level(claude?.effort),
+    ultracode: t.ultracode ?? legacy(t.effort) ?? p?.ultracode ?? legacy(p?.effort) ?? false,
+  };
+}
+
+/** "Opus", "Sonnet 5.5"…: the model as people say it. */
+export function modelLabel(m: string | null | undefined): string {
+  if (!m) return "Default model";
+  // An alias ("fable") means the newest version: say which one it is today.
+  const alias = aliasLabel(m);
+  if (alias) return alias;
+  const x = /(opus|sonnet|haiku|fable)(?:[-\s]?(\d+)[-.](\d+))?/i.exec(m);
+  if (!x) return m;
+  const name = x[1][0].toUpperCase() + x[1].slice(1).toLowerCase();
+  return x[2] ? `${name} ${x[2]}.${x[3]}` : name;
+}
+
+/** "Opus 5.5 · medium", "Fable 5.2 · xhigh · ultracode": what a ticket runs on (see resolveRun). */
+export function runText(r: RunPick): string {
+  return [modelLabel(r.model), r.effort ?? "default effort", r.ultracode ? "ultracode" : null].filter(Boolean).join(" · ");
+}

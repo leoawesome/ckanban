@@ -1,7 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { type ClaudeSession, type Status, type Ticket, type TicketMode } from "./api";
+import { type ClaudeSession, type Profile, type Status, type Ticket, type TicketMode } from "./api";
 import { looksLikeQuestion } from "./family";
-import { mainHint } from "./newTicketText";
+import { mainHint, modelWord, runsOn } from "./newTicketText";
+import { EFFORTS, modelOptions } from "./models";
+import { Select } from "./Select";
 import { FeatureChoice, useFeatureChoice } from "./FeatureChoice";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { useImagePaste } from "./imagePaste";
@@ -16,8 +18,10 @@ import { StarToggle } from "./StarToggle";
 import { TagEditor } from "./Tags";
 import { usePhone } from "./usePhone";
 
-export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], onClose, onCreate, onAskInChat }: {
+export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets = [], onClose, onCreate, onAskInChat }: {
   slug: string;
+  /** The board: its model, Main ticket model and effort are what "Board default" means here. */
+  profile?: Pick<Profile, "model" | "mainModel" | "effort"> | null;
   folder: string;
   /** This board's tags (most used first), offered in the Tags field. */
   knownTags?: { name: string; count: number }[];
@@ -26,7 +30,7 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
   onClose: () => void;
   /** Closes the form and opens Chat with this text in a new chat's message box. */
   onAskInChat?: (text: string) => void;
-  onCreate: (input: { title: string; body: string; status: Status; sessionId?: string; mode?: TicketMode; important?: boolean; tags?: string[]; partOf?: string }) => Promise<void>;
+  onCreate: (input: { title: string; body: string; status: Status; sessionId?: string; mode?: TicketMode; important?: boolean; tags?: string[]; partOf?: string; model?: string; effort?: string }) => Promise<void>;
 }) {
   const [mode, setMode] = useState<TicketMode>("interview");
   const [session, setSession] = useState<ClaudeSession | null>(null);
@@ -37,6 +41,10 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Model and effort for this ticket ("" = board default). Not remembered: every new form starts at the board's.
+  const [model, setModel] = useState("");
+  const [effort, setEffort] = useState("");
+  const [runOpen, setRunOpen] = useState(false);
   const images = useImagePaste(setBody);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   // A small "Part of X?" chip: the open feature sharing the most words (no AI call). It stays on its own until the user picks.
@@ -49,6 +57,12 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
   const startStatus: Status = mode === "interview" ? "planning" : "ready";
   const [mainInfo, setMainInfo] = useState(false);
   const hint = mainHint(partOf, session?.id);
+  // Same rule as the server (http.ts): the user's ticket on its own, not part of a feature or a linked chat, is a main
+  // ticket, and main tickets run on the board's Main ticket model when it is set.
+  const isMain = !partOf && !session;
+  const boardModel = (isMain ? profile?.mainModel : null) || profile?.model || null;
+  const boardEffort = (profile?.effort === "ultracode" ? "xhigh" : profile?.effort) || null;
+  const runs = runsOn({ model, effort, boardModel, boardEffort });
   // On a phone the description starts at 4 rows and grows to 6 while typing, so Start stays in view.
   const phone = usePhone();
   useLayoutEffect(() => {
@@ -62,7 +76,7 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
     if (busy || !title.trim() || images.uploading) return;
     setBusy(true);
     try {
-      await onCreate({ title: title.trim(), body, status, sessionId: session?.id, mode, ...(important ? { important } : {}), ...(tags.length ? { tags } : {}), ...(partOf ? { partOf } : {}) });
+      await onCreate({ title: title.trim(), body, status, sessionId: session?.id, mode, ...(important ? { important } : {}), ...(tags.length ? { tags } : {}), ...(partOf ? { partOf } : {}), ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
     } catch (e: any) {
       setErr(e.message);
       setBusy(false);
@@ -115,6 +129,27 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
               onClick={() => setMainInfo((v) => !v)}>ⓘ</button></>}</span>
           </span>
           {hint && mainInfo && <span className="muted small new-ticket-main-hint">{hint}</span>}
+        </div>
+        <div className="field new-ticket-run">
+          <button type="button" className="new-ticket-run-chip" aria-expanded={runOpen} onClick={() => setRunOpen((v) => !v)}
+            title={isMain && profile?.mainModel && !model ? "Main tickets use the board's Main ticket model" : undefined}>
+            <span>Runs on <b>{runs.what}</b>{runs.boardDefault && " (board default)"}</span><span className="new-ticket-run-caret" aria-hidden="true">{runOpen ? "▴" : "▾"}</span>
+          </button>
+          {runOpen && (
+            <div className="new-ticket-run-panel">
+              <div>
+                <span className="field-label">Model</span>
+                <Select ariaLabel="Model for this ticket" value={model} onChange={setModel}
+                  options={[{ value: "", label: `Board default${boardModel ? ` (${modelWord(boardModel)})` : ""}` }, ...modelOptions()]} />
+              </div>
+              <div>
+                <span className="field-label">Effort</span>
+                <Select ariaLabel="Effort for this ticket" value={effort} onChange={setEffort}
+                  options={[{ value: "", label: `Board default${boardEffort ? ` (${boardEffort})` : ""}` }, ...EFFORTS.map((e) => ({ value: e, label: e }))]} />
+              </div>
+            </div>
+          )}
+          {!runOpen && <span className="muted small">{phone ? "Tap" : "Click"} the chip to pick a stronger model for this ticket.</span>}
         </div>
         {session && (
           <div className="session-chip">

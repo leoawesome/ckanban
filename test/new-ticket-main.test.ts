@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { chatPrompt, firstRunPrompt, MAIN_FIRST_REPLY } from "../src/server/prompts";
-import { MAIN_HINT, mainHint } from "../web/src/newTicketText";
+import { MAIN_HINT, mainHint, runsOn } from "../web/src/newTicketText";
 import { plural } from "../web/src/teamText";
 
 const main = { kind: "main" as const, repo: "remote" as const, branch: "ck/x", inPlace: false };
@@ -44,4 +44,11 @@ test("the feature chip never adds a new ticket to a feature by itself", async ()
   const src = await Bun.file(new URL("../web/src/FeatureChoice.tsx", import.meta.url)).text();
   expect(src).toContain('useState<FeatureChoiceValue>("own")');
   expect(src).not.toContain("useEffect");
+});
+
+test("New ticket chip: board default wording, picked values drop it, empty values read plainly", () => {
+  expect(runsOn({ model: "", effort: "", boardModel: "sonnet", boardEffort: "medium" })).toEqual({ what: "Sonnet · medium", boardDefault: true });
+  expect(runsOn({ model: "opus", effort: "", boardModel: "sonnet", boardEffort: "medium" })).toEqual({ what: "Opus · medium", boardDefault: false });
+  expect(runsOn({ model: "", effort: "high", boardModel: null, boardEffort: null })).toEqual({ what: "Default model · high", boardDefault: false });
+  expect(runsOn({ model: "", effort: "", boardModel: "claude-opus-5-5", boardEffort: null }).what).toBe("claude-opus-5-5 · default effort");
 });

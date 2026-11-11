@@ -52,11 +52,11 @@ test("listClaudeProjects: missing ~/.claude.json gives empty list", () => {
 
 test("claudeDefaults reads model from settings.json", () => {
   const configDir = tempDir();
-  expect(claudeDefaults({ configDir })).toEqual({ model: null });
-  writeFileSync(join(configDir, "settings.json"), JSON.stringify({ model: "opus[1m]" }));
-  expect(claudeDefaults({ configDir })).toEqual({ model: "opus[1m]" });
+  expect(claudeDefaults({ configDir })).toEqual({ model: null, effort: null });
+  writeFileSync(join(configDir, "settings.json"), JSON.stringify({ model: "opus[1m]", effortLevel: "xhigh" }));
+  expect(claudeDefaults({ configDir })).toEqual({ model: "opus[1m]", effort: "xhigh" });
   writeFileSync(join(configDir, "settings.json"), "{broken");
-  expect(claudeDefaults({ configDir })).toEqual({ model: null });
+  expect(claudeDefaults({ configDir })).toEqual({ model: null, effort: null });
 });
 
 import { listSessions, liveSessionMatch } from "../src/server/claude";

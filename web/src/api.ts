@@ -1586,7 +1586,7 @@ export interface Proposal {
 export const api = {
   claudeProjects: () => req<ClaudeProject[]>("GET", "/api/claude/projects"),
   /** Claude's own default model, and the version each alias means as learned from real runs ({ fable: "5.2" }). */
-  claudeDefaults: () => req<{ model: string | null; versions?: Record<string, string> }>("GET", "/api/claude/defaults"),
+  claudeDefaults: () => req<{ model: string | null; effort?: string | null; versions?: Record<string, string> }>("GET", "/api/claude/defaults"),
   pickFolder: () => req<{ path: string | null }>("POST", "/api/pick-folder"),
   versionHistory: (path: string) => req<VersionHistory>("GET", `/api/version-history?path=${encodeURIComponent(path)}`),
   enableVersionHistory: (path: string) => req<{ changed: boolean; sha: string | null; ignored: string[]; repo: RepoKind }>("POST", "/api/version-history", { path }),
@@ -1783,6 +1783,8 @@ export const api = {
   createTicket: (slug: string, input: {
     title: string; body: string; status: Status; sessionId?: string; mode?: TicketMode; parentId?: string; planKey?: string; dependsOn?: string[];
     needs?: string[]; tags?: string[]; important?: boolean; proposedAs?: string; partOf?: string; kind?: TicketKind;
+    /** This ticket's model and effort (left out = board default). */
+    model?: string; effort?: string;
   }) => req<Ticket>("POST", t(slug), input),
   /** The feature's "Where we are" status (on any ticket of its family). */
   featureStatus: (slug: string, id: string) => req<FeatureStatus>("GET", `${t(slug, id)}/status`),

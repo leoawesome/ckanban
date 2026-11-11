@@ -73,9 +73,11 @@ export function listClaudeProjects(d: Dirs = {}): ClaudeProject[] {
 }
 
 /** User-level Claude Code defaults (runs without --model inherit these automatically). */
-export function claudeDefaults(d: Dirs = {}): { model: string | null } {
+export function claudeDefaults(d: Dirs = {}): { model: string | null; effort: string | null } {
   const settings = readJson(join(configDirOf(d), "settings.json"));
-  return { model: typeof settings?.model === "string" && settings.model ? settings.model : null };
+  const text = (v: unknown) => (typeof v === "string" && v ? v : null);
+  // effortLevel: the effort Claude Code runs at when the board and ticket set none (shown in the Tasks tab).
+  return { model: text(settings?.model), effort: text(settings?.effortLevel) };
 }
 
 /** Native macOS folder chooser. Returns null when cancelled or unsupported. */

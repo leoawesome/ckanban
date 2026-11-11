@@ -1510,6 +1510,7 @@ export function App() {
         <NewTicketDialog
           slug={profile.slug}
           folder={profile.path}
+          profile={profile}
           knownTags={boardTags(tickets)}
           tickets={tickets}
           onClose={() => setNewTicket(false)}

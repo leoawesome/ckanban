@@ -424,6 +424,36 @@ test("on a plain folder tool tickets edit the folder one at a time and land_mile
   }
 }, 60_000);
 
+test("New ticket form: create stores the picked model and effort (null without), refuses bad ones, and the first run uses them", async () => {
+  const p = await setup();
+  store.saveProfile({ ...p, model: "sonnet", mainModel: "haiku", effort: "low" });
+  quickBoard();
+  const server = createServer({ store, bus, board, port: 0, webDir: tempDir("ck-web-") });
+  try {
+    const base = `http://127.0.0.1:${server.port}/api/profiles/p/tickets`;
+    const post = (body: unknown) => fetch(base, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    // Neither picked: both stay null (board default), for Start and Save for later alike.
+    const plain = (await (await post({ title: "Plain", body: "", status: "backlog" })).json()) as Ticket;
+    expect(get(plain.id).model ?? null).toBeNull();
+    expect(get(plain.id).effort ?? null).toBeNull();
+    // Bad values are refused like the update path.
+    expect((await post({ title: "Bad", model: "gpt-4" })).status).toBe(400);
+    expect((await post({ title: "Bad", effort: "loud" })).status).toBe(400);
+    expect(store.listTickets("p").some((t) => t.title === "Bad")).toBe(false);
+    // Opus at high, started straight away (Just do it → Ready): stored, and the first run gets them.
+    const picked = (await (await post({ title: "Picked", body: "Do it.", status: "ready", mode: "auto", model: "opus", effort: "high" })).json()) as Ticket;
+    expect(picked).toMatchObject({ model: "opus", effort: "high", main: true });
+    expect(get(picked.id)).toMatchObject({ model: "opus", effort: "high" });
+    await untilSpawned(1);
+    await board.whenIdle();
+    const a = readArgs()[0].args;
+    expect(a[a.indexOf("--model") + 1]).toBe("opus"); // over the board's Main ticket model (haiku)
+    expect(a[a.indexOf("--effort") + 1]).toBe("high"); // over the board's effort (low)
+  } finally {
+    server.stop(true);
+  }
+}, 60_000);
+
 test("create_ticket inside a main ticket makes tool tickets with the kind's model and effort, or the ones it passes", async () => {
   const p = await setup();
   quickBoard();
