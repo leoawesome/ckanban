@@ -3961,18 +3961,26 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
 .field-row > .mini-link:first-of-type { margin-left: 0; }
 .part-of-row > .field-key { flex: none; white-space: nowrap; }
 .part-of-value { display: inline-flex; align-items: baseline; min-width: 0; max-width: 100%; }
-/* The board's suggestion: one row `Add to "X"? Add ✕`; a tap on the question shows why, ✕ offers Pick another / Not related. */
-.part-suggest { flex-wrap: wrap; align-items: center; gap: 2px 0; }
-.part-suggest-q { font-size: var(--fs-sm); color: var(--text); text-align: left; min-width: 0; overflow-wrap: anywhere; }
-.mini-link.part-suggest-add { color: var(--accent-text); font-weight: 600; text-decoration: none; font-size: var(--fs-sm); }
-.mini-link.part-suggest-add:hover:not(:disabled) { color: var(--accent-text); text-decoration: underline; }
-.icon-btn.part-suggest-x { width: 22px; height: 22px; font-size: var(--fs-xs); margin-left: 4px; }
-.parent-suggest-why { color: var(--muted); font-size: var(--fs-xs); margin: -2px 0 4px; }
-/* Touch: the row's links and ✕ get finger-sized tap areas. */
+/* The board's suggestion: one quiet dashed chip `Suggested: X ▾` (FeatureChoice's .fc-chip look); a tap lists
+   Add it / Pick another / Not related as plain rows in a small card. Right-aligned on desktop, stacked on phones. */
+.part-of-row:has(> .part-suggest) { align-items: flex-start; }
+.part-of-row:has(> .part-suggest) > .field-key { padding-top: 8px; }
+.fc.part-suggest { flex: 1 1 auto; align-items: flex-end; }
+.part-suggest .fc-chip { gap: 4px; }
+.part-suggest .fc-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+.part-suggest .fc-row { width: 100%; }
+.part-suggest .fc-row:disabled { cursor: default; opacity: 0.6; }
+.part-suggest .fc-row-title { font-weight: 600; }
+/* Touch: the row's links get finger-sized tap areas. */
 @media (pointer: coarse) {
-  .part-of-row .mini-link, .part-suggest-q { min-height: 40px; display: inline-flex; align-items: center; }
-  .part-of-row .mini-link { padding: 0 6px; }
-  .icon-btn.part-suggest-x { width: 40px; height: 40px; }
+  .part-of-row .mini-link { min-height: 40px; display: inline-flex; align-items: center; padding: 0 6px; }
+  .part-suggest .fc-chip, .part-suggest .fc-row { min-height: 44px; }
+}
+@media (max-width: 720px) {
+  .panel-ticket .part-of-row:has(> .part-suggest) > .field-key { padding-top: 0; }
+  .fc.part-suggest { align-items: flex-start; }
+  .part-suggest .fc-chip, .part-suggest .fc-row { min-height: 44px; }
+  .part-suggest .fc-row { justify-content: center; }
 }
 .parent-picker { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px; }
 .parent-picker input { width: 100%; box-sizing: border-box; }

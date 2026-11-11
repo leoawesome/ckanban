@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { api, COLUMNS, type Ticket } from "./api";
 import { featureRows, LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
 import { linkHints } from "./linkHints";
+import { useLayer } from "./layers";
 
 const columnLabel = (status: string) => COLUMNS.find((c) => c.id === status)?.label ?? status;
 
@@ -68,7 +69,7 @@ const PARENT_ROW: Record<LinkHow | "none", { key: string; title: string; gone: s
 
 /**
  * The ticket this one hangs under ("Part of", or "From" for plan tickets) with Change and
- * Unlink, or the board's suggestion with Link, Not related and Pick another. Moving a plan ticket
+ * Unlink, or the board's suggestion as one chip whose list offers Add it, Pick another and Not related. Moving a plan ticket
  * elsewhere ends that link too (Board.setPartOf).
  */
 export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
@@ -76,17 +77,20 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
 }) {
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
-  // The suggestion row: why (a tap on the question, or hover), and ✕'s other choices.
-  const [why, setWhy] = useState(false);
-  const [declining, setDeclining] = useState(false);
+  // The suggestion chip's list (Add it / Pick another / Not related) is open.
+  const [suggestOpen, setSuggestOpen] = useState(false);
   const current = parentLink(ticket);
   const row = PARENT_ROW[current?.how ?? "none"];
   const parent = current ? tickets.find((t) => t.id === current.id) : undefined;
-  const suggested = !current && ticket.parentSuggestion ? tickets.find((t) => t.id === ticket.parentSuggestion!.id) : undefined;
+  // Tickets in review or done are past the point of joining a feature: no suggestion there, just "Link to a ticket…".
+  const settled = ticket.status === "review" || ticket.status === "done";
+  const suggested = !current && !settled && ticket.parentSuggestion ? tickets.find((t) => t.id === ticket.parentSuggestion!.id) : undefined;
+  // Esc closes the open list first (the app's one Esc stack), before it closes the ticket panel.
+  useLayer(() => setSuggestOpen(false), { active: suggestOpen && !!suggested && !picking });
   const act = (p: Promise<unknown>) => {
     setBusy(true);
     // The server's refusal (too deep, a sub-feature under a sub-feature) is already in plain words.
-    p.then(() => setPicking(false), (e) => onError((e as Error).message)).finally(() => setBusy(false));
+    p.then(() => { setPicking(false); setSuggestOpen(false); }, (e) => onError((e as Error).message)).finally(() => setBusy(false));
   };
   const link = (id: string | null) => act(api.setPartOf(slug, ticket.id, id));
   const hints = linkHints(ticket, current?.how ?? null, ticket.main ? Math.max(0, featureRows(tickets, ticket.id).length - 1) : 0);
@@ -109,25 +113,27 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
         ) : current ? (
           <span className="part-of-value"><span className="muted small">{row.gone}</span>{changeUnlink}</span>
         ) : suggested ? (
-          <span className="part-of-value part-suggest">
-            {declining ? (
-              <>
-                <button className="mini-link" disabled={busy} onClick={() => setPicking(true)}>Pick another…</button>
-                <button className="mini-link" disabled={busy} onClick={() => act(api.dismissParentSuggestion(slug, ticket.id))}>Not related</button>
-                <button className="mini-link" onClick={() => setDeclining(false)}>Cancel</button>
-              </>
-            ) : (
-              <>
-                <button className="link-btn part-suggest-q" aria-expanded={ticket.parentSuggestion!.reason ? why : undefined}
-                  title={ticket.parentSuggestion!.reason || undefined} onClick={() => setWhy((v) => !v)}>
-                  Add to “{suggested.title}”?
+          <div className="fc part-suggest" role="group" aria-label="Suggested feature">
+            <button type="button" className="fc-chip" aria-expanded={suggestOpen} title={suggested.title}
+              onClick={() => setSuggestOpen((v) => !v)}>
+              Suggested: <span className="fc-title">{suggested.title}</span> <span aria-hidden>▾</span>
+            </button>
+            {suggestOpen && (
+              <div className="fc-list">
+                <button type="button" className="fc-row" disabled={busy} onClick={() => link(suggested.id)}>
+                  <span className="fc-row-title">Add it to this feature</span>
+                  {ticket.parentSuggestion!.reason && <span className="muted small">{ticket.parentSuggestion!.reason}</span>}
                 </button>
-                <button className="mini-link part-suggest-add" disabled={busy} onClick={() => link(suggested.id)}>Add</button>
-                <button className="icon-btn part-suggest-x" aria-label="Other choices: pick another ticket, or not related" title="Pick another or not related"
-                  onClick={() => setDeclining(true)}>✕</button>
-              </>
+                <button type="button" className="fc-row" disabled={busy} onClick={() => { setSuggestOpen(false); setPicking(true); }}>
+                  <span className="fc-row-title">Pick another feature…</span>
+                </button>
+                <button type="button" className="fc-row" disabled={busy} onClick={() => act(api.dismissParentSuggestion(slug, ticket.id))}>
+                  <span className="fc-row-title">Not related</span>
+                  <span className="muted small">Hide this suggestion</span>
+                </button>
+              </div>
             )}
-          </span>
+          </div>
         ) : (
           <button className="mini-link" disabled={busy} onClick={() => setPicking(true)} title={hints.link}>Link to a ticket…</button>
         )}
@@ -142,9 +148,6 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
         </div>
       )}
       {picking && <ParentPicker ticket={ticket} tickets={tickets} onPick={link} onCancel={() => setPicking(false)} />}
-      {suggested && !picking && !declining && why && ticket.parentSuggestion!.reason && (
-        <div className="parent-suggest-why">{ticket.parentSuggestion!.reason} <span className="muted">({columnLabel(suggested.status)})</span></div>
-      )}
     </>
   );
 }
