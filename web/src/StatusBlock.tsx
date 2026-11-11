@@ -52,7 +52,7 @@ const n = (c: Record<string, number>, ...keys: string[]) => keys.reduce((s, k) =
 /** "4 of 6 done, 1 working, 1 waiting" */
 function countText(c: Record<string, number>, total: number): string {
   const parts = [`${n(c, "done", "passed", "problem")} of ${total} done`];
-  for (const [k, w] of [["working", "working"], ["waiting", "waiting"], ["needs_you", "need you"], ["failed", "failed"], ["paused", "paused"]] as const) {
+  for (const [k, w] of [["working", "working"], ["waiting", "waiting"], ["needs_you", "need you"], ["in_review", "in review"], ["failed", "failed"], ["paused", "paused"]] as const) {
     if (c[k]) parts.push(`${c[k]} ${w}`);
   }
   return parts.join(", ");
@@ -139,7 +139,7 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
   const doneGroups = f.groups.filter((g) => g.settled && g.total);
   const looseDone = n(f.loose.counts, "done", "passed", "problem");
   const running = f.groups.filter((g) => !g.settled && g.total);
-  const looseActive = n(f.loose.counts, "working", "waiting", "needs_you", "paused");
+  const looseActive = n(f.loose.counts, "working", "waiting", "needs_you", "in_review", "paused");
   const roundOf = (id: string) => f.rounds.find((r) => r.id === id);
   const link = (id: string, title: string) => <button key={id} className="link-btn ws-link" onClick={() => onOpenTicket(id)}>{title}</button>;
   const after = () => onChanged();

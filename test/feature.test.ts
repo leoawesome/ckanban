@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { familyOf, familyState, suggestFeature } from "../web/src/family";
+import { familyOf, familyState, groupSummary, settled, STATE_WORDS, suggestFeature } from "../web/src/family";
 import { parseResult } from "../src/server/result";
 import type { Ticket } from "../src/server/types";
 import { board, readArgs, setup, store, untilSpawned, useBoardEnv } from "./board-env";
@@ -32,9 +32,9 @@ test("update_status writes status.md with the board's counts, verdicts and pull 
   await setup();
   const f = await feature();
   store.updateTicket("p", f.b1.id, { status: "done", outcome: "done", prUrl: "https://github.com/x/y/pull/37161", prs: [{ url: "https://github.com/x/y/pull/37161", state: "MERGED" }] });
-  store.updateTicket("p", f.b2.id, { status: "review", outcome: "done", prUrl: "https://github.com/x/y/pull/37162", prs: [{ url: "https://github.com/x/y/pull/37162", state: "OPEN" }] });
+  store.updateTicket("p", f.b2.id, { status: "done", outcome: "done", prUrl: "https://github.com/x/y/pull/37162", prs: [{ url: "https://github.com/x/y/pull/37162", state: "OPEN" }] });
   store.updateTicket("p", f.t1.id, { status: "done", outcome: "done" });
-  store.updateTicket("p", f.t2.id, { status: "review", outcome: "done", verdict: "problem" });
+  store.updateTicket("p", f.t2.id, { status: "done", outcome: "done", verdict: "problem" });
   store.updateTicket("p", f.fix.id, { status: "review", outcome: "failed" });
 
   const r = board.updateStatus("p", f.t1.id, { goal: "Agents reach contacts by WhatsApp.", next: "Fix the window check.", prNotes: { "https://github.com/x/y/pull/37161": "on staging" } });
@@ -129,7 +129,9 @@ test("a test ticket with verdict problem counts as Found a problem; one without 
     delete process.env.FAKE_VERDICT;
   }
   expect(get(f.t2.id).verdict).toBe("problem");
-  expect(familyState(get(f.t2.id))).toBe("problem");
+  // Its run ended in Review (an old plan child): still open until it is in Done.
+  expect(familyState(get(f.t2.id))).toBe("in_review");
+  expect(familyState({ ...get(f.t2.id), status: "done" })).toBe("problem");
   expect(familyState({ ...get(f.t1.id), status: "done", outcome: "done" })).toBe("passed");
   expect(parseResult('CKANBAN_RESULT: {"status":"done","prUrl":null,"summary":"x","verdict":"passed"}')?.verdict).toBe("passed");
   expect(parseResult('CKANBAN_RESULT: {"status":"done","prUrl":null,"summary":"x","verdict":"maybe"}')?.verdict).toBeUndefined();
@@ -220,11 +222,40 @@ test("the New ticket word match suggests the feature with the most shared words,
   expect(suggestFeature(tickets, "agent call", "")?.feature.id).toBe("b");
 });
 
+test("a task moved from Done back to Review reads In review: open, not counted as done, its group doesn't fold", async () => {
+  await setup();
+  const f = await feature();
+  const done = { status: "done", outcome: "done" } as const;
+  store.updateTicket("p", f.b1.id, done);
+  store.updateTicket("p", f.b2.id, { status: "review", outcome: "done", tool: true } as any);
+  store.updateTicket("p", f.fix.id, { status: "review", outcome: "done" });
+  expect(familyState(get(f.b2.id))).toBe("in_review");
+  expect(familyState(get(f.b2.id), true)).toBe("needs_you");
+  expect(familyState({ ...get(f.b2.id), outcome: "failed" })).toBe("failed");
+  expect(familyState({ ...get(f.b2.id), outcome: "limit" })).toBe("paused");
+  expect(familyState({ ...get(f.b2.id), running: true })).toBe("working");
+  expect(familyState({ ...get(f.b2.id), outcome: null })).toBe("in_review");
+  expect(familyState({ ...get(f.b2.id), status: "done" })).toBe("done");
+  expect(settled("in_review")).toBe(false);
+  expect(STATE_WORDS.in_review).toBe("In review");
+  expect(groupSummary([{ state: "done" }, { state: "in_review" }])).toBe("1 of 2 done");
+  const s = board.featureStatus("p", f.top.id);
+  expect(s.facts.counts.in_review).toBe(2);
+  expect(s.facts.counts.done ?? 0).toBe(1);
+  const builds = s.facts.groups.find((g) => g.id === f.builds.id)!;
+  expect(builds.settled).toBe(false);
+  expect(builds.counts).toEqual({ done: 1, in_review: 1 });
+  const running = s.sections.find((x) => x.key === "running")?.text ?? "";
+  expect(running).toContain("Builds: 1 of 2 done, 1 in review.");
+  expect(running).toContain("Other tickets: 0 of 1 done, 1 in review.");
+  expect(s.sections.find((x) => x.key === "done")?.text ?? "").not.toContain("Builds");
+});
+
 test("broken facts say why each step failed or found a problem, and usage-limit steps are listed as paused", async () => {
   await setup();
   const f = await feature();
   store.updateTicket("p", f.fix.id, { status: "review", outcome: "failed", error: "Run started\nclaude exited with code 1: tests failed in retry.test.ts\n" });
-  store.updateTicket("p", f.t2.id, { status: "review", outcome: "done", verdict: "problem" });
+  store.updateTicket("p", f.t2.id, { status: "done", outcome: "done", verdict: "problem" });
   store.updateTicket("p", f.b1.id, { status: "review", outcome: "blocked", capHit: { capUsd: 5, spentUsd: 5.2, at: "2026-11-06T10:00:00Z" } } as any);
   store.updateTicket("p", f.b2.id, { status: "review", outcome: "limit", limit: { resetAt: "2026-11-06T14:30:00Z", auto: true, at: "2026-11-06T12:00:00Z", message: "limit" } });
   store.updateTicket("p", f.top.id, {

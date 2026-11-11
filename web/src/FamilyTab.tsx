@@ -31,7 +31,7 @@ const money = (n: number) => `$${n < 10 ? n.toFixed(2) : n.toFixed(1)}`;
 
 /** The pill class for a status word. */
 export const STATE_CLASS: Record<FamilyState, string> = {
-  waiting: "wait", working: "work", done: "done", passed: "done", problem: "prob", failed: "prob", needs_you: "you", paused: "wait",
+  waiting: "wait", working: "work", done: "done", passed: "done", problem: "prob", failed: "prob", needs_you: "you", in_review: "you", paused: "wait",
 };
 
 /** A sub-feature's row: one line with its task count and Open; its tasks are its own (featureRows leaves them out). */
@@ -140,7 +140,7 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
           const group = holds(r, kids) && r.depth > 0;
           const st = stateOf(t);
           const inside = group ? below(t.id) : [];
-          const groupState: FamilyState = subRow(r) ? subFeatureState(tickets, t.id, st) : group ? (inside.every((k) => settled(stateOf(k))) ? "done" : inside.some((k) => stateOf(k) === "needs_you") ? "needs_you" : "working") : st;
+          const groupState: FamilyState = subRow(r) ? subFeatureState(tickets, t.id, st) : group ? (inside.every((k) => settled(stateOf(k))) ? "done" : inside.some((k) => stateOf(k) === "needs_you") ? "needs_you" : inside.some((k) => stateOf(k) === "in_review") ? "in_review" : "working") : st;
           const v = view.get(t.id);
           return (
             <div key={t.id} role="treeitem" aria-current={t.id === ticket.id ? "true" : undefined}

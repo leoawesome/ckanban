@@ -441,9 +441,10 @@ export function linkProblem<T extends FeatureTicket>(tickets: T[], moved: Pick<T
 }
 
 /** How a family row reads: the words the Family tab and the status counts use. */
-export type FamilyState = "waiting" | "working" | "done" | "passed" | "problem" | "failed" | "needs_you" | "paused";
+/** in_review: in the Review column (the user may have moved it back from Done to follow up): still open, waits on them. */
+export type FamilyState = "waiting" | "working" | "done" | "passed" | "problem" | "failed" | "needs_you" | "in_review" | "paused";
 export const STATE_WORDS: Record<FamilyState, string> = {
-  waiting: "Waiting", working: "Working", done: "Done", passed: "Passed", problem: "Found a problem", failed: "Failed", needs_you: "Needs you", paused: "Paused",
+  waiting: "Waiting", working: "Working", done: "Done", passed: "Passed", problem: "Found a problem", failed: "Failed", needs_you: "Needs you", in_review: "In review", paused: "Paused",
 };
 
 /** needsYou: the board's attention shows the ticket as Your turn. */
@@ -452,9 +453,10 @@ export function familyState(t: FeatureTicket, needsYou = false): FamilyState {
   if (t.status === "done") return finished();
   if (t.running || t.status === "ready" || t.status === "in_progress") return t.outcome === "limit" ? "paused" : "working";
   if (t.outcome === "limit") return "paused";
-  if (t.status === "review" && t.outcome === "done") return finished();
   if (t.outcome === "failed" || t.outcome === "blocked") return "failed";
   if (needsYou) return "needs_you";
+  // Only the Done column counts as finished: a ticket in Review is still open, however its last run ended.
+  if (t.status === "review") return "in_review";
   if (t.status === "backlog" || t.status === "planning") return "waiting";
   return "needs_you";
 }

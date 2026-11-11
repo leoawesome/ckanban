@@ -99,7 +99,9 @@ export function wakeTable(kids: Ticket[], all: Ticket[], running: (id: string) =
       const parts = [groupSummary(states)];
       const working = states.filter((s) => s.state === "working").length;
       const failed = states.filter((s) => s.state === "failed").length;
+      const inReview = states.filter((s) => s.state === "in_review").length;
       if (working) parts.push(`${working} working`);
+      if (inReview) parts.push(`${inReview} in review`);
       if (failed) parts.push(`${failed} failed`);
       lines.push(`- ${t.id} ${t.title}: ${parts.join(", ")}${running(t.id) || t.status === "ready" || t.status === "in_progress" ? " (group working)" : ""}`);
       continue;

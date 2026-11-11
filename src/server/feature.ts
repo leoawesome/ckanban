@@ -251,7 +251,7 @@ export function applyPatch(saved: SavedStatus | null, patch: StatusPatch, now: s
 
 const countWords = (c: Partial<Record<FamilyState, number>>, total: number): string => {
   const done = (c.done ?? 0) + (c.passed ?? 0) + (c.problem ?? 0);
-  const rest = (["working", "waiting", "needs_you", "failed", "paused"] as FamilyState[])
+  const rest = (["working", "waiting", "needs_you", "in_review", "failed", "paused"] as FamilyState[])
     .filter((s) => c[s]).map((s) => `${c[s]} ${s === "needs_you" ? "need you" : STATE_WORDS[s].toLowerCase()}`);
   return [`${done} of ${total} done`, ...rest].join(", ");
 };
@@ -284,7 +284,7 @@ export function statusSections(saved: SavedStatus | null, f: StatusFacts): { key
     const r = f.rounds.find((x) => x.id === g.id);
     return `${g.title}: ${countWords(g.counts, g.total)}${r && (r.passed || r.problem) ? ` (${r.passed} passed, ${r.problem} found a problem)` : ""}.`;
   });
-  const looseActive = (["working", "waiting", "needs_you", "paused"] as FamilyState[]).some((x) => f.loose.counts[x]);
+  const looseActive = (["working", "waiting", "needs_you", "in_review", "paused"] as FamilyState[]).some((x) => f.loose.counts[x]);
   if (looseActive) running.push(`Other tickets: ${countWords(f.loose.counts, f.loose.total)}.`);
   push("running", "Running", running.join(" "));
   push("subfeatures", "Sub-features", (f.subFeatures ?? []).map((x) => `${x.title}: ${STATE_WORDS[x.state]}${x.headline ? ` · ${x.headline}` : ""}`).join("\n"));
