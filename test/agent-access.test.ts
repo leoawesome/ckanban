@@ -147,7 +147,7 @@ function fakeClient() {
       adopted: ids.filter((x) => x !== "t_x").map((id) => ticket({ id, title: `T ${id}` })),
       skipped: ids.includes("t_x") ? [{ id: "t_x", reason: "belongs to plan t_other" }] : [],
     })),
-    planAction: rec("planAction", (_s, id) => ticket({ id, plan: { state: "running", maxConcurrent: 2 } })),
+    planAction: rec("planAction", (_s, id) => ticket({ id, plan: { state: "running" } })),
     stop: rec("stop", () => ({ stopped: true })),
     comment: rec("comment", () => ({ id: "c2", author: "user", text: "x", at: "" })),
     reportBug: rec("reportBug", () => ({ url: "https://github.com/leoawesome/ckanban/issues/7", fallbackUrl: "", error: null, screenshots: [] })),
@@ -553,7 +553,7 @@ test("adopt_tickets and plan_control act on the run's own ticket and pass the ru
   expect((await callTool("adopt_tickets", { ids: [] }, ctx)).isError).toBe(true);
   const p = await callTool("plan_control", { action: "resume" }, ctx);
   expect(calls.at(-1)).toEqual({ fn: "planAction", args: ["site", "t_9", "resume", "site/t_9"] });
-  expect(p.content[0].text).toContain("is running (2 at a time)");
+  expect(p.content[0].text).toContain("Plan of t_9 is running.");
   expect((await callTool("plan_control", { action: "pause" }, ctx)).content[0].text).toContain("start or resume");
   // Outside a run the ticket must be named.
   const out = ctxWith({}, "/elsewhere");

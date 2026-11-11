@@ -142,7 +142,7 @@ const MODE = {
 };
 
 /** What a board run may do to other tickets (see runRights in http.ts). */
-const IN_RUN = " Inside a board run: other tickets on this board, when your ticket's task calls for it (logged on that ticket); runs started this way are limited. " +
+const IN_RUN = " Inside a board run: other tickets on this board, when your ticket's task calls for it (logged on that ticket); a ticket that keeps restarting the run that started it is refused, to stop loops. " +
   "Another board's tickets (pass its profile; list_profiles lists them): only from a chat reply to a message the user typed in that chat.";
 
 interface Tool {
@@ -1867,12 +1867,12 @@ export const TOOLS: Tool[] = [
         },
         model: {
           type: "string",
-          description: "Model for its runs, e.g. \"claude-sonnet-5-5\" or \"opus\". Inside a main ticket, leave it out to use the kind's default " +
-            "(explore, test, review, with_you: Sonnet 5.5; build, fix: Opus 5.5; group, round: Sonnet 5.5).",
+          description: "Model for its runs: an alias (\"opus\", \"fable\", \"sonnet\", \"haiku\", always the newest version) or a full id. " +
+            "Inside a main ticket, leave it out to use the kind's model from the board's Task models setting (your rules list it).",
         },
         effort: {
           type: "string", enum: ["low", "medium", "high", "xhigh", "max"],
-          description: "Reasoning effort for its runs. Inside a main ticket, leave it out to use the kind's default (medium; low for group and round).",
+          description: "Reasoning effort for its runs. Inside a main ticket, leave it out to use the kind's effort from the board's Task models setting.",
         },
         partOfThisTicket: {
           type: "boolean",
@@ -2301,9 +2301,9 @@ export const TOOLS: Tool[] = [
   {
     name: "plan_control",
     description:
-      "Start or resume this ticket's plan, so the board runs its child tickets unattended: in dependency order, a few at a time, one ticket per " +
-      "exclusive resource (needs) at a time, never a child waiting on the user. Use it when the user asked you to run, manage or take over the " +
-      "tickets. Pausing, finishing and how many run at once stay with the user (Plan tab). Inside a board run it works for the ticket's own plan " +
+      "Start or resume this ticket's plan, so the board runs its child tickets unattended: each child starts as soon as the ones it waits for are done, " +
+      "shared devices (needs) taken in turns, never a child waiting on the user. Use it when the user asked you to run, manage or take over the " +
+      "tickets. Pausing and finishing stay with the user (Plan tab). Inside a board run it works for the ticket's own plan " +
       "only: in a reply to the user's message in this ticket's chat, or while the plan runs.",
     inputSchema: {
       type: "object",
@@ -2324,7 +2324,7 @@ export const TOOLS: Tool[] = [
       if (!action) throw new ClientError("action must be start or resume");
       const t = await ctx.client.planAction(slug, id, action, ctx.env[RUN_ENV]);
       const p = t.plan;
-      return `Plan of ${t.id} is ${p?.state ?? "not started"}${p ? ` (${p.maxConcurrent} at a time)` : ""}. ` +
+      return `Plan of ${t.id} is ${p?.state ?? "not started"}. ` +
         "The board starts children itself and wakes this ticket when one needs a decision; end your reply now.";
     },
   },

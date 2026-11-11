@@ -7,6 +7,7 @@ import type { TicketUsage, UsageResult } from "./usage";
 import type { ContextView } from "./contextText";
 import type { Status } from "./columns";
 import type { TicketKind } from "./family";
+import type { TaskModels } from "./models";
 import type { PrStatus, TicketPr } from "./prText";
 export type { PrCheck, PrStatus, TicketPr } from "./prText";
 export type { Status } from "./columns";
@@ -250,6 +251,8 @@ export interface Profile {
   workspace?: Workspace;
   /** Connectors from the claude.ai account this board's runs get: "all" (missing), "none" or the names to keep ("Slack"). */
   claudeAiConnectors?: "all" | "none" | string[];
+  /** "Task models": model and effort per kind of task, only the kinds changed from the defaults (models.ts KIND_DEFAULTS). */
+  taskModels?: TaskModels | null;
   pathExists?: boolean;
   running?: number;
 }
@@ -546,7 +549,6 @@ export type PlanState = "running" | "paused" | "finishing" | "done" | "stuck";
 
 export interface Plan {
   state: PlanState;
-  maxConcurrent: number;
   wakeups: number;
   startedAt: string;
   finishedAt?: string | null;
@@ -1581,12 +1583,13 @@ export interface Proposal {
 
 export const api = {
   claudeProjects: () => req<ClaudeProject[]>("GET", "/api/claude/projects"),
-  claudeDefaults: () => req<{ model: string | null }>("GET", "/api/claude/defaults"),
+  /** Claude's own default model, and the version each alias means as learned from real runs ({ fable: "5.2" }). */
+  claudeDefaults: () => req<{ model: string | null; versions?: Record<string, string> }>("GET", "/api/claude/defaults"),
   pickFolder: () => req<{ path: string | null }>("POST", "/api/pick-folder"),
   versionHistory: (path: string) => req<VersionHistory>("GET", `/api/version-history?path=${encodeURIComponent(path)}`),
   enableVersionHistory: (path: string) => req<{ changed: boolean; sha: string | null; ignored: string[]; repo: RepoKind }>("POST", "/api/version-history", { path }),
   /** Claude plan usage (5h / weekly windows) or a plain-words error. */
-  usage: () => req<UsageResult>("GET", "/api/usage"),
+  usage: (fresh = false) => req<UsageResult>("GET", `/api/usage${fresh ? "?fresh=1" : ""}`),
   /** What every board spent today (local day). */
   spend: () => req<TodaySpend>("GET", "/api/spend"),
   version: () => req<{ version: string; latest: string | null; updateAvailable: boolean; url: string | null }>("GET", "/api/version"),
@@ -1789,8 +1792,8 @@ export const api = {
   gather: (slug: string, id: string, tickets: { id: string; group: string | null }[], newGroup: string | null) =>
     req<{ gathered: Ticket[]; movedUp: { id: string; title: string; to: string }[]; skipped: { id: string; reason: string }[]; group: Ticket | null }>(
       "POST", `${t(slug, id)}/gather`, { tickets, newGroup }),
-  plan: (slug: string, id: string, action: "start" | "pause" | "resume" | "done" | "concurrency", maxConcurrent?: number) =>
-    req<Ticket>("POST", `${t(slug, id)}/plan`, { action, maxConcurrent }),
+  plan: (slug: string, id: string, action: "start" | "pause" | "resume" | "done") =>
+    req<Ticket>("POST", `${t(slug, id)}/plan`, { action }),
   updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome">> & { expectedBody?: string }) =>
     req<Ticket>("PATCH", t(slug, id), patch),
   deleteTicket: (slug: string, id: string) => req<void>("DELETE", t(slug, id)),

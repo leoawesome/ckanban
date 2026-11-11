@@ -47,7 +47,10 @@ export async function setup(idleMs = 300, maxParallel = 3) {
   huddles = new Huddles(store, board, bus, {
     claudeBin: FAKE, idleMs, learn: (slug, h, p, role, lessons) => learned.push({ slug, huddle: h.id, handle: p.handle, role, lessons }),
   });
-  server = createServer({ store, bus, board, huddles, port: 0, webDir: tempDir("ck-web-") });
+  server = createServer({
+    store, bus, board, huddles, port: 0, webDir: tempDir("ck-web-"),
+    usage: async () => ({ windows: [], fetchedAt: new Date().toISOString() }),
+  });
   client = new BoardClient(server.port);
   const p: Profile = { name: "P", slug: "p", path: await makeRepo(), baseBranch: "main", maxParallel, model: null, createdAt: new Date().toISOString() };
   store.saveProfile(p);

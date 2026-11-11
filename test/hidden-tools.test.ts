@@ -42,9 +42,9 @@ function feature(extra: Partial<Ticket> = {}) {
   return { main, round, tests, build, withYou, added, old, all: [main, round, ...tests, build, withYou, added, old] };
 }
 
-test("the with_you kind exists with Sonnet 5.5 at medium; every tool ticket is hidden, with you ones too", () => {
+test("the with_you kind exists with Sonnet at medium; every tool ticket is hidden, with you ones too", () => {
   expect(TICKET_KINDS).toContain("with_you");
-  expect(KIND_DEFAULTS.with_you).toEqual({ model: "claude-sonnet-5-5", effort: "medium" });
+  expect(KIND_DEFAULTS.with_you).toEqual({ model: "sonnet", effort: "medium" });
   expect(hiddenTool(tk("a", { tool: true, kind: "test" }))).toBe(true);
   expect(hiddenTool(tk("a", { tool: true, kind: "with_you" }))).toBe(true);
   expect(withYouTool(tk("a", { tool: true, kind: "with_you" }))).toBe(true);
@@ -100,7 +100,7 @@ test("a tool ticket has no Your turn; its question shows on the main card naming
 test("ticketAttention: tool tickets need nothing themselves, the main ticket says Needs you for a with-you step, and the paused main ticket rolls up the oldest step", async () => {
   await setup();
   const main = await board.createTicket("p", { title: "AI Outreach", body: "", status: "backlog", mode: "auto", main: true });
-  store.updateTicket("p", main.id, { status: "review", outcome: "done", runEndedAt: at(1), plan: { state: "running", maxConcurrent: 2, wakeups: 0, startedAt: at(0), originalCount: 0, inbox: [], seen: {}, retries: {}, awaiting: null } });
+  store.updateTicket("p", main.id, { status: "review", outcome: "done", runEndedAt: at(1), plan: { state: "running", wakeups: 0, startedAt: at(0), originalCount: 0, inbox: [], seen: {}, retries: {}, awaiting: null } });
   const mk = async (title: string, kind: Ticket["kind"], x: Partial<Ticket>) => {
     const t = await board.createTicket("p", { title, body: "", status: "backlog", mode: "auto", parentId: main.id, tool: true, kind });
     return store.updateTicket("p", t.id, x);
@@ -356,7 +356,7 @@ test("a with-you step waiting for the user doesn't wake its main ticket or make 
   const { planStep } = await import("../src/server/plan");
   const w = tk("W", { parentId: "M", tool: true, kind: "with_you", status: "review", outcome: "needs_input", runCount: 1 });
   const done = tk("D", { parentId: "M", tool: true, kind: "build", status: "done", outcome: "done", runCount: 1 });
-  const plan = { state: "running", maxConcurrent: 2, wakeups: 0, startedAt: at(0), originalCount: 0, inbox: [], seen: { D: "1:done:" }, retries: {}, awaiting: null } as any;
+  const plan = { state: "running", wakeups: 0, startedAt: at(0), originalCount: 0, inbox: [], seen: { D: "1:done:" }, retries: {}, awaiting: null } as any;
   const step = planStep(plan, [done, w], () => false, { managed: { summary: () => "", report: () => null } });
   expect(step.events).toEqual([]);
   expect(step.deadEnd).toBeNull();

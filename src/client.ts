@@ -112,7 +112,7 @@ export interface TicketInfo {
   resources?: { holding: boolean; waitingFor: string[] } | null;
   /** Plan child waiting on the user: the plan won't start it until then. */
   userWait?: string | null;
-  plan?: { state: string; maxConcurrent: number } | null;
+  plan?: { state: string } | null;
   /** ⭐ Important: reviewed in an auto huddle before landing. */
   important?: boolean;
   autoHuddle?: { state: "waiting" | "live"; reason: string; trigger?: string; template: string; huddleId?: string | null } | null;

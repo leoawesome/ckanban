@@ -68,7 +68,7 @@ test("a close after the last run ended clears every 'needs you'; a newer run ask
   expect(userWaitReason(asked, S({ openQuestions: 1 }))).not.toBeNull();
   expect(userWaitReason(closed, S({ openQuestions: 1 }))).toBeNull();
   // A plan stuck only on that question no longer says "Plan stuck"; stuck for another reason still does.
-  const plan = { state: "stuck", reason: STUCK_ON_QUESTIONS, maxConcurrent: 1, wakeups: 0, startedAt: "", originalCount: 1 } as any;
+  const plan = { state: "stuck", reason: STUCK_ON_QUESTIONS, wakeups: 0, startedAt: "", originalCount: 1 } as any;
   expect(attentionFor({ ...asked, main: true, plan }, S({ openQuestions: 1 }), false)?.label).toBe("Plan stuck");
   expect(attentionFor({ ...closed, main: true, plan }, S({ openQuestions: 1 }), false)?.label).not.toBe("Plan stuck");
   expect(attentionFor({ ...closed, main: true, plan: { ...plan, reason: "no progress" } }, null, false)?.label).toBe("Plan stuck");

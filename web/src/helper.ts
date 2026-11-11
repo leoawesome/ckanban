@@ -57,6 +57,7 @@ export const helperApi = {
   messages: (held = false) => req<{ messages: Message[]; unread: number }>("GET", `/api/messages${held ? "?held=1" : ""}`),
   message: (id: string) => req<Message>("GET", `/api/messages/${encodeURIComponent(id)}`),
   markRead: (id: string) => req<{ message: Message; unread: number }>("POST", `/api/messages/${encodeURIComponent(id)}/read`, {}),
+  markAllRead: () => req<{ marked: number; unread: number }>("POST", "/api/messages/read-all", {}),
   stop: (id: string, how: "got-it" | "not-urgent", key?: string | null) =>
     req<{ stopped: number; text: string; message: Message; unread: number }>("POST", `/api/messages/${encodeURIComponent(id)}/${how}`, key ? { key } : {}),
 };

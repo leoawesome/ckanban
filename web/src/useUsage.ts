@@ -8,7 +8,7 @@ const SPEND_THROTTLE_MS = 15_000;
 export interface UsageState {
   usage: UsageResult | null;
   loading: boolean;
-  /** Fetch plan usage again (the Refresh button). */
+  /** Ask for plan usage now (the Refresh button; the server allows one check a minute). */
   load: () => void;
   spend: TodaySpend | null;
   loadSpend: () => void;
@@ -22,14 +22,20 @@ export function useUsage(): UsageState {
   const [usage, setUsage] = useState<UsageResult | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(() => {
+  const fetchUsage = useCallback((fresh: boolean) => {
     setLoading(true);
-    api.usage()
+    api.usage(fresh)
       .then(setUsage)
-      .catch((e: Error) => setUsage({ error: e.message || "Could not reach the board server", fetchedAt: new Date().toISOString() }))
+      // Keep numbers already shown when the board server can't be reached.
+      .catch((e: Error) => setUsage((u) => {
+        const error = e.message || "Could not reach the board server";
+        return u && "windows" in u ? { ...u, stale: true, error, limited: false } : { error, fetchedAt: new Date().toISOString() };
+      }))
       .finally(() => setLoading(false));
   }, []);
-  useEffect(load, [load]);
+  const load = useCallback(() => fetchUsage(true), [fetchUsage]);
+  // Page open: the server's cached answer (it asks Anthropic only when that is a few minutes old).
+  useEffect(() => fetchUsage(false), [fetchUsage]);
 
   const [spend, setSpend] = useState<TodaySpend | null>(null);
   const loadSpend = useCallback(() => {

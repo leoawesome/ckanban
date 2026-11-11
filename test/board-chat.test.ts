@@ -347,7 +347,7 @@ test("a peer message or a running plan's child keeps a Backlog card in Backlog",
   const planner = await board.createTicket("p", { title: "plan", body: "", status: "review" });
   const kid = await board.createTicket("p", { title: "kid", body: "", status: "backlog" });
   store.updateTicket("p", kid.id, { parentId: planner.id, mode: "interview" });
-  const plan = (state: "running" | "paused") => ({ state, maxConcurrent: 1, wakeups: 0, startedAt: new Date().toISOString(), originalCount: 1, inbox: [], seen: {}, retries: {}, awaiting: null });
+  const plan = (state: "running" | "paused") => ({ state, wakeups: 0, startedAt: new Date().toISOString(), originalCount: 1, inbox: [], seen: {}, retries: {}, awaiting: null });
   // The running plan moves its children itself.
   store.updateTicket("p", planner.id, { plan: plan("running") });
   expect((await board.chat("p", kid.id, "a question")).status).toBe("backlog");

@@ -45,7 +45,7 @@ async function settle(ms = 20000) {
   }
 }
 
-test("a plan runs its children in dependency order, at most maxConcurrent at once, then the final check", async () => {
+test("a plan runs its children in dependency order, every ready child at once, then the final check", async () => {
   process.env.FAKE_STEP_MS = "40";
   const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog" });
   const mk = (title: string, planKey: string, dependsOn?: string[]) =>
@@ -72,10 +72,11 @@ test("a plan runs its children in dependency order, at most maxConcurrent at onc
   await settle();
 
   expect(order.slice(0, 2).sort()).toEqual(["A", "E"]);
+  expect(order.slice(2, 4).sort()).toEqual(["B", "C"]);
   expect(order.at(-1)).toBe("D");
   expect(order.indexOf("B")).toBeLessThan(order.indexOf("D"));
   expect(order.indexOf("C")).toBeLessThan(order.indexOf("D"));
-  expect(peak).toBeLessThanOrEqual(2);
+  expect(peak).toBeGreaterThanOrEqual(2);
   for (const k of [a, b, c, d, e]) expect(store.getTicket("p", k.id)!.outcome).toBe("done");
   const p = store.getTicket("p", planner.id)!;
   expect(p.plan?.state).toBe("done");
@@ -123,7 +124,7 @@ async function stuckPlan(...statuses: ("backlog" | "review" | "done")[]) {
   const kids = [];
   for (const [i, s] of statuses.entries()) kids.push(await board.createTicket("p", { title: `K${i}`, body: "", status: s, parentId: planner.id }));
   store.updateTicket("p", planner.id, {
-    plan: { state: "stuck", maxConcurrent: 2, wakeups: 1, startedAt: "", originalCount: kids.length, inbox: [], seen: {}, retries: {}, awaiting: null, reason: "the planner's run is blocked" },
+    plan: { state: "stuck", wakeups: 1, startedAt: "", originalCount: kids.length, inbox: [], seen: {}, retries: {}, awaiting: null, reason: "the planner's run is blocked" },
   });
   return { planner, kids };
 }
@@ -177,7 +178,7 @@ test("a plan starts children that list the same device together", async () => {
   const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog" });
   const mk = (title: string) => board.createTicket("p", { title, body: "", status: "backlog", parentId: planner.id, needs: ["emulator"] });
   const kids = [await mk("E1"), await mk("E2")];
-  board.startPlan("p", planner.id, { maxConcurrent: 3 });
+  board.startPlan("p", planner.id);
   for (const k of kids) expect(store.getTicket("p", k.id)!.status).not.toBe("backlog");
   await settle();
   expect(store.getTicket("p", planner.id)!.plan?.state).toBe("done");
@@ -268,7 +269,7 @@ test("planner rights: a reply to the user's own chat message, or any run of a ru
   expect(board.plannerRights("p", w.id)).toBeNull();
   await settle();
   // A plan that is done: the user's own message still grants rights (tidy up its children), wake-ups don't.
-  store.updateTicket("p", mgr.id, { plan: { state: "done", maxConcurrent: 2, wakeups: 0, startedAt: "", originalCount: 1 } });
+  store.updateTicket("p", mgr.id, { plan: { state: "done", wakeups: 0, startedAt: "", originalCount: 1 } });
   await board.chat("p", mgr.id, "mark all children done");
   expect(board.plannerRights("p", mgr.id)?.id).toBe(mgr.id);
   await settle();

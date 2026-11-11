@@ -8,7 +8,7 @@ const T = (p: Partial<Ticket>): Ticket => ({
   outcome: null, lastActivity: null, lastRunAt: null, runCount: 0, error: null, createdAt: `2026-10-01T00:00:${String(n).padStart(2, "0")}Z`,
   updatedAt: "", body: "", parentId: "t_plan", ...p,
 } as Ticket);
-const plan = (p: Partial<Plan> = {}): Plan => ({ state: "running", maxConcurrent: 2, wakeups: 0, startedAt: "", originalCount: 5, ...p });
+const plan = (p: Partial<Plan> = {}): Plan => ({ state: "running", wakeups: 0, startedAt: "", originalCount: 5, ...p });
 const idle = () => false;
 
 function abcde() {
@@ -38,15 +38,16 @@ test("cycles are found", () => {
   expect(findCycle(abcde().all)).toBeNull();
 });
 
-test("planStep starts eligible children up to the cap, in order", () => {
+test("planStep starts every child whose dependencies are done, in order", () => {
   const { a, b, c, d, e, all } = abcde();
   expect(planStep(plan(), all, idle).start).toEqual([a.id, e.id]);
-  expect(planStep(plan({ maxConcurrent: 1 }), all, idle).start).toEqual([a.id]);
-  // A done, E running: one free slot goes to B, then C.
+  // An old plan file's "at once" limit is ignored.
+  expect(planStep({ ...plan(), maxConcurrent: 1 } as Plan, all, idle).start).toEqual([a.id, e.id]);
+  // A done, E running: B and C both start.
   a.status = "done";
   e.status = "in_progress";
   const s = planStep(plan(), all, idle);
-  expect(s.start).toEqual([b.id]);
+  expect(s.start).toEqual([b.id, c.id]);
   expect(s.active).toBe(1);
   b.status = "review";
   b.outcome = "done";
@@ -93,7 +94,7 @@ test("needs is only a hint: children that list the same device start together", 
   const e1 = T({ title: "E1", needs: ["emulator"] });
   const e2 = T({ title: "E2", needs: ["emulator"] });
   const free = T({ title: "Free" });
-  const s = planStep(plan({ maxConcurrent: 3 }), [e1, e2, free], idle);
+  const s = planStep(plan(), [e1, e2, free], idle);
   expect(s.start).toEqual([e1.id, e2.id, free.id]);
 });
 
@@ -117,4 +118,10 @@ test("children waiting on the user are never started; alone they end the plan wi
 
 test("planTable lists what a child needs", () => {
   expect(planTable([T({ id: "t_e", title: "E", needs: ["emulator"] })])).toContain("needs emulator");
+});
+
+test("a plan with 6 ready children starts all 6 together", () => {
+  const kids = [1, 2, 3, 4, 5, 6].map((n) => T({ title: `K${n}` }));
+  const s = planStep({ ...plan({ originalCount: 6 }), maxConcurrent: 2 } as Plan, kids, idle);
+  expect(s.start).toEqual(kids.map((k) => k.id));
 });

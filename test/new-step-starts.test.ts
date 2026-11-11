@@ -91,7 +91,7 @@ const tk = (id: string, x: Partial<Ticket> = {}) => ({
   lastActivity: null, lastRunAt: null, runCount: 0, error: null, createdAt: at(Number(id.replace(/\D/g, "") || 0)), updatedAt: at(0),
   mode: "auto", parentId: "M", tool: true, ...x,
 }) as Ticket;
-const plan = { state: "running", maxConcurrent: 2, wakeups: 0, startedAt: at(0), originalCount: 0, inbox: [], seen: {}, retries: {}, awaiting: null } as Plan;
+const plan = { state: "running", wakeups: 0, startedAt: at(0), originalCount: 0, inbox: [], seen: {}, retries: {}, awaiting: null } as Plan;
 const managed = { managed: { summary: () => "", report: () => null } };
 const step = (kids: Ticket[], running: string[] = []) => planStep(plan, kids, (id) => running.includes(id), managed);
 
@@ -123,9 +123,9 @@ test("picker: no build/fix cap and no per-plan limit for a main ticket's family;
   expect(step(done).start).toContain("t6");
 });
 
-test("a main ticket with 4 tool tickets and no dependencies starts all 4 (plan maxConcurrent 2 doesn't apply)", async () => {
+test("a main ticket with 4 tool tickets and no dependencies starts all 4", async () => {
   await withMain("review", async ({ main, create }) => {
-    expect(get(main.id).plan?.maxConcurrent).toBe(2);
+    expect(get(main.id).plan).toBeTruthy();
     const ts = [];
     for (const [title, kind] of [["Build A", "build"], ["Build B", "build"], ["Fix C", "fix"], ["Look D", "explore"]] as const) ts.push(await create({ title, kind }));
     for (const t of ts) expect(started(t.id)).toBe(true);

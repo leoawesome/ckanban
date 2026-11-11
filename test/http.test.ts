@@ -604,7 +604,7 @@ test("inside a board run only a running plan's planner may change tickets, and o
   expect(((await r.json()) as any).error).toContain("disabled inside a board run");
 
   // Start the plan paused right away so nothing runs in this test (no claude here).
-  r = await post(`${tickets}/${planner.id}/plan`, { action: "start", maxConcurrent: 1 });
+  r = await post(`${tickets}/${planner.id}/plan`, { action: "start" });
   expect(r.status).toBe(200);
   expect(((await r.json()) as any).plan.state).toBe("running");
   await post(`${tickets}/${planner.id}/plan`, { action: "pause" });
@@ -612,7 +612,6 @@ test("inside a board run only a running plan's planner may change tickets, and o
   r = await post(`${tickets}/${child.id}`, { body: "clearer" }, run, "PATCH");
   expect(r.status).toBe(403);
   await post(`${tickets}/${planner.id}/plan`, { action: "resume" });
-  await post(`${tickets}/${planner.id}/plan`, { action: "concurrency", maxConcurrent: 3 });
 
   r = await post(`${tickets}/${child.id}`, { body: "clearer", dependsOn: [] }, run, "PATCH");
   expect(r.status).toBe(200);
@@ -700,15 +699,15 @@ test("the user's chat gives a ticket planner rights over its own children: adopt
     expect(((await r.json()) as any).parentId).toBeNull();
     r = await post(`${tickets}/${kid.id}`, { parentId: mgr.id }, undefined, "PATCH");
     expect(r.status).toBe(400);
-    // Only start / resume, only its own plan, and no concurrency change.
-    r = await post(`${tickets}/${mgr.id}/plan`, { action: "concurrency", maxConcurrent: 5 }, run);
+    // Only start / resume, only its own plan.
+    r = await post(`${tickets}/${mgr.id}/plan`, { action: "pause" }, run);
     expect(r.status).toBe(403);
     r = await post(`${tickets}/${elsewhere.id}/plan`, { action: "start" }, run);
     expect(r.status).toBe(403);
-    r = await post(`${tickets}/${mgr.id}/plan`, { action: "start", maxConcurrent: 9 }, run);
+    r = await post(`${tickets}/${mgr.id}/plan`, { action: "start" }, run);
     expect(r.status).toBe(200);
     const plan = ((await r.json()) as any).plan;
-    expect([plan.state, plan.maxConcurrent]).toEqual(["running", 2]);
+    expect(plan.state).toBe("running");
     expect(store.listComments(p.slug, mgr.id).some((c) => c.text.startsWith("Plan started by the planner"))).toBe(true);
     await post(`${tickets}/${mgr.id}/plan`, { action: "pause" });
     // Paused: the user's chat still gives rights (the plan isn't done).
@@ -858,18 +857,19 @@ test("a ticket's active run may change other tickets on its board: labelled note
     r = await send(`${tickets}/${dirty.id}`, { status: "done" }, {}, "PATCH");
     expect(r.status).toBe(200);
 
-    // Starting runs: past the chain limit refused; within it, the started ticket remembers who started it.
-    board.markStartedBy(p.slug, a.id, { ticketId: "t_20261001_root", depth: 2 });
+    // Starting runs: no depth limit; only a loop (next already started this chain twice) is refused, and the started
+    // ticket remembers who started it.
+    board.markStartedBy(p.slug, a.id, { ticketId: next.id, depth: 3, chain: [next.id, a.id, next.id] });
     r = await send(`${tickets}/${next.id}`, { status: "ready" }, run, "PATCH");
     expect(r.status).toBe(409);
-    expect(await errorOf(r)).toContain("chain of runs started by runs stops at 2");
+    expect(await errorOf(r)).toContain("keep starting each other");
     r = await send(`${tickets}/${next.id}/chat`, { text: "go" }, run);
     expect(r.status).toBe(409);
     expect(store.getTicket(p.slug, next.id)!.status).toBe("backlog");
     board.markStartedBy(p.slug, a.id, null);
     r = await send(`${tickets}/${next.id}/chat`, { text: "please pick this up" }, run);
     expect(r.status).toBe(202);
-    expect(store.getTicket(p.slug, next.id)!.startedBy).toEqual({ ticketId: a.id, depth: 1 });
+    expect(store.getTicket(p.slug, next.id)!.startedBy).toEqual({ ticketId: a.id, depth: 1, chain: [a.id] });
     // Labelled with the sending ticket, so the chat shows it as that ticket's, not the user's.
     expect(store.getTicket(p.slug, next.id)!.queued?.at(-1)).toMatchObject({
       text: `Message from ticket ${a.id} ("Post #006 again"): please pick this up`, from: { ticketId: a.id, title: "Post #006 again" },
@@ -939,11 +939,12 @@ test("a chat answering the user's message changes tickets on another board; othe
     // Starting a run there counts against the chat's ticket on its own board, and remembers that board.
     r = await send(`${farTickets}/${existing.id}`, { status: "ready" }, asChat, "PATCH");
     expect(r.status).toBe(200);
-    expect(store.getTicket(far.slug, existing.id)!.startedBy).toEqual({ ticketId: chat.id, depth: 1, slug: home.slug });
-    board.markStartedBy(home.slug, chat.id, { ticketId: "t_20261001_root", depth: 2 });
-    r = await send(farTickets, { title: "Start me", status: "ready" }, asChat);
+    expect(store.getTicket(far.slug, existing.id)!.startedBy).toEqual({ ticketId: chat.id, depth: 1, chain: [chat.id], slug: home.slug });
+    // No depth limit; only a loop back to a ticket that already started this chain twice is refused.
+    board.markStartedBy(home.slug, chat.id, { ticketId: existing.id, depth: 3, chain: [existing.id, chat.id, existing.id] });
+    r = await send(`${farTickets}/${existing.id}/chat`, { text: "again" }, asChat);
     expect(r.status).toBe(409);
-    expect(await errorOf(r)).toContain("stops at 2");
+    expect(await errorOf(r)).toContain("keep starting each other");
     board.markStartedBy(home.slug, chat.id, null);
     // Spending cap and deleting stay the user's.
     r = await send(`${farTickets}/${existing.id}`, { runCapUsd: 0 }, asChat, "PATCH");
@@ -1230,6 +1231,19 @@ test("notify: only the ticket's own Claude sends it, and it is told where it wen
   expect(((await (await fetch(`${base}/api/messages/${m.id}`)).json()) as any).text).toContain("Pick A or B");
   const read = (await (await send(`${base}/api/messages/${m.id}/read`, {})).json()) as any;
   expect(read.message.readAt).toBeString();
+  // Mark all read: the count goes to 0, the messages stay, the one read before keeps its readAt.
+  await send(`${tickets}/${other.id}/notify`, { message: "Second" }, { "x-ckanban-run": `${p.slug}/${other.id}` });
+  const before = (await (await fetch(`${base}/api/messages`)).json()) as any;
+  expect(before.unread).toBeGreaterThan(0);
+  const all = (await (await send(`${base}/api/messages/read-all`, {})).json()) as any;
+  expect(all).toMatchObject({ unread: 0 });
+  expect(all.marked).toBe(before.unread);
+  const after = (await (await fetch(`${base}/api/messages`)).json()) as any;
+  expect(after.unread).toBe(0);
+  expect(after.messages).toHaveLength(before.messages.length);
+  expect(after.messages.every((x: any) => x.readAt)).toBe(true);
+  expect(after.messages.find((x: any) => x.id === m.id).readAt).toBe(read.message.readAt);
+  expect((await send(`${base}/api/messages/read-all`, {}, run)).status).toBe(403);
   expect((await fetch(`${base}/api/messages/m_nope`)).status).toBe(404);
   expect((await fetch(`${base}/api/messages`, { headers: run })).status).toBe(403);
 });

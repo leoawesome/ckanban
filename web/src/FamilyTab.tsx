@@ -1,5 +1,6 @@
 // The Tasks tab (DrawerTab "family"): on a feature's top ticket its status on top (StatusBlock), then the whole feature from its top ticket down, grouped and folded, with each ticket's model, cost and
 // status, a short view of the clicked row, the plan controls of a planner, and "Add tickets…" (GatherDialog).
+import { aliasLabel } from "./models";
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Ticket } from "./api";
 import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, MAX_LEVEL, matchWords, settled, STATE_WORDS, subFeatureState, type FamilyRow, type FamilyState } from "./family";
@@ -18,6 +19,9 @@ const columnLabel = (status: string) => COLUMNS.find((c) => c.id === status)?.la
 /** "Opus", "Sonnet 5.5"…: the model as people say it. */
 export function modelLabel(m: string | null | undefined): string {
   if (!m) return "default";
+  // An alias ("fable") means the newest version: say which one it is today.
+  const alias = aliasLabel(m);
+  if (alias) return alias;
   const x = /(opus|sonnet|haiku|fable)(?:[-\s]?(\d+)[-.](\d+))?/i.exec(m);
   if (!x) return m;
   const name = x[1][0].toUpperCase() + x[1].slice(1).toLowerCase();

@@ -10,8 +10,8 @@ import { plural, resetTitle, scopeChip, usageText } from "./teamText";
 import type { TeammateEditRequest } from "./teammateText";
 import { costText } from "./usage";
 import { liveHuddleCount } from "./huddle";
+import { modelOptions } from "./models";
 
-const MODELS = ["opus", "sonnet", "haiku"];
 const ALL_ROLES = "_all";
 const MAIN = "main";
 const VIEW_KEY = "ckanban.team.view";
@@ -433,8 +433,7 @@ function TeammateEditor({ slug, boardName, draft: initial, isNew, scope: initial
           <label>
             Model
             <Select ariaLabel="Model" value={draft.model ?? ""} onChange={(v) => set({ model: v || null })}
-              options={[{ value: "", label: "Board default" }, ...MODELS.map((m) => ({ value: m, label: m })),
-                ...(draft.model && !MODELS.includes(draft.model) ? [{ value: draft.model, label: draft.model }] : [])]} />
+              options={[{ value: "", label: "Board default" }, ...modelOptions(draft.model)]} />
           </label>
           <label>
             Files

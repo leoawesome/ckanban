@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { markOpened } from "./cardState";
+import { setLearnedVersions } from "./models";
 import { api, copy, COLUMNS, onReconnect, subscribe, waitsForSlot, type Health, type InboxItem, type Job, type McpState, type Profile, type Schedule, type Status, type Ticket } from "./api";
 import { avatarColor, avatarLetter } from "./avatar";
 import { BugReportDialog } from "./BugReportDialog";
@@ -376,6 +377,8 @@ export function App() {
     quiet(api.health, "tool checks", setHealth);
     quiet(api.version, "the version", setVersion);
     quiet(api.mcp, "connections", setMcp);
+    // Which version each model alias means (learned from runs), for labels like "Fable (5.2)".
+    api.claudeDefaults().then((d) => setLearnedVersions(d.versions)).catch(() => {});
   }, [loadProfiles, loadInbox]);
   // First visit with no boards yet: open New board straight away (it lists recent Claude Code folders).
   const autoOpened = useRef(false);

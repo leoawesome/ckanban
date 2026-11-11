@@ -3,10 +3,13 @@ import type { ResultCard } from "./api";
 import { FileLinkContext } from "./fileLinkContext";
 import { requestTab } from "./pendingTab";
 import { QuestionText } from "./QuestionText";
+import { aliasLabel } from "./models";
 
 /** Short model name for the card's head ("Opus 5.5"). */
 export function modelLabel(m: string | null | undefined): string | null {
   if (!m) return null;
+  const alias = aliasLabel(m);
+  if (alias) return alias;
   const x = /claude-(opus|sonnet|haiku|fable)-(\d+)-(\d+)/i.exec(m);
   if (x) return `${x[1][0].toUpperCase()}${x[1].slice(1)} ${x[2]}.${x[3]}`;
   return m.length > 24 ? null : m[0].toUpperCase() + m.slice(1);

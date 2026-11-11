@@ -75,13 +75,14 @@ test("waiting with auto on doesn't need the user; auto off does", () => {
   expect(attentionFor(ticket({ limit: { ...ticket().limit!, auto: false } }), null, false)).toMatchObject({ kind: "limit", label: "Limit hit" });
 });
 
-test("a plan child waiting on the limit with auto on doesn't wake the planner and keeps its slot", () => {
-  const plan: Plan = { state: "running", maxConcurrent: 1, startedAt: "x", wakeups: 0, originalCount: 2, inbox: [], seen: {} } as unknown as Plan;
+test("a plan child waiting on the limit with auto on doesn't wake the planner and still counts as at work", () => {
+  const plan: Plan = { state: "running", startedAt: "x", wakeups: 0, originalCount: 2, inbox: [], seen: {} } as unknown as Plan;
   const waiting = ticket({ id: "a", parentId: "p" });
   const next = ticket({ id: "b", parentId: "p", status: "backlog", outcome: null, limit: null, runCount: 0 });
   const step = planStep(plan, [waiting, next], () => false);
   expect(step.events).toEqual([]);
-  expect(step.start).toEqual([]);
+  expect(step.active).toBe(1);
+  expect(step.start).toEqual(["b"]);
   const off = planStep(plan, [{ ...waiting, limit: { ...waiting.limit!, auto: false } }, next], () => false);
   expect(off.events.map((e) => e.line)).toEqual([expect.stringContaining("hit the usage limit")]);
 });

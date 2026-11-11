@@ -10,7 +10,7 @@ import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "./board-e
 useBoardEnv();
 
 const QS = [{ question: "Which project?", multiSelect: false, options: [{ label: "A" }, { label: "B" }] }] as Question[];
-const plan = (state: Plan["state"]) => ({ state, maxConcurrent: 1, wakeups: 0, startedAt: new Date().toISOString(), originalCount: 1, inbox: [], seen: {}, retries: {}, awaiting: null }) as unknown as Plan;
+const plan = (state: Plan["state"]) => ({ state, wakeups: 0, startedAt: new Date().toISOString(), originalCount: 1, inbox: [], seen: {}, retries: {}, awaiting: null }) as unknown as Plan;
 
 test("replyAsked: an open form or a '?' in the reply's text; the result line doesn't count", () => {
   expect(replyAsked([], "It uses project A (id 123).")).toBe(false);

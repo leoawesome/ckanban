@@ -47,7 +47,7 @@ test("a huddle reply without a result line changes nothing", async () => {
 test("a planner's huddle reply doesn't take PRs", async () => {
   await setup();
   const t = await reviewCard();
-  store.updateTicket("p", t.id, { plan: { state: "running", maxConcurrent: 1, wakeups: 0, startedAt: new Date().toISOString(), originalCount: 1, inbox: [], seen: {}, retries: {}, awaiting: null } });
+  store.updateTicket("p", t.id, { plan: { state: "running", wakeups: 0, startedAt: new Date().toISOString(), originalCount: 1, inbox: [], seen: {}, retries: {}, awaiting: null } });
   await board.chat("p", t.id, "@main done?", { peer: true });
   await board.whenIdle();
   expect(store.getTicket("p", t.id)!.prUrl).toBeNull();

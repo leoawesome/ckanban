@@ -6,7 +6,7 @@ import { Bus } from "../src/server/events";
 import { createServer } from "../src/server/http";
 import { Store } from "../src/server/store";
 import {
-  ClaudeLogIndex, messageCost, priceFor, readWindows, recordWindow, ticketRuns, ticketUsage, UsageCache, type WindowSnapshot,
+  ClaudeLogIndex, messageCost, priceFor, readWindows, recordWindow, ticketRuns, ticketUsage, type WindowSnapshot,
 } from "../src/server/ticket-usage";
 import type { ActivityEntry, Profile } from "../src/server/types";
 import type { UsageResult } from "../src/server/usage";
@@ -165,32 +165,6 @@ test("recordWindow keeps one snapshot per 5h window", () => {
   ]);
 });
 
-test("UsageCache reuses a recent answer and keeps errors only briefly", async () => {
-  let now = 0;
-  let calls = 0;
-  let fail = false;
-  const seen: UsageResult[] = [];
-  const cache = new UsageCache(async () => {
-    calls++;
-    return fail ? { error: "x", fetchedAt: "" } : { windows: [], fetchedAt: "" };
-  }, (r) => seen.push(r), () => now);
-  await Promise.all([cache.get(60_000), cache.get(60_000)]);
-  expect(calls).toBe(1);
-  now = 30_000;
-  await cache.get(60_000);
-  expect(calls).toBe(1);
-  await cache.get(0);
-  expect(calls).toBe(2);
-  fail = true;
-  now = 400_000;
-  await cache.get(300_000);
-  expect(calls).toBe(3);
-  now = 470_000;
-  await cache.get(300_000);
-  expect(calls).toBe(4);
-  expect(seen.length).toBe(4);
-});
-
 test("web usage formatting", () => {
   expect(approxPct(null)).toBe("–");
   expect(approxPct(0)).toBe("≈ 0%");
@@ -249,10 +223,11 @@ function describe_http() {
     expect(u.runs).toEqual([{ run: 1, kind: "work", startedAt: expect.any(String), model: "claude-opus-5-5", tokens: 1000, costUsd: 5, pct5h: 12.5 }]);
     expect(u.totals).toEqual({ costUsd: 5, tokens: 1000, pctCurrentWindow: 12.5, pctLifetime: 12.5 });
     expect(u.window.utilization).toBe(50);
-    // The plan answer is reused, also by the header pill only when asked fresh.
+    // The plan answer is reused by ticket views and the header pill; Refresh waits a minute after the last check.
     await fetch(`${base}/api/profiles/${slug}/tickets/${t.id}/usage`);
     expect(usageCalls).toBe(1);
-    await fetch(`${base}/api/usage`);
-    expect(usageCalls).toBe(2);
+    expect(await (await fetch(`${base}/api/usage`)).json()).toMatchObject({ windows: [{ percent: 50 }] });
+    await fetch(`${base}/api/usage?fresh=1`);
+    expect(usageCalls).toBe(1);
   });
 }

@@ -3,7 +3,7 @@ import { useLayer } from "./layers";
 import { fullTime, timeAgo } from "./time";
 import { useNow } from "./useNow";
 import { runStatusText } from "./boardStats";
-import { costText, limitNote, resetText, shortLabel, usageTone, worstTone } from "./usage";
+import { costText, limitNote, resetLine, resetText, shortLabel, staleNote, usageError, usageTone, usageWindows, worstTone } from "./usage";
 import type { UsageState } from "./useUsage";
 
 /** What the status pill says about the board shown; null until its tickets have loaded. */
@@ -48,8 +48,10 @@ export function StatusPill({ state, board, openRequest }: { state: UsageState; b
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const failed = !!usage && "error" in usage;
-  const windows = usage && !("error" in usage) ? usage.windows : [];
+  const error = usageError(usage);
+  const failed = !!error;
+  const stale = staleNote(usage);
+  const windows = usageWindows(usage);
   const tone = failed || !windows.length ? "ok" : worstTone(windows);
   const limit = limitNote(windows);
   const today = spend ? `${costText(spend.costUsd)} today` : null;
@@ -82,7 +84,7 @@ export function StatusPill({ state, board, openRequest }: { state: UsageState; b
             </div>
           )}
           <h4>Claude plan usage</h4>
-          {usage && "error" in usage && <p className="usage-error">{usage.error}</p>}
+          {error && <p className="usage-error">{error}</p>}
           {!usage && <p className="muted small">Loading…</p>}
           {usage && !failed && !windows.length && <p className="muted small">No usage limits reported for this account.</p>}
           {windows.map((w) => {
@@ -96,6 +98,7 @@ export function StatusPill({ state, board, openRequest }: { state: UsageState; b
               </div>
             );
           })}
+          {stale && <p className="usage-stale">{stale}</p>}
           {spend && (
             <div className="usage-spend">
               <div className="usage-top"><span>Spent today</span><b>{costText(spend.costUsd)}</b></div>
@@ -107,7 +110,7 @@ export function StatusPill({ state, board, openRequest }: { state: UsageState; b
           )}
           <div className="usage-foot">
             <span title={usage ? fullTime(usage.fetchedAt) : undefined}>
-              {usage ? `Updated ${timeAgo(usage.fetchedAt)}` : ""}
+              {usage && !error ? `Updated ${timeAgo(usage.fetchedAt)}` : ""}
             </span>
             <button className="btn small" onClick={load} disabled={loading}>{loading ? "Refreshing…" : "↻ Refresh"}</button>
           </div>
@@ -117,51 +120,51 @@ export function StatusPill({ state, board, openRequest }: { state: UsageState; b
   );
 }
 
-/** Phone More sheet: Claude plan usage as compact bars; tap for reset times and today's spend. */
+/** Phone More sheet: Claude plan usage as compact bars with reset times; tap for today's spend. */
 export function UsageBox({ state }: { state: UsageState }) {
   const { usage, loading, load, spend } = state;
   const [open, setOpen] = useState(false);
   const now = useNow();
-  const failed = !!usage && "error" in usage;
-  const windows = usage && !("error" in usage) ? usage.windows : [];
+  const error = usageError(usage);
+  const stale = staleNote(usage);
+  const windows = usageWindows(usage);
 
   return (
     <div className="usage-box">
       <div className="usage-box-head">
         <span>Claude plan usage</span>
         <span className="usage-box-updated" title={usage ? fullTime(usage.fetchedAt) : undefined}>
-          {usage ? `Updated ${timeAgo(usage.fetchedAt)}` : ""}
+          {usage && !error ? `Updated ${timeAgo(usage.fetchedAt)}` : ""}
         </span>
         <button className="btn small" onClick={load} disabled={loading}>{loading ? "Refreshing…" : "↻ Refresh"}</button>
       </div>
-      {usage && "error" in usage && <p className="usage-error">{usage.error}</p>}
+      {error && <p className="usage-error">{error}</p>}
       {!usage && <p className="muted small">Loading…</p>}
-      {usage && !failed && !windows.length && <p className="muted small">No usage limits reported for this account.</p>}
-      {(windows.length > 0 || spend) && (
+      {usage && !error && !windows.length && <p className="muted small">No usage limits reported for this account.</p>}
+      {windows.map((w) => {
+        const reset = resetLine(w.resetsAt, now);
+        return (
+          <div key={w.key} className="usage-box-row">
+            <span className="usage-box-label">{shortLabel(w)}</span>
+            <span className="usage-bar"><i className={usageTone(w.percent)} style={{ width: `${w.percent}%` }} /></span>
+            <b>{Math.round(w.percent)}%</b>
+            {reset && <span className="usage-box-reset" title={w.resetsAt ? fullTime(w.resetsAt) : undefined}>{reset}</span>}
+          </div>
+        );
+      })}
+      {stale && <p className="usage-stale">{stale}</p>}
+      {spend && (
         <button className="usage-box-body" aria-expanded={open} onClick={() => setOpen((v) => !v)}
-          aria-label={open ? "Hide reset times and today's spend" : "Show reset times and today's spend"}>
-          {windows.map((w) => (
-            <span key={w.key} className="usage-box-row">
-              <span className="usage-box-label">{shortLabel(w)}</span>
-              <span className="usage-bar"><i className={usageTone(w.percent)} style={{ width: `${w.percent}%` }} /></span>
-              <b>{Math.round(w.percent)}%</b>
-            </span>
-          ))}
+          aria-label={open ? "Hide today's spend" : "Show today's spend"}>
           {open && (
             <span className="usage-box-more">
-              {windows.map((w) => {
-                const reset = resetText(w.resetsAt, now);
-                return reset && <span key={w.key} className="usage-sub">{shortLabel(w)}: {reset}</span>;
-              })}
-              {spend && <>
-                <span className="usage-top usage-box-spend"><span>Spent today</span><b>{costText(spend.costUsd)}</b></span>
-                {spend.boards.filter((b) => b.costUsd > 0).map((b) => (
-                  <span key={b.slug} className="usage-sub spend-row"><span>{b.name}</span><span>{costText(b.costUsd)}</span></span>
-                ))}
-              </>}
+              <span className="usage-top usage-box-spend"><span>Spent today</span><b>{costText(spend.costUsd)}</b></span>
+              {spend.boards.filter((b) => b.costUsd > 0).map((b) => (
+                <span key={b.slug} className="usage-sub spend-row"><span>{b.name}</span><span>{costText(b.costUsd)}</span></span>
+              ))}
             </span>
           )}
-          <span className="usage-box-hint">{open ? "Less" : "Reset times and today's spend"}</span>
+          <span className="usage-box-hint">{open ? "Less" : "Today's spend ›"}</span>
         </button>
       )}
     </div>

@@ -88,7 +88,7 @@ test("a proposed ticket already on the board, anywhere, no longer needs the user
 });
 
 test("a stuck plan needs the user, unless the ticket is done or every child is finished", () => {
-  const plan = { state: "stuck" as const, maxConcurrent: 2, wakeups: 1, startedAt: "", originalCount: 2, reason: "x" };
+  const plan = { state: "stuck" as const, wakeups: 1, startedAt: "", originalCount: 2, reason: "x" };
   expect(attentionFor(T({ status: "review", plan }), null, false)).toMatchObject({ kind: "blocked", label: "Plan stuck" });
   expect(attentionFor(T({ status: "done", plan }), null, false)).toBeNull();
   expect(attentionFor(T({ status: "review", outcome: "done", plan }), null, false, { planComplete: true })).toMatchObject({ kind: "review", label: "Ready for review" });

@@ -10,7 +10,8 @@ import { FollowUpError } from "./followup";
 import { claudeDefaults, findClaude, listClaudeProjects, listSessions, liveSessionMatch, pickFolder, processCommands } from "./claude";
 import type { Bus, BusEvent } from "./events";
 import { EFFORT_HELP, listCommands, MODEL_HELP, validEffort, validModel } from "./commands";
-import { isManager, kindDefaults, TOOL_NO_NOTIFY } from "./main-ticket";
+import { isManager, kindDefaults, parseTaskModels, TOOL_NO_NOTIFY } from "./main-ticket";
+import { learnedVersions } from "./model-versions";
 import { addPrs } from "./prs";
 import { DiffError, folderDiff, ticketDiff } from "./diff";
 import { detectBaseBranch, enableVersionHistory, hasUncommittedChanges, isGitRepo, repoKind, resolveBaseBranch, which } from "./git";
@@ -64,7 +65,8 @@ import type { SquadCardState } from "./squad";
 import { LearnError, Learner } from "./learner";
 import { Simplifier, SimplifyError } from "./simplify";
 import { changesPrompt, HELP_KINDS, Helper, HelpError, newId, recapAvailable, recapPrompt, type HelpKind } from "./explain";
-import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, UsageCache, windowsNeeded } from "./ticket-usage";
+import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, windowsNeeded } from "./ticket-usage";
+import { UsageCache } from "./usage-cache";
 import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
 import { familyOf, familyRoot, featureRoot, fitParent, groupsOf, hiddenTool, levelOf, MAX_LEVEL, withYouTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
@@ -368,7 +370,9 @@ export function createServer(deps: ServerDeps) {
   };
   const snippets = new Snippets(store, bus);
   const windowsFile = join(store.root, "usage-windows.json");
-  const usage = new UsageCache(deps.usage ?? fetchUsage, (r) => recordWindow(windowsFile, r));
+  // Saved last good answer and backoff, so a restart neither forgets the numbers nor asks Anthropic again at once.
+  const usage = new UsageCache(deps.usage ?? fetchUsage, (r) => recordWindow(windowsFile, r), Date.now, join(store.root, "usage-last.json"),
+    deps.usage ? undefined : (line) => console.log(line));
   const spend = new SpendIndex(store);
   // A main ticket's card and result cards count what its family spent.
   board.onCost((s, id) => spend.ticket(s, id).costUsd + huddles.ticketSpend(s, id).costUsd);
@@ -587,16 +591,16 @@ export function createServer(deps: ServerDeps) {
   const byChat = (t: Ticket) => `by the chat of ${t.id} ("${t.title}") (user request)`;
   /** Statuses whose move starts a Claude run: Ready (In progress queues there) and Planning (its interview). */
   const startsRun = (st?: string) => st === "ready" || st === "in_progress" || st === "planning";
-  /** A run's start of another ticket's run, refused past the chain limits (Board.runStart). */
-  const runStart = (slug: string, runner: Ticket): NonNullable<Ticket["startedBy"]> => {
+  /** A run's start of another ticket's run (target; null for a new ticket), refused only for a loop (Board.runStart). */
+  const runStart = (slug: string, runner: Ticket, target: string | null = null): NonNullable<Ticket["startedBy"]> => {
     try {
-      return board.runStart(slug, runner.id);
+      return board.runStart(slug, runner.id, target);
     } catch (e) {
       throw new HttpError(409, (e as Error).message);
     }
   };
   /** A guest's start of a run here: counted against the guest's ticket on its own board (Board.runStart). */
-  const guestStart = (g: Guest): NonNullable<Ticket["startedBy"]> => ({ ...runStart(g.slug, g.ticket), slug: g.slug });
+  const guestStart = (g: Guest, target: string | null = null): NonNullable<Ticket["startedBy"]> => ({ ...runStart(g.slug, g.ticket, target), slug: g.slug });
   /** The board run's ticket (RUN_HEADER), null outside runs; a run may only reach tickets on its own board. */
   const runTicket = (req: Request, slug: string): string | null => {
     const h = req.headers.get(RUN_HEADER);
@@ -945,6 +949,11 @@ export function createServer(deps: ServerDeps) {
         const held = url.searchParams.get("held") === "1";
         return json({ messages: store.listNewest({ held }), unread: store.unread() });
       }
+      // "Mark all read" on the Messages page: one write, the same messages.updated event single reads send.
+      if (parts.length === 2 && parts[1] === "read-all" && m === "POST") {
+        const marked = store.markAllRead();
+        return json({ marked, unread: store.unread() });
+      }
       const msg = parts[1] ? store.get(decodeURIComponent(parts[1])) : null;
       if (parts.length === 2 && m === "GET") {
         if (!msg) throw new HttpError(404, "message not found");
@@ -1062,7 +1071,8 @@ export function createServer(deps: ServerDeps) {
 
     if (parts[0] === "events" && m === "GET") return sse(req);
     if (parts[0] === "version" && m === "GET") return json(await updates.status());
-    if (parts[0] === "usage" && m === "GET") return json(await usage.get(0));
+    // ?fresh=1 is the Refresh button: asks now unless a check went out in the last minute or Anthropic asked us to wait.
+    if (parts[0] === "usage" && m === "GET") return json(await usage.get({ fresh: url.searchParams.get("fresh") === "1" }));
     // What every board spent today (tickets' runs and huddle agents), for the header pill.
     if (parts[0] === "spend" && m === "GET") return json(spend.today());
     // How every teammate (huddle preset) and template was used, from the huddles on every board.
@@ -1203,7 +1213,7 @@ export function createServer(deps: ServerDeps) {
       const taken = new Set(store.listProfiles().map((p) => p.path));
       return json(listClaudeProjects().map((p) => ({ ...p, hasProfile: taken.has(p.path) })));
     }
-    if (parts[0] === "claude" && parts[1] === "defaults" && m === "GET") return json(claudeDefaults());
+    if (parts[0] === "claude" && parts[1] === "defaults" && m === "GET") return json({ ...claudeDefaults(), versions: learnedVersions() });
     if (parts[0] === "pick-folder" && m === "POST") return json({ path: await pickFolder() });
     // A folder's version history, for the "Turn on version history" offer (New board, board settings).
     if (parts[0] === "version-history" && parts.length === 1) {
@@ -1370,6 +1380,13 @@ export function createServer(deps: ServerDeps) {
         if (b.mainModel !== undefined) {
           if (b.mainModel && !(typeof b.mainModel === "string" && validModel(b.mainModel))) throw new HttpError(400, `"${b.mainModel}" is not a model name. Use ${MODEL_HELP}.`);
           next.mainModel = b.mainModel || null;
+        }
+        if (b.taskModels !== undefined) {
+          try {
+            next.taskModels = parseTaskModels(b.taskModels);
+          } catch (e: any) {
+            throw new HttpError(400, e.message);
+          }
         }
         if (b.freshChatTokens !== undefined) {
           const v = b.freshChatTokens;
@@ -1986,7 +2003,7 @@ export function createServer(deps: ServerDeps) {
         // Model and effort for its runs: from create_ticket inside a run, else a tool ticket's kind decides.
         if (b.model !== undefined && b.model !== null && !(typeof b.model === "string" && validModel(b.model))) throw new HttpError(400, `"${b.model}" is not a model name. Use ${MODEL_HELP}.`);
         if (b.effort !== undefined && b.effort !== null && !(typeof b.effort === "string" && validEffort(b.effort))) throw new HttpError(400, `"${b.effort}" is not an effort level. Use ${EFFORT_HELP}.`);
-        const defaults = tool ? kindDefaults(kind) : null;
+        const defaults = tool ? kindDefaults(kind, profile) : null;
         const model: string | null = (typeof b.model === "string" && b.model) || defaults?.model || null;
         const effort: string | null = (typeof b.effort === "string" && b.effort) || defaults?.effort || null;
         // Made by a schedule's run: what that schedule raised for the user (its next quiet runs follow up on it).
@@ -2155,9 +2172,9 @@ export function createServer(deps: ServerDeps) {
           }
         }
         if (startsRun(patch.status) && patch.status !== target.status) {
-          // Who starts this run: another ticket's run (counted against the chain limits) or the user (clears it).
-          if (runner) startedBy = runStart(slug, runner);
-          else if (guest) startedBy = guestStart(guest);
+          // Who starts this run: another ticket's run (refused only for a loop) or the user (clears it).
+          if (runner) startedBy = runStart(slug, runner, id);
+          else if (guest) startedBy = guestStart(guest, id);
           else if (!planner) startedBy = null;
         }
         if (planner) {
@@ -2445,14 +2462,14 @@ export function createServer(deps: ServerDeps) {
       return json(view(profile, board.markSeen(slug, id, reminded)));
     }
     if (action === "usage" && m === "GET") {
-      // The usage endpoint rate-limits: a ticket view reuses an answer up to 5 minutes old.
-      const plan = await usage.get(5 * 60_000);
+      // The usage endpoint rate-limits: a ticket view reuses the shared cached answer.
+      const plan = await usage.get();
       const activity = store.readActivity(slug, id);
       const windows = readWindows(windowsFile);
       const needed = windowsNeeded(ticketRuns(activity), windows);
       if (needed.length) await claudeLogs.refresh(Math.min(...needed.map((w) => Date.parse(w.start))));
       return json(ticketUsage({
-        activity, windows, machineCost: (a, b) => claudeLogs.costBetween(a, b), windowError: "error" in plan ? plan.error : null,
+        activity, windows, machineCost: (a, b) => claudeLogs.costBetween(a, b), windowError: "windows" in plan ? null : plan.error,
         teammates: huddles.ticketSpend(slug, id), side: readSideSpend(store.sideSpendPath(slug, id)).costUsd,
       }));
     }
@@ -2720,9 +2737,9 @@ export function createServer(deps: ServerDeps) {
       const b = await body(req);
       const text = String(b.text ?? "").trim();
       if (!text) throw new HttpError(400, "text is required");
-      // A message starts the ticket's run, now or once its current run ends (queued): another ticket's run is counted
-      // against the chain limits either way; the user's message to a ticket that isn't working clears it.
-      const startedBy = runner ? runStart(slug, runner) : guest ? guestStart(guest)
+      // A message starts the ticket's run, now or once its current run ends (queued): another ticket's run is recorded
+      // (and refused only for a loop) either way; the user's message to a ticket that isn't working clears it.
+      const startedBy = runner ? runStart(slug, runner, id) : guest ? guestStart(guest, id)
         : !planner && !requester && !board.isRunning(slug, id) ? null : undefined;
       // A message from a run never hands the user's rights on to the run it starts.
       // Labelled with the sending ticket, so neither Claude nor the chat takes it for the user's own message.
@@ -2999,28 +3016,26 @@ export function createServer(deps: ServerDeps) {
       if (guest && stopped) store.addComment(slug, id, "ai", `Run stopped ${byGuest(guest)}.`);
       return json({ stopped });
     }
-    // Start / pause / resume / mark done a planner's plan, or change how many children run at once.
+    // Start / pause / resume / mark done a planner's plan.
     if (m === "POST" && action === "plan") {
       const b = await body(req);
       // A planner may start or resume its own plan (plan_control) when it has planner rights; the rest is the user's.
       const byPlanner = !!req.headers.get(RUN_HEADER);
       if (byPlanner) {
         if (runTicket(req, slug) !== id || (b.action !== "start" && b.action !== "resume")) {
-          throw new HttpError(403, "a board run may only start or resume its own ticket's plan; pausing, finishing and concurrency are the user's");
+          throw new HttpError(403, "a board run may only start or resume its own ticket's plan; pausing and finishing are the user's");
         }
         if (!board.plannerRights(slug, id)) {
           throw new HttpError(403, "starting the plan from a board run needs the user's go-ahead: only a reply to the user's message in this ticket's chat may do it");
         }
         if (store.getTicket(slug, id)!.plan?.state === "done") throw new HttpError(403, "this ticket's plan is done; the user can start a new one first");
       }
-      const n = b.maxConcurrent === undefined || byPlanner ? undefined : Number(b.maxConcurrent);
       try {
         const t = b.action === "pause" ? board.pausePlan(slug, id)
-          : b.action === "start" || b.action === "resume" ? board.startPlan(slug, id, { maxConcurrent: n, byPlanner })
+          : b.action === "start" || b.action === "resume" ? board.startPlan(slug, id, { byPlanner })
           : b.action === "done" ? board.markPlanDone(slug, id)
-          : b.action === "concurrency" && n !== undefined ? board.setPlanConcurrency(slug, id, n)
           : null;
-        if (!t) throw new HttpError(400, "action must be start, pause, resume, done or concurrency");
+        if (!t) throw new HttpError(400, "action must be start, pause, resume or done");
         return json(view(profile, store.getTicket(slug, id) ?? t));
       } catch (e) {
         if (e instanceof HttpError) throw e;

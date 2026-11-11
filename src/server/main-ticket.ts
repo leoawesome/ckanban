@@ -2,23 +2,39 @@
 // A main ticket is the conversation the user started: it talks, decides and keeps the feature's status, and never edits
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
-import { askClosed, familyBelow, familyState, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
-import type { Plan, Ticket } from "./types";
+import { askClosed, TICKET_KINDS, familyBelow, familyState, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
+import { KIND_DEFAULTS, taskModel, type ModelPick, type TaskModels } from "../../web/src/models";
+import { EFFORTS, MODEL_HELP, validEffort, validModel } from "./commands";
+import type { Plan, Profile, Ticket } from "./types";
 
-/** Model and effort a tool ticket gets from its kind when create_ticket leaves them out. */
-export const KIND_DEFAULTS: Record<TicketKind, { model: string; effort: string }> = {
-  explore: { model: "claude-sonnet-5-5", effort: "medium" },
-  test: { model: "claude-sonnet-5-5", effort: "medium" },
-  review: { model: "claude-sonnet-5-5", effort: "medium" },
-  build: { model: "claude-opus-5-5", effort: "medium" },
-  fix: { model: "claude-opus-5-5", effort: "medium" },
-  group: { model: "claude-sonnet-5-5", effort: "low" },
-  round: { model: "claude-sonnet-5-5", effort: "low" },
-  with_you: { model: "claude-sonnet-5-5", effort: "medium" },
-};
+export { KIND_DEFAULTS } from "../../web/src/models";
 
-export function kindDefaults(kind: string | null | undefined): { model: string; effort: string } | null {
-  return kind && kind in KIND_DEFAULTS ? KIND_DEFAULTS[kind as TicketKind] : null;
+/**
+ * Model and effort a tool ticket gets from its kind when create_ticket leaves them out: the board's Task models
+ * setting (profile.taskModels), else the kind's default. Null for no kind or an unknown one.
+ */
+export function kindDefaults(kind: string | null | undefined, profile?: Pick<Profile, "taskModels"> | null): ModelPick | null {
+  return kind && kind in KIND_DEFAULTS ? taskModel(kind as TicketKind, profile?.taskModels) : null;
+}
+
+/**
+ * The board's Task models setting from a request: null clears it, else an object of kind → { model, effort }. Picks equal
+ * to the kind's default are dropped (only overrides are stored), so the defaults can change later. Throws on bad input.
+ */
+export function parseTaskModels(v: unknown): TaskModels | null {
+  if (v === null) return null;
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("taskModels must be an object of task kind → { model, effort }, or null");
+  const out: TaskModels = {};
+  for (const [kind, pick] of Object.entries(v as Record<string, unknown>)) {
+    if (!(TICKET_KINDS as string[]).includes(kind)) throw new Error(`taskModels: "${kind}" is not a task kind. Use ${TICKET_KINDS.join(", ")}.`);
+    if (pick === null || pick === undefined) continue;
+    const { model, effort } = (pick ?? {}) as Partial<ModelPick>;
+    if (typeof model !== "string" || !validModel(model)) throw new Error(`taskModels.${kind}: "${model}" is not a model name. Use ${MODEL_HELP}.`);
+    if (typeof effort !== "string" || !validEffort(effort)) throw new Error(`taskModels.${kind}: "${effort}" is not an effort level. Use ${EFFORTS.join(", ")}.`);
+    const d = KIND_DEFAULTS[kind as TicketKind];
+    if (model !== d.model || effort !== d.effort) out[kind as TicketKind] = { model, effort };
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 /** merge_into_main tries before the tool ticket ends blocked. */

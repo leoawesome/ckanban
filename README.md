@@ -22,7 +22,7 @@
 
 ## What it does
 
-- 🤖 **Tickets run by headless Claude.** Move a card to Ready and a `claude -p` session works it in its own copy of the folder, up to 5 at once per board (change it in *Board settings*). No git? It works in the folder itself, one ticket at a time, and lists what changed.
+- 🤖 **Tickets run by headless Claude.** Move a card to Ready and a `claude -p` session works it in its own copy of the folder, with no limit on how many run at once. No git? It works in the folder itself, one ticket at a time, and lists what changed.
 - 💬 **Planning chat.** Claude interviews you with a clickable question form, draws HTML mockups for UI work and proposes a clear ticket. *Apply & start work* is one click.
 - 🗺️ **Plans.** Split a big ticket into child tickets that run unattended in dependency order; Claude is only woken when one needs it.
 - 🗣️ **Huddles.** A team of Claude teammates (reviewer, QA, researcher, UX critic, facilitator, ...) discuss one ticket in a shared room, tag each other and pin findings, with a budget you set. While you're away, Claude starts a review huddle on its own before landing ⭐ Important or risky work.

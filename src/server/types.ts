@@ -4,6 +4,7 @@ import type { RewindUndo } from "./rewind";
 
 import type { TicketKind } from "../../web/src/family";
 import type { ClosedForms } from "../../web/src/family";
+import type { TaskModels } from "../../web/src/models";
 export type { TicketKind };
 export type Status = "backlog" | "planning" | "ready" | "in_progress" | "review" | "done";
 /** limit: the run ended because the Claude usage/spend limit was hit (see Ticket.limit). */
@@ -71,6 +72,11 @@ export interface Profile {
    * it would re-read more than this many tokens. Missing: 150,000.
    */
   freshChatTokens?: number | null;
+  /**
+   * Board setting "Task models": model and effort per kind of tool ticket, only the kinds the user changed (the rest
+   * use KIND_DEFAULTS in web/src/models.ts). A model or effort create_ticket passes for one task still wins.
+   */
+  taskModels?: TaskModels | null;
 }
 
 export type Workspace = "worktree" | "folder";
@@ -266,7 +272,7 @@ export interface Ticket {
    * ticket and how deep the chain of runs started by runs is (1 = started by a run the user started). The user starting
    * it again clears it; slug is set when that ticket is on another board. See Board.runStart.
    */
-  startedBy?: { ticketId: string; depth: number; slug?: string } | null;
+  startedBy?: { ticketId: string; depth: number; slug?: string; chain?: string[] } | null;
   /** Set on a planner ticket once its plan was started: the board runs its children unattended. */
   plan?: Plan | null;
   /**
@@ -762,8 +768,7 @@ export type PlanState = "running" | "paused" | "finishing" | "done" | "stuck";
 /** A planner's unattended run of its child tickets (see plan.ts and Board.advancePlans). */
 export interface Plan {
   state: PlanState;
-  /** Children of this plan in Ready or In progress at once. */
-  maxConcurrent: number;
+  /** Old plan files may still carry maxConcurrent (a past "at once" limit); it is ignored: every ready child starts. */
   /** Times the planner's Claude session was woken up (capped, see plan.ts). */
   wakeups: number;
   startedAt: string;

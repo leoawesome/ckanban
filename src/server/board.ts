@@ -26,11 +26,12 @@ import { canEndQuietly, quietContext } from "./quiet";
 import { addHuddleSpend, addTelegramSpend } from "./spend";
 import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "./prompts";
 import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
+import { learnModel, useModelVersionsFile } from "./model-versions";
 import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
 import { chatPrompt, chromeChoiceNote, chromeTurnNote, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
-  childrenOf, DEFAULT_MAX_CONCURRENT, findCycle, isComplete, MAX_RUN_CHAIN, MAX_RUN_STARTS, normalizeNeeds, planActive, planProblem, planStep, planTable,
+  childrenOf, findCycle, isComplete, MAX_RUN_RETURNS, normalizeNeeds, RUN_CHAIN_KEEP, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
 } from "./plan";
 import { run as runCmd } from "./git";
@@ -140,8 +141,6 @@ interface ActiveRun {
   workflowCapHit?: number;
   /** This run started an auto huddle (start_huddle): one per run. */
   autoHuddleStarted?: boolean;
-  /** Other tickets' runs this run started (see runStart). */
-  runStarts?: number;
   /** The user typed a message in the ticket's chat that was handed to this run while it worked (see userAskedRun). */
   userSteered?: boolean;
   /** Queued messages (ticket.queued) written to this claude process, keyed by id, with the text it was given. */
@@ -427,6 +426,7 @@ export class Board {
     this.isSessionLive = opts.isSessionLive ?? psSessionLive;
     this.notify = opts.notify ?? ((title, body) => macBanner(title, body));
     useBundledFile(join(store.root, "claude-commands.json"));
+    useModelVersionsFile(join(store.root, "model-versions.json"));
     this.devices = new Devices(store.root, (owners) => this.devicesChanged(owners));
     this.chromes = new Chromes(store.root, () => this.bus.emit({ type: "browsers.updated" }));
   }
@@ -1342,6 +1342,7 @@ export class Board {
         this.watchWorkflows(slug, id, ev, spend);
         chromeWatch.feed(ev);
         rememberInit(session.dir, ev, { projects: [profile.path] });
+        learnModel(ev);
         if (refine && ev?.type === "assistant") this.saveMockups(slug, id, outputDir, ev);
         if (showsInterrupted && !this.shuttingDown && hasText(ev)) {
           showsInterrupted = false;
@@ -2244,7 +2245,7 @@ export class Board {
   // ---- Plans: a planner ticket runs its children unattended (see plan.ts) ----
 
   /** Start (or resume) the planner's plan: children switch to auto mode and start in dependency order. */
-  startPlan(slug: string, id: string, opts: { maxConcurrent?: number; byPlanner?: boolean; why?: string } = {}): Ticket {
+  startPlan(slug: string, id: string, opts: { byPlanner?: boolean; why?: string } = {}): Ticket {
     const t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
     const kids = childrenOf(this.store.listTickets(slug), id);
@@ -2260,13 +2261,12 @@ export class Board {
         // A stuck plan starts fresh: its last wake-up is over and the planner looks at every open child again.
         ...(prev.state === "stuck" ? { wakeups: 0, awaiting: null, seen: {} } : {}),
       }
-      : { state: "running", maxConcurrent: DEFAULT_MAX_CONCURRENT, wakeups: 0, startedAt: nowIso(), originalCount: kids.length, inbox: [], seen: {}, retries: {}, awaiting: null };
-    if (opts.maxConcurrent !== undefined) plan.maxConcurrent = clampConcurrency(opts.maxConcurrent);
+      : { state: "running", wakeups: 0, startedAt: nowIso(), originalCount: kids.length, inbox: [], seen: {}, retries: {}, awaiting: null };
     // Unattended: children must not stop to interview the user.
     for (const k of kids) if (k.status === "backlog" && k.mode !== "auto") this.patch(slug, k.id, { mode: "auto" });
     const out = this.patch(slug, id, { plan, ...(t.outcome && t.outcome !== "done" ? { outcome: null } : {}) });
     const by = opts.byPlanner ? " by the planner" : "";
-    this.store.addComment(slug, id, "ai", resuming ? `Plan resumed${by}${opts.why ? `: ${opts.why}` : ""}.` : `Plan started${by}: ${kids.length} child tickets, ${plan.maxConcurrent} at a time.`);
+    this.store.addComment(slug, id, "ai", resuming ? `Plan resumed${by}${opts.why ? `: ${opts.why}` : ""}.` : `Plan started${by}: ${kids.length} child tickets; each starts as soon as the ones it waits for are done.`);
     this.advancePlans(slug);
     return this.store.getTicket(slug, id) ?? out;
   }
@@ -2353,14 +2353,6 @@ export class Board {
     if (!t?.plan) throw new Error("this ticket has no plan");
     if (t.plan.state === "done") return t;
     return this.closePlan(slug, t, t.plan, "Plan marked done.");
-  }
-
-  setPlanConcurrency(slug: string, id: string, n: number): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t?.plan) throw new Error("this ticket has no plan");
-    const out = this.patch(slug, id, { plan: { ...t.plan, maxConcurrent: clampConcurrency(n) } });
-    this.advancePlans(slug);
-    return out;
   }
 
   /**
@@ -2458,24 +2450,19 @@ export class Board {
   }
 
   /**
-   * A run starts another ticket's run: refused past MAX_RUN_CHAIN or MAX_RUN_STARTS, otherwise counted. Returns what
-   * goes in the started ticket's startedBy.
+   * A run starts another ticket's run (targetId; null for a ticket it creates). No limit on how many or how deep; only
+   * a loop is refused: the target already started this chain MAX_RUN_RETURNS times (A starts B, B starts A, ...), so
+   * runs can't keep restarting each other with nobody watching. Returns what goes in the started ticket's startedBy.
    */
-  runStart(slug: string, runTicketId: string): NonNullable<Ticket["startedBy"]> {
+  runStart(slug: string, runTicketId: string, targetId: string | null = null): NonNullable<Ticket["startedBy"]> {
     const by = this.store.getTicket(slug, runTicketId)?.startedBy;
     const depth = (by?.depth ?? 0) + 1;
-    if (depth > MAX_RUN_CHAIN) {
-      throw new Error(`this run was started by another ticket's run (${by!.ticketId}), and a chain of runs started by runs stops at ${MAX_RUN_CHAIN}: ` +
-        "it can't start more runs. Ask the user to start it on the board");
+    const chain = [...(by?.chain ?? (by ? [by.ticketId] : [])), runTicketId].slice(-RUN_CHAIN_KEEP);
+    if (targetId && chain.filter((x) => x === targetId).length >= MAX_RUN_RETURNS) {
+      throw new Error(`${targetId} and this run keep starting each other (runs started by runs: ${chain.join(" → ")}): ` +
+        "to stop an endless loop, this run can't start it again. Ask the user to start it on the board");
     }
-    const r = this.runs.get(this.key(slug, runTicketId));
-    if (r) {
-      if ((r.runStarts ?? 0) >= MAX_RUN_STARTS) {
-        throw new Error(`this run already started ${MAX_RUN_STARTS} other tickets' runs, the most one run may start. Ask the user to start it on the board`);
-      }
-      r.runStarts = (r.runStarts ?? 0) + 1;
-    }
-    return { ticketId: runTicketId, depth };
+    return { ticketId: runTicketId, depth, chain };
   }
 
   /** Who started the ticket's latest run: another ticket's run (runStart), or null when the user started it. */
@@ -3114,7 +3101,7 @@ export class Board {
       const top = this.mainOf(slug, manager) ?? manager;
       // A step that changes files starts from the main ticket's copy, so its work merges back there.
       const startFrom = top.branch && top.worktree ? top.branch : null;
-      const d = kindDefaults("build")!;
+      const d = kindDefaults("build", this.store.getProfile(slug))!;
       t = await this.createTicket(slug, {
         title, body: input.body, status: "backlog", mode: "auto", proposedAs: title, madeFrom: src.id, parentId: manager.id, kind: "build", tool: true,
         model: d.model, effort: d.effort, ...(place.as === "step" && place.partOf ? { partOf: place.partOf } : {}), ...tags, ...important,
@@ -3252,7 +3239,7 @@ export class Board {
   }
 
   private newPlan(children: number): Plan {
-    return { state: "running", maxConcurrent: DEFAULT_MAX_CONCURRENT, wakeups: 0, startedAt: nowIso(), originalCount: children, inbox: [], seen: {}, retries: {}, awaiting: null };
+    return { state: "running", wakeups: 0, startedAt: nowIso(), originalCount: children, inbox: [], seen: {}, retries: {}, awaiting: null };
   }
 
   /**
@@ -3478,6 +3465,7 @@ export class Board {
       return {
         kind: "main", repo: session.repo, branch: session.inPlace ? null : now.branch ?? null, inPlace: session.inPlace, ...(now.plan?.state === "paused" ? { paused: true } : {}), ...(planned ? { planned } : {}),
         ...(above ? { subFeatureOf: { id: above.id, title: above.title } } : {}),
+        taskModels: this.store.getProfile(slug)?.taskModels ?? null,
       } satisfies MainRole;
     }
     if (!t.tool) return undefined;
@@ -4368,10 +4356,6 @@ export class Board {
 export function startError(e: unknown): string {
   if ((e as NodeJS.ErrnoException)?.code === "ENOSPC") return "Couldn't start: no space left on the disk";
   return String((e as Error)?.message ?? e);
-}
-
-function clampConcurrency(n: number): number {
-  return Math.max(1, Math.min(10, Math.round(Number(n) || DEFAULT_MAX_CONCURRENT)));
 }
 
 function sameJson(a: unknown, b: unknown): boolean {

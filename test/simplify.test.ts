@@ -41,6 +41,7 @@ beforeAll(() => {
   const board = new Board(store, bus, { claudeBin: "/bin/false" });
   server = createServer({
     store, bus, board, port: 0, webDir: tempDir("ck-web-"), sessions: new SessionCache({ configDir }), isUserBrowser: async () => true,
+    usage: async () => ({ windows: [], fetchedAt: new Date().toISOString() }),
     sideCall: async (i) => {
       calls.push(i);
       if (gate) await gate;

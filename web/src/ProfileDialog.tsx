@@ -1,4 +1,4 @@
-import { EFFORTS, MODELS } from "./models";
+import { EFFORTS, KIND_DEFAULTS, MODELS, modelOptions, setLearnedVersions, taskModel, TASK_ROWS, type ModelPick, type TaskModels } from "./models";
 import { useEffect, useMemo, useState } from "react";
 import { api, type ClaudeProject, type Profile, type RepoKind, type SetupDetection, type Workspace } from "./api";
 import { capInputText, parseCap } from "./capText";
@@ -8,6 +8,13 @@ import { Select } from "./Select";
 import { timeAgo } from "./time";
 import { VersionHistoryOffer } from "./VersionHistoryOffer";
 
+
+/** The table's picks as the board's setting: every kind of each row (the server keeps only the ones off their default). */
+function taskModelsOf(picks: ModelPick[]): TaskModels {
+  const out: TaskModels = {};
+  TASK_ROWS.forEach((r, i) => r.kinds.forEach((k) => { out[k] = picks[i]; }));
+  return out;
+}
 
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -30,6 +37,10 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const [saving, setSaving] = useState(false);
   const [model, setModel] = useState(profile?.model ?? "");
   const [mainModel, setMainModel] = useState(profile?.mainModel ?? "");
+  // Task models: one pick per row of the table (a row's first kind; saving sets every kind of the row).
+  const [taskPicks, setTaskPicks] = useState<ModelPick[]>(() => TASK_ROWS.map((r) => taskModel(r.kinds[0], profile?.taskModels)));
+  const taskPicksDefault = TASK_ROWS.every((r, i) => taskPicks[i].model === KIND_DEFAULTS[r.kinds[0]].model && taskPicks[i].effort === KIND_DEFAULTS[r.kinds[0]].effort);
+  const setTaskPick = (i: number, patch: Partial<ModelPick>) => setTaskPicks((ps) => ps.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   const [freshText, setFreshText] = useState(profile?.freshChatTokens ? String(Math.round(profile.freshChatTokens / 1000)) : "");
   const freshK = freshText.trim() ? Number(freshText) : null;
   const freshError = freshK !== null && !(freshK > 0 && freshK <= 10_000) ? "Enter a chat size in thousands, like 150, or leave it empty." : null;
@@ -81,7 +92,10 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   const setupAuto = !!detected && !!detected.setupCommand && setupCommand.trim() === detected.setupCommand;
 
   useEffect(() => {
-    api.claudeDefaults().then((d) => setClaudeModel(d.model)).catch(() => {});
+    api.claudeDefaults().then((d) => {
+      setLearnedVersions(d.versions);
+      setClaudeModel(d.model);
+    }).catch(() => {});
     if (isNew) api.claudeProjects().then(setRecent).catch(() => setRecent([]));
     else api.tickets(profile!.slug).then((ts) => setTicketCount(ts.length)).catch(() => {});
     if (!isNew) api.mcp().then((s) => setConnectors(s.servers
@@ -125,7 +139,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
       const p = profile
         ? await api.updateProfile(profile.slug, {
           name, path, model: model || null, effort: effort || null, ultracode, autoHuddles, keepAwake, runCapUsd: cap || null, artifacts, stallMinutes, workspace,
-          mainModel: mainModel || null, freshChatTokens: freshK === null ? null : Math.round(freshK * 1000),
+          mainModel: mainModel || null, taskModels: taskModelsOf(taskPicks), freshChatTokens: freshK === null ? null : Math.round(freshK * 1000),
           claudeAiConnectors: connectorMode === "some" ? keepConnectors : connectorMode,
           // A file typed but not yet added with Enter still counts.
           copyFiles: newFile.trim() && !copyFiles.includes(newFile.trim()) ? [...copyFiles, newFile.trim()] : copyFiles,
@@ -167,6 +181,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
   };
 
   const customModel = model && !MODELS.includes(model) ? model : null;
+
 
   return (
     <Modal title={profile ? `Board settings · ${profile.name}` : "New board"} onClose={onClose} wide={isNew} focusDialog={!isNew}>
@@ -254,8 +269,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               onChange={setModel}
               options={[
                 { value: "", label: claudeModel ? `Claude default (${claudeModel})` : "Claude default", hint: "follows ~/.claude/settings.json" },
-                ...MODELS.map((m) => ({ value: m, label: m })),
-                ...(customModel ? [{ value: customModel, label: customModel }] : []),
+                ...modelOptions(customModel),
               ]}
             />
             <span className="muted small">Tickets can override it. Changes apply from the next run.</span>
@@ -357,12 +371,38 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                 onChange={setMainModel}
                 options={[
                   { value: "", label: "Same as the board's model" },
-                  ...MODELS.map((m) => ({ value: m, label: m })),
-                  ...(mainModel && !MODELS.includes(mainModel) ? [{ value: mainModel, label: mainModel }] : []),
+                  ...modelOptions(mainModel),
                 ]}
               />
-              <span className="muted small">The ticket you talk to; its tool tickets pick their own.</span>
+              <span className="muted small">The ticket you talk to; its tasks use Task models below.</span>
             </label>
+            <div className="field task-models">
+              <span className="field-label">Task models</span>
+              <span className="muted small">Which Claude model each kind of task uses on this board. Names always mean the newest version.</span>
+              <table className="task-models-table">
+                <thead><tr><th>Task</th><th>Model</th><th>Effort</th></tr></thead>
+                <tbody>
+                  {TASK_ROWS.map((r, i) => (
+                    <tr key={r.label}>
+                      <td>{r.label}<span className="muted small task-what">{r.what}</span></td>
+                      <td>
+                        <Select ariaLabel={`${r.label} model`} className="roster-select" value={taskPicks[i].model}
+                          onChange={(v) => setTaskPick(i, { model: v })} options={modelOptions(taskPicks[i].model)} />
+                      </td>
+                      <td>
+                        <Select ariaLabel={`${r.label} effort`} className="roster-select" value={taskPicks[i].effort}
+                          onChange={(v) => setTaskPick(i, { effort: v })} options={EFFORTS.map((e) => ({ value: e, label: e }))} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="task-models-foot">
+                <button type="button" className="btn small" disabled={taskPicksDefault}
+                  onClick={() => setTaskPicks(TASK_ROWS.map((r) => KIND_DEFAULTS[r.kinds[0]]))}>Reset to defaults</button>
+                <span className="muted small">A model the main ticket picks for one task still wins. Applies to new tasks.</span>
+              </div>
+            </div>
             <label>
               Start an old chat fresh above this chat size (thousands)
               <input inputMode="numeric" value={freshText} onChange={(e) => setFreshText(e.target.value)} placeholder="150" aria-invalid={!!freshError} />

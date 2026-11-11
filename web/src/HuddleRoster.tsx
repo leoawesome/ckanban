@@ -2,10 +2,10 @@ import { useEffect, useState, type KeyboardEvent } from "react";
 import { api, type Huddle, type HuddleMode, type HuddlePreset, type HuddleTemplate, type RosterEntry, type Ticket } from "./api";
 import { CloseIcon } from "./icons";
 import { Select } from "./Select";
+import { modelOptions, pickerLabel } from "./models";
 import { personModeLabel, TOPIC_MAX } from "./squadText";
 import { applyProposedTemplate, applyTemplate, DEFAULT_MAX, draftError, draftSize, dollars, handleBase, rosterDraft, rowHandle, rowKey as key, MODE_LABEL, type Draft } from "./huddleText";
 
-const MODELS = ["opus", "sonnet", "haiku"];
 const MAX_COUNT = 8;
 
 export type RosterRow = RosterEntry & { key: string };
@@ -209,8 +209,7 @@ export function RosterEditor({ presets, draft, setDraft, tickets, hostId, max = 
                 <td>
                   <Select ariaLabel="Model" className="roster-select" value={r.model ?? ""}
                     onChange={(v) => setRow(r.key, { model: v || null })}
-                    options={[{ value: "", label: p?.model ?? "default" }, ...MODELS.filter((m) => m !== p?.model).map((m) => ({ value: m, label: m })),
-                      ...(r.model && !MODELS.includes(r.model) ? [{ value: r.model, label: r.model }] : [])]} />
+                    options={[{ value: "", label: p?.model ? pickerLabel(p.model) : "default" }, ...modelOptions(r.model, p?.model)]} />
                 </td>
                 {!noFocus && <td>
                   <input className="roster-focus" value={r.focus ?? ""} placeholder="What to look at" disabled={disabled} aria-label="Focus"

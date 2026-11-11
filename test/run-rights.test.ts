@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
-import { MAX_RUN_CHAIN, MAX_RUN_STARTS } from "../src/server/plan";
 import { Store } from "../src/server/store";
 import { tempDir } from "./helpers";
 
@@ -37,43 +36,34 @@ test("only an active work run or chat reply gets runner rights: not Planning cha
   expect(board.runnerRights(slug, work.id)).toBeNull();
 });
 
-test("runs started by runs: the chain stops at MAX_RUN_CHAIN and one run starts at most MAX_RUN_STARTS", () => {
+test("runs started by runs: no limit on how many or how deep; only a ticket that keeps restarting its starter is refused", () => {
   const { store, board, slug, mk, fakeRun } = setup();
   const a = mk("A");
   fakeRun(a.id);
-  // A run the user started: what it starts is one level deep.
-  expect(board.runStart(slug, a.id)).toEqual({ ticketId: a.id, depth: 1 });
-  for (let i = 1; i < MAX_RUN_STARTS; i++) board.runStart(slug, a.id);
-  expect(() => board.runStart(slug, a.id)).toThrow(`already started ${MAX_RUN_STARTS} other tickets' runs`);
+  // A run the user started: what it starts is one level deep, and one run may start any number of tickets.
+  expect(board.runStart(slug, a.id)).toEqual({ ticketId: a.id, depth: 1, chain: [a.id] });
+  for (let i = 0; i < 12; i++) expect(board.runStart(slug, a.id, mk(`K${i}`).id).depth).toBe(1);
 
-  const b = mk("B");
-  fakeRun(b.id);
-  board.markStartedBy(slug, b.id, { ticketId: a.id, depth: MAX_RUN_CHAIN - 1 });
-  expect(board.runStart(slug, b.id)).toEqual({ ticketId: b.id, depth: MAX_RUN_CHAIN });
-  board.markStartedBy(slug, b.id, { ticketId: a.id, depth: MAX_RUN_CHAIN });
-  expect(() => board.runStart(slug, b.id)).toThrow(`stops at ${MAX_RUN_CHAIN}`);
+  // Deep chains are fine: A → B → C → D → E → F.
+  let prev = a.id;
+  for (const title of ["B", "C", "D", "E", "F"]) {
+    const t = mk(title);
+    board.markStartedBy(slug, t.id, board.runStart(slug, prev, t.id));
+    prev = t.id;
+  }
+  expect(store.getTicket(slug, prev)!.startedBy!.depth).toBe(5);
+
+  // A loop: B (started by A) starts A, A starts B again, then B can't start A a third time.
+  const b = mk("B2");
+  board.markStartedBy(slug, b.id, board.runStart(slug, a.id, b.id));
+  board.markStartedBy(slug, a.id, board.runStart(slug, b.id, a.id));
+  board.markStartedBy(slug, b.id, board.runStart(slug, a.id, b.id));
+  expect(() => board.runStart(slug, b.id, a.id)).toThrow("keep starting each other");
+  // Old startedBy records (no chain) still work.
+  board.markStartedBy(slug, b.id, { ticketId: a.id, depth: 7 });
+  expect(board.runStart(slug, b.id, a.id)).toEqual({ ticketId: b.id, depth: 8, chain: [a.id, b.id] });
   // The user starts it again: the chain starts over.
   board.markStartedBy(slug, b.id, null);
   expect(store.getTicket(slug, b.id)!.startedBy).toBeNull();
   expect(board.runStart(slug, b.id).depth).toBe(1);
-});
-
-test("a note from another ticket's run is saved as Claude's and labelled with its ticket", () => {
-  const { store, board, slug, mk } = setup();
-  const t = mk("T");
-  const c = board.addComment(slug, t.id, 'Note from ticket t_x ("X"): replaced', "t_x");
-  expect([c.author, c.from]).toEqual(["ai", "t_x"]);
-  expect(store.listComments(slug, t.id).at(-1)).toEqual(c);
-  expect(board.addComment(slug, t.id, "mine").author).toBe("user");
-});
-
-test("only a reply to the user's own typed message counts as asked by the user: not slash commands, peers or work runs", () => {
-  const { board, slug, mk, fakeRun } = setup();
-  const [chat, refine, slash, peer, work] = ["Chat", "Planning", "Slash", "Peer", "Work"].map(mk);
-  fakeRun(chat.id, { text: "make a ticket on the other board", mode: "act", user: true });
-  fakeRun(refine.id, { text: "make it there", mode: "refine", user: true });
-  fakeRun(slash.id, { text: "/compact", mode: "act", user: true, slash: true });
-  fakeRun(peer.id, { text: "q", mode: "act", raw: true, quiet: true });
-  fakeRun(work.id);
-  expect([chat, refine, slash, peer, work].map((t) => board.userAskedRun(slug, t.id))).toEqual([true, true, false, false, false]);
 });

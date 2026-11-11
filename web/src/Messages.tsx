@@ -108,13 +108,33 @@ export function MessagesHistory({ onBack }: { onBack: () => void }) {
     helperApi.messages(held).then((r) => { if (live) { setList(r.messages); setError(null); setUnread(r.unread); } }, (e) => live && setError(e.message));
     return () => { live = false; };
   }, [held, messagesRev]);
+  // "Mark all read": only while something shows New; the list stays, the New badges and the count go.
+  const [marking, setMarking] = useState(false);
+  const anyNew = !!list?.some((m) => !m.readAt && !m.held);
+  const markAll = async () => {
+    if (marking) return;
+    setMarking(true);
+    try {
+      const r = await helperApi.markAllRead();
+      const at = new Date().toISOString();
+      setList((l) => l && l.map((m) => (m.readAt || m.held ? m : { ...m, readAt: at })));
+      setUnread(r.unread);
+      toast(r.marked === 1 ? "Marked 1 message read." : `Marked ${r.marked} messages read.`, { tone: "ok" });
+    } catch (e) {
+      toast((e as Error).message, { tone: "error" });
+    } finally {
+      setMarking(false);
+    }
+  };
 
   return (
     <main className="messages-page">
       <div className="messages-top">
         <button className="link-btn msg-back" onClick={onBack}>‹ Board</button>
         <h2>Messages</h2>
-        <span />
+        <span className="msg-top-right">
+          {anyNew && <button className="btn small" disabled={marking} onClick={() => void markAll()}>{marking ? "Marking…" : "Mark all read"}</button>}
+        </span>
       </div>
       <div className="messages-body">
         <HelperStatusLine status={status} />

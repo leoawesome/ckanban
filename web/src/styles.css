@@ -1097,7 +1097,6 @@ body > .output-view.reader { position: fixed; }
 .child-deps { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dep-list { display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
 .plan-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
-.plan-cap { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .plan-reason { color: var(--warn); }
 /* Plan tab: same centred column as the chat. */
 .panel-scroll.panel-plan { padding: 20px max(28px, calc((100% - var(--read-max)) / 2)); }
@@ -2268,6 +2267,8 @@ button.pill:hover { color: var(--text); }
 .usage-runs { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
 .usage-runs .usage-sub + .usage-sub { margin-top: 4px; }
 .usage-error { margin: 0 0 12px; font-size: var(--fs-sm); color: var(--err); }
+/* Kept numbers after a failed check: a quiet note, not the red error. */
+.usage-stale { margin: 0 0 12px; font-size: var(--fs-xs); color: var(--warn); }
 .usage-row { margin: 0 0 12px; }
 .usage-top { display: flex; justify-content: space-between; font-size: var(--fs-sm); }
 .usage-bar { height: 6px; border-radius: var(--r-pill); background: var(--surface-2); margin: 4px 0 2px; overflow: hidden; }
@@ -3204,20 +3205,22 @@ button.hd-mode:disabled { cursor: default; }
   .menu-sheet .select-item { align-items: center; white-space: normal; padding: 8px 12px 8px 8px; }
   .menu-sheet .term-block { width: 100%; margin: 2px 0 6px; }
   /* More sheet: Claude plan usage box above the items */
-  .usage-box { border: 1px solid var(--border); border-radius: var(--r-md); margin: 0 4px 6px; padding: 4px 12px 0; }
+  .usage-box { border: 1px solid var(--border); border-radius: var(--r-md); margin: 0 4px 6px; padding: 4px 12px 10px; }
   .usage-box-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); font-weight: 600; }
   .usage-box-head > span:first-child { flex: 1; }
   .usage-box-updated { font-size: var(--fs-xs); font-weight: 500; color: var(--muted); }
   .usage-box-head .btn { min-height: 40px; }
-  .usage-box .usage-error, .usage-box > p { margin: 0 0 10px; }
-  .usage-box-body { display: flex; flex-direction: column; gap: 2px; width: 100%; border: 0; background: none; padding: 0 0 10px; text-align: left; color: inherit; cursor: pointer; font-size: var(--fs-sm); }
-  .usage-box-row { display: grid; grid-template-columns: minmax(42px, auto) 1fr 40px; align-items: center; gap: 8px; min-height: 22px; }
+  .usage-box .usage-error, .usage-box > p { margin: 0 0 4px; }
+  .usage-box > .usage-stale { margin: 6px 0 0; }
+  .usage-box-body { display: flex; flex-direction: column; gap: 2px; width: 100%; border: 0; background: none; padding: 6px 0 0; text-align: left; color: inherit; cursor: pointer; font-size: var(--fs-sm); }
+  .usage-box-row { display: grid; grid-template-columns: minmax(42px, auto) 1fr 40px; align-items: center; column-gap: 8px; row-gap: 2px; min-height: 22px; margin-top: 6px; font-size: var(--fs-sm); }
+  .usage-box-reset { grid-column: 2 / 4; font-size: var(--fs-xs); color: var(--muted); }
   .usage-box-label { color: var(--muted); }
   .usage-box-row .usage-bar { margin: 0; }
   .usage-box-row b { text-align: right; font-variant-numeric: tabular-nums; }
   .usage-box-more { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
   .usage-box-spend { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
-  .usage-box-hint { font-size: var(--fs-xs); color: var(--muted); margin-top: 4px; }
+  .usage-box-hint { font-size: var(--fs-sm); color: var(--muted); margin-top: 4px; }
 
   /* dialogs fill the width */
   .overlay { padding: 12px; align-items: flex-end; }
@@ -4194,6 +4197,8 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .messages-top { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .messages-top h2 { margin: 0; font-size: var(--fs-md); }
 .msg-back { color: var(--info); font-size: var(--fs-md); }
+.msg-top-right { justify-self: end; }
+.msg-top-right .btn { white-space: nowrap; }
 .messages-body { max-width: 680px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .msg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
 .msg-ttl { font-weight: 600; font-size: var(--fs-sm); }
@@ -4411,3 +4416,11 @@ button.composer-old:hover { color: var(--text); }
 .browsers-h { font-size: var(--fs-sm); margin: 8px 0 0; }
 .browsers-board { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .browsers-note { background: var(--warn-soft); color: var(--warn); border-radius: var(--r-md); padding: 8px 10px; font-size: var(--fs-xs); margin-top: 4px; }
+
+/* Board settings: Task models (model and effort per kind of task) */
+.task-models-table { width: 100%; border-collapse: collapse; }
+.task-models-table th { font-size: var(--fs-xs); color: var(--muted); font-weight: 600; text-align: left; padding: 4px 6px; }
+.task-models-table td { padding: 6px; border-top: 1px solid var(--surface-2); font-size: var(--fs-sm); vertical-align: middle; }
+.task-models-table td:first-child { font-weight: 500; }
+.task-what { display: block; font-weight: 400; }
+.task-models-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }

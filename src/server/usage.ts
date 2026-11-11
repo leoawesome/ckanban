@@ -16,7 +16,30 @@ export interface UsageWindow {
   resetsAt: string | null;
 }
 
-export type UsageResult = { windows: UsageWindow[]; fetchedAt: string } | { error: string; fetchedAt: string };
+export interface UsageAnswer {
+  windows: UsageWindow[];
+  fetchedAt: string;
+}
+export interface UsageFailure {
+  error: string;
+  fetchedAt: string;
+  /** HTTP status when Anthropic answered (429 = rate limited). */
+  status?: number;
+  /** Anthropic's retry-after, in ms, when it sent one. */
+  retryAfterMs?: number;
+}
+export type UsageResult = UsageAnswer | UsageFailure;
+
+export const RATE_LIMITED = "Anthropic is limiting usage checks";
+
+/** retry-after as seconds or an HTTP date, in ms; undefined when missing or unreadable. */
+export function parseRetryAfter(v: string | null, now = Date.now()): number | undefined {
+  if (!v) return undefined;
+  const t = v.trim();
+  if (/^\d+(\.\d+)?$/.test(t)) return Math.round(Number(t) * 1000);
+  const at = Date.parse(t);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
+}
 
 const LABELS: Record<string, string> = {
   five_hour: "Current session (5h)",
@@ -159,10 +182,13 @@ export async function fetchUsage(deps: UsageDeps = {}): Promise<UsageResult> {
     return { error: timeout ? "Anthropic did not answer in time" : "Could not reach Anthropic (offline?)", fetchedAt: fetchedAt() };
   }
   if (r.status === 401 || r.status === 403) {
-    return { error: "Token rejected: run any claude command to refresh it", fetchedAt: fetchedAt() };
+    return { error: "Token rejected: run any claude command to refresh it", fetchedAt: fetchedAt(), status: r.status };
   }
-  if (r.status === 429) return { error: "Anthropic is rate limiting usage checks; try again in a minute", fetchedAt: fetchedAt() };
-  if (!r.ok) return { error: `Anthropic answered HTTP ${r.status}`, fetchedAt: fetchedAt() };
+  if (r.status === 429) {
+    const retryAfterMs = parseRetryAfter(r.headers.get("retry-after"), now());
+    return { error: RATE_LIMITED, fetchedAt: fetchedAt(), status: 429, ...(retryAfterMs !== undefined && { retryAfterMs }) };
+  }
+  if (!r.ok) return { error: `Anthropic answered HTTP ${r.status}`, fetchedAt: fetchedAt(), status: r.status };
   let body: unknown;
   try {
     body = await r.json();
@@ -170,6 +196,6 @@ export async function fetchUsage(deps: UsageDeps = {}): Promise<UsageResult> {
     body = null;
   }
   const windows = normalizeUsage(body);
-  if (!windows) return { error: "Unexpected answer from the usage endpoint", fetchedAt: fetchedAt() };
+  if (!windows) return { error: "Unexpected answer from the usage endpoint", fetchedAt: fetchedAt(), status: r.status };
   return { windows, fetchedAt: fetchedAt() };
 }

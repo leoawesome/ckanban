@@ -3,15 +3,15 @@
 import { finishedLine } from "./main-ticket";
 import type { Plan, Ticket } from "./types";
 
-export const DEFAULT_MAX_CONCURRENT = 2;
 export const MAX_RETRIES = 3;
 /**
- * Runs may start other tickets' runs (Ready, Planning, a chat message), but nobody watches those chains: a run started
- * by a run started by a run the user started (depth 2) can't start more, and one run starts at most MAX_RUN_STARTS.
- * Past either, the user starts it on the board (see Board.runStart). Raise them if they turn out too tight.
+ * Runs may start other tickets' runs (Ready, Planning, a chat message) with no limit on how many or how deep. The one
+ * guard is against loops nobody watches: a chain of runs started by runs may start a ticket that already started it
+ * at most MAX_RUN_RETURNS times (A starts B, B starts A again, ...); past that the user starts it (see Board.runStart).
  */
-export const MAX_RUN_CHAIN = 2;
-export const MAX_RUN_STARTS = 5;
+export const MAX_RUN_RETURNS = 2;
+/** Ticket ids kept in a ticket's startedBy.chain (the most recent starters). */
+export const RUN_CHAIN_KEEP = 20;
 
 /** Wake-ups allowed per plan before it counts as stuck: 3 per child, at least 5. */
 export function wakeupCap(children: number): number {
@@ -181,19 +181,13 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
     if (reason) userWait.push({ id: t.id, reason });
   }
   const start: string[] = [];
-  const room = Math.max(1, plan.maxConcurrent) - active;
   for (const t of children) {
     if (t.status !== "backlog" || running(t.id)) continue;
     if (userWait.some((w) => w.id === t.id)) continue;
     const { deps, missing } = resolveDeps(t, children);
     if (missing.length || !deps.every(isComplete)) continue;
-    // A main ticket's family: every step whose dependencies are done starts now (merges into the main ticket's copy
-    // take turns on their own lock).
-    if (managed) {
-      start.push(t.id);
-      continue;
-    }
-    if (start.length >= room) continue;
+    // Every child whose dependencies are done starts now: no limit on how many run at once (merges into a main
+    // ticket's copy take turns on their own lock, shared devices on take_devices).
     start.push(t.id);
   }
   let deadEnd: string | null = null;

@@ -125,10 +125,10 @@ test("a group whose children still run is not complete; its children's events st
   const at = new Date().toISOString();
   const base = { body: "", order: 0, sessionId: null, worktree: null, branch: null, prUrl: null, lastActivity: null, lastRunAt: null, runCount: 1, error: null, createdAt: at, updatedAt: at };
   const group = { ...base, id: "g", title: "Round", status: "review", outcome: "done", tool: true, kind: "round", parentId: "m",
-    plan: { state: "running", maxConcurrent: 2, wakeups: 1, startedAt: at, originalCount: 2 } } as Ticket;
+    plan: { state: "running", wakeups: 1, startedAt: at, originalCount: 2 } } as Ticket;
   expect(isComplete(group)).toBe(false);
   expect(isComplete({ ...group, plan: { ...group.plan!, state: "done" } })).toBe(true);
-  const step = planStep({ state: "running", maxConcurrent: 2, wakeups: 0, startedAt: at, originalCount: 1, seen: {} }, [group], () => false,
+  const step = planStep({ state: "running", wakeups: 0, startedAt: at, originalCount: 1, seen: {} }, [group], () => false,
     { managed: { summary: () => "s", report: () => null } });
   expect(step.events).toEqual([]);
   expect(step.active).toBe(1);
@@ -139,7 +139,7 @@ test("a family's build and fix tickets aren't limited either: every step without
   const at = new Date().toISOString();
   const kid = (id: string, kind: Ticket["kind"]) => ({ id, title: id, status: "backlog", outcome: null, kind, tool: true, body: "", order: 0, sessionId: null, worktree: null, branch: null, prUrl: null, lastActivity: null, lastRunAt: null, runCount: 0, error: null, createdAt: at, updatedAt: at }) as Ticket;
   const kids = [kid("b1", "build"), kid("b2", "build"), kid("f1", "fix"), kid("e1", "explore"), kid("e2", "explore"), kid("t1", "test")];
-  const step = planStep({ state: "running", maxConcurrent: 1, wakeups: 0, startedAt: at, originalCount: 6, seen: {} }, kids, () => false,
+  const step = planStep({ state: "running", wakeups: 0, startedAt: at, originalCount: 6, seen: {} }, kids, () => false,
     { managed: { summary: () => "", report: () => null } });
   expect(step.start).toEqual(["b1", "b2", "f1", "e1", "e2", "t1"]);
 }, 60_000);
@@ -249,7 +249,7 @@ test("a with-you step that ends asking puts a grey note in the main chat without
 test("recover() wakes a main ticket from its saved events instead of starting a work run", async () => {
   await setup();
   const main = await mkMain("Main", "in_progress");
-  store.updateTicket("p", main.id, { plan: { state: "running", maxConcurrent: 2, wakeups: 1, startedAt: new Date().toISOString(), originalCount: 0, inbox: ["finished: t_x \"X\"; outcome done; summary: ok; report: no report"], seen: {} } });
+  store.updateTicket("p", main.id, { plan: { state: "running", wakeups: 1, startedAt: new Date().toISOString(), originalCount: 0, inbox: ["finished: t_x \"X\"; outcome done; summary: ok; report: no report"], seen: {} } });
   quickBoard();
   board.recover();
   await until(() => promptsOf(null, "The board restarted while your last run was going").length > 0, 30000);
@@ -449,7 +449,24 @@ test("create_ticket inside a main ticket makes tool tickets with the kind's mode
     const by = (title: string) => kids.find((k) => k.title === title || (title === "Round" && k.kind === "round"))!;
     expect(by("Build the queue")).toMatchObject({ tool: true, kind: "build", model: KIND_DEFAULTS.build.model, effort: "medium", mode: "auto" });
     expect(by("Look at replies")).toMatchObject({ tool: true, kind: "explore", model: "haiku", effort: "high" });
-    expect(by("Round")).toMatchObject({ tool: true, kind: "round", model: "claude-sonnet-5-5", effort: "low" });
+    expect(by("Round")).toMatchObject({ tool: true, kind: "round", model: "sonnet", effort: "low" });
+    // The board's Task models table changes the next task's model; a model passed for one task still wins.
+    const profileUrl = `http://127.0.0.1:${server.port}/api/profiles/p`;
+    const patch = (taskModels: unknown) => fetch(profileUrl, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ taskModels }) });
+    expect((await patch({ explore: { model: "fable", effort: "high" }, build: { model: "opus", effort: "medium" } })).status).toBe(200);
+    expect(store.getProfile("p")!.taskModels).toEqual({ explore: { model: "fable", effort: "high" } }); // only overrides are kept
+    expect((await patch({ explore: { model: "gpt-5", effort: "high" } })).status).toBe(400);
+    await callTool("create_ticket", { profile: "p", title: "Explore with the table", kind: "explore" }, ctx);
+    await callTool("create_ticket", { profile: "p", title: "Explore picked", kind: "explore", model: "haiku" }, ctx);
+    // Reset to defaults clears the setting.
+    expect((await patch(null)).status).toBe(200);
+    expect(store.getProfile("p")!.taskModels).toBeNull();
+    await callTool("create_ticket", { profile: "p", title: "Explore after reset", kind: "explore" }, ctx);
+    const now = store.listTickets("p").filter((t) => t.parentId === main.id);
+    const named = (title: string) => now.find((k) => k.title === title)!;
+    expect(named("Explore with the table")).toMatchObject({ model: "fable", effort: "high" });
+    expect(named("Explore picked")).toMatchObject({ model: "haiku", effort: "high" });
+    expect(named("Explore after reset")).toMatchObject({ model: "sonnet", effort: "medium" });
     expect(get(main.id).plan?.state).toBe("running");
     // ask_questions is refused for tool tickets.
     const toolCtx: ToolContext = { ...ctx, env: { CKANBAN_TICKET: `p/${by("Build the queue").id}` } };
@@ -471,17 +488,21 @@ test("the wake prompt lists only working, failed and waiting tool tickets, plus 
   const at = new Date().toISOString();
   const tk = (id: string, x: Partial<Ticket>) => ({ id, title: id, status: "backlog", outcome: null, body: "", order: 0, sessionId: null, worktree: null, branch: null, prUrl: null, lastActivity: null, lastRunAt: null, runCount: 0, error: null, createdAt: at, updatedAt: at, tool: true, ...x }) as Ticket;
   const kids = [
-    tk("done1", { status: "review", outcome: "done", kind: "build" }), tk("done2", { status: "done", outcome: "done" }),
+    // Finished tool tickets move to Done (board.ts); one still in the Review column is open and shows as in review.
+    tk("done1", { status: "done", outcome: "done", kind: "build" }), tk("done2", { status: "done", outcome: "done" }),
+    tk("back", { status: "review", outcome: "done", kind: "build" }),
     tk("busy", { status: "in_progress", kind: "build" }), tk("bad", { status: "review", outcome: "failed" }), tk("ask", { status: "review", outcome: "needs_input" }),
     tk("next", { dependsOn: ["busy"] }), tk("round", { kind: "round", title: "Testing round 1", status: "review", outcome: "done" }),
   ];
-  const all = [...kids, ...[1, 2, 3, 4, 5, 6].map((n) => tk(`t${n}`, { parentId: "round", kind: "test", status: "review", outcome: "done" }))];
+  const all = [...kids, ...[1, 2, 3, 4, 5, 6].map((n) => tk(`t${n}`, { parentId: "round", kind: "test", status: "done", outcome: "done" }))];
   const table = wakeTable(kids, all, () => false);
   expect(table).toContain('- busy "busy" (build): working');
   expect(table).toContain('- bad "bad": failed');
   expect(table).toContain('- ask "ask": asking a question');
   expect(table).toContain('- next "next": waiting for busy');
+  expect(table).toContain('- back "back" (build): in review');
   expect(table).toContain("- round Testing round 1: 6 of 6 passed");
+  expect(table).not.toContain("6 of 6 passed, ");
   expect(table).toContain("- 2 other tool tickets finished");
   expect(table).not.toContain("done1");
   const prompt = mainWakePrompt(kids[0], { kind: "event", events: ["finished: x"], table, board: "p" });

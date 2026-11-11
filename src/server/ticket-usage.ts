@@ -189,34 +189,6 @@ export function recordWindow(file: string, r: UsageResult): void {
   atomicWrite(file, JSON.stringify(list.slice(-500)));
 }
 
-/** Shares one usage-endpoint answer between the header pill and ticket views (the endpoint rate-limits). */
-export class UsageCache {
-  private last: UsageResult | null = null;
-  private at = 0;
-  private inflight: Promise<UsageResult> | null = null;
-
-  constructor(private fetcher: () => Promise<UsageResult>, private onResult: (r: UsageResult) => void = () => {}, private now = Date.now) {}
-
-  /** A cached answer younger than maxAgeMs (errors are kept at most a minute), else a fresh one. */
-  async get(maxAgeMs: number): Promise<UsageResult> {
-    const age = this.now() - this.at;
-    if (this.last && age < (("error" in this.last) ? Math.min(maxAgeMs, 60_000) : maxAgeMs)) return this.last;
-    this.inflight ??= this.fetcher()
-      .then((r) => {
-        this.last = r;
-        this.at = this.now();
-        try {
-          this.onResult(r);
-        } catch {}
-        return r;
-      })
-      .finally(() => {
-        this.inflight = null;
-      });
-    return this.inflight;
-  }
-}
-
 // ---------- per-ticket runs ----------
 
 export type RunKind = "work" | "planning" | "chat" | "reply" | "follow-up" | "run";

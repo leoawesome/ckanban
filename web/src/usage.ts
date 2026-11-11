@@ -1,4 +1,5 @@
 // Pure helpers for the header usage pill (kept out of the component so tests can import them).
+import { aliasLabel } from "./models";
 
 export interface UsageWindow {
   key: string;
@@ -7,7 +8,30 @@ export interface UsageWindow {
   resetsAt: string | null;
 }
 
-export type UsageResult = { windows: UsageWindow[]; fetchedAt: string } | { error: string; fetchedAt: string };
+/**
+ * GET /api/usage (src/server/usage-cache.ts UsageView): the last good numbers, with `stale` and the error when a later
+ * check failed, or the error alone when there are no numbers.
+ */
+export type UsageResult =
+  | { windows: UsageWindow[]; fetchedAt: string; stale?: boolean; error?: string; limited?: boolean; retryAt?: string }
+  | { error: string; fetchedAt: string; limited?: boolean; retryAt?: string };
+
+/** The windows to draw (empty when the answer is an error alone). */
+export function usageWindows(u: UsageResult | null): UsageWindow[] {
+  return u && "windows" in u ? u.windows : [];
+}
+
+/** The red error, only when there are no numbers to show. */
+export function usageError(u: UsageResult | null): string | null {
+  return u && !("windows" in u) ? u.error : null;
+}
+
+/** The note under kept numbers when the latest check failed. */
+export function staleNote(u: UsageResult | null): string | null {
+  if (!u || !("windows" in u) || !u.stale) return null;
+  const why = u.limited ? "Anthropic is limiting checks" : u.error || "the check failed";
+  return `Couldn't update just now (${why}). Showing the last numbers.`;
+}
 
 export type UsageTone = "ok" | "warn" | "err";
 
@@ -58,6 +82,18 @@ export function resetText(iso: string | null, now = Date.now()): string | null {
   return `Resets ${at.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;
 }
 
+/** "Resets at 23:10, in 2h 13m" within a day, "Resets Sat 09:00, in 2d 12h" further out (phone usage box). */
+export function resetLine(iso: string | null, now = Date.now()): string | null {
+  if (!iso) return null;
+  const at = new Date(iso);
+  const ms = at.getTime() - now;
+  if (Number.isNaN(ms)) return null;
+  if (ms <= 0) return "Resets now";
+  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (ms < 24 * 3600_000) return `Resets at ${time}, in ${inWords(ms)}`;
+  return `Resets ${at.toLocaleDateString(undefined, { weekday: "short" })} ${time}, in ${inWords(ms)}`;
+}
+
 // ---------- per-ticket usage (Usage tab) ----------
 
 export type RunKind = "work" | "planning" | "chat" | "reply" | "follow-up" | "run";
@@ -102,6 +138,8 @@ export function tokenText(n: number): string {
 /** "claude-opus-5-5[1m]" → "Opus 5.5", "claude-haiku-4-5-20251001" → "Haiku 4.5". */
 export function modelName(id: string | null): string {
   if (!id) return "–";
+  const alias = aliasLabel(id);
+  if (alias) return alias;
   const m = /(opus|sonnet|haiku|fable|mythos)(?:-(\d+))?(?:-(\d{1,2}))?(?=$|[-[])/i.exec(id.replace(/\[.*\]$/, ""));
   if (!m) return id;
   const name = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();

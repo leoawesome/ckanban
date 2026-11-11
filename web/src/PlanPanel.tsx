@@ -46,7 +46,7 @@ export function PlanFinished({ ticket, total, onMoveToDone, onAddMore }: {
   );
 }
 
-/** The plan controls at the top of a planner's Family tab: state, Start / Pause / Resume and how many run at once. */
+/** The plan controls at the top of a planner's Family tab: state and Start / Pause / Resume. */
 export function PlanControls({ slug, ticket, children, onOpenTicket, onError, onMoveToDone, onAddMore, countShown }: {
   slug: string;
   /** The feature's status summary above already says "N of M done": leave the count off this line. */
@@ -61,20 +61,16 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
   const [busy, setBusy] = useState(false);
   const plan = ticket.plan ?? null;
   const done = children.filter(complete).length;
-  const act = async (action: "start" | "pause" | "resume" | "done" | "concurrency", n?: number) => {
+  const act = async (action: "start" | "pause" | "resume" | "done") => {
     setBusy(true);
     try {
-      await api.plan(slug, ticket.id, action, n);
+      await api.plan(slug, ticket.id, action);
     } catch (e: any) {
       onError(e.message);
     } finally {
       setBusy(false);
     }
   };
-  // Before the plan starts the choice stays here; Start plan sends it.
-  const [draftCap, setDraftCap] = useState(2);
-  const live = !!plan && plan.state !== "done";
-  const cap = live ? plan!.maxConcurrent : draftCap;
   const [label, tone] = stateOf(plan);
   const finished = planFinished(children);
   // Children only the user can move on (questions, a proposal, Planning): what a stuck plan waits for.
@@ -105,7 +101,7 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
           {!plan || plan.state === "done" ? (
             <button className="btn primary small" disabled={busy}
               title="Children switch to auto mode and run in dependency order; Claude is woken only when one needs a decision"
-              onClick={() => act("start", cap)}>Start plan</button>
+              onClick={() => act("start")}>Start plan</button>
           ) : plan.state === "paused" || plan.state === "stuck" ? (
             <button className="btn primary small" disabled={busy} onClick={() => act("resume")}>Resume plan</button>
           ) : (
@@ -115,13 +111,6 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
             <button className="btn small" disabled={busy} title="Close the plan as it is, without waking Claude"
               onClick={() => act("done")}>Mark plan done</button>
           )}
-          {/* A main ticket's tool tickets have no such limit: each starts once its dependencies are done. */}
-          {!ticket.main && <label className="muted small plan-cap" title="Children of this plan in Ready or In progress at once">
-            At once
-            <select value={cap} disabled={busy} onChange={(e) => (live ? act("concurrency", Number(e.target.value)) : setDraftCap(Number(e.target.value)))}>
-              {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>}
           {plan && <span className="muted small" title="Times the plan asked Claude to decide something">{checkInsText(plan.wakeups)}</span>}
         </div>
       )}

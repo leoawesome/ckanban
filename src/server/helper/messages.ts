@@ -218,4 +218,20 @@ export class MessageStore {
     }
     return m;
   }
+
+  /** "Mark all read": every sent message not read yet gets readAt now, in one write; read ones keep theirs. Returns how many. */
+  markAllRead(): number {
+    const at = new Date(this.now()).toISOString();
+    let n = 0;
+    for (const m of this.items()) {
+      if (m.held || m.readAt) continue;
+      m.readAt = at;
+      n++;
+    }
+    if (n) {
+      this.save();
+      this.changed();
+    }
+    return n;
+  }
 }

@@ -68,6 +68,35 @@ describe("message store", () => {
     expect(existsSync(join(root, "messages.json.tmp"))).toBe(false);
   });
 
+  test("mark all read: every unread one in one write, read ones keep their readAt, held ones untouched, one change event", () => {
+    let clock = Date.parse("2026-11-01T00:00:00Z");
+    const root = tempDir();
+    const events: number[] = [];
+    const s = new MessageStore(root, () => clock, (u) => events.push(u));
+    const a = s.add({ level: "direct", oneLine: "a", text: "A" });
+    const b = s.add({ level: "urgent", oneLine: "b", text: "B" });
+    const c = s.add({ level: "direct", oneLine: "c", text: "C" });
+    const p = s.add({ level: "hello", oneLine: "p", text: "P", practice: true });
+    const h = s.add({ level: "routine", oneLine: "h", text: "H", held: true });
+    s.markRead(a.id);
+    const aRead = s.get(a.id)!.readAt;
+    expect(s.unread()).toBe(2);
+    clock += 60_000;
+    events.length = 0;
+    expect(s.markAllRead()).toBe(3);
+    expect(events).toEqual([0]);
+    expect(s.unread()).toBe(0);
+    const again = new MessageStore(root, () => clock);
+    expect(again.get(a.id)?.readAt).toBe(aRead);
+    for (const id of [b.id, c.id, p.id]) expect(again.get(id)?.readAt).toBe(new Date(clock).toISOString());
+    expect(again.get(h.id)?.readAt).toBeNull();
+    expect(again.listNewest({ held: true })).toHaveLength(5);
+    // Nothing left: no write, no event.
+    events.length = 0;
+    expect(s.markAllRead()).toBe(0);
+    expect(events).toEqual([]);
+  });
+
   test("600 held log rows don't push out 5 alerts; held rows keep 200 and 7 days, alerts 30 days", () => {
     let clock = Date.parse("2026-11-01T00:00:00Z");
     const s = new MessageStore(tempDir(), () => clock);
