@@ -3468,11 +3468,12 @@ button.hd-mode:disabled { cursor: default; }
   .panel.head-slim .panel-head { padding-bottom: 0; }
   .head-row2 { gap: 4px; }
   .head-row2 .tabs { margin-left: 0; flex: 1 1 auto; }
-  /* Five tabs (with counts) fit 360px: the cost moved to the top row, tabs share the row and pad tighter. More than
-     five still scroll, with the fade on the right. */
-  .head-row2 .tabs { justify-content: space-between; gap: 0; }
+  /* Tabs keep their natural width from the left with even padding; when they don't fit the row scrolls sideways,
+     with the fade on the right. */
+  .head-row2 .tabs { justify-content: flex-start; gap: 0; }
   .head-row2 > .head-spacer { display: none; }
-  .head-row2 .tabs button { min-height: 40px; padding: 0 5px; font-size: var(--fs-sm); }
+  .head-row2 .tabs button { min-height: 40px; padding: 0 12px; font-size: var(--fs-sm); }
+  .head-row2 .tabs button:first-child { padding-left: 4px; }
   .head-row2 .tabs .tab-count, .head-row2 .tabs .for-you-pill { margin-left: 3px; padding: 0 4px; }
   .panel-head .head-cost { padding: 6px 4px; min-height: 40px; }
   @media (prefers-reduced-motion: reduce) { .head-title-wrap { transition: none; } }
