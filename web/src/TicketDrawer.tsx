@@ -37,6 +37,7 @@ import { PrBox } from "./PrBox";
 import { PrList } from "./PrList";
 import { Select } from "./Select";
 import { phoneStatus } from "./phoneStatus";
+import { ClaudeFace } from "./ConvTurn";
 import { useShareNotices } from "./share";
 import { SessionPicker, sessionLabel } from "./SessionPicker";
 import { TicketMenu } from "./TicketMenu";
@@ -1030,7 +1031,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const statusButton = (
     <Select className={`phone-status tone-${ps.tone}`} ariaLabel={`${att ? `Your turn: ${att.label}` : ps.label}. Move to column`} value={boardColumnOf(ticket)}
       onChange={(s) => setStatus(menuPick(ticket, s as Status))}
-      renderValue={() => <><span className={`ps-dot${ps.busy ? " busy" : ""}${ps.icon ? " mark" : ""}`} aria-hidden>{ps.icon}</span><span className="ps-label">{shortStatus}</span></>}
+      renderValue={() => <>{ps.mood
+        ? <span className="ps-face" aria-hidden><ClaudeFace mood={ps.mood} size={16} /></span>
+        : <span className={`ps-dot${ps.busy ? " busy" : ""}${ps.icon ? " mark" : ""}`} aria-hidden>{ps.icon}</span>}<span className="ps-label">{shortStatus}</span></>}
       menuMaxHeight={Infinity} // all columns fit on a phone screen; only scroll when the screen is too short
       options={statusOptions}
       footer={att && goal ? [{ label: goal.button, icon: <ChevronRightIcon size={12} />, onSelect: goTo }] : undefined} />

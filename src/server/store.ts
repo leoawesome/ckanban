@@ -7,6 +7,7 @@ import YAML from "yaml";
 import type {
   ActivityEntry, Comment, Config, Huddle, HuddleMessage, Job, Loop, LoopState, OutputFile, Profile, Schedule, ScheduleHistoryEntry, Status, Ticket, TicketKind, TicketMode, TicketSource,
 } from "./types";
+import { cleanAvatars, type SavedAvatarMap } from "./avatars";
 import { cleanPresets, type HuddlePreset } from "./huddle-presets";
 import { cleanTemplates, type HuddleTemplate } from "./huddle-templates";
 import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "./huddle-notes";
@@ -694,6 +695,21 @@ export class Store {
 
   saveHuddleTemplates(slug: string | null, ts: HuddleTemplate[]): void {
     atomicWrite(this.levelFile(slug, "huddle-templates.json"), JSON.stringify(ts, null, 2) + "\n");
+  }
+
+  /** The user's avatar choices, shared by every board (<home>/avatars.json). Missing or damaged: none (defaults show). */
+  listAvatars(): SavedAvatarMap {
+    const file = join(this.root, "avatars.json");
+    if (!existsSync(file)) return {};
+    try {
+      return cleanAvatars(JSON.parse(readFileSync(file, "utf8")));
+    } catch {
+      return {};
+    }
+  }
+
+  saveAvatars(map: SavedAvatarMap): void {
+    atomicWrite(join(this.root, "avatars.json"), JSON.stringify(cleanAvatars(map), null, 2) + "\n");
   }
 
   /** <home>/<name> for the global level (slug null), else the board's profiles/<slug>/<name>. */

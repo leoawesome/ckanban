@@ -20,6 +20,9 @@ import { clearArrival, useArrival } from "./arrivals";
 import { attentionLabel, cardFamily, familyLineText, partChip, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
 import { boardColumnOf } from "./columns";
 import { usePhone } from "./usePhone";
+import { ClaudeFace } from "./ConvTurn";
+import type { AvatarMood } from "./avatarLook";
+import { attentionMood, finishMood, runMood, runWord } from "./avatarMood";
 
 /**
  * The card's 📌 button: Pin to top, or Unpin on a pinned card. Desktop shows it on hover and focus (always on a pinned
@@ -62,9 +65,14 @@ function useStepAge(at: string | null | undefined) {
   return age;
 }
 
-function workingBadge(label: string, since?: string | null, title = label) {
-  // The label hides in a phone's ticket header (just spinner and time there); the title keeps it.
-  return <span className="badge running" title={title}><span className="spinner" /> <span className="badge-label">{label}</span>{since && <Elapsed since={since} />}</span>;
+/** mood: Claude's face in that mood in place of the spinner (a huddle's helpers keep the spinner: no one face for them). */
+function workingBadge(label: string, since?: string | null, title = label, mood?: AvatarMood) {
+  // The label hides in a phone's ticket header (just the face and time there); the title keeps it.
+  return (
+    <span className="badge running" title={title}>
+      {mood ? <ClaudeFace mood={mood} size={16} /> : <span className="spinner" />} <span className="badge-label">{label}</span>{since && <Elapsed since={since} />}
+    </span>
+  );
 }
 
 // Whether each ticket was working when last drawn, and the mark its last run left. Kept outside the components:
@@ -74,7 +82,8 @@ const finished = new Map<string, { mark: FinishMark; until: number }>();
 const FINISH_MS = 2400;
 
 /**
- * For a moment after a run ends (working turns false), the mark it leaves: ✓, ✕ or !, shown in place of the spinner.
+ * For a moment after a run ends (working turns false), the mark it leaves: Claude's done, failed or waiting face (✓, ✕ or !
+ * in its corner from 24px up), shown in place of the working face.
  * Null the rest of the time, and on first load (nothing was seen running).
  */
 export function useFinishMark(working: boolean, t: Ticket): FinishMark | null {
@@ -97,7 +106,7 @@ export function useFinishMark(working: boolean, t: Ticket): FinishMark | null {
 }
 
 export function finishBadge(m: FinishMark) {
-  return <span className={`badge finish ${m.tone}`} role="status"><span className="finish-icon" aria-hidden>{m.icon}</span> {m.label}</span>;
+  return <span className={`badge finish ${m.tone}`} role="status"><span className="finish-icon" aria-hidden><ClaudeFace mood={finishMood(m)} size={16} /></span> {m.label}</span>;
 }
 
 /** Badge text plus a shorter form that a phone's ticket header shows instead (styles.css picks one). */
@@ -131,8 +140,8 @@ export const autoHuddleIdle = (t: Ticket) => !!t.autoHuddle && !t.running;
 export function outcomeBadge(t: Ticket) {
   if (autoHuddleIdle(t)) return autoHuddleChip(t.autoHuddle!);
   if (waitsForSlot(t)) return <span className="badge queued" title="Your reply starts when the other ticket is done with the folder">Queued</span>;
-  if (t.status === "in_progress") return workingBadge("Running", t.runStartedAt);
-  if (t.running) return workingBadge("Replying", t.runStartedAt);
+  if (t.status === "in_progress") return workingBadge("Running", t.runStartedAt, undefined, runMood(t.lastActivity));
+  if (t.running) return workingBadge("Replying", t.runStartedAt, undefined, runMood(t.lastActivity));
   if (t.error?.startsWith("corrupt")) return <span className="badge failed">Corrupt file</span>;
   // Done means accepted: an old outcome there doesn't ask anything of the user.
   if (t.status === "done") return null;
@@ -165,7 +174,7 @@ function FamilyLineView({ line, fc, id }: { line: NonNullable<NonNullable<Ticket
   const text = line.until ? `${base}, resumes at ${clockTime(line.until)}` : base;
   return (
     <div id={id} className={`card-family-line ${line.tone}`} title={text}>
-      {line.tone === "work" && <span className="spinner" aria-hidden />}
+      {line.tone === "work" && <ClaudeFace mood="working" size={16} />}
       <span className="activity-text">{text}</span>
     </div>
   );
@@ -215,6 +224,8 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   const arrival = useArrival(ticket.id);
   const now = useNow();
   const pulse = shouldPulse(att, now, openedAt(ticket.id));
+  // Waiting on the user's answer: Claude's waiting face stays in place of the dot (the end-of-run mark leaves after a moment).
+  const waitFace = att ? attentionMood(att.kind) : null;
   const lastAt = ticket.session ? ticket.session.lastMessage?.at || ticket.session.updatedAt : null;
   const artifact = newestArtifact(ticket);
   const artifactHref = safeHref(artifact?.url);
@@ -254,7 +265,9 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
       {costText(cost)}{capped && " over budget"}
     </span>
   ) });
-  if (ownWorking && ticket.runStartedAt) facts.push({ key: "time", node: <span className="card-run-time"><span className="spinner" aria-hidden /><Elapsed since={ticket.runStartedAt} sep={false} /></span> });
+  if (ownWorking && ticket.runStartedAt) facts.push({ key: "time", node: (
+    <span className="card-run-time"><ClaudeFace mood={runMood(ticket.lastActivity)} size={16} /><span className="card-run-word">{runWord(runMood(ticket.lastActivity))}</span><Elapsed since={ticket.runStartedAt} sep={false} /></span>
+  ) });
   else if (lastAt && !working) facts.push({ key: "time", node: <time dateTime={lastAt} title={fullTime(lastAt)}>{timeAgo(lastAt)}</time> });
   // A main ticket's plan runs in the background: its card shows In progress instead, unless it stopped.
   const planPill = ticket.plan && ticket.plan.state !== "done" && !(ticket.main && (ticket.plan.state === "running" || ticket.plan.state === "finishing")) && (
@@ -274,7 +287,8 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
       {pinned && <div className="card-pinned-label" aria-hidden><PinIcon size={12} /> Pinned</div>}
       {att && (
         <div className={`your-turn att-${att.kind}`} id={a11yId && `${a11yId}-turn`}>
-          <span className={`yt-dot ${pulse ? "pulse" : ""}`} aria-hidden />
+          {waitFace ? <span className={`yt-face${pulse ? " pulse" : ""}`} aria-hidden><ClaudeFace mood={waitFace} size={16} /></span>
+            : <span className={`yt-dot ${pulse ? "pulse" : ""}`} aria-hidden />}
           <span className="yt-label">{attentionLabel(att, fromSteps ? stepsWaiting.length : 0, familyWorks)}</span>
           <span className="yt-why" title={ticket.error ?? undefined}>{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>
         </div>

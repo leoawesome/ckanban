@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api, type AgentInfo, type AgentStep, type SessionEntry } from "./api";
 import { duration, fullTime } from "./time";
 import { ToolRow } from "./ToolRows";
+import { ClaudeFace } from "./ConvTurn";
+import { agentMood } from "./avatarMood";
 import { Markdown } from "./Transcript";
 
 /** Rows the user opened; module-level so they stay open across live refreshes and ticket switches. */
@@ -54,7 +56,7 @@ function AgentRow({ slug, ticketId, agent: a }: { slug: string; ticketId: string
         }}>
         <summary>
           <span className="agent-chev" aria-hidden>▶</span>
-          <StatusIcon status={a.status} />
+          <StatusIcon status={a.status} current={a.current} />
           <span className="agent-name">{a.description}</span>
           {a.type && <span className="agent-type">{a.type}</span>}
           <span className={`agent-pill ${a.status}`}>{STATUS_LABEL[a.status]}</span>
@@ -99,8 +101,9 @@ function AgentRow({ slug, ticketId, agent: a }: { slug: string; ticketId: string
   );
 }
 
-function StatusIcon({ status }: { status: AgentInfo["status"] }) {
-  if (status === "running") return <span className="spinner agent-icon" aria-label="running" />;
+/** A running subagent shows Claude's face (thinking until its first step, then working); finished ones keep their mark. */
+function StatusIcon({ status, current }: { status: AgentInfo["status"]; current?: string | null }) {
+  if (status === "running") return <span className="agent-icon face" role="img" aria-label="running"><ClaudeFace mood={agentMood(status, current)} size={16} /></span>;
   return <span className={`agent-icon ${status}`} aria-hidden>{status === "done" ? "✓" : status === "failed" ? "✕" : "■"}</span>;
 }
 

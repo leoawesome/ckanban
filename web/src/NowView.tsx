@@ -9,6 +9,8 @@ import { RowMore, type InboxHelper } from "./Inbox";
 import { isHeldLine } from "./helper";
 import { HelperStatusLine, MessagesEntry } from "./Messages";
 import { ChevronDownIcon, ChevronRightIcon } from "./icons";
+import { ClaudeFace } from "./ConvTurn";
+import { runMood } from "./avatarMood";
 
 /**
  * Phone home (≤720px), for the board shown: what needs you (what Claude is waiting on, then what is ready to check,
@@ -121,7 +123,10 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
       {running.map((t) => (
         <button key={t.id} className="now-card run now-open" onClick={() => onOpen(slug, t.id)}>
           <span className="now-title">{t.title}</span>
-          <span className="now-act">{t.lastActivity || "Claude is working…"}{t.runStartedAt && <> · {elapsed(t.runStartedAt, now)}</>}</span>
+          <span className="now-act now-run-act">
+            <ClaudeFace mood={runMood(t.lastActivity)} size={16} />
+            <span className="now-run-text">{t.lastActivity || "Claude is working…"}{t.runStartedAt && <> · {elapsed(t.runStartedAt, now)}</>}</span>
+          </span>
         </button>
       ))}
 

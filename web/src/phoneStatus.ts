@@ -1,5 +1,7 @@
 import { COLUMNS, waitsForSlot, type Status } from "./columns";
 import { HUDDLE_WORKING, type FinishMark } from "./cardState";
+import type { AvatarMood } from "./avatarLook";
+import { runMood } from "./avatarMood";
 
 /** The colour of the phone header's status button. */
 export type StatusTone = "ok" | "warn" | "err" | "info" | "neutral";
@@ -9,6 +11,8 @@ export interface PhoneStatus {
   tone: StatusTone;
   /** A run is going: the dot spins. */
   busy?: boolean;
+  /** Claude's own run (not a huddle's): its face in this mood in place of the spinning dot, as on the desktop pill. */
+  mood?: AvatarMood;
   /** The just-finished mark (✓, ✕ or !) shown in place of the dot. */
   icon?: string;
 }
@@ -22,6 +26,7 @@ interface StatusTicket {
   slotWait?: { at: string } | null;
   huddleBusy?: boolean;
   autoHuddle?: { state?: string } | null;
+  lastActivity?: string | null;
 }
 
 const columnLabel = (s: Status) => COLUMNS.find((c) => c.id === (s === "ready" ? "in_progress" : s))?.label ?? s;
@@ -40,8 +45,8 @@ export function phoneStatus(t: StatusTicket, finish: FinishMark | null, att: { k
   if (t.huddleBusy) return { label: HUDDLE_WORKING, tone: "info", busy: true };
   if (t.autoHuddle && !t.running) return t.autoHuddle.state === "waiting" ? { label: "Waiting for huddle", tone: "warn" } : { label: "Auto huddle", tone: "info", busy: true };
   if (waitsForSlot({ id: "", order: 0, ...t })) return { label: "Queued", tone: "warn" };
-  if (t.status === "in_progress") return { label: "Running", tone: "info", busy: true };
-  if (t.running) return { label: "Replying", tone: "info", busy: true };
+  if (t.status === "in_progress") return { label: "Running", tone: "info", busy: true, mood: runMood(t.lastActivity) };
+  if (t.running) return { label: "Replying", tone: "info", busy: true, mood: runMood(t.lastActivity) };
   if (t.error?.startsWith("corrupt")) return { label: "Corrupt file", tone: "err" };
   if (t.status === "done") return column;
   switch (t.outcome) {

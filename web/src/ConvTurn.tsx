@@ -3,6 +3,9 @@ import { copy } from "./api";
 import { avatarColor, avatarLetter } from "./avatar";
 import { stepsSummary } from "./chatTurns";
 import { CheckIcon, CopyIcon } from "./icons";
+import { AvatarFace, useAvatar } from "./AvatarFace";
+import type { AvatarMood } from "./avatarLook";
+import { runMood } from "./avatarMood";
 import { elapsed, fullTime, timeAgo } from "./time";
 import { toast } from "./toast";
 
@@ -12,15 +15,14 @@ import { toast } from "./toast";
  * turn show no avatar or name (screen readers still hear the name).
  */
 
-/** Claude's avatar: the spark on the accent colour. */
+/** Claude's face (the user's saved choice or the default robot); a turn's avatar rests (idle). */
+export function ClaudeFace({ mood = "idle", size }: { mood?: AvatarMood; size: number }) {
+  return <AvatarFace look={useAvatar("claude")} mood={mood} size={size} />;
+}
+
+/** Claude's avatar at the start of its turn: its face, at rest (the working row below shows what it is doing). */
 export function ClaudeAvatar() {
-  return (
-    <span className="turn-av claude" aria-hidden>
-      <svg viewBox="0 0 24 24" fill="currentColor" focusable="false">
-        <path d="M12 2l1.8 6.2L20 6l-4.2 4.9L22 12l-6.2 1.1L20 18l-6.2-2.2L12 22l-1.8-6.2L4 18l4.2-4.9L2 12l6.2-1.1L4 6l6.2 2.2z" />
-      </svg>
-    </span>
-  );
+  return <span className="turn-av claude" aria-hidden><ClaudeFace size={28} /></span>;
 }
 
 /** A letter avatar (another ticket, later a teammate): colour from `seed`, so it stays the same everywhere. */
@@ -112,12 +114,12 @@ function useSecondTick(on: boolean) {
 
 /**
  * A run of tool calls: one line under the reply, "✓ Did 6 steps · last step" in plain words; click to see each step by its
- * real tool name. While the run is on its last step this is the chat's one live line: spinner, "Step 3 · Running gh"
+ * real tool name. While the run is on its last step this is the chat's one live line: Claude's working face, "Step 3 · Running gh"
  * and how long that step has been going.
  */
 export function StepsLine({ items, running, activity, old, children }: {
   items: { text: string; error?: true; at?: string }[];
-  /** The run is on this step right now: spinner and "Step 4 · …". */
+  /** The run is on this step right now: Claude's working face and "Step 4 · …". */
   running: boolean;
   /** The run's live description of the current step ("Running gh"); falls back to the step's plain name. */
   activity?: string | null;
@@ -131,7 +133,7 @@ export function StepsLine({ items, running, activity, old, children }: {
   return (
     <details className={`steps-line${old ? " inherited" : ""}${running ? " live" : ""}`}>
       <summary>
-        {running ? <span className="spinner" /> : <CheckIcon size={14} className="icon steps-ok" />}
+        {running ? <ClaudeFace mood="working" size={16} /> : <CheckIcon size={14} className="icon steps-ok" />}
         <span className="steps-text" role={running ? "status" : undefined} aria-live={running ? "polite" : undefined}>{s.text}</span>
         {since && <span className="working-time" title={`This step started ${fullTime(since)}`}>· {elapsed(since)}</span>}
         {s.failed > 0 && <span className="steps-failed">· {s.failed} failed</span>}
@@ -141,7 +143,10 @@ export function StepsLine({ items, running, activity, old, children }: {
   );
 }
 
-/** Claude's place while it works: spinner, what it is doing and for how long; dots before the first step shows. */
+/**
+ * Claude's place while it works: its face (44px, thinking or working), what it is doing and for how long. It takes the
+ * whole width under the replies, so it shows no turn avatar or name line of its own (screen readers still hear "Claude").
+ */
 export function WorkingRow({ start, activity, startedAt, stalled, children }: {
   start: boolean;
   activity: string | null;
@@ -151,14 +156,14 @@ export function WorkingRow({ start, activity, startedAt, stalled, children }: {
   children?: ReactNode;
 }) {
   const since = startedAt ? elapsed(startedAt) : "";
-  const early = !activity && !!startedAt && Date.now() - Date.parse(startedAt) < 3000;
+  const mood = runMood(activity);
   return (
-    <Turn start={start} className="working">
+    <Turn start={false} className={`working${start ? " start" : ""}`}>
       <div className={`working-row${stalled ? " stalled" : ""}`} role="status" aria-live="polite">
+        <ClaudeFace mood={mood} size={44} />
         {stalled ? <span>No output for {stalled} min</span>
-          : early || (!activity && !startedAt) ? <span className="typing-dots" aria-label="Claude is working"><i /><i /><i /></span>
-          : <><span className="spinner" /><span className="working-text">{activity ?? "Working"}</span></>}
-        {since && !stalled && <span className="working-time">· {since}</span>}
+          : <span className="working-text">{mood === "working" ? activity : activity ?? "Thinking…"}</span>}
+        {since && !stalled && <span className="working-time">{since}</span>}
       </div>
       {children}
     </Turn>

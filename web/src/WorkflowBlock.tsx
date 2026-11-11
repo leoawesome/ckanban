@@ -3,6 +3,7 @@ import { api, type SessionEntry, type WorkflowAgent, type WorkflowAgentDetail, t
 import { duration, fullTime } from "./time";
 import { toast } from "./toast";
 import { ToolRow } from "./ToolRows";
+import { ClaudeFace } from "./ConvTurn";
 import { Markdown } from "./Transcript";
 import { costText } from "./usage";
 
@@ -163,8 +164,9 @@ function AgentLine({ slug, ticketId, w, a, now }: { slug: string; ticketId: stri
   );
 }
 
+/** A running workflow shows Claude's working face; finished ones keep their mark. */
 function StatusIcon({ status }: { status: WorkflowInfo["status"] }) {
-  if (status === "running") return <span className="spinner agent-icon" aria-label="running" />;
+  if (status === "running") return <span className="agent-icon face" role="img" aria-label="running"><ClaudeFace mood="working" size={16} /></span>;
   return <span className={`agent-icon ${status}`} aria-hidden>{status === "done" ? "✓" : status === "failed" ? "✕" : "■"}</span>;
 }
 

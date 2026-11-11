@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { api, subscribe, type Huddle, type HuddleNote, type HuddleNotes, type HuddlePreset, type HuddleTemplate, type LearnedView, type Level, type SquadCardRef, type SquadDraft, type TeamUsage } from "./api";
 import { LearnedPane } from "./Learned";
-import { avatarColor, avatarLetter } from "./avatar";
+import { AvatarFace, useAvatar } from "./AvatarFace";
+import { AvatarEditor } from "./AvatarEditor";
 import { Select } from "./Select";
 import { TeamSquads } from "./HuddleTemplates";
 import { HuddleList } from "./HuddleList";
@@ -15,6 +16,8 @@ import { useEdgeFade } from "./useEdgeFade";
 
 const ALL_ROLES = "_all";
 const MAIN = "main";
+/** The list's Claude row (not a teammate; ':' can't be in a handle). */
+const CLAUDE_ROW = ":claude";
 const VIEW_KEY = "ckanban.team.view";
 
 type View = "teammates" | "templates" | "huddles" | "notes" | "learned";
@@ -53,8 +56,9 @@ function metaText(p: HuddlePreset): string {
   ].filter(Boolean).join(" · ");
 }
 
+/** A teammate's (or Claude's: "claude") face, as saved in the avatar editor or its default. */
 export function TeammateAvatar({ name, big }: { name: string; big?: boolean }) {
-  return <span className={`tm-av${big ? " big" : ""}`} style={{ background: avatarColor(name) }} aria-hidden>{avatarLetter(name)}</span>;
+  return <AvatarFace look={useAvatar(name)} size={big ? 36 : 22} className="tm-face" />;
 }
 
 /**
@@ -100,6 +104,8 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   const [newTemplate, setNewTemplate] = useState(0);
   const [squadEdit, setSquadEdit] = useState<{ draft: SquadDraft; card?: SquadCardRef; n: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** The avatar editor is open on this one ("claude" or a handle). */
+  const [avatarEdit, setAvatarEdit] = useState<string | null>(null);
   const fail = (e: unknown) => setErr((e as Error).message);
 
   useEffect(() => {
@@ -160,7 +166,10 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   const q = filter.trim().toLowerCase();
   const shown = useMemo(() => (presets ?? []).filter((p) => !q || [p.name, p.role, p.prompt].some((s) => s.toLowerCase().includes(q))), [presets, q]);
   const shownTemplates = useMemo(() => (templates ?? []).filter((t) => !q || [t.name, t.label, t.description].some((s) => s.toLowerCase().includes(q))), [templates, q]);
-  const cur = presets?.find((p) => p.name === selected) ?? shown[0] ?? null;
+  const showClaude = !q || "claude".includes(q) || CLAUDE_TEXT.toLowerCase().includes(q);
+  const claudeOn = selected === CLAUDE_ROW && showClaude;
+  const cur = claudeOn ? null : presets?.find((p) => p.name === selected) ?? shown[0] ?? null;
+  const pick = (name: string) => { setSelected(name); setEditing(null); setErr(null); };
   const noteCount = (role: string) => (notes?.notes[role]?.general.length ?? 0) + (notes?.notes[role]?.repo.length ?? 0);
   const setRoleNotes = (role: string, scope: "general" | "repo", list: HuddleNote[]) =>
     setNotes((n) => n && { ...n, notes: { ...n.notes, [role]: { ...(n.notes[role] ?? { general: [], repo: [] }), [scope]: list } } });
@@ -204,7 +213,22 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
         <div className="team-body">
           <div className="tm-list" role="listbox" aria-label="Teammates">
             {presets === null && <div className="muted small tm-empty">Loading…</div>}
-            {presets && !shown.length && <div className="muted small tm-empty">{q ? `No teammate matches “${filter.trim()}”.` : "No teammates yet."}</div>}
+            {showClaude && (
+              <div role="group" aria-label="Claude">
+                <div className="tm-grp">Claude</div>
+                <div role="option" aria-selected={claudeOn && !editing} tabIndex={0} className={`tm-row${claudeOn && !editing ? " sel" : ""}`}
+                  onClick={() => pick(CLAUDE_ROW)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(CLAUDE_ROW); } }}>
+                  <TeammateAvatar name="claude" />
+                  <span className="tm-names">
+                    <span className="tm-name">Claude</span>
+                    <span className="tm-role">Runs your tickets and chats</span>
+                  </span>
+                  <span />
+                </div>
+              </div>
+            )}
+            {presets && !shown.length && !showClaude && <div className="muted small tm-empty">{q ? `No teammate matches “${filter.trim()}”.` : "No teammates yet."}</div>}
             {([["Built-in", shown.filter((p) => p.builtin)], ["Yours", shown.filter((p) => !p.builtin)]] as const).map(([title, list]) => list.length > 0 && (
               <div key={title} role="group" aria-label={title}>
                 <div className="tm-grp">{title}</div>
@@ -215,8 +239,8 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
                   const on = cur?.name === p.name && !editing?.isNew;
                   return (
                     <div key={p.name} role="option" aria-selected={on} tabIndex={0} className={`tm-row${on ? " sel" : ""}`}
-                      onClick={() => { setSelected(p.name); setEditing(null); setErr(null); }}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(p.name); setEditing(null); } }}>
+                      onClick={() => pick(p.name)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(p.name); } }}>
                       <TeammateAvatar name={p.name} />
                       <span className="tm-names">
                         <span className="tm-name mono">{p.name}</span>
@@ -244,8 +268,10 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
                   setSelected(p.name);
                   loadPresets();
                 }} />
+            ) : claudeOn ? (
+              <ClaudeDetail onAvatar={() => setAvatarEdit("claude")} />
             ) : cur ? (
-              <TeammateDetail key={cur.name} slug={slug} p={cur} usage={usage?.teammates[cur.name]} notes={notes} startHint={startHint}
+              <TeammateDetail key={cur.name} onAvatar={() => setAvatarEdit(cur.name)} slug={slug} p={cur} usage={usage?.teammates[cur.name]} notes={notes} startHint={startHint}
                 onEdit={() => { setErr(null); setEditing({ draft: draftOf(cur), isNew: false, scope: cur.source === "board" ? "board" : "global" }); }}
                 onDelete={async () => {
                   setErr(null);
@@ -262,6 +288,10 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
               presets && <div className="muted small tm-empty">Pick a teammate.</div>
             )}
           </div>
+          {avatarEdit && (
+            <AvatarEditor initial={avatarEdit} onClose={() => setAvatarEdit(null)}
+              people={[{ who: "claude", label: "Claude" }, ...(presets ?? []).map((p) => ({ who: p.name, label: p.role || p.name }))]} />
+          )}
         </div>
       )}
 
@@ -304,10 +334,30 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   );
 }
 
+const CLAUDE_TEXT = "Runs your tickets and chats";
+
+/** The Claude row's pane: its avatar can be changed here (it isn't a teammate, so nothing else to set). */
+function ClaudeDetail({ onAvatar }: { onAvatar: () => void }) {
+  return (
+    <div className="tm-pane">
+      <div className="tm-head">
+        <button type="button" className="tm-face-btn" onClick={onAvatar} aria-label="Change Claude's avatar" title="Change avatar"><TeammateAvatar name="claude" big /></button>
+        <h3>Claude</h3>
+        <span className="spacer" />
+        <button className="btn small" onClick={onAvatar}>Change avatar</button>
+      </div>
+      <div className="tm-meta">The Claude that runs your tickets and chats with you. Its face shows what it's doing: thinking, working, waiting for you, done or stuck.</div>
+      <div className="tm-hint">Its avatar is the same on every board. Teammates in huddles have their own; pick one in the list to change it.</div>
+    </div>
+  );
+}
+
 const draftOf = (p: HuddlePreset): Draft => ({ name: p.name, role: p.role, prompt: p.prompt, model: p.model, mode: p.mode, lead: p.lead, canEdit: p.canEdit, workspace: p.workspace });
 
-function TeammateDetail({ slug, p, usage, notes, startHint, onEdit, onDelete, onStart, onSaveNotes, onOpenHuddle }: {
+function TeammateDetail({ slug, p, usage, notes, startHint, onEdit, onDelete, onStart, onSaveNotes, onOpenHuddle, onAvatar }: {
   slug: string;
+  /** Open the avatar editor on this teammate. */
+  onAvatar: () => void;
   p: HuddlePreset;
   usage: TeamUsage | undefined;
   notes: { notes: HuddleNotes; cap: number } | null;
@@ -324,9 +374,10 @@ function TeammateDetail({ slug, p, usage, notes, startHint, onEdit, onDelete, on
   return (
     <div className="tm-pane">
       <div className="tm-head">
-        <TeammateAvatar name={p.name} big />
+        <button type="button" className="tm-face-btn" onClick={onAvatar} aria-label={`Change @${p.name}'s avatar`} title="Change avatar"><TeammateAvatar name={p.name} big /></button>
         <h3>{p.role} <span className="tm-handle mono">@{p.name}</span></h3>
         <span className="spacer" />
+        <button className="btn small" onClick={onAvatar}>Change avatar</button>
         {p.source === "builtin" ? (
           <button className="btn small" onClick={onEdit} title="Make your own version of this built-in, for all boards or this board">Copy to customise</button>
         ) : (

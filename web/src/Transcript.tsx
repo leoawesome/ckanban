@@ -6,6 +6,7 @@ import { ATTACHMENT_SRC, fileHref, fileKind, formatSize, opensInline } from "./a
 import { FileLinkContext } from "./fileLinkContext";
 import { codePath, textPaths } from "./filePaths";
 import { opensNewTab } from "./links";
+import { ClaudeFace } from "./ConvTurn";
 import { sourceLabel, splitCommandMentions, type SlashCommand } from "./slashText";
 
 function textOf(content: unknown): string {
@@ -431,7 +432,7 @@ export function Transcript({ entries, live }: { entries: ActivityEntry[]; live: 
           {evs.map((e, i) => <Event key={i} ev={e.event} />)}
         </div>
       ))}
-      {live && <div className="ev ev-live"><span className="spinner" /> Working…</div>}
+      {live && <div className="ev ev-live"><ClaudeFace mood="working" size={16} /> Working…</div>}
       <div ref={endRef} />
     </div>
   );

@@ -1,4 +1,5 @@
 import { parseConnectorSetting } from "./connectors";
+import { AvatarError, withAvatar, withoutAvatar } from "./avatars";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { routeLabel, track } from "./lag";
@@ -1078,6 +1079,22 @@ export function createServer(deps: ServerDeps) {
     if (parts[0] === "spend" && m === "GET") return json(spend.today());
     // How every teammate (huddle preset) and template was used, from the huddles on every board.
     if (parts[0] === "team-usage" && m === "GET") return json(huddles.usage());
+    // The user's avatar choices for Claude, the user and teammates: one set for every board (src/server/avatars.ts).
+    if (parts[0] === "avatars") {
+      if (parts.length === 1 && m === "GET") return json(store.listAvatars());
+      if (parts.length === 2 && (m === "PUT" || m === "DELETE")) {
+        if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "a board or huddle run can't change avatars; ask the user");
+        const name = parts[1];
+        try {
+          const next = m === "PUT" ? withAvatar(store.listAvatars(), name, await body(req)) : withoutAvatar(store.listAvatars(), name);
+          store.saveAvatars(next);
+          return json(next);
+        } catch (e) {
+          if (e instanceof AvatarError) throw new HttpError(e.status, e.message);
+          throw e;
+        }
+      }
+    }
     if (parts[0] === "inbox" && m === "GET") {
       // Every board: tickets that need the user (the same rule as the cards' "Your turn"), oldest first.
       // Right after a start with no saved summaries, wait for the sliced read instead of reading every transcript now.

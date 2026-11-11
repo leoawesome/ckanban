@@ -23,7 +23,7 @@ import { restoredDraft, rewindOff } from "./rewindText";
 import { fullTime, timeAgo } from "./time";
 import { toast } from "./toast";
 import { ToolRows } from "./ToolRows";
-import { ErrorTurn, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
+import { ClaudeFace, ErrorTurn, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
 import { layoutTurns } from "./chatTurns";
 import { useChatSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
@@ -296,7 +296,7 @@ function ChatRows({ chats, currentId, onPick }: { chats: QuickChat[] | null; cur
     <>
       {chats.map((c) => (
         <button key={c.id} className={`qc-row${c.id === currentId ? " cur" : ""}`} onClick={() => onPick(c.id)} title={c.title}>
-          <span className="qc-row-title">{c.running && <span className="spinner" />}<span className="qc-row-name">{c.title}</span></span>
+          <span className="qc-row-title">{c.running && <ClaudeFace mood="working" size={16} />}<span className="qc-row-name">{c.title}</span></span>
           <span className="qc-row-meta">
             <time dateTime={c.updatedAt} title={fullTime(c.updatedAt)}>{timeAgo(c.updatedAt)}</time>
             {c.ticketId && <span className="qc-tag">made ticket</span>}

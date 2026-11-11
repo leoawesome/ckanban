@@ -4,6 +4,8 @@ import { resolveRun, runText } from "./models";
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Profile, type Ticket } from "./api";
 import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, MAX_LEVEL, matchWords, settled, STATE_WORDS, subFeatureState, type FamilyRow, type FamilyState } from "./family";
+import { ClaudeFace } from "./ConvTurn";
+import { familyMood } from "./avatarMood";
 import { familyText } from "./FamilyPanel";
 import { Modal } from "./Modal";
 import { copyText } from "./share";
@@ -153,6 +155,8 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
                   e.stopPropagation();
                   if (holds(r, kids) && r.depth > 0) setOpen((o) => ({ ...o, [t.id]: !isOpen(r) }));
                 }}>{holds(r, kids) ? (isOpen(r) || r.depth === 0 ? "▾" : "▸") : ""}</button>
+              {/* Its Claude's face in the row's state (the words beside it say the state too). */}
+              <span className="ft-face" aria-hidden><ClaudeFace mood={familyMood(groupState)} size={20} /></span>
               <span className="ft-body">
                 <span className="ft-title">{subRow(r) && <span className="part-chip ft-sub">Sub-feature</span>}{t.important && <ImportantStar />}{t.title}</span>
                 <span className="ft-meta">

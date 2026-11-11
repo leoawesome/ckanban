@@ -459,13 +459,20 @@ const LOOK_WORDS: [RegExp, string][] = [
 /** Hand-picked colours for roles without a look (the same palette as the letter avatars), stable per handle. */
 const FALLBACK_COLORS = ["#7a5af5", "#2f7d4f", "#c96442", "#b3428a", "#2b5fb8", "#0e7c86", "#8a5a2b"];
 
+/** The built-in role whose look a participant gets: its preset, else its handle (qa-2: qa), else words in its role; null for none. */
+export function faceLookKey(p: { handle: string; role?: string | null; preset?: string | null }): string | null {
+  for (const k of [p.preset, p.handle.replace(/-\d+$/, ""), handleBase(p.role ?? "")]) if (k && Object.prototype.hasOwnProperty.call(LOOKS, k)) return k;
+  const role = (p.role ?? "").toLowerCase();
+  for (const [re, k] of LOOK_WORDS) if (re.test(role)) return k;
+  return null;
+}
+
 /** The look of a huddle participant: its preset, else its handle (qa-2: qa), else words in its role; others a stable colour and 💡. */
 export function faceLook(p: { handle: string; role?: string | null; preset?: string | null; kind?: string | null }): FaceLook {
   if (p.handle === "you" || p.kind === "human") return { color: "#c96442", badge: "", you: true };
   const base = p.handle.replace(/-\d+$/, "");
-  for (const k of [p.preset, base, handleBase(p.role ?? "")]) if (k && LOOKS[k]) return { color: LOOKS[k][0], badge: LOOKS[k][1] };
-  const role = (p.role ?? "").toLowerCase();
-  for (const [re, k] of LOOK_WORDS) if (re.test(role)) return { color: LOOKS[k][0], badge: LOOKS[k][1] };
+  const k = faceLookKey(p);
+  if (k) return { color: LOOKS[k][0], badge: LOOKS[k][1] };
   let h = 0x811c9dc5;
   for (const c of base) h = Math.imul(h ^ c.charCodeAt(0), 0x01000193);
   // Another ticket's own Claude: a pin instead of the bulb.

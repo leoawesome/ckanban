@@ -33,7 +33,7 @@ export function HuddleList({ huddles, onOpen }: { huddles: Huddle[]; onOpen?: (t
           {host}{round && <span className="hr-round"> · {round}</span>}
         </span>
         <span className="hr-line">
-          <FaceStack people={helpers} />
+          <FaceStack people={helpers} closed={h.status === "closed"} />
           <time dateTime={h.updatedAt} title={`Last activity ${fullTime(h.updatedAt)} · ${h.seq} ${h.seq === 1 ? "message" : "messages"}`}>{timeAgo(h.updatedAt)}</time>
           {forYou > 0 && <span className="for-you-pill">{forYou} for you</span>}
           {brake ? <span className="hr-brake">{brake}</span> : h.status === "stopped" && <span className="hr-brake">paused</span>}

@@ -36,6 +36,7 @@ import type { HuddleSeed, TeamRequest } from "./Team";
 import { TeammateProposalView } from "./TeammateCard";
 import { savedText } from "./teammateText";
 import { FaceStack, HelperFace } from "./HelperFace";
+import { participantMood } from "./avatarMood";
 import { enterSends } from "./enterSends";
 
 const clock = (iso: string) => {
@@ -349,7 +350,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
   // The bar's head: the helpers' faces, then "● Live · 3 helpers · $1.20 of $20".
   const head = (
     <>
-      <FaceStack people={members(h)} size={phone ? 26 : 24} />
+      <FaceStack people={members(h)} size={phone ? 26 : 24} closed={closed} />
       <span className="hd-head-meta">
         {stateLabel}<span aria-hidden> · </span>{count} {count === 1 ? "helper" : "helpers"}<span aria-hidden> · </span>{budget}
       </span>
@@ -1231,7 +1232,7 @@ function Roster({ slug, huddle: h, onError, viewing, onView }: {
           // One line: face (with its status dot), name, cost. The row opens the participant's steps; ⌄ shows the rest under it.
           <div key={p.handle} className={`hd-p${human ? "" : " viewable"}${viewing === p.handle ? " sel" : ""}${open ? " open" : ""}`}>
             <span className="hd-p-face" title={human ? undefined : activity} aria-hidden>
-              <HelperFace p={p} size={28} /><span className={`hd-dot ${human ? "human" : st}`} />
+              <HelperFace p={p} size={28} mood={participantMood(p, closed)} /><span className={`hd-dot ${human ? "human" : st}`} />
             </span>
             {!human && (
               <button className="hd-p-open" onClick={() => onView(p.handle)} aria-pressed={viewing === p.handle}

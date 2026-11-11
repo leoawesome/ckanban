@@ -21,9 +21,10 @@ test("outcomes and runs", () => {
   expect(phoneStatus(t({ status: "review", outcome: "done" }), null, null)).toEqual({ label: "Ready for review", tone: "ok" });
   expect(phoneStatus(t({ outcome: "blocked" }), null, null)).toEqual({ label: "Blocked", tone: "warn" });
   expect(phoneStatus(t({ outcome: "failed" }), null, null)).toEqual({ label: "Failed", tone: "err" });
-  expect(phoneStatus(t({ status: "in_progress" }), null, null)).toEqual({ label: "Running", tone: "info", busy: true });
+  expect(phoneStatus(t({ status: "in_progress" }), null, null)).toEqual({ label: "Running", tone: "info", busy: true, mood: "thinking" });
+  expect(phoneStatus(t({ status: "in_progress", lastActivity: "Running gh" }), null, null).mood).toBe("working");
   expect(phoneStatus(t({ status: "in_progress", slotWait: { at: "x" } }), null, null)).toEqual({ label: "Queued", tone: "warn" });
-  expect(phoneStatus(t({ status: "planning", running: true }), null, null)).toEqual({ label: "Replying", tone: "info", busy: true });
+  expect(phoneStatus(t({ status: "planning", running: true }), null, null)).toEqual({ label: "Replying", tone: "info", busy: true, mood: "thinking" });
   expect(phoneStatus(t({ status: "review", outcome: "done", huddleBusy: true }), null, null)).toEqual({ label: "Huddle working", tone: "info", busy: true });
 });
 

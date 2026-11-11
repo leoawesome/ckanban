@@ -75,7 +75,7 @@ export function TeammateProposalView({ proposal, presets, dismissed, busy, initi
     <div className={`proposal teammate-card${dismissed ? " done" : ""}`}>
       <span className="proposal-tag">{existing ? "Proposed change" : "Proposed teammate"}</span>
       <div className="tmc-top">
-        <TeammateAvatar name={next.name} />
+        <TeammateAvatar name={next.name} big />
         <div>
           <div className="proposal-title">{next.role}</div>
           <div className="tmc-handle mono">@{next.name}</div>
