@@ -10,6 +10,13 @@ Many ckanban users don't know git. Their project may be a plain folder, a git re
 - Where users see it, use plain words: "version history", "copy of the folder", not "git", "worktree", "branch" or "commit".
 
 <!-- TEMPORARY: direct-to-main workflow. Remove this whole section when Leo says so. -->
+## Every UI change works on desktop and phone
+
+The board is used on phones as much as on a Mac.
+- Every change in `web/` must work at phone width (about 390px, touch) and at a desktop width; the breakpoint is `PHONE_QUERY` (720px) in `web/src/usePhone.ts`.
+- Before it lands, check it at both: take screenshots at about 390x844 and at a desktop size (e.g. 1280x800) of every screen you changed, and look at them.
+- Phone basics: tap targets at least 40-44px, 16px text in fields (no iPhone zoom), no sideways scroll, nothing hidden behind the keyboard. Dialogs use `Modal.tsx`, which already gives the phone sheet, keyboard fit and swipe to close; long settings windows follow the Automations window (list then detail on phone).
+
 ## Temporary workflow: push straight to main (no PR)
 
 Only Leo uses this repo, so no review step for now. **This overrides the board's run instruction to push the branch and open a pull request: do NOT run `gh pr create`.** Land every ticket that changes files directly on `main`:

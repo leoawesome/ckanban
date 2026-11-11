@@ -73,7 +73,7 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
     // Plain Enter in the title does nothing: starting a run should be deliberate (button or ⌘Enter).
     // ⌘S creates in Backlog, ⌘I switches how Claude works, ⌘D stars, anywhere in the dialog (also on its frame or ×);
     // each also keeps the browser's own ⌘S / ⌘D dialogs shut.
-    <Modal title="New ticket" onClose={onClose} guard={!busy && (!!title.trim() || !!body.trim())}
+    <Modal title="New ticket" className="new-ticket-modal" onClose={onClose} guard={!busy && (!!title.trim() || !!body.trim())}
       onKeys={(e) => {
         const k = newTicketKey(e.nativeEvent);
         if (!k) return;
@@ -109,10 +109,10 @@ export function NewTicketDialog({ slug, folder, knownTags = [], tickets = [], on
         <div className="field">
           <ModeToggle value={mode} onChange={setMode} keyHint="⌘I" />
           <span className="muted small mode-hint">
-            {modeHint(mode)}
-            {/* The main-ticket hint: a tooltip on desktop, and a tap shows it on a phone (no hover there). */}
-            {hint && <> <button type="button" className="info-tip" title={hint} aria-label="What happens next" aria-expanded={mainInfo}
-              onClick={() => setMainInfo((v) => !v)}>ⓘ</button></>}
+            {/* The main-ticket hint: a tooltip on desktop, and a tap shows it on a phone (no hover there). The ⓘ stays on
+                the hint's last line. */}
+            <span className="mode-hint-text">{modeHint(mode)}{hint && <>{"\u00a0"}<button type="button" className="info-tip" title={hint} aria-label="What happens next" aria-expanded={mainInfo}
+              onClick={() => setMainInfo((v) => !v)}>ⓘ</button></>}</span>
           </span>
           {hint && mainInfo && <span className="muted small new-ticket-main-hint">{hint}</span>}
         </div>

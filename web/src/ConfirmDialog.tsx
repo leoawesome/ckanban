@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type ReactNode } from "react";
 import { useFocusTrap, useLayer } from "./layers";
+import { useBackdropClose } from "./sheet";
 import { KeyHint } from "./KeyHint";
 
 export function ConfirmDialog({ title, children, confirmLabel, busyLabel = "Working…", tone = "danger", onConfirm, onCancel }: {
@@ -18,6 +19,7 @@ export function ConfirmDialog({ title, children, confirmLabel, busyLabel = "Work
   const cancelRef = useRef<HTMLButtonElement>(null);
   useLayer(onCancel);
   useFocusTrap(box);
+  const backdrop = useBackdropClose(onCancel);
 
   const confirm = async () => {
     setBusy(true);
@@ -30,7 +32,7 @@ export function ConfirmDialog({ title, children, confirmLabel, busyLabel = "Work
   };
 
   return (
-    <div className="overlay confirm-overlay" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
+    <div className="overlay confirm-overlay" {...backdrop}>
       <div ref={box} className="modal confirm" role="alertdialog" aria-modal="true" aria-labelledby={id}>
         <div className="confirm-body">
           <h3 id={id}>{title}</h3>

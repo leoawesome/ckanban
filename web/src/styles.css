@@ -481,6 +481,7 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes modal-in { from { opacity: 0; transform: scale(0.98); } }
 .modal.wide { max-width: 760px; }
+.modal-grip { display: none; }
 .modal-head { display: flex; align-items: center; padding: 14px 18px 4px; }
 .modal-head h3 { margin: 0; flex: 1; font-size: var(--fs-lg); }
 .form { display: flex; flex-direction: column; gap: 12px; padding: 12px 18px 18px; }
@@ -494,6 +495,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 textarea { resize: vertical; font-size: var(--fs-md); }
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 4px; }
 .form-error { color: var(--err); font-size: var(--fs-sm); }
+/* Delete and other can't-undo buttons: their own row under the form, away from Save. */
+.form-danger { display: flex; justify-content: flex-start; padding-top: 12px; margin-top: 4px; border-top: 1px solid var(--border); }
 /* Groups inside a dialog: hairline-separated rows, never a bordered box inside the dialog's box. */
 .modal :is(.device, .conn-card, .auto-box, .auto-editor, .pa-fix, .mcp-add, .ft-peek) {
   border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none; padding: 10px 0 0;
@@ -779,6 +782,10 @@ textarea { resize: vertical; font-size: var(--fs-md); }
 .output-name { flex: 1; font-family: var(--mono); font-size: var(--fs-xs); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .output-file.selected .output-name { font-weight: 600; }
 .output-age { flex: none; margin-left: auto; padding-left: 8px; font-size: var(--fs-2xs); white-space: nowrap; }
+.output-group-head { padding: 8px 8px 4px; font-size: var(--fs-2xs); font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--muted); }
+.output-featured { padding-bottom: 2px; }
+.output-featured .output-group-head:last-child { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+.output-dir { color: var(--muted); font-weight: 400; }
 .output-count { margin-left: auto; padding-left: 8px; flex: none; font-size: var(--fs-2xs); }
 .output-view {
   flex: 1; min-width: 0; min-height: 0; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg);
@@ -831,9 +838,20 @@ textarea { resize: vertical; font-size: var(--fs-md); }
 .pdf-page { flex: none; background: #fff; box-shadow: var(--shadow-sm); }
 .pdf-page.blank { background: #fff linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.03), transparent); }
 .pdf-page canvas { display: block; width: 100%; height: 100%; }
-.pdf-count {
-  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); pointer-events: none;
-  background: rgba(31, 30, 27, 0.78); color: #fff; font-size: var(--fs-xs); padding: 4px 10px; border-radius: var(--r-pill); white-space: nowrap;
+/* Zoomed wider than the pane: pages start at the left edge, so all of them can be scrolled to. */
+.pdf-scroll.zoomed { align-items: flex-start; }
+.pdf-tools {
+  position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 2px; padding: 2px;
+  background: rgba(31, 30, 27, 0.78); color: #fff; border-radius: var(--r-pill); font-size: var(--fs-xs);
+}
+.pdf-count { padding: 0 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pdf-zoom { width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; color: inherit; font-size: var(--fs-lg); line-height: 1; cursor: pointer; }
+.pdf-zoom:hover:not(:disabled) { background: rgba(255, 255, 255, 0.15); }
+.pdf-zoom:disabled { opacity: 0.4; cursor: default; }
+@media (max-width: 720px) {
+  .pdf-scroll { padding: 4px 4px 60px; gap: 6px; }
+  .pdf-tools { right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); }
+  .pdf-zoom { width: 40px; height: 40px; }
 }
 .pdf-note { padding: 14px 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .pdf-note p { margin: 0; }
@@ -882,6 +900,12 @@ body > .output-view.reader { position: fixed; }
   color: var(--accent-text); font: inherit; font-size: var(--fs-lg); font-weight: 600; cursor: pointer;
 }
 .reader .output-bar-name { text-align: center; font-size: var(--fs-sm); }
+/* A previewed page on a phone: Back, Open in new tab and Share on the first line, the file name readable on its own line. */
+@media (max-width: 720px) {
+  .reader.html .output-bar { flex-wrap: wrap; row-gap: 0; }
+  .reader.html .output-bar > .link-btn { margin-left: auto; min-height: 40px; }
+  .reader.html .output-bar-name { order: 9; flex-basis: 100%; text-align: left; padding: 0 6px 2px; white-space: normal; overflow-wrap: anywhere; }
+}
 .reader .output-body { padding: 16px 18px; font-size: var(--fs-lg); line-height: 1.6; overflow-x: hidden; }
 .reader .output-body .md { overflow-wrap: anywhere; }
 .reader .output-body .md table { display: block; max-width: 100%; overflow-x: auto; }
@@ -1404,6 +1428,8 @@ body > .output-view.reader { position: fixed; }
 /* Cards under a reply: the page colour, so they stand apart from the flat text. */
 .turn-body > :is(.proposal, .huddle-card, .chat-file, .teammate-card, .newtix, .branch-card) { margin-top: 0; border-radius: var(--r-md); background: var(--bg); }
 .turn-body > .proposal.ticket-proposal { border-radius: 0; background: none; }
+.turn-body > .chat-files > .chat-file { background: var(--bg); }
+.turn-body > .chat-files > :first-child { margin-top: 0; }
 .turn-body .qform .q { background: var(--bg); border-radius: var(--r-md); }
 
 /* Markdown in the chat */
@@ -1595,10 +1621,11 @@ body > .output-view.reader { position: fixed; }
 .btn.image-pick.add-pick { justify-content: center; }
 @media (max-width: 720px) { .image-pick-group .btn.image-pick.add-pick { width: 40px; min-width: 40px; min-height: 40px; padding: 0; } }
 .composer-warn-more { margin-top: 4px; color: var(--text); opacity: 0.8; }
+/* Small, at the right just above the message box: an arrow, "↓ New" when something arrived while reading up. */
 .jump-latest {
-  position: sticky; bottom: 4px; align-self: center; z-index: 2; display: inline-flex; align-items: center; gap: 6px;
-  border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--r-pill);
-  padding: 5px 12px; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; box-shadow: var(--shadow-pop);
+  position: sticky; bottom: 6px; align-self: flex-end; z-index: 2; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 36px; height: 36px; margin-top: -36px; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--r-pill);
+  padding: 0 10px; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; box-shadow: var(--shadow-pop);
 }
 .jump-latest.fresh { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); }
 .composer .btn.primary:disabled { background: var(--surface-2); border-color: var(--border); color: var(--muted); opacity: 1; }
@@ -1755,6 +1782,14 @@ button.your-turn.go:focus-visible { outline: 2px solid currentColor; outline-off
 .chat-file > .muted { flex: none; }
 .chat-file-actions { margin-left: auto; display: flex; gap: 6px; flex: none; }
 .chat-file + .chat-file { margin-top: 6px; }
+.chat-files { display: flex; flex-direction: column; max-width: 560px; }
+.chat-files > .chat-file:first-child { margin-top: 8px; }
+.chat-files-head {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 10px; min-height: 36px; width: 100%; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2); border-radius: var(--r-md); color: var(--text); font: inherit; font-size: var(--fs-sm); font-weight: 600; text-align: left;
+}
+.chat-files-head svg { color: var(--muted); }
+.chat-files-head[aria-expanded="true"] .fold-chev.side { transform: rotate(90deg); }
 .chat-unreadable {
   margin-top: 8px; font-size: var(--fs-sm); color: var(--warn); background: var(--warn-soft); border-radius: var(--r-sm); padding: 6px 10px;
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -1914,6 +1949,16 @@ textarea.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--
 .terminal-host { flex: 1; min-width: 0; }
 .terminal-host .xterm { height: 100%; }
 .terminal-host .xterm-viewport { background: transparent !important; }
+/* Touch screens: Esc, Tab, Ctrl and arrow keys in a row under the terminal, just above the phone keyboard. */
+.terminal-view.keys { flex-direction: column; padding-right: 0; }
+.terminal-view.keys .terminal-host { min-height: 0; }
+.term-keys { flex: none; display: flex; gap: 4px; padding: 6px 8px max(6px, env(safe-area-inset-bottom)) 0; overflow-x: auto; border-top: 1px solid var(--border); background: var(--surface); }
+.term-key {
+  flex: 1 0 auto; min-width: 44px; min-height: 40px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text); font: 600 var(--fs-sm) var(--mono); cursor: pointer; touch-action: manipulation;
+}
+.term-key:active { background: var(--accent-soft); }
+.term-key.on { background: var(--accent-strong); color: var(--on-accent); border-color: var(--accent-strong); }
 .terminal-banner {
   position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); padding: 6px 12px; font-size: var(--fs-sm);
   border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn); border: 1px solid var(--border);
@@ -2006,7 +2051,7 @@ textarea.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--
 @media (max-width: 720px) {
   .form.mcp { max-height: calc(100dvh - 90px); }
   .mcp-toolbar { flex-wrap: wrap; }
-  .mcp-toolbar-text { flex-basis: 100%; }
+  .mcp-toolbar-text, .mcp-toolbar .sched-intro { flex-basis: 100%; }
   .mcp-toolbar .spacer { display: none; }
   .mcp-toolbar .btn { flex: 1; min-height: 40px; }
   .mcp-row { padding: 12px 0; }
@@ -2035,6 +2080,10 @@ textarea.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--
 .sched-item:last-child { border-bottom: 0; }
 .sched-item .mcp-row { border-bottom: 0; }
 .sched-item > .mcp-add { margin-bottom: 10px; }
+.sched-intro { flex: 1; min-width: 0; }
+.sched-intro > summary { cursor: pointer; }
+.sched-intro[open] > summary { margin-bottom: 2px; }
+.sched-more-btn { padding-inline: 10px; }
 .sched-when { font-size: var(--fs-sm); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .sched-when code { color: var(--muted); }
 .sched-history { display: flex; flex-direction: column; gap: 2px; margin: 0 0 10px; padding: 8px 10px; background: var(--surface-2); border-radius: var(--r-sm); max-height: 260px; overflow-y: auto; }
@@ -2321,10 +2370,12 @@ button.pill:hover { color: var(--text); }
 .devices { display: flex; flex-direction: column; gap: 10px; padding: 4px 18px 18px; }
 .devices-intro { margin: 0 0 2px; }
 .device { border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
-.device-head { display: flex; align-items: center; gap: 8px; }
-.device-name { font-family: var(--mono); font-weight: 600; font-size: var(--fs-sm); }
-.device-cap { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--muted); }
-.device-cap input { width: 50px; padding: 2px 6px; text-align: center; }
+.device-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.device-name { flex: 1; min-width: 0; font-family: var(--mono); font-weight: 600; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.device-cap-note { flex: none; font-size: var(--fs-xs); }
+.device-edit-btn { flex: none; }
+.device-cap { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--muted); }
+.device-cap input { width: 56px; padding: 2px 6px; text-align: center; }
 .device-desc { font-size: var(--fs-sm); color: var(--muted); }
 .device-desc.muted { font-style: italic; }
 .device-status { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; font-size: var(--fs-sm); }
@@ -2336,8 +2387,9 @@ button.pill:hover { color: var(--text); }
 .device-pill.wait { background: var(--warn-soft); color: var(--warn); }
 .device-pill.free { background: var(--ok-soft); color: var(--ok); }
 .device-pill.new { background: var(--surface-2); color: var(--muted); }
-.device-edit { display: flex; gap: 6px; align-items: center; }
-.device-edit input { flex: 1; min-width: 0; }
+.device-edit { display: flex; flex-direction: column; gap: 8px; }
+.device-edit > input { width: 100%; min-width: 0; }
+.device-edit-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .device-new input:not([type="number"]) { width: 100%; }
 .device-new .device-name-input { font-family: var(--mono); flex: 1; width: auto; }
 .device-edit-actions { display: flex; justify-content: flex-end; gap: 6px; }
@@ -2405,6 +2457,16 @@ button.pill:hover { color: var(--text); }
 .changes-file.on { background: var(--accent-soft); }
 .changes-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .changes-caret { width: 14px; text-align: center; flex: none; }
+.changes-file-dir { color: var(--muted); }
+.changes-file-count { flex: none; display: inline-flex; gap: 5px; }
+.changes-file-count :is(.diff-add, .diff-del) { font-size: var(--fs-2xs); }
+/* Phone and the side column: one line-number column, a slim gutter, long lines wrap instead of scrolling sideways. */
+.diff-table.narrow { width: 100%; }
+.diff-table.narrow td.ln:first-child { display: none; }
+.diff-table.narrow td.ln { min-width: 0; padding: 0 4px 0 2px; }
+.diff-table.narrow td { padding-right: 6px; }
+.diff-table.narrow td.code { white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 4px; }
+.diff-table.narrow .dl-cmt td > .cbox { position: static; width: auto; max-width: none; }
 .changes-cmt-count { flex: none; font-size: var(--fs-2xs); line-height: 16px; background: var(--accent-strong); color: var(--on-accent); border-radius: var(--r-pill); padding: 0 5px; }
 .diff-st { flex: none; width: 14px; text-align: center; font-size: var(--fs-2xs); font-weight: 700; }
 .diff-st.st-A { color: var(--ok); }
@@ -3220,32 +3282,162 @@ button.hd-mode:disabled { cursor: default; }
   .usage-box-row b { text-align: right; font-variant-numeric: tabular-nums; }
   .usage-box-more { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
   .usage-box-spend { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
-  .usage-box-hint { font-size: var(--fs-sm); color: var(--muted); margin-top: 4px; }
+  .usage-box-hint { color: var(--accent-text); font-weight: 600; font-size: var(--fs-sm); min-height: 32px; display: flex; align-items: center; margin-top: 0; }
+
+  /* More sheet: a title row with Close, one icon column, rarely used items folded under "More tools". */
+  .sheet-grip { width: 40px; height: 5px; background: color-mix(in srgb, var(--muted) 45%, transparent); }
+  .sheet-head { display: flex; align-items: center; padding: 0 2px 4px 12px; }
+  .sheet-title { flex: 1; font-weight: 700; font-size: var(--fs-md); }
+  .sheet-close { width: 40px; height: 40px; }
+  .sheet-item { min-height: 44px; padding: 9px 12px; }
+  .sheet-icon { width: 18px; flex: none; display: inline-flex; justify-content: center; color: var(--muted); }
+  .sheet-fold { border-top: 1px solid var(--border); border-radius: 0; margin-top: 4px; }
+  .sheet-fold .sheet-label { flex: none; }
+  .sheet-fold-names { flex: 1; min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Board: the search row folds into an icon in the column tab row; no column head; whole columns, no peek. */
+  .board-bar.folded { display: none; }
+  .col-jump-row { display: flex; align-items: center; gap: 6px; padding: 8px 12px 0 0; flex: none; }
+  .col-jump-row .col-jump { flex: 1; min-width: 0; padding: 0 0 0 12px; }
+  .col-jump-tool { flex: none; width: 40px; height: 40px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); color: var(--muted); }
+  .col-jump-tool.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+  .chip-claude { display: inline-flex; color: var(--accent-text); margin-left: -2px; }
+  .board { gap: 24px; }
+  .board > .column { flex: 0 0 100%; }
+  .board > .column > .column-body { padding-top: 8px; }
+  /* Rows that scroll sideways (useEdgeFade.ts): fade the edge that has more. */
+  :is(.col-jump, .phone-team .segmented)[data-more-right] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  :is(.col-jump, .phone-team .segmented)[data-more-left] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
+  :is(.col-jump, .phone-team .segmented)[data-more-left][data-more-right] {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+  }
+
+  /* Now: Open is the big button; review cards add a quieter Mark done; a clear ⋯, Older toggle and Snooze all. */
+  .now-actions .btn.primary { flex: 2; }
+  .now-actions .btn.now-done { flex: 1; }
+  .now-actions .row-more-btn { border-color: var(--border); color: var(--text); }
+  .now-older-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: var(--fs-md); color: var(--text); }
+  .now-snooze-all { min-height: 40px; padding: 0 14px; }
+
+  /* Messages: one header (the board's top bar steps aside), rows of one or two lines, unread as a dot. */
+  .app.msg-route > .topbar { display: none; }
+  .messages-top { padding: calc(6px + env(safe-area-inset-top)) 12px 6px; min-height: 52px; }
+  .messages-top .msg-back { min-height: 40px; font-size: var(--fs-md); }
+  .msg-mark-all { min-height: 36px; }
+  .msg-row.compact { flex-direction: row; align-items: flex-start; gap: 10px; padding: 10px 12px; }
+  .msg-row.compact.new { background: none; }
+  .msg-row.compact .msg-row-line {
+    flex: 1; min-width: 0; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .msg-row.compact.new .msg-row-line { font-weight: 700; }
+  .msg-row.compact .msg-badge { font-size: var(--fs-2xs); padding: 0 6px; vertical-align: 2px; }
+  .msg-row-time { flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; line-height: 1.6; }
+  .msg-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-strong); }
+
+  /* Command bar: a short placeholder, no repeated board name for this board's tickets, no key footer. */
+  .cmdbar-foot, .cmdbar-board.here { display: none; }
+
+  /* New ticket: a bottom sheet like the other phone panels; the star inside the title field; clear buttons. */
+  .overlay:has(> .new-ticket-modal) { padding: 0; }
+  .modal.new-ticket-modal {
+    max-width: none; max-height: 94dvh; border-radius: var(--r-md) var(--r-md) 0 0; border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom); animation: sheet-up 0.16s ease-out;
+  }
+  .modal.new-ticket-modal::before { content: ""; display: block; width: 40px; height: 5px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--muted) 45%, transparent); margin: 8px auto 0; }
+  .new-ticket-modal .modal-head { padding-top: 6px; }
+  .new-ticket-modal .title-row { position: relative; }
+  .new-ticket-modal .title-row input { padding-right: 44px; }
+  .new-ticket-modal .title-row .star-toggle { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); border-color: transparent; }
+  .new-ticket-modal .mode-hint-text .info-tip { min-height: 32px; min-width: 32px; margin: -8px 0; vertical-align: middle; }
+  .new-ticket-actions .btn.primary:disabled { opacity: 1; background: var(--surface-2); border-color: var(--border); color: var(--muted); }
+  .new-ticket-actions .btn.ghost { border-color: var(--border); background: var(--surface); color: var(--text); }
+  .new-ticket-actions .btn.ghost:disabled { opacity: 0.55; }
+  .new-ticket-modal .link-btn.new-ticket-from-chat {
+    align-self: stretch; display: flex; align-items: center; justify-content: center; text-align: center; min-height: 44px;
+    margin: 0; padding: 0 12px; border: 1px dashed var(--border); border-radius: var(--r-sm); color: var(--text); font-weight: 600;
+  }
+
+  /* Team: Undo / Redo go under their lesson instead of squeezing it into a narrow column. */
+  .phone-team .ln-row { flex-wrap: wrap; }
+  .phone-team .ln-main { flex-basis: 100%; }
 
   /* dialogs fill the width */
   .overlay { padding: 12px; align-items: flex-end; }
   .modal { max-height: calc(100dvh - 24px); overflow-y: auto; }
+  /* Modal.tsx dialogs: one bottom sheet for all. Flush with the bottom edge, rounded top, the same top gap (so
+     every sheet tops out at the same height), a grab handle (swipe down closes) and a 44px close button. While the
+     keyboard is up, sheet.ts sizes the overlay to the space left above it. */
+  .modal-overlay { padding: calc(28px + env(safe-area-inset-top)) 0 0; align-items: flex-end; overflow: hidden; }
+  .modal-overlay > .modal:not(.auto-modal) {
+    max-height: 100%; border-radius: var(--r-md) var(--r-md) 0 0; border-width: 1px 0 0; overscroll-behavior: contain;
+    padding-bottom: env(safe-area-inset-bottom); animation: sheet-up 0.18s ease-out;
+  }
+  .modal-overlay.kb-open > .modal:not(.auto-modal) { padding-bottom: 0; }
+  .modal-overlay.kb-open > .modal.auto-modal { height: 100%; }
+  /* Full-screen windows have no handle; New ticket draws its own (::before). */
+  :is(.auto-modal, .new-ticket-modal) > .modal-grip { display: none; }
+  .modal-grip { display: block; position: sticky; top: 0; z-index: 2; height: 18px; margin-bottom: -18px; touch-action: none; }
+  .modal-grip::before { content: ""; display: block; width: 40px; height: 5px; border-radius: var(--r-pill); background: var(--border); margin: 7px auto 0; }
+  .modal-overlay .modal-head { padding: 18px 6px 6px 18px; touch-action: none; }
+  .modal-overlay .modal-head .icon-btn { width: 44px; height: 44px; flex: none; }
+  .modal-overlay .modal-head .key-hint { display: none; }
+  /* The last row of buttons stays at the bottom of the sheet while the form scrolls. */
+  .modal-overlay > .modal:not(.auto-modal) .form > :is(.form-actions:last-child, .form-actions:has(+ .form-danger:last-child)) {
+    position: sticky; bottom: 0; z-index: 1; background: var(--surface); margin: 0 -18px -18px; padding: 10px 18px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .modal-overlay > .modal:not(.auto-modal) .form > :is(.form-actions:last-child, .form-actions:has(+ .form-danger:last-child)) .btn { min-height: 44px; }
+  .modal-overlay .form-danger { padding-top: 16px; margin-top: 8px; }
+  .modal-overlay .form.mcp { max-height: none; }
   .pa-grid { flex-direction: column; align-items: stretch; }
   .pa-qr { align-self: center; }
 
   /* ticket: full screen */
   .panel { border-left: 0; animation: none; }
   .panel-head { padding: calc(2px + env(safe-area-inset-top)) 8px 0 4px; }
-  .head-row1 { gap: 2px; }
-  .head-row1 .title-input { flex: 1 1 0; min-width: 0; field-sizing: fixed; font-size: var(--fs-md); }
+  /* Phone header, three rows: back … status, job, helper, bulb, more; the whole title (two lines at most); the tabs
+     and the cost. Scrolling the chat down folds only the title row (useShrinkHeader). */
+  .head-row1 { gap: 2px; min-height: 40px; }
   .panel-head .star-toggle, .panel-head .ticket-nav, .panel-head .save-state { display: none; }
   .panel-head .job-chip .job-chip-word { display: none; }
-  .panel-head .phone-back, .panel-head .more-btn, .panel-head .help-btn { width: 32px; height: 32px; }
+  .panel-head .phone-back, .panel-head .more-btn, .panel-head .help-btn { width: 36px; height: 36px; }
+  .panel-head .helper-icon { width: 36px; height: 36px; }
   .panel-head .help-btn { border: 0; background: transparent; color: var(--muted); border-radius: var(--r-sm); }
   .panel-head .help-btn.on, .panel-head .help-btn:hover { background: var(--surface-2); color: var(--text); }
+  .head-row1 .phone-status { flex-shrink: 1; min-width: 0; margin-right: 2px; }
+  .head-row1 .phone-status .select-trigger { min-height: 30px; }
+  .head-row1 .phone-status .ps-label { max-width: 46vw; }
+  .head-title-wrap { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr; transition: grid-template-rows 0.22s ease, opacity 0.18s ease; }
+  .head-title { min-height: 0; min-width: 0; overflow: hidden; }
+  .phone-title { position: relative; padding: 2px 8px 4px 10px; }
+  .phone-title-text, .phone-title .title-input {
+    font-family: inherit; font-size: var(--fs-lg); font-weight: 700; line-height: 1.3; color: var(--text); overflow-wrap: anywhere;
+  }
+  .phone-title-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  /* The box lies over the cut text, invisible, so a tap types into it; while typing it shows the whole title. */
+  .phone-title .title-input {
+    position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 2px 8px 4px 10px; border: 0; border-radius: var(--r-sm);
+    background: transparent; resize: none; overflow: hidden; opacity: 0; box-shadow: none; field-sizing: content;
+  }
+  .phone-title .title-input:focus { position: static; height: auto; opacity: 1; padding: 2px 6px; margin: 0 0 0 -6px; width: calc(100% + 6px); background: var(--surface); outline: 2px solid var(--accent); }
+  .phone-title:focus-within .phone-title-text { display: none; }
+  .panel.head-slim .head-title-wrap { grid-template-rows: 0fr; opacity: 0; }
+  .panel.head-slim .head-row2-wrap { grid-template-rows: 1fr; opacity: 1; }
+  .panel.head-slim .head-row2 { overflow: visible; }
+  .panel.head-slim .panel-head { padding-bottom: 0; }
   .head-row2 { gap: 4px; }
-  .head-row2 .tabs { margin-left: 0; }
-  .head-row2 .tabs button { padding: 5px 8px 6px; }
-  .head-row2 .phone-status .ps-label { max-width: 40vw; }
+  .head-row2 .tabs { margin-left: 0; flex: 1 1 auto; }
+  /* Five tabs (with counts) fit 360px: the cost moved to the top row, tabs share the row and pad tighter. More than
+     five still scroll, with the fade on the right. */
+  .head-row2 .tabs { justify-content: space-between; gap: 0; }
+  .head-row2 > .head-spacer { display: none; }
+  .head-row2 .tabs button { min-height: 40px; padding: 0 5px; font-size: var(--fs-sm); }
+  .head-row2 .tabs .tab-count, .head-row2 .tabs .for-you-pill { margin-left: 3px; padding: 0 4px; }
+  .panel-head .head-cost { padding: 6px 4px; min-height: 40px; }
+  @media (prefers-reduced-motion: reduce) { .head-title-wrap { transition: none; } }
   .phone-tags { justify-content: flex-start; }
   .phone-tags .tag-editor { min-width: 0; }
   /* The status button: what the ticket waits on, in its colour; tapping it moves the ticket. */
-  .panel-head > .phone-status { flex-shrink: 1; min-width: 0; }
   .phone-status .select-trigger { min-height: 26px; padding: 0 10px; gap: 6px; border: 0; border-radius: var(--r-pill); font-weight: 600; font-size: var(--fs-sm); background: var(--surface-2); color: var(--text); }
   .phone-status .select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
   .phone-status .ps-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -3362,6 +3554,13 @@ button.hd-mode:disabled { cursor: default; }
   .hd-chk input { width: 18px; height: 18px; margin-top: 1px; }
   .hd-brief .btn.small { min-height: 40px; }
   .hd-brief-text { max-height: none; overflow: visible; }
+  .hd-brief-text.clamp { max-height: 6.2em; overflow: hidden; line-height: 1.5; }
+  .hd-brief-text.cut { -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+  .hd-brief-more { min-height: 40px; font-size: var(--fs-sm); font-weight: 600; align-self: flex-start; }
+  /* The head line wraps to two lines on a narrow phone instead of cutting the spend off; the ⋯ is a 44px target. */
+  .huddle-bar.hd-head { overflow: visible; }
+  .huddle-bar.hd-head > .hd-head-meta { flex: 1 1 auto; white-space: normal; overflow: visible; line-height: 1.35; }
+  .huddle-bar.hd-head > .hd-more { width: 44px; height: 44px; margin: -4px 0; }
 
   .hd-session, .huddle-body:has(.hd-session) .hd-session {
     position: absolute; inset: 0; z-index: 6; width: auto; max-height: none; border: 0; box-shadow: none;
@@ -3381,13 +3580,15 @@ button.hd-mode:disabled { cursor: default; }
    Image / Stop / Send on a row below (the hint line hides, warnings still show); the huddle's status, spend and Chat / People / Findings share one row. */
 .chat-file-dir { display: none; }
 @media (max-width: 720px) {
-  .chat-file { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 9px 10px; }
-  .chat-file > svg { margin-top: 2px; }
-  .chat-file b { white-space: normal; overflow: visible; overflow-wrap: anywhere; font-size: var(--fs-sm); }
-  .chat-file-dir { display: block; font-weight: 400; font-size: var(--fs-xs); color: var(--muted); }
-  .chat-file-actions { grid-column: 2 / -1; margin-left: 0; }
-  .chat-file-actions .btn { flex: 1; min-height: 40px; justify-content: center; }
-  .chat-file + .chat-file { margin-top: 8px; }
+  /* One compact row per file: name (folder above, small), size, Open and ⋯ (Copy file, Download). */
+  .chat-file { gap: 8px; padding: 4px 4px 4px 10px; }
+  .chat-file b { font-size: var(--fs-md); }
+  .chat-file-dir { display: block; font-weight: 400; font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+  .chat-file-size { display: none; }
+  .chat-file-actions { gap: 2px; }
+  .chat-file-actions .btn { min-height: 40px; font-size: var(--fs-md); justify-content: center; }
+  .chat-file-actions .chat-file-more { width: 40px; padding: 0; border: 0; background: none; }
+  .chat-files-head { min-height: 44px; font-size: var(--fs-md); }
 
   .composer { gap: 4px; padding: 10px 8px 8px 12px; }
   .composer > textarea { min-height: 0; padding: 2px 0; }
@@ -3408,7 +3609,24 @@ button.hd-mode:disabled { cursor: default; }
 @media (max-width: 640px) { .notify-kinds { grid-template-columns: 1fr; } }
 /* Ticket Usage tab: what its huddles' teammates spent (counted in the total). */
 .usage-teammates { margin: 10px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); font-size: var(--fs-sm); }
-.usage-teammates-head { margin-bottom: 4px; }
+.usage-teammates-head { cursor: pointer; }
+.usage-teammates[open] > .usage-teammates-head { margin-bottom: 6px; }
+.usage-teammates-head .muted { margin-left: 8px; }
+.usage-table-wrap { overflow-x: auto; }
+/* Phone: one card per line (number then its words), so there's no half-empty row; rows of the run table stay readable. */
+@media (max-width: 720px) {
+  .panel-scroll.panel-usage { padding: 14px 12px max(16px, env(safe-area-inset-bottom)); }
+  .usage-stats { grid-template-columns: 1fr; gap: 8px; }
+  .usage-stat { display: flex; align-items: baseline; gap: 12px; padding: 10px 12px; }
+  .usage-stat b { flex: none; min-width: 4.2em; font-size: var(--fs-lg); }
+  .usage-stat span { font-size: var(--fs-sm); }
+  .usage-teammates-head { min-height: 40px; display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; list-style: none; }
+  .usage-teammates-head::-webkit-details-marker { display: none; }
+  .usage-teammates-head::before { content: "▸"; color: var(--muted); width: 1em; }
+  .usage-teammates[open] > .usage-teammates-head::before { content: "▾"; }
+  .usage-table th, .usage-table td { padding: 7px 6px; }
+  .usage-mini { display: none; }
+}
 .usage-teammates-huddle + .usage-teammates-huddle { margin-top: 6px; }
 .usage-teammate { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
 .usage-teammate .n { font-variant-numeric: tabular-nums; }
@@ -3667,6 +3885,9 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
 .conn-card .mcp-target-row .icon-btn { opacity: 0; }
 .conn-card:hover .mcp-target-row .icon-btn, .conn-card .mcp-target-row .icon-btn:focus-visible { opacity: 1; }
 .conn-card > .mcp-add { margin-top: 6px; }
+.conn-details > summary { cursor: pointer; font-size: var(--fs-xs); color: var(--muted); width: fit-content; }
+.conn-details[open] > summary { margin-bottom: 4px; }
+.conn-details > .link-btn { display: inline-block; margin-top: 4px; }
 .conn-card .mcp-help { margin-top: 6px; }
 /* Where a tool reaches: grey for all projects, blue for only some boards. */
 .badge.reach { background: var(--surface-2); color: var(--muted); }
@@ -3729,6 +3950,7 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
   .conn-actions { flex-basis: 100%; justify-content: flex-start; }
   .conn-actions .btn, .conn-paste-row .btn, .conn-add-pass { min-height: 40px; }
   .conn-card .mcp-target-row .icon-btn.mcp-copy { opacity: 1; }
+  .conn-details > summary { padding: 8px 0; font-size: var(--fs-sm); }
   .conn-tabs button { flex: 1; }
   .conn-paste-row input { font-size: var(--fs-lg); }
 }
@@ -3839,6 +4061,11 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
   .inbox-actions .row-more { display: inline-flex; }
   .inbox-actions > .btn.primary { flex: 1; }
   /* No keys to press: hide key badges and key hints (desktop keeps them). */
+  .key-hint, .hint-legend { display: none !important; }
+  .header-menu-list kbd, .cmdbar-input kbd, .cmdbar-keys, .search-kbd, .cmdbar-foot > span:not(.cmdbar-foot-note) { display: none; }
+}
+/* Phone width without a coarse pointer (some phone browsers report a fine one): no key chips either. */
+@media (max-width: 720px) {
   .key-hint, .hint-legend { display: none !important; }
   .header-menu-list kbd, .cmdbar-input kbd, .cmdbar-keys, .search-kbd, .cmdbar-foot > span:not(.cmdbar-foot-note) { display: none; }
 }
@@ -3973,6 +4200,20 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
 .show-on-board { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: var(--fs-sm); }
 .ft-show { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap; }
 .ft-sub { margin-right: 6px; }
+/* The title keeps at least ~14em; when the actions don't fit beside it they wrap below it. */
+.ft-row { flex-wrap: wrap; }
+.ft-body { flex-basis: 14em; }
+@media (max-width: 720px) {
+  /* Phone: the title gets the whole line; Show on board / Make it its own work sit on their own line below it. */
+  .ft-body { flex-basis: 0; }
+  .ft-row { row-gap: 0; }
+  .ft-actions { flex-basis: 100%; flex-wrap: wrap; gap: 0 16px; padding-left: 22px; font-size: var(--fs-xs); }
+  .ft-actions > * { min-height: 36px; display: inline-flex; align-items: center; margin: 0; }
+  .ft-peek .ft-peek-btns { flex-wrap: wrap; }
+  .ft-peek .ft-peek-btns .btn { min-height: 44px; }
+  .ft-peek-close { margin-left: auto; }
+}
+@media (max-width: 380px) { .ft-actions { padding-left: 0; } }
 .ft-cost { margin-left: auto; font-variant-numeric: tabular-nums; }
 .ft-st { flex: none; font-size: var(--fs-2xs); font-weight: 600; padding: 0 7px; border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); white-space: nowrap; }
 .ft-st.done { background: var(--ok-soft); color: var(--ok); }
@@ -4315,7 +4556,7 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
 .helper-settings .hs-card > .muted.small { line-height: 1.45; }
 /* Phone: one clear text scale (row title, smaller muted hint), more room for the rows, pickers on their own line. */
 @media (max-width: 720px) {
-  .helper-settings { padding-left: 14px; padding-right: 14px; }
+  .helper-settings:not(.auto-wrap) { padding-left: 14px; padding-right: 14px; }
   .helper-settings .ch-ttl { font-size: var(--fs-lg); line-height: 1.3; }
   .helper-settings .ch-ttl.big { font-size: var(--fs-lg); font-weight: 700; }
   .helper-settings .small:not(.btn, .link-btn) { font-size: var(--fs-sm); line-height: 1.4; }
@@ -4333,6 +4574,20 @@ input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
   .helper-settings .hs-stack > .select .select-trigger { width: 100%; }
   .helper-settings .tg-actions { flex: 1 1 100%; }
   .helper-settings .tg-actions .btn { flex: 1 1 0; min-height: 40px; }
+}
+
+/* Notifications window (NotificationsDialog.tsx): the Automations layout, a list of settings and the picked one. */
+/* .form gives the old field styles (labels, checkboxes); the pane keeps the Automations padding. */
+.auto-pane.notify-pane { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; }
+.notify-reach { flex: none; }
+.notify-modal .auto-foot-note { flex: 1; }
+@media (max-width: 720px) {
+  .notify-reach { margin: 12px 16px 4px; }
+  .auto-pane.notify-pane { padding: 12px 16px max(16px, env(safe-area-inset-bottom)); }
+  .notify-modal .auto-pane { flex: 1; min-height: 0; overflow-y: auto; }
+  .notify-modal .auto-main { min-height: 0; }
+  .notify-modal .auto-side { min-height: 0; }
+  .notify-modal .auto-side-actions .btn { width: 100%; }
 }
 
 /* Key box (ask_keys): one password field per key, saved on this Mac for the board. */
@@ -4358,9 +4613,21 @@ button.composer-old:hover { color: var(--text); }
   border: 1px solid var(--border); background: var(--surface-2); color: var(--muted); font-size: var(--fs-xs); line-height: 18px; white-space: nowrap;
 }
 .ctx-chip:hover, .ctx-chip[aria-expanded="true"] { border-color: var(--accent); color: var(--text); }
-.ctx-mini { width: 36px; height: 5px; border-radius: var(--r-sm); background: var(--border); overflow: hidden; display: inline-flex; }
-.ctx-mini i { display: block; height: 100%; background: var(--accent); }
-.ctx-chip.warn .ctx-mini i { background: var(--warn); }
+/* The ring: filled to the share used (--p, 0-100); accent once nearly full (80%, the chip's warn). */
+.ctx-ring {
+  flex: none; width: 16px; height: 16px; border-radius: 50%;
+  background: conic-gradient(var(--ok) calc(var(--p, 0) * 1%), var(--border) 0);
+  -webkit-mask: radial-gradient(circle, transparent 4.5px, #000 5px); mask: radial-gradient(circle, transparent 4.5px, #000 5px);
+}
+.ctx-chip.warn { color: var(--accent-text); }
+.ctx-chip.warn .ctx-ring { background: conic-gradient(var(--accent) calc(var(--p, 0) * 1%), var(--border) 0); }
+/* The chat's message box: one row, + (or Attach), the Context ring, the hint (desktop), then Send. */
+.composer-foot.one-row { flex-wrap: nowrap; justify-content: flex-start; gap: 8px; }
+.composer-foot.one-row .composer-meta { flex: 1 1 auto; min-width: 0; }
+.composer-foot.one-row .composer-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-foot.one-row .composer-actions { flex: none; margin-left: auto; }
+.composer-foot.one-row .ctx-chip { border: 0; padding: 0 10px 0 8px; min-height: 30px; font-size: var(--fs-sm); }
+.sheet-kbd { width: 20px; text-align: center; border: 0; background: none; padding: 0; font: 600 var(--fs-lg) system-ui, sans-serif; color: var(--muted); }
 .ctx-pop {
   position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 80; width: 340px; max-height: min(70vh, 560px); overflow-y: auto;
   padding: 14px 16px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-md);
@@ -4395,6 +4662,8 @@ button.composer-old:hover { color: var(--text); }
 .ctx-loading { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 720px) {
   .composer-meta { flex: 1 1 100%; }
+  .composer-foot.one-row .composer-meta { flex: 1 1 auto; }
+  .composer-foot.one-row .ctx-chip { min-height: 36px; }
   .menu-sheet > .ctx-pop { padding: 6px 18px max(24px, env(safe-area-inset-bottom)); font-size: var(--fs-md); }
   .ctx-pop h3 { font-size: var(--fs-md); }
   .ctx-top b { font-size: var(--fs-xl); }
@@ -4407,12 +4676,19 @@ button.composer-old:hover { color: var(--text); }
 /* More, Browsers: named Chromes and each board's default (BrowsersDialog.tsx). */
 .browsers { display: flex; flex-direction: column; gap: 10px; padding: 4px 18px 18px; }
 .browsers-intro { margin: 0 0 2px; }
-.browser { border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; display: flex; align-items: center; gap: 12px; }
+.browser { border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; display: flex; align-items: flex-start; gap: 12px; }
+.browser > .browser-dot { margin-top: 13px; }
 .browser-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); flex: none; }
 .browser-dot.off { background: var(--muted); opacity: .45; }
 .browser-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .browser-meta input { width: 180px; max-width: 100%; }
-.browser-id { font-family: var(--mono); font-size: var(--fs-2xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The whole id, wrapped (never cut mid-way): it is how the board tells two Chromes apart. */
+.browser-id { font-family: var(--mono); font-size: var(--fs-2xs); overflow-wrap: anywhere; }
+.browser-remove { align-self: flex-start; margin: 2px 0 0 -10px; }
+@media (max-width: 720px) {
+  .browser-meta input { width: 100%; }
+  .browser-remove { min-height: 40px; }
+}
 .browsers-h { font-size: var(--fs-sm); margin: 8px 0 0; }
 .browsers-board { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .browsers-note { background: var(--warn-soft); color: var(--warn); border-radius: var(--r-md); padding: 8px 10px; font-size: var(--fs-xs); margin-top: 4px; }
@@ -4424,3 +4700,68 @@ button.composer-old:hover { color: var(--text); }
 .task-models-table td:first-child { font-weight: 500; }
 .task-what { display: block; font-weight: 400; }
 .task-models-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+/* Phone chat fixes (ticket Chat tab): one-line banner, question footer that wraps, 40px step rows that open to their
+   full text, proposed tickets with their status under the title, 14px minimum for step rows and file buttons. */
+.qfoot .qback:not(:disabled) { color: var(--text); }
+.tool-row[open] > summary { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .tool-note { display: flex; align-items: center; gap: 4px; white-space: nowrap; font-size: var(--fs-sm); padding: 0 10px; min-height: 36px; }
+  .tool-note .link-btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: inherit; min-height: 36px; }
+  .steps-line, .steps-line > summary { font-size: var(--fs-md); }
+  .steps-line > summary { min-height: 40px; padding: 0; }
+  .tool-rows { font-size: var(--fs-md); gap: 0; }
+  .tool-row > summary { min-height: 40px; padding: 10px 4px; line-height: 20px; }
+  .new-ticket-head { flex-direction: column; align-items: stretch; gap: 2px; }
+  .new-ticket-head .new-ticket-status { min-height: 40px; display: flex; align-items: center; font-size: var(--fs-md); }
+  .new-ticket-head > .btn { min-height: 40px; align-self: flex-start; padding: 0 16px; }
+}
+@media (max-width: 560px) {
+  .qfoot { flex-wrap: wrap; row-gap: 8px; padding: 10px 12px; }
+  .qfoot .qhint { display: none; }
+  .qfoot .qclose { margin-right: auto; }
+  .qfoot .qmain { flex: 1 1 100%; order: 9; justify-content: center; min-height: 44px; font-size: var(--fs-md); }
+}
+/* "12 files": a paragraph's long run of file chips, folded (Transcript.tsx foldPaths); a tap opens the list. */
+.md .path-fold-btn {
+  display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); background: var(--surface-2); color: var(--accent-text);
+  border-radius: var(--r-pill); padding: 2px 10px; font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; vertical-align: baseline;
+}
+.md .path-fold-btn::after { content: "▸"; font-size: var(--fs-2xs); transition: transform 0.15s; }
+.md .path-fold.open .path-fold-btn::after { transform: rotate(90deg); }
+.md .path-fold-list { display: none; }
+.md .path-fold.open .path-fold-list { display: inline; }
+.md .path-fold.open .path-fold-btn { margin-right: 6px; }
+@media (max-width: 720px) { .md .path-fold-btn { min-height: 36px; padding: 0 12px; } }
+/* Phones' Ticket tab (TicketDrawer details): the description first, then one "Status" row that folds the status blocks;
+   field rows stack the label above a full-width control. */
+.status-fold-sum { color: var(--muted); font-size: var(--fs-sm); font-weight: 500; margin-left: auto; }
+.status-fold[aria-expanded="true"] .fold-chev.side { transform: rotate(90deg); }
+@media (max-width: 720px) {
+  .panel-ticket .details-desc { order: -1; flex: none; border-top: 0; }
+  .panel-ticket .details-pinned { border-top: 1px solid var(--border); }
+  .panel-ticket .status-fold { width: 100%; min-height: 44px; margin: -6px 0; }
+  .panel-ticket .status-fold h4 { margin: 0; }
+  .panel-ticket .field-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .panel-ticket .field-row > .field-key { font-size: var(--fs-sm); }
+  .panel-ticket .phone-tags .tag-editor { min-height: 44px; }
+  .panel-ticket .part-of-value { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; }
+  .panel-ticket .part-of-value .ticket-link { flex: 1 1 100%; min-height: 40px; display: flex; align-items: center; font-size: var(--fs-md); overflow-wrap: anywhere; }
+  .panel-ticket .part-of-row .mini-link { min-height: 40px; padding: 0 10px; margin-left: 0; font-size: var(--fs-md); }
+  .panel-ticket .part-of-row > .mini-link { align-self: flex-start; }
+  .panel-ticket .show-on-board {
+    display: flex; width: 100%; min-height: 44px; padding: 0 12px; gap: 10px; font-size: var(--fs-md);
+    border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
+  }
+  .panel-ticket .show-on-board input { width: 20px; height: 20px; margin: 0; }
+}
+.jump-latest { flex: none; }
+@media (max-width: 720px) {
+  /* The PR card's top line wraps at phone width instead of squeezing "Pull request" and the base branch. */
+  .panel-ticket .pr-head { flex-wrap: wrap; row-gap: 2px; }
+  .panel-ticket .pr-head .pr-label { white-space: nowrap; }
+  .panel-ticket .pr-head .pr-base { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel-ticket .pr-head .pr-sp { display: none; }
+  /* A huddle digest's folded header in the chat: a 40px tap row. */
+  .huddle-digest > summary.conv-head { min-height: 40px; }
+}
+.show-on-board { white-space: nowrap; }

@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { MenuItem } from "./HeaderMenu";
-import { BoardIcon, ChatIcon, MoreIcon, NowIcon, TeamIcon } from "./icons";
+import { BoardIcon, ChatIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, MoreIcon, NowIcon, TeamIcon } from "./icons";
 import { useLayer } from "./layers";
 
 export type PhoneTab = "now" | "board" | "ask" | "team";
@@ -25,7 +25,9 @@ export function PhoneNav({ tab, onTab, needYou, liveHuddles, teamAlert, onMore, 
   );
   return (
     <nav className="phone-nav" aria-label="Sections">
-      {item("Now", <NowIcon size={20} />, tab === "now", () => onTab("now"), needYou > 0 && <span className="pn-badge">{needYou}</span>)}
+      {item("Now", <NowIcon size={20} />, tab === "now", () => onTab("now"), needYou > 0 && (
+        <span className="pn-badge" title={`${needYou} on this board need you`} aria-label={`${needYou} on this board need you`}>{needYou}</span>
+      ))}
       {item("Board", <BoardIcon size={20} />, tab === "board", () => onTab("board"))}
       {item("Ask", <ChatIcon size={20} />, tab === "ask", () => onTab("ask"))}
       {item("Team", <TeamIcon size={20} />, tab === "team", () => onTab("team"),
@@ -35,9 +37,14 @@ export function PhoneNav({ tab, onTab, needYou, liveHuddles, teamAlert, onMore, 
   );
 }
 
-/** More: the header menu as a bottom sheet, plus whatever the phone top bar has no room for. */
-export function MoreSheet({ items, footer, onClose, label = "More", top, bottom }: {
+/**
+ * More: the header menu as a bottom sheet, plus whatever the phone top bar has no room for. A title row with a close
+ * button on top; items marked `rare` fold under "More tools" (open by itself when one of them has a badge).
+ */
+export function MoreSheet({ items, rare = [], footer, onClose, label = "More", top, bottom }: {
   items: MenuItem[];
+  /** Used now and then: folded under "More tools". */
+  rare?: MenuItem[];
   footer?: string | null;
   onClose: () => void;
   label?: string;
@@ -47,17 +54,33 @@ export function MoreSheet({ items, footer, onClose, label = "More", top, bottom 
   bottom?: ReactNode;
 }) {
   useLayer(onClose);
+  const [tools, setTools] = useState(false);
+  const row = (it: MenuItem) => (
+    <button key={it.label} role="menuitem" className={`sheet-item${it.separator ? " sep" : ""}${it.danger ? " danger" : ""}`} title={it.title}
+      onClick={() => { onClose(); it.onSelect(); }}>
+      <span className="sheet-icon" aria-hidden>{it.icon}</span><span className="sheet-label">{it.label}</span>{it.badge}
+    </button>
+  );
   return (
     <div className="sheet-wrap" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="sheet" role="menu" aria-label={label}>
         <span className="sheet-grip" aria-hidden />
+        <div className="sheet-head">
+          <span className="sheet-title">{label}</span>
+          <button className="icon-btn sheet-close" aria-label="Close" onClick={onClose}><CloseIcon size={16} /></button>
+        </div>
         {top}
-        {items.map((it) => (
-          <button key={it.label} role="menuitem" className={`sheet-item${it.separator ? " sep" : ""}${it.danger ? " danger" : ""}`} title={it.title}
-            onClick={() => { onClose(); it.onSelect(); }}>
-            {it.icon}<span className="sheet-label">{it.label}</span>{it.badge}
-          </button>
-        ))}
+        {items.map(row)}
+        {rare.length > 0 && (
+          <>
+            <button className="sheet-item sheet-fold" aria-expanded={tools} onClick={() => setTools((v) => !v)}>
+              <span className="sheet-icon" aria-hidden>{tools ? <ChevronDownIcon /> : <ChevronRightIcon />}</span>
+              <span className="sheet-label">More tools</span>
+              {!tools && <span className="muted small sheet-fold-names">{rare.map((i) => i.label).slice(0, 3).join(", ")}…</span>}
+            </button>
+            {tools && <div className="sheet-group">{rare.map(row)}</div>}
+          </>
+        )}
         {bottom}
         {footer && <div className="sheet-foot muted small">{footer}</div>}
       </div>

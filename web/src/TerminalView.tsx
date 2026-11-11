@@ -3,7 +3,8 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import { shellSocketUrl } from "./api";
-import { keyToInput } from "./termKeys";
+import { KEY_ROW, keyToInput, withCtrl } from "./termKeys";
+import { useMedia } from "./usePhone";
 import { THEME_EVENT } from "./theme";
 
 function themeFromCss(): ITheme {
@@ -51,6 +52,13 @@ export function TerminalView({ slug, ticket = null, active, focusSignal = 0, res
   // Command waiting for the shell to be connected (sent once, then cleared).
   const pendingCommand = useRef<{ text: string; n: number } | null>(null);
   const sentCommand = useRef<number | null>(null);
+  const inputRef = useRef<(data: string) => void>(() => {});
+
+  // Touch screens: a row of Esc, Tab, Ctrl and arrows (a phone keyboard has none). Ctrl applies to the next key typed.
+  const touch = useMedia("(pointer: coarse)");
+  const [ctrl, setCtrl] = useState(false);
+  const ctrlRef = useRef(false);
+  ctrlRef.current = ctrl;
 
   const send = (msg: unknown) => {
     if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify(msg));
@@ -78,8 +86,13 @@ export function TerminalView({ slug, ticket = null, active, focusSignal = 0, res
     const input = (data: string) => {
       // An exited shell restarts on any key.
       if (stateRef.current === "exited") send({ type: "restart" });
-      else send({ type: "input", data });
+      else if (ctrlRef.current) {
+        ctrlRef.current = false;
+        setCtrl(false);
+        send({ type: "input", data: withCtrl(data) });
+      } else send({ type: "input", data });
     };
+    inputRef.current = input;
     const onData = t.onData(input);
     // Shift+Enter sends ESC CR so Claude Code inserts a newline instead of submitting.
     t.attachCustomKeyEventHandler((ev) => {
@@ -206,9 +219,23 @@ export function TerminalView({ slug, ticket = null, active, focusSignal = 0, res
     });
   }, [focusSignal]);
 
+  // Pressing a row key keeps the keyboard up: the press doesn't take focus from the terminal.
+  const keep = (e: React.PointerEvent | React.MouseEvent) => e.preventDefault();
   return (
-    <div className="terminal-view">
+    <div className={`terminal-view${touch ? " keys" : ""}`}>
       <div ref={host} className="terminal-host" />
+      {touch && (
+        <div className="term-keys" role="toolbar" aria-label="Terminal keys">
+          {KEY_ROW.slice(0, 2).map((k) => (
+            <button key={k.label} className="term-key" aria-label={k.aria} onPointerDown={keep} onMouseDown={keep} onClick={() => inputRef.current(k.data)}>{k.label}</button>
+          ))}
+          <button className={`term-key${ctrl ? " on" : ""}`} aria-pressed={ctrl} aria-label="Control: applies to the next key you type"
+            onPointerDown={keep} onMouseDown={keep} onClick={() => { setCtrl((c) => !c); term.current?.focus(); }}>Ctrl</button>
+          {KEY_ROW.slice(2).map((k) => (
+            <button key={k.label} className="term-key" aria-label={k.aria} onPointerDown={keep} onMouseDown={keep} onClick={() => inputRef.current(k.data)}>{k.label}</button>
+          ))}
+        </div>
+      )}
       {state === "closed" && (
         <div className="terminal-banner" role="status">
           Disconnected from the shell.{retryIn !== null && ` Reconnecting in ${retryIn}s…`}{" "}

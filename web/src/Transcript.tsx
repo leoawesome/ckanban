@@ -48,6 +48,7 @@ function thumbnails(html: string, commands?: SlashCommand[] | null, handles?: st
   });
   fileCards(doc);
   if (files?.size) fileChips(doc, files);
+  foldPaths(doc);
   copyBars(doc);
   return doc.body.innerHTML;
 }
@@ -74,6 +75,37 @@ function pathsIn(html: string): string[] {
   }
   for (const n of texts) for (const m of textPaths(n.nodeValue ?? "")) out.add(m.path);
   return [...out];
+}
+
+/** Four or more file paths in one paragraph or list item fold into "N files" (a tap opens them, see Markdown). */
+export const FOLD_PATHS = 4;
+function foldPaths(doc: Document) {
+  const byParent = new Map<Element, Element[]>();
+  // File chips, and paths in inline code that aren't chips (the file is gone, or outside a ticket).
+  const items = [...doc.querySelectorAll("a.path-chip, code")]
+    .filter((el) => el.tagName === "A" || (!el.closest("pre, a") && !!codePath(el.textContent ?? "")));
+  for (const el of items) {
+    const p = el.parentElement;
+    if (p && !p.closest(".path-fold")) byParent.set(p, [...(byParent.get(p) ?? []), el]);
+  }
+  for (const [parent, chips] of byParent) {
+    if (chips.length < FOLD_PATHS) continue;
+    const nodes = [...parent.childNodes];
+    const from = nodes.indexOf(chips[0]);
+    const to = nodes.indexOf(chips[chips.length - 1]);
+    const fold = doc.createElement("span");
+    fold.className = "path-fold";
+    const btn = doc.createElement("button");
+    btn.type = "button";
+    btn.className = "path-fold-btn";
+    btn.setAttribute("aria-expanded", "false");
+    btn.textContent = `${chips.length} files`;
+    const list = doc.createElement("span");
+    list.className = "path-fold-list";
+    parent.insertBefore(fold, nodes[from]);
+    for (const n of nodes.slice(from, to + 1)) list.append(n);
+    fold.append(btn, list);
+  }
 }
 
 /** Paths of files that exist become links that open the file (FileViewer.tsx). Long paths break after a "/". */
@@ -280,12 +312,20 @@ export function Markdown({ text, commands, handles }: { text: string; commands?:
   useEffect(() => fillSizes(ref.current), [html]);
   return (
     <div ref={ref} className="md" dangerouslySetInnerHTML={{ __html: html }}
-      onDoubleClick={(e) => { if ((e.target as HTMLElement).closest(".code-copy, .path-chip")) e.stopPropagation(); }}
+      onDoubleClick={(e) => { if ((e.target as HTMLElement).closest(".code-copy, .path-chip, .path-fold-btn")) e.stopPropagation(); }}
       onClick={(e) => {
         const bar = (e.target as HTMLElement).closest<HTMLButtonElement>(".code-copy");
         if (bar) {
           e.stopPropagation(); // e.g. a click on the ticket description opens its editor
           void copyCode(bar);
+          return;
+        }
+        const fold = (e.target as HTMLElement).closest<HTMLButtonElement>(".path-fold-btn");
+        if (fold) {
+          e.stopPropagation();
+          const open = fold.getAttribute("aria-expanded") !== "true";
+          fold.setAttribute("aria-expanded", String(open));
+          fold.parentElement?.classList.toggle("open", open);
           return;
         }
         const chip = (e.target as HTMLElement).closest<HTMLElement>(".path-chip");

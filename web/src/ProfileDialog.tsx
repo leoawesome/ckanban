@@ -467,15 +467,18 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
 
         {err && <div className="form-error">{err}</div>}
         <div className="form-actions">
-          {profile && (
-            <button type="button" className="btn ghost danger" onClick={() => setConfirmDelete(true)}>Delete board</button>
-          )}
           <div className="spacer" />
           <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
           <button type="submit" className="btn primary" disabled={saving || !name.trim() || !path.trim() || !!capError || (!!profile && !!stallError)}>
             {saving ? (profile ? "Saving…" : "Creating…") : profile ? "Save" : "Create board"}
           </button>
         </div>
+        {/* Away from Save, so a thumb can't hit it by mistake. */}
+        {profile && (
+          <div className="form-danger">
+            <button type="button" className="btn ghost danger" onClick={() => setConfirmDelete(true)}>Delete board</button>
+          </div>
+        )}
       </form>
       {confirmDelete && profile && (
         <ConfirmDialog

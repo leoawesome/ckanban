@@ -236,16 +236,16 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
       )}
 
       <div className="qfoot">
-        <button className="btn ghost small" disabled={step === 0} onClick={() => setStep(step - 1)}>Back</button>
+        <button className="btn ghost small qback" disabled={step === 0} onClick={() => setStep(step - 1)}>Back</button>
         {onClose && (
           <button className="btn ghost small qclose" disabled={disabled} onClick={close}
             title="Close this question without answering: nothing is sent to Claude, and it stops waiting on you">Close question</button>
         )}
         <span className="muted small qhint">{summary ? "Enter to send" : "1-9 to pick · Enter for next"}</span>
         {summary || total === 1 ? (
-          <button className="btn primary small" disabled={disabled} onClick={send}>Send answers</button>
+          <button className="btn primary small qmain" disabled={disabled} onClick={send}>Send answers</button>
         ) : (
-          <button className="btn primary small" disabled={disabled} onClick={next}>{step === total - 1 ? "Review →" : "Next →"}</button>
+          <button className="btn primary small qmain" disabled={disabled} onClick={next}>{step === total - 1 ? "Review →" : "Next →"}</button>
         )}
       </div>
     </div>

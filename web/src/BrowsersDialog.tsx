@@ -139,8 +139,8 @@ function BrowserRow({ browser: b, connected, listedAt, onRename, onRemove }: {
         <span className="browser-id muted" title="Claude in Chrome's name for it changes when it reconnects; the board goes by this id">
           {b.label ? `${b.label} · ` : ""}{b.deviceId}
         </span>
+        <button className="btn ghost small browser-remove" onClick={() => void onRemove()} title="Forget this Chrome. It comes back, unnamed, the next time a task lists the Chromes.">Remove</button>
       </div>
-      <button className="btn ghost small" onClick={() => void onRemove()} title="Forget this Chrome. It comes back, unnamed, the next time a task lists the Chromes.">Remove</button>
     </div>
   );
 }

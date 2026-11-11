@@ -264,7 +264,7 @@ export function isFeature<T extends FeatureTicket>(tickets: T[], top: T): boolea
 /**
  * Why a main ticket counts as already planned, or null: any other ticket in its family (steps, gathered or added
  * tickets), or a written "Where we are" status (statusAt). Its Planning chat updates the ticket instead of rewriting
- * it, and the update card offers Apply only, never "Apply & start work" (prompts.ts mainPlannedRule, Chat.tsx).
+ * it; its card's plain Apply never starts work, "Apply & start work" is the go-ahead (prompts.ts mainPlannedRule, Chat.tsx).
  */
 export function plannedMain<T extends FeatureTicket & { main?: boolean }>(tickets: T[], t: T): "family" | "status" | null {
   if (!t.main) return null;

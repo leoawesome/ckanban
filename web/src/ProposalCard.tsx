@@ -36,7 +36,7 @@ function ProposalBody({ text }: { text: string }) {
   );
 }
 
-/** Claude's proposed title/description; Apply replaces the ticket's fields, Apply & start work also moves it to Queued. */
+/** Claude's proposed title/description; Apply replaces the ticket's fields, Apply & start work also queues it (status `ready`, shown in the In Progress column). */
 export function ProposalCard({ proposal, applied, started, onApply, onApplyStart, keyHint, followUp, family }: {
   proposal: Proposal;
   applied: boolean;
@@ -69,7 +69,7 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
       {family && <div className="proposal-family muted small">{family}</div>}
       <div className="proposal-actions">
         {applied ? (
-          <span className="badge ok">{started ? "Applied · moved to Queued" : "Applied to ticket"}</span>
+          <span className="badge ok">{started ? "Applied · moved to In Progress" : "Applied to ticket"}</span>
         ) : onApplyStart ? (
           <>
             <button className="btn primary small" disabled={!!busy} title={hint ? `Apply & start work (${hint})` : undefined}
@@ -90,7 +90,7 @@ export function ProposalCard({ proposal, applied, started, onApply, onApplyStart
           {applied
             ? started ? "Claude starts when a slot is free." : "You can still edit them in the details."
             : onApplyStart
-              ? "Replaces the title and description. Start work moves it to Queued; Claude works on its own."
+              ? "Replaces the title and description. Start work moves it to In Progress; Claude starts when a slot is free."
               : "Replaces the title and description. You can undo right after."}
         </span>
       </div>
@@ -142,7 +142,7 @@ function FollowUpCard({ proposal, followUp, busy, run, onApply, keyHint, hint }:
           <div className="proposal-note">{w.note}</div>
           <div className="proposal-actions">
             <button className="btn primary small" disabled={!!busy}
-              title={`${step ? "Claude works on it on its own" : "Creates a new ticket next to this one and moves it to Queued; Claude works on its own"}${hint ? ` (${hint})` : ""}`}
+              title={`${step ? "Claude works on it on its own" : "Creates a new ticket next to this one and moves it to In Progress; Claude works on its own"}${hint ? ` (${hint})` : ""}`}
               onClick={run("start", () => followUp.onCreate(true))}>
               {busy === "start" ? "Starting…" : w.start}{keyHint && <KeyHint keys="⌘⇧↵" />}
             </button>

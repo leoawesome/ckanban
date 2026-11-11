@@ -3,8 +3,10 @@ import { api, COLUMNS, type Profile, type Ticket, type TicketRow } from "./api";
 import { avatarColor, avatarLetter } from "./avatar";
 import { mainTicketOf, onBoard } from "./family";
 import { fuzzyMatch, highlightRuns, rankTickets, type Snippet } from "./fuzzy";
-import { CheckIcon, SearchIcon } from "./icons";
+import { CheckIcon, ChevronRightIcon, SearchIcon } from "./icons";
+import { usePhone } from "./usePhone";
 import { useFocusTrap, useLayer } from "./layers";
+import { useBackdropClose } from "./sheet";
 
 export interface CommandAction {
   id: string;
@@ -59,6 +61,8 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
   const box = useRef<HTMLDivElement>(null);
   useLayer(onClose);
   useFocusTrap(box);
+  const backdrop = useBackdropClose(onClose);
+  const phone = usePhone();
 
   useEffect(() => {
     api.allTickets().then(setOthers).catch(() => setOthers([]));
@@ -127,11 +131,11 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
   const optionId = (item: Item) => `cmd-${item.key.replace(/[^\w-]/g, "_")}`;
 
   return (
-    <div className="overlay cmdbar-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="overlay cmdbar-overlay" {...backdrop}>
       <div ref={box} className="cmdbar" role="dialog" aria-modal="true" aria-label="Command bar">
         <div className="cmdbar-input">
           <SearchIcon className="icon" />
-          <input autoFocus value={q} placeholder="Search tickets on every board, actions and boards…" aria-label="Search tickets, actions and boards"
+          <input autoFocus value={q} placeholder={phone ? "Search tickets and actions" : "Search tickets on every board, actions and boards…"} aria-label="Search tickets, actions and boards"
             role="combobox" aria-expanded aria-controls="cmdbar-list" aria-autocomplete="list"
             aria-activedescendant={items[at] ? optionId(items[at]) : undefined}
             onChange={(e) => { setQ(e.target.value); setActive(0); }} onKeyDown={onKey} />
@@ -171,7 +175,7 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
                   )}
                   {item.kind === "action" && (
                     <>
-                      <span className="cmdbar-icon" aria-hidden>{item.action.icon}</span>
+                      <span className="cmdbar-icon" aria-hidden>{item.action.icon ?? <ChevronRightIcon size={14} />}</span>
                       <span className="cmdbar-title"><Marked text={item.action.label} at={item.at} />{item.action.hint && <span className="cmdbar-hint"> · {item.action.hint}</span>}</span>
                       {item.action.keys && <span className="cmdbar-keys">{item.action.keys.map((k, n) => <kbd key={n}>{k}</kbd>)}</span>}
                     </>

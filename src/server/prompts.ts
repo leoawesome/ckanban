@@ -833,11 +833,11 @@ export const MAIN_FIRST_REPLY = `This is the first reply of a new main ticket: t
 /**
  * Planning a main ticket that is already planned (MainRole.planned): instead of TICKET_FORMAT's "propose an improved
  * ticket", the plan goes into the status, steps follow the go-ahead, and a proposal only updates the user's title and
- * description (its card offers Apply only, see web/src/family.ts plannedMain).
+ * description (its card's plain Apply never starts work; Apply & start work is the go-ahead).
  */
 export function mainPlannedRule(reason: string): string {
   return `This main ticket is already planned (${reason}). Put decisions and the plan in "Where we are" with the ckanban \`update_status\` tool (goal, nextStep and the other sections that changed). Steps start only on a go-ahead (the go-ahead rule in your instructions): then create them with \`create_ticket\`.
-When the discussion adds or changes something the ticket should say, you may call \`propose_ticket\` with an update of this ticket: keep its current title and description, word for word, and add or adjust only what changed (a new requirement, a decision, a corrected detail), not a fresh rewrite. Change the title only when it clearly no longer fits. The card changes nothing until the user clicks Apply, and applying it never starts work.`;
+When the discussion adds or changes something the ticket should say, you may call \`propose_ticket\` with an update of this ticket: keep its current title and description, word for word, and add or adjust only what changed (a new requirement, a decision, a corrected detail), not a fresh rewrite. Change the title only when it clearly no longer fits. The card changes nothing until the user clicks it: "Apply" only updates the ticket (applying it never starts work); "Apply & start work" also moves it to Ready, which counts as the go-ahead for the plan in the status.`;
 }
 
 /** A main ticket's Planning chat makes no ticket cards: it creates tool tickets itself once the work starts. */

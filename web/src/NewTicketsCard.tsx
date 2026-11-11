@@ -66,11 +66,11 @@ export function NewTicketsCard({ drafts, created, parentId, onCreate, onOpen }: 
               </button>
               {t ? (
                 t.parentId === parentId || made.get(i) === t ? (
-                  <button className="link-btn small" onClick={() => onOpen(t.id)} title={t.title === d.title ? undefined : `Now “${t.title}”`}>
+                  <button className="link-btn small new-ticket-status" onClick={() => onOpen(t.id)} title={t.title === d.title ? undefined : `Now “${t.title}”`}>
                     Created, in {COLUMNS.find((c) => c.id === t.status)?.label ?? t.status}, open
                   </button>
                 ) : (
-                  <button className="link-btn small" onClick={() => onOpen(t.id)} title={`“${t.title}” is already a ticket on this board`}>Already on the board, open</button>
+                  <button className="link-btn small new-ticket-status" onClick={() => onOpen(t.id)} title={`“${t.title}” is already a ticket on this board`}>Already on the board, open</button>
                 )
               ) : (
                 <button className="btn small" disabled={busy.has(i)} onClick={() => create(d, i)}>

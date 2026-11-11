@@ -1137,8 +1137,17 @@ const MODE_OPTIONS = [
 function Brief({ slug, huddle: h, handles, onError }: { slug: string; huddle: Huddle; handles: string[]; onError: (m: string) => void }) {
   const [edit, setEdit] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Phone: the brief shows about 4 lines (the people list stays in view) with Show more when it's longer.
+  const phone = usePhone();
+  const [more, setMore] = useState(false);
+  const [long, setLong] = useState(false);
+  const textRef = useRef<HTMLDivElement>(null);
   const closed = h.status === "closed";
   useEffect(() => setEdit(null), [h.id]);
+  useLayoutEffect(() => {
+    const el = textRef.current;
+    setLong(!!el && phone && !more && el.scrollHeight > el.clientHeight + 2);
+  }, [phone, more, h.brief?.text, edit]);
   if (closed && !h.brief) return null;
   const save = async () => {
     if (edit === null || busy) return;
@@ -1171,9 +1180,14 @@ function Brief({ slug, huddle: h, handles, onError }: { slug: string; huddle: Hu
           </div>
         </>
       ) : h.brief ? (
-        <div className="hd-brief-text" title={`Last changed by @${h.brief.by} · ${fullTime(h.brief.at)}`}>
-          <Markdown text={h.brief.text} handles={handles} />
-        </div>
+        <>
+          <div ref={textRef} className={`hd-brief-text${phone && !more ? " clamp" : ""}${long ? " cut" : ""}`} title={`Last changed by @${h.brief.by} · ${fullTime(h.brief.at)}`}>
+            <Markdown text={h.brief.text} handles={handles} />
+          </div>
+          {phone && (long || more) && (
+            <button className="link-btn hd-brief-more" aria-expanded={more} onClick={() => setMore((m) => !m)}>{more ? "Show less" : "Show more"}</button>
+          )}
+        </>
       ) : (
         <button className="hd-brief-empty" onClick={() => setEdit("")}>The goal and the decisions so far. Every agent reads it first.</button>
       )}

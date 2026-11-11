@@ -8,12 +8,13 @@ import { useNow } from "./useNow";
 import { RowMore, type InboxHelper } from "./Inbox";
 import { isHeldLine } from "./helper";
 import { HelperStatusLine, MessagesEntry } from "./Messages";
+import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 
 /**
  * Phone home (≤720px), for the board shown: what needs you (what Claude is waiting on, then what is ready to check,
  * newest first; over a week old folds into Older), what runs and what is being planned. Other boards that need you are
- * one line at the end. Tapping a card opens the ticket full screen. A waiting card shows one full-width button (Mark done
- * for review, else Answer/Open) and a ⋯ with Snooze. A cleared card shrinks away and taps pause briefly.
+ * one line at the end. Tapping a card opens the ticket full screen. A waiting card shows one big button (Answer or Open; review
+ * cards add a quieter Mark done beside it) and a ⋯ with Snooze. A cleared card shrinks away and taps pause briefly.
  * Until the inbox and the tickets have loaded, grey placeholder rows stand in (no "nothing waits" line yet). `footer`
  * (the notifications offer) goes below the list, so its late arrival doesn't push the rows down.
  */
@@ -66,9 +67,9 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
             {line && <span className={`helper-line${line.startsWith("Urgent") ? " urgent" : ""}`}>{line}</span>}
           </button>
           <div className="now-actions">
-            {done
-              ? <button className="btn primary" onClick={() => clear(key, () => onMarkDone(i))}>Mark done</button>
-              : <button className="btn primary" onClick={() => open(i)}>{answers(i) ? "Answer" : "Open"}</button>}
+            <button className="btn primary" onClick={() => open(i)}>{answers(i) ? "Answer" : "Open"}</button>
+            {/* Finishing a ticket is the quieter button beside Open, so a thumb slip on the big one never ends it. */}
+            {done && <button className="btn now-done" onClick={() => clear(key, () => onMarkDone(i))}>Mark done</button>}
             <RowMore label={i.title} actions={more} />
           </div>
         </div>
@@ -87,7 +88,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
             </div>
           )}
           <MessagesEntry unread={helper.unread} onOpen={helper.onOpenMessages} />
-          <HelperStatusLine status={helper.status} compact />
+          <HelperStatusLine status={helper.status} compact total={inbox.length} />
         </div>
       )}
       {!inboxLoaded && <>
@@ -106,9 +107,9 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
         <>
           <div className="now-older">
             <button className="now-head now-older-toggle" aria-expanded={showOlder} onClick={() => setShowOlder((v) => !v)}>
-              {showOlder ? "▾" : "▸"} Older · {groups.older.length}
+              {showOlder ? <ChevronDownIcon size={16} /> : <ChevronRightIcon size={16} />} {showOlder ? "Hide older" : "Show older"} · {groups.older.length}
             </button>
-            <button className="btn ghost" onClick={() => { if (!busy()) onSnoozeAll(groups.older); }} title="Hide every item waiting more than a week for a day">Snooze all</button>
+            <button className="btn small now-snooze-all" onClick={() => { if (!busy()) onSnoozeAll(groups.older); }} title="Hide every item waiting more than a week for a day">Snooze older</button>
           </div>
           {showOlder && groups.older.map(card)}
         </>

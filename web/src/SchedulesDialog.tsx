@@ -7,11 +7,14 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { UpcomingJobs } from "./Jobs";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { Modal } from "./Modal";
+import { MenuSheet } from "./MenuSheet";
+import { MoreIcon } from "./icons";
 import { ModeToggle } from "./ModeToggle";
 import { TagChip, TagEditor } from "./Tags";
 import { boardTags } from "./tagText";
 import { timeAgo, timeUntil } from "./time";
 import { useNow } from "./useNow";
+import { usePhone } from "./usePhone";
 
 export const CRON_PRESETS: { label: string; cron: string }[] = [
   { label: "Hourly", cron: "0 * * * *" },
@@ -85,6 +88,9 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  /** Phone: the schedule whose "…" menu (History, Edit, Delete) is open. */
+  const [menuOf, setMenuOf] = useState<Schedule | null>(null);
+  const phone = usePhone();
   useNow();
 
   const act = async (key: string, fn: () => Promise<unknown>) => {
@@ -148,10 +154,18 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
           <button className="btn small" disabled={busy === `run:${s.id}`} onClick={() => runNow(s)}>
             {busy === `run:${s.id}` ? "Starting…" : "Run now"}
           </button>
-          <button className={`btn small ghost${historyOf === s.id ? " on" : ""}`} aria-pressed={historyOf === s.id}
-            onClick={() => setHistoryOf((h) => (h === s.id ? null : s.id))}>History</button>
-          <button className="btn small ghost" onClick={() => setEditing(s)}>Edit</button>
-          <button className="btn small ghost danger" onClick={() => setConfirm(s)}>Delete</button>
+          {phone ? (
+            <button className="btn small ghost sched-more-btn" aria-label={`More for ${s.name}`} aria-haspopup="menu" onClick={() => setMenuOf(s)}>
+              <MoreIcon size={20} />
+            </button>
+          ) : (
+            <>
+              <button className={`btn small ghost${historyOf === s.id ? " on" : ""}`} aria-pressed={historyOf === s.id}
+                onClick={() => setHistoryOf((h) => (h === s.id ? null : s.id))}>History</button>
+              <button className="btn small ghost" onClick={() => setEditing(s)}>Edit</button>
+              <button className="btn small ghost danger" onClick={() => setConfirm(s)}>Delete</button>
+            </>
+          )}
         </div>
       </div>
       {editing !== "new" && editing?.id === s.id && (
@@ -166,16 +180,17 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
       <div className="form mcp">
         <section className="sched-group">
           <h3 className="sched-heading">Upcoming</h3>
-          <span className="muted small">One-time: at the set time the board starts a ticket or runs a command, once.</span>
+          <span className="muted small">Runs once, at the set time.</span>
           <UpcomingJobs slug={profile.slug} jobs={jobs} tickets={tickets} filter={jobFilter} onFilter={onJobFilter} onOpenTicket={onOpenTicket} />
         </section>
         {!jobFilter && <h3 className="sched-heading">Recurring</h3>}
         {!jobFilter && <>
         <div className="mcp-toolbar">
-          <span className="muted small">
-            Recurring tickets. At each time a schedule fires, a new ticket is created on this board and Claude starts it right away.
-            Times are this computer's local time; runs happen only while ckanban is running (one missed run is caught up on start).
-          </span>
+          <details className="muted small sched-intro">
+            <summary>Each time one fires, a new ticket starts on this board.</summary>
+            Claude starts it right away. Times are this computer's local time; runs happen only while ckanban is running (one missed
+            run is caught up on start).
+          </details>
           <div className="spacer" />
           <button className="btn small" disabled={busy === "checkin"} onClick={setUpCheckins}
             title="Claude checks every work hour what needs you and tells you only then. Set it up in a short chat.">
@@ -195,6 +210,21 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
         {schedules && schedules.length > 0 && <div className="mcp-section">{schedules.map(row)}</div>}
         </>}
       </div>
+      {menuOf && (
+        <MenuSheet onClose={() => setMenuOf(null)}>
+          <div className="auto-menu" role="menu" aria-label={menuOf.name}>
+            <button type="button" role="menuitem" className="menu-item" onClick={() => { setHistoryOf((h) => (h === menuOf.id ? null : menuOf.id)); setMenuOf(null); }}>
+              <span className="menu-label">{historyOf === menuOf.id ? "Hide history" : "History"}</span>
+            </button>
+            <button type="button" role="menuitem" className="menu-item" onClick={() => { setEditing(menuOf); setMenuOf(null); }}>
+              <span className="menu-label">Edit</span>
+            </button>
+            <button type="button" role="menuitem" className="menu-item danger" onClick={() => { setConfirm(menuOf); setMenuOf(null); }}>
+              <span className="menu-label">Delete</span>
+            </button>
+          </div>
+        </MenuSheet>
+      )}
       {confirm && (
         <ConfirmDialog
           title={`Delete ${confirm.name}?`}

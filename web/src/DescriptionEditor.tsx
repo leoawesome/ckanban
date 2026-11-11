@@ -1,10 +1,11 @@
-import { useLayoutEffect, useMemo, useRef, type KeyboardEvent, type RefObject } from "react";
+import { useMemo, type KeyboardEvent, type RefObject } from "react";
 import { AttachmentChips } from "./AttachmentChips";
 import { ImagePickButton } from "./ImagePickButton";
 import type { useImagePaste } from "./imagePaste";
 import { useSlashCommands, useSlashPicker } from "./SlashPicker";
 import { useSnippetPicker } from "./SnippetPicker";
 import type { SlashCommand } from "./slashText";
+import { useTypeTrigger } from "./typeTrigger";
 import { usePhone } from "./usePhone";
 
 /** What `/` offers in a description: skills and custom commands (built-ins mean nothing outside the chat). */
@@ -37,27 +38,10 @@ export function DescriptionEditor({ slug, ticketId, value, setValue, images, inp
   const slash = useSlashPicker({ commands, ref: inputRef, setValue, inline: true });
   const phone = usePhone();
   // Phone buttons type `@` / `/` at the caret; after that render the caret moves past it and the picker opens.
-  const pending = useRef<number | null>(null);
-
-  useLayoutEffect(() => {
-    const el = inputRef.current;
-    if (pending.current === null || !el) return;
-    el.setSelectionRange(pending.current, pending.current);
-    pending.current = null;
+  const typeTrigger = useTypeTrigger(inputRef, setValue, () => {
     snippets.handlers.onSelect();
     slash.handlers.onSelect();
   });
-
-  const typeTrigger = (ch: "@" | "/") => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.focus(); // inside the tap, so phones open the keyboard
-    const start = el.selectionStart ?? el.value.length;
-    const before = el.value.slice(0, start);
-    const lead = before && !/[\s([{"'`]$/.test(before) ? " " : "";
-    pending.current = start + lead.length + 1;
-    setValue(before + lead + ch + el.value.slice(el.selectionEnd ?? start));
-  };
   // Keep the textarea focused (and the caret where it was) while a button is pressed.
   const keepFocus = (e: React.MouseEvent) => e.preventDefault();
 

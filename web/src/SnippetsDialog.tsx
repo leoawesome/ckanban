@@ -99,13 +99,17 @@ export function SnippetsDialog({ profile, onClose }: { profile: Profile; onClose
           </label>
           {err && <div className="form-error">{err}</div>}
           <div className="form-actions">
-            {current && <button type="button" className="btn ghost danger" onClick={() => setConfirm(current)}>Delete</button>}
             <span className="spacer" />
             {dirty && <button type="button" className="btn ghost" onClick={() => { setDraft(saved); setErr(null); }}>Revert</button>}
             <button type="submit" className="btn primary" disabled={busy || !dirty || !draft.name.trim() || !draft.text.trim()}>
               {busy ? "Saving…" : current ? "Save" : "Create"}
             </button>
           </div>
+          {current && (
+            <div className="form-danger">
+              <button type="button" className="btn ghost danger" onClick={() => setConfirm(current)}>Delete @{current.name}</button>
+            </div>
+          )}
         </form>
       </div>
       {confirm && (

@@ -19,7 +19,10 @@ import { DeleteCard } from "./DeleteCard";
 import { AgentRows } from "./AgentRow";
 import { WorkflowBlocks } from "./WorkflowBlock";
 import { ToolRows } from "./ToolRows";
-import { ArrowDownIcon, BranchIcon, CloseIcon, FileCodeIcon, FileTextIcon } from "./icons";
+import { ArrowDownIcon, BranchIcon, ClockIcon, CloseIcon, CopyIcon, DownloadIcon, FileCodeIcon, FileTextIcon, MoreIcon } from "./icons";
+import { MoreSheet } from "./PhoneNav";
+import type { MenuItem } from "./HeaderMenu";
+import { useTypeTrigger } from "./typeTrigger";
 import { useImagePaste } from "./imagePaste";
 import { AttachmentChips } from "./AttachmentChips";
 import { ImagePickButton } from "./ImagePickButton";
@@ -38,7 +41,7 @@ import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
 import { StatusNoteView, useFeatureStatus } from "./StatusBlock";
 import { ResultCardView } from "./ResultCardView";
-import { askClosed, familyOf, hiddenTool, plannedMain, withYouTool } from "./family";
+import { askClosed, familyOf, hiddenTool, withYouTool } from "./family";
 import { type StepInfo, type StepMsg, useStepMessages } from "./StepMessages";
 import { QuestionText } from "./QuestionText";
 import { TaskCard, TaskSheet, TaskTrail, useSheet, WaitingButton } from "./TaskSheet";
@@ -185,6 +188,57 @@ const RETRY = "That run stopped with an error. Please try again from where you s
 
 const REFINE = (s: Ticket["status"]) => s === "backlog" || s === "planning";
 
+/**
+ * The files a reply wrote: one compact row each (name, size, Open; Copy file and Download behind ⋯ on a phone, beside
+ * Open on a wider screen). More than two fold into one "N files" row that opens the list.
+ */
+function ChatFiles({ files, canCopy, onOpen, onCopy, onDownload }: {
+  files: { name: string; size: number }[]; canCopy: boolean;
+  onOpen: (name: string) => void; onCopy: (name: string) => void; onDownload: (name: string) => void;
+}) {
+  const phone = usePhone();
+  const [open, setOpen] = useState(files.length <= 2);
+  const [menu, setMenu] = useState<string | null>(null);
+  const shown = files.slice(0, MAX_FILE_CARDS);
+  return (
+    <div className="chat-files">
+      {files.length > 2 && (
+        <button className="chat-files-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          <FileTextIcon size={14} /><span>{files.length} files</span><span className="fold-chev side" aria-hidden>▸</span>
+        </button>
+      )}
+      {open && shown.map((f) => (
+        <div key={f.name} className="chat-file">
+          <FileTextIcon size={14} />
+          <b title={f.name}>{dirName(f.name) && <span className="chat-file-dir">{dirName(f.name)}</span>}{baseName(f.name)}</b>
+          <span className="muted small chat-file-size">{kb(f.size)}</span>
+          <span className="chat-file-actions">
+            <button className="btn small view" onClick={() => onOpen(f.name)}>Open</button>
+            {phone ? (
+              <button className="btn small icon-only chat-file-more" aria-label={`More for ${baseName(f.name)}`} aria-haspopup="menu"
+                onClick={() => setMenu(f.name)}><MoreIcon size={16} /></button>
+            ) : <>
+              {canCopy && <button className="btn small" onClick={() => onCopy(f.name)}>Copy file</button>}
+              <button className="btn small" onClick={() => onDownload(f.name)}>Download</button>
+            </>}
+          </span>
+        </div>
+      ))}
+      {open && files.length > MAX_FILE_CARDS && (
+        <button className="link-btn small chat-more-files" onClick={() => onOpen(files[MAX_FILE_CARDS].name)}>
+          +{files.length - MAX_FILE_CARDS} more files in the Outputs tab
+        </button>
+      )}
+      {menu && (
+        <MoreSheet label={baseName(menu)} onClose={() => setMenu(null)} items={[
+          ...(canCopy ? [{ label: "Copy file", icon: <CopyIcon />, onSelect: () => onCopy(menu) }] : []),
+          { label: "Download", icon: <DownloadIcon />, onSelect: () => onDownload(menu) },
+        ]} />
+      )}
+    </div>
+  );
+}
+
 function kb(n: number): string {
   return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
@@ -296,6 +350,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   const commands = useSlashCommands(slug, ticket.id);
   const simpler = useSimpler(slug, ticket.id);
   const slash = useSlashPicker({ commands, ref: composer, setValue: setDraft });
+  // The phone "+" sheet's Snippet and Skill type `@` / `/` at the caret and open their picker.
+  const typeTrigger = useTypeTrigger(composer, setDraft, () => {
+    snippets.handlers.onSelect();
+    slash.handlers.onSelect();
+  });
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   // Text Claude is writing right now (from the run's partial-message stream); not yet in the session file.
   const [live, setLive] = useState("");
@@ -786,8 +845,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
 
   // Proposals applied with "Apply & start work" here, so their card says the ticket moved on.
   const [startedProposals, setStartedProposals] = useState<ReadonlySet<string>>(new Set());
-  // An already-planned main ticket's card updates it only: steps start on the user's go-ahead in the chat, so no "Apply & start work".
-  const canStart = canStartFromProposal({ status: ticket.status, working: ticket.status === "in_progress" || running }) && !plannedMain(tickets, ticket);
+  // An already-planned main ticket's card offers "Apply & start work" too: moving it to Ready is the go-ahead for its plan
+  // (the user asked for it after finding only Apply there; plain Apply still never starts anything).
+  const canStart = canStartFromProposal({ status: ticket.status, working: ticket.status === "in_progress" || running });
   const applyProposal = async (p: Proposal, start?: { uuid: string }) => {
     const before = { title: ticket.title, body: ticket.body, important: !!ticket.important };
     try {
@@ -1017,22 +1077,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                   ))}
                 </div>
               )}
-              {cards.get(e.uuid)?.slice(0, MAX_FILE_CARDS).map((f) => (
-                <div key={f.name} className="chat-file">
-                  <FileTextIcon size={14} />
-                  <b title={f.name}>{dirName(f.name) && <span className="chat-file-dir">{dirName(f.name)}</span>}{baseName(f.name)}</b>
-                  <span className="muted small">{kb(f.size)}</span>
-                  <span className="chat-file-actions">
-                    <button className="btn small view" onClick={() => onOpenOutput?.(f.name)}>View</button>
-                    {ticket.canCopyFile && <button className="btn small" onClick={() => copyFile(slug, ticket.id, f.name)}>Copy file</button>}
-                    <button className="btn small" onClick={() => downloadFile(slug, ticket.id, f.name)}>Download</button>
-                  </span>
-                </div>
-              ))}
-              {(cards.get(e.uuid)?.length ?? 0) > MAX_FILE_CARDS && (
-                <button className="link-btn small chat-more-files" onClick={() => onOpenOutput?.(cards.get(e.uuid)![MAX_FILE_CARDS].name)}>
-                  +{cards.get(e.uuid)!.length - MAX_FILE_CARDS} more files in the Outputs tab
-                </button>
+              {!!cards.get(e.uuid)?.length && (
+                <ChatFiles files={cards.get(e.uuid)!} canCopy={!!ticket.canCopyFile} onOpen={(n) => onOpenOutput?.(n)}
+                  onCopy={(n) => copyFile(slug, ticket.id, n)} onDownload={(n) => downloadFile(slug, ticket.id, n)} />
               )}
               {e.unreadable && (
                 <div className="chat-unreadable" role="status">
@@ -1219,16 +1266,29 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     </div>
   );
 
+  const toolNoteMore = withYouTool(ticket)
+    ? "This step talks to you in its feature's chat too; what you say here or there goes straight to it."
+    : "What you say here is passed to it.";
+  // The phone "+" sheet: after Photo and File, @ Snippet and / Skill (typed at the caret, the picker opens), then the
+  // old-chat line when the next message re-reads a lot (it opens the Context panel).
+  const plusExtras: MenuItem[] = [
+    { label: "Snippet", icon: <kbd className="sheet-kbd">@</kbd>, title: "Insert a saved snippet", onSelect: () => typeTrigger("@") },
+    ...(commands?.length ? [{ label: "Skill", icon: <kbd className="sheet-kbd">/</kbd>, title: "Pick a skill or command", onSelect: () => typeTrigger("/") }] : []),
+    ...(old && old.tokens > OLD_LINE_MIN_TOKENS
+      ? [{ label: old.phoneLine, icon: <ClockIcon />, title: `${old.title} Tap to see what fills Claude's memory.`, onSelect: () => setContextLocal(Date.now()) }]
+      : []),
+  ];
   return (
     <div className="chat">
       <div className="chat-log" ref={scroller}
         onScroll={(e) => {
           const el = e.currentTarget;
           const gap = gapOf(el);
+          const movedUp = el.scrollTop < lastTop.current - 2;
           stickToBottom.current = stickAfterScroll({ gap, stuck: stickToBottom.current, movedDown: el.scrollTop > lastTop.current });
           lastTop.current = el.scrollTop;
           lastGap.current = gap;
-          setJump((j) => jumpAfterScroll(gap, j));
+          setJump((j) => jumpAfterScroll(gap, j, movedUp));
         }}>
         {page === null && <div className="muted"><span className="spinner" /> Loading the conversation…</div>}
         {loadError && (
@@ -1387,8 +1447,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         )}
         {/* Sticky inside the log, so it floats just above the composer. */}
         {jump && (
-          <button className={`jump-latest${jump.fresh ? " fresh" : ""}`} onClick={toBottom}>
-            <ArrowDownIcon size={12} /> {jump.fresh ? "New messages" : "Jump to latest"}
+          <button className={`jump-latest${jump.fresh ? " fresh" : ""}`} onClick={toBottom}
+            aria-label={jump.fresh ? "New messages: jump to the latest" : "Jump to the latest message"} title={jump.fresh ? "New messages" : "Jump to latest"}>
+            <ArrowDownIcon size={14} />{jump.fresh && <span>New</span>}
           </button>
         )}
       </div>
@@ -1407,12 +1468,14 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         </div>
       )}
       {hiddenTool(ticket) && (
-        <div className="tool-note" role="note">
-          {ticket.mainTicket
+        // Phones: one line ("In charge: <feature>"); the rest is in its tooltip.
+        <div className="tool-note" role="note" title={phone ? toolNoteMore : undefined}>
+          {phone ? (ticket.mainTicket
+            ? <>In charge: <button className="link-btn" onClick={() => onOpenTicket?.(ticket.mainTicket!.id)}>{ticket.mainTicket.title}</button></>
+            : "Its feature is in charge of this.")
+          : <>{ticket.mainTicket
             ? <><button className="link-btn" onClick={() => onOpenTicket?.(ticket.mainTicket!.id)}>{ticket.mainTicket.title}</button> is in charge of this.</>
-            : "Its feature is in charge of this."} {withYouTool(ticket)
-            ? "This step talks to you in its feature's chat too; what you say here or there goes straight to it."
-            : "What you say here is passed to it."}
+            : "Its feature is in charge of this."} {toolNoteMore}</>}
         </div>
       )}
       {undo && !running && (
@@ -1457,13 +1520,15 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
             <button className="btn small" onClick={sendFresh}>Send in a fresh chat</button>
           </div>
         )}
-        <div className="composer-foot">
+        {/* One row: + (photo, file; on a phone also snippet, skill and the old-chat line), the Context ring, then Send. */}
+        <div className="composer-foot one-row">
+          <ImagePickButton images={images} target={composer} disabled={stopping} merged extra={phone ? plusExtras : undefined} />
+          <ContextChip slug={slug} kind="ticket" id={ticket.id} openRequest={Math.max(contextRequest, contextLocal)} />
           {/* The old-chat line only for a big re-read (over 100k tokens); Send still asks for any old chat. */}
           <span className="composer-meta">
-            <ContextChip slug={slug} kind="ticket" id={ticket.id} openRequest={Math.max(contextRequest, contextLocal)} />
-            {old && old.tokens > OLD_LINE_MIN_TOKENS ? (
+            {phone ? null : old && old.tokens > OLD_LINE_MIN_TOKENS ? (
               <button className="muted small composer-hint composer-old" title={`${old.title} Click to see what fills Claude's memory.`}
-                onClick={() => setContextLocal(Date.now())}>{phone ? old.phoneLine : old.line}</button>
+                onClick={() => setContextLocal(Date.now())}>{old.line}</button>
             ) : (
               <span className="muted small composer-hint">
                 {refine && "Refine mode: Claude won't change files."}
@@ -1472,7 +1537,6 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
             )}
           </span>
           <span className="composer-actions">
-            <ImagePickButton images={images} target={composer} disabled={stopping} merged />
             <SendOrStop running={running} hasDraft={!!draft.trim()} stopping={stopping} onStop={stop}
               send={<button className={`btn small${draft.trim() ? " primary" : ""}`} disabled={!draft.trim() || stopping || images.uploading} onClick={submit}>{images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" /></button>} />
           </span>

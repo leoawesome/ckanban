@@ -1,5 +1,6 @@
 import { useRef, useState, type RefObject } from "react";
 import { ACCEPT, PHOTO_ACCEPT } from "./attachText";
+import type { MenuItem } from "./HeaderMenu";
 import { ImageIcon, PaperclipIcon, PlusIcon } from "./icons";
 import type { useImagePaste } from "./imagePaste";
 import { MoreSheet } from "./PhoneNav";
@@ -13,12 +14,14 @@ const FILE_TYPES = "PDF, Word, Excel, PowerPoint, text or code";
  * its gallery straight away) and a paperclip for files; a mixed picker there only offers Camera / Files. With `merged`
  * (the chat's message box) a phone gets one "+" instead, whose sheet offers Photo and File.
  */
-export function ImagePickButton({ images, target, disabled, className = "", merged }: {
+export function ImagePickButton({ images, target, disabled, className = "", merged, extra }: {
   images: ReturnType<typeof useImagePaste>;
   target: RefObject<HTMLTextAreaElement>;
   disabled?: boolean;
   className?: string;
   merged?: boolean;
+  /** With `merged` on a phone: more rows in the "+" sheet, after Photo and File (the chat's Snippet, Skill, old chat). */
+  extra?: MenuItem[];
 }) {
   const phone = usePhone();
   const [sheet, setSheet] = useState(false);
@@ -37,13 +40,15 @@ export function ImagePickButton({ images, target, disabled, className = "", merg
     return (
       <span className="image-pick-group">
         <button type="button" className={`btn small image-pick add-pick ${className}`} disabled={disabled}
-          aria-label="Add a photo or file" aria-haspopup="menu" title="Add a photo or file" onClick={() => setSheet(true)}>
+          aria-label={extra?.length ? "Add a photo, file, snippet or skill" : "Add a photo or file"} aria-haspopup="menu"
+          title={extra?.length ? "Add a photo, file, snippet or skill" : "Add a photo or file"} onClick={() => setSheet(true)}>
           <PlusIcon size={16} />
         </button>
         {sheet && (
           <MoreSheet label="Add" onClose={() => setSheet(false)} items={[
             { label: "Photo", icon: <ImageIcon />, title: "Add photos from your gallery", onSelect: () => photo.current?.click() },
             { label: "File", icon: <PaperclipIcon />, title: `Add a file: ${FILE_TYPES}`, onSelect: () => file.current?.click() },
+            ...(extra ?? []),
           ]} />
         )}
         {input(photo, PHOTO_ACCEPT)}

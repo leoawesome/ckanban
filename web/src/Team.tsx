@@ -11,6 +11,7 @@ import type { TeammateEditRequest } from "./teammateText";
 import { costText } from "./usage";
 import { liveHuddleCount } from "./huddle";
 import { modelOptions } from "./models";
+import { useEdgeFade } from "./useEdgeFade";
 
 const ALL_ROLES = "_all";
 const MAIN = "main";
@@ -78,6 +79,7 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   /** The board's huddles (kept live by the App), for the Huddles view. */
   huddles?: Huddle[];
 }) {
+  const viewsFade = useEdgeFade<HTMLDivElement>();
   const [view, setView] = useState<View>(() => {
     try {
       const v = localStorage.getItem(VIEW_KEY);
@@ -179,7 +181,7 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   return (
     <div className="team">
       <div className="team-bar">
-        <div className="segmented" role="tablist" aria-label="Team">
+        <div className="segmented" role="tablist" aria-label="Team" {...viewsFade}>
           {([["teammates", "Teammates", presets?.length], ["templates", "Squads", templates?.length], ["huddles", "Huddles", undefined], ["notes", "Notes for all", noteCount(ALL_ROLES)], ["learned", "Learned", undefined]] as const).map(([id, label, n]) => (
             <button key={id} role="tab" aria-selected={view === id} className={view === id ? "on" : undefined} onClick={() => { setView(id); setErr(null); }}>
               {label}{n !== undefined ? ` · ${n}` : ""}

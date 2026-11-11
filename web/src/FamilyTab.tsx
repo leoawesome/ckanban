@@ -13,6 +13,8 @@ import { StatusBlock, useFeatureStatus } from "./StatusBlock";
 import { timeAgo } from "./time";
 import { toast } from "./toast";
 import { Markdown } from "./Transcript";
+import { MenuSheet } from "./MenuSheet";
+import { usePhone } from "./usePhone";
 
 const columnLabel = (status: string) => COLUMNS.find((c) => c.id === status)?.label ?? status;
 
@@ -78,6 +80,7 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
   const [peek, setPeek] = useState<string | null>(null);
   const [gathering, setGathering] = useState(false);
   const [report, setReport] = useState<{ title: string; text: string } | null>(null);
+  const phone = usePhone();
   if (!top) return null;
   const below = (id: string): Ticket[] => (kids.get(id) ?? []).flatMap((c) => [c.ticket, ...(c.ticket.main ? [] : below(c.ticket.id))]);
   const [acting, setActing] = useState<string | null>(null);
@@ -189,7 +192,8 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
         })}
       </div>
       {peeked && (
-        <div className="ft-peek">
+        <MenuSheet onClose={() => setPeek(null)}>
+        <div className="ft-peek" role={phone ? "dialog" : undefined} aria-label={phone ? peeked.ticket.title : undefined}>
           <h3>{peeked.ticket.title}</h3>
           <div className="muted small">
             {[groupOf(peeked.ticket.id), `${modelLabel(pv?.model ?? peeked.ticket.model)}${pv?.effort ? `, ${pv.effort}` : ""}`,
@@ -199,8 +203,10 @@ export function FamilyTab({ slug, ticket, tickets, planChildren, onOpenTicket, o
           <div className="ft-peek-btns">
             {peeked.ticket.id !== ticket.id && <button className="btn small" onClick={() => onOpenTicket(peeked.ticket.id)}>Open ticket</button>}
             {pv?.report && <button className="btn small" onClick={() => void readReport(peeked.ticket)}>Read report</button>}
+            {phone && <button className="btn small ft-peek-close" onClick={() => setPeek(null)}>Close</button>}
           </div>
         </div>
+        </MenuSheet>
       )}
       {gathering && <GatherDialog slug={slug} top={top} tickets={tickets} onClose={() => setGathering(false)} onError={onError} />}
       {report && (

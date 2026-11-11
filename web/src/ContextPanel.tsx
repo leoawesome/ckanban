@@ -102,10 +102,12 @@ export function ContextChip({ slug, kind, id, openRequest = 0 }: { slug: string;
   const pct = report ? Math.min(100, Math.max(0, report.percent)) : 0;
   return (
     <div className="ctx" ref={root}>
+      {/* A small ring filled to the share used, then "34%" ("Context" before the first check); accent when nearly full. */}
       <button ref={chip} className={`ctx-chip${pct >= 80 ? " warn" : ""}`} aria-haspopup="dialog" aria-expanded={open}
+        aria-label={report ? `Context: ${chipText(view)} used. Show what fills it` : "Context: show how much Claude is holding in mind"}
         title={report ? `Claude is holding ${tokenText(report.used)} of ${tokenText(report.window)} in mind for this chat` : "How much Claude is holding in mind for this chat"}
         onClick={() => setOpen((v) => !v)}>
-        <span className="ctx-mini" aria-hidden><i style={{ width: `${pct}%` }} /></span>
+        <span className="ctx-ring" aria-hidden style={{ "--p": pct } as React.CSSProperties} />
         {chipText(view)}
       </button>
       {open && (

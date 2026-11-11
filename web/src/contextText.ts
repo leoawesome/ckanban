@@ -121,9 +121,9 @@ export function tokenText(n: number): string {
 
 export const percentText = (p: number | null) => (p === null ? "—" : `${p.toFixed(1)}%`);
 
-/** The chip: "Context" before the first check, then "N% used". */
+/** The chip: "Context" before the first check, then "N%" (beside a ring filled that far). */
 export function chipText(v: ContextView | null): string {
-  return v?.result ? `${Math.round(v.result.report.percent)}% used` : "Context";
+  return v?.result ? `${Math.round(v.result.report.percent)}%` : "Context";
 }
 
 /** "Checked just now", "Checked 2 min ago", "Checked 3 h ago". */

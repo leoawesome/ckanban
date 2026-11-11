@@ -253,7 +253,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
                   </div>
                 )}
                 <MessagesEntry menuItem unread={unread} onOpen={() => { setOpen(false); helper.onOpenMessages(); }} />
-                <HelperStatusLine status={helper.status} reach={false} compact />
+                <HelperStatusLine status={helper.status} reach={false} compact total={items.length} />
               </div>
             )}
             {!items.length && <p className="inbox-empty muted small">Nothing needs you right now.</p>}

@@ -34,7 +34,7 @@ test("the phone merges skills, memory and app instructions, and the on-demand ro
 test("chip, token and time words", () => {
   expect(chipText(null)).toBe("Context");
   expect(chipText({ state: "idle", result: null, error: "x" })).toBe("Context");
-  expect(chipText({ state: "idle", result: { report: report("long-chat.md"), checkedAt: "" }, error: null })).toBe("15% used");
+  expect(chipText({ state: "idle", result: { report: report("long-chat.md"), checkedAt: "" }, error: null })).toBe("15%");
   expect([tokenText(154_200), tokenText(1_000_000), tokenText(92_100), tokenText(201), tokenText(1_500_000)]).toEqual(["154k", "1M", "92.1k", "201", "1.5M"]);
   const now = Date.parse("2026-11-11T10:00:00Z");
   expect(checkedText("2026-11-11T09:58:00Z", now)).toBe("Checked 2 min ago");

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -19,6 +19,9 @@ const AHEAD = 1.5;
 
 interface Size { w: number; h: number }
 
+/** Zoom steps: 1 fits the pane's width. */
+const ZOOMS = [1, 1.5, 2, 3];
+
 /**
  * A PDF as a column of pages fitting the pane's width, with a "Page N of M" pill. PDF.js draws each page to a canvas
  * only (no text, annotation or form layer), so nothing in the file can run or link anywhere. Pages render when they
@@ -30,7 +33,25 @@ export function PdfView({ url, name, downloadUrl }: { url: string; name: string;
   const [error, setError] = useState<string | null>(null);
   const [width, setWidth] = useState(0);
   const [page, setPage] = useState(1);
+  const [zoom, setZoom] = useState(1);
   const scroller = useRef<HTMLDivElement>(null);
+  // Where the view was (as a share of the whole), so a zoom keeps the same spot in view.
+  const spot = useRef<{ y: number; x: number } | null>(null);
+  const zoomTo = (z: number) => {
+    const el = scroller.current;
+    // From fit-to-width, start at the left edge (where lines begin); once zoomed, keep the same spot.
+    if (el) spot.current = { y: (el.scrollTop + el.clientHeight / 2) / el.scrollHeight, x: el.scrollWidth > el.clientWidth ? (el.scrollLeft + el.clientWidth / 2) / el.scrollWidth : -1 };
+    setZoom(z);
+  };
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const at = spot.current;
+    if (!el || !at) return;
+    spot.current = null;
+    el.scrollTop = at.y * el.scrollHeight - el.clientHeight / 2;
+    el.scrollLeft = at.x < 0 ? 0 : at.x * el.scrollWidth - el.clientWidth / 2;
+  }, [zoom]);
+  const zi = ZOOMS.indexOf(zoom);
 
   useEffect(() => {
     let gone = false;
@@ -39,6 +60,7 @@ export function PdfView({ url, name, downloadUrl }: { url: string; name: string;
     setSizes([]);
     setError(null);
     setPage(1);
+    setZoom(1);
     (async () => {
       const lib = await loadPdfjs();
       const r = await fetch(url, { cache: "no-store" });
@@ -90,26 +112,32 @@ export function PdfView({ url, name, downloadUrl }: { url: string; name: string;
   if (!doc) return <div className="pdf-note muted"><span className="spinner" /> Loading PDF…</div>;
   return (
     <div className="pdf-view">
-      <div className="pdf-scroll" ref={scroller} onScroll={onScroll}>
+      <div className={`pdf-scroll${zoom > 1 ? " zoomed" : ""}`} ref={scroller} onScroll={onScroll}>
         {width > 0 && sizes.map((s, i) => (
-          <PdfPage key={i} doc={doc} n={i + 1} size={s} width={width} root={scroller}
+          <PdfPage key={i} doc={doc} n={i + 1} size={s} width={width} zoom={zoom} root={scroller}
             onSize={(size) => setSizes((all) => all.map((x, j) => (j === i ? size : x)))} />
         ))}
       </div>
-      <div className="pdf-count" aria-live="polite">Page {page} of {doc.numPages}</div>
+      {/* In the corner, so it covers the page margin, not the text; zoom out / in beside the page count. */}
+      <div className="pdf-tools">
+        <button className="pdf-zoom" aria-label="Zoom out" disabled={zi <= 0} onClick={() => zoomTo(ZOOMS[zi - 1])}>−</button>
+        <span className="pdf-count" aria-live="polite" title={`Page ${page} of ${doc.numPages}`}>{page} / {doc.numPages}</span>
+        <button className="pdf-zoom" aria-label="Zoom in" disabled={zi >= ZOOMS.length - 1} onClick={() => zoomTo(ZOOMS[zi + 1])}>+</button>
+      </div>
     </div>
   );
 }
 
-function PdfPage({ doc, n, size, width, root, onSize }: {
-  doc: PDFDocumentProxy; n: number; size: Size; width: number; root: React.RefObject<HTMLDivElement>; onSize: (s: Size) => void;
+function PdfPage({ doc, n, size, width, zoom, root, onSize }: {
+  doc: PDFDocumentProxy; n: number; size: Size; width: number; zoom: number; root: React.RefObject<HTMLDivElement>; onSize: (s: Size) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [near, setNear] = useState(false);
   const [drawn, setDrawn] = useState(false);
-  // Fit the pane's width, but don't blow a portrait page up past a readable width on a wide desktop pane.
-  const cssW = Math.max(Math.min(width - 24, 900), 80);
+  // Fit the pane's width (a narrow phone pane keeps only a slim margin), but don't blow a portrait page up past a
+  // readable width on a wide desktop pane; zoom scales from there.
+  const cssW = Math.round(Math.max(Math.min(width - (width < 500 ? 8 : 24), 900), 80) * zoom);
   const cssH = Math.round((cssW * size.h) / size.w);
 
   useEffect(() => {

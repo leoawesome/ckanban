@@ -11,8 +11,9 @@ import { boardColumnOf, groupByColumn } from "./columns";
 import { playMove } from "./arrivals";
 import { reducedMotion } from "./motion";
 import { useCardTabs } from "./useCardTabs";
-import { CollapseIcon, PlusIcon, SparkIcon } from "./icons";
+import { CloseIcon, CollapseIcon, FilterIcon, PlusIcon, SparkIcon } from "./icons";
 import { usePhone } from "./usePhone";
+import { useEdgeFade } from "./useEdgeFade";
 import { toast } from "./toast";
 
 const COLLAPSED_KEY = "ckanban.collapsedColumns";
@@ -64,6 +65,8 @@ interface Props {
   /** Folded columns (useCollapsedColumns). */
   collapsed: Set<Status>;
   onCollapse: (id: Status, v: boolean) => void;
+  /** Phones: the search row is folded into an icon at the end of the column tab row (a tap opens or closes it). */
+  search?: { on: boolean; toggle: () => void };
 }
 
 /** Card props shared down the columns. */
@@ -174,16 +177,8 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   }
   return (
     <section className={`column col-${id} ${claude ? "claude-zone" : ""} ${isOver ? "over" : ""}`} aria-label={label} aria-busy={loading || undefined}>
-      {phone ? (
-        // A phone's column chips name the column and its count, and columns don't collapse there, so the head keeps only
-        // Backlog's + and the ✦ in one short right-aligned row; Review and Done get none, so the first card sits at the top.
-        (canAdd || claude) && (
-          <header className="column-head compact">
-            {claude && <span className="claude-tag" title={CLAUDE_TAG} aria-label={CLAUDE_TAG}><SparkIcon /></span>}
-            {canAdd && <button className="icon-btn" title={`Add to ${label}`} aria-label={`Add ticket to ${label}`} onClick={() => onAdd(id)}><PlusIcon /></button>}
-          </header>
-        )
-      ) : (
+      {/* A phone has no column head: its tab row names the column, its count, the ✦ and Backlog's +. */}
+      {!phone && (
       <header className="column-head">
         {/* The column's hint is the title's tooltip (a phone has no title here: a tap on its column chip shows it). */}
         <h2 className="column-title" title={hint}>{label}</h2>
@@ -253,7 +248,7 @@ const collision: CollisionDetection = (args) => {
   return closestCenter(args);
 };
 
-export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed }: Props) {
+export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed, search }: Props) {
   const ctx = useMemo(() => ({
     limit: slug ? { slug, onError: (msg: string) => toast(msg, { tone: "error" }) } : undefined, jobs, onOpenJobs, via,
   }), [slug, jobs, onOpenJobs, via]);
@@ -331,6 +326,13 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
     const dist = [...el.querySelectorAll<HTMLElement>(":scope > .column")].map((c) => Math.abs(c.getBoundingClientRect().left - left));
     setShownCol(dist.indexOf(Math.min(...dist)));
   };
+  // The tab row scrolls sideways when the columns don't fit: its edge fades on the side with more tabs.
+  const jumpFade = useEdgeFade<HTMLElement>();
+  const jumpRef = jumpFade.ref;
+  // The shown column's tab scrolls into view as you swipe.
+  useEffect(() => {
+    jumpRef.current?.querySelectorAll<HTMLElement>(".chip")[shownCol]?.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, [shownCol]);
   const jumpTo = (i: number) => {
     const el = boardRef.current;
     const col = el?.querySelectorAll<HTMLElement>(":scope > .column")[i];
@@ -343,17 +345,27 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
   return (
     <DndContext accessibility={{ screenReaderInstructions: { draggable: CARD_HELP } }} sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
       {phone && (
-        <nav className="col-jump" aria-label="Columns">
-          {BOARD_COLUMNS.map((c, i) => {
-            const n = (byColumn.get(c.id)?.length ?? 0) + (c.id === "in_progress" ? byColumn.get("ready")?.length ?? 0 : 0);
-            return (
-              <button key={c.id} className={`chip${i === shownCol ? " on" : ""}`} aria-current={i === shownCol || undefined} title={c.hint}
-                aria-expanded={i === shownCol ? hintOpen : undefined} onClick={() => (i === shownCol ? setHintOpen((v) => !v) : jumpTo(i))}>
-                {c.label}{!loading && <span className="chip-count">{n}</span>}
-              </button>
-            );
-          })}
-        </nav>
+        <div className="col-jump-row">
+          <nav className="col-jump" aria-label="Columns" {...jumpFade}>
+            {BOARD_COLUMNS.map((c, i) => {
+              const n = (byColumn.get(c.id)?.length ?? 0) + (c.id === "in_progress" ? byColumn.get("ready")?.length ?? 0 : 0);
+              return (
+                <button key={c.id} className={`chip${i === shownCol ? " on" : ""}`} aria-current={i === shownCol || undefined} title={c.hint}
+                  aria-expanded={i === shownCol ? hintOpen : undefined} onClick={() => (i === shownCol ? setHintOpen((v) => !v) : jumpTo(i))}>
+                  {c.label}{c.claude && <span className="chip-claude" title={CLAUDE_TAG} aria-label={CLAUDE_TAG}><SparkIcon size={12} /></span>}
+                  {!loading && <span className="chip-count">{n}</span>}
+                </button>
+              );
+            })}
+          </nav>
+          {search && (
+            <button className={`icon-btn col-jump-tool${search.on ? " on" : ""}`} aria-label={search.on ? "Close search" : "Search and filter this board"} title={search.on ? "Close search" : "Search and filter this board"} aria-pressed={search.on}
+              onClick={search.toggle}>{search.on ? <CloseIcon size={16} /> : <FilterIcon size={16} />}</button>
+          )}
+          {BOARD_COLUMNS[shownCol]?.id === "backlog" && (
+            <button className="icon-btn col-jump-tool" aria-label="Add ticket to Backlog" title="Add to Backlog" onClick={() => onAdd("backlog")}><PlusIcon size={16} /></button>
+          )}
+        </div>
       )}
       {phone && hintOpen && <p className="col-jump-hint" role="status">{BOARD_COLUMNS[shownCol]?.hint}</p>}
       <main className={`board${fadeIn ? " fade-in" : ""}`} ref={boardRef} onScroll={phone ? onBoardScroll : undefined}>

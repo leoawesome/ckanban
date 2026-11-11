@@ -19,9 +19,13 @@ export function stickAfterScroll(o: { gap: number; stuck: boolean; movedDown: bo
   return o.gap < NEAR_BOTTOM || (o.stuck && o.movedDown);
 }
 
-/** The jump button after a scroll: gone near the bottom, shown once well up, otherwise unchanged. */
-export function jumpAfterScroll<J extends { fresh: boolean }>(gap: number, jump: J | null): J | { fresh: false } | null {
+/**
+ * The jump button after a scroll: gone near the bottom, shown once well up, otherwise unchanged. Scrolling up while
+ * it says "New" drops the word (they chose to read further up): only the small arrow stays.
+ */
+export function jumpAfterScroll<J extends { fresh: boolean }>(gap: number, jump: J | null, movedUp = false): J | { fresh: false } | null {
   if (gap < NEAR_BOTTOM) return null;
+  if (movedUp && jump?.fresh) return { fresh: false };
   if (gap > SHOW_JUMP) return jump ?? { fresh: false };
   return jump;
 }

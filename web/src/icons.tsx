@@ -108,3 +108,12 @@ export const RestoreIcon = (p: IconProps) => svg(<path d="M13.5 6.5h-4v-4M9.5 6.
 export const PanelsIcon = (p: IconProps) => svg(<><rect x="2" y="2.5" width="12" height="11" rx="1.8" /><path d="M9.5 2.5v11M9.5 8H14" /></>, p);
 /** A ticket's changes (the Changes panel). */
 export const DiffIcon = (p: IconProps) => svg(<path d="M5 2.5v6M2 5.5h6M2 12.5h6M11.5 2.5v11M9.5 11.5l2 2 2-2" />, p);
+
+/** Messages: an inbox tray (Notifications keeps the bell). */
+export const InboxIcon = (p: IconProps) => svg(<><path d="M2.5 9.5l1.6-5.2c.2-.5.6-.8 1.1-.8h5.6c.5 0 .9.3 1.1.8l1.6 5.2v2.7c0 .7-.6 1.3-1.3 1.3H3.8c-.7 0-1.3-.6-1.3-1.3V9.5z" /><path d="M2.5 9.5h3l.8 1.5h3.4l.8-1.5h3" /></>, p);
+/** Board settings: sliders (GearIcon reads as a sun at small sizes). */
+export const SlidersIcon = (p: IconProps) => svg(<><path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6" /><circle cx="10" cy="4.5" r="1.5" /><circle cx="6" cy="11.5" r="1.5" /></>, p);
+/** Shared devices: a laptop with a phone beside it (Phone access keeps the single phone). */
+export const DevicesIcon = (p: IconProps) => svg(<><path d="M9 11.5H1.8M3 10V4.3c0-.5.4-.8.8-.8h7.4c.4 0 .8.3.8.8V5.5" /><rect x="10" y="7" width="4.2" height="6.5" rx="1" /></>, p);
+/** Filter this board's cards (the phone board's search; the top bar's magnifier searches every board). */
+export const FilterIcon = (p: IconProps) => svg(<path d="M2.5 3.5h11L9.3 8.6v4.2l-2.6 1.1V8.6L2.5 3.5z" />, p);

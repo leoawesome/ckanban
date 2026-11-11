@@ -110,8 +110,14 @@ export function Changes({ slug, ticket, state, onSent, onError, compact = false 
       <button key={f.path} className={`changes-file ${file?.path === f.path ? "on" : ""}`} style={{ paddingLeft: 12 + depth * 14 }}
         onClick={() => { setPicked(f.path); setReading(true); }} title={f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}>
         <span className={`diff-st st-${f.status}`}>{f.status}</span>
-        <span className="changes-file-name">{label}</span>
+        <FileLabel label={label} />
         {n > 0 && <span className="changes-cmt-count" title={`${n} comment${n > 1 ? "s" : ""}`}>{n}</span>}
+        {!f.binary && (f.additions > 0 || f.deletions > 0) && (
+          <span className="changes-file-count" aria-label={`${f.additions} lines added, ${f.deletions} removed`}>
+            {f.additions > 0 && <span className="diff-add">+{f.additions}</span>}
+            {f.deletions > 0 && <span className="diff-del">−{f.deletions}</span>}
+          </span>
+        )}
       </button>
     );
   };
@@ -185,7 +191,7 @@ export function Changes({ slug, ticket, state, onSent, onError, compact = false 
           {(!phone || diffOn) && (
             <div className="changes-diff">
               {diffOn && <button className="changes-back" onClick={() => setReading(false)}><ChevronLeftIcon size={14} /> Files</button>}
-              {file && <FileDiff key={file.path} file={file} comments={comments.filter((c) => c.path === file.path)} setComments={setComments} />}
+              {file && <FileDiff key={file.path} file={file} narrow={phone} comments={comments.filter((c) => c.path === file.path)} setComments={setComments} />}
             </div>
           )}
         </div>
@@ -206,8 +212,21 @@ export function Changes({ slug, ticket, state, onSent, onError, compact = false 
 
 type Editing = { line: number; code: string; id: string | null; text: string };
 
-function FileDiff({ file, comments, setComments }: {
+/** A changed file's name, its folder (if any) after it in grey, so a long path still shows the name. */
+function FileLabel({ label }: { label: string }) {
+  const at = label.lastIndexOf("/");
+  if (at < 0) return <span className="changes-file-name">{label}</span>;
+  return (
+    <span className="changes-file-name">
+      {label.slice(at + 1)} <span className="changes-file-dir">{label.slice(0, at)}</span>
+    </span>
+  );
+}
+
+function FileDiff({ file, narrow = false, comments, setComments }: {
   file: DiffFile;
+  /** Phone or side column: no old line numbers, a slim gutter, long lines wrap. */
+  narrow?: boolean;
   comments: ReviewComment[];
   setComments: (fn: (prev: ReviewComment[]) => ReviewComment[]) => void;
 }) {
@@ -306,7 +325,7 @@ function FileDiff({ file, comments, setComments }: {
         <>
         {coarse && <div className="diff-tap-hint muted small">Tap a line to comment on it.</div>}
         {/* Line cursor: Tab to a line's +, ↑↓ move between lines, C (or Enter) comments on it. */}
-        <table className="diff-table" ref={table} onKeyDown={(e) => {
+        <table className={`diff-table${narrow ? " narrow" : ""}`} ref={table} onKeyDown={(e) => {
           const at = e.target as HTMLElement;
           if (!at.classList.contains("add-cmt") || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
           if (e.key === "ArrowDown" || e.key === "ArrowUp") {

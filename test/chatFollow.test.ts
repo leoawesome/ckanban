@@ -46,6 +46,13 @@ test("jumpAfterScroll: hidden near the bottom, shown well up, kept in between", 
   expect(jumpAfterScroll(NEAR_BOTTOM + 10, fresh)).toBe(fresh);
 });
 
+test("jumpAfterScroll: scrolling up drops the New word, the arrow stays", () => {
+  const fresh = { fresh: true };
+  expect(jumpAfterScroll(SHOW_JUMP + 1, fresh, true)).toEqual({ fresh: false });
+  expect(jumpAfterScroll(SHOW_JUMP + 1, fresh, false)).toBe(fresh);
+  expect(jumpAfterScroll(0, fresh, true)).toBeNull();
+});
+
 test("onContentChange: the user's own click opening something near the bottom doesn't scroll it away", () => {
   expect(onContentChange({ before: 0, after: 500, stuck: true, pressing: false, userCaused: true })).toBe("none");
 });

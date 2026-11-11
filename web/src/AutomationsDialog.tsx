@@ -144,7 +144,7 @@ export function AutomationsDialog({ profile, boards, refreshKey, onClose, onOpen
 }
 
 /** A phone screen's top bar: back to the list, the name, and an optional ⋯ button. */
-function PhoneBar({ title, onBack, children }: { title: string; onBack: () => void; children?: ReactNode }) {
+export function PhoneBar({ title, onBack, children }: { title: string; onBack: () => void; children?: ReactNode }) {
   return (
     <div className="auto-phone-bar">
       <button type="button" className="icon-btn" onClick={onBack} aria-label="Back to the list"><ChevronLeftIcon size={20} /></button>

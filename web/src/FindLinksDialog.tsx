@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, COLUMNS, type Ticket } from "./api";
 import { useFocusTrap, useLayer } from "./layers";
+import { useBackdropClose } from "./sheet";
 import { toast } from "./toast";
 
 type Found = { id: string; parent: string; reason: string };
@@ -16,6 +17,7 @@ export function FindLinksDialog({ slug, tickets, onClose }: { slug: string; tick
   const box = useRef<HTMLDivElement>(null);
   useLayer(onClose);
   useFocusTrap(box);
+  const backdrop = useBackdropClose(onClose);
 
   useEffect(() => {
     let live = true;
@@ -69,7 +71,7 @@ export function FindLinksDialog({ slug, tickets, onClose }: { slug: string; tick
   const column = (t?: Ticket) => (t ? COLUMNS.find((c) => c.id === t.status)?.label ?? t.status : "");
 
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="overlay" {...backdrop}>
       <div ref={box} className="modal find-links" role="dialog" aria-modal="true" aria-labelledby={id}>
         <h3 id={id}>Suggested links</h3>
         {!found && !err && <p className="muted small">Claude is reading your open and recent tickets to find which belong together. This takes about a minute.</p>}

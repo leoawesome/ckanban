@@ -51,9 +51,13 @@ export function usageChipText(u: TicketUsage): string {
 /** "Huddle teammates: $X", then each huddle (when there are several) and its teammates. */
 function TeammateLines({ teammates: t }: { teammates: TeammateUsage }) {
   const several = t.huddles.length > 1;
+  // Folded to one line: the per-helper list is long once there are a few huddles.
   return (
-    <div className="usage-teammates" title="What the agents of this ticket's huddles spent, counted in the total above. @main's huddle replies are runs of this ticket and already in the table.">
-      <div className="usage-teammates-head"><b>Huddle teammates: {costText(t.costUsd)}</b></div>
+    <details className="usage-teammates" title="What the agents of this ticket's huddles spent, counted in the total above. @main's huddle replies are runs of this ticket and already in the table.">
+      <summary className="usage-teammates-head">
+        <b>Huddle helpers: {costText(t.costUsd)}</b>
+        <span className="muted small">{t.huddles.length} huddle{t.huddles.length === 1 ? "" : "s"}: tap to see who spent what</span>
+      </summary>
       {t.huddles.map((h) => (
         <div key={h.id} className="usage-teammates-huddle">
           {several && (
@@ -70,7 +74,7 @@ function TeammateLines({ teammates: t }: { teammates: TeammateUsage }) {
           ))}
         </div>
       ))}
-    </div>
+    </details>
   );
 }
 
@@ -90,16 +94,18 @@ export function UsagePanel({ usage, error }: { usage: TicketUsage | null; error:
         <div className="usage-stat" title={totals.pctCurrentWindow === null ? missing : undefined}>
           <b>{approxPct(totals.pctCurrentWindow)}</b>
           <span>
-            of your plan's current 5-hour limit{w && <> (now at {Math.round(w.utilization)}%, <span title={fullTime(w.seenAt)}>checked {timeAgo(w.seenAt)}</span>)</>}
+            of your current 5-hour limit used by this ticket{w && <> (all your Claude use is at {Math.round(w.utilization)}%, <span title={fullTime(w.seenAt)}>checked {timeAgo(w.seenAt)}</span>)</>}
           </span>
         </div>
         <div className="usage-stat" title={totals.pctLifetime === null ? missing : undefined}>
           <b>{approxPct(totals.pctLifetime)}</b>
-          <span>of 5-hour limits, all time</span>
+          <span>of one 5-hour limit, adding up everything this ticket used</span>
         </div>
         <div className="usage-stat">
           <b>{costText(totals.costUsd)}</b>
-          <span title={`${tokenText(totals.tokens)} tokens`}>API-equivalent cost{usage.teammates || usage.sideCostUsd ? " (runs)" : ""}</span>
+          <span title={`${tokenText(totals.tokens)} tokens. Your plan covers it; this is what the same work would cost at API prices.`}>
+            what Claude's work{usage.teammates || usage.sideCostUsd ? " on this ticket itself" : ""} would cost at API prices
+          </span>
         </div>
       </div>
       {usage.teammates && <TeammateLines teammates={usage.teammates} />}
@@ -108,9 +114,10 @@ export function UsagePanel({ usage, error }: { usage: TicketUsage | null; error:
           <b>Plain-words help: {costText(usage.sideCostUsd)}</b>
         </div>
       )}
+      <div className="usage-table-wrap">
       <table className="usage-table">
         <thead>
-          <tr><th>Run</th><th>When</th><th>Model</th><th className="n">Cost</th><th className="n">% of 5-hour limit</th></tr>
+          <tr><th>Run</th><th>When</th><th>Model</th><th className="n">Cost</th><th className="n" title="Share of a 5-hour limit">% of limit</th></tr>
         </thead>
         <tbody>
           {runs.map((r, i) => (
@@ -129,6 +136,7 @@ export function UsagePanel({ usage, error }: { usage: TicketUsage | null; error:
           ))}
         </tbody>
       </table>
+      </div>
       <p className="usage-note">
         % = this ticket's share of all Claude Code usage in the window × the window's usage %. Approximate: Claude use
         outside Claude Code on this Mac (claude.ai, other machines) isn't seen, so shares can come out a bit high.

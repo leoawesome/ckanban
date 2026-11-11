@@ -54,6 +54,29 @@ function flatten(d: Folder): string[] {
   return [...d.folders.flatMap(flatten), ...d.files.map((f) => f.name)];
 }
 
+/** Reports first: a report/summary/result/readme markdown file, shallowest then newest. */
+const REPORT = /^(report|summary|result|readme|findings)\b.*\.(md|markdown)$/i;
+const depthOf = (name: string) => name.split("/").length - 1;
+/** How many files the "Reports and recent" group holds at most. */
+const FEATURED_MAX = 6;
+
+/**
+ * The files for the "Reports and recent" group at the top of a long, foldered list: reports, then the newest files.
+ * Empty when the list is short or flat (everything is in view anyway).
+ */
+export function featuredFiles(files: OutputFile[]): OutputFile[] {
+  if (files.length <= FILTER_MIN || !files.some((f) => f.name.includes("/"))) return [];
+  const reports = files.filter((f) => REPORT.test(baseName(f.name)))
+    .sort((a, b) => depthOf(a.name) - depthOf(b.name) || b.updatedAt.localeCompare(a.updatedAt));
+  const recent = files.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const out: OutputFile[] = [];
+  for (const f of [...reports, ...recent]) {
+    if (out.length >= FEATURED_MAX) break;
+    if (!out.includes(f)) out.push(f);
+  }
+  return out;
+}
+
 /** Keep in step with the `@container (max-width: 640px)` rules for .outputs in styles.css. */
 const NARROW = 640;
 
@@ -167,7 +190,8 @@ export function Outputs({ slug, ticket, onCount, focus }: {
   const [open, setOpen] = useState<string | null>(focus ?? null);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  // Folders the user flipped from their default (open in a short list, shut in a long one).
+  const [flipped, setFlipped] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState("");
   // Narrow (phone or a narrow panel): the list fills the tab and a tapped file opens in a full-height reader.
   const [box, setBox] = useState<HTMLElement | null>(null);
@@ -190,7 +214,9 @@ export function Outputs({ slug, ticket, onCount, focus }: {
     setError(null);
     setFiles(fs);
     onCount?.(fs.length);
-    setOpen((cur) => (cur && fs.some((f) => f.name === cur) ? cur : null) ?? fs.find((f) => MARKDOWN.test(f.name))?.name ?? fs[0]?.name ?? null);
+    setOpen((cur) => (cur && fs.some((f) => f.name === cur) ? cur : null)
+      ?? featuredFiles(fs).find((f) => REPORT.test(baseName(f.name)))?.name
+      ?? fs.slice().sort((a, b) => depthOf(a.name) - depthOf(b.name)).find((f) => MARKDOWN.test(f.name))?.name ?? fs[0]?.name ?? null);
   }).catch((e) => {
     setError(e.message);
     setFiles((f) => f ?? []);
@@ -215,10 +241,13 @@ export function Outputs({ slug, ticket, onCount, focus }: {
   const tree = useMemo(() => buildTree(shown), [shown]);
   // The selected file's folders always stay open; while filtering every match is visible.
   const forcedOpen = useMemo(() => new Set(open ? ancestors(open) : []), [open]);
-  const isOpen = (path: string) => !!needle || forcedOpen.has(path) || !collapsed.has(path);
-  const toggle = (path: string) => setCollapsed((c) => {
+  const featured = useMemo(() => featuredFiles(files ?? []), [files]);
+  // A long list with folders starts with its folders shut; "Reports and recent" sits above them.
+  const shutByDefault = featured.length > 0;
+  const isOpen = (path: string) => !!needle || forcedOpen.has(path) || shutByDefault === flipped.has(path);
+  const toggle = (path: string) => setFlipped((c) => {
     const next = new Set(c);
-    if (isOpen(path)) next.add(path); else next.delete(path);
+    if (next.has(path)) next.delete(path); else next.add(path);
     return next;
   });
 
@@ -276,22 +305,33 @@ export function Outputs({ slug, ticket, onCount, focus }: {
           {isOpen(s.path) && <div role="group">{renderFolder(s, depth + 1)}</div>}
         </div>
       ))}
-      {d.files.map((f) => (
-        <div key={f.name} className={`output-row${f.name === open ? " selected" : ""}`} role="none">
+      {d.files.map((f) => fileRow(f, depth, depth > 0 || tree.folders.length > 0))}
+    </>
+  );
+  const fileRow = (f: OutputFile, depth: number, caret: boolean, inGroup = false) => (
+        <div key={`${inGroup ? "r:" : ""}${f.name}`} className={`output-row${f.name === open ? " selected" : ""}`} role="none">
           {/* One line: name, then the age on the right; size, full time and "shared" in the tooltip. Drag it into Slack or Finder. */}
           <button className={`tree-row output-file${f.name === open ? " selected" : ""}`} style={pad(depth)}
             title={`${f.name}\n${kb(f.size)} · updated ${fullTime(f.updatedAt)}${shared.has(f.name) ? "\nShared as a claude.ai page" : ""}`}
             role="treeitem" aria-selected={f.name === open} onClick={() => pick(f.name)}
             draggable onDragStart={(e) => dragFile(e, slug, ticketId, f.name)}>
-            {(depth > 0 || tree.folders.length > 0) && <span className="tree-caret" aria-hidden />}
+            {caret && <span className="tree-caret" aria-hidden />}
             <span className="tree-icon" aria-hidden>{fileIcon(f.name)}</span>
-            <span className="output-name">{baseName(f.name)}</span>
+            <span className="output-name">
+              {baseName(f.name)}
+              {inGroup && f.name.includes("/") && <span className="output-dir"> {f.name.slice(0, f.name.lastIndexOf("/"))}</span>}
+            </span>
             <span className="output-age muted">{timeAgo(f.updatedAt)}</span>
           </button>
           <ShareMenu slug={slug} ticket={ticket} name={f.name} variant="dots" text={f.name === open ? text : undefined} />
         </div>
-      ))}
-    </>
+  );
+  const featuredGroup = featured.length > 0 && !needle && (
+    <div role="group" aria-label="Reports and recent" className="output-featured">
+      <div className="output-group-head">Reports and recent</div>
+      {featured.map((f) => fileRow(f, 0, false, true))}
+      <div className="output-group-head">All files</div>
+    </div>
   );
 
   const rawUrl = open ? api.outputUrl(slug, ticketId, open) : "";
@@ -350,6 +390,7 @@ export function Outputs({ slug, ticket, onCount, focus }: {
           </div>
         )}
         <nav className="file-tree output-files" aria-label="Outputs" role="tree">
+          {featuredGroup}
           {shown.length ? renderFolder(tree, 0) : <div className="tree-note muted small">No matches</div>}
         </nav>
       </div>

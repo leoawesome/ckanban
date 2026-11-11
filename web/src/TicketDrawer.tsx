@@ -504,7 +504,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [phone]);
-  const titleRef = useRef<HTMLInputElement>(null);
+  // The title box: one line on desktop (input); on a phone a box that wraps (textarea, see the header).
+  const titleRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const revertTitle = useRef(false);
   // Leaving for the neighbouring ticket: keep a title edit, and don't drop an unsaved description edit.
   const step = (id: string | null | undefined) => {
@@ -549,6 +550,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const pinnedRef = useRef<HTMLDivElement>(null);
   // A main ticket's sidebar leads with "Where we are"; its original description folds under "Original brief".
   const [briefOpen, setBriefOpen] = useState(false);
+  // Phones' Ticket tab: the "Status" fold (null: the default, open on a feature only).
+  const [statusOpen, setStatusOpen] = useState<boolean | null>(null);
+  const statusShown = statusOpen ?? whereShown;
   const briefFolded = whereShown && !briefOpen && !editing;
   const split = useDetailsSplit(detailsRef, pinnedRef, !phone && !briefFolded);
   // "Model and effort" from the ⋯ menu: its dropdowns open under the header's first row.
@@ -835,6 +839,14 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const details = (
     <div ref={detailsRef} className={`panel-details ${split.height !== null ? "split-set" : ""} ${split.dragging ? "splitting" : ""}`}>
       <div ref={pinnedRef} className="details-pinned" style={split.height !== null ? { height: split.height } : undefined}>
+        {/* Phones: the description comes first (CSS order); everything here folds under one "Status" row, open at first
+            only on a feature, whose brief is folded and whose "Where we are" is the news. */}
+        {phone && (
+          <button className="fold-head status-fold" aria-expanded={statusShown} onClick={() => setStatusOpen(!statusShown)}>
+            <h4>Status</h4><span className="status-fold-sum">{shortStatus}</span><span className="fold-chev side" aria-hidden>▸</span>
+          </button>
+        )}
+        {(!phone || statusShown) && <>
         {whereShown && <WhereWeAre slug={slug} ticket={ticket} tickets={tickets} onOpen={() => openTab("family")} />}
         {/* Phones: the tags live here (the header has room for the title only). */}
         {phone && (
@@ -953,6 +965,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           </div>
         )}
         <OldChatNote slug={slug} ticket={ticket} working={working} feature={whereShown} onError={onError} />
+        </>}
       </div>
 
       {!phone && !briefFolded && (
@@ -992,7 +1005,32 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
       </section>
     </div>
   );
+  // The title box's handlers, shared by the desktop input and the phone textarea.
+  const titleProps = {
+    value: title, "aria-label": "Title",
+    // A phone's box wraps, but the title stays one line: a new line (pasted) becomes a space.
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setTitle(e.target.value.replace(/\s*\n\s*/g, " ")),
+    // Esc's blur runs with this render's title, so it is told to skip the save.
+    onBlur: () => { if (revertTitle.current) revertTitle.current = false; else saveTitle(); },
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      // Enter saves (on blur) and gives the keyboard back to the panel; Esc reverts, then leaves the same way (see above).
+      if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); panelRef.current?.focus({ preventScroll: true }); }
+      else if (e.key === "Escape") { revertTitle.current = true; setTitle(ticket.title); e.currentTarget.blur(); }
+    },
+  };
+  // Phones: one button says the state and moves the ticket (desktop keeps the chip and its own column picker).
+  const statusButton = (
+    <Select className={`phone-status tone-${ps.tone}`} ariaLabel={`${att ? `Your turn: ${att.label}` : ps.label}. Move to column`} value={boardColumnOf(ticket)}
+      onChange={(s) => setStatus(menuPick(ticket, s as Status))}
+      renderValue={() => <><span className={`ps-dot${ps.busy ? " busy" : ""}${ps.icon ? " mark" : ""}`} aria-hidden>{ps.icon}</span><span className="ps-label">{shortStatus}</span></>}
+      menuMaxHeight={Infinity} // all columns fit on a phone screen; only scroll when the screen is too short
+      options={statusOptions}
+      footer={att && goal ? [{ label: goal.button, icon: <ChevronRightIcon size={12} />, onSelect: goTo }] : undefined} />
+  );
   // The tab bar's buttons: every tab is in the bar, which scrolls sideways when they don't fit.
+  const costChip = usage && hasUsage ? (
+    <button className="head-cost" onClick={() => openTab("usage")} title={`${usageChipText(usage)}. ${usageTitle}`}>{costText(usage.totals.costUsd)}</button>
+  ) : null;
   const tabLabel: Record<DrawerTab, React.ReactNode> = {
     ticket: "Ticket",
     chat: <>Chat {working && <span className="dot" />}</>,
@@ -1042,24 +1080,20 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               </svg>
             </button>}
             <StarToggle on={!!ticket.important} onChange={toggleStar} keyHint="S" />
-            {/* One line, cut short; the whole title is in its tooltip. */}
-            <input ref={titleRef} className="title-input" value={title} aria-label="Title" title={title}
-              onChange={(e) => setTitle(e.target.value)}
-              // Esc's blur runs with this render's title, so it is told to skip the save.
-              onBlur={() => { if (revertTitle.current) revertTitle.current = false; else saveTitle(); }}
-              onKeyDown={(e) => {
-                // Enter saves (on blur) and gives the keyboard back to the panel; Esc reverts, then leaves the same way (see above).
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); panelRef.current?.focus({ preventScroll: true }); }
-                else if (e.key === "Escape") { revertTitle.current = true; setTitle(ticket.title); e.currentTarget.blur(); }
-              }} />
+            {/* One line, cut short; the whole title is in its tooltip. Phones: the title has a row of its own (below). */}
+            {!phone && <input ref={titleRef} className="title-input" title={title} {...titleProps} />}
             {!phone && tagEditor}
-            <HelperIcon slug={slug} ticketId={ticket.id} />
+            {!phone && <HelperIcon slug={slug} ticketId={ticket.id} />}
             <span className="save-state" aria-live="polite">
               {titleSave === "saving" && <span className="muted small">Saving…</span>}
               {titleSave === "saved" && <span className="saved small"><CheckIcon size={12} /> Saved</span>}
             </span>
             <span className="head-spacer" />
+            {/* Phones: the cost sits up here, so every tab fits on the row below. */}
+            {phone && costChip}
+            {phone && statusButton}
             <JobChip jobs={jobs} ticketId={ticket.id} onOpen={onOpenJobs} />
+            {phone && <HelperIcon slug={slug} ticketId={ticket.id} />}
             <HelpMenu help={help} phone={phone} onAsk={(kind) => { setTab("chat"); void help.ask(kind); }} />
             {nav && (
               <span className="ticket-nav">
@@ -1087,23 +1121,26 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             {!phone && <button className="icon-btn" onClick={onClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>}
           </div>
           {runOpen && <RunPopover profile={profile} ticket={ticket} onError={onError} onClose={() => setRunOpen(false)} />}
-          {/* Row 2: the tabs, then the short status and the cost. Folds away while the chat scrolls down (useShrinkHeader). */}
-          <div className="head-row2-wrap" aria-hidden={slim || undefined}><div className="head-row2">
+          {/* Phones: the whole title on a row of its own, up to two lines, then cut. It folds away while the chat scrolls
+              down (useShrinkHeader); the tabs below stay. The box sits over the text, so a tap types straight into it. */}
+          {phone && (
+            <div className="head-title-wrap" aria-hidden={slim || undefined}><div className="head-title">
+              <div className="phone-title">
+                <span className="phone-title-text" aria-hidden>{title || ticket.title}</span>
+                <textarea ref={titleRef} className="title-input" rows={1} tabIndex={slim ? -1 : undefined} {...titleProps} />
+              </div>
+            </div></div>
+          )}
+          {/* Row 2: the tabs, then the short status (desktop) and the cost. On desktop it folds away while the chat
+              scrolls down (useShrinkHeader); on a phone it stays and the title row folds instead. */}
+          <div className="head-row2-wrap" aria-hidden={(slim && !phone) || undefined}><div className="head-row2">
             <nav ref={tabsRef} className={`tabs${tabsMore ? " more-right" : ""}`} role="tablist" aria-label="Ticket" onScroll={checkTabs}>
               {tabs.map((t) => (
-                <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} tabIndex={slim ? -1 : undefined} onClick={() => openTab(t)}>{tabLabel[t]}</button>
+                <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} tabIndex={slim && !phone ? -1 : undefined} onClick={() => openTab(t)}>{tabLabel[t]}</button>
               ))}
             </nav>
             <span className="head-spacer" />
-            {phone ? (
-              // Phones: one button says the state and moves the ticket (desktop keeps the chip and its own column picker).
-              <Select className={`phone-status tone-${ps.tone}`} ariaLabel={`${att ? `Your turn: ${att.label}` : ps.label}. Move to column`} value={boardColumnOf(ticket)}
-                onChange={(s) => setStatus(menuPick(ticket, s as Status))}
-                renderValue={() => <><span className={`ps-dot${ps.busy ? " busy" : ""}${ps.icon ? " mark" : ""}`} aria-hidden>{ps.icon}</span><span className="ps-label">{shortStatus}</span></>}
-                menuMaxHeight={Infinity} // all columns fit on a phone screen; only scroll when the screen is too short
-                options={statusOptions}
-                footer={att && goal ? [{ label: goal.button, icon: <ChevronRightIcon size={12} />, onSelect: goTo }] : undefined} />
-            ) : <>
+            {!phone && <>
               {/* Only the short status; what it waits on is in the tooltip (and in the chat's waiting list). */}
               {finish ? finishBadge(finish) : att && goal ? (
                 <button className={`your-turn inline go att-${att.kind}`} onClick={goTo} title={`${attLabel}: show me where`} aria-label={`Your turn: ${attLabel}. Show me where`}>
@@ -1116,9 +1153,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               )}
               {!finish && !att && !featureBusy(ticket) && (ticket.huddleBusy ? huddleBadge(ticket) : outcomeBadge(ticket))}
             </>}
-            {usage && hasUsage && (
-              <button className="head-cost" onClick={() => openTab("usage")} title={`${usageChipText(usage)}. ${usageTitle}`}>{costText(usage.totals.costUsd)}</button>
-            )}
+            {!phone && costChip}
           </div></div>
         </header>
 

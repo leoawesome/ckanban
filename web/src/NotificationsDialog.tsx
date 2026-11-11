@@ -2,12 +2,15 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type ChannelState, type NotifyKind, type NotifyPatch, type NotifyState } from "./api";
 import { helperApi, setHelperStatus, spendLine, useHelper, type FeedbackLine } from "./helper";
 import { HelperStatusLine, PracticeAlert } from "./Messages";
+import { PhoneBar } from "./AutomationsDialog";
+import { ChevronRightIcon } from "./icons";
 import { Modal } from "./Modal";
 import { PUSH_CHANGED } from "./push";
 import { PushSection } from "./PushSection";
 import { Select } from "./Select";
 import { timeAgo } from "./time";
 import { toast } from "./toast";
+import { usePhone } from "./usePhone";
 
 const KINDS: { kind: NotifyKind; label: string }[] = [
   { kind: "questions", label: "Questions for you" },
@@ -58,9 +61,10 @@ function ChannelRow({ ch, title, detail, onToggle, children }: {
 }
 
 /**
- * Header menu → Notifications: the helper (on/off, its status line), the channels it reaches you on (This Mac, phone
- * push, ntfy, Telegram; a JSON web address under More), my night, Focus mode, what the helper knows about you, and its
- * model. Every switch saves at once; errors show in plain words under the section.
+ * Header menu → Notifications: a list on the left (desktop) or its own screen (phone) of the helper, the channels it
+ * reaches you on (This Mac, phone push, ntfy, Telegram; a JSON web address under More), my night with Focus mode, what
+ * the helper knows about you, and More (its model, message format, kinds). Picking one shows its settings on the right
+ * (desktop) or on a screen with a back arrow (phone), like the Automations window. Every switch saves at once.
  */
 export function NotificationsDialog({ profile, onClose }: { profile: string | null; onClose: () => void }) {
   const [state, setState] = useState<NotifyState | null>(null);
@@ -68,6 +72,10 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "test" | null>(null);
   const { status } = useHelper();
+  const phone = usePhone();
+  /** The setting shown on the right (desktop) or on its own screen (phone, while phoneOpen). */
+  const [pane, setPane] = useState<Pane>("helper");
+  const [phoneOpen, setPhoneOpen] = useState(false);
 
   useEffect(() => {
     api.notify().then((s) => { setState(s); setUrl(s.webhookUrl); }).catch((e) => setError(e.message));
@@ -117,124 +125,206 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
 
   const ch = (name: ChannelState["name"]) => state?.channels?.find((c) => c.name === name);
   const json = state?.format === "json" || (state?.format === "auto" && !!url && !/ntfy/i.test(url));
-  return (
-    <Modal title="Notifications" onClose={onClose} focusDialog wide>
-      <form className="form notify-form helper-settings" onSubmit={(e) => { e.preventDefault(); void saveUrl(); }}>
-        {!state && !error && <div className="muted small"><span className="spinner" /> Loading…</div>}
-        {state && (
-          <>
-            <section className="hs-card">
-              <div className="ch-head">
-                <div className="grow">
-                  <div className="ch-ttl big">Helper</div>
-                  <div className="muted small">Groups routine waits into summaries. Interrupts you and keeps reminding only when something is urgent.</div>
-                </div>
-                <Switch on={state.helper} label="Helper" onChange={(on) => void save({ helper: on })} />
+  const chItem = (name: ChannelState["name"], title: string, id: Pane = name as Pane): PaneItem | null => {
+    const c = ch(name);
+    if (!c) return null;
+    return { id, title, sub: c.on ? c.detail : "Off", tone: c.on && c.ready ? "ok" : c.on ? "blocked" : "" };
+  };
+  const items: PaneItem[] = state ? [
+    { id: "helper", title: "Helper", sub: state.helper ? "On: groups routine waits, interrupts only when urgent" : "Off", tone: state.helper ? "ok" : "" },
+    chItem("mac", "This Mac"),
+    chItem("push", "Phone push"),
+    chItem("webhook", json ? "Web address" : "ntfy", "ntfy"),
+    chItem("telegram", "Telegram"),
+    { id: "night", title: "My night", sub: status ? `Quiet ${status.night.start} to ${status.night.end} · Focus mode` : "Quiet hours and Focus mode", tone: "none" },
+    { id: "knows", title: "What the helper knows", sub: "Lasting preferences it always follows", tone: "none" },
+    { id: "more", title: "More", sub: "Model, message format, what to notify about", tone: "none" },
+  ].filter((x): x is PaneItem => !!x) : [];
+  const cur = items.find((i) => i.id === pane) ?? items[0];
+  const open = (id: Pane) => { setPane(id); setPhoneOpen(true); };
+  const detail = phone && phoneOpen && !!cur;
+
+  const body = state && cur && (() => {
+    switch (cur.id) {
+      case "helper":
+        return (
+          <section className="hs-card">
+            <div className="ch-head">
+              <div className="grow">
+                <div className="ch-ttl big">Helper</div>
+                <div className="muted small">Groups routine waits into summaries. Interrupts you and keeps reminding only when something is urgent.</div>
               </div>
-              <HelperStatusLine status={status} reach={false} />
-              <div className="hs-warn small">Alerts need this Mac on and awake. A closed lid means no alerts.</div>
-              {status?.on && (
-                <div className="ch-head hs-sep hs-stack">
-                  <div className="grow">
-                    <div className="ch-ttl">See what an urgent alert looks like</div>
-                    <div className="muted small">Sends a pretend alert now and one reminder a minute later, like a real one. Tap Got it to stop it.</div>
+              <Switch on={state.helper} label="Helper" onChange={(on) => void save({ helper: on })} />
+            </div>
+            <HelperStatusLine status={status} reach={false} />
+            <div className="hs-warn small">Alerts need this Mac on and awake. A closed lid means no alerts.</div>
+            {status?.on && (
+              <div className="ch-head hs-sep hs-stack">
+                <div className="grow">
+                  <div className="ch-ttl">See what an urgent alert looks like</div>
+                  <div className="muted small">Sends a pretend alert now and one reminder a minute later, like a real one. Tap Got it to stop it.</div>
+                </div>
+                <PracticeAlert compact />
+              </div>
+            )}
+          </section>
+        );
+      case "mac":
+        return <section className="hs-card ch-list"><ChannelRow ch={ch("mac")} title="This Mac" onToggle={(on) => void save({ mac: on })} /></section>;
+      case "push":
+        return (
+          <section className="hs-card ch-list">
+            <ChannelRow ch={ch("push")} title="Phone push" onToggle={(on) => void save({ push: on })}>
+              {state.push && <PushSection profile={profile} />}
+            </ChannelRow>
+          </section>
+        );
+      case "ntfy":
+        return (
+          <section className="hs-card ch-list">
+            <ChannelRow ch={ch("webhook")} title={json ? "Web address" : "ntfy"} detail={json ? undefined : ch("webhook")?.ready ? ch("webhook")?.detail : "A free phone app. It shows the full message."}
+              onToggle={(on) => void (on && !url ? (setUrl(state.ntfyTopicSuggestion), save({ webhookUrl: state.ntfyTopicSuggestion, webhookOn: true })) : save({ webhookOn: on }))}>
+              {state.webhookOn && (
+                <>
+                  <div className="small">{json ? "Messages go to this address:" : "Install the ntfy app and subscribe to this topic:"}</div>
+                  <div className="hs-inline">
+                    <input className="mono" value={url} onChange={(e) => setUrl(e.target.value)} onBlur={() => void saveUrl()}
+                      placeholder="https://ntfy.sh/your-secret-topic" spellCheck={false} autoComplete="off" aria-label="ntfy topic address" />
+                    {!json && <button type="button" className="btn small" onClick={() => { const t = randomTopic(); setUrl(t); void saveUrl(t); }}>New topic</button>}
+                    <button type="button" className="btn small" disabled={!!busy || !url.trim()} onClick={() => void test()}>{busy === "test" ? "Sending…" : "Send test"}</button>
                   </div>
-                  <PracticeAlert compact />
+                  {!json && !state.webhookUrl && (
+                    <div className="hs-suggest small">
+                      <span>A random topic for you:</span> <code>{state.ntfyTopicSuggestion}</code>
+                      <button type="button" className="btn small primary" onClick={() => { setUrl(state.ntfyTopicSuggestion); void saveUrl(state.ntfyTopicSuggestion); }}>Use it</button>
+                    </div>
+                  )}
+                  {!json && <div className="hs-warn small">{state.ntfyWarning}</div>}
+                </>
+              )}
+            </ChannelRow>
+          </section>
+        );
+      case "telegram":
+        return (
+          <section className="hs-card ch-list">
+            <ChannelRow ch={ch("telegram")} title="Telegram" detail={`${TELEGRAM_URGENT_ONLY} ${state.telegram.paired ? ch("telegram")?.detail ?? "" : "Alerts come with Got it and Not urgent buttons. Reply to an alert to answer that ticket."}`.trim()}
+              onToggle={(on) => void save({ telegram: { on } })}>
+              {state.telegram.on && <TelegramSetup state={state} profile={profile} onState={setState} onError={setError} />}
+              {state.telegram.on && (
+                <div className="small muted">
+                  Messages pass through Telegram's servers, and bot chats aren't end-to-end encrypted: Telegram can read them. Leave Telegram off if your tickets hold private things.
                 </div>
               )}
-            </section>
-
-            <h3 className="hs-head">Channels</h3>
-            {state.reachLine && <div className="helper-status warn"><i aria-hidden /><span>{state.reachLine}. Turn on a phone channel below.</span></div>}
-            <section className="hs-card ch-list">
-              <ChannelRow ch={ch("mac")} title="This Mac" onToggle={(on) => void save({ mac: on })} />
-              <ChannelRow ch={ch("push")} title="Phone push" onToggle={(on) => void save({ push: on })}>
-                {state.push && <PushSection profile={profile} />}
-              </ChannelRow>
-              <ChannelRow ch={ch("webhook")} title={json ? "Web address" : "ntfy"} detail={json ? undefined : ch("webhook")?.ready ? ch("webhook")?.detail : "A free phone app. It shows the full message."}
-                onToggle={(on) => void (on && !url ? (setUrl(state.ntfyTopicSuggestion), save({ webhookUrl: state.ntfyTopicSuggestion, webhookOn: true })) : save({ webhookOn: on }))}>
-                {state.webhookOn && (
-                  <>
-                    <div className="small">{json ? "Messages go to this address:" : "Install the ntfy app and subscribe to this topic:"}</div>
-                    <div className="hs-inline">
-                      <input className="mono" value={url} onChange={(e) => setUrl(e.target.value)} onBlur={() => void saveUrl()}
-                        placeholder="https://ntfy.sh/your-secret-topic" spellCheck={false} autoComplete="off" aria-label="ntfy topic address" />
-                      {!json && <button type="button" className="btn small" onClick={() => { const t = randomTopic(); setUrl(t); void saveUrl(t); }}>New topic</button>}
-                      <button type="button" className="btn small" disabled={!!busy || !url.trim()} onClick={() => void test()}>{busy === "test" ? "Sending…" : "Send test"}</button>
-                    </div>
-                    {!json && !state.webhookUrl && (
-                      <div className="hs-suggest small">
-                        <span>A random topic for you:</span> <code>{state.ntfyTopicSuggestion}</code>
-                        <button type="button" className="btn small primary" onClick={() => { setUrl(state.ntfyTopicSuggestion); void saveUrl(state.ntfyTopicSuggestion); }}>Use it</button>
-                      </div>
-                    )}
-                    {!json && <div className="hs-warn small">{state.ntfyWarning}</div>}
-                  </>
-                )}
-              </ChannelRow>
-              <ChannelRow ch={ch("telegram")} title="Telegram" detail={`${TELEGRAM_URGENT_ONLY} ${state.telegram.paired ? ch("telegram")?.detail ?? "" : "Alerts come with Got it and Not urgent buttons. Reply to an alert to answer that ticket."}`.trim()}
-                onToggle={(on) => void save({ telegram: { on } })}>
-                {state.telegram.on && <TelegramSetup state={state} profile={profile} onState={setState} onError={setError} />}
-                {state.telegram.on && (
-                  <div className="small muted">
-                    Messages pass through Telegram's servers, and bot chats aren't end-to-end encrypted: Telegram can read them. Leave Telegram off if your tickets hold private things.
-                  </div>
-                )}
-              </ChannelRow>
-            </section>
-            {error && <div className="form-error" role="alert">{error}</div>}
-
-            <h3 className="hs-head">My night</h3>
+            </ChannelRow>
+          </section>
+        );
+      case "night":
+        return (
+          <>
             <NightSection />
             <section className="hs-card">
               <div className="ch-ttl">Focus mode</div>
               <div className="muted small">{state.focusHint}</div>
             </section>
-
-            <h3 className="hs-head">What the helper knows about you</h3>
-            <KnowsSection />
-
-            <details className="hs-card hs-more">
-              <summary>More</summary>
-              <ModelRow />
-              <div className="ch-head hs-more-row hs-stack">
-                <div className="grow">
-                  <div className="ch-ttl">Send to a web address as JSON</div>
-                  <div className="muted small">For your own tools: the address above gets each message as JSON instead of ntfy text.</div>
-                </div>
-                <Select ariaLabel="Message format" value={state.format} onChange={(format) => void save({ format })}
-                  options={[
-                    { value: "auto", label: "Pick by address", hint: "ntfy when the address has “ntfy” in it" },
-                    { value: "ntfy", label: "ntfy" },
-                    { value: "json", label: "JSON" },
-                  ]} />
+          </>
+        );
+      case "knows":
+        return <KnowsSection />;
+      case "more":
+        return (
+          <section className="hs-card hs-more">
+            <ModelRow />
+            <div className="ch-head hs-more-row hs-stack">
+              <div className="grow">
+                <div className="ch-ttl">Send to a web address as JSON</div>
+                <div className="muted small">For your own tools: the web address (under ntfy) gets each message as JSON instead of ntfy text.</div>
               </div>
-              <div className="form-section"><span>{state.helper ? "Things the helper may tell you about" : "Notify me about"}</span></div>
-              <div className="notify-kinds">
-                {KINDS.map(({ kind, label }) => (
-                  <label key={kind} className="board-switch">
-                    <input type="checkbox" checked={state.kinds[kind]} onChange={(e) => void save({ kinds: { [kind]: e.target.checked } })} />
-                    <span>{label}</span>
-                  </label>
+              <Select ariaLabel="Message format" value={state.format} onChange={(format) => void save({ format })}
+                options={[
+                  { value: "auto", label: "Pick by address", hint: "ntfy when the address has “ntfy” in it" },
+                  { value: "ntfy", label: "ntfy" },
+                  { value: "json", label: "JSON" },
+                ]} />
+            </div>
+            <div className="form-section"><span>{state.helper ? "Things the helper may tell you about" : "Notify me about"}</span></div>
+            <div className="notify-kinds">
+              {KINDS.map(({ kind, label }) => (
+                <label key={kind} className="board-switch">
+                  <input type="checkbox" checked={state.kinds[kind]} onChange={(e) => void save({ kinds: { [kind]: e.target.checked } })} />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+            <span className="muted small">
+              Links open the message on your phone when Phone access is on, else on this Mac.
+              {state.lastSentAt && <> Last sent {timeAgo(state.lastSentAt)}.</>}
+            </span>
+          </section>
+        );
+    }
+  })();
+
+  const testButton = (
+    <button type="button" className="btn" disabled={!state || !!busy} onClick={() => void test()}>{busy === "test" ? "Sending…" : "Send test message"}</button>
+  );
+  const errorLine = error && <div className="form-error notify-err" role="alert">{error}</div>;
+
+  return (
+    <Modal title={detail ? cur.title : "Notifications"} onClose={onClose} focusDialog wide className="auto-modal notify-modal" bare={detail}>
+      {!state && !error && <div className="muted auto-msg"><span className="spinner" /> Loading…</div>}
+      {!state && error && <div className="form-error auto-msg" role="alert">{error}</div>}
+      {state && (
+        <form className="auto-wrap helper-settings" onSubmit={(e) => { e.preventDefault(); void saveUrl(); }}>
+          {!detail && (
+            <div className="auto-side">
+              {state.reachLine && <div className="helper-status warn notify-reach"><i aria-hidden /><span>{state.reachLine}. Turn on a phone channel.</span></div>}
+              <div className="auto-list" role="list" aria-label="Notification settings">
+                {items.map((it) => (
+                  <button key={it.id} type="button" role="listitem" className={`auto-item${!phone && cur?.id === it.id ? " sel" : ""}`}
+                    aria-current={!phone && cur?.id === it.id ? "true" : undefined} onClick={() => open(it.id)}>
+                    {it.tone !== "none" && <span className={`auto-dot ${it.tone}`} aria-hidden />}
+                    <span className="auto-item-main">
+                      <span className="auto-item-name">{it.title}</span>
+                      <span className="auto-item-sub">{it.sub}</span>
+                    </span>
+                    {phone && <ChevronRightIcon size={16} className="auto-chev" />}
+                  </button>
                 ))}
               </div>
-              <span className="muted small">
-                Links open the message on your phone when Phone access is on, else on this Mac.
-                {state.lastSentAt && <> Last sent {timeAgo(state.lastSentAt)}.</>}
-              </span>
-            </details>
-          </>
-        )}
-        {!state && error && <div className="form-error" role="alert">{error}</div>}
-        <div className="form-actions">
-          <button type="button" className="btn" disabled={!state || !!busy} onClick={() => void test()}>{busy === "test" ? "Sending…" : "Send test message"}</button>
-          <div className="spacer" />
-          <button type="button" className="btn" disabled={busy === "save"} onClick={async () => { if (await saveUrl()) onClose(); }}>Done</button>
-        </div>
-      </form>
+              {phone && (
+                <div className="auto-side-actions">
+                  {errorLine}
+                  {testButton}
+                </div>
+              )}
+            </div>
+          )}
+          {(!phone || detail) && cur && (
+            <div className="auto-main">
+              {phone && <PhoneBar title={cur.title} onBack={() => setPhoneOpen(false)} />}
+              <div className="auto-pane notify-pane form">
+                {phone && errorLine}
+                {body}
+              </div>
+              {!phone && (
+                <div className="auto-foot">
+                  <span className="auto-foot-note err">{error}</span>
+                  {testButton}
+                  <button type="button" className="btn primary" disabled={busy === "save"} onClick={async () => { if (await saveUrl()) onClose(); }}>Done</button>
+                </div>
+              )}
+            </div>
+          )}
+        </form>
+      )}
     </Modal>
   );
 }
+
+type Pane = "helper" | "mac" | "push" | "ntfy" | "telegram" | "night" | "knows" | "more";
+/** One row in the Notifications list: tone "none" = no dot (a settings page, not a channel). */
+type PaneItem = { id: Pane; title: string; sub: string; tone: "ok" | "blocked" | "" | "none" };
 
 /** Telegram: BotFather steps, the bot key, then the 6-digit pairing code the user sends to the bot. */
 function TelegramSetup({ state, profile, onState, onError }: { state: NotifyState; profile: string | null; onState: (s: NotifyState) => void; onError: (e: string | null) => void }) {

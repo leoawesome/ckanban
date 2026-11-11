@@ -3,10 +3,13 @@ import { KeyHint } from "./KeyHint";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CloseIcon } from "./icons";
 import { useFocusTrap, useLayer } from "./layers";
+import { useBackdropClose, useCalmTouchFocus, useKeyboardFit, useSwipeClose } from "./sheet";
 
 /**
  * Dialog with focus trap and Esc (topmost layer only). `guard` = there is typed work to lose:
  * Esc, the × and clicking outside ask before closing.
+ * On a phone it is a bottom sheet (sheet.ts): grab handle, swipe down to close, sized to what the keyboard leaves,
+ * and it doesn't open the keyboard by itself unless it has a single field.
  */
 export function Modal({ title, onClose, children, wide, guard, focusDialog, onKeys, className, bare }: {
   title: string;
@@ -28,17 +31,23 @@ export function Modal({ title, onClose, children, wide, guard, focusDialog, onKe
 }) {
   const id = useId();
   const box = useRef<HTMLDivElement>(null);
+  const overlay = useRef<HTMLDivElement>(null);
   const [asking, setAsking] = useState(false);
   const tryClose = () => (guard ? setAsking(true) : onClose());
   useLayer(tryClose);
   useFocusTrap(box, focusDialog);
+  useCalmTouchFocus(box);
+  useKeyboardFit(overlay, box);
+  const backdrop = useBackdropClose(tryClose);
+  const swipe = useSwipeClose(box, tryClose);
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && tryClose()}>
+    <div ref={overlay} className="overlay modal-overlay" {...backdrop}>
       <div ref={box} className={`modal ${wide ? "wide" : ""} ${className ?? ""}`} role="dialog" aria-modal="true"
         aria-labelledby={bare ? undefined : id} aria-label={bare ? title : undefined} tabIndex={-1}
         onKeyDown={onKeys && ((e) => { if ((e.target as HTMLElement).closest(".modal") === e.currentTarget) onKeys(e); })}>
+        {!bare && <div className="modal-grip" aria-hidden {...swipe} />}
         {!bare && (
-          <header className="modal-head">
+          <header className="modal-head" {...swipe}>
             <h3 id={id}>{title}</h3>
             <button className="icon-btn" onClick={tryClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>
           </header>

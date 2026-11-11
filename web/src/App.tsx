@@ -10,7 +10,7 @@ import { HeaderMenu, type MenuItem } from "./HeaderMenu";
 import { ThemePicker } from "./ThemePicker";
 import { boardTags, hasTags, parseSearch, tagStyle } from "./tagText";
 import { TagFilter } from "./Tags";
-import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, DiffIcon, GlobeIcon, FolderIcon, PanelsIcon, GearIcon, KeyboardIcon, LinkIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
+import { AtIcon, BellIcon, BugIcon, ChatIcon, CheckIcon, ClockIcon, CloseIcon, CopyIcon, DeviceIcon, DevicesIcon, DiffIcon, GlobeIcon, FolderIcon, InboxIcon, PanelsIcon, SlidersIcon, KeyboardIcon, LinkIcon, LoopIcon, Logo, PlugIcon, PlusIcon, SearchIcon, TeamIcon, TerminalIcon } from "./icons";
 import { Inbox, type InboxHelper } from "./Inbox";
 import { NowView } from "./NowView";
 import { NotificationsDialog } from "./NotificationsDialog";
@@ -227,6 +227,8 @@ export function App() {
   useEffect(() => setTagFilter([]), [slug]);
   const clearSearch = () => { setQuery(""); setTagFilter([]); };
   const searchRef = useRef<HTMLInputElement>(null);
+  // Phones fold the board's search row into an icon in the column tab row; it opens on a tap and stays while a search is on.
+  const [phoneSearch, setPhoneSearch] = useState(false);
   const inboxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [profileDialog, setProfileDialog] = useState<"new" | "edit" | null>(null);
   const [newTicket, setNewTicket] = useState(false);
@@ -936,24 +938,34 @@ export function App() {
             label: "Find links", icon: <LinkIcon />, onSelect: () => setFindLinksOpen(true),
             title: "Claude suggests which tickets belong together (part of one piece of work); you pick the links to make",
           }] : []),
-          { label: "Devices", icon: <DeviceIcon />, onSelect: () => setDevicesOpen(true), title: "Shared devices (a phone, a WhatsApp Web tab): who uses each one and who waits" },
+          { label: "Devices", icon: <DevicesIcon />, onSelect: () => setDevicesOpen(true), title: "Shared devices (a phone, a WhatsApp Web tab): who uses each one and who waits" },
           { label: "Browsers", icon: <GlobeIcon />, onSelect: () => setBrowsersOpen(true), title: "Name your Chromes and pick which one each board uses" },
           {
             label: "Connections", icon: <PlugIcon />, onSelect: () => setConnections(true), separator: true,
             title: mcpAttention ? `${mcpAttention} MCP server${mcpAttention === 1 ? "" : "s"} failed or need you to log in again` : "Claude Code MCP servers",
             badge: mcpAttention > 0 ? <span className="need-chip">{mcpAttention}</span> : null,
           },
-          ...(profile ? [{ label: "Board settings", icon: <GearIcon />, onSelect: () => setProfileDialog("edit") }] : []),
+          ...(profile ? [{ label: "Board settings", icon: <SlidersIcon />, onSelect: () => setProfileDialog("edit") }] : []),
           { label: "Phone access", icon: <DeviceIcon />, onSelect: () => setPhoneAccess(true), title: "Open this board from your phone over Tailscale" },
           {
-            label: "Messages", icon: <BellIcon />, onSelect: () => { location.hash = MESSAGES_HASH; },
+            label: "Messages", icon: <InboxIcon />, onSelect: () => { location.hash = MESSAGES_HASH; },
             title: "Everything the helper and the board told you, in full",
-            badge: helper.unread > 0 ? <span className="need-chip">{helper.unread} new</span> : null,
+            badge: helper.unread > 0 ? <span className="need-chip">{helper.unread} unread</span> : null,
           },
           { label: "Notifications", icon: <BellIcon />, onSelect: () => setNotifications(true), title: "The helper and where it reaches you: this Mac, your phone, ntfy, Telegram" },
           { label: "Keyboard shortcuts", hint: "?", icon: <KeyboardIcon />, onSelect: () => setShortcuts(true) },
           { label: "Report a bug", icon: <BugIcon />, onSelect: () => setBugReport(true) },
   ];
+  // The phone's More sheet: Search and the everyday items first; the rest fold under "More tools" (Connections stays out
+  // while it needs you). Keyboard shortcuts don't apply on a phone.
+  const PHONE_MAIN = ["Messages", "Notifications", "Schedules", "Automations", "Board settings"];
+  const phoneMain: MenuItem[] = [
+    { label: "Search", icon: <SearchIcon />, onSelect: () => setCommandBar(true), title: "Find tickets on every board, actions and boards" },
+    ...PHONE_MAIN.flatMap((l) => menuItems.filter((i) => i.label === l)),
+    ...(mcpAttention > 0 ? menuItems.filter((i) => i.label === "Connections") : []),
+  ].map((i) => ({ ...i, separator: false }));
+  const phoneRare = menuItems.filter((i) => !phoneMain.some((m) => m.label === i.label) && i.label !== "Keyboard shortcuts")
+    .map((i) => ({ ...i, separator: false }));
   const menuAlert = scheduleFails > 0 || mcpAttention > 0;
   const menuFooter = version && version.version !== "dev" ? `ckanban v${version.version} · by Leo` : "by Leo";
   // Inbox triage on any board: the entry leaves the list (and the counts) at once, the server confirms.
@@ -1059,7 +1071,7 @@ export function App() {
     ...(commandBar && openId ? ticketActions() : []),
     ...cardActions,
     ...(profile ? [
-      { id: "new", label: "New ticket", keys: ["N"], run: () => setNewTicket(true) },
+      { id: "new", label: "New ticket", keys: ["N"], icon: <PlusIcon size={14} />, run: () => setNewTicket(true) },
       { id: "dock", label: "Open terminal", keys: ["Ctrl", "`"], icon: <TerminalIcon size={14} />, hint: open?.worktree ? "in this ticket's copy" : "in the board folder", run: () => openPanel("terminal") },
       { id: "files", label: "Open files", keys: ["F"], icon: <FolderIcon size={14} />, hint: open?.worktree ? "this ticket's copy" : "browse this folder", run: () => openPanel("files") },
       { id: "changes", label: "Open changes", icon: <DiffIcon size={14} />, hint: open ? "this ticket's changes" : "of the open ticket", run: () => openPanel("changes") },
@@ -1071,7 +1083,7 @@ export function App() {
     ...(profile ? [
       { id: "team", label: "Open Team", keys: ["T"], icon: <TeamIcon size={14} />, hint: "teammates, squads, huddles", run: () => openPanel("team") },
       { id: "huddles", label: liveHuddles ? `Huddles (${liveHuddles} live)` : "Huddles", icon: <TeamIcon size={14} />, hint: "in Team", run: () => openPanel("team", { action: "huddles" }) },
-      { id: "new-teammate", label: "New teammate…", run: () => openPanel("team", { action: "new" }) },
+      { id: "new-teammate", label: "New teammate…", icon: <PlusIcon size={14} />, run: () => openPanel("team", { action: "new" }) },
     ] : []),
     ...(inbox.length || snoozed.length ? [{
       id: "inbox", label: inbox.length ? `Open inbox (${inbox.length} need you)` : `Open inbox (${snoozed.length} snoozed)`, keys: ["I"],
@@ -1080,14 +1092,14 @@ export function App() {
     ...(profile ? [{ id: "schedules", label: "Schedules", icon: <ClockIcon size={14} />, run: () => openSchedules() }] : []),
     ...(profile ? [{ id: "automations", label: "Automations", icon: <LoopIcon size={14} />, run: () => setAutomationsOpen(true) }] : []),
     { id: "connections", label: "Connections", icon: <PlugIcon size={14} />, run: () => setConnections(true) },
-    { id: "devices", label: "Devices", icon: <DeviceIcon size={14} />, hint: "who uses each shared device", run: () => setDevicesOpen(true) },
+    { id: "devices", label: "Devices", icon: <DevicesIcon size={14} />, hint: "who uses each shared device", run: () => setDevicesOpen(true) },
     { id: "browsers", label: "Browsers", icon: <GlobeIcon size={14} />, hint: "name your Chromes, pick each board's", run: () => setBrowsersOpen(true) },
     ...(profile ? [{ id: "snippets", label: "Snippets", icon: <AtIcon size={14} />, run: () => setSnippetsOpen(true) }] : []),
     ...(profile ? [{ id: "find-links", label: "Find links", icon: <LinkIcon size={14} />, hint: "tickets that belong together", run: () => setFindLinksOpen(true) }] : []),
     { id: "usage", label: "Usage", run: () => setUsageRequest(Date.now()) },
-    ...(profile ? [{ id: "settings", label: "Board settings", icon: <GearIcon size={14} />, run: () => setProfileDialog("edit") }] : []),
-    { id: "new-board", label: "New board", run: () => setProfileDialog("new") },
-    { id: "messages", label: helper.unread ? `Messages (${helper.unread} new)` : "Messages", hint: "everything the helper told you", run: () => { location.hash = MESSAGES_HASH; } },
+    ...(profile ? [{ id: "settings", label: "Board settings", icon: <SlidersIcon size={14} />, run: () => setProfileDialog("edit") }] : []),
+    { id: "new-board", label: "New board", icon: <PlusIcon size={14} />, run: () => setProfileDialog("new") },
+    { id: "messages", label: helper.unread ? `Messages (${helper.unread} unread)` : "Messages", icon: <InboxIcon size={14} />, hint: "everything the helper told you", run: () => { location.hash = MESSAGES_HASH; } },
     { id: "notifications", label: "Notifications", icon: <BellIcon size={14} />, hint: "on your phone when a ticket needs you", run: () => setNotifications(true) },
     { id: "phone", label: "Phone access", icon: <DeviceIcon size={14} />, hint: "open the board from your phone", run: () => setPhoneAccess(true) },
     { id: "shortcuts", label: "Keyboard shortcuts", keys: ["?"], icon: <KeyboardIcon size={14} />, run: () => setShortcuts(true) },
@@ -1111,7 +1123,8 @@ export function App() {
   ];
 
   return (
-    <div className="app">
+    // A phone's Messages pages draw their own header (‹ Board · Messages), so the board's top bar steps aside.
+    <div className={`app${phone && msgRoute ? " msg-route" : ""}`}>
       <HintLegend />
       <header className="topbar" ref={topbarRef}>
         <div className="brand">
@@ -1180,6 +1193,7 @@ export function App() {
               ),
             } : {}} />
         )}
+        <button className="btn ghost phone-only topbar-icon" aria-label="Search tickets and actions" onClick={() => setCommandBar(true)}><SearchIcon size={20} /></button>
         {profile && (
           <button className="btn primary phone-only topbar-icon" aria-label="New ticket" onClick={() => setNewTicket(true)}><PlusIcon size={20} /></button>
         )}
@@ -1279,7 +1293,7 @@ export function App() {
           <NowView helper={inboxHelper} inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, len) => void inboxSnooze(i, true, len)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} onSwitchBoard={switchBoard}
             inboxLoaded={inboxLoaded} ticketsLoaded={ticketsLoaded} footer={<PushHint onSetup={() => setNotifications(true)} />} />
         ) : <>
-          <div className="board-bar">
+          <div className={`board-bar${phone && !phoneSearch && !query && !tagFilter.length ? " folded" : ""}`}>
             <div className={`search${tagFilter.length ? " has-tags" : ""}`}>
               <SearchIcon className="icon search-icon" />
               {tagFilter.map((g) => (
@@ -1291,7 +1305,7 @@ export function App() {
               <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tagFilter.length ? "Search" : "Search tickets · #tag"}
                 aria-label="Search tickets on this board (#tag filters by tag)" aria-keyshortcuts="/"
                 onKeyDown={(e) => {
-                  if (e.key === "Escape") { e.preventDefault(); if (query || tagFilter.length) clearSearch(); else e.currentTarget.blur(); }
+                  if (e.key === "Escape") { e.preventDefault(); if (query || tagFilter.length) clearSearch(); else { e.currentTarget.blur(); setPhoneSearch(false); } }
                   else if (e.key === "Backspace" && !query && tagFilter.length) setTagFilter((f) => f.slice(0, -1));
                 }} />
               {query || tagFilter.length ? (
@@ -1330,7 +1344,11 @@ export function App() {
           )}
           <Board tickets={shownTickets} loading={!ticketsLoaded} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
             collapsed={collapsed} onCollapse={setColumnCollapsed}
-            slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia} />
+            slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia}
+            search={{ on: phoneSearch || !!query || tagFilter.length > 0, toggle: () => {
+              if (phoneSearch || query || tagFilter.length) { clearSearch(); setPhoneSearch(false); }
+              else { setPhoneSearch(true); requestAnimationFrame(() => searchRef.current?.focus()); }
+            } }} />
         </>
       )}
       {phone && profile && (
@@ -1342,7 +1360,7 @@ export function App() {
           }}
           onMore={() => setMoreOpen(true)} moreAlert={mcpAttention > 0 || scheduleFails > 0} />
       )}
-      {moreOpen && <MoreSheet items={menuItems.filter((i) => i.label !== "Keyboard shortcuts")} footer={menuFooter} onClose={() => setMoreOpen(false)}
+      {moreOpen && <MoreSheet items={phoneMain} rare={phoneRare} footer={menuFooter} onClose={() => setMoreOpen(false)}
         top={<UsageBox state={usage} />} bottom={<ThemePicker />} />}
       {phoneAccess && <PhoneAccessDialog onClose={() => setPhoneAccess(false)} />}
       {browsersOpen && <BrowsersDialog onClose={() => setBrowsersOpen(false)} />}

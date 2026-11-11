@@ -74,11 +74,17 @@ function DeviceRow({ device: d, board, onSave, onRemove, onFree, onOpenTicket }:
   const [editing, setEditing] = useState(false);
   const [desc, setDesc] = useState(d.description);
   const [cap, setCap] = useState(String(d.capacity));
-  useEffect(() => setCap(String(d.capacity)), [d.capacity]);
-  const saveCap = () => {
+  const startEdit = () => {
+    setDesc(d.description);
+    setCap(String(d.capacity));
+    setEditing((v) => !v);
+  };
+  const save = async () => {
     const n = Math.floor(Number(cap));
-    if (!Number.isFinite(n) || n < 1) return setCap(String(d.capacity));
-    if (n !== d.capacity) void onSave({ capacity: n });
+    const patch: { description?: string; capacity?: number } = {};
+    if (desc !== d.description) patch.description = desc;
+    if (Number.isFinite(n) && n >= 1 && n !== d.capacity) patch.capacity = Math.min(50, n);
+    if (!Object.keys(patch).length || (await onSave(patch))) setEditing(false);
   };
   const who = (u: DeviceUser) => (
     <>
@@ -88,29 +94,34 @@ function DeviceRow({ device: d, board, onSave, onRemove, onFree, onOpenTicket }:
       {u.slug !== board && <span className="muted"> · {u.board}</span>}
     </>
   );
+  const tag = d.addedByClaude && (
+    <span className="device-pill new" title="Claude asked for this name, so the board added it. Describe it so every Claude knows what it is.">Added by Claude</span>
+  );
+  const busy = d.using.length > 0 || d.waiting.length > 0;
   return (
     <div className="device">
       <div className="device-head">
         <span className="device-name">{d.name}</span>
-        {d.addedByClaude && <span className="device-pill new" title="Claude asked for this name, so the board added it. Describe it so every Claude knows what it is.">Added by Claude</span>}
-        <label className="device-cap" title="How many tickets may use it at once">
-          at once
-          <input type="number" min={1} max={50} value={cap} aria-label={`How many tickets may use ${d.name} at once`}
-            onChange={(e) => setCap(e.target.value)} onBlur={saveCap} onKeyDown={(e) => e.key === "Enter" && saveCap()} />
-        </label>
-        <button className="btn ghost small" onClick={() => { setDesc(d.description); setEditing((v) => !v); }}>{editing ? "Cancel" : "Edit"}</button>
+        {d.capacity > 1 && <span className="device-cap-note muted">{d.capacity} at once</span>}
+        <button className="btn ghost small device-edit-btn" aria-expanded={editing} onClick={startEdit}>{editing ? "Cancel" : "Edit"}</button>
       </div>
       {editing ? (
-        <form className="device-edit" onSubmit={async (e) => { e.preventDefault(); if (await onSave({ description: desc })) setEditing(false); }}>
+        <form className="device-edit" onSubmit={(e) => { e.preventDefault(); void save(); }}>
           <input value={desc} onChange={(e) => setDesc(e.target.value)} autoFocus maxLength={300} aria-label={`What ${d.name} is`}
             placeholder="What it is, e.g. Chrome tab signed in to WhatsApp Web as Leo" />
-          <button className="btn primary small" type="submit">Save</button>
-          <button className="btn ghost danger small" type="button" onClick={() => void onRemove()}
-            disabled={d.using.length > 0 || d.waiting.length > 0} title={d.using.length || d.waiting.length ? "Free it first" : "Remove it from the list"}>Remove</button>
+          <div className="device-edit-row">
+            <label className="device-cap" title="How many tickets may use it at once">
+              <input type="number" min={1} max={50} value={cap} aria-label={`How many tickets may use ${d.name} at once`}
+                onChange={(e) => setCap(e.target.value)} />
+              at once
+            </label>
+            <span className="spacer" />
+            <button className="btn ghost danger small" type="button" onClick={() => void onRemove()}
+              disabled={d.using.length > 0 || d.waiting.length > 0} title={d.using.length || d.waiting.length ? "Free it first" : "Remove it from the list"}>Remove</button>
+            <button className="btn primary small" type="submit">Save</button>
+          </div>
         </form>
-      ) : d.description
-        ? <div className="device-desc">{d.description}</div>
-        : <div className="device-desc muted">No description yet. Add one so every Claude knows what it is.</div>}
+      ) : d.description && <div className="device-desc">{d.description}</div>}
       <div className="device-status">
         {d.using.map((u, i) => (
           <div key={`${u.slug}/${u.id}`} className="device-use">
@@ -130,8 +141,10 @@ function DeviceRow({ device: d, board, onSave, onRemove, onFree, onOpenTicket }:
           <div className="device-use">
             <span className="device-pill free">Free</span>
             {d.lastUsedAt && <span className="muted"> · last used {timeAgo(d.lastUsedAt)}</span>}
+            {tag}
           </div>
         )}
+        {busy && tag && <div className="device-use">{tag}</div>}
       </div>
     </div>
   );

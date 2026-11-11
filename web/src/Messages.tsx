@@ -7,6 +7,7 @@ import { ChevronDownIcon, ChevronUpIcon } from "./icons";
 import { KeyHint } from "./KeyHint";
 import { isTyping, panelStep } from "./keynav";
 import { useNow } from "./useNow";
+import { usePhone } from "./usePhone";
 import { toast } from "./toast";
 
 /** "Show what the helper kept quiet" on the history, kept for this tab so a message page's up/down walks the same list. */
@@ -34,20 +35,35 @@ let stepping: Stepping | null = null;
  * The helper's status line: "Helper on, checked 2:41, nothing waits on you", red when it is paused or failing, and
  * "I can only reach you on this Mac" under it when no phone channel works (reach: show that part too).
  */
-export function HelperStatusLine({ status, reach = true, compact }: { status: HelperStatus | null; reach?: boolean; compact?: boolean }) {
+export function HelperStatusLine({ status, reach = true, compact, total }: {
+  status: HelperStatus | null; reach?: boolean; compact?: boolean;
+  /** What needs you on every board (the Inbox's count): said in place of the helper's own count, so the numbers match. */
+  total?: number;
+}) {
   if (!status) return null;
   const red = status.problem || status.paused;
+  const line = total === undefined ? status.line : helperLineWithTotal(status.line, total);
   return (
     <div className={`helper-status-wrap${compact ? " compact" : ""}`}>
       <div className={`helper-status${red ? " red" : status.on ? "" : " off"}`} role="status">
         <i aria-hidden />
-        <span>{status.line}</span>
+        <span>{line}</span>
       </div>
       {reach && status.on && status.onlyMac && (
         <div className="helper-status warn" role="status"><i aria-hidden /><span>I can only reach you on this Mac. Turn on a phone channel in Notifications.</span></div>
       )}
     </div>
   );
+}
+
+/**
+ * "Helper on, checked 21:07, 16 wait on you" → "Helper on, checked 21:07 · 7 need you on all boards", with the Inbox's
+ * count (the one the tab badges and board picker use). Other lines (off, paused, failed) stay as they are.
+ */
+export function helperLineWithTotal(line: string, total: number): string {
+  const m = /^(Helper on, [^,]+), (?:\d+ waits? on you|nothing waits on you)$/.exec(line);
+  if (!m) return line;
+  return `${m[1]} · ${total ? `${total} need${total === 1 ? "s" : ""} you on all boards` : "nothing needs you"}`;
 }
 
 const TELL_HINT = "For lasting preferences it should always follow, not one-off requests.";
@@ -127,22 +143,25 @@ export function MessagesHistory({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const phone = usePhone();
+
   return (
     <main className="messages-page">
       <div className="messages-top">
         <button className="link-btn msg-back" onClick={onBack}>‹ Board</button>
         <h2>Messages</h2>
         <span className="msg-top-right">
-          {anyNew && <button className="btn small" disabled={marking} onClick={() => void markAll()}>{marking ? "Marking…" : "Mark all read"}</button>}
+          {anyNew && <button className="btn small msg-mark-all" disabled={marking} onClick={() => void markAll()}>{marking ? "Marking…" : "Mark all read"}</button>}
         </span>
       </div>
       <div className="messages-body">
-        <HelperStatusLine status={status} />
+        {/* A phone has this line on Now already. */}
+        {!phone && <HelperStatusLine status={status} />}
         <label className="msg-switch-row" title="Only changes what you see here; the helper works the same.">
           <span>Show what the helper kept quiet</span>
           <input type="checkbox" role="switch" className="switch" checked={held} onChange={(e) => setHeld(e.target.checked)} />
         </label>
-        <div className="muted small msg-switch-hint">Only changes what you see here; the helper works the same.</div>
+        {!phone && <div className="muted small msg-switch-hint">Only changes what you see here; the helper works the same.</div>}
         {error && <div className="form-error" role="alert">{error}</div>}
         {!list && !error && <div className="muted small"><span className="spinner" /> Loading…</div>}
         {list && !list.length && <p className="muted">No messages yet. When the helper tells you something, it shows here.</p>}
@@ -150,19 +169,31 @@ export function MessagesHistory({ onBack }: { onBack: () => void }) {
           <section key={g.day}>
             <h3 className="msg-day">{g.day}</h3>
             <div className="msg-card msg-list">
-              {g.messages.map((m) => (
-                <a key={m.id} href={messageHash(m.id)} className={`msg-row${m.held ? " held" : ""}${!m.readAt && !m.held ? " new" : ""}`}>
-                  <span className="msg-row-head">
-                    <span className={`msg-badge b-${levelTone(m.level, m.held, m.practice)}`}>{levelLabel(m.level, m.held, m.practice)}</span>
-                    {!m.readAt && !m.held && <span className="msg-badge b-new">New</span>}
-                    <span className="grow" />
-                    <span className="muted small">{clock(m.at)}{m.readAt ? " · read" : ""}</span>
-                  </span>
-                  <span className="msg-row-line">{m.oneLine}</span>
-                  {m.sends.length > 0 && <span className="muted small">{sendTrail(m)}</span>}
-                  {m.why && m.level !== "summary" && <span className="muted small msg-row-why">Why: {m.why}</span>}
-                </a>
-              ))}
+              {g.messages.map((m) => {
+                const fresh = !m.readAt && !m.held;
+                const badge = <span className={`msg-badge b-${levelTone(m.level, m.held, m.practice)}`}>{levelLabel(m.level, m.held, m.practice)}</span>;
+                // A phone row: the badge and the line (two lines at most), the time on the right; unread has a dot.
+                if (phone) return (
+                  <a key={m.id} href={messageHash(m.id)} className={`msg-row compact${m.held ? " held" : ""}${fresh ? " new" : ""}`}
+                    aria-label={`${fresh ? "Unread. " : ""}${levelLabel(m.level, m.held, m.practice)}: ${m.oneLine}, ${clock(m.at)}`}>
+                    <span className="msg-row-line">{badge} {m.oneLine}</span>
+                    <span className="msg-row-time muted small">{fresh && <i className="msg-dot" aria-hidden />}{clock(m.at)}</span>
+                  </a>
+                );
+                return (
+                  <a key={m.id} href={messageHash(m.id)} className={`msg-row${m.held ? " held" : ""}${fresh ? " new" : ""}`}>
+                    <span className="msg-row-head">
+                      {badge}
+                      {fresh && <span className="msg-badge b-new">New</span>}
+                      <span className="grow" />
+                      <span className="muted small">{clock(m.at)}{m.readAt ? " · read" : ""}</span>
+                    </span>
+                    <span className="msg-row-line">{m.oneLine}</span>
+                    {m.sends.length > 0 && <span className="muted small">{sendTrail(m)}</span>}
+                    {m.why && m.level !== "summary" && <span className="muted small msg-row-why">Why: {m.why}</span>}
+                  </a>
+                );
+              })}
             </div>
           </section>
         ))}
@@ -471,10 +502,10 @@ export function MessagesEntry({ unread, latest, onOpen, menuItem }: { unread: nu
     <a href="#/~messages" role={menuItem ? "menuitem" : undefined} className={`messages-entry${unread ? " has-new" : ""}`} onClick={(e) => { e.preventDefault(); onOpen(); }}>
       <span aria-hidden>✉</span>
       <span className="grow">
-        <span className="msg-ttl">{unread ? `Messages, ${unread} new` : "Messages"}</span>
+        <span className="msg-ttl">Messages</span>
         {latest && <span className="muted small"> {latest}</span>}
       </span>
-      {unread > 0 && <span className="msg-badge b-new">{unread}</span>}
+      {unread > 0 && <span className="msg-badge b-new" aria-label={`${unread} unread`}>{unread} unread</span>}
       <span className="muted" aria-hidden>›</span>
     </a>
   );

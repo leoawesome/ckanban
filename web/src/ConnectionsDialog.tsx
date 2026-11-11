@@ -241,6 +241,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
         {signingIn ? "Starting…" : text}
       </button>
     );
+    const signInShown = canLogin(s) && !waiting;
     return (
       <div key={s.name} className="conn-card">
         <div className="conn-top">
@@ -251,7 +252,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             {reach && <span className={`badge reach${s.scope === "board" ? " board" : ""}`} title={info}>{reach}</span>}
           </div>
           <div className="conn-actions">
-            {canLogin(s) && !waiting && (s.status === "connected" ? signInButton("Sign in again", false) : signInButton("Sign in", false))}
+            {signInShown && (s.status === "connected" ? signInButton("Sign in again", false) : signInButton("Sign in", false))}
             {canLogin(s) && s.scope !== "claude.ai" && !waiting && s.status === "connected" && (
               <button className="btn small" onClick={() => setConfirm({ kind: "logout", server: s })}>Log out</button>
             )}
@@ -268,7 +269,8 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
                 <button className="btn small ghost danger" onClick={() => setConfirm({ kind: "remove", server: s })}>Remove</button>
               </>
             )}
-            {s.scope === "claude.ai" && (
+            {/* One sign-in button per row: with Sign in showing, Manage on claude.ai moves under Details. */}
+            {s.scope === "claude.ai" && !signInShown && (
               <a className="btn small" href={CLAUDE_AI_CONNECTORS} target="_blank" rel="noreferrer">Manage on claude.ai</a>
             )}
             {!own && s.scope !== "claude.ai" && (
@@ -276,16 +278,24 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             )}
           </div>
         </div>
-        {s.target && (
-          <div className="mcp-target-row">
-            <span className="mcp-target" title={s.target}>{s.target}</span>
-            {!s.target.includes("***") && (
-              <button className="icon-btn tiny mcp-copy" aria-label={`Copy ${s.name} ${stdio ? "command" : "address"}`} title="Copy"
-                onClick={async () => { await copy(s.target); setCopiedTarget(s.name); }}>
-                <CopyIcon size={12} /><span className="mcp-copy-label">{copiedTarget === s.name ? "Copied" : "Copy"}</span>
-              </button>
+        {(s.target || (s.scope === "claude.ai" && signInShown)) && (
+          <details className="conn-details">
+            <summary>{s.target ? (stdio ? "Command" : "Address") : "Details"}</summary>
+            {s.target && (
+              <div className="mcp-target-row">
+                <span className="mcp-target" title={s.target}>{s.target}</span>
+                {!s.target.includes("***") && (
+                  <button className="icon-btn tiny mcp-copy" aria-label={`Copy ${s.name} ${stdio ? "command" : "address"}`} title="Copy"
+                    onClick={async () => { await copy(s.target); setCopiedTarget(s.name); }}>
+                    <CopyIcon size={12} /><span className="mcp-copy-label">{copiedTarget === s.name ? "Copied" : "Copy"}</span>
+                  </button>
+                )}
+              </div>
             )}
-          </div>
+            {s.scope === "claude.ai" && signInShown && (
+              <a className="link-btn small" href={CLAUDE_AI_CONNECTORS} target="_blank" rel="noreferrer">Manage on claude.ai</a>
+            )}
+          </details>
         )}
         {canMoveHere && s.move.why && <span className="muted small">{s.move.why}</span>}
         {s.leftover && (
