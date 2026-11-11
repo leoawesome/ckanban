@@ -8,8 +8,12 @@ import { useFocusTrap, useLayer } from "./layers";
  * Dialog with focus trap and Esc (topmost layer only). `guard` = there is typed work to lose:
  * Esc, the × and clicking outside ask before closing.
  */
-export function Modal({ title, onClose, children, wide, guard, focusDialog, onKeys }: {
+export function Modal({ title, onClose, children, wide, guard, focusDialog, onKeys, className, bare }: {
   title: string;
+  /** Extra class on the dialog box. */
+  className?: string;
+  /** No title bar (the content draws its own, e.g. a phone screen with a back arrow); `title` stays its accessible name. */
+  bare?: boolean;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
@@ -30,12 +34,15 @@ export function Modal({ title, onClose, children, wide, guard, focusDialog, onKe
   useFocusTrap(box, focusDialog);
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && tryClose()}>
-      <div ref={box} className={`modal ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1}
+      <div ref={box} className={`modal ${wide ? "wide" : ""} ${className ?? ""}`} role="dialog" aria-modal="true"
+        aria-labelledby={bare ? undefined : id} aria-label={bare ? title : undefined} tabIndex={-1}
         onKeyDown={onKeys && ((e) => { if ((e.target as HTMLElement).closest(".modal") === e.currentTarget) onKeys(e); })}>
-        <header className="modal-head">
-          <h3 id={id}>{title}</h3>
-          <button className="icon-btn" onClick={tryClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>
-        </header>
+        {!bare && (
+          <header className="modal-head">
+            <h3 id={id}>{title}</h3>
+            <button className="icon-btn" onClick={tryClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>
+          </header>
+        )}
         {children}
       </div>
       {asking && (

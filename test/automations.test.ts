@@ -4,7 +4,7 @@ import { parseDecision } from "../src/server/integrations/ask-claude";
 import { parseItems } from "../src/server/integrations/script";
 import { ticketBody, ticketTitle } from "../src/server/integrations/ticket-text";
 import type { Pass } from "../web/src/automationTypes";
-import { boardCell, everyLabel, loopStatus, loopSubtitle, resolveProposedPass } from "../web/src/automations";
+import { boardCell, everyLabel, groupLastItems, loopStatus, loopSubtitle, resolveProposedPass, saveBlocker } from "../web/src/automations";
 
 const pass = (p: Partial<Pass>): Pass => ({
   id: "p1", kind: "mcp", name: "linear", claudeName: null, url: null, envName: null, status: "connected", error: null, createdAt: "", usedBy: 0, ...p,
@@ -71,4 +71,21 @@ test("a proposal from the setup chat needs a name, a summary and a tested script
   expect(p).toEqual({ name: "L", summary: "s", script: "echo\n", everyMinutes: 15, service: "Linear", passes: [{ name: "Linear", from: "linear" }] });
   expect(() => automationProposal({ name: "L", script: "echo" })).toThrow("summary is required");
   expect(() => automationProposal({ name: "L", summary: "s", script: " " })).toThrow("script is required");
+});
+
+test("Save says why it is greyed out: a name, a script, and the start-by-itself box for Planning and Ready", () => {
+  const ok = { name: "Linear", script: "echo", column: "backlog" as const, autoStart: false };
+  expect(saveBlocker(ok)).toBeNull();
+  expect(saveBlocker({ ...ok, name: "  " })).toContain("name");
+  expect(saveBlocker({ ...ok, script: "" })).toContain("check script");
+  expect(saveBlocker({ ...ok, column: "ready" })).toContain("Let Claude start by itself");
+  expect(saveBlocker({ ...ok, column: "planning", autoStart: true })).toBeNull();
+});
+
+test("the Last check tab lists new and skipped items and folds the ones that were already there", () => {
+  const item = (id: string, state: "new" | "skipped" | "seen" | "first") => ({ id, title: id, state });
+  const g = groupLastItems([item("a", "first"), item("b", "new"), item("c", "seen"), item("d", "skipped"), item("e", "first")]);
+  expect(g.shown.map((i) => i.id)).toEqual(["b", "d"]);
+  expect(g.first.map((i) => i.id)).toEqual(["a", "e"]);
+  expect(g.seen.map((i) => i.id)).toEqual(["c"]);
 });

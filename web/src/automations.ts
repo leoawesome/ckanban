@@ -1,12 +1,36 @@
 // Pure helpers for the Automations dialog and the For automations tab of Connections (tested in test/automations.test.ts).
-import type { AutomationProposal, Loop, LoopColumn, Pass } from "./automationTypes";
+import type { AutomationProposal, Loop, LoopColumn, LoopSeenItem, Pass } from "./automationTypes";
 
 /** What boardCell needs of a Connections server (api.ts McpServer; not imported, so tests can load this file). */
 type ClaudeServer = { name: string; scope: "user" | "local" | "project" | "claude.ai" | "board" | "other"; transport: "stdio" | "http" | "sse" | null };
 
 export const COLUMN_LABEL: Record<LoopColumn, string> = { backlog: "Backlog", planning: "Planning", ready: "Ready" };
 
+/** One line under each "New tickets go to" choice. */
+export const COLUMN_MEANING: Record<LoopColumn, string> = {
+  backlog: "You look at them and start the ones you want.",
+  planning: "Claude opens a chat on each one and waits for you.",
+  ready: "Claude starts working on each one right away.",
+};
+
 export const EVERY_CHOICES = [5, 15, 60];
+
+/** Why Save is greyed out, in plain words (null: it can be saved). */
+export function saveBlocker(f: { name: string; script: string; column: LoopColumn; autoStart: boolean }): string | null {
+  if (!f.name.trim()) return "Give it a name to save it.";
+  if (!f.script.trim()) return "Add a check script under How it checks to save it.";
+  if (f.column !== "backlog" && !f.autoStart) return `Tick "Let Claude start by itself" in Settings, or pick Backlog, to save it.`;
+  return null;
+}
+
+/** The last check's items in the groups the Last check tab shows: new and skipped in full, the rest folded. */
+export function groupLastItems(items: LoopSeenItem[]): { shown: LoopSeenItem[]; first: LoopSeenItem[]; seen: LoopSeenItem[] } {
+  return {
+    shown: items.filter((i) => i.state === "new" || i.state === "skipped"),
+    first: items.filter((i) => i.state === "first"),
+    seen: items.filter((i) => i.state === "seen"),
+  };
+}
 
 export function everyLabel(min: number): string {
   if (min % 60 === 0) return min === 60 ? "hour" : `${min / 60} hours`;
