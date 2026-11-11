@@ -3,6 +3,7 @@ import type { SquadCardState, SquadProposal } from "./squad";
 import type { RewindUndo } from "./rewind";
 
 import type { TicketKind } from "../../web/src/family";
+import type { ClosedForms } from "../../web/src/family";
 export type { TicketKind };
 export type Status = "backlog" | "planning" | "ready" | "in_progress" | "review" | "done";
 /** limit: the run ended because the Claude usage/spend limit was hit (see Ticket.limit). */
@@ -352,6 +353,12 @@ export interface Ticket {
    * self when they chose to do it themselves. Never the values.
    */
   keyCards?: Record<string, KeyCardState>;
+  /**
+   * Question forms in this ticket's chat closed without an answer, by entry uuid (only the form open at the time): the
+   * user's Close question, or by: "task" when they answered in the task the form was about. A close made for the last
+   * run (run: its runEndedAt) means the ticket no longer waits on the user (askClosed).
+   */
+  closedForms?: ClosedForms;
   /** Made by Automations → Set up with Claude: its Planning chat sets up an automation instead of shaping a ticket. */
   automationSetup?: boolean;
   /** Made by Schedules → Proactive check-ins: its Planning chat sets up a quiet check-in schedule (checkin-guides.ts). */

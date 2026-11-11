@@ -48,13 +48,16 @@ export interface Question {
 export interface AskMeta {
   urgent?: boolean;
   why?: string;
+  /** A main ticket's question about these tasks: the user answering in one of their chats closes it (closedForms). */
+  about?: string[];
 }
 
 /** ask_questions' urgent and why, or undefined when neither is set. */
 export function parseAskMeta(v: any): AskMeta | undefined {
   const urgent = v?.urgent === true;
   const why = typeof v?.why === "string" && v.why.trim() ? v.why.trim().slice(0, 300) : undefined;
-  return urgent || why ? { ...(urgent ? { urgent } : {}), ...(why ? { why } : {}) } : undefined;
+  const about = Array.isArray(v?.about) ? v.about.filter((x: unknown): x is string => typeof x === "string" && !!x.trim()).slice(0, 20) : [];
+  return urgent || why || about.length ? { ...(urgent ? { urgent } : {}), ...(why ? { why } : {}), ...(about.length ? { about } : {}) } : undefined;
 }
 
 export interface TicketProposal {
@@ -320,6 +323,8 @@ export interface ParsedSession {
   openForm: Question[];
   /** That form's urgent / why, when the asking Claude set them. */
   openAsk?: AskMeta;
+  /** That form's entry uuid (Ticket.closedForms keys). */
+  openFormId?: string;
   /** Latest ticket proposal since the user's last message. */
   pendingProposal: TicketProposal | null;
   /** Latest proposed new tickets since the user's last message (some may already be created). */
@@ -347,6 +352,8 @@ export interface SessionSummary {
   openForm?: Question[];
   /** See ParsedSession.openAsk. */
   openAsk?: AskMeta;
+  /** See ParsedSession.openFormId. */
+  openFormId?: string;
   pendingProposal: TicketProposal | null;
   pendingNewTickets: NewTicketDraft[];
   pendingTeammates: string[];
@@ -802,7 +809,7 @@ function handBack(text: string): string {
   return text.slice(m[0].length).split("\n").map((l) => l.replace(/^ {2}/, "")).join("\n").trim();
 }
 
-function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys"> {
+function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "openFormId" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys"> {
   let lastUser = -1;
   entries.forEach((e, i) => {
     // Huddle messages don't answer what Claude asked the user (another ticket's message, e.g. the planner's answer, does).
@@ -816,6 +823,7 @@ function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestio
     openQuestions: openForm.length,
     openForm,
     ...(form?.ask ? { openAsk: form.ask } : {}),
+    ...(form ? { openFormId: form.uuid } : {}),
     pendingProposal: after.findLast((e) => e.proposal)?.proposal ?? null,
     pendingNewTickets: after.findLast((e) => e.newTickets)?.newTickets ?? [],
     pendingTeammates: after.filter((e) => e.teammate).map((e) => e.uuid),
@@ -1166,7 +1174,7 @@ export class SessionCache {
     const s: StoredSummary = {
       // The preview is stored and sent to the UI: a saved key in Claude's last message is hidden there.
       title: p.title, lastMessage: p.lastMessage && this.summaryFile ? { ...p.lastMessage, text: maskSaved(dirname(this.summaryFile), p.lastMessage.text) } : p.lastMessage, artifacts: p.artifacts,
-      openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates, pendingSquads: p.pendingSquads,
+      openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), ...(p.openFormId ? { openFormId: p.openFormId } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates, pendingSquads: p.pendingSquads,
       pendingAutomations: p.pendingAutomations, ...(p.pendingKeys.length ? { pendingKeys: p.pendingKeys } : {}), cache: p.cache,
     };
     if (v) this.storeSummary(sessionId, v, s);

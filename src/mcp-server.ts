@@ -642,6 +642,9 @@ const MAX_BARE_QUESTION = 200;
 export function questionsError(args: any): string | null {
   const u = urgencyError(args);
   if (u) return u;
+  if (args?.about !== undefined && (!Array.isArray(args.about) || args.about.some((x: unknown) => typeof x !== "string") || args.about.length > 20)) {
+    return "about must be a list of task ids (at most 20)";
+  }
   const qs = args?.questions;
   if (!Array.isArray(qs) || qs.length < 1) return "questions must be a non-empty list";
   for (const [i, q] of qs.entries()) {
@@ -802,6 +805,10 @@ const PLANNING_TOOLS: Tool[] = [
         },
         urgent: URGENT,
         why: WHY,
+        about: {
+          type: "array", items: { type: "string" },
+          description: "Main ticket only: ids of your tasks this question is about (e.g. you pass on what a task found or asks). If the user answers in that task's own chat instead, this form closes by itself.",
+        },
       },
       required: ["questions"],
     },

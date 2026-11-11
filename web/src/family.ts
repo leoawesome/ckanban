@@ -208,6 +208,8 @@ export interface FeatureTicket extends FamilyTicket {
   kind?: TicketKind | null;
   outcome?: string | null;
   verdict?: "passed" | "problem" | null;
+  closedForms?: ClosedForms | null;
+  runEndedAt?: string | null;
   /** When the feature's status ("Where we are") last changed; set only on a top ticket that has one. */
   statusAt?: string | null;
   updatedAt?: string;
@@ -455,10 +457,29 @@ export function familyState(t: FeatureTicket, needsYou = false): FamilyState {
   if (t.outcome === "limit") return "paused";
   if (t.outcome === "failed" || t.outcome === "blocked") return "failed";
   if (needsYou) return "needs_you";
+  // Its question was closed without an answer (Close question): it waits, but not on the user.
+  if (t.outcome === "needs_input" && askClosed(t)) return "waiting";
   // Only the Done column counts as finished: a ticket in Review is still open, however its last run ended.
   if (t.status === "review") return "in_review";
   if (t.status === "backlog" || t.status === "planning") return "waiting";
   return "needs_you";
+}
+
+/**
+ * Ticket.closedForms: forms closed without an answer, by entry uuid. run: the ticket's runEndedAt when it closed (the
+ * run that asked it); older closes without it fall back to their time.
+ */
+export type ClosedForms = Record<string, { at: string; by?: "user" | "task"; taskId?: string; run?: string }>;
+
+/**
+ * Whether the user closed what the ticket's last run asked (Close question, or answered in its task's chat): a close
+ * made for that run. The ticket then no longer waits on the user for it, until a new run asks again; a close never
+ * hides a newer run's question.
+ */
+export function askClosed(t: { closedForms?: ClosedForms | null; runEndedAt?: string | null }): boolean {
+  const ended = t.runEndedAt ?? "";
+  return Object.values(t.closedForms ?? {}).some((c) =>
+    typeof c?.run === "string" ? c.run === ended : typeof c?.at === "string" && c.at >= ended);
 }
 
 /** A group is finished (folds) once every child is Done, Passed or Found a problem. */

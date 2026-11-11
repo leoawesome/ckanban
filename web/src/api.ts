@@ -522,6 +522,8 @@ export interface Ticket {
   automationCards?: Record<string, { loopId: string; at: string }>;
   /** Key boxes (ask_keys) answered, by entry uuid: the names saved, or self for "I'll do it myself". */
   keyCards?: Record<string, { saved: string[]; self?: boolean; at: string }>;
+  /** Question forms closed without an answer, by entry uuid (questionForms.ts ClosedForms). */
+  closedForms?: Record<string, { at: string; by?: "user" | "task"; taskId?: string }>;
   /** Made by Automations → Set up with Claude. */
   automationSetup?: boolean;
   /** Share menu publishes in progress (or the last one's error), per output file. */
@@ -1815,6 +1817,8 @@ export const api = {
   /** The user answered a teammate card (saved it, or dismissed it). */
   answerTeammateCard: (slug: string, id: string, uuid: string, card: Omit<TeammateCardState, "at">) =>
     req<Ticket>("PUT", `${t(slug, id)}/teammate-cards/${encodeURIComponent(uuid)}`, card),
+  /** Close question: the form closes without sending anything to Claude, and stops waiting on the user. */
+  closeForm: (slug: string, id: string, uuid: string) => req<Ticket>("PUT", `${t(slug, id)}/closed-forms/${encodeURIComponent(uuid)}`, {}),
   /** The user dismissed a squad card (saving goes through saveSquad with the card). */
   answerSquadCard: (slug: string, id: string, uuid: string, card: Omit<SquadCardState, "at" | "teammates">) =>
     req<Ticket>("PUT", `${t(slug, id)}/squad-cards/${encodeURIComponent(uuid)}`, card),

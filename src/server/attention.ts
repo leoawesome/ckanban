@@ -1,9 +1,12 @@
-import { featureRows, hiddenTool } from "../../web/src/family";
+import { askClosed, featureRows, hiddenTool } from "../../web/src/family";
 import { stepWait, type StepWait } from "./main-ticket";
 import { childrenOf, isComplete, planActive } from "./plan";
 import type { SessionSummary } from "./session";
 import type { Store } from "./store";
 import type { Ticket } from "./types";
+
+/** Plan.reason when the planner's run ended asking the user (board.ts stuck()). */
+export const STUCK_ON_QUESTIONS = "there are questions for you";
 
 export type AttentionKind = "stalled" | "failed" | "limit" | "blocked" | "questions" | "proposal" | "review" | "reply" | "huddle";
 
@@ -111,7 +114,9 @@ function ownAttention(
   // A run that went silent: still running, but only the user can tell a hung tool from a slow one.
   if (t.stalled && running) return { kind: "stalled", label: `Stalled · no output for ${t.stalled.minutes} min`, since: t.stalled.at };
   // A main ticket's stuck plan (no progress, or it asked something) needs the user even when its tool tickets are done.
-  if (t.plan?.state === "stuck" && (!o.planComplete || t.main)) return { kind: "blocked", label: "Plan stuck", since: t.updatedAt };
+  // A plan stuck only because it asked the user, whose question they closed (Close question), doesn't need them for it.
+  const closedAsk = t.plan?.reason === STUCK_ON_QUESTIONS && askClosed(t);
+  if (t.plan?.state === "stuck" && (!o.planComplete || t.main) && !closedAsk) return { kind: "blocked", label: "Plan stuck", since: t.updatedAt };
   if (running || t.status === "in_progress") return null;
   // A running plan's planner and children are handled unattended; the plan pings the user when stuck.
   if (o.managed || t.plan?.state === "running" || t.plan?.state === "finishing" || t.plan?.state === "paused") return null;
@@ -123,11 +128,13 @@ function ownAttention(
   // Hit the usage limit: it waits for the reset and continues by itself, unless that is off or used up for today.
   if (t.outcome === "limit") return t.limit?.auto ? null : { kind: "limit", label: "Limit hit", since };
   if (t.outcome === "blocked") return { kind: "blocked", label: t.capHit ? `Stopped at $${t.capHit.capUsd.toFixed(2)} cap` : "Blocked", since };
-  const q = s?.openQuestions ?? 0;
+  // A question the user closed (Close question, or answered in its task's chat) no longer waits on them.
+  const closed = askClosed(t);
+  const q = closed ? 0 : s?.openQuestions ?? 0;
   if (q > 0) return { kind: "questions", label: `Answer ${q} question${q === 1 ? "" : "s"}`, since };
   // A key box (ask_keys) waits for the user's Save or "I'll do it myself".
   if (s?.pendingKeys?.some((id) => !t.keyCards?.[id])) return { kind: "questions", label: "Add keys", since };
-  if (t.outcome === "needs_input") return { kind: "questions", label: "Answer Claude", since };
+  if (t.outcome === "needs_input" && !closed) return { kind: "questions", label: "Answer Claude", since };
   const p = s?.pendingProposal;
   if (p && !((!p.title || p.title === t.title) && (!p.description || p.description.trim() === t.body.trim()))) {
     return { kind: "proposal", label: "Review proposal", since };
@@ -244,10 +251,11 @@ export const byWaitingAge = <T extends { attention: Pick<Attention, "since"> }>(
 export function userWaitReason(t: Ticket, s: SessionSummary | null): string | null {
   if (t.status === "done") return null;
   // Open questions first, also in Planning: the plan names what to do ("Launch kit has 5 questions").
-  const q = s?.openQuestions ?? 0;
+  const closed = askClosed(t);
+  const q = closed ? 0 : s?.openQuestions ?? 0;
   if (q > 0) return `${q} question${q === 1 ? "" : "s"} for you`;
   if (t.status === "planning") return "in Planning";
-  if (t.outcome === "needs_input") return "has questions for you";
+  if (t.outcome === "needs_input" && !closed) return "has questions for you";
   const p = s?.pendingProposal;
   if (p && !((!p.title || p.title === t.title) && (!p.description || p.description.trim() === t.body.trim()))) return "proposal to apply";
   return null;

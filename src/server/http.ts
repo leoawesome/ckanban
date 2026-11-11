@@ -2724,11 +2724,18 @@ export function createServer(deps: ServerDeps) {
       const sender = runner ?? planner ?? requester ?? guest?.ticket;
       // "Send in a fresh chat" is the user's own choice, never a run's or another ticket's.
       const fresh = b.fresh === true && !sender && !req.headers.get(RUN_HEADER);
+      // Whether the task waited on the user before this message (closeQuestionsAbout).
+      const waited = board.waitsForAnswer(slug, store.getTicket(slug, id)!);
       const t = await board.chat(slug, id, sender ? fromTicketText(sender.id, sender.title, text) : text,
         { fromPlanner: !!sender, ...(sender ? { from: { ticketId: sender.id, title: sender.title } } : {}), ...(fresh ? { fresh } : {}) });
       if (startedBy !== undefined) board.markStartedBy(slug, id, startedBy);
       // A message the user typed (not a slash command) reached Claude: a pending follow-up hears about it, and stops if it was set to.
       if (!req.headers.get(RUN_HEADER) && !text.startsWith("/")) board.userReplied(slug, id);
+      // The user answered in a task's chat: a main ticket's question about that task is settled, and closes by itself.
+      if (!sender && !req.headers.get(RUN_HEADER) && !req.headers.get(HUDDLE_HEADER) && !text.startsWith("/")) {
+        const main = board.closeQuestionsAbout(slug, t, waited);
+        if (main) emitTicket(slug, main.id);
+      }
       // The user wrote in a tool ticket: its parent hears the whole message before its next decision.
       // A "with you" ticket is the user's own live step: answers go straight to it (also from the main ticket's chat), and
       // its result reaches the main ticket.
@@ -2831,6 +2838,21 @@ export function createServer(deps: ServerDeps) {
       store.updateTicket(slug, id, { squadCards: { ...t.squadCards, [parts[5]]: card } });
       emitTicket(slug, id);
       return json(view(profile, store.getTicket(slug, id)!));
+    }
+    // Close question: PUT .../closed-forms/<entry uuid> closes a questions form without answering (nothing is sent to
+    // Claude, no run starts); the ticket stops waiting on the user for it.
+    if (action === "closed-forms" && parts.length === 6 && m === "PUT") {
+      await userOnly(req, "Closing a question");
+      const uuid = parts[5];
+      if (!uuid || uuid.length > 200) throw new HttpError(400, "the question's id is missing");
+      try {
+        const t = board.closeForm(slug, id, uuid);
+        emitTicket(slug, id);
+        return json(view(profile, t));
+      } catch (e) {
+        if (e instanceof ConflictError) throw new HttpError(409, e.message);
+        throw new HttpError(404, (e as Error).message);
+      }
     }
     if (action === "teammate-cards" && parts.length === 6 && m === "PUT") {
       if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user answers teammate cards");

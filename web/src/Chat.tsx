@@ -38,7 +38,7 @@ import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
 import { StatusNoteView, useFeatureStatus } from "./StatusBlock";
 import { ResultCardView } from "./ResultCardView";
-import { familyOf, hiddenTool, plannedMain, withYouTool } from "./family";
+import { askClosed, familyOf, hiddenTool, plannedMain, withYouTool } from "./family";
 import { type StepInfo, type StepMsg, useStepMessages } from "./StepMessages";
 import { QuestionText } from "./QuestionText";
 import { TaskCard, TaskSheet, TaskTrail, useSheet, WaitingButton } from "./TaskSheet";
@@ -737,7 +737,18 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   const replying = pending.some((p) => !p.steer);
   // Board updates (kind "board") never answer: a form they interrupt stays open, or is asked again below.
   const answeredAfter = (index: number) => replying || entries.slice(index + 1).some((e) => e.role === "user" && e.kind === "text" && !e.huddleId);
-  const forms = useMemo(() => formStates(entries, replying), [entries, replying]);
+  // Forms the user closed without answering (Close question), by uuid; the newest open one also when the ticket only
+  // knows a close came after its last run (it closed by itself when they answered in its task's chat).
+  const closedIds = useMemo(() => new Set(Object.keys(ticket.closedForms ?? {})), [ticket.closedForms]);
+  const closeLatest = !running && askClosed(ticket);
+  const forms = useMemo(() => formStates(entries, replying, closedIds, closeLatest), [entries, replying, closedIds, closeLatest]);
+  /** The message that answered form index: in the chat, or still on its way. */
+  const answerOf = (index: number): string | undefined => {
+    const f = formState(index);
+    if (f.state !== "answered") return undefined;
+    return f.by !== undefined ? entries[f.by]?.text : pending.find((p) => !p.steer)?.text;
+  };
+  const closeForm = (uuid: string) => api.closeForm(slug, ticket.id, uuid).catch((err: Error) => onError(err.message));
   const formState = (index: number): FormState => forms.get(index) ?? { state: "answered" };
   const replacedBy = (index: number) => { const f = formState(index); return f.state === "replaced" ? f : undefined; };
   /** Where an open form saves its progress: shared with the earlier forms it asks again. */
@@ -952,7 +963,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                   newest={newest} lastOfTurn={l.lastReply} active={simpler.active(e.uuid)} />
               )}
               {e.questions && (
-                <QuestionsForm questions={e.questions} answered={formState(b.index).state === "answered"} replaced={replacedBy(b.index)}
+                <QuestionsForm questions={e.questions} answered={formState(b.index).state === "answered"} answer={answerOf(b.index)}
+                  replaced={replacedBy(b.index)} closed={formState(b.index).state === "closed"} onClose={() => closeForm(e.uuid)}
                   disabled={running} onSubmit={send} onPreview={onOpenOutput && ((m) => onOpenOutput(`mockups/${m}`))}
                   storageKey={formKey(slug, ticket.id, openKey(b.index) ?? e.uuid)} />
               )}

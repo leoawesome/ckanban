@@ -69,7 +69,10 @@ export function startProgress(questions: Question[], saved: Progress | null | un
 export type FormState =
   /** Waiting for the user's answers. */
   | { state: "open"; key: string }
-  | { state: "answered" }
+  /** by: the index of the user's message that answered it, when it is in the chat (not while the answer is on its way). */
+  | { state: "answered"; by?: number }
+  /** The user closed it without answering (Close question), or it closed by itself when they answered in its task's chat. */
+  | { state: "closed" }
   /** Asked again further down (a board update came in before the user answered): same says whether the questions match. */
   | { state: "replaced"; same: boolean };
 
@@ -80,14 +83,16 @@ const answers = (e: SessionEntry) => e.role === "user" && e.kind === "text" && !
  * The state of every questions form in the chat, by entry index. A form followed by another one before the user
  * answered is replaced by it; a chain of such forms shares one saved-progress key (the first form's uuid), so what the
  * user typed into the old form shows up in the new one. replying: the user's answer is on its way.
+ * closed: the uuids of forms the user closed (Ticket.closedForms); closeLatest: the newest open form counts as closed
+ * too (askClosed: closed after the last run ended, also when the board only knows that it closed, not which form).
  */
-export function formStates(entries: SessionEntry[], replying = false): Map<number, FormState> {
+export function formStates(entries: SessionEntry[], replying = false, closed: ReadonlySet<string> = new Set(), closeLatest = false): Map<number, FormState> {
   const out = new Map<number, FormState>();
   let chain = null as { key: string; last: number } | null;
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     if (answers(e)) {
-      if (chain) out.set(chain.last, { state: "answered" });
+      if (chain) out.set(chain.last, { state: "answered", by: i });
       chain = null;
       continue;
     }
@@ -96,9 +101,44 @@ export function formStates(entries: SessionEntry[], replying = false): Map<numbe
     const key: string = chain?.key ?? e.uuid;
     chain = { key, last: i };
     out.set(i, { state: "open", key: chain.key });
+    // A closed form ends its chain: a later form starts fresh, and nothing answers the closed one.
+    if (closed.has(e.uuid)) {
+      out.set(i, { state: "closed" });
+      chain = null;
+    }
   }
   if (chain && replying) out.set(chain.last, { state: "answered" });
+  else if (chain && closeLatest) out.set(chain.last, { state: "closed" });
   return out;
+}
+
+/**
+ * The answers in the message a form sent (answersMessage), paired with its questions by their text: one per question
+ * (null when the message doesn't answer it, e.g. the user typed their own message), plus the note after the list.
+ */
+export function parseAnswers(text: string, questions: Pick<Question, "question">[]): { answers: (string | null)[]; note: string } {
+  const none = { answers: questions.map(() => null), note: "" };
+  const m = /^\s*My answers:\n/.exec(text);
+  if (!m) return none;
+  const items: string[] = [];
+  const lines = text.slice(m[0].length).split("\n");
+  let i = 0;
+  for (; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.startsWith("- ")) items.push(l.slice(2));
+    else if (l.startsWith("  ") && items.length) items[items.length - 1] += `\n${l.slice(2)}`;
+    else break;
+  }
+  const note = lines.slice(i).join("\n").trim();
+  const used = new Set<number>();
+  const answers = questions.map((q) => {
+    const head = `${q.question} → `;
+    const j = items.findIndex((it, k) => !used.has(k) && it.startsWith(head));
+    if (j < 0) return null;
+    used.add(j);
+    return items[j].slice(head.length).trim();
+  });
+  return { answers, note };
 }
 
 /** One answer as the sent message shows it: the picked options, then the typed text, joined with "; ". */

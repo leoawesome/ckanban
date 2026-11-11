@@ -13,10 +13,10 @@ import { saveMockups } from "./mockups";
 import { Devices, type DeviceTicketState } from "./devices";
 import { ChromeWatch, Chromes, resolveChromeSetting, type ChromeChoice } from "./chromes";
 import { macBanner } from "./notify";
-import { type HostHuddle, ticketAttention, userWaitReason } from "./attention";
+import { type HostHuddle, STUCK_ON_QUESTIONS, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
 import { recallBlock } from "./recall";
-import { familyBelow, familyOf, featureRoot, featureRows, groupsOf, isFeature, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
+import { askClosed, familyBelow, familyOf, featureRoot, featureRows, groupsOf, isFeature, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { followUpFor, followUpPlace } from "../../web/src/followUp";
@@ -488,6 +488,11 @@ export class Board {
   /** For the card: the devices the ticket's run uses now, and the ones it waits for. */
   deviceState(slug: string, id: string): DeviceTicketState | null {
     return this.devices.ticketState(slug, id);
+  }
+
+  /** The ticket waits on the user now: not working, and a question or proposal is open (userWait). */
+  waitsForAnswer(slug: string, t: Ticket): boolean {
+    return !this.isRunning(slug, t.id) && this.userWait(t) !== null;
   }
 
   /** Why a plan child waits on the user (questions, a proposal to apply, in Planning), or null. */
@@ -2625,7 +2630,7 @@ export class Board {
         return false;
       }
       if (o === "blocked" || o === "needs_input" || o === "failed" || o === "stopped") {
-        this.stuck(slug, planner, plan, o === "needs_input" ? "there are questions for you" : `the run that plans the steps ${o === "blocked" ? "is blocked" : o}`);
+        this.stuck(slug, planner, plan, o === "needs_input" ? STUCK_ON_QUESTIONS : `the run that plans the steps ${o === "blocked" ? "is blocked" : o}`);
         return false;
       }
       if (plan.awaiting === "final") {
@@ -2719,7 +2724,43 @@ export class Board {
 
   /** The questions form in the ticket's chat still waiting for the user's answers (empty when none). */
   private openForm(t: Ticket): Question[] {
+    // A question the user closed isn't asked again after a board update.
+    if (askClosed(t)) return [];
     return (t.sessionId ? this.sessionSummary(t.sessionId)?.openForm : undefined) ?? [];
+  }
+
+  /**
+   * Close question: the user closes a questions form (entry uuid) without answering. Nothing is sent and no run
+   * starts; the ticket stops waiting on the user for it (askClosed), until a new run asks again. Only the form still
+   * open now can be closed (a stale tab can't hide a newer question); the close remembers the run that asked it.
+   */
+  closeForm(slug: string, id: string, uuid: string): Ticket {
+    const t = this.store.getTicket(slug, id);
+    if (!t) throw new Error(`ticket ${id} not found`);
+    if (this.isRunning(slug, id)) throw new ConflictError("Claude is working on this ticket; close the question once it has finished");
+    if (t.closedForms?.[uuid]) return t;
+    const open = t.sessionId ? this.sessionSummary(t.sessionId)?.openFormId : undefined;
+    if (!open || open !== uuid) throw new ConflictError("This question isn't the one waiting now; reload the page to see the latest question");
+    return this.patch(slug, id, { closedForms: { ...t.closedForms, [uuid]: { at: nowIso(), by: "user", run: t.runEndedAt ?? "" } } });
+  }
+
+  /**
+   * The user wrote in a task's chat: a main ticket's open question about that task (ask_questions' about) is settled
+   * there, so it closes by itself (as if they pressed Close question). Only when the task was waiting on the user as
+   * the message arrived (taskWaited: a question, a proposal), so "status?" to a working task doesn't close it, and only
+   * the main ticket's form still open now. Returns the main ticket when it closed one.
+   */
+  closeQuestionsAbout(slug: string, task: Ticket, taskWaited: boolean): Ticket | null {
+    if (!taskWaited) return null;
+    const parent = parentLink(task);
+    const above = parent ? this.store.getTicket(slug, parent.id) : undefined;
+    const main = above ? this.mainOf(slug, above) : null;
+    if (!main || !main.sessionId || this.isRunning(slug, main.id) || askClosed(main)) return null;
+    const s = this.sessionSummary(main.sessionId);
+    if (!s?.openQuestions || !s.openFormId || !s.openAsk?.about?.includes(task.id) || main.closedForms?.[s.openFormId]) return null;
+    const out = this.patch(slug, main.id, { closedForms: { ...main.closedForms, [s.openFormId]: { at: nowIso(), by: "task", taskId: task.id, run: main.runEndedAt ?? "" } } });
+    this.store.addComment(slug, main.id, "ai", `Closed the question about "${task.title}": you answered it in that task's chat.`);
+    return out;
   }
 
   /** A key box (ask_keys) in the ticket's chat still waits for the user. */

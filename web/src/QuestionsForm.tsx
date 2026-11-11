@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Question } from "./api";
 import { autoGrow } from "./autoGrow";
 import { browserStore, forget, loadSaved } from "./drafts";
-import { type Answer, answersMessage, answerText, fresh, type Progress, signature, startProgress } from "./questionForms";
+import { type Answer, answersMessage, answerText, fresh, parseAnswers, type Progress, signature, startProgress } from "./questionForms";
 import { CheckIcon } from "./icons";
 import { usePersistentState } from "./usePersistentState";
 import { enterSends } from "./enterSends";
@@ -43,21 +43,27 @@ function AnswerBox({ value, onChange, onEnter, autoFocus, disabled, placeholder,
  * Claude's interview questions, one at a time (like Claude Code's question picker).
  * Keys: 1-9 pick an option, Enter goes next, Backspace/← goes back when not typing.
  */
-export function QuestionsForm({ questions, answered, replaced, disabled: off, onSubmit, storageKey, onPreview }: {
+export function QuestionsForm({ questions, answered, answer, replaced, closed, disabled: off, onSubmit, onClose, storageKey, onPreview }: {
   questions: Question[];
   answered: boolean;
+  /** The message that answered it (its "My answers:" list pairs each question with its answer), when known. */
+  answer?: string;
+  /** Closed without answering (Close question, or answered in its task's chat). */
+  closed?: boolean;
   /** Asked again further down (after a board update); same: with the same questions. Its progress lives on there. */
   replaced?: { same: boolean };
   disabled: boolean;
   /** Sends the answers; while its promise is pending the form can't send again (a double tap sends once). */
   onSubmit: (text: string) => void | Promise<unknown>;
+  /** Close question: closes the form without sending anything; omit to not offer it. */
+  onClose?: () => void | Promise<unknown>;
   /** Open an option's mockup (file name in outputs/mockups); options with one get a Preview link. */
   onPreview?: (mockup: string) => void;
   /** Where to keep unsent progress so it survives leaving the ticket; omit to not save. */
   storageKey?: string;
 }) {
   const sig = signature(questions);
-  const key = answered || replaced ? null : storageKey ?? null;
+  const key = answered || replaced || closed ? null : storageKey ?? null;
   // Progress saved for this form, or for the earlier form it asks again (same key), carried over question by question.
   const [progress, setProgress] = usePersistentState<Progress>(
     key,
@@ -72,8 +78,8 @@ export function QuestionsForm({ questions, answered, replaced, disabled: off, on
 
   // Answered (here or elsewhere): saved progress is no longer needed.
   useEffect(() => {
-    if (answered && storageKey) forget(browserStore(), storageKey);
-  }, [answered, storageKey]);
+    if ((answered || closed) && storageKey) forget(browserStore(), storageKey);
+  }, [answered, closed, storageKey]);
   const root = useRef<HTMLDivElement>(null);
   const total = questions.length;
   const summary = step >= total;
@@ -81,8 +87,8 @@ export function QuestionsForm({ questions, answered, replaced, disabled: off, on
   const a = answers[Math.min(step, total - 1)];
 
   useEffect(() => {
-    if (!answered && !replaced) root.current?.focus({ preventScroll: true });
-  }, [step, answered, !!replaced]);
+    if (!answered && !replaced && !closed) root.current?.focus({ preventScroll: true });
+  }, [step, answered, !!replaced, closed]);
 
   const update = (i: number, fn: (a: Answer) => Answer) => setAnswers((arr) => arr.map((x, j) => (j === i ? fn(x) : x)));
 
@@ -103,6 +109,15 @@ export function QuestionsForm({ questions, answered, replaced, disabled: off, on
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const disabled = off || sending;
+  const close = () => {
+    if (sendingRef.current || disabled || !onClose) return;
+    sendingRef.current = true;
+    setSending(true);
+    void Promise.resolve().then(() => onClose()).catch(() => {}).finally(() => {
+      sendingRef.current = false;
+      setSending(false);
+    });
+  };
   const send = () => {
     if (sendingRef.current || disabled) return;
     sendingRef.current = true;
@@ -124,13 +139,15 @@ export function QuestionsForm({ questions, answered, replaced, disabled: off, on
     );
   }
 
-  if (answered) {
+  if (closed) {
     return (
-      <div className="qcard answered">
-        <div className="qcard-head"><span className="qcard-title"><CheckIcon size={12} strokeWidth={2.2} /> Answered {total} question{total > 1 ? "s" : ""}</span></div>
+      <div className="qcard answered replaced closed">
+        <div className="qcard-head"><span className="qcard-title">Closed without answering</span></div>
       </div>
     );
   }
+
+  if (answered) return <AnsweredCard questions={questions} answer={answer} />;
 
   const onKey = (e: React.KeyboardEvent) => {
     if (disabled || (e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
@@ -220,6 +237,10 @@ export function QuestionsForm({ questions, answered, replaced, disabled: off, on
 
       <div className="qfoot">
         <button className="btn ghost small" disabled={step === 0} onClick={() => setStep(step - 1)}>Back</button>
+        {onClose && (
+          <button className="btn ghost small qclose" disabled={disabled} onClick={close}
+            title="Close this question without answering: nothing is sent to Claude, and it stops waiting on you">Close question</button>
+        )}
         <span className="muted small qhint">{summary ? "Enter to send" : "1-9 to pick · Enter for next"}</span>
         {summary || total === 1 ? (
           <button className="btn primary small" disabled={disabled} onClick={send}>Send answers</button>
@@ -227,6 +248,29 @@ export function QuestionsForm({ questions, answered, replaced, disabled: off, on
           <button className="btn primary small" disabled={disabled} onClick={next}>{step === total - 1 ? "Review →" : "Next →"}</button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** An answered form: each question in bold, the user's answer under it, and its Details folded as on the open form. */
+function AnsweredCard({ questions, answer }: { questions: Question[]; answer?: string }) {
+  const { answers, note } = answer ? parseAnswers(answer, questions) : { answers: questions.map(() => null), note: "" };
+  const total = questions.length;
+  return (
+    <div className="qcard answered">
+      <div className="qcard-head"><span className="qcard-title"><CheckIcon size={12} strokeWidth={2.2} /> Answered {total} question{total > 1 ? "s" : ""}</span></div>
+      <ol className="qanswered">
+        {questions.map((q, i) => (
+          <li key={i}>
+            <div className="qa-q"><QuestionText as="span" text={q.question} /></div>
+            {answers[i] && <div className="qa-a">{answers[i]}</div>}
+            {q.context?.trim() && (
+              <details className="qcontext"><summary>Details</summary><QuestionText text={q.context} /></details>
+            )}
+          </li>
+        ))}
+      </ol>
+      {note && <div className="qa-note"><span className="muted">Also: </span>{note}</div>}
     </div>
   );
 }

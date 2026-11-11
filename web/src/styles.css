@@ -1662,6 +1662,18 @@ body > .output-view.reader { position: fixed; }
 .qsummary { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
 .qsummary li > span { display: block; font-weight: 600; }
 .qsummary .link-btn { font-weight: 500; color: var(--muted); font-size: var(--fs-sm); }
+/* An answered form: each question (bold), the answer under it, its Details folded; smaller than the open form. */
+.qanswered { margin: 0; padding: 0 14px 12px 32px; display: flex; flex-direction: column; gap: 8px; font-size: var(--fs-sm); }
+.qanswered li::marker { color: var(--muted); }
+.qa-q { font-weight: 600; color: var(--text); }
+.qa-a { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.qa-a::before { content: "→ "; color: var(--muted); }
+.qanswered .qcontext { font-size: var(--fs-xs); margin-top: 2px; }
+.qa-note { padding: 0 14px 12px; font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.qfoot .qclose { color: var(--muted); }
+/* Narrow screens: with Close question in the footer, the keyboard hint has no room. */
+@media (max-width: 560px) { .qfoot .qclose + .qhint { display: none; } .qfoot .qclose { margin-right: auto; } }
+.qcard.closed .qcard-title { color: var(--muted); font-weight: 600; }
 .qfoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--bg); }
 .qhint { flex: 1; text-align: center; }
 /* touch screens: Enter adds a new line and the buttons send (enterSends.ts), so the Enter hints don't apply */

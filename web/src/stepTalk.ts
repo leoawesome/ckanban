@@ -40,8 +40,8 @@ const userTyped = (e: StepEntry) => e.role === "user" && e.kind === "text" && !e
  * What a step's conversation showed the user: the last reply of each finished turn (its narration in between stays in
  * the step's own chat), its question forms, and the user's own messages. Pure, so it is easy to test.
  */
-export function stepMessages(stepId: string, entries: StepEntry[], running: boolean): StepMsg[] {
-  const forms = formStates(entries, false);
+export function stepMessages(stepId: string, entries: StepEntry[], running: boolean, closed: ReadonlySet<string> = new Set(), closeLatest = false): StepMsg[] {
+  const forms = formStates(entries, false, closed, closeLatest);
   const out: StepMsg[] = [];
   let last: number | null = null;
   const flush = () => {

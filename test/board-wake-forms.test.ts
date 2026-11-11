@@ -69,7 +69,7 @@ test("a board update leaves the form open; asked again, the old form says so and
   expect(states.get(0)).toEqual({ state: "replaced", same: true });
   expect(states.get(2)).toEqual({ state: "open", key: "q1" });
   const answered = formStates([form, note, E({ uuid: "q2", questions: QS }), E({ uuid: "u", role: "user", text: "My answers" }), E({ uuid: "q3", questions: QS })]);
-  expect(answered.get(2)).toEqual({ state: "answered" });
+  expect(answered.get(2)).toEqual({ state: "answered", by: 3 });
   expect(answered.get(0)).toEqual({ state: "replaced", same: true });
   expect(answered.get(4)).toEqual({ state: "open", key: "q3" });
   expect(formStates([form], true).get(0)).toEqual({ state: "answered" });

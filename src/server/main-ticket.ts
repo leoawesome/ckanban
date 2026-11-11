@@ -2,7 +2,7 @@
 // A main ticket is the conversation the user started: it talks, decides and keeps the feature's status, and never edits
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
-import { familyBelow, familyState, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
+import { askClosed, familyBelow, familyState, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import type { Plan, Ticket } from "./types";
 
 /** Model and effort a tool ticket gets from its kind when create_ticket leaves them out. */
@@ -158,7 +158,7 @@ export interface StepWait {
  * to the user in its main ticket's chat; the main ticket's card says "Needs you" meanwhile.
  */
 export function youWaiting(t: Ticket, running: boolean): boolean {
-  if (!withYouTool(t) || running || t.outcome !== "needs_input") return false;
+  if (!withYouTool(t) || running || t.outcome !== "needs_input" || askClosed(t)) return false;
   if (t.status === "done" || t.status === "ready" || t.status === "in_progress" || t.status === "backlog") return false;
   return !(t.queued?.length);
 }
@@ -168,7 +168,7 @@ export function stepWait(t: Ticket, running: boolean): StepWait | null {
   if (running || t.status === "done" || t.status === "ready" || t.status === "in_progress" || t.status === "backlog") return null;
   const since = t.runEndedAt ?? t.updatedAt;
   const at = (why: string, attention: StepWait["attention"]): StepWait => ({ id: t.id, label: `${stepName(t)} ${why}`, attention, since });
-  if (t.outcome === "needs_input") return at("asks a question", "questions");
+  if (t.outcome === "needs_input" && !askClosed(t)) return at("asks a question", "questions");
   // A failure says why in a few words (its error's last line), so the user needn't open the tool ticket.
   const why = (t.error ?? "").trim().split("\n").findLast((l) => l.trim())?.trim();
   if (t.outcome === "failed") return at(why ? `failed: ${clip(why, 80)}` : "failed", "failed");
