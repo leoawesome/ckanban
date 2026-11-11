@@ -2155,6 +2155,8 @@ export class Board {
       expectedBody?: string;
       /** null: take the ticket out of its plan (only clearing is allowed here; adoptTickets sets it). */
       parentId?: null;
+      /** true pins the card to the top of its column (pinnedAt now), false unpins it. */
+      pinned?: boolean;
     },
     /** byUser: the user's own move (on the board, or asked for in the ticket's chat), not a run's or a planner's. */
     opts: { byUser?: boolean } = {},
@@ -2187,6 +2189,7 @@ export class Board {
       clean.suggestedTags = normalizeTags(patch.suggestedTags ?? current.suggestedTags).filter((s) => !tags.includes(s));
     }
     if (patch.important !== undefined) clean.important = !!patch.important;
+    if (patch.pinned !== undefined) clean.pinnedAt = patch.pinned ? nowIso() : null;
     if (patch.parentId === null && current.parentId) {
       const plannerId = current.parentId;
       const me = current;

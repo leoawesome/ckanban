@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import type { Status } from "../web/src/columns";
-import { boardColumnOf, columnNeighbours, columnOrder, menuPick, STATUS_MENU } from "../web/src/columns";
+import { boardColumnOf, columnNeighbours, columnOrder, dropOrder, groupByColumn, menuPick, STATUS_MENU } from "../web/src/columns";
 import { opensNewTab } from "../web/src/links";
 
-const tk = (id: string, status: Status, order: number, extra: { slotWait?: { at: string } } = {}) => ({ id, status, order, ...extra });
+const tk = (id: string, status: Status, order: number, extra: { slotWait?: { at: string }; pinnedAt?: string | null } = {}) => ({ id, status, order, ...extra });
 
 const board = [
   tk("b1", "backlog", 0), tk("p2", "planning", 1), tk("p1", "planning", 0), tk("p3", "planning", 2),
@@ -53,4 +53,55 @@ test("opensNewTab: every link but same-page hash links", () => {
   expect(opensNewTab("#/kanban/t_1")).toBe(false);
   expect(opensNewTab(null)).toBe(false);
   expect(opensNewTab("")).toBe(false);
+});
+
+const pins = [
+  tk("r1", "review", 0), tk("r2", "review", 1), tk("old", "review", 5, { pinnedAt: "2026-11-10T10:00:00.000Z" }),
+  tk("new", "review", 9, { pinnedAt: "2026-11-11T10:00:00.000Z" }), tk("r3", "review", 2, { pinnedAt: null }),
+];
+
+test("pinned cards come first in their column, newest pin first, then the usual order", () => {
+  expect(columnOrder(pins, "review")).toEqual(["new", "old", "r1", "r2", "r3"]);
+});
+
+test("a pinned ticket that moves to another column shows at the top there among the pinned cards", () => {
+  const moved = pins.map((t) => (t.id === "old" ? { ...t, status: "backlog" as Status } : t));
+  const backlog = [...moved, tk("b1", "backlog", -3), tk("b2", "backlog", -2, { pinnedAt: "2026-11-09T00:00:00.000Z" })];
+  expect(columnOrder(backlog, "backlog")).toEqual(["old", "b2", "b1"]);
+  expect(columnOrder(backlog, "review")).toEqual(["new", "r1", "r2", "r3"]);
+});
+
+test("in the queue pinned cards come first, then replies waiting for a slot (oldest first), then order", () => {
+  const q = [
+    tk("q1", "ready", 0), tk("w2", "in_progress", 0, { slotWait: { at: "2026-11-11T02:00:00.000Z" } }),
+    tk("w1", "in_progress", 0, { slotWait: { at: "2026-11-11T01:00:00.000Z" } }), tk("qp", "ready", 7, { pinnedAt: "2026-11-11T00:00:00.000Z" }),
+  ];
+  expect(groupByColumn(q).get("ready")!.map((t) => t.id)).toEqual(["qp", "w1", "w2", "q1"]);
+});
+
+test("columnNeighbours follows the pinned order", () => {
+  const order = columnOrder(pins, "review");
+  expect(columnNeighbours(order, "review", "old", pins)).toEqual({ prev: "new", next: "r1" });
+  expect(columnNeighbours(order, "review", "r1", pins)).toEqual({ prev: "old", next: "r2" });
+});
+
+test("dropOrder: an unpinned card dropped onto the pinned cards lands at the top of the unpinned ones", () => {
+  const list = groupByColumn(pins).get("review")!.filter((t) => t.id !== "r2");
+  const r2 = pins.find((t) => t.id === "r2")!;
+  // Dropped on "new" (index 0) or "old" (index 1): above r1 (order 0).
+  expect(dropOrder(r2, "review", list, 0)).toBe(-1);
+  expect(dropOrder(r2, "review", list, 1)).toBe(-1);
+  // Between r1 (0) and r3 (2).
+  expect(dropOrder(r2, "review", list, 3)).toBe(1);
+  // At the end.
+  expect(dropOrder(r2, "review", list, list.length)).toBe(3);
+});
+
+test("dropOrder: a pinned card keeps its pin place in its column, and goes on top of the unpinned cards in a new one", () => {
+  const list = groupByColumn(pins).get("review")!.filter((t) => t.id !== "old");
+  const old = pins.find((t) => t.id === "old")!;
+  expect(dropOrder(old, "review", list, 3)).toBeNull();
+  const backlog = [tk("b1", "backlog", 4), tk("b2", "backlog", 8)];
+  expect(dropOrder(old, "backlog", backlog, 2)).toBe(3);
+  expect(dropOrder(old, "done", [], 0)).toBe(1);
 });

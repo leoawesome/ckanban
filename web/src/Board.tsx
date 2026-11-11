@@ -7,7 +7,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BOARD_COLUMNS, type Job, type Status, type Ticket } from "./api";
 import { Card } from "./Card";
-import { boardColumnOf, groupByColumn } from "./columns";
+import { boardColumnOf, dropOrder, groupByColumn } from "./columns";
 import { playMove } from "./arrivals";
 import { reducedMotion } from "./motion";
 import { useCardTabs } from "./useCardTabs";
@@ -67,10 +67,16 @@ interface Props {
   onCollapse: (id: Status, v: boolean) => void;
   /** Phones: the search row is folded into an icon at the end of the column tab row (a tap opens or closes it). */
   search?: { on: boolean; toggle: () => void };
+  /** 📌 Pin (true) or unpin a ticket (the card's pin button). */
+  onPin?: (id: string, on: boolean) => void;
 }
 
 /** Card props shared down the columns. */
-interface CardCtx { limit?: { slug: string; onError: (msg: string) => void }; jobs?: Job[]; onOpenJobs?: (ticketId: string) => void; via?: Map<string, string> }
+interface CardCtx {
+  limit?: { slug: string; onError: (msg: string) => void }; jobs?: Job[]; onOpenJobs?: (ticketId: string) => void; via?: Map<string, string>;
+  /** 📌 Pin (true) or unpin a ticket: the card's pin button. */
+  onPin?: (id: string, on: boolean) => void;
+}
 
 /** What a screen reader says on every card, after its title and status (also how to move between cards). */
 const CARD_HELP = "Arrow keys or J and K move between cards in a column, H and L between columns. Enter opens the ticket. " +
@@ -115,7 +121,8 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
       }}
     >
       <Card a11yId={a11y} ticket={ticket} onClick={() => onOpen(ticket.id)} queued={queued} held={held}
-        limit={ctx.limit} jobs={ctx.jobs} onOpenJobs={ctx.onOpenJobs} via={ctx.via?.get(ticket.id)} />
+        limit={ctx.limit} jobs={ctx.jobs} onOpenJobs={ctx.onOpenJobs} via={ctx.via?.get(ticket.id)}
+        onPin={ctx.onPin && ((on) => ctx.onPin!(ticket.id, on))} />
     </div>
   );
 }
@@ -248,10 +255,15 @@ const collision: CollisionDetection = (args) => {
   return closestCenter(args);
 };
 
-export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed, search }: Props) {
+export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed, search, onPin }: Props) {
+  // The latest onPin, so the cards' context doesn't change on every render.
+  const pinRef = useRef(onPin);
+  pinRef.current = onPin;
+  const canPin = !!onPin;
   const ctx = useMemo(() => ({
     limit: slug ? { slug, onError: (msg: string) => toast(msg, { tone: "error" }) } : undefined, jobs, onOpenJobs, via,
-  }), [slug, jobs, onOpenJobs, via]);
+    onPin: canPin ? (id: string, on: boolean) => pinRef.current?.(id, on) : undefined,
+  }), [slug, jobs, onOpenJobs, via, canPin]);
   const phone = usePhone();
   const sensors = useSensors(
     // Phones: long-press picks a card up, so a swipe still scrolls the board.
@@ -301,12 +313,9 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
         index = movingDown ? overIndex + 1 : overIndex;
       }
     }
-    const before = list[index - 1]?.order;
-    const after = list[index]?.order;
-    const order = before === undefined && after === undefined ? 1
-      : before === undefined ? after! - 1
-      : after === undefined ? before + 1
-      : (before + after) / 2;
+    // Pinned cards keep the top of the column: the order is worked out among the unpinned ones (columns.ts).
+    const order = dropOrder(ticket, targetStatus, list, index);
+    if (order === null) return;
     if (targetStatus === ticket.status && order === ticket.order) return;
     onMove(ticket.id, targetStatus, order);
   };

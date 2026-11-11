@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { newestArtifact, safeHref, waitsForSlot, type Job, type SessionMessage, type Ticket } from "./api";
 import { digestPreview } from "./huddleText";
-import { ClockIcon, ExternalIcon } from "./icons";
+import { ClockIcon, CloseIcon, ExternalIcon, PinIcon } from "./icons";
 import { FollowUpChip } from "./FollowUpChip";
 import { JobChip } from "./Jobs";
 import { jobChip } from "./jobText";
@@ -19,6 +19,23 @@ import { useNow } from "./useNow";
 import { clearArrival, useArrival } from "./arrivals";
 import { attentionLabel, cardFamily, familyLineText, partChip, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
 import { boardColumnOf } from "./columns";
+import { usePhone } from "./usePhone";
+
+/**
+ * The card's 📌 button: Pin to top, or Unpin on a pinned card. Desktop shows it on hover and focus (always on a pinned
+ * card); a phone always shows it, 40px to tap. A press never opens the card or picks it up.
+ */
+function PinButton({ pinned, onPin }: { pinned: boolean; onPin: (on: boolean) => void }) {
+  const label = pinned ? "Unpin" : "Pin to top";
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+  return (
+    <button type="button" className="icon-btn card-pin" aria-label={label} aria-pressed={pinned} title={`${label} (P)`}
+      onClick={(e) => { e.stopPropagation(); onPin(!pinned); }} onPointerDown={stop} onMouseDown={stop} onTouchStart={stop}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation(); }}>
+      {pinned ? <CloseIcon size={14} /> : <PinIcon size={14} />}
+    </button>
+  );
+}
 
 /** Live running time: ticks every second for the first minute, then every 30s. */
 function Elapsed({ since, sep = true }: { since: string; sep?: boolean }) {
@@ -154,7 +171,7 @@ function FamilyLineView({ line, fc, id }: { line: NonNullable<NonNullable<Ticket
   );
 }
 
-export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, jobs, onOpenJobs, via }: {
+export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, jobs, onOpenJobs, via, onPin }: {
   /** Board cards: id prefix of the title (`-title`) and status lines (`-turn`, `-line`, `-meta`) the card is labelled by. */
   a11yId?: string;
   ticket: Ticket; onClick?: () => void; dragging?: boolean; queued?: number; held?: boolean;
@@ -164,7 +181,10 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   onOpenJobs?: (ticketId: string) => void;
   /** A board search found this card through one of its tool tickets: that ticket's title. */
   via?: string;
+  /** Board cards: pin (true) or unpin the ticket; the 📌 button shows when given (not on Done cards). */
+  onPin?: (on: boolean) => void;
 }) {
+  const phone = usePhone();
   const ownWorking = (ticket.status === "in_progress" && !waitsForSlot(ticket) && !autoHuddleIdle(ticket)) || !!ticket.running;
   // A main ticket with a step, or a ticket of its feature working: one card for the feature (working line, "7 of 16
   // steps", family cost). Its feature working shows the blue stripe too (cardFamily).
@@ -185,6 +205,9 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   const quiet = ownWorking && !!step?.quiet;
   const last = ticket.session?.lastMessage;
   const done = ticket.status === "done";
+  // 📌 Pinned: the dark card at the top of its column (Done unpins it).
+  const pinned = !!ticket.pinnedAt && !done;
+  const pinBtn = onPin && !dragging && !done;
   // Claude Code's own "Not logged in" isn't Claude's last word: a red chip says what to do instead (nothing on Done).
   const signIn = !!last && last.role !== "user" && signInError(last.text);
   const finish = useFinishMark(ownWorking, ticket);
@@ -245,8 +268,10 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   const pill = signInChip || (finish ? finishBadge(finish) : badge) || (ticket.autoHuddle && ownWorking && autoHuddleChip(ticket.autoHuddle)) || planPill || null;
   return (
     <article
-      className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working || huddleLine ? "is-running" : ""} ${quiet ? "is-quiet" : ""} ${att ? `needs-you att-${att.kind}` : ""}${arrival.ring ? " just-arrived" : ""}`}
+      className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working || huddleLine ? "is-running" : ""} ${quiet ? "is-quiet" : ""} ${att ? `needs-you att-${att.kind}` : ""}${arrival.ring ? " just-arrived" : ""}${pinned ? " is-pinned" : ""}${pinBtn ? " has-pin" : ""}${pinBtn && phone ? " pin-phone" : ""}`}
       onClick={() => { clearArrival(ticket.id); onClick?.(); }} onMouseEnter={arrival.isNew ? () => clearArrival(ticket.id) : undefined}>
+      {pinBtn && <PinButton pinned={pinned} onPin={onPin} />}
+      {pinned && <div className="card-pinned-label" aria-hidden><PinIcon size={12} /> Pinned</div>}
       {att && (
         <div className={`your-turn att-${att.kind}`} id={a11yId && `${a11yId}-turn`}>
           <span className={`yt-dot ${pulse ? "pulse" : ""}`} aria-hidden />
@@ -261,7 +286,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
             : `A task of ${part.parent.title}, shown on the board`}>{part.text}</span>
         </div>
       )}
-      <KeyHint inset className="card-keys" keys={doneHint ? "↵ open · S star · M move · D done · Space drag" : "↵ open · S star · M move · Space drag"} />
+      <KeyHint inset className="card-keys" keys={doneHint ? "↵ open · S star · P pin · M move · D done · Space drag" : `↵ open · S star${done ? "" : " · P pin"} · M move · Space drag`} />
       <div className="card-title" title={ticket.title} id={a11yId && `${a11yId}-title`}>
         {arrival.isNew && <span className="arrived-dot" role="img" aria-label="New here" title="Claude moved this card here" />}
         {ticket.important && <ImportantStar />}{ticket.title}

@@ -322,6 +322,11 @@ export interface Ticket {
   snooze?: { until: string; key: string } | null;
   /** ⭐ Important: set by the user (or Claude when the user says so); unattended runs review it in an auto huddle before landing. */
   important?: boolean;
+  /**
+   * 📌 Pinned by the user: the card sits at the top of whatever column it is in (newest pin first) until unpinned or
+   * moved to Done (the store clears it then). Missing or null: not pinned.
+   */
+  pinnedAt?: string | null;
   /** The auto huddle this ticket's run started or waits for; the card stays In Progress until it ends. */
   autoHuddle?: AutoHuddle | null;
   /** Claude comes back to this ticket at followUp.dueAt: the board wakes the same conversation (see followup.ts). */

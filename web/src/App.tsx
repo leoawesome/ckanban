@@ -520,12 +520,12 @@ export function App() {
     setSlug(to);
   }, []);
   // Latest values for the window key handler below, which is bound once per dialog state.
-  const live = useRef({ profiles, tickets, markDone: (_id: string) => {}, toggleStar: (_id: string) => {}, inboxCount: 0 });
+  const live = useRef({ profiles, tickets, markDone: (_id: string) => {}, toggleStar: (_id: string) => {}, togglePin: (_id: string) => {}, inboxCount: 0 });
 
   // Shortcuts: N new ticket, / search, ? cheatsheet, Ctrl+` Terminal, F Files, C Claude, T Team (each opens or focuses its side panel),
   // ⌘K command bar (tickets on every board, actions, boards), I the Inbox, U the newest toast's Undo,
   // B or ⌘B board picker, [ ] previous / next board, 1…9 board N, J/K/H/L or arrows select a card;
-  // on a focused card S stars, M moves to a column, D marks a Review card done.
+  // on a focused card S stars, P pins or unpins, M moves to a column, D marks a Review card done.
   // With a ticket panel open (and it has the keyboard) only N, ?, B, F, C, T, U, ⌘K and ⌘B; single keys stay quiet while
   // typing and inside the side panels. Esc is handled by the panel and dialogs (one layer at a time, see layers.ts).
   useEffect(() => {
@@ -595,12 +595,13 @@ export function App() {
         focusCard(next, grid);
         return;
       }
-      // S, M and D on a focused card (elsewhere they do nothing).
+      // S, P, M and D on a focused card (elsewhere they do nothing).
       const card = cardKey(e);
       const cardId = card && focusedCardId();
       if (card && cardId) {
         e.preventDefault();
         if (card === "star") live.current.toggleStar(cardId);
+        else if (card === "pin") live.current.togglePin(cardId);
         else if (card === "move") setMoveAsk(cardId);
         else live.current.markDone(cardId);
         return;
@@ -881,7 +882,26 @@ export function App() {
       loadTickets(board).catch(() => {});
     });
   };
-  live.current = { profiles, tickets, markDone, toggleStar, inboxCount: inbox.length + snoozed.length };
+  // 📌 Pin to the top of its column, or unpin (card button, P, ticket panel, ⌘K): shows at once, with Undo; Done cards can't be pinned.
+  const pin = (id: string, on: boolean, undo = true) => {
+    const t = live.current.tickets.find((x) => x.id === id);
+    const board = slug;
+    if (!t || !board || (on && t.status === "done") || on === !!t.pinnedAt) return;
+    setTickets((ts) => ts.map((x) => (x.id === id ? { ...x, pinnedAt: on ? new Date().toISOString() : null } : x)));
+    api.updateTicket(board, id, { pinned: on }).then(() => {
+      if (undo) toast(<>{on ? "Pinned" : "Unpinned"} <b>{t.title}</b></>, {
+        action: { label: "Undo", run: () => { if (slugRef.current === board) pin(id, !on, false); } },
+      });
+    }, (e) => {
+      setError(`Couldn't ${on ? "pin" : "unpin"} the ticket: ${e.message}`);
+      loadTickets(board).catch(() => {});
+    });
+  };
+  const togglePin = (id: string) => {
+    const t = tickets.find((x) => x.id === id);
+    if (t) pin(id, !t.pinnedAt);
+  };
+  live.current = { profiles, tickets, markDone, toggleStar, togglePin, inboxCount: inbox.length + snoozed.length };
 
   const mcpAttention = mcp?.servers.filter((s) => s.attention).length ?? 0;
   const scheduleFails = schedules?.filter((s) => s.lastError).length ?? 0;
@@ -1062,6 +1082,7 @@ export function App() {
   const cardTicket = !openId && cmdCard ? tickets.find((t) => t.id === cmdCard) ?? null : null;
   const cardActions: CommandAction[] = cardTicket ? [
     { id: "card-star", label: cardTicket.important ? "Remove the star" : "Star as important", hint: cardTicket.title, keys: ["S"], run: () => toggleStar(cardTicket.id) },
+    ...(cardTicket.status !== "done" || cardTicket.pinnedAt ? [{ id: "card-pin", label: cardTicket.pinnedAt ? "Unpin" : "Pin to top", hint: cardTicket.title, keys: ["P"], run: () => togglePin(cardTicket.id) }] : []),
     { id: "card-move", label: "Move to a column…", hint: cardTicket.title, keys: ["M"], run: afterBar(() => setMoveAsk(cardTicket.id)) },
     ...(cardTicket.status === "review" ? [{ id: "card-done", label: "Mark done", hint: cardTicket.title, keys: ["D"], run: afterBar(() => markDone(cardTicket.id)) }] : []),
     { id: "card-delete", label: "Delete ticket…", hint: cardTicket.title, run: afterBar(() => setDeleteAsk(cardTicket.id)) },
@@ -1342,7 +1363,7 @@ export function App() {
                 openTicket(t.id);
               }} />
           )}
-          <Board tickets={shownTickets} loading={!ticketsLoaded} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
+          <Board tickets={shownTickets} loading={!ticketsLoaded} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
             collapsed={collapsed} onCollapse={setColumnCollapsed}
             slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia}
             search={{ on: phoneSearch || !!query || tagFilter.length > 0, toggle: () => {
@@ -1465,7 +1486,7 @@ export function App() {
         beside={columnShown ? { right: columnWidth, top: topbarBottom } : null}
         tabRequest={huddleTab?.id === open.id ? { tab: "huddle", n: huddleTab.n, huddleId: huddleTab.huddleId } : null}
         huddleSeed={huddleSeed?.id === open.id ? { seed: huddleSeed.seed, n: huddleSeed.n } : null}
-        onOpenTeam={(r) => openPanel("team", r)} />}
+        onOpenTeam={(r) => openPanel("team", r)} onPin={(on) => pin(open.id, on)} />}
       {profileDialog && (
         <ProfileDialog
           profile={profileDialog === "edit" ? profile : null}

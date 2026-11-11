@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { copy, type Ticket } from "./api";
-import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, InfoIcon, MoreIcon, MoveIcon, RefreshIcon, SparkIcon, TerminalIcon, TrashIcon } from "./icons";
+import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, InfoIcon, MoreIcon, MoveIcon, PinIcon, RefreshIcon, SparkIcon, TerminalIcon, TrashIcon } from "./icons";
 import { capInputText, parseCap } from "./capText";
 import { useLayer } from "./layers";
 import { MenuSheet } from "./MenuSheet";
@@ -10,7 +10,7 @@ import { costText } from "./usage";
  * "⋯" menu in the ticket panel header: the session (resume command, branch, ID, linked session),
  * then Report a bug and Delete. ↑↓ move, Esc closes only the menu.
  */
-export function TicketMenu({ runSettings, ticket, working, live, linkedLabel, boardCap, onCap, onBranch, onMoveToBoard, onPickSession, onUnlink, onCheckPr, onReportBug, onDelete, onHuddle, onContext }: {
+export function TicketMenu({ runSettings, ticket, working, live, linkedLabel, boardCap, onCap, onBranch, onMoveToBoard, onPickSession, onUnlink, onCheckPr, onReportBug, onDelete, onHuddle, onContext, onPin }: {
   /** "Model and effort" with the current choice under it; picking it opens the dropdowns. */
   runSettings?: { value: string; onOpen: () => void };
   /** Open the chat's Context panel (how much Claude is holding in mind). */
@@ -36,6 +36,8 @@ export function TicketMenu({ runSettings, ticket, working, live, linkedLabel, bo
   /** Open the Huddle tab (hidden until the ticket has a huddle) to start one. */
   onHuddle?: () => void;
   onDelete: () => void;
+  /** 📌 Pin to top / Unpin (missing on a Done ticket that isn't pinned). */
+  onPin?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -180,6 +182,14 @@ export function TicketMenu({ runSettings, ticket, working, live, linkedLabel, bo
             <div className="menu-sep" role="separator" />
             <CapRow ticket={ticket} boardCap={boardCap} onCap={onCap} />
             <div className="menu-sep" role="separator" />
+            {onPin && (
+              <button role="menuitem" className="menu-item" onClick={pick(onPin)}
+                title={ticket.pinnedAt ? "Let the card go back to its usual place in the column" : "Keep the card at the top of its column, wherever it moves, until Done"}>
+                <span className="menu-icon" aria-hidden><PinIcon size={14} /></span>
+                <span className="menu-label">{ticket.pinnedAt ? "Unpin" : "Pin to top"}</span>
+                <span className="menu-hint">P</span>
+              </button>
+            )}
             {ticket.status === "backlog" && onMoveToBoard && (
               <button role="menuitem" className="menu-item" disabled={working}
                 title={working ? "Wait until Claude is done" : "Send this ticket to the Backlog of another board"} onClick={pick(onMoveToBoard)}>

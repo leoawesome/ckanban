@@ -63,7 +63,7 @@ export const HuddleIcon = (p: IconProps) => svg(<><path d="M2.5 3.6c0-.6.5-1.1 1
 export const BulbIcon = (p: IconProps) => svg(<><path d="M6 11.5h4M6.5 13.8h3" /><path d="M5.9 9.6C4.9 8.9 4.2 7.8 4.2 6.5a3.8 3.8 0 0 1 7.6 0c0 1.3-.7 2.4-1.7 3.1-.3.2-.5.6-.5 1v.9H6.4v-.9c0-.4-.2-.8-.5-1z" /></>, p);
 /** Learnings: a graduation cap. */
 export const CapIcon = (p: IconProps) => svg(<><path d="M1.8 6.2L8 3.2l6.2 3L8 9.2 1.8 6.2z" /><path d="M4.5 7.6v3c0 .9 1.6 1.9 3.5 1.9s3.5-1 3.5-1.9v-3M14.2 6.2v3.6" /></>, p);
-/** A pinned note (the huddle brief). */
+/** A push pin: the huddle brief, and 📌 pinned tickets. */
 export const PinIcon = (p: IconProps) => svg(<><path d="M9.8 2.2l4 4-1.4.6-2.3 2.3-.3 2.7-1.2 1.2-5.4-5.4 1.2-1.2 2.7-.3 2.3-2.3.4-1.6z" /><path d="M5.2 10.8L2.2 13.8" /></>, p);
 /** Thinking: a thought bubble. */
 export const ThoughtIcon = (p: IconProps) => svg(<><path d="M5 10.2a3 3 0 0 1-.4-5.9 3.4 3.4 0 0 1 6.3-.2 2.8 2.8 0 0 1 .4 5.6c-.3.3-.8.5-1.3.5H5z" /><circle cx="4" cy="12.3" r=".8" /><circle cx="2.4" cy="14" r=".5" /></>, p);

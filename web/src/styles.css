@@ -448,6 +448,42 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .star-toggle:hover { border-color: var(--border); color: var(--text); }
 .star-toggle.on { color: var(--star); }
 .star-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 📌 Pinned card: first in its column. Light board: a dark card (the dark theme's tokens, so every chip keeps its 4.5:1)
+   with a 5px orange edge, a "Pinned" label and a bigger title. Dark board: the inverse, a light raised card. */
+.card.is-pinned {
+  --surface: #2a2622; --surface-2: #36312c; --border: #4a443d; --text: #f4efe8; --muted: #c9c2b8;
+  --accent-text: #f0a084; --accent-soft: #3d2a22; --ok: #6cc28e; --ok-soft: #1f3327; --warn: #e2b04a; --warn-soft: #3a3020;
+  --err: #f08378; --err-soft: #3d2320; --info: #86aef0; --info-soft: #222d40; --star: #e8b23a; --pin-label: #f0a084;
+  color-scheme: dark; position: relative;
+  background: var(--surface); color: var(--text); border-color: transparent; border-left: 5px solid var(--accent);
+  box-shadow: var(--shadow-pop); padding: 11px 13px 11px 12px;
+}
+:root[data-theme="dark"] .card.is-pinned {
+  --surface: #fbf7f1; --surface-2: #efe9e0; --border: #ddd5c8; --text: #1f1e1b; --muted: #6b6862;
+  --accent-text: #a34a2b; --accent-soft: #f6e3da; --ok: #2a7046; --ok-soft: #dff0e5; --warn: #8a5900; --warn-soft: #fbefd5;
+  --err: #b3261e; --err-soft: #fbe2df; --info: #2b5fb8; --info-soft: #e1eafb; --star: #a67800; --pin-label: #a34a2b;
+  color-scheme: light;
+}
+.card.is-pinned:hover { border-color: transparent; border-left-color: var(--accent); }
+.card.is-pinned.is-running::before { display: none; }
+.card.is-pinned .card-title { font-size: var(--fs-lg); }
+.card-pinned-label {
+  display: flex; align-items: center; gap: 4px; margin-bottom: 4px;
+  font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--pin-label);
+}
+/* The card's pin button: top right, on hover or focus on desktop (always on a pinned card); always on a phone, 40px to tap. */
+.card-pin { position: absolute; top: 4px; right: 4px; z-index: 2; width: 28px; height: 28px; opacity: 0; transition: opacity 0.12s; }
+.card:hover > .card-pin, .card:focus-within > .card-pin, .sortable-card:focus-visible > .card > .card-pin, .card.is-pinned > .card-pin { opacity: 1; }
+.card-pin:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card.has-pin > :is(.card-title, .your-turn, .card-part, .card-pinned-label) { padding-right: 24px; }
+/* A pinned card's button sits beside its PINNED label, so the lines under it use the full width and wrap like a normal card's.
+   (A phone keeps the space: its 40px button reaches the second line, and a phone column is wide enough.) */
+.card.is-pinned.has-pin:not(.pin-phone) > :is(.card-title, .your-turn, .card-part) { padding-right: 0; }
+.card.pin-phone > .card-pin { top: 0; right: 0; width: 40px; height: 40px; opacity: 1; }
+.card.pin-phone > :is(.card-title, .your-turn, .card-part, .card-pinned-label) { padding-right: 30px; }
+/* The open ticket's pin toggle, next to the star. */
+.icon-btn.pin-toggle { width: 30px; height: 30px; }
+.icon-btn.pin-toggle.on { color: var(--accent-text); background: var(--accent-soft); }
 .title-row { display: flex; align-items: center; gap: 6px; }
 .title-row input { flex: 1; min-width: 0; }
 .form label.board-switch { flex-direction: row; align-items: flex-start; gap: 8px; font-weight: 600; }
@@ -1743,6 +1779,8 @@ button.your-turn.go:focus-visible { outline: 2px solid currentColor; outline-off
 .card.needs-you { border-left: 3px solid var(--warn); }
 .card.needs-you.att-failed, .card.needs-you.att-blocked { border-left-color: var(--err); }
 .card.needs-you.att-review { border-left-color: var(--ok); }
+/* 📌 A pinned card keeps its orange edge whatever its state (the Your turn line and the spinner still say it). */
+.card.is-pinned.needs-you, .card.is-pinned.is-running { border-left: 5px solid var(--accent); }
 
 /* ============ columns: where Claude runs ============ */
 .column-head { min-height: 38px; }
@@ -3402,6 +3440,7 @@ button.hd-mode:disabled { cursor: default; }
   .panel-head .job-chip .job-chip-word { display: none; }
   .panel-head .phone-back, .panel-head .more-btn, .panel-head .help-btn { width: 36px; height: 36px; }
   .panel-head .helper-icon { width: 36px; height: 36px; }
+  .panel-head .pin-toggle { width: 36px; height: 36px; }
   .panel-head .help-btn { border: 0; background: transparent; color: var(--muted); border-radius: var(--r-sm); }
   .panel-head .help-btn.on, .panel-head .help-btn:hover { background: var(--surface-2); color: var(--text); }
   .head-row1 .phone-status { flex-shrink: 1; min-width: 0; margin-right: 2px; }

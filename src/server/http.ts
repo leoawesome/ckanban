@@ -2123,6 +2123,10 @@ export function createServer(deps: ServerDeps) {
           if (typeof b.important !== "boolean") throw new HttpError(400, "important must be true or false");
           patch.important = b.important;
         }
+        if (b.pinned !== undefined) {
+          if (typeof b.pinned !== "boolean") throw new HttpError(400, "pinned must be true or false");
+          patch.pinned = b.pinned;
+        }
         // Spending cap per run: a positive amount, 0 for none, null for the board's. Only the user sets it.
         if (b.runCapUsd !== undefined) {
           if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "only the user can change a ticket's spending cap");
@@ -2201,7 +2205,7 @@ export function createServer(deps: ServerDeps) {
         if (own && onlyOwn && target.important !== t.important) store.addComment(slug, id, "ai", t.important ? "Claude marked this ticket ⭐ Important." : "Claude cleared ⭐ Important.");
         if (changer) {
           const what = Object.entries(patch)
-            .map(([k, v]) => (k === "status" ? `moved it to ${v}` : k === "parentId" ? `released it from plan ${target.parentId}` : k === "important" ? (v ? "marked it ⭐ Important" : "cleared ⭐ Important") : `changed ${k}`)).join(", ");
+            .map(([k, v]) => (k === "status" ? `moved it to ${v}` : k === "parentId" ? `released it from plan ${target.parentId}` : k === "important" ? (v ? "marked it ⭐ Important" : "cleared ⭐ Important") : k === "pinned" ? (v ? "pinned it" : "unpinned it") : `changed ${k}`)).join(", ");
           const by = planner ? "" : requester ? byRequest(requester) : runner ? byRun(runner) : byGuest(guest!);
           const was = parentLink(target)?.id ?? null;
           const linked = b.partOf === undefined || b.partOf === was ? ""

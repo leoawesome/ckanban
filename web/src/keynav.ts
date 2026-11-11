@@ -182,14 +182,15 @@ export function panelBoardKey(e: PlainKeys): PanelBoardKey | null {
   }
 }
 
-/** Single keys on a focused board card: S star, M move to a column, D mark done (Review cards). */
-export type CardKey = "star" | "move" | "done";
+/** Single keys on a focused board card: S star, M move to a column, D mark done (Review cards), P pin / unpin. */
+export type CardKey = "star" | "move" | "done" | "pin";
 export function cardKey(e: PlainKeys & { shiftKey: boolean }): CardKey | null {
   if (!plain(e) || e.shiftKey) return null;
   switch (e.key) {
     case "s": case "S": return "star";
     case "m": case "M": return "move";
     case "d": case "D": return "done";
+    case "p": case "P": return "pin";
     default: return null;
   }
 }

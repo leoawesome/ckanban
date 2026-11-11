@@ -493,6 +493,8 @@ export interface Ticket {
   holdsSlot?: boolean;
   /** ⭐ Important: unattended runs review it in an auto huddle before landing. */
   important?: boolean;
+  /** 📌 Pinned to the top of its column since then (newest first); the server clears it at Done. */
+  pinnedAt?: string | null;
   /** The auto huddle its run started (live) or waits for (waiting, another one has the board's slot). */
   autoHuddle?: { state: "waiting" | "live"; reason: string; template: string; at: string; huddleId?: string | null } | null;
   createdAt: string;
@@ -1794,7 +1796,7 @@ export const api = {
       "POST", `${t(slug, id)}/gather`, { tickets, newGroup }),
   plan: (slug: string, id: string, action: "start" | "pause" | "resume" | "done") =>
     req<Ticket>("POST", `${t(slug, id)}/plan`, { action }),
-  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome">> & { expectedBody?: string }) =>
+  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome">> & { expectedBody?: string; pinned?: boolean }) =>
     req<Ticket>("PATCH", t(slug, id), patch),
   deleteTicket: (slug: string, id: string) => req<void>("DELETE", t(slug, id)),
   /** Part of parent's family (null unlinks). */

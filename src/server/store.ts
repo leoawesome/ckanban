@@ -408,6 +408,8 @@ export class Store {
     }
     if (patch.body === undefined) next.body = current.body;
     if (next.status === "done" && current.status !== "done") next.doneAt = next.updatedAt;
+    // Every status change is saved here, so a pin always ends when the ticket reaches Done (the user's drag, a run, the CLI, MCP).
+    if (next.status === "done" && next.pinnedAt) next.pinnedAt = null;
     atomicWrite(this.ticketPath(slug, id), serializeTicket(next));
     this.saved(slug, id, next);
     return next;

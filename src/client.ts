@@ -115,6 +115,8 @@ export interface TicketInfo {
   plan?: { state: string } | null;
   /** ⭐ Important: reviewed in an auto huddle before landing. */
   important?: boolean;
+  /** 📌 Pinned to the top of its column since then (cleared at Done). */
+  pinnedAt?: string | null;
   autoHuddle?: { state: "waiting" | "live"; reason: string; trigger?: string; template: string; huddleId?: string | null } | null;
   /** When Claude comes back to this ticket, and why (follow_up). */
   followUp?: { dueAt: string; note: string; cancelOnReply: boolean; missedAt?: string | null } | null;
@@ -235,6 +237,8 @@ export interface TicketPatch {
   tags?: string[];
   suggestedTags?: string[];
   important?: boolean;
+  /** true pins the card to the top of its column, false unpins it. */
+  pinned?: boolean;
   /** null takes the ticket out of its plan. */
   parentId?: null;
   /** A task (tool ticket): true gives it a card on the board, false hides it again. */

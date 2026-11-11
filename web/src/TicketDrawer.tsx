@@ -18,7 +18,7 @@ import { HelpMenu, useHelp } from "./HelpMenu";
 import { Chat, useStop } from "./Chat";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DescriptionEditor, useDescriptionCommands } from "./DescriptionEditor";
-import { BellIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, LinkIcon, SparkIcon } from "./icons";
+import { BellIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, LinkIcon, PinIcon, SparkIcon } from "./icons";
 import { useImagePaste } from "./imagePaste";
 import { useFocusTrap, useLayer } from "./layers";
 import { ticketBeside } from "./sideChatLayout";
@@ -323,7 +323,7 @@ function WaitBanner({ line, details, actions }: { line: string; details: React.R
   );
 }
 
-export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: closeNow, nav, slideIn = true, beside = null, tabRequest, huddleSeed, onOpenTeam, jobs = [], onOpenJobs, moveTo }: {
+export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: closeNow, nav, slideIn = true, beside = null, tabRequest, huddleSeed, onOpenTeam, jobs = [], onOpenJobs, moveTo, onPin }: {
   profile: Profile;
   ticket: Ticket;
   /** The board's tickets, for the planner/child links. */
@@ -348,6 +348,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   jobs?: Job[];
   /** The chip was clicked: open Schedules → Upcoming for this ticket. */
   onOpenJobs?: (ticketId: string) => void;
+  /** 📌 Pin (true) or unpin this ticket (with the board's Undo note). */
+  onPin?: (on: boolean) => void;
 }) {
   // Errors from actions in this ticket show here, next to what failed, not in the page's top strip.
   const [panelError, setPanelError] = useState<string | null>(null);
@@ -744,7 +746,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  // E: edit the description; R: Refine with Claude (Backlog); S: star; M: move to a column; [ ]: previous / next tab;
+  // E: edit the description; R: Refine with Claude (Backlog); S: star; P: pin / unpin; M: move to a column; [ ]: previous / next tab;
   // /: the message box.
   // Only when the panel has the keyboard.
   const letterRef = useRef<(k: string) => boolean>(() => false);
@@ -755,6 +757,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     }
     if (k === "r" && !working && !editing && ticket.status === "backlog") return setStatus("planning"), true;
     if (k === "s") return toggleStar(), true;
+    if (k === "p" && canPin) return togglePin(), true;
     if (k === "m") return openStatusPicker(), true;
     if (k === "/") return focusComposer(), true;
     if (k === "[" || k === "]") {
@@ -787,6 +790,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const toggleStar = () => {
     api.updateTicket(slug, ticket.id, { important: !ticket.important }).catch((e) => onError(`Important not saved: ${e.message}`));
   };
+  // 📌 Pin to the top of its column; a Done ticket can only be unpinned (the board unpins it at Done).
+  const pinned = !!ticket.pinnedAt;
+  const canPin = !!onPin && (pinned || ticket.status !== "done");
+  const togglePin = () => onPin?.(!pinned);
   // M: open the Status picker (the header's status button on a phone with the details hidden), showing the details first if needed.
   const openStatusPicker = () => {
     const sel = phone && !detailsShown ? ".phone-status" : ".status-select";
@@ -814,6 +821,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     if (!working && !finished && (ticket.status === "backlog" || ticket.status === "planning")) add("start", "Start work", startWork, next === "start" ? [MOD, "Shift", "Enter"] : undefined);
     if (!working && !editing && ticket.status === "backlog") add("refine", "Refine with Claude", () => setStatus("planning"), ["R"]);
     add("star", ticket.important ? "Remove the star" : "Star as important", toggleStar, ["S"]);
+    if (canPin) add("pin", pinned ? "Unpin" : "Pin to top", togglePin, ["P"]);
     add("move", "Move to a column…", openStatusPicker, ["M"]);
     if (!editing) add("edit", "Edit the description", () => letterRef.current("e"), ["E"]);
     if ((working || familyBusy) && !stopping) add("stop", familyBusy ? "Stop this ticket and its tasks…" : "Stop Claude…", () => setConfirmStop(true), [MOD, "."]);
@@ -1080,6 +1088,13 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               </svg>
             </button>}
             <StarToggle on={!!ticket.important} onChange={toggleStar} keyHint="S" />
+            {canPin && (
+              <button type="button" className={`icon-btn pin-toggle${pinned ? " on" : ""}`} aria-pressed={pinned} aria-label={pinned ? "Unpin" : "Pin to top"}
+                title={pinned ? "Pinned to the top of its column. Click to unpin (P)" : "Pin to the top of its column (P)"} onClick={togglePin}>
+                <PinIcon size={16} />
+                <KeyHint keys="P" />
+              </button>
+            )}
             {/* One line, cut short; the whole title is in its tooltip. Phones: the title has a row of its own (below). */}
             {!phone && <input ref={titleRef} className="title-input" title={title} {...titleProps} />}
             {!phone && tagEditor}
@@ -1104,7 +1119,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
                 <KeyHint keys="↑↓ J K" />
               </span>
             )}
-            <TicketMenu ticket={ticket} working={working} live={!!(ticket.terminalOpen || linked?.live)}
+            <TicketMenu ticket={ticket} working={working} onPin={canPin ? togglePin : undefined} live={!!(ticket.terminalOpen || linked?.live)}
               runSettings={{ value: runSettingsText(profile, ticket), onOpen: () => setRunOpen(true) }}
               linkedLabel={ticket.workdir && ticket.sessionId ? (linked ? sessionLabel(linked) : ticket.sessionId.slice(0, 8)) : null}
               boardCap={profile.runCapUsd ?? null}

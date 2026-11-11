@@ -1,7 +1,7 @@
 export type Status = "backlog" | "planning" | "ready" | "in_progress" | "review" | "done";
 
 /** The ticket fields that place a card on the board (kept apart from api.ts so tests can load this file). */
-interface Placed { id: string; status: Status; order: number; slotWait?: { at: string } | null; running?: boolean; main?: boolean; familyWorking?: number; stepsRunning?: number }
+interface Placed { id: string; status: Status; order: number; pinnedAt?: string | null; slotWait?: { at: string } | null; running?: boolean; main?: boolean; familyWorking?: number; stepsRunning?: number }
 
 /**
  * A main ticket shows In progress while any ticket of its family works (its steps and tickets the user added) and it
@@ -35,11 +35,40 @@ export function groupByColumn<T extends Placed>(tickets: T[]): Map<Status, T[]> 
   const m = new Map<Status, T[]>(COLUMNS.map((c) => [c.id, []]));
   // Replies waiting for a slot sit in the queue, first in line (oldest first), like the server starts them.
   for (const t of tickets) m.get(waitsForSlot(t) ? "ready" : familyBusy(t) ? "in_progress" : t.status)?.push(t);
-  for (const list of m.values()) {
-    list.sort((a, b) => a.slotWait && b.slotWait ? a.slotWait.at.localeCompare(b.slotWait.at)
-      : a.slotWait ? -1 : b.slotWait ? 1 : a.order - b.order);
-  }
+  for (const list of m.values()) list.sort(byPlace);
   return m;
+}
+
+/** 📌 Pinned cards first in every column (newest pin first), then replies waiting for a slot (oldest first), then `order`. */
+function byPlace(a: Placed, b: Placed): number {
+  if (a.pinnedAt || b.pinnedAt) {
+    if (!a.pinnedAt) return 1;
+    if (!b.pinnedAt) return -1;
+    const newer = b.pinnedAt.localeCompare(a.pinnedAt);
+    if (newer) return newer;
+  }
+  return a.slotWait && b.slotWait ? a.slotWait.at.localeCompare(b.slotWait.at)
+    : a.slotWait ? -1 : b.slotWait ? 1 : a.order - b.order;
+}
+
+/**
+ * Where a card dropped on the board lands, as an `order` among the column's unpinned cards (`list`, in board order,
+ * without the dragged card). Pinned cards keep the top whatever their order, so a drop onto or above them means the top
+ * of the unpinned cards. `index`: the drop position counted in `list`. Null: nothing to save (a pinned card dragged
+ * within its own column stays where its pin puts it).
+ */
+export function dropOrder<T extends Placed>(ticket: T, targetStatus: Status, list: T[], index: number): number | null {
+  if (ticket.pinnedAt && targetStatus === ticket.status) return null;
+  const pinned = list.filter((t) => t.pinnedAt).length;
+  const rest = list.filter((t) => !t.pinnedAt);
+  // A pinned card moving to another column shows among the pins there; it goes to the top of the unpinned cards for when it is unpinned.
+  const at = ticket.pinnedAt ? 0 : Math.max(0, Math.min(index - pinned, rest.length));
+  const before = rest[at - 1]?.order;
+  const after = rest[at]?.order;
+  return before === undefined && after === undefined ? 1
+    : before === undefined ? after! - 1
+    : after === undefined ? before + 1
+    : (before + after) / 2;
 }
 
 /** What a board column shows: In Progress also lists the queued (`ready`) tickets, under the running ones. */
