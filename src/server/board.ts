@@ -28,7 +28,7 @@ import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt
 import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
 import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
-import { chatPrompt, chromeChoiceNote, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
+import { chatPrompt, chromeChoiceNote, chromeTurnNote, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
   childrenOf, DEFAULT_MAX_CONCURRENT, findCycle, isComplete, MAX_RUN_CHAIN, MAX_RUN_STARTS, normalizeNeeds, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
@@ -1260,6 +1260,9 @@ export class Board {
       console.error(`chrome choice for ${slug}/${id}:`, e);
     }
     if (chromeNote) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${chromeNote}` : chromeNote;
+    // A resumed session keeps the system prompt it started with (Claude Code ignores a new one), so the current
+    // pick also goes in this turn's message (not with a slash command: that must stay the whole message).
+    if (chromeNote && session.existed && !run.chat?.slash) prompt += `\n\n${chromeTurnNote(chromeNote)}`;
     const chromeWatch = new ChromeWatch(this.chromes);
     // A main ticket's fixed rules go once per run here, not in every message the chat shows.
     if (role?.kind === "main" && !quiet) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${mainTicketRules(role)}` : mainTicketRules(role);

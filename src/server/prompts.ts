@@ -84,7 +84,7 @@ Claude in Chrome is available (mcp__claude-in-chrome__* tools, in the user's own
 
 /**
  * Which Chrome a run uses (More → Browsers, the board's default, the ticket's pick; see chromes.ts). It adds to
- * CHROME_RULE and goes in every run's system prompt, so it holds on every turn. Null (nothing set): CHROME_RULE alone.
+ * CHROME_RULE and goes in every run's system prompt; a resumed session also gets it in the message (chromeTurnNote). Null: CHROME_RULE alone.
  */
 export function chromeChoiceNote(choice: ChromeChoice): string | null {
   if (!choice) return null;
@@ -101,6 +101,15 @@ The user has more than one Chrome connected to Claude in Chrome. This run uses o
 The user has more than one Chrome connected to Claude in Chrome (named ones: ${names}) and wants to be asked which one a task uses.
 - Before your first browser step, call \`list_connected_browsers\`. If only one Chrome is connected, \`select_browser\` with its deviceId. If more than one is connected and the ticket or the user hasn't said which, stop and ask the user which Chrome to use (end with status "questions"), naming them as above; don't pick one yourself.
 - Once you know which, \`select_browser\` with its deviceId and never use another Chrome in this task. Go by the deviceId, not display names like "Browser 1": they change when a browser reconnects.`;
+}
+
+/**
+ * The Chrome note again, in the message of a turn that resumes a session. Claude Code keeps a resumed session's first
+ * --append-system-prompt and ignores a new one, so a pick made after the session started (the ticket's own Chrome, a
+ * changed board default) only reaches the run this way. The chat hides ckanban-context blocks.
+ */
+export function chromeTurnNote(note: string): string {
+  return context("Which Chrome for this turn", `${note}\nThis replaces any earlier "Which Chrome" instructions in this session.`);
 }
 
 /** Every run's Claude adapts to users who may not know git (see CLAUDE.md, "Users may not be technical"). */

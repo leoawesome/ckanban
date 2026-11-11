@@ -302,3 +302,32 @@ test("a run gets its Chrome in the system prompt: the board's default, a tool st
   expect(noteOf(1)).toContain(`deviceId \`${WORK}\` (named "Work")`);
   expect(noteOf(2)).toContain(`deviceId \`${PERSONAL}\` (named "Personal")`);
 });
+
+test("a ticket's own Chrome beats the board's default, in work runs and chat runs", async () => {
+  const p = await setup();
+  const WORK = "d4a71199-fd4a-427d-a310-bee508a721c5", PERSONAL = "8e20160c-5cb5-4f7e-b037-33523d4791f8";
+  board.chromes.listed([{ deviceId: WORK, name: "Browser 1", isLocal: true }, { deviceId: PERSONAL, name: "Browser 2", isLocal: true }]);
+  board.chromes.rename(WORK, "Work");
+  board.chromes.rename(PERSONAL, "Personal");
+  const noteOf = (i: number) => { const a = readArgs()[i].args as string[]; return a.includes("--append-system-prompt") ? a[a.indexOf("--append-system-prompt") + 1] : ""; };
+  store.saveProfile({ ...p, chrome: PERSONAL });
+  const main = await board.createTicket("p", { title: "main", body: "", status: "backlog" });
+  const tool = store.createTicket("p", { title: "tool", body: "", status: "backlog" });
+  store.updateTicket("p", tool.id, { parentId: main.id });
+  await board.updateTicket("p", tool.id, { chrome: WORK });
+  await board.updateTicket("p", tool.id, { status: "ready" });
+  await board.whenIdle();
+  expect(noteOf(0)).toContain(`deviceId \`${WORK}\` (named "Work")`);
+  await board.chat("p", tool.id, "again");
+  await board.whenIdle();
+  expect(noteOf(1)).toContain(`deviceId \`${WORK}\` (named "Work")`);
+  expect(noteOf(1)).not.toContain(PERSONAL);
+  // Claude Code keeps a resumed session's first system prompt, so the pick also goes in the resumed turn's message.
+  const chat = readArgs()[1];
+  expect(chat.args).toContain("--resume");
+  expect(chat.prompt).toContain('<ckanban-context note="Which Chrome for this turn">');
+  expect(chat.prompt).toContain(`deviceId \`${WORK}\` (named "Work")`);
+  expect(chat.prompt).not.toContain(PERSONAL);
+  // A first run has it in the system prompt only.
+  expect(readArgs()[0].prompt).not.toContain("Which Chrome for this turn");
+});
