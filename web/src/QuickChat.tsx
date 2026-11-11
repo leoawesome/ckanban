@@ -757,7 +757,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
             }} />
           <AttachmentChips text={draft} images={images} />
           {images.error && <div className="form-error">{images.error}</div>}
-          <div className="composer-foot">
+          <div className="composer-foot one-row">
             <span className="composer-meta">
               {chat && <ContextChip slug={slug} kind="chat" id={chat.id} />}
               <span className="muted small composer-hint">

@@ -3473,7 +3473,6 @@ button.hd-mode:disabled { cursor: default; }
   .head-row2 .tabs { justify-content: flex-start; gap: 0; }
   .head-row2 > .head-spacer { display: none; }
   .head-row2 .tabs button { min-height: 40px; padding: 0 12px; font-size: var(--fs-sm); }
-  .head-row2 .tabs button:first-child { padding-left: 4px; }
   .head-row2 .tabs .tab-count, .head-row2 .tabs .for-you-pill { margin-left: 3px; padding: 0 4px; }
   .panel-head .head-cost { padding: 6px 4px; min-height: 40px; }
   @media (prefers-reduced-motion: reduce) { .head-title-wrap { transition: none; } }
