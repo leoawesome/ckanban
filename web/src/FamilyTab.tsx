@@ -3,7 +3,7 @@
 import { resolveRun, runText } from "./models";
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Profile, type Ticket } from "./api";
-import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, MAX_LEVEL, matchWords, settled, STATE_WORDS, subFeatureState, type FamilyRow, type FamilyState } from "./family";
+import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, subFeatureState, type FamilyRow, type FamilyState } from "./family";
 import { ClaudeFace } from "./ConvTurn";
 import { familyMood } from "./avatarMood";
 import { familyText } from "./FamilyPanel";
@@ -52,7 +52,7 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
   onAddMore: () => void;
 }) {
   // Its own feature: a sub-feature is one row here, and opened it shows its own tasks.
-  const rows = useMemo(() => featureRows(tickets, ticket.id), [tickets, ticket.id]);
+  const rows = useMemo(() => newestFirst(featureRows(tickets, ticket.id)), [tickets, ticket.id]);
   const kids = useMemo(() => childrenByParent(tickets), [tickets]);
   const top = rows[0]?.ticket;
   const feature = useFeatureStatus(slug, ticket, tickets);

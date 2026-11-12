@@ -11,7 +11,7 @@ import { parseProposal } from "../src/server/session";
 import type { SideCallInput, SideCallResult } from "../src/server/side-call";
 import { Store } from "../src/server/store";
 import type { Ticket } from "../src/server/types";
-import { familyNearby, partOfFor, familyOf, looksLikeQuestion, parentLink, wouldLoop, type FamilyTicket } from "../web/src/family";
+import { familyNearby, newestFirst, partOfFor, familyOf, looksLikeQuestion, parentLink, wouldLoop, type FamilyTicket } from "../web/src/family";
 import { tempDir, until } from "./helpers";
 
 const at = (n: number) => `2026-10-${String(n).padStart(2, "0")}T00:00:00.000Z`;
@@ -295,4 +295,10 @@ test("partOfFor: a new ticket stays on its own until the user picks a feature th
   // The picked feature closed: nothing is sent.
   expect(partOfFor("add", "t_a", "", ["t_b"])).toBeUndefined();
   expect(partOfFor("other", "", "t_b", ["t_a"])).toBeUndefined();
+});
+
+test("newestFirst keeps the top ticket first and lists each ticket's children newest first", () => {
+  const r = (id: string, depth: number) => ({ ticket: { id } as any, depth, how: null });
+  const out = newestFirst([r("top", 0), r("a", 1), r("a1", 2), r("a2", 2), r("b", 1), r("c", 1), r("c1", 2)] as any);
+  expect(out.map((x) => x.ticket.id)).toEqual(["top", "c", "c1", "b", "a", "a2", "a1"]);
 });

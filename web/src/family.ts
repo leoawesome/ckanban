@@ -543,3 +543,23 @@ export function partOfFor(choice: "add" | "own" | "other", added: string, other:
   const id = choice === "add" ? added : choice === "other" ? other : "";
   return id && openIds.includes(id) ? id : undefined;
 }
+
+/** Depth-first rows with each ticket's children newest first (the top ticket stays first), so recent work shows without scrolling. */
+export function newestFirst<T extends FamilyTicket>(rows: FamilyRow<T>[]): FamilyRow<T>[] {
+  const out: FamilyRow<T>[] = [];
+  const place = (from: number, to: number) => {
+    // rows[from..to) are the subtrees of one parent's children, oldest first: emit them in reverse.
+    const starts: number[] = [];
+    for (let i = from; i < to; i++) if (rows[i].depth === rows[from].depth) starts.push(i);
+    for (let k = starts.length - 1; k >= 0; k--) {
+      const s = starts[k], e = k + 1 < starts.length ? starts[k + 1] : to;
+      out.push(rows[s]);
+      if (s + 1 < e) place(s + 1, e);
+    }
+  };
+  if (rows.length) {
+    out.push(rows[0]);
+    if (rows.length > 1) place(1, rows.length);
+  }
+  return out;
+}
