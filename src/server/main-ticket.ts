@@ -38,12 +38,12 @@ export function parseTaskModels(v: unknown): TaskModels | null {
 }
 
 /**
- * Whether a task's finished run wakes its main ticket with the result. Every result does, except a schedule's task
- * whose run just finished (done, or quiet: removed by the board): those show in the Tasks tab only. A schedule's task
- * that needs the user (questions), is blocked, failed or hit the usage limit still wakes it.
+ * Whether a task's finished run wakes its main ticket with the result. Every result does, except a schedule's or an
+ * automation's task whose run just finished (done, or quiet: removed by the board): those show in the Tasks tab only.
+ * One that needs the user (questions), is blocked, failed or hit the usage limit still wakes it.
  */
-export function resultWakesMain(t: Pick<Ticket, "scheduleId" | "outcome">): boolean {
-  if (!t.scheduleId) return true;
+export function resultWakesMain(t: Pick<Ticket, "scheduleId" | "outcome"> & { source?: Ticket["source"] }): boolean {
+  if (!t.scheduleId && !t.source?.loopId) return true;
   return t.outcome === "needs_input" || t.outcome === "blocked" || t.outcome === "failed" || t.outcome === "limit";
 }
 

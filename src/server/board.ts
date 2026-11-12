@@ -59,8 +59,8 @@ import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TI
 const INSTALLING = "Installing project dependencies…";
 import { nowIso, slugify, starredTitle } from "./util";
 
-/** Where a schedule's run goes as a task (Board.taskPlaceFor). */
-export interface ScheduledTaskPlace {
+/** Where a schedule's run or an automation's new ticket goes as a task (Board.taskPlaceFor). */
+export interface TaskPlace {
   /** The ticket that runs it as a task (its parentId): a tool group or the main ticket. */
   managerId: string;
   mainId: string;
@@ -68,6 +68,9 @@ export interface ScheduledTaskPlace {
   partOf?: string;
   startFrom?: string;
 }
+
+/** What made a task in a feature (Board.createFeatureTask): it names it in the comments. */
+export type TaskMaker = { kind: "schedule" | "automation"; name: string };
 
 export interface BoardOptions {
   claudeBin: string;
@@ -1955,7 +1958,7 @@ export class Board {
   folderWait(slug: string, t: Ticket): boolean {
     if (this.isRunning(slug, t.id)) return false;
     const parent = t.parentId ? this.store.getTicket(slug, t.parentId) : null;
-    const next = t.status === "ready" || !!t.slotWait || (t.status === "backlog" && planActive(parent?.plan));
+    const next = t.status === "ready" || !!t.slotWait || (t.status === "backlog" && !t.waitsForStart && planActive(parent?.plan));
     return next && this.folderBusy(slug, t);
   }
 
@@ -2131,7 +2134,7 @@ export class Board {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
       model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string; madeFrom?: string; kind?: TicketKind | null;
-      effort?: string | null; main?: boolean; tool?: boolean; startFrom?: string | null;
+      effort?: string | null; main?: boolean; tool?: boolean; startFrom?: string | null; waitsForStart?: boolean;
     },
   ): Promise<Ticket> {
     const status = input.status === "in_progress" ? "ready" : input.status;
@@ -2252,6 +2255,8 @@ export class Board {
     if (clean.status && current.limit) clean.limit = null;
     if (clean.status && current.autoHuddle) clean.autoHuddle = null;
     if (clean.status && current.snooze) clean.snooze = null;
+    // A task waiting to be started (waitsForStart): once moved, the plan runs it as usual.
+    if (clean.status && current.waitsForStart) clean.waitsForStart = false;
     // Back to Planning/Backlog from Review/Done: remember where it was, so a follow-up card can put it back there.
     const shaping = clean.status === "planning" || clean.status === "backlog";
     if (shaping && reopenable(current.status)) clean.reopenedFrom = { status: current.status, outcome: current.outcome };
@@ -3302,12 +3307,13 @@ export class Board {
   }
 
   /**
-   * Where a schedule set to put each run in a feature (Schedule.partOf: a main ticket's id or one of its groups') puts
-   * its next run: a task of the nearest ticket there that runs tasks (a tool group, else the main ticket), like a task
-   * a run makes with create_ticket's partOf. A Done feature (or a done group of it) still takes runs: createScheduledTask
-   * moves its main ticket back to Review. A problem (the feature is gone or not a feature): its own card instead.
+   * Where a schedule or automation set to put its tickets in a feature (Schedule.partOf / Loop.partOf: a main ticket's
+   * id or one of its groups') puts the next one: a task of the nearest ticket there that runs tasks (a tool group, else
+   * the main ticket), like a task a run makes with create_ticket's partOf. A Done feature (or a done group of it) still
+   * takes them: createFeatureTask moves its main ticket back to Review. A problem (the feature is gone or not a
+   * feature): its own card instead.
    */
-  taskPlaceFor(slug: string, partOf: string): ScheduledTaskPlace | { problem: string } {
+  taskPlaceFor(slug: string, partOf: string): TaskPlace | { problem: string } {
     const all = this.store.listTickets(slug);
     const at = all.find((t) => t.id === partOf);
     if (!at) return { problem: `The feature ${partOf} it puts runs in no longer exists` };
@@ -3324,26 +3330,35 @@ export class Board {
   }
 
   /**
-   * A schedule's run as a task of a feature (taskPlaceFor): a tool ticket that starts right away (the schedule decides
-   * when, not the main ticket's plan) and keeps its schedule, tags, model and mode. Its main ticket's card stays where
-   * it is, except in Done: there it goes back to Review (no run, no wake, not the user's move) so the user sees that
-   * something ran. The plan picks the result up (resultWakesMain decides whether it wakes the main ticket).
+   * A schedule's run or an automation's new item as a task of a feature (taskPlaceFor): a tool ticket that keeps its
+   * schedule or source, tags, model and mode. In progress: it starts right away (the schedule or automation decides
+   * when, not the main ticket's plan). Backlog: it waits (waitsForStart) until the user or the main ticket starts it.
+   * Its main ticket's card stays where it is, except in Done: there it goes back to Review (no run, no wake, not the
+   * user's move) so the user sees that something came in. The plan picks the result up (resultWakesMain decides
+   * whether it wakes the main ticket).
    */
-  async createScheduledTask(
-    slug: string, place: ScheduledTaskPlace,
-    input: { title: string; body: string; status: "in_progress"; mode: TicketMode; scheduleId: string; tags?: string[]; model?: string },
-    scheduleName: string,
+  async createFeatureTask(
+    slug: string, place: TaskPlace,
+    input: {
+      title: string; body: string; status: "in_progress" | "backlog"; mode: TicketMode; scheduleId?: string; source?: TicketSource;
+      tags?: string[]; model?: string;
+    },
+    by: TaskMaker,
   ): Promise<Ticket> {
     const main = this.store.getTicket(slug, place.mainId);
     if (main?.main && main.status === "done") {
       this.patch(slug, main.id, { status: "review", reopenedFrom: null });
-      this.store.addComment(slug, main.id, "ai", `Back to Review: scheduled run "${scheduleName}" started.`);
+      this.store.addComment(slug, main.id, "ai", by.kind === "schedule"
+        ? `Back to Review: scheduled run "${by.name}" started.`
+        : `Back to Review: the automation "${by.name}" added a task.`);
     }
     const t = await this.createTicket(slug, {
       ...input, parentId: place.managerId, tool: true, ...(place.partOf ? { partOf: place.partOf } : {}), ...(place.startFrom ? { startFrom: place.startFrom } : {}),
+      ...(input.status === "backlog" ? { waitsForStart: true } : {}),
     });
     const manager = this.store.getTicket(slug, place.managerId);
-    this.store.addComment(slug, t.id, "ai", `Task of ${place.managerId} ("${manager?.title ?? ""}"), made by the schedule "${scheduleName}".`);
+    this.store.addComment(slug, t.id, "ai", `Task of ${place.managerId} ("${manager?.title ?? ""}"), made by the ${by.kind} "${by.name}".`
+      + (input.status === "backlog" ? " It waits in Backlog until you or the main ticket start it." : ""));
     this.ensurePlan(slug, place.managerId);
     this.advancePlans(slug);
     return this.store.getTicket(slug, t.id)!;

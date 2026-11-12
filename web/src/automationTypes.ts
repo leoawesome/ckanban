@@ -54,6 +54,9 @@ export interface Loop {
   lastCheckedAt: string | null;
   lastFiredAt: string | null;
   lastError: string | null;
+  /** The feature each new ticket goes into as a task (a main ticket's or group's id), and its title; null: its own card. */
+  partOf?: string | null;
+  partOfTitle?: string | null;
   state: "ok" | "unsupported" | "needs_connection" | "script_changed";
   problems: string[];
   script: string | null;
@@ -74,6 +77,7 @@ export interface LoopInput {
   autoStart: boolean;
   askClaude: { on: boolean; prompt: string };
   instructions: string;
+  partOf?: string | null;
 }
 
 export interface LoopTest {
@@ -94,5 +98,7 @@ export interface AutomationProposal {
   everyMinutes: number;
   instructions?: string;
   askClaude?: { on: boolean; prompt: string };
+  /** The feature each new ticket goes into as a task (a main ticket's or group's id). */
+  partOf?: string;
   summary: string;
 }

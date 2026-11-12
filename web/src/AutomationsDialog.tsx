@@ -1,7 +1,8 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { api, type Loop, type LoopColumn, type LoopInput, type LoopTest, type Pass, type Profile } from "./api";
+import { api, type Loop, type LoopColumn, type LoopInput, type LoopTest, type Pass, type Profile, type Ticket } from "./api";
 import { COLUMN_LABEL, COLUMN_MEANING, EVERY_CHOICES, everyLabel, groupLastItems, loopStatus, loopSubtitle, saveBlocker } from "./automations";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { FeaturePicker } from "./FeaturePicker";
 import { ChevronLeftIcon, ChevronRightIcon, MoreIcon } from "./icons";
 import { MenuSheet } from "./MenuSheet";
 import { Modal } from "./Modal";
@@ -27,10 +28,12 @@ const INTRO = "An automation checks a service on a timer, by itself and for free
  * the screen; tapping one opens its own screen with a back arrow.
  * refreshKey: bumps when an automation or a pass changed on the server.
  */
-export function AutomationsDialog({ profile, boards, refreshKey, onClose, onOpenTicket, onOpenConnections }: {
+export function AutomationsDialog({ profile, boards, tickets, refreshKey, onClose, onOpenTicket, onOpenConnections }: {
   profile: Profile;
   /** Every board, for "Copy to board". */
   boards: Profile[];
+  /** This board's tickets, for "Where each new ticket goes". */
+  tickets: Ticket[];
   refreshKey: number;
   onClose: () => void;
   /** Opens a ticket of this board (the setup chat, a ticket an automation made). */
@@ -116,7 +119,7 @@ export function AutomationsDialog({ profile, boards, refreshKey, onClose, onOpen
             <div className="auto-main">
               {!selected && <div className="muted auto-empty">Set one up with Claude: say what to watch, Claude writes and tests the check, and you save it.</div>}
               {selected === "new" && (
-                <LoopEditor key="new" slug={profile.slug} passes={data.passes} loop={null} phone={phone} onBack={back}
+                <LoopEditor key="new" slug={profile.slug} passes={data.passes} tickets={tickets} loop={null} phone={phone} onBack={back}
                   onOpenTicket={onOpenTicket} onOpenConnections={onOpenConnections}
                   onSaved={async (l) => { await reload(); setSelected(l.id); }} onDeleted={deleted} />
               )}
@@ -125,7 +128,7 @@ export function AutomationsDialog({ profile, boards, refreshKey, onClose, onOpen
                   onSaved={async () => { await reload(); }} onDeleted={deleted} />
               )}
               {loop && loop.state !== "unsupported" && (
-                <LoopEditor key={loop.id} slug={profile.slug} passes={data.passes} loop={loop} otherBoards={boards.filter((b) => b.slug !== profile.slug)}
+                <LoopEditor key={loop.id} slug={profile.slug} passes={data.passes} tickets={tickets} loop={loop} otherBoards={boards.filter((b) => b.slug !== profile.slug)}
                   phone={phone} onBack={back} onOpenTicket={onOpenTicket} onOpenConnections={onOpenConnections}
                   onSaved={async () => { await reload(); }} onDeleted={deleted} />
               )}
@@ -162,9 +165,10 @@ function statusChip(l: Loop): { label: string; tone: string } {
   return st;
 }
 
-function LoopEditor({ slug, passes, loop, otherBoards = [], phone, onBack, onSaved, onDeleted, onOpenTicket, onOpenConnections }: {
+function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBack, onSaved, onDeleted, onOpenTicket, onOpenConnections }: {
   slug: string;
   passes: Pass[];
+  tickets: Ticket[];
   loop: Loop | null;
   otherBoards?: Profile[];
   phone: boolean;
@@ -186,6 +190,7 @@ function LoopEditor({ slug, passes, loop, otherBoards = [], phone, onBack, onSav
   const [askOn, setAskOn] = useState(loop?.askClaude?.on ?? false);
   const [askPrompt, setAskPrompt] = useState(loop?.askClaude?.prompt ?? "");
   const [instructions, setInstructions] = useState(loop?.instructions ?? DEFAULT_TEXT);
+  const [partOf, setPartOf] = useState(loop?.partOf ?? "");
   const changed = loop?.state === "script_changed";
   // A new one starts on its script; a changed script file opens that tab by itself.
   const [tab, setTab] = useState<Tab>(!loop || changed ? "how" : "settings");
@@ -216,6 +221,7 @@ function LoopEditor({ slug, passes, loop, otherBoards = [], phone, onBack, onSav
   const input = (): LoopInput => ({
     name: name.trim(), enabled, service: service.trim(), passes: passIds, script, everyMinutes: every,
     column, autoStart: column !== "backlog" && autoStart, askClaude: { on: askOn, prompt: askPrompt }, instructions,
+    partOf: partOf || null,
   });
 
   const save = (e?: React.FormEvent) => {
@@ -356,6 +362,20 @@ function LoopEditor({ slug, passes, loop, otherBoards = [], phone, onBack, onSav
               </div>
 
               <div className="auto-field">
+                <div className="auto-key" id={`${ids}-where`}>Where each new ticket goes</div>
+                <div className="auto-val auto-where">
+                  <FeaturePicker tickets={tickets} value={partOf} onChange={setPartOf} maker="automation" ariaLabel="Where each new ticket goes" />
+                  <div className="auto-hint">
+                    {partOf
+                      ? `Each new ticket becomes a task of that feature, in its Tasks tab, not its own card. ${autoStart && column !== "backlog"
+                        ? "It starts right away"
+                        : "It waits until you or the main ticket start it (pick Planning or Ready above to start it right away)"}. The feature's main chat hears only when a task needs you, is blocked, failed or hit the usage limit. If the main ticket is in Done, each new task moves it back to Review.`
+                      : "Each new ticket gets its own card on the board."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="auto-field">
                 <div className="auto-key" id={`${ids}-each`}>Each ticket</div>
                 <div className="auto-val">
                   <div className="auto-opt-pair" role="radiogroup" aria-labelledby={`${ids}-each`}>
@@ -482,6 +502,7 @@ function ItemRow({ item: i, onOpenTicket }: { item: SeenItem; onOpenTicket?: (id
         <button type="button" className="link-btn" onClick={() => onOpenTicket(i.ticketId!)}>Open ticket</button>
       )}
       {i.state === "skipped" && <span className="auto-tag skip">Claude skipped: {i.note ?? "no ticket"}</span>}
+      {i.state === "new" && i.note && <span className="auto-tag skip">{i.note}</span>}
     </li>
   );
 }

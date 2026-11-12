@@ -416,7 +416,7 @@ This ticket exists to set up an automation for this board with the user, not to 
 3. For a connected service, call \`connection_tools\` and write the check script: bash that prints JSON items {"id","title","text","link"} (one per line or one list) for the current open items, calling the service with \`ckanban call <name> <tool> '<json>'\`. Never put a key or token in the script.
 4. Test it with \`test_automation_script\` and fix it until it finds what the user expects. Tell the user in plain words what it found. Its first check after saving only notes what is already there, so items the test found never become tickets: say so, and that only new ones will.
 5. Call \`propose_automation\` with the tested script. The user's click on the card saves it (and connects what still needs connecting); you can't save it yourself, and don't try through the API.
-Don't use propose_ticket in this chat. Offer "Ask Claude first" only when the user wants Claude to filter items: it costs a little per new item.`;
+If the user wants each new item as a task of a feature instead of its own card, pass that main ticket's id (or one of its groups') as partOf (list_tickets finds it). Don't use propose_ticket in this chat. Offer "Ask Claude first" only when the user wants Claude to filter items: it costs a little per new item.`;
 
 /** What a quiet schedule's run is told: its last check and the tickets it raised that are still open. */
 export interface QuietContext {

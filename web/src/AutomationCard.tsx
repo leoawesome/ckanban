@@ -30,6 +30,11 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
       if (e.type === "integration.updated") load();
     });
   }, []);
+  // The feature its tickets go into (partOf), by name; null: not found (saving then says why).
+  const [featureTitle, setFeatureTitle] = useState<string | null>(null);
+  useEffect(() => {
+    if (proposal.partOf) api.ticket(slug, proposal.partOf).then((t) => setFeatureTitle(t.title)).catch(() => setFeatureTitle(null));
+  }, [slug, proposal.partOf]);
 
   if (saved) {
     return (
@@ -87,6 +92,7 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
       name: proposal.name, enabled: true, service: proposal.service, passes: ids, script: proposal.script, everyMinutes: proposal.everyMinutes,
       column: "backlog", autoStart: false, askClaude: proposal.askClaude ?? { on: false, prompt: "" },
       instructions: proposal.instructions ?? "Look at this item from {{service}} and do what it needs.\n\nLink: {{link}}",
+      ...(proposal.partOf ? { partOf: proposal.partOf } : {}),
     });
     await api.answerAutomationCard(slug, ticketId, uuid, l.id);
   });
@@ -98,7 +104,10 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
       <div className="muted small">{proposal.summary}</div>
       <div className="auto-box">
         <div className="small">
-          Checks {proposal.service} every {everyLabel(proposal.everyMinutes)}, without Claude. New items become tickets in Backlog.
+          Checks {proposal.service} every {everyLabel(proposal.everyMinutes)}, without Claude.
+          {proposal.partOf
+            ? ` New items become tasks of "${featureTitle ?? proposal.partOf}" that wait until you or its main ticket start them.`
+            : " New items become tickets in Backlog."}
           {proposal.askClaude?.on ? " Claude looks at each new item first (a little cost per new item)." : ""}
         </div>
         {resolved.length > 0 && (

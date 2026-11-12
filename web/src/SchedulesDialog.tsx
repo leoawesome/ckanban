@@ -6,7 +6,7 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { UpcomingJobs } from "./Jobs";
 import { DescriptionEditor } from "./DescriptionEditor";
-import { featureChoices } from "./featureChoices";
+import { FeaturePicker } from "./FeaturePicker";
 import { Modal } from "./Modal";
 import { MenuSheet } from "./MenuSheet";
 import { MoreIcon } from "./icons";
@@ -431,10 +431,7 @@ function ScheduleForm({ slug, initial, knownTags, tickets, onDone }: {
       </label>
       <label>
         Where each run goes
-        <select value={partOf} onChange={(e) => setPartOf(e.target.value)}>
-          <option value="">Its own card</option>
-          {featureChoices(tickets, partOf).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        <FeaturePicker tickets={tickets} value={partOf} onChange={setPartOf} maker="schedule" />
       </label>
       {partOf && (
         <span className="muted small field-help-tight">

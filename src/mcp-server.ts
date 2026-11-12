@@ -1177,6 +1177,11 @@ const PLANNING_TOOLS: Tool[] = [
           properties: { on: { type: "boolean" }, prompt: { type: "string", description: "What Claude should make tickets for and what to skip." } },
           description: "Ask Claude first: a short no-tools Claude call per new item decides whether it needs a ticket (costs a little per new item, never on quiet checks).",
         },
+        partOf: {
+          type: "string",
+          description: "Optional: a main ticket's id (or one of its groups') when the user wants each new item to become a task of that feature instead of its own card. " +
+            "The task waits until the user or the main ticket starts it (the user can let them start by themselves in the editor); a main ticket in Done moves back to Review. Checked when the user saves.",
+        },
       },
       required: ["name", "summary", "script"],
     },

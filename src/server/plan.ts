@@ -125,6 +125,9 @@ export interface PlanStepOptions {
   managed?: { summary: (t: Ticket) => string; report: (t: Ticket) => string | null };
 }
 
+/** A task in Backlog that waits for the user or its main ticket to start it: the plan never starts it on its own. */
+const waitsToStart = (t: Ticket): boolean => t.status === "backlog" && !!t.waitsForStart;
+
 /** Hit the usage limit and the board continues it automatically once the limit resets. */
 export const waitsOnLimit = (t: Ticket): boolean => t.outcome === "limit" && !!t.limit?.auto;
 
@@ -157,7 +160,7 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
     let ev: PlanEvent | null = null;
     if (managed) {
       // Every result reaches the parent once per run: done (with or without a PR), failed, blocked, questions; a
-      // schedule's task only when it needs attention (resultWakesMain).
+      // schedule's or automation's task only when it needs attention (resultWakesMain).
       const ended = t.outcome === "done" || t.outcome === "failed" || t.outcome === "blocked" || t.outcome === "needs_input" || t.outcome === "limit";
       if (ended && t.status !== "backlog" && t.status !== "planning" && resultWakesMain(t)) {
         ev = { childId: t.id, sig: `${t.runCount}:${t.outcome}:${t.prUrl ?? ""}`, line: finishedLine(t, managed.summary(t), managed.report(t)), result: true };
@@ -183,7 +186,7 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
   }
   const start: string[] = [];
   for (const t of children) {
-    if (t.status !== "backlog" || running(t.id)) continue;
+    if (t.status !== "backlog" || running(t.id) || waitsToStart(t)) continue;
     if (userWait.some((w) => w.id === t.id)) continue;
     const { deps, missing } = resolveDeps(t, children);
     if (missing.length || !deps.every(isComplete)) continue;
@@ -195,10 +198,11 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
   if (!allComplete && !active && !start.length && !events.length && !awaitingMerge) {
     const label = (t: Ticket) => `"${t.title}"`;
     const you = userWait.map((w) => `${label(children.find((c) => c.id === w.id)!)} (${w.reason})`);
-    const open = children.filter((t) => !isComplete(t) && !userWait.some((w) => w.id === t.id))
+    // A task waiting for the user or the main ticket to start it (waitsForStart) isn't a dead end: it waits on purpose.
+    const open = children.filter((t) => !isComplete(t) && !userWait.some((w) => w.id === t.id) && !waitsToStart(t))
       .map((t) => `${label(t)} (${t.status}${t.outcome ? `, ${t.outcome}` : ""})`);
     const list = (xs: string[]) => `${xs.slice(0, 8).join(", ")}${xs.length > 8 ? ` and ${xs.length - 8} more` : ""}`;
-    deadEnd = [
+    if (you.length || open.length) deadEnd = [
       you.length ? `waiting for you: ${list(you)}` : null,
       open.length ? `${you.length ? "also not done" : "nothing can run; not done yet"}: ${list(open)}` : null,
     ].filter(Boolean).join("; ");
@@ -211,7 +215,7 @@ export function planTable(children: Ticket[]): string {
   return children.map((t) => {
     const deps = resolveDeps(t, children).deps.map((d) => d.id);
     const bits = [
-      t.status, t.outcome, t.prUrl ? `PR ${t.prUrl}` : null, deps.length ? `waits for ${deps.join(", ")}` : null,
+      t.status, waitsToStart(t) ? "waits to be started: move_ticket to ready starts it" : null, t.outcome, t.prUrl ? `PR ${t.prUrl}` : null, deps.length ? `waits for ${deps.join(", ")}` : null,
       t.needs?.length ? `needs ${t.needs.join(", ")}` : null,
     ].filter(Boolean);
     return `- ${t.id}${t.planKey ? ` [${t.planKey}]` : ""} "${t.title}": ${bits.join("; ")}`;

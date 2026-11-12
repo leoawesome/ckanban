@@ -1432,7 +1432,7 @@ export function App() {
           onOpenTicket={(id) => { setSchedulesOpen(false); openTicket(id); }} />
       )}
       {automationsOpen && profile && (
-        <AutomationsDialog profile={profile} boards={profiles ?? []} refreshKey={autoTick} onClose={() => setAutomationsOpen(false)}
+        <AutomationsDialog profile={profile} boards={profiles ?? []} tickets={tickets} refreshKey={autoTick} onClose={() => setAutomationsOpen(false)}
           onOpenTicket={(id) => { setAutomationsOpen(false); openTicket(id); }}
           onOpenConnections={() => { setAutomationsOpen(false); setConnections(true); }} />
       )}

@@ -24,6 +24,8 @@ export interface AutomationProposal {
   everyMinutes: number;
   instructions?: string;
   askClaude?: { on: boolean; prompt: string };
+  /** The feature each new ticket goes into as a task: a main ticket's or group's id (Loop.partOf; checked on save). */
+  partOf?: string;
   /** One line: what it watches, in plain words. */
   summary: string;
 }
@@ -52,11 +54,14 @@ export function automationProposal(input: any): AutomationProposal {
   const summary = str(input?.summary).slice(0, 300);
   if (!summary) throw new Error("summary is required: one plain line on what it watches");
   const ask = input?.askClaude;
+  const partOf = str(input?.partOf);
+  if (partOf && !/^[A-Za-z0-9_-]{1,80}$/.test(partOf)) throw new Error("partOf must be a ticket id: a main ticket's or one of its groups'");
   return {
     name, script, everyMinutes: every, passes, summary,
     service: (str(input?.service) || passes[0]?.name || "a script").slice(0, 60),
     ...(str(input?.instructions) ? { instructions: str(input.instructions).slice(0, 8000) } : {}),
     ...(ask && typeof ask === "object" ? { askClaude: { on: ask.on === true, prompt: str(ask.prompt).slice(0, 4000) } } : {}),
+    ...(partOf ? { partOf } : {}),
   };
 }
 

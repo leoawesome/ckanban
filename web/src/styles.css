@@ -3899,6 +3899,8 @@ button.tag-chip:hover { border-color: currentColor; }
 .auto-field:last-child { border-bottom: 0; }
 .auto-key { font-weight: 600; font-size: var(--fs-sm); padding-top: 7px; }
 .auto-val { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.auto-where select { width: 100%; max-width: 100%; min-height: 40px; }
+@media (max-width: 720px) { .auto-where select { min-height: 44px; } }
 .auto-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .auto-service { width: 200px; max-width: 100%; }
 .auto-hint { font-size: var(--fs-xs); color: var(--muted); }

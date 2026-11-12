@@ -31,9 +31,13 @@ export interface LoopInput {
   autoStart?: unknown;
   askClaude?: unknown;
   instructions?: unknown;
+  /** A feature's main ticket or group id: each new ticket goes into it as a task; "" or null clears it. */
+  partOf?: unknown;
 }
 
 export type LoopView = Loop & {
+  /** The title of the feature its tickets go into (partOf); null: that ticket is gone. */
+  partOfTitle?: string | null;
   /** ok: it runs; otherwise the first of `problems` is why not. */
   state: "ok" | "unsupported" | "needs_connection" | "script_changed";
   /** Why it can't run, in plain words. A loop with problems stays on disk. */
@@ -93,6 +97,9 @@ const BACKOFF_MAX_MS = 30 * 60_000;
 const COLUMNS: LoopColumn[] = ["backlog", "planning", "ready"];
 const ASK_BODY = "Work on this item from {{service}}.";
 
+/** taskPlaceFor's problem (worded for schedules' runs) in an automation's words. */
+const forTickets = (problem: string) => problem.replace("it puts runs in", "it puts new tickets in");
+
 export const DEFAULT_INSTRUCTIONS = "Look at this item from {{service}} and do what it needs.\n\nLink: {{link}}";
 
 /**
@@ -142,7 +149,10 @@ export class LoopManager {
       state = "script_changed";
     }
     const st = this.store.getLoopState(slug, l.id);
-    return { ...l, state, problems, script, passViews, seenCount: st.seen.length, lastFound: st.lastFound, lastItems: st.lastItems };
+    return {
+      ...l, state, problems, script, passViews, seenCount: st.seen.length, lastFound: st.lastFound, lastItems: st.lastItems,
+      ...(l.partOf ? { partOfTitle: this.store.getTicket(slug, l.partOf)?.title ?? null } : {}),
+    };
   }
 
   private emit(slug: string, l: Loop | null, id = l?.id ?? "") {
@@ -210,7 +220,16 @@ export class LoopManager {
       throw new LoopError(400, `Unknown ${unknown.length === 1 ? "variable" : "variables"} in the ticket text: ${unknown.map((v) => `{{${v}}}`).join(", ")}`);
     }
     const enabled = input.enabled === undefined ? base?.enabled ?? true : input.enabled === true;
-    return { fields: { name, enabled, service, passes, everyMinutes: every, column, autoStart, askClaude, instructions }, script };
+    let partOf = base?.partOf ?? null;
+    if (input.partOf !== undefined) {
+      const p = input.partOf === null ? "" : String(input.partOf).trim();
+      if (p && !/^[A-Za-z0-9_-]{1,80}$/.test(p)) throw new LoopError(400, `"${p.slice(0, 80)}" isn't a ticket id: pick a main ticket or one of its groups`);
+      // Same rule as schedules (Board.taskPlaceFor): a main ticket or one of its groups, also in Done.
+      const place = p ? this.board.taskPlaceFor(slug, p) : null;
+      if (place && "problem" in place) throw new LoopError(400, `Where each new ticket goes: ${forTickets(place.problem)}`);
+      partOf = p || null;
+    }
+    return { fields: { name, enabled, service, passes, everyMinutes: every, column, autoStart, askClaude, instructions, partOf }, script };
   }
 
   async create(slug: string, input: LoopInput): Promise<LoopView> {
@@ -472,15 +491,23 @@ export class LoopManager {
       seen.add(item.id);
       remember();
       try {
-        const t = await this.board.createTicket(slug, {
+        const fields = {
           title: ticketTitle(decision?.title || item.title),
           body: ticketBody(decision ? ASK_BODY : loop.instructions, loop.service, item, decision?.summary),
-          status: loop.column === "backlog" || !loop.autoStart ? "backlog" : loop.column,
           source: { provider: loop.service, label: ticketTitle(item.title), url: item.link ?? "", loopId: id },
-        });
+        };
+        // Set to put each ticket in a feature: a task there (Board.createFeatureTask, as schedules do), started now with
+        // autoStart, else waiting for the user or the main ticket; a gone feature or one that isn't: its own card.
+        const place = loop.partOf ? this.board.taskPlaceFor(slug, loop.partOf) : null;
+        const t = place && !("problem" in place)
+          ? await this.board.createFeatureTask(slug, place, {
+            ...fields, status: loop.autoStart ? "in_progress" : "backlog", mode: "auto",
+          }, { kind: "automation", name: loop.name })
+          : await this.board.createTicket(slug, { ...fields, status: loop.column === "backlog" || !loop.autoStart ? "backlog" : loop.column });
         fired = now.toISOString();
         made++;
-        shown.push({ ...base, state: "new", ticketId: t.id });
+        const note = place && "problem" in place ? `${forTickets(place.problem)}, so it got its own card.` : undefined;
+        shown.push({ ...base, state: "new", ticketId: t.id, ...(note ? { note } : {}) });
       } catch (e) {
         seen.delete(item.id);
         remember();

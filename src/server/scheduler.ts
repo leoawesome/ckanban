@@ -223,7 +223,7 @@ export class Scheduler {
         const profile = this.store.getProfile(slug);
         if (!profile) throw new Error(`board ${slug} no longer exists`);
         if (!existsSync(profile.path)) throw new Error(`board folder ${profile.path} does not exist`);
-        // Set to put each run in a feature: a task there (Board.createScheduledTask); a gone or finished feature: its own card.
+        // Set to put each run in a feature: a task there (Board.createFeatureTask); a gone or finished feature: its own card.
         const place = s.partOf ? this.board.taskPlaceFor(slug, s.partOf) : null;
         const note = place && "problem" in place ? `${place.problem}, so this run got its own card.` : undefined;
         const input = {
@@ -231,7 +231,7 @@ export class Scheduler {
           ...(s.model ? { model: s.model } : {}),
         };
         const t = place && !("problem" in place)
-          ? await this.board.createScheduledTask(slug, place, input, s.name)
+          ? await this.board.createFeatureTask(slug, place, input, { kind: "schedule", name: s.name })
           : await this.board.createTicket(slug, input);
         entry = { at, kind: "fired", trigger, ticketId: t.id, ...(note ? { note } : {}) };
         lastError = null;

@@ -367,7 +367,7 @@ export class Store {
       title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
       needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
       model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string; madeFrom?: string; kind?: TicketKind | null;
-      effort?: string | null; main?: boolean; tool?: boolean; startFrom?: string | null;
+      effort?: string | null; main?: boolean; tool?: boolean; startFrom?: string | null; waitsForStart?: boolean;
     },
   ): Ticket {
     const at = nowIso();
@@ -392,6 +392,7 @@ export class Store {
       ...(input.kind ? { kind: input.kind } : {}),
       ...(input.effort ? { effort: input.effort } : {}),
       ...(input.main ? { main: true } : {}),
+      ...(input.waitsForStart ? { waitsForStart: true } : {}),
       ...(input.tool ? { tool: true } : {}),
       ...(input.startFrom ? { startFrom: input.startFrom } : {}),
     };

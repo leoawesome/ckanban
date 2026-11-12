@@ -219,6 +219,11 @@ export interface Ticket {
   jobId?: string | null;
   /** Set on tickets an automation loop made from an event in another service (see TicketSource). */
   source?: TicketSource | null;
+  /**
+   * A task an automation put in a feature without starting it (autoStart off): it waits in Backlog and its main
+   * ticket's plan doesn't start it on its own; the user or the main ticket moving it starts it (cleared then).
+   */
+  waitsForStart?: boolean;
   /** Planner ticket whose Planning chat proposed this one. Missing on most tickets. */
   parentId?: string | null;
   /** Short name siblings use in dependsOn (from the planner's proposal). */
@@ -551,6 +556,11 @@ export interface Loop {
   lastFiredAt: string | null;
   /** Why the last check failed (cleared by the next good one). */
   lastError: string | null;
+  /**
+   * The feature each new ticket goes into as a task: a main ticket's id or one of its groups'. Null/missing: each gets
+   * its own card (older automations). A gone feature, or one that isn't a feature: its own card, and the check says why.
+   */
+  partOf?: string | null;
 }
 
 /** An item of the last check, for the editor's "Last check found". */
