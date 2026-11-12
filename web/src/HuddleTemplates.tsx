@@ -194,6 +194,7 @@ export function TeamSquads({ slug, squads, loading, filtered, presets, usage, st
       {squads.map((t) => {
         const chip = scopeChip(t);
         const changed = t.source !== "builtin";
+        const rules = [templateRules(t), t.hostRules?.trim() && "host rules"].filter(Boolean).join(" · ");
         return (
           <div key={t.name} className="tt-row">
             <div className="tt-main">
@@ -203,8 +204,20 @@ export function TeamSquads({ slug, squads, loading, filtered, presets, usage, st
               <span className="tm-stats">{usage ? usageText(usage[t.name]) : ""}</span>
             </div>
             {t.description && <div className="tt-desc">{t.description}</div>}
-            <div className="tt-meta">
-              {[t.roster.map((e) => `@${e.handle ?? e.preset ?? e.role}${e.host ? " (host)" : ""}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`).join(", "), templateRules(t), t.hostRules?.trim() && "host rules"].filter(Boolean).join(" · ")}
+            {/* Phone: people as chips, then the rules on their own line. Desktop: one grey line, people first. */}
+            <div className="tt-people">
+              {t.roster.map((e, i) => (
+                <span key={i} className={e.host ? "tt-person host" : "tt-person"}>
+                  @{e.handle ?? e.preset ?? e.role}{e.count && e.count > 1 ? ` ×${e.count}` : ""}{e.host ? " · host" : ""}
+                </span>
+              ))}
+            </div>
+            <div className={rules ? "tt-meta" : "tt-meta no-rules"}>
+              <span className="tt-meta-people">
+                {t.roster.map((e) => `@${e.handle ?? e.preset ?? e.role}${e.host ? " (host)" : ""}${e.count && e.count > 1 ? ` ×${e.count}` : ""}`).join(", ")}
+                {rules && t.roster.length > 0 && " · "}
+              </span>
+              {rules}
             </div>
             <div className="tt-actions">
               <button className="btn small primary" onClick={() => onStart(t.name)} title={startHint} disabled={busy}>Start huddle…</button>
