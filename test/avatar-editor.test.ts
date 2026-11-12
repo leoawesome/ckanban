@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import {
-  AVATAR_ACCESSORIES, AVATAR_COLORS, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_HATS, CLAUDE_LOOK, hairCut, showsAntenna, TEAMMATE_LOOKS,
+  AVATAR_ACCESSORIES, AVATAR_BACKGROUNDS, AVATAR_COLORS, AVATAR_DETAILS, AVATAR_EYES, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_HATS, CLAUDE_LOOK, crownBase, hairCut, shownHair, showsAntenna, TEAMMATE_LOOKS,
 } from "../web/src/avatarLook";
 import { colorName, looksRight, partLabel, sameLook, surpriseLook, swatches } from "../web/src/avatarEditorText";
 
@@ -28,7 +28,7 @@ test("Surprise me always changes the look", () => {
 });
 
 test("Surprise me picks from every part, new ones included, and never hides hair whole under a hat", () => {
-  const seen = { face: new Set<string>(), hair: new Set<string>(), hat: new Set<string>(), accessory: new Set<string>() };
+  const seen = { face: new Set<string>(), hair: new Set<string>(), hat: new Set<string>(), accessory: new Set<string>(), eyes: new Set<string>(), detail: new Set<string>(), background: new Set<string>() };
   let seed = 7;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   let from = CLAUDE_LOOK;
@@ -36,13 +36,22 @@ test("Surprise me picks from every part, new ones included, and never hides hair
     const next = surpriseLook(from, rnd);
     expect(looksRight(next)).toBe(true);
     expect(sameLook(next, from)).toBe(false);
-    for (const k of ["face", "hair", "hat", "accessory"] as const) seen[k].add(next[k]);
+    for (const k of ["face", "hair", "hat", "accessory", "eyes", "detail", "background"] as const) seen[k].add(next[k]);
     from = next;
   }
   expect([...seen.face].sort()).toEqual([...AVATAR_FACES].sort());
   expect([...seen.hair].sort()).toEqual([...AVATAR_HAIRS].sort());
   expect([...seen.hat].sort()).toEqual([...AVATAR_HATS].sort());
   expect([...seen.accessory].sort()).toEqual([...AVATAR_ACCESSORIES].sort());
+  expect([...seen.eyes].sort()).toEqual([...AVATAR_EYES].sort());
+  expect([...seen.detail].sort()).toEqual([...AVATAR_DETAILS].sort());
+  expect([...seen.background].sort()).toEqual([...AVATAR_BACKGROUNDS].sort());
+  // A ghost from Surprise me has no hair and no facial hair (a sheet shows none, a beard would hang off it).
+  expect(looksRight({ ...CLAUDE_LOOK, face: "ghost", hair: "short" })).toBe(false);
+  expect(looksRight({ ...CLAUDE_LOOK, face: "ghost", detail: "beard" })).toBe(false);
+  expect(looksRight({ ...CLAUDE_LOOK, face: "ghost", detail: "blush" })).toBe(true);
+  expect(looksRight({ ...CLAUDE_LOOK, face: "bear", eyes: "big" })).toBe(false);
+  expect(looksRight(surpriseLook({ ...CLAUDE_LOOK, face: "alien", hair: "short" }, () => 0.999))).toBe(true);
   expect(looksRight({ ...CLAUDE_LOOK, hair: "bun", hat: "beanie" })).toBe(false);
   expect(looksRight({ ...CLAUDE_LOOK, hair: "mohawk", hat: "crown" })).toBe(false);
   expect(looksRight({ ...CLAUDE_LOOK, hair: "bun", hat: "bow" })).toBe(true);
@@ -62,7 +71,24 @@ test("hair goes under covering hats, and the antenna hides under any hat but the
   for (const hat of AVATAR_HATS.filter((h) => h !== "none" && h !== "bow")) expect(showsAntenna({ ...CLAUDE_LOOK, hat })).toBe(false);
 });
 
+test("new faces: no hair on the ghost, the alien's antennae hide under any hat", () => {
+  expect(shownHair({ ...CLAUDE_LOOK, face: "ghost", hair: "long" })).toBe("none");
+  expect(shownHair({ ...CLAUDE_LOOK, face: "bear", hair: "long" })).toBe("long");
+  expect(hairCut({ ...CLAUDE_LOOK, face: "ghost", hair: "bun", hat: "beanie" })).toBeNull();
+  expect(crownBase({ ...CLAUDE_LOOK, face: "ghost", hair: "spiky" })).toBe(crownBase({ ...CLAUDE_LOOK, face: "ghost", hair: "none" }));
+  expect(showsAntenna({ ...CLAUDE_LOOK, face: "alien" })).toBe(true);
+  expect(showsAntenna({ ...CLAUDE_LOOK, face: "alien", hat: "bow" })).toBe(false);
+  expect(showsAntenna({ ...CLAUDE_LOOK, face: "alien", hair: "curly" })).toBe(false);
+  // The faces we had keep their fit exactly.
+  expect(crownBase({ ...CLAUDE_LOOK, face: "robot" })).toBe(12.4);
+  expect(crownBase({ ...CLAUDE_LOOK, face: "person" })).toBe(12);
+  expect(crownBase({ ...CLAUDE_LOOK, face: "critter", hair: "short" })).toBe(10.6);
+});
+
 test("labels and comparisons", () => {
+  expect(sameLook({ ...CLAUDE_LOOK, eyes: "big" }, CLAUDE_LOOK)).toBe(false);
+  expect(sameLook({ ...CLAUDE_LOOK, detail: "blush" }, CLAUDE_LOOK)).toBe(false);
+  expect(sameLook({ ...CLAUDE_LOOK, background: "fade" }, CLAUDE_LOOK)).toBe(false);
   expect(partLabel("magnifier")).toBe("Magnifier");
   expect(partLabel("tophat")).toBe("Top hat");
   expect(partLabel("eyepatch")).toBe("Eye patch");

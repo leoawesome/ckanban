@@ -1,6 +1,8 @@
 // Words and small helpers for the avatar editor (AvatarEditor.tsx): plain names for the parts and swatches (screen
 // readers read them), comparing looks, and a random look for "Surprise me".
-import { AVATAR_ACCESSORIES, AVATAR_COLORS, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_HATS, type AvatarLook } from "./avatarLook";
+import {
+  AVATAR_ACCESSORIES, AVATAR_BACKGROUNDS, AVATAR_COLORS, AVATAR_DETAILS, AVATAR_EYES, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_HATS, type AvatarLook,
+} from "./avatarLook";
 
 const COLOR_NAMES: Record<string, string> = {
   "#b0502f": "Rust", "#7a5af5": "Violet", "#2b5fb8": "Blue", "#0e7c86": "Teal", "#2f7d4f": "Green",
@@ -28,11 +30,17 @@ export function swatches(list: readonly string[], current: string): string[] {
 
 export const sameLook = (a: AvatarLook, b: AvatarLook): boolean =>
   a.face === b.face && a.color.toLowerCase() === b.color.toLowerCase() && a.hair === b.hair
-  && a.hairColor.toLowerCase() === b.hairColor.toLowerCase() && a.hat === b.hat && a.accessory === b.accessory;
+  && a.hairColor.toLowerCase() === b.hairColor.toLowerCase() && a.hat === b.hat && a.accessory === b.accessory
+  && a.eyes === b.eyes && a.detail === b.detail && a.background === b.background;
 
 /** Whether Surprise me may pick this look: not hair that a hat would hide whole (a bun or mohawk only grows on top
- * of the head, so under any hat but the bow nothing of it would show). Any such look still draws neatly when picked by hand. */
-export const looksRight = (l: AvatarLook): boolean => l.hat === "none" || l.hat === "bow" || (l.hair !== "bun" && l.hair !== "mohawk");
+ * of the head, so under any hat but the bow nothing of it would show), and a ghost with no hair and no facial hair (a
+ * sheet shows none, and a beard would hang off it), and not big eyes on the bear. Any such look still draws neatly when picked by hand. */
+export const looksRight = (l: AvatarLook): boolean =>
+  (l.hat === "none" || l.hat === "bow" || (l.hair !== "bun" && l.hair !== "mohawk"))
+  && (l.face !== "ghost" || (l.hair === "none" && l.detail !== "beard" && l.detail !== "moustache"))
+  // The bear's dark nose sits between big eyes and they run together.
+  && !(l.face === "bear" && l.eyes === "big");
 
 /** A random look from every part; never the same as `from`, and only pairs that look right (rnd: 0..1, Math.random by default). */
 export function surpriseLook(from: AvatarLook, rnd: () => number = Math.random): AvatarLook {
@@ -40,10 +48,13 @@ export function surpriseLook(from: AvatarLook, rnd: () => number = Math.random):
   for (let i = 0; i < 40; i++) {
     const next: AvatarLook = {
       face: pick(AVATAR_FACES), color: pick(AVATAR_COLORS), hair: pick(AVATAR_HAIRS), hairColor: pick(AVATAR_HAIR_COLORS),
-      hat: pick(AVATAR_HATS), accessory: pick(AVATAR_ACCESSORIES),
+      hat: pick(AVATAR_HATS), accessory: pick(AVATAR_ACCESSORIES), eyes: pick(AVATAR_EYES), detail: pick(AVATAR_DETAILS), background: pick(AVATAR_BACKGROUNDS),
     };
+    if (next.face === "ghost") next.hair = "none";
     if (looksRight(next) && !sameLook(next, from)) return next;
   }
-  const face = AVATAR_FACES[(AVATAR_FACES.indexOf(from.face) + 1) % AVATAR_FACES.length];
-  return looksRight(from) ? { ...from, face } : { ...from, face, hat: "none" };
+  // A stuck generator: the next face that isn't the ghost, with nothing on the head that could hide the hair.
+  let face = AVATAR_FACES[(AVATAR_FACES.indexOf(from.face) + 1) % AVATAR_FACES.length];
+  if (face === "ghost") face = AVATAR_FACES[0];
+  return looksRight({ ...from, face }) ? { ...from, face } : { ...from, face, hat: "none" };
 }

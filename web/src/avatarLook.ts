@@ -3,18 +3,27 @@
 // (GET /api/avatars, <home>/avatars.json, src/server/avatars.ts); anything unknown in them is ignored here too.
 import { faceLookKey, faceLook, handleBase } from "./huddleText";
 
-export const AVATAR_FACES = ["robot", "person", "critter"] as const;
+export const AVATAR_FACES = ["robot", "person", "critter", "cat", "bear", "alien", "ghost"] as const;
 export const AVATAR_HAIRS = ["none", "short", "ponytail", "bun", "spiky", "long", "curly", "mohawk", "pigtails", "fringe"] as const;
 /** Worn on the head; can go with any accessory. */
 export const AVATAR_HATS = ["none", "crown", "bow", "cap", "beanie", "wizard", "party", "tophat"] as const;
 /** Worn on the face or body, or held. */
 export const AVATAR_ACCESSORIES = ["none", "glasses", "headset", "magnifier", "sunglasses", "bowtie", "scarf", "flower", "eyepatch"] as const;
+/** Eye styles; every mood still shows with each (done, failed and the blink win over the style). */
+export const AVATAR_EYES = ["dots", "round", "big", "sleepy", "lashes"] as const;
+/** Small things on the face, drawn around the mouth (never over it). */
+export const AVATAR_DETAILS = ["none", "blush", "freckles", "moustache", "beard"] as const;
+/** What fills the round background, in tones of the avatar's colour (plain below 24px). */
+export const AVATAR_BACKGROUNDS = ["plain", "fade", "stripes", "dots", "stars"] as const;
 export const AVATAR_MOODS = ["idle", "thinking", "working", "waiting", "done", "failed"] as const;
 
 export type AvatarFace = (typeof AVATAR_FACES)[number];
 export type AvatarHair = (typeof AVATAR_HAIRS)[number];
 export type AvatarHat = (typeof AVATAR_HATS)[number];
 export type AvatarAccessory = (typeof AVATAR_ACCESSORIES)[number];
+export type AvatarEyes = (typeof AVATAR_EYES)[number];
+export type AvatarDetail = (typeof AVATAR_DETAILS)[number];
+export type AvatarBackground = (typeof AVATAR_BACKGROUNDS)[number];
 export type AvatarMood = (typeof AVATAR_MOODS)[number];
 
 /** One avatar: colours are #rrggbb. */
@@ -25,6 +34,9 @@ export interface AvatarLook {
   hairColor: string;
   hat: AvatarHat;
   accessory: AvatarAccessory;
+  eyes: AvatarEyes;
+  detail: AvatarDetail;
+  background: AvatarBackground;
 }
 
 /** Saved choices by name: "claude", "you" or a teammate name. Fields left out keep the default. Claude's entry may
@@ -58,7 +70,7 @@ export const AVATAR_HAIR_COLORS = ["#5a3a24", "#2b2622", "#d9a441", "#a33a2a", "
 
 const BROWN = "#5a3a24", DARK = "#2b2622";
 const look = (face: AvatarFace, color: string, hair: AvatarHair = "none", accessory: AvatarAccessory = "none", hairColor = BROWN, hat: AvatarHat = "none"): AvatarLook =>
-  ({ face, color, hair, hairColor, hat, accessory });
+  ({ face, color, hair, hairColor, hat, accessory, eyes: "dots", detail: "none", background: "plain" });
 
 /** The main Claude: a robot in the brand colour. */
 export const CLAUDE_LOOK = look("robot", "#b0502f");
@@ -107,6 +119,9 @@ export function cleanAvatarLook(v: unknown): Partial<AvatarLook> {
   if (isHex(x.hairColor)) out.hairColor = x.hairColor.toLowerCase();
   if (oneOf(AVATAR_HATS, x.hat)) out.hat = x.hat;
   if (oneOf(AVATAR_ACCESSORIES, x.accessory)) out.accessory = x.accessory;
+  if (oneOf(AVATAR_EYES, x.eyes)) out.eyes = x.eyes;
+  if (oneOf(AVATAR_DETAILS, x.detail)) out.detail = x.detail;
+  if (oneOf(AVATAR_BACKGROUNDS, x.background)) out.background = x.background;
   // No usable hat (an old entry, or a damaged hat): read a crown or bow accessory as that hat; another accessory means no hat.
   if (!out.hat) {
     if (oneOf(OLD_HAT_ACCESSORIES, x.accessory)) Object.assign(out, { hat: x.accessory, accessory: "none" });
@@ -158,16 +173,24 @@ export const COVERING_HATS = new Set<AvatarLook["hat"]>(["cap", "beanie", "wizar
 /** Where a covering hat's band ends on the forehead (y): hair above this is under the hat. */
 export const HAT_LINE = 12.6;
 
+/** The hair drawn: a ghost is a sheet with no hair, so none shows on it (the saved choice is kept for other faces). */
+export const shownHair = (look: AvatarLook): AvatarHair => (look.face === "ghost" ? "none" : look.hair);
+
+/** Faces whose eyes, mouth and details are drawn in dark ink (the others are white and use the avatar's colour). */
+export const DARK_INK_FACES = new Set<AvatarFace>(["person", "bear", "alien"]);
+
 /** Where the crown's or party hat's base sits (y): on the head, or on the hair, with a little overlap so it doesn't float. */
 export function crownBase(look: AvatarLook): number {
-  if (look.hair === "spiky") return 10.2;
-  if (look.hair === "curly") return 10.4;
-  if (look.hair === "mohawk" || look.hair === "none") return look.face === "robot" ? 12.4 : 12;
+  const hair = shownHair(look);
+  if (hair === "spiky") return 10.2;
+  if (hair === "curly") return 10.4;
+  if (hair === "mohawk" || hair === "none") return look.face === "robot" ? 12.4 : look.face === "alien" || look.face === "ghost" ? 11.2 : 12;
   return 10.6;
 }
 
 /** The y above which the hair is hidden under the hat, or null when all of it shows. */
 export function hairCut(look: AvatarLook): number | null {
+  if (look.face === "ghost") return null; // no hair shows on a ghost
   if (COVERING_HATS.has(look.hat)) return HAT_LINE;
   // A crown or party hat on a mohawk: the mohawk is tucked under it (the crown sits on the head, as without hair).
   if ((look.hat === "crown" || look.hat === "party") && look.hair === "mohawk") return crownBase(look) + 0.3;
@@ -176,6 +199,7 @@ export function hairCut(look: AvatarLook): number | null {
   return null;
 }
 
-/** The robot's antenna shows unless a hat or tall hair sits where it would be. */
+/** The robot's antenna (and the alien's two) show unless a hat or tall hair sits where they would be. The alien's
+ * left antenna would cross a bow, so on the alien any hat hides them. */
 export const showsAntenna = (look: AvatarLook): boolean =>
-  (look.hat === "none" || look.hat === "bow") && !["bun", "spiky", "mohawk", "curly"].includes(look.hair);
+  (look.hat === "none" || (look.hat === "bow" && look.face !== "alien")) && !["bun", "spiky", "mohawk", "curly"].includes(look.hair);

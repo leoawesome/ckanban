@@ -4,7 +4,10 @@
 // the user's saved choice (shared by every board) or the default.
 import { useEffect, useId, useState } from "react";
 import { req } from "./api";
-import { avatarFor, avatarKey, claudeName, cleanAvatarLook, COVERING_HATS, crownBase, hairCut, showsAntenna, type AvatarLook, type AvatarMood, type AvatarWho, type SavedAvatars } from "./avatarLook";
+import {
+  avatarFor, avatarKey, claudeName, cleanAvatarLook, COVERING_HATS, crownBase, DARK_INK_FACES, hairCut, shownHair, showsAntenna,
+  type AvatarLook, type AvatarMood, type AvatarWho, type SavedAvatars,
+} from "./avatarLook";
 
 const INK = "#2b2622";
 const HAIR_BASE = "M9 19q1-10 11-10t11 10q-5-5-11-4.5T9 19z";
@@ -171,6 +174,11 @@ function Accessory({ look }: { look: AvatarLook }) {
   }
 }
 
+/** The ghost's sheet: a dome with a scalloped hem. */
+const GHOST = "M9.4 31.2V19.6Q9.4 9 20 9t10.6 10.6v11.6" + "q-1.33 1.7-2.65 0".repeat(8) + "z";
+/** The alien's head: wide at the top, narrowing to the chin. */
+const ALIEN = "M20 9C27.6 9 32 13.2 32 19c0 6.6-6 12-12 12S8 25.6 8 19C8 13.2 12.4 9 20 9z";
+
 function Head({ look }: { look: AvatarLook }) {
   if (look.face === "person") return <circle cx="20" cy="21" r="11" fill="#f3c9a5" />;
   if (look.face === "critter") {
@@ -182,6 +190,46 @@ function Head({ look }: { look: AvatarLook }) {
       </>
     );
   }
+  // A cat: pointed ears with pink insides, a pink nose and whiskers (the critter has plain ears and a nose in its colour).
+  if (look.face === "cat") {
+    return (
+      <>
+        <path d="M10 16.4L9.2 5.8l8.2 4.8zM30 16.4l.8-10.6-8.2 4.8z" fill="#fff" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
+        <path d="M11 13.6l-.5-5.4 4.4 2.8zM29 13.6l.5-5.4-4.4 2.8z" fill="#ffb3c7" />
+        <ellipse cx="20" cy="21" rx="11.6" ry="10.4" fill="#fff" />
+        <path d="M18.9 23h2.2l-1.1 1.2z" fill="#ff8fab" stroke="#ff8fab" strokeWidth=".9" strokeLinejoin="round" />
+        <path d="M6.6 22.6l5.4 1M6.8 26.2l5.2-.9M33.4 22.6l-5.4 1M33.2 26.2l-5.2-.9" stroke={INK} strokeOpacity=".35" strokeWidth=".7" strokeLinecap="round" />
+      </>
+    );
+  }
+  // A bear: round ears, a light muzzle round the mouth, a dark nose.
+  if (look.face === "bear") {
+    return (
+      <>
+        <circle cx="11" cy="12.4" r="4.2" fill="#c08a5c" /><circle cx="29" cy="12.4" r="4.2" fill="#c08a5c" />
+        <circle cx="11" cy="12.4" r="2.2" fill="#e8c39c" /><circle cx="29" cy="12.4" r="2.2" fill="#e8c39c" />
+        <circle cx="20" cy="21" r="11" fill="#c08a5c" />
+        <ellipse cx="20" cy="25.4" rx="6" ry="4.6" fill="#f0dcc2" />
+        <ellipse cx="20" cy="22.5" rx="1.9" ry="1.25" fill={INK} />
+      </>
+    );
+  }
+  // An alien: a green head, wide on top, with two antennae (hidden under hats and tall hair, like the robot's).
+  if (look.face === "alien") {
+    return (
+      <>
+        {showsAntenna(look) && (
+          <>
+            <path d="M15.4 10.6L12.6 5.4M24.6 10.6l2.8-5.2" stroke="#7cc45a" strokeWidth="1.6" strokeLinecap="round" />
+            <circle cx="12.4" cy="5" r="1.8" fill="#c6f08a" /><circle cx="27.6" cy="5" r="1.8" fill="#c6f08a" />
+          </>
+        )}
+        <path d={ALIEN} fill="#9bd86f" />
+      </>
+    );
+  }
+  // A ghost: a white sheet with a wavy hem (no hair shows on it).
+  if (look.face === "ghost") return <path d={GHOST} fill="#fff" />;
   return (
     <>
       {showsAntenna(look) && <><line x1="20" y1="11" x2="20" y2="6" stroke="#fff" strokeWidth="2" /><circle cx="20" cy="5" r="2" fill="#fff" /></>}
@@ -190,11 +238,89 @@ function Head({ look }: { look: AvatarLook }) {
   );
 }
 
-function Eyes({ mood, ink }: { mood: AvatarMood; ink: string }) {
+/** One eye in a style, open (idle, thinking, working, waiting: the moves come from .av in styles.css). */
+function OpenEye({ x, style, ink }: { x: number; style: AvatarLook["eyes"]; ink: string }) {
+  const side = x < 20 ? -1 : 1;
+  switch (style) {
+    case "round": return <><circle cx={x} cy="20" r="2.8" fill={ink} /><circle cx={x + 0.9} cy="19.1" r=".95" fill="#fff" /></>;
+    case "big": return <><circle cx={x} cy="20" r="3.5" fill={ink} /><circle cx={x + 1.1} cy="18.8" r="1.3" fill="#fff" /><circle cx={x - 1.2} cy="21.3" r=".6" fill="#fff" /></>;
+    // Half closed: the lower half of the eye under a heavy lid.
+    case "sleepy": return <path d={`M${x - 2.5} 20.4a2.5 2.1 0 0 0 5 0z`} fill={ink} stroke={ink} strokeWidth=".9" strokeLinejoin="round" />;
+    case "lashes": return (
+      <>
+        <circle cx={x} cy="20" r="2.3" fill={ink} />
+        <path d={`M${x + side * 1.7} 18.3l${side * 1.3}-1.3M${x + side * 0.5} 17.8l${side * 0.5}-1.6`} stroke={ink} strokeWidth=".9" strokeLinecap="round" />
+      </>
+    );
+    default: return <circle cx={x} cy="20" r="2.3" fill={ink} />;
+  }
+}
+
+/** The eyes: done (happy closed) and failed (crossed) are the same for every style, so the mood always reads. */
+function Eyes({ mood, ink, style }: { mood: AvatarMood; ink: string; style: AvatarLook["eyes"] }) {
   const st = { stroke: ink, fill: "none", strokeLinecap: "round" as const };
-  if (mood === "done") return <path d="M13.6 20.8q2.4-3.2 4.8 0M21.6 20.8q2.4-3.2 4.8 0" strokeWidth="1.8" {...st} />;
+  if (mood === "done") return <path d={`M13.6 20.8q2.4-3.2 4.8 0M21.6 20.8q2.4-3.2 4.8 0${style === "lashes" ? "M13.6 20.8l-1.3-.9M26.4 20.8l1.3-.9" : ""}`} strokeWidth="1.8" {...st} />;
   if (mood === "failed") return <path d="M14.4 18.4l3.2 3.2m0-3.2l-3.2 3.2M22.4 18.4l3.2 3.2m0-3.2l-3.2 3.2" strokeWidth="1.6" {...st} />;
-  return <><circle cx="16" cy="20" r="2.3" fill={ink} /><circle cx="24" cy="20" r="2.3" fill={ink} /></>;
+  if (style === "dots") return <><circle cx="16" cy="20" r="2.3" fill={ink} /><circle cx="24" cy="20" r="2.3" fill={ink} /></>;
+  return <><OpenEye x={16} style={style} ink={ink} /><OpenEye x={24} style={style} ink={ink} /></>;
+}
+
+/** Cheeks and facial hair: drawn under the mouth, which always stays on top and uncovered (a beard leaves room round it). */
+function Detail({ look }: { look: AvatarLook }) {
+  switch (look.detail) {
+    case "blush": return <g fill="#ff6f91" opacity=".5"><ellipse cx="12.3" cy="24.3" rx="2.3" ry="1.4" /><ellipse cx="27.7" cy="24.3" rx="2.3" ry="1.4" /></g>;
+    case "freckles": return (
+      <g fill="#a0522d" opacity=".75">
+        {[[11.6, 23.2], [13.5, 23.7], [12.2, 25.1], [28.4, 23.2], [26.5, 23.7], [27.8, 25.1]].map(([x, y]) => <circle key={x} cx={x} cy={y} r=".6" />)}
+      </g>
+    );
+    // A curled moustache between the nose and the mouth.
+    case "moustache": return <path d="M20 22.9q-1.7-1.3-3.8-.9q-2 .4-3.3 1.9q2 .5 3.8-.1q2.1-.5 3.3-.9zM20 22.9q1.7-1.3 3.8-.9q2 .4 3.3 1.9q-2 .5-3.8-.1q-2.1-.5-3.3-.9z" fill={look.hairColor} />;
+    // A beard along the jaw and round the chin, with an opening that leaves the mouth's shape clear in every mood.
+    case "beard": return (
+      <path fillRule="evenodd" fill={look.hairColor}
+        d="M9.6 21.2Q9.4 33.2 20 33.4T30.4 21.2Q29.4 23.6 27 24.6Q24.6 22.4 20 22.4T13 24.6Q10.6 23.6 9.6 21.2zM13.6 25.9a6.4 3.5 0 1 0 12.8 0a6.4 3.5 0 1 0-12.8 0z" />
+    );
+    default: return null;
+  }
+}
+
+/** Mixes a #rrggbb colour toward white (t > 0) or black (t < 0). */
+const tone = (hex: string, t: number): string => {
+  const n = parseInt(hex.slice(1), 16), to = t > 0 ? 255 : 0, a = Math.abs(t);
+  return "#" + [16, 8, 0].map((sh) => Math.round(((n >> sh) & 255) * (1 - a) + to * a).toString(16).padStart(2, "0")).join("");
+};
+/** A four-pointed sparkle centred on x, y. */
+const sparkle = (x: number, y: number, r: number) => `M${x} ${y - r}Q${x} ${y} ${x + r} ${y}Q${x} ${y} ${x} ${y + r}Q${x} ${y} ${x - r} ${y}Q${x} ${y} ${x} ${y - r}z`;
+const STARS: [number, number, number][] = [[6.6, 9.4, 2], [33.4, 9.8, 1.6], [4.4, 23.6, 1.4], [35.6, 21.4, 1.8], [9.6, 34, 1.6], [20, 3, 1.2], [27, 36.6, 1.2]];
+
+/** The round background: plain in the avatar's colour, or a quiet pattern in tones of it (never animated). */
+function Background({ look, plain, id }: { look: AvatarLook; plain: boolean; id: string }) {
+  // The id is this face's own (useId): a shared one would resolve to the first copy on the page, which may sit in a
+  // hidden panel and then draws nothing.
+  const base = <circle cx="20" cy="20" r="20" fill={look.color} />;
+  if (plain || look.background === "plain") return base;
+  if (look.background === "fade") {
+    return (
+      <>
+        <defs><linearGradient id={id} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor={tone(look.color, 0.3)} /><stop offset="1" stopColor={tone(look.color, -0.22)} /></linearGradient></defs>
+        {base}
+        <circle cx="20" cy="20" r="20" fill={`url(#${id})`} />
+      </>
+    );
+  }
+  if (look.background === "stars") return <>{base}<path d={STARS.map(([x, y, r]) => sparkle(x, y, r)).join("")} fill="#fff" fillOpacity=".6" /></>;
+  return (
+    <>
+      <defs>
+        {look.background === "stripes"
+          ? <pattern id={id} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(40)"><rect width="3" height="6" fill="#fff" fillOpacity=".14" /></pattern>
+          : <pattern id={id} width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1" fill="#fff" fillOpacity=".2" /><circle cx="4.5" cy="4.5" r="1" fill="#fff" fillOpacity=".2" /></pattern>}
+      </defs>
+      {base}
+      <circle cx="20" cy="20" r="20" fill={`url(#${id})`} />
+    </>
+  );
 }
 
 const markText = (t: string) => <text x="32" y="35.8" fontSize="11" fontWeight="700" textAnchor="middle" fill="#fff" fontFamily="sans-serif">{t}</text>;
@@ -225,17 +351,18 @@ export interface AvatarFaceProps {
 export function AvatarFace({ look: raw, mood = "idle", size = 40, className }: AvatarFaceProps) {
   // A look from anywhere (an old cache, a hand-made object) still draws: unknown parts fall back to the defaults.
   const look: AvatarLook = { ...avatarFor("claude"), ...cleanAvatarLook(raw) };
-  const ink = look.face === "person" ? INK : look.color;
+  const ink = DARK_INK_FACES.has(look.face) ? INK : look.color;
   const cut = hairCut(look);
   const clip = `avc${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
     <svg className={`av ${mood}${size < 32 ? " small" : ""}${className ? ` ${className}` : ""}`} width={size} height={size} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
-      <circle cx="20" cy="20" r="20" fill={look.color} />
+      <Background look={look} plain={size < 24} id={`${clip}bg`} />
       <g className="head">
         <Head look={look} />
         {cut !== null && <clipPath id={clip}><rect x="0" y={cut} width="40" height={40 - cut} /></clipPath>}
-        <g fill={look.hairColor} clipPath={cut !== null ? `url(#${clip})` : undefined}><Hair hair={look.hair} color={look.hairColor} /></g>
-        <g className="eyes"><Eyes mood={mood} ink={ink} /></g>
+        <g fill={look.hairColor} clipPath={cut !== null ? `url(#${clip})` : undefined}><Hair hair={shownHair(look)} color={look.hairColor} /></g>
+        <g className="eyes"><Eyes mood={mood} ink={ink} style={look.eyes} /></g>
+        <Detail look={look} />
         <path d={MOUTH[mood] ?? MOUTH.idle} strokeWidth="1.8" stroke={ink} fill="none" strokeLinecap="round" />
         {/* Face things first, then the hat over them (a headset band or eye patch strap goes under a hat); a flower
             goes on top, so with a hat it sits on the band. */}

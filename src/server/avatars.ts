@@ -5,10 +5,13 @@
 // Claude's entry may also hold `name`: the name the board shows in place of "Claude" (display only; missing, empty or
 // damaged means "Claude"). It lives on the "claude" entry only, and changing or resetting the look keeps it.
 
-export const AVATAR_FACES = ["robot", "person", "critter"] as const;
+export const AVATAR_FACES = ["robot", "person", "critter", "cat", "bear", "alien", "ghost"] as const;
 export const AVATAR_HAIRS = ["none", "short", "ponytail", "bun", "spiky", "long", "curly", "mohawk", "pigtails", "fringe"] as const;
 export const AVATAR_HATS = ["none", "crown", "bow", "cap", "beanie", "wizard", "party", "tophat"] as const;
 export const AVATAR_ACCESSORIES = ["none", "glasses", "headset", "magnifier", "sunglasses", "bowtie", "scarf", "flower", "eyepatch"] as const;
+export const AVATAR_EYES = ["dots", "round", "big", "sleepy", "lashes"] as const;
+export const AVATAR_DETAILS = ["none", "blush", "freckles", "moustache", "beard"] as const;
+export const AVATAR_BACKGROUNDS = ["plain", "fade", "stripes", "dots", "stars"] as const;
 /** Parts that were accessories before hats got their own slot (old files may still hold them there). */
 const OLD_HAT_ACCESSORIES = ["crown", "bow"] as const;
 
@@ -19,6 +22,10 @@ export interface SavedLook {
   hairColor?: string;
   hat?: (typeof AVATAR_HATS)[number];
   accessory?: (typeof AVATAR_ACCESSORIES)[number];
+  /** Missing (every look saved before these existed): dots, none, plain. */
+  eyes?: (typeof AVATAR_EYES)[number];
+  detail?: (typeof AVATAR_DETAILS)[number];
+  background?: (typeof AVATAR_BACKGROUNDS)[number];
   /** Only on "claude": the name shown in place of "Claude". */
   name?: string;
 }
@@ -69,6 +76,9 @@ export function cleanLook(v: unknown, key?: string): SavedLook {
   if (isHex(x.hairColor)) out.hairColor = x.hairColor.toLowerCase();
   if (oneOf(AVATAR_HATS, x.hat)) out.hat = x.hat;
   if (oneOf(AVATAR_ACCESSORIES, x.accessory)) out.accessory = x.accessory;
+  if (oneOf(AVATAR_EYES, x.eyes)) out.eyes = x.eyes;
+  if (oneOf(AVATAR_DETAILS, x.detail)) out.detail = x.detail;
+  if (oneOf(AVATAR_BACKGROUNDS, x.background)) out.background = x.background;
   // No usable hat (an old entry, or a damaged hat): read a crown or bow accessory as that hat; another accessory means no hat.
   if (!out.hat) {
     if (oneOf(OLD_HAT_ACCESSORIES, x.accessory)) Object.assign(out, { hat: x.accessory, accessory: "none" });

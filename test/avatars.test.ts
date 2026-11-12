@@ -8,7 +8,7 @@ import { RUN_HEADER } from "../src/server/scheduler";
 import { Store } from "../src/server/store";
 import * as server from "../src/server/avatars";
 import {
-  AVATAR_ACCESSORIES, AVATAR_FACES, AVATAR_HAIRS, AVATAR_HATS, avatarFor, avatarKey, CLAUDE_LOOK, claudeName, cleanAvatarLook, cleanClaudeName, defaultAvatar, MAX_CLAUDE_NAME,
+  AVATAR_ACCESSORIES, AVATAR_BACKGROUNDS, AVATAR_DETAILS, AVATAR_EYES, AVATAR_FACES, AVATAR_HAIRS, AVATAR_HATS, avatarFor, avatarKey, CLAUDE_LOOK, claudeName, cleanAvatarLook, cleanClaudeName, defaultAvatar, MAX_CLAUDE_NAME,
   TEAMMATE_LOOKS, YOU_LOOK,
 } from "../web/src/avatarLook";
 import { faceLook } from "../web/src/huddleText";
@@ -19,6 +19,62 @@ test("the server and the UI know the same parts", () => {
   expect([...server.AVATAR_HAIRS]).toEqual([...AVATAR_HAIRS]);
   expect([...server.AVATAR_ACCESSORIES]).toEqual([...AVATAR_ACCESSORIES]);
   expect([...server.AVATAR_HATS]).toEqual([...AVATAR_HATS]);
+  expect([...server.AVATAR_EYES]).toEqual([...AVATAR_EYES]);
+  expect([...server.AVATAR_DETAILS]).toEqual([...AVATAR_DETAILS]);
+  expect([...server.AVATAR_BACKGROUNDS]).toEqual([...AVATAR_BACKGROUNDS]);
+});
+
+// ---- Eye styles, face details and backgrounds: new fields whose defaults are today's look ----
+
+test("every default look has dot eyes, no detail and a plain background, so nobody's face changes", () => {
+  const defaults = { eyes: "dots", detail: "none", background: "plain" };
+  expect(CLAUDE_LOOK).toMatchObject(defaults);
+  expect(YOU_LOOK).toMatchObject(defaults);
+  for (const look of Object.values(TEAMMATE_LOOKS)) expect(look).toMatchObject(defaults);
+  for (const name of ["perf-hunter", "alice", "z", "qa-7"]) expect(defaultAvatar(name)).toMatchObject(defaults);
+  expect(AVATAR_EYES[0]).toBe("dots");
+  expect(AVATAR_DETAILS[0]).toBe("none");
+  expect(AVATAR_BACKGROUNDS[0]).toBe("plain");
+});
+
+test("a saved look without the new fields shows exactly the face it showed before", () => {
+  // Entries as earlier versions wrote them: only the old fields, so the new ones come from the default.
+  const old = { claude: { face: "person", color: "#2b5fb8", hair: "bun", hairColor: "#2b2622", hat: "cap", accessory: "scarf", name: "Ada" }, qa: { hair: "spiky" }, main: { accessory: "crown" } };
+  const saved = server.cleanAvatars(old) as any;
+  expect(avatarFor("claude", saved)).toEqual({ face: "person", color: "#2b5fb8", hair: "bun", hairColor: "#2b2622", hat: "cap", accessory: "scarf", eyes: "dots", detail: "none", background: "plain" });
+  expect(avatarFor("qa", saved)).toEqual({ ...TEAMMATE_LOOKS.qa, hair: "spiky" });
+  expect(avatarFor("main", saved)).toEqual({ ...TEAMMATE_LOOKS.main, hat: "crown", accessory: "none" });
+  expect(saved.qa).toEqual({ hair: "spiky" });
+});
+
+test("new fields are kept when valid and dropped when unknown or damaged (server and UI agree)", () => {
+  const cases: [Record<string, unknown>, Record<string, unknown>][] = [
+    [{ eyes: "big", detail: "beard", background: "stars" }, { eyes: "big", detail: "beard", background: "stars" }],
+    [{ face: "ghost", eyes: "sleepy" }, { face: "ghost", eyes: "sleepy" }],
+    [{ face: "cat" }, { face: "cat" }], [{ face: "bear" }, { face: "bear" }], [{ face: "alien" }, { face: "alien" }],
+    [{ eyes: "laser", detail: 3, background: { a: 1 } }, {}],
+    [{ eyes: null, detail: "", background: "Plain" }, {}],
+    [{ eyes: ["big"], background: "fade", face: "dragon" }, { background: "fade" }],
+  ];
+  for (const [raw, want] of cases) {
+    expect(cleanAvatarLook(raw)).toEqual(want);
+    expect(server.cleanLook(raw)).toEqual(want as server.SavedLook);
+  }
+  // A damaged field falls back to that field's default; the rest of the saved choice still shows.
+  expect(avatarFor("claude", { claude: { eyes: "laser", background: "stripes" } } as any)).toEqual({ ...CLAUDE_LOOK, background: "stripes" });
+});
+
+test("saving the new fields keeps everything else in avatars.json, and a reload shows them", async () => {
+  const dir = tempDir("ck-new-fields-");
+  const file = join(dir, "avatars.json");
+  writeFileSync(file, JSON.stringify({ claude: { face: "robot", name: "Ada" }, reviewer: { hair: "bun", accessory: "glasses", hat: "none" } }));
+  const st = new Store(dir);
+  st.saveAvatars(server.withAvatar(st.listAvatars(), "claude", { face: "alien", eyes: "lashes", detail: "freckles", background: "dots", junk: 1 }));
+  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({
+    claude: { face: "alien", eyes: "lashes", detail: "freckles", background: "dots", name: "Ada" },
+    reviewer: { hair: "bun", accessory: "glasses", hat: "none" },
+  });
+  expect(new Store(dir).listAvatars().claude).toEqual({ face: "alien", eyes: "lashes", detail: "freckles", background: "dots", name: "Ada" });
 });
 
 // ---- Hats got their own slot: old saved looks (one `accessory`, crown or bow among them) keep their face ----

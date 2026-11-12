@@ -1,14 +1,14 @@
 // The avatar editor (Team page): pick who, try the moods on a big live preview, change the parts, then Save (all boards).
 // Desktop: preview on the left, parts on the right. Phone: a bottom sheet with the preview pinned at the top while
 // the parts scroll, and the buttons pinned at the bottom.
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { Modal } from "./Modal";
 import { CheckIcon } from "./icons";
 import { usePhone } from "./usePhone";
 import { AvatarFace, resetAvatar, saveAvatar, saveClaudeName, useClaudeName, useSavedAvatars } from "./AvatarFace";
 import {
-  AVATAR_ACCESSORIES, AVATAR_COLORS, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_HATS, AVATAR_MOODS, avatarFor, avatarKey, claudeName, cleanClaudeName,
+  AVATAR_ACCESSORIES, AVATAR_BACKGROUNDS, AVATAR_COLORS, AVATAR_DETAILS, AVATAR_EYES, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_HATS, AVATAR_MOODS, avatarFor, avatarKey, claudeName, cleanClaudeName,
   defaultAvatar, DEFAULT_CLAUDE_NAME, MAX_CLAUDE_NAME, type AvatarLook, type AvatarMood, type SavedAvatars,
 } from "./avatarLook";
 import { colorName, partLabel, sameLook, surpriseLook, swatches } from "./avatarEditorText";
@@ -39,6 +39,10 @@ export function AvatarEditorHost() {
 
 const MOOD_LABELS: Record<AvatarMood, string> = { idle: "Idle", thinking: "Thinking", working: "Working", waiting: "Waiting", done: "Done", failed: "Failed" };
 
+/** The parts are grouped under tabs so the list stays short enough to scan (phone and desktop alike). */
+const TABS = [{ id: "face", label: "Face" }, { id: "hair", label: "Hair and hat" }, { id: "extras", label: "Extras" }] as const;
+type Tab = (typeof TABS)[number]["id"];
+
 const hasSaved = (saved: SavedAvatars, who: string) => Object.prototype.hasOwnProperty.call(saved, avatarKey(who));
 
 export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerson[]; initial: string; onClose: () => void }) {
@@ -46,6 +50,17 @@ export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerso
   const saved = useSavedAvatars();
   const [cur, setCur] = useState(() => (people.some((p) => p.who === initial) ? initial : people[0]?.who ?? "claude"));
   const [mood, setMood] = useState<AvatarMood>("thinking");
+  const [tab, setTab] = useState<Tab>("face");
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  /** Arrow keys, Home and End move between the tabs (the usual tab list keys). */
+  const tabKey = (e: KeyboardEvent) => {
+    const i = TABS.findIndex((t) => t.id === tab);
+    const j = e.key === "ArrowRight" ? (i + 1) % TABS.length : e.key === "ArrowLeft" ? (i + TABS.length - 1) % TABS.length : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
+    if (j < 0) return;
+    e.preventDefault();
+    setTab(TABS[j].id);
+    tabRefs.current[TABS[j].id]?.focus();
+  };
   /** Changes not saved yet, per person (kept while the dialog is open, so switching doesn't lose them). */
   const [drafts, setDrafts] = useState<Record<string, AvatarLook>>({});
   /** Claude's name as typed, not saved yet (null: unchanged). */
@@ -100,7 +115,7 @@ export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerso
   };
 
   const ids = useId();
-  const optGroup = <K extends "face" | "hair" | "hat" | "accessory">(key: K, title: string, list: readonly AvatarLook[K][]) => (
+  const optGroup = <K extends "face" | "hair" | "hat" | "accessory" | "eyes" | "detail" | "background">(key: K, title: string, list: readonly AvatarLook[K][]) => (
     <section className="ave-part" aria-labelledby={`${ids}-${key}`}>
       <h4 id={`${ids}-${key}`}>{title}</h4>
       <div className="ave-opts" role="radiogroup" aria-labelledby={`${ids}-${key}`}>
@@ -171,12 +186,39 @@ export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerso
                 <div id={`${ids}-name-hint`} className="ave-name-hint">Shown in place of “Claude” on every board. Empty: Claude.</div>
               </section>
             )}
-            {optGroup("face", "Face", AVATAR_FACES)}
-            {swatchGroup("color", "Colour", AVATAR_COLORS)}
-            {optGroup("hair", "Hair", AVATAR_HAIRS)}
-            {swatchGroup("hairColor", "Hair colour", AVATAR_HAIR_COLORS)}
-            {optGroup("hat", "Hat", AVATAR_HATS)}
-            {optGroup("accessory", "Accessory", AVATAR_ACCESSORIES)}
+            <div className="ave-tabs" role="tablist" aria-label="Parts" onKeyDown={tabKey}>
+              {TABS.map((t) => (
+                <button key={t.id} ref={(el) => { tabRefs.current[t.id] = el; }} type="button" role="tab" id={`${ids}-tab-${t.id}`} aria-selected={tab === t.id}
+                  aria-controls={`${ids}-panel`} tabIndex={tab === t.id ? 0 : -1} className={tab === t.id ? "on" : undefined} onClick={() => setTab(t.id)}>{t.label}</button>
+              ))}
+            </div>
+            <div className="ave-panel" role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`}>
+              {tab === "face" && (
+                <>
+                  {optGroup("face", "Face", AVATAR_FACES)}
+                  {swatchGroup("color", "Colour", AVATAR_COLORS)}
+                  {optGroup("eyes", "Eyes", AVATAR_EYES)}
+                  {optGroup("detail", "Details", AVATAR_DETAILS)}
+                </>
+              )}
+              {tab === "hair" && (
+                <>
+                  {look.face === "ghost"
+                    ? <section className="ave-part"><h4>Hair</h4><p className="ave-note">A ghost shows no hair. Pick another face to wear it.</p></section>
+                    : optGroup("hair", "Hair", AVATAR_HAIRS)}
+                  {/* Also the colour of a moustache or beard, so it stays on the ghost when one is worn. */}
+                  {(look.face !== "ghost" || look.detail === "moustache" || look.detail === "beard")
+                    && swatchGroup("hairColor", look.face === "ghost" ? "Moustache and beard colour" : "Hair colour", AVATAR_HAIR_COLORS)}
+                  {optGroup("hat", "Hat", AVATAR_HATS)}
+                </>
+              )}
+              {tab === "extras" && (
+                <>
+                  {optGroup("accessory", "Accessory", AVATAR_ACCESSORIES)}
+                  {optGroup("background", "Background", AVATAR_BACKGROUNDS)}
+                </>
+              )}
+            </div>
             <div className="ave-acts">
               {msg && <span className={`ave-msg${msg.ok ? "" : " err"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</span>}
               <button type="button" className="btn" onClick={() => set(surpriseLook(look))} disabled={busy}>Surprise me</button>
