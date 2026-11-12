@@ -787,7 +787,10 @@ export function App() {
   const panelProps = (p: Profile) => ({
     profile: p, pty: health?.pty ?? true, panels, ticket: open, focus: panelFocus,
     command: panelCommand, onCommandSent: () => setPanelCommand(null), teamRequest, huddles,
-    onOpenHuddle: openHuddle, onOpenTicket: (id: string) => openTicket(id), onStartHuddle: (seed: HuddleSeed) => void startHuddle(seed),
+    // On a phone the panel covers the ticket: showing a ticket from it goes back to the board first (the panel stays open).
+    onOpenHuddle: (id: string, huddleId?: string) => { setPhonePanel(null); openHuddle(id, huddleId); },
+    onOpenTicket: (id: string) => { setPhonePanel(null); openTicket(id); },
+    onStartHuddle: (seed: HuddleSeed) => { setPhonePanel(null); void startHuddle(seed); },
   });
   // The drawer has taken the Huddle tab request (as its first tab, or switched to it): forget it.
   useEffect(() => {
