@@ -8,7 +8,7 @@ import { CheckIcon } from "./icons";
 import { usePhone } from "./usePhone";
 import { AvatarFace, resetAvatar, saveAvatar, saveClaudeName, useClaudeName, useSavedAvatars } from "./AvatarFace";
 import {
-  AVATAR_ACCESSORIES, AVATAR_COLORS, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_MOODS, avatarFor, avatarKey, claudeName, cleanClaudeName,
+  AVATAR_ACCESSORIES, AVATAR_COLORS, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_HATS, AVATAR_MOODS, avatarFor, avatarKey, claudeName, cleanClaudeName,
   defaultAvatar, DEFAULT_CLAUDE_NAME, MAX_CLAUDE_NAME, type AvatarLook, type AvatarMood, type SavedAvatars,
 } from "./avatarLook";
 import { colorName, partLabel, sameLook, surpriseLook, swatches } from "./avatarEditorText";
@@ -100,7 +100,7 @@ export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerso
   };
 
   const ids = useId();
-  const optGroup = <K extends "face" | "hair" | "accessory">(key: K, title: string, list: readonly AvatarLook[K][]) => (
+  const optGroup = <K extends "face" | "hair" | "hat" | "accessory">(key: K, title: string, list: readonly AvatarLook[K][]) => (
     <section className="ave-part" aria-labelledby={`${ids}-${key}`}>
       <h4 id={`${ids}-${key}`}>{title}</h4>
       <div className="ave-opts" role="radiogroup" aria-labelledby={`${ids}-${key}`}>
@@ -175,6 +175,7 @@ export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerso
             {swatchGroup("color", "Colour", AVATAR_COLORS)}
             {optGroup("hair", "Hair", AVATAR_HAIRS)}
             {swatchGroup("hairColor", "Hair colour", AVATAR_HAIR_COLORS)}
+            {optGroup("hat", "Hat", AVATAR_HATS)}
             {optGroup("accessory", "Accessory", AVATAR_ACCESSORIES)}
             <div className="ave-acts">
               {msg && <span className={`ave-msg${msg.ok ? "" : " err"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</span>}

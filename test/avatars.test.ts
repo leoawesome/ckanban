@@ -8,7 +8,7 @@ import { RUN_HEADER } from "../src/server/scheduler";
 import { Store } from "../src/server/store";
 import * as server from "../src/server/avatars";
 import {
-  AVATAR_ACCESSORIES, AVATAR_FACES, AVATAR_HAIRS, avatarFor, avatarKey, CLAUDE_LOOK, claudeName, cleanAvatarLook, cleanClaudeName, defaultAvatar, MAX_CLAUDE_NAME,
+  AVATAR_ACCESSORIES, AVATAR_FACES, AVATAR_HAIRS, AVATAR_HATS, avatarFor, avatarKey, CLAUDE_LOOK, claudeName, cleanAvatarLook, cleanClaudeName, defaultAvatar, MAX_CLAUDE_NAME,
   TEAMMATE_LOOKS, YOU_LOOK,
 } from "../web/src/avatarLook";
 import { faceLook } from "../web/src/huddleText";
@@ -18,6 +18,79 @@ test("the server and the UI know the same parts", () => {
   expect([...server.AVATAR_FACES]).toEqual([...AVATAR_FACES]);
   expect([...server.AVATAR_HAIRS]).toEqual([...AVATAR_HAIRS]);
   expect([...server.AVATAR_ACCESSORIES]).toEqual([...AVATAR_ACCESSORIES]);
+  expect([...server.AVATAR_HATS]).toEqual([...AVATAR_HATS]);
+});
+
+// ---- Hats got their own slot: old saved looks (one `accessory`, crown or bow among them) keep their face ----
+
+test("an old look with a crown or bow accessory reads as that hat with no accessory (server and UI agree)", () => {
+  const cases: [Record<string, unknown>, Record<string, unknown>][] = [
+    [{ accessory: "crown" }, { hat: "crown", accessory: "none" }],
+    [{ accessory: "bow", hair: "ponytail" }, { hat: "bow", accessory: "none", hair: "ponytail" }],
+    // Any other old accessory was the only thing worn: no hat (so a default crown doesn't come back on top of it).
+    [{ accessory: "glasses" }, { hat: "none", accessory: "glasses" }],
+    [{ accessory: "none" }, { hat: "none", accessory: "none" }],
+    [{ accessory: "magnifier", face: "critter" }, { hat: "none", accessory: "magnifier", face: "critter" }],
+    // Nothing worn was saved: the default hat and accessory stay.
+    [{ face: "person" }, { face: "person" }],
+    [{ accessory: "dragon" }, {}],
+    // The new shape is kept as it is; an old part name in the accessory slot of a new look is just dropped.
+    [{ hat: "cap", accessory: "sunglasses" }, { hat: "cap", accessory: "sunglasses" }],
+    [{ hat: "crown", accessory: "crown" }, { hat: "crown" }],
+    [{ hat: "wizard", accessory: "bow" }, { hat: "wizard" }],
+    // A damaged hat is read like a missing one, so an old crown or bow isn't lost.
+    [{ hat: "sombrero", accessory: "glasses" }, { hat: "none", accessory: "glasses" }],
+    [{ hat: null, accessory: "crown" }, { hat: "crown", accessory: "none" }],
+    [{ hat: "fez", accessory: "bow" }, { hat: "bow", accessory: "none" }],
+  ];
+  for (const [raw, want] of cases) {
+    expect(cleanAvatarLook(raw)).toEqual(want);
+    expect(server.cleanLook(raw)).toEqual(want as server.SavedLook);
+  }
+});
+
+test("old saved looks show the same face as before: what was worn stays, nothing new appears", () => {
+  // main's default is a crown; reviewer's default is glasses.
+  expect(avatarFor("main", { main: { accessory: "glasses" } } as any)).toMatchObject({ hat: "none", accessory: "glasses" });
+  expect(avatarFor("main", { main: { hair: "bun" } } as any)).toMatchObject({ hat: "crown", accessory: "none", hair: "bun" });
+  expect(avatarFor("reviewer", { reviewer: { accessory: "crown" } } as any)).toMatchObject({ hat: "crown", accessory: "none" });
+  expect(avatarFor("reviewer", { reviewer: { accessory: "bow" } } as any)).toMatchObject({ hat: "bow", accessory: "none" });
+  expect(avatarFor("claude", { claude: { face: "person", accessory: "crown" } } as any)).toEqual({ ...CLAUDE_LOOK, face: "person", hat: "crown", accessory: "none" });
+  expect(avatarFor("qa", { qa: { accessory: "magnifier" } } as any)).toEqual({ ...TEAMMATE_LOOKS.qa, accessory: "magnifier" });
+});
+
+test("teammates without a saved look keep the same default face: crown and bow moved to the hat slot", () => {
+  expect(TEAMMATE_LOOKS.main).toMatchObject({ hat: "crown", accessory: "none" });
+  expect(TEAMMATE_LOOKS.designer).toMatchObject({ hat: "crown", accessory: "none", hair: "short" });
+  expect(TEAMMATE_LOOKS.ponytail).toMatchObject({ hat: "bow", accessory: "none", hair: "ponytail" });
+  expect(TEAMMATE_LOOKS.reviewer).toMatchObject({ hat: "none", accessory: "glasses" });
+  expect(TEAMMATE_LOOKS.facilitator).toMatchObject({ hat: "none", accessory: "headset" });
+  expect(CLAUDE_LOOK).toMatchObject({ hat: "none", accessory: "none" });
+  expect(YOU_LOOK).toMatchObject({ hat: "none", accessory: "none" });
+  for (const name of ["perf-hunter", "alice", "z"]) expect(defaultAvatar(name)).toMatchObject({ hat: "none", accessory: "none" });
+  for (const look of Object.values(TEAMMATE_LOOKS)) {
+    expect(AVATAR_HATS).toContain(look.hat);
+    expect(AVATAR_ACCESSORIES).toContain(look.accessory);
+  }
+});
+
+test("an old avatars.json loads in the new shape and is written in it on the next save, keeping the name and everyone else", async () => {
+  const dir = tempDir("ck-old-avatars-");
+  const file = join(dir, "avatars.json");
+  writeFileSync(file, JSON.stringify({
+    claude: { face: "person", accessory: "crown", name: "Ada" }, reviewer: { accessory: "bow", hair: "bun" }, qa: { accessory: "glasses" },
+    designer: { face: "critter" }, junk: { accessory: "dragon" },
+  }));
+  const st = new Store(dir);
+  const want = {
+    claude: { face: "person", hat: "crown", accessory: "none", name: "Ada" }, reviewer: { hair: "bun", hat: "bow", accessory: "none" },
+    qa: { hat: "none", accessory: "glasses" }, designer: { face: "critter" },
+  };
+  expect(st.listAvatars()).toEqual(want as server.SavedAvatarMap);
+  // The file itself only changes when something is saved.
+  expect(JSON.parse(readFileSync(file, "utf8")).claude.accessory).toBe("crown");
+  st.saveAvatars(server.withAvatar(st.listAvatars(), "designer", { face: "robot", hat: "wizard", accessory: "scarf" }));
+  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ ...want, designer: { face: "robot", hat: "wizard", accessory: "scarf" } });
 });
 
 test("Claude is a brand-colour robot, the user a person", () => {
@@ -33,7 +106,7 @@ test("built-in teammates keep their role colours and get their look", () => {
     expect(look.color).toBe(faceLook({ handle: name }).color);
   }
   expect(defaultAvatar("reviewer")).toMatchObject({ accessory: "glasses" });
-  expect(defaultAvatar("ponytail")).toMatchObject({ face: "person", hair: "ponytail", accessory: "bow" });
+  expect(defaultAvatar("ponytail")).toMatchObject({ face: "person", hair: "ponytail", hat: "bow", accessory: "none" });
   expect(defaultAvatar("qa")).toMatchObject({ accessory: "headset" });
 });
 
@@ -71,7 +144,7 @@ test("a saved choice wins field by field; damaged data falls back to the default
 });
 
 test("only known parts and #rrggbb colours are kept", () => {
-  const raw = { face: "robot", color: "#ABCDEF", hair: "mohawk", hairColor: "url(#x)", accessory: "<script>", extra: "x" };
+  const raw = { face: "robot", color: "#ABCDEF", hair: "dreadlocks", hairColor: "url(#x)", accessory: "<script>", hat: "<b>", extra: "x" };
   expect(cleanAvatarLook(raw)).toEqual({ face: "robot", color: "#abcdef" });
   expect(server.cleanLook(raw)).toEqual({ face: "robot", color: "#abcdef" });
   expect(server.cleanLook({ color: "#fff" })).toEqual({});
@@ -102,14 +175,18 @@ const send = (method: string, path: string, body?: unknown, headers: Record<stri
 
 test("saves a choice for every board, loads it back after a restart, and resets it", async () => {
   expect(await (await send("GET", "/api/avatars")).json()).toEqual({});
-  let r = await send("PUT", "/api/avatars/reviewer", { face: "person", color: "#2B5FB8", hair: "dragon", accessory: "crown", junk: 1 });
+  let r = await send("PUT", "/api/avatars/reviewer", { face: "person", color: "#2B5FB8", hair: "dragon", hat: "tophat", accessory: "bowtie", junk: 1 });
   expect(r.status).toBe(200);
-  expect(await r.json()).toEqual({ reviewer: { face: "person", color: "#2b5fb8", accessory: "crown" } });
+  expect(await r.json()).toEqual({ reviewer: { face: "person", color: "#2b5fb8", hat: "tophat", accessory: "bowtie" } });
   await send("PUT", "/api/avatars/claude", { hair: "bun" });
   // A new Store on the same folder: what a restart reads.
   const again = new Store(store.root);
-  expect(again.listAvatars()).toEqual({ reviewer: { face: "person", color: "#2b5fb8", accessory: "crown" }, claude: { hair: "bun" } });
-  expect(avatarFor("reviewer", again.listAvatars())).toEqual({ ...TEAMMATE_LOOKS.reviewer, face: "person", accessory: "crown" });
+  expect(again.listAvatars()).toEqual({ reviewer: { face: "person", color: "#2b5fb8", hat: "tophat", accessory: "bowtie" }, claude: { hair: "bun" } });
+  expect(avatarFor("reviewer", again.listAvatars())).toEqual({ ...TEAMMATE_LOOKS.reviewer, face: "person", hat: "tophat", accessory: "bowtie" });
+  // An old client sending the one-slot shape still saves the same face.
+  r = await send("PUT", "/api/avatars/qa", { accessory: "crown" });
+  expect((await r.json() as any).qa).toEqual({ hat: "crown", accessory: "none" });
+  await send("DELETE", "/api/avatars/qa");
   r = await send("DELETE", "/api/avatars/reviewer");
   expect(await r.json()).toEqual({ claude: { hair: "bun" } });
 });

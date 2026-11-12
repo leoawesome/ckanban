@@ -6,14 +6,18 @@
 // damaged means "Claude"). It lives on the "claude" entry only, and changing or resetting the look keeps it.
 
 export const AVATAR_FACES = ["robot", "person", "critter"] as const;
-export const AVATAR_HAIRS = ["none", "short", "ponytail", "bun", "spiky"] as const;
-export const AVATAR_ACCESSORIES = ["none", "glasses", "bow", "headset", "crown", "magnifier"] as const;
+export const AVATAR_HAIRS = ["none", "short", "ponytail", "bun", "spiky", "long", "curly", "mohawk", "pigtails", "fringe"] as const;
+export const AVATAR_HATS = ["none", "crown", "bow", "cap", "beanie", "wizard", "party", "tophat"] as const;
+export const AVATAR_ACCESSORIES = ["none", "glasses", "headset", "magnifier", "sunglasses", "bowtie", "scarf", "flower", "eyepatch"] as const;
+/** Parts that were accessories before hats got their own slot (old files may still hold them there). */
+const OLD_HAT_ACCESSORIES = ["crown", "bow"] as const;
 
 export interface SavedLook {
   face?: (typeof AVATAR_FACES)[number];
   color?: string;
   hair?: (typeof AVATAR_HAIRS)[number];
   hairColor?: string;
+  hat?: (typeof AVATAR_HATS)[number];
   accessory?: (typeof AVATAR_ACCESSORIES)[number];
   /** Only on "claude": the name shown in place of "Claude". */
   name?: string;
@@ -52,7 +56,9 @@ const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T => type
 
 export const isAvatarName = (v: unknown): v is string => typeof v === "string" && v.length <= 64 && AVATAR_NAME.test(v);
 
-/** The known, valid fields of one look; everything else is ignored. */
+/** The known, valid fields of one look; everything else is ignored. A look saved before hats had their own slot
+ * (an `accessory` and no usable `hat`) is read in the new shape with the same face: a crown or bow accessory becomes that
+ * hat with no accessory, any other accessory means no hat. The file is written in the new shape on the next save. */
 export function cleanLook(v: unknown, key?: string): SavedLook {
   if (!v || typeof v !== "object" || Array.isArray(v)) return {};
   const x = v as Record<string, unknown>;
@@ -61,7 +67,13 @@ export function cleanLook(v: unknown, key?: string): SavedLook {
   if (isHex(x.color)) out.color = x.color.toLowerCase();
   if (oneOf(AVATAR_HAIRS, x.hair)) out.hair = x.hair;
   if (isHex(x.hairColor)) out.hairColor = x.hairColor.toLowerCase();
+  if (oneOf(AVATAR_HATS, x.hat)) out.hat = x.hat;
   if (oneOf(AVATAR_ACCESSORIES, x.accessory)) out.accessory = x.accessory;
+  // No usable hat (an old entry, or a damaged hat): read a crown or bow accessory as that hat; another accessory means no hat.
+  if (!out.hat) {
+    if (oneOf(OLD_HAT_ACCESSORIES, x.accessory)) Object.assign(out, { hat: x.accessory, accessory: "none" });
+    else if (out.accessory) out.hat = "none";
+  }
   if (key === CLAUDE_KEY) {
     const name = cleanClaudeName(x.name);
     if (name) out.name = name;

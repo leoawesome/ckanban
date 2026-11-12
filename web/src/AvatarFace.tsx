@@ -2,9 +2,9 @@
 // Inline SVG with CSS motion (.av in styles.css: transform and opacity only, still under prefers-reduced-motion).
 // Decorative (aria-hidden): callers say the state in words next to it. useAvatar gives the look to draw for a name,
 // the user's saved choice (shared by every board) or the default.
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { req } from "./api";
-import { avatarFor, avatarKey, claudeName, cleanAvatarLook, type AvatarLook, type AvatarMood, type AvatarWho, type SavedAvatars } from "./avatarLook";
+import { avatarFor, avatarKey, claudeName, cleanAvatarLook, COVERING_HATS, crownBase, hairCut, showsAntenna, type AvatarLook, type AvatarMood, type AvatarWho, type SavedAvatars } from "./avatarLook";
 
 const INK = "#2b2622";
 const HAIR_BASE = "M9 19q1-10 11-10t11 10q-5-5-11-4.5T9 19z";
@@ -14,6 +14,15 @@ const MOUTH: Record<AvatarMood, string> = {
   idle: "M16 25.5q4 3 8 0", thinking: "M18 26.3h4", working: "M17 26h6", waiting: "M16 25.5q4 3 8 0", done: "M15 24.5q5 5 10 0", failed: "M16 27.5q4-3 8 0",
 };
 
+/** Long hair: a cap over the top and curtains down both sides of the face, to the chin. */
+const LONG = "M8.6 30.5Q6.6 18 10 12.8Q14 8.6 20 8.6t10 4.2q3.4 5.2 1.4 17.7q-1.6 1-3-.6q.9-8-1.2-12.6Q24 14.6 20 14.8t-7.2 2.4q-2.1 4.6-1.2 12.6q-1.4 1.6-3 .7z";
+/** Curly hair: a cloud of curls along the top and down the sides (top at y 5). */
+const CURLS: [number, number, number][] = [[10.6, 19.6, 2.6], [29.4, 19.6, 2.6], [10.4, 15.2, 3], [29.6, 15.2, 3], [12.8, 10.8, 3.3], [27.2, 10.8, 3.3], [17, 8.4, 3.4], [23, 8.4, 3.4], [20, 9.6, 3]];
+/** Mohawk: a fin of four rounded points along the middle of the head, standing up from it. */
+const MOHAWK = "M16.9 14Q15.9 8.4 17.6 4.6l1.4 2.2L20 2.6l1.1 4.2 1.4-2.2q1.7 3.8.6 9.4z";
+/** Fringe: a bob with straight-cut bangs over the forehead. */
+const FRINGE = "M8.8 20Q8 9 20 8.8T31.2 20h-1.7q-.2-3.6-1.3-4.4h-16.4q-1.1.8-1.3 4.4z";
+
 function Hair({ hair, color }: { hair: AvatarLook["hair"]; color: string }) {
   switch (hair) {
     case "short": return <path d={HAIR_BASE} />;
@@ -21,28 +30,24 @@ function Hair({ hair, color }: { hair: AvatarLook["hair"]; color: string }) {
     case "bun": return <><circle cx="20" cy="7.5" r="4" /><path d={HAIR_BASE} /></>;
     // A tuft of five even spikes on the crown of the head, inside its width; the round stroke softens the tips.
     case "spiky": return <path d={SPIKY} stroke={color} strokeWidth="1.6" strokeLinejoin="round" />;
+    case "long": return <path d={LONG} />;
+    case "curly": return <>{CURLS.map(([x, y, r]) => <circle key={`${x},${y}`} cx={x} cy={y} r={r} />)}</>;
+    case "mohawk": return <path d={MOHAWK} stroke={color} strokeWidth="1.2" strokeLinejoin="round" />;
+    // Two bunches low on the sides, tied with a yellow band.
+    case "pigtails": return (
+      <>
+        <path d={HAIR_BASE} />
+        <path d="M9.6 15.6q-5.4.4-5.6 6.6q.2 4.6 2.6 5.8q-.6-5 3.4-8.6zM30.4 15.6q5.4.4 5.6 6.6q-.2 4.6-2.6 5.8q.6-5-3.4-8.6z" />
+        <circle cx="9.2" cy="16.4" r="1.5" fill="#f0b429" /><circle cx="30.8" cy="16.4" r="1.5" fill="#f0b429" />
+      </>
+    );
+    case "fringe": return <path d={FRINGE} />;
     default: return null;
   }
 }
 
-/** Where the crown's base sits (y): on the head, or on the hair, with a little overlap so it doesn't float. */
-function crownBase(look: AvatarLook): number {
-  if (look.hair === "spiky") return 10.2;
-  if (look.hair !== "none") return 10.6;
-  return look.face === "robot" ? 12.4 : 12;
-}
-
-function Accessory({ look }: { look: AvatarLook }) {
-  switch (look.accessory) {
-    case "glasses": return <g fill="none" stroke={INK} strokeWidth="1.4"><circle cx="15.5" cy="20" r="4" /><circle cx="24.5" cy="20" r="4" /></g>;
-    case "bow": return <><path d="M13 10l-5-3.5v7zM13 10l5-3.5v7z" fill="#e0457b" /><circle cx="13" cy="10" r="1.7" fill="#b82d5e" /></>;
-    case "headset": return (
-      <>
-        <path d="M8 21q0-12 12-12t12 12" fill="none" stroke={INK} strokeWidth="2" />
-        <rect x="5.5" y="19" width="4.5" height="7.5" rx="2" fill={INK} />
-        <rect x="30" y="19" width="4.5" height="7.5" rx="2" fill={INK} />
-      </>
-    );
+function Hat({ look }: { look: AvatarLook }) {
+  switch (look.hat) {
     case "crown": {
       // Three rounded points over a band with jewels, centred and resting on the head or hair (crownBase).
       const b = crownBase(look);
@@ -55,10 +60,111 @@ function Accessory({ look }: { look: AvatarLook }) {
         </g>
       );
     }
+    case "bow": return <><path d="M13 10l-5-3.5v7zM13 10l5-3.5v7z" fill="#e0457b" /><circle cx="13" cy="10" r="1.7" fill="#b82d5e" /></>;
+    // A cap seen from the front: a dome with seams and a button, the peak curving over the forehead.
+    case "cap": return (
+      <>
+        <path d="M10.2 13.4Q10 5.2 20 5.2t9.8 8.2z" fill="#e8553d" />
+        <path d="M20 5.6v7.6M15 6.6q-1.6 2.6-1.6 6.6M25 6.6q1.6 2.6 1.6 6.6" stroke="#b83a26" strokeWidth=".7" fill="none" />
+        <circle cx="20" cy="5.4" r="1.1" fill="#b83a26" />
+        <path d="M8.6 13.4Q20 10.8 31.4 13.4q.6 2.4-1.6 2.4Q20 13.6 10.2 15.8q-2.2 0-1.6-2.4z" fill="#b83a26" />
+      </>
+    );
+    // A knitted beanie: dome, ribbed cuff, pompom.
+    case "beanie": return (
+      <>
+        <path d="M10.4 12.4Q10.2 4.6 20 4.6t9.6 7.8z" fill="#2f9e8f" />
+        <circle cx="20" cy="4.2" r="2.5" fill="#f3efe6" />
+        <rect x="9.2" y="11.2" width="21.6" height="4.2" rx="1.9" fill="#227a6e" />
+        <path d="M12.6 11.8v3M15.8 11.8v3M19 11.8v3M22.2 11.8v3M25.4 11.8v3M28.2 12v2.6" stroke="#1a5e55" strokeWidth=".8" strokeLinecap="round" />
+      </>
+    );
+    // A tall pointed wizard hat with a star, leaning a little, on a wide brim.
+    case "wizard": return (
+      <>
+        <path d="M11.6 13Q16 7 22.4 1.4q1 .2.6 1.2Q24.6 8 28.4 13z" fill="#4b3fa8" />
+        <path d="M18.4 8.2l.5 1.2 1.3.1-1 .8.3 1.3-1.1-.7-1.1.7.3-1.3-1-.8 1.3-.1zM24.2 10.6a1 1 0 1 0 .9-1.6a1.4 1.4 0 1 1-.9 1.6z" fill="#f0b429" />
+        <ellipse cx="20" cy="13.2" rx="12" ry="2" fill="#382e85" />
+      </>
+    );
+    // A small striped party cone with a pompom, tilted, resting on the head or hair like the crown.
+    case "party": {
+      const b = crownBase(look);
+      return (
+        <g transform={`translate(20 ${b}) rotate(10)`}>
+          <path d="M-5.2-.4L0-8 5.2-.4q-5.2 1.6-10.4 0z" fill="#e0457b" />
+          <path d="M-3.6-2.8l1.8 2.2M-1.8-5.4l3.6 4.4M.6-7l2.4 3" stroke="#f0b429" strokeWidth="1.3" strokeLinecap="round" />
+          <circle cx="0" cy="-8.2" r="1.5" fill="#f0b429" />
+        </g>
+      );
+    }
+    // A black top hat with a coloured band on a wide brim.
+    case "tophat": return (
+      <>
+        <rect x="13" y="2.6" width="14" height="10.2" rx="1" fill="#2b2622" />
+        <rect x="13" y="9" width="14" height="2.2" fill="#b82d5e" />
+        <ellipse cx="20" cy="12.8" rx="11.6" ry="1.9" fill="#2b2622" />
+        <path d="M14.4 3.8v4.4" stroke="#ffffff40" strokeWidth="1" strokeLinecap="round" />
+      </>
+    );
+    default: return null;
+  }
+}
+
+function Accessory({ look }: { look: AvatarLook }) {
+  switch (look.accessory) {
+    case "glasses": return <g fill="none" stroke={INK} strokeWidth="1.4"><circle cx="15.5" cy="20" r="4" /><circle cx="24.5" cy="20" r="4" /></g>;
+    case "headset": return (
+      <>
+        <path d="M8 21q0-12 12-12t12 12" fill="none" stroke={INK} strokeWidth="2" />
+        <rect x="5.5" y="19" width="4.5" height="7.5" rx="2" fill={INK} />
+        <rect x="30" y="19" width="4.5" height="7.5" rx="2" fill={INK} />
+      </>
+    );
     case "magnifier": return (
       <>
         <circle cx="10" cy="26.5" r="4.5" fill="#ffffffaa" stroke={INK} strokeWidth="1.6" />
         <line x1="6.8" y1="29.7" x2="4.2" y2="32.6" stroke={INK} strokeWidth="2.2" strokeLinecap="round" />
+      </>
+    );
+    // Dark rounded lenses with a bridge and a little shine.
+    case "sunglasses": return (
+      <>
+        <path d="M10.6 17.6h7.8q.4 5-3.8 5.2q-4.4-.2-4-5.2zM21.6 17.6h7.8q.4 5-4 5.2q-4.2-.2-3.8-5.2z" fill="#1d1a17" stroke="#1d1a17" strokeWidth=".8" strokeLinejoin="round" />
+        <path d="M18.4 18.2q1.6-.9 3.2 0" stroke="#1d1a17" strokeWidth="1.2" fill="none" />
+        <path d="M12.4 18.8l1.6 1.6M23.4 18.8l1.6 1.6" stroke="#ffffff66" strokeWidth=".9" strokeLinecap="round" />
+      </>
+    );
+    // A bow tie under the chin.
+    case "bowtie": return (
+      <>
+        <path d="M20 32.6l-5.2-2.8v5.6zM20 32.6l5.2-2.8v5.6z" fill="#b82d5e" />
+        <rect x="18.4" y="31.1" width="3.2" height="3" rx="1" fill="#8c1f45" />
+      </>
+    );
+    // A striped scarf round the neck, one end hanging down on the left.
+    case "scarf": return (
+      <>
+        <path d="M11.4 29q8.6 4.6 17.2 0l.8 3.2q-9.4 4.6-18.8 0z" fill="#d64545" />
+        <path d="M12.4 31.6l3 5.6q-1.4 1-3 .8l-2-5.4z" fill="#d64545" />
+        <path d="M15.8 31.2l.8 3M20 31.8v3.2M24.2 31.2l-.8 3M11.6 34.6l2.2-.6" stroke="#f3efe6" strokeWidth="1" strokeLinecap="round" />
+      </>
+    );
+    // A flower tucked over the right ear (on the hat band when a hat is worn).
+    case "flower": {
+      const y = COVERING_HATS.has(look.hat) ? 12.6 : 14.4;
+      return (
+        <g transform={`translate(29.2 ${y})`}>
+          {[0, 72, 144, 216, 288].map((a) => <ellipse key={a} cx="0" cy="-2" rx="1.6" ry="2" fill="#ff8fbd" transform={`rotate(${a})`} />)}
+          <circle r="1.3" fill="#f0b429" />
+        </g>
+      );
+    }
+    // A patch over the right eye, its strap running across the forehead.
+    case "eyepatch": return (
+      <>
+        <path d="M10 13.4L31.2 23.4" stroke={INK} strokeWidth="1.1" />
+        <path d="M20.4 17.6q4-1.4 7.4.6q.6 4.6-3.6 5q-4.2-.2-3.8-5.6z" fill={INK} />
       </>
     );
     default: return null;
@@ -78,7 +184,7 @@ function Head({ look }: { look: AvatarLook }) {
   }
   return (
     <>
-      {look.hair !== "bun" && look.hair !== "spiky" && look.accessory !== "crown" && <><line x1="20" y1="11" x2="20" y2="6" stroke="#fff" strokeWidth="2" /><circle cx="20" cy="5" r="2" fill="#fff" /></>}
+      {showsAntenna(look) && <><line x1="20" y1="11" x2="20" y2="6" stroke="#fff" strokeWidth="2" /><circle cx="20" cy="5" r="2" fill="#fff" /></>}
       <rect x="9" y="11" width="22" height="19" rx="8" fill="#fff" />
     </>
   );
@@ -120,15 +226,22 @@ export function AvatarFace({ look: raw, mood = "idle", size = 40, className }: A
   // A look from anywhere (an old cache, a hand-made object) still draws: unknown parts fall back to the defaults.
   const look: AvatarLook = { ...avatarFor("claude"), ...cleanAvatarLook(raw) };
   const ink = look.face === "person" ? INK : look.color;
+  const cut = hairCut(look);
+  const clip = `avc${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
     <svg className={`av ${mood}${size < 32 ? " small" : ""}${className ? ` ${className}` : ""}`} width={size} height={size} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
       <circle cx="20" cy="20" r="20" fill={look.color} />
       <g className="head">
         <Head look={look} />
-        <g fill={look.hairColor}><Hair hair={look.hair} color={look.hairColor} /></g>
+        {cut !== null && <clipPath id={clip}><rect x="0" y={cut} width="40" height={40 - cut} /></clipPath>}
+        <g fill={look.hairColor} clipPath={cut !== null ? `url(#${clip})` : undefined}><Hair hair={look.hair} color={look.hairColor} /></g>
         <g className="eyes"><Eyes mood={mood} ink={ink} /></g>
         <path d={MOUTH[mood] ?? MOUTH.idle} strokeWidth="1.8" stroke={ink} fill="none" strokeLinecap="round" />
-        <Accessory look={look} />
+        {/* Face things first, then the hat over them (a headset band or eye patch strap goes under a hat); a flower
+            goes on top, so with a hat it sits on the band. */}
+        {look.accessory !== "flower" && <Accessory look={look} />}
+        <Hat look={look} />
+        {look.accessory === "flower" && <Accessory look={look} />}
       </g>
       {size >= 24 && <Mark mood={mood} />}
     </svg>

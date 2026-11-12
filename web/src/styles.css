@@ -4927,7 +4927,7 @@ button.composer-old:hover { color: var(--text); }
 .ave-part h4 { font-size: var(--fs-sm); margin: 16px 0 8px; color: var(--muted); font-weight: 600; }
 .ave-part:first-child h4 { margin-top: 0; }
 .ave-opts { display: flex; flex-wrap: wrap; gap: 8px; }
-.ave-opt { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 76px; min-height: 76px; padding: 8px 4px; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--r-md); font-size: var(--fs-xs); cursor: pointer; }
+.ave-opt { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 76px; min-height: 76px; padding: 8px 2px; text-align: center; line-height: 1.2; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--r-md); font-size: var(--fs-xs); cursor: pointer; }
 .ave-opt:hover { background: var(--surface-2); }
 .ave-opt.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
 .ave-tick { position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-strong); color: var(--on-accent); }
@@ -4967,7 +4967,8 @@ button.composer-old:hover { color: var(--text); }
   .ave-moods button { min-height: 40px; font-size: var(--fs-sm); }
   .ave-parts { border: 0; background: none; padding: 0 0 4px; }
   .ave-opts { gap: 6px; }
-  .ave-opt { width: calc((100% - 18px) / 4); min-width: 0; }
+  .ave-opt { width: calc((100% - 24px) / 5); min-width: 0; padding: 8px 0; letter-spacing: -0.01em; }
+  @media (max-width: 379px) { .ave-opt { width: calc((100% - 18px) / 4); } } /* the longest label (Sunglasses) still fits */
   .ave-sw { width: 44px; height: 44px; }
   /* 16px text: iOS zooms into smaller fields. */
   .ave-name input, .claude-name-row input { font-size: var(--fs-lg); min-height: 44px; max-width: none; }
