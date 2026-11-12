@@ -1239,6 +1239,10 @@ export interface Schedule {
   quiet?: boolean;
   /** Model for its runs (e.g. "sonnet"); null: the board's. */
   model?: string | null;
+  /** The feature (main ticket or one of its groups) each run goes into as a task; null: each run gets its own card. */
+  partOf?: string | null;
+  /** That ticket's title (null: it no longer exists). */
+  partOfTitle?: string | null;
   /** What it spent over the last 7 days, in USD (list only). */
   spend7dUsd?: number;
   /** Quiet checks per local day, newest first (list only). */
@@ -1288,12 +1292,13 @@ export interface Job {
   result: JobResult | null;
 }
 
-export type ScheduleInput = Pick<Schedule, "name" | "title" | "body" | "mode" | "cron" | "skipIfRunning" | "tags" | "quiet" | "model">;
+export type ScheduleInput = Pick<Schedule, "name" | "title" | "body" | "mode" | "cron" | "skipIfRunning" | "tags" | "quiet" | "model" | "partOf">;
 
 export type ScheduleTrigger = "schedule" | "missed" | "manual";
 
 export type ScheduleHistoryItem = { at: string } & (
-  | { kind: "fired" | "skipped"; trigger: ScheduleTrigger; ticketId: string | null }
+  /** note (fired): why the run went somewhere else than set, e.g. its feature is gone so it got its own card. */
+  | { kind: "fired" | "skipped"; trigger: ScheduleTrigger; ticketId: string | null; note?: string }
   | { kind: "error"; trigger: ScheduleTrigger; message: string }
   /** A quiet run found nothing: the board removed its ticket. */
   | { kind: "quiet"; ticketId: string; summary: string; costUsd: number }

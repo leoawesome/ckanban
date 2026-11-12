@@ -16,7 +16,7 @@ import { macBanner } from "./notify";
 import { type HostHuddle, STUCK_ON_QUESTIONS, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
 import { recallBlock } from "./recall";
-import { askClosed, familyBelow, familyOf, featureRoot, featureRows, groupsOf, isFeature, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
+import { askClosed, familyBelow, familyOf, featureRoot, featureRows, groupsOf, isFeature, levelOf, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { followUpFor, followUpPlace } from "../../web/src/followUp";
@@ -57,6 +57,16 @@ import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TI
 
 const INSTALLING = "Installing project dependencies…";
 import { nowIso, slugify, starredTitle } from "./util";
+
+/** Where a schedule's run goes as a task (Board.taskPlaceFor). */
+export interface ScheduledTaskPlace {
+  /** The ticket that runs it as a task (its parentId): a tool group or the main ticket. */
+  managerId: string;
+  mainId: string;
+  /** The group it hangs under when that group doesn't run tasks itself. */
+  partOf?: string;
+  startFrom?: string;
+}
 
 export interface BoardOptions {
   claudeBin: string;
@@ -3277,6 +3287,48 @@ export class Board {
       if (cur.main) return cur;
     }
     return null;
+  }
+
+  /**
+   * Where a schedule set to put each run in a feature (Schedule.partOf: a main ticket's id or one of its groups') puts
+   * its next run: a task of the nearest ticket there that runs tasks (a tool group, else the main ticket), like a task
+   * a run makes with create_ticket's partOf. A problem (the feature is gone, done or not a feature): its own card instead.
+   */
+  taskPlaceFor(slug: string, partOf: string): ScheduledTaskPlace | { problem: string } {
+    const all = this.store.listTickets(slug);
+    const at = all.find((t) => t.id === partOf);
+    if (!at) return { problem: `The feature ${partOf} it puts runs in no longer exists` };
+    const top = featureRoot(all, at.id);
+    if (!top?.main || (at.id !== top.id && !groupsOf(all, top.id).some((g) => g.id === at.id))) {
+      return { problem: `${at.id} ("${at.title}") isn't a feature's main ticket or one of its groups` };
+    }
+    if (top.status === "done" || at.status === "done") return { problem: `The feature "${top.title}" (${top.id}) is done` };
+    const manager = isManager(at) && levelOf(all, at.id) + 1 <= MAX_LEVEL ? at : top;
+    return {
+      managerId: manager.id, mainId: top.id, ...(at.id !== manager.id ? { partOf: at.id } : {}),
+      // A task that changes files starts from the main ticket's copy (git boards), so its work merges back there.
+      ...(top.branch && top.worktree ? { startFrom: top.branch } : {}),
+    };
+  }
+
+  /**
+   * A schedule's run as a task of a feature (taskPlaceFor): a tool ticket that starts right away (the schedule decides
+   * when, not the main ticket's plan) and keeps its schedule, tags, model and mode. Its main ticket's card stays where
+   * it is; the plan picks the result up (resultWakesMain decides whether it wakes the main ticket).
+   */
+  async createScheduledTask(
+    slug: string, place: ScheduledTaskPlace,
+    input: { title: string; body: string; status: "in_progress"; mode: TicketMode; scheduleId: string; tags?: string[]; model?: string },
+    scheduleName: string,
+  ): Promise<Ticket> {
+    const t = await this.createTicket(slug, {
+      ...input, parentId: place.managerId, tool: true, ...(place.partOf ? { partOf: place.partOf } : {}), ...(place.startFrom ? { startFrom: place.startFrom } : {}),
+    });
+    const manager = this.store.getTicket(slug, place.managerId);
+    this.store.addComment(slug, t.id, "ai", `Task of ${place.managerId} ("${manager?.title ?? ""}"), made by the schedule "${scheduleName}".`);
+    this.ensurePlan(slug, place.managerId);
+    this.advancePlans(slug);
+    return this.store.getTicket(slug, t.id)!;
   }
 
   /** The ticket's last result in words (its newest summary comment). */

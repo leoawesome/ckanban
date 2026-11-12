@@ -28,6 +28,8 @@ export interface ScheduleInput {
   tags?: unknown;
   quiet?: unknown;
   model?: unknown;
+  /** A feature's main ticket or group id: each run goes into it as a task; "" or null clears it. */
+  partOf?: unknown;
 }
 
 /** Model names a schedule accepts: an alias (sonnet, opus, haiku) or a full model id. */
@@ -38,7 +40,7 @@ const MISSED_AFTER_MS = 90_000;
 const HISTORY_LIMIT = 100;
 /** Old prompt/title/cron kept in an "updated" history entry, cut to this many characters. */
 const PREVIOUS_MAX = 2000;
-const EDITABLE = ["name", "title", "body", "mode", "cron", "enabled", "skipIfRunning", "tags", "quiet", "model"] as const;
+const EDITABLE = ["name", "title", "body", "mode", "cron", "enabled", "skipIfRunning", "tags", "quiet", "model", "partOf"] as const;
 
 const editorText = (by: ScheduleEditor) => (by === "user" ? "the user" : `ticket ${by.ticketId}`);
 
@@ -81,7 +83,10 @@ export class Scheduler {
   }
 
   view(slug: string, s: Schedule) {
-    return { ...s, summary: describeCron(s.cron), active: this.activeTicket(slug, s.id) !== null };
+    return {
+      ...s, summary: describeCron(s.cron), active: this.activeTicket(slug, s.id) !== null,
+      ...(s.partOf ? { partOfTitle: this.store.getTicket(slug, s.partOf)?.title ?? null } : {}),
+    };
   }
 
   private validate(input: ScheduleInput, base?: Schedule): Omit<Schedule, "id" | "createdAt" | "updatedAt" | "lastFiredAt" | "nextRunAt" | "lastError"> {
@@ -101,6 +106,12 @@ export class Scheduler {
       if (m && !MODEL_RE.test(m)) throw new ScheduleError(400, `invalid model "${m}": use sonnet, opus, haiku or a model id`);
       model = m || null;
     }
+    let partOf = base?.partOf ?? null;
+    if (input.partOf !== undefined) {
+      const p = input.partOf === null ? "" : String(input.partOf).trim();
+      if (p && !/^[A-Za-z0-9_-]{1,80}$/.test(p)) throw new ScheduleError(400, `invalid partOf "${p}": use a ticket id`);
+      partOf = p || null;
+    }
     return {
       name, title, cron, mode,
       body: str(input.body, base?.body ?? ""),
@@ -109,6 +120,7 @@ export class Scheduler {
       tags: input.tags === undefined ? base?.tags ?? [] : normalizeTags(input.tags),
       quiet: input.quiet === undefined ? base?.quiet ?? false : input.quiet === true,
       model,
+      partOf,
     };
   }
 
@@ -124,8 +136,16 @@ export class Scheduler {
     });
   }
 
+  /** A feature picked for its runs (partOf) must be one they can go into now. */
+  private checkPartOf(slug: string, input: ScheduleInput, partOf: string | null | undefined) {
+    if (input.partOf === undefined || !partOf) return;
+    const place = this.board.taskPlaceFor(slug, partOf);
+    if ("problem" in place) throw new ScheduleError(400, `partOf: ${place.problem}`);
+  }
+
   create(slug: string, input: ScheduleInput, by: ScheduleEditor = "user"): Schedule {
     const fields = this.validate(input);
+    this.checkPartOf(slug, input, fields.partOf);
     const at = this.now().toISOString();
     const s: Schedule = {
       id: newId(), ...fields, createdAt: at, updatedAt: at, lastFiredAt: null, lastError: null,
@@ -140,13 +160,15 @@ export class Scheduler {
   update(slug: string, id: string, input: ScheduleInput, by: ScheduleEditor = "user"): Schedule {
     const current = this.get(slug, id);
     const fields = this.validate(input, current);
+    this.checkPartOf(slug, input, fields.partOf);
     const next: Schedule = { ...current, ...fields, updatedAt: this.now().toISOString() };
     // Resuming starts from now (no backfill); edits that keep the timing keep the pending slot.
     if (!next.enabled) next.nextRunAt = null;
     else if (!current.enabled || next.cron !== current.cron || !current.nextRunAt) next.nextRunAt = this.nextRunAt(next.cron);
     this.store.saveSchedule(slug, next);
     const changed: string[] = EDITABLE.filter((k) => k === "tags" ? (next.tags ?? []).join() !== (current.tags ?? []).join()
-      : k === "quiet" ? !!next.quiet !== !!current.quiet : k === "model" ? (next.model ?? null) !== (current.model ?? null) : next[k] !== current[k]);
+      : k === "quiet" ? !!next.quiet !== !!current.quiet : k === "model" ? (next.model ?? null) !== (current.model ?? null)
+      : k === "partOf" ? (next.partOf ?? null) !== (current.partOf ?? null) : next[k] !== current[k]);
     if (changed.length) {
       const toggle = changed.length === 1 && changed[0] === "enabled";
       const previous: SchedulePrevious = {};
@@ -201,11 +223,17 @@ export class Scheduler {
         const profile = this.store.getProfile(slug);
         if (!profile) throw new Error(`board ${slug} no longer exists`);
         if (!existsSync(profile.path)) throw new Error(`board folder ${profile.path} does not exist`);
-        const t = await this.board.createTicket(slug, {
-          title: fillTitle(s.title, now), body: s.body, status: "in_progress", mode: s.mode, scheduleId: s.id, tags: s.tags,
+        // Set to put each run in a feature: a task there (Board.createScheduledTask); a gone or finished feature: its own card.
+        const place = s.partOf ? this.board.taskPlaceFor(slug, s.partOf) : null;
+        const note = place && "problem" in place ? `${place.problem}, so this run got its own card.` : undefined;
+        const input = {
+          title: fillTitle(s.title, now), body: s.body, status: "in_progress" as const, mode: s.mode, scheduleId: s.id, tags: s.tags,
           ...(s.model ? { model: s.model } : {}),
-        });
-        entry = { at, kind: "fired", trigger, ticketId: t.id };
+        };
+        const t = place && !("problem" in place)
+          ? await this.board.createScheduledTask(slug, place, input, s.name)
+          : await this.board.createTicket(slug, input);
+        entry = { at, kind: "fired", trigger, ticketId: t.id, ...(note ? { note } : {}) };
         lastError = null;
         fired = true;
       } catch (e) {

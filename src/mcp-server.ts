@@ -75,6 +75,12 @@ const SCHEDULE_FIELDS = {
       "ends with \"quiet\":true in its result line so the board removes its ticket and keeps one line in the history. " +
       "For check-ins (\"every hour, tell me what needs me\"). Default: false.",
   },
+  partOf: {
+    type: "string",
+    description: "Put each run in a feature as a task instead of its own card: the feature's main ticket id (or one of its groups', from list_tickets). " +
+      "Its runs show in that main ticket's Tasks tab and wake it only when they need the user, are blocked, failed or hit the usage limit. " +
+      "If the feature is gone or done, runs get their own card again. \"\" clears it.",
+  },
   model: {
     type: "string",
     description: "Model for its runs, e.g. \"sonnet\" (cheaper for frequent check-ins), \"opus\", \"haiku\" or a model id. \"\" goes back to the board's model.",
@@ -301,6 +307,7 @@ export function scheduleLine(s: ScheduleInfo): string {
   if (s.lastError) bits.push(`last run failed to start: ${s.lastError}`);
   if (s.quiet) bits.push("quiet when nothing needs the user");
   if (s.model) bits.push(`model ${s.model}`);
+  if (s.partOf) bits.push(`each run is a task of ${s.partOf}${s.partOfTitle ? ` "${s.partOfTitle}"` : " (ticket not found: runs get their own card)"}`);
   return bits.join("; ");
 }
 
@@ -317,7 +324,7 @@ function scheduleText(s: ScheduleInfo): string {
 function historyLine(e: ScheduleHistoryInfo): string {
   const t = e.ticket ? `${e.ticket.id} "${e.ticket.title}" [${e.ticket.running ? "running" : [e.ticket.status, e.ticket.outcome].filter(Boolean).join(", ")}]` : null;
   const at = localTime(e.at);
-  if (e.kind === "fired") return `${at}  fired (${e.trigger}): ${t ?? `${e.ticketId} (deleted)`}`;
+  if (e.kind === "fired") return `${at}  fired (${e.trigger}): ${t ?? `${e.ticketId} (deleted)`}${e.note ? ` (${e.note})` : ""}`;
   if (e.kind === "skipped") return `${at}  skipped (${e.trigger}): previous ticket ${e.ticketId ?? ""} still queued or running`;
   if (e.kind === "error") return `${at}  could not create the ticket (${e.trigger}): ${e.message}`;
   if (e.kind === "quiet") return `${at}  checked, nothing new: ${e.summary ?? ""}`;
@@ -337,6 +344,10 @@ function scheduleInput(args: any, partial: boolean): ScheduleInput {
   if (args?.model !== undefined) {
     if (typeof args.model !== "string") throw new ClientError("model must be a string");
     out.model = args.model.trim() || null;
+  }
+  if (args?.partOf !== undefined) {
+    if (args.partOf !== null && typeof args.partOf !== "string") throw new ClientError("partOf must be a ticket id, or \"\" to clear it");
+    out.partOf = (args.partOf ?? "").trim() || null;
   }
   for (const k of ["enabled", "skipIfRunning", "quiet"] as const) {
     if (args?.[k] === undefined) continue;
@@ -385,7 +396,7 @@ const SCHEDULE_TOOLS: Tool[] = [
   {
     name: "update_schedule",
     description:
-      "Change a schedule: any of name, title, prompt (body), cron, mode, skipIfRunning, tags, quiet, model; enabled false/true pauses/resumes it. " +
+      "Change a schedule: any of name, title, prompt (body), cron, mode, skipIfRunning, tags, quiet, model, partOf; enabled false/true pauses/resumes it. " +
       "Only the fields you pass change. A run created by a schedule may update its own schedule (e.g. refine its prompt); " +
       "the old prompt is kept in the schedule's history.",
     inputSchema: { type: "object", properties: { profile: PROFILE, id: SCHEDULE_ID, ...SCHEDULE_FIELDS }, required: ["id"] },
@@ -394,7 +405,7 @@ const SCHEDULE_TOOLS: Tool[] = [
     async run(args, ctx) {
       const slug = await slugFor(args, ctx);
       const patch = scheduleInput(args, true);
-      if (!Object.keys(patch).length) throw new ClientError("nothing to change: pass name, title, body, cron, mode, enabled, skipIfRunning, tags, quiet or model");
+      if (!Object.keys(patch).length) throw new ClientError("nothing to change: pass name, title, body, cron, mode, enabled, skipIfRunning, tags, quiet, model or partOf");
       const s = await ctx.client.updateSchedule(slug, str(args, "id")!, patch, ctx.env[RUN_ENV]);
       return `Updated: ${scheduleLine(s)}`;
     },

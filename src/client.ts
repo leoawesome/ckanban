@@ -154,6 +154,9 @@ export interface ScheduleInfo {
   tags?: string[];
   quiet?: boolean;
   model?: string | null;
+  /** The feature each run goes into as a task (a main ticket's or group's id), and its title; null: its own card. */
+  partOf?: string | null;
+  partOfTitle?: string | null;
   lastFiredAt: string | null;
   nextRunAt: string | null;
   lastError: string | null;
@@ -172,6 +175,7 @@ export interface ScheduleInput {
   tags?: string[];
   quiet?: boolean;
   model?: string | null;
+  partOf?: string | null;
 }
 
 export interface ScheduleHistoryInfo {
@@ -186,6 +190,7 @@ export interface ScheduleHistoryInfo {
   previous?: { title?: string; body?: string; cron?: string };
   summary?: string;
   costUsd?: number;
+  note?: string;
   ticket: { id: string; title: string; status: Status; outcome: string | null; running: boolean } | null;
 }
 

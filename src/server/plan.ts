@@ -1,6 +1,6 @@
 // Planner orchestration: pure decisions about a plan's children. Board.advancePlans() applies them.
 // Ordering is plain code (no tokens); the planner's Claude session is only woken for events below.
-import { finishedLine } from "./main-ticket";
+import { finishedLine, resultWakesMain } from "./main-ticket";
 import type { Plan, Ticket } from "./types";
 
 export const MAX_RETRIES = 3;
@@ -156,9 +156,10 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
     }
     let ev: PlanEvent | null = null;
     if (managed) {
-      // Every result reaches the parent once per run: done (with or without a PR), failed, blocked, questions.
+      // Every result reaches the parent once per run: done (with or without a PR), failed, blocked, questions; a
+      // schedule's task only when it needs attention (resultWakesMain).
       const ended = t.outcome === "done" || t.outcome === "failed" || t.outcome === "blocked" || t.outcome === "needs_input" || t.outcome === "limit";
-      if (ended && t.status !== "backlog" && t.status !== "planning") {
+      if (ended && t.status !== "backlog" && t.status !== "planning" && resultWakesMain(t)) {
         ev = { childId: t.id, sig: `${t.runCount}:${t.outcome}:${t.prUrl ?? ""}`, line: finishedLine(t, managed.summary(t), managed.report(t)), result: true };
       }
     } else if (t.outcome === "failed" || t.outcome === "blocked" || t.outcome === "needs_input" || t.outcome === "limit") {

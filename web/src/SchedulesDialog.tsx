@@ -6,6 +6,7 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { UpcomingJobs } from "./Jobs";
 import { DescriptionEditor } from "./DescriptionEditor";
+import { featureRoot, groupsOf } from "./family";
 import { Modal } from "./Modal";
 import { MenuSheet } from "./MenuSheet";
 import { MoreIcon } from "./icons";
@@ -25,8 +26,25 @@ export const CRON_PRESETS: { label: string; cron: string }[] = [
 
 const FIELD_LABEL: Record<string, string> = {
   name: "name", title: "ticket title", body: "prompt", mode: "mode", cron: "timing", enabled: "on/off", skipIfRunning: "skip setting", tags: "tags",
-  quiet: "quiet setting", model: "model",
+  quiet: "quiet setting", model: "model", partOf: "where runs go",
 };
+
+/**
+ * Features a schedule can put each run in, as tasks: every open main ticket on the board, each followed by its groups.
+ * The current pick stays listed even when it is gone (the server then gives runs their own card).
+ */
+export function featureChoices(tickets: Ticket[], current: string): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [];
+  for (const top of tickets.filter((t) => t.main && t.status !== "done" && featureRoot(tickets, t.id)?.id === t.id)) {
+    out.push({ value: top.id, label: `Put each run in: ${top.title}` });
+    for (const g of groupsOf(tickets, top.id)) if (g.status !== "done") out.push({ value: g.id, label: `Put each run in: ${top.title} › ${g.title}` });
+  }
+  if (current && !out.some((o) => o.value === current)) {
+    const t = tickets.find((x) => x.id === current);
+    out.push({ value: current, label: t ? `Put each run in: ${t.title} (can't take tasks now)` : "Put each run in: a ticket that no longer exists" });
+  }
+  return out;
+}
 
 /** Models a schedule can pick; "" is the board's own. */
 const MODELS: { value: string; label: string }[] = [
@@ -129,6 +147,11 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
             <span className="badge stopped">{s.mode === "auto" ? "Just do it" : "Interview first"}</span>
             {s.quiet && <span className="badge stopped" title="Checks that find nothing leave no ticket">Quiet</span>}
             {s.model && <span className="badge stopped">{s.model}</span>}
+            {s.partOf && (
+              <span className="badge stopped" title={s.partOfTitle ? "Each run is a task of this feature, not its own card" : "That feature no longer exists, so each run gets its own card"}>
+                {s.partOfTitle ? `In: ${s.partOfTitle}` : "In: feature gone"}
+              </span>
+            )}
             {s.tags?.map((g) => <TagChip key={g} name={g} />)}
           </div>
           <div className="sched-when">
@@ -169,7 +192,7 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
         </div>
       </div>
       {editing !== "new" && editing?.id === s.id && (
-        <ScheduleForm slug={profile.slug} initial={s} knownTags={boardTags(tickets)} onDone={() => setEditing(null)} />
+        <ScheduleForm slug={profile.slug} initial={s} knownTags={boardTags(tickets)} tickets={tickets} onDone={() => setEditing(null)} />
       )}
       {historyOf === s.id && <History slug={profile.slug} schedule={s} tickets={tickets} onOpenTicket={onOpenTicket} />}
     </div>
@@ -200,7 +223,7 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
             {editing === "new" ? "Close form" : "New schedule"}
           </button>
         </div>
-        {editing === "new" && <ScheduleForm slug={profile.slug} knownTags={boardTags(tickets)} onDone={() => setEditing(null)} />}
+        {editing === "new" && <ScheduleForm slug={profile.slug} knownTags={boardTags(tickets)} tickets={tickets} onDone={() => setEditing(null)} />}
         {err && <div className="form-error">{err}</div>}
         {note && <div className="muted small">{note}</div>}
         {!schedules && <div className="muted">Loading…</div>}
@@ -304,6 +327,7 @@ function History({ slug, schedule, tickets, onOpenTicket }: {
                   {ticketBadge(t)}
                 </>
               : <span className="muted small">ticket deleted</span>)}
+            {e.kind === "fired" && e.note && <span className="muted small">{e.note}</span>}
           </div>
         );
       })}
@@ -311,8 +335,8 @@ function History({ slug, schedule, tickets, onOpenTicket }: {
   );
 }
 
-function ScheduleForm({ slug, initial, knownTags, onDone }: {
-  slug: string; initial?: Schedule; knownTags: { name: string; count: number }[]; onDone: () => void;
+function ScheduleForm({ slug, initial, knownTags, tickets, onDone }: {
+  slug: string; initial?: Schedule; knownTags: { name: string; count: number }[]; tickets: Ticket[]; onDone: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [title, setTitle] = useState(initial?.title ?? "");
@@ -325,6 +349,7 @@ function ScheduleForm({ slug, initial, knownTags, onDone }: {
   const [tags, setTags] = useState<string[]>(initial?.tags ?? []);
   const [quiet, setQuiet] = useState(initial?.quiet ?? false);
   const [model, setModel] = useState(initial?.model ?? "");
+  const [partOf, setPartOf] = useState(initial?.partOf ?? "");
   const [preview, setPreview] = useState<CronPreview | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -349,7 +374,7 @@ function ScheduleForm({ slug, initial, knownTags, onDone }: {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const input: ScheduleInput = { name: name.trim(), title: title.trim(), body, mode, cron: cron.trim(), skipIfRunning, tags, quiet, model: model || null };
+    const input: ScheduleInput = { name: name.trim(), title: title.trim(), body, mode, cron: cron.trim(), skipIfRunning, tags, quiet, model: model || null, partOf: partOf || null };
     setBusy(true);
     setErr(null);
     try {
@@ -421,6 +446,18 @@ function ScheduleForm({ slug, initial, knownTags, onDone }: {
           {model && !MODELS.some((m) => m.value === model) && <option value={model}>{model}</option>}
         </select>
       </label>
+      <label>
+        Where each run goes
+        <select value={partOf} onChange={(e) => setPartOf(e.target.value)}>
+          <option value="">Its own card</option>
+          {featureChoices(tickets, partOf).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </label>
+      {partOf && (
+        <span className="muted small field-help-tight">
+          Each run shows in that feature's Tasks tab instead of on the board. It tells the feature's main chat only when it needs you, is blocked, failed or hit the usage limit.
+        </span>
+      )}
       <label className="check-row">
         <input type="checkbox" checked={skipIfRunning} onChange={(e) => setSkipIfRunning(e.target.checked)} />
         Skip a run while the previous one is still queued or running

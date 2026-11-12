@@ -37,6 +37,16 @@ export function parseTaskModels(v: unknown): TaskModels | null {
   return Object.keys(out).length ? out : null;
 }
 
+/**
+ * Whether a task's finished run wakes its main ticket with the result. Every result does, except a schedule's task
+ * whose run just finished (done, or quiet: removed by the board): those show in the Tasks tab only. A schedule's task
+ * that needs the user (questions), is blocked, failed or hit the usage limit still wakes it.
+ */
+export function resultWakesMain(t: Pick<Ticket, "scheduleId" | "outcome">): boolean {
+  if (!t.scheduleId) return true;
+  return t.outcome === "needs_input" || t.outcome === "blocked" || t.outcome === "failed" || t.outcome === "limit";
+}
+
 /** merge_into_main tries before the tool ticket ends blocked. */
 export const MERGE_TRIES = 3;
 /** ask_ticket waits this long for an answer, then reports "no answer". */

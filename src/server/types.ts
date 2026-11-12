@@ -597,6 +597,11 @@ export interface Schedule {
   model?: string | null;
   /** Tags every ticket it creates gets. Missing on older schedules. */
   tags?: string[];
+  /**
+   * The feature each run goes into as a task: a main ticket's id or one of its groups'. Null/missing: each run gets
+   * its own card (older schedules). A gone or finished feature: the run gets its own card and the history says why.
+   */
+  partOf?: string | null;
   createdAt: string;
   updatedAt: string;
   lastFiredAt: string | null;
@@ -656,7 +661,8 @@ export type ScheduleEditAction = "created" | "updated" | "paused" | "resumed";
 export type SchedulePrevious = Partial<Pick<Schedule, "title" | "body" | "cron">>;
 
 export type ScheduleHistoryEntry =
-  | { at: string; kind: "fired"; trigger: ScheduleTrigger; ticketId: string }
+  /** note: why the run went somewhere else than the schedule says (e.g. its feature is gone, so it got its own card). */
+  | { at: string; kind: "fired"; trigger: ScheduleTrigger; ticketId: string; note?: string }
   | { at: string; kind: "skipped"; trigger: ScheduleTrigger; ticketId: string | null }
   | { at: string; kind: "error"; trigger: ScheduleTrigger; message: string }
   /** A quiet schedule's run found nothing for the user: the board removed its ticket (ticketId, now gone). */
