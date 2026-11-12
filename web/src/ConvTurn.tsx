@@ -4,6 +4,7 @@ import { avatarColor, avatarLetter } from "./avatar";
 import { stepsSummary } from "./chatTurns";
 import { CheckIcon, CopyIcon } from "./icons";
 import { AvatarFace, useAvatar, useClaudeName } from "./AvatarFace";
+import { openAvatarEditor } from "./AvatarEditor";
 import type { AvatarMood } from "./avatarLook";
 import { liveLine, runMood } from "./avatarMood";
 import { elapsed, fullTime, timeAgo } from "./time";
@@ -20,10 +21,22 @@ export function ClaudeFace({ mood = "idle", size }: { mood?: AvatarMood; size: n
   return <AvatarFace look={useAvatar("claude")} mood={mood} size={size} />;
 }
 
-/** Claude's avatar at the start of its turn: its face, at rest (the working row below shows what it is doing). */
+/**
+ * Claude's avatar at the start of its turn: its face, at rest (the working row below shows what it is doing). A tap
+ * opens the avatar editor with Claude picked (name and face), the same one as the Team page.
+ */
 export function ClaudeAvatar() {
-  return <span className="turn-av claude" aria-hidden><ClaudeFace size={36} /></span>;
+  const label = `Change ${possessive(useClaudeName())} avatar`;
+  return (
+    <button type="button" className="turn-av claude turn-av-btn" aria-label={label} title={label}
+      onClick={(e) => { e.stopPropagation(); openAvatarEditor("claude"); }}>
+      <ClaudeFace size={36} />
+    </button>
+  );
 }
+
+/** "Claude's", "Max'": for the avatar button's label. */
+const possessive = (name: string) => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
 
 /** A letter avatar (another ticket, later a teammate): colour from `seed`, so it stays the same everywhere. */
 export function LetterAvatar({ seed, name }: { seed: string; name: string }) {

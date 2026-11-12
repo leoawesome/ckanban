@@ -1,12 +1,12 @@
 // The avatar editor (Team page): pick who, try the moods on a big live preview, change the parts, then Save (all boards).
 // Desktop: preview on the left, parts on the right. Phone: a bottom sheet with the preview pinned at the top while
 // the parts scroll, and the buttons pinned at the bottom.
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { Modal } from "./Modal";
 import { CheckIcon } from "./icons";
 import { usePhone } from "./usePhone";
-import { AvatarFace, resetAvatar, saveAvatar, saveClaudeName, useSavedAvatars } from "./AvatarFace";
+import { AvatarFace, resetAvatar, saveAvatar, saveClaudeName, useClaudeName, useSavedAvatars } from "./AvatarFace";
 import {
   AVATAR_ACCESSORIES, AVATAR_COLORS, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_MOODS, avatarFor, avatarKey, claudeName, cleanClaudeName,
   defaultAvatar, DEFAULT_CLAUDE_NAME, MAX_CLAUDE_NAME, type AvatarLook, type AvatarMood, type SavedAvatars,
@@ -17,6 +17,24 @@ import { colorName, partLabel, sameLook, surpriseLook, swatches } from "./avatar
 export interface AvatarPerson {
   who: string;
   label: string;
+}
+
+/**
+ * The one way to open the editor (Team page, or a tap on Claude's face in a chat): `initial` is picked; `people` is who
+ * can be switched to (missing: Claude only). AvatarEditorHost, mounted once in App, shows it above every page and panel.
+ */
+let opened: { initial: string; people?: AvatarPerson[] } | null = null;
+const openListeners = new Set<() => void>();
+const setOpened = (next: typeof opened) => { opened = next; openListeners.forEach((l) => l()); };
+export function openAvatarEditor(initial: string, people?: AvatarPerson[]) { setOpened({ initial, people }); }
+export function closeAvatarEditor() { setOpened(null); }
+const subscribeOpened = (l: () => void) => { openListeners.add(l); return () => { openListeners.delete(l); }; };
+
+export function AvatarEditorHost() {
+  const open = useSyncExternalStore(subscribeOpened, () => opened);
+  const claude = useClaudeName();
+  if (!open) return null;
+  return <AvatarEditor initial={open.initial} people={open.people ?? [{ who: "claude", label: claude }]} onClose={closeAvatarEditor} />;
 }
 
 const MOOD_LABELS: Record<AvatarMood, string> = { idle: "Idle", thinking: "Thinking", working: "Working", waiting: "Waiting", done: "Done", failed: "Failed" };

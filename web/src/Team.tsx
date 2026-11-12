@@ -3,7 +3,7 @@ import { api, subscribe, type Huddle, type HuddleNote, type HuddleNotes, type Hu
 import { LearnedPane } from "./Learned";
 import { AvatarFace, saveClaudeName, useAvatar, useClaudeName } from "./AvatarFace";
 import { cleanClaudeName, DEFAULT_CLAUDE_NAME, MAX_CLAUDE_NAME } from "./avatarLook";
-import { AvatarEditor } from "./AvatarEditor";
+import { openAvatarEditor } from "./AvatarEditor";
 import { Select } from "./Select";
 import { TeamSquads } from "./HuddleTemplates";
 import { HuddleList } from "./HuddleList";
@@ -106,7 +106,6 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   const [squadEdit, setSquadEdit] = useState<{ draft: SquadDraft; card?: SquadCardRef; n: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   /** The avatar editor is open on this one ("claude" or a handle). */
-  const [avatarEdit, setAvatarEdit] = useState<string | null>(null);
   const fail = (e: unknown) => setErr((e as Error).message);
 
   useEffect(() => {
@@ -171,6 +170,8 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   const showClaude = !q || "claude".includes(q) || claudeName.toLowerCase().includes(q) || CLAUDE_TEXT.toLowerCase().includes(q);
   const claudeOn = selected === CLAUDE_ROW && showClaude;
   const cur = claudeOn ? null : presets?.find((p) => p.name === selected) ?? shown[0] ?? null;
+  const editAvatar = (who: string) =>
+    openAvatarEditor(who, [{ who: "claude", label: claudeName }, ...(presets ?? []).map((p) => ({ who: p.name, label: p.role || p.name }))]);
   const pick = (name: string) => { setSelected(name); setEditing(null); setErr(null); };
   const noteCount = (role: string) => (notes?.notes[role]?.general.length ?? 0) + (notes?.notes[role]?.repo.length ?? 0);
   const setRoleNotes = (role: string, scope: "general" | "repo", list: HuddleNote[]) =>
@@ -271,9 +272,9 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
                   loadPresets();
                 }} />
             ) : claudeOn ? (
-              <ClaudeDetail onAvatar={() => setAvatarEdit("claude")} />
+              <ClaudeDetail onAvatar={() => editAvatar("claude")} />
             ) : cur ? (
-              <TeammateDetail key={cur.name} onAvatar={() => setAvatarEdit(cur.name)} slug={slug} p={cur} usage={usage?.teammates[cur.name]} notes={notes} startHint={startHint}
+              <TeammateDetail key={cur.name} onAvatar={() => editAvatar(cur.name)} slug={slug} p={cur} usage={usage?.teammates[cur.name]} notes={notes} startHint={startHint}
                 onEdit={() => { setErr(null); setEditing({ draft: draftOf(cur), isNew: false, scope: cur.source === "board" ? "board" : "global" }); }}
                 onDelete={async () => {
                   setErr(null);
@@ -290,10 +291,6 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
               presets && <div className="muted small tm-empty">Pick a teammate.</div>
             )}
           </div>
-          {avatarEdit && (
-            <AvatarEditor initial={avatarEdit} onClose={() => setAvatarEdit(null)}
-              people={[{ who: "claude", label: claudeName }, ...(presets ?? []).map((p) => ({ who: p.name, label: p.role || p.name }))]} />
-          )}
         </div>
       )}
 

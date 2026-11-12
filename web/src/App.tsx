@@ -58,6 +58,7 @@ import type { HuddleSeed, TeamRequest } from "./Team";
 import { liveHuddleCount, useBoardHuddles, useHuddleIdleTick } from "./huddle";
 import { hasOpenPr, runCounts } from "./boardStats";
 import { ParallelConfirm } from "./ParallelConfirm";
+import { AvatarEditorHost } from "./AvatarEditor";
 import { closeSteps, openDepth } from "./ticketHistory";
 import { helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, takeReadFromHash, useHelper } from "./helper";
 import { HelperNotice, MessagePage, MessagesHistory } from "./Messages";
@@ -1532,6 +1533,7 @@ export function App() {
         />
       )}
       <ParallelConfirm />
+      <AvatarEditorHost />
       <Toaster />
     </div>
   );
