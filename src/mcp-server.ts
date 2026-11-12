@@ -1,5 +1,6 @@
 // `ckanban mcp`: a stdio MCP server (newline-delimited JSON-RPC 2.0) exposing the board as tools.
 // Hand-rolled instead of @modelcontextprotocol/sdk: we only need initialize, tools/list and tools/call.
+import { createHash } from "node:crypto";
 import { hiddenTool, withYouTool } from "../web/src/family";
 import { TOOL_NO_NOTIFY } from "./server/main-ticket";
 import {
@@ -79,7 +80,7 @@ const SCHEDULE_FIELDS = {
     type: "string",
     description: "Put each run in a feature as a task instead of its own card: the feature's main ticket id (or one of its groups', from list_tickets). " +
       "Its runs show in that main ticket's Tasks tab and wake it only when they need the user, are blocked, failed or hit the usage limit. " +
-      "If the feature is gone or done, runs get their own card again. \"\" clears it.",
+      "A Done main ticket works too: each run moves it back to Review. If the feature is gone, runs get their own card again. \"\" clears it.",
   },
   model: {
     type: "string",
@@ -2500,6 +2501,14 @@ export const TOOLS: Tool[] = [
   ...SCHEDULE_TOOLS,
   ...JOB_TOOLS,
 ];
+
+let toolsHash: string | null = null;
+
+/** A fingerprint of the board tools' names, descriptions and options: it changes when a new version changes any tool. */
+export function toolsVersion(): string {
+  toolsHash ??= createHash("sha256").update(JSON.stringify(TOOLS.map((t) => [t.name, t.description, t.inputSchema]))).digest("hex").slice(0, 16);
+  return toolsHash;
+}
 
 export interface ToolResult {
   content: { type: "text"; text: string }[];

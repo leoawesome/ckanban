@@ -6,7 +6,7 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { UpcomingJobs } from "./Jobs";
 import { DescriptionEditor } from "./DescriptionEditor";
-import { featureRoot, groupsOf } from "./family";
+import { featureChoices } from "./featureChoices";
 import { Modal } from "./Modal";
 import { MenuSheet } from "./MenuSheet";
 import { MoreIcon } from "./icons";
@@ -28,23 +28,6 @@ const FIELD_LABEL: Record<string, string> = {
   name: "name", title: "ticket title", body: "prompt", mode: "mode", cron: "timing", enabled: "on/off", skipIfRunning: "skip setting", tags: "tags",
   quiet: "quiet setting", model: "model", partOf: "where runs go",
 };
-
-/**
- * Features a schedule can put each run in, as tasks: every open main ticket on the board, each followed by its groups.
- * The current pick stays listed even when it is gone (the server then gives runs their own card).
- */
-export function featureChoices(tickets: Ticket[], current: string): { value: string; label: string }[] {
-  const out: { value: string; label: string }[] = [];
-  for (const top of tickets.filter((t) => t.main && t.status !== "done" && featureRoot(tickets, t.id)?.id === t.id)) {
-    out.push({ value: top.id, label: `Put each run in: ${top.title}` });
-    for (const g of groupsOf(tickets, top.id)) if (g.status !== "done") out.push({ value: g.id, label: `Put each run in: ${top.title} › ${g.title}` });
-  }
-  if (current && !out.some((o) => o.value === current)) {
-    const t = tickets.find((x) => x.id === current);
-    out.push({ value: current, label: t ? `Put each run in: ${t.title} (can't take tasks now)` : "Put each run in: a ticket that no longer exists" });
-  }
-  return out;
-}
 
 /** Models a schedule can pick; "" is the board's own. */
 const MODELS: { value: string; label: string }[] = [
@@ -455,7 +438,7 @@ function ScheduleForm({ slug, initial, knownTags, tickets, onDone }: {
       </label>
       {partOf && (
         <span className="muted small field-help-tight">
-          Each run shows in that feature's Tasks tab instead of on the board. It tells the feature's main chat only when it needs you, is blocked, failed or hit the usage limit.
+          Each run shows in that feature's Tasks tab instead of on the board. It tells the feature's main chat only when it needs you, is blocked, failed or hit the usage limit. If the main ticket is in Done, each run moves it back to Review so you see that something ran.
         </span>
       )}
       <label className="check-row">

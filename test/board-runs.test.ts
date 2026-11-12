@@ -331,3 +331,23 @@ test("a ticket's own Chrome beats the board's default, in work runs and chat run
   // A first run has it in the system prompt only.
   expect(readArgs()[0].prompt).not.toContain("Which Chrome for this turn");
 });
+
+test("a resumed chat hears once when the board's tools changed since its last run", async () => {
+  await setup();
+  const t = await board.createTicket("p", { title: "tools", body: "", status: "ready" });
+  await board.whenIdle();
+  // A first run starts a new session: it loads the current tools, so no note.
+  expect(readArgs()[0].prompt).not.toContain("The board's tools changed");
+  await board.chat("p", t.id, "again");
+  await board.whenIdle();
+  expect(readArgs()[1].prompt).not.toContain("The board's tools changed");
+  // Its last run saw other tools (an older version): the resumed turn hears it, once.
+  store.updateTicket("p", t.id, { toolsVersion: "older" });
+  await board.chat("p", t.id, "once more");
+  await board.whenIdle();
+  expect(readArgs()[2].args).toContain("--resume");
+  expect(readArgs()[2].prompt).toContain('<ckanban-context note="The board\'s tools changed">');
+  await board.chat("p", t.id, "and again");
+  await board.whenIdle();
+  expect(readArgs()[3].prompt).not.toContain("The board's tools changed");
+});

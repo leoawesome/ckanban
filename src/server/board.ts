@@ -29,7 +29,7 @@ import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type R
 import { learnModel, useModelVersionsFile } from "./model-versions";
 import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
-import { chatPrompt, chromeChoiceNote, chromeTurnNote, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
+import { chatPrompt, chromeChoiceNote, chromeTurnNote, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, toolsChangedNote, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
   childrenOf, findCycle, isComplete, MAX_RUN_RETURNS, normalizeNeeds, RUN_CHAIN_KEEP, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
@@ -48,6 +48,7 @@ import { buildArgs, DEFAULT_STALL_MINUTES, PLANNING_DISALLOWED_TOOLS, startRun, 
 import { RETRY_DELAY_MS, RETRY_TEXT, transientError } from "./retry";
 import { BOARD_COMMANDS, commandText, EFFORT_HELP, runOptions, ultracodeOn, validEffort, listCommands, MODEL_HELP, parseSlash, REFUSED_COMMANDS, rememberInit, slashMessage, useBundledFile, validModel, type SlashCommand } from "./commands";
 import { mcpConfig } from "./agents";
+import { toolsVersion } from "../mcp-server";
 import type { OwnedSession } from "./shell";
 import type { Store } from "./store";
 import { boardKeyEnv, maskSaved } from "./board-keys";
@@ -1278,6 +1279,17 @@ export class Board {
     // A resumed session keeps the system prompt it started with (Claude Code ignores a new one), so the current
     // pick also goes in this turn's message (not with a slash command: that must stay the whole message).
     if (chromeNote && session.existed && !run.chat?.slash) prompt += `\n\n${chromeTurnNote(chromeNote)}`;
+    // A resumed session may hold old copies of board tools it loaded before they changed (toolsChangedNote).
+    let toolsNow: string | null = null;
+    try {
+      toolsNow = toolsVersion();
+    } catch (e) {
+      console.error("board tools fingerprint:", e);
+    }
+    if (toolsNow && t.toolsVersion !== toolsNow) {
+      if (session.existed && !run.chat?.slash) prompt += `\n\n${toolsChangedNote()}`;
+      this.patch(slug, id, { toolsVersion: toolsNow });
+    }
     const chromeWatch = new ChromeWatch(this.chromes);
     // A main ticket's fixed rules go once per run here, not in every message the chat shows.
     if (role?.kind === "main" && !quiet) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${mainTicketRules(role)}` : mainTicketRules(role);
@@ -3292,7 +3304,8 @@ export class Board {
   /**
    * Where a schedule set to put each run in a feature (Schedule.partOf: a main ticket's id or one of its groups') puts
    * its next run: a task of the nearest ticket there that runs tasks (a tool group, else the main ticket), like a task
-   * a run makes with create_ticket's partOf. A problem (the feature is gone, done or not a feature): its own card instead.
+   * a run makes with create_ticket's partOf. A Done feature (or a done group of it) still takes runs: createScheduledTask
+   * moves its main ticket back to Review. A problem (the feature is gone or not a feature): its own card instead.
    */
   taskPlaceFor(slug: string, partOf: string): ScheduledTaskPlace | { problem: string } {
     const all = this.store.listTickets(slug);
@@ -3302,7 +3315,6 @@ export class Board {
     if (!top?.main || (at.id !== top.id && !groupsOf(all, top.id).some((g) => g.id === at.id))) {
       return { problem: `${at.id} ("${at.title}") isn't a feature's main ticket or one of its groups` };
     }
-    if (top.status === "done" || at.status === "done") return { problem: `The feature "${top.title}" (${top.id}) is done` };
     const manager = isManager(at) && levelOf(all, at.id) + 1 <= MAX_LEVEL ? at : top;
     return {
       managerId: manager.id, mainId: top.id, ...(at.id !== manager.id ? { partOf: at.id } : {}),
@@ -3314,13 +3326,19 @@ export class Board {
   /**
    * A schedule's run as a task of a feature (taskPlaceFor): a tool ticket that starts right away (the schedule decides
    * when, not the main ticket's plan) and keeps its schedule, tags, model and mode. Its main ticket's card stays where
-   * it is; the plan picks the result up (resultWakesMain decides whether it wakes the main ticket).
+   * it is, except in Done: there it goes back to Review (no run, no wake, not the user's move) so the user sees that
+   * something ran. The plan picks the result up (resultWakesMain decides whether it wakes the main ticket).
    */
   async createScheduledTask(
     slug: string, place: ScheduledTaskPlace,
     input: { title: string; body: string; status: "in_progress"; mode: TicketMode; scheduleId: string; tags?: string[]; model?: string },
     scheduleName: string,
   ): Promise<Ticket> {
+    const main = this.store.getTicket(slug, place.mainId);
+    if (main?.main && main.status === "done") {
+      this.patch(slug, main.id, { status: "review", reopenedFrom: null });
+      this.store.addComment(slug, main.id, "ai", `Back to Review: scheduled run "${scheduleName}" started.`);
+    }
     const t = await this.createTicket(slug, {
       ...input, parentId: place.managerId, tool: true, ...(place.partOf ? { partOf: place.partOf } : {}), ...(place.startFrom ? { startFrom: place.startFrom } : {}),
     });

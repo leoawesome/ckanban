@@ -113,6 +113,15 @@ export function chromeTurnNote(note: string): string {
   return context("Which Chrome for this turn", `${note}\nThis replaces any earlier "Which Chrome" instructions in this session.`);
 }
 
+/**
+ * Claude Code keeps the details (options, descriptions) of a deferred board tool as the session first loaded them, also
+ * when it resumes after the board's tools changed (ToolSearch then gives the saved copy back). So a resumed chat hears
+ * once that its copy may be old (see Board, toolsVersion).
+ */
+export function toolsChangedNote(): string {
+  return context("The board's tools changed", "The board's tools changed since this chat last ran. A board tool you loaded before then may show old options or an old description, even after you load it again. If the board, the user or a tool's reply names an option that your copy of a board tool doesn't list, pass it anyway: the board checks every option and tells you if it's wrong.");
+}
+
 /** Every run's Claude adapts to users who may not know git (see CLAUDE.md, "Users may not be technical"). */
 /** What follow-ups may not do unasked: the user approves anything that goes out in their name. */
 const OUTBOUND_RULE = "During a follow-up never send an outbound message (email, chat message, post) unless the ticket or the user said you may send it yourself: draft it and end with status \"questions\" so the user can approve it.";

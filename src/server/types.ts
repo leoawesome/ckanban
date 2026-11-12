@@ -149,6 +149,8 @@ export interface Ticket {
   interviewed?: boolean;
   /** True once any claude run used this ticket's sessionId (so later runs must --resume). */
   sessionStarted?: boolean;
+  /** The board tools' fingerprint (mcp-server toolsVersion) at its last run: a resumed session hears when they changed. */
+  toolsVersion?: string;
   /** The next run starts a new session that picks up from the worktree (Start fresh session after a lost session). */
   freshSession?: boolean;
   /** The fresh chat freshSession starts was started by the board (a cold, large main or feature chat), not the user. */
