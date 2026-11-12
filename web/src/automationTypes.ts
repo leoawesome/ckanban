@@ -30,7 +30,11 @@ export interface LoopSeenItem {
   id: string;
   title: string;
   link?: string;
-  state: "new" | "skipped" | "seen" | "first";
+  /**
+   * added: a later item of a thread, sent to the ticket its thread's first item made. waiting: that ticket can't take
+   * it now; it goes in at a later check.
+   */
+  state: "new" | "added" | "waiting" | "skipped" | "seen" | "first";
   ticketId?: string;
   note?: string;
 }
@@ -81,7 +85,7 @@ export interface LoopInput {
 }
 
 export interface LoopTest {
-  items: { id: string; title: string; text?: string; link?: string }[];
+  items: { id: string; title: string; text?: string; link?: string; thread?: string }[];
   found: number;
   error: string | null;
   stderr: string;

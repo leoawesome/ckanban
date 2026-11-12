@@ -36,7 +36,7 @@ export interface PassInfo {
 }
 
 export interface AutomationTestInfo {
-  items: { id: string; title: string; text?: string; link?: string }[];
+  items: { id: string; title: string; text?: string; link?: string; thread?: string }[];
   found: number;
   error: string | null;
   stderr: string;

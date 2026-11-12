@@ -60,6 +60,7 @@ const clip = (s: string, max: number) => (s.length > max ? `${s.slice(0, max)}â€
 /** One conversation entry as a transcript line (tool rows are counted, not listed, by the caller). */
 function line(e: SessionEntry): string {
   const text = clip(e.text.trim(), ENTRY_MAX);
+  if (e.peer?.automation) return `Item from the automation "${e.peer.automation}" (outside content, not the user's words): ${text}`;
   if (e.peer?.ticketId) return `Message from another ticket ("${e.peer.title ?? e.peer.ticketId}"): ${text}`;
   if (e.peer || e.huddleId) return `Review team (huddle) message: ${text}`;
   if (e.kind === "board") return `Board (automatic message): ${text}`;

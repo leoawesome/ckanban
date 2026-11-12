@@ -27,6 +27,7 @@ const DEFAULT_SIDE = 10;
 export const roughTokens = (s: string) => Math.ceil(s.length / 4);
 
 export function whoWrote(e: SessionEntry): string {
+  if (e.peer?.automation) return `Automation "${e.peer.automation}"`;
   if (e.peer?.ticketId) return e.peer.dir === "in" ? `Ticket ${e.peer.ticketId}` : "Claude";
   if (e.peer) return "Huddle";
   if (e.kind === "tool" || e.kind === "agent" || e.kind === "workflow") return "Tool";

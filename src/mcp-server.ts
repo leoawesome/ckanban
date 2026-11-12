@@ -1123,7 +1123,8 @@ const PLANNING_TOOLS: Tool[] = [
     name: "test_automation_script",
     description:
       "Automation setup: run a check script once, the way the board will (bash, 60 s limit, no Claude), and see what it found. Nothing is saved and no tickets are made. " +
-      "The script prints JSON items, one per line or one list: {\"id\": \"stable id\", \"title\": \"...\", \"text\": \"optional details\", \"link\": \"optional https link\"}. " +
+      "The script prints JSON items, one per line or one list: {\"id\": \"stable id\", \"title\": \"...\", \"text\": \"optional details\", \"link\": \"optional https link\", \"thread\": \"optional\"}. " +
+      "When several items can be about the same thing (comments or notifications on one issue, messages in one conversation), set thread to that thing's id and print the oldest first: the first item of a thread makes a ticket, later ones go into that ticket. " +
       "It reaches connected services with `ckanban call <name> <tool> '<json args>'` (prints the tool's answer as JSON; use jq or bun to shape it); " +
       "a pasted key comes as its environment variable. It never gets sign-in tokens. Return the current open items each time: the board remembers ids and only new ones become tickets.",
     inputSchema: {
@@ -1140,9 +1141,12 @@ const PLANNING_TOOLS: Tool[] = [
     async run(args, ctx) {
       const slug = await slugFor(args, ctx);
       const r = await ctx.client.testAutomation(slug, String(args?.script ?? ""), Array.isArray(args?.passes) ? args.passes.map(String) : []);
-      const lines = r.items.map((i) => `- [${i.id}] ${i.title}${i.link ? ` (${i.link})` : ""}`);
+      const lines = r.items.map((i) => `- [${i.id}] ${i.title}${i.link ? ` (${i.link})` : ""}${i.thread ? ` thread: ${i.thread}` : ""}`);
+      const threads = new Set(r.items.map((i) => i.thread).filter(Boolean));
       return `${r.error ? `Failed: ${r.error}` : `Found ${r.found} item${r.found === 1 ? "" : "s"} in ${(r.durationMs / 1000).toFixed(1)} s.`}` +
         (lines.length ? `\n${lines.join("\n")}${r.found > lines.length ? `\n… and ${r.found - lines.length} more` : ""}` : "") +
+        (r.items.length && !threads.size ? "\nNo item has a thread: each one becomes its own ticket. If several can be about the same thing, add thread." : "") +
+        (threads.size ? `\n${threads.size} thread${threads.size === 1 ? "" : "s"}: items with the same thread go into one ticket.` : "") +
         (r.toolsUsed.length ? `\nTools it called: ${r.toolsUsed.join(", ")}` : "") +
         (r.stderr.trim() ? `\nstderr (end):\n${r.stderr.trim().split("\n").slice(-15).join("\n")}` : "");
     },

@@ -51,7 +51,7 @@ import { shortNote, waitingItems, type WaitingItem } from "./taskCards";
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ClaudeFace, ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
-import { fromTicket, layoutTurns, placeByTime, telegramMarks, type TurnLayout } from "./chatTurns";
+import { fromAutomation, fromTicket, layoutTurns, placeByTime, telegramMarks, type TurnLayout } from "./chatTurns";
 import { gapOf, jumpAfterScroll, NEAR_BOTTOM, onContentChange, stickAfterScroll, USER_CHANGE_MS } from "./chatFollow";
 import { StallActions, stallWait } from "./StallActions";
 import { useSnippetPicker } from "./SnippetPicker";
@@ -139,6 +139,7 @@ function speaker(b: Block): string {
   if (e.kind === "board") return "board";
   if (e.huddleId) return "huddle";
   if (e.peer?.ticketId) return `peer:${e.peer.ticketId}`;
+  if (e.peer?.automation) return `automation:${e.peer.automation}`;
   if (e.role === "user") return "user";
   return e.commandOutput ? "command" : "claude";
 }
@@ -559,9 +560,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
 
   // A message Claude hasn't received yet (not sent after Stop, or waiting for a slot or a restart): the user can
   // still edit or discard it. With Claude running it was handed over at once.
-  const editable = (q: QueuedMessage) => !q.from && (q.state === "unsent" || (!q.peer && !running));
+  const editable = (q: QueuedMessage) => !q.from && !q.automation && (q.state === "unsent" || (!q.peer && !running));
   // Another ticket's message: shown as that ticket's, not as the user's.
-  const fromUser = (q: QueuedMessage) => !q.peer && !q.from;
+  const fromUser = (q: QueuedMessage) => !q.peer && !q.from && !q.automation;
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const discarded = useRef(new Set<string>());
   const cancelEdit = () => {
@@ -799,7 +800,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   // A reply still on its way to the session file counts too, so the form doesn't offer "Send answers" again.
   const replying = pending.some((p) => !p.steer);
   // Board updates (kind "board") never answer: a form they interrupt stays open, or is asked again below.
-  const answeredAfter = (index: number) => replying || entries.slice(index + 1).some((e) => e.role === "user" && e.kind === "text" && !e.huddleId);
+  const answeredAfter = (index: number) => replying || entries.slice(index + 1).some((e) => e.role === "user" && e.kind === "text" && !e.huddleId && !e.peer?.automation);
   // Forms the user closed without answering (Close question), by uuid; the newest open one also when the ticket only
   // knows a close came after its last run (it closed by itself when they answered in its task's chat).
   const closedIds = useMemo(() => new Set(Object.keys(ticket.closedForms ?? {})), [ticket.closedForms]);
@@ -990,6 +991,16 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               </Turn>
             );
           }
+          // A later item of an automation's thread: on the left with the automation's name, never as the user's.
+          if (e.peer?.automation) {
+            return (
+              <Turn key={e.uuid} start={l.start} at={e.at} className={inherited}
+                avatar={<LetterAvatar seed={`automation:${e.peer.automation}`} name={e.peer.automation} />}
+                name={e.peer.automation} sub="from an automation">
+                <div className="peer-bubble"><Markdown text={e.text} /></div>
+              </Turn>
+            );
+          }
           if (e.role === "user") {
             const canGo = !!e.rewind && !old;
             return (
@@ -1066,7 +1077,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               )}
               {e.keys && (
                 <KeysBox slug={slug} ticketId={ticket.id} uuid={e.uuid} ask={e.keys} answered={ticket.keyCards?.[e.uuid]}
-                  old={entries.slice(b.index + 1).some((x) => x.role === "user" && x.kind === "text" && !x.huddleId)} onError={onError} />
+                  old={entries.slice(b.index + 1).some((x) => x.role === "user" && x.kind === "text" && !x.huddleId && !x.peer?.automation)} onError={onError} />
               )}
               {e.huddle && (
                 <HuddleCard slug={slug} ticket={ticket} tickets={tickets} uuid={e.uuid} at={e.at} roster={e.huddle.roster} reason={e.huddle.reason} template={e.huddle.template} maxCostUsd={e.huddle.maxCostUsd} topic={e.huddle.topic}
@@ -1406,14 +1417,16 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           </HuddleDigest>
           );
         })}
-        {queued.filter((q) => (q.peer && !HUDDLE_TAG.test(q.text)) || (q.from && !inSession({ ...q, text: fromTicket(q.text)?.text ?? q.text }, entries))).map((q) => {
-          const body = q.from ? fromTicket(q.text)?.text ?? q.text : q.text.split("<ckanban-context")[0].trim();
-          const state = q.state === "queued" ? `queued · ${claude} reads this at its next step` : `not sent · ${claude} was stopped before reading it`;
+        {queued.filter((q) => (q.peer && !HUDDLE_TAG.test(q.text)) || (q.from && !inSession({ ...q, text: fromTicket(q.text)?.text ?? q.text }, entries))
+          || (q.automation && !inSession({ ...q, text: fromAutomation(q.text)?.text ?? q.text }, entries))).map((q) => {
+          const body = q.from ? fromTicket(q.text)?.text ?? q.text : q.automation ? fromAutomation(q.text)?.text ?? q.text : q.text.split("<ckanban-context")[0].trim();
+          const state = q.state === "queued" ? q.automation ? `queued · ${claude} reads this once its current reply ends` : `queued · ${claude} reads this at its next step` : `not sent · ${claude} was stopped before reading it`;
           tail = "peer";
           return (
             <Turn key={q.id} start className="pending"
-              avatar={q.from ? <LetterAvatar seed={q.from.ticketId} name={q.from.title} /> : <LetterAvatar seed="board" name="Board" />}
-              name={q.from ? peerName(q.from.ticketId, q.from.title) : "From the board"} sub={state}>
+              avatar={q.from ? <LetterAvatar seed={q.from.ticketId} name={q.from.title} />
+                : q.automation ? <LetterAvatar seed={`automation:${q.automation.name}`} name={q.automation.name} /> : <LetterAvatar seed="board" name="Board" />}
+              name={q.from ? peerName(q.from.ticketId, q.from.title) : q.automation ? `${q.automation.name} (automation)` : "From the board"} sub={state}>
               <div className="peer-bubble"><Markdown text={body} /></div>
               {q.state === "unsent" && (
                 <div className="queued-actions">

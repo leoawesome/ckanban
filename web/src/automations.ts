@@ -23,10 +23,10 @@ export function saveBlocker(f: { name: string; script: string; column: LoopColum
   return null;
 }
 
-/** The last check's items in the groups the Last check tab shows: new and skipped in full, the rest folded. */
+/** The last check's items in the groups the Last check tab shows: new, added, waiting and skipped in full, the rest folded. */
 export function groupLastItems(items: LoopSeenItem[]): { shown: LoopSeenItem[]; first: LoopSeenItem[]; seen: LoopSeenItem[] } {
   return {
-    shown: items.filter((i) => i.state === "new" || i.state === "skipped"),
+    shown: items.filter((i) => i.state === "new" || i.state === "added" || i.state === "waiting" || i.state === "skipped"),
     first: items.filter((i) => i.state === "first"),
     seen: items.filter((i) => i.state === "seen"),
   };

@@ -124,9 +124,10 @@ export interface SessionEntry {
   unreadable?: BlockKind;
   /**
    * A message from outside the user: in = into this session. A huddle digest has ticketId null; a message another
-   * ticket's Claude sent (chat_ticket) has that ticket's id and title, and text is just the message.
+   * ticket's Claude sent (chat_ticket) has that ticket's id and title, and text is just the message. A later item of an
+   * automation's thread (fromAutomationText) has ticketId null and automation set to the automation's name.
    */
-  peer?: { dir: "in" | "out"; ticketId: string | null; title?: string };
+  peer?: { dir: "in" | "out"; ticketId: string | null; title?: string; automation?: string };
   /** A plain message of the user's that the chat can rewind to (not one sent mid-turn, not a huddle or peer message). */
   rewind?: true;
   /** Huddle messages delivered to this ticket's session (also a peer entry, ticketId null): the huddle's id. */
@@ -306,8 +307,8 @@ export interface SessionMessage {
   role: "user" | "assistant";
   text: string;
   at: string;
-  /** A user-role message that didn't come from the user: a huddle digest. */
-  from?: "huddle";
+  /** A user-role message that didn't come from the user: a huddle digest, or an automation's item. */
+  from?: "huddle" | "automation";
   /** An assistant message answering such a message (a quiet reply, not one for the user). */
   peerReply?: boolean;
 }
@@ -443,6 +444,19 @@ const FROM_TICKET = /^Message from ticket (t_[\w-]+) \("([\s\S]*?)"\): ([\s\S]*)
 export function fromTicket(text: string): { ticketId: string; title: string; text: string } | null {
   const m = FROM_TICKET.exec(text);
   return m ? { ticketId: m[1], title: m[2], text: m[3].trim() } : null;
+}
+
+/**
+ * How the board labels a later item of an automation's thread (Board.automationItem): outside content the automation
+ * copied from a service, never the user's words. The name has no quotes or line breaks, so the label reads back exactly.
+ */
+export const fromAutomationText = (name: string, text: string) => `Message from automation ("${name.replace(/["\r\n]+/g, "'")}"): ${text}`;
+const FROM_AUTOMATION = /^Message from automation \("([^"\r\n]*)"\): ([\s\S]*)$/;
+
+/** The automation's name and the message of a text fromAutomationText made, or null for anything else. */
+export function fromAutomation(text: string): { name: string; text: string } | null {
+  const m = FROM_AUTOMATION.exec(text);
+  return m ? { name: m[1], text: m[2].trim() } : null;
 }
 
 function userText(content: unknown): { kind: "text" | "board"; text: string; huddle?: string; setup?: SetupResult; command?: string; wake?: string } | null {
@@ -629,10 +643,13 @@ export class SessionParser {
 
   private peerEntry(u: NonNullable<ReturnType<typeof userText>>, uuid: string, at: string): SessionEntry {
     const from = u.kind === "text" && !u.huddle ? fromTicket(u.text) : null;
+    // An automation's item is a peer entry too, so nothing reads it as the user's (lessons, rewind, Explain, chat search).
+    const auto = u.kind === "text" && !u.huddle && !from ? fromAutomation(u.text) : null;
     return {
-      uuid, at, role: "user", kind: u.kind, text: from ? from.text : u.text, ...(u.command ? { command: u.command } : {}),
+      uuid, at, role: "user", kind: u.kind, text: from ? from.text : auto ? auto.text : u.text, ...(u.command ? { command: u.command } : {}),
       ...(u.huddle ? { peer: { dir: "in" as const, ticketId: null }, huddleId: u.huddle } : {}),
       ...(from ? { peer: { dir: "in" as const, ticketId: from.ticketId, title: from.title } } : {}),
+      ...(auto ? { peer: { dir: "in" as const, ticketId: null, automation: auto.name } } : {}),
       ...(u.setup ? { setup: u.setup } : {}), ...(u.wake ? { wake: u.wake } : {}),
     };
   }
@@ -768,6 +785,7 @@ export class SessionParser {
         ? {
           role: last.role, text: lastText, at: last.at,
           ...(last.role === "user" && last.huddleId ? { from: "huddle" as const } : {}),
+          ...(last.role === "user" && last.peer?.automation ? { from: "automation" as const } : {}),
           ...(asked?.huddleId ? { peerReply: true } : {}),
         }
         : null,
@@ -812,8 +830,9 @@ function handBack(text: string): string {
 function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "openFormId" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys"> {
   let lastUser = -1;
   entries.forEach((e, i) => {
-    // Huddle messages don't answer what Claude asked the user (another ticket's message, e.g. the planner's answer, does).
-    if (e.role === "user" && e.kind === "text" && !e.huddleId) lastUser = i;
+    // Huddle messages and an automation's items don't answer what Claude asked the user (another ticket's message, e.g.
+    // the planner's answer, does).
+    if (e.role === "user" && e.kind === "text" && !e.huddleId && !e.peer?.automation) lastUser = i;
   });
   const after = entries.slice(lastUser + 1);
   // A form asked again (after a board wake) replaces the earlier ones: the chat shows only the newest as open.

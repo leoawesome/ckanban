@@ -29,7 +29,7 @@ import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type R
 import { learnModel, useModelVersionsFile } from "./model-versions";
 import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
-import { chatPrompt, chromeChoiceNote, chromeTurnNote, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, toolsChangedNote, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
+import { chatNotes, chatPrompt, chromeChoiceNote, chromeTurnNote, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, toolsChangedNote, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
   childrenOf, findCycle, isComplete, MAX_RUN_RETURNS, normalizeNeeds, RUN_CHAIN_KEEP, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
@@ -210,8 +210,9 @@ function chatFor(
 }
 
 /** Queued-message flags from Board.chat options. */
-function flags(o: ChatOptions): Pick<QueuedMessage, "peer" | "fromPlanner" | "from" | "slash" | "hostWake" | "followUp" | "telegram" | "nextRun"> {
+function flags(o: ChatOptions): Pick<QueuedMessage, "peer" | "fromPlanner" | "from" | "automation" | "slash" | "hostWake" | "followUp" | "telegram" | "nextRun"> {
   return {
+    ...(o.automation ? { automation: o.automation } : {}),
     ...(o.nextRun ? { nextRun: true } : {}),
     ...(o.from ? { from: o.from } : {}), ...(o.telegram ? { telegram: o.telegram } : {}),
     ...(o.peer ? { peer: true } : {}), ...(o.fromPlanner ? { fromPlanner: true } : {}), ...(o.slash ? { slash: o.slash } : {}),
@@ -250,6 +251,11 @@ export interface ChatOptions {
   telegram?: { updateId: number; tg: number };
   /** Start a new run for it rather than steering a run already going (see QueuedMessage.nextRun). */
   nextRun?: boolean;
+  /**
+   * A later item of this automation's thread (Board.automationItem): never the user's (send it with fromPlanner), shown
+   * with the automation's name, and it resumes the ticket's session even when it is cold and large (no automatic fresh chat).
+   */
+  automation?: { loopId: string; name: string };
 }
 
 /** What the card says while the ticket waits for its auto huddle. */
@@ -727,7 +733,7 @@ export class Board {
       return this.patch(slug, id, { queued: [...(t.queued ?? []), msg] });
     }
     // A cold, large main or feature chat: this turn starts fresh from the status (not for a reply to another session).
-    if (!opts.peer && !opts.fresh) t = this.autoFresh(slug, t);
+    if (!opts.peer && !opts.fresh && !opts.automation) t = this.autoFresh(slug, t);
     const chat = chatFor(t, { text, ...opts });
     // A reply that may edit files (not a read-only Planning one) waits while another ticket edits the folder in place.
     const folderBusy = chat.mode === "act" && this.folderBusy(slug, t);
@@ -923,7 +929,9 @@ export class Board {
     if (!msg) throw new Error("message not found");
     if (msg.state !== "unsent") throw new ConflictError("message is already on its way to Claude");
     this.dropQueued(slug, id, [msgId]);
-    return this.chat(slug, id, msg.text, { peer: msg.peer, fromPlanner: msg.fromPlanner, from: msg.from, slash: msg.slash, hostWake: msg.hostWake, followUp: msg.followUp, nextRun: msg.nextRun });
+    return this.chat(slug, id, msg.text, {
+      peer: msg.peer, fromPlanner: msg.fromPlanner, from: msg.from, automation: msg.automation, slash: msg.slash, hostWake: msg.hostWake, followUp: msg.followUp, nextRun: msg.nextRun,
+    });
   }
 
   discardQueued(slug: string, id: string, msgId: string): Ticket {
@@ -1154,6 +1162,8 @@ export class Board {
       run.quietEnd = undefined;
       run.retried = false;
       run.restartRequested = false;
+      // Each turn has its own rights: the user's message steered into the last one doesn't carry over to this one.
+      run.userSteered = false;
       run.promptMsgId = next.id;
       run.telegramFrom = undefined;
       run.inFlight = new Map();
@@ -1244,6 +1254,8 @@ export class Board {
       : run.chat
       ? chatPrompt(t, run.chat.text, run.chat.mode, outputDir, artifacts, session.repo, session.inPlace, refine && !session.existed ? this.recall(slug, t) : "", role,
         refine && !role ? followUpPlace(this.store.listTickets(slug), t.id) : null)
+        // A turn that acts counts as a run (lastRunAt): notes left since the last one reach Claude here or never.
+        + (refine || quiet ? "" : chatNotes(newComments.filter((c) => c.from)))
         + (freshChat ? `\n\n${this.freshChatContext(slug, t)}` : "")
       : fresh
       ? this.freshPrompt(slug, t, session, outputDir)
@@ -1416,8 +1428,9 @@ export class Board {
       this.dropQueued(slug, id, [run.promptMsgId]);
       run.promptMsgId = undefined;
     }
-    // Messages sent while the run was starting up, or left over from a run the daemon restarted.
-    for (const msg of this.waiting(slug, id)) this.steer(run, msg);
+    // Messages sent while the run was starting up, or left over from a run the daemon restarted. A nextRun message (an
+    // automation's item, a pasted-key answer) never joins a turn it didn't start: drainQueue gives it one of its own.
+    for (const msg of this.waiting(slug, id)) if (!msg.nextRun || run.promptMsgId === msg.id) this.steer(run, msg);
 
     const out = await run.handle.done;
     if (capWatch) clearInterval(capWatch);
@@ -3365,6 +3378,38 @@ export class Board {
     this.ensurePlan(slug, place.managerId);
     this.advancePlans(slug);
     return this.store.getTicket(slug, t.id)!;
+  }
+
+  /**
+   * A later item of an automation's thread (LoopState.threads) for the ticket its first item made. text is labelled as
+   * the automation's (threadItemText), so it never counts as the user's words.
+   * - Left as a note (a comment the ticket's next run reads, never a run of its own) when the automation's "Start Claude
+   *   by itself" is off (autoStart false: only the user starts Claude on outside text, also on a ticket that ran
+   *   before), when the ticket hasn't started its work (it never ran, waits in Backlog, Planning or Ready, or is a task
+   *   waiting to be started), and when a Planning chat is going on it.
+   * - Otherwise it goes into the chat without the user's rights: a waiting ticket resumes its own session (also when it
+   *   is cold and large), a working one gets it in a turn of its own once the current run ends (nextRun: never inside a
+   *   run that answers the user), and a ticket in Done comes back (its run moves it to In progress; a feature whose task
+   *   it is goes back to Review, as createFeatureTask does).
+   * Throws when it can't be delivered (the ticket is gone, stopping or being rewound): the caller keeps the item for its next check.
+   */
+  async automationItem(slug: string, id: string, text: string, by: { loopId: string; name: string; autoStart: boolean }): Promise<"note" | "chat"> {
+    const t = this.store.getTicket(slug, id);
+    if (!t) throw new Error(`ticket ${id} not found`);
+    const active = this.runs.get(this.key(slug, id));
+    if (active?.stopRequested || this.shuttingDown) throw new ConflictError("Claude is stopping; the item waits for the next check");
+    const notStarted = t.waitsForStart || t.runCount === 0 || t.status === "backlog" || t.status === "planning" || t.status === "ready";
+    if (!by.autoStart || (!active && notStarted) || active?.chat?.mode === "refine") {
+      this.addComment(slug, id, text, `loop:${by.loopId}`);
+      return "note";
+    }
+    await this.chat(slug, id, text, { fromPlanner: true, automation: { loopId: by.loopId, name: by.name }, nextRun: true });
+    // Brought back once the message is on the ticket: a refused message leaves the feature where it was.
+    const main = t.main ? this.store.getTicket(slug, id) : this.mainOf(slug, t);
+    if (main?.main && main.status === "done") {
+      this.unparkMain(slug, main.id, main.id === id ? `the automation "${by.name}" sent it a new item` : `the automation "${by.name}" sent a new item to its task ${id}`);
+    }
+    return "chat";
   }
 
   /** The ticket's last result in words (its newest summary comment). */

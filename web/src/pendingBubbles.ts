@@ -3,7 +3,7 @@
 /** A sent message not yet in the session file. steer: sent while Claude was working. */
 export interface Pending { text: string; steer: boolean }
 /** The fields used here of api.ts's QueuedMessage. */
-interface Queued { text: string; state: "queued" | "unsent"; peer?: boolean; from?: unknown }
+interface Queued { text: string; state: "queued" | "unsent"; peer?: boolean; from?: unknown; automation?: unknown }
 /** The fields used here of api.ts's SessionEntry. */
 interface Entry { role: "user" | "assistant"; text: string; at: string }
 
@@ -15,7 +15,7 @@ export const heldByReply = (q: Queued, pending: Pending[]) => q.state === "queue
 
 /** Stop came before Claude read the reply's message: the board keeps it unsent, and that bubble replaces the plain one. */
 export const unsentNow = (pending: Pending[], queued: Queued[]) =>
-  pending.filter((p) => !p.steer && queued.some((q) => !q.peer && q.state === "unsent" && q.text === p.text));
+  pending.filter((p) => !p.steer && queued.some((q) => !q.peer && !q.automation && q.state === "unsent" && q.text === p.text));
 
 /**
  * The session already shows a message the board still holds (Claude's echo comes later, or at the end of its turn):
@@ -29,7 +29,7 @@ export const inSession = (q: Queued & { at: string }, entries: Entry[]) =>
  * reply it started, one being sent, or one the board holds for Claude's next step (not one Stop left unsent).
  */
 export const userAfterSaved = (pending: Pending[], queued: (Queued & { at: string })[], entries: Entry[]) =>
-  pending.length > 0 || queued.some((q) => !q.peer && !q.from && q.state === "queued" && !inSession(q, entries));
+  pending.length > 0 || queued.some((q) => !q.peer && !q.from && !q.automation && q.state === "queued" && !inSession(q, entries));
 
 /**
  * Where Claude's live progress shows while it works. The newest saved steps group is the live line only while nothing

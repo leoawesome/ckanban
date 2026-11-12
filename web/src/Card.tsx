@@ -160,6 +160,7 @@ export function outcomeBadge(t: Ticket) {
 /** Who wrote the card's last message: huddle digests aren't the user's; Claude's are under the name the user gave it. */
 function lastWho(m: SessionMessage, claude: string): string {
   if (m.from === "huddle") return "Huddle";
+  if (m.from === "automation") return "Automation";
   return m.role === "user" ? "You" : claude;
 }
 

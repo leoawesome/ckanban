@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { helperArgv } from "../artifact";
 
 // A check script: a small shell script the board runs on a timer, without Claude. It prints the items it found as
-// JSON, one per line or one list: {"id": "...", "title": "...", "text": "...", "link": "..."}. The board decides
-// what is new. It reaches services through `ckanban call <service> <tool> '<json>'` (passes.ts via the daemon), so it
+// JSON, one per line or one list: {"id": "...", "title": "...", "text": "...", "link": "...", "thread": "..."}. The
+// board decides what is new; items with the same thread go into one ticket (loops.ts). It reaches services through `ckanban call <service> <tool> '<json>'` (passes.ts via the daemon), so it
 // never holds a sign-in token; a pasted key meant for scripts comes as one environment variable.
 
 /** One thing a check found. */
@@ -15,6 +15,11 @@ export interface Item {
   title: string;
   text?: string;
   link?: string;
+  /**
+   * What the item is about, when several items can be about the same thing (a Linear issue's id for its comments):
+   * the first item of a thread makes a ticket, later ones go into that ticket. Missing: one ticket per item.
+   */
+  thread?: string;
 }
 
 export interface ScriptRun {
@@ -180,7 +185,10 @@ export function parseItems(out: string): Item[] {
     ids.add(id);
     const textValue = str(o.text, TEXT_MAX);
     const link = str(o.link, 2000).trim();
-    items.push({ id, title, ...(textValue.trim() ? { text: textValue } : {}), ...(/^https?:\/\/\S+$/.test(link) ? { link } : {}) });
+    const thread = str(o.thread, 200).trim();
+    items.push({
+      id, title, ...(textValue.trim() ? { text: textValue } : {}), ...(/^https?:\/\/\S+$/.test(link) ? { link } : {}), ...(thread ? { thread } : {}),
+    });
   }
   return items;
 }

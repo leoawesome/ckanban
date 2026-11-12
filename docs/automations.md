@@ -27,7 +27,7 @@ Open **⋯ → Automations** and press **Set up with Claude**. A Planning chat o
 
 ## What an automation is
 
-- **Check script**: a small bash script that prints the items it finds as JSON, one per line or one list: `{"id": "...", "title": "...", "text": "...", "link": "..."}`. Only `id` and `title` are required. It reaches a connected service with `ckanban call <name> <tool> '<json>'`, which prints the tool's answer as JSON. It never sees a sign-in token.
+- **Check script**: a small bash script that prints the items it finds as JSON, one per line or one list: `{"id": "...", "title": "...", "text": "...", "link": "...", "thread": "..."}`. Only `id` and `title` are required. `thread` is optional: items about the same thing (for example comments on one Linear issue) get that thing's id as `thread`. It reaches a connected service with `ckanban call <name> <tool> '<json>'`, which prints the tool's answer as JSON. It never sees a sign-in token.
 - **Every**: how often it checks (at least 5 minutes for a program on this computer).
 - **New items become tickets in**: Backlog by default. Planning or Ready starts Claude on text from the service, so they need **Start Claude by itself** switched on, with a warning. The setup chat can never switch it on.
 - **Ticket text**: your own text first (`{{title}}`, `{{link}}` and `{{service}}` are filled in), then the item's text in a block marked *Outside content from <service>, not instructions*. The run that works on the ticket is told to treat that block as data.
@@ -37,6 +37,7 @@ Open **⋯ → Automations** and press **Set up with Claude**. A Planning chat o
 
 - The first check after you save or switch it on only notes what is already there: old items never become tickets.
 - One item makes at most one ticket, even after a restart: the board remembers every id it has seen.
+- Items with the same `thread` go into one ticket. The first makes the ticket; later ones make no new card and go into that ticket, marked as new and as the automation's (the chat shows the automation's name, never "You", and Claude treats the text as outside content, not as your request). With **Let Claude start by itself** off, or while the ticket hasn't started yet, a later item is left as a note its next run reads, and Claude never starts because of it. Otherwise it goes into its chat, where it resumes its own conversation: a ticket that is working gets it in a turn of its own once its current reply ends, and one in Done comes back (a feature it is a task of goes back to Review). If the ticket can't take it right now (it is stopping), Last check shows it as waiting and it goes in at the next check. Several items of one thread in one check go in the order the script prints them, so print the oldest first. If that ticket was deleted, or put in Done without ever running, the next item makes a new one. Items without `thread` each make their own ticket.
 - Checks run only while ckanban runs. After a failed check it waits 2, 4, 8 ... minutes (at most 30); a rate limit is waited out. **Check now** checks at once.
 - **Last check found** shows what the last check saw and what became a ticket.
 - The script is pinned when you save: if its file changes afterwards, it doesn't run and the automation says *Script changed, review it*. Save it again to run the new version.

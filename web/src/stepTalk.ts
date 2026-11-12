@@ -17,7 +17,7 @@ export interface StepEntry {
   kind: string;
   text: string;
   huddleId?: string;
-  peer?: unknown;
+  peer?: { dir?: string; ticketId?: string | null; title?: string; automation?: string };
   questions?: Question[];
 }
 

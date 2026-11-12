@@ -585,6 +585,8 @@ export interface QueuedMessage {
   peer?: boolean;
   /** Sent by another ticket's Claude: which one (shown with that ticket's name, not as yours). */
   from?: { ticketId: string; title: string };
+  /** A later item of an automation's thread: which automation (shown with its name, not as yours). */
+  automation?: { loopId: string; name: string };
   /** A slash command: Claude Code runs it as its own turn, after the current one. */
   slash?: "prompt" | "local";
 }
@@ -593,8 +595,8 @@ export interface SessionMessage {
   role: "user" | "assistant";
   text: string;
   at: string;
-  /** A user-role message the user didn't write: a huddle digest. */
-  from?: "huddle";
+  /** A user-role message the user didn't write: a huddle digest, or an automation's item. */
+  from?: "huddle" | "automation";
   /** Claude's quiet reply to such a message. */
   peerReply?: boolean;
 }
@@ -689,7 +691,7 @@ export interface SessionEntry {
   unreadable?: "questions" | "proposal" | "tickets";
   /** A message from outside the user (a huddle digest): in = into this session. */
   /** ticketId and title: a message another ticket's Claude sent (text is just the message); ticketId null: a huddle digest. */
-  peer?: { dir: "in" | "out"; ticketId: string | null; title?: string };
+  peer?: { dir: "in" | "out"; ticketId: string | null; title?: string; automation?: string };
   /** Huddle messages delivered to this ticket's session (a peer entry too): the huddle's id. text is the digest. */
   huddleId?: string;
   /** Worktree setup that ran before this prompt (shown as a row before it). */

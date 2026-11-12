@@ -106,6 +106,12 @@ export function fromTicket(text: string): { ticketId: string; title: string; tex
   return m ? { ticketId: m[1], title: m[2], text: m[3].trim() } : null;
 }
 
+/** A later item of an automation's thread, as the board labels it (src/server/session.ts fromAutomationText). */
+export function fromAutomation(text: string): { name: string; text: string } | null {
+  const m = /^Message from automation \("([^"\r\n]*)"\): ([\s\S]*)$/.exec(text);
+  return m ? { name: m[1], text: m[2].trim() } : null;
+}
+
 /**
  * Where items kept beside the conversation (board notes, step results, help cards, status notes, step messages) go:
  * index i = before block i (blocks.length = after them all), each before the first block that came after it, in order.

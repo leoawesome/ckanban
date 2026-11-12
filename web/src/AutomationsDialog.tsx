@@ -14,7 +14,8 @@ type Data = { passes: Pass[]; loops: Loop[] };
 type Tab = "settings" | "last" | "how";
 type SeenItem = Loop["lastItems"][number];
 
-const NEW_SCRIPT = `# Prints the items to watch as JSON, one per line: {"id": "...", "title": "...", "text": "...", "link": "..."}
+const NEW_SCRIPT = `# Prints the items to watch as JSON, one per line: {"id": "...", "title": "...", "text": "...", "link": "...", "thread": "..."}
+# Items with the same "thread" (for example the issue a comment is on) go into one ticket. Print the oldest first.
 # Call a connected service with: ckanban call <service> <tool> '<json arguments>'
 `;
 const DEFAULT_TEXT = "Look at this item from {{service}} and do what it needs.\n\nLink: {{link}}";
@@ -433,6 +434,7 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBa
                   <textarea id={`${ids}-script`} rows={9} className="mono auto-script" value={script} onChange={(e) => setScript(e.target.value)} spellCheck={false} />
                   <div className="auto-hint">
                     It prints one JSON item per line: <code>{`{"id": "...", "title": "...", "text": "...", "link": "..."}`}</code>. Only id and title are required.
+                    Give items about the same thing the same <code>thread</code> (for example the issue a comment is on): the first one makes a ticket, later ones go into that ticket.
                     It reaches a connection with <code>ckanban call &lt;name&gt; &lt;tool&gt; '&lt;json&gt;'</code>.
                   </div>
                   <div className="auto-line">
@@ -498,11 +500,13 @@ function ItemRow({ item: i, onOpenTicket }: { item: SeenItem; onOpenTicket?: (id
       {i.link ? <a className="auto-li-title" href={i.link} target="_blank" rel="noreferrer" title={i.title}>{i.title}</a>
         : <span className="auto-li-title" title={i.title}>{i.title}</span>}
       {i.state === "new" && <span className="auto-tag">ticket made</span>}
-      {i.state === "new" && i.ticketId && onOpenTicket && (
+      {i.state === "added" && <span className="auto-tag">added to its ticket</span>}
+      {i.state === "waiting" && <span className="auto-tag skip">waiting</span>}
+      {(i.state === "new" || i.state === "added" || i.state === "waiting") && i.ticketId && onOpenTicket && (
         <button type="button" className="link-btn" onClick={() => onOpenTicket(i.ticketId!)}>Open ticket</button>
       )}
       {i.state === "skipped" && <span className="auto-tag skip">Claude skipped: {i.note ?? "no ticket"}</span>}
-      {i.state === "new" && i.note && <span className="auto-tag skip">{i.note}</span>}
+      {(i.state === "new" || i.state === "added" || i.state === "waiting") && i.note && <span className="auto-tag skip">{i.note}</span>}
     </li>
   );
 }

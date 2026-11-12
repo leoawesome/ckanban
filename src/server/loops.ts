@@ -7,7 +7,7 @@ import type { Bus } from "./events";
 import { askClaude, type Decision } from "./integrations/ask-claude";
 import { PassError, type Passes } from "./integrations/passes";
 import { readScript, runScript, scriptEnv, sha256, type Item, type ScriptRun } from "./integrations/script";
-import { ticketBody, ticketTitle, usedVariables, VARIABLES } from "./integrations/ticket-text";
+import { threadItemText, ticketBody, ticketTitle, usedVariables, VARIABLES } from "./integrations/ticket-text";
 import { RateLimitError } from "./integrations/types";
 import type { SideCaller } from "./side-call";
 import type { Store } from "./store";
@@ -352,7 +352,7 @@ export class LoopManager {
 
   private maskItem(i: Item): Item {
     const m = (s: string) => this.passes.mask(s);
-    return { id: i.id, title: m(i.title), ...(i.text ? { text: m(i.text) } : {}), ...(i.link ? { link: m(i.link) } : {}) };
+    return { id: i.id, title: m(i.title), ...(i.text ? { text: m(i.text) } : {}), ...(i.link ? { link: m(i.link) } : {}), ...(i.thread ? { thread: m(i.thread) } : {}) };
   }
 
   /** A trial run of a script that isn't saved (the setup chat and the editor's Test): makes no tickets. */
@@ -461,11 +461,25 @@ export class LoopManager {
     let fired: string | null = null;
     let asked = 0;
     let made = 0;
-    const remember = () => this.store.saveLoopState(slug, id, { ...this.store.getLoopState(slug, id), seen: [...seen] });
+    // Thread -> its ticket (Item.thread): a thread whose ticket is gone, or was put in Done without ever running (nobody
+    // would read a note there), starts over with its next item.
+    const open = (ticketId: string) => {
+      const t = this.store.getTicket(slug, ticketId);
+      return !!t && !(t.status === "done" && !t.runCount && !this.board.isRunning(slug, ticketId));
+    };
+    const threads: Record<string, string> = {};
+    for (const [k, v] of Object.entries(state.threads ?? {})) if (open(v)) threads[k] = v;
+    // Threads whose item couldn't reach their ticket this check: their later items wait too, so they arrive in order.
+    const held = new Set<string>();
+    const remember = () => this.store.saveLoopState(slug, id, { ...this.store.getLoopState(slug, id), seen: [...seen], threads });
     for (const item of items) {
       const base = { id: item.id, title: item.title, ...(item.link ? { link: item.link } : {}) };
       if (seen.has(item.id)) {
         shown.push({ ...base, state: "seen" });
+        continue;
+      }
+      if (item.thread && held.has(item.thread)) {
+        shown.push({ ...base, state: "waiting", ticketId: threads[item.thread], note: "an earlier item of its thread waits, so this one does too" });
         continue;
       }
       // The rest stay unseen: the next checks pick them up.
@@ -487,6 +501,26 @@ export class LoopManager {
           continue;
         }
       }
+      // A later item of a thread whose ticket is still there: no new card, it goes into that ticket.
+      const into = item.thread ? threads[item.thread] : undefined;
+      if (into && open(into)) {
+        try {
+          const how = await this.board.automationItem(slug, into, threadItemText(loop.name, loop.service, item, decision?.summary), { loopId: id, name: loop.name, autoStart: loop.autoStart });
+          // Written down after it reached the ticket: a crash in between sends it twice rather than never.
+          seen.add(item.id);
+          remember();
+          fired = now.toISOString();
+          made++;
+          shown.push({ ...base, state: "added", ticketId: into, ...(how === "note" ? { note: "left as a note: it reads it when it next runs" } : {}) });
+        } catch (e) {
+          // Kept for the next check (the ticket is stopping or being rewound), with the rest of its thread.
+          held.add(item.thread!);
+          const why = this.passes.mask(String((e as Error).message ?? e));
+          shown.push({ ...base, state: "waiting", ticketId: into, note: `its ticket can't take it now (${why}); it goes in at the next check` });
+          console.error(`automation ${slug}/${id}: item ${item.id} waits for the next check: ${why}`);
+        }
+        continue;
+      }
       // Written down before the ticket, so a crash in between can't make a second ticket for the same item.
       seen.add(item.id);
       remember();
@@ -506,6 +540,10 @@ export class LoopManager {
           : await this.board.createTicket(slug, { ...fields, status: loop.column === "backlog" || !loop.autoStart ? "backlog" : loop.column });
         fired = now.toISOString();
         made++;
+        if (item.thread) {
+          threads[item.thread] = t.id;
+          remember();
+        }
         const note = place && "problem" in place ? `${forTickets(place.problem)}, so it got its own card.` : undefined;
         shown.push({ ...base, state: "new", ticketId: t.id, ...(note ? { note } : {}) });
       } catch (e) {
@@ -514,10 +552,10 @@ export class LoopManager {
         return fail(`Could not create the ticket: ${(e as Error).message}`);
       }
     }
-    const order = { new: 0, skipped: 1, first: 2, seen: 3 };
+    const order = { new: 0, added: 1, waiting: 2, skipped: 3, first: 4, seen: 5 };
     save(
       { lastCheckedAt: now.toISOString(), lastError: null, allowedTools: learned, ...(fired ? { lastFiredAt: fired } : {}) },
-      { seen: [...seen], failures: 0, backoffUntil: grant.rateLimitMs ? new Date(now.getTime() + grant.rateLimitMs).toISOString() : null, lastFound: items.length, lastItems: preview(shown.sort((a, b) => order[a.state] - order[b.state])) },
+      { seen: [...seen], threads, failures: 0, backoffUntil: grant.rateLimitMs ? new Date(now.getTime() + grant.rateLimitMs).toISOString() : null, lastFound: items.length, lastItems: preview(shown.sort((a, b) => order[a.state] - order[b.state])) },
     );
   }
 

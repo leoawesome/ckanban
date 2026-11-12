@@ -568,8 +568,12 @@ export interface LoopSeenItem {
   id: string;
   title: string;
   link?: string;
-  /** new: became a ticket; skipped: Claude said no ticket; seen: found before; first: found by the first check. */
-  state: "new" | "skipped" | "seen" | "first";
+  /**
+   * new: became a ticket; added: went into the ticket of its thread (Item.thread); waiting: its thread's ticket can't
+   * take it now, it stays unseen and goes in at a later check; skipped: Claude said no ticket; seen: found before;
+   * first: found by the first check.
+   */
+  state: "new" | "added" | "waiting" | "skipped" | "seen" | "first";
   ticketId?: string;
   note?: string;
 }
@@ -584,6 +588,11 @@ export interface LoopState {
   backoffUntil: string | null;
   lastFound: number;
   lastItems: LoopSeenItem[];
+  /**
+   * Thread (Item.thread) -> the ticket its first item made; later items of the thread go into that ticket. An entry
+   * whose ticket was deleted is dropped (its next item makes a new ticket). Missing in state saved before threads: {}.
+   */
+  threads?: Record<string, string>;
 }
 
 /** Recurring ticket template: on each cron tick the board creates a ticket from it and runs it. */
@@ -740,6 +749,8 @@ export interface QueuedMessage {
   fromPlanner?: boolean;
   /** Sent by another ticket's Claude (chat_ticket): which one. The chat shows it with that ticket's name, not as the user's. */
   from?: { ticketId: string; title: string };
+  /** A later item of an automation's thread (Board.automationItem): which automation. Never the user's; shown with its name. */
+  automation?: { loopId: string; name: string };
   /**
    * The text is a slash command Claude Code runs itself (see commands.ts): sent alone, without the board's note.
    * local: a built-in that runs without a model turn (/compact), so Claude never echoes it back.

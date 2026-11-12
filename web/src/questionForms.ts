@@ -11,6 +11,7 @@ interface SessionEntry {
   role: "user" | "assistant";
   kind: string;
   huddleId?: string;
+  peer?: { dir?: string; ticketId?: string | null; title?: string; automation?: string };
   questions?: Question[];
 }
 
@@ -76,8 +77,8 @@ export type FormState =
   /** Asked again further down (a board update came in before the user answered): same says whether the questions match. */
   | { state: "replaced"; same: boolean };
 
-/** A user message that answers forms above it; board updates (kind "board") and huddle messages don't. */
-const answers = (e: SessionEntry) => e.role === "user" && e.kind === "text" && !e.huddleId;
+/** A user message that answers forms above it; board updates (kind "board"), huddle messages and an automation's items don't. */
+const answers = (e: SessionEntry) => e.role === "user" && e.kind === "text" && !e.huddleId && !e.peer?.automation;
 
 /**
  * The state of every questions form in the chat, by entry index. A form followed by another one before the user
