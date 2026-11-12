@@ -9,7 +9,7 @@ import { SAFETY_PASS_MS, type SessionChanges } from "./changefeed";
 import { proposedBudget, rosterError, type RosterEntry } from "./huddle-roster";
 import { mockupName, stripMockups } from "./mockups";
 import { parseResult } from "./result";
-import { atomicWrite } from "./store";
+import { atomicWrite } from "./atomic";
 import { ChatCacheTracker, type ChatCache } from "./chat-cache";
 import { VERSION } from "./version";
 import { parseTeammateProposal, type TeammateProposal } from "./teammate-proposal";
@@ -870,10 +870,26 @@ const FED_INDEX_MS = 60_000;
 const SUMMARY_FLUSH_MS = 2_000;
 
 type StoredSummary = Omit<SessionSummary, "updatedAt">;
+type SummaryItems = Record<string, { v: string; s: StoredSummary }>;
 interface SummaryFile {
   tag: string;
-  items: Record<string, { v: string; s: StoredSummary }>;
+  items: SummaryItems;
+  /**
+   * Summaries made by older code (another tag) whose transcripts haven't changed. They are shown until warm() has
+   * made each one again, so a restart after a change to the parsing doesn't hold the board up while every transcript
+   * is read; the file keeps them, so a second restart before that is done doesn't lose them either.
+   */
+  stale?: SummaryItems;
 }
+
+/**
+ * The first part of the summaries' tag. Summaries from older code with the same number are shown until they are made
+ * again (SummaryFile.stale); fields they lack get the empty summary's values. Raise it when an existing field
+ * changes its type or meaning, so the old ones are dropped instead.
+ */
+const SUMMARY_FORMAT = 2;
+const sameFormat = (tag: unknown) => typeof tag === "string" && tag.startsWith(`${SUMMARY_FORMAT}:`);
+const isItems = (v: unknown): v is SummaryItems => !!v && typeof v === "object" && !Array.isArray(v);
 
 /**
  * Tells summaries made by other code apart: the release version, and from source a hash of the code that makes them
@@ -898,7 +914,7 @@ export function summaryTag(dir = import.meta.dir, entry = "session"): string {
     hash.push(`${name}:${Bun.hash(src).toString(36)}`);
     for (const m of src.matchAll(/^(?:import|export)(?! type )[^;]*?from "\.\/([\w.-]+)"/gm)) todo.push(m[1]);
   }
-  return `2:${VERSION}:${Bun.hash(hash.sort().join(",")).toString(36)}`;
+  return `${SUMMARY_FORMAT}:${VERSION}:${Bun.hash(hash.sort().join(",")).toString(36)}`;
 }
 
 /** Parses session files lazily; re-reads only when size/mtime change. */
@@ -923,6 +939,10 @@ export class SessionCache {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   /** The warm-ups started so far (warm()), one after another. */
   private warming: Promise<void> = Promise.resolve();
+  /** Settles once the latest warm-up has a summary to show for each of its sessions (ready()). */
+  private usable: Promise<void> = Promise.resolve();
+  /** What a summary of an empty transcript holds: the values an older summary's missing fields get. */
+  private blank: StoredSummary | null = null;
   /** The session feed keeping the scan current (follow()), so it isn't redone every second while a session is missing. */
   private feed: SessionChanges | null = null;
 
@@ -931,19 +951,34 @@ export class SessionCache {
   private storedSummaries(): SummaryFile {
     if (this.summaries) return this.summaries;
     const tag = summaryTag();
-    let items: SummaryFile["items"] = {};
+    let items: SummaryItems = {};
+    let stale: SummaryItems = {};
     if (this.summaryFile) {
       try {
         const v = JSON.parse(readFileSync(this.summaryFile, "utf8"));
-        if (v?.tag === tag && v.items && typeof v.items === "object") items = v.items;
+        if (isItems(v?.items) && sameFormat(v.tag)) {
+          const older = isItems(v.stale) ? v.stale : {};
+          if (v.tag === tag) [items, stale] = [v.items, older];
+          else stale = { ...older, ...v.items };
+        }
       } catch {}
     }
-    return (this.summaries = { tag, items });
+    return (this.summaries = { tag, items, ...(Object.keys(stale).length ? { stale } : {}) });
+  }
+
+  /** An older summary of this session that still matches its transcript (version v), to show until it is made again. */
+  private staleSummary(sessionId: string, v: string | null): StoredSummary | null {
+    const old = v ? this.storedSummaries().stale?.[sessionId] : undefined;
+    if (!old || old.v !== v) return null;
+    this.blank ??= this.summaryOf(new SessionParser().result());
+    return { ...this.blank, ...old.s };
   }
 
   private storeSummary(sessionId: string, v: string, s: StoredSummary) {
     if (!this.summaryFile) return;
-    this.storedSummaries().items[sessionId] = { v, s };
+    const stored = this.storedSummaries();
+    stored.items[sessionId] = { v, s };
+    if (stored.stale) delete stored.stale[sessionId];
     this.flushTimer ??= setTimeout(() => this.flushSummaries(), SUMMARY_FLUSH_MS);
     (this.flushTimer as { unref?: () => void }).unref?.();
   }
@@ -1116,33 +1151,73 @@ export class SessionCache {
    * Readies these sessions' summaries without blocking the event loop for more than about sliceMs at a time: big
    * transcripts are read in chunks, with a pause between steps. Sessions whose saved summary is still valid are
    * skipped. Pages that list many tickets wait for it (ready()) instead of parsing everything at once.
+   *
+   * Two rounds. First the sessions with nothing to show (no saved summary, or the transcript changed since): ready()
+   * waits for these only. Then the ones still shown from an older summary (SummaryFile.stale) are made again, and
+   * `changed` is called for each whose summary came out different. The returned promise settles after both.
    */
-  warm(sessionIds: string[], sliceMs = 30): Promise<void> {
+  warm(sessionIds: string[], sliceMs = 30, changed?: (sessionId: string) => void): Promise<void> {
     const pause = pauser(sliceMs);
-    const run = async () => {
+    const read = async (id: string, f: string) => {
+      for (;;) {
+        const hit = this.catchUp(id, f, WARM_CHUNK);
+        if (!hit || hit.offset >= hit.size) break;
+        await pause();
+      }
+    };
+    const missing = async () => {
       for (const id of sessionIds) {
         await pause();
         const f = this.locate(id);
         if (!f) continue;
         const v = this.summaryFile ? this.version(id) : null;
-        if (v && this.storedSummaries().items[id]?.v === v) continue;
-        for (;;) {
-          const hit = this.catchUp(id, f, WARM_CHUNK);
-          if (!hit || hit.offset >= hit.size) break;
-          await pause();
-        }
+        if (v && (this.storedSummaries().items[id]?.v === v || this.staleSummary(id, v))) continue;
+        await read(id, f);
         this.summary(id);
       }
     };
-    const prev = this.warming;
-    const next: Promise<void> = prev.then(run, run).finally(() => {
-      if (this.warming === next) this.warming = Promise.resolve();
+    const remake = async () => {
+      if (!this.summaryFile) return;
+      for (const id of sessionIds) {
+        await pause();
+        if (!this.storedSummaries().stale?.[id]) continue;
+        const f = this.locate(id);
+        const old = f && this.staleSummary(id, this.version(id));
+        // Gone, or changed since the first round: summary() reads it when someone asks.
+        if (!f || !old) continue;
+        await read(id, f);
+        const now = this.fresh(id);
+        if (now && changed) {
+          const { updatedAt: _, ...s } = now;
+          if (!Bun.deepEquals(s, old)) changed(id);
+        }
+      }
+      // What is left belongs to sessions nobody asked for (deleted tickets): not kept for another restart.
+      const stored = this.storedSummaries();
+      if (stored.stale) {
+        delete stored.stale;
+        this.flushTimer ??= setTimeout(() => this.flushSummaries(), SUMMARY_FLUSH_MS);
+        (this.flushTimer as { unref?: () => void }).unref?.();
+      }
+    };
+    const usable = this.warming.then(missing, missing);
+    const next: Promise<void> = usable.then(remake).finally(() => {
+      if (this.warming === next) this.warming = this.usable = Promise.resolve();
     });
+    this.usable = usable;
     return (this.warming = next);
   }
 
-  /** Settles when every warm() started so far has finished. */
+  /**
+   * Settles when every session of the warm-ups started so far has a summary to show (some still from older code, until
+   * made again: see warm()).
+   */
   ready(): Promise<void> {
+    return this.usable;
+  }
+
+  /** Settles when every warm() started so far has finished: every summary is made by this code. */
+  settled(): Promise<void> {
     return this.warming;
   }
 
@@ -1169,16 +1244,33 @@ export class SessionCache {
     const v = this.summaryFile ? this.version(sessionId) : null;
     const hit = v ? this.storedSummaries().items[sessionId] : undefined;
     if (hit && hit.v === v) return { ...hit.s, updatedAt };
-    const p = this.parsed(sessionId);
-    if (!p) return null;
-    const s: StoredSummary = {
+    const old = this.staleSummary(sessionId, v);
+    if (old) return { ...old, updatedAt };
+    return this.fresh(sessionId);
+  }
+
+  /** The summary read from the transcript now (and saved), whatever older summary there is. */
+  private fresh(sessionId: string): SessionSummary | null {
+    const f = this.locate(sessionId);
+    const p = f && this.parsed(sessionId);
+    if (!f || !p) return null;
+    let updatedAt = "";
+    try {
+      updatedAt = statSync(f).mtime.toISOString();
+    } catch {}
+    const v = this.summaryFile ? this.version(sessionId) : null;
+    const s = this.summaryOf(p);
+    if (v) this.storeSummary(sessionId, v, s);
+    return { ...s, updatedAt };
+  }
+
+  private summaryOf(p: ParsedSession): StoredSummary {
+    return {
       // The preview is stored and sent to the UI: a saved key in Claude's last message is hidden there.
       title: p.title, lastMessage: p.lastMessage && this.summaryFile ? { ...p.lastMessage, text: maskSaved(dirname(this.summaryFile), p.lastMessage.text) } : p.lastMessage, artifacts: p.artifacts,
       openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), ...(p.openFormId ? { openFormId: p.openFormId } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates, pendingSquads: p.pendingSquads,
       pendingAutomations: p.pendingAutomations, ...(p.pendingKeys.length ? { pendingKeys: p.pendingKeys } : {}), cache: p.cache,
     };
-    if (v) this.storeSummary(sessionId, v, s);
-    return { ...s, updatedAt };
   }
 }
 
@@ -1209,22 +1301,31 @@ function pollOne(bus: Bus, cache: SessionCache, state: Map<string, string>, live
   if (session && emit) bus.emit({ type: "session.updated", profile: slug, id: t.id, session });
 }
 
+const SILENT = { emit() {} } as unknown as Bus;
+
 /**
  * The watcher's first pass after a start: readies every ticket's summary (reading transcripts in slices, see
- * SessionCache.warm) and notes the versions, sending nothing. It pauses every ~sliceMs, so a start with no saved
- * summaries (seconds of reading on a big board) never freezes the daemon.
+ * SessionCache.warm) and notes the versions. It pauses every ~sliceMs, so a start with no saved summaries (seconds of
+ * reading on a big board, minutes on a busy Mac) never freezes the daemon. It sends nothing, except for a ticket whose
+ * summary from older code was shown meanwhile and came out different (given `bus`).
  */
-export async function primeSessions(store: Store, cache: SessionCache, state: Map<string, string>, sliceMs = 30): Promise<void> {
+export async function primeSessions(store: Store, cache: SessionCache, state: Map<string, string>, sliceMs = 30, bus?: Bus): Promise<void> {
   const tickets = store.listProfiles().flatMap((p) => store.listTickets(p.slug).map((t) => ({ slug: p.slug, t })));
   // Huddle teammates' sessions too: a ticket's links list their artifacts.
   const teammates = store.listProfiles().flatMap((p) => store.listHuddles(p.slug).flatMap((h) => h.participants.flatMap((x) => (x.kind === "agent" && x.sessionId ? [x.sessionId] : []))));
-  await cache.warm([...tickets.flatMap(({ t }) => (t.sessionId ? [t.sessionId] : [])), ...teammates], sliceMs);
+  const remade = new Set<string>();
+  await cache.warm([...tickets.flatMap(({ t }) => (t.sessionId ? [t.sessionId] : [])), ...teammates], sliceMs, (id) => remade.add(id));
   const pause = pauser(sliceMs);
   const live = new Set<string>();
-  const bus = { emit() {} } as unknown as Bus;
   for (const { slug, t } of tickets) {
     await pause();
-    pollOne(bus, cache, state, live, slug, t, false);
+    if (!t.sessionId) continue;
+    if (bus && remade.has(t.sessionId)) {
+      // Announce it even when a pass during the warm-up already noted this version (with the older summary).
+      const session = cache.summary(t.sessionId);
+      if (session) bus.emit({ type: "session.updated", profile: slug, id: t.id, session });
+    }
+    pollOne(SILENT, cache, state, live, slug, t, false);
   }
 }
 
@@ -1282,16 +1383,22 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
   };
   // The first pass after a start announced every ticket's session (hundreds of events, each built for every open tab:
   // seconds right after a restart). Pages load what they need when they (re)connect, and the notifier takes stock at
-  // its start, so the first pass only takes stock. It starts at once (pages and the notifier wait for it through
-  // cache.ready()) and runs in slices; the timer's passes wait until it is done.
+  // its start, so the first pass only takes stock. It starts at once (pages wait through cache.ready() until every
+  // ticket has a summary to show, the notifier through cache.settled() until the pass is done) and runs in slices; the
+  // timer's full passes wait until it is done. Meanwhile, with a live feed, the timer still announces the sessions
+  // that change (running tickets' chats keep moving however long the first pass takes on a busy Mac).
   let primed = false;
   let priming = true;
-  void track("session-watcher: first pass", () => primeSessions(store, cache, state))
+  for (const p of store.listProfiles()) for (const t of store.listTickets(p.slug)) own(t.sessionId, `${p.slug}/${t.id}`);
+  void track("session-watcher: first pass", () => primeSessions(store, cache, state, 30, bus))
     .then(() => (primed = true), (e) => console.error("session watcher", e))
     .finally(() => (priming = false));
   const timer = trackedInterval("session-watcher", () => {
-    if (priming) return;
     try {
+      if (priming) {
+        if (o.feed?.live && !unknown) changed();
+        return;
+      }
       if (!primed || !o.feed?.live || unknown || now() - lastFull >= safetyMs) full(primed);
       else changed();
       primed = true;

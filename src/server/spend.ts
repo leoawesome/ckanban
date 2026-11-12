@@ -120,6 +120,17 @@ export class SpendIndex {
     st.days.set(day, (st.days.get(day) ?? 0) + cost);
   }
 
+  /**
+   * today(), at most a few seconds old. Every open page asks again after each ticket change, and one answer stats
+   * every ticket of every board (hundreds of ms on a big board when the Mac is busy).
+   */
+  recent(maxAgeMs = 5_000): TodaySpend {
+    const at = this.now().getTime();
+    if (!this.last || at - this.last.at >= maxAgeMs || at < this.last.at) this.last = { at, spend: this.today() };
+    return this.last.spend;
+  }
+  private last: { at: number; spend: TodaySpend } | null = null;
+
   /** What every board spent today (local day): its tickets' runs, its quick chats and its huddle agents. */
   today(): TodaySpend {
     const now = this.now();

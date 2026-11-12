@@ -93,6 +93,37 @@ test("a ticket write reaches the session watcher without a full pass", async () 
   }
 });
 
+test("while the first pass is still reading, a session the feed reports is announced; a summary made again differently is too", async () => {
+  const { proj, store, bus, updates, cache } = setup();
+  const [running, old] = ["11111111-2222-3333-4444-777777777777", "11111111-2222-3333-4444-888888888888"];
+  for (const id of [running, old]) writeFileSync(join(proj, `${id}.jsonl`), line("hello", "2026-09-29T01:00:00Z"));
+  const a = store.createTicket("p", { title: "running", body: "", status: "in_progress" });
+  const b = store.createTicket("p", { title: "old", body: "", status: "review" });
+  store.updateTicket("p", a.id, { sessionId: running });
+  store.updateTicket("p", b.id, { sessionId: old });
+  // The warm-up takes as long as the test wants; at its end it reports `old` as made again differently.
+  let finish = () => {};
+  (cache as any).warm = (_ids: string[], _ms: number, changed: (id: string) => void) =>
+    new Promise<void>((r) => (finish = () => (changed(old), r())));
+  const feed = new FakeFeed();
+  const stop = startSessionWatcher(store, bus, cache, 20, { feed, safetyMs: 1e9 });
+  try {
+    await Bun.sleep(100);
+    expect(updates().length).toBe(0);
+    appendFileSync(join(proj, `${running}.jsonl`), line("more", "2026-09-29T01:00:01Z"));
+    feed.send({ sessionId: running, file: null });
+    await until(() => updates().length === 1, 10_000);
+    expect(updates()[0]).toMatchObject({ profile: "p", id: a.id, session: { lastMessage: { text: "more" } } });
+    finish();
+    await until(() => updates().length === 2, 10_000);
+    expect(updates()[1]).toMatchObject({ profile: "p", id: b.id });
+    await Bun.sleep(100);
+    expect(updates().length).toBe(2);
+  } finally {
+    stop();
+  }
+});
+
 test("a transcript append reaches the session watcher through the real feed", async () => {
   const { configDir, proj, store, bus, updates, cache } = setup();
   const sid = "11111111-2222-3333-4444-666666666666";

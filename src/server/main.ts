@@ -62,7 +62,7 @@ export async function startDaemon(): Promise<void> {
   const remoteConfig = new RemoteAccess(store.root, () => 0);
   const push = new PushService(store.root);
   const notifier: Notifier = new Notifier(store, bus, {
-    root: store.root, push, sessionSummary: (id) => sessions.summary(id), sessionsReady: () => sessions.ready(), isRunning: (slug, id) => board.isRunning(slug, id),
+    root: store.root, push, sessionSummary: (id) => sessions.summary(id), sessionsReady: () => sessions.settled(), isRunning: (slug, id) => board.isRunning(slug, id),
     hostHuddles: (slug) => board.hostHuddles(slug),
     baseUrl: () => {
       const r = remoteConfig.active();

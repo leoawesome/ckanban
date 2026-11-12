@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FILES_NOTE, IMAGES_NOTE } from "../src/server/attachments";
 import { Bus, type BusEvent } from "../src/server/events";
@@ -539,6 +539,61 @@ test("session summaries are kept on disk: a new cache answers without reading an
   expect(reads).toBe(1);
 });
 
+test("summaries made by older code are shown until warm() has made them again, and survive a restart meanwhile", async () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-s");
+  mkdirSync(dir, { recursive: true });
+  const [same, differs, grown] = ["31111111-2222-3333-4444-555555555555", "32111111-2222-3333-4444-555555555555", "33111111-2222-3333-4444-555555555555"];
+  for (const id of [same, differs, grown]) writeFileSync(join(dir, `${id}.jsonl`), user(`hello ${id}`, "2026-09-29T01:00:00Z") + "\n");
+  const summaryFile = join(tempDir(), "session-summaries.json");
+  const a = new SessionCache({ configDir }, Date.now, summaryFile);
+  for (const id of [same, differs, grown]) a.summary(id);
+  a.flushSummaries();
+  // The file as older code left it: another tag, one summary that the new code makes differently, and no `cache` field.
+  const saved = JSON.parse(readFileSync(summaryFile, "utf8"));
+  saved.tag = saved.tag.replace(/[^:]+$/, "older");
+  saved.items[differs].s.lastMessage.text = "as the old code read it";
+  for (const id of [same, differs, grown]) delete saved.items[id].s.cache;
+  writeFileSync(summaryFile, JSON.stringify(saved));
+  appendFileSync(join(dir, `${grown}.jsonl`), user("more", "2026-09-29T01:00:01Z") + "\n");
+
+  const b = new SessionCache({ configDir }, Date.now, summaryFile);
+  let reads = 0;
+  const parsed = (b as any).parsed.bind(b);
+  (b as any).parsed = (id: string) => (reads++, parsed(id));
+  // Unchanged transcripts: the older summary, without reading; fields it lacks are filled in.
+  expect(b.summary(differs)?.lastMessage?.text).toBe("as the old code read it");
+  expect(b.summary(same)).toEqual(a.summary(same));
+  expect(reads).toBe(0);
+  // A transcript that changed since is read.
+  expect(b.summary(grown)?.lastMessage?.text).toBe("more");
+  expect(reads).toBe(1);
+
+  // A restart before the warm-up: the older summaries are still there.
+  b.flushSummaries();
+  const c = new SessionCache({ configDir }, Date.now, summaryFile);
+  expect(c.summary(differs)?.lastMessage?.text).toBe("as the old code read it");
+
+  // The warm-up: ready() needs no reading (every session has something to show); then each older one is made again.
+  const remade: string[] = [];
+  const done = c.warm([same, differs, grown], 0, (id) => remade.push(id));
+  await c.ready();
+  expect(c.summary(differs)?.lastMessage?.text).toBe("as the old code read it");
+  await done;
+  expect(remade).toEqual([differs]);
+  expect(c.summary(differs)?.lastMessage?.text).toBe(`hello ${differs}`);
+  c.flushSummaries();
+  const after = JSON.parse(readFileSync(summaryFile, "utf8"));
+  expect(after.stale).toBeUndefined();
+  expect(Object.keys(after.items).sort()).toEqual([same, differs, grown].sort());
+
+  // Another format number: the old summaries are dropped, not shown.
+  after.tag = "1:dev:older";
+  writeFileSync(summaryFile, JSON.stringify(after));
+  const d = new SessionCache({ configDir }, Date.now, summaryFile);
+  expect((d as any).storedSummaries().stale).toBeUndefined();
+});
+
 test("the summaries' tag changes with the code that makes them, not with other server files", () => {
   const dir = tempDir();
   writeFileSync(join(dir, "session.ts"), 'import { a } from "./a";\nimport type { T } from "./typesonly";\nexport const s = a;\n');
@@ -671,7 +726,10 @@ test("SessionCache.warm parses many transcripts without blocking the event loop 
   let ticks = 0;
   const timer = setInterval(() => ticks++, 0);
   const done = cache.warm(ids, 0);
-  expect(cache.ready()).toBe(done);
+  expect(cache.settled()).toBe(done);
+  await cache.ready();
+  // No older summaries to make again: the second round has nothing to read.
+  for (const id of ids) expect((cache as any).items.get(id).offset).toBe(Buffer.byteLength(big));
   await done;
   clearInterval(timer);
   expect(ticks).toBeGreaterThan(5);

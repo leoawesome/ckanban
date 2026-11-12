@@ -12,6 +12,7 @@ import { cleanPresets, type HuddlePreset } from "./huddle-presets";
 import { cleanTemplates, type HuddleTemplate } from "./huddle-templates";
 import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "./huddle-notes";
 import { newId, newTicketId, nowIso } from "./util";
+import { atomicWrite } from "./atomic";
 import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "./board-tools";
 import { maskSaved, maskSavedJson } from "./board-keys";
 
@@ -30,12 +31,7 @@ export function defaultRoot(): string {
 /** One of the Store's own writes (Store.onChange). */
 export type StoreChange = { kind: "ticket" | "huddle" | "schedule" | "job"; slug: string; id: string };
 
-export function atomicWrite(file: string, content: string) {
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${newId()}`;
-  writeFileSync(tmp, content);
-  renameSync(tmp, file);
-}
+export { atomicWrite };
 
 function readJsonl<T>(file: string): T[] {
   if (!existsSync(file)) return [];

@@ -1082,7 +1082,7 @@ export function createServer(deps: ServerDeps) {
     // ?fresh=1 is the Refresh button: asks now unless a check went out in the last minute or Anthropic asked us to wait.
     if (parts[0] === "usage" && m === "GET") return json(await usage.get({ fresh: url.searchParams.get("fresh") === "1" }));
     // What every board spent today (tickets' runs and huddle agents), for the header pill.
-    if (parts[0] === "spend" && m === "GET") return json(spend.today());
+    if (parts[0] === "spend" && m === "GET") return json(spend.recent());
     // How every teammate (huddle preset) and template was used, from the huddles on every board.
     if (parts[0] === "team-usage" && m === "GET") return json(huddles.usage());
     // The user's avatar choices for Claude, the user and teammates: one set for every board (src/server/avatars.ts).
