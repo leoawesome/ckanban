@@ -10,9 +10,9 @@ export const modelWord = (m: string) => {
   return a ? a[1][0].toUpperCase() + a[1].slice(1).toLowerCase() + (a[2] ? " (1M)" : "") : m;
 };
 
-/** The New ticket form's chip: "Sonnet · medium" and whether both are the board's ("Runs on … (board default)"). */
+/** The New ticket form's small chip: only what runs ("Opus · high", "Default model"), and whether both are the board's. */
 export function runsOn(o: { model: string; effort: string; boardModel: string | null; boardEffort: string | null }): { what: string; boardDefault: boolean } {
   const m = o.model || o.boardModel;
   const e = o.effort || o.boardEffort;
-  return { what: `${m ? modelWord(m) : "Default model"} · ${e ?? "default effort"}`, boardDefault: !o.model && !o.effort };
+  return { what: [m ? modelWord(m) : "Default model", e].filter(Boolean).join(" · "), boardDefault: !o.model && !o.effort };
 }

@@ -50,5 +50,6 @@ test("New ticket chip: board default wording, picked values drop it, empty value
   expect(runsOn({ model: "", effort: "", boardModel: "sonnet", boardEffort: "medium" })).toEqual({ what: "Sonnet · medium", boardDefault: true });
   expect(runsOn({ model: "opus", effort: "", boardModel: "sonnet", boardEffort: "medium" })).toEqual({ what: "Opus · medium", boardDefault: false });
   expect(runsOn({ model: "", effort: "high", boardModel: null, boardEffort: null })).toEqual({ what: "Default model · high", boardDefault: false });
-  expect(runsOn({ model: "", effort: "", boardModel: "claude-opus-5-5", boardEffort: null }).what).toBe("claude-opus-5-5 · default effort");
+  expect(runsOn({ model: "", effort: "", boardModel: null, boardEffort: null })).toEqual({ what: "Default model", boardDefault: true });
+  expect(runsOn({ model: "", effort: "", boardModel: "claude-opus-5-5", boardEffort: null }).what).toBe("claude-opus-5-5");
 });

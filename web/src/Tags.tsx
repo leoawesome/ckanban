@@ -22,7 +22,7 @@ export function TagChip({ name, onClick }: { name: string; onClick?: () => void 
  * Tag editor (ticket panel, new-ticket dialog): chips with ✕, Claude's suggestions dashed with ✓ / ✕, and "+ tag",
  * an input that offers the board's tags (most used first) and "Create …" for a new name.
  */
-export function TagEditor({ tags, suggested = [], known, onChange, onSuggested, disabled }: {
+export function TagEditor({ tags, suggested = [], known, onChange, onSuggested, disabled, openSignal = 0, onOpenChange }: {
   tags: string[];
   suggested?: string[];
   /** This board's tags with how many tickets have each. */
@@ -31,6 +31,10 @@ export function TagEditor({ tags, suggested = [], known, onChange, onSuggested, 
   /** Keep or drop Claude's suggestions: the new suggestion list (kept ones also go through onChange). */
   onSuggested?: (suggested: string[]) => void;
   disabled?: boolean;
+  /** Each new value opens the "+ tag" input and focuses it (the New ticket form's # Tag button). */
+  openSignal?: number;
+  /** The "+ tag" input opened or closed. */
+  onOpenChange?: (open: boolean) => void;
 }) {
   // Edits build on this local copy, not on the props: a second quick add must not overwrite the first while the
   // board's live update for it is still on its way. A new value from the board (another tab, Claude) replaces it.
@@ -41,7 +45,17 @@ export function TagEditor({ tags, suggested = [], known, onChange, onSuggested, 
   const change = (next: string[]) => { setList(next); onChange(next); };
   const changeSuggested = (next: string[]) => { setSugg(next); onSuggested?.(next); };
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(openSignal > 0);
+  useEffect(() => {
+    if (!openSignal) return;
+    setOpen(true);
+    inputRef.current?.focus();
+  }, [openSignal]);
+  const openRef = useRef(open);
+  useEffect(() => {
+    if (openRef.current !== open) onOpenChange?.(open);
+    openRef.current = open;
+  }, [open]);
   const [draft, setDraft] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);

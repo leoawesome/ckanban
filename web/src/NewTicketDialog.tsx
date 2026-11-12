@@ -45,6 +45,10 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
   const [runOpen, setRunOpen] = useState(false);
+  // Tags live behind the description toolbar's "# Tag": the row shows while the ticket has tags or "+ tag" is open.
+  const [tagSignal, setTagSignal] = useState(0);
+  const [tagEditing, setTagEditing] = useState(false);
+  const tagRow = tags.length > 0 || tagEditing;
   const images = useImagePaste(setBody);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   // A small "Part of X?" chip: the open feature sharing the most words (no AI call). It stays on its own until the user picks.
@@ -98,21 +102,27 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
         else setImportant((v) => !v);
       }}>
       <form className="form" onSubmit={(e) => e.preventDefault()}>
-        <div className="field">
-          <label htmlFor="new-ticket-title">Title</label>
-          <div className="title-row">
-            <input id="new-ticket-title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What should be done?" />
-            <StarToggle on={important} onChange={setImportant} keyHint="⌘D" />
-          </div>
+        {/* No visible labels: the placeholders say what goes where; screen readers get aria-labels. */}
+        <div className="title-row">
+          <input id="new-ticket-title" aria-label="Title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What should be done?" />
+          <StarToggle on={important} onChange={setImportant} keyHint="⌘D" />
         </div>
-        <div className="field">
-          <div className="field-label">Tags</div>
-          <TagEditor tags={tags} known={knownTags} onChange={setTags} disabled={busy} />
-        </div>
-        <label>
-          Description
-          <DescriptionEditor slug={slug} value={body} setValue={setBody} images={images} inputRef={bodyRef} rows={phone ? 4 : 8} />
-        </label>
+        <DescriptionEditor slug={slug} value={body} setValue={setBody} images={images} inputRef={bodyRef} rows={phone ? 4 : 6}
+          ariaLabel="Description" placeholder="Context, what done looks like, links… (optional)"
+          above={tagRow && (
+            <div className="new-ticket-tags">
+              <TagEditor tags={tags} known={knownTags} onChange={setTags} disabled={busy} openSignal={tagSignal} onOpenChange={setTagEditing} />
+            </div>
+          )}
+          tools={
+            <button type="button" className={phone ? "desc-editor-tool new-ticket-tag-btn" : "btn small desc-editor-pick new-ticket-tag-btn"}
+              aria-expanded={tagRow} title="Add tags" disabled={busy}
+              // Keep the "+ tag" input's own blur from closing the row under the tap.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { setTagEditing(true); setTagSignal((n) => n + 1); }}>
+              {phone ? <><kbd>#</kbd> Tag</> : "# Tag"}
+            </button>
+          } />
         {question && (
           <div className="ask-first muted small" role="note">
             Just a question? Ask in Chat first. You can turn the chat into a ticket later.
@@ -120,8 +130,30 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
           </div>
         )}
         <FeatureChoice state={fc} hideNoMatchOnPhone />
-        <div className="field">
+        <div className="new-ticket-how">
           <ModeToggle value={mode} onChange={setMode} keyHint="⌘I" />
+          {/* Small: only what runs. Tapping it shows the Model and Effort pickers below. */}
+          <button type="button" className="new-ticket-run-chip" aria-expanded={runOpen} onClick={() => setRunOpen((v) => !v)}
+            aria-label={`Model and effort: ${runs.what}${runs.boardDefault ? " (board default)" : ""}`}
+            title={isMain && profile?.mainModel && !model ? "Main tickets use the board's Main ticket model" : runs.boardDefault ? "Board default. Tap to pick a model and effort for this ticket" : undefined}>
+            <b>{runs.what}</b><span className="new-ticket-run-caret" aria-hidden="true">{runOpen ? "▴" : "▾"}</span>
+          </button>
+        </div>
+        {runOpen && (
+          <div className="new-ticket-run-panel">
+            <div>
+              <span className="field-label">Model</span>
+              <Select ariaLabel="Model for this ticket" value={model} onChange={setModel}
+                options={[{ value: "", label: `Board default${boardModel ? ` (${modelWord(boardModel)})` : ""}` }, ...modelOptions()]} />
+            </div>
+            <div>
+              <span className="field-label">Effort</span>
+              <Select ariaLabel="Effort for this ticket" value={effort} onChange={setEffort}
+                options={[{ value: "", label: `Board default${boardEffort ? ` (${boardEffort})` : ""}` }, ...EFFORTS.map((e) => ({ value: e, label: e }))]} />
+            </div>
+          </div>
+        )}
+        <div className="new-ticket-hint">
           <span className="muted small mode-hint">
             {/* The main-ticket hint: a tooltip on desktop, and a tap shows it on a phone (no hover there). The ⓘ stays on
                 the hint's last line. */}
@@ -129,27 +161,6 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
               onClick={() => setMainInfo((v) => !v)}>ⓘ</button></>}</span>
           </span>
           {hint && mainInfo && <span className="muted small new-ticket-main-hint">{hint}</span>}
-        </div>
-        <div className="field new-ticket-run">
-          <button type="button" className="new-ticket-run-chip" aria-expanded={runOpen} onClick={() => setRunOpen((v) => !v)}
-            title={isMain && profile?.mainModel && !model ? "Main tickets use the board's Main ticket model" : undefined}>
-            <span>Runs on <b>{runs.what}</b>{runs.boardDefault && " (board default)"}</span><span className="new-ticket-run-caret" aria-hidden="true">{runOpen ? "▴" : "▾"}</span>
-          </button>
-          {runOpen && (
-            <div className="new-ticket-run-panel">
-              <div>
-                <span className="field-label">Model</span>
-                <Select ariaLabel="Model for this ticket" value={model} onChange={setModel}
-                  options={[{ value: "", label: `Board default${boardModel ? ` (${modelWord(boardModel)})` : ""}` }, ...modelOptions()]} />
-              </div>
-              <div>
-                <span className="field-label">Effort</span>
-                <Select ariaLabel="Effort for this ticket" value={effort} onChange={setEffort}
-                  options={[{ value: "", label: `Board default${boardEffort ? ` (${boardEffort})` : ""}` }, ...EFFORTS.map((e) => ({ value: e, label: e }))]} />
-              </div>
-            </div>
-          )}
-          {!runOpen && <span className="muted small">{phone ? "Tap" : "Click"} the chip to pick a stronger model for this ticket.</span>}
         </div>
         {session && (
           <div className="session-chip">

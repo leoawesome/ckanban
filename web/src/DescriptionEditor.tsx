@@ -1,4 +1,4 @@
-import { useMemo, type KeyboardEvent, type RefObject } from "react";
+import { useMemo, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { AttachmentChips } from "./AttachmentChips";
 import { ImagePickButton } from "./ImagePickButton";
 import type { useImagePaste } from "./imagePaste";
@@ -18,7 +18,7 @@ export function useDescriptionCommands(slug: string, ticketId?: string): SlashCo
  * The markdown description box of new tickets, the ticket panel and schedules: `@` inserts a snippet,
  * `/` picks a skill (just text: Claude reads it like the rest), images paste, drop or pick in. One look everywhere.
  */
-export function DescriptionEditor({ slug, ticketId, value, setValue, images, inputRef, rows = 8, placeholder, autoFocus, fill, onKeyDown }: {
+export function DescriptionEditor({ slug, ticketId, value, setValue, images, inputRef, rows = 8, placeholder, ariaLabel, autoFocus, fill, onKeyDown, above, tools }: {
   slug: string;
   /** The ticket's own skills (its worktree); without one, the board folder's. */
   ticketId?: string;
@@ -28,10 +28,15 @@ export function DescriptionEditor({ slug, ticketId, value, setValue, images, inp
   inputRef: RefObject<HTMLTextAreaElement>;
   rows?: number;
   placeholder?: string;
+  ariaLabel?: string;
   autoFocus?: boolean;
   /** Grow to fill the parent (ticket panel) instead of a fixed number of rows. */
   fill?: boolean;
   onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void;
+  /** Shown inside the box between the text and the toolbar (New ticket: the tag row). */
+  above?: ReactNode;
+  /** Extra buttons at the end of the toolbar (New ticket: # Tag). */
+  tools?: ReactNode;
 }) {
   const snippets = useSnippetPicker({ slug, ref: inputRef, setValue });
   const commands = useDescriptionCommands(slug, ticketId);
@@ -48,7 +53,7 @@ export function DescriptionEditor({ slug, ticketId, value, setValue, images, inp
   return (
     <>
     <div className={`desc-editor${fill ? " fill" : ""}${images?.dragOver ? " drop-target" : ""}`}>
-      <textarea ref={inputRef} rows={rows} value={value} onChange={(e) => setValue(e.target.value)} autoFocus={autoFocus}
+      <textarea ref={inputRef} rows={rows} value={value} onChange={(e) => setValue(e.target.value)} autoFocus={autoFocus} aria-label={ariaLabel}
         placeholder={placeholder ?? "Context, what done looks like, links…"} {...images?.handlers}
         onSelect={() => { snippets.handlers.onSelect(); slash.handlers.onSelect(); }}
         onBlur={() => { snippets.handlers.onBlur(); slash.handlers.onBlur(); }}
@@ -57,6 +62,7 @@ export function DescriptionEditor({ slug, ticketId, value, setValue, images, inp
           onKeyDown?.(e);
         }} />
       {images && <AttachmentChips text={value} images={images} />}
+      {above}
       {phone ? (
         // Phones: tap buttons instead of keyboard hints (paste and `@` / `/` are awkward on a phone keyboard).
         <div className="desc-editor-foot phone">
@@ -65,6 +71,7 @@ export function DescriptionEditor({ slug, ticketId, value, setValue, images, inp
           {!!commands?.length && (
             <button type="button" className="desc-editor-tool" onMouseDown={keepFocus} onClick={() => typeTrigger("/")}><kbd>/</kbd> Skill</button>
           )}
+          {tools}
           {images?.uploading && <span className="desc-editor-status">Uploading…</span>}
         </div>
       ) : (
@@ -73,6 +80,7 @@ export function DescriptionEditor({ slug, ticketId, value, setValue, images, inp
           <span><kbd>/</kbd> skill</span>
           {images && <span>{images.uploading ? "Uploading…" : "Paste or drop files"}</span>}
           {images && <ImagePickButton images={images} target={inputRef} className="desc-editor-pick" />}
+          {tools}
         </div>
       )}
       {snippets.popup}
