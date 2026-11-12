@@ -247,7 +247,7 @@ test("every tool advertises a profile argument; change tools are flagged", () =>
   // Huddle tools work inside runs: the daemon checks who the run is (lead, coordinator, the participant itself).
   expect(TOOLS.filter((t) => t.allowInRun).map((t) => t.name).sort()).toEqual([
     "ask_ticket", "cancel_follow_up", "cancel_job", "create_schedule", "delete_huddle_preset", "delete_schedule", "follow_up", "gather_tickets", "huddle_add_participant", "huddle_allow_changes", "huddle_brief", "huddle_close", "huddle_findings", "huddle_hand_in", "huddle_mode", "huddle_post", "huddle_review_changes", "huddle_status", "land_milestone", "merge_into_main", "notify_user",
-    "release_devices", "run_job_now", "save_huddle_preset", "schedule_job", "start_huddle", "suggest_tags", "take_devices", "update_job", "update_schedule", "update_status",
+    "release_devices", "run_job_now", "run_schedule", "save_huddle_preset", "schedule_job", "start_huddle", "suggest_tags", "take_devices", "update_job", "update_schedule", "update_status",
   ]);
 });
 
@@ -478,7 +478,7 @@ test("create_schedule defaults, next runs, and validation", async () => {
     .toBe("enabled must be true or false");
 });
 
-test("schedule edits are allowed inside a board run and credited to it; run_schedule is not", async () => {
+test("schedule edits and run now are allowed inside a board run and credited to it; delete only proposes", async () => {
   const { ctx, calls } = ctxWith({ CKANBAN_TICKET: "site/t_9" }, "/elsewhere");
   const c = await callTool("create_schedule", { name: "N", title: "T", body: "b", cron: "0 3 * * *" }, ctx);
   expect(c.isError).toBeUndefined();
@@ -486,15 +486,47 @@ test("schedule edits are allowed inside a board run and credited to it; run_sche
   const u = await callTool("update_schedule", { id: "s1", body: "better prompt" }, ctx);
   expect(u.content[0].text).toStartWith("Updated: s1  [active]  Nightly audit");
   expect(calls.find((x) => x.fn === "updateSchedule")?.args).toEqual(["site", "s1", { body: "better prompt" }, "site/t_9"]);
-  expect((await callTool("delete_schedule", { id: "s1" }, ctx)).content[0].text).toBe("Deleted schedule s1.");
-  expect(calls.find((x) => x.fn === "deleteSchedule")?.args).toEqual(["site", "s1", "site/t_9"]);
+  const del = await callTool("delete_schedule", { id: "s1", reason: "replaced" }, ctx);
+  expect(del.isError).toBeUndefined();
+  expect(del.content[0].text).toContain("Nothing is deleted yet");
+  expect(del.content[0].text).toContain("pause it with update_schedule enabled=false");
+  expect(calls.some((x) => x.fn === "deleteSchedule")).toBe(false);
+  const missing = await callTool("delete_schedule", { id: "nope" }, ctx);
+  expect(missing.isError).toBe(true);
   const run = await callTool("run_schedule", { id: "s1" }, ctx);
-  expect(run.isError).toBe(true);
-  expect(run.content[0].text).toContain("inside a board run");
-  expect(calls.some((x) => x.fn === "runSchedule")).toBe(false);
+  expect(run.isError).toBeUndefined();
+  expect(calls.find((x) => x.fn === "runSchedule")?.args).toEqual(["site", "s1", { run: "site/t_9", agent: null }]);
   // Ticket tools go to the daemon tagged with the run, which only lets a running plan's planner through.
   await callTool("create_ticket", { title: "x" }, ctx);
   expect(calls.find((x) => x.fn === "createTicket")?.args[2]).toBe("site/t_9");
+});
+
+test("delete_schedule: a quick chat is refused (nothing deleted), the front desk goes to its Confirm tap, a tool ticket reports to its main ticket", async () => {
+  const quick = ctxWith({ CKANBAN_QUICK_CHAT: "kanban/c_1" });
+  const q = await callTool("delete_schedule", { id: "s1" }, quick.ctx);
+  expect(q.isError).toBe(true);
+  expect(q.content[0].text).toContain("Schedules window");
+  expect(quick.calls.some((x) => x.fn === "deleteSchedule")).toBe(false);
+  // The front desk (a quick chat too) sends it on: the daemon holds it for the Confirm tap in Telegram.
+  const desk = ctxWith({ CKANBAN_QUICK_CHAT: "kanban/c_2", CKANBAN_FRONTDESK: "kanban/c_2/tok" });
+  await callTool("delete_schedule", { id: "s1" }, desk.ctx);
+  expect(desk.calls.find((x) => x.fn === "deleteSchedule")?.args).toEqual(["kanban", "s1"]);
+  // A tool ticket: no card (an error, so the chat shows none), told to report it to its main ticket.
+  const step = ctxWith({ CKANBAN_TICKET: "site/t_9" }, "/elsewhere");
+  (step.client as any).getTicket = async () => ({ id: "t_9", title: "Fix", status: "in_progress", tool: true });
+  const r = await callTool("delete_schedule", { id: "s1", reason: "old" }, step.ctx);
+  expect(r.isError).toBe(true);
+  expect(r.content[0].text).toContain("your main ticket asks the user with delete_schedule");
+  expect(r.content[0].text).toContain('schedule s1 "Nightly audit"');
+  expect(step.calls.some((x) => x.fn === "deleteSchedule")).toBe(false);
+});
+
+test("run_schedule: a huddle helper is refused before reaching the daemon", async () => {
+  const { ctx, calls } = ctxWith({ CKANBAN_TICKET: "site/t_9", CKANBAN_HUDDLE_AGENT: "h/a/tok" }, "/elsewhere");
+  const r = await callTool("run_schedule", { id: "s1" }, ctx);
+  expect(r.isError).toBe(true);
+  expect(r.content[0].text).toContain("huddle participants can't run a schedule now");
+  expect(calls.some((x) => x.fn === "runSchedule")).toBe(false);
 });
 
 test("planner-scoped ticket tools pass the run to the daemon instead of refusing", async () => {

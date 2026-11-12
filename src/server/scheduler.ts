@@ -10,6 +10,12 @@ import { newId } from "./util";
 
 /** Request header the ckanban MCP tools send from inside a board run (value: the run's CKANBAN_TICKET). */
 export const RUN_HEADER = "x-ckanban-run";
+/**
+ * A quick chat's runs get QUICK_CHAT_ENV ("<profile>/<chat id>"), and BoardClient sends it back as QUICK_CHAT_HEADER:
+ * quick chats can't show a delete card, so the daemon refuses their schedule deletes.
+ */
+export const QUICK_CHAT_ENV = "CKANBAN_QUICK_CHAT";
+export const QUICK_CHAT_HEADER = "x-ckanban-quick-chat";
 
 export class ScheduleError extends Error {
   constructor(public status: number, message: string) {
@@ -205,11 +211,12 @@ export class Scheduler {
     });
   }
 
-  runNow(slug: string, id: string): Promise<ScheduleHistoryEntry> {
-    return this.serial(() => this.fire(slug, this.get(slug, id), "manual"));
+  /** by: who asked; a board run's ticket is noted on the history entry. Skip-if-running applies as for any fire. */
+  runNow(slug: string, id: string, by: ScheduleEditor = "user"): Promise<ScheduleHistoryEntry> {
+    return this.serial(() => this.fire(slug, this.get(slug, id), "manual", by === "user" ? undefined : by));
   }
 
-  private async fire(slug: string, s: Schedule, trigger: ScheduleTrigger): Promise<ScheduleHistoryEntry> {
+  private async fire(slug: string, s: Schedule, trigger: ScheduleTrigger, by?: { ticketId: string }): Promise<ScheduleHistoryEntry> {
     const now = this.now();
     const at = now.toISOString();
     let entry: ScheduleHistoryEntry;
@@ -243,6 +250,7 @@ export class Scheduler {
         lastError = message;
       }
     }
+    if (by) entry = { ...entry, by } as ScheduleHistoryEntry;
     // The schedule may have been edited or deleted while the ticket was being created.
     const current = this.store.getSchedule(slug, s.id);
     if (current) {

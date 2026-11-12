@@ -21,13 +21,13 @@ import { checkPr, mergePr, PrError, REFRESH_MIN_MS, refreshPr, resolveConflicts,
 import { resumeCommand } from "./prompts";
 import { applyRewind, messagesFrom, previewRewind, RewindRefused } from "./rewind";
 import { cronError, describeCron, nextRuns, parseCron } from "./cron";
-import { fromUserBrowser } from "./integrations/guard";
+import { fromUserBrowser, outsideBoard } from "./integrations/guard";
 import { PassError, Passes } from "./integrations/passes";
 import { keysAnswerText } from "./ask-keys";
 import { maskSavedJson } from "./board-keys";
 import { ckanbanShim } from "./integrations/script";
 import { LoopError, LoopManager } from "./loops";
-import { RUN_HEADER, ScheduleError, Scheduler } from "./scheduler";
+import { QUICK_CHAT_HEADER, RUN_HEADER, ScheduleError, Scheduler } from "./scheduler";
 import { JobError, JobRunner } from "./jobs";
 import { SnippetError, Snippets } from "./snippets";
 import { HuddleError, Huddles, type Caller } from "./huddle";
@@ -109,6 +109,11 @@ export interface ServerDeps {
    * passes (integrations/guard.ts). Tests pass a fake.
    */
   isUserBrowser?: (peerPort: number) => Promise<boolean>;
+  /**
+   * Whether a local request comes from a program the daemon didn't start (the user's own Claude or terminal): only
+   * that, or the user's browser, may delete a schedule (integrations/guard.ts outsideBoard). Tests pass a fake.
+   */
+  isOutsideBoard?: (peerPort: number) => Promise<boolean>;
   jobs?: JobRunner;
   agents?: AgentRegistry;
   huddles?: Huddles;
@@ -388,6 +393,9 @@ export function createServer(deps: ServerDeps) {
     now: () => new Date(), sideCall, shimDir: () => ckanbanShim(store.root), port: () => server.port ?? deps.port,
   });
   const isUserBrowser = deps.isUserBrowser ?? ((peerPort: number) => fromUserBrowser(peerPort));
+  const isOutsideBoard = deps.isOutsideBoard ?? ((peerPort: number) => outsideBoard(peerPort));
+  /** Requests the front desk replays after the user's Confirm tap in Telegram: they act as the user. */
+  const confirmedInTelegram = new WeakSet<Request>();
   /**
    * Saving or changing an automation or a pass is for the user only: from the board's page in a browser. Not a board
    * run (RUN_HEADER), and not any other program, header or not: a run's shell, a check script, the board's terminal or
@@ -408,6 +416,28 @@ export function createServer(deps: ServerDeps) {
     if (v?.listener === "remote") return;
     const peer = v?.srv.requestIP(req)?.port ?? 0;
     if (!(await isUserBrowser(peer))) throw new HttpError(403, refusal);
+  };
+  /**
+   * Who may really delete a schedule: the user, from the Schedules window (their browser, as userOnly checks), their
+   * own Claude or terminal outside the board (a program the daemon didn't start), or a front desk request they
+   * confirmed in Telegram. Not a board run or chat, a quick chat, a huddle helper, a run's shell or a job's command:
+   * Claude's delete_schedule in a ticket's chat shows the user a card instead (the schedule-delete-cards route). A
+   * process a run detached from the daemon can't be told apart (integrations/guard.ts).
+   */
+  const scheduleDeleter = async (req: Request) => {
+    if (confirmedInTelegram.has(req)) return;
+    if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) {
+      throw new HttpError(403, "a board run or chat can't delete a schedule: call delete_schedule, which shows the user a card to confirm, " +
+        "or pause it with update_schedule enabled=false");
+    }
+    const refusal = "only the user deletes a schedule (in the board's Schedules window): a quick chat, a run's shell or a job's command can't. " +
+      "Pause it with update_schedule enabled=false, or ask the user to delete it in Schedules.";
+    if (req.headers.get(QUICK_CHAT_HEADER)) throw new HttpError(403, refusal);
+    // From a page: the user's browser (or their phone over remote access), as for every user-only action.
+    if (req.headers.get("origin")) return userOnly(req, "Deleting a schedule");
+    const v = via.get(req);
+    if (v?.listener === "remote") throw new HttpError(403, refusal);
+    if (!(await isOutsideBoard(v?.srv.requestIP(req)?.port ?? 0))) throw new HttpError(403, refusal);
   };  const simplifier = new Simplifier(store, sideCall);
   const helper = new Helper(store, sideCall);
   const linker = deps.linker ?? new Linker(store, board, sideCall);
@@ -435,7 +465,9 @@ export function createServer(deps: ServerDeps) {
     chats: quickChats,
     replay: async (method, path, b) => {
       const u = new URL(`http://127.0.0.1${path}`);
-      const r = await api(new Request(u.href, { method, ...(b === null || b === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(b) }) }), u).catch((e) => {
+      const replayed = new Request(u.href, { method, ...(b === null || b === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(b) }) });
+      confirmedInTelegram.add(replayed);
+      const r = await api(replayed, u).catch((e) => {
         const status = e instanceof ConflictError ? 409 : typeof (e as { status?: unknown }).status === "number" ? (e as { status: number }).status : 500;
         return json({ error: (e as Error).message }, status);
       });
@@ -1676,12 +1708,18 @@ export function createServer(deps: ServerDeps) {
       const sid = parts[3];
       if (parts.length === 4 && m === "PATCH") return json(scheduler.view(slug, scheduler.update(slug, sid, (await body(req)) ?? {}, by)));
       if (parts.length === 4 && m === "DELETE") {
+        await scheduleDeleter(req);
         scheduler.remove(slug, sid, by);
         return new Response(null, { status: 204 });
       }
       if (parts.length === 5 && parts[4] === "history" && m === "GET") return json(scheduler.history(slug, sid));
       if (parts.length === 5 && parts[4] === "run" && m === "POST") {
-        const entry = await scheduler.runNow(slug, sid);
+        // Any run may run a schedule now, its own schedule's run too; the history notes which ticket asked. Huddle
+        // helpers only review (as for jobs), and a run only reaches its own board (as for jobs).
+        if (req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "huddle participants can't run a schedule now; ask @main");
+        const runner = runTicket(req, slug);
+        if (runner && !store.getTicket(slug, runner)) throw new HttpError(404, `ticket ${runner} not found`);
+        const entry = await scheduler.runNow(slug, sid, by);
         return json({ entry, schedule: scheduler.view(slug, scheduler.get(slug, sid)) });
       }
       throw new HttpError(404, "not found");
@@ -1785,8 +1823,8 @@ export function createServer(deps: ServerDeps) {
       throw new HttpError(404, "not found");
     }
 
-    // /profiles/:p/jobs — one-time jobs (jobs.ts). Anyone lists; a board run (RUN_HEADER) schedules jobs as its
-    // ticket and may change, run or cancel only the jobs it scheduled.
+    // /profiles/:p/jobs — one-time jobs (jobs.ts). Anyone lists; a board run or chat (RUN_HEADER) schedules jobs as its
+    // ticket and may change, run or cancel any job on its board (credited to its ticket on the job). Huddle helpers can't.
     if (parts[2] === "jobs") {
       if (parts.length === 3 && m === "GET") {
         // finishedDays (the board UI): every job finished in that many days, not just the last 20.
@@ -2909,6 +2947,30 @@ export function createServer(deps: ServerDeps) {
         if (e instanceof ConflictError) throw new HttpError(409, e.message);
         throw new HttpError(404, (e as Error).message);
       }
+    }
+    // Schedule delete card (Claude's delete_schedule in this ticket's chat or run): PUT .../schedule-delete-cards/<entry
+    // uuid> { state: "deleted", scheduleId } deletes the schedule, { state: "kept" } keeps it. Only the user's click.
+    if (action === "schedule-delete-cards" && parts.length === 6 && m === "PUT") {
+      await userOnly(req, "Deleting a schedule");
+      const uuid = parts[5];
+      if (!uuid || uuid.length > 200) throw new HttpError(400, "the card's id is missing");
+      const b = (await body(req)) ?? {};
+      if (b.state !== "deleted" && b.state !== "kept") throw new HttpError(400, "state must be deleted or kept");
+      const t = store.getTicket(slug, id)!;
+      const done = t.scheduleDeleteCards?.[uuid];
+      if (done) throw new HttpError(409, done.state === "deleted" ? "this schedule was already deleted from this card" : "this card was already answered");
+      let name: string | undefined;
+      if (b.state === "deleted") {
+        const sid = typeof b.scheduleId === "string" ? b.scheduleId : "";
+        const s = sid ? store.getSchedule(slug, sid) : null;
+        if (!s) throw new HttpError(404, "This schedule is no longer on the board.");
+        name = s.name;
+        scheduler.remove(slug, sid, "user");
+      }
+      const card = { state: b.state, at: nowIso(), ...(name ? { name, scheduleId: b.scheduleId as string } : {}) };
+      store.updateTicket(slug, id, { scheduleDeleteCards: { ...store.getTicket(slug, id)!.scheduleDeleteCards, [uuid]: card } });
+      emitTicket(slug, id);
+      return json(view(profile, store.getTicket(slug, id)!));
     }
     if (action === "teammate-cards" && parts.length === 6 && m === "PUT") {
       if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user answers teammate cards");

@@ -255,7 +255,9 @@ test("a scheduled ticket's first run is told its schedule", () => {
   expect(firstRunPrompt(t, { repo: "remote" as const, outputDir: "/out", schedule: { id: "s1", name: null, board: "kanban" } })).toContain("since been deleted");
   const plain = firstRunPrompt(ticket, { repo: "remote" as const, outputDir: "/out" });
   expect(plain).not.toContain("created by schedule");
-  expect(plain).not.toContain("update_schedule");
+  expect(plain).not.toContain("You can read or change that schedule");
+  // Every run may manage schedules and jobs; deleting a schedule only shows the user a card.
+  expect(plain).toContain("`delete_schedule` deletes nothing here");
   // Every run learns it can do something once later with a one-time job.
   expect(plain).toContain("use `schedule_job`; a ticket job's prompt is all its future run sees");
 });

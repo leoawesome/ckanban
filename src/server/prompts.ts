@@ -147,6 +147,8 @@ export function devicesNote(devices: Pick<Device, "name" | "description" | "capa
 }
 
 const JOB_RULE = "To do something once at a later time (post at Tue 22:00, run a script tomorrow), use `schedule_job`; a ticket job's prompt is all its future run sees, so put everything it needs in it, and for long content or images save files in the board folder first and give their paths.";
+/** Schedules and one-time jobs: any chat or run manages them on its own judgment; deleting a schedule waits for the user's click. */
+export const SCHEDULES_RULE = "Schedules and one-time jobs on this board: when it helps, you may create, change, pause (`update_schedule` enabled=false), resume and run them now (`run_schedule`, `run_job_now`), and change or cancel any one-time job, without asking first; say in your reply what you changed. `delete_schedule` deletes nothing here: it shows the user a card and only their click deletes the schedule (a tool ticket gets no card: it reports the request to its main ticket); to stop one for now, pause it instead.";
 /** Follow-ups (follow_up): the board wakes this ticket's conversation later; Claude Code's own timers die with the run. */
 /** Work runs and chat replies may manage other tickets on their board (see runRights in http.ts). */
 /** The rule for tickets Claude creates or proposes: work that belongs to an open feature joins it. */
@@ -476,7 +478,7 @@ ${ctx.main && t.runCount === 0 ? `- ${MAIN_FIRST_REPLY}
 `}- A missing git repository, remote or \`gh\` is never a reason to stop or report "blocked": work with what the folder has.
 - If it is a non-code task (research, writing, analysis, file organisation), no PR is needed.${t.tags?.length ? "" : `
 - This ticket has no tags: if one clearly fits (prefer tags the board already uses), you may suggest 1-3 with \`suggest_tags\`; the user keeps or drops them.`}
-- ${JOB_RULE}
+- ${JOB_RULE} ${SCHEDULES_RULE}
 - ${FOLLOW_UP_RULE}
 - ${BOARD_RULE}
 - ${PLAIN_WORDS}${autoSection(t, ctx.autoHuddles, ctx.repo)}
@@ -704,6 +706,7 @@ How to help:
 - Tags: if the ticket has none and one clearly fits (prefer tags the board already uses), you may suggest 1-3 with \`suggest_tags\`; the user keeps or drops them.
 - Managing the board: ONLY when the user asks for it in their message (never on your own initiative), you may change other tickets on this board with the ckanban tools: move_ticket, update_ticket, comment_ticket, create_ticket, chat_ticket, stop_ticket, and adopt_tickets / plan_control to manage or run tickets from this ticket's plan. The same tools (not adopt_tickets or plan_control) work on another board's tickets when the user asks: pass that board's \`profile\` (\`list_profiles\` lists the boards); new tickets there go to Backlog unless the user asks to start them. When the user asks, update_status, gather_tickets and the chat search tools (read_chat) also work on any feature or ticket, on this board or another (pass its \`profile\`). Every change is logged on the changed ticket. Say in your reply what you changed. ${FEATURE_RULE} ${NEW_MAIN_RULE}
 - ${OFF_TOPIC_RULE}
+- ${SCHEDULES_RULE}
 - To delete tickets, call the \`propose_delete\` tool with their ids and a one-line reason: the board shows a card and the user's click deletes them (delete_ticket is refused here).
 - Never edit, stop or delete this ticket itself: ask the user to do it on the board. ${SELF_MOVE_RULE}${main || followUps ? "" : ` ${PLANNING_GO_AHEAD_RULE}`} Otherwise changing the project's files and starting this ticket's work stay off-limits while planning; to run a plan the user can also press Start plan in the Plan tab.
 ${bugReportRule(t)}
@@ -1356,7 +1359,7 @@ ${recallSection(ctx.recall)}# Rules
 - ${whereRule(t, r.repo, false, !r.mainBranch)}
 ${toolRules(r)}
 - A missing git repository, remote or \`gh\` is never a reason to stop or report "blocked": work with what the folder has.
-- ${JOB_RULE}${autoSection(t, ctx.autoHuddles, r.repo)}
+- ${JOB_RULE} ${SCHEDULES_RULE}${autoSection(t, ctx.autoHuddles, r.repo)}
 
 ${CHROME_RULE}
 

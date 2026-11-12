@@ -311,15 +311,6 @@ const STALL_RESTART_TEXT = "Your previous run stopped responding and the user re
 export const RESTART_MAX_WAIT_MS = 10 * 60_000;
 const DRAFT_THROTTLE_MS = 120;
 /** What a run spent: its own messages plus its workflows' helper agents. */
-/**
- * Tools a Planning chat doesn't get. The check-in setup chat (Schedules → Proactive check-ins, which the user opened to
- * make a schedule) may create and change schedules; it still can't run, delete or edit files.
- */
-function planningDisallowed(t: Ticket): string[] {
-  if (!t.checkinSetup) return PLANNING_DISALLOWED_TOOLS;
-  return PLANNING_DISALLOWED_TOOLS.filter((x) => x !== "mcp__ckanban__create_schedule" && x !== "mcp__ckanban__update_schedule");
-}
-
 type RunSpend = { main: Map<string, number>; workflowDirs: Set<string>; files: Map<string, { key: string; cost: number }> };
 
 function spentWith(spend: RunSpend): number {
@@ -3560,7 +3551,7 @@ export class Board {
     const connectors = boardConnectorOptions(profile);
     return buildArgs(sessionId, resume, t.model ?? (t.main ? profile.mainModel : null) ?? profile.model,
       // A main ticket never edits: every change goes to a tool ticket.
-      [...(refine ? planningDisallowed(t) : []), ...(t.main ? NO_EDIT_TOOLS.split(",") : []), ...connectors.disallowed], mcpConfig(undefined, this.store.boardTools(slug)), systemPrompt, cap ?? null, effortNow.effort, effortNow.ultracode);
+      [...(refine ? PLANNING_DISALLOWED_TOOLS : []), ...(t.main ? NO_EDIT_TOOLS.split(",") : []), ...connectors.disallowed], mcpConfig(undefined, this.store.boardTools(slug)), systemPrompt, cap ?? null, effortNow.effort, effortNow.ultracode);
   }
 
   /** The environment a run of the ticket gets. */

@@ -241,6 +241,21 @@ test("the chain walk stops on a loop, and a ticket job from a 10-deep chain is r
   expect(() => jobs.create("p", { name: "c", at: local(at(15, 9)), action: { kind: "command", command: "true" } }, src)).not.toThrow();
 });
 
+test("a ticket at the end of a chain can't turn someone else's job into a ticket job", async () => {
+  let src = source().id;
+  for (let i = 0; i < MAX_CHAIN; i++) {
+    const job = ticketJob(`K${i}`, at(15, 9), src);
+    src = store.createTicket("p", { title: `U${i}`, body: "", status: "review", jobId: job.id }).id;
+  }
+  // The user's own command job, changed by the ticket at the end of the chain.
+  const mine = jobs.create("p", { name: "mine", at: local(at(15, 9)), action: { kind: "command", command: "true" } });
+  await expect(jobs.update("p", mine.id, { action: { kind: "ticket", title: "again", body: "b" } }, src)).rejects.toThrow("chain of 10 tickets");
+  expect(store.getJob("p", mine.id)!.action.kind).toBe("command");
+  // A ticket that isn't deep in a chain may still do it.
+  const fresh = source().id;
+  await expect(jobs.update("p", mine.id, { action: { kind: "ticket", title: "ok", body: "b" } }, fresh)).resolves.toMatchObject({ action: { kind: "ticket" } });
+});
+
 test("an old missed job file reads as skipped", () => {
   const j = ticketJob("Old", at(15, 9));
   store.saveJob("p", { ...j, state: "missed" as any });
@@ -273,13 +288,25 @@ test("update changes a scheduled job and replaces its whole action", async () =>
   await expect(jobs.update("p", j.id, { name: "late" })).rejects.toThrow("is done");
 });
 
-test("a run may only change the jobs it scheduled", async () => {
+test("a run may change, run now and cancel a job another ticket scheduled; the change is credited to it", async () => {
   const mine = source();
   const other = source();
   const j = ticketJob("A", at(14, 10), mine.id);
-  await expect(jobs.cancel("p", j.id, other.id)).rejects.toThrow("was not scheduled by this ticket");
-  await expect(jobs.update("p", j.id, { name: "x" }, other.id)).rejects.toThrow("was not scheduled by this ticket");
-  expect((await jobs.update("p", j.id, { name: "x" }, mine.id)).name).toBe("x");
+  const u = await jobs.update("p", j.id, { name: "x" }, other.id);
+  expect(u.name).toBe("x");
+  expect(u.sourceTicketId).toBe(mine.id);
+  expect(u.changedBy).toMatchObject({ ticketId: other.id, action: "changed" });
+  const c = await jobs.cancel("p", j.id, other.id);
+  expect(c.state).toBe("cancelled");
+  expect(c.changedBy).toMatchObject({ ticketId: other.id, action: "cancelled" });
+  const k = ticketJob("B", at(14, 10), mine.id);
+  const r = await jobs.runNow("p", k.id, other.id);
+  await jobs.whenIdle();
+  expect(r.changedBy).toMatchObject({ ticketId: other.id, action: "run now" });
+  expect(store.getJob("p", k.id)!.state).not.toBe("scheduled");
+  // The user (no run) changes nothing on the credit.
+  const n = ticketJob("C", at(14, 10), mine.id);
+  expect((await jobs.update("p", n.id, { name: "y" })).changedBy).toBeUndefined();
 });
 
 test("restart while running: commands fail, ticket jobs are checked against their ticket, nothing fires twice", async () => {

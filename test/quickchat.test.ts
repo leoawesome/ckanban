@@ -68,6 +68,13 @@ test("the note says which board and folder the chat is on and how to reach the b
   expect(note).toContain("plain question");
 });
 
+test("a quick chat's runs carry CKANBAN_QUICK_CHAT, so the ckanban tools refuse schedule deletes there", async () => {
+  const v = chats.send("p", null, "hi");
+  await chats.idle();
+  const env = (chats as any).runSetup("p", profile, chats.get("p", v.id)!, true).env as Record<string, string>;
+  expect(env.CKANBAN_QUICK_CHAT).toBe(`p/${v.id}`);
+});
+
 test("a first message makes a chat that runs Claude in the board's folder, with full powers and the board note", async () => {
   const v = chats.send("p", null, "What is in this folder?");
   expect(v.title).toBe("What is in this folder?");

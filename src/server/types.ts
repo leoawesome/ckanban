@@ -364,6 +364,11 @@ export interface Ticket {
   teammateCards?: Record<string, TeammateCardState>;
   /** Squad cards in this ticket's chat (propose_squad) the user answered, by entry uuid (the tool_use id). */
   squadCards?: Record<string, SquadCardState>;
+  /**
+   * Schedule delete cards in this ticket's chat (delete_schedule from a board run or chat) the user answered, by entry uuid
+   * (the tool_use id): deleted (with the schedule's name then) or kept.
+   */
+  scheduleDeleteCards?: Record<string, ScheduleDeleteCardState>;
   /** Automation cards in this ticket's chat (propose_automation) the user saved, by entry uuid: the automation made. */
   automationCards?: Record<string, { loopId: string; at: string }>;
   /**
@@ -491,6 +496,15 @@ export interface PrStatus {
 }
 
 /** What the user did with a proposed teammate: saved it (as `name`, for all boards or this board) or dismissed it. */
+export interface ScheduleDeleteCardState {
+  state: "deleted" | "kept";
+  at: string;
+  /** The schedule's name when it was deleted (the card shows it once the schedule is gone). */
+  name?: string;
+  /** The schedule it deleted: another card for the same schedule names it from here. */
+  scheduleId?: string;
+}
+
 export interface TeammateCardState {
   state: "saved" | "dismissed";
   name?: string;
@@ -665,6 +679,11 @@ export interface Job {
   state: JobState;
   /** Ticket whose board run scheduled it; null when the user or CLI did. */
   sourceTicketId: string | null;
+  /**
+   * The last change, cancel or run now, when a board run made it (any run may, not only the one that scheduled it);
+   * cleared when the user changes it after that.
+   */
+  changedBy?: { ticketId: string; action: "changed" | "cancelled" | "run now"; at: string };
   createdAt: string;
   updatedAt: string;
   firedAt: string | null;
@@ -683,9 +702,10 @@ export type SchedulePrevious = Partial<Pick<Schedule, "title" | "body" | "cron">
 
 export type ScheduleHistoryEntry =
   /** note: why the run went somewhere else than the schedule says (e.g. its feature is gone, so it got its own card). */
-  | { at: string; kind: "fired"; trigger: ScheduleTrigger; ticketId: string; note?: string }
-  | { at: string; kind: "skipped"; trigger: ScheduleTrigger; ticketId: string | null }
-  | { at: string; kind: "error"; trigger: ScheduleTrigger; message: string }
+  /** by (a manual run only): the ticket whose board run asked for the run now; missing for the user. */
+  | { at: string; kind: "fired"; trigger: ScheduleTrigger; ticketId: string; note?: string; by?: { ticketId: string } }
+  | { at: string; kind: "skipped"; trigger: ScheduleTrigger; ticketId: string | null; by?: { ticketId: string } }
+  | { at: string; kind: "error"; trigger: ScheduleTrigger; message: string; by?: { ticketId: string } }
   /** A quiet schedule's run found nothing for the user: the board removed its ticket (ticketId, now gone). */
   | { at: string; kind: "quiet"; ticketId: string; summary: string; costUsd: number }
   | { at: string; kind: "edited"; action: ScheduleEditAction; fields: string[]; by: ScheduleEditor; previous?: SchedulePrevious };

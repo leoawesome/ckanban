@@ -102,14 +102,16 @@ export function buildArgs(
 const CHROME_TOOL = "mcp__claude-in-chrome__";
 /**
  * Backlog/Planning chats may act outside the project when the user asks (APIs, browser, commands), so they don't
- * use plan mode. Instead they can't edit files (the prompt also rules out shell edits), and the board tools that
- * plan mode used to block and the daemon doesn't check per run (schedules, jobs, starting a huddle) are off too.
+ * use plan mode. Instead they can't edit files (the prompt also rules out shell edits) or start a huddle. Schedules and
+ * one-time jobs are theirs to manage like any run's (the user chose so): deleting a schedule only shows a card, and the
+ * daemon refuses a real delete from any run (see the schedules route in http.ts).
  */
-export const PLANNING_DISALLOWED_TOOLS = [
-  ...NO_EDIT_TOOLS.split(","),
-  ...["create_schedule", "update_schedule", "delete_schedule", "run_schedule", "schedule_job", "update_job", "run_job_now", "cancel_job", "start_huddle"]
+export const PLANNING_DISALLOWED_TOOLS = [...NO_EDIT_TOOLS.split(","), "mcp__ckanban__start_huddle"];
+/** The board's schedule and one-time job tools: every run may use them (the daemon checks each call). */
+export const SCHEDULE_JOB_TOOLS = new Set(
+  ["list_schedules", "create_schedule", "update_schedule", "delete_schedule", "run_schedule", "schedule_history", "schedule_job", "list_jobs", "update_job", "run_job_now", "cancel_job"]
     .map((t) => `mcp__ckanban__${t}`),
-];
+);
 /**
  * The board's huddle tools: they only touch the huddle, never files, so any run (a Planning chat too) can
  * coordinate its huddle.
@@ -126,7 +128,7 @@ const PLANNING_BOARD_TOOLS = new Set(["move_ticket", "update_ticket", "comment_t
 
 /**
  * The board's answer to a control request from claude (stream-json). Permission asks for Claude in Chrome
- * tools and the huddle tools are allowed, and in a Planning run the board tools too; every other ask
+ * tools, the huddle tools and the schedule and job tools are allowed, and in a Planning run the board tools too; every other ask
  * is denied, as it was before prompts reached the board (headless runs had nobody to answer them). Anything else
  * gets an error so claude never waits on the board.
  */
@@ -137,7 +139,7 @@ export function controlResponse(ev: any, planning = false): unknown {
     return { type: "control_response", response: { subtype: "error", request_id: id, error: `unsupported control request: ${req?.subtype}` } };
   }
   const tool = typeof req.tool_name === "string" ? req.tool_name : "";
-  const allow = tool.startsWith(CHROME_TOOL) || HUDDLE_TOOLS.has(tool) || (planning && PLANNING_BOARD_TOOLS.has(tool));
+  const allow = tool.startsWith(CHROME_TOOL) || HUDDLE_TOOLS.has(tool) || SCHEDULE_JOB_TOOLS.has(tool) || (planning && PLANNING_BOARD_TOOLS.has(tool));
   return {
     type: "control_response",
     response: {

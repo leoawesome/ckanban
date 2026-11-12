@@ -3,6 +3,8 @@
 import { createHash } from "node:crypto";
 import { hiddenTool, withYouTool } from "../web/src/family";
 import { TOOL_NO_NOTIFY } from "./server/main-ticket";
+import { FRONT_DESK_ENV } from "./server/helper/frontdesk-id";
+import { QUICK_CHAT_ENV } from "./server/scheduler";
 import {
   assertCanChange, BoardClient, bugReportText, ClientError, ConfirmPending, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
   familyLine, ticketLine, ticketText, type GatherResult, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
@@ -161,8 +163,9 @@ interface Tool {
   /** Changes the board: refused inside board runs, unless allowInRun. */
   changes: boolean;
   /**
-   * Schedule edits only affect future fire times (the user can pause them), so board runs may make them,
-   * including a scheduled run refining its own schedule. Every edit is credited to the run's ticket in the history.
+   * Allowed inside board runs too. The schedule and job tools are (the user chose to let Claude manage them on its own
+   * judgment): every schedule edit or run now is credited to the run's ticket in the schedule's history, a job change
+   * to the run's ticket on the job, and delete_schedule only shows a card the user confirms.
    */
   allowInRun?: boolean;
   /** Inside a board run the daemon decides: only a running plan's planner may use it, on its own child tickets. */
@@ -322,12 +325,24 @@ function scheduleText(s: ScheduleInfo): string {
   ].join("\n");
 }
 
+/** delete_schedule in a quick chat: no card can show there, and the daemon refuses the delete. */
+export const QUICK_CHAT_NO_DELETE = "Nothing was deleted: a quick chat can't show the user a delete card, and only the user deletes a schedule. " +
+  "Ask them to delete it in the board's Schedules window, or pause it now with update_schedule enabled=false (resume it later with enabled=true).";
+
+/** delete_schedule in a tool ticket: nobody sees its chat, so the request goes to its main ticket. */
+export function toolNoScheduleDelete(s: { id: string; name: string }): string {
+  return `Nothing was deleted and no card was shown: this is a tool ticket, and the user doesn't see its chat. ` +
+    `Put the request in your result for your main ticket (schedule ${s.id} "${s.name}" and why it can go); ` +
+    "your main ticket asks the user with delete_schedule in its own chat, where a card shows. If it only needs to stop for now, pause it with update_schedule enabled=false.";
+}
+
 function historyLine(e: ScheduleHistoryInfo): string {
   const t = e.ticket ? `${e.ticket.id} "${e.ticket.title}" [${e.ticket.running ? "running" : [e.ticket.status, e.ticket.outcome].filter(Boolean).join(", ")}]` : null;
   const at = localTime(e.at);
-  if (e.kind === "fired") return `${at}  fired (${e.trigger}): ${t ?? `${e.ticketId} (deleted)`}${e.note ? ` (${e.note})` : ""}`;
-  if (e.kind === "skipped") return `${at}  skipped (${e.trigger}): previous ticket ${e.ticketId ?? ""} still queued or running`;
-  if (e.kind === "error") return `${at}  could not create the ticket (${e.trigger}): ${e.message}`;
+  const runBy = e.kind !== "edited" && e.by && e.by !== "user" ? ` by ticket ${e.by.ticketId}` : "";
+  if (e.kind === "fired") return `${at}  fired (${e.trigger}${runBy}): ${t ?? `${e.ticketId} (deleted)`}${e.note ? ` (${e.note})` : ""}`;
+  if (e.kind === "skipped") return `${at}  skipped (${e.trigger}${runBy}): previous ticket ${e.ticketId ?? ""} still queued or running`;
+  if (e.kind === "error") return `${at}  could not create the ticket (${e.trigger}${runBy}): ${e.message}`;
   if (e.kind === "quiet") return `${at}  checked, nothing new: ${e.summary ?? ""}`;
   const by = !e.by || e.by === "user" ? "the user" : `ticket ${e.by.ticketId}`;
   const fields = e.fields?.length ? ` ${e.fields.join(", ")}` : "";
@@ -413,26 +428,63 @@ const SCHEDULE_TOOLS: Tool[] = [
   },
   {
     name: "delete_schedule",
-    description: "Delete a schedule (tickets it already created stay). Only when the user asked; to stop it for a while, pause it with update_schedule enabled=false.",
+    description:
+      "Ask the user to delete a schedule (tickets it already created stay). In a board ticket's chat or run nothing is deleted by the call: " +
+      "the board shows a card in this ticket's chat with the schedule's name, when it runs and its next run, and the user's Delete click removes it " +
+      "(an unattended run's ticket is marked as needing the user). Only schedules on this ticket's board. " +
+      "A tool ticket (one working for a main ticket) gets no card: it reports the request to its main ticket, which asks in its own chat. " +
+      "A quick chat can't show a card, so it is refused there: ask the user to delete it in the board's Schedules window. " +
+      "The Telegram front desk holds it for the user's Confirm tap. " +
+      "If the goal is only to stop it for now, pause it instead with update_schedule enabled=false (resume it later with enabled=true). " +
+      "Outside the board (the user's own Claude) it deletes the schedule right away.",
+    inputSchema: {
+      type: "object",
+      properties: { profile: PROFILE, id: SCHEDULE_ID, reason: { type: "string", description: "One short line: why it can go (shown on the card)." } },
+      required: ["id"],
+    },
+    changes: true,
+    allowInRun: true,
+    async run(args, ctx) {
+      const id = str(args, "id")!;
+      if (ctx.env[HUDDLE_AGENT_ENV]) throw new ClientError("huddle participants can't delete schedules; ask @main");
+      // The front desk's request is held for the user's Confirm tap in Telegram (ConfirmPending carries what to say).
+      if (!ctx.env[RUN_ENV] && ctx.env[FRONT_DESK_ENV]) {
+        await ctx.client.deleteSchedule(await slugFor(args, ctx), id);
+        return `Deleted schedule ${id}.`;
+      }
+      // A quick chat shows no cards, and the daemon refuses its deletes.
+      if (!ctx.env[RUN_ENV] && ctx.env[QUICK_CHAT_ENV]) throw new ClientError(QUICK_CHAT_NO_DELETE);
+      if (!ctx.env[RUN_ENV]) {
+        const slug = await slugFor(args, ctx);
+        await ctx.client.deleteSchedule(slug, id);
+        return `Deleted schedule ${id}.`;
+      }
+      // A board run or chat: the card in this ticket's chat (session.ts reads this call) deletes it on the user's click.
+      const slug = await slugFor({}, ctx);
+      if (typeof args?.profile === "string" && args.profile.trim() && (await slugFor(args, ctx)) !== slug) {
+        throw new ClientError(`only schedules on this ticket's board (${slug}) can be proposed for deletion here; ask the user to delete it in that board's Schedules window.`);
+      }
+      const s = (await ctx.client.listSchedules(slug)).find((x) => x.id === id);
+      if (!s) throw new ClientError(`no schedule ${id} on board ${slug}. Check list_schedules.`);
+      // A tool ticket's chat is seen by nobody: its main ticket asks the user instead (refused, so session.ts shows no card).
+      const me = await Promise.resolve().then(() => ctx.client.getTicket(slug, ctx.env[RUN_ENV]!.split("/")[1])).catch(() => null);
+      if (hiddenTool(me)) throw new ClientError(toolNoScheduleDelete(s));
+      return `Nothing is deleted yet: the board shows the user a card in this ticket's chat for schedule "${s.name}" (${s.summary}), ` +
+        "and only their click on Delete removes it. You don't need to wait for it. " +
+        "If the goal is only to stop it for now, pause it with update_schedule enabled=false instead, and tell the user.";
+    },
+  },
+  {
+    name: "run_schedule",
+    description: "Run a schedule now: creates its ticket and starts it, without moving the next scheduled run. " +
+      "If the schedule skips while its previous ticket is still queued or running, that still applies. Inside a board run the run is credited to your ticket in the schedule's history.",
     inputSchema: { type: "object", properties: { profile: PROFILE, id: SCHEDULE_ID }, required: ["id"] },
     changes: true,
     allowInRun: true,
     async run(args, ctx) {
       const slug = await slugFor(args, ctx);
-      const id = str(args, "id")!;
-      await ctx.client.deleteSchedule(slug, id, ctx.env[RUN_ENV]);
-      return `Deleted schedule ${id}.`;
-    },
-  },
-  {
-    name: "run_schedule",
-    description: "Fire a schedule now: creates its ticket and starts it, without moving the next scheduled run. Not available inside board runs.",
-    inputSchema: { type: "object", properties: { profile: PROFILE, id: SCHEDULE_ID }, required: ["id"] },
-    // Starts a run immediately, so like create_ticket it stays off-limits to board runs.
-    changes: true,
-    async run(args, ctx) {
-      const slug = await slugFor(args, ctx);
-      const { entry } = await ctx.client.runSchedule(slug, str(args, "id")!);
+      if (ctx.env[HUDDLE_AGENT_ENV]) throw new ClientError("huddle participants can't run a schedule now; ask @main");
+      const { entry } = await ctx.client.runSchedule(slug, str(args, "id")!, huddleCaller(ctx.env));
       if (entry.kind === "fired") return `Started: created ticket ${entry.ticketId}, Claude is working on it.`;
       if (entry.kind === "skipped") return `Skipped: the previous ticket ${entry.ticketId ?? ""} from this schedule is still queued or running.`;
       throw new ClientError(`could not create the ticket: ${entry.message}`);
@@ -461,7 +513,7 @@ const SCHEDULE_TOOLS: Tool[] = [
 ];
 
 // --- One-time jobs ---------------------------------------------------------------------------
-// The board fires them once at a set time. Runs may schedule them and manage the ones they scheduled.
+// The board fires them once at a set time. Runs and chats may schedule them and change, run or cancel any of the board's.
 
 const JOB_ID = { type: "string", description: "Job id (from schedule_job or list_jobs)." };
 const JOB_AT = {
@@ -509,6 +561,7 @@ export function jobLine(j: JobInfo): string {
   const what = j.action.kind === "ticket" ? `ticket "${j.action.title}"` : `command \`${j.action.command.replace(/\s+/g, " ").slice(0, 80)}\``;
   const bits = [`${j.id}  [${j.state}]  ${j.name}: ${j.when}, ${what}`];
   if (j.sourceTicketId) bits.push(`scheduled by ${j.sourceTicketId}`);
+  if (j.changedBy) bits.push(`${j.changedBy.action} by ${j.changedBy.ticketId}`);
   const r = j.result;
   if (r?.ticketId) bits.push(`created ticket ${r.ticketId}`);
   if (r && j.action.kind === "command" && j.state !== "running" && (r.exitCode !== undefined || r.timedOut)) {
@@ -569,7 +622,7 @@ const JOB_TOOLS: Tool[] = [
   {
     name: "update_job",
     description: "Change a job that hasn't run yet: its name, time (at) or action. The action is replaced as a whole: " +
-      "send the whole action (kind and all its fields), not only the part you change. Inside a board run, only jobs this ticket scheduled.",
+      "send the whole action (kind and all its fields), not only the part you change. Any job on the board; inside a board run the change is credited to your ticket.",
     inputSchema: { type: "object", properties: { profile: PROFILE, id: JOB_ID, name: { type: "string" }, at: JOB_AT, action: JOB_ACTION }, required: ["id"] },
     changes: true,
     allowInRun: true,
@@ -591,7 +644,7 @@ const JOB_TOOLS: Tool[] = [
   },
   {
     name: "cancel_job",
-    description: "Cancel a job that hasn't run yet, so it never runs. Inside a board run, only jobs this ticket scheduled.",
+    description: "Cancel a job that hasn't run yet, so it never runs. Any job on the board; inside a board run the change is credited to your ticket.",
     inputSchema: { type: "object", properties: { profile: PROFILE, id: JOB_ID }, required: ["id"] },
     changes: true,
     allowInRun: true,
@@ -602,7 +655,7 @@ const JOB_TOOLS: Tool[] = [
   },
   {
     name: "run_job_now",
-    description: "Run a scheduled job right away, ahead of its time. Inside a board run, only jobs this ticket scheduled.",
+    description: "Run a scheduled job right away, ahead of its time. Any job on the board; inside a board run it is credited to your ticket.",
     inputSchema: { type: "object", properties: { profile: PROFILE, id: JOB_ID }, required: ["id"] },
     changes: true,
     allowInRun: true,
@@ -2556,7 +2609,9 @@ export async function handleMessage(msg: JsonRpc, ctx: ToolContext): Promise<obj
           "Tools for the user's local ckanban board. Use them when the user asks to put work on the board, " +
           "find what to do next, or check on, start or steer tickets. Tickets you create land in Backlog in interview mode by default. " +
           "Schedules (create_schedule etc.) make the board create and run a ticket on a cron, for work the user wants done regularly; " +
-          "schedule_job runs a ticket or a command once at a set time. " +
+          "schedule_job runs a ticket or a command once at a set time. Board chats and runs may create, change, pause, resume and run them now on their own judgment; " +
+          "delete_schedule there deletes nothing: in a ticket's chat or run it shows the user a card to confirm (a tool ticket reports it to its main ticket instead), " +
+          "a quick chat can't delete schedules (the user does it in the Schedules window), and the Telegram front desk asks for a Confirm tap. " +
           "ask_questions, propose_ticket, propose_tickets, propose_branch, propose_teammate and propose_squad are for the board's ticket chats: they show a form or cards to the user.",
       });
     }

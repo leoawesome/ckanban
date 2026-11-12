@@ -7,7 +7,7 @@ import type { HuddleTemplateView } from "./server/huddle-templates";
 import type { DeviceUser } from "./server/devices";
 import type { MessageResult } from "./server/notify";
 import type { SetupOutcome } from "./server/worktree-setup";
-import { RUN_HEADER } from "./server/scheduler";
+import { QUICK_CHAT_ENV, QUICK_CHAT_HEADER, RUN_HEADER } from "./server/scheduler";
 import { CONFIRM_STATUS, FRONT_DESK_ENV, FRONT_DESK_HEADER } from "./server/helper/frontdesk-id";
 import { defaultRoot, Store } from "./server/store";
 import { STATUSES, type HandIn, type HuddleFinding, type HuddleLearning, type HuddleMessage, type HuddleMode, type Status, type TicketMode } from "./server/types";
@@ -205,6 +205,8 @@ export interface JobInfo {
   action: JobActionInfo;
   state: "scheduled" | "running" | "done" | "failed" | "cancelled" | "skipped";
   sourceTicketId: string | null;
+  /** The last change a board run made to it (see Job.changedBy). */
+  changedBy?: { ticketId: string; action: "changed" | "cancelled" | "run now"; at: string };
   createdAt: string;
   firedAt: string | null;
   result: { ticketId?: string; exitCode?: number | null; durationMs?: number; output?: string; timedOut?: boolean; message?: string } | null;
@@ -355,7 +357,11 @@ export class BoardClient {
     let res: Response;
     // The Telegram front desk's runs say who they are, so the daemon can hold work-changing actions for a Confirm tap.
     const fd = process.env[FRONT_DESK_ENV];
-    const headers = { ...(body === undefined ? {} : { "content-type": "application/json" }), ...(fd ? { [FRONT_DESK_HEADER]: fd } : {}), ...extra };
+    // A quick chat's runs say so too: the daemon refuses their schedule deletes (they have no card to confirm on).
+    const qc = process.env[QUICK_CHAT_ENV];
+    const headers = {
+      ...(body === undefined ? {} : { "content-type": "application/json" }), ...(fd ? { [FRONT_DESK_HEADER]: fd } : {}), ...(qc ? { [QUICK_CHAT_HEADER]: qc } : {}), ...extra,
+    };
     try {
       res = await this.fetchFn(this.base + path, {
         method,
@@ -472,14 +478,15 @@ export class BoardClient {
   updateSchedule = (slug: string, id: string, patch: ScheduleInput, run?: string | null) =>
     this.req<ScheduleInfo>("PATCH", this.s(slug, id), patch, this.by(run));
   deleteSchedule = (slug: string, id: string, run?: string | null) => this.req<void>("DELETE", this.s(slug, id), undefined, this.by(run));
-  runSchedule = (slug: string, id: string) =>
-    this.req<{ entry: ScheduleHistoryInfo; schedule: ScheduleInfo }>("POST", `${this.s(slug, id)}/run`, {});
+  // A huddle teammate (agent set) is refused by the daemon.
+  runSchedule = (slug: string, id: string, c: HuddleCaller = {}) =>
+    this.req<{ entry: ScheduleHistoryInfo; schedule: ScheduleInfo }>("POST", `${this.s(slug, id)}/run`, {}, this.as(c));
   scheduleHistory = (slug: string, id: string) => this.req<ScheduleHistoryInfo[]>("GET", `${this.s(slug, id)}/history`);
   private j(slug: string, id?: string): string {
     const base = `/api/profiles/${encodeURIComponent(slug)}/jobs`;
     return id ? `${base}/${encodeURIComponent(id)}` : base;
   }
-  // `run`: the board run's CKANBAN_TICKET; a run schedules jobs as its ticket and may only change its own.
+  // `run`: the board run's CKANBAN_TICKET; a run schedules jobs as its ticket, and its changes to any job are credited to it.
   listJobs = (slug: string, ticketId?: string) =>
     this.req<JobInfo[]>("GET", ticketId ? `${this.j(slug)}?ticketId=${encodeURIComponent(ticketId)}` : this.j(slug));
   // A huddle teammate (agent set) is refused by the daemon.

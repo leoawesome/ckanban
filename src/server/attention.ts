@@ -76,12 +76,16 @@ export function lastChange(t: Ticket, s: SessionSummary | null): string {
  * managed: the ticket is a child of a running plan, so its planner, not the user, handles it.
  * planComplete: every child of this ticket's plan is finished, so a stuck plan no longer needs the user.
  * huddle: the ticket's own open huddle; while it works the ticket doesn't need the user unless the huddle asks.
+ * schedules: ids of the board's schedules, so a delete card whose schedule is already gone no longer waits.
  * step: a main ticket's oldest tool ticket waiting on a decision (main-ticket.ts stepWait), when the main ticket hasn't
  * dealt with it yet or passes it on to the user: the main card names it ("Test: checkout sign-in asks a question").
  */
 export function attentionFor(
   t: Ticket, s: SessionSummary | null, running: boolean,
-  o: { createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null; step?: StepWait | null } = {},
+  o: {
+    createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null; step?: StepWait | null;
+    schedules?: Set<string>;
+  } = {},
 ): Attention | null {
   // A tool ticket is its main ticket's business: its questions, failures and limits show on the main card instead.
   if (hiddenTool(t)) return null;
@@ -103,7 +107,7 @@ export function attentionFor(
 
 function ownAttention(
   t: Ticket, s: SessionSummary | null, running: boolean,
-  o: { createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null },
+  o: { createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null; schedules?: Set<string> },
 ): Attention | null {
   // A follow-up the board saw too late to wake (computer asleep, board off) waits for the user in any column: Claude
   // meant to come back, and only the user can say whether that still makes sense.
@@ -143,6 +147,10 @@ function ownAttention(
   if (s?.pendingTeammates?.some((id) => !t.teammateCards?.[id])) return { kind: "proposal", label: "Review proposed teammate", since };
   if (s?.pendingSquads?.some((id) => !t.squadCards?.[id])) return { kind: "proposal", label: "Review proposed squad", since };
   if (s?.pendingAutomations?.some((id) => !t.automationCards?.[id])) return { kind: "proposal", label: "Review proposed automation", since };
+  // Claude asked to delete a schedule (from a chat or an unattended run): only the user's click on the card deletes it.
+  if (s?.pendingScheduleDeletes?.some((c) => !t.scheduleDeleteCards?.[c.uuid] && (!o.schedules || o.schedules.has(c.id)))) {
+    return { kind: "proposal", label: "Confirm deleting a schedule", since };
+  }
   if (t.status === "review") return { kind: "review", label: "Ready for review", since };
   // A reply cut off by a restart isn't a reply yet: recover() resumes it.
   if (t.status === "planning" && s?.lastMessage?.role === "assistant" && !s.lastMessage.peerReply && !t.interrupted) return { kind: "reply", label: "Claude replied", since };
@@ -183,6 +191,7 @@ export function ticketAttention(
     step: t.main ? oldestStep(store.listTickets(slug), t.id, isRunning) : undefined,
     planComplete: t.plan?.state === "stuck" ? planComplete() : undefined,
     huddle,
+    schedules: s?.pendingScheduleDeletes?.length ? new Set(store.listSchedules(slug).map((x) => x.id)) : undefined,
   });
 }
 

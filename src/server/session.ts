@@ -108,6 +108,8 @@ export interface SessionEntry {
   huddle?: { roster: RosterEntry[]; reason: string; template?: string; maxCostUsd?: number; topic?: string };
   /** Claude asked to delete tickets (propose_delete; rendered with Cancel / Delete buttons). */
   deletion?: { ids: string[]; reason: string };
+  /** Claude asked to delete a schedule (delete_schedule in a board run or chat; rendered with Keep / Delete buttons). */
+  scheduleDeletion?: { id: string; reason: string };
   /** Claude proposed a teammate (propose_teammate; rendered with Save teammate / Edit first / Dismiss). */
   teammate?: TeammateProposal;
   /** Claude proposed a squad (propose_squad; rendered with Save for this board / Save for all boards / Edit first / Dismiss). */
@@ -338,6 +340,11 @@ export interface ParsedSession {
   pendingAutomations: string[];
   /** Key boxes (entry uuids) since the user's last message; Ticket.keyCards says which were answered. */
   pendingKeys: string[];
+  /**
+   * Schedule delete cards (entry uuid and schedule id) anywhere in the chat; Ticket.scheduleDeleteCards says which were
+   * answered, and one whose schedule is gone no longer waits.
+   */
+  pendingScheduleDeletes: { uuid: string; id: string }[];
   /** Conversation size and cache time at Claude's last reply (chat-cache.ts); null before any reply with usage. */
   cache: ChatCache | null;
 }
@@ -363,6 +370,8 @@ export interface SessionSummary {
   pendingAutomations?: string[];
   /** See ParsedSession.pendingKeys. */
   pendingKeys?: string[];
+  /** See ParsedSession.pendingScheduleDeletes. */
+  pendingScheduleDeletes?: { uuid: string; id: string }[];
   /** See ParsedSession.cache: the ticket chat's "gone cold" note. */
   cache?: ChatCache | null;
 }
@@ -504,14 +513,20 @@ const TICKETS_TOOL = /(?:^|__)propose_tickets$/;
 const BRANCH_TOOL = /(?:^|__)propose_branch$/;
 const HUDDLE_TOOL = /(?:^|__)propose_huddle$/;
 const DELETE_TOOL = /(?:^|__)propose_delete$/;
+const DELETE_SCHEDULE_TOOL = /(?:^|__)delete_schedule$/;
 const TEAMMATE_TOOL = /(?:^|__)propose_teammate$/;
 const SQUAD_TOOL = /(?:^|__)propose_squad$/;
 const AUTOMATION_TOOL = /(?:^|__)propose_automation$/;
 const KEYS_TOOL = /(?:^|__)ask_keys$/;
 
 /** The form or card a planning-chat tool call shows, or null for other tools (or input that can't be read). */
-function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "teammate" | "squad" | "automation" | "keys"> | null {
+function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "scheduleDeletion" | "teammate" | "squad" | "automation" | "keys"> | null {
   const name = String(block.name ?? "");
+  // A refused call (no such schedule, another board, a huddle helper) comes back as an error and shows no card.
+  if (DELETE_SCHEDULE_TOOL.test(name)) {
+    const id = typeof block.input?.id === "string" ? block.input.id.trim() : "";
+    return id ? { scheduleDeletion: { id, reason: typeof block.input?.reason === "string" ? block.input.reason.trim() : "" } } : null;
+  }
   if (KEYS_TOOL.test(name)) {
     const keys = parseKeysAsk(block.input);
     return keys && { keys };
@@ -767,12 +782,13 @@ export class SessionParser {
       return c;
     });
     dropBlockedMoves(entries);
-    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.teammate || e.squad || e.automation || e.keys));
+    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.scheduleDeletion || e.teammate || e.squad || e.automation || e.keys));
     const lastText = !last ? "" : last.text
       || (last.questions ? `Asked ${last.questions.length} question${last.questions.length > 1 ? "s" : ""}`
         : last.newTickets ? `Proposed ${last.newTickets.length} new ticket${last.newTickets.length > 1 ? "s" : ""}`
         : last.branch ? "Offered to branch this ticket"
         : last.deletion ? `Asked to delete ${last.deletion.ids.length} ticket${last.deletion.ids.length > 1 ? "s" : ""}`
+        : last.scheduleDeletion ? "Asked to delete a schedule"
         : last.teammate ? `Proposed teammate @${last.teammate.name}`
         : last.squad ? `Proposed squad "${last.squad.squad.label}"`
         : last.automation ? `Proposed automation "${last.automation.name}"` : "Proposed an updated ticket");
@@ -827,7 +843,7 @@ function handBack(text: string): string {
   return text.slice(m[0].length).split("\n").map((l) => l.replace(/^ {2}/, "")).join("\n").trim();
 }
 
-function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "openFormId" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys"> {
+function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "openFormId" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys" | "pendingScheduleDeletes"> {
   let lastUser = -1;
   entries.forEach((e, i) => {
     // Huddle messages and an automation's items don't answer what Claude asked the user (another ticket's message, e.g.
@@ -849,6 +865,8 @@ function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestio
     pendingSquads: after.filter((e) => e.squad).map((e) => e.uuid),
     pendingAutomations: after.filter((e) => e.automation).map((e) => e.uuid),
     pendingKeys: after.filter((e) => e.keys).map((e) => e.uuid),
+    // Not only since the user's last message: a schedule waits to be deleted until the card is answered.
+    pendingScheduleDeletes: entries.filter((e) => e.scheduleDeletion).map((e) => ({ uuid: e.uuid, id: e.scheduleDeletion!.id })),
   };
 }
 
@@ -1288,7 +1306,8 @@ export class SessionCache {
       // The preview is stored and sent to the UI: a saved key in Claude's last message is hidden there.
       title: p.title, lastMessage: p.lastMessage && this.summaryFile ? { ...p.lastMessage, text: maskSaved(dirname(this.summaryFile), p.lastMessage.text) } : p.lastMessage, artifacts: p.artifacts,
       openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), ...(p.openFormId ? { openFormId: p.openFormId } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates, pendingSquads: p.pendingSquads,
-      pendingAutomations: p.pendingAutomations, ...(p.pendingKeys.length ? { pendingKeys: p.pendingKeys } : {}), cache: p.cache,
+      pendingAutomations: p.pendingAutomations, ...(p.pendingKeys.length ? { pendingKeys: p.pendingKeys } : {}),
+      ...(p.pendingScheduleDeletes.length ? { pendingScheduleDeletes: p.pendingScheduleDeletes } : {}), cache: p.cache,
     };
   }
 }

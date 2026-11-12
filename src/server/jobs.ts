@@ -304,18 +304,27 @@ export class JobRunner {
     return this.save(slug, j);
   }
 
-  /** Only a job that hasn't run yet; `by` (a board run's ticket) may only change the jobs it scheduled. */
-  private open(slug: string, id: string, by: string | null, verb: string): Job {
+  /**
+   * Only a job that hasn't run yet. Any board run or chat may change, cancel or run any job on its board (the user chose
+   * so); `by` (that run's ticket) is noted on the job as its last changer. The chain guard (checkChain) still applies.
+   */
+  private open(slug: string, id: string): Job {
     const j = this.get(slug, id);
-    if (by && j.sourceTicketId !== by) throw new JobError(403, `job ${id} was not scheduled by this ticket (${by}), so it can't ${verb} it`);
     if (!OPEN.includes(j.state)) throw new JobError(409, `job ${id} is ${j.state}: only a scheduled job can be changed`);
     return j;
   }
 
+  private credit(j: Job, by: string | null, action: NonNullable<Job["changedBy"]>["action"]): Job {
+    if (by) return { ...j, changedBy: { ticketId: by, action, at: this.now().toISOString() } };
+    // The user's own change is the last one now: a run's earlier one no longer says who changed it last.
+    const { changedBy: _, ...rest } = j;
+    return rest;
+  }
+
   update(slug: string, id: string, input: JobInput, by: string | null = null): Promise<Job> {
     return this.serial(() => {
-      const j = this.open(slug, id, by, "change");
-      const next: Job = { ...j };
+      const j = this.open(slug, id);
+      const next: Job = this.credit(j, by, "changed");
       if (input.name !== undefined) {
         next.name = typeof input.name === "string" ? input.name.trim() : "";
         if (!next.name) throw new JobError(400, "name can't be empty");
@@ -328,7 +337,9 @@ export class JobRunner {
           if (e instanceof JobError && e.status === 400) throw new JobError(400, `${e.message}: ${WHOLE_ACTION}`);
           throw e;
         }
+        // The job's own chain, and the changer's: a ticket at the end of a chain can't turn another job into a ticket job.
         this.checkChain(slug, next.action, j.sourceTicketId);
+        if (by && by !== j.sourceTicketId) this.checkChain(slug, next.action, by);
       }
       if (input.at !== undefined) next.at = this.futureAt(input.at);
       return this.save(slug, next);
@@ -336,12 +347,12 @@ export class JobRunner {
   }
 
   cancel(slug: string, id: string, by: string | null = null): Promise<Job> {
-    return this.serial(() => this.save(slug, { ...this.open(slug, id, by, "cancel"), state: "cancelled" }));
+    return this.serial(() => this.save(slug, { ...this.credit(this.open(slug, id), by, "cancelled"), state: "cancelled" }));
   }
 
   /** Fire a scheduled job now, ahead of its time. Resolves once it started (a command keeps running; see whenIdle). */
   runNow(slug: string, id: string, by: string | null = null): Promise<Job> {
-    return this.serial(() => this.fire(slug, this.open(slug, id, by, "run"), false));
+    return this.serial(() => this.fire(slug, this.credit(this.open(slug, id), by, "run now"), false));
   }
 
   /** Saves a job as failed; a command's failure also leaves a quiet comment on the ticket that scheduled it. */

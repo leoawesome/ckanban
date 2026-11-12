@@ -523,6 +523,8 @@ export interface Ticket {
   teammateCards?: Record<string, TeammateCardState>;
   /** Squad cards in the chat the user answered, by entry uuid. */
   squadCards?: Record<string, SquadCardState>;
+  /** Schedule delete cards in the chat the user answered, by entry uuid (src/server/types.ts). */
+  scheduleDeleteCards?: Record<string, ScheduleDeleteCardState>;
   /** Automation cards in the chat the user saved (by entry uuid). */
   automationCards?: Record<string, { loopId: string; at: string }>;
   /** Key boxes (ask_keys) answered, by entry uuid: the names saved, or self for "I'll do it myself". */
@@ -676,6 +678,8 @@ export interface SessionEntry {
   huddle?: { roster: RosterEntry[]; reason: string; template?: string; maxCostUsd?: number; topic?: string };
   /** Claude asked to delete tickets (propose_delete): the card with Cancel / Delete. */
   deletion?: { ids: string[]; reason: string };
+  /** Claude asked to delete a schedule (delete_schedule in a board chat or run): the card with Keep / Delete. */
+  scheduleDeletion?: { id: string; reason: string };
   /** Claude proposed a teammate (propose_teammate): the card with Save teammate / Edit first / Dismiss. */
   teammate?: TeammateProposal;
   /** Claude proposed a squad (propose_squad): the card with Save for this board / Save for all boards / Edit first / Dismiss. */
@@ -918,6 +922,15 @@ export interface HuddlePreset extends LayerInfo {
 export type TeammateProposal = Pick<HuddlePreset, "name" | "prompt"> & Partial<Pick<HuddlePreset, "role" | "model" | "mode" | "lead" | "canEdit" | "workspace">> & { why: string };
 
 /** What the user did with a teammate card. */
+export interface ScheduleDeleteCardState {
+  state: "deleted" | "kept";
+  at: string;
+  /** The schedule's name when it was deleted. */
+  name?: string;
+  /** The schedule it deleted (another card for the same schedule names it from here once it is gone). */
+  scheduleId?: string;
+}
+
 export interface TeammateCardState {
   state: "saved" | "dismissed";
   name?: string;
@@ -1288,6 +1301,8 @@ export interface Job {
   action: JobAction;
   state: JobState;
   sourceTicketId: string | null;
+  /** The last change, cancel or run now, when a board run (not the user) made it. */
+  changedBy?: { ticketId: string; action: "changed" | "cancelled" | "run now"; at: string };
   createdAt: string;
   updatedAt: string;
   firedAt: string | null;
@@ -1828,6 +1843,9 @@ export const api = {
   /** body: {} for a day, { hours } (a week: 168), { forever: true } until unsnoozed (snoozeBody in snooze.ts). */
   snooze: (slug: string, id: string, body: Record<string, unknown> = {}) => req<Ticket>("POST", `${t(slug, id)}/snooze`, body),
   unsnooze: (slug: string, id: string) => req<Ticket>("DELETE", `${t(slug, id)}/snooze`),
+  /** The user answered a schedule delete card: deleted deletes the schedule, kept keeps it. */
+  answerScheduleDeleteCard: (slug: string, id: string, uuid: string, answer: { state: "deleted"; scheduleId: string } | { state: "kept" }) =>
+    req<Ticket>("PUT", `${t(slug, id)}/schedule-delete-cards/${encodeURIComponent(uuid)}`, answer),
   /** The user answered a teammate card (saved it, or dismissed it). */
   answerTeammateCard: (slug: string, id: string, uuid: string, card: Omit<TeammateCardState, "at">) =>
     req<Ticket>("PUT", `${t(slug, id)}/teammate-cards/${encodeURIComponent(uuid)}`, card),

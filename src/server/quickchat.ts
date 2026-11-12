@@ -12,6 +12,7 @@ import { DraftTracker } from "./draft";
 import type { Bus } from "./events";
 import { WRITING_RULE } from "./prompts";
 import { buildArgs, startRun, type RunHandle } from "./runner";
+import { QUICK_CHAT_ENV } from "./scheduler";
 import { messageCost } from "./ticket-usage";
 import { atomicWrite, type Store } from "./store";
 import type { ActivityEntry, Profile, Ticket } from "./types";
@@ -440,7 +441,8 @@ export class QuickChats {
     // A front desk chat never runs with a normal chat's rights (shell, file edits), even if the front desk isn't plugged in.
     if (c.frontDesk && !limits) throw new Error("The Telegram front desk isn't set up on this board right now, so nothing was run.");
     return {
-      env: extraEnv ? { ...connectors.env, ...extraEnv } : connectors.env,
+      // QUICK_CHAT_ENV: the ckanban tools know they run in a quick chat (no delete card there; see delete_schedule).
+      env: { ...connectors.env, ...(extraEnv ?? {}), [QUICK_CHAT_ENV]: `${slug}/${c.id}` },
       args: buildArgs(c.sessionId, resume, profile.model, limits ? [...connectors.disallowed, ...limits.disallowed] : connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), extraNote ? `${quickChatNote(profile)}\n\n${extraNote}` : quickChatNote(profile), limits?.maxBudgetUsd ?? null, runOptions(null, profile, false).effort, false, limits ? { settings: limits.settings, tools: limits.tools ?? null, strictMcp: !!limits.strictMcp } : null),
     };
   }

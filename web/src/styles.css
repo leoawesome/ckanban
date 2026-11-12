@@ -1096,6 +1096,11 @@ body > .output-view.reader { position: fixed; }
 .delete-card.done .proposal-tag { color: var(--muted); }
 .delete-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); }
 .delete-card .proposal-actions { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; }
+/* delete_schedule: the user confirms deleting a schedule (ScheduleDeleteCard.tsx) */
+.sdc-what { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .sched-delete-card .proposal-actions .btn { min-height: 44px; padding: 0 18px; font-size: var(--fs-sm); }
+}
 /* propose_teammate: a teammate the user saves with one click */
 .teammate-card.done { border-color: var(--border); }
 .teammate-card.done .proposal-tag { color: var(--muted); }

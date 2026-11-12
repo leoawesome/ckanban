@@ -360,13 +360,13 @@ describe("Confirm", () => {
     expect(heldKind("DELETE", "/api/profiles/kb/tickets/t_1", null)?.kind).toBe("delete");
     expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/plan", { action: "start" })?.kind).toBe("plan");
     expect(heldKind("POST", "/api/profiles/kb/schedules/s1/run", {})?.kind).toBe("run");
-    // Schedules and one-time jobs start work later: making or changing one is held; cancelling or deleting isn't.
+    // Schedules and one-time jobs start work later: making or changing one is held; cancelling a job isn't. Deleting a schedule waits for a tap.
     expect(heldKind("POST", "/api/profiles/kb/jobs", { at: "x", action: { kind: "ticket", title: "t" } })?.kind).toBe("schedule");
     expect(heldKind("POST", "/api/profiles/kb/schedules", { cron: "* * * * *" })?.kind).toBe("schedule");
     expect(heldKind("PATCH", "/api/profiles/kb/schedules/s1", { enabled: true })?.kind).toBe("schedule");
     expect(heldKind("PATCH", "/api/profiles/kb/jobs/j1", { at: "x" })?.kind).toBe("schedule");
     expect(heldKind("POST", "/api/profiles/kb/jobs/j1/cancel", {})).toBeNull();
-    expect(heldKind("DELETE", "/api/profiles/kb/schedules/s1", null)).toBeNull();
+    expect(heldKind("DELETE", "/api/profiles/kb/schedules/s1", null)?.kind).toBe("unschedule");
     expect(heldKind("GET", "/api/profiles/kb/tickets", null)).toBeNull();
     // A note steers the next run: held too.
     expect(heldKind("POST", "/api/profiles/kb/tickets/t_1/comments", { text: "x" })?.kind).toBe("comment");
@@ -644,6 +644,21 @@ describe("through the board's HTTP API", () => {
     expect(made).toBeDefined();
     expect(made.telegramReport).toMatchObject({ tg: 9001, chatId: ME });
     expect(store.listTickets("shop").filter((t) => t.title === "Resize photos")).toHaveLength(1);
+
+    // Deleting a schedule waits for its own Confirm tap (it can't be undone); the tap deletes it as the user.
+    const sch = await fetch(`${base}/api/profiles/shop/schedules`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "Nightly photos", title: "T", body: "b", cron: "0 3 * * *", enabled: false }) });
+    const sid = ((await sch.json()) as any).id as string;
+    const del = await fetch(`${base}/api/profiles/shop/schedules/${sid}`, { method: "DELETE", headers: header });
+    expect(del.status).toBe(202);
+    expect(store.getSchedule("shop", sid)).toBeTruthy();
+    const missing = await fetch(`${base}/api/profiles/shop/schedules/s_nope`, { method: "DELETE", headers: header });
+    expect(missing.status).toBe(404);
+    const delCard = api.sent().find((c) => c.body.text.startsWith('Delete the schedule "Nightly photos" on Shop site?'))!;
+    expect(delCard).toBeDefined();
+    api.queue(tap(3, button(delCard.body, "Confirm"), 1));
+    await notifier.telegram.pollOnce();
+    expect(store.getSchedule("shop", sid)).toBeNull();
+    expect(api.edits().some((c) => String(c.body.text ?? "").startsWith("✓ Deleted the schedule on Shop site."))).toBe(true);
     await board.shutdown?.();
   });
 });

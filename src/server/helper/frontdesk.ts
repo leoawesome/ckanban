@@ -207,7 +207,7 @@ interface DeskState {
 
 /** What a Confirm card holds (PendingActions kind "fd"). */
 export interface DeskAction {
-  kind: "create" | "move" | "edit" | "stop" | "chat" | "delete" | "plan" | "run" | "schedule" | "comment" | "other";
+  kind: "create" | "move" | "edit" | "stop" | "chat" | "delete" | "plan" | "run" | "schedule" | "unschedule" | "comment" | "other";
   method: string;
   path: string;
   body: any;
@@ -269,8 +269,10 @@ export function heldKind(method: string, path: string, body: any): { kind: DeskA
     if (id && method === "POST" && sub === "comments") return { kind: "comment", slug, ticketId: id };
     return { kind: "other", slug, ticketId: id };
   }
-  // Cancelling a one-time job or deleting a schedule only stops work that hasn't started: it passes.
-  if ((area === "schedules" || area === "jobs") && id && ((method === "POST" && sub === "cancel") || (method === "DELETE" && !sub))) return null;
+  // Cancelling a one-time job only stops work that hasn't started: it passes. Deleting a schedule can't be undone (its
+  // history goes with it), and only the user deletes one: it waits for their Confirm tap.
+  if (area === "schedules" && id && method === "DELETE" && !sub) return { kind: "unschedule", slug, ticketId: null };
+  if (area === "jobs" && id && method === "POST" && sub === "cancel") return null;
   if ((area === "schedules" || area === "jobs") && method === "POST" && id && sub === "run") return { kind: "run", slug, ticketId: null };
   // Schedules and one-time jobs start tickets (or commands) later.
   if ((area === "schedules" || area === "jobs") && ((method === "POST" && !id) || (method === "PATCH" && id && !sub))) return { kind: "schedule", slug, ticketId: null };
@@ -644,6 +646,9 @@ export class FrontDesk {
     if (held.slug !== null && !this.d.store.getProfile(held.slug)) return { status: 404, body: { error: `board ${held.slug} not found` } };
     const t = held.ticketId && held.slug ? this.d.store.getTicket(held.slug, held.ticketId) : null;
     if (held.ticketId && !t) return { status: 404, body: { error: `ticket ${held.ticketId} not found` } };
+    if (held.kind === "unschedule" && !this.d.store.getSchedule(held.slug ?? "", routeParts(path)?.[3] ?? "")) {
+      return { status: 404, body: { error: `no schedule ${routeParts(path)?.[3] ?? ""} on this board. Check list_schedules.` } };
+    }
     const out = this.d.out(who.chatId);
     if (!out) return { status: 409, body: { error: "Telegram can't be reached right now, so the Confirm button couldn't be shown. Nothing was done." } };
     const replyTo = this.state.replyTo[`${who.slug}/${who.id}`]?.[0] ?? null;
@@ -717,6 +722,14 @@ export class FrontDesk {
       }
       case "delete":
         return { text: `Delete "${title}" (${board})? This can't be undone.`, buttons: yes("Confirm") };
+      case "unschedule": {
+        const sid = (routeParts(a.path) ?? [])[3] ?? "";
+        const s = a.slug ? this.d.store.getSchedule(a.slug, sid) : null;
+        return {
+          text: `Delete the schedule "${short(s?.name ?? sid, 120)}" on ${board}? It stops making tickets; tickets it already made stay. This can't be undone.`,
+          buttons: yes("Confirm"),
+        };
+      }
       case "plan":
         return { text: `Start the plan of "${title}" (${board})? Its tickets start running.`, buttons: yes("Confirm") };
       case "run":
@@ -886,6 +899,8 @@ export class FrontDesk {
         return finish(`✓ Stopped "${t!.title}".`, "Done");
       case "delete":
         return finish(`✓ Deleted "${t!.title}".`, "Done");
+      case "unschedule":
+        return finish(`✓ Deleted the schedule on ${where}.`, "Done");
       case "schedule":
         return finish(`✓ ${a.method === "PATCH" ? "Changed" : "Set up"} on ${where}.`, "Done");
       case "run":

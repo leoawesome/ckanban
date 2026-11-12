@@ -379,6 +379,22 @@ test("parseSession: propose_delete shows a delete card; a refused call shows non
   expect(parseSession(asst([{ type: "tool_use", id: "x", name: "propose_delete", input: { ids: [] } }], "1")).entries[0].kind).toBe("tool");
 });
 
+test("parseSession: delete_schedule shows a schedule delete card that waits until answered; a refused call shows none", () => {
+  const s = parseSession([
+    asst([{ type: "tool_use", id: "toolu_s", name: "mcp__ckanban__delete_schedule", input: { id: " s1 ", reason: " replaced " } }], "2026-10-10T01:00:00Z"),
+    user([{ type: "tool_result", tool_use_id: "toolu_s", content: [{ type: "text", text: "Nothing is deleted yet" }] }], "2026-10-10T01:00:01Z"),
+  ].join("\n"));
+  expect(s.entries[0]).toEqual({ uuid: "toolu_s", at: "2026-10-10T01:00:00Z", role: "assistant", kind: "text", text: "", scheduleDeletion: { id: "s1", reason: "replaced" } });
+  expect(s.lastMessage?.text).toBe("Asked to delete a schedule");
+  expect(s.pendingScheduleDeletes).toEqual([{ uuid: "toolu_s", id: "s1" }]);
+  const refused = parseSession([
+    asst([{ type: "tool_use", id: "toolu_x", name: "mcp__ckanban__delete_schedule", input: { id: "nope" } }], "2026-10-10T01:00:00Z"),
+    user([{ type: "tool_result", tool_use_id: "toolu_x", is_error: true, content: [{ type: "text", text: "no schedule nope" }] }], "2026-10-10T01:00:01Z"),
+  ].join("\n"));
+  expect(refused.entries.some((e) => e.scheduleDeletion)).toBe(false);
+  expect(refused.pendingScheduleDeletes).toEqual([]);
+});
+
 test("parseSession: propose_teammate shows a teammate card; refused or broken calls show none; pending until the user's next message", () => {
   const input = { name: "WA Watcher", role: " WhatsApp responder ", prompt: " Draft replies. ", model: "", mode: "tagged", workspace: "shared", canEdit: false, why: " No teammate watches a web inbox. " };
   const s = parseSession(asst([{ type: "tool_use", id: "toolu_t", name: "mcp__ckanban__propose_teammate", input }], "2026-10-10T01:00:00Z"));

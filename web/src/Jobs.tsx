@@ -38,6 +38,22 @@ function Source({ job, tickets, onOpenTicket }: { job: Job; tickets: Ticket[]; o
   );
 }
 
+const CHANGED_WORD: Record<NonNullable<Job["changedBy"]>["action"], string> = { changed: "Changed", cancelled: "Cancelled", "run now": "Started early" };
+
+/** The ticket whose run last changed, cancelled or started the job, as a link (nothing when the user did). */
+function ChangedBy({ job, tickets, onOpenTicket }: { job: Job; tickets: Ticket[]; onOpenTicket: (id: string) => void }) {
+  const c = job.changedBy;
+  if (!c) return null;
+  const t = tickets.find((x) => x.id === c.ticketId);
+  return (
+    <span className="muted small job-source">
+      {CHANGED_WORD[c.action] ?? "Changed"} by {t
+        ? <button className="link-btn sched-ticket" onClick={() => onOpenTicket(t.id)} title={t.title}>{t.title}</button>
+        : "a ticket that's gone"} · {jobDate(c.at)}
+    </span>
+  );
+}
+
 /** What a finished job left: the ticket it started, or the command's exit code and output. */
 function Result({ job, tickets, onOpenTicket }: { job: Job; tickets: Ticket[]; onOpenTicket: (id: string) => void }) {
   const r = job.result;
@@ -102,6 +118,7 @@ export function JobRow({ slug, job, tickets, onOpenTicket, showSource = true }: 
             {jobDoes(job)}: {job.action.kind === "command" ? <code>{what}</code> : what}
           </div>
           {showSource && <Source job={job} tickets={tickets} onOpenTicket={onOpenTicket} />}
+          <ChangedBy job={job} tickets={tickets} onOpenTicket={onOpenTicket} />
           {!open && job.state !== "running" && <Result job={job} tickets={tickets} onOpenTicket={onOpenTicket} />}
           {err && <div className="form-error">{err}</div>}
         </div>

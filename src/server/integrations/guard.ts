@@ -78,3 +78,16 @@ export async function fromUserBrowser(peerPort: number, daemonPid = process.pid)
   ]);
   return pids.every((p) => !descendsFrom(p, daemonPid, parents) && isBrowser(commands.get(p) ?? "") && !drivenBrowser(p, parents, args));
 }
+
+/**
+ * Whether the client on `peerPort` of a local connection is a program the daemon didn't start (the user's own Claude
+ * or terminal, a browser), so not a board run, its shell or a job's command. Nothing found counts as the daemon's.
+ * Like fromUserBrowser it can't see a process that a run detached from the daemon (double fork, setsid).
+ */
+export async function outsideBoard(peerPort: number, daemonPid = process.pid): Promise<boolean> {
+  if (!peerPort) return false;
+  const pids = lsofPids(await out(["lsof", "-nP", `-iTCP:${peerPort}`, "-sTCP:ESTABLISHED", "-Fp"])).filter((p) => p !== daemonPid);
+  if (!pids.length) return false;
+  const parents = parentMap(await out(["ps", "-A", "-o", "pid=,ppid="]));
+  return pids.every((p) => !descendsFrom(p, daemonPid, parents));
+}

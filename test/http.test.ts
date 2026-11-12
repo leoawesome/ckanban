@@ -20,7 +20,9 @@ beforeAll(() => {
   const bus = new Bus();
   board = new Board(store, bus, { claudeBin: "/bin/false" });
   // userOnly routes: only the browser check is stubbed (they still need the board's Origin and no run header).
-  server = createServer({ store, bus, board, port: 0, webDir: tempDir("ck-web-"), isUserBrowser: async () => userBrowser });
+  server = createServer({ store, bus, board, port: 0, webDir: tempDir("ck-web-"), isUserBrowser: async () => userBrowser,
+    // A schedule delete with no page: the test process stands in for the user's own Claude outside the board.
+    isOutsideBoard: async () => true });
   base = `http://127.0.0.1:${server.port}`;
 });
 
@@ -1149,7 +1151,7 @@ test("tags: the user sets them; a ticket's own run may only suggest them", async
   expect([kept.tags, kept.suggestedTags]).toEqual([["post", "xhs", "video"], []]);
 });
 
-test("one-time jobs: schedule, list, update, run now, and runs manage only their own", async () => {
+test("one-time jobs: schedule, list, update, run now, and any run may change another ticket's job", async () => {
   let r = await fetch(`${base}/api/profiles`, json("POST", { name: "Jobs", path: tempDir("ck-jobs-") }));
   const slug = ((await r.json()) as any).slug;
   const url = `${base}/api/profiles/${slug}/jobs`;
@@ -1174,8 +1176,9 @@ test("one-time jobs: schedule, list, update, run now, and runs manage only their
   expect(((await r.json()) as any[]).map((x) => x.id)).toEqual([j.id]);
 
   const other = (await (await fetch(`${base}/api/profiles/${slug}/tickets`, json("POST", { title: "Other", status: "backlog" }))).json()) as any;
-  r = await fetch(`${url}/${j.id}`, as(other.id, "PATCH", { name: "Hijack" }));
-  expect(r.status).toBe(403);
+  r = await fetch(`${url}/${j.id}`, as(other.id, "PATCH", { name: "Renamed" }));
+  expect(r.status).toBe(200);
+  expect((await r.json()) as any).toMatchObject({ name: "Renamed", sourceTicketId: src.id, changedBy: { ticketId: other.id, action: "changed" } });
   // A run whose ticket doesn't exist can't make a job it couldn't manage.
   r = await fetch(url, as("t_20261001_ghost", "POST", { name: "x", at: when, action: { kind: "command", command: "true" } }));
   expect(r.status).toBe(404);

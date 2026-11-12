@@ -140,11 +140,14 @@ test("buildArgs passes the board's MCP server so every run has the ckanban tools
   expect(JSON.parse(mcpConfig()).mcpServers.ckanban.args.at(-1)).toBe("mcp");
 });
 
-test("buildArgs: planning chats skip plan mode but can't edit files", () => {
+test("buildArgs: planning chats skip plan mode but can't edit files or start huddles; schedules and jobs are on", () => {
   const planning = buildArgs("u1", false, null, PLANNING_DISALLOWED_TOOLS);
   expect(planning[planning.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
   const off = planning[planning.indexOf("--disallowedTools") + 1].split(",");
-  for (const t of ["Edit", "Write", "NotebookEdit", "mcp__ckanban__run_schedule", "mcp__ckanban__schedule_job", "mcp__ckanban__start_huddle"]) expect(off).toContain(t);
+  for (const t of ["Edit", "Write", "NotebookEdit", "mcp__ckanban__start_huddle"]) expect(off).toContain(t);
+  for (const t of ["create_schedule", "update_schedule", "delete_schedule", "run_schedule", "schedule_job", "update_job", "run_job_now", "cancel_job"]) {
+    expect(off).not.toContain(`mcp__ckanban__${t}`);
+  }
   const work = buildArgs("u1", false, null);
   expect(work[work.indexOf("--disallowedTools") + 1].split(",")).not.toContain("Edit");
 });
@@ -259,7 +262,9 @@ test("controlResponse allows the board tools only for Planning runs; Chrome and 
     expect(ask("mcp__ckanban__huddle_post", planning)).toBe("allow");
     expect(ask("mcp__claude-in-chrome__navigate", planning)).toBe("allow");
     // Deleting, file edits and shell commands stay blocked in plan mode.
-    for (const t of ["mcp__ckanban__delete_ticket", "mcp__ckanban__run_schedule", "Edit", "Write", "Bash"]) expect(ask(t, planning)).toBe("deny");
+    for (const t of ["mcp__ckanban__delete_ticket", "Edit", "Write", "Bash"]) expect(ask(t, planning)).toBe("deny");
+    // Schedules and jobs: the daemon checks each call, so a permission ask never blocks them.
+    for (const t of ["run_schedule", "delete_schedule", "schedule_job", "cancel_job"]) expect(ask(`mcp__ckanban__${t}`, planning)).toBe("allow");
   }
 });
 
