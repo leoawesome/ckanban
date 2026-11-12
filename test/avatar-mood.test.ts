@@ -1,11 +1,13 @@
 // Which mood each screen's avatar shows (web/src/avatarMood.ts).
 import { expect, test } from "bun:test";
-import { agentMood, familyMood, finishMood, participantMood, runMood } from "../web/src/avatarMood";
+import { agentMood, familyMood, finishMood, isQuietLine, isThinkingLine, liveLine, participantMood, runMood, THINKING_LINE } from "../web/src/avatarMood";
+import { THINKING_LINE as SERVER_THINKING_LINE } from "../src/server/board";
 
 test("a run thinks until its live line names a step, then works", () => {
   expect(runMood(null)).toBe("thinking");
   expect(runMood("Starting…")).toBe("thinking");
   expect(runMood("Claude is replying…")).toBe("thinking");
+  expect(runMood("Claude is thinking…")).toBe("thinking");
   expect(runMood("Stopping…")).toBe("thinking");
   expect(runMood("Running gh")).toBe("working");
 });
@@ -42,4 +44,19 @@ test("subagents and task rows", () => {
   expect(familyMood("problem")).toBe("done");
   expect(familyMood("failed")).toBe("failed");
   expect(familyMood("paused")).toBe("idle");
+});
+
+test("the thinking line: a fixed marker from the server, shown with Claude's name; old saved lines still count", () => {
+  expect(THINKING_LINE).toBe(SERVER_THINKING_LINE);
+  for (const line of [THINKING_LINE, "Claude is replying…"]) {
+    expect(isThinkingLine(line)).toBe(true);
+    expect(isQuietLine(line)).toBe(true);
+    expect(liveLine(line, "Claude")).toBe("Claude is thinking…");
+    expect(liveLine(line, "Ada")).toBe("Ada is thinking…");
+  }
+  expect(isThinkingLine("Ada is thinking…")).toBe(false);
+  expect(liveLine("Running gh", "Ada")).toBe("Running gh");
+  expect(liveLine(null, "Ada")).toBeNull();
+  expect(isQuietLine("Starting…")).toBe(true);
+  expect(isQuietLine("Running gh")).toBe(false);
 });

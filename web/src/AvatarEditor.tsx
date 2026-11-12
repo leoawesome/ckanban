@@ -6,10 +6,10 @@ import { createPortal } from "react-dom";
 import { Modal } from "./Modal";
 import { CheckIcon } from "./icons";
 import { usePhone } from "./usePhone";
-import { AvatarFace, resetAvatar, saveAvatar, useSavedAvatars } from "./AvatarFace";
+import { AvatarFace, resetAvatar, saveAvatar, saveClaudeName, useSavedAvatars } from "./AvatarFace";
 import {
-  AVATAR_ACCESSORIES, AVATAR_COLORS, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_MOODS, avatarFor, avatarKey, defaultAvatar,
-  type AvatarLook, type AvatarMood, type SavedAvatars,
+  AVATAR_ACCESSORIES, AVATAR_COLORS, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_MOODS, avatarFor, avatarKey, claudeName, cleanClaudeName,
+  defaultAvatar, DEFAULT_CLAUDE_NAME, MAX_CLAUDE_NAME, type AvatarLook, type AvatarMood, type SavedAvatars,
 } from "./avatarLook";
 import { colorName, partLabel, sameLook, surpriseLook, swatches } from "./avatarEditorText";
 
@@ -30,14 +30,22 @@ export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerso
   const [mood, setMood] = useState<AvatarMood>("thinking");
   /** Changes not saved yet, per person (kept while the dialog is open, so switching doesn't lose them). */
   const [drafts, setDrafts] = useState<Record<string, AvatarLook>>({});
+  /** Claude's name as typed, not saved yet (null: unchanged). */
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const stored = (who: string) => avatarFor(who, saved);
   const lookOf = (who: string) => drafts[who] ?? stored(who);
-  const dirty = (who: string) => !!drafts[who] && !sameLook(drafts[who], stored(who));
+  const savedName = claudeName(saved);
+  /** The name as it would be saved ("Claude" when empty). */
+  const nameAfter = nameDraft === null ? savedName : cleanClaudeName(nameDraft) || DEFAULT_CLAUDE_NAME;
+  const nameDirty = nameAfter !== savedName;
+  const dirty = (who: string) => (!!drafts[who] && !sameLook(drafts[who], stored(who))) || (who === "claude" && nameDirty);
   const look = lookOf(cur);
-  const person = people.find((p) => p.who === cur) ?? { who: cur, label: cur };
+  const labelOf = (p: AvatarPerson) => (p.who === "claude" ? nameAfter : p.label);
+  const found = people.find((p) => p.who === cur);
+  const person = { who: cur, label: found ? labelOf(found) : cur };
   const anyDirty = people.some((p) => dirty(p.who));
 
   // The chosen person's button stays in view in the strip.
@@ -55,10 +63,16 @@ export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerso
     setMsg(null);
     try {
       // The default look is stored as "no choice", so a later change to the defaults still reaches it.
-      if (sameLook(look, defaultAvatar(cur))) {
-        if (hasSaved(saved, cur)) await resetAvatar(cur);
-      } else await saveAvatar(cur, look);
+      if (drafts[cur] && !sameLook(drafts[cur], stored(cur))) {
+        if (sameLook(look, defaultAvatar(cur))) {
+          if (hasSaved(saved, cur)) await resetAvatar(cur);
+        } else await saveAvatar(cur, look);
+      }
       setDrafts(({ [cur]: _, ...rest }) => rest);
+      if (cur === "claude" && nameDraft !== null) {
+        if (nameDirty) await saveClaudeName(nameAfter === DEFAULT_CLAUDE_NAME ? "" : nameAfter);
+        setNameDraft(null);
+      }
       setMsg({ ok: true, text: "Saved for all boards." });
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
@@ -110,7 +124,7 @@ export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerso
           {people.map((p) => (
             <button key={p.who} type="button" aria-pressed={p.who === cur} className={p.who === cur ? "on" : undefined} onClick={() => { setCur(p.who); setMsg(null); }}>
               <AvatarFace look={lookOf(p.who)} size={32} />
-              <span>{p.label}</span>
+              <span>{labelOf(p)}</span>
               {dirty(p.who) && <span className="ave-dirty" title="Not saved yet"><span className="sr-only">(not saved yet)</span></span>}
             </button>
           ))}
@@ -129,6 +143,16 @@ export function AvatarEditor({ people, initial, onClose }: { people: AvatarPerso
             </div>
           </div>
           <div className="ave-parts">
+            {cur === "claude" && (
+              <section className="ave-part ave-name">
+                <h4><label htmlFor={`${ids}-name`}>Name</label></h4>
+                <input id={`${ids}-name`} type="text" value={nameDraft ?? (savedName === DEFAULT_CLAUDE_NAME ? "" : savedName)} placeholder={DEFAULT_CLAUDE_NAME}
+                  maxLength={MAX_CLAUDE_NAME} autoComplete="off" spellCheck={false} enterKeyHint="done" aria-describedby={`${ids}-name-hint`}
+                  onChange={(e) => { setMsg(null); setNameDraft(e.target.value); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && !busy && dirty(cur)) { e.preventDefault(); void save(); } }} />
+                <div id={`${ids}-name-hint`} className="ave-name-hint">Shown in place of “Claude” on every board. Empty: Claude.</div>
+              </section>
+            )}
             {optGroup("face", "Face", AVATAR_FACES)}
             {swatchGroup("color", "Colour", AVATAR_COLORS)}
             {optGroup("hair", "Hair", AVATAR_HAIRS)}

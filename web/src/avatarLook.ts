@@ -22,8 +22,30 @@ export interface AvatarLook {
   accessory: AvatarAccessory;
 }
 
-/** Saved choices by name: "claude", "you" or a teammate name. Fields left out keep the default. */
-export type SavedAvatars = Record<string, Partial<AvatarLook>>;
+/** Saved choices by name: "claude", "you" or a teammate name. Fields left out keep the default. Claude's entry may
+ * also hold `name`, the name the board shows in place of "Claude" (claudeName). */
+export type SavedAvatars = Record<string, Partial<AvatarLook> & { name?: string }>;
+
+/** The name the board shows for Claude when the user gave none. */
+export const DEFAULT_CLAUDE_NAME = "Claude";
+/** Longest name kept (characters); the server (src/server/avatars.ts) keeps the same. */
+export const MAX_CLAUDE_NAME = 24;
+
+/** A name as kept: one line, spaces collapsed, trimmed, at most MAX_CLAUDE_NAME characters; "" when unusable or "Claude".
+ * Same rule as cleanClaudeName in src/server/avatars.ts (test/avatars.test.ts checks). */
+export function cleanClaudeName(v: unknown): string {
+  if (typeof v !== "string") return "";
+  const one = v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/\p{Cf}+/gu, "").replace(/\s+/g, " ").trim();
+  const name = Array.from(one).slice(0, MAX_CLAUDE_NAME).join("").trim();
+  return name.toLowerCase() === "claude" ? "" : name;
+}
+
+/** The name the board shows for Claude: the user's saved name, else "Claude" (missing, empty or damaged too). */
+export function claudeName(saved?: SavedAvatars | null): string {
+  if (!saved || typeof saved !== "object" || !Object.prototype.hasOwnProperty.call(saved, "claude")) return DEFAULT_CLAUDE_NAME;
+  const e = saved.claude;
+  return (e && typeof e === "object" && cleanClaudeName(e.name)) || DEFAULT_CLAUDE_NAME;
+}
 
 /** Swatches for the editor (the role colours are in them, plus the brand colour). */
 export const AVATAR_COLORS = ["#b0502f", "#7a5af5", "#2b5fb8", "#0e7c86", "#2f7d4f", "#8a5a2b", "#b3428a", "#8e44ad", "#a83838", "#4f6386"] as const;

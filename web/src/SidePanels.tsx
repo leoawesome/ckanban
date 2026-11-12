@@ -13,6 +13,7 @@ import { MenuSheet } from "./MenuSheet";
 import { QuickChatPane } from "./QuickChat";
 import { isMac } from "./Shortcuts";
 import { clampChatWidth, COLUMN_MIN } from "./sideChatLayout";
+import { useClaudeName } from "./AvatarFace";
 import { PANELS, panelLabel, resizePair, shareOf, whereHint, type PanelId } from "./panelState";
 import { TeamTab, type HuddleSeed, type TeamRequest } from "./Team";
 import { TerminalView } from "./TerminalView";
@@ -91,6 +92,7 @@ function useLandFocus(n: number | null | undefined, root: () => HTMLElement | nu
 export default function SidePanels(props: PanelsProps & { width: number; ticketOpen: boolean }) {
   const { panels, width, ticketOpen } = props;
   const { open, shown, folded } = panels.state;
+  const claude = useClaudeName();
   const column = useRef<HTMLElement>(null);
   const [max, setMax] = useState<PanelId | null>(null);
   // A maximised panel that closed or folded gives the column back to the others.
@@ -172,7 +174,7 @@ export default function SidePanels(props: PanelsProps & { width: number; ticketO
           <Fragment key={id}>
             {divider && (
               <div className="sp-divider" role="separator" aria-orientation="horizontal" tabIndex={0}
-                aria-label={`Share the height between ${panelLabel(prev)} and ${panelLabel(id)}`} title="Drag (or ↑↓) to share the height"
+                aria-label={`Share the height between ${panelLabel(prev, claude)} and ${panelLabel(id, claude)}`} title="Drag (or ↑↓) to share the height"
                 onPointerDown={(e) => { e.preventDefault(); (e.target as HTMLElement).setPointerCapture(e.pointerId); startPair(prev, id, e.clientY); }}
                 onPointerMove={(e) => pairDrag.current && movePair(e.clientY - pairDrag.current.y)}
                 onPointerUp={() => (pairDrag.current = null)} onPointerCancel={() => (pairDrag.current = null)}
@@ -212,7 +214,7 @@ function PanelFrame({ id, props, first, last, maxed, hidden, visible, onMax, sec
   sectionRef: (el: HTMLElement | null) => void;
 }) {
   const { panels, ticket } = props;
-  const label = panelLabel(id);
+  const label = panelLabel(id, useClaudeName());
   const folded = panels.state.folded.includes(id);
   const where = whereHint(id, ticket);
   const body = useRef<HTMLDivElement>(null);
@@ -240,7 +242,7 @@ function PanelFrame({ id, props, first, last, maxed, hidden, visible, onMax, sec
           {maxed ? <RestoreIcon size={14} /> : <MaximizeIcon size={14} />}
         </button>
         <button className="icon-btn sp-icon" onClick={() => panels.close(id)} aria-label={`Close ${label}`}
-          title={`Close ${label}${id === "terminal" ? ". The shell keeps running." : id === "claude" ? ". Claude's replies keep running." : ""}`}>
+          title={`Close ${label}${id === "terminal" ? ". The shell keeps running." : id === "claude" ? `. ${label}'s replies keep running.` : ""}`}>
           <CloseIcon size={14} />
         </button>
       </div>
@@ -504,6 +506,7 @@ function ClaudePanel({ profile, active, onOpenTicket }: { profile: Profile; acti
  */
 export function PhonePanels(props: PanelsProps & { shown: PanelId; onShow: (id: PanelId | null) => void }) {
   const { panels, shown, onShow, ticket } = props;
+  const claude = useClaudeName();
   const open = panels.state.open.includes(shown) ? panels.state.open : [...panels.state.open, shown];
   const [adding, setAdding] = useState(false);
   const addRef = useRef<HTMLDivElement>(null);
@@ -524,15 +527,15 @@ export function PhonePanels(props: PanelsProps & { shown: PanelId; onShow: (id: 
   const closed = PANELS.filter((p) => !open.includes(p.id));
   const where = whereHint(shown, ticket);
   return (
-    <div className="phone-panels" role="dialog" aria-modal="true" aria-label={`${panelLabel(shown)} panel`}>
+    <div className="phone-panels" role="dialog" aria-modal="true" aria-label={`${panelLabel(shown, claude)} panel`}>
       <div className="pp-top">
         <button className="icon-btn pp-btn" onClick={() => onShow(null)} aria-label="Back to the board"><ChevronLeftIcon size={20} /></button>
-        <b className="pp-title">{panelLabel(shown)}</b>
-        <button className="icon-btn pp-btn" onClick={close} aria-label={`Close ${panelLabel(shown)}`}><CloseIcon size={20} /></button>
+        <b className="pp-title">{panelLabel(shown, claude)}</b>
+        <button className="icon-btn pp-btn" onClick={close} aria-label={`Close ${panelLabel(shown, claude)}`}><CloseIcon size={20} /></button>
       </div>
       <div className="pp-chips" role="tablist" aria-label="Open panels">
         {open.map((id) => (
-          <button key={id} role="tab" aria-selected={id === shown} className={`chip${id === shown ? " on" : ""}`} onClick={() => onShow(id)}>{panelLabel(id)}</button>
+          <button key={id} role="tab" aria-selected={id === shown} className={`chip${id === shown ? " on" : ""}`} onClick={() => onShow(id)}>{panelLabel(id, claude)}</button>
         ))}
         {closed.length > 0 && (
           <div className="pp-add" ref={addRef}>
@@ -542,7 +545,7 @@ export function PhonePanels(props: PanelsProps & { shown: PanelId; onShow: (id: 
                 <div className="sp-menu" role="menu">
                   {closed.map((p) => (
                     <button key={p.id} role="menuitem" className="menu-item" onClick={() => { setAdding(false); panels.open(p.id); onShow(p.id); }}>
-                      <span className="menu-label">{p.label}</span>
+                      <span className="menu-label">{panelLabel(p.id, claude)}</span>
                     </button>
                   ))}
                 </div>

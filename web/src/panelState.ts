@@ -13,7 +13,8 @@ export const PANELS: { id: PanelId; label: string; keys?: string }[] = [
   { id: "team", label: "Team", keys: "T" },
   { id: "claude", label: "Claude", keys: "C" },
 ];
-export const panelLabel = (id: PanelId) => PANELS.find((p) => p.id === id)!.label;
+/** A panel's name; the Claude panel shows the name the user gave Claude (useClaudeName), if given. */
+export const panelLabel = (id: PanelId, claude?: string) => (id === "claude" && claude ? claude : PANELS.find((p) => p.id === id)!.label);
 const isPanel = (v: unknown): v is PanelId => typeof v === "string" && PANELS.some((p) => p.id === v);
 
 export interface PanelsState {

@@ -57,6 +57,9 @@ import { autoHuddlesOn, runCapFor, workspaceOf, BOARD_NOTES_KEEP, type BoardNote
 import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TIMEOUT_MS, withBoardText, type SetupOutcome, type SetupResult } from "./worktree-setup";
 
 const INSTALLING = "Installing project dependencies…";
+/** The live line right after a message is sent, while Claude thinks (no step yet). A fixed marker: the UI shows it as
+ * "<the name the user gave Claude> is thinking…" (web/src/avatarMood.ts liveLine); old tickets may still hold "Claude is replying…". */
+export const THINKING_LINE = "Claude is thinking…";
 import { nowIso, slugify, starredTitle } from "./util";
 
 /** Where a schedule's run or an automation's new ticket goes as a task (Board.taskPlaceFor). */
@@ -1112,9 +1115,9 @@ export class Board {
     if (followUpRun || t?.followUpRun) this.patch(run.slug, run.id, { followUpRun });
     // A main ticket's replies and wakes don't move its card: it stays where the user put it.
     this.patch(run.slug, run.id, run.chat?.quiet || (run.chat && run.noEdit && run.chat.mode === "act" && !run.chat.hostWake)
-      ? { error: null, lastActivity: "Claude is replying…", runStartedAt: nowIso(), waitingOn: null, stalled: null }
+      ? { error: null, lastActivity: THINKING_LINE, runStartedAt: nowIso(), waitingOn: null, stalled: null }
       : run.chat?.mode === "refine"
-      ? { error: null, lastActivity: "Claude is replying…", refineStarted: true, runStartedAt: nowIso(), waitingOn: null, stalled: null }
+      ? { error: null, lastActivity: THINKING_LINE, refineStarted: true, runStartedAt: nowIso(), waitingOn: null, stalled: null }
       : { status: "in_progress", outcome: null, error: null, limit: null, capHit: null, lastActivity: "Starting…", runStartedAt: nowIso(), waitingOn: null, stalled: null });
   }
 

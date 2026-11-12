@@ -17,7 +17,8 @@ import { branchTicket } from "./branch";
 import { BranchCard } from "./BranchCard";
 import { DeleteCard } from "./DeleteCard";
 import { AgentRows } from "./AgentRow";
-import { runMood } from "./avatarMood";
+import { liveLine, runMood } from "./avatarMood";
+import { useClaudeName } from "./AvatarFace";
 import { WorkflowBlocks } from "./WorkflowBlock";
 import { ToolRows } from "./ToolRows";
 import { ArrowDownIcon, BranchIcon, ClockIcon, CloseIcon, CopyIcon, DownloadIcon, FileCodeIcon, FileTextIcon, MoreIcon } from "./icons";
@@ -261,6 +262,7 @@ const SIDE_WAIT_MS = 3000;
  */
 function StepsWorking({ ticket, tickets, onOpenTicket }: { ticket: Ticket; tickets: Ticket[]; onOpenTicket: (id: string) => void }) {
   const steps = useMemo(() => stepsWorking(tickets, ticket), [tickets, ticket]);
+  const claude = useClaudeName();
   const line = stepsLine(steps);
   if (!line) return null;
   const one = steps.length === 1 && steps[0].running ? steps[0] : null;
@@ -276,7 +278,7 @@ function StepsWorking({ ticket, tickets, onOpenTicket }: { ticket: Ticket; ticke
           </Fragment>
         ))}
         {line.more > 0 && ` and ${line.more} more`}
-        {one?.lastActivity && <span className="steps-live-activity"> · {one.lastActivity}</span>}
+        {one?.lastActivity && <span className="steps-live-activity"> · {liveLine(one.lastActivity, claude)}</span>}
       </span>
       {one?.runStartedAt && <span className="working-time">· {elapsed(one.runStartedAt)}</span>}
     </div>
@@ -328,6 +330,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   /** A rewind put files back: the Changes tab reloads its list. */
   onFilesChanged?: () => void;
 }) {
+  const claude = useClaudeName();
   const [page, setPage] = useState<{ entries: SessionEntry[]; start: number } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Scrolled up: offer a jump back down; "fresh" = something new arrived meanwhile.
@@ -1253,8 +1256,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           </>
         )}
       </div>
-      <div className="me-meta">{q.state === "unsent" ? "not sent · Claude was stopped before reading it"
-        : running ? (q.slash ? "queued · runs after Claude's current turn" : "sent · Claude reads it at its next step")
+      <div className="me-meta">{q.state === "unsent" ? `not sent · ${claude} was stopped before reading it`
+        : running ? (q.slash ? `queued · runs after ${claude}'s current turn` : `sent · ${claude} reads it at its next step`)
         : ticket.slotWait ? "queued · starts when the other ticket is done with the folder" : "The board restarts soon; your message is sent right after (at most 10 minutes)."}</div>
       </div>
     );
@@ -1391,7 +1394,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           tail = "peer";
           return (
           <HuddleDigest key={q.id} text={q.text.split("<ckanban-context")[0].trim()} pending onOpen={onOpenHuddle}
-            meta={<span className="muted small">{q.state === "queued" ? "queued · Claude reads this at its next step" : "not sent · Claude was stopped before reading it"}</span>}>
+            meta={<span className="muted small">{q.state === "queued" ? `queued · ${claude} reads this at its next step` : `not sent · ${claude} was stopped before reading it`}</span>}>
             {q.state === "unsent" && (
               <div className="queued-actions">
                 <button className="btn primary small" disabled={stopping}
@@ -1405,7 +1408,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         })}
         {queued.filter((q) => (q.peer && !HUDDLE_TAG.test(q.text)) || (q.from && !inSession({ ...q, text: fromTicket(q.text)?.text ?? q.text }, entries))).map((q) => {
           const body = q.from ? fromTicket(q.text)?.text ?? q.text : q.text.split("<ckanban-context")[0].trim();
-          const state = q.state === "queued" ? "queued · Claude reads this at its next step" : "not sent · Claude was stopped before reading it";
+          const state = q.state === "queued" ? `queued · ${claude} reads this at its next step` : `not sent · ${claude} was stopped before reading it`;
           tail = "peer";
           return (
             <Turn key={q.id} start className="pending"
@@ -1487,9 +1490,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
       {waiting.length > 0 && <WaitingButton items={waiting} onPick={pickWaiting} />}
       <div className="composer">
         <textarea ref={composer} rows={phone ? 1 : 2} value={draft} disabled={stopping} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
-          placeholder={formWaiting && !running ? "Or type a note to Claude…" : phone
-            ? running ? "Steer Claude…" : refine ? "Describe your idea…" : "Ask Claude…"
-            : running ? "Steer Claude: it reads this at its next step, no restart…" : refine ? "Describe your idea or answer Claude…" : "Ask Claude to change or continue something…"}
+          placeholder={formWaiting && !running ? `Or type a note to ${claude}…` : phone
+            ? running ? `Steer ${claude}…` : refine ? "Describe your idea…" : `Ask ${claude}…`
+            : running ? `Steer ${claude}: it reads this at its next step, no restart…` : refine ? `Describe your idea or answer ${claude}…` : `Ask ${claude} to change or continue something…`}
           onChange={(e) => setDraft(e.target.value)}
           onSelect={() => { snippets.handlers.onSelect(); slash.handlers.onSelect(); }}
           onBlur={() => { snippets.handlers.onBlur(); slash.handlers.onBlur(); }}

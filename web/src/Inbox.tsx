@@ -1,3 +1,4 @@
+import { useClaudeName } from "./AvatarFace";
 import { useEffect, useRef, useState } from "react";
 import { openedAt, shouldPulse } from "./cardState";
 import type { InboxItem } from "./api";
@@ -85,6 +86,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
   openRequest?: number;
   helper?: InboxHelper;
 }) {
+  const claude = useClaudeName();
   const [open, setOpen] = useState(false);
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showOlder, setShowOlder] = useState(false);
@@ -236,7 +238,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
             }
           }
         }}
-        title="Tickets on any board where Claude is waiting on you (I)" aria-keyshortcuts="I">
+        title={`Tickets on any board where ${claude} is waiting on you (I)`} aria-keyshortcuts="I">
         {items.length ? <><span className={`yt-dot ${fresh ? "pulse" : ""}`} aria-hidden /> {items.length} need you</>
           : snoozed.length ? <>{snoozed.length} snoozed</> : unread ? <>✉ {unread} new</> : <span className="muted">Inbox</span>}
         <KeyHint keys="I" />
@@ -257,7 +259,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
               </div>
             )}
             {!items.length && <p className="inbox-empty muted small">Nothing needs you right now.</p>}
-            {groups.waiting.length > 0 && <div className="inbox-board" role="presentation">Claude is waiting on you · {groups.waiting.length}</div>}
+            {groups.waiting.length > 0 && <div className="inbox-board" role="presentation">{claude} is waiting on you · {groups.waiting.length}</div>}
             {groups.waiting.map(row)}
             {groups.check.length > 0 && <div className="inbox-board" role="presentation">Ready to check · {groups.check.length}</div>}
             {groups.check.map(row)}

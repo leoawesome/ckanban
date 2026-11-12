@@ -1,5 +1,5 @@
 import { parseConnectorSetting } from "./connectors";
-import { AvatarError, withAvatar, withoutAvatar } from "./avatars";
+import { AvatarError, CLAUDE_KEY, withAvatar, withClaudeName, withoutAvatar } from "./avatars";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { routeLabel, track } from "./lag";
@@ -258,6 +258,12 @@ export function isAllowedSocket(req: Request, port: number, remote?: RemoteConfi
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } });
+}
+
+/** The `name` of a PUT /api/avatars/claude/name body; anything but {name: text or null} is a 400. */
+function claudeNameOf(b: unknown): unknown {
+  if (!b || typeof b !== "object" || Array.isArray(b) || !("name" in b)) throw new HttpError(400, "send {\"name\": \"...\"}");
+  return (b as { name: unknown }).name;
 }
 
 async function body(req: Request): Promise<any> {
@@ -1082,11 +1088,16 @@ export function createServer(deps: ServerDeps) {
     // The user's avatar choices for Claude, the user and teammates: one set for every board (src/server/avatars.ts).
     if (parts[0] === "avatars") {
       if (parts.length === 1 && m === "GET") return json(store.listAvatars());
-      if (parts.length === 2 && (m === "PUT" || m === "DELETE")) {
+      // PUT /api/avatars/claude/name {name}: the name shown in place of "Claude" ("" or "Claude": back to "Claude").
+      const nameRoute = parts.length === 3 && parts[1] === CLAUDE_KEY && parts[2] === "name" && m === "PUT";
+      if (nameRoute || (parts.length === 2 && (m === "PUT" || m === "DELETE"))) {
         if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "a board or huddle run can't change avatars; ask the user");
         const name = parts[1];
+        // The body first, then the saved file: a slow upload must not write back a copy read before it arrived.
+        const sent = m === "PUT" ? await body(req) : undefined;
         try {
-          const next = m === "PUT" ? withAvatar(store.listAvatars(), name, await body(req)) : withoutAvatar(store.listAvatars(), name);
+          const next = nameRoute ? withClaudeName(store.listAvatars(), claudeNameOf(sent))
+            : m === "PUT" ? withAvatar(store.listAvatars(), name, sent) : withoutAvatar(store.listAvatars(), name);
           store.saveAvatars(next);
           return json(next);
         } catch (e) {

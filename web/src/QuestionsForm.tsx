@@ -7,6 +7,7 @@ import { CheckIcon } from "./icons";
 import { usePersistentState } from "./usePersistentState";
 import { enterSends } from "./enterSends";
 import { QuestionText } from "./QuestionText";
+import { useClaudeName } from "./AvatarFace";
 import { plainMarkdown } from "./miniMarkdown";
 
 /**
@@ -62,6 +63,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
   /** Where to keep unsent progress so it survives leaving the ticket; omit to not save. */
   storageKey?: string;
 }) {
+  const claude = useClaudeName();
   const sig = signature(questions);
   const key = answered || replaced || closed ? null : storageKey ?? null;
   // Progress saved for this form, or for the earlier form it asks again (same key), carried over question by question.
@@ -170,7 +172,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
   return (
     <div className="qcard" ref={root} tabIndex={-1} onKeyDown={onKey}>
       <div className="qcard-head">
-        <span className="qcard-title">Claude has {total} question{total > 1 ? "s" : ""}</span>
+        <span className="qcard-title">{claude} has {total} question{total > 1 ? "s" : ""}</span>
         {total > 1 && <span className="qsteps" aria-label={`Step ${Math.min(step + 1, total)} of ${total}`}>
           {questions.map((_, i) => (
             <button key={i} className={`qstep ${i === step ? "on" : ""} ${i < step || summary ? "done" : ""}`}

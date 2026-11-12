@@ -22,7 +22,8 @@ import { boardColumnOf } from "./columns";
 import { usePhone } from "./usePhone";
 import { ClaudeFace } from "./ConvTurn";
 import type { AvatarMood } from "./avatarLook";
-import { attentionMood, finishMood, runMood, runWord } from "./avatarMood";
+import { attentionMood, finishMood, isThinkingLine, runMood, runWord } from "./avatarMood";
+import { useClaudeName } from "./AvatarFace";
 
 /**
  * The card's 📌 button: Pin to top, or Unpin on a pinned card. Desktop shows it on hover and focus (always on a pinned
@@ -115,7 +116,7 @@ function twoLabels(long: string, short: string) {
 }
 
 // Shown by the badge already, so the activity line would only repeat it.
-const QUIET_ACTIVITY = new Set(["Starting…", "Claude is replying…"]);
+const quietActivity = (a: string) => a === "Starting…" || isThinkingLine(a);
 
 /** The ticket's auto huddle: reviewing its work ("Auto huddle · reason"), or waiting for the board's one slot. */
 export function autoHuddleChip(a: NonNullable<Ticket["autoHuddle"]>) {
@@ -156,10 +157,10 @@ export function outcomeBadge(t: Ticket) {
   }
 }
 
-/** Who wrote the card's last message: huddle digests aren't the user's. */
-function lastWho(m: SessionMessage): string {
+/** Who wrote the card's last message: huddle digests aren't the user's; Claude's are under the name the user gave it. */
+function lastWho(m: SessionMessage, claude: string): string {
   if (m.from === "huddle") return "Huddle";
-  return m.role === "user" ? "You" : "Claude";
+  return m.role === "user" ? "You" : claude;
 }
 
 /**
@@ -206,13 +207,14 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
       ? <span className="badge queued" title="A daemon restart is pending; queued tickets start right after it">Waits for restart</span>
       : <span className="badge queued" title="Starts as soon as nothing else holds it back (another ticket editing the folder, or a restart)">Queued · #{queued}</span>)
     : ownWorking ? null : outcomeBadge(ticket);
-  const showActivity = ownWorking && ticket.lastActivity && !QUIET_ACTIVITY.has(ticket.lastActivity);
+  const showActivity = ownWorking && ticket.lastActivity && !quietActivity(ticket.lastActivity);
   // Its own huddle working while its own run isn't: a blue working line in place of the last message ("Needs you" wins).
   const huddleLine = cardHuddleLine(ticket, { working, needsYou: !!att });
   // How long since the run's last step; amber and a slower spinner once it has been quiet for 3 minutes.
   const step = useStepAge(ownWorking ? ticket.lastActivityAt : null);
   const quiet = ownWorking && !!step?.quiet;
   const last = ticket.session?.lastMessage;
+  const claudeName = useClaudeName();
   const done = ticket.status === "done";
   // 📌 Pinned: the dark card at the top of its column (Done unpins it).
   const pinned = !!ticket.pinnedAt && !done;
@@ -322,7 +324,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
         </div>
       ) : last && !signIn && previewShown(boardColumnOf(ticket)) && (
         <div className="card-last" title={last.text}>
-          <span className={`who ${last.role}`}>{lastWho(last)}:</span>{" "}
+          <span className={`who ${last.role}`}>{lastWho(last, claudeName)}:</span>{" "}
           {plainPreview(last.from === "huddle" ? digestPreview(last.text) : last.text)}
         </div>
       )}

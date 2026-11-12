@@ -2,6 +2,8 @@
 // for every board in <home>/avatars.json. Only known part names and #rrggbb colours are kept; anything else in a
 // request or a hand-edited file is dropped, and a missing field means "the default" (web/src/avatarLook.ts).
 // The part lists match web/src/avatarLook.ts (test/avatars.test.ts checks).
+// Claude's entry may also hold `name`: the name the board shows in place of "Claude" (display only; missing, empty or
+// damaged means "Claude"). It lives on the "claude" entry only, and changing or resetting the look keeps it.
 
 export const AVATAR_FACES = ["robot", "person", "critter"] as const;
 export const AVATAR_HAIRS = ["none", "short", "ponytail", "bun", "spiky"] as const;
@@ -13,6 +15,8 @@ export interface SavedLook {
   hair?: (typeof AVATAR_HAIRS)[number];
   hairColor?: string;
   accessory?: (typeof AVATAR_ACCESSORIES)[number];
+  /** Only on "claude": the name shown in place of "Claude". */
+  name?: string;
 }
 
 /** Name -> look. Plain object built from validated keys only. */
@@ -29,13 +33,27 @@ export class AvatarError extends Error {
   }
 }
 
+/** The key whose entry may carry a display name. */
+export const CLAUDE_KEY = "claude";
+/** Longest display name kept (characters). */
+export const MAX_CLAUDE_NAME = 24;
+
+/** A display name as kept: one line, spaces collapsed, trimmed, at most MAX_CLAUDE_NAME characters; "" when unusable.
+ * "Claude" itself is "" (the default, so nothing is stored). Same rule as cleanClaudeName in web/src/avatarLook.ts. */
+export function cleanClaudeName(v: unknown): string {
+  if (typeof v !== "string") return "";
+  const one = v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/\p{Cf}+/gu, "").replace(/\s+/g, " ").trim();
+  const name = Array.from(one).slice(0, MAX_CLAUDE_NAME).join("").trim();
+  return name.toLowerCase() === "claude" ? "" : name;
+}
+
 const isHex = (v: unknown): v is string => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
 const oneOf = <T extends string>(list: readonly T[], v: unknown): v is T => typeof v === "string" && (list as readonly string[]).includes(v);
 
 export const isAvatarName = (v: unknown): v is string => typeof v === "string" && v.length <= 64 && AVATAR_NAME.test(v);
 
 /** The known, valid fields of one look; everything else is ignored. */
-export function cleanLook(v: unknown): SavedLook {
+export function cleanLook(v: unknown, key?: string): SavedLook {
   if (!v || typeof v !== "object" || Array.isArray(v)) return {};
   const x = v as Record<string, unknown>;
   const out: SavedLook = {};
@@ -44,6 +62,10 @@ export function cleanLook(v: unknown): SavedLook {
   if (oneOf(AVATAR_HAIRS, x.hair)) out.hair = x.hair;
   if (isHex(x.hairColor)) out.hairColor = x.hairColor.toLowerCase();
   if (oneOf(AVATAR_ACCESSORIES, x.accessory)) out.accessory = x.accessory;
+  if (key === CLAUDE_KEY) {
+    const name = cleanClaudeName(x.name);
+    if (name) out.name = name;
+  }
   return out;
 }
 
@@ -55,7 +77,7 @@ export function cleanAvatars(v: unknown): SavedAvatarMap {
   for (const [name, raw] of Object.entries(v as Record<string, unknown>)) {
     if (n >= MAX_AVATARS) break;
     if (!isAvatarName(name)) continue;
-    const look = cleanLook(raw);
+    const look = cleanLook(raw, name);
     if (!Object.keys(look).length) continue;
     out[name] = look;
     n++;
@@ -63,18 +85,46 @@ export function cleanAvatars(v: unknown): SavedAvatarMap {
   return out;
 }
 
-/** The map after saving `look` for `name` (replaces the old choice). Throws AvatarError on a bad name or nothing valid. */
+const has = (map: SavedAvatarMap, name: string) => Object.prototype.hasOwnProperty.call(map, name);
+/** Claude's saved display name ({} when none), kept when its look changes. */
+const keptName = (map: SavedAvatarMap, name: string): SavedLook => {
+  const n = name === CLAUDE_KEY && has(map, name) ? cleanClaudeName(map[name].name) : "";
+  return n ? { name: n } : {};
+};
+
+/** The map after saving `look` for `name` (replaces the old look; Claude's display name stays). Throws AvatarError on a bad name or nothing valid. */
 export function withAvatar(map: SavedAvatarMap, name: string, look: unknown): SavedAvatarMap {
   if (!isAvatarName(name)) throw new AvatarError(400, "name may only use lowercase letters, digits and dashes");
-  const clean = cleanLook(look);
+  const { name: _ignored, ...clean } = cleanLook(look, name);
   if (!Object.keys(clean).length) throw new AvatarError(400, "nothing to save: use known parts and #rrggbb colours");
-  if (!Object.prototype.hasOwnProperty.call(map, name) && Object.keys(map).length >= MAX_AVATARS) throw new AvatarError(400, `at most ${MAX_AVATARS} avatars can be saved`);
-  return { ...map, [name]: clean };
+  if (!has(map, name) && Object.keys(map).length >= MAX_AVATARS) throw new AvatarError(400, `at most ${MAX_AVATARS} avatars can be saved`);
+  return { ...map, [name]: { ...clean, ...keptName(map, name) } };
 }
 
-/** The map without `name` (its default look comes back). */
+/** The map without `name`'s look (its default look comes back); Claude's display name stays. */
 export function withoutAvatar(map: SavedAvatarMap, name: string): SavedAvatarMap {
+  const kept = keptName(map, name);
   const out: SavedAvatarMap = {};
-  for (const [k, v] of Object.entries(map)) if (k !== name) out[k] = v;
+  for (const [k, v] of Object.entries(map)) {
+    if (k !== name) out[k] = v;
+    else if (kept.name) out[k] = kept;
+  }
+  return out;
+}
+
+/** The map with Claude's display name set (cleaned), or cleared when it is empty or "Claude"; the look stays. */
+export function withClaudeName(map: SavedAvatarMap, raw: unknown): SavedAvatarMap {
+  if (raw !== null && raw !== undefined && typeof raw !== "string") throw new AvatarError(400, "name must be text");
+  const name = cleanClaudeName(raw);
+  const { name: _old, ...look } = has(map, CLAUDE_KEY) ? map[CLAUDE_KEY] : ({} as SavedLook);
+  const next = { ...look, ...(name ? { name } : {}) };
+  if (!has(map, CLAUDE_KEY) && name && Object.keys(map).length >= MAX_AVATARS) throw new AvatarError(400, `at most ${MAX_AVATARS} avatars can be saved`);
+  const keep = Object.keys(next).length > 0;
+  const out: SavedAvatarMap = {};
+  for (const [k, v] of Object.entries(map)) {
+    if (k !== CLAUDE_KEY) out[k] = v;
+    else if (keep) out[k] = next;
+  }
+  if (keep) out[CLAUDE_KEY] = next;
   return out;
 }

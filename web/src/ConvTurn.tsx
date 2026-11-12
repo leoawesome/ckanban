@@ -3,9 +3,9 @@ import { copy } from "./api";
 import { avatarColor, avatarLetter } from "./avatar";
 import { stepsSummary } from "./chatTurns";
 import { CheckIcon, CopyIcon } from "./icons";
-import { AvatarFace, useAvatar } from "./AvatarFace";
+import { AvatarFace, useAvatar, useClaudeName } from "./AvatarFace";
 import type { AvatarMood } from "./avatarLook";
-import { runMood } from "./avatarMood";
+import { liveLine, runMood } from "./avatarMood";
 import { elapsed, fullTime, timeAgo } from "./time";
 import { toast } from "./toast";
 
@@ -30,10 +30,11 @@ export function LetterAvatar({ seed, name }: { seed: string; name: string }) {
   return <span className="turn-av" style={{ background: avatarColor(seed) }} aria-hidden>{avatarLetter(name)}</span>;
 }
 
-export function Turn({ start, avatar = <ClaudeAvatar />, name = "Claude", sub, at, className, children }: {
+export function Turn({ start, avatar = <ClaudeAvatar />, name: given, sub, at, className, children }: {
   /** First row of the turn: shows the avatar and the name line. */
   start: boolean;
   avatar?: ReactNode;
+  /** Missing: Claude, under the name the user gave it (useClaudeName). */
   name?: ReactNode;
   /** After the name, e.g. "from another ticket". */
   sub?: ReactNode;
@@ -41,6 +42,8 @@ export function Turn({ start, avatar = <ClaudeAvatar />, name = "Claude", sub, a
   className?: string;
   children: ReactNode;
 }) {
+  const claude = useClaudeName();
+  const name = given ?? claude;
   return (
     <div className={`turn${start ? " start" : ""}${className ? ` ${className}` : ""}`}>
       {start && avatar}
@@ -128,7 +131,7 @@ export function StepsLine({ items, running, activity, old, children }: {
   children: ReactNode;
 }) {
   useSecondTick(running);
-  const s = stepsSummary(items, running, activity);
+  const s = stepsSummary(items, running, liveLine(activity, useClaudeName()));
   const since = running ? items.at(-1)?.at : undefined;
   return (
     <details className={`steps-line${old ? " inherited" : ""}${running ? " live" : ""}`}>
@@ -145,7 +148,7 @@ export function StepsLine({ items, running, activity, old, children }: {
 
 /**
  * Claude's place while it works: its face (44px, thinking or working), what it is doing and for how long. It takes the
- * whole width under the replies, so it shows no turn avatar or name line of its own (screen readers still hear "Claude").
+ * whole width under the replies, so it shows no turn avatar or name line of its own (screen readers still hear Claude's name).
  */
 export function WorkingRow({ start, activity, startedAt, stalled, children }: {
   start: boolean;
@@ -157,12 +160,13 @@ export function WorkingRow({ start, activity, startedAt, stalled, children }: {
 }) {
   const since = startedAt ? elapsed(startedAt) : "";
   const mood = runMood(activity);
+  const claude = useClaudeName();
   return (
     <Turn start={false} className={`working${start ? " start" : ""}`}>
       <div className={`working-row${stalled ? " stalled" : ""}`} role="status" aria-live="polite">
         <ClaudeFace mood={mood} size={44} />
         {stalled ? <span>No output for {stalled} min</span>
-          : <span className="working-text">{mood === "working" ? activity : activity ?? "Thinking…"}</span>}
+          : <span className="working-text">{mood === "working" ? activity : liveLine(activity, claude) ?? "Thinking…"}</span>}
         {since && !stalled && <span className="working-time">{since}</span>}
       </div>
       {children}

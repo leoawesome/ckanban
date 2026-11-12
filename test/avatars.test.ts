@@ -8,7 +8,8 @@ import { RUN_HEADER } from "../src/server/scheduler";
 import { Store } from "../src/server/store";
 import * as server from "../src/server/avatars";
 import {
-  AVATAR_ACCESSORIES, AVATAR_FACES, AVATAR_HAIRS, avatarFor, avatarKey, CLAUDE_LOOK, cleanAvatarLook, defaultAvatar, TEAMMATE_LOOKS, YOU_LOOK,
+  AVATAR_ACCESSORIES, AVATAR_FACES, AVATAR_HAIRS, avatarFor, avatarKey, CLAUDE_LOOK, claudeName, cleanAvatarLook, cleanClaudeName, defaultAvatar, MAX_CLAUDE_NAME,
+  TEAMMATE_LOOKS, YOU_LOOK,
 } from "../web/src/avatarLook";
 import { faceLook } from "../web/src/huddleText";
 import { tempDir } from "./helpers";
@@ -130,4 +131,75 @@ test("a damaged avatars.json shows the defaults instead of breaking", async () =
   // Saving over a damaged file writes a clean one.
   await send("PUT", "/api/avatars/claude", { face: "robot" });
   expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ qa: { face: "critter" }, claude: { face: "robot" } });
+});
+
+// ---- Claude's name (shown in place of "Claude"; kept on the "claude" entry) ----
+
+test("the name is trimmed, one line, capped at 24 characters, and 'Claude' or junk means none (server and UI agree)", () => {
+  const cases: [unknown, string][] = [
+    ["  Ada  ", "Ada"], ["Ada\nLovelace\t!", "Ada Lovelace !"], ["x".repeat(40), "x".repeat(24)], ["😀".repeat(30), "😀".repeat(24)],
+    ["", ""], ["   ", ""], ["\u200b", ""], ["\u202eAda\u200b", "Ada"], ["claude", ""], [" Claude ", ""], [42, ""], [null, ""], [{ a: 1 }, ""], [["Ada"], ""],
+  ];
+  for (const [raw, want] of cases) {
+    expect(server.cleanClaudeName(raw)).toBe(want);
+    expect(cleanClaudeName(raw)).toBe(want);
+  }
+  expect(MAX_CLAUDE_NAME).toBe(server.MAX_CLAUDE_NAME);
+});
+
+test("the name falls back to Claude when missing, empty or damaged", () => {
+  expect(claudeName(undefined)).toBe("Claude");
+  expect(claudeName({})).toBe("Claude");
+  expect(claudeName({ claude: { hair: "bun" } })).toBe("Claude");
+  for (const bad of [null, "x", 42, [], { claude: null }, { claude: "Ada" }, { claude: { name: 7 } }, { claude: { name: "  " } }]) expect(claudeName(bad as any)).toBe("Claude");
+  expect(claudeName({ claude: { name: " Ada " } })).toBe("Ada");
+  // A name on a teammate's entry is not Claude's name, and isn't part of anyone's look.
+  expect(claudeName({ qa: { name: "Ada" } } as any)).toBe("Claude");
+  expect(avatarFor("claude", { claude: { name: "Ada", hair: "bun" } })).toEqual({ ...CLAUDE_LOOK, hair: "bun" });
+});
+
+test("old files without a name load unchanged; a name only stays on Claude's entry", () => {
+  const old = { claude: { face: "person", color: "#123456" }, qa: { face: "critter" } };
+  expect(server.cleanAvatars(old)).toEqual(old as server.SavedAvatarMap);
+  expect(server.cleanAvatars({ claude: { name: "Ada" }, qa: { face: "critter", name: "Bob" }, reviewer: { name: "Zed" } }))
+    .toEqual({ claude: { name: "Ada" }, qa: { face: "critter" } });
+  expect(server.cleanAvatars({ claude: { name: 12, face: "robot" } })).toEqual({ claude: { face: "robot" } });
+});
+
+test("the look and the name change apart: a new look or a reset keeps the name, a new name keeps the look", () => {
+  let m = server.withClaudeName({ qa: { face: "robot" } }, "  Ada ");
+  expect(m).toEqual({ qa: { face: "robot" }, claude: { name: "Ada" } });
+  m = server.withAvatar(m, "claude", { hair: "bun", name: "Ignored" });
+  expect(m.claude).toEqual({ hair: "bun", name: "Ada" });
+  m = server.withClaudeName(m, "Bea");
+  expect(m.claude).toEqual({ hair: "bun", name: "Bea" });
+  m = server.withoutAvatar(m, "claude");
+  expect(m).toEqual({ qa: { face: "robot" }, claude: { name: "Bea" } });
+  m = server.withClaudeName(m, "");
+  expect(m).toEqual({ qa: { face: "robot" } });
+  expect(server.withClaudeName({ claude: { hair: "bun", name: "Ada" } }, "Claude")).toEqual({ claude: { hair: "bun" } });
+  expect(server.withClaudeName({ claude: { hair: "bun" } }, null)).toEqual({ claude: { hair: "bun" } });
+  expect(() => server.withClaudeName({}, 42)).toThrow();
+});
+
+test("saves the name for every board, keeps it after a restart, and keeps everything else in the file", async () => {
+  writeFileSync(join(store.root, "avatars.json"), JSON.stringify({ qa: { face: "critter" }, claude: { hair: "bun" } }));
+  let r = await send("PUT", "/api/avatars/claude/name", { name: "  Ada Lovelace the Analytical Engine Fan " });
+  expect(r.status).toBe(200);
+  expect(await r.json()).toEqual({ qa: { face: "critter" }, claude: { hair: "bun", name: "Ada Lovelace the Analyti" } });
+  expect(claudeName(new Store(store.root).listAvatars())).toBe("Ada Lovelace the Analyti");
+  // Changing and resetting the look keeps the name.
+  await send("PUT", "/api/avatars/claude", { face: "critter" });
+  await send("DELETE", "/api/avatars/claude");
+  expect(new Store(store.root).listAvatars()).toEqual({ qa: { face: "critter" }, claude: { name: "Ada Lovelace the Analyti" } });
+  // Bad bodies and runs are refused; the saved name stays.
+  expect((await send("PUT", "/api/avatars/claude/name", { name: 5 })).status).toBe(400);
+  expect((await send("PUT", "/api/avatars/claude/name", "Ada")).status).toBe(400);
+  expect((await send("PUT", "/api/avatars/qa/name", { name: "Ada" })).status).not.toBe(200);
+  expect((await send("PUT", "/api/avatars/claude/name", { name: "Run" }, { [RUN_HEADER]: "b/t" })).status).toBe(403);
+  expect(claudeName(store.listAvatars())).toBe("Ada Lovelace the Analyti");
+  // Empty goes back to "Claude".
+  r = await send("PUT", "/api/avatars/claude/name", { name: "" });
+  expect(await r.json()).toEqual({ qa: { face: "critter" } });
+  expect(claudeName(store.listAvatars())).toBe("Claude");
 });

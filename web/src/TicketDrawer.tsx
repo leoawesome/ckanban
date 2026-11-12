@@ -38,6 +38,7 @@ import { PrList } from "./PrList";
 import { Select } from "./Select";
 import { phoneStatus } from "./phoneStatus";
 import { ClaudeFace } from "./ConvTurn";
+import { useClaudeName } from "./AvatarFace";
 import { useShareNotices } from "./share";
 import { SessionPicker, sessionLabel } from "./SessionPicker";
 import { TicketMenu } from "./TicketMenu";
@@ -352,6 +353,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   /** 📌 Pin (true) or unpin this ticket (with the board's Undo note). */
   onPin?: (on: boolean) => void;
 }) {
+  const claude = useClaudeName();
   // Errors from actions in this ticket show here, next to what failed, not in the page's top strip.
   const [panelError, setPanelError] = useState<string | null>(null);
   const onError = (msg: string) => setPanelError(msg);
@@ -825,7 +827,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     if (canPin) add("pin", pinned ? "Unpin" : "Pin to top", togglePin, ["P"]);
     add("move", "Move to a column…", openStatusPicker, ["M"]);
     if (!editing) add("edit", "Edit the description", () => letterRef.current("e"), ["E"]);
-    if ((working || familyBusy) && !stopping) add("stop", familyBusy ? "Stop this ticket and its tasks…" : "Stop Claude…", () => setConfirmStop(true), [MOD, "."]);
+    if ((working || familyBusy) && !stopping) add("stop", familyBusy ? "Stop this ticket and its tasks…" : `Stop ${claude}…`, () => setConfirmStop(true), [MOD, "."]);
     add("delete", "Delete ticket…", () => setConfirmDelete(true));
     return list;
   };
@@ -885,7 +887,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           {goal && !working && !goalOnScreen && (
             <button className="btn primary goal-btn" onClick={goTo} title={`${att!.label}: show me where`}>{goal.button}</button>
           )}
-          {working && !familyBusy && <button className="btn danger" disabled={stopping} onClick={stop} title={`Stop Claude (${MOD}.)`}>{stopping ? "Stopping…" : "Stop Claude"}<KeyHint keys="⌘." /></button>}
+          {working && !familyBusy && <button className="btn danger" disabled={stopping} onClick={stop} title={`Stop ${claude} (${MOD}.)`}>{stopping ? "Stopping…" : `Stop ${claude}`}<KeyHint keys="⌘." /></button>}
           {familyBusy && <button className="btn danger" disabled={stopping} onClick={() => setConfirmStop(true)} title={`Stop this ticket and its running tasks (${MOD}.)`}>{stopping ? "Stopping…" : "Stop"}<KeyHint keys="⌘." /></button>}
           {finished && <PlanFinished ticket={ticket} total={children.length} onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />}
           {!working && !finished && (ticket.status === "backlog" || ticket.status === "planning") && (
@@ -1245,7 +1247,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           </ConfirmDialog>
         )}
         {confirmStop && (
-          <ConfirmDialog title={stopTitle(ticket)} confirmLabel={familyBusy ? "Stop all" : "Stop Claude"} busyLabel="Stopping…"
+          <ConfirmDialog title={stopTitle(ticket, claude)} confirmLabel={familyBusy ? "Stop all" : `Stop ${claude}`} busyLabel="Stopping…"
             onCancel={() => setConfirmStop(false)}
             onConfirm={async () => {
               if (familyBusy) await api.stop(slug, ticket.id);
@@ -1254,7 +1256,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             }}>
             {familyBusy
               ? <p>Its running tasks stop now and queued ones don't start. Tickets you added to the feature keep going. {`$${ticket.familyCard!.costUsd.toFixed(2)}`} spent so far.</p>
-              : <p>Claude stops working on this ticket now. You can start it again later.</p>}
+              : <p>{claude} stops working on this ticket now. You can start it again later.</p>}
           </ConfirmDialog>
         )}
         {confirmPark && (

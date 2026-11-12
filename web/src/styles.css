@@ -4928,6 +4928,16 @@ button.composer-old:hover { color: var(--text); }
 .ave-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
 .ave-acts .btn { min-height: 40px; padding: 8px 16px; font-weight: 600; }
 .ave-acts .btn.primary { margin-left: auto; }
+.ave-name input { min-height: 40px; max-width: 320px; font-size: var(--fs-md); }
+.ave-name-hint { margin-top: 4px; font-size: var(--fs-xs); color: var(--muted); }
+.claude-name { display: flex; flex-direction: column; gap: 6px; max-width: 420px; }
+.claude-name label { font-size: var(--fs-sm); font-weight: 600; }
+.claude-name-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.claude-name-row input { min-height: 40px; flex: 1 1 160px; min-width: 0; font-size: var(--fs-md); }
+.claude-name-row .btn { min-height: 40px; padding: 8px 16px; font-weight: 600; flex: none; }
+.claude-name-msg { font-size: var(--fs-xs); color: var(--ok); }
+.claude-name-msg.err { color: var(--err); }
+.tm-was { font-size: var(--fs-xs); color: var(--muted); font-weight: 400; }
 .ave-msg { flex-basis: 100%; font-size: var(--fs-sm); color: var(--ok); }
 .ave-msg.err { color: var(--err); }
 @media (max-width: 720px) {
@@ -4948,6 +4958,9 @@ button.composer-old:hover { color: var(--text); }
   .ave-opts { gap: 6px; }
   .ave-opt { width: calc((100% - 18px) / 4); min-width: 0; }
   .ave-sw { width: 44px; height: 44px; }
+  /* 16px text: iOS zooms into smaller fields. */
+  .ave-name input, .claude-name-row input { font-size: var(--fs-lg); min-height: 44px; max-width: none; }
+  .claude-name-row .btn { min-height: 44px; }
   .ave-acts { position: sticky; bottom: 0; z-index: 1; background: var(--surface); margin: 16px -12px 0; padding: 10px 12px 14px; border-top: 1px solid var(--border); }
   .ave-acts .btn { min-height: 44px; font-size: var(--fs-md); }
   .ave-acts .btn.primary { margin-left: 0; flex: 1; }

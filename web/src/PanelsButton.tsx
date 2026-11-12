@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckIcon, ChevronDownIcon, PanelsIcon } from "./icons";
 import { useLayer } from "./layers";
-import { PANELS, type PanelId } from "./panelState";
+import { PANELS, panelLabel, type PanelId } from "./panelState";
+import { useClaudeName } from "./AvatarFace";
 import type { Panels } from "./usePanels";
 
 /**
@@ -16,6 +17,7 @@ export function PanelsButton({ panels, onOpen, badges = {} }: {
   badges?: Partial<Record<PanelId, ReactNode>>;
 }) {
   const { open, shown } = panels.state;
+  const claude = useClaudeName();
   const [menu, setMenu] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const caret = useRef<HTMLButtonElement>(null);
@@ -64,7 +66,7 @@ export function PanelsButton({ panels, onOpen, badges = {} }: {
               <button key={p.id} role="menuitemcheckbox" aria-checked={on} className="menu-item"
                 onClick={() => (on ? panels.close(p.id) : onOpen(p.id))}>
                 <span className={`panels-check${on ? " on" : ""}`} aria-hidden>{on && <CheckIcon size={12} />}</span>
-                <span className="menu-label">{p.label}</span>
+                <span className="menu-label">{panelLabel(p.id, claude)}</span>
                 {badges[p.id]}
                 {p.keys && <kbd>{p.keys}</kbd>}
               </button>

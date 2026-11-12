@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { api, subscribe, type Huddle, type HuddleNote, type HuddleNotes, type HuddlePreset, type HuddleTemplate, type LearnedView, type Level, type SquadCardRef, type SquadDraft, type TeamUsage } from "./api";
 import { LearnedPane } from "./Learned";
-import { AvatarFace, useAvatar } from "./AvatarFace";
+import { AvatarFace, saveClaudeName, useAvatar, useClaudeName } from "./AvatarFace";
+import { cleanClaudeName, DEFAULT_CLAUDE_NAME, MAX_CLAUDE_NAME } from "./avatarLook";
 import { AvatarEditor } from "./AvatarEditor";
 import { Select } from "./Select";
 import { TeamSquads } from "./HuddleTemplates";
@@ -166,7 +167,8 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   const q = filter.trim().toLowerCase();
   const shown = useMemo(() => (presets ?? []).filter((p) => !q || [p.name, p.role, p.prompt].some((s) => s.toLowerCase().includes(q))), [presets, q]);
   const shownTemplates = useMemo(() => (templates ?? []).filter((t) => !q || [t.name, t.label, t.description].some((s) => s.toLowerCase().includes(q))), [templates, q]);
-  const showClaude = !q || "claude".includes(q) || CLAUDE_TEXT.toLowerCase().includes(q);
+  const claudeName = useClaudeName();
+  const showClaude = !q || "claude".includes(q) || claudeName.toLowerCase().includes(q) || CLAUDE_TEXT.toLowerCase().includes(q);
   const claudeOn = selected === CLAUDE_ROW && showClaude;
   const cur = claudeOn ? null : presets?.find((p) => p.name === selected) ?? shown[0] ?? null;
   const pick = (name: string) => { setSelected(name); setEditing(null); setErr(null); };
@@ -221,8 +223,8 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(CLAUDE_ROW); } }}>
                   <TeammateAvatar name="claude" />
                   <span className="tm-names">
-                    <span className="tm-name">Claude</span>
-                    <span className="tm-role">Runs your tickets and chats</span>
+                    <span className="tm-name">{claudeName}</span>
+                    <span className="tm-role">{CLAUDE_TEXT}</span>
                   </span>
                   <span />
                 </div>
@@ -290,7 +292,7 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
           </div>
           {avatarEdit && (
             <AvatarEditor initial={avatarEdit} onClose={() => setAvatarEdit(null)}
-              people={[{ who: "claude", label: "Claude" }, ...(presets ?? []).map((p) => ({ who: p.name, label: p.role || p.name }))]} />
+              people={[{ who: "claude", label: claudeName }, ...(presets ?? []).map((p) => ({ who: p.name, label: p.role || p.name }))]} />
           )}
         </div>
       )}
@@ -336,19 +338,61 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
 
 const CLAUDE_TEXT = "Runs your tickets and chats";
 
-/** The Claude row's pane: its avatar can be changed here (it isn't a teammate, so nothing else to set). */
+/** The Claude row's pane: its avatar and the name the board shows for it can be changed here (it isn't a teammate, so nothing else to set). */
 function ClaudeDetail({ onAvatar }: { onAvatar: () => void }) {
+  const name = useClaudeName();
+  const renamed = name !== DEFAULT_CLAUDE_NAME;
   return (
     <div className="tm-pane">
       <div className="tm-head">
-        <button type="button" className="tm-face-btn" onClick={onAvatar} aria-label="Change Claude's avatar" title="Change avatar"><TeammateAvatar name="claude" big /></button>
-        <h3>Claude</h3>
+        <button type="button" className="tm-face-btn" onClick={onAvatar} aria-label={`Change ${name}'s avatar`} title="Change avatar"><TeammateAvatar name="claude" big /></button>
+        <h3>{name}</h3>
+        {renamed && <span className="tm-was">Claude</span>}
         <span className="spacer" />
         <button className="btn small" onClick={onAvatar}>Change avatar</button>
       </div>
       <div className="tm-meta">The Claude that runs your tickets and chats with you. Its face shows what it's doing: thinking, working, waiting for you, done or stuck.</div>
-      <div className="tm-hint">Its avatar is the same on every board. Teammates in huddles have their own; pick one in the list to change it.</div>
+      <ClaudeNameForm saved={name} />
+      <div className="tm-hint">Its avatar and name are the same on every board. Teammates in huddles have their own avatar; pick one in the list to change it.</div>
     </div>
+  );
+}
+
+/** The name the board shows in place of "Claude" (every board); empty goes back to "Claude". */
+function ClaudeNameForm({ saved }: { saved: string }) {
+  const shown = saved === DEFAULT_CLAUDE_NAME ? "" : saved;
+  const [draft, setDraft] = useState(shown);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // A save from the avatar editor (or another tab) shows here too.
+  useEffect(() => setDraft(shown), [shown]);
+  const next = cleanClaudeName(draft);
+  const changed = next !== cleanClaudeName(shown);
+  const save = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const v = await saveClaudeName(next);
+      setDraft(cleanClaudeName(v.claude?.name));
+      setMsg({ ok: true, text: "Saved for all boards." });
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="claude-name" onSubmit={(e) => { e.preventDefault(); if (changed && !busy) void save(); }}>
+      <label htmlFor="claude-name-input">Name on the board</label>
+      <div className="claude-name-row">
+        <input id="claude-name-input" type="text" value={draft} placeholder={DEFAULT_CLAUDE_NAME} maxLength={MAX_CLAUDE_NAME} autoComplete="off" spellCheck={false}
+          enterKeyHint="done" aria-describedby="claude-name-hint"
+          onKeyDown={(e) => { if (e.key === "Enter" && e.nativeEvent.isComposing) e.preventDefault(); }} onChange={(e) => { setDraft(e.target.value); setMsg(null); }} />
+        <button type="submit" className="btn primary" disabled={busy || !changed}>{busy ? "Saving…" : "Save"}</button>
+      </div>
+      {msg ? <span className={`claude-name-msg${msg.ok ? "" : " err"}`} role={msg.ok ? "status" : "alert"}>{msg.text}</span>
+        : <span id="claude-name-hint" className="tm-hint">Shown in place of “Claude” where it replies and works. Leave it empty for Claude.</span>}
+    </form>
   );
 }
 

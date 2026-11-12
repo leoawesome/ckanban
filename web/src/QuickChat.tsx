@@ -23,6 +23,7 @@ import { restoredDraft, rewindOff } from "./rewindText";
 import { fullTime, timeAgo } from "./time";
 import { toast } from "./toast";
 import { ToolRows } from "./ToolRows";
+import { useClaudeName } from "./AvatarFace";
 import { ClaudeFace, ErrorTurn, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
 import { layoutTurns } from "./chatTurns";
 import { useChatSimpler } from "./Simpler";
@@ -79,6 +80,7 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
   onOpenTicket: (id: string) => void;
 }) {
   const slug = profile.slug;
+  const claude = useClaudeName();
   const [chats, setChats] = useState<QuickChat[] | null>(null);
   const [selected, setSelected] = useState<string | null | undefined>(() => readSelected(slug));
   // Changes when the user picks a chat (not when a new chat gets its id), so the open thread keeps its state then.
@@ -174,8 +176,8 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
   };
 
   const canMake = !!current && current.started && !current.ticketId && !current.running;
-  const makeTitle = !current ? "Send Claude a message first" : current.ticketId ? "This chat is already a ticket"
-    : current.running ? "Wait for Claude's reply to finish" : !current.started ? "Send Claude a message first"
+  const makeTitle = !current ? `Send ${claude} a message first` : current.ticketId ? "This chat is already a ticket"
+    : current.running ? `Wait for ${claude}'s reply to finish` : !current.started ? `Send ${claude} a message first`
     : "Turn this chat into a Backlog ticket that carries on the conversation";
 
   const thread = (
@@ -202,7 +204,7 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
             if (deleting.id === currentId) pick(null);
             setDeleting(null);
           }}>
-          <p>Removes <b>{deleting.title}</b> from this board's chats.{deleting.running ? " Claude's reply stops." : ""}{deleting.ticketId ? " The ticket made from it stays." : ""}</p>
+          <p>Removes <b>{deleting.title}</b> from this board's chats.{deleting.running ? ` ${claude}'s reply stops.` : ""}{deleting.ticketId ? " The ticket made from it stays." : ""}</p>
         </ConfirmDialog>
       )}
     </>
@@ -290,8 +292,9 @@ function MakeTicketDialog({ chat, tickets, busy, onClose, onMake }: {
 
 function ChatRows({ chats, currentId, onPick }: { chats: QuickChat[] | null; currentId: string | null; onPick: (id: string) => void }) {
   useNow();
+  const claude = useClaudeName();
   if (chats === null) return <div className="muted small qc-list-note"><span className="spinner" /> Loading…</div>;
-  if (!chats.length) return <div className="muted small qc-list-note">No chats yet. Ask Claude anything about this folder.</div>;
+  if (!chats.length) return <div className="muted small qc-list-note">No chats yet. Ask {claude} anything about this folder.</div>;
   return (
     <>
       {chats.map((c) => (
@@ -371,6 +374,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
   onNew: () => void;
 }) {
   const id = chat?.id ?? null;
+  const claude = useClaudeName();
   const [page, setPage] = useState<{ entries: SessionEntry[]; start: number } | null>(id ? null : { entries: [], start: 0 });
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [pending, setPending] = useState<{ text: string; steer: boolean }[]>([]);
@@ -607,7 +611,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
         )}
         {empty && (
           <div className="qc-empty">
-            <p><b>Ask Claude about this folder.</b> No ticket needed. Claude can read and change files and run commands here, and knows this board.</p>
+            <p><b>Ask {claude} about this folder.</b> No ticket needed. {claude} can read and change files and run commands here, and knows this board.</p>
             <p className="muted small">Chats are kept: open Chats to go back to one. Make ticket turns a chat into a ticket.</p>
           </div>
         )}
@@ -716,11 +720,11 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
         {pending.filter((p) => p.steer).map((p, i) => (
           <div key={i} className="me-wrap">
             <div className="conv-msg user pending"><Markdown text={p.text} /></div>
-            <div className="me-meta">sent · Claude reads it at its next step</div>
+            <div className="me-meta">sent · {claude} reads it at its next step</div>
           </div>
         ))}
         {!!chat?.waiting && !running && (
-          <div className="chat-note">{chat.waiting === 1 ? "Your message goes" : `${chat.waiting} messages go`} to Claude once the board has restarted.</div>
+          <div className="chat-note">{chat.waiting === 1 ? "Your message goes" : `${chat.waiting} messages go`} to {claude} once the board has restarted.</div>
         )}
         {chat?.error && !running && !closed && <ErrorTurn error={chat.error} onRetry={() => send(RETRY)} retryDisabled={sending} />}
         {closed && (
@@ -746,8 +750,8 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
       {!closed && (
         <div className="composer">
           <textarea ref={composer} rows={phone ? 1 : 2} value={draft} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
-            placeholder={running ? "Add to your question: Claude reads it at its next step…" : phone ? "Ask Claude about this folder…" : "Ask Claude about this folder… (Enter sends)"}
-            aria-label="Message to Claude"
+            placeholder={running ? `Add to your question: ${claude} reads it at its next step…` : phone ? `Ask ${claude} about this folder…` : `Ask ${claude} about this folder… (Enter sends)`}
+            aria-label={`Message to ${claude}`}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (enterSends(e)) {
@@ -761,7 +765,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
             <span className="composer-meta">
               {chat && <ContextChip slug={slug} kind="chat" id={chat.id} />}
               <span className="muted small composer-hint">
-                Claude works in this board's folder.<span className="composer-keys"> Enter to send · Shift+Enter for a new line</span>
+                {claude} works in this board's folder.<span className="composer-keys"> Enter to send · Shift+Enter for a new line</span>
               </span>
             </span>
             <span className="composer-actions">

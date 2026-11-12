@@ -10,7 +10,8 @@ import { isHeldLine } from "./helper";
 import { HelperStatusLine, MessagesEntry } from "./Messages";
 import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 import { ClaudeFace } from "./ConvTurn";
-import { runMood } from "./avatarMood";
+import { liveLine, runMood } from "./avatarMood";
+import { useClaudeName } from "./AvatarFace";
 
 /**
  * Phone home (≤720px), for the board shown: what needs you (what Claude is waiting on, then what is ready to check,
@@ -37,6 +38,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
 }) {
   const now = useNow();
   const [showOlder, setShowOlder] = useState(false);
+  const claude = useClaudeName();
   const { clear, busy, leaving } = useSafeClear();
   const needs = inbox.filter((i) => i.profile === slug);
   const groups = groupInbox(needs, now);
@@ -101,7 +103,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
         <h3 className="now-head">Needs you · 0</h3>
         <p className="now-empty muted small">Nothing waits on you right now.</p>
       </>}
-      {groups.waiting.length > 0 && <h3 className="now-head">Claude is waiting on you · {groups.waiting.length}</h3>}
+      {groups.waiting.length > 0 && <h3 className="now-head">{claude} is waiting on you · {groups.waiting.length}</h3>}
       {groups.waiting.map(card)}
       {groups.check.length > 0 && <h3 className="now-head">Ready to check · {groups.check.length}</h3>}
       {groups.check.map(card)}
@@ -125,7 +127,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
           <span className="now-title">{t.title}</span>
           <span className="now-act now-run-act">
             <ClaudeFace mood={runMood(t.lastActivity)} size={20} />
-            <span className="now-run-text">{t.lastActivity || "Claude is working…"}{t.runStartedAt && <> · {elapsed(t.runStartedAt, now)}</>}</span>
+            <span className="now-run-text">{liveLine(t.lastActivity, claude) || `${claude} is working…`}{t.runStartedAt && <> · {elapsed(t.runStartedAt, now)}</>}</span>
           </span>
         </button>
       ))}
@@ -136,7 +138,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
           {planning.map((t) => (
             <button key={t.id} className="now-card now-open" onClick={() => onOpen(slug, t.id)}>
               <span className="now-title">{t.title}</span>
-              <span className="now-act">{t.lastActivity || "Waiting for your reply"}</span>
+              <span className="now-act">{liveLine(t.lastActivity, claude) || "Waiting for your reply"}</span>
             </button>
           ))}
         </>

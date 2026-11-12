@@ -6,12 +6,28 @@ import type { AvatarMood } from "./avatarLook";
 import type { FamilyState } from "./family";
 import type { FinishMark } from "./cardState";
 
-/** Live lines that aren't a tool step: the run is thinking or writing its reply. */
-const NOT_A_TOOL = new Set(["Starting…", "Claude is replying…", "Stopping…"]);
+/** The server's live line right after a message is sent (src/server/board.ts THINKING_LINE), and the one tickets
+ * saved before it ("Claude is replying…"). Both are a fixed marker: liveLine shows them with the user's name for Claude. */
+export const THINKING_LINE = "Claude is thinking…";
+const THINKING_LINES = new Set([THINKING_LINE, "Claude is replying…"]);
+
+/** The run has no step yet: it is thinking about its reply (the marker line, old or new). */
+export const isThinkingLine = (activity: string | null | undefined): boolean => !!activity && THINKING_LINES.has(activity);
+
+/** A live line as shown: the thinking marker becomes "<name> is thinking…", anything else is shown as it is. */
+export function liveLine(activity: string, name: string): string;
+export function liveLine(activity: string | null | undefined, name: string): string | null;
+export function liveLine(activity: string | null | undefined, name: string): string | null {
+  if (!activity) return activity ?? null;
+  return isThinkingLine(activity) ? `${name} is thinking…` : activity;
+}
+
+/** Live lines that aren't a tool step: the run is starting, thinking or stopping. Shown quietly (no step line on cards). */
+export const isQuietLine = (activity: string | null | undefined): boolean => !!activity && (activity === "Starting…" || activity === "Stopping…" || isThinkingLine(activity));
 
 /** A running ticket or chat: working while its live line names a step ("Running gh"), else thinking. */
 export function runMood(activity: string | null | undefined): AvatarMood {
-  return activity && !NOT_A_TOOL.has(activity) ? "working" : "thinking";
+  return activity && !isQuietLine(activity) ? "working" : "thinking";
 }
 
 /** The word a running card shows next to the face ("Thinking 12s", "Working 48s"), so the two moods read apart. */

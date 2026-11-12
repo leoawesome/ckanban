@@ -19,9 +19,9 @@ export const openTools = (t: FamilyTicketLike): number => (t.main ? t.familyCard
 export const runningTools = (t: FamilyTicketLike): number => (t.main ? t.familyCard?.running.length ?? 0 : 0);
 
 /** "Stop AI Outreach and its 2 running tasks?" */
-export function stopTitle(t: FamilyTicketLike): string {
+export function stopTitle(t: FamilyTicketLike, claude = "Claude"): string {
   const k = runningTools(t);
-  return k ? `Stop ${t.title} and its ${n(k, "running task")}?` : "Stop Claude?";
+  return k ? `Stop ${t.title} and its ${n(k, "running task")}?` : `Stop ${claude}?`;
 }
 
 /** "Delete AI Outreach and its 14 tasks ($41.20 spent)?" */

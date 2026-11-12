@@ -4,7 +4,7 @@
 // the user's saved choice (shared by every board) or the default.
 import { useEffect, useState } from "react";
 import { req } from "./api";
-import { avatarFor, avatarKey, cleanAvatarLook, type AvatarLook, type AvatarMood, type AvatarWho, type SavedAvatars } from "./avatarLook";
+import { avatarFor, avatarKey, claudeName, cleanAvatarLook, type AvatarLook, type AvatarMood, type AvatarWho, type SavedAvatars } from "./avatarLook";
 
 const INK = "#2b2622";
 const HAIR_BASE = "M9 19q1-10 11-10t11 10q-5-5-11-4.5T9 19z";
@@ -141,7 +141,14 @@ export async function saveAvatar(who: AvatarWho, look: Partial<AvatarLook>): Pro
   return next;
 }
 
-/** Drops the saved choice: the default look comes back. */
+/** Saves the name shown in place of "Claude" (every board); "" goes back to "Claude". Returns the choices as stored. */
+export async function saveClaudeName(name: string): Promise<SavedAvatars> {
+  const next = await req<SavedAvatars>("PUT", "/api/avatars/claude/name", { name });
+  publish(next);
+  return next;
+}
+
+/** Drops the saved choice: the default look comes back (Claude's name stays). */
 export async function resetAvatar(who: AvatarWho): Promise<SavedAvatars> {
   const next = await req<SavedAvatars>("DELETE", `/api/avatars/${encodeURIComponent(avatarKey(who))}`);
   publish(next);
@@ -163,4 +170,9 @@ export function useSavedAvatars(): SavedAvatars {
 /** The look to draw for "claude", "you", a teammate name or handle, or a huddle participant. */
 export function useAvatar(who: AvatarWho): AvatarLook {
   return avatarFor(who, useSavedAvatars());
+}
+
+/** The name the board shows for Claude (the user's choice, else "Claude"); re-renders when it is saved. */
+export function useClaudeName(): string {
+  return claudeName(useSavedAvatars());
 }
