@@ -70,7 +70,7 @@ function workingBadge(label: string, since?: string | null, title = label, mood?
   // The label hides in a phone's ticket header (just the face and time there); the title keeps it.
   return (
     <span className="badge running" title={title}>
-      {mood ? <ClaudeFace mood={mood} size={16} /> : <span className="spinner" />} <span className="badge-label">{label}</span>{since && <Elapsed since={since} />}
+      {mood ? <ClaudeFace mood={mood} size={20} /> : <span className="spinner" />} <span className="badge-label">{label}</span>{since && <Elapsed since={since} />}
     </span>
   );
 }
@@ -106,7 +106,7 @@ export function useFinishMark(working: boolean, t: Ticket): FinishMark | null {
 }
 
 export function finishBadge(m: FinishMark) {
-  return <span className={`badge finish ${m.tone}`} role="status"><span className="finish-icon" aria-hidden><ClaudeFace mood={finishMood(m)} size={16} /></span> {m.label}</span>;
+  return <span className={`badge finish ${m.tone}`} role="status"><span className="finish-icon" aria-hidden><ClaudeFace mood={finishMood(m)} size={20} /></span> {m.label}</span>;
 }
 
 /** Badge text plus a shorter form that a phone's ticket header shows instead (styles.css picks one). */
@@ -174,7 +174,7 @@ function FamilyLineView({ line, fc, id }: { line: NonNullable<NonNullable<Ticket
   const text = line.until ? `${base}, resumes at ${clockTime(line.until)}` : base;
   return (
     <div id={id} className={`card-family-line ${line.tone}`} title={text}>
-      {line.tone === "work" && <ClaudeFace mood="working" size={16} />}
+      {line.tone === "work" && <ClaudeFace mood="working" size={20} />}
       <span className="activity-text">{text}</span>
     </div>
   );
@@ -266,7 +266,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
     </span>
   ) });
   if (ownWorking && ticket.runStartedAt) facts.push({ key: "time", node: (
-    <span className="card-run-time"><ClaudeFace mood={runMood(ticket.lastActivity)} size={16} /><span className="card-run-word">{runWord(runMood(ticket.lastActivity))}</span><Elapsed since={ticket.runStartedAt} sep={false} /></span>
+    <span className="card-run-time"><ClaudeFace mood={runMood(ticket.lastActivity)} size={20} /><span className="card-run-word">{runWord(runMood(ticket.lastActivity))}</span><Elapsed since={ticket.runStartedAt} sep={false} /></span>
   ) });
   else if (lastAt && !working) facts.push({ key: "time", node: <time dateTime={lastAt} title={fullTime(lastAt)}>{timeAgo(lastAt)}</time> });
   // A main ticket's plan runs in the background: its card shows In progress instead, unless it stopped.
@@ -287,7 +287,7 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
       {pinned && <div className="card-pinned-label" aria-hidden><PinIcon size={12} /> Pinned</div>}
       {att && (
         <div className={`your-turn att-${att.kind}`} id={a11yId && `${a11yId}-turn`}>
-          {waitFace ? <span className={`yt-face${pulse ? " pulse" : ""}`} aria-hidden><ClaudeFace mood={waitFace} size={16} /></span>
+          {waitFace ? <span className={`yt-face${pulse ? " pulse" : ""}`} aria-hidden><ClaudeFace mood={waitFace} size={20} /></span>
             : <span className={`yt-dot ${pulse ? "pulse" : ""}`} aria-hidden />}
           <span className="yt-label">{attentionLabel(att, fromSteps ? stepsWaiting.length : 0, familyWorks)}</span>
           <span className="yt-why" title={ticket.error ?? undefined}>{att.kind === "limit" ? limitLabel(ticket) : att.label}</span>

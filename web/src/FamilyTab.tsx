@@ -156,7 +156,7 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
                   if (holds(r, kids) && r.depth > 0) setOpen((o) => ({ ...o, [t.id]: !isOpen(r) }));
                 }}>{holds(r, kids) ? (isOpen(r) || r.depth === 0 ? "▾" : "▸") : ""}</button>
               {/* Its Claude's face in the row's state (the words beside it say the state too). */}
-              <span className="ft-face" aria-hidden><ClaudeFace mood={familyMood(groupState)} size={20} /></span>
+              <span className="ft-face" aria-hidden><ClaudeFace mood={familyMood(groupState)} size={24} /></span>
               <span className="ft-body">
                 <span className="ft-title">{subRow(r) && <span className="part-chip ft-sub">Sub-feature</span>}{t.important && <ImportantStar />}{t.title}</span>
                 <span className="ft-meta">

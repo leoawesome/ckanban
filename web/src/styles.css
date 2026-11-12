@@ -1442,15 +1442,15 @@ body > .output-view.reader { position: fixed; }
 
 /* ============ chat turns (ConvTurn.tsx): avatar + name line, then the replies under it ============ */
 /* relative: the turn holds its screen-reader name (.sr-only), which would otherwise stretch the page below the panel. */
-.turn { position: relative; align-self: stretch; display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; }
+.turn { position: relative; align-self: stretch; display: grid; grid-template-columns: 36px minmax(0, 1fr); column-gap: 10px; }
 .turn.start { margin-top: 6px; }
 /* Rows that continue a turn sit closer to the row above. */
 .chat-log > .turn:not(.start) { margin-top: -4px; }
-.turn-av { grid-column: 1; grid-row: 1; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: var(--fs-xs); }
+.turn-av { grid-column: 1; grid-row: 1; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: var(--fs-md); }
 /* Claude's face fills the avatar's place (its own round background). */
 .turn-av.claude { background: none; }
 .turn-av .av { width: 100%; height: 100%; }
-.turn-name { grid-column: 2; grid-row: 1; display: flex; align-items: center; flex-wrap: wrap; column-gap: 7px; min-height: 28px; font-size: var(--fs-sm); color: var(--muted); min-width: 0; }
+.turn-name { grid-column: 2; grid-row: 1; display: flex; align-items: center; flex-wrap: wrap; column-gap: 7px; min-height: 36px; font-size: var(--fs-sm); color: var(--muted); min-width: 0; }
 .turn-name b { color: var(--text); font-weight: 700; font-size: var(--fs-md); }
 .turn-name .turn-link { font-size: var(--fs-md); font-weight: 700; color: var(--text); }
 .turn-name .turn-link:hover { color: var(--accent-text); }
@@ -1518,14 +1518,16 @@ body > .output-view.reader { position: fixed; }
 .steps-ok { color: var(--ok); flex: none; }
 .steps-failed { color: var(--err); flex: none; white-space: nowrap; }
 .steps-line .spinner, .steps-line .av { flex: none; }
-.steps-line ul { margin: 4px 0 4px 20px; padding: 0; }
+.steps-line ul { margin: 4px 0 4px 30px; padding: 0; }
+/* 24px for the face and the ✓ alike, so a step line doesn't move or change height when it finishes. */
+.steps-icon { flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; }
 .steps-line li { overflow-wrap: anywhere; }
 
 /* Claude's place while it works: its 44px face and what it is doing, across the whole width (no turn avatar column). */
 .turn.working > .turn-body { grid-column: 1 / -1; }
 .working-row { display: flex; align-items: center; gap: 12px; font-size: var(--fs-md); color: var(--muted); min-height: 44px; }
 .working-row .av { flex: none; }
-/* "Preparing questions…" under a reply that is still streaming: a small face, the row keeps its old height. */
+/* "Preparing questions…" under a reply that is still streaming: a 24px face. */
 .working-row.preparing { min-height: 24px; gap: 8px; }
 .working-text { min-width: 0; overflow-wrap: anywhere; color: var(--accent-text); }
 .working-time { flex: none; font-variant-numeric: tabular-nums; }
@@ -1558,13 +1560,11 @@ body > .output-view.reader { position: fixed; }
 .stop-btn.icon-only { padding-left: 9px; padding-right: 9px; }
 
 /* Claude panel (narrow): smaller avatar and text */
-.qc-thread .turn { grid-template-columns: 24px minmax(0, 1fr); column-gap: 8px; }
-.qc-thread .turn-av { width: 24px; height: 24px; font-size: var(--fs-2xs); }
-.qc-thread .turn-name { min-height: 24px; }
+.qc-thread .turn { grid-template-columns: 32px minmax(0, 1fr); column-gap: 8px; }
+.qc-thread .turn-av { width: 32px; height: 32px; font-size: var(--fs-sm); }
+.qc-thread .turn-name { min-height: 32px; }
 .qc-thread .reply-text { font-size: var(--fs-md); }
-.qc-phone .qc-thread .turn { grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; }
-.qc-phone .qc-thread .turn-av { width: 28px; height: 28px; font-size: var(--fs-xs); }
-.qc-phone .qc-thread .turn-name { min-height: 28px; }
+.qc-phone .qc-thread .turn { column-gap: 10px; }
 .qc-phone .qc-thread .reply-text { font-size: var(--fs-lg); line-height: 1.55; }
 
 @media (max-width: 720px) {
@@ -1582,9 +1582,8 @@ body > .output-view.reader { position: fixed; }
 .agent summary::-webkit-details-marker { display: none; }
 .agent-chev { color: var(--muted); font-size: var(--fs-2xs); transition: transform 0.15s; }
 .agent details[open] .agent-chev { transform: rotate(90deg); }
-/* 16px: the running face's room, so a row doesn't shift when its face becomes ✓, ✕ or ■. */
-.agent-icon { flex: none; width: 16px; text-align: center; font-size: var(--fs-xs); }
-.agent-icon.face { display: inline-flex; }
+/* 24px: the running face's room, so a row doesn't shift when its face becomes ✓, ✕ or ■. */
+.agent-icon { flex: none; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; font-size: var(--fs-xs); }
 .agent-icon.done { color: var(--ok); }
 .agent-icon.failed { color: var(--err); }
 .agent-icon.stopped { color: var(--muted); font-size: var(--fs-2xs); }
@@ -1595,8 +1594,8 @@ body > .output-view.reader { position: fixed; }
 .agent-pill.done { background: var(--ok-soft); color: var(--ok); }
 .agent-pill.failed { background: var(--err-soft); color: var(--err); }
 .agent-meta { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.agent-now { font: var(--fs-xs) var(--mono); color: var(--accent-text); padding: 0 12px 7px 43px; margin-top: -4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agent-body { border-top: 1px dashed var(--border); padding: 8px 12px 10px 43px; }
+.agent-now { font: var(--fs-xs) var(--mono); color: var(--accent-text); padding: 0 12px 7px 51px; margin-top: -4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-body { border-top: 1px dashed var(--border); padding: 8px 12px 10px 51px; }
 .agent-steps { list-style: none; margin: 0; padding: 0; font: var(--fs-xs)/1.7 var(--mono); color: var(--muted); }
 .agent-steps li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agent-steps li.txt { font-size: var(--fs-sm); line-height: 1.5; font-family: inherit; color: var(--text); margin: 4px 0; white-space: pre-wrap; }
@@ -1616,7 +1615,7 @@ body > .output-view.reader { position: fixed; }
 .wf-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px 2px; font-size: var(--fs-sm); }
 .wf-name { font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wf-meta { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.wf-desc { padding: 2px 12px 0 34px; font-size: var(--fs-xs); color: var(--muted); }
+.wf-desc { padding: 2px 12px 0 42px; font-size: var(--fs-xs); color: var(--muted); }
 .wf-bar { height: 4px; background: var(--surface-2); margin: 8px 12px 4px; border-radius: var(--r-pill); overflow: hidden; }
 .wf-bar i { display: block; height: 100%; background: var(--accent); border-radius: var(--r-pill); transition: width 0.3s; }
 .workflow.done .wf-bar i { background: var(--ok); }
@@ -3120,6 +3119,8 @@ button.hd-mode:disabled { cursor: default; }
 .hd-session-err { color: var(--err); background: var(--err-soft); border-radius: var(--r-sm); padding: 6px 10px; font-size: var(--fs-xs); overflow-wrap: anywhere; }
 .hd-st { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
 .hd-st-i { flex: none; width: 14px; text-align: center; color: var(--muted); line-height: 20px; font-size: var(--fs-xs); }
+/* The helper's thinking face: centred on the 14px step column, so the text lines up with the steps above. */
+.hd-st-i.face { display: inline-flex; justify-content: center; margin: -2px -5px; width: 24px; }
 .hd-st-i .spinner { width: 8px; height: 8px; vertical-align: 0; color: var(--ok); border-width: 1.5px; }
 .hd-think { flex: 1; min-width: 0; color: var(--muted); font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; padding-top: 1px; }
 .hd-think.live { color: var(--ok); }
@@ -3189,7 +3190,7 @@ button.hd-mode:disabled { cursor: default; }
 .qc-row:hover { background: var(--surface-2); }
 .qc-row.cur { background: var(--accent-soft); }
 .qc-new { flex-direction: row; align-items: center; gap: 6px; color: var(--accent-text); font-weight: 600; }
-.qc-row-title { display: flex; gap: 6px; align-items: center; min-width: 0; font-weight: 600; }
+.qc-row-title { display: flex; gap: 6px; align-items: center; min-width: 0; min-height: 24px; font-weight: 600; }
 .qc-row-title .av { flex: none; }
 .qc-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qc-row-meta { display: flex; gap: 6px; align-items: center; font-size: var(--fs-xs); color: var(--muted); }
@@ -4867,6 +4868,15 @@ button.composer-old:hover { color: var(--text); }
 @keyframes av-tilt { 0%, 100% { transform: rotate(0); } 30%, 70% { transform: rotate(10deg); } }
 @keyframes av-pulse { 50% { transform: scale(1.18); } }
 @keyframes av-hop { 50% { transform: translateY(-3px); } }
+/* Faces under 32px (AvatarFace adds .small): the same moves a little bigger, so they read at row size. */
+.av.small.thinking .head { animation-name: av-think-s; }
+.av.small.thinking .eyes { animation-name: av-lookup-s; }
+.av.small.working .head { animation-name: av-bob-s; }
+.av.small.working .eyes { animation-name: av-scan-s; }
+@keyframes av-think-s { 0%, 100% { transform: rotate(0); } 18%, 42% { transform: rotate(-18deg); } 60%, 88% { transform: rotate(16deg); } }
+@keyframes av-lookup-s { 0%, 100% { transform: translate(0, 0); } 18%, 42% { transform: translate(1.8px, -2.2px); } 60%, 88% { transform: translate(-1.8px, -2.2px); } }
+@keyframes av-bob-s { to { transform: translateY(2.6px); } }
+@keyframes av-scan-s { 0%, 100% { transform: translate(-2px, 1px); } 50% { transform: translate(2px, 1px); } }
 @media (prefers-reduced-motion: reduce) { .av, .av * { animation: none !important; } }
 
 /* Avatar editor (AvatarEditor.tsx) and the faces on the Team page. */

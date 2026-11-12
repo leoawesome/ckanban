@@ -266,7 +266,7 @@ function StepsWorking({ ticket, tickets, onOpenTicket }: { ticket: Ticket; ticke
   const one = steps.length === 1 && steps[0].running ? steps[0] : null;
   return (
     <div className="steps-live" role="status" aria-live="polite" title={stepsLineText(steps.map((t) => t.title))}>
-      <ClaudeFace mood={one ? runMood(one.lastActivity) : "working"} size={16} />
+      <ClaudeFace mood={one ? runMood(one.lastActivity) : "working"} size={24} />
       <span className="steps-live-text">
         {line.lead}{" "}
         {line.shown.map((t, i) => (
@@ -1363,14 +1363,14 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         {waitingHandoff.map((h) => (
           <Turn key={h.at} start={tailStart()} className="live">
             {liveView(h.text).text && <div className="reply-text"><Markdown text={liveView(h.text).text} /></div>}
-            {liveView(h.text).preparing && <div className="working-row preparing"><ClaudeFace mood="working" size={16} /> <span>{liveView(h.text).preparing}</span></div>}
+            {liveView(h.text).preparing && <div className="working-row preparing"><ClaudeFace mood="working" size={24} /> <span>{liveView(h.text).preparing}</span></div>}
           </Turn>
         ))}
         {live && (
           <Turn start={tailStart()} className="live">
             <div aria-live="polite">
               {liveView(live).text && <div className="reply-text writing"><Markdown text={liveView(live).text} /></div>}
-              {liveView(live).preparing && <div className="working-row preparing"><ClaudeFace mood="working" size={16} /> <span>{liveView(live).preparing}</span></div>}
+              {liveView(live).preparing && <div className="working-row preparing"><ClaudeFace mood="working" size={24} /> <span>{liveView(live).preparing}</span></div>}
             </div>
           </Turn>
         )}

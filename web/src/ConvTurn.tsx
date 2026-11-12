@@ -22,7 +22,7 @@ export function ClaudeFace({ mood = "idle", size }: { mood?: AvatarMood; size: n
 
 /** Claude's avatar at the start of its turn: its face, at rest (the working row below shows what it is doing). */
 export function ClaudeAvatar() {
-  return <span className="turn-av claude" aria-hidden><ClaudeFace size={28} /></span>;
+  return <span className="turn-av claude" aria-hidden><ClaudeFace size={36} /></span>;
 }
 
 /** A letter avatar (another ticket, later a teammate): colour from `seed`, so it stays the same everywhere. */
@@ -133,7 +133,7 @@ export function StepsLine({ items, running, activity, old, children }: {
   return (
     <details className={`steps-line${old ? " inherited" : ""}${running ? " live" : ""}`}>
       <summary>
-        {running ? <ClaudeFace mood="working" size={16} /> : <CheckIcon size={14} className="icon steps-ok" />}
+        <span className="steps-icon" aria-hidden>{running ? <ClaudeFace mood="working" size={24} /> : <CheckIcon size={14} className="icon steps-ok" />}</span>
         <span className="steps-text" role={running ? "status" : undefined} aria-live={running ? "polite" : undefined}>{s.text}</span>
         {since && <span className="working-time" title={`This step started ${fullTime(since)}`}>· {elapsed(since)}</span>}
         {s.failed > 0 && <span className="steps-failed">· {s.failed} failed</span>}

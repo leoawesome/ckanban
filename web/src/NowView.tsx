@@ -124,7 +124,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
         <button key={t.id} className="now-card run now-open" onClick={() => onOpen(slug, t.id)}>
           <span className="now-title">{t.title}</span>
           <span className="now-act now-run-act">
-            <ClaudeFace mood={runMood(t.lastActivity)} size={16} />
+            <ClaudeFace mood={runMood(t.lastActivity)} size={20} />
             <span className="now-run-text">{t.lastActivity || "Claude is working…"}{t.runStartedAt && <> · {elapsed(t.runStartedAt, now)}</>}</span>
           </span>
         </button>

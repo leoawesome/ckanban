@@ -432,7 +432,7 @@ export function Transcript({ entries, live }: { entries: ActivityEntry[]; live: 
           {evs.map((e, i) => <Event key={i} ev={e.event} />)}
         </div>
       ))}
-      {live && <div className="ev ev-live"><ClaudeFace mood="working" size={16} /> Working…</div>}
+      {live && <div className="ev ev-live"><ClaudeFace mood="working" size={24} /> Working…</div>}
       <div ref={endRef} />
     </div>
   );

@@ -103,7 +103,7 @@ function AgentRow({ slug, ticketId, agent: a }: { slug: string; ticketId: string
 
 /** A running subagent shows Claude's face (thinking until its first step, then working); finished ones keep their mark. */
 function StatusIcon({ status, current }: { status: AgentInfo["status"]; current?: string | null }) {
-  if (status === "running") return <span className="agent-icon face" role="img" aria-label="running"><ClaudeFace mood={agentMood(status, current)} size={16} /></span>;
+  if (status === "running") return <span className="agent-icon face" role="img" aria-label="running"><ClaudeFace mood={agentMood(status, current)} size={24} /></span>;
   return <span className={`agent-icon ${status}`} aria-hidden>{status === "done" ? "✓" : status === "failed" ? "✕" : "■"}</span>;
 }
 

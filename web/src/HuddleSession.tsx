@@ -183,7 +183,7 @@ export function SessionPanel({ slug, huddle: h, participant: p, onClose, onStep,
           {steps.map((x) => <Step key={x.i} step={x} current={live && x.i === view.current}
             tool={(item) => <ToolRow slug={slug} ticketId={toolKey} live={live} load={loadTool} item={item} />} />)}
           {live && view.current === null && (
-            <div className="hd-st"><span className="hd-st-i"><span className="spinner" /></span><span className="hd-think live">Thinking…</span></div>
+            <div className="hd-st"><span className="hd-st-i face" aria-hidden><HelperFace p={p} size={24} mood="thinking" /></span><span className="hd-think live">Thinking…</span></div>
           )}
           {p.status === "failed" && p.error && <div className="hd-session-err" role="alert">Failed: {p.error}</div>}
           {error && <div className="hd-session-err" role="alert">Couldn't load the steps: {error} <button className="link-btn" onClick={() => refresh()}>Retry</button></div>}

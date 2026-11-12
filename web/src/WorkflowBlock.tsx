@@ -166,7 +166,7 @@ function AgentLine({ slug, ticketId, w, a, now }: { slug: string; ticketId: stri
 
 /** A running workflow shows Claude's working face; finished ones keep their mark. */
 function StatusIcon({ status }: { status: WorkflowInfo["status"] }) {
-  if (status === "running") return <span className="agent-icon face" role="img" aria-label="running"><ClaudeFace mood="working" size={16} /></span>;
+  if (status === "running") return <span className="agent-icon face" role="img" aria-label="running"><ClaudeFace mood="working" size={24} /></span>;
   return <span className={`agent-icon ${status}`} aria-hidden>{status === "done" ? "✓" : status === "failed" ? "✕" : "■"}</span>;
 }
 

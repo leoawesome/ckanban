@@ -1032,7 +1032,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     <Select className={`phone-status tone-${ps.tone}`} ariaLabel={`${att ? `Your turn: ${att.label}` : ps.label}. Move to column`} value={boardColumnOf(ticket)}
       onChange={(s) => setStatus(menuPick(ticket, s as Status))}
       renderValue={() => <>{ps.mood
-        ? <span className="ps-face" aria-hidden><ClaudeFace mood={ps.mood} size={16} /></span>
+        ? <span className="ps-face" aria-hidden><ClaudeFace mood={ps.mood} size={24} /></span>
         : <span className={`ps-dot${ps.busy ? " busy" : ""}${ps.icon ? " mark" : ""}`} aria-hidden>{ps.icon}</span>}<span className="ps-label">{shortStatus}</span></>}
       menuMaxHeight={Infinity} // all columns fit on a phone screen; only scroll when the screen is too short
       options={statusOptions}

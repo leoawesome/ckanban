@@ -89,7 +89,7 @@ export interface AvatarFaceProps {
   /** The parts to draw (avatarFor / useAvatar give it for a name). */
   look: AvatarLook;
   mood?: AvatarMood;
-  /** Square, in px. Below 24 the corner mark is left out. */
+  /** Square, in px. Below 24 the corner mark is left out; below 32 the moves are a little bigger (.small). */
   size?: number;
   className?: string;
 }
@@ -100,7 +100,7 @@ export function AvatarFace({ look: raw, mood = "idle", size = 40, className }: A
   const look: AvatarLook = { ...avatarFor("claude"), ...cleanAvatarLook(raw) };
   const ink = look.face === "person" ? INK : look.color;
   return (
-    <svg className={`av ${mood}${className ? ` ${className}` : ""}`} width={size} height={size} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+    <svg className={`av ${mood}${size < 32 ? " small" : ""}${className ? ` ${className}` : ""}`} width={size} height={size} viewBox="0 0 40 40" aria-hidden="true" focusable="false">
       <circle cx="20" cy="20" r="20" fill={look.color} />
       <g className="head">
         <Head look={look} />
