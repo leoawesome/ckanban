@@ -942,6 +942,8 @@ const ACTIVE_MS = 10 * 60_000;
 
 /** How much of a transcript one step of a warm-up reads (about 1 to 2ms of parsing). */
 const WARM_CHUNK = 1 << 20;
+let sharedRead: Buffer | null = null;
+const readBuffer = () => (sharedRead ??= Buffer.allocUnsafe(WARM_CHUNK));
 
 /** A session file missing this long is searched for at most every MISSING_RETRY_MS. */
 const MISSING_GRACE_MS = 5 * 60_000;
@@ -1202,8 +1204,9 @@ export class SessionCache {
     let fd: number | null = null;
     try {
       fd = openSync(f, "r");
-      // In steps of at most WARM_CHUNK: one buffer the size of a big transcript stays with the allocator afterwards.
-      const buf = Buffer.allocUnsafe(Math.min(n, WARM_CHUNK));
+      // In steps of at most WARM_CHUNK, into one shared buffer (the parser copies what it keeps): a buffer per read
+      // was a stream of 1 MB allocations while the first pass reads every transcript, and GC pauses with it.
+      const buf = readBuffer();
       for (let left = n; left > 0; ) {
         const got = readSync(fd, buf, 0, Math.min(left, buf.length), hit.offset);
         hit.parser.feed(buf.subarray(0, got));
