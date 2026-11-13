@@ -1942,6 +1942,9 @@ button.your-turn.go:focus-visible { outline: 2px solid currentColor; outline-off
 }
 .search-clear:hover { color: var(--text); background: var(--border); }
 .show-all { align-self: center; }
+/* The end of Done's loaded cards: the next page loads when it scrolls into view (the button is the fallback). */
+.done-more { display: flex; flex-direction: column; gap: 8px; }
+.done-more .show-all { min-height: 40px; }
 .panel-error { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin: 10px 24px 0; cursor: default; }
 .panel-error span { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm); }
 .select-label .need-chip { margin-left: 6px; vertical-align: 1px; }

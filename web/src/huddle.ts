@@ -147,16 +147,47 @@ export function useHuddle(slug: string, ticketId: string, huddleId: string | nul
   return { huddle, list, latest: latest && huddle && latest.id === huddle.id ? huddle : latest, messages, hasMore, loaded, error, reload, loadEarlier };
 }
 
-/** Every huddle on the board, kept live from huddle.updated events (card badges and the dock's Huddles list). */
+const ALL_HUDDLES = "ckanban-all-huddles";
+
+/** The Huddles list is on screen: the board's earlier huddles load too (the first load has only the open ones). */
+export function useAllHuddles(on: boolean, slug: string) {
+  useEffect(() => {
+    // After the board's own reset (its effects run first): the next tick.
+    if (!on) return;
+    const t = setTimeout(() => window.dispatchEvent(new Event(ALL_HUDDLES)), 0);
+    return () => clearTimeout(t);
+  }, [on, slug]);
+}
+
+/**
+ * The board's huddles, kept live from huddle.updated events (counts, the running agents and the Team's Huddles list).
+ * The first load has only the open ones; the closed ones load once the Huddles list asks (useAllHuddles).
+ */
 export function useBoardHuddles(slug: string | null): Huddle[] {
   const [list, setList] = useState<Huddle[]>([]);
+  const all = useRef(false);
   const reload = useCallback(() => {
     if (!slug) return;
-    api.boardHuddles(slug).then((hs) => setList(hs)).catch(() => {});
+    api.boardHuddles(slug, !all.current).then((hs) => setList((cur) => {
+      // Open only: closed ones already here (from events) stay.
+      if (all.current) return hs;
+      const ids = new Set(hs.map((h) => h.id));
+      return [...hs, ...cur.filter((h) => !ids.has(h.id) && h.status === "closed")];
+    })).catch(() => {});
   }, [slug]);
   useEffect(() => {
+    all.current = false;
     setList([]);
     reload();
+  }, [reload]);
+  useEffect(() => {
+    const onAll = () => {
+      if (all.current) return;
+      all.current = true;
+      reload();
+    };
+    window.addEventListener(ALL_HUDDLES, onAll);
+    return () => window.removeEventListener(ALL_HUDDLES, onAll);
   }, [reload]);
   useEffect(() => subscribe((e) => {
     if (e.type === "huddle.updated" && e.profile === slug) setList((hs) => upsertHuddle(hs, e.huddle));

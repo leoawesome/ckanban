@@ -11,7 +11,7 @@ import { fullTime, timeAgo } from "./time";
 import { plural, resetTitle, scopeChip, usageText } from "./teamText";
 import type { TeammateEditRequest } from "./teammateText";
 import { costText } from "./usage";
-import { liveHuddleCount } from "./huddle";
+import { liveHuddleCount, useAllHuddles } from "./huddle";
 import { modelOptions } from "./models";
 import { useEdgeFade } from "./useEdgeFade";
 
@@ -188,6 +188,7 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   };
 
   const liveCount = liveHuddleCount(huddles);
+  useAllHuddles(view === "huddles" && active, slug);
   const startHint = openTicket ? `Starts on the open ticket “${openTicket.title}”.` : "No ticket open: a new one is created in Planning.";
 
   return (

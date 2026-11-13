@@ -78,6 +78,7 @@ import { familyOf, familyRoot, featureRoot, fitParent, groupsOf, hiddenTool, lev
 import { STATUS_FIELDS, type StatusPatch } from "./feature";
 import { createdFromDraft } from "../../web/src/proposalMatch";
 import type { Store } from "./store";
+import { boardScope, DONE_PAGE, donePage, doneSearch, idsScope } from "./ticketScope";
 import { runCapFor, SELF_MOVES, STATUSES, type HelperRuleCardState, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
 import { nowIso, slugify } from "./util";
 import { applyDetection, detectSetup } from "./worktree-setup";
@@ -1943,7 +1944,11 @@ export function createServer(deps: ServerDeps) {
     // /profiles/:p/learned — what the board learned on its own (learner.ts). Anyone reads; only the user undoes,
     // saves or drops, so no run or agent can change what future runs are told.
     if (parts[2] === "learned") {
-      if (parts.length === 3 && m === "GET") return json(learner.view(slug));
+      if (parts.length === 3 && m === "GET") {
+        const v = learner.view(slug);
+        // count=1: only how many are new (the Team badge); the Learned view loads the rest when opened.
+        return json(url.searchParams.get("count") === "1" ? { newCount: v.newCount } : v);
+      }
       if (m !== "POST") throw new HttpError(404, "not found");
       if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user changes what the board learned (Team, Learned)");
       try {
@@ -1983,7 +1988,20 @@ export function createServer(deps: ServerDeps) {
         const tickets = store.listTickets(slug);
         // Open features (feature.ts) are marked, so list_tickets can show which work to add new tickets to.
         const features = new Set(openFeatures(tickets).map((f) => f.top.id));
-        return json(tickets.map((t) => ({ ...view(profile, t, hosts), ...(features.has(t.id) ? { feature: true } : {}) })));
+        const one = (t: Ticket) => ({ ...view(profile, t, hosts), ...(features.has(t.id) ? { feature: true } : {}) });
+        // The board itself asks for a scope (ticketScope.ts): the unfinished work first, Done in pages or by search.
+        // No scope: every ticket, as list_tickets and older clients expect.
+        const scope = url.searchParams.get("scope");
+        if (!scope) return json(tickets.map(one));
+        const num = (k: string) => Number(url.searchParams.get(k) ?? 0) || 0;
+        const list = (k: string) => (url.searchParams.get(k) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+        const picked = scope === "board" ? boardScope(tickets, { done: num("done"), ids: list("ids") })
+          : scope === "done" ? donePage(tickets, num("offset"), num("limit") || DONE_PAGE)
+          : scope === "search" ? doneSearch(tickets, url.searchParams.get("q") ?? "", list("tags"))
+          : scope === "ids" ? idsScope(tickets, list("ids"))
+          : null;
+        if (!picked) throw new HttpError(400, "scope must be board, done, search or ids");
+        return json({ tickets: picked.tickets.map(one), doneTotal: picked.doneTotal });
       }
       if (m === "POST") {
         const b = await body(req);
@@ -3324,7 +3342,11 @@ export function createServer(deps: ServerDeps) {
       return json({ waiting: out.waiting, template: out.template, huddle: out.huddle ? huddles.view(slug, out.huddle) : null }, out.waiting ? 202 : 201);
     }
     if (rest.length === 0) {
-      if (m === "GET") return json(huddles.list(slug, url.searchParams.get("ticket") ?? undefined));
+      if (m === "GET") {
+        const all = huddles.list(slug, url.searchParams.get("ticket") ?? undefined);
+        // open=1: only the huddles still going (the board's first load); the Huddles list asks for all of them.
+        return json(url.searchParams.get("open") === "1" ? all.filter((h) => h.status !== "closed") : all);
+      }
       if (m === "POST") {
         userOnly("start a huddle (propose a roster with propose_huddle instead)");
         const b = await body(req);

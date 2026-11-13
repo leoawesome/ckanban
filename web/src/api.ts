@@ -1571,6 +1571,9 @@ export interface TicketFile {
   dir: string;
 }
 
+/** Some of a board's tickets and how many cards the Done column has in all. */
+export interface TicketPage { tickets: Ticket[]; doneTotal: number }
+
 export async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const hasBody = method === "POST" || method === "PATCH" || method === "PUT";
   const r = await fetch(url, {
@@ -1668,6 +1671,19 @@ export const api = {
   deleteProfile: (slug: string) => req<void>("DELETE", `/api/profiles/${slug}`),
   detectSetup: (slug: string) => req<SetupDetection>("POST", `/api/profiles/${slug}/detect-setup`),
   tickets: (slug: string) => req<Ticket[]>("GET", t(slug)),
+  /**
+   * The board's first load: unfinished work with whole families, plus the first `done` cards of Done and the `ids`
+   * asked for (open tickets, search finds) with their families. doneTotal: the Done column's card count.
+   */
+  boardTickets: (slug: string, opts: { done?: number; ids?: string[] } = {}) => req<TicketPage>("GET",
+    `${t(slug)}?scope=board${opts.done ? `&done=${opts.done}` : ""}${opts.ids?.length ? `&ids=${opts.ids.map(encodeURIComponent).join(",")}` : ""}`),
+  /** A page of the Done column, from `offset` cards in. */
+  doneTickets: (slug: string, offset: number) => req<TicketPage>("GET", `${t(slug)}?scope=done&offset=${offset}`),
+  /** These tickets with their families. */
+  ticketsByIds: (slug: string, ids: string[]) => req<TicketPage>("GET", `${t(slug)}?scope=ids&ids=${ids.map(encodeURIComponent).join(",")}`),
+  /** Finished tickets matching the board search (text and/or tags). */
+  searchDone: (slug: string, q: string, tags: string[]) => req<TicketPage>("GET",
+    `${t(slug)}?scope=search&q=${encodeURIComponent(q)}${tags.length ? `&tags=${tags.map(encodeURIComponent).join(",")}` : ""}`),
   huddlePresets: (slug: string) => req<HuddlePreset[]>("GET", `/api/profiles/${encodeURIComponent(slug)}/huddle-presets`),
   /** scope: global (every board) or this board. */
   saveHuddlePreset: (slug: string, p: Partial<Omit<HuddlePreset, keyof LayerInfo>> & { name: string }, scope: Level) =>
@@ -1678,7 +1694,7 @@ export const api = {
   /** How every teammate and template was used, from the huddles on every board. */
   teamUsage: () => req<{ teammates: Record<string, TeamUsage>; templates: Record<string, TeamUsage> }>("GET", "/api/team-usage"),
   /** Every huddle on the board (live, stopped and closed). */
-  boardHuddles: (slug: string) => req<Huddle[]>("GET", hud(slug)),
+  boardHuddles: (slug: string, open = false) => req<Huddle[]>("GET", `${hud(slug)}${open ? "?open=1" : ""}`),
   /** Huddles the ticket hosts or takes part in. */
   huddles: (slug: string, ticketId: string) => req<Huddle[]>("GET", `${hud(slug)}?ticket=${encodeURIComponent(ticketId)}`),
   /** A huddle and its newest messages (`before`: the page before that seq; `since`: the ones after it). */
@@ -1745,6 +1761,8 @@ export const api = {
   /** Every role's notes (general and this board's repo notes); cap: lines per file that go into instructions. */
   /** What the board learned on its own: saved this week, cleaned up, seen once. */
   learned: (slug: string) => req<LearnedView>("GET", `/api/profiles/${encodeURIComponent(slug)}/learned`),
+  /** Only how many lessons are new (the Team badge). */
+  learnedCount: (slug: string) => req<{ newCount: number }>("GET", `/api/profiles/${encodeURIComponent(slug)}/learned?count=1`),
   /** The user opened the Learned view: the new count goes back to 0. */
   learnedSeen: (slug: string) => req<LearnedView>("POST", `/api/profiles/${encodeURIComponent(slug)}/learned/seen`),
   /** Undo (or redo) a saved lesson or a tidy step. */

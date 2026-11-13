@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { markOpened } from "./cardState";
 import { setLearnedVersions } from "./models";
-import { api, copy, COLUMNS, onReconnect, subscribe, waitsForSlot, type Health, type InboxItem, type Job, type McpState, type Profile, type Schedule, type Status, type Ticket } from "./api";
+import { api, copy, COLUMNS, onReconnect, subscribe, waitsForSlot, type Health, type TicketPage, type InboxItem, type Job, type McpState, type Profile, type Schedule, type Status, type Ticket } from "./api";
 import { avatarColor, avatarLetter } from "./avatar";
 import { BugReportDialog } from "./BugReportDialog";
 import { AutomationsDialog } from "./AutomationsDialog";
@@ -26,6 +26,7 @@ import { StatusPill, UsageBox } from "./UsagePill";
 import { useUsage } from "./useUsage";
 import { onlyBaseLayers } from "./layers";
 import { Board, useCollapsedColumns } from "./Board";
+import { DONE_PAGE, joinsBoard, mergeTickets, unseenDone } from "./donePaging";
 import { boardColumnOf, columnNeighbours, columnOrder, STATUS_MENU } from "./columns";
 import { ColumnPicker } from "./ColumnPicker";
 import { setThemeChoice, type ThemeChoice } from "./theme";
@@ -317,12 +318,53 @@ export function App() {
 
   const slugRef = useRef(slug);
   slugRef.current = slug;
+  // The board loads its unfinished work first; Done arrives a page at a time when its column is shown, and finished
+  // tickets also come in from the search and when opened directly (donePaging.ts, server ticketScope.ts).
+  // Done cards the server has that aren't loaded: the Done count adds them, and while some are left Done can load more.
+  const [doneUnseen, setDoneUnseen] = useState(0);
+  // Done cards asked for by page so far (the next page's offset), and finished tickets fetched by id or search:
+  // a reload asks for them again so they stay.
+  const donePaged = useRef(0);
+  const extraIds = useRef(new Set<string>());
+  const [doneLoading, setDoneLoading] = useState(false);
+  const doneLoadingRef = useRef(false);
+  const doneTotal = useRef(0);
+  /** Adds a piece of the board's tickets (late answers for a board no longer shown are dropped). */
+  const takeTickets = useCallback((board: string, page: TicketPage, replace = false) => {
+    if (slugRef.current !== board) return false;
+    doneTotal.current = page.doneTotal;
+    setTickets((cur) => {
+      const next = replace ? page.tickets : mergeTickets(cur, page.tickets);
+      // Counted against the list it lands in (events may have changed it since the request went out).
+      setDoneUnseen(unseenDone(page.doneTotal, next));
+      return next;
+    });
+    return true;
+  }, []);
   // A late answer for a board no longer shown is dropped (it would show that board's cards here).
-  const loadTickets = useCallback((board: string) => api.tickets(board).then((list) => {
-    if (slugRef.current !== board) return;
-    setTickets(list);
-    setLoadedSlug(board);
-  }), []);
+  const loadTickets = useCallback((board: string) => api.boardTickets(board, { done: donePaged.current, ids: [...extraIds.current].slice(-150) }).then((page) => {
+    if (takeTickets(board, page, true)) setLoadedSlug(board);
+  }), [takeTickets]);
+  const loadMoreDone = useCallback(() => {
+    const board = slugRef.current;
+    if (!board || doneLoadingRef.current || donePaged.current >= doneTotal.current) return;
+    doneLoadingRef.current = true;
+    setDoneLoading(true);
+    const offset = donePaged.current;
+    api.doneTickets(board, offset).then((page) => {
+      if (slugRef.current !== board) return;
+      donePaged.current = Math.max(donePaged.current, offset + DONE_PAGE);
+      takeTickets(board, page);
+    }).catch((e) => toast(`Couldn't load more of Done: ${(e as Error).message}`, { tone: "error" })).finally(() => {
+      doneLoadingRef.current = false;
+      setDoneLoading(false);
+    });
+  }, [takeTickets]);
+  /** Finished tickets fetched outside Done's pages (search finds, a ticket opened by link): kept on reloads. */
+  const takeExtra = useCallback((board: string, page: TicketPage) => {
+    if (!takeTickets(board, page)) return;
+    for (const t of page.tickets) if (t.status === "done") extraIds.current.add(t.id);
+  }, [takeTickets]);
   const loadSchedules = useCallback((board: string) => api.schedules(board).then((list) => {
     // Ignore a late answer for a board we already left.
     if (slugRef.current === board) setSchedules(list);
@@ -674,6 +716,10 @@ export function App() {
       localStorage.setItem(LAST_PROFILE, slug);
     } catch {}
     setTickets([]);
+    setDoneUnseen(0);
+    donePaged.current = 0;
+    doneTotal.current = 0;
+    extraIds.current = new Set();
     setLoadedSlug(null);
     setSchedules(null);
     setJobs(null);
@@ -724,7 +770,8 @@ export function App() {
           setTickets((ts) => {
             const i = ts.findIndex((t) => t.id === e.ticket.id);
             const merged = { ...ts[i], ...e.ticket };
-            if (i < 0) return [...ts, merged];
+            // A finished ticket not loaded yet stays one of Done's unloaded cards.
+            if (i < 0) return joinsBoard(e.ticket) ? [...ts, merged] : ts;
             // Claude moved it to another column (the board's own moves already show it there): show the move.
             if (boardColumnOf(ts[i]) !== boardColumnOf(merged)) noteServerMove(merged.id, boardColumnOf(merged));
             const next = ts.slice();
@@ -743,6 +790,7 @@ export function App() {
   );
 
   const profile = useMemo(() => profiles?.find((p) => p.slug === slug) ?? null, [profiles, slug]);
+  const ticketsLoaded = !!slug && loadedSlug === slug;
   const open = tickets.find((t) => t.id === openId) ?? null;
   // The side panel column (computers): the board gets narrower; an open ticket sits between the board and the column
   // (sideChatLayout.ts: the board gives way first, then hides; the column narrows before the ticket does).
@@ -763,6 +811,17 @@ export function App() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  // A finished ticket opened from a link, the Inbox or ⌘K may not be loaded yet, nor its family (the Family tab and
+  // chips read the board's list): fetch it with its family, once per opened ticket.
+  const fetchedOpen = useRef(new Set<string>());
+  useEffect(() => {
+    if (!openId || !slug || !ticketsLoaded) return;
+    const held = tickets.find((t) => t.id === openId);
+    if ((held && held.status !== "done") || fetchedOpen.current.has(`${slug}/${openId}`)) return;
+    fetchedOpen.current.add(`${slug}/${openId}`);
+    const board = slug;
+    api.ticketsByIds(board, [openId]).then((page) => takeExtra(board, page)).catch(() => {});
+  }, [openId, slug, ticketsLoaded, open?.status, takeExtra]);
   // Opening a ticket (or having it open when it starts waiting) stops its "Your turn" pulse.
   useEffect(() => {
     if (openId) markOpened(openId);
@@ -816,6 +875,16 @@ export function App() {
     (t) => hasTags(t, tagsWanted) && (!activeFilters.length || activeFilters.some((f) => f.test(t))), !!q),
   [tickets, query, tagFilter, filters]);
   const filtering = !!q || tagsWanted.length > 0 || activeFilters.length > 0;
+  // The search also finds finished tickets Done hasn't loaded (the server looks through all of them).
+  const tagKey = tagsWanted.join(",");
+  useEffect(() => {
+    if (!slug || !ticketsLoaded || (!q && !tagKey)) return;
+    const board = slug;
+    const timer = setTimeout(() => {
+      api.searchDone(board, q, tagKey ? tagKey.split(",") : []).then((page) => takeExtra(board, page)).catch(() => {});
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [slug, ticketsLoaded, q, tagKey, takeExtra]);
   // Prev/next walk the visible tickets of the column the drawer opened in, in its order at that time, so
   // moving the open ticket (e.g. Planning to Done) keeps Next in Planning, and the ends of the column stop
   // there. Stepping keeps that order; deleted tickets are skipped.
@@ -929,14 +998,13 @@ export function App() {
   useEffect(() => {
     setLearnedNew(0);
     if (!slug) return;
-    const load = () => api.learned(slug).then((v) => setLearnedNew(v.newCount), () => {});
+    const load = () => api.learnedCount(slug).then((v) => setLearnedNew(v.newCount), () => {});
     load();
     return subscribe((e) => {
       if (e.type === "learned.updated" && (e.profile === slug || e.profile === null)) load();
     });
   }, [slug]);
   const queued = visibleTickets.filter((t) => t.status === "ready" || waitsForSlot(t)).length;
-  const ticketsLoaded = !!slug && loadedSlug === slug;
 
   const updateKey = `update:${version?.latest}`;
   const pathKey = `path:${missing.join(",")}`;
@@ -1376,7 +1444,7 @@ export function App() {
                 openTicket(t.id);
               }} />
           )}
-          <Board tickets={shownTickets} loading={!ticketsLoaded} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
+          <Board tickets={shownTickets} loading={!ticketsLoaded} done={{ more: filtering ? 0 : doneUnseen, loading: doneLoading, loadMore: loadMoreDone }} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
             collapsed={collapsed} onCollapse={setColumnCollapsed}
             slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia}
             search={{ on: phoneSearch || !!query || tagFilter.length > 0, toggle: () => {

@@ -71,13 +71,15 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
   const here = profiles.find((p) => p.slug === current) ?? null;
   const rows = useMemo(() => {
     const summaries = new Map((others ?? []).filter((r) => r.profile === current).map((r) => [r.id, r.summary]));
+    const held = new Set(tickets.map((t) => t.id));
     return [
       ...(here ? tickets.map((t) => {
         // A hidden task stands for its main ticket's card; one shown on the board is its own card.
         const main = !onBoard(t) ? mainTicketOf(tickets, t.id) : undefined;
         return rowOf(here, t, summaries.get(t.id) ?? "", main ? { id: main.id, title: main.title } : !onBoard(t) ? null : undefined);
       }) : []),
-      ...(others ?? []).filter((r) => r.profile !== current),
+      // This board's finished tickets the board hasn't loaded (Done loads in pages) come from the full list.
+      ...(others ?? []).filter((r) => r.profile !== current || !held.has(r.id)),
     ];
   }, [here, tickets, others, current]);
 

@@ -26,9 +26,12 @@ function readCollapsed(): Set<Status> {
   }
 }
 
-/** The columns folded to a narrow strip (saved in this browser): the column's own button and ⌘K both change it. */
+/**
+ * The columns folded to a narrow strip (saved in this browser): the column's own button and ⌘K both change it. Done
+ * starts folded on every load: its cards load only once it is opened.
+ */
 export function useCollapsedColumns() {
-  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [collapsed, setCollapsed] = useState(() => readCollapsed().add("done"));
   useEffect(() => {
     try {
       localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed]));
@@ -69,7 +72,12 @@ interface Props {
   search?: { on: boolean; toggle: () => void };
   /** 📌 Pin (true) or unpin a ticket (the card's pin button). */
   onPin?: (id: string, on: boolean) => void;
+  /** Done loads in pages: `more` cards aren't loaded yet (counted in its badge), loadMore fetches the next page. */
+  done?: DonePaging;
 }
+
+/** Done's cards not loaded yet, and how to load the next page. */
+export interface DonePaging { more: number; loading: boolean; loadMore: () => void }
 
 /** Card props shared down the columns. */
 interface CardCtx {
@@ -136,12 +144,36 @@ const EMPTY_HINT: Record<Status, string> = {
   done: "Nothing finished yet",
 };
 
-const DONE_LIMIT = 10;
 /** Placeholder cards per column while the board loads (Backlog, Planning, In Progress, Review, Done). */
 const PLACEHOLDERS: Record<Status, number> = { backlog: 3, planning: 2, ready: 0, in_progress: 2, review: 2, done: 3 };
 const CLAUDE_TAG = "Claude starts automatically when a card is here";
 
-function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx, phone = false }: {
+/**
+ * The end of Done's loaded cards: once it scrolls into view (the column open, on a phone its tab shown), the next page
+ * loads. It is watched again after each page, so a short page that still shows it loads the next one too.
+ */
+function MoreDone({ paging, loaded }: { paging: DonePaging; loaded: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { loadMore, loading } = paging;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || loading || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) loadMore();
+    }, { rootMargin: "300px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loadMore, loading, loaded]);
+  return (
+    <div ref={ref} className="done-more">
+      {loading
+        ? Array.from({ length: 2 }, (_, i) => <div key={i} className="card skeleton-card" aria-hidden><i /><i /><i /></div>)
+        : <button className="btn ghost small show-all" onClick={loadMore}>Show more ({paging.more} left)</button>}
+    </div>
+  );
+}
+
+function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx, phone = false, done }: {
   id: Status; label: string; hint: string; claude: boolean; tickets: Ticket[]; loading: boolean;
   /** In Progress only: tickets waiting their turn on the folder, in start order. */
   queue?: Ticket[];
@@ -149,28 +181,30 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   held?: boolean;
   onOpen: (id: string) => void; onAdd: (s: Status) => void;
   collapsed: boolean; onCollapse: (v: boolean) => void; filtered: boolean; ctx: CardCtx; phone?: boolean;
+  /** Done only: its paging. */
+  done?: DonePaging;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${id}`, data: { status: id } });
   const all = [...tickets, ...queue];
   const needYou = all.filter((t) => t.attention).length;
-  const total = `${all.length} ${all.length === 1 ? "ticket" : "tickets"}${queue.length ? `, ${queue.length} queued` : ""}`;
+  // Done counts the cards it hasn't loaded yet too.
+  const more = done?.more ?? 0;
+  const count = all.length + more;
+  const total = `${count} ${count === 1 ? "ticket" : "tickets"}${queue.length ? `, ${queue.length} queued` : ""}`;
   const countLabel = needYou > 0 ? `${total}, ${needYou} ${needYou === 1 ? "needs" : "need"} you` : total;
   // Only Backlog has its own +: elsewhere N and New ticket add one.
   const canAdd = id === "backlog";
-  // Done keeps growing: show the most recently finished cards unless expanded.
-  const [showAll, setShowAll] = useState(false);
-  const limited = id === "done" && !showAll && tickets.length > DONE_LIMIT;
-  const shown = limited ? tickets.slice(0, DONE_LIMIT) : tickets;
+  const shown = tickets;
   // The count bumps when a card arrives.
   const countRef = useRef<HTMLSpanElement>(null);
-  const lastCount = useRef(all.length);
+  const lastCount = useRef(count);
   useEffect(() => {
     // One or two more, not a whole board loading in.
-    const grew = all.length > lastCount.current && all.length - lastCount.current <= 2;
-    lastCount.current = all.length;
+    const grew = count > lastCount.current && count - lastCount.current <= 2;
+    lastCount.current = count;
     if (grew && !reducedMotion()) countRef.current?.animate?.([{ transform: "scale(1)" }, { transform: "scale(1.15)" }, { transform: "scale(1)" }], { duration: 200, easing: "ease-out" });
-  }, [all.length]);
-  const countBadge = loading ? null : <span ref={countRef} className={`count ${needYou > 0 ? "needs-you" : ""}`} title={countLabel} aria-label={countLabel}>{all.length}</span>;
+  }, [count]);
+  const countBadge = loading ? null : <span ref={countRef} className={`count ${needYou > 0 ? "needs-you" : ""}`} title={countLabel} aria-label={countLabel}>{count}</span>;
   if (collapsed) {
     // Narrow strip: still a drop target; click to expand.
     return (
@@ -211,12 +245,8 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
           {queue.map((t, i) => (
             <SortableCard key={t.id} ticket={t} onOpen={onOpen} queued={i + 1} held={held} ctx={ctx} />
           ))}
-          {id === "done" && tickets.length > DONE_LIMIT && (
-            <button className="btn ghost small show-all" onClick={() => setShowAll((v) => !v)}>
-              {showAll ? "Show fewer" : `Show all ${tickets.length}`}
-            </button>
-          )}
-          {!loading && all.length === 0 && (
+          {!loading && done && more > 0 && <MoreDone paging={done} loaded={tickets.length} />}
+          {!loading && count === 0 && (
             <div className={claude ? "column-drop-hint" : "column-empty"}>{filtered ? "No matching tickets" : EMPTY_HINT[id]}</div>
           )}
         </div>
@@ -255,7 +285,7 @@ const collision: CollisionDetection = (args) => {
   return closestCenter(args);
 };
 
-export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed, search, onPin }: Props) {
+export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed, search, onPin, done }: Props) {
   // The latest onPin, so the cards' context doesn't change on every render.
   const pinRef = useRef(onPin);
   pinRef.current = onPin;
@@ -357,7 +387,7 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
         <div className="col-jump-row">
           <nav className="col-jump" aria-label="Columns" {...jumpFade}>
             {BOARD_COLUMNS.map((c, i) => {
-              const n = (byColumn.get(c.id)?.length ?? 0) + (c.id === "in_progress" ? byColumn.get("ready")?.length ?? 0 : 0);
+              const n = (byColumn.get(c.id)?.length ?? 0) + (c.id === "in_progress" ? byColumn.get("ready")?.length ?? 0 : 0) + (c.id === "done" ? done?.more ?? 0 : 0);
               return (
                 <button key={c.id} className={`chip${i === shownCol ? " on" : ""}`} aria-current={i === shownCol || undefined} title={c.hint}
                   aria-expanded={i === shownCol ? hintOpen : undefined} onClick={() => (i === shownCol ? setHintOpen((v) => !v) : jumpTo(i))}>
@@ -380,6 +410,7 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
       <main className={`board${fadeIn ? " fade-in" : ""}`} ref={boardRef} onScroll={phone ? onBoardScroll : undefined}>
         {BOARD_COLUMNS.map((c) => (
           <Column key={c.id} {...c} tickets={byColumn.get(c.id) ?? []} queue={c.id === "in_progress" ? byColumn.get("ready") : undefined} held={restartPending} onOpen={onOpen} onAdd={onAdd} filtered={filtered} loading={loading} ctx={ctx} phone={phone}
+            done={c.id === "done" ? done : undefined}
             collapsed={!phone && collapsed.has(c.id)} onCollapse={(v) => setColumnCollapsed(c.id, v)} />
         ))}
       </main>
