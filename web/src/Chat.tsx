@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  api, NotStarted, subscribe, type Huddle, type Level, type NewTicketDraft, type OutputFile, type Proposal, type QueuedMessage, type RewindResult, type SessionEntry, type TeammateProposal, type Ticket,
+  api, NotStarted, onReconnect, subscribe, type Huddle, type Level, type NewTicketDraft, type OutputFile, type Proposal, type QueuedMessage, type RewindResult, type SessionEntry, type TeammateProposal, type Ticket,
 } from "./api";
 import { HuddleCard } from "./HuddleCard";
 import { HuddleDigest } from "./HuddleDigest";
@@ -178,6 +178,10 @@ function group(entries: SessionEntry[], splitAt?: string): Block[] {
 }
 
 const HANDOFF_RETRY_MS = 500;
+// A sent message shows "sending" until the loaded conversation has it. Live updates normally reload it, but they can
+// be missed (a board restart, a daemon frozen on a busy Mac, a dropped connection), so while one waits the chat
+// checks again this often on its own.
+const SENDING_RECHECK_MS = 3000;
 
 const UNREADABLE = { questions: "questions", proposal: "ticket proposal", tickets: "proposed tickets" } as const;
 
@@ -507,6 +511,17 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     reload();
   }, [reload]);
   useLayoutEffect(() => autoGrow(composer.current), [draft, phone]);
+  // The live connection came back (board restart, laptop sleep, a long freeze): updates were missed, so reload.
+  useEffect(() => onReconnect(() => void loadTail().catch(() => {})), [loadTail]);
+  // While a sent message still says "sending", check the conversation now and then in case its update was missed.
+  const waitingToShow = pending.length > 0;
+  useEffect(() => {
+    if (!waitingToShow) return;
+    const timer = setInterval(() => {
+      if (typeof document === "undefined" || !document.hidden) loadTail().catch(() => {});
+    }, SENDING_RECHECK_MS);
+    return () => clearInterval(timer);
+  }, [waitingToShow, loadTail]);
 
   // Live updates: session file changes (terminal) and run activity (board) both refresh the tail.
   useEffect(() => subscribe((e) => {
