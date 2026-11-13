@@ -123,12 +123,6 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
               {phone ? <><kbd>#</kbd> Tag</> : "# Tag"}
             </button>
           } />
-        {question && (
-          <div className="ask-first muted small" role="note">
-            Just a question? Ask in Chat first. You can turn the chat into a ticket later.
-            {onAskInChat && <> <button type="button" className="link-btn small" onClick={() => onAskInChat([title.trim(), body.trim()].filter(Boolean).join("\n\n"))}>Ask in Chat</button></>}
-          </div>
-        )}
         <FeatureChoice state={fc} hideNoMatchOnPhone />
         <div className="new-ticket-how">
           <ModeToggle value={mode} onChange={setMode} keyHint="⌘I" />
@@ -179,7 +173,12 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
             <KeyHint keys="⌘↵" />
           </button>
         </div>
-        {!session && (
+        {/* The bottom line offers the other way in: "Ask in Chat" while the title reads like a question (it takes the
+            Claude Code chat link's place, so typing "?" adds no line and nothing jumps), otherwise an old Claude Code chat. */}
+        {question && onAskInChat ? (
+          <button type="button" className="link-btn small new-ticket-from-chat" title="You can turn the chat into a ticket later"
+            onClick={() => onAskInChat([title.trim(), body.trim()].filter(Boolean).join("\n\n"))}>Just a question? Ask in Chat instead</button>
+        ) : !session && (
           <button type="button" className="link-btn small new-ticket-from-chat" onClick={() => setPicking(true)}>Continue a Claude Code chat instead…</button>
         )}
       </form>

@@ -521,6 +521,11 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 @keyframes modal-in { from { opacity: 0; transform: scale(0.98); } }
 .modal.wide { max-width: 760px; }
 .modal-grip { display: none; }
+/* New ticket on desktop: in the middle of the screen, not near the top (the phone keeps its bottom sheet). */
+@media (min-width: 721px) {
+  /* Auto margins centre it yet let a tall form scroll from its top instead of being cut off. */
+  .modal.new-ticket-modal { margin-block: auto; transform-origin: center; }
+}
 .modal-head { display: flex; align-items: center; padding: 14px 18px 4px; }
 .modal-head h3 { margin: 0; flex: 1; font-size: var(--fs-lg); }
 .form { display: flex; flex-direction: column; gap: 12px; padding: 12px 18px 18px; }
@@ -4427,7 +4432,6 @@ button.fc-chip:hover, button.fc-chip[aria-expanded="true"] { color: var(--text);
 }
 .gather { padding: 4px 18px 18px; }
 .gather-row input[type="checkbox"] { width: auto; flex: none; }
-.ask-first { border: 1px dashed var(--border); border-radius: var(--r-md); padding: 8px 12px; line-height: 1.45; }
 .gather-new input { width: auto; flex: 1; }
 
 /* A tool ticket's result in its main ticket's chat (main-ticket.ts). */
