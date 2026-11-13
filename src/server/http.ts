@@ -62,7 +62,7 @@ import type { TerminalWatcher } from "./terminals";
 import { attachmentHeader, canCopyFile, copyFileToClipboard, markdownPage, markdownTitle, revealFile, ShareError } from "./share";
 import { UpdateChecker } from "./update";
 import { SpendIndex } from "./spend";
-import { quietPerDay, scheduleSpend } from "./quiet";
+import { lastPause, quietPerDay, scheduleSpend } from "./quiet";
 import { makeSideCaller, readSideSpend, type SideCaller } from "./side-call";
 import type { SquadCardState } from "./squad";
 import { LearnError, Learner } from "./learner";
@@ -1721,7 +1721,13 @@ export function createServer(deps: ServerDeps) {
       const view7 = (s: Schedule) => {
         const h = store.readScheduleHistory(slug, s.id);
         const costOf = (tid: string) => (store.getTicket(slug, tid) ? spend.ticket(slug, tid).costUsd : 0);
-        return { ...scheduler.view(slug, s), spend7dUsd: scheduleSpend(h, new Date(Date.now() - 7 * 86_400_000), costOf), quietPerDay: quietPerDay(h).slice(0, 7) };
+        // A paused one also says when and by whom (its last "paused" edit), for the Paused section's status line.
+        const p = s.enabled ? null : lastPause(h);
+        const paused = p ? {
+          pausedAt: p.at,
+          pausedBy: p.by === "user" ? "user" as const : { ticketId: p.by.ticketId, title: store.getTicket(slug, p.by.ticketId)?.title ?? null },
+        } : {};
+        return { ...scheduler.view(slug, s), spend7dUsd: scheduleSpend(h, new Date(Date.now() - 7 * 86_400_000), costOf), quietPerDay: quietPerDay(h).slice(0, 7), ...paused };
       };
       if (parts.length === 3 && m === "GET") return json(store.listSchedules(slug).map(view7));
       if (parts.length === 3 && m === "POST") return json(scheduler.view(slug, scheduler.create(slug, (await body(req)) ?? {}, by)), 201);

@@ -2145,6 +2145,45 @@ textarea.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--
 .sched-intro > summary { cursor: pointer; }
 .sched-intro[open] > summary { margin-bottom: 2px; }
 .sched-more-btn { padding-inline: 10px; }
+/* On / Paused / Finished: summary pills, section heads, a status dot and coloured status line per row, an on/off switch */
+.sched-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.sched-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 600; }
+.sched-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.sched-pill.on { background: var(--ok-soft); color: var(--ok); }
+.sched-pill.paused { background: var(--warn-soft); color: var(--warn); }
+.sched-pill.finished { background: var(--surface-2); color: var(--muted); }
+.sched-sections > section + section { margin-top: 10px; }
+.sched-sec-head { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.sched-sec-n { background: var(--surface-2); border-radius: var(--r-pill); padding: 1px 8px; font-size: var(--fs-2xs); letter-spacing: 0; }
+.sched-del-all { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.sched-hint { margin: 2px 0 2px; }
+.sched-more-done { align-self: flex-start; margin: 6px 0; }
+.sched-row { flex-wrap: nowrap; align-items: flex-start; }
+.sched-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; margin: 6px 2px 0; background: var(--muted); opacity: 0.6; }
+.sched-dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); opacity: 1; }
+.sched-dot.paused { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); opacity: 1; }
+.sched-state { font-size: var(--fs-sm); font-weight: 500; overflow-wrap: anywhere; }
+.sched-state.on { color: var(--ok); }
+.sched-state.paused { color: var(--warn); }
+.sched-state.finished { color: var(--muted); }
+.sched-state .link-btn.sched-by { display: inline; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 2px; padding: 0; text-align: left; }
+.sched-meta { overflow-wrap: anywhere; }
+.sched-finished .mcp-name { color: var(--muted); }
+.sched-switch { display: inline-flex; align-items: center; justify-content: center; flex: none; min-height: 32px; cursor: pointer; }
+.sched-switch input.switch { width: 44px; height: 26px; }
+.sched-switch input.switch::after { width: 20px; height: 20px; }
+.sched-switch input.switch:checked::after { left: 21px; }
+.sched-switch input.switch:not(:checked) { background: color-mix(in srgb, var(--muted) 45%, var(--border)); }
+.sched-del-list { margin: 6px 0 0; padding-left: 18px; max-height: 160px; overflow-y: auto; }
+@media (max-width: 720px) {
+  .sched-row { flex-wrap: wrap; }
+  .sched-row .mcp-main { flex: 1 1 0; }
+  .sched-switch { min-width: 44px; min-height: 44px; margin-top: -8px; }
+  .sched-del-all { min-height: 40px; }
+  .sched-more-done { min-height: 40px; }
+  .sched-state .link-btn.sched-by { min-height: 0; }
+  .sched-row .mcp-actions { padding-left: 24px; }
+}
 .sched-when { font-size: var(--fs-sm); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .sched-when code { color: var(--muted); }
 .sched-history { display: flex; flex-direction: column; gap: 2px; margin: 0 0 10px; padding: 8px 10px; background: var(--surface-2); border-radius: var(--r-sm); max-height: 260px; overflow-y: auto; }

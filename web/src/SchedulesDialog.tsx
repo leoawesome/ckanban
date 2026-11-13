@@ -13,6 +13,7 @@ import { MoreIcon } from "./icons";
 import { ModeToggle } from "./ModeToggle";
 import { TagChip, TagEditor } from "./Tags";
 import { boardTags } from "./tagText";
+import { scheduleGroup, type ScheduleGroup } from "./scheduleGroups";
 import { timeAgo, timeUntil } from "./time";
 import { useNow } from "./useNow";
 import { usePhone } from "./usePhone";
@@ -36,6 +37,9 @@ const MODELS: { value: string; label: string }[] = [
   { value: "opus", label: "Opus" },
   { value: "haiku", label: "Haiku (cheapest)" },
 ];
+
+/** Finished schedules shown before "Show N more". */
+const FINISHED_SHOWN = 3;
 
 const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
 
@@ -91,6 +95,9 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
   const [note, setNote] = useState<string | null>(null);
   /** Phone: the schedule whose "…" menu (History, Edit, Delete) is open. */
   const [menuOf, setMenuOf] = useState<Schedule | null>(null);
+  /** The finished schedules "Delete all N" asks about. */
+  const [confirmAll, setConfirmAll] = useState<Schedule[] | null>(null);
+  const [showAllFinished, setShowAllFinished] = useState(false);
   const phone = usePhone();
   useNow();
 
@@ -119,67 +126,97 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
     else setNote(`${s.name}: ticket created and started.`);
   });
 
-  const row = (s: Schedule) => (
-    <div key={s.id} className="sched-item">
-      <div className="mcp-row">
-        <div className="mcp-main">
-          <div className="mcp-name">
-            <span>{s.name}</span>
-            {s.enabled ? <span className="badge ok">Active</span> : <span className="badge stopped">Paused</span>}
-            {s.active && <span className="badge running"><span className="spinner" /> Running</span>}
-            <span className="badge stopped">{s.mode === "auto" ? "Just do it" : "Interview first"}</span>
-            {s.quiet && <span className="badge stopped" title="Checks that find nothing leave no ticket">Quiet</span>}
-            {s.model && <span className="badge stopped">{s.model}</span>}
-            {s.partOf && (
-              <span className="badge stopped" title={s.partOfTitle ? "Each run is a task of this feature, not its own card" : "That feature no longer exists, so each run gets its own card"}>
-                {s.partOfTitle ? `In: ${s.partOfTitle}` : "In: feature gone"}
-              </span>
-            )}
-            {s.tags?.map((g) => <TagChip key={g} name={g} />)}
-          </div>
-          <div className="sched-when">
-            {s.summary}
-          </div>
-          <div className="muted small">
-            {s.enabled && s.nextRunAt ? <>Next: {when(s.nextRunAt)} ({timeUntil(s.nextRunAt)})</> : "Paused: won't run until resumed."}
-            {s.lastFiredAt && <> · Last {s.quiet ? "check" : "ticket"} {timeAgo(s.lastFiredAt)}</>}
-          </div>
-          {(s.spend7dUsd !== undefined || s.quiet) && (
-            <div className="muted small">
-              {s.spend7dUsd !== undefined && <>Last 7 days: {usd(s.spend7dUsd)}</>}
-              {s.quiet && <>{s.spend7dUsd !== undefined ? " · " : ""}Quiet checks today: {s.quietPerDay?.find((d) => d.day === today())?.count ?? 0}</>}
+  const toggle = (s: Schedule) => act(`toggle:${s.id}`, () => api.updateSchedule(profile.slug, s.id, { enabled: !s.enabled }));
+
+  /** The coloured line under the name: when it runs next, who paused it, or when it ran. */
+  const stateLine = (s: Schedule, g: ScheduleGroup) => {
+    if (g === "finished") return s.lastFiredAt ? <>Ran {when(s.lastFiredAt)}</> : <>Finished</>;
+    if (g === "on") return s.nextRunAt ? <>Next run {when(s.nextRunAt)} ({timeUntil(s.nextRunAt)})</> : <>On, no next run found</>;
+    if (!s.pausedAt) return <>Paused: won't run until you turn it on</>;
+    const by = s.pausedBy;
+    return (
+      <>
+        Paused {timeAgo(s.pausedAt)}
+        {by === "user" && " by you"}
+        {by && by !== "user" && (by.title
+          ? <> by Claude in <button type="button" className="link-btn sched-by" onClick={() => onOpenTicket(by.ticketId)}>{by.title}</button></>
+          : " by Claude in a ticket that was deleted")}
+      </>
+    );
+  };
+
+  /** Everything else, as one muted line of plain text. */
+  const metaLine = (s: Schedule, g: ScheduleGroup) => {
+    const parts: string[] = [s.summary];
+    if (g !== "finished") {
+      if (s.model) parts.push(s.model[0].toUpperCase() + s.model.slice(1));
+      parts.push(s.mode === "auto" ? "Just do it" : "Interview first");
+      if (s.partOf) parts.push(s.partOfTitle ? `in ${s.partOfTitle}` : "feature gone, so each run gets its own card");
+      if (s.lastFiredAt) parts.push(`last ${s.quiet ? "check" : "ticket"} ${timeAgo(s.lastFiredAt)}`);
+    }
+    if (s.spend7dUsd) parts.push(`${usd(s.spend7dUsd)} last 7 days`);
+    if (s.quiet && g !== "finished") parts.push(`quiet checks today: ${s.quietPerDay?.find((d) => d.day === today())?.count ?? 0}`);
+    return parts.join(" · ");
+  };
+
+  const row = (s: Schedule) => {
+    const g = scheduleGroup(s);
+    const done = g === "finished";
+    return (
+      <div key={s.id} className={`sched-item sched-${g}`}>
+        <div className="mcp-row sched-row">
+          <span className={`sched-dot ${g}`} aria-hidden="true" />
+          <div className="mcp-main">
+            <div className="mcp-name">
+              <span>{s.name}</span>
+              {s.active && <span className="badge running"><span className="spinner" /> Running</span>}
+              {s.tags?.map((t) => <TagChip key={t} name={t} />)}
             </div>
+            <div className={`sched-state ${g}`}>{stateLine(s, g)}</div>
+            <div className="muted small sched-meta">{metaLine(s, g)}</div>
+            {s.lastError && <div className="mcp-msg">Last run failed to start: {s.lastError}</div>}
+          </div>
+          {!done && (
+            <label className="sched-switch" title={s.enabled ? "On: click to pause" : "Paused: click to turn on"}>
+              <input type="checkbox" role="switch" className="switch" checked={s.enabled} aria-checked={s.enabled}
+                aria-label={`${s.enabled ? "Pause" : "Resume"} ${s.name}`} disabled={busy === `toggle:${s.id}`}
+                onChange={() => toggle(s)} />
+            </label>
           )}
-          {s.lastError && <div className="mcp-msg">Last run failed to start: {s.lastError}</div>}
+          <div className="mcp-actions">
+            {!done && (
+              <button className="btn small" disabled={busy === `run:${s.id}`} onClick={() => runNow(s)}>
+                {busy === `run:${s.id}` ? "Starting…" : "Run now"}
+              </button>
+            )}
+            {phone ? (
+              <button className="btn small ghost sched-more-btn" aria-label={`More for ${s.name}`} aria-haspopup="menu" onClick={() => setMenuOf(s)}>
+                <MoreIcon size={20} />
+              </button>
+            ) : (
+              <>
+                <button className={`btn small ghost${historyOf === s.id ? " on" : ""}`} aria-pressed={historyOf === s.id}
+                  onClick={() => setHistoryOf((h) => (h === s.id ? null : s.id))}>History</button>
+                {!done && <button className="btn small ghost" onClick={() => setEditing(s)}>Edit</button>}
+                <button className="btn small ghost danger" onClick={() => setConfirm(s)}>Delete</button>
+              </>
+            )}
+          </div>
         </div>
-        <div className="mcp-actions">
-          <button className="btn small ghost" disabled={busy === `toggle:${s.id}`}
-            onClick={() => act(`toggle:${s.id}`, () => api.updateSchedule(profile.slug, s.id, { enabled: !s.enabled }))}>
-            {s.enabled ? "Pause" : "Resume"}
-          </button>
-          <button className="btn small" disabled={busy === `run:${s.id}`} onClick={() => runNow(s)}>
-            {busy === `run:${s.id}` ? "Starting…" : "Run now"}
-          </button>
-          {phone ? (
-            <button className="btn small ghost sched-more-btn" aria-label={`More for ${s.name}`} aria-haspopup="menu" onClick={() => setMenuOf(s)}>
-              <MoreIcon size={20} />
-            </button>
-          ) : (
-            <>
-              <button className={`btn small ghost${historyOf === s.id ? " on" : ""}`} aria-pressed={historyOf === s.id}
-                onClick={() => setHistoryOf((h) => (h === s.id ? null : s.id))}>History</button>
-              <button className="btn small ghost" onClick={() => setEditing(s)}>Edit</button>
-              <button className="btn small ghost danger" onClick={() => setConfirm(s)}>Delete</button>
-            </>
-          )}
-        </div>
+        {editing !== "new" && editing?.id === s.id && (
+          <ScheduleForm slug={profile.slug} initial={s} knownTags={boardTags(tickets)} tickets={tickets} onDone={() => setEditing(null)} />
+        )}
+        {historyOf === s.id && <History slug={profile.slug} schedule={s} tickets={tickets} onOpenTicket={onOpenTicket} />}
       </div>
-      {editing !== "new" && editing?.id === s.id && (
-        <ScheduleForm slug={profile.slug} initial={s} knownTags={boardTags(tickets)} tickets={tickets} onDone={() => setEditing(null)} />
-      )}
-      {historyOf === s.id && <History slug={profile.slug} schedule={s} tickets={tickets} onOpenTicket={onOpenTicket} />}
-    </div>
-  );
+    );
+  };
+
+  // On (soonest first), Paused, then Finished (latest run first).
+  const groups: Record<ScheduleGroup, Schedule[]> = { on: [], paused: [], finished: [] };
+  for (const s of schedules ?? []) groups[scheduleGroup(s)].push(s);
+  groups.on.sort((a, b) => (a.nextRunAt ?? "~").localeCompare(b.nextRunAt ?? "~"));
+  groups.finished.sort((a, b) => (b.lastFiredAt ?? "").localeCompare(a.lastFiredAt ?? ""));
+  const shownFinished = showAllFinished ? groups.finished : groups.finished.slice(0, FINISHED_SHOWN);
 
   return (
     <Modal title={`Schedules · ${profile.name}`} onClose={onClose} wide>
@@ -191,6 +228,13 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
         </section>
         {!jobFilter && <h3 className="sched-heading">Recurring</h3>}
         {!jobFilter && <>
+        {schedules && schedules.length > 0 && (
+          <div className="sched-summary">
+            {groups.on.length > 0 && <span className="sched-pill on"><span className="sched-pill-dot" aria-hidden="true" />{groups.on.length} on</span>}
+            {groups.paused.length > 0 && <span className="sched-pill paused"><span className="sched-pill-dot" aria-hidden="true" />{groups.paused.length} paused</span>}
+            {groups.finished.length > 0 && <span className="sched-pill finished"><span className="sched-pill-dot" aria-hidden="true" />{groups.finished.length} finished</span>}
+          </div>
+        )}
         <div className="mcp-toolbar">
           <details className="muted small sched-intro">
             <summary>Each time one fires, a new ticket starts on this board.</summary>
@@ -213,7 +257,39 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
         {schedules && !schedules.length && editing !== "new" && (
           <div className="muted">No schedules yet. Examples: a nightly dependency audit, a weekly changelog draft, a daily "fix failing CI".</div>
         )}
-        {schedules && schedules.length > 0 && <div className="mcp-section">{schedules.map(row)}</div>}
+        {schedules && schedules.length > 0 && (
+          <div className="mcp-section sched-sections">
+            {groups.on.length > 0 && (
+              <section aria-labelledby="sched-on">
+                <h4 id="sched-on" className="sched-sec-head">On <span className="sched-sec-n">{groups.on.length}</span></h4>
+                {groups.on.map(row)}
+              </section>
+            )}
+            {groups.paused.length > 0 && (
+              <section aria-labelledby="sched-paused">
+                <h4 id="sched-paused" className="sched-sec-head">Paused <span className="sched-sec-n">{groups.paused.length}</span></h4>
+                {groups.paused.map(row)}
+              </section>
+            )}
+            {groups.finished.length > 0 && (
+              <section aria-labelledby="sched-finished">
+                <h4 id="sched-finished" className="sched-sec-head">
+                  Finished <span className="sched-sec-n">{groups.finished.length}</span>
+                  <button type="button" className="btn small ghost danger sched-del-all" onClick={() => setConfirmAll(groups.finished)}>
+                    Delete all {groups.finished.length}
+                  </button>
+                </h4>
+                <div className="muted small sched-hint">Set for one date. They already ran and would only run again next year.</div>
+                {shownFinished.map(row)}
+                {groups.finished.length > shownFinished.length && (
+                  <button type="button" className="link-btn sched-more-done" onClick={() => setShowAllFinished(true)}>
+                    Show {groups.finished.length - shownFinished.length} more
+                  </button>
+                )}
+              </section>
+            )}
+          </div>
+        )}
         </>}
       </div>
       {menuOf && (
@@ -222,9 +298,11 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
             <button type="button" role="menuitem" className="menu-item" onClick={() => { setHistoryOf((h) => (h === menuOf.id ? null : menuOf.id)); setMenuOf(null); }}>
               <span className="menu-label">{historyOf === menuOf.id ? "Hide history" : "History"}</span>
             </button>
-            <button type="button" role="menuitem" className="menu-item" onClick={() => { setEditing(menuOf); setMenuOf(null); }}>
-              <span className="menu-label">Edit</span>
-            </button>
+            {scheduleGroup(menuOf) !== "finished" && (
+              <button type="button" role="menuitem" className="menu-item" onClick={() => { setEditing(menuOf); setMenuOf(null); }}>
+                <span className="menu-label">Edit</span>
+              </button>
+            )}
             <button type="button" role="menuitem" className="menu-item danger" onClick={() => { setConfirm(menuOf); setMenuOf(null); }}>
               <span className="menu-label">Delete</span>
             </button>
@@ -244,6 +322,24 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
           }}
         >
           <p>No more tickets will be created from it. Tickets it already created stay on the board.</p>
+        </ConfirmDialog>
+      )}
+      {confirmAll && (
+        <ConfirmDialog
+          title={`Delete ${confirmAll.length} finished schedule${confirmAll.length === 1 ? "" : "s"}?`}
+          confirmLabel={`Delete all ${confirmAll.length}`}
+          busyLabel="Deleting…"
+          onCancel={() => setConfirmAll(null)}
+          onConfirm={async () => {
+            for (const s of confirmAll) {
+              await api.deleteSchedule(profile.slug, s.id);
+              if (historyOf === s.id) setHistoryOf(null);
+            }
+            setConfirmAll(null);
+          }}
+        >
+          <p>They already ran on their one date. Tickets they created stay on the board.</p>
+          <ul className="sched-del-list">{confirmAll.map((s) => <li key={s.id}>{s.name}</li>)}</ul>
         </ConfirmDialog>
       )}
     </Modal>
