@@ -13,6 +13,7 @@ import { ArrowDownIcon, ChatIcon, MoreIcon, PlusIcon, TrashIcon } from "./icons"
 import { ImagePickButton } from "./ImagePickButton";
 import { useImagePaste } from "./imagePaste";
 import { KeyHint } from "./KeyHint";
+import { escLeavesField, isTyping, quickChatKey, stepChat } from "./keynav";
 import { useLayer } from "./layers";
 import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, type Handoff } from "./liveReply";
 import { norm } from "./pendingBubbles";
@@ -136,6 +137,68 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
     setSheet(null);
   };
 
+  // Single keys on a computer (see quickChatKey), while the keyboard is in the Claude side panel (its Chats / New chat
+  // bar included) and not in a text box. The board's single keys stay quiet in the side panels (inDock), so these never
+  // clash with them.
+  const root = useRef<HTMLDivElement>(null);
+  // Where the keyboard goes once a chat picked by key has rendered: its message box (new chat) or its row in the list.
+  const focusAfter = useRef<"composer" | "row" | null>(null);
+  useEffect(() => {
+    const to = focusAfter.current;
+    focusAfter.current = null;
+    const el = root.current;
+    if (!to || !el) return;
+    const composer = to === "composer" ? el.querySelector<HTMLElement>(".composer textarea:not([disabled])") : null;
+    // The row only takes the keyboard while the past chats list shows; otherwise the chat keeps it, so keys go on working.
+    const row = composer ? null : el.querySelector<HTMLElement>(".qc-row.cur");
+    const target = composer ?? row;
+    target?.focus({ preventScroll: true });
+    if (target && document.activeElement === target) {
+      if (row) row.scrollIntoView({ block: "nearest" });
+    } else el.focus({ preventScroll: true });
+  }, [threadKey]);
+  const keys = useRef<(e: KeyboardEvent) => void>(() => {});
+  keys.current = (e: KeyboardEvent) => {
+    const el = root.current;
+    if (!el || e.defaultPrevented) return;
+    // Esc in a text box: leave it for the chat (what was typed stays), so these keys work next; Esc again hides the
+    // column (SidePanels.tsx).
+    if (escLeavesField(e)) {
+      e.preventDefault();
+      el.focus({ preventScroll: true });
+      return;
+    }
+    if (isTyping(e)) return;
+    const k = quickChatKey(e);
+    if (!k) return;
+    e.preventDefault();
+    if (k === "compose") {
+      el.querySelector<HTMLElement>(".composer textarea")?.focus();
+      return;
+    }
+    if (k === "new") {
+      // The list's own New chat row, like ⌘⇧O: a click there also closes the past chats list (SidePanels.tsx).
+      focusAfter.current = "composer";
+      const row = el.querySelector<HTMLElement>(".qc-list .qc-new");
+      if (row) row.click();
+      else pick(null);
+      return;
+    }
+    const to = stepChat([null, ...(chats ?? []).map((c) => c.id)], currentId, k === "prev" ? -1 : 1);
+    if (to === undefined) return;
+    focusAfter.current = "row";
+    pick(to);
+  };
+  useEffect(() => {
+    // The Claude panel around the chat (its bar holds Chats and New chat); dialogs opened from here (Rename, Delete,
+    // Make ticket) render elsewhere in the page, so their keys aren't ours.
+    const scope = root.current?.closest<HTMLElement>(".claude-panel") ?? root.current;
+    if (phone || !scope) return;
+    const on = (e: KeyboardEvent) => keys.current(e);
+    scope.addEventListener("keydown", on);
+    return () => scope.removeEventListener("keydown", on);
+  }, [phone]);
+
   const created = (c: QuickChat) => {
     setChats((cs) => [c, ...(cs ?? []).filter((x) => x.id !== c.id)]);
     setSelected(c.id);
@@ -238,10 +301,12 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
   }
 
   return (
-    <div className="qc qc-dock">
+    <div className="qc qc-dock" ref={root} tabIndex={-1}>
       <aside className="qc-list" aria-label="Chats in this folder">
-        <button className={`qc-row qc-new${currentId === null ? " cur" : ""}`} onClick={() => pick(null)}><PlusIcon size={14} /> New chat</button>
-        <ChatRows chats={chats} currentId={currentId} onPick={pick} />
+        <button className={`qc-row qc-new${currentId === null ? " cur" : ""}`} onClick={() => pick(null)}>
+          <PlusIcon size={14} /> New chat<KeyHint keys={currentId && chats?.[0]?.id === currentId ? "O · ," : "O"} inset />
+        </button>
+        <ChatRows chats={chats} currentId={currentId} onPick={pick} hints />
       </aside>
       <section className="qc-main">
         <div className="qc-head">
@@ -290,15 +355,18 @@ function MakeTicketDialog({ chat, tickets, busy, onClose, onMake }: {
   );
 }
 
-function ChatRows({ chats, currentId, onPick }: { chats: QuickChat[] | null; currentId: string | null; onPick: (id: string) => void }) {
+/** `hints`: the computer's list, where , and . step to the row above / below the open chat (badges on those rows). */
+function ChatRows({ chats, currentId, onPick, hints }: { chats: QuickChat[] | null; currentId: string | null; onPick: (id: string) => void; hints?: boolean }) {
   useNow();
   const claude = useClaudeName();
   if (chats === null) return <div className="muted small qc-list-note"><span className="spinner" /> Loading…</div>;
   if (!chats.length) return <div className="muted small qc-list-note">No chats yet. Ask {claude} anything about this folder.</div>;
   return (
     <>
-      {chats.map((c) => (
+      {chats.map((c, i) => (
         <button key={c.id} className={`qc-row${c.id === currentId ? " cur" : ""}`} onClick={() => onPick(c.id)} title={c.title}>
+          {hints && chats[i + 1]?.id === currentId && <KeyHint keys="," inset />}
+          {hints && (i > 0 ? chats[i - 1].id === currentId : currentId === null) && <KeyHint keys="." inset />}
           <span className="qc-row-title">{c.running && <ClaudeFace mood="working" size={24} />}<span className="qc-row-name">{c.title}</span></span>
           <span className="qc-row-meta">
             <time dateTime={c.updatedAt} title={fullTime(c.updatedAt)}>{timeAgo(c.updatedAt)}</time>
@@ -749,6 +817,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
       {!closed && undone && !undo && <UndoneNote line={undone} onClose={() => setUndone(null)} />}
       {!closed && (
         <div className="composer">
+          {!phone && <KeyHint keys="M" inset className="qc-compose-hint" />}
           <textarea ref={composer} rows={phone ? 1 : 2} value={draft} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
             placeholder={running ? `Add to your question: ${claude} reads it at its next step…` : phone ? `Ask ${claude} about this folder…` : `Ask ${claude} about this folder… (Enter sends)`}
             aria-label={`Message to ${claude}`}

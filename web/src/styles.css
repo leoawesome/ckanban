@@ -159,6 +159,8 @@ body.show-hints .key-hint.kh-split { display: flex; }
 body.show-hints .hint-legend { display: flex; animation: key-hint-in 0.12s ease-out; }
 /* Only the topmost layer shows its keys: a dialog over the ticket panel over the board. */
 body.show-hints:has(.drawer-wrap) .key-hint:not(.drawer-wrap .key-hint):not(.overlay .key-hint):not(.side-panels .key-hint) { display: none; }
+/* Quick chat (QuickChat.tsx): M puts the keyboard in the message box, so its badge hides once it is there. */
+body.show-hints .composer:focus-within > .key-hint.qc-compose-hint { display: none; }
 body.show-hints:has(.overlay) .key-hint:not(.overlay .key-hint) { display: none; }
 /* A card's keys only show on the focused card. */
 body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; }
@@ -2373,7 +2375,7 @@ input[aria-invalid="true"] { border-color: var(--err); }
   /* A still, full bar: Undo is there, with no countdown motion. */
   .toast-life { animation: none; }
 }
-.panel:focus, .modal:focus { outline: none; }
+.panel:focus, .modal:focus, .qc-dock:focus { outline: none; }
 
 /* Report bug dialog */
 .bug-form textarea { font-family: var(--mono); font-size: var(--fs-sm); }

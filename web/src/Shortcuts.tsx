@@ -9,7 +9,7 @@ import { Modal } from "./Modal";
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 export const MOD = isMac ? "⌘" : "Ctrl";
 
-// Every row matches a real handler (App.tsx, TicketDrawer.tsx, Inbox.tsx, Changes.tsx, Dock.tsx, …). Single keys stay
+// Every row matches a real handler (App.tsx, TicketDrawer.tsx, Inbox.tsx, Changes.tsx, Dock.tsx, QuickChat.tsx, …). Single keys stay
 // quiet while typing in a field and inside the bottom panel.
 const GROUPS: { title: string; keys: [string[], string][] }[] = [
   {
@@ -100,6 +100,18 @@ const GROUPS: { title: string; keys: [string[], string][] }[] = [
       [[MOD, "K"], "This ticket's actions: go to what needs you, mark done, delete…"],
       [["↑", "↓", "C"], "Changes tab, on a line's +: other lines, comment on it"],
       [["Esc"], "Close (one layer at a time)"],
+    ],
+  },
+  {
+    title: "Quick chat (Claude side panel, on a computer)",
+    keys: [
+      [["O"], "New chat"],
+      [[",", "K"], "Previous chat in the list (up)"],
+      [[".", "J"], "Next chat in the list (down)"],
+      [["M", "/"], "Write a message (into the message box)"],
+      [["Enter"], "Send"],
+      [["Shift", "Enter"], "New line"],
+      [["Esc"], "In the message box: leave it (what you typed stays), again to hide the column"],
     ],
   },
   {
