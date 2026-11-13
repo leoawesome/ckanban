@@ -126,6 +126,7 @@ Requires [Bun](https://bun.sh) ≥ 1.3.5 (the embedded terminal uses Bun's built
 ```bash
 bun install && (cd web && bun install)
 bun run test           # server tests, files in parallel (use a fake claude binary)
+bun run test --related # only the tests your changes can affect
 bun run build:web      # build the UI into web/dist
 bun run dev            # API + UI on :7777 from source
 cd web && bun run dev  # Vite dev server with /api proxy (view only: changes need :7777)
@@ -133,6 +134,8 @@ bun run build:bin      # standalone binaries in dist/ (UI embedded)
 ```
 
 `bun run test` runs test files side by side (`bun test --parallel` through `scripts/test.ts`: at most two suites run at once on one machine, a later one waits for a free slot, and two at once share the cores; `CKANBAN_TEST_SLOTS` and `CKANBAN_TEST_WORKERS` change that), slowest first using `test/timings.json`; refresh that file with `bun run test:timings` after adding or splitting slow test files. `bun test test/<file>` runs one file.
+
+A full `bun run test` that passes remembers the exact code it tested; running it again on the same code (docs aside) says so and stops at once, and `--force` runs it anyway. `bun run test --related` runs only the test files that import a file changed since the branch left main (committed or not), plus everything when shared setup changes (`package.json`, `test/preload.ts`, `test/fixtures/`, the runner): use it while building, and the full run before landing. Both live in `scripts/test-plan.ts`.
 
 Run from source as the daemon: `bun src/cli.ts install`. Data layout and env overrides: [docs/features.md](docs/features.md#data-layout).
 

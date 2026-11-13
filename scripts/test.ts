@@ -6,9 +6,47 @@
 // more work done, only slower, so at most two suites run at once (CKANBAN_TEST_SLOTS, default 2); a later one waits for
 // a free slot and says so. A suite that shares the machine with another uses half the cores. CKANBAN_TEST_WORKERS=<n>
 // sets the worker count by hand. Extra arguments go to `bun test`.
+//
+// A full run (no extra arguments) on code that already passed stops at once and says so (`--force` runs it anyway);
+// `--related` runs only the test files a change can affect. See scripts/test-plan.ts.
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
+import { changedFiles, codeKey, passedAt, recordPass, relatedBase, relatedPlan } from "./test-plan";
+
+const cwd = process.cwd();
+let rest = process.argv.slice(2);
+const force = rest.includes("--force") || process.env.CKANBAN_TEST_FORCE === "1";
+const related = rest.includes("--related");
+rest = rest.filter((a) => a !== "--force" && a !== "--related");
+
+// Which runs to make: each is a list of `bun test` arguments (paths or filters).
+let runs: string[][] = [["test"]];
+let full = rest.length === 0;
+if (related && rest.length === 0) {
+  const base = relatedBase(cwd);
+  if (base) {
+    const changed = changedFiles(cwd, base);
+    const plan = relatedPlan(changed);
+    if (plan.full) {
+      console.error(`--related: ${plan.reason} changed, which can affect any test: running them all.`);
+    } else {
+      console.error(`--related: ${changed.length} changed file(s); running only the tests they can affect.`);
+      runs = [[`--changed=${base}`]];
+      if (plan.extra.length) runs.push(plan.extra.map((f) => `./${f}`));
+      full = false;
+    }
+  } else console.error("--related: no version history here; running every test.");
+}
+
+// Skip when this exact code already passed the full suite (a related run is covered by that too).
+const key = rest.length === 0 ? codeKey(cwd) : null;
+const passed = key && !force ? passedAt(key) : null;
+if (passed) {
+  const ago = Math.round((Date.now() - passed) / 60_000);
+  console.log(`All tests already passed on this exact code ${ago} min ago; not running them again. (--force runs them anyway.)`);
+  process.exit(0);
+}
 
 const dir = join(tmpdir(), "ckanban-test-slots");
 mkdirSync(dir, { recursive: true });
@@ -77,9 +115,16 @@ const fromEnv = Number(process.env.CKANBAN_TEST_WORKERS);
 const workers = fromEnv > 0 ? Math.floor(fromEnv) : Math.max(2, Math.floor(cores / (others + 1)));
 if (workers < cores) console.error(`Another test run is going on: using ${workers} of ${cores} cores.`);
 
-const args = ["test", "test", `--parallel=${workers}`, "--timeout=60000", "--timings=test/timings.json", ...process.argv.slice(2)];
-const child = Bun.spawn([process.execPath, ...args], { stdio: ["inherit", "inherit", "inherit"] });
-for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => child.kill(sig));
-const code = await child.exited;
+let child: ReturnType<typeof Bun.spawn> | null = null;
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => child?.kill(sig));
+let code = 0;
+for (const target of runs) {
+  const args = ["test", ...target, `--parallel=${workers}`, "--timeout=60000", "--timings=test/timings.json", ...rest];
+  child = Bun.spawn([process.execPath, ...args], { stdio: ["inherit", "inherit", "inherit"] });
+  code = await child.exited;
+  if (code !== 0) break;
+}
 release();
+// Remember the pass only if the code didn't change while the tests ran.
+if (code === 0 && full && key && codeKey(cwd) === key) recordPass(key);
 process.exit(code);
