@@ -56,6 +56,8 @@ export class TerminalWatcher {
         if (!t.sessionId || !t.workdir) continue;
         await pause();
         const key = `${p.slug}/${t.id}`;
+        // A title not known yet may need a long transcript read: in chunks.
+        if (cmds.length > 0 && !this.titles.has(t.sessionId)) await this.sessions.readIn(t.sessionId, pause);
         // No claude running: nothing to match, and no title to read.
         const live = cmds.length > 0 && liveSessionMatch(cmds, { id: t.sessionId, title: this.title(t.sessionId) });
         if (live) next.add(key);

@@ -77,7 +77,7 @@ function lagLine(lag: number, now: number): string {
   return `[lag] event loop blocked ${Math.round(lag)}ms at ${new Date().toISOString()}` +
     ` (up ${Math.round(process.uptime())}s); ran: ${top.join(", ") || "nothing tracked (GC or untracked work)"}` +
     (pending.length ? `; still running: ${pending.join(", ")}` : "") +
-    `; rss ${mb(mem.rss)}MB heap ${mb(mem.heapUsed)}MB`;
+    `; rss ${mb(mem.rss)}MB heap ${mb(mem.heapUsed)}MB external ${mb(mem.external)}MB buffers ${mb(mem.arrayBuffers)}MB`;
 }
 
 /** A request's label: method and path, with ids and long parts shortened so lines stay readable. */

@@ -113,3 +113,14 @@ test("recent() is today() made in slices: it lets other work run meanwhile, and 
   // Still fresh: the same answer, not made again.
   expect(await spend.recent(5_000, 0)).toBe(one);
 });
+
+test("a log longer than one read chunk, with characters split between chunks, adds up the same", async () => {
+  const store = new Store(tempDir("ck-spend-"));
+  board(store, "a");
+  // ~3 MB of multi-byte text between result lines: chunk edges land inside characters.
+  const filler = (n: number) => ({ run: 1, at: at(9), event: { type: "assistant", message: { content: [{ type: "text", text: "é日🎉".repeat(n) }] } } });
+  write(store, "a", "t1", [filler(70_001), { run: 1, at: at(10), event: result("s1", 0.4) }, filler(90_003), { run: 1, at: at(11), event: result("s1", 1.1) }, filler(50_000)]);
+  const sliced = await new SpendIndex(store, () => NOW).recent(5_000, 0);
+  expect(sliced.costUsd).toBeCloseTo(1.1);
+  expect(new SpendIndex(store, () => NOW).ticket("a", "t1").costUsd).toBeCloseTo(1.1);
+});

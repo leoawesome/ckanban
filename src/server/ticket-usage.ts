@@ -132,11 +132,12 @@ export class ClaudeLogIndex {
     }
     if (st.size < state.offset) Object.assign(state, { offset: 0, rest: "" });
     if (st.size === state.offset) return;
-    const text = await Bun.file(file).slice(state.offset, st.size).text();
-    state.offset = st.size;
-    const lines = (state.rest + text).split("\n");
-    state.rest = lines.pop() ?? "";
-    for (const line of lines) this.add(line);
+    // In chunks: a first read of a long transcript all at once held hundreds of MB the daemon kept afterwards. A line
+    // still being written is read again next time.
+    state.rest = "";
+    state.offset = await readLines(file, state.offset, st.size, (lines) => {
+      for (const line of lines) this.add(line);
+    });
   }
 
   private add(line: string) {
@@ -364,4 +365,100 @@ export function ticketUsage(i: UsageInputs): TicketUsage {
     window: current ? { utilization: current.utilization, resetsAt: current.end, seenAt: current.seenAt } : null,
     windowError: current ? null : i.windowError ?? null,
   };
+}
+
+// ---------- run log (what ticketRuns reads of an activity log) ----------
+
+/** The event fields ticketRuns reads. */
+const RUN_FIELDS = ["type", "subtype", "kind", "permissionMode", "session_id", "total_cost_usd", "modelUsage", "usage"] as const;
+const LOG_CHUNK = 1 << 20;
+
+/**
+ * The entries of each ticket's activity log that ticketRuns needs, kept per file and read incrementally in chunks
+ * off the event loop. A busy ticket's log is tens of MB of tool output: reading and parsing all of it each time its
+ * Usage tab opened froze the daemon for seconds. Run markers, inits and results are kept (with only the fields
+ * ticketRuns reads), and one stand-in entry wherever the run number changes.
+ */
+export class RunLogIndex {
+  private files = new Map<string, { offset: number; size: number; entries: ActivityEntry[]; lastRun: number | null }>();
+  private reading = new Map<string, Promise<ActivityEntry[]>>();
+
+  entries(file: string, sliceMs = 30): Promise<ActivityEntry[]> {
+    const busy = this.reading.get(file);
+    if (busy) return busy;
+    const p = this.read(file, sliceMs).finally(() => this.reading.delete(file));
+    this.reading.set(file, p);
+    return p;
+  }
+
+  private async read(file: string, sliceMs: number): Promise<ActivityEntry[]> {
+    let size: number;
+    try {
+      size = (await stat(file)).size;
+    } catch {
+      this.files.delete(file);
+      return [];
+    }
+    let st = this.files.get(file);
+    if (!st || size < st.size) {
+      st = { offset: 0, size: 0, entries: [], lastRun: null };
+      this.files.set(file, st);
+    }
+    const pause = pauser(sliceMs);
+    st.offset = await readLines(file, st.offset, size, async (lines) => {
+      for (const line of lines) this.add(st!, line);
+      await pause();
+    });
+    st.size = size;
+    return st.entries;
+  }
+
+  private add(st: { entries: ActivityEntry[]; lastRun: number | null }, line: string): void {
+    if (!line) return;
+    const wanted = line.includes('"ckanban_run"') || line.includes('"subtype":"init"') || line.includes('"type":"result"');
+    if (wanted) {
+      let e: ActivityEntry;
+      try {
+        e = JSON.parse(line);
+      } catch {
+        return;
+      }
+      const ev = e?.event as Record<string, unknown> | undefined;
+      if (!ev || typeof ev !== "object") return;
+      const slim: Record<string, unknown> = {};
+      for (const k of RUN_FIELDS) if (ev[k] !== undefined) slim[k] = ev[k];
+      st.entries.push({ ...e, event: slim } as ActivityEntry);
+      st.lastRun = e.run;
+      return;
+    }
+    // Any other line matters only where the run number changes (ticketRuns starts a run there).
+    const m = /^\{"run":(\d+),"at":"([^"]*)"/.exec(line);
+    if (!m || Number(m[1]) === st.lastRun) return;
+    st.lastRun = Number(m[1]);
+    st.entries.push({ run: st.lastRun, at: m[2], event: { type: "other" } } as ActivityEntry);
+  }
+}
+
+/**
+ * Reads the whole lines between byte offsets from and to, a chunk at a time (decoding only up to each chunk's last
+ * newline, so a character split between chunks stays whole). Returns the offset after the last whole line.
+ */
+export async function readLines(file: string, from: number, to: number, each: (lines: string[]) => void | Promise<void>, chunk = LOG_CHUNK): Promise<number> {
+  const f = Bun.file(file);
+  let carry: Buffer = Buffer.alloc(0);
+  let pos = from;
+  while (pos < to) {
+    const end = Math.min(to, pos + chunk);
+    const got = Buffer.from(await f.slice(pos, end).arrayBuffer());
+    pos = end;
+    const all = carry.length ? Buffer.concat([carry, got]) : got;
+    const cut = all.lastIndexOf(10);
+    if (cut < 0) {
+      carry = all;
+      continue;
+    }
+    await each(all.toString("utf8", 0, cut).split("\n"));
+    carry = all.subarray(cut + 1);
+  }
+  return pos - carry.length;
 }

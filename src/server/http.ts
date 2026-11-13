@@ -70,7 +70,7 @@ import type { SquadCardState } from "./squad";
 import { LearnError, Learner } from "./learner";
 import { Simplifier, SimplifyError } from "./simplify";
 import { changesPrompt, HELP_KINDS, Helper, HelpError, newId, recapAvailable, recapPrompt, type HelpKind } from "./explain";
-import { ClaudeLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, windowsNeeded } from "./ticket-usage";
+import { ClaudeLogIndex, RunLogIndex, readWindows, recordWindow, ticketRuns, ticketUsage, windowsNeeded } from "./ticket-usage";
 import { UsageCache } from "./usage-cache";
 import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
@@ -366,7 +366,8 @@ export function createServer(deps: ServerDeps) {
   board.onRunEnd(contextAfterRun("ticket", (s, id) => board.contextSpec(s, id)));
   quickChats.onRunEnd(contextAfterRun("chat", (s, id) => quickChats.contextSpec(s, id)));
   /** GET: the cached result; POST: a fresh check (shared with one already running), answered once it is over. */
-  const contextRoute = async (req: Request, kind: "ticket" | "chat", slug: string, id: string, spec: () => ContextSpec | null, what: string): Promise<Response> => {
+  /** session: the session spec() would name, when that is cheaper to find than the whole spec (a GET needs only it). */
+  const contextRoute = async (req: Request, kind: "ticket" | "chat", slug: string, id: string, spec: () => ContextSpec | null, what: string, session?: () => string | null): Promise<Response> => {
     const key = `${kind}/${slug}/${id}`;
     if (req.method === "POST") {
       await userOnly(req, what);
@@ -381,7 +382,7 @@ export function createServer(deps: ServerDeps) {
     }
     let sessionId: string | null = null;
     try {
-      sessionId = spec()?.sessionId ?? null;
+      sessionId = session ? session() : spec()?.sessionId ?? null;
     } catch {}
     return json(contexts.view(key, sessionId));
   };
@@ -450,6 +451,7 @@ export function createServer(deps: ServerDeps) {
     linker.suggest(slug, id).catch((e) => console.error(`suggesting a parent for ${slug}/${id}: ${(e as Error).message}`));
   };
   const claudeLogs = deps.claudeLogs ?? new ClaudeLogIndex();
+  const runLogs = new RunLogIndex();
   const publishArtifact = deps.publishArtifact ?? ((job: ArtifactJob) => runArtifactJob(job));
   // No listener (not bound): 0, so `on` refuses instead of pointing serve at whatever holds the port.
   const remote = deps.remote ?? new RemoteAccess(store.root, () => remoteServer?.port ?? 0);
@@ -2367,7 +2369,7 @@ export function createServer(deps: ServerDeps) {
     const action = parts[4];
     // The Context panel: how much of Claude's memory the ticket's chat fills (GET cached, POST checks now).
     if (action === "context" && parts.length === 5 && (m === "GET" || m === "POST")) {
-      return contextRoute(req, "ticket", slug, id, () => board.contextSpec(slug, id), "Checking a chat's context");
+      return contextRoute(req, "ticket", slug, id, () => board.contextSpec(slug, id), "Checking a chat's context", () => board.contextSession(slug, id));
     }
     // The log's newest page; `?before=` (the previous answer's `before`) pages back, null once the first entry is in.
     if (action === "activity" && m === "GET") {
@@ -2597,7 +2599,7 @@ export function createServer(deps: ServerDeps) {
     if (action === "usage" && m === "GET") {
       // The usage endpoint rate-limits: a ticket view reuses the shared cached answer.
       const plan = await usage.get();
-      const activity = store.readActivity(slug, id);
+      const activity = await runLogs.entries(store.activityPath(slug, id));
       const windows = readWindows(windowsFile);
       const needed = windowsNeeded(ticketRuns(activity), windows);
       if (needed.length) await claudeLogs.refresh(Math.min(...needed.map((w) => Date.parse(w.start))));

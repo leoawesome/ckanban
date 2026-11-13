@@ -805,3 +805,25 @@ test("scanSessionFilesAsync finds the same files as scanSessionFiles", async () 
   expect([...async.entries()].sort()).toEqual([...sync.entries()].sort());
   expect(await scanSessionFilesAsync({ configDir: join(configDir, "nope") })).toEqual(new Map());
 });
+
+test("readIn reads a changed transcript in chunks, pausing between them, and skips one whose saved summary holds", async () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-f");
+  mkdirSync(dir, { recursive: true });
+  const sid = "11111111-2222-3333-4444-666666666666";
+  const lines = [user("first", "2026-09-29T01:00:00Z")];
+  // Over 2 MB: more than one chunk.
+  for (let i = 0; i < 40; i++) lines.push(asst([{ type: "text", text: `${i} ${"y".repeat(60_000)}` }], "2026-09-29T01:00:01Z"));
+  lines.push(asst([{ type: "text", text: "last" }], "2026-09-29T01:00:02Z"));
+  writeFileSync(join(dir, `${sid}.jsonl`), lines.join("\n") + "\n");
+  const cache = new SessionCache({ configDir }, Date.now, join(tempDir(), "summaries.json"));
+  let pauses = 0;
+  await cache.readIn(sid, async () => void pauses++);
+  expect(pauses).toBeGreaterThan(1);
+  expect(cache.summary(sid)!.lastMessage!.text).toBe("last");
+  cache.flushSummaries();
+  const again = new SessionCache({ configDir }, Date.now, cache["summaryFile"]);
+  let more = 0;
+  await again.readIn(sid, async () => void more++);
+  expect(more).toBe(0);
+});

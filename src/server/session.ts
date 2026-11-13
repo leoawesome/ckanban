@@ -1317,6 +1317,25 @@ export class SessionCache {
   }
 
   /**
+   * Reads what the session's transcript gained, a chunk at a time with `pause` between, unless its saved summary still
+   * holds. Watchers call it before summary(): a running session's first read after a restart (tens of MB) or one that
+   * fell out of the parse cache otherwise froze the daemon for seconds in one go.
+   */
+  async readIn(sessionId: string, pause: () => Promise<void>): Promise<void> {
+    const f = this.locate(sessionId);
+    if (!f) return;
+    if (this.summaryFile) {
+      const v = this.version(sessionId);
+      if (v && (this.storedSummaries().items[sessionId]?.v === v || this.staleSummary(sessionId, v))) return;
+    }
+    for (;;) {
+      const hit = this.catchUp(sessionId, f, WARM_CHUNK);
+      if (!hit || hit.offset >= hit.size) break;
+      await pause();
+    }
+  }
+
+  /**
    * Settles when every session of the warm-ups started so far has a summary to show (some still from older code, until
    * made again: see warm()).
    */
@@ -1390,33 +1409,42 @@ export class SessionCache {
  * that load after it, and their first load finds the summaries ready).
  */
 export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true, seen?: (sessionId: string | null, key: string) => void): void {
-  for (const _ of pollSteps(store, bus, cache, state, emit, seen));
-}
-
-/**
- * pollSessions in slices: it pauses every ~sliceMs. Each ticket's look costs a few stats (its transcript, its
- * subagents' and workflows' folders): tens of ms for a big board on an idle Mac, but seconds of frozen daemon when the
- * Mac is busy (test suites, a virus scan).
- */
-export async function pollSessionsSliced(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true, seen?: (sessionId: string | null, key: string) => void, sliceMs = 30): Promise<void> {
-  const pause = pauser(sliceMs);
-  for (const _ of pollSteps(store, bus, cache, state, emit, seen)) await pause();
-}
-
-/**
- * One step per ticket. Sliced, the listing can be a moment old by the time a ticket is looked at: what changed meanwhile
- * the Store's writes and the feed report to the next pass anyway.
- */
-function* pollSteps(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit: boolean, seen?: (sessionId: string | null, key: string) => void): Generator<void> {
   const live = new Set<string>();
   for (const p of store.listProfiles()) {
     for (const t of store.listTickets(p.slug)) {
-      yield;
       seen?.(t.sessionId, `${p.slug}/${t.id}`);
       pollOne(bus, cache, state, live, p.slug, t, emit);
     }
   }
   for (const k of state.keys()) if (!live.has(k)) state.delete(k);
+}
+
+/**
+ * pollSessions in slices: it pauses every ~sliceMs, also inside a long transcript read. Each ticket's look costs a few
+ * stats (its transcript, its subagents' and workflows' folders): tens of ms for a big board on an idle Mac, but seconds
+ * of frozen daemon when the Mac is busy (test suites, a virus scan). The listing can be a moment old by the time a
+ * ticket is looked at: what changed meanwhile the Store's writes and the feed report to the next pass anyway.
+ */
+export async function pollSessionsSliced(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true, seen?: (sessionId: string | null, key: string) => void, sliceMs = 30): Promise<void> {
+  const pause = pauser(sliceMs);
+  const live = new Set<string>();
+  for (const p of store.listProfiles()) {
+    for (const t of store.listTickets(p.slug)) {
+      await pause();
+      seen?.(t.sessionId, `${p.slug}/${t.id}`);
+      await pollOneSliced(bus, cache, state, live, p.slug, t, emit, pause);
+    }
+  }
+  for (const k of state.keys()) if (!live.has(k)) state.delete(k);
+}
+
+/** pollOne, with a changed transcript read in chunks first (SessionCache.readIn). */
+async function pollOneSliced(bus: Bus, cache: SessionCache, state: Map<string, string>, live: Set<string>, slug: string, t: Ticket, emit: boolean, pause: () => Promise<void>): Promise<void> {
+  if (t.sessionId) {
+    const v = cache.version(t.sessionId);
+    if (v && state.get(`${slug}/${t.id}`) !== `${t.sessionId}:${v}`) await cache.readIn(t.sessionId, pause);
+  }
+  pollOne(bus, cache, state, live, slug, t, emit);
 }
 
 function pollOne(bus: Bus, cache: SessionCache, state: Map<string, string>, live: Set<string>, slug: string, t: Ticket, emit: boolean): void {
@@ -1507,22 +1535,31 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
       nextOwners = null;
     }
   };
+  // One at a time, in slices: a changed session's transcript may need a long read (SessionCache.readIn).
+  let changing: Promise<void> | null = null;
   const changed = () => {
+    if (changing) return changing;
     const keys = new Set(tickets);
     for (const id of sessions) for (const k of owners.get(id) ?? []) keys.add(k);
     tickets.clear();
     sessions.clear();
-    for (const key of keys) {
-      const i = key.indexOf("/");
-      const slug = key.slice(0, i);
-      const t = store.getTicket(slug, key.slice(i + 1));
-      if (!t?.sessionId) {
-        state.delete(key);
-        continue;
+    if (!keys.size) return;
+    const pause = pauser(sliceMs);
+    const run = async () => {
+      for (const key of keys) {
+        await pause();
+        const i = key.indexOf("/");
+        const slug = key.slice(0, i);
+        const t = store.getTicket(slug, key.slice(i + 1));
+        if (!t?.sessionId) {
+          state.delete(key);
+          continue;
+        }
+        own(t.sessionId, key);
+        await pollOneSliced(bus, cache, state, new Set(), slug, t, true, pause);
       }
-      own(t.sessionId, key);
-      pollOne(bus, cache, state, new Set(), slug, t, true);
-    }
+    };
+    return (changing = run().catch((e) => console.error("session watcher", e)).finally(() => (changing = null)));
   };
   // The first pass after a start announced every ticket's session (hundreds of events, each built for every open tab:
   // seconds right after a restart). Pages load what they need when they (re)connect, and the notifier takes stock at
@@ -1541,7 +1578,7 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
     try {
       // The first pass or a full one still under way: only what the feed says changed meanwhile.
       if (priming || passing) {
-        if (o.feed?.live && !unknown) changed();
+        if (o.feed?.live && !unknown) return changed();
         return;
       }
       if (!primed || !o.feed?.live || unknown || now() - lastFull >= safetyMs) {
@@ -1552,7 +1589,7 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
           .catch((e) => console.error("session watcher", e))
           .finally(() => (passing = false));
       }
-      changed();
+      return changed();
     } catch (e) {
       console.error("session watcher", e);
     }

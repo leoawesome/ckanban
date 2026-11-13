@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
 import { createServer } from "../src/server/http";
 import { Store } from "../src/server/store";
 import {
-  ClaudeLogIndex, messageCost, priceFor, readWindows, recordWindow, ticketRuns, ticketUsage, type WindowSnapshot,
+  ClaudeLogIndex, messageCost, priceFor, readLines, readWindows, recordWindow, RunLogIndex, ticketRuns, ticketUsage, type WindowSnapshot,
 } from "../src/server/ticket-usage";
 import type { ActivityEntry, Profile } from "../src/server/types";
 import type { UsageResult } from "../src/server/usage";
@@ -231,3 +231,40 @@ function describe_http() {
     expect(usageCalls).toBe(1);
   });
 }
+
+test("readLines reads whole lines in chunks, keeping a character split between chunks whole", async () => {
+  const file = join(tempDir(), "log.jsonl");
+  const lines = ["héllo wörld ✓✓✓", "日本語のテキスト", "plain", "emoji 🎉🎉"];
+  writeFileSync(file, lines.join("\n") + "\nhalf-writ");
+  const got: string[] = [];
+  const size = Buffer.byteLength(readFileSync(file, "utf8"));
+  const end = await readLines(file, 0, size, (ls) => void got.push(...ls), 3);
+  expect(got).toEqual(lines);
+  // The half-written last line is left for later.
+  expect(end).toBe(size - "half-writ".length);
+});
+
+test("RunLogIndex keeps what ticketRuns needs and reads only what was appended since", async () => {
+  const file = join(tempDir(), "activity.jsonl");
+  const big = "x".repeat(5000);
+  const entries: ActivityEntry[] = [
+    { run: 1, at: "2026-11-01T00:00:00Z", event: { type: "ckanban_run", kind: "work" } },
+    { run: 1, at: "2026-11-01T00:00:01Z", event: { type: "system", subtype: "init", permissionMode: "default" } },
+    { run: 1, at: "2026-11-01T00:00:02Z", event: { type: "assistant", message: { content: [{ type: "text", text: `ünïcode ${big}` }] } } },
+    { run: 1, at: "2026-11-01T00:00:03Z", event: { type: "result", session_id: "s1", total_cost_usd: 0.5, result: big, usage: { input_tokens: 10, output_tokens: 5 } } },
+    // An old run without a marker: a new run number starts it.
+    { run: 2, at: "2026-11-02T00:00:00Z", event: { type: "assistant", message: { content: [] } } },
+    { run: 2, at: "2026-11-02T00:00:01Z", event: { type: "result", session_id: "s1", total_cost_usd: 0.75, modelUsage: { "claude-x": { inputTokens: 1, outputTokens: 2, costUSD: 0.25 } } } },
+  ];
+  writeFileSync(file, entries.slice(0, 4).map((e) => JSON.stringify(e) + "\n").join(""));
+  const index = new RunLogIndex();
+  const first = await index.entries(file, 0);
+  expect(ticketRuns(first)).toEqual(ticketRuns(entries.slice(0, 4)));
+  // Slim: the result's long text isn't kept.
+  expect(JSON.stringify(first).length).toBeLessThan(1000);
+  appendFileSync(file, entries.slice(4).map((e) => JSON.stringify(e) + "\n").join(""));
+  const second = await index.entries(file, 0);
+  expect(ticketRuns(second)).toEqual(ticketRuns(entries));
+  expect(ticketRuns(second).map((r) => r.costUsd)).toEqual([0.5, 0.25]);
+  expect(await index.entries(join(tempDir(), "none.jsonl"))).toEqual([]);
+});

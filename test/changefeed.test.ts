@@ -212,7 +212,7 @@ test("terminal watcher reads a session's title once until the feed reports it ch
   store.updateTicket("p", t.id, { sessionId: "s1", workdir: path });
   let reads = 0;
   const title: Record<string, string> = { s1: "old name" };
-  const sessions = { summary: (id: string) => (reads++, { title: title[id] }) } as unknown as SessionCache;
+  const sessions = { summary: (id: string) => (reads++, { title: title[id] }), readIn: async () => {} } as unknown as SessionCache;
   const feed = new FakeFeed();
   let cmds = ["claude --resume 'new name'"];
   const w = new TerminalWatcher(store, new Bus(), sessions, async () => cmds, feed, () => 0);

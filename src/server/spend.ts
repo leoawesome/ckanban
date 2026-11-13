@@ -11,7 +11,7 @@ import { atomicWrite, type Store } from "./store";
 // ledger (side-call.ts); huddle agents have no ticket log, so their result lines add to a small per-day ledger
 // (spend-days.json).
 
-const CHUNK = 8 * 1024 * 1024;
+const CHUNK = 1024 * 1024;
 /** Days the huddle ledger keeps. */
 const KEEP_DAYS = 60;
 
@@ -41,7 +41,12 @@ export class SpendIndex {
 
   /** A ticket's cost so far: its runs and its side calls. */
   ticket(slug: string, id: string): TicketSpend {
-    const runs = this.runs(slug, id);
+    return drain(this.ticketSteps(slug, id));
+  }
+
+  /** ticket() in steps: it yields between chunks of a long activity log (a place to pause). */
+  private *ticketSteps(slug: string, id: string): Generator<void, TicketSpend> {
+    const runs = yield* this.logSteps(this.store.activityPath(slug, id));
     const side = readSideSpend(this.store.sideSpendPath(slug, id));
     if (!side.costUsd) return runs;
     const days = new Map(runs.days);
@@ -49,13 +54,8 @@ export class SpendIndex {
     return { costUsd: runs.costUsd + side.costUsd, days };
   }
 
-  /** The ticket's runs' cost (reads only what was appended to its activity log since the last call). */
-  private runs(slug: string, id: string): TicketSpend {
-    return this.logSpend(this.store.activityPath(slug, id));
-  }
-
-  /** Cost of the result lines in one activity log (a ticket's, or a quick chat's). */
-  private logSpend(file: string): TicketSpend {
+  /** Cost of the result lines in one activity log (a ticket's, or a quick chat's); reads only what was appended since. */
+  private *logSteps(file: string): Generator<void, TicketSpend> {
     let st = this.files.get(file);
     let size = 0;
     try {
@@ -69,30 +69,38 @@ export class SpendIndex {
       st = { offset: 0, totals: new Map(), costUsd: 0, days: new Map() };
       this.files.set(file, st);
     }
-    if (size > st.offset) this.read(file, st, size);
+    if (size > st.offset) yield* this.read(file, st, size);
     return st;
   }
 
-  private read(file: string, st: FileState, size: number) {
+  /** Yields after each chunk: a first read of a busy ticket's log is tens of MB. */
+  private *read(file: string, st: FileState, size: number): Generator<void> {
     const fd = openSync(file, "r");
     try {
-      let rest = "";
+      const buf = Buffer.allocUnsafe(Math.min(CHUNK, size - st.offset));
+      // Bytes after the last whole line: decoded with the next chunk, so a character split between chunks stays whole.
+      let carry: Buffer = Buffer.alloc(0);
       let pos = st.offset;
       while (pos < size) {
-        const buf = Buffer.alloc(Math.min(CHUNK, size - pos));
-        const n = readSync(fd, buf, 0, buf.length, pos);
+        const n = readSync(fd, buf, 0, Math.min(buf.length, size - pos), pos);
         if (n <= 0) break;
         pos += n;
-        const text = rest + buf.toString("utf8", 0, n);
-        const cut = text.lastIndexOf("\n");
+        const all = carry.length ? Buffer.concat([carry, buf.subarray(0, n)]) : buf.subarray(0, n);
+        const cut = all.lastIndexOf(10);
         // A line still being written stays for the next read.
         if (cut < 0) {
-          rest = text;
+          carry = Buffer.from(all);
           continue;
         }
-        for (const line of text.slice(0, cut).split("\n")) this.line(st, line);
-        rest = text.slice(cut + 1);
-        st.offset = pos - Buffer.byteLength(rest);
+        for (const line of all.toString("utf8", 0, cut).split("\n")) this.line(st, line);
+        carry = Buffer.from(all.subarray(cut + 1));
+        st.offset = pos - carry.length;
+        if (pos < size) {
+          const at = st.offset;
+          yield;
+          // Read on by someone else meanwhile (ticket() doesn't pause): what is left is counted already.
+          if (st.offset !== at || this.files.get(file) !== st) return;
+        }
       }
     } finally {
       closeSync(fd);
@@ -153,7 +161,7 @@ export class SpendIndex {
   }
 
   /** today() in steps: undefined between tickets (a place to pause), the answer last. */
-  private *todaySteps(): Generator<TodaySpend | undefined> {
+  private *todaySteps(): Generator<TodaySpend | undefined | void> {
     const now = this.now();
     const day = dayKey(now);
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -166,14 +174,14 @@ export class SpendIndex {
         yield;
         // Untouched since midnight: nothing spent today.
         const mtime = Math.max(mtimeOf(this.store.activityPath(p.slug, id)), mtimeOf(this.store.sideSpendPath(p.slug, id)));
-        if (mtime >= start) cost += this.ticket(p.slug, id).days.get(day) ?? 0;
+        if (mtime >= start) cost += (yield* this.ticketSteps(p.slug, id)).days.get(day) ?? 0;
       }
       // Quick chats (quickchat.ts) log their result lines next to each chat.
       const chats = join(this.store.root, "profiles", p.slug, "chats");
       for (const f of existsSync(chats) ? readdirSync(chats) : []) {
         yield;
         const file = join(chats, f);
-        if (f.endsWith(".activity.jsonl") && mtimeOf(file) >= start) cost += this.logSpend(file).days.get(day) ?? 0;
+        if (f.endsWith(".activity.jsonl") && mtimeOf(file) >= start) cost += (yield* this.logSteps(file)).days.get(day) ?? 0;
         // Their side calls ("Say it simpler").
         if (f.endsWith(".side-spend.jsonl") && mtimeOf(file) >= start) cost += readSideSpend(file).days.get(day) ?? 0;
       }
@@ -183,6 +191,14 @@ export class SpendIndex {
     const helper = readSideSpend(helperSpendFile(this.store.root)).days.get(day) ?? 0;
     if (helper > 0) boards.push({ slug: "~helper", name: "Helper", costUsd: helper });
     yield { day, costUsd: boards.reduce((s, b) => s + b.costUsd, 0), boards };
+  }
+}
+
+/** Runs a step generator to its end, without pausing. */
+function drain<T>(g: Generator<void, T>): T {
+  for (;;) {
+    const r = g.next();
+    if (r.done) return r.value;
   }
 }
 

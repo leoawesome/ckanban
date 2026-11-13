@@ -3578,14 +3578,22 @@ export class Board {
    * What the Context panel needs to run `/context` like the ticket's chat runs (same folder, flags and environment), or
    * null when the ticket has no saved Claude session yet. The per-run system prompt and spending cap are left out.
    */
-  contextSpec(slug: string, id: string): { sessionId: string; cwd: string; args: string[]; env: Record<string, string> } | null {
+  /** The session contextSpec would check, without building the chat's command (a whole prompt): null when it has none. */
+  contextSession(slug: string, id: string): string | null {
     const t = this.store.getTicket(slug, id);
     const profile = this.store.getProfile(slug);
     if (!t || !profile || !t.sessionId || !this.sessionExists(t.sessionId)) return null;
+    return existsSync(t.workdir ?? t.worktree ?? profile.path) ? t.sessionId : null;
+  }
+
+  contextSpec(slug: string, id: string): { sessionId: string; cwd: string; args: string[]; env: Record<string, string> } | null {
+    const sessionId = this.contextSession(slug, id);
+    if (!sessionId) return null;
+    const t = this.store.getTicket(slug, id)!;
+    const profile = this.store.getProfile(slug)!;
     const cwd = t.workdir ?? t.worktree ?? profile.path;
-    if (!existsSync(cwd)) return null;
     const refine = chatModeFor(t.status) === "refine";
-    return { sessionId: t.sessionId, cwd, args: this.chatArgs(slug, t, profile, refine, t.sessionId, true), env: this.chatEnv(slug, id, this.store.outputsDir(slug, id)) };
+    return { sessionId, cwd, args: this.chatArgs(slug, t, profile, refine, sessionId, true), env: this.chatEnv(slug, id, this.store.outputsDir(slug, id)) };
   }
 
   private runEnded: ((slug: string, id: string) => void)[] = [];
