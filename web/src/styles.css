@@ -3524,7 +3524,8 @@ button.hd-mode:disabled { cursor: default; }
   .phone-tags .tag-editor { min-width: 0; }
   /* The status button: what the ticket waits on, in its colour; tapping it moves the ticket. */
   .phone-status .select-trigger { min-height: 26px; padding: 0 10px; gap: 6px; border: 0; border-radius: var(--r-pill); font-weight: 600; font-size: var(--fs-sm); background: var(--surface-2); color: var(--text); }
-  .phone-status .select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+  /* No clipping here: Claude's face draws its hat above its box and sits 4px left; the label keeps its own ellipsis. */
+  .phone-status .select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: visible; }
   .phone-status .ps-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .phone-status .select-chevron { color: currentColor; opacity: 0.7; }
   .phone-status .ps-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
