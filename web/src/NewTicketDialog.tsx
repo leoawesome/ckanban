@@ -1,6 +1,5 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { type ClaudeSession, type Profile, type Status, type Ticket, type TicketMode } from "./api";
-import { looksLikeQuestion } from "./family";
 import { mainHint, modelWord, runsOn } from "./newTicketText";
 import { EFFORTS, modelOptions } from "./models";
 import { Select } from "./Select";
@@ -18,7 +17,7 @@ import { StarToggle } from "./StarToggle";
 import { TagEditor } from "./Tags";
 import { usePhone } from "./usePhone";
 
-export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets = [], onClose, onCreate, onAskInChat }: {
+export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets = [], onClose, onCreate }: {
   slug: string;
   /** The board: its model, Main ticket model and effort are what "Board default" means here. */
   profile?: Pick<Profile, "model" | "mainModel" | "effort"> | null;
@@ -28,8 +27,6 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
   /** The board's tickets: a new ticket that shares words with an open feature is offered to it. */
   tickets?: Ticket[];
   onClose: () => void;
-  /** Closes the form and opens Chat with this text in a new chat's message box. */
-  onAskInChat?: (text: string) => void;
   onCreate: (input: { title: string; body: string; status: Status; sessionId?: string; mode?: TicketMode; important?: boolean; tags?: string[]; partOf?: string; model?: string; effort?: string }) => Promise<void>;
 }) {
   const [mode, setMode] = useState<TicketMode>("interview");
@@ -54,8 +51,6 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
   // A small "Part of X?" chip: the open feature sharing the most words (no AI call). It stays on its own until the user picks.
   const fc = useFeatureChoice(tickets, title, body);
   const partOf = fc.partOf;
-  // "Just a question? Ask in Chat first": a word check, no AI call.
-  const question = useMemo(() => looksLikeQuestion(title, body), [title, body]);
 
   // Start: an interview goes to Planning (questions now), "Just do it" goes to Ready (runs when a slot is free).
   const startStatus: Status = mode === "interview" ? "planning" : "ready";
@@ -173,12 +168,7 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
             <KeyHint keys="⌘↵" />
           </button>
         </div>
-        {/* The bottom line offers the other way in: "Ask in Chat" while the title reads like a question (it takes the
-            Claude Code chat link's place, so typing "?" adds no line and nothing jumps), otherwise an old Claude Code chat. */}
-        {question && onAskInChat ? (
-          <button type="button" className="link-btn small new-ticket-from-chat" title="You can turn the chat into a ticket later"
-            onClick={() => onAskInChat([title.trim(), body.trim()].filter(Boolean).join("\n\n"))}>Just a question? Ask in Chat instead</button>
-        ) : !session && (
+        {!session && (
           <button type="button" className="link-btn small new-ticket-from-chat" onClick={() => setPicking(true)}>Continue a Claude Code chat instead…</button>
         )}
       </form>

@@ -20,7 +20,7 @@ import { PushHint } from "./PushHint";
 import { startPushClient } from "./push";
 import { PhoneAccessDialog } from "./PhoneAccessDialog";
 import { MoreSheet, PhoneNav, type PhoneTab } from "./PhoneNav";
-import { askInChat, QuickChatPane } from "./QuickChat";
+import { QuickChatPane } from "./QuickChat";
 import { usePhone } from "./usePhone";
 import { StatusPill, UsageBox } from "./UsagePill";
 import { useUsage } from "./useUsage";
@@ -1595,11 +1595,6 @@ export function App() {
           knownTags={boardTags(tickets)}
           tickets={tickets}
           onClose={() => setNewTicket(false)}
-          onAskInChat={(text) => {
-            askInChat(profile.slug, text);
-            setNewTicket(false);
-            openChat();
-          }}
           onCreate={async (input) => {
             const t = await api.createTicket(profile.slug, input);
             setTickets((ts) => (ts.some((x) => x.id === t.id) ? ts : [...ts, t]));

@@ -519,6 +519,12 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
   width: 100%; max-width: 520px; background: var(--surface); border-radius: var(--r-md); border: 1px solid var(--border);
   box-shadow: var(--shadow-panel); transform-origin: top center; animation: modal-in 140ms ease-out;
 }
+/* Desktop: dialogs sit in the middle. margin: auto centres one that fits and, unlike align-items: center, lets a taller
+   one start at the top (24px gap) with the overlay scrolling, so nothing is cut off above. Phones keep the sheet. */
+@media (min-width: 721px) {
+  .overlay { padding: 24px 16px; }
+  .overlay > .modal { margin: auto; transform-origin: center; }
+}
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes modal-in { from { opacity: 0; transform: scale(0.98); } }
 .modal.wide { max-width: 760px; }

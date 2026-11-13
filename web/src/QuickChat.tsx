@@ -5,7 +5,7 @@ import { openFeatures } from "./family";
 import { AttachmentChips } from "./AttachmentChips";
 import { autoGrow } from "./autoGrow";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { browserStore, draftKey, loadSaved, save } from "./drafts";
+import { browserStore, draftKey, save } from "./drafts";
 import { FeatureChoice, useFeatureChoice } from "./FeatureChoice";
 import { Modal } from "./Modal";
 import { enterSends } from "./enterSends";
@@ -51,22 +51,6 @@ const writeSelected = (slug: string, id: string | null) => {
 
 const HANDOFF_RETRY_MS = 500;
 
-/** Fired by askInChat: an open Chat pane switches to a new chat so the filled-in message box shows. */
-const ASK_EVENT = "ckanban:ask-in-chat";
-
-/**
- * Puts text in a new chat's message box (added under anything already typed there) and selects the new chat, so Chat
- * opens on it. The caller then opens the Chat panel or the Ask tab.
- */
-export function askInChat(slug: string, text: string) {
-  const key = draftKey(slug, "chat-new");
-  const had = loadSaved<string>(browserStore(), key);
-  const before = typeof had === "string" && had.trim() ? had : "";
-  if (!before.includes(text)) save(browserStore(), key, before ? `${before}\n\n${text}` : text);
-  writeSelected(slug, null);
-  window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: slug }));
-}
-
 /** What Retry under a failed reply sends. */
 const RETRY = "That reply stopped with an error. Please try again.";
 
@@ -100,14 +84,6 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
     setThreadKey((n) => n + 1);
     load();
     return onReconnect(load);
-  }, [slug]);
-  // "Ask in Chat" from the New ticket form: show the new chat, whose message box askInChat filled in.
-  useEffect(() => {
-    const on = (e: Event) => {
-      if ((e as CustomEvent).detail === slug) pick(null);
-    };
-    window.addEventListener(ASK_EVENT, on);
-    return () => window.removeEventListener(ASK_EVENT, on);
   }, [slug]);
   useEffect(() => subscribe((e) => {
     if (e.type === "chat.updated" && e.profile === slug) {

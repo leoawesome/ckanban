@@ -572,20 +572,6 @@ export function suggestFeature<T extends FeatureTicket>(tickets: T[], title: str
   return best && { feature: best.feature, words: best.words };
 }
 
-// ---- New ticket: "Just a question? Ask in Chat first" (no AI call) ----
-
-const QUESTION_START = /^(why|how|what|where|when|who|which|is|are|was|were|can|could|should|would|does|do|did|has|have)\b/i;
-
-/**
- * The title or description reads like a question: the title starts with why, how, what, is, can, does… or either ends
- * with "?". A word check, no AI call.
- */
-export function looksLikeQuestion(title: string, body = ""): boolean {
-  const t = title.trim();
-  const b = body.trim();
-  return QUESTION_START.test(t) || t.endsWith("?") || b.endsWith("?") || (!t && QUESTION_START.test(b));
-}
-
 /**
  * The feature a new ticket joins (undefined: its own). Only an explicit pick counts: "add" keeps the id tapped
  * (not today's suggestion), "other" needs a pick, and a pick whose feature has since closed falls back to its own.
