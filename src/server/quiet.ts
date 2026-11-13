@@ -76,3 +76,17 @@ export function scheduleSpend(history: ScheduleHistoryEntry[], since: Date, cost
   }
   return Math.round(total * 100) / 100;
 }
+
+/**
+ * When and by whom a paused schedule was paused: its last "paused" edit, unless a later "resumed" undid it.
+ * null when the history has no such edit (paused before edits were logged, or created paused).
+ */
+export function lastPause(history: ScheduleHistoryEntry[]): { at: string; by: "user" | { ticketId: string } } | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const e = history[i];
+    if (e.kind !== "edited") continue;
+    if (e.action === "resumed") return null;
+    if (e.action === "paused") return { at: e.at, by: e.by };
+  }
+  return null;
+}

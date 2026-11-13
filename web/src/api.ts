@@ -1262,6 +1262,9 @@ export interface Schedule {
   spend7dUsd?: number;
   /** Quiet checks per local day, newest first (list only). */
   quietPerDay?: { day: string; count: number }[];
+  /** Paused only, from its last "paused" edit (list only): when, and by the user or Claude in a ticket (title null: deleted). */
+  pausedAt?: string;
+  pausedBy?: "user" | { ticketId: string; title: string | null };
 }
 
 /** Reusable prompt text, inserted by typing `@name` in a composer. scope: "global" or a board slug. */
