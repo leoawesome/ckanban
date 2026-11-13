@@ -1108,6 +1108,16 @@ body > .output-view.reader { position: fixed; }
 @media (max-width: 720px) {
   .sched-delete-card .proposal-actions .btn { min-height: 44px; padding: 0 18px; font-size: var(--fs-sm); }
 }
+/* propose_helper_rule: a line for what the helper knows about you, added with one tap (HelperRuleCard.tsx) */
+.helper-rule-card .proposal-tag { display: inline-flex; align-items: center; gap: 4px; }
+.helper-rule-card.done { border-color: var(--border); }
+.helper-rule-card.done .proposal-tag { color: var(--muted); }
+.hrc-line { margin: 0; font-size: var(--fs-sm); font-weight: 600; background: var(--surface-2); border-radius: var(--r-sm); padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.helper-rule-card .proposal-actions { justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 8px; }
+.helper-rule-card .proposal-actions .btn { min-height: 40px; padding: 0 16px; }
+@media (max-width: 720px) {
+  .helper-rule-card .proposal-actions .btn { min-height: 44px; padding: 0 18px; font-size: var(--fs-sm); }
+}
 /* propose_teammate: a teammate the user saves with one click */
 .teammate-card.done { border-color: var(--border); }
 .teammate-card.done .proposal-tag { color: var(--muted); }

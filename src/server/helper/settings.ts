@@ -21,8 +21,11 @@ export interface FeedbackLine {
   id: string;
   text: string;
   at: string;
-  /** Where it came from: typed by the user, or a tap (Should have pinged me). */
-  source: "user" | "should-have-pinged";
+  /**
+   * Where it came from: typed by the user, a tap (Should have pinged me), or Claude's suggestion the user added with
+   * one tap on its card in a ticket's chat (propose_helper_rule).
+   */
+  source: "user" | "should-have-pinged" | "suggested";
 }
 
 export interface HelperSettings {
@@ -33,7 +36,8 @@ export interface HelperSettings {
   feedback: FeedbackLine[];
 }
 
-export const FEEDBACK_MAX = 300;
+export { FEEDBACK_MAX } from "./line";
+import { FEEDBACK_MAX } from "./line";
 export const FEEDBACK_LINES_MAX = 100;
 
 const HM = /^([01]?\d|2[0-3]):([0-5]\d)$/;

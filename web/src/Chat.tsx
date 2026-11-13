@@ -17,6 +17,7 @@ import { branchTicket } from "./branch";
 import { BranchCard } from "./BranchCard";
 import { DeleteCard } from "./DeleteCard";
 import { ScheduleDeleteCard } from "./ScheduleDeleteCard";
+import { HelperRuleCard } from "./HelperRuleCard";
 import { AgentRows } from "./AgentRow";
 import { liveLine, runMood } from "./avatarMood";
 import { useClaudeName } from "./AvatarFace";
@@ -153,7 +154,7 @@ const OLD_LINE_MIN_TOKENS = 100_000;
 
 const before = (e: SessionEntry, at: string | undefined) => !!at && !!e.at && e.at < at;
 
-const CARDS = ["questions", "proposal", "newTickets", "branch", "huddle", "deletion", "scheduleDeletion", "teammate", "squad", "automation", "keys"] as const;
+const CARDS = ["questions", "proposal", "newTickets", "branch", "huddle", "deletion", "scheduleDeletion", "helperRule", "teammate", "squad", "automation", "keys"] as const;
 
 /**
  * Tool calls (and subagents) in a row fold into one block; a branch point (splitAt) starts a new one. A reply that
@@ -1065,6 +1066,10 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                 <ScheduleDeleteCard slug={slug} ticketId={ticket.id} uuid={e.uuid} scheduleId={e.scheduleDeletion.id} reason={e.scheduleDeletion.reason}
                   answered={ticket.scheduleDeleteCards?.[e.uuid]} onError={onError}
                   deletedName={Object.values(ticket.scheduleDeleteCards ?? {}).find((c) => c.state === "deleted" && c.scheduleId === e.scheduleDeletion!.id)?.name} />
+              )}
+              {e.helperRule && (
+                <HelperRuleCard slug={slug} ticketId={ticket.id} uuid={e.uuid} text={e.helperRule.text} reason={e.helperRule.reason}
+                  answered={ticket.helperRuleCards?.[e.uuid]} onError={onError} />
               )}
               {e.teammate && (
                 <TeammateCard proposal={e.teammate} presets={presets} answered={ticket.teammateCards?.[e.uuid]}

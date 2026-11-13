@@ -525,6 +525,8 @@ export interface Ticket {
   squadCards?: Record<string, SquadCardState>;
   /** Schedule delete cards in the chat the user answered, by entry uuid (src/server/types.ts). */
   scheduleDeleteCards?: Record<string, ScheduleDeleteCardState>;
+  /** Helper rule cards (propose_helper_rule) the user answered, by entry uuid (src/server/types.ts). */
+  helperRuleCards?: Record<string, HelperRuleCardState>;
   /** Automation cards in the chat the user saved (by entry uuid). */
   automationCards?: Record<string, { loopId: string; at: string }>;
   /** Key boxes (ask_keys) answered, by entry uuid: the names saved, or self for "I'll do it myself". */
@@ -680,6 +682,8 @@ export interface SessionEntry {
   deletion?: { ids: string[]; reason: string };
   /** Claude asked to delete a schedule (delete_schedule in a board chat or run): the card with Keep / Delete. */
   scheduleDeletion?: { id: string; reason: string };
+  /** Claude suggested a line for what the helper knows about the user (propose_helper_rule): the card with Not now / Add. */
+  helperRule?: { text: string; reason: string };
   /** Claude proposed a teammate (propose_teammate): the card with Save teammate / Edit first / Dismiss. */
   teammate?: TeammateProposal;
   /** Claude proposed a squad (propose_squad): the card with Save for this board / Save for all boards / Edit first / Dismiss. */
@@ -929,6 +933,14 @@ export interface ScheduleDeleteCardState {
   name?: string;
   /** The schedule it deleted (another card for the same schedule names it from here once it is gone). */
   scheduleId?: string;
+}
+
+/** What the user did with a suggested helper line: added (already: it was in the list) or Not now. */
+export interface HelperRuleCardState {
+  state: "added" | "dismissed";
+  at: string;
+  text?: string;
+  already?: boolean;
 }
 
 export interface TeammateCardState {
@@ -1847,6 +1859,8 @@ export const api = {
   snooze: (slug: string, id: string, body: Record<string, unknown> = {}) => req<Ticket>("POST", `${t(slug, id)}/snooze`, body),
   unsnooze: (slug: string, id: string) => req<Ticket>("DELETE", `${t(slug, id)}/snooze`),
   /** The user answered a schedule delete card: deleted deletes the schedule, kept keeps it. */
+  answerHelperRuleCard: (slug: string, id: string, uuid: string, answer: { state: "added"; text: string } | { state: "dismissed" }) =>
+    req<Ticket>("PUT", `${t(slug, id)}/helper-rule-cards/${encodeURIComponent(uuid)}`, answer),
   answerScheduleDeleteCard: (slug: string, id: string, uuid: string, answer: { state: "deleted"; scheduleId: string } | { state: "kept" }) =>
     req<Ticket>("PUT", `${t(slug, id)}/schedule-delete-cards/${encodeURIComponent(uuid)}`, answer),
   /** The user answered a teammate card (saved it, or dismissed it). */

@@ -151,6 +151,8 @@ function ownAttention(
   if (s?.pendingScheduleDeletes?.some((c) => !t.scheduleDeleteCards?.[c.uuid] && (!o.schedules || o.schedules.has(c.id)))) {
     return { kind: "proposal", label: "Confirm deleting a schedule", since };
   }
+  // Claude suggested a line for the helper: only the user's Add saves it.
+  if (s?.pendingHelperRules?.some((id) => !t.helperRuleCards?.[id])) return { kind: "proposal", label: "Review a suggestion for the helper", since };
   if (t.status === "review") return { kind: "review", label: "Ready for review", since };
   // A reply cut off by a restart isn't a reply yet: recover() resumes it.
   if (t.status === "planning" && s?.lastMessage?.role === "assistant" && !s.lastMessage.peerReply && !t.interrupted) return { kind: "reply", label: "Claude replied", since };

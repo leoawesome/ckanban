@@ -1,4 +1,5 @@
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, type Stats } from "node:fs";
+import { helperLineText, suggestedLineError } from "./helper/line";
 import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -110,6 +111,11 @@ export interface SessionEntry {
   deletion?: { ids: string[]; reason: string };
   /** Claude asked to delete a schedule (delete_schedule in a board run or chat; rendered with Keep / Delete buttons). */
   scheduleDeletion?: { id: string; reason: string };
+  /**
+   * Claude suggested a line for "What the helper knows about you" (propose_helper_rule in a board run or chat; rendered
+   * with Add / Not now). The text is as the helper would save it (spaces folded); the Add route saves this, not the click's body.
+   */
+  helperRule?: { text: string; reason: string };
   /** Claude proposed a teammate (propose_teammate; rendered with Save teammate / Edit first / Dismiss). */
   teammate?: TeammateProposal;
   /** Claude proposed a squad (propose_squad; rendered with Save for this board / Save for all boards / Edit first / Dismiss). */
@@ -345,6 +351,8 @@ export interface ParsedSession {
    * answered, and one whose schedule is gone no longer waits.
    */
   pendingScheduleDeletes: { uuid: string; id: string }[];
+  /** Helper rule cards (entry uuids) anywhere in the chat; Ticket.helperRuleCards says which were answered. */
+  pendingHelperRules: string[];
   /** Conversation size and cache time at Claude's last reply (chat-cache.ts); null before any reply with usage. */
   cache: ChatCache | null;
 }
@@ -372,6 +380,8 @@ export interface SessionSummary {
   pendingKeys?: string[];
   /** See ParsedSession.pendingScheduleDeletes. */
   pendingScheduleDeletes?: { uuid: string; id: string }[];
+  /** See ParsedSession.pendingHelperRules. */
+  pendingHelperRules?: string[];
   /** See ParsedSession.cache: the ticket chat's "gone cold" note. */
   cache?: ChatCache | null;
 }
@@ -514,14 +524,23 @@ const BRANCH_TOOL = /(?:^|__)propose_branch$/;
 const HUDDLE_TOOL = /(?:^|__)propose_huddle$/;
 const DELETE_TOOL = /(?:^|__)propose_delete$/;
 const DELETE_SCHEDULE_TOOL = /(?:^|__)delete_schedule$/;
+// Only the board's own tool: a same-named tool from another MCP server never passed propose_helper_rule's checks.
+const HELPER_RULE_TOOL = /^mcp__ckanban__propose_helper_rule$/;
+export { helperLineText };
 const TEAMMATE_TOOL = /(?:^|__)propose_teammate$/;
 const SQUAD_TOOL = /(?:^|__)propose_squad$/;
 const AUTOMATION_TOOL = /(?:^|__)propose_automation$/;
 const KEYS_TOOL = /(?:^|__)ask_keys$/;
 
 /** The form or card a planning-chat tool call shows, or null for other tools (or input that can't be read). */
-function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "scheduleDeletion" | "teammate" | "squad" | "automation" | "keys"> | null {
+function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "scheduleDeletion" | "helperRule" | "teammate" | "squad" | "automation" | "keys"> | null {
   const name = String(block.name ?? "");
+  // Refused calls (a tool ticket, a line too long) come back as errors and show no card, as for delete_schedule.
+  if (HELPER_RULE_TOOL.test(name)) {
+    // A line the tool would refuse (too long, invisible characters) shows no card, even before its result arrives.
+    const text = helperLineText(block.input?.text);
+    return suggestedLineError(text) ? null : { helperRule: { text, reason: helperLineText(block.input?.reason).slice(0, 300) } };
+  }
   // A refused call (no such schedule, another board, a huddle helper) comes back as an error and shows no card.
   if (DELETE_SCHEDULE_TOOL.test(name)) {
     const id = typeof block.input?.id === "string" ? block.input.id.trim() : "";
@@ -782,13 +801,14 @@ export class SessionParser {
       return c;
     });
     dropBlockedMoves(entries);
-    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.scheduleDeletion || e.teammate || e.squad || e.automation || e.keys));
+    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.scheduleDeletion || e.helperRule || e.teammate || e.squad || e.automation || e.keys));
     const lastText = !last ? "" : last.text
       || (last.questions ? `Asked ${last.questions.length} question${last.questions.length > 1 ? "s" : ""}`
         : last.newTickets ? `Proposed ${last.newTickets.length} new ticket${last.newTickets.length > 1 ? "s" : ""}`
         : last.branch ? "Offered to branch this ticket"
         : last.deletion ? `Asked to delete ${last.deletion.ids.length} ticket${last.deletion.ids.length > 1 ? "s" : ""}`
         : last.scheduleDeletion ? "Asked to delete a schedule"
+        : last.helperRule ? "Suggested a line for the helper"
         : last.teammate ? `Proposed teammate @${last.teammate.name}`
         : last.squad ? `Proposed squad "${last.squad.squad.label}"`
         : last.automation ? `Proposed automation "${last.automation.name}"` : "Proposed an updated ticket");
@@ -843,7 +863,7 @@ function handBack(text: string): string {
   return text.slice(m[0].length).split("\n").map((l) => l.replace(/^ {2}/, "")).join("\n").trim();
 }
 
-function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "openFormId" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys" | "pendingScheduleDeletes"> {
+function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "openFormId" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys" | "pendingScheduleDeletes" | "pendingHelperRules"> {
   let lastUser = -1;
   entries.forEach((e, i) => {
     // Huddle messages and an automation's items don't answer what Claude asked the user (another ticket's message, e.g.
@@ -867,6 +887,8 @@ function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestio
     pendingKeys: after.filter((e) => e.keys).map((e) => e.uuid),
     // Not only since the user's last message: a schedule waits to be deleted until the card is answered.
     pendingScheduleDeletes: entries.filter((e) => e.scheduleDeletion).map((e) => ({ uuid: e.uuid, id: e.scheduleDeletion!.id })),
+    // Likewise: a suggested helper line waits for Add or Not now.
+    pendingHelperRules: entries.filter((e) => e.helperRule).map((e) => e.uuid),
   };
 }
 
@@ -1307,7 +1329,8 @@ export class SessionCache {
       title: p.title, lastMessage: p.lastMessage && this.summaryFile ? { ...p.lastMessage, text: maskSaved(dirname(this.summaryFile), p.lastMessage.text) } : p.lastMessage, artifacts: p.artifacts,
       openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), ...(p.openFormId ? { openFormId: p.openFormId } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates, pendingSquads: p.pendingSquads,
       pendingAutomations: p.pendingAutomations, ...(p.pendingKeys.length ? { pendingKeys: p.pendingKeys } : {}),
-      ...(p.pendingScheduleDeletes.length ? { pendingScheduleDeletes: p.pendingScheduleDeletes } : {}), cache: p.cache,
+      ...(p.pendingScheduleDeletes.length ? { pendingScheduleDeletes: p.pendingScheduleDeletes } : {}),
+      ...(p.pendingHelperRules.length ? { pendingHelperRules: p.pendingHelperRules } : {}), cache: p.cache,
     };
   }
 }

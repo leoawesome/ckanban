@@ -369,6 +369,11 @@ export interface Ticket {
    * (the tool_use id): deleted (with the schedule's name then) or kept.
    */
   scheduleDeleteCards?: Record<string, ScheduleDeleteCardState>;
+  /**
+   * Helper rule cards in this ticket's chat (propose_helper_rule from a board run or chat) the user answered, by entry
+   * uuid (the tool_use id): added (the line saved) or dismissed (Not now).
+   */
+  helperRuleCards?: Record<string, HelperRuleCardState>;
   /** Automation cards in this ticket's chat (propose_automation) the user saved, by entry uuid: the automation made. */
   automationCards?: Record<string, { loopId: string; at: string }>;
   /**
@@ -503,6 +508,16 @@ export interface ScheduleDeleteCardState {
   name?: string;
   /** The schedule it deleted: another card for the same schedule names it from here. */
   scheduleId?: string;
+}
+
+/** What the user did with a suggested helper line: added it to "What the helper knows about you", or Not now. */
+export interface HelperRuleCardState {
+  state: "added" | "dismissed";
+  at: string;
+  /** The line as saved (added only). */
+  text?: string;
+  /** Added, but the same line was already in the list, so nothing new was saved. */
+  already?: boolean;
 }
 
 export interface TeammateCardState {

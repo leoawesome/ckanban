@@ -51,7 +51,9 @@ import { PushService } from "./push";
 import { LISTENER_HEADER, LOGIN_HEADER, qrSvg, RemoteAccess, RemoteError, remoteUrl, type RemoteConfig } from "./remote";
 import { AGENT_IDS, AgentError, AgentRegistry, type AgentId } from "./agents";
 import { collectLinks } from "./links";
-import { findSessionFile, fromTicketText, SessionCache, type SessionEntry, type SessionSummary } from "./session";
+import { findSessionFile, fromTicketText, helperLineText, SessionCache, type SessionEntry, type SessionSummary } from "./session";
+import { suggestedLineError } from "./helper/line";
+import { FEEDBACK_LINES_MAX } from "./helper/settings";
 import { matchesText, parseRef, readChat, readText, searchChat, toolOutputs, type ChatSource } from "./chat-search";
 import { ptySupported, ShellManager, type Shell } from "./shell";
 import { AGENT_STEP_TAIL, settleAgent } from "./subagents";
@@ -76,7 +78,7 @@ import { familyOf, familyRoot, featureRoot, fitParent, groupsOf, hiddenTool, lev
 import { STATUS_FIELDS, type StatusPatch } from "./feature";
 import { createdFromDraft } from "../../web/src/proposalMatch";
 import type { Store } from "./store";
-import { runCapFor, SELF_MOVES, STATUSES, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
+import { runCapFor, SELF_MOVES, STATUSES, type HelperRuleCardState, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
 import { nowIso, slugify } from "./util";
 import { applyDetection, detectSetup } from "./worktree-setup";
 
@@ -2995,6 +2997,46 @@ export function createServer(deps: ServerDeps) {
       }
       const card = { state: b.state, at: nowIso(), ...(name ? { name, scheduleId: b.scheduleId as string } : {}) };
       store.updateTicket(slug, id, { scheduleDeleteCards: { ...store.getTicket(slug, id)!.scheduleDeleteCards, [uuid]: card } });
+      emitTicket(slug, id);
+      return json(view(profile, store.getTicket(slug, id)!));
+    }
+    // Helper rule card (Claude's propose_helper_rule in this ticket's chat or run): PUT .../helper-rule-cards/<entry uuid>
+    // { state: "added", text } saves the card's line to "What the helper knows about you"; { state: "dismissed" } (Not
+    // now) saves nothing. Only the user's click: a run, huddle helper or other program is refused (userOnly), as on the
+    // helper's own routes. The line saved is the one in this chat's transcript, the one the card shows; `text` (what the
+    // user's card showed) must match it, so a line changed meanwhile is never saved unseen.
+    if (action === "helper-rule-cards" && parts.length === 6 && m === "PUT") {
+      await userOnly(req, "Adding to what the helper knows about you");
+      const uuid = parts[5];
+      if (!uuid || uuid.length > 200) throw new HttpError(400, "the card's id is missing");
+      const b = (await body(req)) ?? {};
+      if (b.state !== "added" && b.state !== "dismissed") throw new HttpError(400, "state must be added or dismissed");
+      const t = store.getTicket(slug, id)!;
+      const rule = chatEntries(t).find((e) => e.uuid === uuid && e.helperRule)?.helperRule;
+      if (!rule) throw new HttpError(404, "This suggestion isn't in this ticket's chat.");
+      const done = t.helperRuleCards?.[uuid];
+      if (done) throw new HttpError(409, done.state === "added" ? "This line was already added from this card." : "This card was already answered.");
+      let card: HelperRuleCardState = { state: "dismissed", at: nowIso() };
+      if (b.state === "added") {
+        if (b.text !== rule.text) throw new HttpError(409, "This suggestion changed since the card was shown; reload the chat and check it again.");
+        // The tool refuses these and the chat shows no card for them; checked again so nothing hidden is ever saved.
+        const bad = suggestedLineError(rule.text);
+        if (bad) throw new HttpError(400, `This suggestion can't be added: ${bad}.`);
+        if (hiddenTool(t)) throw new HttpError(403, "This suggestion came from a step working in the background; ask in the main chat instead.");
+        const h = helperOr503();
+        const key = (x: string) => helperLineText(x).toLowerCase();
+        const already = h.settings.get().feedback.some((f) => key(f.text) === key(rule.text));
+        // A full list would drop the user's oldest line without a word: they choose what goes, in Notifications.
+        if (!already && h.settings.get().feedback.length >= FEEDBACK_LINES_MAX) {
+          throw new HttpError(409, `What the helper knows about you is full (${FEEDBACK_LINES_MAX} lines). Remove a line in Notifications, then tap Add again.`);
+        }
+        if (!already) {
+          helperCall(() => h.settings.addFeedback(rule.text, "suggested"));
+          h.feedbackAdded();
+        }
+        card = { state: "added", at: nowIso(), text: rule.text, ...(already ? { already: true } : {}) };
+      }
+      store.updateTicket(slug, id, { helperRuleCards: { ...store.getTicket(slug, id)!.helperRuleCards, [uuid]: card } });
       emitTicket(slug, id);
       return json(view(profile, store.getTicket(slug, id)!));
     }
