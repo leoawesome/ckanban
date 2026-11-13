@@ -577,7 +577,7 @@ export interface Loop {
   askClaude: { on: boolean; prompt: string };
   /** Ticket description with {{title}}, {{link}}, {{service}}; the copied text is added below as a fenced block. */
   instructions: string;
-  /** The tools `ckanban call` may use, learned from the first check after a save. Null: not learned yet. */
+  /** The tools `ckanban call` may use, learned from the first check after a save that calls tools. Null (or an empty list from older versions): not learned yet. */
   allowedTools: string[] | null;
   createdAt: string;
   updatedAt: string;

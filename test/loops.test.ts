@@ -199,6 +199,95 @@ test("ckanban call: only with the check's token, only its own passes, and after 
   expect(loops.list("p")[0].lastError).toContain('can\'t use "Other". It can use: Tracker.');
 });
 
+test("#28: a check that calls no tools learns nothing; the next check that does learns its tools, and others stay refused", async () => {
+  const p = await passes.add({ kind: "mcp", name: "Tracker", url: svc.url });
+  const { code, state } = svc.approve(await passes.authorizeUrl(p.id));
+  await passes.complete(state, code);
+  svc.issues = [{ id: "i1", title: "First", url: "https://t/i1" }];
+  // Like a script that returns [] outside working hours before calling any tool.
+  let tools: string[] = [];
+  run = async (_f, _c, env) => {
+    try {
+      for (const t of tools) await loops.call(env.CKANBAN_CALL_TOKEN, "tracker", t, {});
+      return { items: [], error: null, stderr: "", durationMs: 1 };
+    } catch (e) {
+      return { items: null, error: `The check failed (exit 1): ${(e as Error).message}`, stderr: "", durationMs: 1 };
+    }
+  };
+  const l = await loops.create("p", input({ passes: [p.id] }));
+  await loops.checkNow("p", l.id);
+  expect(loops.list("p")[0].lastError).toBeNull();
+  expect(loops.list("p")[0].allowedTools).toBeNull();
+
+  tools = ["list_issues"];
+  await loops.checkNow("p", l.id);
+  expect(loops.list("p")[0].lastError).toBeNull();
+  expect(loops.list("p")[0].allowedTools).toEqual([`${p.id}:list_issues`]);
+
+  // Once learned, a check that calls nothing keeps the list, and a tool outside it is still refused.
+  tools = [];
+  await loops.checkNow("p", l.id);
+  expect(loops.list("p")[0].allowedTools).toEqual([`${p.id}:list_issues`]);
+  tools = ["list_issues", "delete_issue"];
+  await loops.checkNow("p", l.id);
+  expect(loops.list("p")[0].lastError).toContain("may not use Tracker's delete_issue");
+  expect(svc.calls.map((c) => c.tool)).not.toContain("delete_issue");
+});
+
+test("#28: an automation stuck with an empty tool list from an older version recovers by itself", async () => {
+  const p = await passes.add({ kind: "mcp", name: "Tracker", url: svc.url });
+  const { code, state } = svc.approve(await passes.authorizeUrl(p.id));
+  await passes.complete(state, code);
+  svc.issues = [];
+  run = async (_f, _c, env) => {
+    try {
+      await loops.call(env.CKANBAN_CALL_TOKEN, "tracker", "list_issues", {});
+      return { items: [], error: null, stderr: "", durationMs: 1 };
+    } catch (e) {
+      return { items: null, error: `The check failed (exit 1): ${(e as Error).message}`, stderr: "", durationMs: 1 };
+    }
+  };
+  const l = await loops.create("p", input({ passes: [p.id] }));
+  store.saveLoop("p", { ...store.getLoop("p", l.id)!, allowedTools: [] });
+  await loops.checkNow("p", l.id);
+  expect(loops.list("p")[0].lastError).toBeNull();
+  expect(loops.list("p")[0].allowedTools).toEqual([`${p.id}:list_issues`]);
+});
+
+test("#28: saving the same script again from the editor lets it learn its tools again", async () => {
+  const p = await passes.add({ kind: "mcp", name: "Tracker", url: svc.url });
+  const { code, state } = svc.approve(await passes.authorizeUrl(p.id));
+  await passes.complete(state, code);
+  svc.issues = [];
+  let tools = ["list_issues"];
+  run = async (_f, _c, env) => {
+    try {
+      for (const t of tools) await loops.call(env.CKANBAN_CALL_TOKEN, "tracker", t, {});
+      return { items: [], error: null, stderr: "", durationMs: 1 };
+    } catch (e) {
+      return { items: null, error: `The check failed (exit 1): ${(e as Error).message}`, stderr: "", durationMs: 1 };
+    }
+  };
+  const l = await loops.create("p", input({ passes: [p.id] }));
+  await loops.checkNow("p", l.id);
+  expect(loops.list("p")[0].allowedTools).toEqual([`${p.id}:list_issues`]);
+  tools = ["delete_issue"];
+  await loops.checkNow("p", l.id);
+  expect(loops.list("p")[0].lastError).toContain("may not use Tracker's delete_issue");
+
+  // Switching it off and on (no script sent) keeps what it learned.
+  await loops.update("p", l.id, { enabled: false });
+  await loops.update("p", l.id, { enabled: true });
+  expect(loops.list("p")[0].allowedTools).toEqual([`${p.id}:list_issues`]);
+
+  // The editor's Save sends the whole form, the same script included.
+  const v = await loops.update("p", l.id, { ...input({ passes: [p.id] }) });
+  expect(v.allowedTools).toBeNull();
+  await loops.checkNow("p", l.id);
+  expect(loops.list("p")[0].lastError).toBeNull();
+  expect(loops.list("p")[0].allowedTools).toEqual([`${p.id}:delete_issue`]);
+});
+
 test("Ask Claude first: a no-tools call per new item; no makes no ticket, yes uses Claude's title and summary inside the block", async () => {
   const l = await loops.create("p", input({ askClaude: { on: true, prompt: "Only bugs." } }));
   await loops.checkNow("p", l.id);

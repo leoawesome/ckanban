@@ -100,6 +100,12 @@ const ASK_BODY = "Work on this item from {{service}}.";
 /** taskPlaceFor's problem (worded for schedules' runs) in an automation's words. */
 const forTickets = (problem: string) => problem.replace("it puts runs in", "it puts new tickets in");
 
+/**
+ * The tools a loop's checks may call, or null while it is still learning them. A stored empty list (saved by older
+ * versions after a check that called no tools) counts as not learned yet, so those automations recover by themselves.
+ */
+export const learnedTools = (l: Pick<Loop, "allowedTools">): string[] | null => (l.allowedTools?.length ? l.allowedTools : null);
+
 export const DEFAULT_INSTRUCTIONS = "Look at this item from {{service}} and do what it needs.\n\nLink: {{link}}";
 
 /**
@@ -269,9 +275,11 @@ export class LoopManager {
       if (script !== null && (sha256(script) !== current.scriptHash || readScript(this.store.loopScriptFile(slug, id)) !== script)) {
         this.store.saveLoopScript(slug, id, script);
         next.scriptHash = sha256(script);
-        next.allowedTools = null;
         restart = true;
       }
+      // Saving with its script (the board's editor always sends it, and only the user saves) learns its tools again,
+      // even when the script is the same: that is how the user lets a check use more tools.
+      if (script !== null) next.allowedTools = null;
       if (fields.passes.join() !== current.passes.join()) next.allowedTools = null;
       // It only looks forward from when it starts: switching it on again, or a new script, notes what is there first.
       if (restart || (next.enabled && !current.enabled)) {
@@ -440,9 +448,12 @@ export class LoopManager {
       save({ lastCheckedAt: now.toISOString(), lastError: message }, { failures, backoffUntil: new Date(now.getTime() + wait).toISOString() });
     };
 
-    const { run, grant } = await this.runWith(slug, this.store.loopScriptFile(slug, id), profile.path, loop.passes, loop.allowedTools);
+    const allowed = learnedTools(loop);
+    const { run, grant } = await this.runWith(slug, this.store.loopScriptFile(slug, id), profile.path, loop.passes, allowed);
     if (!run.items) return fail(run.error ?? "The check failed", grant.rateLimitMs);
-    const learned = loop.allowedTools ?? [...grant.used].sort();
+    // Learned from the first good check that really calls tools: one that called none (e.g. a script that returns []
+    // outside working hours) learns nothing yet, so it doesn't lock the automation out of every tool.
+    const learned = allowed ?? (grant.used.size ? [...grant.used].sort() : null);
     const items = run.items.map((i) => this.maskItem(i));
     const seen = new Set(state.seen);
     const preview = (list: LoopSeenItem[]) => list.slice(0, PREVIEW);
