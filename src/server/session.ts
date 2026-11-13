@@ -1318,13 +1318,14 @@ export class SessionCache {
 
   /**
    * Reads what the session's transcript gained, a chunk at a time with `pause` between, unless its saved summary still
-   * holds. Watchers call it before summary(): a running session's first read after a restart (tens of MB) or one that
+   * holds (or, with parse, whatever). Watchers call it before summary(): a running session's first read after a restart (tens of MB) or one that
    * fell out of the parse cache otherwise froze the daemon for seconds in one go.
    */
-  async readIn(sessionId: string, pause: () => Promise<void>): Promise<void> {
+  async readIn(sessionId: string, pause: () => Promise<void>, o: { parse?: boolean } = {}): Promise<void> {
     const f = this.locate(sessionId);
     if (!f) return;
-    if (this.summaryFile) {
+    // parse: for a caller that needs the parse itself (get()), not only the summary.
+    if (this.summaryFile && !o.parse) {
       const v = this.version(sessionId);
       if (v && (this.storedSummaries().items[sessionId]?.v === v || this.staleSummary(sessionId, v))) return;
     }

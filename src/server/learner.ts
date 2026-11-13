@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { trackedInterval } from "./lag";
+import { track, trackedInterval } from "./lag";
 import { join } from "node:path";
 import type { Bus } from "./events";
 import { ALL_ROLES, type HuddleNote, type LessonInput, type NoteScope, noteText, parseNotes, serializeNotes } from "./huddle-notes";
@@ -36,6 +36,8 @@ export interface LearnerOptions {
   /** The ticket's conversation. */
   entries: (t: Ticket) => SessionEntry[];
   isRunning: (slug: string, id: string) => boolean;
+  /** Reads the ticket's conversation ahead of entries(), in slices (a long transcript is seconds of reading). */
+  prepare?: (t: Ticket) => Promise<void>;
   now?: () => Date;
   /** How long a ticket stays in Review or Done before it is read (the user may correct it again). Default 2 minutes. */
   settleMs?: number;
@@ -86,6 +88,41 @@ export class Learner {
 
   private get pileFile() {
     return join(this.store.learnedDir(), "pile.json");
+  }
+
+  /** Each scanned ticket's updatedAt when it was last scanned: a restart rescans only the ones changed since. */
+  private get scannedAtFile() {
+    return join(this.store.learnedDir(), "scanned-at.json");
+  }
+  private scannedAtCache: Record<string, string> | null = null;
+  private scannedAtTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private scannedAt(): Record<string, string> {
+    if (!this.scannedAtCache) {
+      try {
+        const v = JSON.parse(readFileSync(this.scannedAtFile, "utf8"));
+        this.scannedAtCache = v && typeof v === "object" && !Array.isArray(v) ? v : {};
+      } catch {
+        this.scannedAtCache = {};
+      }
+    }
+    return this.scannedAtCache!;
+  }
+
+  private noteScanned(k: string, updatedAt: string) {
+    const all = this.scannedAt();
+    if (all[k] === updatedAt) return;
+    all[k] = updatedAt;
+    this.scannedAtTimer ??= setTimeout(() => this.flushScannedAt(), 2_000);
+    (this.scannedAtTimer as { unref?: () => void }).unref?.();
+  }
+
+  private flushScannedAt() {
+    if (this.scannedAtTimer) clearTimeout(this.scannedAtTimer);
+    this.scannedAtTimer = null;
+    if (!this.scannedAtCache) return;
+    mkdirSync(this.store.learnedDir(), { recursive: true });
+    atomicWrite(this.scannedAtFile, JSON.stringify(this.scannedAtCache) + "\n");
   }
 
   private get changesFile() {
@@ -182,9 +219,13 @@ export class Learner {
     const pile = this.readPile();
     if (!pile.since) this.writePile({ ...pile, since: this.now().toISOString() });
     const since = this.readPile().since!;
-    // Tickets that settled while the daemon was down.
+    // Tickets that settled while the daemon was down (not every settled ticket again: scanning 1000+ of them at once
+    // after each start froze the daemon for seconds).
+    const scanned = this.scannedAt();
     for (const p of this.store.listProfiles()) {
-      for (const t of this.store.listTickets(p.slug)) if (isLearnable(t) && t.updatedAt >= since) this.schedule(p.slug, t.id);
+      for (const t of this.store.listTickets(p.slug)) {
+        if (isLearnable(t) && t.updatedAt >= since && scanned[`${p.slug}/${t.id}`] !== t.updatedAt) this.schedule(p.slug, t.id);
+      }
     }
     const off = this.bus.on((e) => {
       if (e.type !== "ticket.updated") return;
@@ -200,6 +241,7 @@ export class Learner {
       off();
       if (first) clearTimeout(first);
       if (tick) clearInterval(tick);
+      if (this.scannedAtTimer) this.flushScannedAt();
       for (const t of this.timers.values()) clearTimeout(t);
       this.timers.clear();
     };
@@ -210,7 +252,7 @@ export class Learner {
     clearTimeout(this.timers.get(k));
     this.timers.set(k, setTimeout(() => {
       this.timers.delete(k);
-      void this.scanTicket(slug, id).catch((err) => console.error(`learning from ${k} failed:`, err));
+      void track("learner-scan", () => this.scanTicket(slug, id)).catch((err) => console.error(`learning from ${k} failed:`, err));
     }, this.o.settleMs ?? 120_000));
   }
 
@@ -220,10 +262,18 @@ export class Learner {
    */
   scanTicket(slug: string, id: string): Promise<Candidate[]> {
     return this.serial(async () => {
-      const t = this.store.getTicket(slug, id);
+      // A turn of the event loop between scans: many settling at once used to run back to back in one go.
+      await new Promise((r) => setTimeout(r, 0));
+      let t = this.store.getTicket(slug, id);
       if (!t || !isLearnable(t) || this.o.isRunning(slug, id)) return [];
       let pile = this.readPile();
       if (pile.since && t.updatedAt < pile.since) return [];
+      if (this.o.prepare) {
+        await this.o.prepare(t);
+        t = this.store.getTicket(slug, id);
+        if (!t || !isLearnable(t) || this.o.isRunning(slug, id)) return [];
+      }
+      this.noteScanned(`${slug}/${id}`, t.updatedAt);
       const entries = this.o.entries(t);
       const tickets = this.store.listTickets(slug);
       const all = corrections(t, entries, tickets);

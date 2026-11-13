@@ -330,3 +330,23 @@ test("review fixes: a failed tidy retries, notes changed during the call are lef
   }
   expect(prune(pile, new Date("2026-10-05T00:00:00Z"), 2).candidates.map((x) => x.state)).toEqual(["undone", "dropped"]);
 });
+
+test("after a restart only tickets changed since their last scan are scanned again", async () => {
+  const a = ticket("Login page", ["no, use a button"]);
+  const b = ticket("Signup page", ["no, use a link"]);
+  // Scanned before the restart.
+  await learner.scanTicket("p", a);
+  await learner.scanTicket("p", b);
+  const stop = learner.start();
+  stop(); // flushes what was scanned
+  store.updateTicket("p", b, { title: "Signup page v2" });
+  const scanned: string[] = [];
+  const again = new Learner(store, bus, {
+    sideCall: async () => ({ ok: false, error: "none" }), entries: (t) => (scanned.push(t.id), sessions.get(t.id) ?? []),
+    isRunning: () => false, now: () => clock, settleMs: 0, tidyCheckMs: 0,
+  });
+  const stop2 = again.start();
+  await new Promise((r) => setTimeout(r, 30));
+  stop2();
+  expect(scanned).toEqual([b]);
+});

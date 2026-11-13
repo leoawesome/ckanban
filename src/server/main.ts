@@ -17,7 +17,7 @@ import { PushService } from "./push";
 import { RemoteAccess, remoteListenPort, remoteUrl } from "./remote";
 import { Passes } from "./integrations/passes";
 import { ckanbanShim } from "./integrations/script";
-import { startLagMonitor, track, trackedInterval } from "./lag";
+import { pauser, startLagMonitor, track, trackedInterval } from "./lag";
 import { LoopManager } from "./loops";
 import { makeSideCaller } from "./side-call";
 import { Learner } from "./learner";
@@ -85,6 +85,7 @@ export async function startDaemon(): Promise<void> {
   });
   const learner = new Learner(store, bus, {
     sideCall, entries: (t) => (t.sessionId ? sessions.get(t.sessionId)?.entries : null) ?? [], isRunning: (slug, id) => board.isRunning(slug, id),
+    prepare: async (t) => void (t.sessionId && (await sessions.readIn(t.sessionId, pauser(), { parse: true }))),
   });
   const huddles = new Huddles(store, board, bus, {
     claudeBin: process.env.CKANBAN_CLAUDE_BIN ?? "claude", learn: (slug, h, p, role, lessons) => void learner.addHuddleLessons(slug, h, p, role, lessons),
