@@ -258,6 +258,8 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 /* board toolbar: search + filters */
 .board-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px 0; flex-wrap: wrap; }
 .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+/* A phone's search field and its Done button share a row; a computer lays them out in the bar as before. */
+.board-search-row { display: contents; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface);
   border-radius: var(--r-pill); padding: 3px 10px; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; color: var(--muted);
@@ -3336,17 +3338,13 @@ button.hd-mode:disabled { cursor: default; }
   .board-bar { padding: 8px 12px 0; gap: 8px; }
   .board-bar .search { flex: 1; }
   .board-bar .search input { width: 100%; }
-  /* Now covers Needs you / Running; the board keeps search + column chips */
-  .board-bar .filter-chips > :not(.tag-filter), .board-bar .search-kbd { display: none; }
-  .board-bar .tag-filter .chip { min-height: 36px; padding: 5px 12px; }
+  .board-bar .search-kbd { display: none; }
   .menu-sheet .tag-filter-list { max-height: none; }
   .menu-sheet .tag-filter-item { min-height: 44px; font-size: var(--fs-lg); padding: 6px 10px; }
   .menu-sheet .tag-filter-item input { width: 18px; height: 18px; }
   .menu-sheet .tag-filter-item .tag-chip { font-size: var(--fs-md); padding: 2px 10px; }
   .menu-sheet .tag-filter-find { font-size: var(--fs-lg); padding: 9px 12px; }
   .menu-sheet .tag-filter-clear { margin: 6px 10px; font-size: var(--fs-md); }
-  .col-jump { display: flex; gap: 6px; padding: 8px 12px 0; overflow-x: auto; scrollbar-width: none; flex: none; }
-  .col-jump .chip { white-space: nowrap; padding: 5px 11px; }
   .board { gap: 10px; padding: 10px 12px 12px; scroll-padding-inline: 12px; scrollbar-width: none; }
   .column { flex: 0 0 88%; min-width: 0; }
 
@@ -3443,20 +3441,52 @@ button.hd-mode:disabled { cursor: default; }
   .sheet-fold .sheet-label { flex: none; }
   .sheet-fold-names { flex: 1; min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* Board: the search row folds into an icon in the column tab row; no column head; whole columns, no peek. */
+  /* Board: the top bar 🔍 opens the search and filter panel under the top bar (field + Done, the chips, then search
+     everywhere); a dot on 🔍 while a search or filter is on and the panel is closed. */
   .board-bar.folded { display: none; }
-  .col-jump-row { display: flex; align-items: center; gap: 6px; padding: 8px 12px 0 0; flex: none; }
-  .col-jump-row .col-jump { flex: 1; min-width: 0; padding: 0 0 0 12px; }
-  .col-jump-tool { flex: none; width: 40px; height: 40px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); color: var(--muted); }
-  .col-jump-tool.on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
-  .chip-claude { display: inline-flex; color: var(--accent-text); margin-left: -2px; }
-  .board { gap: 24px; }
+  .board-bar { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 10px; padding: 10px 12px 8px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; }
+  .board-search-row { display: flex; align-items: center; gap: 6px; }
+  .board-bar .search input { min-height: 44px; }
+  .link-btn.board-search-done { align-items: center; font-size: var(--fs-lg); min-height: 44px; padding: 0 6px; }
+  .board-bar .filter-chips { flex-wrap: nowrap; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .board-bar .filter-chips::-webkit-scrollbar { display: none; }
+  .board-bar .filter-chips .chip { flex: none; min-height: 40px; padding: 0 14px; font-size: var(--fs-md); }
+  .board-bar .filter-chips .chip-count { font-size: var(--fs-xs); }
+  .link-btn.board-search-all { align-items: center; gap: 8px; min-height: 40px; padding: 0 2px; color: var(--muted); font-weight: 400; font-size: var(--fs-md); }
+  .board-search-btn { position: relative; }
+  .topbar .btn.ghost.topbar-icon.on { background: var(--accent-soft); border-color: var(--accent); }
+  .topbar-dot { position: absolute; top: 4px; right: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); }
+  /* Five equal column tabs across the width: count on top, the name under it; the shown one underlined. */
+  .col-jump { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 0 6px; background: var(--surface); border-bottom: 1px solid var(--border); flex: none; }
+  .col-tab {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; min-height: 54px; padding: 6px 2px 5px;
+    border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--muted); cursor: pointer; font: inherit;
+  }
+  .col-tab-count { display: flex; align-items: center; gap: 3px; font-size: var(--fs-lg); font-weight: 700; line-height: 1.25; color: var(--text); font-variant-numeric: tabular-nums; }
+  .col-tab-claude { display: inline-flex; color: var(--accent); }
+  .col-tab-you { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; }
+  .col-tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); font-weight: 600; }
+  .col-tab.on { border-bottom-color: var(--accent); color: var(--accent-text); }
+  .col-tab.on .col-tab-count { color: var(--accent-text); }
+  .col-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  /* No column head and no column box: the cards sit on the page (a dragged card still lights up the column). */
+  .board { gap: 24px; padding-top: 0; }
   .board > .column { flex: 0 0 100%; }
-  .board > .column > .column-body { padding-top: 8px; }
+  .board > .column:not(.over) { background: transparent; box-shadow: none; }
+  @media (max-width: 370px) { .col-tab-label { font-size: var(--fs-2xs); } }
+  .board > .column > .column-body { padding: 12px 0 20px; }
+  .col-filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; font-size: var(--fs-sm); color: var(--muted); }
+  .col-filter-bar .link-btn { min-height: 40px; padding: 0 4px; font-size: var(--fs-md); }
+  .col-empty { display: flex; flex-direction: column; align-items: center; margin-top: 60px; padding: 0 28px; text-align: center; color: var(--muted); }
+  .col-filter-bar + .col-empty { margin-top: 48px; }
+  .col-empty-icon { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 12px; border-radius: 50%; background: var(--surface-2); }
+  .col-empty-title { font-size: var(--fs-lg); font-weight: 600; color: var(--text); }
+  .col-empty-text { margin-top: 4px; font-size: var(--fs-md); }
+  .col-empty .btn { margin-top: 16px; min-height: 44px; padding: 0 18px; font-size: var(--fs-lg); }
   /* Rows that scroll sideways (useEdgeFade.ts): fade the edge that has more. */
-  :is(.col-jump, .phone-team .segmented)[data-more-right] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
-  :is(.col-jump, .phone-team .segmented)[data-more-left] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
-  :is(.col-jump, .phone-team .segmented)[data-more-left][data-more-right] {
+  .phone-team .segmented[data-more-right] { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  .phone-team .segmented[data-more-left] { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
+  .phone-team .segmented[data-more-left][data-more-right] {
     -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
   }
 
@@ -4228,7 +4258,7 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
   .tag-x::after { content: ""; position: absolute; inset: -7px -4px; }
   button.badge { padding-top: 5px; padding-bottom: 5px; }
   /* main controls on the phone screens */
-  .push-hint .btn, .col-jump .chip, .now-elsewhere .chip, .team-bar .segmented button { min-height: 40px; }
+  .push-hint .btn, .now-elsewhere .chip, .team-bar .segmented button { min-height: 40px; }
   .composer textarea { min-height: 40px; }
   /* Top bar and panel icons at 40×40 (later than their own sections, so these win). */
   .topbar-icon, .hd-more { width: 40px; height: 40px; }

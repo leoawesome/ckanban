@@ -230,7 +230,8 @@ export function App() {
   useEffect(() => setTagFilter([]), [slug]);
   const clearSearch = () => { setQuery(""); setTagFilter([]); };
   const searchRef = useRef<HTMLInputElement>(null);
-  // Phones fold the board's search row into an icon in the column tab row; it opens on a tap and stays while a search is on.
+  // Phones: the top bar 🔍 on the Board tab opens and closes the search and filter panel under the top bar (Done closes it
+  // too and keeps the search and filters).
   const [phoneSearch, setPhoneSearch] = useState(false);
   const inboxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [profileDialog, setProfileDialog] = useState<"new" | "edit" | null>(null);
@@ -1295,7 +1296,19 @@ export function App() {
               ),
             } : {}} />
         )}
-        <button className="btn ghost phone-only topbar-icon" aria-label="Search tickets and actions" onClick={() => setCommandBar(true)}><SearchIcon size={20} /></button>
+        {phone && phoneTab === "board" && profile ? (
+          // The Board tab: 🔍 searches and filters this board; a dot says a search or filter is on while the panel is closed.
+          <button className={`btn ghost phone-only topbar-icon board-search-btn${phoneSearch ? " on" : ""}`} aria-expanded={phoneSearch}
+            aria-label={phoneSearch ? "Close search and filter" : filtering ? "Search and filter this board (a filter is on)" : "Search and filter this board"}
+            onClick={() => {
+              if (phoneSearch) { setPhoneSearch(false); searchRef.current?.blur(); }
+              else { setPhoneSearch(true); requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true })); }
+            }}>
+            <SearchIcon size={20} />{filtering && !phoneSearch && <span className="topbar-dot" aria-hidden />}
+          </button>
+        ) : (
+          <button className="btn ghost phone-only topbar-icon" aria-label="Search tickets and actions" onClick={() => setCommandBar(true)}><SearchIcon size={20} /></button>
+        )}
         {profile && (
           <button className="btn primary phone-only topbar-icon" aria-label="New ticket" onClick={() => setNewTicket(true)}><PlusIcon size={20} /></button>
         )}
@@ -1395,7 +1408,9 @@ export function App() {
           <NowView helper={inboxHelper} inbox={inbox} tickets={tickets} slug={profile.slug} onOpen={openFrom} onMarkDone={(i) => void inboxDone(i)} onSnooze={(i, len) => void inboxSnooze(i, true, len)} onSnoozeAll={(l) => void inboxSnoozeAll(l)} onSwitchBoard={switchBoard}
             inboxLoaded={inboxLoaded} ticketsLoaded={ticketsLoaded} footer={<PushHint onSetup={() => setNotifications(true)} />} />
         ) : <>
-          <div className={`board-bar${phone && !phoneSearch && !query && !tagFilter.length ? " folded" : ""}`}>
+          <div className={`board-bar${phone && !phoneSearch ? " folded" : ""}`}>
+            {/* A phone puts Done beside the field; a computer lays the row out as before (display: contents). */}
+            <div className="board-search-row">
             <div className={`search${tagFilter.length ? " has-tags" : ""}`}>
               <SearchIcon className="icon search-icon" />
               {tagFilter.map((g) => (
@@ -1404,7 +1419,7 @@ export function App() {
                   #{g} <CloseIcon size={12} />
                 </button>
               ))}
-              <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tagFilter.length ? "Search" : "Search tickets · #tag"}
+              <input ref={searchRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tagFilter.length ? "Search" : phone ? "Search this board · #tag" : "Search tickets · #tag"}
                 aria-label="Search tickets on this board (#tag filters by tag)" aria-keyshortcuts="/"
                 onKeyDown={(e) => {
                   if (e.key === "Escape") { e.preventDefault(); if (query || tagFilter.length) clearSearch(); else { e.currentTarget.blur(); setPhoneSearch(false); } }
@@ -1418,6 +1433,8 @@ export function App() {
               ) : <kbd className="search-kbd" aria-hidden>/</kbd>}
               <KeyHint keys="/" />
             </div>
+            <button className="link-btn phone-only board-search-done" onClick={() => { setPhoneSearch(false); searchRef.current?.blur(); }}>Done</button>
+            </div>
             <div className="filter-chips" role="group" aria-label="Filter tickets">
               {FILTERS.map((f) => {
                 const n = visibleTickets.filter(f.test).length;
@@ -1429,8 +1446,11 @@ export function App() {
               })}
               <TagFilter tickets={tickets} picked={tagFilter} onChange={setTagFilter} />
             </div>
+            <button className="link-btn phone-only board-search-all" onClick={() => setCommandBar(true)}>
+              <SearchIcon size={16} />Search every board and action ›
+            </button>
             {filtering && (
-              <span className="muted small" aria-live="polite">
+              <span className="muted small desktop-only" aria-live="polite">
                 {shownTickets.length} of {visibleTickets.length} ticket{visibleTickets.length === 1 ? "" : "s"}
                 {" · "}<button className="link-btn small" onClick={() => { clearSearch(); setFilters(new Set()); }}>Clear all</button>
               </span>
@@ -1447,10 +1467,7 @@ export function App() {
           <Board tickets={shownTickets} loading={!ticketsLoaded} done={{ more: filtering ? 0 : doneUnseen, loading: doneLoading, loadMore: loadMoreDone }} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
             collapsed={collapsed} onCollapse={setColumnCollapsed}
             slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia}
-            search={{ on: phoneSearch || !!query || tagFilter.length > 0, toggle: () => {
-              if (phoneSearch || query || tagFilter.length) { clearSearch(); setPhoneSearch(false); }
-              else { setPhoneSearch(true); requestAnimationFrame(() => searchRef.current?.focus()); }
-            } }} />
+            filter={filtering ? { all: visibleTickets, doneMore: doneUnseen, clear: () => { clearSearch(); setFilters(new Set()); } } : undefined} />
         </>
       )}
       {phone && profile && (

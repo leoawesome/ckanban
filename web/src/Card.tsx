@@ -27,7 +27,7 @@ import { useClaudeName } from "./AvatarFace";
 
 /**
  * The card's 📌 button: Pin to top, or Unpin on a pinned card. Desktop shows it on hover and focus (always on a pinned
- * card); a phone always shows it, 40px to tap. A press never opens the card or picks it up.
+ * card); a phone shows it only on a pinned card (Unpin), 40px to tap. A press never opens the card or picks it up.
  */
 function PinButton({ pinned, onPin }: { pinned: boolean; onPin: (on: boolean) => void }) {
   const label = pinned ? "Unpin" : "Pin to top";
@@ -219,7 +219,8 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   const done = ticket.status === "done";
   // 📌 Pinned: the dark card at the top of its column (Done unpins it).
   const pinned = !!ticket.pinnedAt && !done;
-  const pinBtn = onPin && !dragging && !done;
+  // A phone shows the button only on pinned cards (Unpin); pinning is in the ticket's ⋯ menu there.
+  const pinBtn = onPin && !dragging && !done && (!phone || pinned);
   // Claude Code's own "Not logged in" isn't Claude's last word: a red chip says what to do instead (nothing on Done).
   const signIn = !!last && last.role !== "user" && signInError(last.text);
   const finish = useFinishMark(ownWorking, ticket);

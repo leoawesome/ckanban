@@ -4,16 +4,15 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BOARD_COLUMNS, type Job, type Status, type Ticket } from "./api";
 import { Card } from "./Card";
 import { boardColumnOf, dropOrder, groupByColumn } from "./columns";
 import { playMove } from "./arrivals";
 import { reducedMotion } from "./motion";
 import { useCardTabs } from "./useCardTabs";
-import { CloseIcon, CollapseIcon, FilterIcon, PlusIcon, SparkIcon } from "./icons";
+import { ChatIcon, CheckIcon, CollapseIcon, PlusIcon, SparkIcon } from "./icons";
 import { usePhone } from "./usePhone";
-import { useEdgeFade } from "./useEdgeFade";
 import { toast } from "./toast";
 
 const COLLAPSED_KEY = "ckanban.collapsedColumns";
@@ -68,8 +67,11 @@ interface Props {
   /** Folded columns (useCollapsedColumns). */
   collapsed: Set<Status>;
   onCollapse: (id: Status, v: boolean) => void;
-  /** Phones: the search row is folded into an icon at the end of the column tab row (a tap opens or closes it). */
-  search?: { on: boolean; toggle: () => void };
+  /**
+   * Phones, while a search or filter is on: every ticket the board shows unfiltered (and Done's cards not loaded yet),
+   * for the "N of M match" line at the top of each column, and Clear filters.
+   */
+  filter?: { all: Ticket[]; doneMore: number; clear: () => void };
   /** 📌 Pin (true) or unpin a ticket (the card's pin button). */
   onPin?: (id: string, on: boolean) => void;
   /** Done loads in pages: `more` cards aren't loaded yet (counted in its badge), loadMore fetches the next page. */
@@ -144,6 +146,20 @@ const EMPTY_HINT: Record<Status, string> = {
   done: "Nothing finished yet",
 };
 
+/** A phone's empty columns: what the column is for, in phone words (desktop keeps EMPTY_HINT). */
+const PHONE_EMPTY: Record<Status, { title: string; text?: string }> = {
+  backlog: { title: "No parked ideas", text: "Save ideas here for later. Nothing runs until you start one." },
+  planning: { title: "Nothing in planning", text: "Claude asks you its questions about a ticket here before it starts." },
+  ready: { title: "Nothing running", text: "Started tickets run here while Claude works on them." },
+  in_progress: { title: "Nothing running", text: "Started tickets run here while Claude works on them." },
+  review: { title: "Nothing to check", text: "Finished work lands here for you to check." },
+  done: { title: "Nothing finished yet" },
+};
+const PHONE_EMPTY_ICON: Record<Status, ReactNode> = {
+  backlog: <PlusIcon size={20} />, planning: <ChatIcon size={20} />, ready: <SparkIcon size={20} />, in_progress: <SparkIcon size={20} />,
+  review: <CheckIcon size={20} />, done: <CheckIcon size={20} />,
+};
+
 /** Placeholder cards per column while the board loads (Backlog, Planning, In Progress, Review, Done). */
 const PLACEHOLDERS: Record<Status, number> = { backlog: 3, planning: 2, ready: 0, in_progress: 2, review: 2, done: 3 };
 const CLAUDE_TAG = "Claude starts automatically when a card is here";
@@ -173,7 +189,7 @@ function MoreDone({ paging, loaded }: { paging: DonePaging; loaded: number }) {
   );
 }
 
-function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx, phone = false, done }: {
+function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx, phone = false, done, match }: {
   id: Status; label: string; hint: string; claude: boolean; tickets: Ticket[]; loading: boolean;
   /** In Progress only: tickets waiting their turn on the folder, in start order. */
   queue?: Ticket[];
@@ -183,6 +199,8 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   collapsed: boolean; onCollapse: (v: boolean) => void; filtered: boolean; ctx: CardCtx; phone?: boolean;
   /** Done only: its paging. */
   done?: DonePaging;
+  /** Phones while filtering: the column's count before the filter, and Clear filters. */
+  match?: { total: number; clear: () => void };
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${id}`, data: { status: id } });
   const all = [...tickets, ...queue];
@@ -237,6 +255,12 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
       )}
       <SortableContext items={[...shown, ...queue].map((t) => t.id)} strategy={verticalListSortingStrategy}>
         <div ref={setNodeRef} className="column-body">
+          {match && !loading && (
+            <div className="col-filter-bar" aria-live="polite">
+              <span>{count} of {match.total} match</span>
+              <button className="link-btn" onClick={match.clear}>Clear filters</button>
+            </div>
+          )}
           {loading && Array.from({ length: PLACEHOLDERS[id] }, (_, i) => <div key={i} className="card skeleton-card" aria-hidden><i /><i /><i /></div>)}
           {shown.map((t) => (
             <SortableCard key={t.id} ticket={t} onOpen={onOpen} ctx={ctx} />
@@ -246,7 +270,17 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
             <SortableCard key={t.id} ticket={t} onOpen={onOpen} queued={i + 1} held={held} ctx={ctx} />
           ))}
           {!loading && done && more > 0 && <MoreDone paging={done} loaded={tickets.length} />}
-          {!loading && count === 0 && (
+          {!loading && count === 0 && phone && (
+            <div className="col-empty">
+              {filtered ? <div className="col-empty-title">No matching tickets</div> : <>
+                <div className="col-empty-icon" aria-hidden>{PHONE_EMPTY_ICON[id]}</div>
+                <div className="col-empty-title">{PHONE_EMPTY[id].title}</div>
+                {PHONE_EMPTY[id].text && <div className="col-empty-text">{PHONE_EMPTY[id].text}</div>}
+                {id === "backlog" && <button className="btn primary" onClick={() => onAdd(id)}>New ticket</button>}
+              </>}
+            </div>
+          )}
+          {!loading && count === 0 && !phone && (
             <div className={claude ? "column-drop-hint" : "column-empty"}>{filtered ? "No matching tickets" : EMPTY_HINT[id]}</div>
           )}
         </div>
@@ -285,7 +319,7 @@ const collision: CollisionDetection = (args) => {
   return closestCenter(args);
 };
 
-export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed, search, onPin, done }: Props) {
+export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed, filter, onPin, done }: Props) {
   // The latest onPin, so the cards' context doesn't change on every render.
   const pinRef = useRef(onPin);
   pinRef.current = onPin;
@@ -306,6 +340,13 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
   );
   const [dragId, setDragId] = useState<string | null>(null);
   const byColumn = useMemo(() => groupByColumn(tickets), [tickets]);
+  // While filtering on a phone: each column's count before the filter (In Progress with its queue, Done with its unloaded cards).
+  const allTickets = filter?.all;
+  const totals = useMemo(() => {
+    if (!allTickets) return null;
+    const by = groupByColumn(allTickets);
+    return (id: Status) => (by.get(id)?.length ?? 0) + (id === "in_progress" ? by.get("ready")?.length ?? 0 : 0) + (id === "done" ? filter?.doneMore ?? 0 : 0);
+  }, [allTickets, filter?.doneMore]);
   // The cards fade in when the first load lands (not on later moves).
   const [fadeIn, setFadeIn] = useState(false);
   const wasLoading = useRef(loading);
@@ -365,13 +406,6 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
     const dist = [...el.querySelectorAll<HTMLElement>(":scope > .column")].map((c) => Math.abs(c.getBoundingClientRect().left - left));
     setShownCol(dist.indexOf(Math.min(...dist)));
   };
-  // The tab row scrolls sideways when the columns don't fit: its edge fades on the side with more tabs.
-  const jumpFade = useEdgeFade<HTMLElement>();
-  const jumpRef = jumpFade.ref;
-  // The shown column's tab scrolls into view as you swipe.
-  useEffect(() => {
-    jumpRef.current?.querySelectorAll<HTMLElement>(".chip")[shownCol]?.scrollIntoView?.({ block: "nearest", inline: "nearest", behavior: "smooth" });
-  }, [shownCol]);
   const jumpTo = (i: number) => {
     const el = boardRef.current;
     const col = el?.querySelectorAll<HTMLElement>(":scope > .column")[i];
@@ -384,33 +418,33 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
   return (
     <DndContext accessibility={{ screenReaderInstructions: { draggable: CARD_HELP } }} sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
       {phone && (
-        <div className="col-jump-row">
-          <nav className="col-jump" aria-label="Columns" {...jumpFade}>
-            {BOARD_COLUMNS.map((c, i) => {
-              const n = (byColumn.get(c.id)?.length ?? 0) + (c.id === "in_progress" ? byColumn.get("ready")?.length ?? 0 : 0) + (c.id === "done" ? done?.more ?? 0 : 0);
-              return (
-                <button key={c.id} className={`chip${i === shownCol ? " on" : ""}`} aria-current={i === shownCol || undefined} title={c.hint}
-                  aria-expanded={i === shownCol ? hintOpen : undefined} onClick={() => (i === shownCol ? setHintOpen((v) => !v) : jumpTo(i))}>
-                  {c.label}{c.claude && <span className="chip-claude" title={CLAUDE_TAG} aria-label={CLAUDE_TAG}><SparkIcon size={12} /></span>}
-                  {!loading && <span className="chip-count">{n}</span>}
-                </button>
-              );
-            })}
-          </nav>
-          {search && (
-            <button className={`icon-btn col-jump-tool${search.on ? " on" : ""}`} aria-label={search.on ? "Close search" : "Search and filter this board"} title={search.on ? "Close search" : "Search and filter this board"} aria-pressed={search.on}
-              onClick={search.toggle}>{search.on ? <CloseIcon size={16} /> : <FilterIcon size={16} />}</button>
-          )}
-          {BOARD_COLUMNS[shownCol]?.id === "backlog" && (
-            <button className="icon-btn col-jump-tool" aria-label="Add ticket to Backlog" title="Add to Backlog" onClick={() => onAdd("backlog")}><PlusIcon size={16} /></button>
-          )}
-        </div>
+        // Five equal tabs that all fit: the count on top (✦ where Claude starts work, an amber dot when one needs you), the name under it.
+        <nav className="col-jump" aria-label="Columns">
+          {BOARD_COLUMNS.map((c, i) => {
+            const list = [...(byColumn.get(c.id) ?? []), ...(c.id === "in_progress" ? byColumn.get("ready") ?? [] : [])];
+            const n = list.length + (c.id === "done" ? done?.more ?? 0 : 0);
+            const needYou = list.some((t) => t.attention);
+            return (
+              <button key={c.id} className={`col-tab${i === shownCol ? " on" : ""}`} aria-current={i === shownCol || undefined} title={c.hint}
+                aria-label={`${c.label}${loading ? "" : `, ${n}`}${needYou ? ", needs you" : ""}`}
+                aria-expanded={i === shownCol ? hintOpen : undefined} onClick={() => (i === shownCol ? setHintOpen((v) => !v) : jumpTo(i))}>
+                <span className="col-tab-count" aria-hidden>
+                  {loading ? "·" : n}
+                  {c.claude && <span className="col-tab-claude"><SparkIcon size={12} /></span>}
+                  {needYou && <span className="col-tab-you" />}
+                </span>
+                <span className="col-tab-label" aria-hidden>{c.label}</span>
+              </button>
+            );
+          })}
+        </nav>
       )}
       {phone && hintOpen && <p className="col-jump-hint" role="status">{BOARD_COLUMNS[shownCol]?.hint}</p>}
       <main className={`board${fadeIn ? " fade-in" : ""}`} ref={boardRef} onScroll={phone ? onBoardScroll : undefined}>
         {BOARD_COLUMNS.map((c) => (
           <Column key={c.id} {...c} tickets={byColumn.get(c.id) ?? []} queue={c.id === "in_progress" ? byColumn.get("ready") : undefined} held={restartPending} onOpen={onOpen} onAdd={onAdd} filtered={filtered} loading={loading} ctx={ctx} phone={phone}
             done={c.id === "done" ? done : undefined}
+            match={phone && filter && totals ? { total: totals(c.id), clear: filter.clear } : undefined}
             collapsed={!phone && collapsed.has(c.id)} onCollapse={(v) => setColumnCollapsed(c.id, v)} />
         ))}
       </main>
