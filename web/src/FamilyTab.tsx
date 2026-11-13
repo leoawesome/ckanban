@@ -3,7 +3,7 @@
 import { resolveRun, runText } from "./models";
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Profile, type Ticket } from "./api";
-import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, subFeatureState, type FamilyRow, type FamilyState } from "./family";
+import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, hideableCard, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, subFeatureState, type FamilyRow, type FamilyState } from "./family";
 import { ClaudeFace } from "./ConvTurn";
 import { familyMood } from "./avatarMood";
 import { familyText } from "./FamilyPanel";
@@ -169,10 +169,16 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
                   {v && cost(r) > 0 && <span className="ft-cost">{money(cost(r))}</span>}
                 </span>
               </span>
-              {(subRow(r) || (t.tool && r.depth > 0)) && (
+              {(subRow(r) || (t.tool && r.depth > 0) || (hideableCard(t) && r.depth > 0)) && (
                 <span className="ft-actions" onClick={(e) => e.stopPropagation()}>
                   {subRow(r) ? (
                     <button className="mini-link" onClick={() => onOpenTicket(t.id)} title={`Open ${t.title}: its own chat and tasks`}>Open</button>
+                  ) : !t.tool ? (
+                    // A card gathered into this feature: it can leave the board like a task, keeping its chat and history.
+                    <label className="ft-show" title={t.showOnBoard === false ? "Give it its card on the board again" : "Hide its card from the board; it stays in this list with its chat and history"}>
+                      <input type="checkbox" checked={t.showOnBoard !== false} disabled={acting === t.id}
+                        onChange={(e) => act(t.id, api.setShowOnBoard(slug, t.id, e.target.checked))} /> Show on board
+                    </label>
                   ) : (
                     <>
                       <label className="ft-show" title={t.showOnBoard ? "Hide its card again; it stays in this list" : "Give it its own card on the board; its questions still come to this chat"}>

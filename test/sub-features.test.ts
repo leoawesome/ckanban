@@ -180,7 +180,7 @@ test("unlinking a task or making it its own work gives a ticket that shows on th
   expect(get(a.id).showOnBoard).toBe(true);
   board.setShowOnBoard("p", a.id, false);
   expect(get(a.id).showOnBoard ?? null).toBeNull();
-  expect(() => board.setShowOnBoard("p", outreach.id, true)).toThrow("only a task can be shown on the board");
+  expect(() => board.setShowOnBoard("p", outreach.id, false)).toThrow("is a main ticket: it keeps its own card on the board");
   await board.setPartOf("p", a.id, null);
   expect(get(a.id).tool).toBe(false);
   expect(onBoard(get(a.id))).toBe(true);

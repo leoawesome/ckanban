@@ -2217,7 +2217,7 @@ export function createServer(deps: ServerDeps) {
         // Family: partOf a ticket id links it (null unlinks); parentSuggestion null is Not related.
         if (b.partOf !== undefined && b.partOf !== null && (typeof b.partOf !== "string" || !b.partOf)) throw new HttpError(400, "partOf must be a ticket id or null");
         if (b.parentSuggestion !== undefined && b.parentSuggestion !== null) throw new HttpError(400, "parentSuggestion can only be cleared (null)");
-        // Show on board: a task (tool ticket) also gets a card; false hides it again.
+        // Show on board: a task (tool ticket) also gets a card; false hides it again (also a card gathered into a feature).
         if (b.showOnBoard !== undefined && typeof b.showOnBoard !== "boolean") throw new HttpError(400, "showOnBoard must be true or false");
         const linkOnly = Object.keys(b).length > 0 && Object.keys(b).every((k) => k === "partOf" || k === "parentSuggestion" || k === "showOnBoard");
         if (b.mode === "auto" || b.mode === "interview") patch.mode = b.mode;
@@ -2366,7 +2366,7 @@ export function createServer(deps: ServerDeps) {
     if (action === "family" && m === "GET") {
       return json(familyOf(store.listTickets(slug), id).map(({ ticket: t, depth, how }) => ({
         id: t.id, title: t.title, status: t.status, depth, how: how && LINK_WORDS[how], parent: depth ? parentLink(t)?.id ?? null : null,
-        ...(depth && t.main ? { subFeature: true } : t.tool ? { task: true, ...(t.showOnBoard ? { showOnBoard: true } : {}) } : {}),
+        ...(depth && t.main ? { subFeature: true } : t.tool ? { task: true, ...(t.showOnBoard ? { showOnBoard: true } : {}) } : t.showOnBoard === false ? { showOnBoard: false } : {}),
         sessionId: t.sessionId, resumeCommand: t.sessionId ? resumeCommand(t.workdir ?? t.worktree ?? profile.path, t.sessionId) : null,
         prUrl: t.prUrl, updatedAt: t.updatedAt, result: store.lastAiComment(slug, t.id),
       })));
@@ -2486,8 +2486,9 @@ export function createServer(deps: ServerDeps) {
       const items = b.tickets.filter((x: any) => x && typeof x.id === "string" && x.id.trim())
         .map((x: any) => ({ id: x.id.trim(), group: typeof x.group === "string" && x.group.trim() ? x.group.trim() : null }));
       try {
-        const r = await board.gather(slug, id, items, typeof b.newGroup === "string" ? b.newGroup : null, by);
-        return json({ gathered: r.gathered.map((t) => view(profile, t)), movedUp: r.movedUp, skipped: r.skipped, group: r.group && view(profile, r.group) });
+        if (b.hide !== undefined && typeof b.hide !== "boolean") throw new HttpError(400, "hide must be true or false");
+        const r = await board.gather(slug, id, items, typeof b.newGroup === "string" ? b.newGroup : null, by, { hide: b.hide === true });
+        return json({ gathered: r.gathered.map((t) => view(profile, t)), movedUp: r.movedUp, skipped: r.skipped, group: r.group && view(profile, r.group), kept: r.kept });
       } catch (e) {
         throw new HttpError(400, (e as Error).message);
       }

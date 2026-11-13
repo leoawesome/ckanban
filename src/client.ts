@@ -67,6 +67,8 @@ export interface GatherResult {
   movedUp: { id: string; title: string; to: string }[];
   skipped: { id: string; reason: string }[];
   group: TicketInfo | null;
+  /** With hide: gathered cards that kept their card, and why (main tickets, sub-features, groups). */
+  kept?: { id: string; reason: string }[];
 }
 
 export interface TicketInfo {
@@ -425,9 +427,9 @@ export class BoardClient {
   /** update_status: the feature's status (only the sections named change); returns the whole status as markdown. */
   updateStatus = (slug: string, id: string, patch: Record<string, unknown>, run?: string | null) =>
     this.req<{ topId: string; title: string; markdown: string }>("POST", `${this.t(slug, id)}/status`, patch, this.by(run));
-  gather = (slug: string, id: string, tickets: { id: string; group?: string | null }[], newGroup: string | null, run?: string | null) =>
+  gather = (slug: string, id: string, tickets: { id: string; group?: string | null }[], newGroup: string | null, run?: string | null, hide?: boolean) =>
     this.req<GatherResult>(
-      "POST", `${this.t(slug, id)}/gather`, { tickets, newGroup }, this.by(run));
+      "POST", `${this.t(slug, id)}/gather`, { tickets, newGroup, ...(hide ? { hide: true } : {}) }, this.by(run));
   adopt = (slug: string, id: string, ids: string[], run?: string | null) => this.req<AdoptReply>("POST", `${this.t(slug, id)}/adopt`, { ids }, this.by(run));
   updateTicket = (slug: string, id: string, patch: TicketPatch, run?: string | null) => this.req<TicketInfo>("PATCH", this.t(slug, id), patch, this.by(run));
   deleteTicket = (slug: string, id: string) => this.req<void>("DELETE", this.t(slug, id));

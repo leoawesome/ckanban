@@ -138,7 +138,7 @@ ckanban profiles
 ckanban ticket list [--status ready]
 ckanban ticket show <id>
 ckanban ticket create --title "Add dark mode" --body-file notes.md   # or --body "...", or --body - (stdin)
-ckanban ticket update <id> [--title ...] [--body ...] [--status ...] [--mode interview|auto] [--needs a,b] [--tags a,b]
+ckanban ticket update <id> [--title ...] [--body ...] [--status ...] [--mode interview|auto] [--needs a,b] [--tags a,b] [--show-on-board true|false]
 ckanban ticket move <id> ready     # starts a run, like dragging the card
 ckanban ticket chat <id> "also handle the empty state"
 ckanban ticket comment <id> "note for the next run"

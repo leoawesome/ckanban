@@ -2,7 +2,7 @@
 // tab (FamilyTab.tsx).
 import { useMemo, useState } from "react";
 import { api, COLUMNS, type Ticket } from "./api";
-import { featureRows, LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
+import { featureRows, hideableCard, LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
 import { linkHints } from "./linkHints";
 import { useLayer } from "./layers";
 
@@ -143,6 +143,15 @@ export function PartOfField({ slug, ticket, tickets, onOpenTicket, onError }: {
           <span className="field-key" title="A task has no card of its own unless you show it; its questions still go to its feature's chat">Board</span>
           <label className="show-on-board" title={ticket.showOnBoard ? "Hide its card again; it stays in its feature's task list" : `Give it its own card on the board; its questions still go to ${ticket.mainTicket?.title ?? "its feature"}`}>
             <input type="checkbox" checked={!!ticket.showOnBoard} disabled={busy}
+              onChange={(e) => act(api.setShowOnBoard(slug, ticket.id, e.target.checked))} /> Show on board
+          </label>
+        </div>
+      )}
+      {hideableCard(ticket) && (
+        <div className="field-row">
+          <span className="field-key" title="A card gathered into a feature can leave the board like its tasks; it keeps its chat and history and stays in the feature's Tasks tab">Board</span>
+          <label className="show-on-board" title={ticket.showOnBoard === false ? "Give it its card on the board again" : "Hide its card from the board; it stays in its feature's Tasks tab and comes back while it works or waits for you"}>
+            <input type="checkbox" checked={ticket.showOnBoard !== false} disabled={busy}
               onChange={(e) => act(api.setShowOnBoard(slug, ticket.id, e.target.checked))} /> Show on board
           </label>
         </div>

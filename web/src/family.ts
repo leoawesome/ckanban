@@ -179,8 +179,29 @@ export const hiddenTool = (t: { tool?: boolean; kind?: string | null } | null | 
 /** A task the user gave a card ("Show on board"). Old tickets have no flag: hidden as before. */
 export const shownTool = (t: { tool?: boolean; showOnBoard?: boolean | null } | null | undefined): boolean => !!t?.tool && !!t?.showOnBoard;
 
-/** The board shows a card for t (columns, counts, search, filters): any ticket but a task that isn't shown on the board. */
-export const onBoard = (t: { tool?: boolean; showOnBoard?: boolean | null } | null | undefined): boolean => !!t && (!t.tool || !!t.showOnBoard);
+/** What onBoard and hiddenCard read of a ticket. */
+type BoardFlags = {
+  tool?: boolean; showOnBoard?: boolean | null; main?: boolean; kind?: string | null; partOf?: string | null; parentId?: string | null;
+  status?: string; running?: boolean;
+};
+
+/**
+ * A card gathered into a feature (not a task, main ticket or group) can be hidden from the board too (showOnBoard
+ * false): it lives in its feature's Tasks list like a task, but keeps its own chat and Your turn. It is one while it
+ * is still part of a feature (unlinked or made a main ticket, its card comes back).
+ */
+export const hideableCard = (t: BoardFlags | null | undefined): boolean =>
+  !!t && !t.tool && !t.main && t.kind !== "group" && t.kind !== "round" && !!(t.partOf || t.parentId);
+
+/** A gathered card the user hid; it shows again while it works or waits for the user (In progress, Review). */
+export const hiddenCard = (t: BoardFlags | null | undefined): boolean =>
+  !!t && t.showOnBoard === false && hideableCard(t) && !t.running && t.status !== "in_progress" && t.status !== "review";
+
+/**
+ * The board shows a card for t (columns, counts, search, filters): any ticket but a task that isn't shown on the board
+ * and a gathered card the user hid (hiddenCard).
+ */
+export const onBoard = (t: BoardFlags | null | undefined): boolean => !!t && (t.tool ? !!t.showOnBoard : !hiddenCard(t));
 
 /** A "with you" tool ticket: a step that needs the user live; it may ask and notify the user (in its main ticket's chat). */
 export const withYouTool = (t: { tool?: boolean; kind?: string | null } | null | undefined): boolean => !!t?.tool && t?.kind === "with_you";

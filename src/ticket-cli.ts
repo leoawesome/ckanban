@@ -13,7 +13,7 @@ export const TICKET_USAGE = `  ckanban profiles     List boards (profiles) and t
   ckanban ticket list [--status <s>] [--include-tool]
   ckanban ticket show <id>
   ckanban ticket create --title <t> [--body <md> | --body-file <f>] [--status <s>] [--mode interview|auto] [--needs <r1,r2>] [--tags <t1,t2>]
-  ckanban ticket update <id> [--title <t>] [--body <md> | --body-file <f>] [--status <s>] [--mode <m>] [--needs <r1,r2>] [--tags <t1,t2>]
+  ckanban ticket update <id> [--title <t>] [--body <md> | --body-file <f>] [--status <s>] [--mode <m>] [--needs <r1,r2>] [--tags <t1,t2>] [--show-on-board true|false]
   ckanban ticket move <id> <status>
   ckanban ticket chat <id> <message>
   ckanban ticket comment <id> <text>
@@ -195,7 +195,13 @@ export async function ticketCommand(argv: string[], io: CliIo = defaultIo()): Pr
         if (needs) patch.needs = needs;
         const tags = tagsFlag(p);
         if (tags) patch.tags = tags;
-        if (!Object.keys(patch).length) throw new ClientError("nothing to change: pass --title, --body, --status, --mode, --needs or --tags");
+        // A task's card on or off the board; false also hides a card gathered into a feature.
+        const show = flagStr(p, "show-on-board");
+        if (show !== undefined) {
+          if (show !== "true" && show !== "false") throw new ClientError("--show-on-board must be true or false");
+          patch.showOnBoard = show === "true";
+        }
+        if (!Object.keys(patch).length) throw new ClientError("nothing to change: pass --title, --body, --status, --mode, --needs, --tags or --show-on-board");
       }
       const t = await c.updateTicket(slug, tid, patch);
       return print(t, `Updated ${ticketLine(t)}`);

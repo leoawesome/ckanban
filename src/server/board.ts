@@ -16,7 +16,7 @@ import { macBanner } from "./notify";
 import { type HostHuddle, STUCK_ON_QUESTIONS, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
 import { recallBlock } from "./recall";
-import { askClosed, familyBelow, familyOf, featureRoot, featureRows, groupsOf, isFeature, levelOf, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
+import { askClosed, familyBelow, familyOf, featureRoot, featureRows, groupsOf, hideableCard, isFeature, levelOf, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { followUpFor, followUpPlace } from "../../web/src/followUp";
@@ -3239,12 +3239,24 @@ export class Board {
     return out;
   }
 
-  /** "Show on board": a task gets a card like any ticket (on) or goes back to living in its feature only (off). */
+  /**
+   * "Show on board": a task gets a card like any ticket (on) or goes back to living in its feature only (off). A card
+   * gathered into a feature (hideableCard) can be hidden the same way (off) and shown again (on); it keeps its chat,
+   * results and run history and stays in the feature's Tasks list. Main tickets, sub-features and groups keep their card.
+   */
   setShowOnBoard(slug: string, id: string, on: boolean): Ticket {
     const t = this.store.getTicket(slug, id);
     if (!t) throw new Error(`ticket ${id} not found`);
-    if (!t.tool) throw new Error(`"${t.title}" already has its own card: only a task can be shown on the board`);
-    return this.patch(slug, id, { showOnBoard: on ? true : null });
+    if (t.tool) return this.patch(slug, id, { showOnBoard: on ? true : null });
+    if (on) return t.showOnBoard === false ? this.patch(slug, id, { showOnBoard: null }) : t;
+    const all = this.store.listTickets(slug);
+    if (t.main) throw new Error(`"${t.title}" is a main ticket${parentLink(t) ? " (a sub-feature)" : ""}: it keeps its own card on the board`);
+    if (t.kind === "group" || t.kind === "round") throw new Error(`"${t.title}" is a group of its feature: it keeps its own card on the board`);
+    const top = featureRoot(all, t.id);
+    if (!hideableCard(t) || !top || top.id === t.id) {
+      throw new Error(`"${t.title}" isn't part of a feature: only a task or a card gathered into a feature can be hidden from the board`);
+    }
+    return this.patch(slug, id, { showOnBoard: false });
   }
 
   /** Not related: the suggestion goes and the board doesn't suggest a parent for this ticket again. */
@@ -4007,8 +4019,10 @@ export class Board {
    * keep running. A ticket in another family moves (setPartOf rules). Its own tickets that would sit deeper than level 2
    * move up beside it (still in their plan, if any). by: who to credit, for a chat outside the feature ("by the chat of ...").
    */
-  async gather(slug: string, featureId: string, items: { id: string; group?: string | null }[], newGroup?: string | null, by?: string | null): Promise<{
+  async gather(slug: string, featureId: string, items: { id: string; group?: string | null }[], newGroup?: string | null, by?: string | null, opts: { hide?: boolean } = {}): Promise<{
     gathered: Ticket[]; movedUp: { id: string; title: string; to: string }[]; skipped: { id: string; reason: string }[]; group: Ticket | null;
+    /** hide: what kept its card and why (main tickets, sub-features, groups); hidden cards are the rest of gathered. */
+    kept: { id: string; reason: string }[];
   }> {
     const top = featureRoot(this.store.listTickets(slug), featureId);
     if (!top) throw new Error(`ticket ${featureId} not found`);
@@ -4020,6 +4034,7 @@ export class Board {
     const gathered: Ticket[] = [];
     const skipped: { id: string; reason: string }[] = [];
     const movedUp: { id: string; title: string; to: string }[] = [];
+    const kept: { id: string; reason: string }[] = [];
     for (const item of items) {
       const target = item.group === "new" ? group!.id : item.group || top.id;
       const t = this.store.getTicket(slug, item.id);
@@ -4040,6 +4055,15 @@ export class Board {
       try {
         // Its own depth and the sub-feature rule are checked; deeper tickets of its own move up below (and say so).
         if (parentLink(t)?.id !== target) await this.setPartOf(slug, t.id, target, null, { subtree: false });
+        // hide: off the board like the feature's tasks (setShowOnBoard); a task, main ticket or group keeps what it has.
+        const now = this.store.getTicket(slug, t.id)!;
+        if (opts.hide && !now.tool) {
+          try {
+            this.setShowOnBoard(slug, t.id, false);
+          } catch (e) {
+            kept.push({ id: t.id, reason: (e as Error).message });
+          }
+        }
         gathered.push(this.store.getTicket(slug, t.id)!);
         this.store.addComment(slug, t.id, "ai", `Gathered into the feature "${top.title}" (${top.id})${target !== top.id ? `, under "${this.store.getTicket(slug, target)?.title}"` : ""}${by ? ` ${by}` : ""}.`);
       } catch (e) {
@@ -4061,7 +4085,7 @@ export class Board {
     }
     if (gathered.length) this.store.addComment(slug, top.id, "ai", `Gathered ${gathered.length} ticket${gathered.length === 1 ? "" : "s"} into this feature${by ? ` ${by}` : ""}: ${gathered.map((t) => `"${t.title}"`).join(", ")}.`);
     this.emitTicket(slug, this.store.getTicket(slug, top.id)!);
-    return { gathered, movedUp, skipped, group };
+    return { gathered, movedUp, skipped, group, kept };
   }
 
   // ---- One-click recovery from a lost or busy session ----

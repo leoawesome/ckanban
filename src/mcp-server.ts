@@ -33,6 +33,7 @@ const gatherText = (r: GatherResult): string => [
   ...(r.group ? [`New group: ${ticketLine(r.group)}`] : []),
   ...(r.movedUp.length ? [`Moved up to stay 2 levels deep:\n${r.movedUp.map((m) => `- ${m.id} "${m.title}" under ${m.to}`).join("\n")}`] : []),
   ...(r.skipped.length ? [`Skipped ${r.skipped.length}:\n${r.skipped.map((x) => `- ${x.id}: ${x.reason}`).join("\n")}`] : []),
+  ...(r.kept?.length ? [`Kept their card ${r.kept.length}:\n${r.kept.map((x) => `- ${x.id}: ${x.reason}`).join("\n")}`] : []),
 ].join("\n\n");
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -2079,7 +2080,7 @@ export const TOOLS: Tool[] = [
       "Edit a ticket's title, description, column, mode, dependsOn, needs, tags or ⭐ important. Moving it to ready starts a Claude run, " +
       "moving it to planning starts the interview in the board chat (same as dragging it on the board). " +
       "A planner can take one of its children out of its plan with release: true. showOnBoard gives a task (tool ticket) its own card on the board, " +
-      "when the user asks for it." + IN_RUN,
+      "or hides a card gathered into a feature (false), when the user asks for it." + IN_RUN,
     inputSchema: {
       type: "object",
       properties: {
@@ -2093,8 +2094,10 @@ export const TOOLS: Tool[] = [
         release: { type: "boolean", description: "true: take the ticket out of its plan (it keeps its column; its dependsOn and key are cleared)." },
         showOnBoard: {
           type: "boolean",
-          description: "Tasks (tool tickets) only, when the user asks: true shows the task's card on the board, false hides it again. " +
-            "Its questions still go to its main ticket's chat.",
+          description: "When the user asks. A task (tool ticket): true shows its card on the board, false hides it again; its questions still go to its main ticket's chat. " +
+            "A card gathered into a feature (not a main ticket, sub-feature or group): false hides it from the board like a task, true shows it again; " +
+            "it keeps its chat, results and run history, shows in the feature's Tasks tab, and its card comes back while it works or waits for the user. " +
+            "To hide many gathered cards at once, use gather_tickets with hide: true.",
         },
       },
       required: ["id"],
@@ -2357,7 +2360,9 @@ export const TOOLS: Tool[] = [
       "a new group, or the feature itself. They keep their chats, work and pull requests, and running ones keep running. " +
       "A ticket's own tickets that would sit deeper than 2 levels move up beside it. A main ticket gathered in becomes a sub-feature: it keeps its own card, " +
       "chat and tasks (they report to it); a sub-feature can't hold another one, so a main ticket can't go into a sub-feature. Find tickets with list_tickets first. " +
-      "Works on any feature, also on another board (pass its profile and the feature's id); outside the feature's own chat it is logged on the changed tickets.",
+      "Works on any feature, also on another board (pass its profile and the feature's id); outside the feature's own chat it is logged on the changed tickets. " +
+      "hide: true also takes the gathered cards off the board, like the feature's tasks (e.g. a schedule's old run cards): they keep their chats, results and run history " +
+      "and show in the feature's Tasks tab; main tickets, sub-features and groups keep their card. Tickets already in the feature can be passed again to hide them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2375,6 +2380,7 @@ export const TOOLS: Tool[] = [
           },
         },
         newGroup: { type: "string", description: "Title of the new group, when a ticket uses group \"new\"." },
+        hide: { type: "boolean", description: "true: also hide the gathered cards from the board (they stay in the feature's Tasks tab). Same as update_ticket showOnBoard: false on each." },
       },
       required: ["tickets"],
     },
@@ -2385,7 +2391,7 @@ export const TOOLS: Tool[] = [
       const id = str(args, "id", false)?.trim() || (slug === runProfile(ctx.env) ? runTicketId(ctx) : null);
       if (!id) throw new ClientError("id is required outside a board run and for another board's feature");
       if (!Array.isArray(args?.tickets) || !args.tickets.length) throw new ClientError("tickets must list { id, group } entries");
-      return gatherText(await ctx.client.gather(slug, id, args.tickets, typeof args?.newGroup === "string" ? args.newGroup : null, ctx.env[RUN_ENV]));
+      return gatherText(await ctx.client.gather(slug, id, args.tickets, typeof args?.newGroup === "string" ? args.newGroup : null, ctx.env[RUN_ENV], args?.hide === true));
     },
   },
   {
