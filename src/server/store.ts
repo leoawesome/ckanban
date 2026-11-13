@@ -240,7 +240,6 @@ export class Store {
     // With rechecks in the background (recheckTickets), a listing never stats every ticket file just because time passed.
     const recent = !!b && b.dirMtime === dirMtime && (this.rechecking || this.now() - b.checkedAt < TICKET_RECHECK_MS);
     if (b?.list && recent) return [...b.list];
-    const prev = b?.list;
     const ids = new Set<string>();
     const out: Ticket[] = [];
     if (b && recent) {
@@ -255,12 +254,52 @@ export class Store {
         if (t) (ids.add(id), out.push(t));
       }
     }
+    return this.remember(slug, dirMtime, b && recent ? b.checkedAt : this.now(), ids, out);
+  }
+
+  /** Keeps a freshly built listing (sorted here); its version moves on when it differs from the last one. */
+  private remember(slug: string, dirMtime: number, checkedAt: number, ids: Set<string>, out: Ticket[]): Ticket[] {
+    const b = this.boards.get(slug);
+    const prev = b?.list;
     out.sort((x, y) => x.order - y.order);
     const changed = !prev || prev.length !== out.length || out.some((t, i) => t !== prev[i]);
     const version = (b?.version ?? 0) + (changed && b ? 1 : 0);
-    const checkedAt = b && recent ? b.checkedAt : this.now();
     this.boards.set(slug, { dirMtime, checkedAt, ids, list: out, version });
     return [...out];
+  }
+
+  /**
+   * listTickets, except that a board not read yet (the first listing after a start) reads its ticket files in slices,
+   * pausing every ~sliceMs, instead of all in one go: on a big board that froze the daemon for a second or more.
+   */
+  async listTicketsSliced(slug: string, sliceMs = 30): Promise<Ticket[]> {
+    if (this.boards.get(slug)?.list) return this.listTickets(slug);
+    const dir = join(this.profileDir(slug), "tickets");
+    let dirMtime: number;
+    let names: string[];
+    try {
+      dirMtime = statSync(dir).mtimeMs;
+      names = readdirSync(dir);
+    } catch {
+      return this.listTickets(slug);
+    }
+    const startedAt = this.now();
+    const pause = pauser(sliceMs);
+    const ids = new Set<string>();
+    const out: Ticket[] = [];
+    for (const id of names) {
+      await pause();
+      const t = this.readTicketOrCorrupt(slug, id);
+      if (t) (ids.add(id), out.push(t));
+    }
+    // Another listing or a Store write got there first while this one paused: the normal path is current and cheap now.
+    if (this.boards.get(slug)?.list) return this.listTickets(slug);
+    return this.remember(slug, dirMtime, startedAt, ids, out);
+  }
+
+  /** Reads every board's tickets in slices (listTicketsSliced), so the first listings after a start are quick. */
+  async loadAllTickets(sliceMs = 30): Promise<void> {
+    for (const p of this.listProfiles()) await this.listTicketsSliced(p.slug, sliceMs);
   }
 
   /** Set by recheckTickets(): the daemon rechecks the ticket files in the background, listings don't. */

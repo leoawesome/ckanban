@@ -1992,7 +1992,8 @@ export function createServer(deps: ServerDeps) {
       if (m === "GET") {
         await sessions.ready();
         const hosts = board.hostHuddles(slug);
-        const tickets = store.listTickets(slug);
+        // The first listing after a start reads the board's ticket files in slices (seconds of frozen daemon otherwise).
+        const tickets = await store.listTicketsSliced(slug);
         // Open features (feature.ts) are marked, so list_tickets can show which work to add new tickets to.
         const features = new Set(openFeatures(tickets).map((f) => f.top.id));
         const one = (t: Ticket) => ({ ...view(profile, t, hosts), ...(features.has(t.id) ? { feature: true } : {}) });

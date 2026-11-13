@@ -211,3 +211,20 @@ test("activity pages: newest first page, older pages back to the first entry, a 
   expect(readJsonlPage(file).before).toBeNull();
   expect(readJsonlPage(join(dir, "missing.jsonl"))).toEqual({ entries: [], before: null });
 });
+
+test("the first listing after a start can be read in slices, with the same tickets in the same order", async () => {
+  for (let i = 0; i < 30; i++) store.createTicket("demo", { title: `T${i}`, body: "", status: i % 3 ? "done" : "backlog" });
+  // What a Store that just started on the same folder lists the normal way (tickets on the same spot keep folder order).
+  const expected = new Store(store.root).listTickets("demo").map((t) => t.id);
+  const fresh = new Store(store.root);
+  const sliced = await fresh.listTicketsSliced("demo", 0);
+  expect(sliced.map((t) => t.id)).toEqual(expected);
+  // Later listings come from memory, and a write still shows at once.
+  expect(fresh.listTickets("demo").map((t) => t.id)).toEqual(expected);
+  const added = fresh.createTicket("demo", { title: "New", body: "", status: "backlog" });
+  expect((await fresh.listTicketsSliced("demo")).some((t) => t.id === added.id)).toBe(true);
+  // loadAllTickets warms every board the same way.
+  const other = new Store(store.root);
+  await other.loadAllTickets(0);
+  expect(other.listTickets("demo").length).toBe(expected.length + 1);
+});

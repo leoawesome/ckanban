@@ -17,7 +17,7 @@ import { PushService } from "./push";
 import { RemoteAccess, remoteListenPort, remoteUrl } from "./remote";
 import { Passes } from "./integrations/passes";
 import { ckanbanShim } from "./integrations/script";
-import { pauser, startLagMonitor, track, trackedInterval } from "./lag";
+import { freezeAlarm, pauser, startLagMonitor, track, trackedInterval } from "./lag";
 import { LoopManager } from "./loops";
 import { makeSideCaller } from "./side-call";
 import { Learner } from "./learner";
@@ -119,7 +119,14 @@ export async function startDaemon(): Promise<void> {
   const remotePort = remoteListenPort(port, config.remotePort);
   const server = createServer({ store, bus, board, port, remotePort, webDir, sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
   console.log(`ckanban v${VERSION} listening on http://localhost:${server.port} (data: ${store.root})`);
-  const stopLag = startLagMonitor();
+  // Running from source (developing ckanban): a freeze of seconds raises a Mac banner naming what ran. Installed
+  // copies only log it; their users can't act on it.
+  const stopLag = startLagMonitor(VERSION === "dev" ? {
+    onLag: freezeAlarm({ send: (title, body) => notifier.macOnly(title, body, `${notifier.link(store.listProfiles()[0]?.slug ?? "")}`) }),
+  } : {});
+  // Every board's tickets read in slices first: recover() and the first pages then list them from memory instead of
+  // reading thousands of ticket files in one go.
+  await track("startup: load tickets", () => store.loadAllTickets());
   track("startup: board.recover", () => board.recover());
   track("startup: huddles.recover", () => huddles.recover());
   track("startup: quickChats.recover", () => quickChats.recover());

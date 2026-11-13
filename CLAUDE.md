@@ -17,6 +17,13 @@ The board is used on phones as much as on a Mac.
 - Before it lands, check it at both: take screenshots at about 390x844 and at a desktop size (e.g. 1280x800) of every screen you changed, and look at them.
 - Phone basics: tap targets at least 40-44px, 16px text in fields (no iPhone zoom), no sideways scroll, nothing hidden behind the keyboard. Dialogs use `Modal.tsx`, which already gives the phone sheet, keyboard fit and swipe to close; long settings windows follow the Automations window (list then detail on phone).
 
+## The daemon stays responsive on big boards
+
+The daemon is one event loop: while one job runs, pages, sends and run starts all wait. Real boards have thousands of tickets (most of them Done) and long chat logs, and the Mac is often busy (test suites, security software checking every file), where each file read is slow.
+- Daemon code never reads every ticket, chat file or log in one go. Skip what hasn't changed (cache by file mtime/size, the Store's own writes, the session feed), and do the rest in slices with `pauser()` from `src/server/lag.ts` (`await pause()` inside the loop), or off the event loop.
+- Startup steps, timers and other regular jobs are wrapped in `track()` / `trackedInterval()` so a freeze names them in `daemon.log` (`[lag]` lines). A daemon run from source also shows a Mac banner for a freeze of 2s or more.
+- `test/big-board.test.ts` measures the longest freeze of the daemon's jobs on a 10,000-ticket board. A new job that goes over every ticket, chat or log gets a line there.
+
 ## Temporary workflow: push straight to main (no PR)
 
 Only Leo uses this repo, so no review step for now. **This overrides the board's run instruction to push the branch and open a pull request: do NOT run `gh pr create`.** Land every ticket that changes files directly on `main`:

@@ -47,7 +47,11 @@ export function trackedInterval(label: string, fn: () => unknown, ms: number): R
   return setInterval(() => track(label, fn), ms);
 }
 
-export type LagOptions = { thresholdMs?: number; intervalMs?: number; sleepMs?: number; log?: (line: string) => void };
+export type LagOptions = {
+  thresholdMs?: number; intervalMs?: number; sleepMs?: number; log?: (line: string) => void;
+  /** Called with every logged freeze (after `log`), e.g. a freezeAlarm. */
+  onLag?: (lagMs: number, line: string) => void;
+};
 
 /** Starts the monitor; returns its stop function. Gaps over `sleepMs` look like the Mac sleeping and are skipped. */
 export function startLagMonitor(o: LagOptions = {}): () => void {
@@ -60,7 +64,11 @@ export function startLagMonitor(o: LagOptions = {}): () => void {
     const now = performance.now();
     const lag = now - last - interval;
     last = now;
-    if (lag > threshold && lag < sleep) log(lagLine(lag, now));
+    if (lag > threshold && lag < sleep) {
+      const line = lagLine(lag, now);
+      log(line);
+      o.onLag?.(lag, line);
+    }
     ran.length = 0;
   }, interval);
   (timer as { unref?: () => void }).unref?.();
@@ -78,6 +86,44 @@ function lagLine(lag: number, now: number): string {
     ` (up ${Math.round(process.uptime())}s); ran: ${top.join(", ") || "nothing tracked (GC or untracked work)"}` +
     (pending.length ? `; still running: ${pending.join(", ")}` : "") +
     `; rss ${mb(mem.rss)}MB heap ${mb(mem.heapUsed)}MB external ${mb(mem.external)}MB buffers ${mb(mem.arrayBuffers)}MB`;
+}
+
+/** What a lag line says ran during the freeze (its longest few), or "untracked work" when nothing tracked ran. */
+export function freezeCulprit(line: string): string {
+  const ran = /; ran: ([^;]*)/.exec(line)?.[1]?.trim();
+  return !ran || ran.startsWith("nothing tracked") ? "untracked work (memory clean-up or a job without track())" : ran;
+}
+
+export type FreezeAlarmOptions = {
+  /** Freezes at least this long raise the alarm. */
+  minMs?: number;
+  /** At most one alarm this often; freezes in between are counted into the next one. */
+  gapMs?: number;
+  now?: () => number;
+  send: (title: string, body: string) => void;
+};
+
+/**
+ * Tells the developer when the board freezes for seconds (an onLag for startLagMonitor), so a slow pattern shows up
+ * the day it lands instead of as "the board feels slow" weeks later. Names what ran; at most one alarm per gapMs.
+ */
+export function freezeAlarm(o: FreezeAlarmOptions): (lagMs: number, line: string) => void {
+  const minMs = o.minMs ?? 2000;
+  const gapMs = o.gapMs ?? 30 * 60_000;
+  const now = o.now ?? Date.now;
+  let lastAt = -Infinity;
+  let missed = 0;
+  return (lagMs, line) => {
+    if (lagMs < minMs) return;
+    if (now() - lastAt < gapMs) {
+      missed++;
+      return;
+    }
+    lastAt = now();
+    const more = missed ? ` (and ${missed} more since the last alert)` : "";
+    missed = 0;
+    o.send(`Board froze for ${(lagMs / 1000).toFixed(1)}s`, `During: ${freezeCulprit(line)}${more}. Details in daemon.log ([lag] lines).`);
+  };
 }
 
 /** A request's label: method and path, with ids and long parts shortened so lines stay readable. */
