@@ -17,7 +17,11 @@ import { usePhone } from "./usePhone";
  * here, the chat keeps working: every failure stays inside the panel.
  * openRequest: a Date.now() stamp; a new one opens the panel from elsewhere (the ticket ⋯ menu, the old-chat line).
  */
-export function ContextChip({ slug, kind, id, openRequest = 0 }: { slug: string; kind: "ticket" | "chat"; id: string; openRequest?: number }) {
+export function ContextChip({ slug, kind, id, openRequest = 0, quietBelow }: {
+  slug: string; kind: "ticket" | "chat"; id: string; openRequest?: number;
+  /** Hide the chip until this share is used (the panel still opens on a request): the phone message box shows it only from 80%. */
+  quietBelow?: number;
+}) {
   const [view, setView] = useState<ContextView | null>(null);
   const [busy, setBusy] = useState(false);
   const [netError, setNetError] = useState<string | null>(null);
@@ -101,7 +105,7 @@ export function ContextChip({ slug, kind, id, openRequest = 0 }: { slug: string;
   const report = view?.result?.report ?? null;
   const pct = report ? Math.min(100, Math.max(0, report.percent)) : 0;
   return (
-    <div className="ctx" ref={root}>
+    <div className={`ctx${quietBelow !== undefined && pct < quietBelow ? " ctx-quiet" : ""}`} ref={root}>
       {/* A small ring filled to the share used, then "34%" ("Context" before the first check); accent when nearly full. */}
       <button ref={chip} className={`ctx-chip${pct >= 80 ? " warn" : ""}`} aria-haspopup="dialog" aria-expanded={open}
         aria-label={report ? `Context: ${chipText(view)} used. Show what fills it` : "Context: show how much Claude is holding in mind"}

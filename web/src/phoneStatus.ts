@@ -31,7 +31,7 @@ interface StatusTicket {
 
 const columnLabel = (s: Status) => COLUMNS.find((c) => c.id === (s === "ready" ? "in_progress" : s))?.label ?? s;
 
-const attTone = (kind: string): StatusTone => (kind === "failed" || kind === "blocked" ? "err" : kind === "review" ? "ok" : "warn");
+export const attTone = (kind: string): StatusTone => (kind === "failed" || kind === "blocked" ? "err" : kind === "review" ? "ok" : "warn");
 
 /**
  * The one label and colour a phone's ticket header shows on its status button, which also moves the ticket.
@@ -58,4 +58,12 @@ export function phoneStatus(t: StatusTicket, finish: FinishMark | null, att: { k
     case "done": return t.status === "review" ? { label: "Ready for review", tone: "ok" } : column;
     default: return column;
   }
+}
+
+/** "Answer 2 questions" as the reason after "Your turn ·": lower case first, and Review in plain words. */
+export function turnReason(att: { kind: string; label: string } | null, limitLabel = ""): string {
+  if (!att) return "";
+  if (att.kind === "review") return "review the result";
+  const label = att.kind === "limit" ? limitLabel : att.label;
+  return label.charAt(0).toLowerCase() + label.slice(1);
 }

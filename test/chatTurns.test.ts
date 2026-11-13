@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dividerLabel, layoutTurns, placeByTime, plainStep, shortStep, stepsSummary } from "../web/src/chatTurns";
+import { dividerLabel, layoutTurns, placeByTime, plainStep, shortStep, stepsSummary, wakeLabel } from "../web/src/chatTurns";
 
 const at = (min: number) => new Date(Date.UTC(2026, 9, 25, 6, 0) + min * 60_000).toISOString();
 const NOW = Date.UTC(2026, 9, 25, 8, 0);
@@ -46,8 +46,8 @@ test("dividerLabel: Today and Yesterday, else the date", () => {
 test("stepsSummary: running, done and failed steps", () => {
   const items = [{ text: "Read: a.ts" }, { text: "Bash: bun test", error: true as const }, { text: "Edit: b.ts" }];
   expect(stepsSummary(items, true)).toEqual({ text: "Step 3 · Edited b.ts", failed: 1 });
-  expect(stepsSummary(items, false)).toEqual({ text: "Did 3 steps · Edited b.ts", failed: 1 });
-  expect(stepsSummary([{ text: "Read: a.ts" }], false).text).toBe("Did 1 step · Read a.ts");
+  expect(stepsSummary(items, false)).toEqual({ text: "Did 3 steps", failed: 1 });
+  expect(stepsSummary([{ text: "Read: a.ts" }], false).text).toBe("Did 1 step");
 });
 
 test("stepsSummary: the running step counts once and uses the live activity when there is one", () => {
@@ -55,8 +55,8 @@ test("stepsSummary: the running step counts once and uses the live activity when
   expect(stepsSummary(items, true, "Running gh").text).toBe("Step 3 · Running gh");
   expect(stepsSummary(items, true, null).text).toBe("Step 3 · Ran a command");
   expect(stepsSummary(items, true, "").text).toBe("Step 3 · Ran a command");
-  // Done: the plain name, never the live activity.
-  expect(stepsSummary(items, false, "Running gh").text).toBe("Did 3 steps · Ran a command");
+  // Done: only the count (the steps are in the list it opens to), never the live activity.
+  expect(stepsSummary(items, false, "Running gh").text).toBe("Did 3 steps");
 });
 
 test("shortStep: a file tool's path becomes its file name; other steps stay as they are", () => {
@@ -66,7 +66,7 @@ test("shortStep: a file tool's path becomes its file name; other steps stay as t
   expect(shortStep("Bash: ls /Users/leo/dev")).toBe("Bash: ls /Users/leo/dev");
   expect(shortStep("Grep: /api/attachments/")).toBe("Grep: /api/attachments/");
   expect(shortStep("Read: notes.md")).toBe("Read: notes.md");
-  expect(stepsSummary([{ text: "Bash: ls" }, { text: "Read: /a/b/c.png" }], false).text).toBe("Did 2 steps · Read c.png");
+  expect(stepsSummary([{ text: "Bash: ls" }, { text: "Read: /a/b/c.png" }], true).text).toBe("Step 2 · Read c.png");
 });
 
 test("plainStep: tool names become plain verbs for the summary line", () => {
@@ -81,7 +81,7 @@ test("plainStep: tool names become plain verbs for the summary line", () => {
   expect(plainStep("Thinking about it")).toBe("Thinking about it");
   // The summary never shows a raw tool name.
   for (const t of ["mcp__linear-server__get_document: x", "ToolSearch: select:mcp__a__b", "Bash: ls", "Grep: foo", "TodoWrite"]) {
-    expect(stepsSummary([{ text: t }], false).text).not.toMatch(/mcp__|ToolSearch|Bash|Grep|TodoWrite/);
+    expect(stepsSummary([{ text: t }], true).text).not.toMatch(/mcp__|ToolSearch|Bash|Grep|TodoWrite/);
   }
 });
 
@@ -102,4 +102,13 @@ test("placeByTime: on a partial page, notes older than the first loaded message 
   expect([...m.keys()]).toEqual([1]);
   // No messages yet in a fresh chat: notes still show.
   expect(placeByTime([{ at: at(1) }], [], { start: 0 }, true).get(0)?.length).toBe(1);
+});
+
+test("wakeLabel: tool ticket updates say 'task'; other board wakes keep 'Board update'", () => {
+  expect(wakeLabel("1 update from a tool ticket")).toBe("Update from 1 task");
+  expect(wakeLabel("3 updates from tool tickets")).toBe("Updates from 3 tasks");
+  expect(wakeLabel("2 updates from tickets in this group")).toBe("Updates from 2 tasks");
+  expect(wakeLabel("every tool ticket finished")).toBe("Every task finished");
+  expect(wakeLabel("1 update from a child ticket")).toBe("Board update: 1 update from a child ticket");
+  expect(wakeLabel("status refresh")).toBe("Board update: status refresh");
 });

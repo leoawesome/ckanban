@@ -47,7 +47,7 @@ export function dividerLabel(iso: string, now = Date.now()): string {
   return d.toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-/** The steps line under a reply: running "Step 4 · Reading api.ts", done "Did 6 steps · ran the tests"; failed: how many errored.
+/** The steps line under a reply: running "Step 4 · Reading api.ts", done "Did 6 steps"; failed: how many errored.
  *  activity: the run's live description of the step it is on ("Running gh"); while running it replaces the plain name. */
 /** File tools whose step label is "<Tool>: <path>" (src/server/subagents.ts toolLabel). */
 const FILE_STEP = /^(Read|Write|Edit|MultiEdit|NotebookEdit): ((?:~|\/)\S*\/([^/\s]+))$/;
@@ -97,7 +97,8 @@ export function stepsSummary(items: { text: string; error?: true }[], running: b
   const plain = plainStep(items.at(-1)?.text ?? "");
   const failed = items.filter((t) => t.error).length;
   const n = items.length;
-  return { text: running ? `Step ${n} · ${activity || plain}` : `Did ${n} step${n === 1 ? "" : "s"} · ${plain}`, failed };
+  // Done: only the count; the steps themselves are in the list it opens to.
+  return { text: running ? `Step ${n} · ${activity || plain}` : `Did ${n} step${n === 1 ? "" : "s"}`, failed };
 }
 
 /** A message another ticket's Claude sent, as the board labels it (src/server/session.ts fromTicketText): its sender and text. */
@@ -157,4 +158,12 @@ export function telegramMarks(
     if (e) outbound.add(e.uuid);
   }
   return { in: inbound, out: outbound };
+}
+
+/** A board wake's grey line: "1 update from a tool ticket" (src/server/prompts.ts wakeSummary) is "Update from 1 task", others "Board update: …". */
+export function wakeLabel(wake: string): string {
+  const m = /^(\d+) updates? from (?:a |)(?:tool )?tickets?(?: in this group)?$/.exec(wake);
+  if (m) return m[1] === "1" ? "Update from 1 task" : `Updates from ${m[1]} tasks`;
+  if (/^every tool ticket finished$|^every ticket in this group finished$/.test(wake)) return "Every task finished";
+  return `Board update: ${wake}`;
 }

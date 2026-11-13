@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   api, NotStarted, onReconnect, subscribe, type Huddle, type Level, type NewTicketDraft, type OutputFile, type Proposal, type QueuedMessage, type RewindResult, type SessionEntry, type TeammateProposal, type Ticket,
 } from "./api";
@@ -23,7 +23,7 @@ import { liveLine, runMood } from "./avatarMood";
 import { useClaudeName } from "./AvatarFace";
 import { WorkflowBlocks } from "./WorkflowBlock";
 import { ToolRows } from "./ToolRows";
-import { ArrowDownIcon, BranchIcon, ClockIcon, CloseIcon, CopyIcon, DownloadIcon, FileCodeIcon, FileTextIcon, MoreIcon } from "./icons";
+import { ArrowDownIcon, ArrowUpIcon, BranchIcon, ClockIcon, CloseIcon, CopyIcon, DownloadIcon, FileCodeIcon, FileTextIcon, MoreIcon } from "./icons";
 import { MoreSheet } from "./PhoneNav";
 import type { MenuItem } from "./HeaderMenu";
 import { useTypeTrigger } from "./typeTrigger";
@@ -53,7 +53,7 @@ import { shortNote, waitingItems, type WaitingItem } from "./taskCards";
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ClaudeFace, ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
-import { fromAutomation, fromTicket, layoutTurns, placeByTime, telegramMarks, type TurnLayout } from "./chatTurns";
+import { fromAutomation, fromTicket, layoutTurns, placeByTime, telegramMarks, type TurnLayout, wakeLabel } from "./chatTurns";
 import { gapOf, jumpAfterScroll, NEAR_BOTTOM, onContentChange, stickAfterScroll, USER_CHANGE_MS } from "./chatFollow";
 import { StallActions, stallWait } from "./StallActions";
 import { useSnippetPicker } from "./SnippetPicker";
@@ -124,7 +124,7 @@ function UserText({ text, commands, command }: { text: string; commands: SlashCo
 function WakeNote({ entry: e, old }: { entry: SessionEntry; old: boolean }) {
   return (
     <details className={`chat-note wake-note${old ? " inherited" : ""}`}>
-      <summary>Board update: {e.wake}{e.at && <span title={fullTime(e.at)}> · {timeAgo(e.at)}</span>}</summary>
+      <summary>{wakeLabel(e.wake ?? "")}{e.at && <span title={fullTime(e.at)}> · {timeAgo(e.at)}</span>}</summary>
       {e.text && <div className="wake-body"><Markdown text={e.text} /></div>}
     </details>
   );
@@ -311,7 +311,7 @@ export function useStop(slug: string, ticket: Ticket, working: boolean, onError:
 /** A queued peer message that carries huddle messages (see the server's huddleMainPrompt). */
 const HUDDLE_TAG = /<ckanban-context[^>]* huddle="/;
 
-export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help, onFilesChanged, contextRequest = 0 }: {
+export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenOutput, onError, onPendingProposal, huddle = null, onOpenHuddle, onOpenTeam, help, onFilesChanged, contextRequest = 0, turnBar }: {
   /** A Date.now() stamp: a new one opens the Context panel (the ticket ⋯ menu's Context item). */
   contextRequest?: number;
   slug: string;
@@ -336,6 +336,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   help?: HelpState;
   /** A rewind put files back: the Changes tab reloads its list. */
   onFilesChanged?: () => void;
+  /** Phones: the "Your turn" line just above the message box (TicketDrawer). */
+  turnBar?: ReactNode;
 }) {
   const claude = useClaudeName();
   const [page, setPage] = useState<{ entries: SessionEntry[]; start: number } | null>(null);
@@ -510,7 +512,12 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     setHandoff([]);
     reload();
   }, [reload]);
-  useLayoutEffect(() => autoGrow(composer.current), [draft, phone]);
+  // Phones: the round box gets plain corners once the text wraps to a second line.
+  const [tallBox, setTallBox] = useState(false);
+  useLayoutEffect(() => {
+    autoGrow(composer.current);
+    setTallBox(phone && (composer.current?.offsetHeight ?? 0) > 48);
+  }, [draft, phone]);
   // The live connection came back (board restart, laptop sleep, a long freeze): updates were missed, so reload.
   useEffect(() => onReconnect(() => void loadTail().catch(() => {})), [loadTail]);
   // While a sent message still says "sending", check the conversation now and then in case its update was missed.
@@ -1527,7 +1534,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
       )}
       {undone && !undo && <UndoneNote line={undone} onClose={() => setUndone(null)} />}
       {waiting.length > 0 && <WaitingButton items={waiting} onPick={pickWaiting} />}
-      <div className="composer">
+      {turnBar}
+      <div className={`composer${tallBox ? " tall" : ""}`}>
         <textarea ref={composer} rows={phone ? 1 : 2} value={draft} disabled={stopping} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
           placeholder={formWaiting && !running ? `Or type a note to ${claude}…` : phone
             ? running ? `Steer ${claude}…` : refine ? "Describe your idea…" : `Ask ${claude}…`
@@ -1566,7 +1574,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         {/* One row: + (photo, file; on a phone also snippet, skill and the old-chat line), the Context ring, then Send. */}
         <div className="composer-foot one-row">
           <ImagePickButton images={images} target={composer} disabled={stopping} merged extra={phone ? plusExtras : undefined} />
-          <ContextChip slug={slug} kind="ticket" id={ticket.id} openRequest={Math.max(contextRequest, contextLocal)} />
+          <ContextChip slug={slug} kind="ticket" id={ticket.id} openRequest={Math.max(contextRequest, contextLocal)} quietBelow={phone ? 80 : undefined} />
           {/* The old-chat line only for a big re-read (over 100k tokens); Send still asks for any old chat. */}
           <span className="composer-meta">
             {phone ? null : old && old.tokens > OLD_LINE_MIN_TOKENS ? (
@@ -1581,7 +1589,13 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           </span>
           <span className="composer-actions">
             <SendOrStop running={running} hasDraft={!!draft.trim()} stopping={stopping} onStop={stop}
-              send={<button className={`btn small${draft.trim() ? " primary" : ""}`} disabled={!draft.trim() || stopping || images.uploading} onClick={submit}>{images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" /></button>} />
+              send={phone
+                // Phones: a round arrow, greyed out while the box is empty.
+                ? <button className={`btn small send-round${draft.trim() ? " primary" : ""}`} disabled={!draft.trim() || stopping || images.uploading} onClick={submit}
+                    aria-label={images.uploading ? "Uploading…" : "Send"} title={images.uploading ? "Uploading…" : "Send"}>
+                    {images.uploading ? <span className="spinner" aria-hidden /> : <ArrowUpIcon size={20} />}
+                  </button>
+                : <button className={`btn small${draft.trim() ? " primary" : ""}`} disabled={!draft.trim() || stopping || images.uploading} onClick={submit}>{images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" /></button>} />
           </span>
         </div>
       </div>

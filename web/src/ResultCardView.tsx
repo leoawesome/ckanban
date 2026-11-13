@@ -41,7 +41,7 @@ export function ResultCardView({ r, onOpenTicket }: { r: ResultCard; onOpenTicke
       <div className="r-links">
         {r.report && files && <button className="link-btn" onClick={() => files.open(r.report!)}>Read report</button>}
         {!r.folderFiles && <button className="link-btn" onClick={() => { requestTab(r.ticketId, "changes"); onOpenTicket(r.ticketId); }}>Changes</button>}
-        <button className="link-btn" onClick={() => onOpenTicket(r.ticketId)}>Open ticket</button>
+        <button className="link-btn" onClick={() => onOpenTicket(r.ticketId)}>Open task</button>
       </div>
     </div>
   );

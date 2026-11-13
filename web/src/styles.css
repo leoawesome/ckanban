@@ -3564,37 +3564,38 @@ button.hd-mode:disabled { cursor: default; }
 
   /* ticket: full screen */
   .panel { border-left: 0; animation: none; }
-  .panel-head { padding: calc(2px + env(safe-area-inset-top)) 8px 0 4px; }
-  /* Phone header, three rows: back … status, job, helper, bulb, more; the whole title (two lines at most); the tabs
-     and the cost. Scrolling the chat down folds only the title row (useShrinkHeader). */
-  .head-row1 { gap: 2px; min-height: 40px; }
+  .panel-head { padding: calc(2px + env(safe-area-inset-top)) max(2px, env(safe-area-inset-right)) 0 max(2px, env(safe-area-inset-left)); }
+  /* Phone header: back, the title with the status in words under it (a tap opens the details sheet), the jobs chip, ⋯;
+     then the tabs, which fold away while the chat scrolls down (useShrinkHeader). */
+  .head-row1 { gap: 2px; min-height: 52px; }
   .panel-head .star-toggle, .panel-head .ticket-nav, .panel-head .save-state { display: none; }
   .panel-head .job-chip .job-chip-word { display: none; }
-  .panel-head .phone-back, .panel-head .more-btn, .panel-head .help-btn { width: 36px; height: 36px; }
-  .panel-head .helper-icon { width: 36px; height: 36px; }
-  .panel-head .pin-toggle { width: 36px; height: 36px; }
-  .panel-head .help-btn { border: 0; background: transparent; color: var(--muted); border-radius: var(--r-sm); }
-  .panel-head .help-btn.on, .panel-head .help-btn:hover { background: var(--surface-2); color: var(--text); }
-  .head-row1 .phone-status { flex-shrink: 1; min-width: 0; margin-right: 2px; }
-  .head-row1 .phone-status .select-trigger { min-height: 30px; }
-  .head-row1 .phone-status .ps-label { max-width: 46vw; }
-  .head-title-wrap { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr; transition: grid-template-rows 0.22s ease, opacity 0.18s ease; }
-  .head-title { min-height: 0; min-width: 0; overflow: hidden; }
-  .phone-title { position: relative; padding: 2px 8px 4px 10px; }
-  .phone-title-text, .phone-title .title-input {
-    font-family: inherit; font-size: var(--fs-lg); font-weight: 700; line-height: 1.3; color: var(--text); overflow-wrap: anywhere;
+  .panel-head .phone-back, .panel-head .more-btn { width: 44px; height: 44px; }
+  .panel-head button.badge.job-chip { min-height: 32px; padding: 0 10px; border-radius: var(--r-pill); font-size: var(--fs-sm); margin: 0 2px; }
+  .head-row1 > .phone-who { flex: 1 1 auto; min-width: 0; }
+  .phone-who {
+    display: flex; flex-direction: column; align-items: stretch; gap: 1px; min-height: 44px; padding: 4px 6px; margin: 0;
+    border: 0; border-radius: var(--r-md); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
-  .phone-title-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
-  /* The box lies over the cut text, invisible, so a tap types into it; while typing it shows the whole title. */
-  .phone-title .title-input {
-    position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 2px 8px 4px 10px; border: 0; border-radius: var(--r-sm);
-    background: transparent; resize: none; overflow: hidden; opacity: 0; box-shadow: none; field-sizing: content;
-  }
-  .phone-title .title-input:focus { position: static; height: auto; opacity: 1; padding: 2px 6px; margin: 0 0 0 -6px; width: calc(100% + 6px); background: var(--surface); outline: 2px solid var(--accent); }
-  .phone-title:focus-within .phone-title-text { display: none; }
-  .panel.head-slim .head-title-wrap { grid-template-rows: 0fr; opacity: 0; }
-  .panel.head-slim .head-row2-wrap { grid-template-rows: 1fr; opacity: 1; }
-  .panel.head-slim .head-row2 { overflow: visible; }
+  .phone-who:active { background: var(--surface-2); }
+  .phone-who:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .pw-title { display: block; font-size: var(--fs-lg); font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The status word never shrinks; the reason after the dot is cut first. */
+  .pw-status { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-sm); font-weight: 600; line-height: 1.3; color: var(--muted); }
+  .pw-word { flex: none; white-space: nowrap; }
+  .pw-reason { flex: 0 1 auto; min-width: 0; font-weight: 400; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pw-chev { flex: none; font-size: var(--fs-2xs); color: var(--muted); }
+  .pw-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .pw-dot.busy { width: 10px; height: 10px; background: none; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite; }
+  .pw-dot.mark { width: auto; height: auto; background: none; font-weight: 700; animation: finish-pop 250ms ease-out; }
+  .pw-face { flex: none; display: inline-flex; }
+  .phone-who.tone-ok .pw-status { color: var(--ok); }
+  .phone-who.tone-warn .pw-status { color: var(--warn); }
+  .phone-who.tone-err .pw-status { color: var(--err); }
+  .phone-who.tone-info .pw-status { color: var(--info); }
+  .phone-who.tone-neutral .pw-word { color: var(--text); }
+  .phone-who :is(.pw-reason, .pw-chev) { color: var(--muted); }
   .panel.head-slim .panel-head { padding-bottom: 0; }
   .head-row2 { gap: 4px; }
   .head-row2 .tabs { margin-left: 0; flex: 1 1 auto; }
@@ -3604,27 +3605,9 @@ button.hd-mode:disabled { cursor: default; }
   .head-row2 > .head-spacer { display: none; }
   .head-row2 .tabs button { min-height: 40px; padding: 0 12px; font-size: var(--fs-sm); }
   .head-row2 .tabs .tab-count, .head-row2 .tabs .for-you-pill { margin-left: 3px; padding: 0 4px; }
-  .panel-head .head-cost { padding: 6px 4px; min-height: 40px; }
-  @media (prefers-reduced-motion: reduce) { .head-title-wrap { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .pw-dot.busy { animation: none; } }
   .phone-tags { justify-content: flex-start; }
   .phone-tags .tag-editor { min-width: 0; }
-  /* The status button: what the ticket waits on, in its colour; tapping it moves the ticket. */
-  .phone-status .select-trigger { min-height: 26px; padding: 0 10px; gap: 6px; border: 0; border-radius: var(--r-pill); font-weight: 600; font-size: var(--fs-sm); background: var(--surface-2); color: var(--text); }
-  /* No clipping here: Claude's face draws its hat above its box and sits 4px left; the label keeps its own ellipsis. */
-  .phone-status .select-value { display: inline-flex; align-items: center; gap: 8px; min-width: 0; overflow: visible; }
-  .phone-status .ps-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .phone-status .select-chevron { color: currentColor; opacity: 0.7; }
-  .phone-status .ps-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-  .phone-status .ps-dot.busy { width: 10px; height: 10px; background: none; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite; }
-  .phone-status .ps-face { flex: none; display: inline-flex; margin-left: -4px; }
-  .phone-status .ps-dot.mark { width: auto; height: auto; background: none; font-weight: 700; animation: finish-pop 250ms ease-out; }
-  .phone-status.tone-neutral .select-trigger { color: var(--muted); }
-  .phone-status.tone-neutral .ps-label { color: var(--text); }
-  .phone-status.tone-ok .select-trigger { background: var(--ok-soft); color: var(--ok); }
-  .phone-status.tone-warn .select-trigger { background: var(--warn-soft); color: var(--warn); }
-  .phone-status.tone-err .select-trigger { background: var(--err-soft); color: var(--err); }
-  .phone-status.tone-info .select-trigger { background: var(--info-soft); color: var(--info); }
-  .phone-status.open .select-trigger, .phone-status .select-trigger:focus-visible { box-shadow: 0 0 0 2px currentColor; }
   .panel-body.details-closed { grid-template-rows: minmax(0, 1fr); }
   /* Ticket tab (phones): the details sidebar as one full-height page that scrolls as a whole */
   .panel-ticket { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
@@ -5139,4 +5122,86 @@ button.composer-old:hover { color: var(--text); }
   .ave-acts { position: sticky; bottom: 0; z-index: 1; background: var(--surface); margin: 16px -12px 0; padding: 10px 12px 14px; border-top: 1px solid var(--border); }
   .ave-acts .btn { min-height: 44px; font-size: var(--fs-md); }
   .ave-acts .btn.primary { margin-left: 0; flex: 1; }
+}
+
+/* "Your turn" line above a phone's message box (TicketDrawer turnBar): what the ticket waits on and its one button. */
+.turn-bar { display: flex; align-items: center; gap: 8px; margin: 0 8px 6px; padding: 4px 4px 4px 12px; border-radius: var(--r-md); background: var(--warn-soft); color: var(--warn); font-size: var(--fs-md); }
+.turn-bar.tone-ok { background: var(--ok-soft); color: var(--ok); }
+.turn-bar.tone-err { background: var(--err-soft); color: var(--err); }
+.turn-bar-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn-bar .btn.turn-bar-btn { flex: none; min-height: 40px; padding: 0 14px; border: 0; border-radius: var(--r-pill); background: currentColor; font-weight: 600; }
+.turn-bar .btn.turn-bar-btn { color: var(--surface); }
+.turn-bar.tone-ok .btn.turn-bar-btn { background: var(--ok); }
+.turn-bar.tone-warn .btn.turn-bar-btn { background: var(--warn); }
+.turn-bar.tone-err .btn.turn-bar-btn { background: var(--err); }
+
+/* The phone ticket's details sheet (TicketSheet.tsx), from the header's title. */
+.ticket-sheet .modal-head h3 { overflow-wrap: anywhere; }
+.ts-body { display: flex; flex-direction: column; padding: 0 16px 16px; }
+.ts-status { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); font-weight: 600; color: var(--muted); margin-bottom: 12px; }
+.ts-status .ts-reason { font-weight: 400; }
+.ts-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.ts-status.tone-ok { color: var(--ok); }
+.ts-status.tone-warn { color: var(--warn); }
+.ts-status.tone-err { color: var(--err); }
+.ts-status.tone-info { color: var(--info); }
+.ts-label { font-size: var(--fs-xs); color: var(--muted); }
+.ts-cols { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 12px; }
+.ts-col { min-height: 40px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-md); cursor: pointer; }
+.ts-col.current { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.ts-col:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ts-goal { align-self: flex-start; min-height: 40px; margin: -4px 0 12px; }
+.ts-rows { display: flex; flex-direction: column; }
+.ts-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 6px 0; margin: 0;
+  border: 0; border-top: 1px solid var(--border); background: none; color: var(--text); font: inherit; font-size: var(--fs-md); text-align: left;
+  text-decoration: none; cursor: pointer;
+}
+.ts-row:disabled { cursor: default; opacity: 0.6; }
+.ts-row.static { cursor: default; }
+.ts-row-label { display: flex; flex-direction: column; min-width: 0; }
+.ts-row-label small { font-size: var(--fs-sm); color: var(--muted); }
+.ts-row-value { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: var(--fs-md); }
+.ts-row[aria-pressed="true"] .ts-row-value { color: var(--accent-text); font-weight: 600; }
+.ts-help-label { padding: 12px 0 2px; border-top: 1px solid var(--border); }
+.ts-help-label + .ts-row { border-top: 0; }
+.ts-rename { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.ts-rename textarea { font-size: var(--fs-lg); resize: none; }
+.ts-rename-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ts-rename-actions .btn { min-height: 40px; }
+
+/* The Context chip hides until the chat is nearly full (ContextChip quietBelow); its panel still opens on a request. */
+.ctx.ctx-quiet { display: contents; }
+.ctx.ctx-quiet > .ctx-chip { display: none; }
+
+@media (max-width: 720px) {
+  /* Ticket chat on a phone: Claude's face small on the name line, then the replies, cards and steps at full width. */
+  .chat-log .turn { grid-template-columns: 24px minmax(0, 1fr); column-gap: 8px; }
+  .chat-log .turn-av { width: 24px; height: 24px; font-size: var(--fs-2xs); }
+  .chat-log .turn-av-btn::before { inset: -10px; }
+  .chat-log .turn-name { min-height: 28px; }
+  .chat-log .turn-body { grid-column: 1 / -1; }
+  .chat-log .steps-line ul { margin-left: 8px; }
+
+  /* The message box in one row: a round +, the text, (the memory ring from 80%), a round send. */
+  .chat > .composer {
+    flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 6px; padding: 4px; border-radius: var(--r-pill);
+    margin-left: max(8px, env(safe-area-inset-left)); margin-right: max(8px, env(safe-area-inset-right));
+  }
+  .chat > .composer > * { flex: 1 1 100%; min-width: 0; }
+  .chat > .composer.tall { border-radius: var(--r-md); }
+  .chat > .composer > textarea { order: 1; flex: 1 1 0; min-height: 40px; padding: 9px 2px; line-height: 22px; font-size: var(--fs-lg); }
+  .chat > .composer > .composer-foot.one-row { display: contents; }
+  .chat > .composer .composer-meta { display: none; }
+  .chat > .composer .image-pick-group { order: 0; flex: none; }
+  .chat > .composer .image-pick-group .btn.image-pick.add-pick { width: 40px; min-width: 40px; height: 40px; min-height: 40px; border: 0; border-radius: 50%; background: none; color: var(--muted); }
+  .chat > .composer .ctx { order: 2; flex: none; align-self: center; }
+  .chat > .composer .composer-actions { order: 3; flex: none; margin: 0; gap: 4px; }
+  .chat > .composer .composer-actions .btn { min-height: 40px; }
+  .chat > .composer .btn.send-round { width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
+  .chat > .composer .btn.send-round:not(.primary), .chat > .composer .btn.send-round:disabled { background: var(--surface-2); border-color: transparent; color: var(--muted); }
+  .chat > .composer .stop-btn { border-radius: var(--r-pill); }
+  .chat > .composer .stop-btn.icon-only { width: 40px; padding: 0; justify-content: center; border-radius: 50%; }
+  .chat > .composer > .key-hint { display: none; }
+  .chat > .composer > :is(.draft-files, .form-error, .old-chat-ask) { padding: 4px 8px 0; }
 }

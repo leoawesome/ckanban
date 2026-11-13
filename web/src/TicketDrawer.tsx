@@ -36,7 +36,7 @@ import { Outputs } from "./Outputs";
 import { PrBox } from "./PrBox";
 import { PrList } from "./PrList";
 import { Select } from "./Select";
-import { phoneStatus } from "./phoneStatus";
+import { attTone, phoneStatus, turnReason } from "./phoneStatus";
 import { ClaudeFace } from "./ConvTurn";
 import { useClaudeName } from "./AvatarFace";
 import { useShareNotices } from "./share";
@@ -62,7 +62,8 @@ import { toast } from "./toast";
 import { FollowUpChip } from "./FollowUpChip";
 import { PartOfField } from "./FamilyPanel";
 import { FileLinksProvider } from "./FileViewer";
-import { messageHash, useHelper } from "./helper";
+import { messageHash } from "./helper";
+import { TicketSheet, useHelperLine } from "./TicketSheet";
 
 // v2: widths saved under the old 80% default are dropped once so the new default shows.
 const WIDTH_KEY = "ckanban.panelWidth.v2";
@@ -509,7 +510,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [phone]);
-  // The title box: one line on desktop (input); on a phone a box that wraps (textarea, see the header).
+  // The title box (desktop; phones rename in the details sheet).
   const titleRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const revertTitle = useRef(false);
   // Leaving for the neighbouring ticket: keep a title edit, and don't drop an unsaved description edit.
@@ -562,8 +563,12 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const split = useDetailsSplit(detailsRef, pinnedRef, !phone && !briefFolded);
   // "Model and effort" from the ⋯ menu: its dropdowns open under the header's first row.
   const [runOpen, setRunOpen] = useState(false);
-  // Scrolling the chat or huddle feed down shrinks the header to one line; scrolling up brings it back.
-  const slim = useShrinkHeader(bodyRef, tab === "chat" || tab === "huddle", tab);
+  // Scrolling the chat (or, on desktop, the huddle feed) down folds the tab row away; scrolling up brings it back.
+  // A new tab or ticket starts with the row shown.
+  const slim = useShrinkHeader(bodyRef, phone ? tab === "chat" : tab === "chat" || tab === "huddle", `${tab}:${ticket.id}`);
+  // Phones: the details sheet under the header's title ("move": opened by M, the keyboard on the current column).
+  const [sheet, setSheet] = useState<null | "open" | "move">(null);
+  useEffect(() => setSheet(null), [ticket.id]);
   // Opens fitted to the sidebar plus the chat's reading column; dragging can make it wider.
   const room = beside ? besideRoom(beside.right) : windowRoom();
   const panel = usePanelWidth((detailsShown ? side.pref : 0) + CHAT_ROOM, room);
@@ -799,13 +804,13 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const togglePin = () => onPin?.(!pinned);
   // M: open the Status picker (the header's status button on a phone with the details hidden), showing the details first if needed.
   const openStatusPicker = () => {
-    const sel = phone && !detailsShown ? ".phone-status" : ".status-select";
+    if (phone) return setSheet("move");
     const open = () => {
-      const trigger = panelRef.current?.querySelector<HTMLButtonElement>(`${sel} .select-trigger`);
+      const trigger = panelRef.current?.querySelector<HTMLButtonElement>(".status-select .select-trigger");
       trigger?.focus();
       trigger?.click();
     };
-    if (!detailsShown && !phone) {
+    if (!detailsShown) {
       setDetailsOpen(() => true);
       requestAnimationFrame(open);
     } else open();
@@ -1016,7 +1021,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
       </section>
     </div>
   );
-  // The title box's handlers, shared by the desktop input and the phone textarea.
+  // The desktop title box's handlers.
   const titleProps = {
     value: title, "aria-label": "Title",
     // A phone's box wraps, but the title stays one line: a new line (pasted) becomes a space.
@@ -1029,17 +1034,35 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
       else if (e.key === "Escape") { revertTitle.current = true; setTitle(ticket.title); e.currentTarget.blur(); }
     },
   };
-  // Phones: one button says the state and moves the ticket (desktop keeps the chip and its own column picker).
-  const statusButton = (
-    <Select className={`phone-status tone-${ps.tone}`} ariaLabel={`${att ? `Your turn: ${att.label}` : ps.label}. Move to column`} value={boardColumnOf(ticket)}
-      onChange={(s) => setStatus(menuPick(ticket, s as Status))}
-      renderValue={() => <>{ps.mood
-        ? <span className="ps-face" aria-hidden><ClaudeFace mood={ps.mood} size={24} /></span>
-        : <span className={`ps-dot${ps.busy ? " busy" : ""}${ps.icon ? " mark" : ""}`} aria-hidden>{ps.icon}</span>}<span className="ps-label">{shortStatus}</span></>}
-      menuMaxHeight={Infinity} // all columns fit on a phone screen; only scroll when the screen is too short
-      options={statusOptions}
-      footer={att && goal ? [{ label: goal.button, icon: <ChevronRightIcon size={12} />, onSelect: goTo }] : undefined} />
+  // Phones: the title on one line with the status in words under it ("● Your turn · review the result"); a tap opens
+  // the details sheet (move, cost, memory, pin, alerts, rename, help). The title shrinks first, then the reason; the
+  // status word itself is never cut.
+  const reason = turnReason(att, attLabel);
+  const statusMark = ps.mood
+    ? <span className="pw-face" aria-hidden><ClaudeFace mood={ps.mood} size={18} /></span>
+    : <span className={`pw-dot${ps.busy ? " busy" : ""}${ps.icon ? " mark" : ""}`} aria-hidden>{ps.icon}</span>;
+  const phoneWho = (
+    <button type="button" className={`phone-who tone-${ps.tone}`} onClick={() => setSheet("open")} aria-haspopup="dialog"
+      aria-label={`${title || ticket.title}. ${shortStatus}${reason ? `: ${reason}` : ""}. Ticket details and move to a column`}>
+      <b className="pw-title">{title || ticket.title}</b>
+      <span className="pw-status">{statusMark}<span className="pw-word">{shortStatus}</span>
+        {reason && <span className="pw-reason">· {reason}</span>}<span className="pw-chev" aria-hidden>▾</span></span>
+    </button>
   );
+  // Phones, Chat tab: while the ticket waits on the user (and Claude isn't working), one slim line above the message
+  // box says what for, with its one button (the same handlers as the Ticket tab's).
+  const turnAction = !att || working ? null : goal ? { label: goal.button, run: goTo }
+    : ticket.status === "review" && !finished ? { label: "Mark done", run: () => setStatus("done") } : null;
+  const turnBar = phone && turnAction ? (
+    <div className={`turn-bar tone-${attTone(att!.kind)}`} role="status">
+      <span className="turn-bar-text"><b>Your turn:</b> {reason}</span>
+      <button type="button" className="btn small turn-bar-btn" onClick={turnAction.run}>{turnAction.label}</button>
+    </div>
+  ) : null;
+  const rename = async (t: string) => {
+    await api.updateTicket(slug, ticket.id, { title: t });
+    setTitle(t);
+  };
   // The tab bar's buttons: every tab is in the bar, which scrolls sideways when they don't fit.
   const costChip = usage && hasUsage ? (
     <button className="head-cost" onClick={() => openTab("usage")} title={`${usageChipText(usage)}. ${usageTitle}`}>{costText(usage.totals.costUsd)}</button>
@@ -1077,6 +1100,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           {/* Row 1: the title, its tags, the helper's note, then the buttons. */}
           <div className="head-row1">
             {phone && <button className="icon-btn phone-back" onClick={onClose} aria-label="Back to the board"><ChevronLeftIcon size={20} /></button>}
+            {phone && phoneWho}
             {!phone && boardHidden && (
               <button className="btn ghost small icon-label board-back" onClick={onClose} title="The window is too narrow for the board beside this ticket and the side panels: close the ticket to see the board">
                 <ChevronLeftIcon size={14} /> Board
@@ -1092,8 +1116,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
                 {detailsShown && <rect x="2.75" y="3.75" width="3.5" height="10.5" rx="1.5" fill="currentColor" opacity="0.35" />}
               </svg>
             </button>}
-            <StarToggle on={!!ticket.important} onChange={toggleStar} keyHint="S" />
-            {canPin && (
+            {!phone && <StarToggle on={!!ticket.important} onChange={toggleStar} keyHint="S" />}
+            {!phone && canPin && (
               <button type="button" className={`icon-btn pin-toggle${pinned ? " on" : ""}`} aria-pressed={pinned} aria-label={pinned ? "Unpin" : "Pin to top"}
                 title={pinned ? "Pinned to the top of its column. Click to unpin (P)" : "Pin to the top of its column (P)"} onClick={togglePin}>
                 <PinIcon size={16} />
@@ -1108,13 +1132,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               {titleSave === "saving" && <span className="muted small">Saving…</span>}
               {titleSave === "saved" && <span className="saved small"><CheckIcon size={12} /> Saved</span>}
             </span>
-            <span className="head-spacer" />
-            {/* Phones: the cost sits up here, so every tab fits on the row below. */}
-            {phone && costChip}
-            {phone && statusButton}
+            {!phone && <span className="head-spacer" />}
             <JobChip jobs={jobs} ticketId={ticket.id} onOpen={onOpenJobs} />
-            {phone && <HelperIcon slug={slug} ticketId={ticket.id} />}
-            <HelpMenu help={help} phone={phone} onAsk={(kind) => { setTab("chat"); void help.ask(kind); }} />
+            {/* Phones: cost, alerts, help, pin and moving the ticket are in the details sheet (the title opens it). */}
+            {!phone && <HelpMenu help={help} phone={false} onAsk={(kind) => { setTab("chat"); void help.ask(kind); }} />}
             {nav && (
               <span className="ticket-nav">
                 <button className="icon-btn" disabled={!nav.prev || editing} onClick={() => step(nav.prev)} aria-label="Previous ticket"
@@ -1141,22 +1162,12 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             {!phone && <button className="icon-btn" onClick={onClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>}
           </div>
           {runOpen && <RunPopover profile={profile} ticket={ticket} onError={onError} onClose={() => setRunOpen(false)} />}
-          {/* Phones: the whole title on a row of its own, up to two lines, then cut. It folds away while the chat scrolls
-              down (useShrinkHeader); the tabs below stay. The box sits over the text, so a tap types straight into it. */}
-          {phone && (
-            <div className="head-title-wrap" aria-hidden={slim || undefined}><div className="head-title">
-              <div className="phone-title">
-                <span className="phone-title-text" aria-hidden>{title || ticket.title}</span>
-                <textarea ref={titleRef} className="title-input" rows={1} tabIndex={slim ? -1 : undefined} {...titleProps} />
-              </div>
-            </div></div>
-          )}
-          {/* Row 2: the tabs, then the short status (desktop) and the cost. On desktop it folds away while the chat
-              scrolls down (useShrinkHeader); on a phone it stays and the title row folds instead. */}
-          <div className="head-row2-wrap" aria-hidden={(slim && !phone) || undefined}><div className="head-row2">
+          {/* Row 2: the tabs, then the short status (desktop) and the cost. It folds away while the chat scrolls down
+              (useShrinkHeader). */}
+          <div className="head-row2-wrap" aria-hidden={slim || undefined}><div className="head-row2">
             <nav ref={tabsRef} className={`tabs${tabsMore ? " more-right" : ""}`} role="tablist" aria-label="Ticket" onScroll={checkTabs}>
               {tabs.map((t) => (
-                <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} tabIndex={slim && !phone ? -1 : undefined} onClick={() => openTab(t)}>{tabLabel[t]}</button>
+                <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} tabIndex={slim ? -1 : undefined} onClick={() => openTab(t)}>{tabLabel[t]}</button>
               ))}
             </nav>
             <span className="head-spacer" />
@@ -1229,11 +1240,21 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               <Chat slug={slug} ticket={ticket} tickets={tickets} contextRequest={contextRequest} onOpenTicket={onOpenTicket} onError={onError} onPendingProposal={onPendingProposal} onFilesChanged={diffState.reload}
                 onOpenTasks={tabs.includes("family") ? () => openTab("family") : undefined}
                 huddle={huddle} onOpenHuddle={() => setTab("huddle")} onOpenTeam={onOpenTeam} help={help}
-                onOpenOutput={(name) => { setOutputFocus(name); setTab("outputs"); }} />
+                onOpenOutput={(name) => { setOutputFocus(name); setTab("outputs"); }} turnBar={turnBar} />
             )}
           </div>
         </div>
 
+        {sheet && (
+          <TicketSheet slug={slug} ticketId={ticket.id} title={title || ticket.title} tone={ps.tone} focusMove={sheet === "move"} onClose={() => setSheet(null)}
+            status={<span>{shortStatus}{reason && <span className="ts-reason">: {reason}</span>}</span>}
+            columns={statusOptions} current={boardColumnOf(ticket)} onMove={(s) => setStatus(menuPick(ticket, s as Status))}
+            goal={att && goal && !working ? { label: goal.button, onGo: goTo } : null}
+            cost={usage && hasUsage ? costText(usage.totals.costUsd) : null} onCost={() => openTab("usage")}
+            onContext={() => { setTab("chat"); setContextRequest(Date.now()); }}
+            pin={canPin ? { on: pinned, toggle: togglePin } : null} star={{ on: !!ticket.important, toggle: toggleStar }}
+            help={help} onHelp={(kind) => { setTab("chat"); void help.ask(kind); }} onRename={rename} />
+        )}
         {picking && (
           <SessionPicker slug={slug} folder={profile.path} currentTicketId={ticket.id} onClose={() => setPicking(false)}
             onPick={(s) => act(async () => { await api.linkSession(slug, ticket.id, s.id); setPicking(false); })} />
@@ -1310,11 +1331,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
  * the line as its tooltip. It opens the alert's message when there is one.
  */
 function HelperIcon({ slug, ticketId }: { slug: string; ticketId: string }) {
-  const { status } = useHelper();
-  const key = `${slug}/${ticketId}`;
-  const line = status?.on ? status.lines[key] : undefined;
-  if (!line) return null;
-  const msg = status?.lineMsg?.[key];
+  const alert = useHelperLine(slug, ticketId);
+  if (!alert) return null;
+  const { line, msg } = alert;
   const cls = `icon-btn helper-icon${line.startsWith("Urgent") ? " urgent" : ""}`;
   return msg
     ? <a className={cls} href={messageHash(msg)} title={`${line} · open the message`} aria-label={`${line}. Open the message`}><BellIcon size={14} /></a>
