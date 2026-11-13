@@ -1228,8 +1228,13 @@ test("notify: only the ticket's own Claude sends it, and it is told where it wen
 
   // Every message is stored before it is sent: the history lists it, one reads in full, it can be marked read.
   const list = (await (await fetch(`${base}/api/messages`)).json()) as any;
-  const m = list.messages.find((x: any) => x.items?.[0]?.ticketId === t.id);
-  expect(m).toMatchObject({ level: "message", readAt: null, items: [{ question: "Pick A or B" }] });
+  const m = list.rows.find((x: any) => x.oneLine.includes("Pick A or B"));
+  // Light rows only: no text, sends or items.
+  expect(m).toMatchObject({ level: "message", readAt: null, needsYou: true });
+  expect(m.text).toBeUndefined();
+  expect(m.items).toBeUndefined();
+  expect(list).toMatchObject({ hasMore: false });
+  expect(((await (await fetch(`${base}/api/messages/${m.id}/near?tab=all`)).json()) as any)).toMatchObject({ tab: "all", newer: null });
   expect(list.unread).toBeGreaterThan(0);
   expect(((await (await fetch(`${base}/api/messages/${m.id}`)).json()) as any).text).toContain("Pick A or B");
   const read = (await (await send(`${base}/api/messages/${m.id}/read`, {})).json()) as any;
@@ -1243,9 +1248,10 @@ test("notify: only the ticket's own Claude sends it, and it is told where it wen
   expect(all.marked).toBe(before.unread);
   const after = (await (await fetch(`${base}/api/messages`)).json()) as any;
   expect(after.unread).toBe(0);
-  expect(after.messages).toHaveLength(before.messages.length);
-  expect(after.messages.every((x: any) => x.readAt)).toBe(true);
-  expect(after.messages.find((x: any) => x.id === m.id).readAt).toBe(read.message.readAt);
+  expect(after.rows).toHaveLength(before.rows.length);
+  expect(after.rows.every((x: any) => x.readAt)).toBe(true);
+  expect(after.rows.find((x: any) => x.id === m.id).readAt).toBe(read.message.readAt);
+  expect((await fetch(`${base}/api/messages/${m.id}/near`, { headers: run })).status).toBe(403);
   expect((await send(`${base}/api/messages/read-all`, {}, run)).status).toBe(403);
   expect((await fetch(`${base}/api/messages/m_nope`)).status).toBe(404);
   expect((await fetch(`${base}/api/messages`, { headers: run })).status).toBe(403);

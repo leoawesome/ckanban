@@ -93,28 +93,10 @@ describe("summary cadence", () => {
 
 describe("message page words", () => {
   test("board links on their own line are left out of the page; other text stays", async () => {
-    const { withoutLinks, messageNeighbours, stillWaitingLine } = await import("../web/src/helperText");
+    const { withoutLinks, stillWaitingLine } = await import("../web/src/helperText");
     const old = "Pricing\nStop it?\nhttps://mac.ts.net/#/kb/t_1\n\n- Docs (kanban): Ready\n  https://mac.ts.net/#/kanban/t_2\n\nSee https://ckanban.dev for more";
     expect(withoutLinks(old)).toBe("Pricing\nStop it?\n\n- Docs (kanban): Ready\n\nSee https://ckanban.dev for more");
-    const list = [{ id: "c" }, { id: "b" }, { id: "a" }];
-    expect(messageNeighbours(list, "b")).toEqual({ newer: "c", older: "a" });
-    expect(messageNeighbours(list, "c")).toEqual({ newer: null, older: "b" });
-    expect(messageNeighbours(list, "zz")).toEqual({ newer: null, older: null });
     expect(stillWaitingLine({ stillCount: 27, oldestAt: new Date(2026, 9, 12).toISOString(), new: [{} as any] })).toBe("27 more still wait on you, oldest from 12 Oct.");
-  });
-
-  test("next/previous keeps the list the first message page chose (held items stay while stepping)", async () => {
-    const { listWithHeld, messageNeighbours } = await import("../web/src/helperText");
-    // History without held items; a held message opened (from the Inbox): its list has held items.
-    expect(listWithHeld(null, "h", false, true)).toBe(true);
-    // Stepping from it to a normal message keeps that list, so stepping back returns to the held one.
-    const list = [{ id: "n2" }, { id: "h" }, { id: "n1" }];
-    const to = messageNeighbours(list, "h").older!;
-    expect(listWithHeld({ to, withHeld: true }, "n1", false, false)).toBe(true);
-    expect(messageNeighbours(list, "n1").newer).toBe("h");
-    // Opened afresh (not by stepping): the history's choice again.
-    expect(listWithHeld({ to: "n1", withHeld: true }, "n2", false, false)).toBe(false);
-    expect(listWithHeld(null, "n2", true, false)).toBe(true);
   });
 });
 

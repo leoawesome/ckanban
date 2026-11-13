@@ -1,35 +1,68 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
-  anyItemOpen, asksNight, clock, dayLabel, groupByDay, helperApi, levelLabel, levelTone, listWithHeld, messageHash, messageNeighbours, nightQuestion, rowsByBoard, sendTrail,
-  itemStateKey, itemStateLabel, setHelperStatus, setUnread, stillWaitingLine, tapWord, useHelper, userTrail, withoutLinks, type HelperStatus, type ItemState, type Message, type Stepping, type SummaryRow, type SummaryView,
+  anyItemOpen, appendRows, hashMoved, asksNight, asTab, clock, dayLabel, emptyLine, entryKey, entryLines, entryRows, foldByDay, helperApi, isFresh, levelLabel, levelTone, loadingMoreLine,
+  MESSAGE_TABS, messageHash, nightQuestion, prependRows, rowIcon, rowsByBoard, itemStateKey, itemStateLabel, setHelperStatus, setUnread, stillWaitingLine, tapWord, useHelper,
+  userTrail, withoutLinks, type HelperStatus, type ItemState, type ListEntry, type Message, type MessageRow, type MessageTab, type SummaryRow, type SummaryView,
 } from "./helper";
 import { ChevronDownIcon, ChevronUpIcon } from "./icons";
 import { KeyHint } from "./KeyHint";
 import { isTyping, panelStep } from "./keynav";
+import { openFromList, stepTo } from "./msgNav";
+import { useSwipeBack } from "./sheet";
 import { useNow } from "./useNow";
 import { usePhone } from "./usePhone";
 import { toast } from "./toast";
 
-/** "Show what the helper kept quiet" on the history, kept for this tab so a message page's up/down walks the same list. */
-const HELD_KEY = "ck.messages.held";
-const readHeld = () => {
+/** The Messages tab chosen, kept for this browser tab so a message page's up/down walks the same list. */
+const TAB_KEY = "ck.messages.tab";
+const readTab = (): MessageTab => {
   try {
-    return sessionStorage.getItem(HELD_KEY) === "1";
+    return asTab(sessionStorage.getItem(TAB_KEY));
   } catch {
-    return false;
+    return "needs";
   }
 };
-const writeHeld = (on: boolean) => {
+const writeTab = (tab: MessageTab) => {
   try {
-    sessionStorage.setItem(HELD_KEY, on ? "1" : "0");
+    sessionStorage.setItem(TAB_KEY, tab);
   } catch {}
 };
 
 /**
- * Next/previous carries the list the first message page chose (with or without held items) to the page it steps to,
- * so stepping from a held message to a normal one and back returns to the held one.
+ * The Needs you tab as the user saw it this session: its rows' ids, and messages stepped to or opened unread from it.
+ * Opening one marks it read, so it leaves the tab; up/down send these so it still steps (both ways).
  */
-let stepping: Stepping | null = null;
+const SEEN_KEY = "ck.messages.needsSeen";
+const SEEN_MAX = 300;
+export function readSeen(): string[] {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(SEEN_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+/** reset: the tab loaded again from the top (what it shows now is the list the user sees). */
+export function noteSeen(ids: (string | null | undefined)[], reset = false): void {
+  const add = ids.filter((x): x is string => !!x);
+  if (!add.length && !reset) return;
+  const all = [...new Set([...(reset ? [] : readSeen()), ...add])].slice(-SEEN_MAX);
+  try {
+    sessionStorage.setItem(SEEN_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+/**
+ * What the list had loaded when a message was opened from it (rows, scroll spot, open groups): Back shows it again at
+ * once, in the same place, then adds only what came in since.
+ */
+interface ListCache { tab: MessageTab; rows: MessageRow[]; hasMore: boolean; needs: number; scroll: number; open: string[] }
+let listCache: ListCache | null = null;
+
+/** A message page marked one read: the list it returns to shows it read. */
+function noteRead(id: string, at: string) {
+  if (listCache) listCache = { ...listCache, rows: listCache.rows.map((r) => (r.id === id && !r.readAt ? { ...r, readAt: at } : r)) };
+}
 
 /**
  * The helper's status line: "Helper on, checked 2:41, nothing waits on you", red when it is paused or failing, and
@@ -106,34 +139,115 @@ export function TellHelper({ hint = TELL_HINT, multiline }: { hint?: string; mul
   );
 }
 
-/** #/~messages: every message, newest first, grouped by day; "Show what the helper kept quiet" adds what the helper held (its log). */
+/**
+ * #/~messages: tabs (Needs you, All, Summaries, Kept quiet), then the messages newest first under day headings, a pause
+ * and its missed waits as one row, runs of updates folded into "N updates". Loads 30 at a time as you scroll; new
+ * messages are added on top without loading the list again.
+ */
 export function MessagesHistory({ onBack }: { onBack: () => void }) {
   const { status, messagesRev } = useHelper();
-  // Back on the history: a message opened from here picks its list afresh.
-  useEffect(() => { stepping = null; }, []);
-  const [held, setHeldState] = useState(readHeld);
-  const setHeld = (on: boolean) => {
-    writeHeld(on);
-    setHeldState(on);
-  };
-  const [list, setList] = useState<Message[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const phone = usePhone();
   const now = useNow();
+  const kept = listCache?.tab === readTab() ? listCache : null;
+  const [tab, setTabState] = useState<MessageTab>(kept?.tab ?? readTab);
+  const [rows, setRows] = useState<MessageRow[] | null>(kept?.rows ?? null);
+  const [hasMore, setHasMore] = useState(kept?.hasMore ?? false);
+  const [needs, setNeeds] = useState(kept?.needs ?? 0);
+  const [open, setOpen] = useState<Set<string>>(() => new Set(kept?.open ?? []));
+  const [error, setError] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const page = useRef<HTMLElement>(null);
+  const live = useRef({ tab, rows, hasMore, needs, open });
+  live.current = { tab, rows, hasMore, needs, open };
+  // Requests for an older tab are dropped when they come back.
+  const gen = useRef(0);
+
+  // Back from a message: the same scroll spot.
+  useLayoutEffect(() => {
+    if (kept && page.current) page.current.scrollTop = kept.scroll;
+  }, []);
+  // The scroll spot as it moves (the page is gone by the time the list unmounts).
+  const scroll = useRef(kept?.scroll ?? 0);
+  useEffect(() => () => {
+    const l = live.current;
+    if (l.rows) listCache = { tab: l.tab, rows: l.rows, hasMore: l.hasMore, needs: l.needs, scroll: scroll.current, open: [...l.open] };
+  }, []);
+
+  const loadFirst = (t: MessageTab) => {
+    const g = ++gen.current;
+    helperApi.messages(t).then((r) => {
+      if (g !== gen.current) return;
+      if (t === "needs") noteSeen(r.rows.map((x) => x.id), true);
+      setRows(r.rows); setHasMore(r.hasMore); setNeeds(r.needs); setUnread(r.unread); setError(null);
+    }, (e) => g === gen.current && setError(e.message));
+  };
+  const setTab = (t: MessageTab) => {
+    if (t === tab) return;
+    writeTab(t);
+    setTabState(t);
+    setRows(null);
+    setHasMore(false);
+    setOpen(new Set());
+    if (page.current) page.current.scrollTop = 0;
+    scroll.current = 0;
+    loadFirst(t);
+  };
+
+  // First load (or nothing kept), then on each change only what is newer than the top row.
+  const firstRev = useRef(messagesRev);
   useEffect(() => {
-    let live = true;
-    helperApi.messages(held).then((r) => { if (live) { setList(r.messages); setError(null); setUnread(r.unread); } }, (e) => live && setError(e.message));
-    return () => { live = false; };
-  }, [held, messagesRev]);
-  // "Mark all read": only while something shows New; the list stays, the New badges and the count go.
+    if (!kept) loadFirst(tab);
+  }, []);
+  useEffect(() => {
+    if (messagesRev === firstRev.current && !kept) return;
+    const { tab: t, rows: have } = live.current;
+    if (!have) return;
+    const g = gen.current;
+    const top = have[0];
+    helperApi.messages(t, top ? { after: top, limit: 100 } : {}).then((r) => {
+      if (g !== gen.current) return;
+      if (t === "needs") noteSeen(r.rows.map((x) => x.id));
+      setNeeds(r.needs);
+      setUnread(r.unread);
+      if (!top) setRows(r.rows), setHasMore(r.hasMore);
+      else if (r.hasMore) loadFirst(t); // a lot came in: start from the top again
+      else if (r.rows.length) setRows((l) => l && prependRows(l, r.rows));
+    }, () => {});
+  }, [messagesRev]);
+
+  // The next 30 when the bottom comes near.
+  const more = () => {
+    const { tab: t, rows: have, hasMore: any } = live.current;
+    if (!have?.length || !any || loadingMore) return;
+    setLoadingMore(true);
+    const g = gen.current;
+    helperApi.messages(t, { before: have.at(-1) }).then((r) => {
+      if (g !== gen.current) return;
+      if (t === "needs") noteSeen(r.rows.map((x) => x.id));
+      setRows((l) => l && appendRows(l, r.rows));
+      setHasMore(r.hasMore);
+      setNeeds(r.needs);
+    }, (e) => toast((e as Error).message, { tone: "error" })).finally(() => setLoadingMore(false));
+  };
+  const sentinel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || !hasMore || loadingMore) return;
+    const io = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting)) more(); }, { root: page.current, rootMargin: "600px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, loadingMore, rows?.length]);
+
+  // "Mark all read": only while something shows New; the list stays, the dots and the count go.
   const [marking, setMarking] = useState(false);
-  const anyNew = !!list?.some((m) => !m.readAt && !m.held);
+  const anyNew = !!rows?.some(isFresh);
   const markAll = async () => {
     if (marking) return;
     setMarking(true);
     try {
       const r = await helperApi.markAllRead();
       const at = new Date().toISOString();
-      setList((l) => l && l.map((m) => (m.readAt || m.held ? m : { ...m, readAt: at })));
+      setRows((l) => l && l.map((m) => (isFresh(m) ? { ...m, readAt: at } : m)));
       setUnread(r.unread);
       toast(r.marked === 1 ? "Marked 1 message read." : `Marked ${r.marked} messages read.`, { tone: "ok" });
     } catch (e) {
@@ -143,63 +257,109 @@ export function MessagesHistory({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const phone = usePhone();
+  const toggle = (e: ListEntry) => {
+    const ids = entryRows(e).map((r) => r.id);
+    setOpen((s) => {
+      const n = new Set(s);
+      if (ids.some((id) => n.has(id))) ids.forEach((id) => n.delete(id));
+      else n.add(ids[0]);
+      return n;
+    });
+  };
 
   return (
-    <main className="messages-page">
+    <main className="messages-page" ref={page} onScroll={(e) => { scroll.current = e.currentTarget.scrollTop; }}>
       <div className="messages-top">
         <button className="link-btn msg-back" onClick={onBack}>‹ Board</button>
         <h2>Messages</h2>
         <span className="msg-top-right">
-          {anyNew && <button className="btn small msg-mark-all" disabled={marking} onClick={() => void markAll()}>{marking ? "Marking…" : "Mark all read"}</button>}
+          {anyNew && <button className="link-btn msg-mark-all" disabled={marking} onClick={() => void markAll()}>{marking ? "Marking…" : "Mark all read"}</button>}
         </span>
       </div>
       <div className="messages-body">
         {/* A phone has this line on Now already. */}
         {!phone && <HelperStatusLine status={status} />}
-        <label className="msg-switch-row" title="Only changes what you see here; the helper works the same.">
-          <span>Show what the helper kept quiet</span>
-          <input type="checkbox" role="switch" className="switch" checked={held} onChange={(e) => setHeld(e.target.checked)} />
-        </label>
-        {!phone && <div className="muted small msg-switch-hint">Only changes what you see here; the helper works the same.</div>}
+        <div className="msg-tabs" role="tablist" aria-label="Which messages">
+          {MESSAGE_TABS.map((t) => (
+            <button key={t.id} role="tab" aria-selected={tab === t.id} className={`msg-tab${tab === t.id ? " on" : ""}`} onClick={() => setTab(t.id)}>
+              {t.label}
+              {t.id === "needs" && needs > 0 && <span className="msg-tab-n" aria-label={`, ${needs}`}>{needs}</span>}
+            </button>
+          ))}
+        </div>
+        {tab === "quiet" && <div className="muted small msg-tab-hint">What the helper held back for a later summary. Only changes what you see here.</div>}
         {error && <div className="form-error" role="alert">{error}</div>}
-        {!list && !error && <div className="muted small"><span className="spinner" /> Loading…</div>}
-        {list && !list.length && <p className="muted">No messages yet. When the helper tells you something, it shows here.</p>}
-        {list && groupByDay(list, now).map((g) => (
-          <section key={g.day}>
-            <h3 className="msg-day">{g.day}</h3>
+        {!rows && !error && <div className="muted small"><span className="spinner" /> Loading…</div>}
+        {rows && !rows.length && <p className="muted">{emptyLine(tab)}</p>}
+        {rows && foldByDay(rows, now).map((d) => (
+          <section key={d.day}>
+            <h3 className="msg-day">{d.day}</h3>
             <div className="msg-card msg-list">
-              {g.messages.map((m) => {
-                const fresh = !m.readAt && !m.held;
-                const badge = <span className={`msg-badge b-${levelTone(m.level, m.held, m.practice)}`}>{levelLabel(m.level, m.held, m.practice)}</span>;
-                // A phone row: the badge and the line (two lines at most), the time on the right; unread has a dot.
-                if (phone) return (
-                  <a key={m.id} href={messageHash(m.id)} className={`msg-row compact${m.held ? " held" : ""}${fresh ? " new" : ""}`}
-                    aria-label={`${fresh ? "Unread. " : ""}${levelLabel(m.level, m.held, m.practice)}: ${m.oneLine}, ${clock(m.at)}`}>
-                    <span className="msg-row-line">{badge} {m.oneLine}</span>
-                    <span className="msg-row-time muted small">{fresh && <i className="msg-dot" aria-hidden />}{clock(m.at)}</span>
-                  </a>
-                );
-                return (
-                  <a key={m.id} href={messageHash(m.id)} className={`msg-row${m.held ? " held" : ""}${fresh ? " new" : ""}`}>
-                    <span className="msg-row-head">
-                      {badge}
-                      {fresh && <span className="msg-badge b-new">New</span>}
-                      <span className="grow" />
-                      <span className="muted small">{clock(m.at)}{m.readAt ? " · read" : ""}</span>
-                    </span>
-                    <span className="msg-row-line">{m.oneLine}</span>
-                    {m.sends.length > 0 && <span className="muted small">{sendTrail(m)}</span>}
-                    {m.why && m.level !== "summary" && <span className="muted small msg-row-why">Why: {m.why}</span>}
-                  </a>
-                );
-              })}
+              {d.entries.map((e) => <EntryRow key={entryKey(e)} entry={e} open={entryRows(e).some((r) => open.has(r.id))} onToggle={() => toggle(e)} />)}
             </div>
           </section>
         ))}
-        <TellHelper hint={'Lasting preferences it should always follow, like "Never wake me for docs tickets." Not for one-off requests.'} />
+        {hasMore && <div ref={sentinel} className="msg-more muted" role="status"><span className="spinner" />{loadingMoreLine(rows?.at(-1), now)}</div>}
+        {rows && !hasMore && <TellHelper hint={'Lasting preferences it should always follow, like "Never wake me for docs tickets." Not for one-off requests.'} />}
       </div>
     </main>
+  );
+}
+
+/** A row opens its message on a new history entry, so Back returns to this list. */
+const openRow = (id: string) => (e: ReactMouseEvent) => {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+  e.preventDefault();
+  const from = location.href;
+  openFromList(history, id);
+  hashMoved(from);
+};
+
+/** One line of the list: a message, a pause with its missed waits, or "N updates" that opens in place. */
+function EntryRow({ entry, open, onToggle }: { entry: ListEntry; open: boolean; onToggle: () => void }) {
+  const { title, sub } = entryLines(entry);
+  const icon = rowIcon(entry);
+  const rows = entryRows(entry);
+  const fresh = rows.some(isFresh);
+  const first = rows[0];
+  const body = (
+    <>
+      <span className={`msg-ic i-${icon.tone}`} aria-hidden>{icon.glyph}</span>
+      <span className="msg-mid">
+        <span className="msg-t">{title}</span>
+        {sub && <span className="msg-s">{sub}</span>}
+      </span>
+      <span className="msg-tm">
+        {fresh && <i className="msg-dot" aria-hidden />}
+        {clock(first.at)}
+        {entry.kind === "group" && <span className="msg-chev" aria-hidden>›</span>}
+      </span>
+    </>
+  );
+  const cls = `msg-row${fresh ? " new" : ""}${rows.every((r) => r.held) ? " held" : ""}`;
+  const label = `${fresh ? "Unread. " : ""}${title}${sub ? `. ${sub}` : ""}, ${clock(first.at)}`;
+  if (entry.kind !== "group") {
+    const id = entry.kind === "pair" ? entry.missed.id : entry.row.id;
+    return <a href={messageHash(id)} className={cls} aria-label={label} onClick={openRow(id)}>{body}</a>;
+  }
+  return (
+    <div className={`msg-grp${open ? " open" : ""}`}>
+      <button type="button" className={cls} aria-expanded={open} aria-label={label} onClick={onToggle}>{body}</button>
+      {open && (
+        <div className="msg-kids">
+          {entry.rows.map((r) => (
+            <a key={r.id} href={messageHash(r.id)} className={`msg-row kid${isFresh(r) ? " new" : ""}`} onClick={openRow(r.id)}
+              aria-label={`${isFresh(r) ? "Unread. " : ""}${r.title}${r.sub ? `. ${r.sub}` : ""}, ${clock(r.at)}`}>
+              <span className="msg-mid">
+                <span className="msg-t">{r.title}</span>
+                {r.sub && <span className="msg-s">{r.sub}</span>}
+              </span>
+              <span className="msg-tm">{isFresh(r) && <i className="msg-dot" aria-hidden />}{clock(r.at)}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -213,23 +373,30 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"got-it" | "not-urgent" | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const [list, setList] = useState<Message[] | null>(null);
   const now = useNow();
-  // The list the history shows (with held items when it shows them, or when this one is held): up/down walk it. While
-  // stepping, the list the first page chose stays.
-  const withHeld = listWithHeld(stepping, id, readHeld(), !!m?.held);
+  // Swipe right to go back to the list (phone).
+  const pageRef = useRef<HTMLElement>(null);
+  const swipe = useSwipeBack(pageRef, onBack);
+  // Up/down walk the list's tab (the server picks Kept quiet or All when this message isn't in it).
+  const [nav, setNav] = useState<{ newer: string | null; older: string | null }>({ newer: null, older: null });
   useEffect(() => {
     let live = true;
-    helperApi.messages(withHeld).then((r) => live && setList(r.messages), () => {});
+    const tab = readTab();
+    helperApi.near(id, tab, tab === "needs" ? readSeen() : []).then((r) => {
+      // Needs you: what it steps to was in the tab now, so it keeps stepping once read.
+      if (r.tab === "needs") noteSeen([r.newer, r.older]);
+      if (live) setNav({ newer: r.newer, older: r.older });
+    }, () => {});
     return () => { live = false; };
-  }, [withHeld, messagesRev]);
-  const nav = list ? messageNeighbours(list, id) : { newer: null, older: null };
-  const navRef = useRef({ ...nav, withHeld });
-  navRef.current = { ...nav, withHeld };
+  }, [id, messagesRev]);
+  const navRef = useRef(nav);
+  navRef.current = nav;
+  // Same history entry, so one Back still returns to the list.
   const go = (to: string | null) => {
     if (!to) return;
-    stepping = { to, withHeld: navRef.current.withHeld };
-    location.hash = messageHash(to);
+    const from = location.href;
+    stepTo(history, to);
+    hashMoved(from);
   };
   useEffect(() => {
     // ↑/K the newer message, ↓/J the older one (as in the ticket panel); Alt+↑/↓ also while typing.
@@ -263,8 +430,11 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
     helperApi.message(id).then(async (msg) => {
       if (!live) return;
       setM(msg);
+      // Opened unread (a notification, a link) while the list's tab is Needs you: it was in that tab.
+      if (!msg.readAt && !msg.held && readTab() === "needs") noteSeen([id]);
       if (!msg.readAt) {
         const r = await helperApi.markRead(id).catch(() => null);
+        if (r?.message.readAt) noteRead(id, r.message.readAt);
         if (r && live) { setM(r.message); setUnread(r.unread); }
       }
     }, (e) => live && setError(/not found/i.test(e.message) ? "This message is gone: messages are kept for 30 days (the last 500), and what the helper kept quiet for 7 days (the last 200)." : e.message));
@@ -289,7 +459,7 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
 
   if (error) {
     return (
-      <main className="messages-page">
+      <main className="messages-page message-page" ref={pageRef} {...swipe}>
         <div className="messages-top"><button className="link-btn msg-back" onClick={onBack}>‹ Messages</button><span /><span /></div>
         <div className="messages-body"><p className="muted">{error}</p></div>
       </main>
@@ -306,7 +476,7 @@ export function MessagePage({ id, onBack, onOpenTicket }: { id: string; onBack: 
   const boards = [...new Set(m.items.map((i) => i.boardName))];
   const alert = m.level === "urgent" || m.level === "reminder" || !!m.practice;
   return (
-    <main className="messages-page message-page">
+    <main className="messages-page message-page" ref={pageRef} {...swipe}>
       <div className="messages-top">
         <button className="link-btn msg-back" onClick={onBack}>‹ Messages</button>
         <span />

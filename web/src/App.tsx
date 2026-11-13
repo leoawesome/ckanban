@@ -60,7 +60,8 @@ import { hasOpenPr, runCounts } from "./boardStats";
 import { ParallelConfirm } from "./ParallelConfirm";
 import { AvatarEditorHost } from "./AvatarEditor";
 import { closeSteps, openDepth } from "./ticketHistory";
-import { helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, takeReadFromHash, useHelper } from "./helper";
+import { hashMoved, helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, takeReadFromHash, useHelper } from "./helper";
+import { backToBoard, backToList, settleMessagesEntry } from "./msgNav";
 import { HelperNotice, MessagePage, MessagesHistory } from "./Messages";
 import { snoozeBody, snoozeUntil, snoozeWords, type SnoozeLength } from "./snooze";
 
@@ -393,8 +394,16 @@ export function App() {
 
   // Browser Back/Forward and pasted links drive the open board and ticket.
   useEffect(() => {
-    const onHash = () => {
+    // A Messages page opened by a fresh load (a notification, a link): the list and the board go under it, so Back works.
+    settleMessagesEntry(history, location.hash, null, hashFor(slugRef.current));
+    setMsgRoute(messagesRoute(location.hash));
+    const onHash = (e: HashChangeEvent) => {
       takeReadFromHash();
+      let prev = "";
+      try {
+        prev = new URL(e.oldURL).hash;
+      } catch {}
+      settleMessagesEntry(history, location.hash, prev, hashFor(slugRef.current));
       setMsgRoute(messagesRoute(location.hash));
       if (location.hash.startsWith("#/~")) return;
       const h = parseHash();
@@ -1292,8 +1301,8 @@ export function App() {
 
       {msgRoute ? (
         msgRoute.id
-          ? <MessagePage key={msgRoute.id} id={msgRoute.id} onBack={() => { location.hash = MESSAGES_HASH; }} onOpenTicket={openFrom} />
-          : <MessagesHistory onBack={() => { location.hash = hashFor(slug); }} />
+          ? <MessagePage key={msgRoute.id} id={msgRoute.id} onBack={() => { if (backToList(history) === "replace") hashMoved(); }} onOpenTicket={openFrom} />
+          : <MessagesHistory onBack={() => { if (backToBoard(history, hashFor(slug)) === "replace") hashMoved(); }} />
       ) : profiles === null ? (
         <div className="empty"><span className="spinner" /> Loading boards…</div>
       ) : !profile ? (

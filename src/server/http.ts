@@ -44,6 +44,7 @@ import { FileError, findInRoots, listDir, openWithSystem, readFileForView, ticke
 import { boardToolsSource, McpError, McpManager } from "./mcp";
 import { MacOnlyError, MessageError, Notifier, TG_PAIR_FROM_MAC } from "./notify";
 import { HelperError, type HelperRunner } from "./helper/runner";
+import { asMessageTab, nearOf, needsShown, pageOf, toRow, type MessageCursor } from "./helper/messages";
 import { DeviceError, TAKE_WAIT_MS, type DeviceUser } from "./devices";
 import { ChromeError, chromeSetting, resolveChromeSetting } from "./chromes";
 import { PushService } from "./push";
@@ -985,9 +986,20 @@ export function createServer(deps: ServerDeps) {
     if (parts[0] === "messages") {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "board runs can't read the user's messages");
       const store = notifier.helper.messages;
+      // The list, one page of a tab at a time, light rows only: ?tab=needs|all|summaries|quiet&limit=30, then
+      // beforeAt+beforeId (the next page down) or afterAt+afterId (only what came in since the newest row shown).
       if (parts.length === 1 && m === "GET") {
-        const held = url.searchParams.get("held") === "1";
-        return json({ messages: store.listNewest({ held }), unread: store.unread() });
+        const q = url.searchParams;
+        const tab = asMessageTab(q.get("tab") ?? "all");
+        const limit = Math.min(Math.max(Math.floor(Number(q.get("limit"))) || 30, 1), 100);
+        const cursor = (side: "before" | "after"): MessageCursor | null => {
+          const at = q.get(`${side}At`), id = q.get(`${side}Id`);
+          return at && id && !Number.isNaN(Date.parse(at)) ? { at, id } : null;
+        };
+        const newest = store.listNewest({ held: true });
+        const needs = notifier.helper.needsYou(newest);
+        const page = pageOf(newest, { tab, limit, before: cursor("before"), after: cursor("after") }, needs);
+        return json({ rows: page.rows.map((x) => toRow(x, needs)), hasMore: page.hasMore, needs: needsShown(newest, needs), unread: store.unread() });
       }
       // "Mark all read" on the Messages page: one write, the same messages.updated event single reads send.
       if (parts.length === 2 && parts[1] === "read-all" && m === "POST") {
@@ -998,6 +1010,14 @@ export function createServer(deps: ServerDeps) {
       if (parts.length === 2 && m === "GET") {
         if (!msg) throw new HttpError(404, "message not found");
         return json(notifier.helper.withStates(msg));
+      }
+      // A message page's up/down: the newer and older message in the list's tab (or the tab the message belongs to).
+      if (parts.length === 3 && parts[2] === "near" && m === "GET") {
+        if (!msg) throw new HttpError(404, "message not found");
+        const newest = store.listNewest({ held: true });
+        const needs = notifier.helper.needsYou(newest);
+        // keep: the Needs you ids the user's list showed this session; read since, they left the tab, but still step.
+        return json(nearOf(newest, msg, asMessageTab(url.searchParams.get("tab") ?? "all"), needs, url.searchParams.get("keep")));
       }
       if (parts.length === 3 && parts[2] === "read" && m === "POST") {
         if (!msg) throw new HttpError(404, "message not found");

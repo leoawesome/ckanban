@@ -5,8 +5,8 @@
 import type { NotifyMessage, NotifySettings } from "../notify";
 import type { Store } from "../store";
 import { Channels, tapTicket, type ChannelResult, type OutMessage } from "./channels";
-import { MessageStore, type MessageItem, type NewMessage, type StoredMessage } from "./messages";
-import { pending, WaitStore, type NewWait, type ToldVia, type WaitRecord } from "./waits";
+import { MessageStore, needsYouIds, type MessageItem, type NewMessage, type StoredMessage } from "./messages";
+import { pending, recordForMessage, WaitStore, type NewWait, type ToldVia, type WaitRecord } from "./waits";
 
 /** Why the runner hears about a record. */
 export type WaitEventReason = "new" | "urgent" | "seeded" | "restart" | "message";
@@ -346,6 +346,22 @@ export class HelperCore {
       } else out[k] = { state: "open" };
     }
     return out;
+  }
+
+  /** The Messages screen's "Needs you" ids over the newest-first list (one pass, records indexed by key). */
+  needsYou(newest: StoredMessage[] = this.messages.listNewest()): Set<string> {
+    const byBase = new Map<string, WaitRecord[]>();
+    for (const r of this.waits.all()) {
+      const base = r.key.split("#")[0];
+      const list = byBase.get(base);
+      if (list) list.push(r);
+      else byBase.set(base, [r]);
+    }
+    return needsYouIds(newest, (key, m) => {
+      const rec = recordForMessage(byBase.get(key.split("#")[0]) ?? [], key, m);
+      if (!rec || rec.closedAt || !this.d.store.getTicket(rec.board, rec.ticketId)) return null;
+      return rec.key;
+    });
   }
 
   /** A message with its tickets' states (GET /api/messages/:id and the page's buttons). */

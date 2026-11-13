@@ -1,4 +1,5 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
+import { swipeCloses, swipeIntent } from "./msgNav";
 import { PHONE_QUERY } from "./usePhone";
 
 /**
@@ -129,5 +130,61 @@ export function useSwipeClose(box: RefObject<HTMLElement | null>, close: () => v
       if (dy > 90 || flick) close();
     },
     onPointerCancel: reset,
+  };
+}
+
+/**
+ * Swipe right on a page to go back (phone, touch only): the page follows the finger and springs back when the swipe is
+ * short. Never starts on buttons, links or fields, nor while text is selected; a mostly vertical move stays a scroll.
+ * The page needs `touch-action: pan-y` so the browser leaves sideways moves to it.
+ */
+export function useSwipeBack(box: RefObject<HTMLElement | null>, back: () => void) {
+  const start = useRef<{ x: number; y: number; t: number; id: number; intent: "back" | "scroll" | null } | null>(null);
+  const spring = (el: HTMLElement) => {
+    el.style.transition = "transform 160ms ease-out";
+    el.style.transform = "";
+    setTimeout(() => { el.style.transition = ""; }, 170);
+  };
+  return {
+    onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
+      start.current = null;
+      if (e.pointerType !== "touch" || !window.matchMedia(PHONE_QUERY).matches) return;
+      if ((e.target as HTMLElement).closest("button, a, input, select, textarea, label, summary, [contenteditable='true'], [role=switch]")) return;
+      if (window.getSelection()?.toString()) return;
+      start.current = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId, intent: null };
+    },
+    onPointerMove: (e: ReactPointerEvent<HTMLElement>) => {
+      const s = start.current;
+      const el = box.current;
+      if (!s || s.id !== e.pointerId || !el) return;
+      const dx = e.clientX - s.x;
+      if (!s.intent) {
+        s.intent = swipeIntent(dx, e.clientY - s.y);
+        if (s.intent === "back") e.currentTarget.setPointerCapture?.(e.pointerId);
+      }
+      if (s.intent !== "back") return;
+      if (window.getSelection()?.toString()) {
+        start.current = null;
+        spring(el);
+        return;
+      }
+      el.style.transform = `translateX(${Math.max(0, dx)}px)`;
+    },
+    onPointerUp: (e: ReactPointerEvent<HTMLElement>) => {
+      const s = start.current;
+      const el = box.current;
+      start.current = null;
+      if (!s || s.id !== e.pointerId || s.intent !== "back" || !el) return;
+      const dx = e.clientX - s.x;
+      if (!swipeCloses(dx, Date.now() - s.t)) return spring(el);
+      el.style.transition = "transform 140ms ease-in";
+      el.style.transform = "translateX(100%)";
+      setTimeout(back, 130);
+    },
+    onPointerCancel: () => {
+      const el = box.current;
+      if (start.current?.intent === "back" && el) spring(el);
+      start.current = null;
+    },
   };
 }

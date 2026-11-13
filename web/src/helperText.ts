@@ -241,25 +241,6 @@ export function stillWaitingLine(v: Pick<SummaryView, "stillCount" | "oldestAt" 
   return `${n}${v.new.length ? " more" : ""} still ${n === 1 ? "waits" : "wait"} on you${day ? `, oldest from ${day}` : ""}.`;
 }
 
-/** The newer and older message next to this one in a newest-first list (null at either end or when it isn't there). */
-export function messageNeighbours(list: Pick<Message, "id">[], id: string): { newer: string | null; older: string | null } {
-  const i = list.findIndex((m) => m.id === id);
-  if (i < 0) return { newer: null, older: null };
-  return { newer: list[i - 1]?.id ?? null, older: list[i + 1]?.id ?? null };
-}
-
-/** What next/previous carried from the message page it stepped from: the page it went to and that page's list. */
-export interface Stepping { to: string; withHeld: boolean }
-
-/**
- * Whether a message page's next/previous walks the list with held items: the list carried while stepping, else the
- * history's "Show held items" choice, or yes when this message is held.
- */
-export function listWithHeld(stepping: Stepping | null, id: string, historyHeld: boolean, messageHeld: boolean): boolean {
-  if (stepping?.to === id) return stepping.withHeld;
-  return historyHeld || messageHeld;
-}
-
 /** The night question, as the board asks it (src/server/helper/settings.ts nightQuestion). */
 export function nightQuestion(night: { start: string; end: string }): string {
   return `Should urgent alerts wake you at night (${night.start}-${night.end})? I'd only do it when harm keeps growing, like customers billed twice.`;
@@ -276,4 +257,146 @@ export function spendLine(today: { checks: number; costUsd: number } | undefined
   if (!today.checks) return "Today: no checks yet";
   const usd = today.costUsd > 0 && today.costUsd < 0.01 ? "<$0.01" : `$${today.costUsd.toFixed(2)}`;
   return `Today: ${today.checks} check${today.checks === 1 ? "" : "s"}, ${usd}`;
+}
+
+// ---- the Messages list: tabs, light rows, folding ----
+
+/** The Messages screen's tabs (src/server/helper/messages.ts MessageTab); Needs you opens first. */
+export type MessageTab = "needs" | "all" | "summaries" | "quiet";
+export const MESSAGE_TABS: { id: MessageTab; label: string }[] = [
+  { id: "needs", label: "Needs you" }, { id: "all", label: "All" }, { id: "summaries", label: "Summaries" }, { id: "quiet", label: "Kept quiet" },
+];
+export const asTab = (v: unknown): MessageTab => (MESSAGE_TABS.some((t) => t.id === v) ? (v as MessageTab) : "needs");
+
+/** One row of the list (GET /api/messages; src/server/helper/messages.ts MessageRow). */
+export interface MessageRow {
+  id: string;
+  at: string;
+  level: MessageLevel;
+  oneLine: string;
+  title: string;
+  sub: string;
+  readAt: string | null;
+  held?: boolean;
+  practice?: boolean;
+  needsYou?: boolean;
+}
+
+/** GET /api/messages: one page of a tab. */
+export interface MessagePage { rows: MessageRow[]; hasMore: boolean; needs: number; unread: number }
+
+/** The query for a page: the tab, then the row to load below (older) or above (newer). */
+export function pageQuery(tab: MessageTab, o: { before?: MessageRow | null; after?: MessageRow | null; limit?: number } = {}): string {
+  const q = new URLSearchParams({ tab, limit: String(o.limit ?? 30) });
+  if (o.before) { q.set("beforeAt", o.before.at); q.set("beforeId", o.before.id); }
+  if (o.after) { q.set("afterAt", o.after.at); q.set("afterId", o.after.id); }
+  return q.toString();
+}
+
+/** Newer rows on top of the loaded ones (no row twice; the newer copy wins). */
+export function prependRows(rows: MessageRow[], newer: MessageRow[]): MessageRow[] {
+  const ids = new Set(newer.map((r) => r.id));
+  return [...newer, ...rows.filter((r) => !ids.has(r.id))];
+}
+
+/** The next page under the loaded rows (no row twice). */
+export function appendRows(rows: MessageRow[], older: MessageRow[]): MessageRow[] {
+  const ids = new Set(rows.map((r) => r.id));
+  return [...rows, ...older.filter((r) => !ids.has(r.id))];
+}
+
+/** Unread and not held: a dot and a bold title. */
+export const isFresh = (r: Pick<MessageRow, "readAt" | "held" | "practice">) => !r.readAt && !r.held && !r.practice;
+
+/** Routine rows ("Ready for review", "Claude replied"): runs of two or more fold into "N updates". */
+export const isUpdate = (r: Pick<MessageRow, "level" | "held">) => !r.held && (r.level === "direct" || r.level === "routine");
+
+/** A pause and its "Missed" sent this close together become one row. */
+export const PAIR_MS = 90_000;
+
+/** One line of the list: a message, a pause with its missed waits, or a run of updates. */
+export type ListEntry =
+  | { kind: "one"; row: MessageRow }
+  | { kind: "pair"; pause: MessageRow; missed: MessageRow }
+  | { kind: "group"; rows: MessageRow[] };
+
+export const entryKey = (e: ListEntry) => (e.kind === "one" ? e.row.id : e.kind === "pair" ? e.missed.id : `g-${e.rows.at(-1)!.id}`);
+export const entryRows = (e: ListEntry): MessageRow[] => (e.kind === "one" ? [e.row] : e.kind === "pair" ? [e.missed, e.pause] : e.rows);
+
+const isPairOf = (a: MessageRow, b: MessageRow) =>
+  !a.held && !b.held && ((a.level === "pause" && b.level === "fallback") || (a.level === "fallback" && b.level === "pause"))
+  && Math.abs(Date.parse(a.at) - Date.parse(b.at)) <= PAIR_MS;
+
+/** Folds a newest-first run of rows (one day's): pause + missed pairs into one, runs of 2+ updates into a group. */
+export function foldRows(rows: MessageRow[]): ListEntry[] {
+  const out: ListEntry[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const next = rows[i + 1];
+    if (next && isPairOf(r, next)) {
+      out.push(r.level === "pause" ? { kind: "pair", pause: r, missed: next } : { kind: "pair", pause: next, missed: r });
+      i++;
+      continue;
+    }
+    if (isUpdate(r)) {
+      let j = i;
+      while (j + 1 < rows.length && isUpdate(rows[j + 1])) j++;
+      if (j > i) {
+        out.push({ kind: "group", rows: rows.slice(i, j + 1) });
+        i = j;
+        continue;
+      }
+    }
+    out.push({ kind: "one", row: r });
+  }
+  return out;
+}
+
+/** Day headings (Today, Yesterday, dates) over the loaded rows, each day folded on its own. */
+export function foldByDay(rows: MessageRow[], now = Date.now()): { day: string; entries: ListEntry[] }[] {
+  const days: { day: string; rows: MessageRow[] }[] = [];
+  for (const r of rows) {
+    const day = dayLabel(r.at, now);
+    const last = days.at(-1);
+    if (last && last.day === day) last.rows.push(r);
+    else days.push({ day, rows: [r] });
+  }
+  return days.map((d) => ({ day: d.day, entries: foldRows(d.rows) }));
+}
+
+/** A folded row's two lines: "Helper paused · 5 tickets wait on you", "4 updates" naming the first few. */
+export function entryLines(e: ListEntry): { title: string; sub: string } {
+  if (e.kind === "one") return { title: e.row.title, sub: e.row.sub || levelLabel(e.row.level, e.row.held, e.row.practice) };
+  if (e.kind === "pair") return { title: `Helper paused · ${e.missed.title}`, sub: e.pause.sub || "It can't run right now, so you get each wait directly" };
+  const names = [...new Set(e.rows.map((r) => r.sub || r.title).filter(Boolean))];
+  return { title: `${e.rows.length} updates`, sub: names.slice(0, 3).join(", ") + (names.length > 3 ? "…" : "") };
+}
+
+/** The round icon on a row: its colour and the character in it. */
+export function rowIcon(e: ListEntry): { tone: "urgent" | "sum" | "ok" | "warn" | "plain"; glyph: string } {
+  if (e.kind === "pair") return { tone: "warn", glyph: "!" };
+  if (e.kind === "group") return { tone: "plain", glyph: String(e.rows.length) };
+  const r = e.row;
+  const tone = levelTone(r.level, r.held, r.practice);
+  if (r.held) return { tone, glyph: "z" };
+  if (r.level === "summary" || r.level === "digest") return { tone, glyph: /^(\d+)\b/.exec(r.title)?.[1] ?? "Σ" };
+  if (tone === "urgent" || tone === "warn") return { tone, glyph: "!" };
+  if (r.level === "hello" || r.level === "test") return { tone, glyph: "✓" };
+  if (r.level === "message") return { tone, glyph: "✉" };
+  return { tone, glyph: "✓" };
+}
+
+/** "Loading more of today…", "Loading more of Mon 3 Nov…": the day the next page continues. */
+export function loadingMoreLine(last: MessageRow | undefined, now = Date.now()): string {
+  if (!last) return "Loading…";
+  const day = dayLabel(last.at, now);
+  return `Loading more of ${day === "Today" || day === "Yesterday" ? day.toLowerCase() : day}…`;
+}
+
+/** What each tab says when it has nothing. */
+export function emptyLine(tab: MessageTab): string {
+  if (tab === "needs") return "Nothing needs you right now. New and unanswered messages show here.";
+  if (tab === "summaries") return "No summaries yet.";
+  if (tab === "quiet") return "The helper hasn't kept anything quiet in the last 7 days.";
+  return "No messages yet. When the helper tells you something, it shows here.";
 }

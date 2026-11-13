@@ -34,7 +34,7 @@ export interface HelperStatus {
   today?: { checks: number; costUsd: number };
 }
 
-import { readFromHash, type Message } from "./helperText";
+import { pageQuery, readFromHash, type Message, type MessagePage, type MessageRow, type MessageTab } from "./helperText";
 export type { Message, MessageItem, MessageLevel, MessageSend } from "./helperText";
 
 export interface FeedbackLine {
@@ -54,7 +54,14 @@ export const helperApi = {
   noticeSeen: () => req<HelperStatus>("POST", "/api/helper/notice-seen", {}),
   /** A pretend urgent alert: one now, one reminder a minute later unless Got it stops it. */
   practice: () => req<{ messageId: string }>("POST", "/api/helper/practice", {}),
-  messages: (held = false) => req<{ messages: Message[]; unread: number }>("GET", `/api/messages${held ? "?held=1" : ""}`),
+  /** One page of a tab's light rows: the newest 30, the 30 under a row (before), or what came in above one (after). */
+  messages: (tab: MessageTab, o: { before?: MessageRow | null; after?: MessageRow | null; limit?: number } = {}) =>
+    req<MessagePage>("GET", `/api/messages?${pageQuery(tab, o)}`),
+  /** A message page's up/down in the list's tab (tab: the one it walks, when the message isn't in the list's). */
+  /** keep (Needs you): ids the tab showed this session, so ones read since still step (they left the tab when read). */
+  near: (id: string, tab: MessageTab, keep: string[] = []) =>
+    req<{ tab: MessageTab; newer: string | null; older: string | null }>(
+      "GET", `/api/messages/${encodeURIComponent(id)}/near?tab=${tab}${keep.length ? `&keep=${keep.map(encodeURIComponent).join(",")}` : ""}`),
   message: (id: string) => req<Message>("GET", `/api/messages/${encodeURIComponent(id)}`),
   markRead: (id: string) => req<{ message: Message; unread: number }>("POST", `/api/messages/${encodeURIComponent(id)}/read`, {}),
   markAllRead: () => req<{ marked: number; unread: number }>("POST", "/api/messages/read-all", {}),
@@ -85,7 +92,7 @@ function set(patch: Partial<Shared>) {
 export function reloadHelper(): Promise<void> {
   loading ??= Promise.all([
     helperApi.status().then((status) => set({ status }), () => {}),
-    helperApi.messages().then((r) => set({ unread: r.unread }), () => {}),
+    helperApi.messages("needs", { limit: 1 }).then((r) => set({ unread: r.unread }), () => {}),
   ]).then(() => { loading = null; });
   return loading;
 }
@@ -137,3 +144,8 @@ export function useHelper(): Shared {
 }
 
 export * from "./helperText";
+
+/** After a replaceState or pushState: tell the app's hashchange handler the address moved (they fire no event). */
+export function hashMoved(oldURL = location.href): void {
+  window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: location.href }));
+}

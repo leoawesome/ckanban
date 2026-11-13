@@ -235,3 +235,188 @@ export class MessageStore {
     return n;
   }
 }
+
+// ---- the Messages screen's list: tabs, light rows, pages ----
+
+/** The Messages screen's tabs: Needs you, All (sent), Summaries, Kept quiet (held). */
+export type MessageTab = "needs" | "all" | "summaries" | "quiet";
+export const MESSAGE_TABS: MessageTab[] = ["needs", "all", "summaries", "quiet"];
+export const asMessageTab = (v: unknown): MessageTab => (MESSAGE_TABS.includes(v as MessageTab) ? (v as MessageTab) : "all");
+
+/** One row of the list: only what a row shows (no text, sends, items or summary rows). */
+export interface MessageRow {
+  id: string;
+  at: string;
+  level: MessageLevel;
+  oneLine: string;
+  /** The row's bold line ("Ready for review", "6 new for you", the alert's line). */
+  title: string;
+  /** The muted second line: the ticket, the rest of a summary's line, or what a pause means. */
+  sub: string;
+  readAt: string | null;
+  held?: boolean;
+  practice?: boolean;
+  /** Unread, or a ticket it names still waits on the user (and no newer message names that wait). */
+  needsYou?: boolean;
+}
+
+/** A place in the newest-first list: the row's time and id (the id wins while it is still stored). */
+export interface MessageCursor { at: string; id: string }
+
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
+
+/** A ticket's title for a row, never its raw id (a ticket gone when the message was made kept its id as title). */
+const itemName = (i: Pick<MessageItem, "title" | "ticketId">) => {
+  const t = i.title.trim();
+  return t && t !== i.ticketId && !/^t_\d{8}_\w+$/.test(t) ? t : "";
+};
+
+/** "1 ticket on rocketbots", "3 tickets on rocketbots and kanban": a row's line when no item has a title. */
+function ticketsOn(items: Pick<MessageItem, "boardName" | "board">[]): string {
+  const boards = [...new Set(items.map((i) => (i.boardName || i.board).trim()).filter(Boolean))];
+  const n = items.length;
+  const on = boards.length ? ` on ${boards.length > 2 ? `${boards.slice(0, 2).join(", ")} and ${boards.length - 2} more boards` : boards.join(" and ")}` : "";
+  return `${n} ticket${n === 1 ? "" : "s"}${on}`;
+}
+
+/** A row's two lines from a stored message. */
+export function rowLines(m: Pick<StoredMessage, "level" | "oneLine" | "items" | "held">): { title: string; sub: string } {
+  const line = m.oneLine.trim();
+  if (m.level === "pause" && !m.held) return { title: "Helper paused", sub: "It can't run right now, so you get each wait directly" };
+  if (m.items.length === 1) {
+    const t = itemName(m.items[0]);
+    if (t && line.endsWith(`: ${t}`) && line.length > t.length + 2) return { title: clip(line.slice(0, -(t.length + 2)), 160), sub: clip(t, 120) };
+  }
+  if (m.level === "summary" || m.level === "digest") {
+    const at = line.indexOf(": ");
+    if (at > 0) return { title: clip(line.slice(0, at), 160), sub: clip(line.slice(at + 2), 120) };
+  }
+  const names = [...new Set(m.items.map(itemName).filter(Boolean))];
+  if (!names.length && m.items.length) return { title: clip(line, 160), sub: clip(ticketsOn(m.items), 120) };
+  return { title: clip(line, 160), sub: clip(names.slice(0, 3).join(", ") + (names.length > 3 ? ` and ${names.length - 3} more` : ""), 120) };
+}
+
+export function toRow(m: StoredMessage, needs: Set<string>): MessageRow {
+  return {
+    id: m.id, at: m.at, level: m.level, oneLine: clip(m.oneLine, 200), ...rowLines(m), readAt: m.readAt,
+    ...(m.held ? { held: true } : {}), ...(m.practice ? { practice: true } : {}), ...(needs.has(m.id) ? { needsYou: true } : {}),
+  };
+}
+
+/** Whether a message shows under a tab (needs: the ids needsYouIds found). */
+export function inTab(m: Pick<StoredMessage, "id" | "level" | "held">, tab: MessageTab, needs: Set<string>): boolean {
+  if (tab === "quiet") return !!m.held;
+  if (m.held) return false;
+  if (tab === "summaries") return m.level === "summary" || m.level === "digest";
+  if (tab === "needs") return needs.has(m.id);
+  return true;
+}
+
+/**
+ * "Needs you", over a newest-first list: a sent message that is unread, or that names a wait still open which no newer
+ * message names (so one open wait lights only its latest message). openKey: the open record's key a message's item
+ * meant, or null. A summary counts its new rows only; tapped alerts and practice ones never count for open waits.
+ */
+export function needsYouIds(newest: StoredMessage[], openKey: (key: string, m: StoredMessage) => string | null): Set<string> {
+  const out = new Set<string>();
+  const claimed = new Set<string>();
+  for (const m of newest) {
+    if (m.held || m.practice) continue;
+    const rows: { key?: string | null }[] = m.summary ? m.summary.new : m.items;
+    let open = false;
+    for (const r of rows) {
+      const k = r.key ? openKey(r.key, m) : null;
+      if (!k || claimed.has(k)) continue;
+      claimed.add(k);
+      open = true;
+    }
+    if (!m.readAt || (open && !m.tapped)) out.add(m.id);
+  }
+  return out;
+}
+
+/** The most ids a message page sends as keep (its Needs you tab as the user saw it). */
+export const NEAR_KEEP_MAX = 300;
+
+/** A pause and its "Missed" sent this close together show as one row (the list's PAIR_MS). */
+export const PAIR_MS = 90_000;
+
+/**
+ * The Needs you badge: the rows its tab shows, so a pause and its missed message (one folded row) count once, as the
+ * list folds them (each pause and missed next to each other in the tab, sent within PAIR_MS).
+ */
+export function needsShown(newest: Pick<StoredMessage, "id" | "at" | "level" | "held">[], needs: Set<string>): number {
+  const tab = newest.filter((m) => !m.held && needs.has(m.id));
+  let n = 0;
+  for (let i = 0; i < tab.length; i++) {
+    const a = tab[i], b = tab[i + 1];
+    const pair = !!b && ((a.level === "pause" && b.level === "fallback") || (a.level === "fallback" && b.level === "pause"))
+      && Math.abs(Date.parse(a.at) - Date.parse(b.at)) <= PAIR_MS;
+    if (pair) i++;
+    n++;
+  }
+  return n;
+}
+
+/** Index of the cursor in a newest-first list: its id, else the first message older than its time (end when none). */
+function cursorIndex(newest: StoredMessage[], c: MessageCursor, side: "before" | "after"): number {
+  const i = newest.findIndex((m) => m.id === c.id);
+  if (i >= 0) return i;
+  const t = Date.parse(c.at);
+  // A trimmed or unknown id: place it by time (older rows follow it, newer ones come before it).
+  const j = newest.findIndex((m) => (side === "before" ? Date.parse(m.at) < t || (Date.parse(m.at) === t && m.id < c.id) : Date.parse(m.at) <= t));
+  return j < 0 ? newest.length : j - (side === "before" ? 1 : 0);
+}
+
+/**
+ * One page of a tab, newest first. before: rows older than that row (the next page down); after: rows newer than that
+ * row (what came in since the newest row shown), the newest `limit` of them with hasMore when there were more.
+ */
+export function pageOf(newest: StoredMessage[], o: { tab: MessageTab; limit: number; before?: MessageCursor | null; after?: MessageCursor | null }, needs: Set<string>): { rows: StoredMessage[]; hasMore: boolean } {
+  let from = 0;
+  let to = newest.length;
+  if (o.before) from = cursorIndex(newest, o.before, "before") + 1;
+  if (o.after) to = Math.min(to, cursorIndex(newest, o.after, "after"));
+  const hits: StoredMessage[] = [];
+  let hasMore = false;
+  for (let i = Math.max(0, from); i < to; i++) {
+    if (!inTab(newest[i], o.tab, needs)) continue;
+    if (hits.length === o.limit) {
+      hasMore = true;
+      break;
+    }
+    hits.push(newest[i]);
+  }
+  return { rows: hits, hasMore };
+}
+
+/**
+ * The tab a message page's up/down walks: the one the list shows when the message belongs there (Needs you keeps
+ * a message it just marked read), else Kept quiet for a held message and All for the rest.
+ */
+export function stepTab(m: Pick<StoredMessage, "id" | "level" | "held">, tab: MessageTab, needs: Set<string>): MessageTab {
+  if (inTab(m, tab, needs) || (tab === "needs" && !m.held)) return tab;
+  return m.held ? "quiet" : "all";
+}
+
+/** The newer and older message next to one in a tab, by its place in the whole list (it may have left the tab). */
+export function neighboursIn(newest: StoredMessage[], id: string, tab: MessageTab, needs: Set<string>): { newer: string | null; older: string | null } {
+  const i = newest.findIndex((m) => m.id === id);
+  if (i < 0) return { newer: null, older: null };
+  let newer: string | null = null;
+  for (let j = i - 1; j >= 0; j--) if (inTab(newest[j], tab, needs)) { newer = newest[j].id; break; }
+  let older: string | null = null;
+  for (let j = i + 1; j < newest.length; j++) if (inTab(newest[j], tab, needs)) { older = newest[j].id; break; }
+  return { newer, older };
+}
+
+/**
+ * A message page's up/down (/near): the tab it walks and the messages next to it there. keep (Needs you): the ids the
+ * user's list showed this session, comma separated; read since, they left the tab, but still step both ways.
+ */
+export function nearOf(newest: StoredMessage[], msg: Pick<StoredMessage, "id" | "level" | "held">, asked: MessageTab, needs: Set<string>, keep?: string | null): { tab: MessageTab; newer: string | null; older: string | null } {
+  const ids = (keep ?? "").split(",").filter(Boolean).slice(0, NEAR_KEEP_MAX);
+  const walk = asked === "needs" && ids.length ? new Set([...needs, ...ids]) : needs;
+  const tab = stepTab(msg, asked, walk);
+  return { tab, ...neighboursIn(newest, msg.id, tab, walk) };
+}

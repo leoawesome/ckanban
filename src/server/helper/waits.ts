@@ -201,13 +201,7 @@ export class WaitStore {
    * back reuses its key, so a tap on an old message must not reach the newer wait (or one opened after the message).
    */
   forMessage(key: string, message: { id: string; at: string }): WaitRecord | undefined {
-    const recs = Object.values(this.data.records).filter((r) => r.key === key || r.key.startsWith(`${key}#`));
-    const linked = recs.find((r) => r.messageId === message.id || r.reminders.some((s) => s.messageId === message.id));
-    if (linked) return linked;
-    const at = Date.parse(message.at);
-    return recs
-      .filter((r) => !(Date.parse(r.queuedAt) > at))
-      .sort((a, b) => Date.parse(b.queuedAt) - Date.parse(a.queuedAt))[0];
+    return recordForMessage(Object.values(this.data.records), key, message);
   }
 
   /** Every record, open and closed. */
@@ -422,4 +416,15 @@ export function normalizeRecords(raw: Record<string, unknown>): Record<string, W
 /** A reminder step not sent yet, and the expiry not passed. */
 export function pending(r: WaitRecord): boolean {
   return r.reminders.some((s) => !s.sentAt);
+}
+
+/** WaitStore.forMessage over a list of records (callers asking for many messages pass the few that share the key's base). */
+export function recordForMessage(all: WaitRecord[], key: string, message: { id: string; at: string }): WaitRecord | undefined {
+  const recs = all.filter((r) => r.key === key || r.key.startsWith(`${key}#`));
+  const linked = recs.find((r) => r.messageId === message.id || r.reminders.some((s) => s.messageId === message.id));
+  if (linked) return linked;
+  const at = Date.parse(message.at);
+  return recs
+    .filter((r) => !(Date.parse(r.queuedAt) > at))
+    .sort((a, b) => Date.parse(b.queuedAt) - Date.parse(a.queuedAt))[0];
 }
