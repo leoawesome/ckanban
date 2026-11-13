@@ -166,6 +166,22 @@ test("a ticket.md edited outside the Store shows in the listing by the slow re-c
   expect(store.listTickets("demo")[0].title).toBe("d");
 });
 
+test("with background rechecks a listing never re-stats on time alone; recheckTickets finds outside edits", async () => {
+  let now = 1_000_000;
+  store = new Store(store.root, { now: () => now });
+  const t = store.createTicket("demo", { title: "b", body: "", status: "backlog" });
+  await store.recheckTickets(0);
+  expect(store.listTickets("demo").find((x) => x.id === t.id)!.title).toBe("b");
+  const file = store.ticketPath("demo", t.id);
+  writeFileSync(file, readFileSync(file, "utf8").replace("title: b", "title: c"));
+  now += TICKET_RECHECK_MS * 3;
+  expect(store.listTickets("demo").find((x) => x.id === t.id)!.title).toBe("b");
+  const v = store.ticketsVersion("demo");
+  await store.recheckTickets(0);
+  expect(store.listTickets("demo").find((x) => x.id === t.id)!.title).toBe("c");
+  expect(store.ticketsVersion("demo")).toBeGreaterThan(v);
+});
+
 test("activity pages: newest first page, older pages back to the first entry, a half-written last line left out", () => {
   const dir = mkdtempSync(join(tmpdir(), "ck-page-"));
   const file = join(dir, "activity.jsonl");

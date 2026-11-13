@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } fr
 import { join } from "node:path";
 import { FILES_NOTE, IMAGES_NOTE } from "../src/server/attachments";
 import { Bus, type BusEvent } from "../src/server/events";
-import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessions } from "../src/server/session";
+import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessions, pollSessionsSliced, scanSessionFiles, scanSessionFilesAsync } from "../src/server/session";
 import { Store } from "../src/server/store";
 import { tempDir } from "./helpers";
 
@@ -752,4 +752,56 @@ test("SessionCache.warm parses many transcripts without blocking the event loop 
   // Every transcript was read to the end, so summaries need no more reading.
   for (const id of ids) expect((cache as any).items.get(id).offset).toBe(Buffer.byteLength(big));
   for (const id of ids) expect(cache.summary(id)!.lastMessage!.text).toBe(`line 2999 ${"x".repeat(300)}`);
+});
+
+test("pollSessionsSliced announces the same changes as pollSessions, pausing between tickets", async () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-f");
+  mkdirSync(dir, { recursive: true });
+  const store = new Store(tempDir());
+  store.saveProfile({ name: "P", slug: "p", path: tempDir(), baseBranch: "main", maxParallel: 1, createdAt: "" });
+  const ids: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    const sid = `11111111-2222-3333-4444-55555555555${i}`;
+    writeFileSync(join(dir, `${sid}.jsonl`), user(`hi ${i}`, "2026-09-29T01:00:00Z") + "\n");
+    const t = store.createTicket("p", { title: `t${i}`, body: "", status: "review" });
+    store.updateTicket("p", t.id, { sessionId: sid });
+    ids.push(t.id);
+  }
+  const bus = new Bus();
+  const seen: BusEvent[] = [];
+  bus.on((e) => seen.push(e));
+  const cache = new SessionCache({ configDir });
+  const state = new Map<string, string>();
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 0);
+  const owners: string[] = [];
+  await pollSessionsSliced(store, bus, cache, state, true, (sid, key) => sid && owners.push(key), 0);
+  clearInterval(timer);
+  expect(ticks).toBeGreaterThan(0);
+  expect(seen.map((e) => (e as any).id).sort()).toEqual([...ids].sort());
+  expect(owners.length).toBe(4);
+  await pollSessionsSliced(store, bus, cache, state, true, undefined, 0);
+  expect(seen.length).toBe(4);
+  appendFileSync(join(dir, "11111111-2222-3333-4444-555555555552.jsonl"), asst([{ type: "text", text: "reply" }], "2026-09-29T01:00:01Z") + "\n");
+  await pollSessionsSliced(store, bus, cache, state, true, undefined, 0);
+  expect(seen.length).toBe(5);
+  expect((seen[4] as any).id).toBe(ids[2]);
+});
+
+test("scanSessionFilesAsync finds the same files as scanSessionFiles", async () => {
+  const configDir = tempDir();
+  for (let d = 0; d < 20; d++) {
+    const dir = join(configDir, "projects", `-p${d}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `s${d}.jsonl`), "");
+    writeFileSync(join(dir, "notes.txt"), "");
+  }
+  // The same id in two folders: the first listed wins in both.
+  writeFileSync(join(configDir, "projects", "-p7", "s3.jsonl"), "");
+  const sync = scanSessionFiles({ configDir });
+  const async = await scanSessionFilesAsync({ configDir }, 3);
+  expect(async.size).toBe(20);
+  expect([...async.entries()].sort()).toEqual([...sync.entries()].sort());
+  expect(await scanSessionFilesAsync({ configDir: join(configDir, "nope") })).toEqual(new Map());
 });

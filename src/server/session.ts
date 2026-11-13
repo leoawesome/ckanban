@@ -1,4 +1,5 @@
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, type Stats } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { helperLineText, suggestedLineError } from "./helper/line";
 import { pauser, track, trackedInterval } from "./lag";
 import { homedir } from "node:os";
@@ -433,6 +434,30 @@ export function scanSessionFiles(d: Dirs = {}): Map<string, string> {
       const id = name.slice(0, -6);
       if (!out.has(id)) out.set(id, join(root, dir, name));
     }
+  }
+  return out;
+}
+
+/** scanSessionFiles with its reads off the event loop, a few folders at a time. */
+export async function scanSessionFilesAsync(d: Dirs = {}, batch = 16): Promise<Map<string, string>> {
+  const root = projectsDir(d);
+  const out = new Map<string, string>();
+  let dirs: string[];
+  try {
+    dirs = await readdir(root);
+  } catch {
+    return out;
+  }
+  for (let i = 0; i < dirs.length; i += batch) {
+    const part = dirs.slice(i, i + batch);
+    const lists = await Promise.all(part.map((dir) => readdir(join(root, dir)).catch(() => [] as string[])));
+    part.forEach((dir, j) => {
+      for (const name of lists[j]) {
+        if (!name.endsWith(".jsonl")) continue;
+        const id = name.slice(0, -6);
+        if (!out.has(id)) out.set(id, join(root, dir, name));
+      }
+    });
   }
   return out;
 }
@@ -1060,6 +1085,7 @@ export class SessionCache {
     const stop = feed.subscribe((c) => {
       if (!c?.file) return;
       this.index?.files.set(c.sessionId, c.file);
+      this.scanAdds?.set(c.sessionId, c.file);
       this.missing.delete(c.sessionId);
     });
     return () => {
@@ -1086,13 +1112,36 @@ export class SessionCache {
     const miss = this.missing.get(sessionId);
     if (miss && now - miss.since >= MISSING_GRACE_MS && now - miss.at < MISSING_RETRY_MS) return null;
     const indexMs = this.feed?.live ? FED_INDEX_MS : INDEX_MS;
-    if (!this.index || now - this.index.at >= indexMs || now < this.index.at) this.index = { at: now, files: scanSessionFiles(this.dirs) };
+    if (!this.index || now - this.index.at >= indexMs || now < this.index.at) {
+      // With the feed live a fresh scan is only a safety net: it runs in the background (seconds of frozen daemon on a
+      // busy Mac when done here), and the scan we have answers meanwhile.
+      if (this.index && this.feed?.live) this.rescan();
+      else this.index = { at: now, files: scanSessionFiles(this.dirs) };
+    }
     const f = this.index.files.get(sessionId) ?? null;
     if (f) {
       this.files.set(sessionId, f);
       this.missing.delete(sessionId);
     } else this.missing.set(sessionId, { since: miss?.since ?? now, at: now });
     return f;
+  }
+
+  /** Files the feed reported while a background scan runs: the scan may have read their folder before they came. */
+  private scanAdds: Map<string, string> | null = null;
+
+  /** A fresh index from a scan off the event loop (one at a time); the old index stays until it is done. */
+  private rescan(): void {
+    if (this.scanAdds) return;
+    const adds = (this.scanAdds = new Map());
+    const at = this.now();
+    void scanSessionFilesAsync(this.dirs)
+      .then((files) => {
+        for (const [id, f] of adds) files.set(id, f);
+        this.index = { at, files };
+      }, (e) => console.error("session scan", e))
+      .finally(() => {
+        if (this.scanAdds === adds) this.scanAdds = null;
+      });
   }
 
   private fileVersion(f: string): string | null {
@@ -1341,9 +1390,28 @@ export class SessionCache {
  * that load after it, and their first load finds the summaries ready).
  */
 export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true, seen?: (sessionId: string | null, key: string) => void): void {
+  for (const _ of pollSteps(store, bus, cache, state, emit, seen));
+}
+
+/**
+ * pollSessions in slices: it pauses every ~sliceMs. Each ticket's look costs a few stats (its transcript, its
+ * subagents' and workflows' folders): tens of ms for a big board on an idle Mac, but seconds of frozen daemon when the
+ * Mac is busy (test suites, a virus scan).
+ */
+export async function pollSessionsSliced(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true, seen?: (sessionId: string | null, key: string) => void, sliceMs = 30): Promise<void> {
+  const pause = pauser(sliceMs);
+  for (const _ of pollSteps(store, bus, cache, state, emit, seen)) await pause();
+}
+
+/**
+ * One step per ticket. Sliced, the listing can be a moment old by the time a ticket is looked at: what changed meanwhile
+ * the Store's writes and the feed report to the next pass anyway.
+ */
+function* pollSteps(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit: boolean, seen?: (sessionId: string | null, key: string) => void): Generator<void> {
   const live = new Set<string>();
   for (const p of store.listProfiles()) {
     for (const t of store.listTickets(p.slug)) {
+      yield;
       seen?.(t.sessionId, `${p.slug}/${t.id}`);
       pollOne(bus, cache, state, live, p.slug, t, emit);
     }
@@ -1395,8 +1463,9 @@ export async function primeSessions(store: Store, cache: SessionCache, state: Ma
  * the tickets the Store just wrote and the sessions the feed reported, plus a full pass every safetyMs for missed
  * changes (outside edits to ticket files, a dropped event). Without a live feed every pass is a full one.
  */
-export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache, intervalMs = 2000, o: { feed?: SessionChanges; safetyMs?: number; now?: () => number } = {}): () => void {
+export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache, intervalMs = 2000, o: { feed?: SessionChanges; safetyMs?: number; now?: () => number; sliceMs?: number } = {}): () => void {
   const state = new Map<string, string>();
+  const sliceMs = o.sliceMs ?? 30;
   const now = o.now ?? Date.now;
   const safetyMs = o.safetyMs ?? SAFETY_PASS_MS;
   // Changes since the last pass: tickets by "slug/id", sessions by id; unknown when the feed couldn't say what changed.
@@ -1404,12 +1473,18 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
   const sessions = new Set<string>();
   let unknown = false;
   // Ticket keys by session id, from the last full pass and the Store's writes since.
-  const owners = new Map<string, Set<string>>();
+  let owners = new Map<string, Set<string>>();
+  // What the full pass under way has seen so far; it replaces owners when the pass is done.
+  let nextOwners: Map<string, Set<string>> | null = null;
+  const add = (map: Map<string, Set<string>>, sessionId: string, key: string) => {
+    let keys = map.get(sessionId);
+    if (!keys) map.set(sessionId, (keys = new Set()));
+    keys.add(key);
+  };
   const own = (sessionId: string | null | undefined, key: string) => {
     if (!sessionId) return;
-    let keys = owners.get(sessionId);
-    if (!keys) owners.set(sessionId, (keys = new Set()));
-    keys.add(key);
+    add(owners, sessionId, key);
+    if (nextOwners) add(nextOwners, sessionId, key);
   };
   const stopStore = store.onChange((c) => {
     if (c.kind === "ticket") tickets.add(`${c.slug}/${c.id}`);
@@ -1417,13 +1492,20 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
   const stopFeed = o.feed?.subscribe((c) => (c ? sessions.add(c.sessionId) : (unknown = true)));
   // The first timer pass is a full one: it learns which tickets own which sessions.
   let lastFull = -Infinity;
-  const full = (emit: boolean) => {
+  // A full pass runs in slices (pollSessionsSliced): on a busy Mac it takes seconds, and the daemon answers meanwhile.
+  // The owners it learns replace the old ones only when it is done, so changed() keeps finding them until then.
+  const full = async (emit: boolean) => {
     tickets.clear();
     sessions.clear();
     unknown = false;
-    owners.clear();
     lastFull = now();
-    pollSessions(store, bus, cache, state, emit, own);
+    const next = (nextOwners = new Map());
+    try {
+      await pollSessionsSliced(store, bus, cache, state, emit, (id, key) => id && add(next, id, key), sliceMs);
+      owners = next;
+    } finally {
+      nextOwners = null;
+    }
   };
   const changed = () => {
     const keys = new Set(tickets);
@@ -1454,15 +1536,23 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
   void track("session-watcher: first pass", () => primeSessions(store, cache, state, 30, bus))
     .then(() => (primed = true), (e) => console.error("session watcher", e))
     .finally(() => (priming = false));
+  let passing = false;
   const timer = trackedInterval("session-watcher", () => {
     try {
-      if (priming) {
+      // The first pass or a full one still under way: only what the feed says changed meanwhile.
+      if (priming || passing) {
         if (o.feed?.live && !unknown) changed();
         return;
       }
-      if (!primed || !o.feed?.live || unknown || now() - lastFull >= safetyMs) full(primed);
-      else changed();
-      primed = true;
+      if (!primed || !o.feed?.live || unknown || now() - lastFull >= safetyMs) {
+        passing = true;
+        const emit = primed;
+        primed = true;
+        return full(emit)
+          .catch((e) => console.error("session watcher", e))
+          .finally(() => (passing = false));
+      }
+      changed();
     } catch (e) {
       console.error("session watcher", e);
     }

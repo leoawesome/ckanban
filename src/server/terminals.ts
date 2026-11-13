@@ -1,6 +1,6 @@
 import { isClaudeCommand, liveSessionMatch, processCommands } from "./claude";
 import { SAFETY_PASS_MS, type SessionChanges } from "./changefeed";
-import { trackedInterval } from "./lag";
+import { pauser, trackedInterval } from "./lag";
 import type { Bus } from "./events";
 import type { SessionCache } from "./session";
 import type { Store } from "./store";
@@ -25,6 +25,7 @@ export class TerminalWatcher {
     private commands: () => Promise<string[]> = processCommands,
     private feed?: SessionChanges,
     private now: () => number = Date.now,
+    private sliceMs = 30,
   ) {
     feed?.subscribe((c) => (c ? this.titles.delete(c.sessionId) : this.titles.clear()));
   }
@@ -48,9 +49,12 @@ export class TerminalWatcher {
     }
     const next = new Set<string>();
     const changed: [string, string][] = [];
+    // In slices: reading titles is a few stats per ticket, which add up to seconds when the Mac is busy.
+    const pause = pauser(this.sliceMs);
     for (const p of this.store.listProfiles()) {
       for (const t of this.store.listTickets(p.slug)) {
         if (!t.sessionId || !t.workdir) continue;
+        await pause();
         const key = `${p.slug}/${t.id}`;
         // No claude running: nothing to match, and no title to read.
         const live = cmds.length > 0 && liveSessionMatch(cmds, { id: t.sessionId, title: this.title(t.sessionId) });

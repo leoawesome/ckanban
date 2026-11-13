@@ -12,6 +12,7 @@ import { cleanPresets, type HuddlePreset } from "./huddle-presets";
 import { cleanTemplates, type HuddleTemplate } from "./huddle-templates";
 import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "./huddle-notes";
 import { newId, newTicketId, nowIso } from "./util";
+import { pauser } from "./lag";
 import { atomicWrite } from "./atomic";
 import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "./board-tools";
 import { maskSaved, maskSavedJson } from "./board-keys";
@@ -236,11 +237,13 @@ export class Store {
       return [];
     }
     const b = this.boards.get(slug);
-    if (b?.list && b.dirMtime === dirMtime && this.now() - b.checkedAt < TICKET_RECHECK_MS) return [...b.list];
+    // With rechecks in the background (recheckTickets), a listing never stats every ticket file just because time passed.
+    const recent = !!b && b.dirMtime === dirMtime && (this.rechecking || this.now() - b.checkedAt < TICKET_RECHECK_MS);
+    if (b?.list && recent) return [...b.list];
     const prev = b?.list;
     const ids = new Set<string>();
     const out: Ticket[] = [];
-    if (b && b.dirMtime === dirMtime && this.now() - b.checkedAt < TICKET_RECHECK_MS) {
+    if (b && recent) {
       // Only Store writes since the last listing: they keep ticketCache current, no need to stat every file.
       for (const id of b.ids) {
         const hit = this.ticketCache.get(this.ticketPath(slug, id))?.ticket ?? this.readTicketOrCorrupt(slug, id);
@@ -255,9 +258,38 @@ export class Store {
     out.sort((x, y) => x.order - y.order);
     const changed = !prev || prev.length !== out.length || out.some((t, i) => t !== prev[i]);
     const version = (b?.version ?? 0) + (changed && b ? 1 : 0);
-    const checkedAt = b && b.dirMtime === dirMtime && this.now() - b.checkedAt < TICKET_RECHECK_MS ? b.checkedAt : this.now();
+    const checkedAt = b && recent ? b.checkedAt : this.now();
     this.boards.set(slug, { dirMtime, checkedAt, ids, list: out, version });
     return [...out];
+  }
+
+  /** Set by recheckTickets(): the daemon rechecks the ticket files in the background, listings don't. */
+  private rechecking = false;
+
+  /**
+   * Stats every board's ticket files again, in slices (pausing every ~sliceMs), to catch edits made outside the Store;
+   * a changed one shows in the next listing. Once called, listTickets leaves this to it (the daemon calls it every
+   * TICKET_RECHECK_MS): stat'ing a big board's every file inside a listing froze the daemon for seconds on a busy Mac.
+   */
+  async recheckTickets(sliceMs = 30): Promise<void> {
+    this.rechecking = true;
+    const pause = pauser(sliceMs);
+    for (const p of this.listProfiles()) {
+      const dir = join(this.profileDir(p.slug), "tickets");
+      let ids: string[];
+      try {
+        ids = readdirSync(dir);
+      } catch {
+        continue;
+      }
+      const startedAt = this.now();
+      for (const id of ids) {
+        await pause();
+        this.readTicketOrCorrupt(p.slug, id);
+      }
+      const b = this.boards.get(p.slug);
+      if (b) b.checkedAt = Math.max(b.checkedAt, startedAt);
+    }
   }
 
   /** A number that changes whenever the board's ticket listing changes (Store writes at once; outside edits by the next re-check). */

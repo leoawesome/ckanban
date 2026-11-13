@@ -96,3 +96,20 @@ test("withActivity carries a participant's live turn cost", () => {
   expect(withActivity(next, "qa", "Reading", 0.3)).toBe(next);
   expect(withActivity(next, "qa", "Reading")).toBe(next);
 });
+
+test("recent() is today() made in slices: it lets other work run meanwhile, and callers at the same time share one", async () => {
+  const store = new Store(tempDir("ck-spend-"));
+  board(store, "a");
+  for (let i = 0; i < 5; i++) write(store, "a", `t${i}`, [{ run: 1, at: at(9), event: result(`s${i}`, 0.1) }]);
+  const spend = new SpendIndex(store, () => NOW);
+  let ticks = 0;
+  const timer = setInterval(() => ticks++, 0);
+  const [one, two] = await Promise.all([spend.recent(5_000, 0), spend.recent(5_000, 0)]);
+  clearInterval(timer);
+  expect(ticks).toBeGreaterThan(0);
+  expect(two).toBe(one);
+  expect(one.costUsd).toBeCloseTo(0.5);
+  expect(one).toEqual(spend.today());
+  // Still fresh: the same answer, not made again.
+  expect(await spend.recent(5_000, 0)).toBe(one);
+});

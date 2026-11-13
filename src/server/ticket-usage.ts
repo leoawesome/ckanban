@@ -1,7 +1,9 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { atomicWrite } from "./store";
+import { pauser } from "./lag";
 import type { ActivityEntry } from "./types";
 import type { UsageResult } from "./usage";
 
@@ -97,37 +99,44 @@ export class ClaudeLogIndex {
   }
 
   private async scan(since: number): Promise<void> {
+    // Thousands of files under the projects folder: listed and stat'ed off the event loop (doing it here held the
+    // daemon up for seconds when the Mac was busy), a batch of stats at a time.
     let names: string[];
     try {
-      names = readdirSync(this.root, { recursive: true }) as string[];
+      names = ((await readdir(this.root, { recursive: true })) as string[]).filter((n) => n.endsWith(".jsonl"));
     } catch {
       names = [];
     }
-    for (const name of names) {
-      if (!name.endsWith(".jsonl")) continue;
-      const file = join(this.root, name);
-      let st;
-      try {
-        st = statSync(file);
-      } catch {
-        continue;
+    const BATCH = 64;
+    // Parsing what a file gained is the other cost (a first read takes in megabytes): a pause between files.
+    const pause = pauser();
+    for (let i = 0; i < names.length; i += BATCH) {
+      const part = names.slice(i, i + BATCH).map((name) => join(this.root, name));
+      const stats = await Promise.all(part.map((f) => stat(f).catch(() => null)));
+      for (let j = 0; j < part.length; j++) {
+        await this.catchUp(part[j], stats[j], since);
+        await pause();
       }
-      let state = this.files.get(file);
-      if (!state) {
-        if (st.mtimeMs < since) continue;
-        state = { offset: 0, rest: "" };
-        this.files.set(file, state);
-      }
-      if (st.size < state.offset) Object.assign(state, { offset: 0, rest: "" });
-      if (st.size === state.offset) continue;
-      const text = await Bun.file(file).slice(state.offset, st.size).text();
-      state.offset = st.size;
-      const lines = (state.rest + text).split("\n");
-      state.rest = lines.pop() ?? "";
-      for (const line of lines) this.add(line);
     }
     this.horizon = Math.min(this.horizon, since);
     this.lastRefresh = this.now();
+  }
+
+  private async catchUp(file: string, st: { mtimeMs: number; size: number } | null, since: number): Promise<void> {
+    if (!st) return;
+    let state = this.files.get(file);
+    if (!state) {
+      if (st.mtimeMs < since) return;
+      state = { offset: 0, rest: "" };
+      this.files.set(file, state);
+    }
+    if (st.size < state.offset) Object.assign(state, { offset: 0, rest: "" });
+    if (st.size === state.offset) return;
+    const text = await Bun.file(file).slice(state.offset, st.size).text();
+    state.offset = st.size;
+    const lines = (state.rest + text).split("\n");
+    state.rest = lines.pop() ?? "";
+    for (const line of lines) this.add(line);
   }
 
   private add(line: string) {

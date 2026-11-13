@@ -2,7 +2,7 @@ import { parseConnectorSetting } from "./connectors";
 import { AvatarError, CLAUDE_KEY, withAvatar, withClaudeName, withoutAvatar } from "./avatars";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
-import { routeLabel, track } from "./lag";
+import { pauser, routeLabel, track } from "./lag";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "./artifact";
 import { profileFor } from "./cpuprof";
 import { claudeSessionFile, ConflictError, recoveryFor, type Board } from "./board";
@@ -1137,7 +1137,7 @@ export function createServer(deps: ServerDeps) {
     // ?fresh=1 is the Refresh button: asks now unless a check went out in the last minute or Anthropic asked us to wait.
     if (parts[0] === "usage" && m === "GET") return json(await usage.get({ fresh: url.searchParams.get("fresh") === "1" }));
     // What every board spent today (tickets' runs and huddle agents), for the header pill.
-    if (parts[0] === "spend" && m === "GET") return json(spend.recent());
+    if (parts[0] === "spend" && m === "GET") return json(await spend.recent());
     // How every teammate (huddle preset) and template was used, from the huddles on every board.
     if (parts[0] === "team-usage" && m === "GET") return json(huddles.usage());
     // The user's avatar choices for Claude, the user and teammates: one set for every board (src/server/avatars.ts).
@@ -1166,9 +1166,11 @@ export function createServer(deps: ServerDeps) {
       // Right after a start with no saved summaries, wait for the sliced read instead of reading every transcript now.
       await sessions.ready();
       const out = [];
+      const pause = pauser();
       for (const p of store.listProfiles()) {
         const hosts = board.hostHuddles(p.slug);
         for (const t of store.listTickets(p.slug)) {
+          await pause();
           // Done waits on the user only for a missed follow-up (see ownAttention). Skipping the rest, and building
           // just the attention instead of the whole card, keeps this poll from reading every old ticket's transcript
           // summary every few seconds (most tickets are Done; it held the daemon up for seconds at a time).
@@ -1187,8 +1189,10 @@ export function createServer(deps: ServerDeps) {
       // capped: the bar only needs enough to find a word and show a snippet around it.
       const cap = (s: string | null) => (s && s.length > 4000 ? s.slice(0, 4000) : s ?? "");
       const out = [];
+      const pause = pauser();
       for (const p of store.listProfiles()) {
         for (const t of store.listTickets(p.slug)) {
+          await pause();
           out.push({
             profile: p.slug, profileName: p.name, id: t.id, title: t.title, status: t.status,
             running: board.isRunning(p.slug, t.id), updatedAt: t.updatedAt,
@@ -1991,8 +1995,18 @@ export function createServer(deps: ServerDeps) {
         const one = (t: Ticket) => ({ ...view(profile, t, hosts), ...(features.has(t.id) ? { feature: true } : {}) });
         // The board itself asks for a scope (ticketScope.ts): the unfinished work first, Done in pages or by search.
         // No scope: every ticket, as list_tickets and older clients expect.
+        // Views are built in slices: a whole board's (list_tickets) is seconds of work when the Mac is busy.
+        const views = async (list: Ticket[]) => {
+          const pause = pauser();
+          const out = [];
+          for (const t of list) {
+            await pause();
+            out.push(one(t));
+          }
+          return out;
+        };
         const scope = url.searchParams.get("scope");
-        if (!scope) return json(tickets.map(one));
+        if (!scope) return json(await views(tickets));
         const num = (k: string) => Number(url.searchParams.get(k) ?? 0) || 0;
         const list = (k: string) => (url.searchParams.get(k) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
         const picked = scope === "board" ? boardScope(tickets, { done: num("done"), ids: list("ids") })
@@ -2001,7 +2015,7 @@ export function createServer(deps: ServerDeps) {
           : scope === "ids" ? idsScope(tickets, list("ids"))
           : null;
         if (!picked) throw new HttpError(400, "scope must be board, done, search or ids");
-        return json({ tickets: picked.tickets.map(one), doneTotal: picked.doneTotal });
+        return json({ tickets: await views(picked.tickets), doneTotal: picked.doneTotal });
       }
       if (m === "POST") {
         const b = await body(req);

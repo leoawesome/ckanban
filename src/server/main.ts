@@ -17,7 +17,7 @@ import { PushService } from "./push";
 import { RemoteAccess, remoteListenPort, remoteUrl } from "./remote";
 import { Passes } from "./integrations/passes";
 import { ckanbanShim } from "./integrations/script";
-import { startLagMonitor, track } from "./lag";
+import { startLagMonitor, track, trackedInterval } from "./lag";
 import { LoopManager } from "./loops";
 import { makeSideCaller } from "./side-call";
 import { Learner } from "./learner";
@@ -30,7 +30,7 @@ import { projectsDir, SessionCache, startSessionWatcher } from "./session";
 import { SessionFeed } from "./changefeed";
 import { ShellManager } from "./shell";
 import { TerminalWatcher } from "./terminals";
-import { defaultRoot, Store } from "./store";
+import { defaultRoot, Store, TICKET_RECHECK_MS } from "./store";
 import { keepAwakeOn } from "./types";
 import { VERSION } from "./version";
 import { WEB_ASSETS } from "./web-assets.gen";
@@ -134,6 +134,11 @@ export async function startDaemon(): Promise<void> {
   const stopLimits = new LimitWatcher(board, store).start();
   const stopFollowUps = new FollowUpWatcher(board, store).start();
   const stopWatcher = startSessionWatcher(store, bus, sessions, 2000, { feed });
+  // Ticket files edited outside the Store, found in slices in the background instead of inside a listing.
+  let rechecking: Promise<void> | null = null;
+  const recheck = () => (rechecking ??= store.recheckTickets().catch((e) => console.error("ticket recheck", e)).finally(() => (rechecking = null)));
+  void recheck();
+  const recheckTimer = trackedInterval("ticket-recheck", recheck, TICKET_RECHECK_MS);
   const stopHuddleWatcher = startHuddleSessionWatcher(store, bus, (id) => sessions.version(id), 2000, { feed });
   const stopTerminals = terminals.start();
   const stopMcp = mcp.start();
@@ -152,6 +157,7 @@ export async function startDaemon(): Promise<void> {
     stopLimits();
     stopFollowUps();
     stopWatcher();
+    clearInterval(recheckTimer);
     sessions.flushSummaries();
     stopHuddleWatcher();
     stopFollow();

@@ -1,6 +1,7 @@
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { dayKey } from "./limit";
+import { pauser } from "./lag";
 import { readSideSpend } from "./side-call";
 import { helperSpendFile } from "./helper/runner";
 import { atomicWrite, type Store } from "./store";
@@ -122,25 +123,47 @@ export class SpendIndex {
 
   /**
    * today(), at most a few seconds old. Every open page asks again after each ticket change, and one answer stats
-   * every ticket of every board (hundreds of ms on a big board when the Mac is busy).
+   * every ticket of every board (seconds when the Mac is busy). So it is made in slices (pausing every ~sliceMs), one
+   * at a time: callers meanwhile wait for the same one.
    */
-  recent(maxAgeMs = 5_000): TodaySpend {
+  async recent(maxAgeMs = 5_000, sliceMs = 30): Promise<TodaySpend> {
     const at = this.now().getTime();
-    if (!this.last || at - this.last.at >= maxAgeMs || at < this.last.at) this.last = { at, spend: this.today() };
-    return this.last.spend;
+    const fresh = this.last && at - this.last.at < maxAgeMs && at >= this.last.at;
+    if (!fresh && !this.making) {
+      const pause = pauser(sliceMs);
+      this.making = (async () => {
+        let spend: TodaySpend | undefined;
+        for (const step of this.todaySteps()) {
+          if (step) spend = step;
+          else await pause();
+        }
+        this.last = { at, spend: spend! };
+        return spend!;
+      })().finally(() => (this.making = null));
+    }
+    return fresh ? this.last!.spend : this.making!;
   }
   private last: { at: number; spend: TodaySpend } | null = null;
+  private making: Promise<TodaySpend> | null = null;
 
   /** What every board spent today (local day): its tickets' runs, its quick chats and its huddle agents. */
   today(): TodaySpend {
+    for (const step of this.todaySteps()) if (step) return step;
+    throw new Error("unreachable");
+  }
+
+  /** today() in steps: undefined between tickets (a place to pause), the answer last. */
+  private *todaySteps(): Generator<TodaySpend | undefined> {
     const now = this.now();
     const day = dayKey(now);
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const huddles = readLedger(this.store.root)[day] ?? {};
-    const boards = this.store.listProfiles().map((p) => {
+    const boards: TodaySpend["boards"] = [];
+    for (const p of this.store.listProfiles()) {
       let cost = huddles[p.slug] ?? 0;
       const dir = join(this.store.root, "profiles", p.slug, "tickets");
       for (const id of existsSync(dir) ? readdirSync(dir) : []) {
+        yield;
         // Untouched since midnight: nothing spent today.
         const mtime = Math.max(mtimeOf(this.store.activityPath(p.slug, id)), mtimeOf(this.store.sideSpendPath(p.slug, id)));
         if (mtime >= start) cost += this.ticket(p.slug, id).days.get(day) ?? 0;
@@ -148,17 +171,18 @@ export class SpendIndex {
       // Quick chats (quickchat.ts) log their result lines next to each chat.
       const chats = join(this.store.root, "profiles", p.slug, "chats");
       for (const f of existsSync(chats) ? readdirSync(chats) : []) {
+        yield;
         const file = join(chats, f);
         if (f.endsWith(".activity.jsonl") && mtimeOf(file) >= start) cost += this.logSpend(file).days.get(day) ?? 0;
         // Their side calls ("Say it simpler").
         if (f.endsWith(".side-spend.jsonl") && mtimeOf(file) >= start) cost += readSideSpend(file).days.get(day) ?? 0;
       }
-      return { slug: p.slug, name: p.name, costUsd: cost };
-    });
+      boards.push({ slug: p.slug, name: p.name, costUsd: cost });
+    }
     // The helper (helper/runner.ts) covers every board: its own "Helper" line.
     const helper = readSideSpend(helperSpendFile(this.store.root)).days.get(day) ?? 0;
     if (helper > 0) boards.push({ slug: "~helper", name: "Helper", costUsd: helper });
-    return { day, costUsd: boards.reduce((s, b) => s + b.costUsd, 0), boards };
+    yield { day, costUsd: boards.reduce((s, b) => s + b.costUsd, 0), boards };
   }
 }
 

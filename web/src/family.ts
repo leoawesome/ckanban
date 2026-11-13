@@ -42,11 +42,41 @@ function parentIn<T extends FamilyTicket>(byId: Map<string, T>, t: T): { parent:
   return parent && l ? { parent, how: l.how } : null;
 }
 
-/** Direct children of every ticket (oldest first), with how each is linked. */
+/** The last answer of childrenByParent, with what it was made from (see there). */
+let lastKids: { tickets: FamilyTicket[]; links: unknown[]; out: Map<string, { ticket: FamilyTicket; how: LinkHow }[]> } | null = null;
+
+/** What childrenByParent reads of a ticket besides the ticket itself, which may be changed in place (in the UI). */
+const LINK_FIELDS = ["id", "createdAt", "partOf", "partOfVia", "parentId"] as const;
+
+function sameKidsInput(last: NonNullable<typeof lastKids>, tickets: FamilyTicket[]): boolean {
+  if (last.tickets.length !== tickets.length) return false;
+  for (let i = 0; i < tickets.length; i++) {
+    const t = tickets[i];
+    if (t !== last.tickets[i]) return false;
+    // The server's tickets are frozen: the same object has the same links.
+    if (Object.isFrozen(t)) continue;
+    for (let k = 0; k < LINK_FIELDS.length; k++) if (t[LINK_FIELDS[k]] !== last.links[i * LINK_FIELDS.length + k]) return false;
+  }
+  return true;
+}
+
+/**
+ * Direct children of every ticket (oldest first), with how each is linked. The board's view of every main ticket asks
+ * for this of the same tickets (sorting a big board's tickets each time was seconds per listing), so the last answer
+ * is kept while the same tickets with the same links are asked about. Callers only read it.
+ */
 export function childrenByParent<T extends FamilyTicket>(tickets: T[]): Map<string, { ticket: T; how: LinkHow }[]> {
+  if (lastKids && sameKidsInput(lastKids, tickets)) return lastKids.out as Map<string, { ticket: T; how: LinkHow }[]>;
+  const out = kidsOf(tickets);
+  lastKids = { tickets: [...tickets], links: tickets.flatMap((t) => LINK_FIELDS.map((f) => t[f])), out: out as Map<string, { ticket: FamilyTicket; how: LinkHow }[]> };
+  return out;
+}
+
+function kidsOf<T extends FamilyTicket>(tickets: T[]): Map<string, { ticket: T; how: LinkHow }[]> {
   const byId = new Map(tickets.map((t) => [t.id, t]));
   const out = new Map<string, { ticket: T; how: LinkHow }[]>();
-  for (const t of [...tickets].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+  // ISO times sort as plain strings (localeCompare is many times slower).
+  for (const t of [...tickets].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0))) {
     const p = parentIn(byId, t);
     if (!p) continue;
     const list = out.get(p.parent.id) ?? out.set(p.parent.id, []).get(p.parent.id)!;
