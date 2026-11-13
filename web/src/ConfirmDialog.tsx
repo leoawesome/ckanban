@@ -2,8 +2,10 @@ import { useId, useRef, useState, type ReactNode } from "react";
 import { useFocusTrap, useLayer } from "./layers";
 import { useBackdropClose } from "./sheet";
 import { KeyHint } from "./KeyHint";
+import { useBackEntry } from "./backEntry";
+import { usePhone } from "./usePhone";
 
-export function ConfirmDialog({ title, children, confirmLabel, busyLabel = "Working…", tone = "danger", onConfirm, onCancel }: {
+export function ConfirmDialog({ title, children, confirmLabel, busyLabel = "Working…", tone = "danger", onConfirm, onCancel, backEntry = true }: {
   title: string;
   children: ReactNode;
   confirmLabel: string;
@@ -11,6 +13,8 @@ export function ConfirmDialog({ title, children, confirmLabel, busyLabel = "Work
   tone?: "danger" | "primary";
   onConfirm: () => Promise<void> | void;
   onCancel: () => void;
+  /** On a phone, Back cancels it (its own history entry). Off for the "Discard draft?" a dialog asks on Back. */
+  backEntry?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -18,6 +22,7 @@ export function ConfirmDialog({ title, children, confirmLabel, busyLabel = "Work
   const box = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   useLayer(onCancel);
+  useBackEntry(usePhone() && backEntry, onCancel);
   useFocusTrap(box);
   const backdrop = useBackdropClose(onCancel);
 

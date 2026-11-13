@@ -8,6 +8,7 @@ import { Markdown } from "./Transcript";
 import { baseName, BINARY, dragFile, HTML, IMAGE, MARKDOWN } from "./share";
 import { ShareMenu } from "./ShareMenu";
 import { useLayer } from "./layers";
+import { useBackEntry } from "./backEntry";
 import { usePhone } from "./usePhone";
 import { PdfView } from "./PdfView";
 
@@ -198,7 +199,6 @@ export function Outputs({ slug, ticket, onCount, focus }: {
   const [narrow, setNarrow] = useState(false);
   const [reading, setReading] = useState(!!focus);
   const phone = usePhone();
-  const pushed = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   useNow();
 
@@ -254,21 +254,10 @@ export function Outputs({ slug, ticket, onCount, focus }: {
   const readerOn = narrow && reading && !!open && !!files?.some((f) => f.name === open);
   const order = useMemo(() => flatten(tree), [tree]);
   const at = open ? order.indexOf(open) : -1;
-  const closeReader = () => (pushed.current ? history.back() : setReading(false));
+  const closeReader = () => setReading(false);
   useLayer(closeReader, { active: readerOn, skipInInputs: true });
   // On a phone the Back gesture closes the reader, not the ticket: the reader gets its own history entry.
-  useEffect(() => {
-    if (!readerOn || !phone) return;
-    history.pushState({ ckOutputsReader: true }, "");
-    pushed.current = true;
-    const onPop = () => { pushed.current = false; setReading(false); };
-    window.addEventListener("popstate", onPop);
-    return () => {
-      window.removeEventListener("popstate", onPop);
-      if (pushed.current && history.state?.ckOutputsReader) history.back();
-      pushed.current = false;
-    };
-  }, [readerOn, phone]);
+  useBackEntry(readerOn && phone, closeReader);
   useEffect(() => { bodyRef.current?.scrollTo(0, 0); }, [open]);
   const pick = (name: string) => { setOpen(name); setReading(true); };
   const stepFile = (by: number) => { if (at >= 0) setOpen(order[(at + by + order.length) % order.length]); };

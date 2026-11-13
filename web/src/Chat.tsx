@@ -8,7 +8,7 @@ import { usePresets } from "./HuddleRoster";
 import type { TeamRequest } from "./Team";
 import { TeammateCard } from "./TeammateCard";
 import { SquadCard } from "./SquadCard";
-import { AutomationCard } from "./AutomationCard";
+import { AutomationCard, openAutomations } from "./AutomationCard";
 import { KeysBox } from "./KeysBox";
 import { oldChat } from "./cacheNote";
 import { ContextChip } from "./ContextPanel";
@@ -1099,7 +1099,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                   onOpenTeam={onOpenTeam && (() => onOpenTeam({ action: "squads" }))} onSaved={() => setPresetsVersion((n) => n + 1)} onError={onError} />
               )}
               {e.automation && (
-                <AutomationCard slug={slug} ticketId={ticket.id} uuid={e.uuid} proposal={e.automation} saved={ticket.automationCards?.[e.uuid]} onError={onError} />
+                <AutomationCard slug={slug} ticketId={ticket.id} uuid={e.uuid} proposal={e.automation} saved={ticket.automationCards?.[e.uuid]} onOpenAutomations={openAutomations} onError={onError} />
               )}
               {e.keys && (
                 <KeysBox slug={slug} ticketId={ticket.id} uuid={e.uuid} ask={e.keys} answered={ticket.keyCards?.[e.uuid]}

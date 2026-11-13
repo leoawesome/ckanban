@@ -104,5 +104,7 @@ export interface AutomationProposal {
   askClaude?: { on: boolean; prompt: string };
   /** The feature each new ticket goes into as a task (a main ticket's or group's id). */
   partOf?: string;
+  /** Claude suggests new tickets start Claude by themselves: the card's box starts ticked. */
+  autoStart?: boolean;
   summary: string;
 }

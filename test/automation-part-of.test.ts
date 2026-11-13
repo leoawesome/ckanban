@@ -190,3 +190,11 @@ test("the setup chat's proposal takes partOf; the picker words it for new ticket
   const rows = featureChoices(store.listTickets("p"), "", "automation");
   expect(rows.find((r) => r.value === done.id)!.label).toBe("Put each new ticket in: Old (done: new tickets move it back to Review)");
 });
+
+test("the proposal carries autoStart only when Claude sets it to true", () => {
+  const base = { name: "A", summary: "s", script: "echo" };
+  expect(automationProposal({ ...base, partOf: "t_1", autoStart: true }).autoStart).toBe(true);
+  expect(automationProposal({ ...base, autoStart: false }).autoStart).toBeUndefined();
+  expect(automationProposal({ ...base, autoStart: "yes" }).autoStart).toBeUndefined();
+  expect(automationProposal(base).autoStart).toBeUndefined();
+});

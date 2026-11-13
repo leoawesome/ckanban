@@ -5,6 +5,7 @@ import { formatSize } from "./attachText";
 import { fileFinder, FileLinkContext, type FileLinks } from "./fileLinkContext";
 import { CheckIcon, CloseIcon, CopyIcon } from "./icons";
 import { useLayer } from "./layers";
+import { useBackEntry } from "./backEntry";
 import { withFit } from "./Outputs";
 import { PdfView } from "./PdfView";
 import { baseName, HTML, IMAGE, MARKDOWN } from "./share";
@@ -51,27 +52,15 @@ function FileViewer({ slug, ticketId, path, onClose }: { slug: string; ticketId:
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const phone = usePhone();
-  const pushed = useRef(false);
 
   useEffect(() => {
     api.ticketFile(slug, ticketId, path).then(setFile).catch((e) => setError(e.message));
   }, [slug, ticketId, path]);
 
-  const close = () => (pushed.current ? history.back() : onClose());
+  const close = onClose;
   useLayer(close, { skipInInputs: true });
   // On a phone the Back gesture closes the file, not the ticket.
-  useEffect(() => {
-    if (!phone) return;
-    history.pushState({ ckFileViewer: true }, "");
-    pushed.current = true;
-    const onPop = () => { pushed.current = false; onClose(); };
-    window.addEventListener("popstate", onPop);
-    return () => {
-      window.removeEventListener("popstate", onPop);
-      if (pushed.current && history.state?.ckFileViewer) history.back();
-      pushed.current = false;
-    };
-  }, [phone]);
+  useBackEntry(phone, close);
 
   const name = baseName(path);
   const kind = IMAGE.test(name) ? "image" : PDF.test(name) ? "pdf" : HTML.test(name) ? "html" : MARKDOWN.test(name) ? "md" : "text";

@@ -1258,7 +1258,7 @@ const PLANNING_TOOLS: Tool[] = [
     name: "propose_automation",
     description:
       "Automation setup chat: propose the automation you set up with the user. The board shows a card with Connect buttons for connections not made yet and Save automation; " +
-      "only the user's click saves it. Test the script with test_automation_script first. Its tickets land in Backlog (the user can change that in the editor). " +
+      "only the user's click saves it. Test the script with test_automation_script first. Its tickets land in Backlog, unless autoStart is set (then they go to Ready and start Claude at once). " +
       "passes: each connection the script uses: {name} for one already connected, {name, from: \"<Connections server>\"} to connect from Connections in one click, " +
       "{name, url: \"https://<online MCP server>\"} when its online MCP server isn't in the user's own Claude settings (e.g. a claude.ai connector's address): the board signs in to it by itself, " +
       "or {name, envName, keyHelp} for a key the user pastes (keyHelp says where to find it; a key already saved for this board under that envName is used as is, and ask_keys asks for one in a box). Nothing is saved by the call.",
@@ -1287,7 +1287,13 @@ const PLANNING_TOOLS: Tool[] = [
         partOf: {
           type: "string",
           description: "Optional: a main ticket's id (or one of its groups') when the user wants each new item to become a task of that feature instead of its own card. " +
-            "The task waits until the user or the main ticket starts it (the user can let them start by themselves in the editor); a main ticket in Done moves back to Review. Checked when the user saves.",
+            "The task waits until the user or the main ticket starts it, unless autoStart is set; a main ticket in Done moves back to Review. Checked when the user saves.",
+        },
+        autoStart: {
+          type: "boolean",
+          description: "Optional: true pre-ticks \"Start Claude by itself\" on the card: each new ticket or task starts a Claude run right away (a little cost per run). " +
+            "Set it when the watcher should clearly act on its own: the user asked for that, or the tasks only make sense if they start at once (e.g. a watcher that feeds a main ticket's work). " +
+            "Leave it out when the user should look at each new item first. The user can untick it before saving.",
         },
       },
       required: ["name", "summary", "script"],

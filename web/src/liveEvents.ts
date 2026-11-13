@@ -150,6 +150,14 @@ export function createLive<E>(deps: LiveDeps<E>) {
         reconnectListeners.delete(fn);
       };
     },
+    /**
+     * Hands an event to this tab's listeners as if the server had sent it: for a change this tab made itself (the
+     * request's answer), so the page shows it even when the live connection is stalled (a phone that put the tab
+     * holding the connection to sleep). The server's own event repeats it later; listeners merge, so that is harmless.
+     */
+    emitLocal(e: E): void {
+      deliver(e);
+    },
     /** For tests: is this tab the one holding the connection. */
     isLeader: () => leader,
   };

@@ -5,6 +5,7 @@ import { api, copy, COLUMNS, onReconnect, subscribe, waitsForSlot, type Health, 
 import { avatarColor, avatarLetter } from "./avatar";
 import { BugReportDialog } from "./BugReportDialog";
 import { AutomationsDialog } from "./AutomationsDialog";
+import { OPEN_AUTOMATIONS_EVENT } from "./AutomationCard";
 import { ConnectionsDialog } from "./ConnectionsDialog";
 import { HeaderMenu, type MenuItem } from "./HeaderMenu";
 import { ThemePicker } from "./ThemePicker";
@@ -294,6 +295,16 @@ export function App() {
   // Automations (this board) and the board's passes in Connections: they fetch for themselves and refetch when this
   // counter moves (the server says an automation or a pass changed).
   const [automationsOpen, setAutomationsOpen] = useState(false);
+  /** The automation Automations opens on (a saved chat card's "Open in Automations"). */
+  const [automationPick, setAutomationPick] = useState<string | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => {
+      setAutomationPick((e as CustomEvent<{ loopId?: string }>).detail?.loopId ?? null);
+      setAutomationsOpen(true);
+    };
+    window.addEventListener(OPEN_AUTOMATIONS_EVENT, on);
+    return () => window.removeEventListener(OPEN_AUTOMATIONS_EVENT, on);
+  }, []);
   const [autoTick, setAutoTick] = useState(0);
   const schedulesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phone = usePhone();
@@ -1530,7 +1541,7 @@ export function App() {
           onOpenTicket={(id) => { setSchedulesOpen(false); openTicket(id); }} />
       )}
       {automationsOpen && profile && (
-        <AutomationsDialog profile={profile} boards={profiles ?? []} tickets={tickets} refreshKey={autoTick} onClose={() => setAutomationsOpen(false)}
+        <AutomationsDialog profile={profile} boards={profiles ?? []} tickets={tickets} refreshKey={autoTick} initialId={automationPick} onClose={() => { setAutomationsOpen(false); setAutomationPick(null); }}
           onOpenTicket={(id) => { setAutomationsOpen(false); openTicket(id); }}
           onOpenConnections={() => { setAutomationsOpen(false); setConnections(true); }} />
       )}

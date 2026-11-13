@@ -2058,6 +2058,11 @@ export function subscribe(fn: (e: BusEvent) => void): () => void {
   return live.subscribe(fn);
 }
 
+/** Shows a ticket this tab just changed (a request's answer) at once, without waiting for the live connection. */
+export function showTicket(profile: string, ticket: Ticket): void {
+  live.emitLocal({ type: "ticket.updated", profile, ticket });
+}
+
 /** Called after the live connection comes back (daemon restart, laptop sleep, leader tab closed): refetch state. */
 export function onReconnect(fn: () => void): () => void {
   return live.onReconnect(fn);

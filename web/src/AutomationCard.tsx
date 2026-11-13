@@ -1,13 +1,19 @@
 import { useEffect, useState } from "react";
-import { api, subscribe, type AutomationProposal, type Pass } from "./api";
+import { api, showTicket, subscribe, type AutomationProposal, type Pass } from "./api";
 import { everyLabel, resolveProposedPass } from "./automations";
 import { connectFromClaude, KeyForm, openSignIn } from "./passConnect";
 
 /**
  * The setup chat proposed an automation (propose_automation). The card shows what it watches and the connections it
- * needs (Connect or paste a key for each one still missing); only the user's Save automation saves it. Its tickets
- * land in Backlog: the editor in Automations is where the user lets them start Claude by themselves.
+ * needs (Connect or paste a key for each one still missing); only the user's Save automation saves it. "Start Claude by
+ * itself" starts ticked when Claude suggested it (proposal.autoStart): ticked saves to Ready with autoStart, so new
+ * tickets start at once; unticked saves to Backlog, where they wait for the user.
  */
+
+/** Asks the board (App.tsx) to open Automations on this automation. */
+export const OPEN_AUTOMATIONS_EVENT = "ckanban:open-automations";
+export const openAutomations = (loopId?: string) => window.dispatchEvent(new CustomEvent(OPEN_AUTOMATIONS_EVENT, { detail: { loopId } }));
+
 export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAutomations, onError }: {
   slug: string;
   ticketId: string;
@@ -15,9 +21,23 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
   proposal: AutomationProposal;
   /** The automation this card saved (the ticket's automationCards), if any. */
   saved?: { loopId: string };
-  onOpenAutomations?: () => void;
+  onOpenAutomations?: (loopId: string) => void;
   onError: (m: string) => void;
 }) {
+  const [autoStart, setAutoStart] = useState(proposal.autoStart === true);
+  /** What this card saved in this tab: shown at once, before the ticket update arrives. */
+  const [justSaved, setJustSaved] = useState<{ loopId: string; autoStart: boolean } | null>(null);
+  /** Saved earlier (or in another tab): whether it starts Claude by itself, read from the automation. */
+  const [savedStarts, setSavedStarts] = useState<boolean | null>(null);
+  const done = justSaved ?? saved ?? null;
+  useEffect(() => {
+    if (!saved || justSaved) return;
+    // An automation list is small (a handful per board), so reading it whole is fine.
+    api.loops(slug).then((ls) => {
+      const l = ls.find((x) => x.id === saved.loopId);
+      setSavedStarts(l ? l.autoStart && l.column !== "backlog" : null);
+    }).catch(() => {});
+  }, [slug, saved?.loopId, !!justSaved]);
   const [passes, setPasses] = useState<Pass[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [keyFor, setKeyFor] = useState<string | null>(null);
@@ -36,14 +56,18 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
     if (proposal.partOf) api.ticket(slug, proposal.partOf).then((t) => setFeatureTitle(t.title)).catch(() => setFeatureTitle(null));
   }, [slug, proposal.partOf]);
 
-  if (saved) {
+  if (done) {
+    const starts = justSaved ? justSaved.autoStart : savedStarts;
+    const what = proposal.partOf ? "tasks" : "tickets";
     return (
-      <div className="proposal applied auto-card">
-        <span className="proposal-tag">Automation saved</span>
-        <div className="proposal-actions">
-          <span className="badge ok">{proposal.name}: checks every {everyLabel(proposal.everyMinutes)}</span>
-          {onOpenAutomations && <button className="btn small ghost" onClick={onOpenAutomations}>Open in Automations</button>}
+      <div className="proposal applied auto-card auto-card-saved" role="status">
+        <span className="proposal-tag">✓ Automation saved</span>
+        <div className="proposal-title">{proposal.name}</div>
+        <div className="muted small">
+          Checks every {everyLabel(proposal.everyMinutes)}.
+          {starts === true ? ` New ${what} start Claude by themselves.` : starts === false ? ` New ${what} wait for you to start them.` : ""}
         </div>
+        {onOpenAutomations && <button className="btn ghost auto-card-open" onClick={() => onOpenAutomations(done.loopId)}>Open in Automations</button>}
       </div>
     );
   }
@@ -90,11 +114,17 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
     const ids = resolved.map((r) => r.pass!.id);
     const l = await api.createLoop(slug, {
       name: proposal.name, enabled: true, service: proposal.service, passes: ids, script: proposal.script, everyMinutes: proposal.everyMinutes,
-      column: "backlog", autoStart: false, askClaude: proposal.askClaude ?? { on: false, prompt: "" },
+      column: autoStart ? "ready" : "backlog", autoStart, askClaude: proposal.askClaude ?? { on: false, prompt: "" },
       instructions: proposal.instructions ?? "Look at this item from {{service}} and do what it needs.\n\nLink: {{link}}",
       ...(proposal.partOf ? { partOf: proposal.partOf } : {}),
     });
-    await api.answerAutomationCard(slug, ticketId, uuid, l.id);
+    setJustSaved({ loopId: l.id, autoStart });
+    // The ticket's answer shows the saved card everywhere in this tab, even if the live connection is stalled.
+    const t = await api.answerAutomationCard(slug, ticketId, uuid, l.id).catch((e) => {
+      onError(`Saved, but the card couldn't be marked: ${e.message}`);
+      return null;
+    });
+    if (t) showTicket(slug, t);
   });
 
   return (
@@ -106,8 +136,8 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
         <div className="small">
           Checks {proposal.service} every {everyLabel(proposal.everyMinutes)}, without Claude.
           {proposal.partOf
-            ? ` New items become tasks of "${featureTitle ?? proposal.partOf}" that wait until you or its main ticket start them.`
-            : " New items become tickets in Backlog."}
+            ? ` New items become tasks of "${featureTitle ?? proposal.partOf}" that ${autoStart ? "start Claude right away" : "wait until you or its main ticket start them"}.`
+            : autoStart ? " New items become tickets in Ready that start Claude right away." : " New items become tickets in Backlog."}
           {proposal.askClaude?.on ? " Claude looks at each new item first (a little cost per new item)." : ""}
         </div>
         {resolved.length > 0 && (
@@ -134,6 +164,13 @@ export function AutomationCard({ slug, ticketId, uuid, proposal, saved, onOpenAu
         </button>
         {showScript && <pre className="mcp-raw">{proposal.script}</pre>}
       </div>
+      <label className="auto-card-start">
+        <input type="checkbox" checked={autoStart} disabled={!!busy} onChange={(e) => setAutoStart(e.target.checked)} />
+        <span>
+          <b>Start Claude by itself</b>
+          <span className="muted small">Each new {proposal.partOf ? "task" : "ticket"} starts right away (each run costs a little). Untick to start them yourself.</span>
+        </span>
+      </label>
       {note && <div className="muted small">{note}</div>}
       <div className="proposal-actions">
         <button className="btn primary" disabled={!ready || !!busy} title={ready ? "" : "Connect what it needs first"} onClick={save}>

@@ -9,6 +9,7 @@ import { Modal } from "./Modal";
 import { Select } from "./Select";
 import { timeAgo } from "./time";
 import { usePhone } from "./usePhone";
+import { useBackEntry } from "./backEntry";
 
 type Data = { passes: Pass[]; loops: Loop[] };
 type Tab = "settings" | "last" | "how";
@@ -29,13 +30,15 @@ const INTRO = "An automation checks a service on a timer, by itself and for free
  * the screen; tapping one opens its own screen with a back arrow.
  * refreshKey: bumps when an automation or a pass changed on the server.
  */
-export function AutomationsDialog({ profile, boards, tickets, refreshKey, onClose, onOpenTicket, onOpenConnections }: {
+export function AutomationsDialog({ profile, boards, tickets, refreshKey, initialId, onClose, onOpenTicket, onOpenConnections }: {
   profile: Profile;
   /** Every board, for "Copy to board". */
   boards: Profile[];
   /** This board's tickets, for "Where each new ticket goes". */
   tickets: Ticket[];
   refreshKey: number;
+  /** Open on this automation (on a phone: its own screen) instead of the first one. */
+  initialId?: string | null;
   onClose: () => void;
   /** Opens a ticket of this board (the setup chat, a ticket an automation made). */
   onOpenTicket: (id: string) => void;
@@ -44,10 +47,12 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, onClos
   const phone = usePhone();
   const [data, setData] = useState<Data | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | "new" | null>(null);
+  const [selected, setSelected] = useState<string | "new" | null>(initialId ?? null);
   /** Phone only: the picked automation's screen is showing (else the list). */
-  const [phoneOpen, setPhoneOpen] = useState(false);
+  const [phoneOpen, setPhoneOpen] = useState(!!initialId);
   const [busy, setBusy] = useState(false);
+  /** A new automation just saved: its editor reopens under its id and still says "Saved". */
+  const [justMade, setJustMade] = useState<string | null>(null);
 
   const reload = async () => {
     const [p, loops] = await Promise.all([api.passes(), api.loops(profile.slug)]);
@@ -76,6 +81,8 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, onClos
     setPhoneOpen(true);
   };
   const back = () => setPhoneOpen(false);
+  // Phone: Back from an automation's screen goes to the list first (the window's own entry closes it after that).
+  useBackEntry(phone && phoneOpen, back);
   const deleted = async () => {
     setSelected(null);
     setPhoneOpen(false);
@@ -122,7 +129,7 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, onClos
               {selected === "new" && (
                 <LoopEditor key="new" slug={profile.slug} passes={data.passes} tickets={tickets} loop={null} phone={phone} onBack={back}
                   onOpenTicket={onOpenTicket} onOpenConnections={onOpenConnections}
-                  onSaved={async (l) => { await reload(); setSelected(l.id); }} onDeleted={deleted} />
+                  onSaved={async (l) => { await reload(); setJustMade(l.id); setSelected(l.id); }} onDeleted={deleted} />
               )}
               {loop && loop.state === "unsupported" && (
                 <UnsupportedLoop key={loop.id} slug={profile.slug} loop={loop} phone={phone} onBack={back}
@@ -130,7 +137,7 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, onClos
               )}
               {loop && loop.state !== "unsupported" && (
                 <LoopEditor key={loop.id} slug={profile.slug} passes={data.passes} tickets={tickets} loop={loop} otherBoards={boards.filter((b) => b.slug !== profile.slug)}
-                  phone={phone} onBack={back} onOpenTicket={onOpenTicket} onOpenConnections={onOpenConnections}
+                  phone={phone} onBack={back} onOpenTicket={onOpenTicket} onOpenConnections={onOpenConnections} justSaved={justMade === loop.id}
                   onSaved={async () => { await reload(); }} onDeleted={deleted} />
               )}
               {selected && selected !== "new" && !loop && (
@@ -158,6 +165,22 @@ export function PhoneBar({ title, onBack, children }: { title: string; onBack: (
   );
 }
 
+/** A field's label with a round "?" that shows its help underneath (the help stays folded until asked for). */
+function FieldHead({ label, help, id, htmlFor }: { label: string; help: ReactNode; id?: string; htmlFor?: string }) {
+  const [open, setOpen] = useState(false);
+  const helpId = useId();
+  return (
+    <>
+      <div className="auto-key">
+        {htmlFor ? <label id={id} htmlFor={htmlFor}>{label}</label> : <span id={id}>{label}</span>}
+        <button type="button" className="auto-help-btn" aria-label={`About ${label}`} aria-expanded={open} aria-controls={helpId} onClick={() => setOpen((v) => !v)}>?</button>
+      </div>
+      {/* Under the label on a phone; on a computer under the whole row (styles.css). */}
+      {open && <div id={helpId} className="auto-tip">{help}</div>}
+    </>
+  );
+}
+
 /** The header chip for a saved automation: whether it works, in plain words. */
 function statusChip(l: Loop): { label: string; tone: string } {
   const st = loopStatus(l);
@@ -166,13 +189,15 @@ function statusChip(l: Loop): { label: string; tone: string } {
   return st;
 }
 
-function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBack, onSaved, onDeleted, onOpenTicket, onOpenConnections }: {
+function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, justSaved, onBack, onSaved, onDeleted, onOpenTicket, onOpenConnections }: {
   slug: string;
   passes: Pass[];
   tickets: Ticket[];
   loop: Loop | null;
   otherBoards?: Profile[];
   phone: boolean;
+  /** Opened right after it was created here: show "Saved" until the first edit. */
+  justSaved?: boolean;
   onBack: () => void;
   onSaved: (l: Loop) => Promise<void>;
   onDeleted: () => void | Promise<void>;
@@ -201,6 +226,8 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBa
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [menu, setMenu] = useState<null | "main" | "boards">(null);
+  /** The form as last saved here (set right after Save; a new automation reopens with justSaved). */
+  const [savedSnap, setSavedSnap] = useState<string | null>(null);
   useEffect(() => { if (changed) setTab("how"); }, [changed]);
   const svc = service.trim() || passes.find((p) => p.id === passIds[0])?.name || "the service";
   const everyOptions = [...new Set([...EVERY_CHOICES, every])].sort((a, b) => a - b).map((m) => ({ value: String(m), label: everyLabel(m) }));
@@ -229,7 +256,9 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBa
     e?.preventDefault();
     if (blocker) return;
     return act("save", async () => {
-      const l = loop ? await api.updateLoop(slug, loop.id, input()) : await api.createLoop(slug, input());
+      const sent = input();
+      const l = loop ? await api.updateLoop(slug, loop.id, sent) : await api.createLoop(slug, sent);
+      setSavedSnap(JSON.stringify(sent));
       await onSaved(l);
     });
   };
@@ -254,7 +283,11 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBa
     { id: "how", label: "How it checks" },
   ];
   const chip = loop && statusChip(loop);
-  const footNote = err ?? note ?? (busy ? null : blocker) ?? "Changes apply after you save.";
+  // "✓ Saved" until the next edit: the form as it was saved, compared with the form now.
+  const snap = JSON.stringify(input());
+  useEffect(() => { if (justSaved) setSavedSnap(snap); }, []);
+  const saved = !err && !note && !busy && savedSnap === snap;
+  const footNote = err ?? note ?? (busy ? null : blocker) ?? (saved ? "✓ Saved" : "Changes apply after you save.");
 
   return (
     <form className="auto-form" onSubmit={save}>
@@ -305,12 +338,8 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBa
             </label>
           </div>
           {loop && chip && (
-            <div className="auto-chips">
-              <span className={`auto-chip ${chip.tone}`}>● {chip.label}</span>
-              <span className="auto-chip">{loop.lastCheckedAt ? `Checked ${timeAgo(loop.lastCheckedAt)}` : "Not checked yet"}</span>
-              {loop.lastCheckedAt && <span className="auto-chip">Found {loop.lastFound} item{loop.lastFound === 1 ? "" : "s"}</span>}
-              <span className="auto-chip">Free until something new shows up</span>
-              {askOn && <span className="auto-chip">Then Claude looks at it</span>}
+            <div className="auto-status">
+              <span className={`auto-status-dot ${chip.tone}`} aria-hidden>●</span> {chip.label} · {loop.lastCheckedAt ? `checked ${timeAgo(loop.lastCheckedAt)}` : "not checked yet"}
             </div>
           )}
           {loop && loop.state !== "ok" && <div className="mcp-msg">{loop.problems.map((p) => <div key={p}>{p}</div>)}</div>}
@@ -330,78 +359,73 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBa
           {tab === "settings" && (
             <>
               <div className="auto-field">
-                <div className="auto-key">Watch</div>
+                <FieldHead label="Watch" help="Only items that show up after it's switched on count. Each one becomes a ticket. Checking is free; Claude only runs for tickets it makes." />
                 <div className="auto-val">
                   <div className="auto-line">
                     <input className="auto-service" value={service} onChange={(e) => setService(e.target.value)} placeholder={svc} aria-label="What it checks" />
                     <span>every</span>
                     <Select<string> value={String(every)} ariaLabel="How often" options={everyOptions} onChange={(v) => setEvery(Number(v))} />
                   </div>
-                  <div className="auto-hint">Only items that show up after it's switched on. One ticket per item.</div>
                 </div>
               </div>
 
               <div className="auto-field">
-                <div className="auto-key" id={`${ids}-col`}>New tickets go to</div>
-                <div className="auto-val" role="radiogroup" aria-labelledby={`${ids}-col`}>
-                  {COLUMNS.map((c) => (
-                    <label key={c} className={`auto-opt${column === c ? " on" : ""}`}>
-                      <input type="radio" name={`${ids}-column`} checked={column === c} onChange={() => pickColumn(c)} />
-                      <span><b>{COLUMN_LABEL[c]}</b><span className="auto-opt-sub">{COLUMN_MEANING[c]}</span></span>
-                    </label>
-                  ))}
-                  {column !== "backlog" && (
-                    <div className={`auto-warn${autoStart ? "" : " need"}`}>
-                      <span>Text from {svc} will start Claude, which can change your files. Anyone who can write in {svc} can put text there.</span>
-                      <label>
-                        <input type="checkbox" checked={autoStart} onChange={(e) => setAutoStart(e.target.checked)} />
-                        <span>Let Claude start by itself (needed for {COLUMN_LABEL[column]}; without it, pick Backlog)</span>
+                <FieldHead label="New tickets go to" id={`${ids}-col`}
+                  help={COLUMNS.map((c) => `${COLUMN_LABEL[c]}: ${COLUMN_MEANING[c]}`).join(" ")} />
+                <div className="auto-val">
+                  <div className="auto-seg" role="radiogroup" aria-labelledby={`${ids}-col`}>
+                    {COLUMNS.map((c) => (
+                      <label key={c} className={column === c ? "on" : ""}>
+                        <input type="radio" name={`${ids}-column`} checked={column === c} onChange={() => pickColumn(c)} />
+                        <span>{COLUMN_LABEL[c]}</span>
                       </label>
-                    </div>
+                    ))}
+                  </div>
+                  {column !== "backlog" && (
+                    <>
+                      <label className={`auto-check${autoStart ? "" : " need"}`}>
+                        <input type="checkbox" checked={autoStart} onChange={(e) => setAutoStart(e.target.checked)} />
+                        <span>Let Claude start by itself</span>
+                      </label>
+                      <div className="auto-hint">{autoStart
+                        ? `Anyone who can write in ${svc} can start Claude here.`
+                        : `Needed for ${COLUMN_LABEL[column]}. Without it, pick Backlog.`}</div>
+                    </>
                   )}
                 </div>
               </div>
 
               <div className="auto-field">
-                <div className="auto-key" id={`${ids}-where`}>Where each new ticket goes</div>
+                <FieldHead label="Put it in" help={partOf
+                  ? `Each new ticket becomes a task of that feature, in its Tasks tab, not its own card. ${autoStart && column !== "backlog"
+                    ? "It starts right away."
+                    : "It waits until you or the main ticket start it (pick Planning or Ready to start it right away)."} The main chat hears only when a task needs you, is blocked, failed or hit the usage limit. If the main ticket is in Done, each new task moves it back to Review.`
+                  : "Each new ticket gets its own card on the board. Pick a feature to make them its tasks instead."} />
                 <div className="auto-val auto-where">
                   <FeaturePicker tickets={tickets} value={partOf} onChange={setPartOf} maker="automation" ariaLabel="Where each new ticket goes" />
-                  <div className="auto-hint">
-                    {partOf
-                      ? `Each new ticket becomes a task of that feature, in its Tasks tab, not its own card. ${autoStart && column !== "backlog"
-                        ? "It starts right away"
-                        : "It waits until you or the main ticket start it (pick Planning or Ready above to start it right away)"}. The feature's main chat hears only when a task needs you, is blocked, failed or hit the usage limit. If the main ticket is in Done, each new task moves it back to Review.`
-                      : "Each new ticket gets its own card on the board."}
-                  </div>
                 </div>
               </div>
 
               <div className="auto-field">
-                <div className="auto-key" id={`${ids}-each`}>Each ticket</div>
+                <FieldHead label="Each ticket" id={`${ids}-each`} help={askOn
+                  ? "Claude looks at each new item first and decides whether it needs a ticket (a small cost per new item). Quiet checks cost nothing."
+                  : `Free. ${"{{title}}"}, ${"{{link}}"} and ${"{{service}}"} are filled in, and the item's own text is added below, marked as copied from ${svc}.`} />
                 <div className="auto-val">
-                  <div className="auto-opt-pair" role="radiogroup" aria-labelledby={`${ids}-each`}>
-                    <label className={`auto-opt${askOn ? "" : " on"}`}>
+                  <div className="auto-seg" role="radiogroup" aria-labelledby={`${ids}-each`}>
+                    <label className={askOn ? "" : "on"}>
                       <input type="radio" name={`${ids}-ask`} checked={!askOn} onChange={() => setAskOn(false)} />
-                      <span><b>Use a template</b><span className="auto-opt-sub">Free</span></span>
+                      <span>Template</span>
                     </label>
-                    <label className={`auto-opt${askOn ? " on" : ""}`}>
+                    <label className={askOn ? "on" : ""}>
                       <input type="radio" name={`${ids}-ask`} checked={askOn} onChange={() => setAskOn(true)} />
-                      <span><b>Ask Claude first</b><span className="auto-opt-sub">Claude decides if it needs a ticket. Small cost per new item.</span></span>
+                      <span>Ask Claude first</span>
                     </label>
                   </div>
                   {askOn ? (
-                    <>
-                      <textarea rows={4} value={askPrompt} onChange={(e) => setAskPrompt(e.target.value)} aria-label="What Claude should make tickets for"
-                        placeholder="e.g. Skip questions and duplicates. Make a ticket for bugs, with the steps to reproduce." />
-                      <div className="auto-hint">Claude looks at each new item and decides whether it needs a ticket. Quiet checks cost nothing.</div>
-                    </>
+                    <textarea rows={4} value={askPrompt} onChange={(e) => setAskPrompt(e.target.value)} aria-label="What Claude should make tickets for"
+                      placeholder="e.g. Skip questions and duplicates. Make a ticket for bugs, with the steps to reproduce." />
                   ) : (
-                    <>
-                      <textarea rows={4} value={instructions} onChange={(e) => setInstructions(e.target.value)} aria-label="Ticket text" />
-                      <div className="auto-hint">
-                        {"{{title}}"}, {"{{link}}"} and {"{{service}}"} are filled in. The item's own text is added below it, marked as copied from {svc}.
-                      </div>
-                    </>
+                    <textarea rows={4} value={instructions} onChange={(e) => setInstructions(e.target.value)} aria-label="Ticket text" />
                   )}
                 </div>
               </div>
@@ -414,7 +438,7 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBa
             <>
               {changed && <div className="mcp-msg auto-changed">The script file changed since it was saved. Read it below; Save runs this version from now on.</div>}
               <div className="auto-field">
-                <div className="auto-key">Connections</div>
+                <FieldHead label="Connections" help="The services the script may call. Connect new ones in Connections." />
                 <div className="auto-val">
                   <div className="auto-conns">
                     {usable.map((p) => (
@@ -429,14 +453,13 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBa
                 </div>
               </div>
               <div className="auto-field">
-                <label className="auto-key" htmlFor={`${ids}-script`}>Check script</label>
+                <FieldHead label="Check script" htmlFor={`${ids}-script`} help={<>
+                  It prints one JSON item per line: <code>{`{"id": "...", "title": "...", "text": "...", "link": "..."}`}</code>. Only id and title are required.
+                  Give items about the same thing the same <code>thread</code> (for example the issue a comment is on): the first one makes a ticket, later ones go into that ticket.
+                  It reaches a connection with <code>ckanban call &lt;name&gt; &lt;tool&gt; '&lt;json&gt;'</code>.
+                </>} />
                 <div className="auto-val">
                   <textarea id={`${ids}-script`} rows={9} className="mono auto-script" value={script} onChange={(e) => setScript(e.target.value)} spellCheck={false} />
-                  <div className="auto-hint">
-                    It prints one JSON item per line: <code>{`{"id": "...", "title": "...", "text": "...", "link": "..."}`}</code>. Only id and title are required.
-                    Give items about the same thing the same <code>thread</code> (for example the issue a comment is on): the first one makes a ticket, later ones go into that ticket.
-                    It reaches a connection with <code>ckanban call &lt;name&gt; &lt;tool&gt; '&lt;json&gt;'</code>.
-                  </div>
                   <div className="auto-line">
                     <button type="button" className="btn" disabled={!!busy || !script.trim()}
                       onClick={() => act("test", async () => setTest(await api.testLoop(slug, script, passIds)))}>
@@ -454,7 +477,7 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, onBa
       </div>
 
       <div className="auto-foot">
-        <span className={`auto-foot-note${err ? " err" : note ? "" : !busy && blocker ? " why" : " idle"}`} role="status">{footNote}</span>
+        <span className={`auto-foot-note${err ? " err" : note ? "" : !busy && blocker ? " why" : saved ? " saved" : " idle"}`} role="status">{footNote}</span>
         {!phone && loop && otherBoards.length > 0 && (
           <Select<string> value="" ariaLabel="Copy to another board" options={otherBoards.map((b) => ({ value: b.slug, label: b.name }))}
             renderValue={() => "Copy to board…"} onChange={copyTo} />

@@ -4,12 +4,14 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { CloseIcon } from "./icons";
 import { useFocusTrap, useLayer } from "./layers";
 import { useBackdropClose, useCalmTouchFocus, useKeyboardFit, useSwipeClose } from "./sheet";
+import { useBackEntry } from "./backEntry";
+import { usePhone } from "./usePhone";
 
 /**
  * Dialog with focus trap and Esc (topmost layer only). `guard` = there is typed work to lose:
  * Esc, the × and clicking outside ask before closing.
  * On a phone it is a bottom sheet (sheet.ts): grab handle, swipe down to close, sized to what the keyboard leaves,
- * and it doesn't open the keyboard by itself unless it has a single field.
+ * and it doesn't open the keyboard by itself unless it has a single field. The phone's Back gesture closes it (backEntry.ts).
  */
 export function Modal({ title, onClose, children, wide, guard, focusDialog, onKeys, className, bare }: {
   title: string;
@@ -35,6 +37,7 @@ export function Modal({ title, onClose, children, wide, guard, focusDialog, onKe
   const [asking, setAsking] = useState(false);
   const tryClose = () => (guard ? setAsking(true) : onClose());
   useLayer(tryClose);
+  useBackEntry(usePhone(), tryClose);
   useFocusTrap(box, focusDialog);
   useCalmTouchFocus(box);
   useKeyboardFit(overlay, box);
@@ -55,7 +58,7 @@ export function Modal({ title, onClose, children, wide, guard, focusDialog, onKe
         {children}
       </div>
       {asking && (
-        <ConfirmDialog title="Discard draft?" confirmLabel="Discard" onCancel={() => setAsking(false)} onConfirm={onClose}>
+        <ConfirmDialog title="Discard draft?" confirmLabel="Discard" backEntry={false} onCancel={() => setAsking(false)} onConfirm={onClose}>
           <p>What you typed here will be lost.</p>
         </ConfirmDialog>
       )}

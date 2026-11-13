@@ -1,6 +1,6 @@
 // propose_automation: the setup chat (Automations → Set up with Claude) proposes an automation and the user saves it
-// with one click. It is a card built from the tool call in the transcript (session.ts). The card never sets the
-// column: its tickets land in Backlog until the user switches on "Start Claude by itself" in the editor.
+// with one click. It is a card built from the tool call in the transcript (session.ts). autoStart pre-ticks the card's
+// "Start Claude by itself" box (tickets go to Ready and start at once); the user's tick or untick on the card decides.
 
 /** A connection the automation needs, as the setup chat names it. */
 export interface ProposedPass {
@@ -26,6 +26,8 @@ export interface AutomationProposal {
   askClaude?: { on: boolean; prompt: string };
   /** The feature each new ticket goes into as a task: a main ticket's or group's id (Loop.partOf; checked on save). */
   partOf?: string;
+  /** Claude suggests that new tickets start Claude by themselves (Ready + Loop.autoStart): pre-ticks the card's box. */
+  autoStart?: boolean;
   /** One line: what it watches, in plain words. */
   summary: string;
 }
@@ -62,6 +64,7 @@ export function automationProposal(input: any): AutomationProposal {
     ...(str(input?.instructions) ? { instructions: str(input.instructions).slice(0, 8000) } : {}),
     ...(ask && typeof ask === "object" ? { askClaude: { on: ask.on === true, prompt: str(ask.prompt).slice(0, 4000) } } : {}),
     ...(partOf ? { partOf } : {}),
+    ...(input?.autoStart === true ? { autoStart: true } : {}),
   };
 }
 
