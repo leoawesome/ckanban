@@ -114,7 +114,7 @@ test("a task leaving another site's login page open changes nothing, and a Whats
   expect(alerts).toEqual([["Fatt Interior WhatsApp", "web.whatsapp.com"]]);
 });
 
-test("a site seen signed in that shows its login page later is logged out too, per site", async () => {
+test("a site seen signed in that shows its login page later is logged out too, per site; WhatsApp is never forgotten", async () => {
   const { bb, f, view, alerts } = await setup();
   f.pages = [WA, { id: "s", type: "page", title: "Shop", url: "https://shop.example.com/orders" }];
   f.answers.set("wa", "in");
@@ -127,8 +127,20 @@ test("a site seen signed in that shows its login page later is logged out too, p
   f.answers.set("wa", "out");
   await bb.tick();
   await bb.tick();
-  expect(alerts.map((a) => a[1])).toEqual(["shop.example.com", "web.whatsapp.com"]);
+  // Only the site the browser is for (WhatsApp here) sends an urgent alert; the shop only changed the card.
+  expect(alerts.map((a) => a[1])).toEqual(["web.whatsapp.com"]);
   expect(view().signInSite).toBe("web.whatsapp.com");
+  // 25 more sites later, WhatsApp is still remembered, so its next logout alerts.
+  f.answers.set("wa", "in");
+  f.pages = [WA, ...Array.from({ length: 25 }, (_, i) => ({ id: `x${i}`, type: "page", title: "", url: `https://site${i}.example.com/` }))];
+  await bb.tick();
+  expect(Object.keys(bb.get("fatt-interior-whatsapp")!.sites!)).toContain("web.whatsapp.com");
+  expect(Object.keys(bb.get("fatt-interior-whatsapp")!.sites!).length).toBeLessThanOrEqual(21);
+  f.pages = [WA];
+  f.answers.set("wa", "out");
+  await bb.tick();
+  await bb.tick();
+  expect(alerts.length).toBe(2);
 });
 
 test("a stopped browser keeps its last look with the time; a restart that finds it still logged out doesn't alert again", async () => {

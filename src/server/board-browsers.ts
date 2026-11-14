@@ -951,7 +951,9 @@ export class BoardBrowsers {
     const now = nowIso();
     const first = !b.check;
     const sites = { ...(b.sites ?? {}) };
-    const watched = (site: string) => first || site in sites || site in PAGE_PROBES || (!!b.startUrl && siteOf(b.startUrl) === site);
+    // The sites this browser is for: an urgent alert only for these; other sites only change the card.
+    const main = (site: string) => site in PAGE_PROBES || (!!b.startUrl && siteOf(b.startUrl) === site);
+    const watched = (site: string) => first || site in sites || main(site);
     let changed = false;
     let any = false;
     const pending = new Set<string>();
@@ -980,11 +982,13 @@ export class BoardBrowsers {
           continue;
         }
         this.outTicks.delete(key);
-        this.note(b.id, `sign-in: was signed in, now needs sign-in on ${site}`);
-        try {
-          this.onLoggedOut?.({ id: b.id, name: b.name }, site);
-        } catch (e) {
-          console.error(`board browser ${b.id}: logged-out alert`, e);
+        this.note(b.id, `sign-in: was signed in, now needs sign-in on ${site}${main(site) ? "" : " (no alert: not the site this browser is for)"}`);
+        if (main(site)) {
+          try {
+            this.onLoggedOut?.({ id: b.id, name: b.name }, site);
+          } catch (e) {
+            console.error(`board browser ${b.id}: logged-out alert`, e);
+          }
         }
       } else this.note(b.id, `sign-in: needs sign-in on ${site}`);
       sites[site] = "out";
@@ -1002,7 +1006,8 @@ export class BoardBrowsers {
     if (!any && !changed) return false;
     this.checkedAt.set(b.id, now);
     // Kept small: the sites it has been seen on (oldest dropped past SITES_MAX).
-    const keys = Object.keys(sites);
+    // The sites it is for are never dropped (a missing entry would turn a logout into a first look, with no alert).
+    const keys = Object.keys(sites).filter((k) => !main(k));
     for (const k of keys.slice(0, Math.max(0, keys.length - SITES_MAX))) delete sites[k];
     b.sites = sites;
     const outSite = Object.keys(sites).find((s) => sites[s] === "out" && s in PAGE_PROBES) ?? Object.keys(sites).find((s) => sites[s] === "out");
