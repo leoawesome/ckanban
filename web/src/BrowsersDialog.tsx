@@ -1,9 +1,10 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api, subscribe, type BoardBrowserView, type BrowserPick, type BrowsersState, type ChromeBrowser } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Modal } from "./Modal";
 import { timeAgo } from "./time";
 import { useNow } from "./useNow";
+import { usePhone } from "./usePhone";
 
 /** A board's or ticket's chrome setting meaning "ask each time" (server: chromes.ts ASK_CHROME). */
 export const ASK_CHROME = "ask";
@@ -224,14 +225,20 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
     if (!(await run("start", () => api.updateBoardBrowser(b.id, { startUrl: v || null })))) setStartUrl(b.startUrl ?? "");
   };
 
-  const needsSignIn = !b.signedIn;
+  const phone = usePhone();
+  const needsSignIn = b.signIn === "Needs sign-in";
+  const notChecked = b.signIn === "Not checked";
+  const running = b.state === "hidden" || b.state === "visible";
   const inUse = b.inUse > 0;
-  const where = b.lastSite ? b.lastSite.site : needsSignIn ? "new, no site opened yet" : null;
+  const where = needsSignIn && b.signInSite ? `logged out of ${b.signInSite}` : b.lastSite ? b.lastSite.site : notChecked ? "no site opened yet" : null;
+  // A browser that isn't running keeps what the last look said, with when.
+  const checked = !running && b.checkedAt && !notChecked ? `checked ${timeAgo(b.checkedAt)}` : null;
   const used = b.lastUsedAt ? `used ${timeAgo(b.lastUsedAt)}` : null;
   const stateText = b.state === "visible" ? "Window open on your Mac" : b.state === "starting" ? "Starting…" : b.state === "closing" ? "Closing…" : null;
+  const onMac = phone ? " on the Mac" : "";
   return (
     <div className="browser board-browser">
-      <span className={`browser-dot${needsSignIn ? " warn" : ""}`} />
+      <span className={`browser-dot${needsSignIn ? " warn" : notChecked ? " off" : ""}`} />
       <div className="browser-meta">
         {renaming ? (
           <input value={name} autoFocus maxLength={40} aria-label="Browser name" onChange={(e) => setName(e.target.value)}
@@ -239,14 +246,15 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { e.stopPropagation(); setName(b.name); setRenaming(false); } }} />
         ) : <span className="browser-name">{b.name}</span>}
         <span className="muted small">
-          <span className={`browser-tag${needsSignIn ? " warn" : ""}`}>{b.signIn}</span>
+          <span className={`browser-tag${needsSignIn ? " warn" : notChecked ? " off" : ""}`}>{b.signIn}</span>
           {inUse && <span className="browser-tag busy">In use by a task</span>}
-          {[where, used, stateText].filter(Boolean).join(" · ")}
+          {[checked, where, used, stateText].filter(Boolean).join(" · ")}
         </span>
+        {needsSignIn && running && <SignInScreen id={b.id} site={b.signInSite} />}
         <div className="browser-acts">
           {needsSignIn
-            ? <button className="btn primary" disabled={!chromeInstalled || !!busy} onClick={() => void open()}>{busy === "open" ? "Opening…" : "Sign in on your Mac"}</button>
-            : <button className="btn" disabled={!chromeInstalled || !!busy} onClick={() => void open()}>{busy === "open" ? "Opening…" : "Open window"}</button>}
+            ? <button className="btn primary" disabled={!chromeInstalled || !!busy} onClick={() => void open()}>{busy === "open" ? "Opening…" : phone ? "Sign in on the Mac" : "Sign in on your Mac"}</button>
+            : <button className="btn" disabled={!chromeInstalled || !!busy} onClick={() => void open()}>{busy === "open" ? "Opening…" : `Open window${onMac}`}</button>}
           {b.state === "visible" && !inUse && (
             <button className="btn ghost" disabled={!!busy} onClick={() => void close()}>{busy === "close" ? "Closing…" : "Close window"}</button>
           )}
@@ -258,9 +266,13 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
             ? "A task is using it now. Its window opens on your Mac once the task is done."
             : inUse
               ? "A task is using it now. Open window waits until the task is done; the window opens on your Mac."
-              : needsSignIn
-                ? "Opens a Chrome window on your Mac. Sign in to the sites this browser needs, then close it."
-                : "Opens a Chrome window on your Mac."}
+              : phone
+                ? needsSignIn && running
+                  ? "Or sign in above, from this phone. The button opens a window on the Mac, not on this phone."
+                  : "Opens a Chrome window on the Mac, not on this phone."
+                : needsSignIn || notChecked
+                  ? "Opens a Chrome window on your Mac. Sign in to the sites this browser needs, then close it."
+                  : "Opens a Chrome window on your Mac."}
         </span>
         <label className="browser-keep">
           <input type="checkbox" role="switch" className="switch" checked={b.keepRunning} disabled={!!busy}
@@ -291,6 +303,107 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
           This deletes the browser and every login saved in it. To use those sites again, you would add a new browser and sign in again.
         </ConfirmDialog>
       )}
+    </div>
+  );
+}
+
+/** How often the sign-in screen asks for a new picture while it is shown. */
+const SCREEN_MS = 3000;
+
+/**
+ * A logged-out browser's login page, live (a new picture every few seconds while the card is open), so sign-in works
+ * without the Mac: scan a WhatsApp QR code with the phone that has the account, or tap the picture and type (for
+ * "Link with phone number instead"). Taps and typing go to that page only. Pictures are never saved.
+ */
+function SignInScreen({ id, site }: { id: string; site: string | null }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [big, setBig] = useState(false);
+  const inFlight = useRef(false);
+  const current = useRef<string | null>(null);
+  const refresh = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      if (inFlight.current || document.hidden) return;
+      inFlight.current = true;
+      try {
+        const url = await api.boardBrowserScreen(id);
+        if (!alive) return URL.revokeObjectURL(url);
+        if (current.current) URL.revokeObjectURL(current.current);
+        current.current = url;
+        setSrc(url);
+        setError(null);
+      } catch (e) {
+        if (alive) setError((e as Error).message);
+      } finally {
+        inFlight.current = false;
+      }
+    };
+    refresh.current = () => void load();
+    void load();
+    const t = setInterval(() => void load(), SCREEN_MS);
+    return () => {
+      alive = false;
+      clearInterval(t);
+      if (current.current) URL.revokeObjectURL(current.current);
+      current.current = null;
+    };
+  }, [id]);
+
+  const send = async (ev: Parameters<typeof api.boardBrowserInput>[1]) => {
+    setSending(true);
+    try {
+      await api.boardBrowserInput(id, ev);
+      setError(null);
+      setTimeout(() => refresh.current(), 400);
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    } finally {
+      setSending(false);
+    }
+  };
+  const tap = (e: React.MouseEvent<HTMLImageElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const share = (v: number) => Math.min(1, Math.max(0, v));
+    void send({ type: "click", x: share((e.clientX - r.left) / r.width), y: share((e.clientY - r.top) / r.height) });
+  };
+  const typeIt = async () => {
+    if (!text) return;
+    if (await send({ type: "text", text })) setText("");
+  };
+  const whatsapp = site === "web.whatsapp.com";
+  return (
+    <div className="signin-screen">
+      <span className="small">
+        {whatsapp
+          ? "The WhatsApp login page, live. Scan the code with the phone that has this WhatsApp account (Settings, Linked devices), or tap \"Log in with phone number\" in the picture and type the number in the box below."
+          : "The login page, live. Tap it to press buttons or pick a field, then type below."}
+      </span>
+      <div className={`signin-shot${big ? " big" : ""}`}>
+        {src
+          ? <img src={src} alt={`Login page of ${site ?? "the site"}. Tap to click there.`} onClick={tap} draggable={false} />
+          : !error && <span className="muted small"><span className="spinner" /> Loading the page…</span>}
+      </div>
+      <div className="signin-type">
+        <input value={text} maxLength={200} placeholder="Type into the page" aria-label="Text to type into the login page"
+          autoComplete="off" autoCapitalize="off" spellCheck={false}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void typeIt(); } }} />
+        <button className="btn" disabled={sending || !text} onClick={() => void typeIt()}>Type</button>
+      </div>
+      <div className="browser-acts">
+        <button className="btn ghost" disabled={sending} onClick={() => void send({ type: "key", key: "Enter" })}>Press Enter</button>
+        <button className="btn ghost" disabled={sending} onClick={() => void send({ type: "key", key: "Backspace" })}>Delete a letter</button>
+        <button className="btn ghost" aria-pressed={big} onClick={() => setBig(!big)}>{big ? "Smaller" : "Bigger"}</button>
+      </div>
+      {error && <span className="form-error small" role="alert">{error}</span>}
     </div>
   );
 }

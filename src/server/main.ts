@@ -11,6 +11,8 @@ import { withUtf8Locale } from "./locale";
 import { boardToolsSource, McpManager } from "./mcp";
 import { startPoller } from "./prpoller";
 import { Notifier } from "./notify";
+import { ownPicks } from "./chromes";
+import { siteName } from "./sign-in-signs";
 import { HelperRunner } from "./helper/runner";
 import { ticketAttention, withSnooze } from "./attention";
 import { PushService } from "./push";
@@ -70,6 +72,13 @@ export async function startDaemon(): Promise<void> {
     },
   });
   notifier.plugBoard(board);
+  // A board browser seen logged out (its sign-in check): tell the user at once, naming the boards that use it.
+  board.boardBrowsers.onLoggedOut = (b, site) => {
+    const using = store.listProfiles().filter((p) => (ownPicks(p) ?? []).some((x) => x.kind === "board" && x.id === b.id));
+    void notifier.browserLoggedOut(b.name, siteName(site), using[0]?.slug ?? null, using.map((p) => p.name || p.slug))
+      .then((err) => console.log(`[browsers] ${b.name} (${b.id}): logged-out alert sent${err ? " (one channel failed; see Settings, Notifications)" : ""}`))
+      .catch((e) => console.error(`[browsers] ${b.id}: logged-out alert`, e));
+  };
   const webDir = join(import.meta.dir, "..", "..", "web", "dist");
   const embedded = Object.keys(WEB_ASSETS).length > 0;
   if (!embedded && !existsSync(join(webDir, "index.html"))) console.warn("web UI not built yet: run `bun run build:web`");

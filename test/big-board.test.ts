@@ -12,6 +12,8 @@ import { Bus } from "../src/server/events";
 import { createServer } from "../src/server/http";
 import { pollSessionsSliced, primeSessions, SessionCache } from "../src/server/session";
 import { Store } from "../src/server/store";
+import { BoardBrowsers } from "../src/server/board-browsers";
+import { fakes, harness } from "./fake-chrome";
 import { tempDir } from "./helpers";
 
 const BIG = 10_000;
@@ -66,8 +68,24 @@ const board = new Board(fresh, bus, { claudeBin: "/bin/false", sessionSummary: (
 const server = createServer({ store: fresh, bus, board, sessions, port: 0, webDir: tempDir("ck-web-") });
 const base = `http://127.0.0.1:${server.port}`;
 
+// Board browsers: 6 running, each with WhatsApp and two other tabs (the tick looks inside the WhatsApp ones).
+const browsers = new BoardBrowsers(store.root, () => {}, harness(store.root).deps);
+for (let i = 0; i < 6; i++) {
+  const b = await browsers.add(`Desk ${i}`);
+  await browsers.ensure(b.id);
+}
+for (const f of fakes) {
+  f.pages = [
+    { id: "wa", type: "page", title: "WhatsApp", url: "https://web.whatsapp.com/" },
+    { id: "a", type: "page", title: "Inbox", url: "https://mail.example.com/inbox" },
+    { id: "b", type: "page", title: "", url: "about:blank" },
+  ];
+  f.answers.set("wa", "in");
+}
+
 afterAll(() => {
   server.stop(true);
+  for (const f of fakes.splice(0)) if (!f.closed) f.quit();
   delete process.env.CLAUDE_CONFIG_DIR;
 });
 
@@ -103,6 +121,8 @@ const jobs: [string, () => Promise<unknown>][] = [
   // The session watcher: its first pass after a start (reads every chat), then a full pass over every ticket.
   ["the session watcher's first pass", () => primeSessions(fresh, sessions, new Map())],
   ["a session watcher full pass", () => pollSessionsSliced(fresh, bus, sessions, new Map(), false)],
+  // The board browsers' tick with its sign-in check, on 6 running browsers.
+  ["the board browsers' tick", () => browsers.tick()],
 ];
 
 for (const [name, work] of jobs) {

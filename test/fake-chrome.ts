@@ -8,6 +8,10 @@ export class FakeChrome {
   closed = false;
   closeCalls = 0;
   pages: { id: string; type: string; title: string; url: string }[] = [{ id: "p1", type: "page", title: "", url: "about:blank" }];
+  /** What Runtime.evaluate answers in each tab (the sign-in check), by tab id. */
+  answers = new Map<string, unknown>();
+  /** Every call made to a tab: [tab id, method, params]. */
+  pageCalls: [string, string, any][] = [];
   server: ReturnType<typeof Bun.serve>;
   constructor(public pid: number, quit = true) {
     const self = this;
@@ -17,12 +21,24 @@ export class FakeChrome {
         const u = new URL(req.url);
         if (u.pathname === "/json/version") return Response.json({ webSocketDebuggerUrl: `ws://127.0.0.1:${srv.port}/devtools/browser/${self.uuid}` });
         if (u.pathname === "/json/list") return Response.json(self.pages);
-        if (u.pathname === `/devtools/browser/${self.uuid}` && srv.upgrade(req, { data: undefined })) return;
+        if (u.pathname === `/devtools/browser/${self.uuid}` && srv.upgrade(req, { data: { tab: null } })) return;
+        const tab = u.pathname.match(/^\/devtools\/page\/(.+)$/)?.[1];
+        if (tab && self.pages.some((p) => p.id === tab) && srv.upgrade(req, { data: { tab } })) return;
         return new Response("no", { status: 404 });
       },
       websocket: {
         message(ws, msg) {
           const m = JSON.parse(String(msg));
+          const tab = (ws.data as { tab: string | null } | undefined)?.tab;
+          if (tab) {
+            self.pageCalls.push([tab, m.method, m.params]);
+            const result = m.method === "Runtime.evaluate" ? { result: { type: "string", value: self.answers.get(tab) ?? "unknown" } }
+              : m.method === "Page.captureScreenshot" ? { data: Buffer.from("fake-jpeg").toString("base64") }
+              : m.method === "Page.getLayoutMetrics" ? { cssVisualViewport: { clientWidth: 1000, clientHeight: 800 } }
+              : {};
+            ws.send(JSON.stringify({ id: m.id, result }));
+            return;
+          }
           if (m.method === "Browser.close") {
             self.closeCalls++;
             ws.send(JSON.stringify({ id: m.id, result: {} }));
@@ -72,6 +88,7 @@ export function harness(_root: string, extra: Partial<BrowserDeps> & { quit?: bo
     },
     alive: (p) => !!byPid.get(p) && !byPid.get(p)!.closed,
     chromeMajor: async () => "157",
+    log: () => {},
     now: () => clock,
     pollMs: 5,
     closeTimeoutMs: 2000,

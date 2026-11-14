@@ -983,6 +983,22 @@ export class Notifier {
     };
   }
 
+  /**
+   * A board browser was logged out (board-browsers.ts sign-in check): an urgent message to the user on every channel
+   * (a customer desk may be waiting), stored in Messages, and shown on open boards as an urgent line. The caller sends
+   * it once per logout. slug: a board that uses the browser (the tap opens its Browsers window), or null.
+   */
+  async browserLoggedOut(name: string, site: string, slug: string | null, boards: string[]): Promise<string | null> {
+    const body = `${name} is logged out of ${site}. Open More, Browsers to sign in again.`;
+    const text = `${body}${boards.length ? `\n\nUsed by: ${boards.join(", ")}.` : ""}\n\nOn a phone, the Browsers window shows the login page so you can sign in from there.`;
+    const url = `${slug ? this.link(slug) : `${this.o.baseUrl()}/#/`}?browsers`;
+    const { results } = await this.helper.send(
+      { level: "urgent", oneLine: body, text },
+      { level: "urgent", title: "Browser logged out", body, text, url, urgent: true, everyDevice: true, tag: `browser-${name}` },
+    );
+    return firstError(results);
+  }
+
   private testMessage(slug?: string): NotifyMessage {
     const p = slug ? this.store.getProfile(slug) : this.store.listProfiles()[0];
     return {

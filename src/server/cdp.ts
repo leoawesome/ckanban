@@ -79,7 +79,7 @@ export class Cdp {
   private next = 1;
   private pending = new Map<number, Pending>();
   private listeners = new Set<(method: string, params: any, sessionId?: string) => void>();
-  private opened: Promise<void>;
+  readonly opened: Promise<void>;
   closed = false;
 
   constructor(url: string) {
@@ -171,5 +171,38 @@ export async function requestBrowserClose(pf: PortFile): Promise<void> {
     if (!(e instanceof CdpError) || !/closed/.test(e.message)) throw e;
   } finally {
     c.close();
+  }
+}
+
+/**
+ * One short call to one tab (page target) over its own WebSocket: connects, sends, closes. For the board browsers'
+ * sign-in check and the sign-in screen in More, Browsers. targetId must come from listPages on the same port.
+ */
+export async function pageCall<T = any>(port: number, targetId: string, calls: { method: string; params?: Record<string, unknown> }[], timeoutMs = 3000): Promise<T[]> {
+  if (!/^[A-Za-z0-9-]{1,64}$/.test(targetId)) throw new CdpError("not a tab id");
+  const c = new Cdp(`ws://127.0.0.1:${port}/devtools/page/${targetId}`);
+  try {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      c.opened,
+      new Promise((_, reject) => (timer = setTimeout(() => reject(new CdpError("the browser didn't answer in time")), timeoutMs))),
+    ]).finally(() => clearTimeout(timer));
+    const out: T[] = [];
+    for (const k of calls) out.push(await c.send<T>(k.method, k.params ?? {}, undefined, timeoutMs));
+    return out;
+  } finally {
+    c.close();
+  }
+}
+
+/** Runs a read-only expression in a tab and returns its value (returnByValue); null when it fails or times out. */
+export async function evaluateInPage(port: number, targetId: string, expression: string, timeoutMs = 2000): Promise<unknown> {
+  try {
+    const [r] = await pageCall<{ result?: { value?: unknown }; exceptionDetails?: unknown }>(port, targetId, [
+      { method: "Runtime.evaluate", params: { expression, returnByValue: true, silent: true, timeout: timeoutMs } },
+    ], timeoutMs);
+    return r?.exceptionDetails ? null : (r?.result?.value ?? null);
+  } catch {
+    return null;
   }
 }
