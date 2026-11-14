@@ -23,12 +23,12 @@ export const LOGIN_SIGNS: LoginSign[] = [
   },
   { name: "Microsoft sign-in", test: (u) => u.hostname === "login.microsoftonline.com" || u.hostname === "login.live.com" },
   { name: "X log-in", test: (u) => /(^|\.)(x|twitter)\.com$/.test(u.hostname) && u.pathname.startsWith("/i/flow/login") },
-  { name: "Login address", test: (u) => /(^|[/_.-])(log-?in|sign-?in|log_in|sign_in)([/_.-]|$)/i.test(u.pathname) },
-  { name: "Login title", test: (_u, title) => /^(sign in|log in|login)\b/i.test(title.trim()) },
+  // Only a path that ends in a login word (/login, /users/sign_in, /account/signin/), not an article about logging in.
+  { name: "Login address", test: (u) => /\/(log-?in|sign-?in|log_in|sign_in)\/?$/i.test(u.pathname) },
 ];
 
 /** Sites whose logged-out page keeps the same address: the board looks inside the page (PAGE_PROBES). */
-export const PAGE_PROBES: Record<string, string> = {
+export const PAGE_PROBES: Record<string, string> = Object.assign(Object.create(null) as Record<string, string>, {
   /**
    * WhatsApp Web: the chat list (#pane-side / #side) means signed in. The QR code (canvas, data-ref) or the "Log into
    * WhatsApp Web" / "Use WhatsApp on your computer" / phone-number link page means logged out. Anything else (still
@@ -43,7 +43,7 @@ export const PAGE_PROBES: Record<string, string> = {
     if (/Log into WhatsApp|Use WhatsApp on your computer|Steps to log in|Link with phone number|Log in with phone number|Scan to log in|Enter phone number|Enter code on (your )?phone/i.test(t)) return "out";
     return "unknown";
   })()`,
-};
+});
 
 /** "web.whatsapp.com" from a web address; null for blank, chrome:// and other non-web pages. */
 export function siteOf(url: string): string | null {

@@ -30,7 +30,11 @@ test("login signs: known login addresses and titles, WhatsApp looked at inside t
   expect(classifyByAddress("https://x.com/i/flow/login", "X")).toBe("out");
   expect(classifyByAddress("https://shop.example.com/account/login?next=/", "Shop")).toBe("out");
   expect(classifyByAddress("https://example.com/users/sign_in", "Example")).toBe("out");
-  expect(classifyByAddress("https://example.com/", "Log in to Example")).toBe("out");
+  // Ordinary pages about logging in are not login pages.
+  expect(classifyByAddress("https://example.com/", "Log in to Example")).toBe("in");
+  expect(classifyByAddress("https://www.google.com/search?q=login", "login - Google Search")).toBe("in");
+  expect(classifyByAddress("https://docs.github.com/en/get-started/how-to-login", "Docs")).toBe("in");
+  expect(classifyByAddress("https://example.com/blog/sign-in-with-apple", "Blog")).toBe("in");
   expect(classifyByAddress("https://mail.example.com/inbox", "Inbox")).toBe("in");
   expect(classifyByAddress("https://example.com/blog/signing-off", "Blog")).toBe("in");
   expect(classifyByAddress("https://web.whatsapp.com/", "WhatsApp")).toBe("probe");
@@ -87,11 +91,44 @@ test("signed in, then logged out: one alert after two looks, none again until it
   await bb.tick();
   expect(alerts.length).toBe(2);
   expect(lines.filter((l) => l.includes("sign-in:"))).toEqual([
-    "[browsers] Fatt Interior WhatsApp (fatt-interior-whatsapp): sign-in: first look: signed in",
+    "[browsers] Fatt Interior WhatsApp (fatt-interior-whatsapp): sign-in: signed in on web.whatsapp.com",
     "[browsers] Fatt Interior WhatsApp (fatt-interior-whatsapp): sign-in: was signed in, now needs sign-in on web.whatsapp.com",
-    "[browsers] Fatt Interior WhatsApp (fatt-interior-whatsapp): sign-in: signed in again (was needed on web.whatsapp.com)",
+    "[browsers] Fatt Interior WhatsApp (fatt-interior-whatsapp): sign-in: signed in again on web.whatsapp.com",
     "[browsers] Fatt Interior WhatsApp (fatt-interior-whatsapp): sign-in: was signed in, now needs sign-in on web.whatsapp.com",
   ]);
+});
+
+test("a task leaving another site's login page open changes nothing, and a WhatsApp logout still alerts", async () => {
+  const { bb, f, view, alerts } = await setup();
+  f.pages = [WA];
+  f.answers.set("wa", "in");
+  await bb.tick();
+  f.pages = [WA, { id: "g", type: "page", title: "Sign in", url: "https://accounts.google.com/v3/signin/identifier" }];
+  for (let i = 0; i < 3; i++) await bb.tick();
+  expect(view().signIn).toBe("Signed in");
+  expect(alerts).toEqual([]);
+  f.answers.set("wa", "out");
+  await bb.tick();
+  await bb.tick();
+  expect([view().signIn, view().signInSite]).toEqual(["Needs sign-in", "web.whatsapp.com"]);
+  expect(alerts).toEqual([["Fatt Interior WhatsApp", "web.whatsapp.com"]]);
+});
+
+test("a site seen signed in that shows its login page later is logged out too, per site", async () => {
+  const { bb, f, view, alerts } = await setup();
+  f.pages = [WA, { id: "s", type: "page", title: "Shop", url: "https://shop.example.com/orders" }];
+  f.answers.set("wa", "in");
+  await bb.tick();
+  f.pages = [WA, { id: "s", type: "page", title: "Shop", url: "https://shop.example.com/login" }];
+  await bb.tick();
+  await bb.tick();
+  expect([view().signIn, view().signInSite]).toEqual(["Needs sign-in", "shop.example.com"]);
+  // WhatsApp logging out as well gets its own alert, and the card names WhatsApp first.
+  f.answers.set("wa", "out");
+  await bb.tick();
+  await bb.tick();
+  expect(alerts.map((a) => a[1])).toEqual(["shop.example.com", "web.whatsapp.com"]);
+  expect(view().signInSite).toBe("web.whatsapp.com");
 });
 
 test("a stopped browser keeps its last look with the time; a restart that finds it still logged out doesn't alert again", async () => {

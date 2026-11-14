@@ -54,6 +54,8 @@ export interface SignInCheck {
 
 /** A logged-out page must be seen this many ticks in a row before a signed-in browser counts as logged out (no alert for a page passing by). */
 const OUT_TICKS = 2;
+/** At most this many sites are remembered per browser. */
+const SITES_MAX = 20;
 /** How long one page check may take. */
 const PROBE_TIMEOUT_MS = 2000;
 /** How long a tap or typing from the sign-in screen may take to reach the page. */
@@ -76,6 +78,8 @@ export interface BoardBrowser {
   signedIn: boolean;
   /** The last sign-in check of its open pages (tick); null: never checked. */
   check: SignInCheck | null;
+  /** Per site it was looked at on: signed in or logged out (host only). */
+  sites?: Record<string, "in" | "out">;
   /** Page a keep-running start opens (e.g. https://web.whatsapp.com/ for a watcher). Null: a blank page. */
   startUrl: string | null;
 }
@@ -291,13 +295,14 @@ export class BoardBrowsers {
   private retry = new Map<string, { at: number; fails: number }>();
   /** Running browsers: when the tick last looked at their pages (kept in memory; saved into check when it changes or stops). */
   private checkedAt = new Map<string, string>();
-  /** Ticks in a row a signed-in browser showed a login page (OUT_TICKS). */
+  /** Ticks in a row a signed-in site showed a login page (OUT_TICKS), by "<id> <site>". */
   private outTicks = new Map<string, number>();
-  /** The tab that showed the login page, for the sign-in screen (screen, input). */
+  /** The tab that shows a site's login page, for the sign-in screen (screen, input), by "<id> <site>". */
   private loginTab = new Map<string, string>();
   /** Told when a signed-in browser is seen logged out (main.ts sends the user an urgent alert). Once per logout. */
   onLoggedOut: ((b: { id: string; name: string }, site: string | null) => void) | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private ticking = false;
   private stopped = false;
   readonly dir: string;
   private d: Required<Omit<BrowserDeps, "chromeMajor">> & { chromeMajor: () => Promise<string | null> };
@@ -352,6 +357,8 @@ export class BoardBrowsers {
         keepRunning: b.keepRunning === true, signedIn: b.signedIn === true, startUrl: typeof b.startUrl === "string" ? b.startUrl : null,
         check: b.check && (b.check.state === "in" || b.check.state === "out") && typeof b.check.at === "string"
           ? { state: b.check.state, site: typeof b.check.site === "string" ? b.check.site : null, at: b.check.at } : null,
+        sites: b.sites && typeof b.sites === "object"
+          ? Object.fromEntries(Object.entries<any>(b.sites).filter(([k, v]) => typeof k === "string" && (v === "in" || v === "out")).slice(-SITES_MAX)) : undefined,
       }));
       const run = raw?.running && typeof raw.running === "object" ? raw.running : {};
       for (const [id, r] of Object.entries<any>(run)) {
@@ -608,8 +615,7 @@ export class BoardBrowsers {
     const at = this.checkedAt.get(id);
     if (b?.check && at) b.check = { ...b.check, at };
     this.checkedAt.delete(id);
-    this.outTicks.delete(id);
-    this.loginTab.delete(id);
+    for (const m of [this.outTicks, this.loginTab]) for (const k of [...m.keys()]) if (k.startsWith(`${id} `)) m.delete(k);
   }
 
   private async closeNow(id: string, why: string): Promise<boolean> {
@@ -841,7 +847,17 @@ export class BoardBrowsers {
    * 127.0.0.1 per running browser; nothing reads files in bulk.
    */
   async tick(): Promise<void> {
-    if (this.stopped) return;
+    // One tick at a time: a slow Chrome can make one run past TICK_MS, and an overlap would count looks twice.
+    if (this.stopped || this.ticking) return;
+    this.ticking = true;
+    try {
+      await this.tickNow();
+    } finally {
+      this.ticking = false;
+    }
+  }
+
+  private async tickNow(): Promise<void> {
     let changed = false;
     for (const b of [...this.browsers]) {
       const id = b.id;
@@ -908,68 +924,95 @@ export class BoardBrowsers {
   /**
    * The sign-in check (one tick, one running browser): reads each tab's address and title, and for sites that keep
    * their address when logged out (WhatsApp Web, sign-in-signs.ts PAGE_PROBES) runs one small read-only check inside
-   * the page. Never navigates, reloads, clicks or types. Any login page: Needs sign-in (after OUT_TICKS looks in a row
-   * when it was signed in, then the user is alerted once); otherwise any web page: Signed in; only blank or loading
-   * tabs: no change. Returns whether the saved state changed.
+   * the page. Never navigates, reloads, clicks or types. Kept per site (b.sites): a site seen on a login page OUT_TICKS
+   * looks in a row after it was seen signed in is logged out, and the user is alerted once for it. A login page only
+   * counts for a site this browser is for: one seen signed in before, its start page's site, a site with its own page
+   * check, or anything on a browser never looked at before. So a task passing some other site's login page changes
+   * nothing. The card shows Needs sign-in while any site is logged out. Returns whether the saved state changed.
    */
   private async checkSignIn(b: BoardBrowser, port: number, pages: PageTarget[]): Promise<boolean> {
-    let out: { site: string | null; tab: string } | null = null;
-    let inSite: string | null | undefined;
+    const seen = new Map<string, { v: "in" | "out"; tab: string }>();
     let probes = 0;
     for (const p of pages) {
-      let v = classifyByAddress(p.url, p.title);
       const site = siteOf(p.url);
+      if (!site) continue;
+      let v = classifyByAddress(p.url, p.title);
       if (v === "probe") {
         if (probes >= PROBES_PER_TICK) continue;
         probes++;
-        const u = new URL(p.url);
-        v = probeAnswer(await this.d.probe(port, p.id, PAGE_PROBES[u.hostname]));
+        v = probeAnswer(await this.d.probe(port, p.id, PAGE_PROBES[new URL(p.url).hostname]));
       }
-      if (v === "out") {
-        out = { site, tab: p.id };
-        break;
-      }
-      if (v === "in" && inSite === undefined) inSite = site;
+      if (v !== "in" && v !== "out") continue;
+      // One site in several tabs: a signed-in tab wins (the login tab may be an old one).
+      if (seen.get(site)?.v !== "in") seen.set(site, { v, tab: p.id });
     }
+    // Stopped or restarted while this looked: what it saw is about a Chrome that is gone.
+    if (this.running[b.id]?.port !== port) return false;
     const now = nowIso();
-    const prev = b.check;
-    if (out) {
-      this.loginTab.set(b.id, out.tab);
-      if (prev?.state === "out") {
-        this.checkedAt.set(b.id, now);
-        if (prev.site === out.site) return false;
-        b.check = { state: "out", site: out.site, at: now };
-        return true;
+    const first = !b.check;
+    const sites = { ...(b.sites ?? {}) };
+    const watched = (site: string) => first || site in sites || site in PAGE_PROBES || (!!b.startUrl && siteOf(b.startUrl) === site);
+    let changed = false;
+    let any = false;
+    const pending = new Set<string>();
+    for (const [site, { v, tab }] of seen) {
+      if (v === "out" && !watched(site)) continue;
+      any = true;
+      if (v === "in") {
+        this.outTicks.delete(`${b.id} ${site}`);
+        if (sites[site] !== "in") {
+          if (sites[site] === "out") this.note(b.id, `sign-in: signed in again on ${site}`);
+          else if (!b.check || b.check.state !== "in") this.note(b.id, `sign-in: signed in on ${site}`);
+          sites[site] = "in";
+          changed = true;
+        }
+        continue;
       }
-      // Signed in before: a login page must stay for OUT_TICKS looks (a task passing a login page isn't a logout).
-      if (prev?.state === "in") {
-        const n = (this.outTicks.get(b.id) ?? 0) + 1;
-        this.outTicks.set(b.id, n);
-        if (n < OUT_TICKS) return false;
-      }
-      this.outTicks.delete(b.id);
-      this.checkedAt.set(b.id, now);
-      b.check = { state: "out", site: out.site, at: now };
-      b.signedIn = false;
-      this.note(b.id, `sign-in: ${prev ? "was signed in, now" : "first look:"} needs sign-in on ${out.site ?? "a page"}`);
-      if (prev?.state === "in") {
+      this.loginTab.set(`${b.id} ${site}`, tab);
+      if (sites[site] === "out") continue;
+      if (sites[site] === "in") {
+        // Signed in before: the login page must stay OUT_TICKS looks (a page passing by isn't a logout).
+        const key = `${b.id} ${site}`;
+        const n = (this.outTicks.get(key) ?? 0) + 1;
+        this.outTicks.set(key, n);
+        if (n < OUT_TICKS) {
+          pending.add(site);
+          continue;
+        }
+        this.outTicks.delete(key);
+        this.note(b.id, `sign-in: was signed in, now needs sign-in on ${site}`);
         try {
-          this.onLoggedOut?.({ id: b.id, name: b.name }, out.site);
+          this.onLoggedOut?.({ id: b.id, name: b.name }, site);
         } catch (e) {
           console.error(`board browser ${b.id}: logged-out alert`, e);
         }
-      }
-      return true;
+      } else this.note(b.id, `sign-in: needs sign-in on ${site}`);
+      sites[site] = "out";
+      changed = true;
     }
-    this.outTicks.delete(b.id);
-    if (inSite === undefined) return false; // only blank or still-loading tabs: says nothing
-    this.loginTab.delete(b.id);
+    // A site's login look that didn't come back this tick starts over.
+    for (const key of [...this.outTicks.keys()]) {
+      const [id, site] = key.split(" ");
+      if (id === b.id && !pending.has(site)) this.outTicks.delete(key);
+    }
+    for (const key of [...this.loginTab.keys()]) {
+      const [id, site] = key.split(" ");
+      if (id === b.id && (sites[site] !== "out" || seen.get(site)?.v !== "out")) this.loginTab.delete(key);
+    }
+    if (!any && !changed) return false;
     this.checkedAt.set(b.id, now);
-    if (prev?.state === "in") return false;
-    b.check = { state: "in", site: inSite, at: now };
-    b.signedIn = true;
-    this.note(b.id, `sign-in: ${prev ? `signed in again${prev.site ? ` (was needed on ${prev.site})` : ""}` : "first look: signed in"}`);
-    return true;
+    // Kept small: the sites it has been seen on (oldest dropped past SITES_MAX).
+    const keys = Object.keys(sites);
+    for (const k of keys.slice(0, Math.max(0, keys.length - SITES_MAX))) delete sites[k];
+    b.sites = sites;
+    const outSite = Object.keys(sites).find((s) => sites[s] === "out" && s in PAGE_PROBES) ?? Object.keys(sites).find((s) => sites[s] === "out");
+    const next: SignInCheck = outSite ? { state: "out", site: outSite, at: now } : { state: "in", site: Object.keys(sites)[0] ?? null, at: now };
+    if (!b.check || b.check.state !== next.state || b.check.site !== next.site) {
+      b.check = next;
+      b.signedIn = next.state === "in";
+      changed = true;
+    }
+    return changed;
   }
 
   // --- Sign-in screen (More, Browsers, from a phone too) -----------------------------------------
@@ -981,7 +1024,8 @@ export class BoardBrowsers {
     const rt = this.running[id];
     if (!rt || this.busy.has(id)) throw new BrowserError(409, "This browser isn't running now.");
     if (b.check?.state !== "out") throw new BrowserError(409, "This browser doesn't need sign-in now.");
-    const tab = this.loginTab.get(id);
+    const site = b.check.site;
+    const tab = site ? this.loginTab.get(`${id} ${site}`) : undefined;
     const pages = await this.d.pages(rt.port);
     if (!tab || !pages?.some((p) => p.id === tab)) throw new BrowserError(409, "The login page was closed. Wait a few seconds for the next check.");
     return { port: rt.port, tab };
