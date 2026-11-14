@@ -512,12 +512,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     setHandoff([]);
     reload();
   }, [reload]);
-  // Phones: the round box gets plain corners once the text wraps to a second line.
-  const [tallBox, setTallBox] = useState(false);
-  useLayoutEffect(() => {
-    autoGrow(composer.current);
-    setTallBox(phone && (composer.current?.offsetHeight ?? 0) > 48);
-  }, [draft, phone]);
+  useLayoutEffect(() => autoGrow(composer.current), [draft, phone]);
   // The live connection came back (board restart, laptop sleep, a long freeze): updates were missed, so reload.
   useEffect(() => onReconnect(() => void loadTail().catch(() => {})), [loadTail]);
   // While a sent message still says "sending", check the conversation now and then in case its update was missed.
@@ -1535,7 +1530,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
       {undone && !undo && <UndoneNote line={undone} onClose={() => setUndone(null)} />}
       {waiting.length > 0 && <WaitingButton items={waiting} onPick={pickWaiting} />}
       {turnBar}
-      <div className={`composer${tallBox ? " tall" : ""}`}>
+      <div className="composer">
         <textarea ref={composer} rows={phone ? 1 : 2} value={draft} disabled={stopping} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
           placeholder={formWaiting && !running ? `Or type a note to ${claude}…` : phone
             ? running ? `Steer ${claude}…` : refine ? "Describe your idea…" : `Ask ${claude}…`
@@ -1571,7 +1566,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
             <button className="btn small" onClick={sendFresh}>Send in a fresh chat</button>
           </div>
         )}
-        {/* One row: + (photo, file; on a phone also snippet, skill and the old-chat line), the Context ring, then Send. */}
+        {/* One row: + (photo, file; on a phone also snippet, skill and the old-chat line), the Context ring, then Send.
+            On a phone this row sits under the text, which gets the box's full width. */}
         <div className="composer-foot one-row">
           <ImagePickButton images={images} target={composer} disabled={stopping} merged extra={phone ? plusExtras : undefined} />
           <ContextChip slug={slug} kind="ticket" id={ticket.id} openRequest={Math.max(contextRequest, contextLocal)} quietBelow={phone ? 80 : undefined} />

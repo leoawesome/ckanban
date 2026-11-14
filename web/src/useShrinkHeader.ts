@@ -23,9 +23,10 @@ export function useShrinkHeader(root: RefObject<HTMLElement | null>, enabled: bo
     let inputAt = 0;
     let settleUntil = 0;
     const last = new WeakMap<Element, number>();
-    // Typing in (or tapping) a box isn't scrolling: the chat following a growing box or the keyboard mustn't fold the header.
+    // Typing in (or tapping) a box or its buttons isn't scrolling: the chat following a growing box, a warning opening in
+    // it (Send on an old chat) or the keyboard mustn't fold the header.
     const input = (e: Event) => {
-      if ((e.type === "keydown" || e.type === "pointerdown") && (e.target as HTMLElement | null)?.closest?.("textarea, input, [contenteditable]")) return;
+      if ((e.type === "keydown" || e.type === "pointerdown") && (e.target as HTMLElement | null)?.closest?.("textarea, input, [contenteditable], .composer")) return;
       inputAt = performance.now();
     };
     const onScroll = (e: Event) => {

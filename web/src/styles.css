@@ -3580,7 +3580,12 @@ button.hd-mode:disabled { cursor: default; }
   }
   .phone-who:active { background: var(--surface-2); }
   .phone-who:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .pw-title { display: block; font-size: var(--fs-lg); font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The title shows up to two lines while the tab row shows, one line with "…" while the chat is scrolled down (head-slim). */
+  .pw-title {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+    font-size: var(--fs-lg); font-weight: 700; line-height: 1.25;
+  }
+  .panel.head-slim .pw-title { display: block; white-space: nowrap; text-overflow: ellipsis; }
   /* The status word never shrinks; the reason after the dot is cut first. */
   .pw-status { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-sm); font-weight: 600; line-height: 1.3; color: var(--muted); }
   .pw-word { flex: none; white-space: nowrap; }
@@ -5183,25 +5188,36 @@ button.composer-old:hover { color: var(--text); }
   .chat-log .turn-body { grid-column: 1 / -1; }
   .chat-log .steps-line ul { margin-left: 8px; }
 
-  /* The message box in one row: a round +, the text, (the memory ring from 80%), a round send. */
-  .chat > .composer {
-    flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 6px; padding: 4px; border-radius: var(--r-pill);
-    margin-left: max(8px, env(safe-area-inset-left)); margin-right: max(8px, env(safe-area-inset-right));
+  /* The message box in two rows: the text at the box's full width on top, then a row of buttons (the round + and the
+     memory ring from 80% on the left, Stop and the round Send on the right). Warnings sit in a strip above the text.
+     Quick chat (.qc-thread) keeps its own box. */
+  .chat:not(.qc-thread) > .composer {
+    flex-direction: column; align-items: stretch; gap: 0; padding: 4px; border-radius: var(--r-md);
+    margin: 0 max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
   }
-  .chat > .composer > * { flex: 1 1 100%; min-width: 0; }
-  .chat > .composer.tall { border-radius: var(--r-md); }
-  .chat > .composer > textarea { order: 1; flex: 1 1 0; min-height: 40px; padding: 9px 2px; line-height: 22px; font-size: var(--fs-lg); }
-  .chat > .composer > .composer-foot.one-row { display: contents; }
-  .chat > .composer .composer-meta { display: none; }
-  .chat > .composer .image-pick-group { order: 0; flex: none; }
-  .chat > .composer .image-pick-group .btn.image-pick.add-pick { width: 40px; min-width: 40px; height: 40px; min-height: 40px; border: 0; border-radius: 50%; background: none; color: var(--muted); }
-  .chat > .composer .ctx { order: 2; flex: none; align-self: center; }
-  .chat > .composer .composer-actions { order: 3; flex: none; margin: 0; gap: 4px; }
-  .chat > .composer .composer-actions .btn { min-height: 40px; }
-  .chat > .composer .btn.send-round { width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
-  .chat > .composer .btn.send-round:not(.primary), .chat > .composer .btn.send-round:disabled { background: var(--surface-2); border-color: transparent; color: var(--muted); }
-  .chat > .composer .stop-btn { border-radius: var(--r-pill); }
-  .chat > .composer .stop-btn.icon-only { width: 40px; padding: 0; justify-content: center; border-radius: 50%; }
-  .chat > .composer > .key-hint { display: none; }
-  .chat > .composer > :is(.draft-files, .form-error, .old-chat-ask) { padding: 4px 8px 0; }
+  .chat:not(.qc-thread) > .composer > * { min-width: 0; }
+  .chat:not(.qc-thread) > .composer > textarea {
+    min-height: 40px; padding: 8px 8px 4px; line-height: 22px; font-size: var(--fs-lg);
+    scrollbar-width: none; /* the text scrolls inside once it is past its limit; no track beside it */
+  }
+  .chat:not(.qc-thread) > .composer > textarea::-webkit-scrollbar { display: none; }
+  .chat:not(.qc-thread) > .composer > .composer-foot.one-row { display: flex; align-items: center; gap: 4px; }
+  .chat:not(.qc-thread) > .composer .composer-meta { display: none; }
+  .chat:not(.qc-thread) > .composer .image-pick-group { flex: none; }
+  .chat:not(.qc-thread) > .composer .image-pick-group .btn.image-pick.add-pick { width: 40px; min-width: 40px; height: 40px; min-height: 40px; border: 0; border-radius: 50%; background: none; color: var(--muted); }
+  .chat:not(.qc-thread) > .composer .ctx { flex: none; align-self: center; }
+  .chat:not(.qc-thread) > .composer .composer-actions { flex: none; margin: 0 0 0 auto; gap: 4px; }
+  .chat:not(.qc-thread) > .composer .composer-actions .btn { min-height: 40px; }
+  .chat:not(.qc-thread) > .composer .btn.send-round { width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
+  .chat:not(.qc-thread) > .composer .btn.send-round:not(.primary), .chat:not(.qc-thread) > .composer .btn.send-round:disabled { background: var(--surface-2); border-color: transparent; color: var(--muted); }
+  .chat:not(.qc-thread) > .composer .stop-btn { border-radius: var(--r-pill); }
+  .chat:not(.qc-thread) > .composer .stop-btn.icon-only { width: 40px; padding: 0; justify-content: center; border-radius: 50%; }
+  .chat:not(.qc-thread) > .composer > .key-hint { display: none; }
+  .chat:not(.qc-thread) > .composer > :is(.draft-files, .form-error) { padding: 4px 8px 0; }
+  /* "Old chat": a strip at the top of the box, the sentence on its line, then its two buttons side by side. */
+  .chat:not(.qc-thread) > .composer > .old-chat-ask {
+    order: -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 4px; padding: 8px; font-size: var(--fs-md);
+  }
+  .chat:not(.qc-thread) > .composer > .old-chat-ask > span { grid-column: 1 / -1; min-width: 0; }
+  .chat:not(.qc-thread) > .composer > .old-chat-ask > .btn { min-height: 40px; min-width: 0; padding: 4px 8px; justify-content: center; text-align: center; white-space: normal; line-height: 1.2; }
 }
