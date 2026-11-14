@@ -94,6 +94,39 @@ export function useKeyboardFit(overlay: RefObject<HTMLElement | null>, box: RefO
 }
 
 /**
+ * Phone keyboard on a full-screen page in the normal flow (the Ask tab): the page takes the height the keyboard leaves
+ * and stays scrolled to the top, so its header and message box both stay in view (iOS otherwise pans the page and can
+ * leave the box under the keyboard). `kb-open` on the element while the keyboard shows. Off when `active` is false.
+ */
+export function useViewportFit(page: RefObject<HTMLElement | null>, active: boolean) {
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const el = page.current;
+    if (!vv || !el || !active) return;
+    const phone = window.matchMedia(PHONE_QUERY);
+    const reset = () => {
+      el.style.height = "";
+      el.classList.remove("kb-open");
+    };
+    const fit = () => {
+      if (phone.matches && vv.height < window.innerHeight - 40) {
+        el.style.height = `${vv.height}px`;
+        el.classList.add("kb-open");
+        if (window.scrollY) window.scrollTo(0, 0);
+      } else reset();
+    };
+    fit();
+    vv.addEventListener("resize", fit);
+    vv.addEventListener("scroll", fit);
+    return () => {
+      vv.removeEventListener("resize", fit);
+      vv.removeEventListener("scroll", fit);
+      reset();
+    };
+  }, [active]);
+}
+
+/**
  * Swipe down on the sheet's handle or title bar to close it (phone). The sheet follows the finger; past 90px, or a
  * quick flick, it closes, else it springs back.
  */

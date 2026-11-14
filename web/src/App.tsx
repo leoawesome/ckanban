@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useViewportFit } from "./sheet";
 import { flushSync } from "react-dom";
 import { markOpened } from "./cardState";
 import { setLearnedVersions } from "./models";
@@ -320,6 +321,9 @@ export function App() {
   phoneRef.current = phone;
   // Phone home: the Now list or the board (bottom tab bar); More opens the header menu as a sheet.
   const [phoneTab, setPhoneTab] = useState<PhoneTab>("now");
+  // The Ask tab's message box stays above the phone keyboard (the page takes the height the keyboard leaves).
+  const appRef = useRef<HTMLDivElement>(null);
+  useViewportFit(appRef, phone && phoneTab === "ask");
   const [phoneTeamRequest, setPhoneTeamRequest] = useState<(TeamRequest & { n: number }) | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [phoneAccess, setPhoneAccess] = useState(false);
@@ -1336,7 +1340,7 @@ export function App() {
 
   return (
     // A phone's Messages pages draw their own header (‹ Board · Messages), so the board's top bar steps aside.
-    <div className={`app${phone && msgRoute ? " msg-route" : ""}`}>
+    <div ref={appRef} className={`app${phone && msgRoute ? " msg-route" : ""}`}>
       <HintLegend />
       <header className="topbar" ref={topbarRef}>
         <div className="brand">

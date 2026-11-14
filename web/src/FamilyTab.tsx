@@ -3,11 +3,13 @@
 import { resolveRun, runText } from "./models";
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Profile, type Ticket } from "./api";
-import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, hideableCard, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, subFeatureState, type FamilyRow, type FamilyState } from "./family";
+import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, hideableCard, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, shownState, subFeatureState, type FamilyRow, type FamilyState } from "./family";
 import { ClaudeFace } from "./ConvTurn";
 import { familyMood } from "./avatarMood";
 import { familyText } from "./FamilyPanel";
 import { Modal } from "./Modal";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { ChevronDownIcon, ChevronRightIcon } from "./icons";
 import { copyText } from "./share";
 import { PlanControls } from "./PlanPanel";
 import { ImportantStar } from "./StarToggle";
@@ -88,6 +90,8 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
   if (!top) return null;
   const below = (id: string): Ticket[] => (kids.get(id) ?? []).flatMap((c) => [c.ticket, ...(c.ticket.main ? [] : below(c.ticket.id))]);
   const [acting, setActing] = useState<string | null>(null);
+  // "Make it its own work" asks first: it can't be undone from here.
+  const [ownWork, setOwnWork] = useState<Ticket | null>(null);
   const act = (id: string, p: Promise<unknown>, done?: string) => {
     setActing(id);
     p.then(() => done && toast(done), (e) => onError((e as Error).message)).finally(() => setActing(null));
@@ -172,17 +176,19 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
     const groupState = rowState(r);
     const v = view.get(t.id);
     return (
-      <div key={t.id} role="treeitem" aria-current={t.id === ticket.id ? "true" : undefined}
+      <li key={t.id} aria-current={t.id === ticket.id ? "true" : undefined}
         className={`ft-row${group ? " group" : ""}${t.id === ticket.id ? " me" : ""}${peek === t.id ? " peeked" : ""}`}
-        style={{ paddingLeft: `calc(var(--sp-3) + ${r.depth} * var(--sp-5))` }} onClick={() => setPeek(peek === t.id ? null : t.id)} title={t.title}>
-        <button className={`ft-chev${holds(r, kids) && r.depth > 0 ? "" : " none"}`} aria-label={isOpen(r) ? "Fold" : "Unfold"} tabIndex={holds(r, kids) && r.depth > 0 ? 0 : -1}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (holds(r, kids) && r.depth > 0) setOpen((o) => ({ ...o, [t.id]: !isOpen(r) }));
-          }}>{holds(r, kids) ? (isOpen(r) || r.depth === 0 ? "▾" : "▸") : ""}</button>
+        style={{ paddingLeft: `calc(var(--sp-3) + ${r.depth} * var(--sp-5))` }}>
+        {holds(r, kids) && r.depth > 0 ? (
+          <button type="button" className="ft-chev" aria-label={`${isOpen(r) ? "Fold" : "Unfold"} ${t.title}`} aria-expanded={isOpen(r)}
+            onClick={() => setOpen((o) => ({ ...o, [t.id]: !isOpen(r) }))}>
+            {isOpen(r) ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
+          </button>
+        ) : <span className="ft-chev none" aria-hidden>{holds(r, kids) && <ChevronDownIcon size={12} />}</span>}
         {/* Its Claude's face in the row's state (the words beside it say the state too). */}
         <span className="ft-face" aria-hidden><ClaudeFace mood={familyMood(groupState)} size={24} /></span>
-        <span className="ft-body">
+        {/* The title and its line open a short summary of the task (keyboard: Tab, then Enter). */}
+        <button type="button" className="ft-open ft-body" onClick={() => setPeek(peek === t.id ? null : t.id)} aria-expanded={peek === t.id} title={t.title}>
           <span className="ft-title">{subRow(r) && <span className="part-chip ft-sub">Sub-feature</span>}{t.important && <ImportantStar />}{t.title}</span>
           <span className="ft-meta">
             {subRow(r)
@@ -190,12 +196,12 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
               : group
               ? <span className="ft-sum">{groupSummary(inside.map((k) => ({ kind: k.kind, state: stateOf(k) })))}</span>
               : <span className="ft-model">{[t.kind ? KIND_WORDS[t.kind] : null, runText(resolveRun(t, profile, claude))].filter(Boolean).join(" · ")}</span>}
-            <span className={`ft-st ${STATE_CLASS[groupState]}`}>{STATE_WORDS[groupState]}</span>
+            <span className={`ft-st ${STATE_CLASS[groupState]}`}>{shownState(groupState)}</span>
             {v && cost(r) > 0 && <span className="ft-cost">{money(cost(r))}</span>}
           </span>
-        </span>
+        </button>
         {(subRow(r) || (t.tool && r.depth > 0) || (hideableCard(t) && r.depth > 0)) && (
-          <span className="ft-actions" onClick={(e) => e.stopPropagation()}>
+          <span className="ft-actions">
             {subRow(r) ? (
               <button className="mini-link" onClick={() => onOpenTicket(t.id)} title={`Open ${t.title}: its own chat and tasks`}>Open</button>
             ) : !t.tool ? (
@@ -212,12 +218,12 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
                 </label>
                 <button className="mini-link" disabled={acting === t.id || !!t.running}
                   title={t.running ? "Wait until it stops working" : `Becomes its own work with its own card, chat and tasks, still part of ${rows[0]?.ticket.title ?? "this feature"}`}
-                  onClick={() => act(t.id, api.makeOwnWork(slug, t.id), `${t.title} is now its own work`)}>Make it its own work</button>
+                  onClick={() => setOwnWork(t)}>Make it its own work</button>
               </>
             )}
           </span>
         )}
-      </div>
+      </li>
     );
   };
   return (
@@ -228,26 +234,42 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
       )}
       <div className="family-tab-head">
         <b>Tasks</b>
-        <span className="muted small">{rows.length} ticket{rows.length === 1 ? "" : "s"} · {money(total)}</span>
+        {/* Counts the tasks like the status's "N of M done": not the main ticket, not the groups that hold tasks. */}
+        <span className="muted small">{plural(rows.slice(1).filter((r) => r.ticket.kind !== "group" && r.ticket.kind !== "round").length, "task")} · {money(total)}</span>
         <button className="mini-link" onClick={() => copyText(familyText(rows), "Task list copied")}
           title="Copy the tasks as a list, for example to ask Claude to summarise this piece of work">Copy list</button>
         <button className="mini-link" onClick={() => setGathering(true)} title={`Bring tickets you already made into "${top.title}"`}>Add tickets…</button>
       </div>
-      <div className="family-tab-tree" role="tree">
+      <ul className="family-tab-tree" aria-label="Tasks">
         {shown.map(treeRow)}
         {doneUnits.length > 0 && (
-          <button type="button" role="treeitem" aria-expanded={doneIsOpen} className="ft-row ft-done-fold"
-            onClick={() => setDoneChoice({ id: ticket.id, open: !doneIsOpen })} title={doneIsOpen ? "Fold the finished tasks" : "Show the finished tasks"}>
-            Done · {doneUnits.length} <span className="ft-done-chev" aria-hidden>›</span>
-          </button>
+          <li className="ft-done-li">
+            <button type="button" aria-expanded={doneIsOpen} className="ft-row ft-done-fold"
+              onClick={() => setDoneChoice({ id: ticket.id, open: !doneIsOpen })} title={doneIsOpen ? "Fold the finished tasks" : "Show the finished tasks"}>
+              Done · {doneUnits.length} <ChevronRightIcon size={12} className="ft-done-chev" aria-hidden />
+            </button>
+          </li>
         )}
         {shownDone.map(treeRow)}
         {doneIsOpen && doneUnits.length > doneShown && (
-          <button type="button" className="show-more-row" onClick={() => setDonePage(doneShown + DONE_PAGE)}>
-            Show {Math.min(DONE_PAGE, doneUnits.length - doneShown)} more <span className="muted">· {doneUnits.length - doneShown} left</span>
-          </button>
+          <li className="ft-done-li">
+            <button type="button" className="show-more-row" onClick={() => setDonePage(doneShown + DONE_PAGE)}>
+              Show {Math.min(DONE_PAGE, doneUnits.length - doneShown)} more <span className="muted">· {doneUnits.length - doneShown} left</span>
+            </button>
+          </li>
         )}
-      </div>
+      </ul>
+      {ownWork && (
+        <ConfirmDialog title={`Make "${ownWork.title}" its own work?`} confirmLabel="Make it its own work" busyLabel="Making it its own work…" tone="primary"
+          onCancel={() => setOwnWork(null)}
+          onConfirm={async () => {
+            await api.makeOwnWork(slug, ownWork.id);
+            toast(`${ownWork.title} is now its own work`);
+            setOwnWork(null);
+          }}>
+          <p>It gets its own card, chat and tasks, and stays part of {rows[0]?.ticket.title ?? "this feature"}. This can't be undone from the Tasks tab.</p>
+        </ConfirmDialog>
+      )}
       {peeked && (
         <MenuSheet onClose={() => setPeek(null)}>
         <div className="ft-peek" role={phone ? "dialog" : undefined} aria-label={phone ? peeked.ticket.title : undefined}>

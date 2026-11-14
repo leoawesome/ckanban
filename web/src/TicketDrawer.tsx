@@ -1,3 +1,5 @@
+import { useKeyboardFit } from "./sheet";
+import { hashIsTicket, readTabLink, withTabLink } from "./tabLink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setCoveredFrom } from "./cardMotion";
 import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, runningTools, stopTitle, toolCount } from "./familyActions";
@@ -377,7 +379,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   // Body the current edit started from; the server rejects the save if the file changed meanwhile.
   const [baseBody, setBaseBody] = useState(ticket.body);
   const phone = usePhone();
-  const [tabPick, setTab] = useState<DrawerTab>(tabRequest?.tab ?? "chat");
+  // A link may name the tab (and the Outputs file) to open on: #/<board>/<ticket>?tab=outputs&file=… (tabLink.ts).
+  const [linked0] = useState(() => (hashIsTicket(location.hash, ticket.id) ? readTabLink(location.hash) : { tab: null, file: null }));
+  const [tabPick, setTab] = useState<DrawerTab>(tabRequest?.tab ?? (linked0.tab as DrawerTab | null) ?? "chat");
   // A result card's Changes link opens the tool ticket on its Changes tab.
   useEffect(() => {
     const asked = takeTab(ticket.id);
@@ -438,13 +442,36 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     else if (t === "usage") ticketUsage.reload();
     setTab(t);
   };
+  // The tab row is one Tab stop: ←/→ (Home/End) move between tabs and open them, as tabs do.
+  const onTabKey = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    const at = tabs.indexOf(tab);
+    const to = e.key === "ArrowRight" ? at + 1 : e.key === "ArrowLeft" ? at - 1 : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : null;
+    if (to === null || e.altKey || e.metaKey || e.ctrlKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const next = tabs[(to + tabs.length) % tabs.length];
+    openTab(next);
+    requestAnimationFrame(() => document.getElementById(`ticket-tab-${next}`)?.focus());
+  };
   const usage = ticketUsage.usage;
   const hasUsage = !!usage?.runs.length;
   useShareNotices(ticket);
   // A file to show when the Outputs tab opens (a mockup clicked in the chat).
-  const [outputFocus, setOutputFocus] = useState<string | null>(null);
+  const [outputFocus, setOutputFocus] = useState<string | null>(linked0.file);
+  // The file open in Outputs, for the link (null: none picked).
+  const [linkFile, setLinkFile] = useState<{ id: string; name: string | null }>({ id: ticket.id, name: linked0.file });
+  const fileForLink = linkFile.id === ticket.id ? linkFile.name : null;
+  // Keep the open tab in the link (replace: switching tabs doesn't add Back steps).
+  useEffect(() => {
+    if (!hashIsTicket(location.hash, ticket.id)) return;
+    const next = withTabLink(location.hash, tab, fileForLink);
+    if (next !== location.hash) history.replaceState(history.state, "", next);
+  }, [tab, fileForLink, ticket.id]);
   const [titleSave, setTitleSave] = useState<"saving" | "saved" | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  // Phones: the panel fits above the keyboard, so the header and the message box both stay in view (as dialogs do).
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useKeyboardFit(wrapRef, panelRef);
   // The board under this ticket pauses its card motion (cardMotion.ts): the part the panel covers, all of it on a phone.
   useEffect(() => {
     const el = panelRef.current;
@@ -905,9 +932,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
         {/* Phones: the description comes first (CSS order); everything here folds under one "Status" row, open at first
             only on a feature, whose brief is folded and whose "Where we are" is the news. */}
         {phone && (
-          <button className="fold-head status-fold" aria-expanded={statusShown} onClick={() => setStatusOpen(!statusShown)}>
-            <h4>Status</h4><span className="status-fold-sum">{shortStatus}</span><span className="fold-chev side" aria-hidden>▸</span>
-          </button>
+          <h3 className="sec-h status-fold-h"><button className="fold-head status-fold" aria-expanded={statusShown} onClick={() => setStatusOpen(!statusShown)}>
+            <span className="fold-title">Status</span><span className="status-fold-sum">{shortStatus}</span><span className="fold-chev side" aria-hidden>▸</span>
+          </button></h3>
         )}
         {(!phone || statusShown) && <>
         {whereShown && <WhereWeAre slug={slug} ticket={ticket} tickets={tickets} onOpen={() => openTab("family")} />}
@@ -939,8 +966,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           {goal && !working && !goalOnScreen && (
             <button className="btn primary goal-btn" onClick={goTo} title={`${att!.label}: show me where`}>{goal.button}</button>
           )}
-          {working && !familyBusy && <button className="btn danger" disabled={stopping} onClick={stop} title={`Stop ${claude} (${MOD}.)`}>{stopping ? "Stopping…" : `Stop ${claude}`}<KeyHint keys="⌘." /></button>}
-          {familyBusy && <button className="btn danger" disabled={stopping} onClick={() => setConfirmStop(true)} title={`Stop this ticket and its running tasks (${MOD}.)`}>{stopping ? "Stopping…" : "Stop"}<KeyHint keys="⌘." /></button>}
+          {working && !familyBusy && <button className="btn danger outline" disabled={stopping} onClick={stop} title={`Stop ${claude} (${MOD}.)`}>{stopping ? "Stopping…" : `Stop ${claude}`}<KeyHint keys="⌘." /></button>}
+          {familyBusy && <button className="btn danger outline" disabled={stopping} onClick={() => setConfirmStop(true)} title={`Stop this ticket and its running tasks (${MOD}.)`}>{stopping ? "Stopping…" : "Stop"}<KeyHint keys="⌘." /></button>}
           {finished && <PlanFinished ticket={ticket} total={children.length} onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />}
           {!working && !finished && (ticket.status === "backlog" || ticket.status === "planning") && (
             <button className={`btn ${goal ? "" : "primary"}`}
@@ -954,7 +981,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             </button>
           )}
           {ticket.status === "review" && !finished && (
-            <button className={`btn ${ticket.prUrl || goal ? "" : "primary"}`} onClick={() => setStatus("done")} title={`Mark done (${MOD}⇧Enter)`}>Mark done{!working && <KeyHint keys={proposalPending ? "⌘⇧↵ after Apply" : "⌘⇧↵"} />}</button>
+            <button className={`btn ${ticket.prUrl || goal || familyBusy ? "" : "primary"}`} onClick={() => setStatus("done")} title={`Mark done (${MOD}⇧Enter)`}>Mark done{!working && <KeyHint keys={proposalPending ? "⌘⇧↵ after Apply" : "⌘⇧↵"} />}</button>
           )}
           {ticket.source?.url && (
             <a className="btn icon-label" href={safeHref(ticket.source.url)} target="_blank" rel="noreferrer" title={ticket.source.label}>
@@ -1038,10 +1065,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
       <section className={`details-desc ${descScrolled && !editing ? "scrolled" : ""}${briefFolded ? " brief-folded" : ""}`}>
         <div className="section-head">
           {whereShown ? (
-            <button className="fold-head brief-toggle" aria-expanded={!briefFolded} onClick={() => setBriefOpen((v) => !v)} disabled={editing}>
-              <h4>Original brief</h4><span className="fold-chev side" aria-hidden>▸</span>
-            </button>
-          ) : <h4>Description</h4>}
+            <h3 className="sec-h"><button className="fold-head brief-toggle" aria-expanded={!briefFolded} onClick={() => setBriefOpen((v) => !v)} disabled={editing}>
+              <span className="fold-title">Original brief</span><span className="fold-chev side" aria-hidden>▸</span>
+            </button></h3>
+          ) : <h3 className="sec-h">Description</h3>}
           {!editing && !briefFolded && <button className="btn ghost small" onClick={startEdit} title="Edit the description (E)">Edit<KeyHint keys="E" /></button>}
         </div>
         {briefFolded ? null : editing ? (
@@ -1137,13 +1164,15 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   };
   return (
     <FileLinksProvider slug={slug} ticketId={ticket.id} panel={panelRef}>
-    <div className={`drawer-wrap${slideIn ? "" : " no-fade"}${leaving ? " leaving" : ""}${beside ? " beside-panels" : ""}`}
+    <div ref={wrapRef} className={`drawer-wrap${slideIn ? "" : " no-fade"}${leaving ? " leaving" : ""}${beside ? " beside-panels" : ""}`}
       style={beside ? { right: beside.right, top: beside.top } : undefined} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <aside ref={panelRef} className={`panel ${dragging ? "resizing" : ""} ${slideIn ? "" : "no-slide"}${slim ? " head-slim" : ""}${leaving ? " leaving" : ""}`} role="dialog" aria-modal="true" aria-label={ticket.title} style={{ width }} tabIndex={-1}>
         <div className="drawer-resize" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabIndex={0}
           title="Drag to resize · double-click to reset" {...handle} />
 
         <header className="panel-head">
+          {/* The page's heading for screen readers (the visible title is a field on desktop, a button on phones). */}
+          <h2 className="sr-only">{ticket.title}</h2>
           {/* Row 1: the title, its tags, the helper's note, then the buttons. */}
           <div className="head-row1">
             {phone && <button className="icon-btn phone-back" onClick={onClose} aria-label="Back to the board"><ChevronLeftIcon size={20} /></button>}
@@ -1214,7 +1243,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           <div className="head-row2-wrap" aria-hidden={slim || undefined}><div className="head-row2">
             <nav ref={tabsRef} className={`tabs${tabsMore ? " more-right" : ""}`} role="tablist" aria-label="Ticket" onScroll={checkTabs}>
               {tabs.map((t) => (
-                <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} tabIndex={slim ? -1 : undefined} onClick={() => openTab(t)}>{tabLabel[t]}</button>
+                <button key={t} id={`ticket-tab-${t}`} role="tab" aria-selected={tab === t} aria-controls="ticket-tabpanel" className={tab === t ? "active" : ""}
+                  tabIndex={slim || tab !== t ? -1 : 0} onClick={() => openTab(t)} onKeyDown={onTabKey}>{tabLabel[t]}</button>
               ))}
             </nav>
             <span className="head-spacer" />
@@ -1236,6 +1266,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
         </header>
 
         <div ref={bodyRef} className={`panel-body ${detailsShown ? "" : "details-closed"} ${side.dragging ? "resizing" : ""}`}
+          id="ticket-tabpanel" role="tabpanel" aria-labelledby={`ticket-tab-${tab}`}
           style={{ "--side-w": `${side.width}px` } as React.CSSProperties}>
           {!phone && details}
 
@@ -1282,7 +1313,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             ) : tab === "usage" ? (
               <div className="panel-scroll panel-usage"><UsagePanel usage={usage} error={ticketUsage.error} /></div>
             ) : tab === "outputs" ? (
-              <div className="panel-scroll panel-outputs"><Outputs slug={slug} ticket={ticket} onCount={setOutputCount} focus={outputFocus} /></div>
+              <div className="panel-scroll panel-outputs"><Outputs slug={slug} ticket={ticket} onCount={setOutputCount} focus={outputFocus} onOpenFile={(name) => setLinkFile({ id: ticket.id, name })} /></div>
             ) : (
               <Chat slug={slug} ticket={ticket} tickets={tickets} contextRequest={contextRequest} onOpenTicket={onOpenTicket} onError={onError} onPendingProposal={onPendingProposal} onFilesChanged={diffState.reload}
                 onOpenTasks={tabs.includes("family") ? () => openTab("family") : undefined}
@@ -1461,7 +1492,7 @@ function WhereWeAre({ slug, ticket, tickets, onOpen }: { slug: string; ticket: T
   return (
     <section className="where-we-are" aria-label="Where we are">
       <div className="section-head">
-        <h4>Where we are</h4>
+        <h3 className="sec-h">Where we are</h3>
         <button className="mini-link" onClick={onOpen} title="The whole status and every task, in the Tasks tab">Tasks ▸</button>
       </div>
       {total > 0 && <div className="wwa-count muted small">{done} of {total} tasks done</div>}

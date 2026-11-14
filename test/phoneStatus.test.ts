@@ -32,3 +32,10 @@ test("the just-finished mark shows first", () => {
   expect(phoneStatus(t({ outcome: "failed" }), { icon: "✕", tone: "failed", label: "Failed" }, { kind: "failed", label: "Run failed" }))
     .toEqual({ label: "Failed", tone: "err", icon: "✕" });
 });
+
+test("a main ticket whose tasks still run says Working on tasks, not Ready for review", () => {
+  const t = { status: "review" as const, outcome: "done", main: true, familyWorking: 2 };
+  expect(phoneStatus(t, null, { kind: "review", label: "Ready for review" })).toEqual({ label: "Working on tasks", tone: "info", busy: true });
+  expect(phoneStatus(t, null, { kind: "questions", label: "Answer 2 questions" }).label).toBe("Answer 2 questions");
+  expect(phoneStatus({ ...t, familyWorking: 0 }, null, null).label).toBe("Ready for review");
+});

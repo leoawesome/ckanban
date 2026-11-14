@@ -515,6 +515,9 @@ export const STATE_WORDS: Record<FamilyState, string> = {
   waiting: "Waiting", working: "Working", done: "Done", passed: "Passed", problem: "Found a problem", failed: "Failed", needs_you: "Needs you", in_review: "In review", paused: "Paused",
 };
 
+/** The state words on screen: Review reads "Ready for review", as on cards and the phone header (STATE_WORDS stays for status text). */
+export const shownState = (s: FamilyState): string => (s === "in_review" ? "Ready for review" : STATE_WORDS[s]);
+
 /** needsYou: the board's attention shows the ticket as Your turn. */
 export function familyState(t: FeatureTicket, needsYou = false): FamilyState {
   const finished = (): FamilyState => (t.kind === "test" ? (t.verdict === "problem" ? "problem" : "passed") : "done");

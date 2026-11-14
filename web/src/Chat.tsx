@@ -52,7 +52,7 @@ import { TaskCard, TaskSheet, TaskTrail, useSheet, WaitingButton } from "./TaskS
 import { shortNote, waitingItems, type WaitingItem } from "./taskCards";
 import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
-import { ClaudeFace, ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
+import { ClaudeFace, ErrorTurn, LetterAvatar, ReplyActions, ReplyAnnouncer, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
 import { fromAutomation, fromTicket, layoutTurns, placeByTime, telegramMarks, type TurnLayout, wakeLabel } from "./chatTurns";
 import { gapOf, jumpAfterScroll, stickAfterScroll } from "./chatFollow";
 import { useChatFollow } from "./useChatFollow";
@@ -76,6 +76,7 @@ import { Markdown } from "./Transcript";
 import { usePersistentState } from "./usePersistentState";
 import { usePhone } from "./usePhone";
 import { enterSends } from "./enterSends";
+import { reducedMotion } from "./motion";
 import { capMap, keepSame, laterCounts, MemoBlock } from "./chatMemo";
 import { recentOutputs } from "./outputsOnce";
 
@@ -720,7 +721,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     const el = scroller.current;
     if (!el) return;
     stickToBottom.current = true;
-    el.scrollTo({ top: el.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    el.scrollTo({ top: el.scrollHeight, behavior: reducedMotion() ? "auto" : "smooth" });
     setJump(null);
   };
 
@@ -1235,7 +1236,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     if (it.kind === "status") return onOpenTasks?.();
     const form = [...(scroller.current?.querySelectorAll<HTMLElement>(".qcard:not(.answered)") ?? [])].at(-1);
     if (!form) return;
-    form.scrollIntoView({ block: "center", behavior: "smooth" });
+    form.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
     form.classList.remove("attn-flash");
     void form.offsetWidth;
     form.classList.add("attn-flash");
@@ -1339,7 +1340,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   ];
   return (
     <div className="chat">
-      <div className="chat-log" ref={scroller}
+      {/* A log for screen readers, but quiet: replies are announced once by ReplyAnnouncer, not chunk by chunk. */}
+      <div className="chat-log" ref={scroller} role="log" aria-live="off" aria-label="Conversation"
         onScroll={(e) => {
           const { gap, movedUp } = noteScroll(e.currentTarget);
           setJump((j) => jumpAfterScroll(gap, j, movedUp));
@@ -1424,12 +1426,13 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         ))}
         {live && (
           <Turn start={tailStart()} className="live">
-            <div aria-live="polite">
+            <div aria-busy="true">
               {liveView(live).text && <div className="reply-text writing"><Markdown text={liveView(live).text} drafts /></div>}
               {liveView(live).preparing && <div className="working-row preparing"><ClaudeFace mood="working" size={24} /> <span>{liveView(live).preparing}</span></div>}
             </div>
           </Turn>
         )}
+        <ReplyAnnouncer live={!!live} />
         {running && !live && !!ticket.waitingOn?.length && <WaitingCard tasks={ticket.waitingOn} />}
         {!running && ticket.outcome === "stopped" && blocks.length > 0 && speaker(blocks[blocks.length - 1]) === "claude" && !pending.length && (
           <div className="chat-note stopped">Stopped</div>
@@ -1546,10 +1549,12 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
       {turnBar}
       <div className="composer">
         <textarea ref={composer} rows={phone ? 1 : 2} value={draft} disabled={stopping} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
+          aria-label={running ? `Steer ${claude}` : `Message ${claude}`} aria-describedby={images.error ? "chat-attach-error" : undefined}
           placeholder={formWaiting && !running ? `Or type a note to ${claude}…` : phone
             ? running ? `Steer ${claude}…` : refine ? "Describe your idea…" : `Ask ${claude}…`
             : running ? `Steer ${claude}: it reads this at its next step, no restart…` : refine ? `Describe your idea or answer ${claude}…` : `Ask ${claude} to change or continue something…`}
           onChange={(e) => setDraft(e.target.value)}
+          {...(slash.aria ?? snippets.aria ?? {})}
           onSelect={() => { snippets.handlers.onSelect(); slash.handlers.onSelect(); }}
           onBlur={() => { snippets.handlers.onBlur(); slash.handlers.onBlur(); }}
           onKeyDown={(e) => {
@@ -1572,7 +1577,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         {snippets.popup}
         {slash.popup}
         <AttachmentChips text={draft} images={images} />
-        {images.error && <div className="form-error">{images.error}</div>}
+        {images.error && <div className="form-error" id="chat-attach-error" role="alert">{images.error}</div>}
         {asking && old && (
           <div className="old-chat-ask" role="alert" title={old.title}>
             <span>{old.ask}</span>

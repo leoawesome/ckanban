@@ -1,5 +1,5 @@
 /** Minimal slice of KeyboardEvent that enterSends looks at (keeps it testable without a DOM). */
-export type EnterKeyLike = { key: string; shiftKey: boolean; nativeEvent: { isComposing: boolean } };
+export type EnterKeyLike = { key: string; shiftKey: boolean; nativeEvent: { isComposing: boolean; keyCode?: number } };
 
 /** Touch screen without a mouse: a phone (or tablet) typing on its on-screen keyboard. */
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
@@ -10,7 +10,8 @@ const isTouch = () => !!(globalThis as { matchMedia?: (q: string) => { matches: 
 /**
  * Whether this keydown should send the message. Enter sends and Shift+Enter adds a new line, except on
  * touch screens: on-screen keyboards have no Shift, so there Enter adds a new line and the Send button sends.
+ * Safari reports the Enter that confirms a Japanese or Chinese word with isComposing false but keyCode 229: never send then.
  */
 export function enterSends(e: EnterKeyLike, touch = isTouch()): boolean {
-  return e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !touch;
+  return e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229 && !touch;
 }

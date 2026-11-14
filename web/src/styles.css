@@ -5474,3 +5474,83 @@ button.composer-old:hover { color: var(--text); }
   /* A27: no key letters in menus on a phone (no keyboard). */
   .menu-key { display: none; }
 }
+
+/* ============ Batch B audit fixes (design-system/kanban/audit.md): ticket chat, Ask, Tasks, Plan, Outputs, message box ============
+   Last in the file so these win over the older 40px rules at the same specificity. */
+/* B02: the working row's one live line (ConvTurn WorkingRow). */
+.working-say { min-width: 0; }
+/* B08: Stop is an outlined danger button; the filled red stays for the confirm step. */
+.btn.danger.outline { background: var(--surface); color: var(--err); border-color: var(--err); }
+.btn.danger.outline:hover:not(:disabled) { background: var(--err-soft); filter: none; }
+.btn.danger.outline:active:not(:disabled) { background: var(--err-soft); }
+/* B09: the Tasks list is a plain list; the title is a real button, the fold chevron names its task. */
+ul.family-tab-tree { list-style: none; margin: 0; }
+.ft-done-li { display: block; }
+.ft-open { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: var(--r-sm); }
+.ft-row { cursor: default; }
+.ft-chev { display: inline-flex; align-items: center; justify-content: center; align-self: stretch; }
+/* B11: section headings are h3 around their fold button, in the same small look as before. */
+.sec-h { margin: 0; font-size: inherit; font-weight: 600; }
+.details-desc .sec-h, .details-desc .fold-title { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+.status-fold-h { width: 100%; }
+.status-fold-h .fold-title { font-weight: 600; }
+/* B13: "More" opens a long option description without picking it. */
+.qopt.read .qdesc { display: block; }
+.qopt-more { display: flex; flex-direction: column; }
+.qopt-row { flex-wrap: wrap; }
+.qopt-row > .qmore { flex-basis: 100%; }
+.qmore { align-self: flex-end; text-align: right; min-height: 24px; padding: 0 var(--sp-2); font-size: var(--fs-xs); }
+/* B14: step dots are 24px buttons with an 8px dot inside; the current one is wider. */
+.qstep { width: 24px; height: 24px; display: inline-grid; place-items: center; border-radius: var(--r-sm); background: none; }
+.qstep.on { width: 24px; background: none; border-radius: var(--r-sm); }
+.qstep-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.qstep.done .qstep-dot { background: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.qstep.on .qstep-dot { width: 18px; border-radius: var(--r-sm); background: var(--accent); }
+/* B12: the ⋯ cue under your own message shows on phones only. */
+.me-more { display: none; }
+.me-off { flex-basis: 100%; text-align: right; font-size: var(--fs-xs); color: var(--muted); }
+/* B19: desktop pointer targets at least 24px tall. */
+.steps-line > summary, .tool-row > summary, .ws-act, .head-cost, .fold-head, .head-row1 .help-btn { min-height: 24px; }
+.steps-line > summary, .head-cost, .ws-act { display: inline-flex; align-items: center; }
+.tool-row > summary { line-height: 20px; }
+/* B25: the box's hint wraps to a second line instead of being cut before its number. */
+.composer-foot.one-row .composer-hint { white-space: normal; overflow: visible; }
+@media (pointer: coarse) {
+  /* B17: remove-file and cancel-upload buttons on attachment chips. */
+  .file-btn { width: var(--tap); height: var(--tap); }
+  /* B18: file paths in chat get a taller tap area without moving the text (inline padding doesn't change the line). */
+  .md a.path-chip { padding: var(--sp-4) 0; }
+  /* B10: the Tasks row's actions are finger-sized and further apart. */
+  .ft-actions { gap: 0 var(--sp-5); }
+  .ft-actions > * { min-height: var(--tap); }
+  .ft-show input { width: 20px; height: 20px; }
+}
+@media (max-width: 720px) {
+  /* B05: Stop and Send are 44px and 12px apart while a run goes. */
+  .chat > .composer .composer-actions { gap: var(--sp-4); }
+  .chat > .composer .composer-actions .btn { min-height: var(--tap); }
+  .chat > .composer .btn.send-round, .chat > .composer .stop-btn.icon-only { width: var(--tap); min-width: var(--tap); height: var(--tap); }
+  .chat > .composer .image-pick-group .btn.image-pick.add-pick { width: var(--tap); min-width: var(--tap); height: var(--tap); min-height: var(--tap); }
+  /* B06: every chat field is 16px on a phone (iPhone zooms in below that). */
+  .qopts .qother, .qother, .file-filter input, .queued-edit { font-size: var(--fs-lg); }
+  /* B09: the Tasks rows, fold chevron and checkboxes at 44px. */
+  .ft-row { min-height: var(--tap); }
+  .ft-chev:not(.none) { width: var(--tap); margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-4)); }
+  .ft-chev:not(.none)::after { content: none; }
+  .ft-done-fold, .show-more-row { min-height: var(--tap); }
+  /* B12: your own message shows a ⋯ under it as the cue that a tap shows Copy, Fork and Rewind. */
+  .user-msg:not(.shown):not(.open) > .me-actions:not(.sending) { display: flex; }
+  .user-msg:not(.shown):not(.open) > .me-actions:not(.sending) > :not(.me-more):not([role="status"]) { display: none; }
+  .me-more { display: inline-flex; position: relative; color: var(--muted); opacity: 0.7; padding: 0 var(--sp-2); min-height: 20px; }
+  .me-more::after { content: ""; position: absolute; left: 50%; top: 50%; width: var(--tap); height: var(--tap); transform: translate(-50%, -50%); }
+  .user-msg.shown .me-more, .user-msg.open .me-more { opacity: 1; }
+  /* B20: Outputs file names wrap instead of losing their end; the folder sits on its own muted line. */
+  .output-name { white-space: normal; overflow-wrap: anywhere; }
+  .output-name .output-dir { display: block; }
+}
+@media (max-width: 720px) {
+  /* B13: "More" under a question option is finger-sized on a phone. */
+  .qmore { min-height: var(--tap); padding: 0 var(--sp-4); }
+}
+/* B07: while the phone keyboard is open on the Ask tab, the bottom nav steps aside so the message box sits on the keyboard. */
+.app.kb-open .phone-nav { display: none; }

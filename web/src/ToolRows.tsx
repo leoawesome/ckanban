@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, copy, type ToolDetail } from "./api";
 import { editDiff, mainInput } from "./toolView";
 import { capMap } from "./chatMemo";
+import { toast } from "./toast";
 
 /** One tool call as a row: its short label, plus the id its full input and output load by. */
 /** out: a short look at the output, shown under the label (the session viewer). */
@@ -108,7 +109,8 @@ function ToolCard({ d, live }: { d: ToolDetail; live: boolean }) {
     <>
       <div className="tool-lbl">
         Input
-        <button type="button" onClick={() => copy(input).then(() => {
+        <button type="button" onClick={() => copy(input).then((ok) => {
+          if (!ok) return void toast("Couldn't copy: select the text and copy it instead", { tone: "error" });
           setCopied(true);
           setTimeout(() => setCopied(false), 1200);
         })}>{copied ? "Copied" : "Copy"}</button>

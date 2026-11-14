@@ -19,7 +19,13 @@ export interface MenuItem {
 }
 
 /** "⋯" overflow menu at the end of the top bar for things you need now and then. ↑↓ move, Esc closes. */
-export function HeaderMenu({ items, footer, alert, keyHint }: { items: MenuItem[]; footer?: string | null; alert?: boolean; keyHint?: ReactNode }) {
+export function HeaderMenu({ items, footer, alert, keyHint, label = "More", theme = true }: {
+  items: MenuItem[]; footer?: string | null; alert?: boolean; keyHint?: ReactNode;
+  /** The button's name (e.g. "Chat actions"). */
+  label?: string;
+  /** The theme picker at the end (the top bar's menu only). */
+  theme?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -50,7 +56,7 @@ export function HeaderMenu({ items, footer, alert, keyHint }: { items: MenuItem[
 
   return (
     <div className="header-menu" ref={root}>
-      <button ref={button} className="icon-btn more-btn" aria-label={alert ? "More (something needs attention)" : "More"} title="More" aria-haspopup="menu" aria-expanded={open}
+      <button ref={button} className="icon-btn more-btn" aria-label={alert ? `${label} (something needs attention)` : label} title={label} aria-haspopup="menu" aria-expanded={open}
         onClick={() => setOpen((v) => !v)}>
         <MoreIcon size={16} />
         {alert && <span className="more-dot" aria-hidden />}
@@ -61,7 +67,7 @@ export function HeaderMenu({ items, footer, alert, keyHint }: { items: MenuItem[
           <div className="inbox-menu header-menu-list" role="menu" ref={menu} onKeyDown={onKey}>
             {items.map((it) => (
               <Fragment key={it.label}>
-                <button role="menuitem" className="menu-item" title={it.title} onClick={() => { setOpen(false); it.onSelect(); }}>
+                <button role="menuitem" className={`menu-item${it.danger ? " danger" : ""}`} title={it.title} onClick={() => { setOpen(false); it.onSelect(); }}>
                   <span className="menu-icon" aria-hidden>{it.icon}</span>
                   <span className="menu-label">{it.label}</span>
                   {it.badge}
@@ -70,7 +76,7 @@ export function HeaderMenu({ items, footer, alert, keyHint }: { items: MenuItem[
                 {it.separator && <div className="menu-sep" role="separator" />}
               </Fragment>
             ))}
-            <ThemePicker />
+            {theme && <ThemePicker />}
             {footer && <div className="menu-footer muted small">{footer}</div>}
           </div>
         </MenuSheet>

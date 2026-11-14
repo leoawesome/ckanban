@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { comboAria } from "./SlashPicker";
 import { createPortal } from "react-dom";
 import { useLayer } from "./layers";
 import { firstLine, matchSnippets, replaceQuery, snippetQuery } from "./snippetText";
@@ -39,6 +40,8 @@ export function useSnippetPicker({ slug, ref, setValue }: {
     el.setSelectionRange(caret.current, caret.current);
     caret.current = null;
   });
+
+  const listId = useId();
 
   const update = () => {
     const el = ref.current;
@@ -82,7 +85,7 @@ export function useSnippetPicker({ slug, ref, setValue }: {
     if (rect.top > 260) style.bottom = window.innerHeight - rect.top + GAP;
     else style.top = rect.bottom + GAP;
     popup = createPortal(
-      <div className="snippet-pop" role="listbox" aria-label="Snippets" style={style} onMouseDown={(e) => e.preventDefault()}>
+      <div id={listId} className="snippet-pop" role="listbox" aria-label="Snippets" style={style} onMouseDown={(e) => e.preventDefault()}>
         {empty ? (
           <div className="snippet-empty">
             <b>No snippets yet</b>
@@ -91,7 +94,7 @@ export function useSnippetPicker({ slug, ref, setValue }: {
         ) : (
           <>
             {matches.map((s, i) => (
-              <div key={s.id} role="option" aria-selected={i === active} className={`snippet-item${i === active ? " on" : ""}`}
+              <div key={s.id} id={`${listId}-${i}`} role="option" aria-selected={i === active} className={`snippet-item${i === active ? " on" : ""}`}
                 onMouseEnter={() => setActive(i)} onClick={() => insert(i)}>
                 <b>@{s.name}{s.scope !== "global" && <span className="snippet-scope">this board</span>}</b>
                 <span>{firstLine(s.text)}</span>
@@ -110,5 +113,7 @@ export function useSnippetPicker({ slug, ref, setValue }: {
     onKeyDown,
     /** Spread on the textarea; re-checks the `@query` whenever the text or caret moves. */
     handlers: { onSelect: update, onBlur: () => setQ(null) },
+    /** While the list is open, spread on the textarea (see SlashPicker's comboAria; null: closed). */
+    aria: open && el ? comboAria(listId, matches.length ? `${listId}-${active}` : undefined) : null,
   };
 }

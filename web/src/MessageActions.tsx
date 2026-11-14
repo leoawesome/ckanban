@@ -6,6 +6,7 @@ import { RewindConfirm, type RewindPreview } from "./Rewind";
 import { useShownMessage } from "./shownMessage";
 import { sentTime } from "./time";
 import { usePhone } from "./usePhone";
+import { MoreIcon } from "./icons";
 
 /** Rewind on a message: what the confirmation asks first and what going back does. */
 export interface RewindSpec {
@@ -93,6 +94,13 @@ export function UserMessage({ at, text, sending, className, bubbleClass, off, fo
                 title={off ?? "Go back to before this message"} onClick={() => setPanel((p) => (p === "rewind" ? null : "rewind"))}>
                 ⟲ Rewind
               </button>
+            )}
+            {/* Phones: titles never show, so say why Fork and Rewind are off. */}
+            {phone && off && (fork || rewind) && <span className="me-off">{off}</span>}
+            {/* Phones: the cue that a tap shows Copy, Fork and Rewind (the bubble itself also toggles them). */}
+            {phone && (
+              <button type="button" className="act-btn me-more" aria-expanded={shown || !!panel} aria-label={shown ? "Hide message actions" : "Message actions"}
+                onClick={toggle}><MoreIcon size={16} aria-hidden /></button>
             )}
           </>
         )}

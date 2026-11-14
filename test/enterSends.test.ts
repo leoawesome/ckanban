@@ -20,3 +20,8 @@ test("Shift+Enter, IME composing and other keys don't send", () => {
 test("Enter adds a new line on touch screens (no Shift on phone keyboards)", () => {
   expect(enterSends(ev(), true)).toBe(false);
 });
+
+test("Safari's Enter that confirms an IME word (keyCode 229) doesn't send", () => {
+  expect(enterSends({ key: "Enter", shiftKey: false, nativeEvent: { isComposing: false, keyCode: 229 } }, false)).toBe(false);
+  expect(enterSends({ key: "Enter", shiftKey: false, nativeEvent: { isComposing: false, keyCode: 13 } }, false)).toBe(true);
+});

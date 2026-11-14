@@ -1,4 +1,4 @@
-import { COLUMNS, waitsForSlot, type Status } from "./columns";
+import { COLUMNS, familyBusy, waitsForSlot, type Status } from "./columns";
 import { HUDDLE_WORKING, type FinishMark } from "./cardState";
 import type { AvatarMood } from "./avatarLook";
 import { runMood } from "./avatarMood";
@@ -27,6 +27,9 @@ interface StatusTicket {
   huddleBusy?: boolean;
   autoHuddle?: { state?: string } | null;
   lastActivity?: string | null;
+  main?: boolean;
+  familyWorking?: number;
+  stepsRunning?: number;
 }
 
 const columnLabel = (s: Status) => COLUMNS.find((c) => c.id === (s === "ready" ? "in_progress" : s))?.label ?? s;
@@ -40,6 +43,8 @@ export const attTone = (kind: string): StatusTone => (kind === "failed" || kind 
  */
 export function phoneStatus(t: StatusTicket, finish: FinishMark | null, att: { kind: string; label: string } | null): PhoneStatus {
   if (finish) return { label: finish.label, tone: finish.tone === "failed" ? "err" : finish.tone, icon: finish.icon };
+  // A main ticket whose tasks still run sits in In Progress on the board: say so, not "Ready for review" (questions still lead).
+  if ((!att || att.kind === "review") && familyBusy({ id: "", order: 0, ...t })) return { label: "Working on tasks", tone: "info", busy: true };
   if (att) return { label: att.kind === "limit" ? "Limit hit" : att.label, tone: attTone(att.kind) };
   const column = { label: columnLabel(t.status), tone: "neutral" as const };
   if (t.huddleBusy) return { label: HUDDLE_WORKING, tone: "info", busy: true };

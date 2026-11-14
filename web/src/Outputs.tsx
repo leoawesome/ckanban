@@ -179,12 +179,14 @@ function Links({ links }: { links: TicketLink[] }) {
  * Deliverables Claude saved in the ticket's outputs folder; markdown is rendered, images, HTML and PDFs previewed, other text shown raw.
  * The ticket's artifacts and share links sit above them.
  */
-export function Outputs({ slug, ticket, onCount, focus }: {
+export function Outputs({ slug, ticket, onCount, focus, onOpenFile }: {
   slug: string;
   ticket: Ticket;
   onCount?: (n: number) => void;
   /** File to show first (path relative to outputs), e.g. a mockup clicked in the chat. */
   focus?: string | null;
+  /** The file the user picked (null: back to the list), so the panel can put it in the link. */
+  onOpenFile?: (name: string | null) => void;
 }) {
   const ticketId = ticket.id;
   const [files, setFiles] = useState<OutputFile[] | null>(null);
@@ -254,13 +256,21 @@ export function Outputs({ slug, ticket, onCount, focus }: {
   const readerOn = narrow && reading && !!open && !!files?.some((f) => f.name === open);
   const order = useMemo(() => flatten(tree), [tree]);
   const at = open ? order.indexOf(open) : -1;
-  const closeReader = () => setReading(false);
+  const closeReader = () => {
+    setReading(false);
+    if (narrow) onOpenFile?.(null);
+  };
   useLayer(closeReader, { active: readerOn, skipInInputs: true });
   // On a phone the Back gesture closes the reader, not the ticket: the reader gets its own history entry.
   useBackEntry(readerOn && phone, closeReader);
   useEffect(() => { bodyRef.current?.scrollTo(0, 0); }, [open]);
-  const pick = (name: string) => { setOpen(name); setReading(true); };
-  const stepFile = (by: number) => { if (at >= 0) setOpen(order[(at + by + order.length) % order.length]); };
+  const pick = (name: string) => { setOpen(name); setReading(true); onOpenFile?.(name); };
+  const stepFile = (by: number) => {
+    if (at < 0) return;
+    const next = order[(at + by + order.length) % order.length];
+    setOpen(next);
+    onOpenFile?.(next);
+  };
 
   const links = ticket.links ?? [];
   const shared = new Set(ticket.shareLinks?.map((l) => l.file));

@@ -12,6 +12,7 @@ import { FeatureChoice, useFeatureChoice } from "./FeatureChoice";
 import { Modal } from "./Modal";
 import { enterSends } from "./enterSends";
 import { ArrowDownIcon, ArrowUpIcon, ChatIcon, MoreIcon, PlusIcon, TrashIcon } from "./icons";
+import { HeaderMenu } from "./HeaderMenu";
 import { ImagePickButton } from "./ImagePickButton";
 import { useImagePaste } from "./imagePaste";
 import { KeyHint } from "./KeyHint";
@@ -27,7 +28,7 @@ import { fullTime, timeAgo } from "./time";
 import { toast } from "./toast";
 import { ToolRows } from "./ToolRows";
 import { useClaudeName } from "./AvatarFace";
-import { ClaudeFace, ErrorTurn, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
+import { ClaudeFace, ErrorTurn, ReplyActions, ReplyAnnouncer, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
 import { layoutTurns, type TurnLayout } from "./chatTurns";
 import { keepSame, laterCounts, MemoBlock } from "./chatMemo";
 import { useChatSimpler } from "./Simpler";
@@ -322,8 +323,13 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
               {making ? "Making ticket…" : "Make ticket"}
             </button>
           )}
-          {current && <button className="btn ghost small" onClick={() => setRenaming(current)}>Rename</button>}
-          {current && <button className="btn ghost small" onClick={() => setDeleting(current)} title="Delete this chat">Delete</button>}
+          {/* Rename and Delete in a ⋯ menu, Delete last and red, so it doesn't sit beside Rename in the same look. */}
+          {current && (
+            <HeaderMenu label="Chat actions" theme={false} items={[
+              { label: "Rename", onSelect: () => setRenaming(current), separator: true },
+              { label: "Delete chat", icon: <TrashIcon size={14} />, danger: true, onSelect: () => setDeleting(current) },
+            ]} />
+          )}
         </div>
         {thread}
       </section>
@@ -697,7 +703,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
 
   return (
     <div className="chat qc-thread">
-      <div className="chat-log" ref={scroller}
+      <div className="chat-log" ref={scroller} role="log" aria-live="off" aria-label="Conversation"
         onScroll={(e) => {
           const { gap } = noteScroll(e.currentTarget);
           if (gap < 60) setJump(null);
@@ -820,9 +826,10 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
               ))}
               {live && (
                 <Turn start={tailStart()} className="live">
-                  <div aria-live="polite">{liveView(live).text && <div className="reply-text writing"><Markdown text={liveView(live).text} drafts /></div>}</div>
+                  <div aria-busy="true">{liveView(live).text && <div className="reply-text writing"><Markdown text={liveView(live).text} drafts /></div>}</div>
                 </Turn>
               )}
+              <ReplyAnnouncer live={!!live} />
               {running && !live && blocks.at(-1)?.kind !== "tools" && (
                 <WorkingRow start={tailStart()} startedAt={replyStartedAt} activity={stopping ? "Stopping…" : activity} />
               )}
@@ -865,7 +872,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
           <textarea ref={composer} rows={phone ? 1 : 2} value={draft} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
             placeholder={phone ? (running ? "Add to your question…" : `Message ${claude}`)
               : running ? `Add to your question: ${claude} reads it at its next step…` : `Ask ${claude} about this folder… (Enter sends)`}
-            aria-label={`Message to ${claude}`}
+            aria-label={`Message to ${claude}`} aria-describedby={images.error ? "qc-attach-error" : undefined}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (enterSends(e)) {
@@ -874,7 +881,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
               }
             }} />
           <AttachmentChips text={draft} images={images} />
-          {images.error && <div className="form-error">{images.error}</div>}
+          {images.error && <div className="form-error" id="qc-attach-error" role="alert">{images.error}</div>}
           {phone ? (
             // Phones: the ticket chat's two-row box (styles.css, ".chat > .composer"): the text on top, then the round +
             // (Photo, File) and the memory ring on the left, Stop and the round Send on the right.

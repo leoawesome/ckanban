@@ -1,10 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { api } from "./api";
 import { useLayer } from "./layers";
 import { inlineSlashQuery, insertInlineCommand, matchCommands, SLASH_GROUPS, slashQuery, sourceLabel, type SlashCommand } from "./slashText";
 
 const GAP = 6;
+
+/** The textarea's combobox attributes while a picker's list is open (SlashPicker, SnippetPicker). */
+export const comboAria = (listId: string, activeId: string | undefined) => ({
+  role: "combobox", "aria-expanded": true, "aria-controls": listId, "aria-activedescendant": activeId, "aria-autocomplete": "list" as const,
+});
 const STALE_MS = 30_000;
 
 // Per ticket (its worktree decides the project skills) or per board; refetched when older than STALE_MS.
@@ -57,6 +62,7 @@ export function useSlashPicker({ commands, ref, setValue, inline = false }: {
   const dismissed = useRef<number | null>(null);
   const caret = useRef<number | null>(null);
   const list = useRef<HTMLDivElement>(null);
+  const listId = useId();
 
   const matches = query !== null && commands ? matchCommands(commands, query) : [];
   const open = query !== null && matches.length > 0;
@@ -136,7 +142,7 @@ export function useSlashPicker({ commands, ref, setValue, inline = false }: {
     else style.top = rect.bottom + GAP;
     let n = 0;
     popup = createPortal(
-      <div ref={list} className="snippet-pop slash-pop" role="listbox" aria-label="Slash commands" style={style} onMouseDown={(e) => e.preventDefault()}>
+      <div ref={list} id={listId} className="snippet-pop slash-pop" role="listbox" aria-label="Slash commands" style={style} onMouseDown={(e) => e.preventDefault()}>
         {SLASH_GROUPS.map((g) => {
           const items = matches.filter((c) => c.kind === g.kind);
           if (!items.length) return null;
@@ -146,7 +152,7 @@ export function useSlashPicker({ commands, ref, setValue, inline = false }: {
               {items.map((c) => {
                 const i = n++;
                 return (
-                  <div key={c.name} role="option" aria-selected={i === active} className={`slash-item${i === active ? " on" : ""}`}
+                  <div key={c.name} id={`${listId}-${i}`} role="option" aria-selected={i === active} className={`slash-item${i === active ? " on" : ""}`}
                     onMouseEnter={() => setActive(i)} onClick={() => insert(i)}>
                     <b title={`/${c.name}`}>
                       {/* A long plugin namespace gives way first: the skill's own name stays readable. */}
@@ -172,5 +178,7 @@ export function useSlashPicker({ commands, ref, setValue, inline = false }: {
     onKeyDown,
     /** Spread on the textarea; re-checks the `/query` whenever the text or caret moves. */
     handlers: { onSelect: update, onBlur: () => setQ(null) },
+    /** While the list is open, spread on the textarea: it owns the list, so screen readers follow ↑↓ (null: closed). */
+    aria: open ? comboAria(listId, `${listId}-${active}`) : null,
   };
 }

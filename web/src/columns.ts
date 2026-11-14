@@ -8,7 +8,7 @@ interface Placed { id: string; status: Status; order: number; pinnedAt?: string 
  * sits in Review or Planning. Parked in Done or Backlog it moves only while one of its own steps runs (a step it started
  * after a new message); a ticket the user added running doesn't undo the user's park.
  */
-const familyBusy = (t: Placed): boolean => !!t.main && (
+export const familyBusy = (t: Placed): boolean => !!t.main && (
   (!!t.familyWorking && (t.status === "review" || t.status === "planning"))
   || (!!t.stepsRunning && (t.status === "done" || t.status === "backlog")));
 

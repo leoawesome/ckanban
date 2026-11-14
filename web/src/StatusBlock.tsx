@@ -6,7 +6,7 @@
 // "N waiting on you" button (TaskSheet.tsx).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, type FeatureStatus, type Ticket } from "./api";
-import { familyOf, featureRows, isFeature, STATE_WORDS, workingInFamily, type FamilyState } from "./family";
+import { familyOf, featureRows, isFeature, STATE_WORDS, shownState, workingInFamily, type FamilyState } from "./family";
 import { InfoIcon } from "./icons";
 import { pausedLine } from "./limitText";
 import { namesText, taskProgress } from "./tasksText";
@@ -172,7 +172,7 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
     rows.push({
       label: "Sub-features", body: <div className="ws-lines">
         {f.subFeatures.map((s) => (
-          <span key={s.id}>{link(s.id, s.title)} · {STATE_WORDS[s.state as FamilyState] ?? s.state}{s.headline ? ` · ${s.headline}` : ""}</span>
+          <span key={s.id}>{link(s.id, s.title)} · {s.state in STATE_WORDS ? shownState(s.state as FamilyState) : s.state}{s.headline ? ` · ${s.headline}` : ""}</span>
         ))}
       </div>,
     });

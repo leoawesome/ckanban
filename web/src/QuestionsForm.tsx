@@ -10,12 +10,17 @@ import { QuestionText } from "./QuestionText";
 import { useClaudeName } from "./AvatarFace";
 import { plainMarkdown } from "./miniMarkdown";
 
+/** Descriptions longer than this (characters) may be cut to 3 lines, so they get a "More" toggle. */
+const LONG_DESC = 140;
+
 /**
  * A free-text answer box: grows to about 6 lines, then scrolls. Enter runs `onEnter`, Shift+Enter adds a new
  * line, and nothing fires while an IME is composing.
  */
-function AnswerBox({ value, onChange, onEnter, autoFocus, disabled, placeholder, className = "", onFocus, inputRef }: {
+function AnswerBox({ value, onChange, onEnter, autoFocus, disabled, placeholder, label, className = "", onFocus, inputRef }: {
   value: string;
+  /** Its name for screen readers (the placeholder is only an example and goes away while typing). */
+  label: string;
   onChange: (v: string) => void;
   onEnter: () => void;
   autoFocus?: boolean;
@@ -29,7 +34,7 @@ function AnswerBox({ value, onChange, onEnter, autoFocus, disabled, placeholder,
   useLayoutEffect(() => autoGrow(ref.current, 6), [value]);
   return (
     <textarea ref={(el) => { ref.current = el; if (inputRef) inputRef.current = el; }} rows={1} autoFocus={autoFocus} disabled={disabled}
-      className={`qother ${className}`} value={value} placeholder={placeholder} onFocus={onFocus}
+      className={`qother ${className}`} value={value} placeholder={placeholder} aria-label={label} onFocus={onFocus}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => {
         if (enterSends(e)) {
@@ -91,6 +96,14 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
   useEffect(() => {
     if (!answered && !replaced && !closed) root.current?.focus({ preventScroll: true });
   }, [step, answered, !!replaced, closed]);
+
+  // Options whose whole description the user opened ("step:label"); only on screen, not saved.
+  const [readMore, setReadMore] = useState<Set<string>>(() => new Set());
+  const toggleMore = (k: string) => setReadMore((cur) => {
+    const next = new Set(cur);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
 
   const update = (i: number, fn: (a: Answer) => Answer) => setAnswers((arr) => arr.map((x, j) => (j === i ? fn(x) : x)));
 
@@ -176,7 +189,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
         {total > 1 && <span className="qsteps" aria-label={`Step ${Math.min(step + 1, total)} of ${total}`}>
           {questions.map((_, i) => (
             <button key={i} className={`qstep ${i === step ? "on" : ""} ${i < step || summary ? "done" : ""}`}
-              onClick={() => setStep(i)} aria-label={`Question ${i + 1}`} />
+              onClick={() => setStep(i)} aria-label={`Question ${i + 1}`} aria-current={i === step && !summary ? "step" : undefined}><span className="qstep-dot" aria-hidden /></button>
           ))}
           <span className="muted small">{summary ? "Review" : `${step + 1} / ${total}`}</span>
         </span>}
@@ -193,9 +206,12 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
           <div className="qopts" role={q.multiSelect ? "group" : "radiogroup"}>
             {q.options.map((o, i) => {
               const on = a.picked.includes(o.label);
+              // A long description is cut to 3 lines; "More" opens it without picking the option.
+              const long = !!o.description && o.description.length > LONG_DESC;
+              const read = on || readMore.has(`${step}:${o.label}`);
               const option = (
                 <button key={o.label} type="button" disabled={disabled}
-                  className={`qopt ${on ? "on" : ""} ${q.multiSelect ? "multi" : ""}`}
+                  className={`qopt ${on ? "on" : ""}${read ? " read" : ""} ${q.multiSelect ? "multi" : ""}`}
                   role={q.multiSelect ? "checkbox" : "radio"} aria-checked={on} onClick={() => pick(o.label)}>
                   <span className="qmark" aria-hidden>{q.multiSelect && on && <CheckIcon size={12} strokeWidth={2.2} />}</span>
                   <span className="qtext">
@@ -208,18 +224,26 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
                   <kbd className="qkey">{i + 1}</kbd>
                 </button>
               );
+              const more = long && !on && (
+                <button type="button" className="qmore link-btn" aria-expanded={read}
+                  aria-label={`${read ? "Less" : "More"} about ${plainMarkdown(o.label)}`} onClick={() => toggleMore(`${step}:${o.label}`)}>
+                  {read ? "Less" : "More"}
+                </button>
+              );
               // A sibling, not inside the option: previewing must not pick it. Progress is saved, so leaving for the Outputs tab keeps it.
+              if (more && !(o.mockup && onPreview)) return <div key={o.label} className="qopt-more">{option}{more}</div>;
               return o.mockup && onPreview ? (
                 <div key={o.label} className="qopt-row">
                   {option}
                   <button type="button" className="qpreview" title={`Preview ${o.mockup} in the Outputs tab`} onClick={() => onPreview(o.mockup!)}>
                     Preview
                   </button>
+                  {more}
                 </div>
               ) : option;
             })}
             <AnswerBox key={step} value={a.other} disabled={disabled} className={a.otherOn ? "on" : ""} inputRef={otherRef}
-              placeholder="Or type your own" onFocus={focusOther} onChange={typeOther} onEnter={next} />
+              placeholder="Or type your own" label="Your own answer" onFocus={focusOther} onChange={typeOther} onEnter={next} />
           </div>
         </div>
       ) : (
@@ -233,7 +257,7 @@ export function QuestionsForm({ questions, answered, answer, replaced, closed, d
             ))}
           </ol>
           <AnswerBox value={note} onChange={setNote} onEnter={send} disabled={disabled}
-            placeholder="Anything else Claude should know? (optional)" />
+            placeholder="Anything else Claude should know? (optional)" label={`Anything else ${claude} should know (optional)`} />
         </div>
       )}
 

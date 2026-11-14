@@ -154,7 +154,7 @@ export function StepsLine({ items, running, activity, old, children }: {
     <details className={`steps-line${old ? " inherited" : ""}${running ? " live" : ""}`}>
       <summary>
         <span className="steps-icon" aria-hidden>{running ? <ClaudeFace mood="working" size={24} /> : <CheckIcon size={14} className="icon steps-ok" />}</span>
-        <span className="steps-text" role={running ? "status" : undefined} aria-live={running ? "polite" : undefined}>{s.text}</span>
+        <span className="steps-text">{s.text}</span>
         {since && <span className="working-time" title={`This step started ${fullTime(since)}`}>· {elapsed(since)}</span>}
         {s.failed > 0 && <span className="steps-failed">· {s.failed} failed</span>}
       </summary>
@@ -180,11 +180,14 @@ export function WorkingRow({ start, activity, startedAt, stalled, children }: {
   const claude = useClaudeName();
   return (
     <Turn start={false} className={`working${start ? " start" : ""}`}>
-      <div className={`working-row${stalled ? " stalled" : ""}`} role="status" aria-live="polite">
+      <div className={`working-row${stalled ? " stalled" : ""}`}>
         <ClaudeFace mood={mood} size={44} />
-        {stalled ? <span>No output for {stalled} min</span>
-          : <span className="working-text">{mood === "working" ? activity : liveLine(activity, claude) ?? "Thinking…"}</span>}
-        {since && !stalled && <span className="working-time">{since}</span>}
+        {/* The one live line while Claude works; the ticking time stays outside it so it isn't read every second. */}
+        <span role="status" className="working-say">
+          {stalled ? <span>No output for {stalled} min</span>
+            : <span className="working-text">{mood === "working" ? activity : liveLine(activity, claude) ?? "Thinking…"}</span>}
+        </span>
+        {since && !stalled && <span className="working-time" aria-hidden>{since}</span>}
       </div>
       {children}
     </Turn>
@@ -213,6 +216,22 @@ export function TimeDivider({ label }: { label: string }) {
   return <div className="time-divider" role="separator"><span>{label}</span></div>;
 }
 
+/**
+ * One hidden status line for screen readers: "Claude replied" once a streamed reply ends. The streaming text itself is
+ * aria-busy (not live), so it isn't read again on every chunk.
+ */
+export function ReplyAnnouncer({ live }: { live: boolean }) {
+  const claude = useClaudeName();
+  const was = useRef(live);
+  const [said, setSaid] = useState("");
+  useEffect(() => {
+    if (was.current && !live) setSaid(`${claude} replied`);
+    else if (live) setSaid("");
+    was.current = live;
+  }, [live, claude]);
+  return <span className="sr-only" role="status">{said}</span>;
+}
+
 /** Clicks on Stop this soon after it took Send's place are a double tap on Send, not a stop. */
 const STOP_GUARD_MS = 800;
 
@@ -229,15 +248,19 @@ export function SendOrStop({ running, hasDraft, stopping, onStop, send }: {
   send: ReactNode;
 }) {
   const alone = running && !hasDraft;
+  // Stop appears in Send's place (alone) or beside it (a draft typed during the run): either way a tap meant for Send
+  // can land on it, so both ignore taps for STOP_GUARD_MS after they appear or move.
+  const place = !running ? "" : alone ? "alone" : "beside";
   const shownAt = useRef(0);
   useEffect(() => {
-    if (alone) shownAt.current = Date.now();
-  }, [alone]);
+    if (place) shownAt.current = Date.now();
+  }, [place]);
+  const guardedStop = () => Date.now() - shownAt.current >= STOP_GUARD_MS && onStop();
   const label = stopping ? "Stopping…" : "Stop";
   if (alone) {
     return (
       <button className="btn danger small stop-btn" disabled={stopping}
-        onClick={() => Date.now() - shownAt.current >= STOP_GUARD_MS && onStop()}>
+        onClick={guardedStop}>
         <span aria-hidden>■</span> {label}
       </button>
     );
@@ -245,7 +268,7 @@ export function SendOrStop({ running, hasDraft, stopping, onStop, send }: {
   return (
     <>
       {running && (
-        <button className="btn danger small stop-btn icon-only" disabled={stopping} onClick={onStop} aria-label={label} title={label}>
+        <button className="btn danger small stop-btn icon-only" disabled={stopping} onClick={guardedStop} aria-label={label} title={label}>
           <span aria-hidden>■</span>
         </button>
       )}
