@@ -60,3 +60,17 @@ test("only the user's browser on the board changes board browsers; a run's shell
   expect((await call("DELETE", "/fatt-interior-whatsapp", { origin: base })).status).toBe(200);
   expect(existsSync(folder)).toBe(false);
 });
+
+test("the sign-in screen and its taps are the user's only: never a run, a run's shell or another program", async () => {
+  await board.boardBrowsers.add("Desk");
+  for (const path of ["/desk/screen", "/desk/input"]) {
+    expect((await call("POST", path, {}, { type: "text", text: "x" })).status).toBe(403);
+    expect((await call("POST", path, { origin: base, "x-ckanban-run": "p/t_1" }, { type: "text", text: "x" })).status).toBe(403);
+    userBrowser = false;
+    expect((await call("POST", path, { origin: base }, { type: "text", text: "x" })).status).toBe(403);
+    userBrowser = true;
+  }
+  // The user: refused while the browser isn't running or doesn't need sign-in.
+  expect((await call("POST", "/desk/screen", { origin: base }, {})).status).toBe(409);
+  expect((await call("POST", "/nope/screen", { origin: base }, {})).status).toBe(404);
+});

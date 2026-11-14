@@ -305,7 +305,12 @@ export interface BoardBrowserView {
   startUrl: string | null;
   /** stopped, starting, hidden (running for tasks, no window), visible (a window on the Mac), closing. */
   state: "stopped" | "starting" | "hidden" | "visible" | "closing";
-  signIn: "Signed in" | "Needs sign-in";
+  /** What the last look at its pages said; "Not checked" when it hasn't been looked at yet. */
+  signIn: "Signed in" | "Needs sign-in" | "Not checked";
+  /** The login page's site when it needs sign-in. */
+  signInSite: string | null;
+  /** When it was last looked at. */
+  checkedAt: string | null;
   /** Tasks using it now. */
   inUse: number;
   /** Open window was asked while a task used it: it opens once that task is done. */
@@ -1695,6 +1700,17 @@ export const api = {
   removeBoardBrowser: (id: string) => req<BrowsersState>("DELETE", `/api/board-browsers/${encodeURIComponent(id)}`),
   /** Sign in / Open window: a visible window on the Mac (url: the site to open). opened false: it opens once the task using it is done. */
   openBoardBrowser: (id: string, url?: string) => req<BrowsersState & { opened: boolean; message: string }>("POST", `/api/board-browsers/${encodeURIComponent(id)}/open`, url ? { url } : {}),
+  /** A live picture of a logged-out browser's login tab (an object URL; revoke it when replaced). */
+  boardBrowserScreen: async (id: string): Promise<string> => {
+    const r = await fetch(`/api/board-browsers/${encodeURIComponent(id)}/screen`, {
+      method: "POST", headers: { "content-type": "application/json", "x-ckanban-source": "ui" }, body: "{}", cache: "no-store",
+    });
+    if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `${r.status} ${r.statusText}`);
+    return URL.createObjectURL(await r.blob());
+  },
+  /** A tap (x, y as shares of the picture) or typing passed to that login tab. */
+  boardBrowserInput: (id: string, ev: { type: "click"; x: number; y: number } | { type: "text"; text: string } | { type: "key"; key: "Enter" | "Backspace" | "Tab" }) =>
+    req<{ ok: true }>("POST", `/api/board-browsers/${encodeURIComponent(id)}/input`, ev),
   closeBoardBrowser: (id: string) => req<BrowsersState & { closed: boolean; message: string }>("POST", `/api/board-browsers/${encodeURIComponent(id)}/close`),
   devices: () => req<DeviceView[]>("GET", "/api/devices"),
   saveDevice: (input: { name: string; description?: string; capacity?: number }) => req<DeviceView[]>("POST", "/api/devices", input),

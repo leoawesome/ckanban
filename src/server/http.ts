@@ -955,6 +955,17 @@ export function createServer(deps: ServerDeps) {
           const r = await bb.openWindow(id, b.url);
           return json({ ...view(), ...r });
         }
+        // The sign-in screen (More, Browsers): a live picture of a logged-out browser's login tab and taps or typing
+        // passed to it, so sign-in works from a phone. Only the user, only this board's own browsers, only while it
+        // needs sign-in (BoardBrowsers.screenTab); the picture is made in memory for this answer and never saved.
+        if (parts.length === 3 && parts[2] === "screen" && m === "POST") {
+          const shot = await bb.screen(id);
+          return new Response(shot.jpeg, { headers: { "content-type": "image/jpeg", "cache-control": "no-store", "x-page-site": shot.site ?? "" } });
+        }
+        if (parts.length === 3 && parts[2] === "input" && m === "POST") {
+          await bb.input(id, await body(req));
+          return json({ ok: true });
+        }
         if (parts.length === 3 && parts[2] === "close" && m === "POST") {
           if (bb.inUse(id)) throw new HttpError(409, "A task is using this browser now. It closes by itself once the task is done.");
           const closed = await bb.close(id);

@@ -22,8 +22,8 @@ test("startup adopts existing folders as board browsers, keeps their contents, a
   await bb.init();
   const v = bb.view().browsers;
   expect(v.map((b) => [b.id, b.name, b.signIn, b.state, b.startUrl])).toEqual([
-    ["fatt-interior-whatsapp", "Fatt Interior WhatsApp", "Signed in", "stopped", "https://web.whatsapp.com/"],
-    ["personal-whatsapp", "Personal WhatsApp", "Needs sign-in", "stopped", "https://web.whatsapp.com/"],
+    ["fatt-interior-whatsapp", "Fatt Interior WhatsApp", "Not checked", "stopped", "https://web.whatsapp.com/"],
+    ["personal-whatsapp", "Personal WhatsApp", "Not checked", "stopped", "https://web.whatsapp.com/"],
   ]);
   expect(readFileSync(join(dir, "Default", "Cookies"), "utf8")).toBe("logins");
   expect(statSync(join(root, "browsers")).mode & 0o777).toBe(0o700);
@@ -88,7 +88,7 @@ test("a stale or foreign port is never trusted: a dead port, another Chrome's pa
   expect(foreign.closeCalls).toBe(0);
 });
 
-test("close asks Chrome to quit over its port and waits; a site was open so the logins count as saved", async () => {
+test("close asks Chrome to quit over its port and waits; it keeps the last sign-in look with its time", async () => {
   const root = tempDir("ck-bb-");
   const h = harness(root);
   const bb = new BoardBrowsers(root, () => {}, h.deps);
@@ -98,12 +98,13 @@ test("close asks Chrome to quit over its port and waits; a site was open so the 
   f.pages = [{ id: "p1", type: "page", title: "Inbox", url: "https://www.mail.example.com/inbox" }];
   await bb.tick();
   expect(bb.view().browsers[0].lastSite?.site).toBe("mail.example.com");
-  expect(bb.view().browsers[0].signIn).toBe("Needs sign-in");
+  expect(bb.view().browsers[0].signIn).toBe("Signed in");
   expect(await bb.close(b.id)).toBe(true);
   expect(f.closeCalls).toBe(1);
   expect(f.closed).toBe(true);
   const v = bb.view().browsers[0];
   expect([v.state, v.signIn]).toEqual(["stopped", "Signed in"]);
+  expect(v.checkedAt).toBeTruthy();
 });
 
 test("a Chrome that won't quit is never killed: close reports it and leaves it running", async () => {

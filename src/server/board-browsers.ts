@@ -2,7 +2,8 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, lstat, mkdir, readdir, readlink, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { helperArgv } from "./artifact";
-import { listPages, PORT_FILE, portMatches, readPortFile, requestBrowserClose, type PageTarget, type PortFile } from "./cdp";
+import { evaluateInPage, listPages, pageCall, PORT_FILE, portMatches, readPortFile, requestBrowserClose, type PageTarget, type PortFile } from "./cdp";
+import { classifyByAddress, PAGE_PROBES, probeAnswer, siteOf, type PageSignIn } from "./sign-in-signs";
 import { trackedInterval } from "./lag";
 import { nowIso } from "./util";
 
@@ -43,6 +44,23 @@ const WINDOW = "1280,900";
 
 export type BrowserMode = "hidden" | "visible";
 
+/** What the last look at its pages said (sign-in-signs.ts): signed in, or a login page on that site. */
+export interface SignInCheck {
+  state: "in" | "out";
+  /** The site of the login page (or of a signed-in page): host only, never a full address. */
+  site: string | null;
+  at: string;
+}
+
+/** A logged-out page must be seen this many ticks in a row before a signed-in browser counts as logged out (no alert for a page passing by). */
+const OUT_TICKS = 2;
+/** How long one page check may take. */
+const PROBE_TIMEOUT_MS = 2000;
+/** How long a tap or typing from the sign-in screen may take to reach the page. */
+const INPUT_TIMEOUT_MS = 8000;
+/** At most this many tabs per browser are looked inside per tick. */
+const PROBES_PER_TICK = 3;
+
 export interface BoardBrowser {
   /** Safe slug, also the folder name and the MCP server name (browser-<id>). */
   id: string;
@@ -54,8 +72,10 @@ export interface BoardBrowser {
   lastSite: { site: string; at: string } | null;
   /** Start it with the daemon, restart it if it dies, never close it when idle (a watcher script needs it). */
   keepRunning: boolean;
-  /** A site was opened and the browser was closed cleanly at least once since: its logins are saved. */
+  /** A site was opened and the browser was closed cleanly at least once since: its logins are saved. Kept for old state files; the screen goes by check. */
   signedIn: boolean;
+  /** The last sign-in check of its open pages (tick); null: never checked. */
+  check: SignInCheck | null;
   /** Page a keep-running start opens (e.g. https://web.whatsapp.com/ for a watcher). Null: a blank page. */
   startUrl: string | null;
 }
@@ -72,8 +92,12 @@ export type BrowserState = "stopped" | "starting" | "hidden" | "visible" | "clos
 
 export interface BoardBrowserView extends BoardBrowser {
   state: BrowserState;
-  /** Plain words for the UI. */
-  signIn: "Signed in" | "Needs sign-in";
+  /** Plain words for the UI: what the last look at its pages said, or "Not checked" when there was none. */
+  signIn: "Signed in" | "Needs sign-in" | "Not checked";
+  /** The login page's site when it needs sign-in ("web.whatsapp.com"). */
+  signInSite: string | null;
+  /** When that was last seen (now-ish while it runs; the last look before it stopped otherwise). */
+  checkedAt: string | null;
   /** How many runs use it now. */
   inUse: number;
   /** "Open window" was asked while a run used it: the window opens once that run is done. */
@@ -112,6 +136,10 @@ export interface BrowserDeps {
   matches?: (pf: PortFile) => Promise<boolean>;
   close?: (pf: PortFile) => Promise<void>;
   pages?: (port: number) => Promise<PageTarget[] | null>;
+  /** Runs a read-only expression in a tab (the sign-in check); null when it fails. */
+  probe?: (port: number, targetId: string, expression: string) => Promise<unknown>;
+  /** A daemon.log line (board browser starts, closes, deaths, sign-in changes). Never page contents or full addresses. */
+  log?: (line: string) => void;
   /** Chrome's major version, for the hidden browser's user agent. */
   chromeMajor?: () => Promise<string | null>;
   now?: () => number;
@@ -227,16 +255,6 @@ export function validBrowserId(v: unknown): v is string {
 /** The MCP server name a run sees for a board browser; its tools are mcp__<name>__*. */
 export const serverName = (id: string) => `browser-${id}`;
 
-function siteOf(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    return u.hostname.replace(/^www\./, "") || null;
-  } catch {
-    return null;
-  }
-}
-
 function cleanName(name: unknown): string {
   if (typeof name !== "string") throw new BrowserError(400, "Give the browser a name.");
   const clean = name.replace(/\s+/g, " ").trim().slice(0, NAME_MAX);
@@ -271,6 +289,14 @@ export class BoardBrowsers {
   private busy = new Map<string, BrowserState>();
   private ops = new Map<string, Promise<unknown>>();
   private retry = new Map<string, { at: number; fails: number }>();
+  /** Running browsers: when the tick last looked at their pages (kept in memory; saved into check when it changes or stops). */
+  private checkedAt = new Map<string, string>();
+  /** Ticks in a row a signed-in browser showed a login page (OUT_TICKS). */
+  private outTicks = new Map<string, number>();
+  /** The tab that showed the login page, for the sign-in screen (screen, input). */
+  private loginTab = new Map<string, string>();
+  /** Told when a signed-in browser is seen logged out (main.ts sends the user an urgent alert). Once per logout. */
+  onLoggedOut: ((b: { id: string; name: string }, site: string | null) => void) | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   readonly dir: string;
@@ -291,6 +317,8 @@ export class BoardBrowsers {
       matches: deps.matches ?? ((pf) => portMatches(pf)),
       close: deps.close ?? requestBrowserClose,
       pages: deps.pages ?? ((port) => listPages(port)),
+      probe: deps.probe ?? ((port, target, expr) => evaluateInPage(port, target, expr, PROBE_TIMEOUT_MS)),
+      log: deps.log ?? ((line) => console.log(line)),
       chromeMajor: deps.chromeMajor ?? (() => realChromeMajor(chromeBin())),
       now: deps.now ?? Date.now,
       idleMs: deps.idleMs ?? IDLE_MS,
@@ -322,6 +350,8 @@ export class BoardBrowsers {
         createdAt: String(b.createdAt ?? nowIso()), lastUsedAt: typeof b.lastUsedAt === "string" ? b.lastUsedAt : null,
         lastSite: b.lastSite && typeof b.lastSite.site === "string" ? { site: b.lastSite.site, at: String(b.lastSite.at ?? "") } : null,
         keepRunning: b.keepRunning === true, signedIn: b.signedIn === true, startUrl: typeof b.startUrl === "string" ? b.startUrl : null,
+        check: b.check && (b.check.state === "in" || b.check.state === "out") && typeof b.check.at === "string"
+          ? { state: b.check.state, site: typeof b.check.site === "string" ? b.check.site : null, at: b.check.at } : null,
       }));
       const run = raw?.running && typeof raw.running === "object" ? raw.running : {};
       for (const [id, r] of Object.entries<any>(run)) {
@@ -356,12 +386,27 @@ export class BoardBrowsers {
     return this.leases.get(id)?.size ?? 0;
   }
 
+  /** A daemon.log line about one browser: its name and id, what happened. */
+  private note(id: string, what: string): void {
+    const b = this.get(id);
+    this.d.log(`[browsers] ${b ? `${b.name} (${id})` : id}: ${what}`);
+  }
+
+  /** Signed in / Needs sign-in / Not checked, with the site and when. */
+  private signInOf(b: BoardBrowser): Pick<BoardBrowserView, "signIn" | "signInSite" | "checkedAt"> {
+    if (!b.check) return { signIn: "Not checked", signInSite: null, checkedAt: null };
+    const at = (this.running[b.id] && this.checkedAt.get(b.id)) || b.check.at;
+    return b.check.state === "out"
+      ? { signIn: "Needs sign-in", signInSite: b.check.site, checkedAt: at }
+      : { signIn: "Signed in", signInSite: null, checkedAt: at };
+  }
+
   view(): BoardBrowsersView {
     const installed = !!this.d.chromeBin();
     return {
       browsers: this.browsers.map((b) => ({
         ...b, lastSite: b.lastSite ? { ...b.lastSite } : null,
-        state: this.stateOf(b.id), signIn: b.signedIn ? "Signed in" : "Needs sign-in", inUse: this.inUse(b.id),
+        state: this.stateOf(b.id), ...this.signInOf(b), inUse: this.inUse(b.id),
         windowPending: this.pending.has(b.id), error: this.errors.get(b.id) ?? null, folder: join(this.dir, b.id),
       })),
       chrome: { installed, message: installed ? null : "Board browsers need Google Chrome. Install it from google.com/chrome, then come back here." },
@@ -404,6 +449,7 @@ export class BoardBrowsers {
         // A folder with saved cookies was used and closed before: count it as signed in.
         signedIn: existsSync(join(dir, "Default", "Cookies")),
         startUrl: e.name.includes("whatsapp") ? "https://web.whatsapp.com/" : null,
+        check: null,
       });
       changed = true;
     }
@@ -415,7 +461,10 @@ export class BoardBrowsers {
     for (const b of this.browsers) {
       const was = !!this.running[b.id];
       const live = await this.adopt(b.id);
-      if (live) this.idleSince.set(b.id, this.d.now());
+      if (live) {
+        this.idleSince.set(b.id, this.d.now());
+        this.note(b.id, `picked up again after the board started (${this.running[b.id].mode === "visible" ? "window open" : "hidden"})`);
+      }
       if (was !== live) changed = true;
     }
     if (changed) this.save();
@@ -466,11 +515,12 @@ export class BoardBrowsers {
     if (!this.get(id)) return Promise.reject(new BrowserError(404, "There is no board browser with that name."));
     return this.serial(id, async () => {
       if (this.running[id] && (await this.adopt(id))) return this.running[id].port;
-      return (await this.launch(id, "hidden", null)).port;
+      return (await this.launch(id, "hidden", null, "for a task")).port;
     });
   }
 
-  private async launch(id: string, mode: BrowserMode, url: string | null): Promise<Runtime> {
+  /** why: plain words for daemon.log ("for a task", "keep running", "for sign-in"). */
+  private async launch(id: string, mode: BrowserMode, url: string | null, why: string): Promise<Runtime> {
     // Removed while this waited its turn (behind remove()'s close): never start Chrome on a folder being deleted.
     if (!this.get(id)) throw new BrowserError(404, "This browser was removed in More, Browsers.");
     const bin = this.d.chromeBin();
@@ -485,6 +535,7 @@ export class BoardBrowsers {
       // Already running on this folder (outside the board, or not yet adopted): use it if it checks out, else say so.
       if (await this.adopt(id)) {
         this.errors.delete(id);
+        this.note(id, `already running outside the board: picked up (${this.running[id].mode === "visible" ? "window open" : "hidden"}, ${why})`);
         return this.running[id];
       }
       const holder = await this.lockHolder(dir);
@@ -514,9 +565,11 @@ export class BoardBrowsers {
       this.idleSince.set(id, this.d.now());
       this.errors.delete(id);
       this.retry.delete(id);
+      this.note(id, `started ${mode === "visible" ? "with a window" : "hidden"} (${why})${url ? `, opening ${siteOf(url) ?? "a blank page"}` : ""}`);
       return this.running[id];
     } catch (e) {
       this.errors.set(id, (e as Error).message);
+      this.note(id, `could not start (${why}): ${(e as Error).message}`);
       throw e;
     } finally {
       this.busy.delete(id);
@@ -545,16 +598,28 @@ export class BoardBrowsers {
   }
 
   /** Closes it cleanly (Browser.close over its checked port) and waits until Chrome is gone. Never kills. */
-  close(id: string): Promise<boolean> {
-    return this.serial(id, () => this.closeNow(id));
+  close(id: string, why = "asked by the user"): Promise<boolean> {
+    return this.serial(id, () => this.closeNow(id, why));
   }
 
-  private async closeNow(id: string): Promise<boolean> {
+  /** The browser stopped (closed or died): its last sign-in look is kept with its time, and the tick's notes go. */
+  private stoppedNow(id: string): void {
+    const b = this.get(id);
+    const at = this.checkedAt.get(id);
+    if (b?.check && at) b.check = { ...b.check, at };
+    this.checkedAt.delete(id);
+    this.outTicks.delete(id);
+    this.loginTab.delete(id);
+  }
+
+  private async closeNow(id: string, why: string): Promise<boolean> {
     const rt = this.running[id];
     const dir = this.folder(id);
     const pf = await readPortFile(dir);
     if (!pf || !(await this.d.matches(pf))) {
       if (rt) {
+        this.note(id, "already gone when the board went to close it");
+        this.stoppedNow(id);
         delete this.running[id];
         this.save();
       }
@@ -578,9 +643,12 @@ export class BoardBrowsers {
     this.busy.delete(id);
     if (!gone) {
       this.errors.set(id, "Chrome is taking long to close. The board leaves it to finish and checks again.");
+      this.note(id, `asked to close (${why}) but still running after ${Math.round(this.d.closeTimeoutMs / 1000)}s`);
       this.onChange();
       return false;
     }
+    this.note(id, `closed (${why})`);
+    this.stoppedNow(id);
     delete this.running[id];
     this.errors.delete(id);
     this.emptyTicks.delete(id);
@@ -638,7 +706,7 @@ export class BoardBrowsers {
     for (let n = 2; this.get(id) || existsSync(join(this.dir, id)); n++) id = `${base.slice(0, 44)}-${n}`;
     await mkdir(this.dir, { recursive: true, mode: 0o700 });
     await mkdir(this.folder(id), { mode: 0o700 });
-    const b: BoardBrowser = { id, name: clean, createdAt: nowIso(), lastUsedAt: null, lastSite: null, keepRunning: false, signedIn: false, startUrl: null };
+    const b: BoardBrowser = { id, name: clean, createdAt: nowIso(), lastUsedAt: null, lastSite: null, keepRunning: false, signedIn: false, startUrl: null, check: null };
     this.browsers.push(b);
     this.save();
     return b;
@@ -673,7 +741,7 @@ export class BoardBrowsers {
     if (!b) throw new BrowserError(404, "There is no board browser with that name.");
     if (this.inUse(id)) throw new BrowserError(409, "A task is using this browser now. Remove it once the task is done.");
     const dir = this.folder(id);
-    if (!(await this.close(id))) throw new BrowserError(409, "Chrome is still closing. Try again in a minute.");
+    if (!(await this.close(id, "removed by the user"))) throw new BrowserError(409, "Chrome is still closing. Try again in a minute.");
     if (this.inUse(id)) throw new BrowserError(409, "A task started using this browser. Remove it once the task is done.");
     this.browsers = this.browsers.filter((x) => x !== b);
     delete this.running[id];
@@ -731,11 +799,11 @@ export class BoardBrowsers {
           this.onChange();
           return { opened: false, message: "A task is using this browser now. Its window opens on this Mac once the task is done." };
         }
-        if (!(await this.closeNow(id))) throw new BrowserError(409, "Chrome is still closing. Try again in a minute.");
+        if (!(await this.closeNow(id, "to open it again with a window"))) throw new BrowserError(409, "Chrome is still closing. Try again in a minute.");
       }
-      await this.launch(id, "visible", start);
+      await this.launch(id, "visible", start, "Open window, by the user");
       this.emptyTicks.delete(id);
-      return { opened: true, message: b.signedIn ? "The window is open on this Mac." : "The window is open on this Mac. Sign in to the sites this browser is for, then close the window." };
+      return { opened: true, message: b.check?.state === "in" ? "The window is open on this Mac." : "The window is open on this Mac. Sign in to the sites this browser is for, then close the window." };
     });
   }
 
@@ -758,7 +826,7 @@ export class BoardBrowsers {
     try {
       await this.serial(id, async () => {
         if (this.running[id] && (await this.adopt(id))) return;
-        await this.launch(id, "hidden", b.startUrl);
+        await this.launch(id, "hidden", b.startUrl, "keep running");
       });
     } catch (e) {
       const fails = (r?.fails ?? 0) + 1;
@@ -792,8 +860,11 @@ export class BoardBrowsers {
         }
         this.misses.delete(id);
         // Quit by the user or crashed; a quit is a clean close too.
+        const dead = rt.pid !== null && !this.d.alive(rt.pid);
+        this.note(id, dead ? "stopped (quit on the Mac or crashed)" : "stopped answering on its port; the board counts it as stopped");
+        this.stoppedNow(id);
         delete this.running[id];
-        if (b.lastSite && rt.pid !== null && !this.d.alive(rt.pid)) b.signedIn = true;
+        if (b.lastSite && dead) b.signedIn = true;
         changed = true;
         if (b.keepRunning) await this.keepAlive(id);
         continue;
@@ -805,6 +876,7 @@ export class BoardBrowsers {
         b.lastSite = { site, at: nowIso() };
         changed = true;
       }
+      if (pages && (await this.checkSignIn(b, rt.port, pages))) changed = true;
       if (this.inUse(id)) {
         this.emptyTicks.delete(id);
         continue;
@@ -812,7 +884,7 @@ export class BoardBrowsers {
       if (rt.mode === "hidden") {
         if (!b.keepRunning && this.d.now() - (this.idleSince.get(id) ?? 0) >= this.d.idleMs) void this.serial(id, async () => {
           // A run may have started using it while this waited.
-          if (!this.inUse(id) && this.running[id]?.mode === "hidden") await this.closeNow(id);
+          if (!this.inUse(id) && this.running[id]?.mode === "hidden") await this.closeNow(id, `idle for ${Math.round(this.d.idleMs / 60_000)} min`);
         }).catch(() => {});
         continue;
       }
@@ -824,8 +896,8 @@ export class BoardBrowsers {
           this.emptyTicks.delete(id);
           void this.serial(id, async () => {
             if (this.inUse(id) || this.running[id]?.mode !== "visible") return;
-            if (!(await this.closeNow(id))) return;
-            if (b.keepRunning) await this.launch(id, "hidden", b.startUrl).catch(() => {});
+            if (!(await this.closeNow(id, "its window was closed"))) return;
+            if (b.keepRunning) await this.launch(id, "hidden", b.startUrl, "keep running, after its window was closed").catch(() => {});
           }).catch(() => {});
         }
       } else this.emptyTicks.delete(id);
@@ -833,9 +905,147 @@ export class BoardBrowsers {
     if (changed) this.save();
   }
 
+  /**
+   * The sign-in check (one tick, one running browser): reads each tab's address and title, and for sites that keep
+   * their address when logged out (WhatsApp Web, sign-in-signs.ts PAGE_PROBES) runs one small read-only check inside
+   * the page. Never navigates, reloads, clicks or types. Any login page: Needs sign-in (after OUT_TICKS looks in a row
+   * when it was signed in, then the user is alerted once); otherwise any web page: Signed in; only blank or loading
+   * tabs: no change. Returns whether the saved state changed.
+   */
+  private async checkSignIn(b: BoardBrowser, port: number, pages: PageTarget[]): Promise<boolean> {
+    let out: { site: string | null; tab: string } | null = null;
+    let inSite: string | null | undefined;
+    let probes = 0;
+    for (const p of pages) {
+      let v = classifyByAddress(p.url, p.title);
+      const site = siteOf(p.url);
+      if (v === "probe") {
+        if (probes >= PROBES_PER_TICK) continue;
+        probes++;
+        const u = new URL(p.url);
+        v = probeAnswer(await this.d.probe(port, p.id, PAGE_PROBES[u.hostname]));
+      }
+      if (v === "out") {
+        out = { site, tab: p.id };
+        break;
+      }
+      if (v === "in" && inSite === undefined) inSite = site;
+    }
+    const now = nowIso();
+    const prev = b.check;
+    if (out) {
+      this.loginTab.set(b.id, out.tab);
+      if (prev?.state === "out") {
+        this.checkedAt.set(b.id, now);
+        if (prev.site === out.site) return false;
+        b.check = { state: "out", site: out.site, at: now };
+        return true;
+      }
+      // Signed in before: a login page must stay for OUT_TICKS looks (a task passing a login page isn't a logout).
+      if (prev?.state === "in") {
+        const n = (this.outTicks.get(b.id) ?? 0) + 1;
+        this.outTicks.set(b.id, n);
+        if (n < OUT_TICKS) return false;
+      }
+      this.outTicks.delete(b.id);
+      this.checkedAt.set(b.id, now);
+      b.check = { state: "out", site: out.site, at: now };
+      b.signedIn = false;
+      this.note(b.id, `sign-in: ${prev ? "was signed in, now" : "first look:"} needs sign-in on ${out.site ?? "a page"}`);
+      if (prev?.state === "in") {
+        try {
+          this.onLoggedOut?.({ id: b.id, name: b.name }, out.site);
+        } catch (e) {
+          console.error(`board browser ${b.id}: logged-out alert`, e);
+        }
+      }
+      return true;
+    }
+    this.outTicks.delete(b.id);
+    if (inSite === undefined) return false; // only blank or still-loading tabs: says nothing
+    this.loginTab.delete(b.id);
+    this.checkedAt.set(b.id, now);
+    if (prev?.state === "in") return false;
+    b.check = { state: "in", site: inSite, at: now };
+    b.signedIn = true;
+    this.note(b.id, `sign-in: ${prev ? `signed in again${prev.site ? ` (was needed on ${prev.site})` : ""}` : "first look: signed in"}`);
+    return true;
+  }
+
+  // --- Sign-in screen (More, Browsers, from a phone too) -----------------------------------------
+
+  /** The tab the sign-in screen shows: the one seen on a login page. Only while the browser runs and needs sign-in. */
+  private async screenTab(id: string): Promise<{ port: number; tab: string }> {
+    const b = this.get(id);
+    if (!b) throw new BrowserError(404, "There is no board browser with that name.");
+    const rt = this.running[id];
+    if (!rt || this.busy.has(id)) throw new BrowserError(409, "This browser isn't running now.");
+    if (b.check?.state !== "out") throw new BrowserError(409, "This browser doesn't need sign-in now.");
+    const tab = this.loginTab.get(id);
+    const pages = await this.d.pages(rt.port);
+    if (!tab || !pages?.some((p) => p.id === tab)) throw new BrowserError(409, "The login page was closed. Wait a few seconds for the next check.");
+    return { port: rt.port, tab };
+  }
+
+  /** A JPEG of the login tab, in memory only (never saved). */
+  async screen(id: string): Promise<{ jpeg: Uint8Array; site: string | null }> {
+    const { port, tab } = await this.screenTab(id);
+    try {
+      const [shot] = await pageCall<{ data: string }>(port, tab, [{ method: "Page.captureScreenshot", params: { format: "jpeg", quality: 70 } }], 5000);
+      return { jpeg: Buffer.from(shot.data, "base64"), site: this.get(id)?.check?.site ?? null };
+    } catch {
+      throw new BrowserError(504, "The browser didn't send a picture of the page in time. Trying again…");
+    }
+  }
+
+  /**
+   * A tap or typing on the sign-in screen, passed to the login tab: a click at a point given as a share of the
+   * picture's width and height, text typed at the cursor, or one of a few keys. Nothing else.
+   */
+  async input(id: string, ev: unknown): Promise<void> {
+    const e = (ev ?? {}) as { type?: unknown; x?: unknown; y?: unknown; text?: unknown; key?: unknown };
+    const share = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
+    const KEYS: Record<string, { code: string; vk: number; text?: string }> = {
+      Enter: { code: "Enter", vk: 13, text: "\r" }, Backspace: { code: "Backspace", vk: 8 }, Tab: { code: "Tab", vk: 9 },
+    };
+    if (e.type === "click" && !(share(e.x) && share(e.y))) throw new BrowserError(400, "A tap needs x and y between 0 and 1.");
+    if (e.type === "text" && (typeof e.text !== "string" || !e.text || e.text.length > 200)) throw new BrowserError(400, "Type up to 200 characters.");
+    if (e.type === "key" && !(typeof e.key === "string" && KEYS[e.key])) throw new BrowserError(400, "That key isn't one the sign-in screen sends.");
+    if (e.type !== "click" && e.type !== "text" && e.type !== "key") throw new BrowserError(400, "Send a tap, text or a key.");
+    const { port, tab } = await this.screenTab(id);
+    // A hidden or background tab may hold input until it counts as focused; this lasts only for this one connection.
+    const focus = { method: "Emulation.setFocusEmulationEnabled", params: { enabled: true } };
+    try {
+      if (e.type === "click") {
+        const [m] = await pageCall<{ cssVisualViewport?: { clientWidth: number; clientHeight: number } }>(port, tab, [{ method: "Page.getLayoutMetrics" }]);
+        const vp = m.cssVisualViewport;
+        if (!vp) throw new Error("no viewport");
+        const at = { x: Math.round((e.x as number) * vp.clientWidth), y: Math.round((e.y as number) * vp.clientHeight), button: "left", clickCount: 1 };
+        await pageCall(port, tab, [
+          focus,
+          { method: "Input.dispatchMouseEvent", params: { type: "mouseMoved", x: at.x, y: at.y } },
+          { method: "Input.dispatchMouseEvent", params: { type: "mousePressed", ...at } },
+          { method: "Input.dispatchMouseEvent", params: { type: "mouseReleased", ...at } },
+        ], INPUT_TIMEOUT_MS);
+      } else if (e.type === "text") {
+        await pageCall(port, tab, [focus, { method: "Input.insertText", params: { text: e.text } }], INPUT_TIMEOUT_MS);
+      } else {
+        const k = KEYS[e.key as string];
+        const base = { key: e.key, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk };
+        await pageCall(port, tab, [
+          focus,
+          { method: "Input.dispatchKeyEvent", params: { type: "keyDown", ...base, ...(k.text ? { text: k.text } : {}) } },
+          { method: "Input.dispatchKeyEvent", params: { type: "keyUp", ...base } },
+        ], INPUT_TIMEOUT_MS);
+      }
+    } catch {
+      throw new BrowserError(504, "The browser didn't take that in time. Try again.");
+    }
+  }
+
   /** For tests and the uninstall: close every running board browser cleanly. */
   async closeAll(): Promise<void> {
-    await Promise.all(Object.keys(this.running).map((id) => this.close(id).catch(() => false)));
+    await Promise.all(Object.keys(this.running).map((id) => this.close(id, "the board quit").catch(() => false)));
   }
 }
 

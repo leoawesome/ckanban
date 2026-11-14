@@ -318,6 +318,17 @@ export function App() {
   const [notifications, setNotifications] = useState(false);
   const [devicesOpen, setDevicesOpen] = useState(false);
   const [browsersOpen, setBrowsersOpen] = useState(false);
+  // A tap on a "browser logged out" alert (#/<board>?browsers): open More, Browsers on that board.
+  useEffect(() => {
+    const take = () => {
+      if (!/^#\/[^?]*\?(.*&)?browsers(&|=|$)/.test(location.hash)) return;
+      history.replaceState(history.state, "", location.hash.replace(/\?.*$/, ""));
+      setBrowsersOpen(true);
+    };
+    take();
+    window.addEventListener("hashchange", take);
+    return () => window.removeEventListener("hashchange", take);
+  }, []);
   // Phone notifications: tell the daemon while the board is on screen here, open tapped notifications' tickets.
   useEffect(() => startPushClient(), []);
   const [version, setVersion] = useState<{ version: string; latest: string | null; updateAvailable: boolean } | null>(null);
