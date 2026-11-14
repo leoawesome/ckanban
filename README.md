@@ -139,6 +139,10 @@ A full `bun run test` that passes remembers the exact code it tested; running it
 
 Run from source as the daemon: `bun src/cli.ts install`. Data layout and env overrides: [docs/features.md](docs/features.md#data-layout).
 
+### Speed check (on demand)
+
+`bun run speedcheck` checks how the board holds up on a big board, with no AI and nothing touching your real board. Run it when the board feels slow, to find why, and again to check a fix; it is never part of `bun run test`, CI or a release. It copies this checkout (uncommitted changes too) into `/tmp`, builds it, fills a temp data folder with a 10,000-ticket board (long chats, huddles, jobs, old run logs), starts a daemon from the copy on free ports with a fake `claude`, and drives headless Chrome at 1280x800 and 390x844: first load, Done column scroll and a fast-scroll crash check, a 6,250-entry chat, search, ⌘K, a drag and a 300-task feature. It prints each step's time against a limit, the daemon's `[lag]` freezes and any page crash, then deletes everything (also on Ctrl-C). It takes about 3 to 4 minutes and needs Google Chrome (or `CHROME_PATH`). Options: `--tickets 3000`, `--only desktop|phone`, `--keep` (keep the temp folder), `--shots` (a screenshot per step). Files: `scripts/speedcheck/`.
+
 ### Releasing
 
 Move the `## Unreleased` notes in [CHANGELOG.md](CHANGELOG.md) under `## [X.Y.Z] - <date>`, add a fresh empty `## Unreleased` and the compare link at the bottom, bump `version` in `package.json`, commit `chore: release vX.Y.Z` and push, then:

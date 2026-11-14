@@ -12,7 +12,8 @@
     "test:timings": "bun scripts/test.ts --update-timings",
     "build:web": "cd web && bun install && bun run build",
     "typecheck": "tsc --noEmit",
-    "build:bin": "bun scripts/build-bin.ts"
+    "build:bin": "bun scripts/build-bin.ts",
+    "speedcheck": "bun scripts/speedcheck/run.ts"
   },
   "dependencies": {
     "qrcode-generator": "^1.4.4",
