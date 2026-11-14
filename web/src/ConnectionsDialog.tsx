@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api, copy, safeHref, type AgentStatus, type McpAddInput, type McpConfig, type McpServer, type McpState, type McpTransport, type Pass } from "./api";
 import { boardCell } from "./automations";
 import { connectFromClaude, KeyForm, openSignIn } from "./passConnect";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { CloseIcon, CopyIcon, TerminalIcon } from "./icons";
-import { Modal } from "./Modal";
+import { CloseIcon, CopyIcon, PlugIcon, PlusIcon, TerminalIcon } from "./icons";
+import { EmptyState, FormError, LoadState, SecretInput } from "./formParts";
+import { tabKeys } from "./tabKeys";
+import { usePhone } from "./usePhone";
+import { Modal, useFormDirty } from "./Modal";
 import { timeAgo } from "./time";
 import { useNow } from "./useNow";
 
@@ -484,10 +487,13 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
   const onAdd = () => {
     if (tab === "claude") {
       setEditing(null);
-      setAdding((v) => !v);
-    } else setAddingPass((v) => !v);
+      setAdding(true);
+    } else setAddingPass(true);
   };
   const addOpen = tab === "claude" ? adding : addingPass;
+  const tabIds = useId();
+  const TABS = ["claude", "automations", "keys"] as const;
+  const phone = usePhone();
 
   return (
     <Modal title="Connections" onClose={onClose} wide>
@@ -498,16 +504,21 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
           </span>
           <div className="spacer" />
           <button className="btn small" disabled={!!state?.checking} onClick={() => act("refresh", async () => { await api.mcpRefresh(); await loadBoard(); })}>Refresh</button>
-          <button className="btn small" onClick={onAdd}>{addOpen ? "Close form" : "Add"}</button>
+          {tab !== "keys" && !addOpen && (
+            <button className="btn small primary icon-label" onClick={onAdd}><PlusIcon size={14} aria-hidden /> {tab === "claude" ? "New tool" : "New key or address"}</button>
+          )}
         </div>
-        <div className="tabs conn-tabs" role="tablist">
-          <button role="tab" aria-selected={tab === "claude"} className={tab === "claude" ? "active" : ""} onClick={() => setTab("claude")}>
-            For Claude{attention.length > 0 && <span className="conn-count" aria-label={`${attention.length} need attention`}>{attention.length}</span>}
-          </button>
-          <button role="tab" aria-selected={tab === "automations"} className={tab === "automations" ? "active" : ""} onClick={() => setTab("automations")}>For automations</button>
-          <button role="tab" aria-selected={tab === "keys"} className={tab === "keys" ? "active" : ""} onClick={() => setTab("keys")}>Keys</button>
+        <div className="tabs conn-tabs" role="tablist" aria-label="Connections" onKeyDown={tabKeys(TABS, tab, setTab, `${tabIds}-tab-`)}>
+          {TABS.map((t) => (
+            <button key={t} role="tab" id={`${tabIds}-tab-${t}`} aria-controls={`${tabIds}-panel`} aria-selected={tab === t} tabIndex={tab === t ? 0 : -1}
+              className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+              {t === "claude" ? <>For Claude{attention.length > 0 && <span className="conn-count" aria-label={`${attention.length} need attention`}>{attention.length}</span>}</>
+                : t === "automations" ? "For automations" : "Keys"}
+            </button>
+          ))}
         </div>
-        {err && <div className="form-error" role="alert">{err}</div>}
+        <FormError>{err}</FormError>
+        <div className="conn-panel" role="tabpanel" id={`${tabIds}-panel`} aria-labelledby={`${tabIds}-tab-${tab}`}>
         {tab === "claude" && (
           <>
             <span className="muted small">
@@ -516,9 +527,12 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             {changed && <div className="mcp-msg info">{CHANGES_APPLY}</div>}
             {adding && <AddServerForm board={thisBoard} onAdded={() => { setAdding(false); setChanged(true); }} onCancel={() => setAdding(false)} />}
             {state?.error && <div className="banner error mcp-banner">{state.error}</div>}
-            {!state && <div className="muted"><span className="spinner" /> Loading…</div>}
-            {state && !servers.length && !state.checking && !state.error && (
-              <div className="muted">No tools yet. Click Add to give Claude one.</div>
+            {!state && <LoadState onRetry={() => act("refresh", async () => { await api.mcpRefresh(); await loadBoard(); })} className="conn-loading" />}
+            {state && !servers.length && !state.checking && !state.error && !adding && (
+              <EmptyState icon={<PlugIcon size={20} />} title="No tools yet"
+                actions={<button className="btn primary icon-label" onClick={onAdd}><PlusIcon size={14} aria-hidden /> New tool</button>}>
+                Tools let Claude reach other services, like GitHub or Linear. {phone ? "Tap" : "Click"} New tool to give Claude one.
+              </EmptyState>
             )}
             {state && !servers.length && state.checking && !state.checkedAt && (
               <div className="muted">Checking every tool takes a little while…</div>
@@ -547,7 +561,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
             <span className="muted small">
               Keys you saved when Claude asked for them. They are saved on this Mac only, for one board: Claude's runs on that board get each one under its name, without seeing it. Delete one and new runs no longer get it.
             </span>
-            {!board && <div className="muted"><span className="spinner" /> Loading…</div>}
+            {!board && <LoadState onRetry={() => void loadBoard()} className="conn-loading" />}
             {board && !boardKeys.length && <div className="muted">No keys saved yet. When Claude needs one, it asks in the ticket's chat with a key box.</div>}
             {keyBoards.map((slug) => (
               <div key={slug} className="conn-section">
@@ -561,7 +575,7 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
           <>
             <span className="muted small">{BOARD_TIP}</span>
             {note && <div className="mcp-msg info">{note}</div>}
-            {!board && <div className="muted"><span className="spinner" /> Loading…</div>}
+            {!board && <LoadState onRetry={() => void loadBoard()} className="conn-loading" />}
             {board && (ready.length > 0 || own.length > 0) && (
               <div className="conn-section">
                 <div className="inbox-board">In use</div>
@@ -581,11 +595,10 @@ export function ConnectionsDialog({ state, refreshKey = 0, onClose, onRunInTermi
                 {unavailable.map(automationCard)}
               </div>
             )}
-            {addingPass
-              ? <AddPassForm onDone={(msg) => { setAddingPass(false); setNote(msg); loadBoard(); }} onCancel={() => setAddingPass(false)} />
-              : <button className="btn small conn-add-pass" onClick={() => setAddingPass(true)}>+ Add a key or address</button>}
+            {addingPass && <AddPassForm onDone={(msg) => { setAddingPass(false); setNote(msg); loadBoard(); }} onCancel={() => setAddingPass(false)} />}
           </>
         )}
+        </div>
       </div>
       {removePass && (
         <ConfirmDialog title={removePass.board ? `Delete the key ${removePass.name}?` : `Remove ${removePass.name} from automations?`}
@@ -653,10 +666,10 @@ function PasteRedirect({ name }: { name: string }) {
       }}>
         <span className="muted small">After you approve, the page may end on an error about "localhost". Copy that page's address and paste it here.</span>
         <div className="conn-paste-row">
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="http://localhost:…/callback?code=…" aria-label="Address the sign-in page ended on" spellCheck={false} autoComplete="off" />
+          <input type="url" inputMode="url" value={text} onChange={(e) => setText(e.target.value)} placeholder="http://localhost:…/callback?code=…" aria-label="Address the sign-in page ended on" spellCheck={false} autoComplete="off" autoCapitalize="off" autoCorrect="off" />
           <button className="btn small primary" disabled={busy || !text.trim()}>{busy ? "Sending…" : "Send"}</button>
         </div>
-        {err && <div className="form-error">{err}</div>}
+        <FormError>{err}</FormError>
       </form>
     </details>
   );
@@ -689,7 +702,7 @@ function AgentsSection() {
       <span className="muted small">
         Gives them the board's own tool, so you can ask them things like "find what's left to do in this repo and put it on my board".
       </span>
-      {err && <div className="form-error" role="alert">{err}</div>}
+      <FormError>{err}</FormError>
       {!agents && !err && <div className="muted small"><span className="spinner" /> Checking…</div>}
       {agents?.map((a) => {
         const [label, tone] = !a.installed ? ["Not added", "stopped"] : a.current ? ["Added", "ok"] : ["Old command", "blocked"];
@@ -744,6 +757,8 @@ function AddServerForm({ onAdded, initial, onCancel, board, editBoard }: {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const stdio = transport === "stdio";
+  const [opened] = useState(() => JSON.stringify([name, transport, command, args, url, pairs]));
+  useFormDirty(!busy && JSON.stringify([name, transport, command, args, url, pairs]) !== opened);
   // An error is about what was submitted: drop it once the form changes.
   useEffect(() => setErr(null), [name, transport, command, args, url, pairs]);
 
@@ -775,7 +790,7 @@ function AddServerForm({ onAdded, initial, onCancel, board, editBoard }: {
       <div className="row two">
         <label>
           Name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="github" spellCheck={false} autoFocus />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="github" spellCheck={false} autoFocus autoCapitalize="off" autoCorrect="off" />
         </label>
         <div className="field">
           <div className="field-label">How it runs</div>
@@ -794,17 +809,17 @@ function AddServerForm({ onAdded, initial, onCancel, board, editBoard }: {
         <div className="row two">
           <label>
             Command
-            <input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npx" spellCheck={false} />
+            <input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npx" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
           </label>
           <label>
             Arguments
-            <input value={args} onChange={(e) => setArgs(e.target.value)} placeholder='-y @modelcontextprotocol/server-github' spellCheck={false} />
+            <input value={args} onChange={(e) => setArgs(e.target.value)} placeholder='-y @modelcontextprotocol/server-github' spellCheck={false} autoCapitalize="off" autoCorrect="off" />
           </label>
         </div>
       ) : (
         <label>
           Address
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mcp.example.com/mcp" spellCheck={false} />
+          <input type="url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mcp.example.com/mcp" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
         </label>
       )}
       <div className="field">
@@ -817,9 +832,8 @@ function AddServerForm({ onAdded, initial, onCancel, board, editBoard }: {
         {pairs.map((p, i) => (
           <div key={i} className="mcp-pair">
             <input value={p.k} onChange={(e) => setPair(i, { k: e.target.value })} placeholder={stdio ? "API_KEY" : "Authorization"}
-              aria-label={stdio ? "Variable name" : "Header name"} spellCheck={false} />
-            <input type="password" value={p.v} onChange={(e) => setPair(i, { v: e.target.value })} placeholder="value"
-              aria-label="Value" autoComplete="off" />
+              aria-label={stdio ? "Variable name" : "Header name"} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+            <SecretInput value={p.v} onChange={(e) => setPair(i, { v: e.target.value })} placeholder="value" aria-label="Value" />
             <button type="button" className="icon-btn" aria-label="Remove" onClick={() => setPairs((ps) => ps.filter((_, j) => j !== i))}><CloseIcon /></button>
           </div>
         ))}
@@ -835,7 +849,7 @@ function AddServerForm({ onAdded, initial, onCancel, board, editBoard }: {
           <span className="muted small">Other projects won't load it, so they don't pay for it on every message.</span>
         </div>
       )}
-      {err && <div className="form-error">{err}</div>}
+      <FormError>{err}</FormError>
       <div className="form-actions">
         {onCancel && <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>}
         <button type="submit" className="btn primary" disabled={busy || !name.trim() || (stdio ? !command.trim() : !url.trim())}>
@@ -854,6 +868,7 @@ function AddPassForm({ onDone, onCancel }: { onDone: (note: string) => void; onC
   const [secret, setSecret] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useFormDirty(!busy && !!(name.trim() || url.trim() || secret));
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -902,15 +917,15 @@ function AddPassForm({ onDone, onCancel }: { onDone: (note: string) => void; onC
       </div>
       <label>
         {kind === "mcp" ? "MCP server address" : "MCP server address (leave empty for a key scripts use)"}
-        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mcp.linear.app/mcp" spellCheck={false} />
+        <input type="url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mcp.linear.app/mcp" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
       </label>
       {kind === "key" && (
         <label>
           Key
-          <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
+          <SecretInput value={secret} onChange={(e) => setSecret(e.target.value)} aria-label="Key" />
         </label>
       )}
-      {err && <div className="form-error">{err}</div>}
+      <FormError>{err}</FormError>
       <div className="form-actions">
         <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
         <button type="submit" className="btn primary" disabled={busy || !name.trim() || (kind === "mcp" ? !url.trim() : !secret.trim())}>
@@ -924,6 +939,7 @@ function AddPassForm({ onDone, onCancel }: { onDone: (note: string) => void; onC
 function ReplaceKey({ pass, onDone, onCancel }: { pass: Pass; onDone: () => void; onCancel: () => void }) {
   const [secret, setSecret] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  useFormDirty(!!secret);
   return (
     <form className="mcp-manual auto-pass" onSubmit={async (e) => {
       e.preventDefault();
@@ -934,10 +950,10 @@ function ReplaceKey({ pass, onDone, onCancel }: { pass: Pass; onDone: () => void
         setErr(e.message);
       }
     }}>
-      <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={`New key for ${pass.name}`} aria-label={`New key for ${pass.name}`} autoComplete="off" />
+      <SecretInput value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={`New key for ${pass.name}`} aria-label={`New key for ${pass.name}`} />
       <button className="btn small primary" disabled={!secret.trim()}>Save</button>
       <button type="button" className="btn small ghost" onClick={onCancel}>Cancel</button>
-      {err && <div className="form-error">{err}</div>}
+      <FormError>{err}</FormError>
     </form>
   );
 }

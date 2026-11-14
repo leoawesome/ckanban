@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   api, type CronPreview, type Job, type ScheduleTrigger, type Outcome, type Profile, type Schedule, type ScheduleHistoryItem, type ScheduleInput, type Status,
   type Ticket, type TicketMode,
@@ -9,7 +9,10 @@ import { DescriptionEditor } from "./DescriptionEditor";
 import { FeaturePicker } from "./FeaturePicker";
 import { Modal } from "./Modal";
 import { MenuSheet } from "./MenuSheet";
-import { MoreIcon } from "./icons";
+import { ClockIcon, MoreIcon, PlusIcon, SparkIcon } from "./icons";
+import { PhoneBar } from "./AutomationsDialog";
+import { EmptyState, FormError, LoadState, useDiscardAsk } from "./formParts";
+import { useBackEntry } from "./backEntry";
 import { ModeToggle } from "./ModeToggle";
 import { TagChip, TagEditor } from "./Tags";
 import { boardTags } from "./tagText";
@@ -100,6 +103,13 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
   const [showAllFinished, setShowAllFinished] = useState(false);
   const phone = usePhone();
   useNow();
+  /** The open form has unsaved edits: closing it or the window asks first. */
+  const [formDirty, setFormDirty] = useState(false);
+  const ask = useDiscardAsk(formDirty);
+  const closeForm = () => ask.leave(() => { setEditing(null); setFormDirty(false); });
+  const openForm = (s: Schedule | "new") => { setFormDirty(false); setEditing(s); };
+  // Phone: Back from the form's own screen goes to the list first.
+  useBackEntry(phone && !!editing, closeForm);
 
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -197,15 +207,12 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
               <>
                 <button className={`btn small ghost${historyOf === s.id ? " on" : ""}`} aria-pressed={historyOf === s.id}
                   onClick={() => setHistoryOf((h) => (h === s.id ? null : s.id))}>History</button>
-                {!done && <button className="btn small ghost" onClick={() => setEditing(s)}>Edit</button>}
+                {!done && <button className="btn small ghost" onClick={() => openForm(s)}>Edit</button>}
                 <button className="btn small ghost danger" onClick={() => setConfirm(s)}>Delete</button>
               </>
             )}
           </div>
         </div>
-        {editing !== "new" && editing?.id === s.id && (
-          <ScheduleForm slug={profile.slug} initial={s} knownTags={boardTags(tickets)} tickets={tickets} onDone={() => setEditing(null)} />
-        )}
         {historyOf === s.id && <History slug={profile.slug} schedule={s} tickets={tickets} onOpenTicket={onOpenTicket} />}
       </div>
     );
@@ -218,8 +225,29 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
   groups.finished.sort((a, b) => (b.lastFiredAt ?? "").localeCompare(a.lastFiredAt ?? ""));
   const shownFinished = showAllFinished ? groups.finished : groups.finished.slice(0, FINISHED_SHOWN);
 
+  // Editing (or making) one opens its own screen: the form only, with a back arrow on a phone.
+  const editingSchedule = editing && editing !== "new" ? schedules?.find((x) => x.id === editing.id) ?? editing : null;
+  if (editing) {
+    const formTitle = editingSchedule ? `Edit ${editingSchedule.name}` : "New schedule";
+    return (
+      <Modal title={phone ? formTitle : `${formTitle} · ${profile.name}`} onClose={onClose} wide bare={phone} guard={formDirty} guardKind="changes"
+        className={phone ? "auto-modal sched-form-modal" : "sched-form-modal"}>
+        {phone && <PhoneBar title={formTitle} onBack={closeForm} />}
+        <div className={phone ? "auto-scroll sched-form-scroll" : undefined}>
+          <ScheduleForm key={editingSchedule?.id ?? "new"} slug={profile.slug} initial={editingSchedule ?? undefined} knownTags={boardTags(tickets)} tickets={tickets}
+            onDirty={setFormDirty} onCancel={closeForm} onDone={() => { setFormDirty(false); setEditing(null); }} />
+        </div>
+        {ask.dialog}
+      </Modal>
+    );
+  }
+
+  const newButton = (
+    <button className={`btn${phone ? " primary" : " small primary"} icon-label`} onClick={() => openForm("new")}><PlusIcon size={14} aria-hidden /> New schedule</button>
+  );
+
   return (
-    <Modal title={`Schedules · ${profile.name}`} onClose={onClose} wide>
+    <Modal title={`Schedules · ${profile.name}`} onClose={onClose} wide className={phone ? "sched-modal" : undefined}>
       <div className="form mcp">
         <section className="sched-group">
           <h3 className="sched-heading">Upcoming</h3>
@@ -242,20 +270,19 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
             run is caught up on start).
           </details>
           <div className="spacer" />
-          <button className="btn small" disabled={busy === "checkin"} onClick={setUpCheckins}
+          <button className="btn small icon-label" disabled={busy === "checkin"} onClick={setUpCheckins}
             title="Claude checks every work hour what needs you and tells you only then. Set it up in a short chat.">
-            {busy === "checkin" ? "Opening…" : "✦ Proactive check-ins"}
+            <SparkIcon size={14} aria-hidden /> {busy === "checkin" ? "Opening…" : "Proactive check-ins"}
           </button>
-          <button className="btn small primary" onClick={() => setEditing((e) => (e === "new" ? null : "new"))}>
-            {editing === "new" ? "Close form" : "New schedule"}
-          </button>
+          {!phone && schedules && schedules.length > 0 && newButton}
         </div>
-        {editing === "new" && <ScheduleForm slug={profile.slug} knownTags={boardTags(tickets)} tickets={tickets} onDone={() => setEditing(null)} />}
-        {err && <div className="form-error">{err}</div>}
-        {note && <div className="muted small">{note}</div>}
-        {!schedules && <div className="muted">Loading…</div>}
-        {schedules && !schedules.length && editing !== "new" && (
-          <div className="muted">No schedules yet. Examples: a nightly dependency audit, a weekly changelog draft, a daily "fix failing CI".</div>
+        <FormError>{err}</FormError>
+        {note && <div className="muted small" role="status">{note}</div>}
+        {!schedules && <LoadState onRetry={() => location.reload()} rows={3} className="sched-loading" />}
+        {schedules && !schedules.length && (
+          <EmptyState icon={<ClockIcon size={20} />} title="No recurring schedules yet" actions={!phone && newButton}>
+            Each one starts a ticket on a timer. For example: a nightly dependency audit, a weekly changelog draft, or a daily "fix failing CI".
+          </EmptyState>
         )}
         {schedules && schedules.length > 0 && (
           <div className="mcp-section sched-sections">
@@ -292,6 +319,7 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
         )}
         </>}
       </div>
+      {phone && !jobFilter && <div className="sched-phone-foot">{newButton}</div>}
       {menuOf && (
         <MenuSheet onClose={() => setMenuOf(null)}>
           <div className="auto-menu" role="menu" aria-label={menuOf.name}>
@@ -299,7 +327,7 @@ export function SchedulesDialog({ profile, schedules, jobs, jobFilter, onJobFilt
               <span className="menu-label">{historyOf === menuOf.id ? "Hide history" : "History"}</span>
             </button>
             {scheduleGroup(menuOf) !== "finished" && (
-              <button type="button" role="menuitem" className="menu-item" onClick={() => { setEditing(menuOf); setMenuOf(null); }}>
+              <button type="button" role="menuitem" className="menu-item" onClick={() => { openForm(menuOf); setMenuOf(null); }}>
                 <span className="menu-label">Edit</span>
               </button>
             )}
@@ -360,8 +388,12 @@ function History({ slug, schedule, tickets, onOpenTicket }: {
     api.scheduleHistory(slug, schedule.id).then(setItems).catch((e) => setErr(e.message));
   }, [slug, schedule.id, schedule.lastFiredAt, schedule.lastError, schedule.updatedAt]);
 
-  if (err) return <div className="form-error sched-history">{err}</div>;
-  if (!items) return <div className="muted small sched-history">Loading…</div>;
+  const load = () => {
+    setErr(null);
+    setItems(null);
+    api.scheduleHistory(slug, schedule.id).then(setItems).catch((e) => setErr(e.message));
+  };
+  if (err || !items) return <LoadState error={err} onRetry={load} rows={2} className="sched-history" />;
   if (!items.length) return <div className="muted small sched-history">Not run yet.</div>;
   return (
     <div className="sched-history">
@@ -414,9 +446,13 @@ function History({ slug, schedule, tickets, onOpenTicket }: {
   );
 }
 
-function ScheduleForm({ slug, initial, knownTags, tickets, onDone }: {
+function ScheduleForm({ slug, initial, knownTags, tickets, onDone, onCancel, onDirty }: {
   slug: string; initial?: Schedule; knownTags: { name: string; count: number }[]; tickets: Ticket[]; onDone: () => void;
+  /** Cancel (asks first when there are unsaved edits). */
+  onCancel: () => void;
+  onDirty: (dirty: boolean) => void;
 }) {
+  const ids = useId();
   const [name, setName] = useState(initial?.name ?? "");
   const [title, setTitle] = useState(initial?.title ?? "");
   const [body, setBody] = useState(initial?.body ?? "");
@@ -432,11 +468,16 @@ function ScheduleForm({ slug, initial, knownTags, tickets, onDone }: {
   const [preview, setPreview] = useState<CronPreview | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The timing field was left once: only then does its error show (not while typing). */
+  const [cronTouched, setCronTouched] = useState(false);
+  const formNow = JSON.stringify([name, title, body, mode, cron, skipIfRunning, tags, quiet, model, partOf]);
+  const [formOpened] = useState(formNow);
+  useEffect(() => { onDirty(formNow !== formOpened); }, [formNow]);
 
   useEffect(() => {
     const expr = cron.trim();
     if (!expr) {
-      setPreview({ valid: false, error: "cron expression is required", summary: null, next: [] });
+      setPreview({ valid: false, error: "Pick a time above, or type a line like 0 9 * * 1 (Mondays at 09:00).", summary: null, next: [] });
       return;
     }
     let live = true;
@@ -450,9 +491,13 @@ function ScheduleForm({ slug, initial, knownTags, tickets, onDone }: {
   }, [cron]);
 
   const preset = custom ? null : CRON_PRESETS.find((p) => p.cron === cron.trim()) ?? null;
+  const cronBad = preview?.valid === false;
+  const showCronError = cronBad && (cronTouched || !!preset);
+  const blocker = !name.trim() ? "Give it a name to save." : !title.trim() ? "Add the ticket title to save." : cronBad ? "Fix the timing to save." : null;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (blocker) { setCronTouched(true); return; }
     const input: ScheduleInput = { name: name.trim(), title: title.trim(), body, mode, cron: cron.trim(), skipIfRunning, tags, quiet, model: model || null, partOf: partOf || null };
     setBusy(true);
     setErr(null);
@@ -470,15 +515,15 @@ function ScheduleForm({ slug, initial, knownTags, tickets, onDone }: {
     <form className="mcp-add" onSubmit={submit}>
       <div className="row two">
         <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nightly dependency audit" autoFocus />
+          <span>Name<span className="req" aria-hidden>*</span></span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nightly dependency audit" autoFocus aria-required="true" />
         </label>
         <label>
-          Ticket title
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Dependency audit {date}" />
+          <span>Ticket title<span className="req" aria-hidden>*</span></span>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Dependency audit {date}" aria-required="true" aria-describedby={`${ids}-title-help`} />
         </label>
       </div>
-      <span className="muted small field-help-tight"><code>{"{date}"}</code> and <code>{"{time}"}</code> in the title become the run's date and time.</span>
+      <span id={`${ids}-title-help`} className="muted small field-help-tight"><code>{"{date}"}</code> and <code>{"{time}"}</code> in the title become the run's date and time.</span>
       <label>
         Prompt
         <DescriptionEditor slug={slug} value={body} setValue={setBody} inputRef={bodyRef} rows={5}
@@ -495,11 +540,13 @@ function ScheduleForm({ slug, initial, knownTags, tickets, onDone }: {
           ))}
           <button type="button" role="radio" aria-checked={!preset} className={!preset ? "on" : ""} onClick={() => setCustom(true)}>Custom</button>
         </div>
-        <input className="mono" value={cron} onChange={(e) => { setCron(e.target.value); setCustom(false); }}
-          placeholder="min hour day-of-month month day-of-week" aria-label="Cron expression" spellCheck={false} />
-        {preview && (preview.valid
-          ? <span className="muted small">{preview.summary}. Next: {preview.next.map(when).join(" · ")}</span>
-          : <span className="form-error">{preview.error}</span>)}
+        <input className="mono" value={cron} onChange={(e) => { setCron(e.target.value); setCustom(false); }} onBlur={() => setCronTouched(true)}
+          placeholder="min hour day-of-month month day-of-week" aria-label="Timing line" spellCheck={false} autoCapitalize="off" autoCorrect="off"
+          aria-invalid={showCronError || undefined} aria-describedby={`${ids}-cron-help`} />
+        {preview?.valid && <span id={`${ids}-cron-help`} className="muted small">{preview.summary}. Next: {preview.next.map(when).join(" · ")}</span>}
+        {preview && !preview.valid && (showCronError
+          ? <span id={`${ids}-cron-help`} className="field-error" role="alert">{cron.trim() ? `This timing line doesn't work: ${preview.error}. Pick a time above, or type a line like 0 9 * * 1.` : preview.error}</span>
+          : <span id={`${ids}-cron-help`} className="muted small">Five parts: minute, hour, day of month, month, day of week.</span>)}
       </div>
       <div className="field">
         <ModeToggle value={mode} onChange={setMode} />
@@ -538,10 +585,11 @@ function ScheduleForm({ slug, initial, knownTags, tickets, onDone }: {
         <input type="checkbox" checked={skipIfRunning} onChange={(e) => setSkipIfRunning(e.target.checked)} />
         Skip a run while the previous one is still queued or running
       </label>
-      {err && <div className="form-error">{err}</div>}
+      <FormError>{err}</FormError>
       <div className="form-actions">
-        <button type="button" className="btn ghost" onClick={onDone}>Cancel</button>
-        <button type="submit" className="btn primary" disabled={busy || !name.trim() || !title.trim() || preview?.valid === false}>
+        {blocker && !busy && <span className="why-off sched-why">{blocker}</span>}
+        <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+        <button type="submit" className="btn primary" disabled={busy || !!blocker} title={blocker ?? undefined}>
           {busy ? "Saving…" : initial ? "Save" : "Create schedule"}
         </button>
       </div>

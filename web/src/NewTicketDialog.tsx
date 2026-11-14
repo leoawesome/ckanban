@@ -16,6 +16,7 @@ import { MOD } from "./Shortcuts";
 import { StarToggle } from "./StarToggle";
 import { TagEditor } from "./Tags";
 import { usePhone } from "./usePhone";
+import { FormError } from "./formParts";
 
 export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets = [], onClose, onCreate }: {
   slug: string;
@@ -97,11 +98,13 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
         else setImportant((v) => !v);
       }}>
       <form className="form" onSubmit={(e) => e.preventDefault()}>
-        {/* No visible labels: the placeholders say what goes where; screen readers get aria-labels. */}
+        {/* Small labels above the fields stay once you type (the placeholders are only examples). */}
+        <label className="field-label" htmlFor="new-ticket-title">Title<span className="req" aria-hidden>*</span></label>
         <div className="title-row">
-          <input id="new-ticket-title" aria-label="Title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What should be done?" />
+          <input id="new-ticket-title" aria-label="Title" aria-required="true" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What should be done?" />
           <StarToggle on={important} onChange={setImportant} keyHint="⌘D" />
         </div>
+        <div className="field-label" aria-hidden>Details <span className="muted">(optional)</span></div>
         <DescriptionEditor slug={slug} value={body} setValue={setBody} images={images} inputRef={bodyRef} rows={phone ? 4 : 6}
           ariaLabel="Description" placeholder="Context, what done looks like, links… (optional)"
           above={tagRow && (
@@ -158,13 +161,14 @@ export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets
             <button type="button" className="link-btn" onClick={() => setSession(null)}>Remove</button>
           </div>
         )}
-        {err && <div className="form-error">{err}</div>}
+        <FormError>{err}</FormError>
         {/* One main button (the mode toggle above says what Start does) and a quiet "Save for later". */}
         <div className="form-actions new-ticket-actions">
+          {!title.trim() && !busy && <span className="why-off new-ticket-why">Add a title to start</span>}
           <button type="button" className="btn ghost" disabled={busy || !title.trim() || images.uploading} onClick={() => submit("backlog")} title={`Put it in Backlog; nothing runs until you start it (${MOD}S)`}>Save for later<KeyHint keys="⌘S" /></button>
           <button type="button" className="btn primary icon-label" onClick={() => submit(startStatus)} disabled={busy || !title.trim() || images.uploading}
             title={mode === "interview" ? "Goes to Planning: Claude asks its questions now" : "Goes to In Progress, or waits its turn if every slot is busy"}>
-            {images.uploading ? "Uploading…" : <>Start <kbd className="kbd-on-primary">⌘↵</kbd></>}
+            {images.uploading ? "Uploading…" : busy ? "Starting…" : <>Start <kbd className="kbd-on-primary">⌘↵</kbd></>}
             <KeyHint keys="⌘↵" />
           </button>
         </div>

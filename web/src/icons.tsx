@@ -76,6 +76,8 @@ export const WarnIcon = (p: IconProps) => svg(<><path d="M7.1 2.6a1 1 0 0 1 1.8 
 export const SunIcon = (p: IconProps) => svg(<><circle cx="8" cy="8" r="2.8" /><path d="M8 1.8v1.3M8 12.9v1.3M1.8 8h1.3M12.9 8h1.3M3.6 3.6l.9.9M11.5 11.5l.9.9M3.6 12.4l.9-.9M11.5 4.5l.9-.9" /></>, p);
 export const MoonIcon = (p: IconProps) => svg(<path d="M13.2 9.6A5.5 5.5 0 0 1 6.4 2.8a5.5 5.5 0 1 0 6.8 6.8z" />, p);
 export const SystemThemeIcon = (p: IconProps) => svg(<><rect x="2" y="2.8" width="12" height="8.4" rx="1.4" /><path d="M5.5 13.6h5M8 11.2v2.4" /></>, p);
+export const EyeIcon = (p: IconProps) => svg(<><path d="M1.8 8s2.3-4.3 6.2-4.3S14.2 8 14.2 8s-2.3 4.3-6.2 4.3S1.8 8 1.8 8z" /><circle cx="8" cy="8" r="1.9" /></>, p);
+export const EyeOffIcon = (p: IconProps) => svg(<><path d="M6.3 4a6.3 6.3 0 0 1 1.7-.3c3.9 0 6.2 4.3 6.2 4.3a11 11 0 0 1-1.6 2.1M10.6 11.6A5.9 5.9 0 0 1 8 12.3C4.1 12.3 1.8 8 1.8 8a11.3 11.3 0 0 1 2.6-3.2" /><path d="M2.5 2.5l11 11M6.7 6.7a1.9 1.9 0 0 0 2.6 2.6" /></>, p);
 export const InfoIcon = (p: IconProps) => svg(<><circle cx="8" cy="8" r="6.2" /><path d="M8 7.3v3.7M8 5h.01" /></>, p);
 export const CollapseIcon = (p: IconProps) => svg(<path d="M9.5 3.5L5 8l4.5 4.5M13 3v10" />, p);
 export const ExpandIcon = (p: IconProps) => svg(<path d="M6.5 3.5L11 8l-4.5 4.5M3 3v10" />, p);

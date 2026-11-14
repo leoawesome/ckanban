@@ -86,3 +86,13 @@ test("the spacing tokens in styles.css match the checker's list", () => {
   const defined = Object.fromEntries([...css.matchAll(/^\s*(--sp-[\w-]+):\s*(\d+)px;/gm)].map((m) => [m[1], +m[2]]));
   expect(defined).toEqual(SPACING);
 });
+
+test("every field is 16px on a phone (iPhone zooms in below that)", () => {
+  const css = readFileSync(join(WEB, "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  // The one phone rule that sets every field to --fs-lg, winning over class rules.
+  expect(css).toMatch(/@media \(max-width: 720px\)[\s\S]*?:is\(input:not\([^)]*\), select, textarea\) \{ font-size: var\(--fs-lg\) !important; \}/);
+  // Nothing else may force a field's text size.
+  const forced = [...css.matchAll(/([^{}]*)\{[^{}]*font-size:[^;}]*!important/g)]
+    .map((m) => m[1].trim()).filter((sel) => /\b(input|textarea|select)\b/.test(sel) && !sel.startsWith(":is(input:not("));
+  expect(forced).toEqual([]);
+});

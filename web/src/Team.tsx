@@ -14,6 +14,12 @@ import { costText } from "./usage";
 import { liveHuddleCount, useAllHuddles } from "./huddle";
 import { modelOptions } from "./models";
 import { useEdgeFade } from "./useEdgeFade";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { PhoneBar } from "./AutomationsDialog";
+import { FormError, LoadState, useDiscardAsk } from "./formParts";
+import { useBackEntry } from "./backEntry";
+import { usePhone } from "./usePhone";
+import { toast } from "./toast";
 
 const ALL_ROLES = "_all";
 const MAIN = "main";
@@ -105,7 +111,13 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   const [newTemplate, setNewTemplate] = useState(0);
   const [squadEdit, setSquadEdit] = useState<{ draft: SquadDraft; card?: SquadCardRef; n: number } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  /** The avatar editor is open on this one ("claude" or a handle). */
+  /** The teammate editor has unsaved edits: leaving it (another row, Cancel, another view) asks first. */
+  const [editDirty, setEditDirty] = useState(false);
+  const ask = useDiscardAsk(!!editing && editDirty);
+  /** Phone: the picked teammate (or the editor) fills the screen, with a back arrow to the list. */
+  const phone = usePhone();
+  const [phoneOpen, setPhoneOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<HuddlePreset | null>(null);
   const fail = (e: unknown) => setErr((e as Error).message);
 
   useEffect(() => {
@@ -137,11 +149,16 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
     if (active && view === "learned" && learned?.newCount) api.learnedSeen(slug).then(setLearned).catch(() => {});
   }, [slug, active, view, learned?.newCount]);
 
-  const newTeammate = () => {
+  const newTeammate = () => ask.leave(() => {
     setErr(null);
     setView("teammates");
     setEditing({ draft: { ...EMPTY }, isNew: true, scope: "global" });
-  };
+    setEditDirty(false);
+    setPhoneOpen(true);
+  });
+  const closeEditor = () => ask.leave(() => { setEditing(null); setEditDirty(false); });
+  const back = () => ask.leave(() => { setEditing(null); setEditDirty(false); setPhoneOpen(false); });
+  useBackEntry(phone && phoneOpen && view === "teammates", back);
   useEffect(() => {
     if (!request) return;
     setErr(null);
@@ -157,6 +174,8 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
     }
     setView("teammates");
     setFilter("");
+    setPhoneOpen(true);
+    setEditDirty(false);
     if (request.action === "edit") return setEditing({ draft: { ...request.draft }, isNew: request.isNew, scope: request.scope, card: request.card });
     setEditing(null);
     setSelected(request.name);
@@ -172,7 +191,7 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
   const cur = claudeOn ? null : presets?.find((p) => p.name === selected) ?? shown[0] ?? null;
   const editAvatar = (who: string) =>
     openAvatarEditor(who, [{ who: "claude", label: claudeName }, ...(presets ?? []).map((p) => ({ who: p.name, label: p.role || p.name }))]);
-  const pick = (name: string) => { setSelected(name); setEditing(null); setErr(null); };
+  const pick = (name: string) => ask.leave(() => { setSelected(name); setEditing(null); setEditDirty(false); setErr(null); setPhoneOpen(true); });
   const noteCount = (role: string) => (notes?.notes[role]?.general.length ?? 0) + (notes?.notes[role]?.repo.length ?? 0);
   const setRoleNotes = (role: string, scope: "general" | "repo", list: HuddleNote[]) =>
     setNotes((n) => n && { ...n, notes: { ...n.notes, [role]: { ...(n.notes[role] ?? { general: [], repo: [] }), [scope]: list } } });
@@ -196,7 +215,7 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
       <div className="team-bar">
         <div className="segmented" role="tablist" aria-label="Team" {...viewsFade}>
           {([["teammates", "Teammates", presets?.length], ["templates", "Squads", templates?.length], ["huddles", "Huddles", undefined], ["notes", "Notes for all", noteCount(ALL_ROLES)], ["learned", "Learned", undefined]] as const).map(([id, label, n]) => (
-            <button key={id} role="tab" aria-selected={view === id} className={view === id ? "on" : undefined} onClick={() => { setView(id); setErr(null); }}>
+            <button key={id} role="tab" aria-selected={view === id} className={view === id ? "on" : undefined} onClick={() => ask.leave(() => { setView(id); setErr(null); setEditing(null); setEditDirty(false); setPhoneOpen(false); })}>
               {label}{n !== undefined ? ` · ${n}` : ""}
               {id === "huddles" && liveCount > 0 && <span className="tab-count ok">{liveCount} live</span>}
               {id === "learned" && !!learned?.newCount && <span className="tab-count">{learned.newCount} new</span>}
@@ -209,18 +228,18 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
         )}
         <span className="spacer" />
         {err && <span className="team-err" role="alert" title={err}>{err}</span>}
-        {view === "teammates" && <button className="btn small ghost" onClick={newTeammate}>+ New teammate</button>}
+        {view === "teammates" && !(phone && phoneOpen) && <button className="btn small ghost" onClick={newTeammate}>+ New teammate</button>}
         {view === "templates" && <button className="btn small ghost" onClick={() => setNewTemplate(Date.now())}>+ New squad</button>}
       </div>
 
       {view === "teammates" && (
-        <div className="team-body">
-          <div className="tm-list" role="listbox" aria-label="Teammates">
-            {presets === null && <div className="muted small tm-empty">Loading…</div>}
+        <div className={`team-body${phone ? (phoneOpen ? " phone-detail" : " phone-list") : ""}`}>
+          {!(phone && phoneOpen) && <div className="tm-list" role="listbox" aria-label="Teammates">
+            {presets === null && <LoadState error={err} onRetry={() => { setErr(null); loadPresets(); }} rows={4} className="tm-loading" />}
             {showClaude && (
               <div role="group" aria-label="Claude">
                 <div className="tm-grp">Claude</div>
-                <div role="option" aria-selected={claudeOn && !editing} tabIndex={0} className={`tm-row${claudeOn && !editing ? " sel" : ""}`}
+                <div role="option" aria-selected={!phone && claudeOn && !editing} tabIndex={0} className={`tm-row${!phone && claudeOn && !editing ? " sel" : ""}`}
                   onClick={() => pick(CLAUDE_ROW)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(CLAUDE_ROW); } }}>
                   <TeammateAvatar name="claude" />
@@ -240,7 +259,7 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
                   const chip = scopeChip(p);
                   const u = usage?.teammates[p.name];
                   const n = p.name === MAIN ? 0 : noteCount(p.name);
-                  const on = cur?.name === p.name && !editing?.isNew;
+                  const on = !phone && cur?.name === p.name && !editing?.isNew;
                   return (
                     <div key={p.name} role="option" aria-selected={on} tabIndex={0} className={`tm-row${on ? " sel" : ""}`}
                       onClick={() => pick(p.name)}
@@ -259,16 +278,18 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
                 })}
               </div>
             ))}
-          </div>
-          <div className="tm-detail">
+          </div>}
+          {(!phone || phoneOpen) && <div className="tm-detail">
+            {phone && <PhoneBar title={editing ? (editing.isNew ? "New teammate" : `Edit @${editing.draft.name}`) : claudeOn ? claudeName : cur ? `@${cur.name}` : "Teammate"} onBack={back} />}
             {editing ? (
               <TeammateEditor key={editing.isNew ? "new" : editing.draft.name} slug={slug} boardName={boardName} {...editing}
                 current={presets?.find((p) => p.name === editing.draft.name) ?? null}
-                onCancel={() => setEditing(null)}
+                onCancel={closeEditor} onDirty={setEditDirty}
                 onSaved={(p, scope) => {
                   // Saved from a proposal's Edit first: the chat card says so.
                   if (editing.card) api.answerTeammateCard(slug, editing.card.ticketId, editing.card.uuid, { state: "saved", name: p.name, scope }).catch(fail);
                   setEditing(null);
+                  setEditDirty(false);
                   setSelected(p.name);
                   loadPresets();
                 }} />
@@ -276,23 +297,30 @@ export function TeamTab({ slug, boardName, active, openTicket, request, onStartH
               <ClaudeDetail onAvatar={() => editAvatar("claude")} />
             ) : cur ? (
               <TeammateDetail key={cur.name} onAvatar={() => editAvatar(cur.name)} slug={slug} p={cur} usage={usage?.teammates[cur.name]} notes={notes} startHint={startHint}
-                onEdit={() => { setErr(null); setEditing({ draft: draftOf(cur), isNew: false, scope: cur.source === "board" ? "board" : "global" }); }}
-                onDelete={async () => {
-                  setErr(null);
-                  try {
-                    setPresets((await api.deleteHuddlePreset(slug, cur.name, cur.source === "global" ? "global" : "board")).presets);
-                  } catch (e) {
-                    fail(e);
-                  }
-                }}
+                onEdit={() => { setErr(null); setEditDirty(false); setEditing({ draft: draftOf(cur), isNew: false, scope: cur.source === "board" ? "board" : "global" }); }}
+                onDelete={() => { setErr(null); setConfirmDelete(cur); }}
                 onStart={() => onStartHuddle({ preset: cur.name })}
                 onSaveNotes={(scope, list) => saveNotes(cur.name, scope, list)}
                 onOpenHuddle={onOpenHuddle} />
             ) : (
               presets && <div className="muted small tm-empty">Pick a teammate.</div>
             )}
-          </div>
+          </div>}
         </div>
+      )}
+      {ask.dialog}
+      {confirmDelete && (
+        <ConfirmDialog title={confirmDelete.base ? `Reset @${confirmDelete.name}?` : `Delete @${confirmDelete.name}?`}
+          confirmLabel={confirmDelete.base ? "Reset" : "Delete"} busyLabel={confirmDelete.base ? "Resetting…" : "Deleting…"}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={async () => {
+            const p = confirmDelete;
+            setPresets((await api.deleteHuddlePreset(slug, p.name, p.source === "global" ? "global" : "board")).presets);
+            setConfirmDelete(null);
+            if (!p.base) setPhoneOpen(false);
+          }}>
+          <p>{confirmDelete.base ? resetTitle(confirmDelete) : "Huddles that already used it keep their transcript. Its notes stay saved."}</p>
+        </ConfirmDialog>
       )}
 
       {view === "templates" && (
@@ -470,7 +498,7 @@ function TeammateDetail({ slug, p, usage, notes, startHint, onEdit, onDelete, on
 }
 
 /** Add a teammate or change one; saved for all boards (default) or this board only. */
-function TeammateEditor({ slug, boardName, draft: initial, isNew, scope: initialScope, current, onCancel, onSaved }: {
+function TeammateEditor({ slug, boardName, draft: initial, isNew, scope: initialScope, current, onCancel, onSaved, onDirty }: {
   slug: string;
   boardName: string;
   draft: Draft;
@@ -480,9 +508,14 @@ function TeammateEditor({ slug, boardName, draft: initial, isNew, scope: initial
   current: HuddlePreset | null;
   onCancel: () => void;
   onSaved: (p: HuddlePreset, scope: Level) => void;
+  /** Whether the form differs from what it opened with. */
+  onDirty?: (dirty: boolean) => void;
 }) {
   const [draft, setDraft] = useState(initial);
   const [scope, setScope] = useState<Level>(initialScope);
+  const dirty = scope !== initialScope || JSON.stringify(draft) !== JSON.stringify(initial);
+  useEffect(() => { onDirty?.(dirty); }, [dirty]);
+  const blocker = !draft.name.trim() ? "Add a handle to save." : !draft.prompt.trim() ? "Add a prompt to save." : null;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
@@ -509,8 +542,9 @@ function TeammateEditor({ slug, boardName, draft: initial, isNew, scope: initial
       </div>
       <div className="row two">
         <label>
-          Handle
-          <input className="mono" value={draft.name} onChange={(e) => set({ name: e.target.value })} disabled={!isNew} placeholder="a11y" spellCheck={false} autoFocus={isNew} />
+          <span>Handle<span className="req" aria-hidden>*</span></span>
+          <input className="mono" value={draft.name} onChange={(e) => set({ name: e.target.value })} disabled={!isNew} placeholder="a11y" spellCheck={false} autoFocus={isNew}
+            aria-required="true" autoCapitalize="off" autoCorrect="off" autoComplete="off" />
         </label>
         <label>
           Label
@@ -518,8 +552,8 @@ function TeammateEditor({ slug, boardName, draft: initial, isNew, scope: initial
         </label>
       </div>
       <label>
-        Prompt
-        <textarea rows={4} value={draft.prompt} onChange={(e) => set({ prompt: e.target.value })} placeholder="What this teammate does in a huddle: what to look at, how to report." />
+        <span>Prompt<span className="req" aria-hidden>*</span></span>
+        <textarea aria-required="true" rows={4} value={draft.prompt} onChange={(e) => set({ prompt: e.target.value })} placeholder="What this teammate does in a huddle: what to look at, how to report." />
       </label>
       {main ? (
         <span className="muted small">@main is the ticket's own Claude: only its label, mode and prompt apply.</span>
@@ -562,11 +596,11 @@ function TeammateEditor({ slug, boardName, draft: initial, isNew, scope: initial
         </div>
         <span className="muted small">{scopeNote}</span>
       </div>
-      {err && <div className="form-error">{err}</div>}
+      <FormError>{err}</FormError>
       <div className="form-actions">
-        <div className="spacer" />
+        {blocker && !busy ? <span className="why-off tm-why">{blocker}</span> : <div className="spacer" />}
         <button type="button" className="btn ghost small" onClick={onCancel}>Cancel</button>
-        <button type="button" className="btn primary small" onClick={save} disabled={busy || !draft.name.trim() || !draft.prompt.trim()}>
+        <button type="button" className="btn primary small" onClick={save} disabled={busy || !!blocker} title={blocker ?? undefined}>
           {busy ? "Saving…" : isNew ? "Add teammate" : "Save teammate"}
         </button>
       </div>
@@ -588,6 +622,7 @@ export function NotesColumn({ title, notes, cap, onSave }: { title: string; note
     const ok = await onSave(list);
     setBusy(false);
     if (ok) setEdit(null);
+    return ok;
   };
   const commit = () => {
     if (!edit) return;
@@ -623,7 +658,11 @@ export function NotesColumn({ title, notes, cap, onSave }: { title: string; note
                 <span className="hn-text">{n.text}</span> <span className="hn-src">{noteSource(n)}</span>
                 <span className="hn-acts">
                   <button type="button" className="link-btn" onClick={() => setEdit({ at: i, text: n.text })} disabled={busy || !!edit}>edit</button>
-                  <button type="button" className="link-btn danger" onClick={() => save(notes.filter((_, j) => j !== i))} disabled={busy || !!edit}
+                  <button type="button" className="link-btn danger" disabled={busy || !!edit}
+                    onClick={async () => {
+                      const before = notes;
+                      if (await save(notes.filter((_, j) => j !== i))) toast("Note deleted", { action: { label: "Undo", run: () => { void onSave(before); } } });
+                    }}
                     aria-label={`Delete note: ${n.text}`}>delete</button>
                 </span>
               </>

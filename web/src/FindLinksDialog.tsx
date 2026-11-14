@@ -1,10 +1,12 @@
 // Find links (board menu): Claude reads the board's open and recent tickets once and suggests which family each
 // unlinked ticket belongs to, grouped by parent. Nothing changes until Link selected.
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type Ticket } from "./api";
-import { useFocusTrap, useLayer } from "./layers";
-import { useBackdropClose } from "./sheet";
+import { FormError } from "./formParts";
+import { RefreshIcon } from "./icons";
+import { Modal, ModalCancel } from "./Modal";
 import { toast } from "./toast";
+import { useNow } from "./useNow";
 
 type Found = { id: string; parent: string; reason: string };
 
@@ -13,14 +15,15 @@ export function FindLinksDialog({ slug, tickets, onClose }: { slug: string; tick
   const [err, setErr] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const id = useId();
-  const box = useRef<HTMLDivElement>(null);
-  useLayer(onClose);
-  useFocusTrap(box);
-  const backdrop = useBackdropClose(onClose);
+  /** Bumped by Retry: asks Claude again. */
+  const [attempt, setAttempt] = useState(0);
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const waiting = !found && !err;
+  const now = useNow(waiting);
 
   useEffect(() => {
     let live = true;
+    setStartedAt(Date.now());
     api.findLinks(slug).then((r) => {
       if (!live) return;
       setFound(r);
@@ -29,7 +32,9 @@ export function FindLinksDialog({ slug, tickets, onClose }: { slug: string; tick
     return () => {
       live = false;
     };
-  }, [slug]);
+  }, [slug, attempt]);
+  const retry = () => { setErr(null); setFound(null); setAttempt((n) => n + 1); };
+  const secs = Math.max(0, Math.round((now - startedAt) / 1000));
 
   const byId = useMemo(() => new Map(tickets.map((t) => [t.id, t])), [tickets]);
   // Grouped by parent, in the order Claude named them; links whose tickets went meanwhile are left out.
@@ -71,10 +76,14 @@ export function FindLinksDialog({ slug, tickets, onClose }: { slug: string; tick
   const column = (t?: Ticket) => (t ? COLUMNS.find((c) => c.id === t.status)?.label ?? t.status : "");
 
   return (
-    <div className="overlay" {...backdrop}>
-      <div ref={box} className="modal find-links" role="dialog" aria-modal="true" aria-labelledby={id}>
-        <h3 id={id}>Suggested links</h3>
-        {!found && !err && <p className="muted small">Claude is reading your open and recent tickets to find which belong together. This takes about a minute.</p>}
+    <Modal title="Suggested links" onClose={onClose} wide className="find-links">
+      <div className="find-links-body">
+        {waiting && (
+          <p className="muted small find-links-wait" role="status">
+            <span className="spinner" aria-hidden /> Claude is reading your open and recent tickets to find which belong together. This takes about a minute
+            <span className="find-links-elapsed"> ({secs}s so far)</span>.
+          </p>
+        )}
         {found && (
           <p className="muted small">
             Claude checked {found.checked} open and recent tickets. {shown.length ? `${shown.length} link${shown.length === 1 ? "" : "s"} suggested.` : "No links to suggest."} Nothing changes until you click Link selected.
@@ -96,17 +105,18 @@ export function FindLinksDialog({ slug, tickets, onClose }: { slug: string; tick
             </div>
           ))}
         </div>
-        {err && <div className="form-error">{err}</div>}
+        <FormError>{err}</FormError>
         <div className="form-actions find-links-foot">
           <span className="muted small">{shown.length ? `${chosen.length} of ${shown.length} selected` : ""}</span>
           <span>
-            <button className="btn ghost" onClick={onClose}>{found && !shown.length ? "Close" : "Cancel"}</button>
+            <ModalCancel label={found && !shown.length ? "Close" : "Cancel"} />
+            {err && !found && <button className="btn icon-label" onClick={retry}><RefreshIcon size={14} aria-hidden /> Retry</button>}
             {shown.length > 0 && (
               <button className="btn primary" disabled={busy || !chosen.length} onClick={linkSelected}>{busy ? "Linking…" : "Link selected"}</button>
             )}
           </span>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

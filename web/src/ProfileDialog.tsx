@@ -1,9 +1,10 @@
 import { EFFORTS, KIND_DEFAULTS, MODELS, modelOptions, setLearnedVersions, taskModel, TASK_ROWS, type ModelPick, type TaskModels } from "./models";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { api, type ClaudeProject, type Profile, type RepoKind, type SetupDetection, type Workspace } from "./api";
 import { capInputText, parseCap } from "./capText";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { Modal } from "./Modal";
+import { Modal, ModalCancel } from "./Modal";
+import { FormError } from "./formParts";
 import { Select } from "./Select";
 import { timeAgo } from "./time";
 import { VersionHistoryOffer } from "./VersionHistoryOffer";
@@ -182,9 +183,21 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
 
   const customModel = model && !MODELS.includes(model) ? model : null;
 
+  // Unsaved changes: the form now vs as it opened (× , Esc, swipe, Back and Cancel ask before dropping them).
+  const formNow = JSON.stringify([name, path, model, mainModel, taskPicks, freshText, effort, ultracode, autoHuddles, keepAwake, capText, artifacts,
+    connectorMode, keepConnectors, workspace, stallText, copyFiles, newFile, setupCommand, cleanupCommand]);
+  const [formOpened] = useState(formNow);
+  const dirty = !saving && formNow !== formOpened;
+  // Why Save is off, said next to it (the field's own error may be folded away under More options).
+  const blocker = !path.trim() ? (isNew ? "Pick a folder first." : "Add the folder.") : !name.trim() ? "Give the board a name."
+    : capError ? "Fix the spending cap under More options." : profile && stallError ? "Fix the stalled-run minutes under More options."
+    : profile && freshError ? "Fix the chat size under More options." : null;
+  const ids = useId();
+  const [deleteName, setDeleteName] = useState("");
+
 
   return (
-    <Modal title={profile ? `Board settings · ${profile.name}` : "New board"} onClose={onClose} wide={isNew} focusDialog={!isNew}>
+    <Modal title={profile ? `Board settings · ${profile.name}` : "New board"} onClose={onClose} wide={isNew} focusDialog={!isNew} guard={dirty} guardKind="changes">
       <form className="form" onSubmit={submit}>
         <div className="field">
           <div className="field-label">{isNew ? "Pick a folder" : "Folder"}</div>
@@ -235,8 +248,8 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
         </div>
 
         <label>
-          Name
-          <input value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My app" />
+          <span>Name<span className="req" aria-hidden>*</span></span>
+          <input aria-required="true" value={name} onChange={(e) => { setName(e.target.value); setNameTouched(true); }} placeholder="My app" />
         </label>
         <VersionHistoryOffer path={path} onRepo={setRepo} />
 
@@ -249,10 +262,11 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
         {more && <>
         <label className="check-row board-switch ws-check" title={noHistory ? "Turn on version history above to use copies" : undefined}>
           <input type="checkbox" checked={shownWorkspace === "folder"} disabled={noHistory}
+            aria-labelledby={`${ids}-ws`} aria-describedby={`${ids}-ws-help`}
             onChange={(e) => setWorkspace(e.target.checked ? "folder" : "worktree")} />
           <span>
-            Work in my folder directly (tickets take turns)
-            <span className="muted small">
+            <span id={`${ids}-ws`}>Work in my folder directly (tickets take turns)</span>
+            <span id={`${ids}-ws-help`} className="muted small">
               {noHistory
                 ? "Copies need version history: turn it on above, then several tickets can run at once."
                 : `Off: each ticket works on its own copy, so several can run at once.${profile ? " Affects new tickets only." : ""}`}
@@ -265,6 +279,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             Model
             <Select
               ariaLabel="Model"
+              ariaDescribedBy={`${ids}-model-help`}
               value={model}
               onChange={setModel}
               options={[
@@ -272,7 +287,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
                 ...modelOptions(customModel),
               ]}
             />
-            <span className="muted small">Tickets can override it. Changes apply from the next run.</span>
+            <span id={`${ids}-model-help`} className="muted small">Tickets can override it. Changes apply from the next run.</span>
           </label>
         </div>
         {profile && (
@@ -357,10 +372,10 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               <span className="muted small">Fewer connectors make every run cheaper.</span>
             </div>
             <label className="cap-field">
-              Spending cap per run
-              <span className="muted small">A run pauses in the Inbox once it spends this much (API-equivalent $). Empty: no cap.</span>
+              <span id={`${ids}-cap`}>Spending cap per run</span>
+              <span id={`${ids}-cap-help`} className="muted small">A run pauses in the Inbox once it spends this much (API-equivalent $). Empty: no cap.</span>
               <input inputMode="decimal" value={capText} onChange={(e) => setCapText(e.target.value)} placeholder="No cap, e.g. 5"
-                aria-invalid={!!capError} aria-describedby={capError ? "cap-error" : undefined} />
+                aria-labelledby={`${ids}-cap`} aria-invalid={!!capError} aria-describedby={capError ? "cap-error" : `${ids}-cap-help`} />
               {capError && <span id="cap-error" className="field-error">{capError}</span>}
             </label>
             <label>
@@ -404,16 +419,17 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
               </div>
             </div>
             <label>
-              Start an old chat fresh above this chat size (thousands)
-              <input inputMode="numeric" value={freshText} onChange={(e) => setFreshText(e.target.value)} placeholder="150" aria-invalid={!!freshError} />
+              <span id={`${ids}-fresh`}>Start an old chat fresh above this chat size (thousands)</span>
+              <input inputMode="numeric" value={freshText} onChange={(e) => setFreshText(e.target.value)} placeholder="150" aria-invalid={!!freshError}
+                aria-labelledby={`${ids}-fresh`} aria-describedby={`${ids}-fresh-help`} />
               {freshError
-                ? <span className="field-error">{freshError}</span>
-                : <span className="muted small">A main ticket's old chat bigger than this starts its next turn fresh from the status.</span>}
+                ? <span id={`${ids}-fresh-help`} className="field-error">{freshError}</span>
+                : <span id={`${ids}-fresh-help`} className="muted small">A main ticket's old chat bigger than this starts its next turn fresh from the status.</span>}
             </label>
             <label>
-              Flag a run as stalled after (minutes without output)
+              <span id={`${ids}-stall`}>Flag a run as stalled after (minutes without output)</span>
               <input type="number" min={0} max={1440} step={1} value={stallText} onChange={(e) => setStallText(e.target.value)}
-                aria-invalid={!!stallError} aria-describedby={stallError ? "stall-error" : "stall-hint"} />
+                aria-labelledby={`${ids}-stall`} aria-invalid={!!stallError} aria-describedby={stallError ? "stall-error" : "stall-hint"} />
               {stallError
                 ? <span id="stall-error" className="field-error">{stallError}</span>
                 : <span id="stall-hint" className="muted small">A silent run shows in the Inbox; nothing is stopped. 0: off.</span>}
@@ -447,8 +463,8 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             <label>
               <span className="setup-label">Setup command {setupAuto && <span className="auto-badge">Auto-detected</span>}</span>
               <textarea className="mono" rows={2} value={setupCommand} onChange={(e) => setSetupCommand(e.target.value)} spellCheck={false}
-                placeholder="e.g. npm ci" />
-              <span className="muted small setup-hint">
+                placeholder="e.g. npm ci" aria-label="Setup command" aria-describedby={`${ids}-setup-help`} autoCapitalize="off" autoCorrect="off" />
+              <span id={`${ids}-setup-help`} className="muted small setup-hint">
                 {setupAuto && detected?.setupFrom.length ? `From ${detected.setupFrom.join(", ")}. ` : ""}
                 Runs when Claude first needs the project's dependencies.
               </span>
@@ -456,8 +472,8 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
             <label>
               <span>Cleanup command <span className="muted small setup-hint">(optional, rarely needed)</span></span>
               <input className="mono" value={cleanupCommand} onChange={(e) => setCleanupCommand(e.target.value)} spellCheck={false}
-                placeholder="e.g. docker compose down" />
-              <span className="muted small setup-hint">Runs in the ticket's copy before the board removes it.</span>
+                placeholder="e.g. docker compose down" aria-label="Cleanup command" aria-describedby={`${ids}-cleanup-help`} autoCapitalize="off" autoCorrect="off" />
+              <span id={`${ids}-cleanup-help`} className="muted small setup-hint">Runs in the ticket's copy before the board removes it.</span>
             </label>
             <span className="muted small">
               Teammates and squads moved to the Team tab{onOpenTeam && <> · <button type="button" className="link-btn" onClick={onOpenTeam}>Open Team</button></>}
@@ -465,11 +481,11 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
           </>
         )}
 
-        {err && <div className="form-error">{err}</div>}
+        <FormError>{err}</FormError>
         <div className="form-actions">
-          <div className="spacer" />
-          <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn primary" disabled={saving || !name.trim() || !path.trim() || !!capError || (!!profile && !!stallError)}>
+          {blocker && !saving ? <span className="why-off board-why">{blocker}</span> : <div className="spacer" />}
+          <ModalCancel />
+          <button type="submit" className="btn primary" disabled={saving || !!blocker} title={blocker ?? undefined}>
             {saving ? (profile ? "Saving…" : "Creating…") : profile ? "Save" : "Create board"}
           </button>
         </div>
@@ -485,14 +501,20 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
           title={`Delete board "${profile.name}"?`}
           confirmLabel="Delete board"
           busyLabel="Deleting…"
-          onCancel={() => setConfirmDelete(false)}
+          onCancel={() => { setConfirmDelete(false); setDeleteName(""); }}
           onConfirm={remove}
+          confirmDisabled={deleteName.trim() !== profile.name.trim()}
         >
           <p>
             Removes {ticketCount === null ? "all" : ticketCount} ticket{ticketCount === 1 ? "" : "s"} with their comments and transcripts
             from <code>~/.claude-kanban</code>. This cannot be undone.
           </p>
           <p className="muted">Your folder <code>{profile.path}</code>, its version history and your Claude Code chats are not touched.</p>
+          <label className="confirm-type">
+            <span>Type <b>{profile.name}</b> to delete it</span>
+            <input value={deleteName} onChange={(e) => setDeleteName(e.target.value)} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+              aria-label={`Type ${profile.name} to confirm`} />
+          </label>
         </ConfirmDialog>
       )}
     </Modal>

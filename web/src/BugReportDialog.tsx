@@ -4,7 +4,8 @@ import { ExternalIcon } from "./icons";
 import { useImagePaste } from "./imagePaste";
 import { AttachmentChips } from "./AttachmentChips";
 import { ImagePickButton } from "./ImagePickButton";
-import { Modal } from "./Modal";
+import { Modal, ModalCancel } from "./Modal";
+import { FormError } from "./formParts";
 
 const TEMPLATE = `**What happened**
 
@@ -88,8 +89,8 @@ export function BugReportDialog({ ticket, onClose }: {
           Something wrong with ckanban? This opens an issue on GitHub for the maintainer. Check the text below first: it is posted publicly.
         </p>
         <label>
-          Title
-          <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What went wrong, in one line" maxLength={200} />
+          <span>Title<span className="req" aria-hidden>*</span></span>
+          <input aria-required="true" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What went wrong, in one line" maxLength={200} />
         </label>
         <label>
           Description
@@ -97,7 +98,7 @@ export function BugReportDialog({ ticket, onClose }: {
             className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(e); }} />
           <AttachmentChips text={description} images={images} />
-          {images.error && <span className="form-error">{images.error}</span>}
+          <FormError>{images.error}</FormError>
         </label>
         <div className="bug-pick">
           <ImagePickButton images={images} target={descRef} disabled={busy} />
@@ -129,9 +130,9 @@ export function BugReportDialog({ ticket, onClose }: {
           </div>
         )}
         {result && !result.url && result.screenshots.length > 0 && <Screenshots urls={result.screenshots} />}
-        {err && <div className="form-error">{err}</div>}
+        <FormError>{err}</FormError>
         <div className="form-actions">
-          <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+          <ModalCancel />
           <button type="submit" className="btn primary" disabled={busy || !title.trim() || blocks === null || images.uploading}>
             {images.uploading ? "Uploading…" : busy ? "Reporting…" : "Report bug"}
           </button>

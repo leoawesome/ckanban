@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { KeyHint } from "./KeyHint";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CloseIcon } from "./icons";
@@ -7,13 +7,32 @@ import { useBackdropClose, useCalmTouchFocus, useKeyboardFit, useSwipeClose } fr
 import { useBackEntry } from "./backEntry";
 import { usePhone } from "./usePhone";
 
+/** Inside a Modal: close it the same way × and Esc do (asks first when the dialog has a `guard`). For Cancel buttons. */
+const CloseCtx = createContext<() => void>(() => {});
+export const useModalClose = () => useContext(CloseCtx);
+/** A form's Cancel: closes like × does, so unsaved work is asked about the same way. */
+export function ModalCancel({ label = "Cancel", className = "btn ghost", disabled }: { label?: string; className?: string; disabled?: boolean }) {
+  const close = useModalClose();
+  return <button type="button" className={className} onClick={close} disabled={disabled}>{label}</button>;
+}
+
+/** Forms inside a Modal report unsaved edits here; the Modal then asks before closing (as with `guard`). */
+const DirtyCtx = createContext<((key: string, dirty: boolean) => void) | null>(null);
+/** A form inside a Modal: while `dirty`, closing the dialog asks "Discard changes?" first. */
+export function useFormDirty(dirty: boolean) {
+  const report = useContext(DirtyCtx);
+  const key = useId();
+  useEffect(() => { report?.(key, dirty); }, [report, key, dirty]);
+  useEffect(() => () => report?.(key, false), [report, key]);
+}
+
 /**
  * Dialog with focus trap and Esc (topmost layer only). `guard` = there is typed work to lose:
  * Esc, the × and clicking outside ask before closing.
  * On a phone it is a bottom sheet (sheet.ts): grab handle, swipe down to close, sized to what the keyboard leaves,
  * and it doesn't open the keyboard by itself unless it has a single field. The phone's Back gesture closes it (backEntry.ts).
  */
-export function Modal({ title, onClose, children, wide, guard, focusDialog, onKeys, className, bare, action }: {
+export function Modal({ title, onClose, children, wide, guard, guardKind = "draft", focusDialog, onKeys, className, bare, action }: {
   title: string;
   /** Shown at the title bar's right instead of the × (e.g. a Done button that closes it). */
   action?: ReactNode;
@@ -25,6 +44,8 @@ export function Modal({ title, onClose, children, wide, guard, focusDialog, onKe
   children: ReactNode;
   wide?: boolean;
   guard?: boolean;
+  /** What `guard` protects: a typed draft ("Discard draft?") or edited settings ("Discard changes?"). */
+  guardKind?: "draft" | "changes";
   /** Focus the dialog itself, not its first field (so a stray key can't edit a saved value). */
   focusDialog?: boolean;
   /**
@@ -37,7 +58,17 @@ export function Modal({ title, onClose, children, wide, guard, focusDialog, onKe
   const box = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const [asking, setAsking] = useState(false);
-  const tryClose = () => (guard ? setAsking(true) : onClose());
+  const [dirtyForms, setDirtyForms] = useState<ReadonlySet<string>>(new Set());
+  const report = useCallback((key: string, dirty: boolean) => setDirtyForms((s) => {
+    if (s.has(key) === dirty) return s;
+    const next = new Set(s);
+    if (dirty) next.add(key);
+    else next.delete(key);
+    return next;
+  }), []);
+  const guarded = guard || dirtyForms.size > 0;
+  const kind = guard ? guardKind : "changes";
+  const tryClose = () => (guarded ? setAsking(true) : onClose());
   useLayer(tryClose);
   useBackEntry(usePhone(), tryClose);
   useFocusTrap(box, focusDialog);
@@ -57,11 +88,11 @@ export function Modal({ title, onClose, children, wide, guard, focusDialog, onKe
             {action ?? <button className="icon-btn" onClick={tryClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>}
           </header>
         )}
-        {children}
+        <CloseCtx.Provider value={tryClose}><DirtyCtx.Provider value={report}>{children}</DirtyCtx.Provider></CloseCtx.Provider>
       </div>
       {asking && (
-        <ConfirmDialog title="Discard draft?" confirmLabel="Discard" backEntry={false} onCancel={() => setAsking(false)} onConfirm={onClose}>
-          <p>What you typed here will be lost.</p>
+        <ConfirmDialog title={kind === "changes" ? "Discard changes?" : "Discard draft?"} confirmLabel="Discard" backEntry={false} onCancel={() => setAsking(false)} onConfirm={onClose}>
+          <p>{kind === "changes" ? "Your changes here aren't saved yet." : "What you typed here will be lost."}</p>
         </ConfirmDialog>
       )}
     </div>

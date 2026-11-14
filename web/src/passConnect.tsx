@@ -1,3 +1,5 @@
+import { useFormDirty } from "./Modal";
+import { FormError, SecretInput } from "./formParts";
 import { useState } from "react";
 import { api, type Pass } from "./api";
 
@@ -61,6 +63,7 @@ export function KeyForm({ name, claudeName, url, envName, help, board, onSaved, 
   const [secret, setSecret] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useFormDirty(!busy && !!secret);
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -76,10 +79,10 @@ export function KeyForm({ name, claudeName, url, envName, help, board, onSaved, 
   return (
     <form className="mcp-manual auto-pass" onSubmit={save}>
       <span className="muted small">{help ?? `Paste a key for ${name}.`} {board ? "It is saved on this Mac for this board: its automations and Claude's runs here get it, without seeing it." : "It stays on this computer and only the automations that use it get it."}</span>
-      <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={`${name} key`} aria-label={`${name} key`} autoComplete="off" />
+      <SecretInput value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={`${name} key`} aria-label={`${name} key`} />
       <button className="btn small primary" disabled={busy || !secret.trim()}>{busy ? "Saving…" : "Save key"}</button>
       {onCancel && <button type="button" className="btn small ghost" onClick={onCancel}>Cancel</button>}
-      {err && <div className="form-error">{err}</div>}
+      <FormError>{err}</FormError>
     </form>
   );
 }

@@ -72,17 +72,18 @@ function resume(id: number) {
   arm(id, Math.max(left, 1000));
 }
 
-/** Small message at the bottom of the screen that goes away on its own. Errors stay longer. */
+/** Small message at the bottom of the screen. Info goes after 4s, one with Undo after 8s; errors stay until closed. */
 export function toast(text: ReactNode, opts: { tone?: Tone; action?: Toast["action"]; ms?: number } = {}): number {
   const tone = opts.tone ?? "info";
   const id = nextId++;
-  const ms = opts.ms ?? (tone === "error" ? 8000 : opts.action ? 7000 : 4000);
+  // 0 = stays until closed (errors, MASTER §9 Toasts).
+  const ms = opts.ms ?? (tone === "error" ? 0 : opts.action ? 8000 : 4000);
   // Same text twice in a row (e.g. a retry that fails again): replace instead of stacking.
   const replaced = toasts.filter((t) => typeof text === "string" && t.text === text);
   for (const t of replaced) forget(t.id);
-  toasts = [...toasts.filter((t) => !replaced.includes(t)), { id, text, tone, action: opts.action, ms }].slice(-4);
+  toasts = [...toasts.filter((t) => !replaced.includes(t)), { id, text, tone, action: opts.action, ms }].slice(-3);
   emit();
-  arm(id, ms);
+  if (ms > 0) arm(id, ms);
   return id;
 }
 
@@ -98,34 +99,42 @@ export function undoLatest(): boolean {
   return true;
 }
 
+/**
+ * Always mounted, so screen readers hear a new toast (a live region added together with its text is often skipped):
+ * the stack is a polite region, and errors are also spoken at once through the assertive region beside it.
+ */
 export function Toaster() {
   const list = useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => toasts);
-  if (!list.length) return null;
   const keyed = newestWithAction(list);
+  const errors = list.filter((t) => t.tone === "error" && !t.leaving);
   return (
-    <div className="toaster">
-      {list.map((t) => (
-        <div key={t.id} className={`toast ${t.tone}${t.leaving ? " leaving" : ""}${t.action ? " has-life" : ""}`} role={t.tone === "error" ? "alert" : "status"}
-          onMouseEnter={() => pause(t.id)} onMouseLeave={(e) => { if (!e.currentTarget.contains(document.activeElement)) resume(t.id); }}
-          onFocus={() => pause(t.id)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) resume(t.id); }}
-          // Phone: swipe it up (or sideways) to dismiss.
-          onTouchStart={(e) => { touch = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
-          onTouchEnd={(e) => {
-            const p = e.changedTouches[0];
-            if (touch && (touch.y - p.clientY > 24 || Math.abs(p.clientX - touch.x) > 60)) dismissToast(t.id);
-            touch = null;
-          }}>
-          <span className="toast-text">{t.text}</span>
-          {t.action && (
-            <button className="toast-action" onClick={() => { t.action!.run(); dismissToast(t.id); }} title={t === keyed ? `${t.action.label} (U)` : undefined}>
-              {t.action.label}{t === keyed && <KeyHint keys="U" />}
-            </button>
-          )}
-          <button className="icon-btn" aria-label="Dismiss" onClick={() => dismissToast(t.id)}><CloseIcon size={12} /></button>
-          {/* How long Undo is still there: shrinks over the toast's life, stops while hovered. */}
-          {t.action && <span className="toast-life" aria-hidden style={{ "--life": `${t.ms}ms` } as CSSProperties} />}
-        </div>
-      ))}
-    </div>
+    <>
+      <div className="sr-only" aria-live="assertive" aria-atomic="true">{errors.length ? errors[errors.length - 1].text : null}</div>
+      <div className="toaster" aria-live="polite" aria-relevant="additions text">
+        {list.map((t) => (
+          <div key={t.id} className={`toast ${t.tone}${t.leaving ? " leaving" : ""}${t.action ? " has-life" : ""}`}
+            onMouseEnter={() => pause(t.id)} onMouseLeave={(e) => { if (!e.currentTarget.contains(document.activeElement)) resume(t.id); }}
+            onFocus={() => pause(t.id)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) resume(t.id); }}
+            // Phone: swipe it up (or sideways) to dismiss.
+            onTouchStart={(e) => { touch = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+            onTouchEnd={(e) => {
+              const p = e.changedTouches[0];
+              if (touch && (touch.y - p.clientY > 24 || Math.abs(p.clientX - touch.x) > 60)) dismissToast(t.id);
+              touch = null;
+            }}>
+            {/* An error is spoken by the assertive region above, so the polite stack doesn't say it twice. */}
+            <span className="toast-text" aria-hidden={t.tone === "error" || undefined}>{t.text}</span>
+            {t.action && (
+              <button className="toast-action" onClick={() => { t.action!.run(); dismissToast(t.id); }} title={t === keyed ? `${t.action.label} (U)` : undefined}>
+                {t.action.label}{t === keyed && <KeyHint keys="U" />}
+              </button>
+            )}
+            <button className="icon-btn" aria-label="Dismiss" onClick={() => dismissToast(t.id)}><CloseIcon size={12} /></button>
+            {/* How long Undo is still there: shrinks over the toast's life, stops while hovered. */}
+            {t.action && t.ms > 0 && <span className="toast-life" aria-hidden style={{ "--life": `${t.ms}ms` } as CSSProperties} />}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }

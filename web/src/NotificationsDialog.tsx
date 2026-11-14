@@ -1,3 +1,4 @@
+import { LoadState, SavedNote, SecretInput, useSavedFlash } from "./formParts";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type ChannelState, type NotifyKind, type NotifyPatch, type NotifyState } from "./api";
 import { helperApi, setHelperStatus, spendLine, useHelper, type FeedbackLine } from "./helper";
@@ -77,8 +78,14 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
   const [pane, setPane] = useState<Pane>("helper");
   const [phoneOpen, setPhoneOpen] = useState(false);
 
-  useEffect(() => {
+  /** Every setting here saves at once: "✓ Saved" shows for a moment after each one. */
+  const saved = useSavedFlash();
+  const load = () => {
+    setError(null);
     api.notify().then((s) => { setState(s); setUrl(s.webhookUrl); }).catch((e) => setError(e.message));
+  };
+  useEffect(() => {
+    load();
     // Turning this device on or off decides whether the macOS banner is used.
     const refresh = () => void api.notify().then((s) => setState((cur) => (cur ? { ...cur, ...s, webhookUrl: cur.webhookUrl } : s))).catch(() => {});
     window.addEventListener(PUSH_CHANGED, refresh);
@@ -90,6 +97,7 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
     try {
       const next = await api.setNotify(patch);
       setState(next);
+      saved.flash();
       if ("helper" in patch || "push" in patch || "webhookOn" in patch || "mac" in patch || patch.telegram) {
         void helperApi.status().then(setHelperStatus, () => {});
       }
@@ -189,7 +197,8 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
                   <div className="small">{json ? "Messages go to this address:" : "Install the ntfy app and subscribe to this topic:"}</div>
                   <div className="hs-inline">
                     <input className="mono" value={url} onChange={(e) => setUrl(e.target.value)} onBlur={() => void saveUrl()}
-                      placeholder="https://ntfy.sh/your-secret-topic" spellCheck={false} autoComplete="off" aria-label="ntfy topic address" />
+                      placeholder="https://ntfy.sh/your-secret-topic" spellCheck={false} autoComplete="off" aria-label="ntfy topic address"
+                      type="url" inputMode="url" autoCapitalize="off" autoCorrect="off" />
                     {!json && <button type="button" className="btn small" onClick={() => { const t = randomTopic(); setUrl(t); void saveUrl(t); }}>New topic</button>}
                     <button type="button" className="btn small" disabled={!!busy || !url.trim()} onClick={() => void test()}>{busy === "test" ? "Sending…" : "Send test"}</button>
                   </div>
@@ -272,8 +281,7 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
 
   return (
     <Modal title={detail ? cur.title : "Notifications"} onClose={onClose} focusDialog wide className="auto-modal notify-modal" bare={detail}>
-      {!state && !error && <div className="muted auto-msg"><span className="spinner" /> Loading…</div>}
-      {!state && error && <div className="form-error auto-msg" role="alert">{error}</div>}
+      {!state && <LoadState error={error} onRetry={load} />}
       {state && (
         <form className="auto-wrap helper-settings" onSubmit={(e) => { e.preventDefault(); void saveUrl(); }}>
           {!detail && (
@@ -302,16 +310,17 @@ export function NotificationsDialog({ profile, onClose }: { profile: string | nu
           )}
           {(!phone || detail) && cur && (
             <div className="auto-main">
-              {phone && <PhoneBar title={cur.title} onBack={() => setPhoneOpen(false)} />}
+              {phone && <PhoneBar title={cur.title} onBack={() => setPhoneOpen(false)}><SavedNote shown={saved.shown} className="notify-saved" /></PhoneBar>}
               <div className="auto-pane notify-pane form">
                 {phone && errorLine}
                 {body}
               </div>
               {!phone && (
                 <div className="auto-foot">
-                  <span className="auto-foot-note err">{error}</span>
+                  {error ? <span className="auto-foot-note err">{error}</span>
+                    : <span className="auto-foot-note">Changes save as you make them. <SavedNote shown={saved.shown} /></span>}
                   {testButton}
-                  <button type="button" className="btn primary" disabled={busy === "save"} onClick={async () => { if (await saveUrl()) onClose(); }}>Done</button>
+                  <button type="button" className="btn ghost" disabled={busy === "save"} onClick={async () => { if (await saveUrl()) onClose(); }}>Close</button>
                 </div>
               )}
             </div>
@@ -395,7 +404,7 @@ function TelegramSetup({ state, profile, onState, onError }: { state: NotifyStat
           </div>
           <span className={`tg-state small${t.takeMessages ? " ok" : ""}`}>{t.takeMessages ? "On" : t.lockedAt ? "Locked" : "Paused"}</span>
         </div>
-        {t.error && <div className="form-error small">{t.error}</div>}
+        {t.error && <div className="form-error small" role="alert">{t.error}</div>}
         <div className="ch-head tg-row">
           <div className="grow">
             <div className="small">Take messages from Telegram</div>
@@ -471,7 +480,7 @@ function TelegramSetup({ state, profile, onState, onError }: { state: NotifyStat
     return (
       <div className="tg-setup">
         <div className="small">Pair Telegram from the Mac.</div>
-        {t.error && <div className="form-error small">{t.error}</div>}
+        {t.error && <div className="form-error small" role="alert">{t.error}</div>}
         {t.tokenSet && <button type="button" className="link-btn small" disabled={busy} onClick={() => void forget()}>Remove the key</button>}
       </div>
     );
@@ -484,7 +493,7 @@ function TelegramSetup({ state, profile, onState, onError }: { state: NotifyStat
         <li>
           Pick a name. BotFather gives you a long key. Paste it here:
           <div className="hs-inline">
-            <input type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" spellCheck={false}
+            <SecretInput value={token} onChange={(e) => setToken(e.target.value)}
               placeholder={t.tokenSet ? `Key ${t.tokenMasked}` : "Paste the bot key"} aria-label="Bot key from BotFather" />
             <button type="button" className="btn small primary" disabled={busy || !token.trim()} onClick={() => void saveToken()}>Save</button>
           </div>
@@ -504,8 +513,8 @@ function TelegramSetup({ state, profile, onState, onError }: { state: NotifyStat
           )}
         </li>
       </ol>
-      {t.pairError && <div className="form-error small">{t.pairError}</div>}
-      {t.error && <div className="form-error small">{t.error}</div>}
+      {t.pairError && <div className="form-error small" role="alert">{t.pairError}</div>}
+      {t.error && <div className="form-error small" role="alert">{t.error}</div>}
       {t.tokenSet && <button type="button" className="link-btn small" disabled={busy} onClick={() => void forget()}>Remove the key</button>}
     </div>
   );
@@ -517,6 +526,7 @@ function NightSection() {
   const [start, setStart] = useState(status?.night.start ?? "22:00");
   const [end, setEnd] = useState(status?.night.end ?? "07:00");
   const [error, setError] = useState<string | null>(null);
+  const saved = useSavedFlash();
   useEffect(() => {
     if (!status) return;
     setStart(status.night.start);
@@ -526,6 +536,7 @@ function NightSection() {
     setError(null);
     try {
       setHelperStatus(await helperApi.settings(patch));
+      saved.flash();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -539,7 +550,7 @@ function NightSection() {
     <section className="hs-card">
       <div className="ch-head hs-stack">
         <div className="grow">
-          <div className="ch-ttl">Quiet hours</div>
+          <div className="ch-ttl">Quiet hours <SavedNote shown={saved.shown} /></div>
           <div className="muted small">In this Mac's time zone.</div>
         </div>
         <div className="hs-times">

@@ -24,7 +24,7 @@ function textOf(n: ReactNode): string {
 }
 
 /** Styled dropdown replacing the native <select>. Keyboard: Enter/Space/↓ open, ↑↓ move, type to jump, Enter pick, Esc close. */
-export function Select<T extends string>({ value, options, onChange, footer, className, ariaLabel, renderValue, menuClassName, renderOption, menuMaxHeight = 320, badge }: {
+export function Select<T extends string>({ value, options, onChange, footer, className, ariaLabel, ariaDescribedBy, renderValue, menuClassName, renderOption, menuMaxHeight = 320, badge }: {
   value: T;
   options: SelectOption<T>[];
   onChange: (v: T) => void;
@@ -32,6 +32,8 @@ export function Select<T extends string>({ value, options, onChange, footer, cla
   footer?: { label: ReactNode; onSelect: () => void; icon?: ReactNode }[];
   className?: string;
   ariaLabel?: string;
+  /** Id of the help text under it. */
+  ariaDescribedBy?: string;
   renderValue?: (o: SelectOption<T> | undefined) => ReactNode;
   /** Extra class on the portaled menu, to restyle one dropdown without touching the others. */
   menuClassName?: string;
@@ -157,7 +159,7 @@ export function Select<T extends string>({ value, options, onChange, footer, cla
 
   return (
     <div className={`select ${open ? "open" : ""} ${className ?? ""}`} ref={root} onKeyDown={onKey}>
-      <button type="button" className="select-trigger" aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel}
+      <button type="button" className="select-trigger" aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} aria-describedby={ariaDescribedBy}
         aria-controls={open ? listId : undefined} aria-activedescendant={open ? `${listId}-${active}` : undefined}
         onClick={() => (open ? setOpen(false) : openMenu())}>
         <span className="select-value">{renderValue ? renderValue(current) : current?.label ?? "Select…"}</span>

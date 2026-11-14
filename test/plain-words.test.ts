@@ -22,7 +22,6 @@ const TEXT_PROPS = new Set(["label", "hint", "title"]);
 const ALLOWED: [string, string, string][] = [
   ["App.tsx", "git", "names the missing program to install"],
   ["UsagePanel.tsx", "tokens", "token count only in the cost tooltip"],
-  ["SchedulesDialog.tsx", "Cron expression", "the Edit form, where the timing is typed"],
   ["ShareMenu.tsx", "Copy markdown", "names the copy format"],
   ["TicketMenu.tsx", "Copy branch", "only shown when the folder has version history"],
   ["TicketMenu.tsx", "{ticket.branch}", "the name that Copy branch copies"],

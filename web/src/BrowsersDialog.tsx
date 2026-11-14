@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { api, subscribe, type BoardBrowserView, type BrowserPick, type BrowsersState, type ChromeBrowser } from "./api";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { Modal } from "./Modal";
+import { Modal, useFormDirty } from "./Modal";
+import { FormError, LoadState, SavedNote, useSavedFlash } from "./formParts";
+import { PlusIcon } from "./icons";
 import { timeAgo } from "./time";
 import { useNow } from "./useNow";
 import { usePhone } from "./usePhone";
@@ -101,20 +103,19 @@ export function BrowsersDialog({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   useNow();
 
+  const load = () => void api.browsers().then((s) => { setState(s); setError(null); }, (e) => setError(e.message));
   useEffect(() => {
-    const load = () => void api.browsers().then(setState, (e) => setError(e.message));
     load();
     return subscribe((e) => (e.type === "browsers.updated" || e.type === "profile.updated") && load());
   }, []);
 
-  const act = async (fn: () => Promise<BrowsersState>) => {
-    setError(null);
+  /** Runs a change for one row; its error is returned so that row shows it under itself. */
+  const act = async (fn: () => Promise<BrowsersState>): Promise<string | null> => {
     try {
       setState(await fn());
-      return true;
+      return null;
     } catch (e) {
-      setError((e as Error).message);
-      return false;
+      return (e as Error).message;
     }
   };
 
@@ -128,7 +129,7 @@ export function BrowsersDialog({ onClose }: { onClose: () => void }) {
         <p className="muted small browsers-intro">
           Board browsers are Chrome windows the board keeps for itself, each with its own logins. They keep working when you switch Claude account.
         </p>
-        {!state && !error && <div className="muted small"><span className="spinner" /> Loading…</div>}
+        {!state && <LoadState error={error} onRetry={load} rows={3} className="browsers-loading" />}
         {state && (
           <>
             <h3 className="browsers-h">Board browsers</h3>
@@ -160,7 +161,7 @@ export function BrowsersDialog({ onClose }: { onClose: () => void }) {
             {!canPick && <p className="muted small">Add a board browser or name one of your own Chromes, then pick it for a board here.</p>}
             {canPick && (
               <div>
-                {state.boards.map((p) => <BoardPick key={p.slug} board={p} state={state} onSaved={setState} onError={setError} />)}
+                {state.boards.map((p) => <BoardPick key={p.slug} board={p} state={state} onSaved={setState} />)}
               </div>
             )}
             <div className="browsers-note">
@@ -168,7 +169,7 @@ export function BrowsersDialog({ onClose }: { onClose: () => void }) {
             </div>
           </>
         )}
-        {error && <div className="form-error" role="alert">{error}</div>}
+        {state && <FormError>{error}</FormError>}
       </div>
     </Modal>
   );
@@ -187,6 +188,8 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  /** "✓ Saved" beside a setting that saves by itself (name, Keep running, start page). */
+  const saved = useSavedFlash();
   useEffect(() => setName(b.name), [b.name]);
   useEffect(() => setStartUrl(b.startUrl ?? ""), [b.startUrl]);
 
@@ -217,12 +220,13 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
   const saveName = async () => {
     const clean = name.trim();
     if (!clean || clean === b.name) { setName(b.name); setRenaming(false); return; }
-    if (await run("rename", () => api.updateBoardBrowser(b.id, { name: clean }))) setRenaming(false);
+    if (await run("rename", () => api.updateBoardBrowser(b.id, { name: clean }))) { setRenaming(false); saved.flash(); }
   };
   const saveStart = async () => {
     const v = startUrl.trim();
     if (v === (b.startUrl ?? "")) return;
     if (!(await run("start", () => api.updateBoardBrowser(b.id, { startUrl: v || null })))) setStartUrl(b.startUrl ?? "");
+    else saved.flash();
   };
 
   const phone = usePhone();
@@ -244,7 +248,7 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
           <input value={name} autoFocus maxLength={40} aria-label="Browser name" onChange={(e) => setName(e.target.value)}
             onBlur={() => void saveName()}
             onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { e.stopPropagation(); setName(b.name); setRenaming(false); } }} />
-        ) : <span className="browser-name">{b.name}</span>}
+        ) : <span className="browser-name">{b.name} <SavedNote shown={saved.shown} /></span>}
         <span className="muted small">
           <span className={`browser-tag${needsSignIn ? " warn" : notChecked ? " off" : ""}`}>{b.signIn}</span>
           {inUse && <span className="browser-tag busy">In use by a task</span>}
@@ -259,7 +263,7 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
             <button className="btn ghost" disabled={!!busy} onClick={() => void close()}>{busy === "close" ? "Closing…" : "Close window"}</button>
           )}
           {!renaming && <button className="btn ghost" disabled={!!busy} onClick={() => setRenaming(true)}>Rename</button>}
-          {!inUse && <button className="btn ghost" disabled={!!busy} onClick={() => setConfirming(true)}>Remove</button>}
+          {!inUse && <button className="btn ghost danger browser-remove-btn" disabled={!!busy} onClick={() => setConfirming(true)}>Remove</button>}
         </div>
         <span className="muted small">
           {b.windowPending
@@ -276,7 +280,7 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
         </span>
         <label className="browser-keep">
           <input type="checkbox" role="switch" className="switch" checked={b.keepRunning} disabled={!!busy}
-            onChange={(e) => void run("keep", () => api.updateBoardBrowser(b.id, { keepRunning: e.target.checked }))} />
+            onChange={async (e) => { if (await run("keep", () => api.updateBoardBrowser(b.id, { keepRunning: e.target.checked }))) saved.flash(); }} />
           <span>
             Keep running
             <span className="muted small">Stays open in the background, for tasks that watch a page all day.</span>
@@ -285,7 +289,7 @@ function BoardBrowserCard({ browser: b, chromeInstalled, setState }: {
         {b.keepRunning && (
           <label className="browser-start">
             <span className="muted small">Opens at</span>
-            <input value={startUrl} maxLength={300} placeholder="e.g. web.whatsapp.com" aria-label="Page it opens at"
+            <input value={startUrl} maxLength={300} placeholder="e.g. web.whatsapp.com" aria-label="Page it opens at" inputMode="url" autoCapitalize="off" autoCorrect="off"
               onChange={(e) => setStartUrl(e.target.value)} onBlur={() => void saveStart()}
               onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} />
           </label>
@@ -414,6 +418,7 @@ function AddBoardBrowser({ disabled, onAdded }: { disabled: boolean; onAdded: (s
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useFormDirty(open && !busy && !!name.trim());
   const add = async () => {
     if (!name.trim()) return;
     setBusy(true);
@@ -429,11 +434,12 @@ function AddBoardBrowser({ disabled, onAdded }: { disabled: boolean; onAdded: (s
     }
   };
   if (!open) {
-    return <button className="btn browsers-add" disabled={disabled} onClick={() => setOpen(true)}>+ Add a board browser</button>;
+    return <button className="btn browsers-add icon-label" disabled={disabled} onClick={() => setOpen(true)}><PlusIcon size={14} aria-hidden /> New board browser</button>;
   }
   return (
     <div className="browsers-add-form">
-      <input value={name} autoFocus maxLength={40} placeholder="Name it, e.g. Business WhatsApp" aria-label="New browser name"
+      <label className="field-label" htmlFor="new-browser-name">Name<span className="req" aria-hidden>*</span></label>
+      <input id="new-browser-name" value={name} autoFocus maxLength={40} placeholder="e.g. Business WhatsApp" aria-required="true"
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") void add(); if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } }} />
       <div className="browser-acts">
@@ -447,12 +453,13 @@ function AddBoardBrowser({ disabled, onAdded }: { disabled: boolean; onAdded: (s
 }
 
 /** One board's row: the chosen browsers as chips, Change opens the ticks (Done saves). */
-function BoardPick({ board: p, state, onSaved, onError }: {
+function BoardPick({ board: p, state, onSaved }: {
   board: BrowsersState["boards"][number];
   state: BrowsersState;
   onSaved: (s: BrowsersState) => void;
-  onError: (msg: string | null) => void;
 }) {
+  const [error, setError] = useState<string | null>(null);
+  const onError = setError;
   const [draft, setDraft] = useState<BrowserPick[] | null>(null);
   const [busy, setBusy] = useState(false);
   const picks = p.browsers ?? [];
@@ -486,6 +493,7 @@ function BoardPick({ board: p, state, onSaved, onError }: {
         </span>
       </div>
       {draft && <BrowserPicker state={state} value={draft} onChange={setDraft} />}
+      <FormError>{error}</FormError>
     </div>
   );
 }
@@ -494,14 +502,20 @@ function BrowserRow({ browser: b, connected, listedAt, onRename, onRemove }: {
   browser: ChromeBrowser;
   connected: boolean;
   listedAt: string | null;
-  onRename: (name: string) => Promise<boolean>;
-  onRemove: () => Promise<boolean>;
+  onRename: (name: string) => Promise<string | null>;
+  onRemove: () => Promise<string | null>;
 }) {
   const [name, setName] = useState(b.name);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const saved = useSavedFlash();
   useEffect(() => setName(b.name), [b.name]);
   const save = async () => {
     if (name.trim() === b.name) return;
-    if (!(await onRename(name))) setName(b.name);
+    const failed = await onRename(name);
+    setError(failed);
+    if (failed) setName(b.name);
+    else saved.flash();
   };
   const status = connected
     ? `Connected${listedAt ? ` at the last check, ${timeAgo(listedAt)}` : ""}`
@@ -510,15 +524,30 @@ function BrowserRow({ browser: b, connected, listedAt, onRename, onRemove }: {
     <div className="browser own-browser">
       <span className={`browser-dot${connected ? "" : " off"}`} title={connected ? "Connected when a task last listed the Chromes" : "Not connected when a task last listed the Chromes"} />
       <div className="browser-meta">
-        <input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => void save()} maxLength={40}
+        <span className="browser-name-row">
+          <label className="field-label" htmlFor={`chrome-${b.deviceId}`}>Name</label>
+          <SavedNote shown={saved.shown} />
+        </span>
+        <input id={`chrome-${b.deviceId}`} value={name} onChange={(e) => setName(e.target.value)} onBlur={() => void save()} maxLength={40}
           onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setName(b.name); }}
-          placeholder="Name it, e.g. Work" aria-label={`Name for ${b.label || "this Chrome"}`} />
+          placeholder="e.g. Work" />
         <span className="muted small">{status}{b.hint ? ` · last used on ${b.hint.site}` : ""}</span>
         <span className="browser-id muted" title="Claude in Chrome's name for it changes when it reconnects; the board goes by this id">
           {b.label ? `${b.label} · ` : ""}{b.deviceId}
         </span>
-        <button className="btn ghost small browser-remove" onClick={() => void onRemove()} title="Forget this Chrome. It comes back, unnamed, the next time a task lists the Chromes.">Remove</button>
+        <FormError>{error}</FormError>
+        <button className="btn ghost danger small browser-remove" onClick={() => setConfirming(true)} title="Forget this Chrome. It comes back, unnamed, the next time a task lists the Chromes.">Remove</button>
       </div>
+      {confirming && (
+        <ConfirmDialog title={`Forget ${b.name || "this Chrome"}?`} confirmLabel="Forget" busyLabel="Forgetting…" onCancel={() => setConfirming(false)}
+          onConfirm={async () => {
+            const failed = await onRemove();
+            if (failed) throw new Error(failed);
+            setConfirming(false);
+          }}>
+          <p>The board forgets its name. It comes back, unnamed, the next time a task lists your Chromes; boards that picked it stop using it.</p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

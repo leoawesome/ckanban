@@ -3,7 +3,9 @@ import { api, type Loop, type LoopColumn, type LoopInput, type LoopTest, type Pa
 import { COLUMN_LABEL, COLUMN_MEANING, EVERY_CHOICES, everyLabel, groupLastItems, loopStatus, loopSubtitle, saveBlocker } from "./automations";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { FeaturePicker } from "./FeaturePicker";
-import { ChevronLeftIcon, ChevronRightIcon, MoreIcon } from "./icons";
+import { ChevronLeftIcon, ChevronRightIcon, LoopIcon, MoreIcon, PlusIcon, SparkIcon } from "./icons";
+import { EmptyState, FormError, LoadState, useDiscardAsk } from "./formParts";
+import { tabKeys } from "./tabKeys";
 import { MenuSheet } from "./MenuSheet";
 import { Modal } from "./Modal";
 import { Select } from "./Select";
@@ -53,15 +55,20 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, initia
   const [busy, setBusy] = useState(false);
   /** A new automation just saved: its editor reopens under its id and still says "Saved". */
   const [justMade, setJustMade] = useState<string | null>(null);
+  /** The open editor has unsaved edits: closing, picking another or going back asks first. */
+  const [dirty, setDirty] = useState(false);
+  const ask = useDiscardAsk(dirty);
 
   const reload = async () => {
     const [p, loops] = await Promise.all([api.passes(), api.loops(profile.slug)]);
     setData({ passes: p.passes, loops });
     return loops;
   };
-  useEffect(() => {
+  const load = () => {
+    setErr(null);
     reload().then((loops) => setSelected((s) => s ?? loops[0]?.id ?? null)).catch((e) => setErr(e.message));
-  }, [profile.slug, refreshKey]);
+  };
+  useEffect(load, [profile.slug, refreshKey]);
 
   const setUpWithClaude = async () => {
     setBusy(true);
@@ -77,13 +84,26 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, initia
   };
 
   const open = (id: string | "new") => {
-    setSelected(id);
-    setPhoneOpen(true);
+    if (id === selected && (!phone || phoneOpen)) return;
+    ask.leave(() => {
+      setDirty(false);
+      setSelected(id);
+      setPhoneOpen(true);
+    });
   };
-  const back = () => setPhoneOpen(false);
+  // Back to the list: the editor closes, so unsaved edits are asked about (and dropped on Discard).
+  const back = () => ask.leave(() => {
+    setDirty(false);
+    setPhoneOpen(false);
+    if (dirty) setSelected((s) => (s === "new" ? null : s));
+    setEditorKey((n) => n + 1);
+  });
+  /** Bumped to throw away an editor's unsaved edits (a fresh editor for the same automation). */
+  const [editorKey, setEditorKey] = useState(0);
   // Phone: Back from an automation's screen goes to the list first (the window's own entry closes it after that).
   useBackEntry(phone && phoneOpen, back);
   const deleted = async () => {
+    setDirty(false);
     setSelected(null);
     setPhoneOpen(false);
     await reload();
@@ -94,14 +114,21 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, initia
   const title = detail ? (selected === "new" ? "New automation" : loop?.name ?? "Automation") : `Automations · ${profile.name}`;
 
   return (
-    <Modal title={title} onClose={onClose} wide className="auto-modal" bare={detail}>
-      {err && <div className="form-error auto-msg">{err}</div>}
-      {!data && !err && <div className="muted auto-msg">Loading…</div>}
+    <Modal title={title} onClose={onClose} wide className="auto-modal" bare={detail} guard={dirty} guardKind="changes">
+      {!data && <LoadState error={err} onRetry={load} />}
+      {data && err && <FormError className="auto-msg">{err}</FormError>}
       {data && (
         <div className="auto-wrap">
           {!detail && (
             <div className="auto-side">
-              <div className="auto-list" role="list" aria-label="Automations">
+              {!phone && data.loops.length > 0 && (
+                <button type="button" className="btn small auto-new" onClick={() => open("new")}><PlusIcon size={14} aria-hidden /> New automation</button>
+              )}
+              {!data.loops.length ? (
+                <EmptyState icon={<LoopIcon size={20} />} title="No automations yet">
+                  {INTRO} For example: every new Linear issue assigned to you becomes a ticket in Backlog.
+                </EmptyState>
+              ) : <div className="auto-list" role="list" aria-label="Automations">
                 {data.loops.map((l) => {
                   const st = loopStatus(l);
                   return (
@@ -115,19 +142,23 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, initia
                     </button>
                   );
                 })}
-                {(!data.loops.length || phone) && <div className="auto-intro">{INTRO}</div>}
-              </div>
+                {phone && <div className="auto-intro">{INTRO}</div>}
+              </div>}
               <div className="auto-side-actions">
-                <button className="btn primary" disabled={busy} onClick={setUpWithClaude}>✦ Set up with Claude</button>
-                <button className={`btn${phone ? "" : " ghost"}`} onClick={() => open("new")}>+ New, by hand</button>
+                <button className="btn primary icon-label" disabled={busy} onClick={setUpWithClaude}><SparkIcon size={14} aria-hidden /> {busy ? "Starting…" : "Set up with Claude"}</button>
+                {(phone || !data.loops.length) && <button className="btn icon-label" onClick={() => open("new")}><PlusIcon size={14} aria-hidden /> New automation, by hand</button>}
               </div>
             </div>
           )}
           {(!phone || phoneOpen) && (
             <div className="auto-main">
-              {!selected && <div className="muted auto-empty">Set one up with Claude: say what to watch, Claude writes and tests the check, and you save it.</div>}
+              {!selected && (
+                <EmptyState title="Set one up with Claude">
+                  Say what to watch; Claude writes and tests the check, and you save it. Or make one by hand on the left.
+                </EmptyState>
+              )}
               {selected === "new" && (
-                <LoopEditor key="new" slug={profile.slug} passes={data.passes} tickets={tickets} loop={null} phone={phone} onBack={back}
+                <LoopEditor key={`new-${editorKey}`} onDirty={setDirty} slug={profile.slug} passes={data.passes} tickets={tickets} loop={null} phone={phone} onBack={back}
                   onOpenTicket={onOpenTicket} onOpenConnections={onOpenConnections}
                   onSaved={async (l) => { await reload(); setJustMade(l.id); setSelected(l.id); }} onDeleted={deleted} />
               )}
@@ -136,7 +167,7 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, initia
                   onSaved={async () => { await reload(); }} onDeleted={deleted} />
               )}
               {loop && loop.state !== "unsupported" && (
-                <LoopEditor key={loop.id} slug={profile.slug} passes={data.passes} tickets={tickets} loop={loop} otherBoards={boards.filter((b) => b.slug !== profile.slug)}
+                <LoopEditor key={`${loop.id}-${editorKey}`} onDirty={setDirty} slug={profile.slug} passes={data.passes} tickets={tickets} loop={loop} otherBoards={boards.filter((b) => b.slug !== profile.slug)}
                   phone={phone} onBack={back} onOpenTicket={onOpenTicket} onOpenConnections={onOpenConnections} justSaved={justMade === loop.id}
                   onSaved={async () => { await reload(); }} onDeleted={deleted} />
               )}
@@ -150,6 +181,7 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, initia
           )}
         </div>
       )}
+      {ask.dialog}
     </Modal>
   );
 }
@@ -189,7 +221,7 @@ function statusChip(l: Loop): { label: string; tone: string } {
   return st;
 }
 
-function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, justSaved, onBack, onSaved, onDeleted, onOpenTicket, onOpenConnections }: {
+function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, justSaved, onBack, onSaved, onDeleted, onOpenTicket, onOpenConnections, onDirty }: {
   slug: string;
   passes: Pass[];
   tickets: Ticket[];
@@ -203,6 +235,8 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, just
   onDeleted: () => void | Promise<void>;
   onOpenTicket: (id: string) => void;
   onOpenConnections: () => void;
+  /** Whether the form differs from what was last saved (or opened). */
+  onDirty?: (dirty: boolean) => void;
 }) {
   const ids = useId();
   const [name, setName] = useState(loop?.name ?? "");
@@ -287,6 +321,11 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, just
   const snap = JSON.stringify(input());
   useEffect(() => { if (justSaved) setSavedSnap(snap); }, []);
   const saved = !err && !note && !busy && savedSnap === snap;
+  // The form as it opened: unsaved = differs from the last save (or from that, before any save).
+  const [openedSnap] = useState(snap);
+  const unsaved = snap !== (savedSnap ?? openedSnap);
+  useEffect(() => { onDirty?.(unsaved); }, [unsaved]);
+  useEffect(() => () => onDirty?.(false), []);
   const footNote = err ?? note ?? (busy ? null : blocker) ?? (saved ? "✓ Saved" : "Changes apply after you save.");
 
   return (
@@ -330,8 +369,9 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, just
 
       <div className="auto-scroll">
         <div className="auto-top">
+          <label className="field-label auto-name-label" htmlFor={`${ids}-name`}>Name<span className="req" aria-hidden>*</span></label>
           <div className="auto-title">
-            <input className="auto-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, e.g. Linear: assigned to me" aria-label="Automation name" />
+            <input id={`${ids}-name`} aria-required="true" className="auto-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, e.g. Linear: assigned to me" aria-label="Automation name" />
             <label className="auto-switch">
               <input type="checkbox" role="switch" className="switch" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} aria-label="On" />
               <span aria-hidden>{enabled ? "On" : "Off"}</span>
@@ -346,10 +386,10 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, just
           {loop?.state === "ok" && loop.lastError && <div className="mcp-msg">Last check failed: {loop.lastError}</div>}
         </div>
 
-        <div className="tabs auto-tabs" role="tablist" aria-label="Automation">
+        <div className="tabs auto-tabs" role="tablist" aria-label="Automation" onKeyDown={tabKeys(tabs.map((t) => t.id), tab, setTab, `${ids}-tab-`)}>
           {tabs.map((t) => (
             <button key={t.id} type="button" role="tab" id={`${ids}-tab-${t.id}`} aria-controls={`${ids}-pane`} aria-selected={tab === t.id}
-              className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)}>
+              tabIndex={tab === t.id ? 0 : -1} className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)}>
               {t.label}{t.count ? <span className="auto-count">{t.count}</span> : null}
             </button>
           ))}
@@ -359,10 +399,10 @@ function LoopEditor({ slug, passes, tickets, loop, otherBoards = [], phone, just
           {tab === "settings" && (
             <>
               <div className="auto-field">
-                <FieldHead label="Watch" help="Only items that show up after it's switched on count. Each one becomes a ticket. Checking is free; Claude only runs for tickets it makes." />
+                <FieldHead label="Watch" htmlFor={`${ids}-service`} help="Only items that show up after it's switched on count. Each one becomes a ticket. Checking is free; Claude only runs for tickets it makes." />
                 <div className="auto-val">
                   <div className="auto-line">
-                    <input className="auto-service" value={service} onChange={(e) => setService(e.target.value)} placeholder={svc} aria-label="What it checks" />
+                    <input id={`${ids}-service`} className="auto-service" value={service} onChange={(e) => setService(e.target.value)} placeholder={svc} aria-label="What it checks" />
                     <span>every</span>
                     <Select<string> value={String(every)} ariaLabel="How often" options={everyOptions} onChange={(v) => setEvery(Number(v))} />
                   </div>
