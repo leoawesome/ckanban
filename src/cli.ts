@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { sha256, sumFor } from "./checksum";
 import { BoardClient, boardPort, ClientError } from "./client";
 import { serveStdio } from "./mcp-server";
+import { serveBrowserMcp } from "./browser-mcp";
 import { runArtifactJob } from "./server/artifact";
 import { LABEL, PLIST_PATH, plistXml } from "./server/launchd";
 import { RESTART_MAX_WAIT_MS } from "./server/board";
@@ -319,6 +320,10 @@ switch (cmd) {
   case "mcp":
     if (process.argv.length === 3) await serveStdio();
     else await board(() => mcpCommand(process.argv.slice(3)));
+    break;
+  case "browser-mcp":
+    // A board browser's tools for one run (see browser-mcp.ts); the board passes it in the run's --mcp-config.
+    await serveBrowserMcp(process.argv.slice(3));
     break;
   case "--version":
   case "-v":

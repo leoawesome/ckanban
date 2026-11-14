@@ -11,7 +11,8 @@ import { MOVE_TO_PLANNING_RE, STAY_RE } from "./session";
 import { forkSessionBefore, forkSessionFile, forkTitle } from "./fork";
 import { saveMockups } from "./mockups";
 import { Devices, type DeviceTicketState } from "./devices";
-import { ChromeWatch, Chromes, resolveChromeSetting, type ChromeChoice } from "./chromes";
+import { ChromeWatch, Chromes, ownPicks, resolveBrowserPicks, resolveChromeSetting, type BrowserPick, type ChromeChoice } from "./chromes";
+import { BoardBrowsers, BROWSER_FILES_DIR, browserServer, serverName, type BrowserDeps } from "./board-browsers";
 import { macBanner } from "./notify";
 import { type HostHuddle, STUCK_ON_QUESTIONS, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
@@ -29,7 +30,7 @@ import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type R
 import { learnModel, useModelVersionsFile } from "./model-versions";
 import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
-import { chatNotes, chatPrompt, chromeChoiceNote, chromeTurnNote, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, toolsChangedNote, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
+import { chatNotes, chatPrompt, chromeChoiceNote, chromeTurnNote, withoutChromeRule, type BoardBrowserChoice, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, toolsChangedNote, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
 import {
   childrenOf, findCycle, isComplete, MAX_RUN_RETURNS, normalizeNeeds, RUN_CHAIN_KEEP, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
@@ -75,8 +76,17 @@ export interface TaskPlace {
 /** What made a task in a feature (Board.createFeatureTask): it names it in the comments. */
 export type TaskMaker = { kind: "schedule" | "automation"; name: string };
 
+/** A run's board browsers (Board.runBrowsers): tool servers for --mcp-config, the prompt note, and whether to leave out Claude in Chrome. */
+export interface RunBrowsers {
+  servers: Record<string, unknown>;
+  note: string | null;
+  noChrome: boolean;
+}
+
 export interface BoardOptions {
   claudeBin: string;
+  /** Board browsers' Chrome launcher and checks (tests pass fakes; see board-browsers.ts). */
+  browserDeps?: BrowserDeps;
   /** Whether Claude has a stored session with this id (used to pick --resume vs --session-id). */
   sessionExists?: (sessionId: string) => boolean;
   /** Whether an interactive claude process currently has this session open. */
@@ -419,6 +429,8 @@ export class Board {
   readonly devices: Devices;
   /** Named Chromes (More → Browsers), learned from runs' list_connected_browsers results (chromes.ts). */
   readonly chromes: Chromes;
+  /** The board's own browsers (More → Browsers, board-browsers.ts): Chromes it starts per set of logins, for runs. */
+  readonly boardBrowsers: BoardBrowsers;
   /** Setup commands running now (`ckanban ticket setup`; stopping the ticket's run aborts them), per ticket key. */
   private setups = new Map<string, { done: Promise<SetupOutcome>; abort: AbortController }>();
   private shuttingDown = false;
@@ -443,6 +455,48 @@ export class Board {
     useModelVersionsFile(join(store.root, "model-versions.json"));
     this.devices = new Devices(store.root, (owners) => this.devicesChanged(owners));
     this.chromes = new Chromes(store.root, () => this.bus.emit({ type: "browsers.updated" }));
+    this.boardBrowsers = new BoardBrowsers(store.root, () => this.bus.emit({ type: "browsers.updated" }), opts.browserDeps);
+  }
+
+  /** The browsers a ticket's runs may use (its own list, the ticket above it, the board's); null ticket: the board's. */
+  browserPicks(slug: string, t: Ticket | null): BrowserPick[] | null {
+    const profile = this.store.getProfile(slug);
+    return t ? resolveBrowserPicks(t, this.store.listTickets(slug), profile) : ownPicks(profile);
+  }
+
+  /** The tool servers for the board browsers in a list, without starting them (the Context panel's copy of a run's flags). */
+  browserServers(picks: BrowserPick[] | null, outDir: string | null): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const p of picks ?? []) {
+      const b = p.kind === "board" && p.id ? this.boardBrowsers.get(p.id) : undefined;
+      if (b) out[serverName(b.id)] = browserServer(b, this.boardBrowsers.folder(b.id), outDir ?? join(this.store.root, BROWSER_FILES_DIR, b.id));
+    }
+    return out;
+  }
+
+  /**
+   * What a run (lease: "slug/id", a quick chat, a huddle agent) gets for its browsers: each chosen board browser is
+   * started and kept open until boardBrowsers.release(lease), with a tool server named browser-<id>; one that can't
+   * start is left out and the run is told so in plain words. Only board browsers chosen: no Claude in Chrome.
+   * Nothing chosen: nothing changes (note null, Claude in Chrome as before).
+   */
+  async runBrowsers(slug: string, t: Ticket | null, lease: string, outDir: string | null): Promise<RunBrowsers> {
+    const picks = this.browserPicks(slug, t);
+    const chrome = this.chromes.choiceOf(picks);
+    const own = (picks ?? []).filter((p) => p.kind === "board" && p.id && this.boardBrowsers.get(p.id));
+    const board: BoardBrowserChoice[] = [];
+    let servers: Record<string, unknown> = {};
+    if (own.length) {
+      const got = await this.boardBrowsers.acquire(lease, own.map((p) => p.id!));
+      const up = own.filter((p) => got.get(p.id!)?.ok);
+      servers = this.browserServers(up, outDir);
+      for (const p of own) {
+        const b = this.boardBrowsers.get(p.id!)!;
+        const r = got.get(p.id!);
+        board.push({ id: b.id, name: b.name, ...(p.note ? { note: p.note } : {}), server: serverName(b.id), available: !!r?.ok, why: r && !r.ok ? r.why : null });
+      }
+    }
+    return { servers, note: chromeChoiceNote(chrome, board), noChrome: board.length > 0 && !chrome };
   }
 
   /** The Chrome a ticket's runs use: its own pick, else the nearest ticket above it with one, else the board's default. */
@@ -1051,6 +1105,7 @@ export class Board {
         this.runs.delete(this.key(slug, id));
         // Whatever devices the run still holds or waits for go to the next ticket in line.
         this.devices.releaseAll(slug, id);
+        this.boardBrowsers.release(this.key(slug, id));
         if (run.quietEnd && !this.shuttingDown && await this.endQuietly(slug, id, run.quietEnd)) {
           if (this.restartPending) this.emitRestart();
           this.dispatch(slug);
@@ -1085,6 +1140,7 @@ export class Board {
     const { slug, id } = run;
     if (this.runs.get(this.key(slug, id)) === run) this.runs.delete(this.key(slug, id));
     this.devices.releaseAll(slug, id);
+    this.boardBrowsers.release(this.key(slug, id));
     try {
       if (this.store.getTicket(slug, id)) this.patch(slug, id, patch);
     } catch (e) {
@@ -1277,12 +1333,26 @@ export class Board {
     // Runs that may act learn the shared device list here, so it is current on every turn (Planning chats don't use devices).
     const deviceNote = refine ? null : devicesNote(this.devices.devices(), t.needs);
     if (deviceNote) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${deviceNote}` : deviceNote;
-    // The Chrome this ticket uses (More → Browsers), on every turn; nothing when no Chrome is chosen.
+    // The browsers this ticket uses (More → Browsers), on every turn; nothing when none is chosen. Board browsers are
+    // started here (the run waits for them) and stay open until the run ends.
     let chromeNote: string | null = null;
+    let browsers: RunBrowsers | null = null;
     try {
-      chromeNote = chromeChoiceNote(this.chromeChoice(slug, t));
+      browsers = await this.runBrowsers(slug, t, this.key(slug, id), outputDir);
+      chromeNote = browsers.note;
     } catch (e) {
-      console.error(`chrome choice for ${slug}/${id}:`, e);
+      console.error(`browsers for ${slug}/${id}:`, e);
+    }
+    if (run.stopRequested || this.shuttingDown) {
+      if (!this.shuttingDown) {
+        this.store.addComment(slug, id, "ai", "Run stopped by user.");
+        this.patch(slug, id, { ...this.endStatus(run), outcome: "stopped", lastActivity: null });
+      }
+      return;
+    }
+    if (browsers?.noChrome) {
+      prompt = withoutChromeRule(prompt);
+      if (systemPrompt) systemPrompt = withoutChromeRule(systemPrompt);
     }
     if (chromeNote) systemPrompt = systemPrompt ? `${systemPrompt}\n\n${chromeNote}` : chromeNote;
     // A resumed session keeps the system prompt it started with (Claude Code ignores a new one), so the current
@@ -1351,7 +1421,7 @@ export class Board {
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: session.dir,
-      args: this.chatArgs(slug, t, profile, refine, session.sessionId, session.existed, systemPrompt, cap),
+      args: this.chatArgs(slug, t, profile, refine, session.sessionId, session.existed, systemPrompt, cap, browsers),
       input: prompt,
       inputLocal: run.chat?.slash === "local" && !resume,
       planning: refine,
@@ -2183,7 +2253,7 @@ export class Board {
   async updateTicket(
     slug: string,
     id: string,
-    patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "dependsOn" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome">> & {
+    patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "dependsOn" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome" | "browsers">> & {
       expectedBody?: string;
       /** null: take the ticket out of its plan (only clearing is allowed here; adoptTickets sets it). */
       parentId?: null;
@@ -2213,6 +2283,7 @@ export class Board {
     if (patch.effort !== undefined) clean.effort = patch.effort;
     if (patch.ultracode !== undefined) clean.ultracode = patch.ultracode;
     if (patch.chrome !== undefined) clean.chrome = patch.chrome;
+    if (patch.browsers !== undefined) clean.browsers = patch.browsers;
     if (patch.needs !== undefined) clean.needs = normalizeNeeds(patch.needs);
     if (patch.tags !== undefined) clean.tags = normalizeTags(patch.tags);
     if (patch.suggestedTags !== undefined || patch.tags !== undefined) {
@@ -3557,13 +3628,15 @@ export class Board {
   }
 
   /** The flags a run of the ticket's chat gets (see executeOnce); contextSpec copies them for the Context panel. */
-  private chatArgs(slug: string, t: Ticket, profile: Profile, refine: boolean, sessionId: string, resume: boolean, systemPrompt?: string, cap?: number | null): string[] {
+  private chatArgs(slug: string, t: Ticket, profile: Profile, refine: boolean, sessionId: string, resume: boolean, systemPrompt?: string, cap?: number | null, browsers?: RunBrowsers | null): string[] {
     const effortNow = runOptions(t, profile, !refine);
     // The board's claude.ai connector setting: hidden connectors join --disallowedTools, "none" turns them all off.
     const connectors = boardConnectorOptions(profile);
     return buildArgs(sessionId, resume, t.model ?? (t.main ? profile.mainModel : null) ?? profile.model,
       // A main ticket never edits: every change goes to a tool ticket.
-      [...(refine ? PLANNING_DISALLOWED_TOOLS : []), ...(t.main ? NO_EDIT_TOOLS.split(",") : []), ...connectors.disallowed], mcpConfig(undefined, this.store.boardTools(slug)), systemPrompt, cap ?? null, effortNow.effort, effortNow.ultracode);
+      [...(refine ? PLANNING_DISALLOWED_TOOLS : []), ...(t.main ? NO_EDIT_TOOLS.split(",") : []), ...connectors.disallowed],
+      mcpConfig(undefined, { ...this.store.boardTools(slug), ...(browsers ? browsers.servers : this.browserServers(this.browserPicks(slug, t), this.store.outputsDir(slug, t.id))) }),
+      systemPrompt, cap ?? null, effortNow.effort, effortNow.ultracode, browsers?.noChrome ? { noChrome: true } : null);
   }
 
   /** The environment a run of the ticket gets. */

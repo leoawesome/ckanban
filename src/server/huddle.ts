@@ -48,7 +48,7 @@ import { trackedInterval } from "./lag";
 import { basename, dirname, join } from "node:path";
 import { summarizeEvent } from "./activity";
 import { mcpConfig } from "./agents";
-import { claudeSessionExists, claudeSessionFile, type Board } from "./board";
+import { claudeSessionExists, claudeSessionFile, type Board, type RunBrowsers } from "./board";
 import { planProposal } from "./plan-proposal";
 import { parseSession, type SessionEntry } from "./session";
 import type { Bus } from "./events";
@@ -70,7 +70,7 @@ import type { HostHuddle } from "./attention";
 import { huddleUsage, type Usage } from "./huddle-usage";
 import { isLevel, type Level, lowerLevels } from "./layers";
 import { accept as acceptHandIn, handIn as saveHandIn, handInDir as handInSaved, keepUnhanded, keptDir, makeFolderCopy, makeGitCopy, readState, removeCopy, unhanded } from "./huddle-copies";
-import { autoHuddleSlotPrompt, autoHuddleStoppedPrompt, huddleAgentPrompt, huddleAgentSystemPrompt, huddleDigest, huddleMainPrompt } from "./prompts";
+import { autoHuddleSlotPrompt, autoHuddleStoppedPrompt, huddleAgentPrompt, huddleAgentSystemPrompt, huddleDigest, huddleMainPrompt, withoutChromeRule } from "./prompts";
 import { buildArgs, MONITOR_IDLE_MS, startRun, type RunHandle } from "./runner";
 import { addHuddleSpend } from "./spend";
 import type { Store } from "./store";
@@ -2113,6 +2113,7 @@ export class Huddles {
       })
       .finally(() => {
         this.runs.delete(key);
+        this.board.boardBrowsers.release(this.browserLease(slug, hid, handle));
         if (this.shuttingDown) return;
         this.board.restartWorkChanged();
         // Emit with running: false now that the run is gone.
@@ -2191,6 +2192,10 @@ export class Huddles {
     return dir;
   }
 
+  private browserLease(slug: string, hid: string, handle: string): string {
+    return `huddle:${slug}/${hid}/${handle}`;
+  }
+
   private async executeAgent(slug: string, hid: string, handle: string, run: AgentRun, input: string): Promise<void> {
     let h = this.get(slug, hid);
     let p = h.participants.find((x) => x.handle === handle)!;
@@ -2209,7 +2214,17 @@ export class Huddles {
     const plan = join(this.store.outputsDir(slug, h.hostTicket), proposalFile(hid));
     const system = huddleAgentSystemPrompt(h, p, host as Ticket, outputDir, dir, profile.baseBranch, this.lessonsFor(slug, p.preset), summary, existsSync(plan) ? plan : undefined);
     const connectors = boardConnectorOptions(profile);
-    const args = buildArgs(sessionId, resume, p.model ?? profile.model, [...(p.canEdit ? [] : NO_EDIT_TOOLS.split(",")), ...connectors.disallowed], mcpConfig(undefined, this.store.boardTools(slug)), system);
+    // The host ticket's browsers: board browsers start now and stay open until this agent's run ends (runAgent).
+    let browsers: RunBrowsers | null = null;
+    try {
+      browsers = await this.board.runBrowsers(slug, host as Ticket, this.browserLease(slug, hid, handle), outputDir);
+    } catch (e) {
+      console.error(`huddle ${slug}/${hid} @${handle}: browsers`, e);
+    }
+    if (run.stopRequested || this.shuttingDown) return;
+    const args = buildArgs(sessionId, resume, p.model ?? profile.model, [...(p.canEdit ? [] : NO_EDIT_TOOLS.split(",")), ...connectors.disallowed],
+      mcpConfig(undefined, { ...this.store.boardTools(slug), ...(browsers?.servers ?? {}) }), browsers?.note ? `${browsers.noChrome ? withoutChromeRule(system) : system}\n\n${browsers.note}` : system,
+      undefined, undefined, false, browsers?.noChrome ? { noChrome: true } : null);
     let lastWrite = 0;
     let started = resume;
     run.handle = startRun({

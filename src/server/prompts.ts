@@ -83,19 +83,74 @@ function context(note: string, body: string, attrs: Record<string, string> = {})
 const CHROME_RULE = `# Browser
 Claude in Chrome is available (mcp__claude-in-chrome__* tools, in the user's own Chrome). Open your own new tab and don't close or take over the user's tabs. If it isn't connected, say so and carry on without it.`;
 
+/** A board browser a run may use (board-browsers.ts): its tools are mcp__<server>__*. available false: it couldn't start (why). */
+export interface BoardBrowserChoice {
+  id: string;
+  name: string;
+  note?: string;
+  server: string;
+  available: boolean;
+  why?: string | null;
+}
+
+/** Where CHROME_RULE was, for runs that use only board browsers (no Claude in Chrome: --no-chrome). */
+const BOARD_ONLY_RULE = `# Browser
+This task uses only the board's own browsers listed under "Which browsers"; Claude in Chrome is not used.`;
+
+/** A run with only board browsers: the Claude in Chrome lines in its prompt give way to BOARD_ONLY_RULE. */
+export function withoutChromeRule(prompt: string): string {
+  return prompt.split(CHROME_RULE).join(BOARD_ONLY_RULE);
+}
+
+const noteOf = (note?: string) => (note ? ` (${note.replace(/[\r\n]+/g, " ")})` : "");
+
 /**
- * Which Chrome a run uses (More → Browsers, the board's default, the ticket's pick; see chromes.ts). It adds to
- * CHROME_RULE and goes in every run's system prompt; a resumed session also gets it in the message (chromeTurnNote). Null: CHROME_RULE alone.
+ * The board browsers a run may use: real Chromes the board keeps with their own saved logins (board-browsers.ts),
+ * each a tool server of its own. Rules: only these, own tab, wait for the page, never sign in; send the user to Browsers.
  */
-export function chromeChoiceNote(choice: ChromeChoice): string | null {
+function boardBrowsersNote(list: BoardBrowserChoice[], withChrome: boolean): string {
+  const lines = list.map((b) => b.available
+    ? `- "${b.name}"${noteOf(b.note)}: tools \`mcp__${b.server}__*\` (for example \`mcp__${b.server}__browser_navigate\`, \`mcp__${b.server}__browser_snapshot\`).`
+    : `- "${b.name}"${noteOf(b.note)}: not available for this run${b.why ? ` (${b.why.replace(/\.$/, "")})` : ""}. Don't try to use it or another browser in its place; say in your result, in plain words, that the browser "${b.name}" wasn't available.`);
+  return `# Which browsers
+This task may use these board browsers: Chromes the board keeps on this Mac, each with its own saved logins, separate from the user's own Chrome${withChrome ? " and from Claude in Chrome" : ""}.
+${lines.join("\n")}
+- Use only ${withChrome ? "these and the Chrome named above" : "these browsers"}, each for what its note says. Never use one browser's tools for another browser's sites${withChrome ? "" : ", and don't use Claude in Chrome"}.
+- Work in a new tab of your own (\`browser_tabs\` with action "new", or \`browser_navigate\` opens one) and never close a tab you didn't open. One exception: a site that allows only one open copy (like WhatsApp Web) that is already open in a tab: select that tab (\`browser_tabs\` list, then select) and work there, without closing it or opening a second copy.
+- Wait for a page to be ready with \`browser_wait_for\` (a text or element you expect), not a fixed delay. Right after a browser starts, sites like WhatsApp Web can take up to a minute.
+- If a site shows a sign-in page or a QR code instead of the account, stop: don't sign in yourself. Tell the user to open More, then Browsers, press Sign in on "${list.length === 1 ? list[0].name : "<the browser's name>"}", sign in in the window that opens and close it; then ask again.`;
+}
+
+/**
+ * Which browsers a run uses (More → Browsers, the board's list, the ticket's list; see chromes.ts and
+ * board-browsers.ts). The Claude in Chrome part adds to CHROME_RULE; board browsers get their own section. It goes in
+ * every run's system prompt; a resumed session also gets it in the message (chromeTurnNote). Null: CHROME_RULE alone.
+ */
+export function chromeChoiceNote(choice: ChromeChoice, board: BoardBrowserChoice[] = []): string | null {
+  const chrome = chromeOnlyNote(choice);
+  if (!board.length) return chrome;
+  const own = boardBrowsersNote(board, !!chrome);
+  return chrome ? `${chrome}\n\n${own}` : own;
+}
+
+function chromeOnlyNote(choice: ChromeChoice): string | null {
   if (!choice) return null;
   if (choice.kind === "device") {
     const { deviceId: id, name } = choice;
     return `# Which Chrome
-The user has more than one Chrome connected to Claude in Chrome. This run uses only the Chrome named "${name}" (deviceId \`${id}\`).
+The user has more than one Chrome connected to Claude in Chrome. This run uses only the Chrome named "${name}" (deviceId \`${id}\`)${noteOf(choice.note)}.
 - Before your first browser step, call \`list_connected_browsers\`, then \`select_browser\` with deviceId \`${id}\` (named "${name}"). Do it again if a browser tool reports another browser or the connection drops. Display names like "Browser 1" change when a browser reconnects: go by the deviceId only.
 - Never use another Chrome, even if a site you need is logged in there too. Don't use \`switch_browser\`.
 - If deviceId \`${id}\` isn't in the list, wait a few seconds and call \`list_connected_browsers\` once more. If it still isn't there, stop and ask the user (end with status "questions"): say the Chrome named "${name}" isn't connected and ask them to open it and connect Claude in Chrome there. Don't fall back to another Chrome.`;
+  }
+  if (choice.kind === "devices") {
+    const list = choice.list.map((b) => `- "${b.name}" (deviceId \`${b.deviceId}\`)${noteOf(b.note)}`).join("\n");
+    return `# Which Chrome
+The user has more than one Chrome connected to Claude in Chrome. This run may use only these, each for what its note says:
+${list}
+- Before each batch of browser steps, call \`list_connected_browsers\`, then \`select_browser\` with the deviceId of the Chrome that batch needs. Go by the deviceId only: display names like "Browser 1" change when a browser reconnects.
+- Never use a Chrome that isn't listed here. Don't use \`switch_browser\`.
+- If a Chrome you need isn't in the list, wait a few seconds and list again. If it still isn't there, stop and ask the user (end with status "questions"): say which Chrome isn't connected and ask them to open it and connect Claude in Chrome there.`;
   }
   const names = choice.named.map((b) => `"${b.name}" (deviceId \`${b.deviceId}\`)`).join(", ");
   return `# Which Chrome
@@ -110,7 +165,7 @@ The user has more than one Chrome connected to Claude in Chrome (named ones: ${n
  * changed board default) only reaches the run this way. The chat hides ckanban-context blocks.
  */
 export function chromeTurnNote(note: string): string {
-  return context("Which Chrome for this turn", `${note}\nThis replaces any earlier "Which Chrome" instructions in this session.`);
+  return context("Which Chrome for this turn", `${note}\nThis replaces any earlier "Which Chrome" or "Which browsers" instructions in this session.`);
 }
 
 /**
