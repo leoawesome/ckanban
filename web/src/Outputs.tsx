@@ -280,7 +280,7 @@ export function Outputs({ slug, ticket, onCount, focus }: {
   }
   if (!files.length) return withLinks(<div className="muted">No output files yet. Research and writing tasks save their report here.</div>);
 
-  const pad = (depth: number) => ({ paddingLeft: 8 + depth * 14 });
+  const pad = (depth: number) => ({ paddingLeft: `calc(var(--sp-3) + ${depth} * var(--sp-4))` });
   const renderFolder = (d: Folder, depth: number): React.ReactNode => (
     <>
       {d.folders.map((s) => (

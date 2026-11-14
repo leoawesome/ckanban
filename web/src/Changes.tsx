@@ -107,7 +107,7 @@ export function Changes({ slug, ticket, state, onSent, onError, compact = false 
   const fileRow = (f: DiffFile, label: string, depth: number) => {
     const n = countFor(f.path);
     return (
-      <button key={f.path} className={`changes-file ${file?.path === f.path ? "on" : ""}`} style={{ paddingLeft: 12 + depth * 14 }}
+      <button key={f.path} className={`changes-file ${file?.path === f.path ? "on" : ""}`} style={{ paddingLeft: `calc(var(--sp-4) + ${depth} * var(--sp-4))` }}
         onClick={() => { setPicked(f.path); setReading(true); }} title={f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}>
         <span className={`diff-st st-${f.status}`}>{f.status}</span>
         <FileLabel label={label} />
@@ -131,7 +131,7 @@ export function Changes({ slug, ticket, state, onSent, onError, compact = false 
         return next;
       });
       return [
-        <button key={`d:${sub.path}`} className="changes-dir" style={{ paddingLeft: 12 + depth * 14 }} onClick={toggle} aria-expanded={!shut}>
+        <button key={`d:${sub.path}`} className="changes-dir" style={{ paddingLeft: `calc(var(--sp-4) + ${depth} * var(--sp-4))` }} onClick={toggle} aria-expanded={!shut}>
           <span className="changes-caret">{shut ? "▸" : "▾"}</span><span className="changes-file-name">{sub.name}</span>
         </button>,
         ...(shut ? [] : dirRows(sub, depth + 1)),

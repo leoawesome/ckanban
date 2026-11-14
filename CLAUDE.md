@@ -17,6 +17,12 @@ The board is used on phones as much as on a Mac.
 - Before it lands, check it at both: take screenshots at about 390x844 and at a desktop size (e.g. 1280x800) of every screen you changed, and look at them.
 - Phone basics: tap targets at least 40-44px, 16px text in fields (no iPhone zoom), no sideways scroll, nothing hidden behind the keyboard. Dialogs use `Modal.tsx`, which already gives the phone sheet, keyboard fit and swipe to close; long settings windows follow the Automations window (list then detail on phone).
 
+## Every UI change follows the design system
+
+- Use the UI UX Pro Max skill (`ui-ux-pro-max:ui-ux-pro-max`) and follow `design-system/kanban/MASTER.md`.
+- Build from existing components (`Modal.tsx`, `Select.tsx`, `MenuSheet.tsx`, `.btn`, `.chip`…) and the tokens at the top of `web/src/styles.css`. A new colour, size, spacing, duration or layer needs a token in the system first (styles.css and MASTER.md); `bun run test` rejects raw colours and off-token spacing in `styles.css` and inline styles.
+- Before landing, run the skill's pre-delivery checklist (`references/pro-rules.md`) and take phone and desktop screenshots in light and dark.
+
 ## The daemon stays responsive on big boards
 
 The daemon is one event loop: while one job runs, pages, sends and run starts all wait. Real boards have thousands of tickets (most of them Done) and long chat logs, and the Mac is often busy (test suites, security software checking every file), where each file read is slow.

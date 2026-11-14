@@ -174,7 +174,7 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
     return (
       <div key={t.id} role="treeitem" aria-current={t.id === ticket.id ? "true" : undefined}
         className={`ft-row${group ? " group" : ""}${t.id === ticket.id ? " me" : ""}${peek === t.id ? " peeked" : ""}`}
-        style={{ paddingLeft: 8 + r.depth * 16 }} onClick={() => setPeek(peek === t.id ? null : t.id)} title={t.title}>
+        style={{ paddingLeft: `calc(var(--sp-3) + ${r.depth} * var(--sp-5))` }} onClick={() => setPeek(peek === t.id ? null : t.id)} title={t.title}>
         <button className={`ft-chev${holds(r, kids) && r.depth > 0 ? "" : " none"}`} aria-label={isOpen(r) ? "Fold" : "Unfold"} tabIndex={holds(r, kids) && r.depth > 0 ? 0 : -1}
           onClick={(e) => {
             e.stopPropagation();

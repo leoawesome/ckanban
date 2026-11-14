@@ -152,7 +152,7 @@ export function FilesView({ slug, ticket = null, refreshSignal, narrow = false }
     <button
       key={flat ? `m:${e.path}` : undefined}
       className={`tree-row${selected === e.path ? " selected" : ""}`}
-      style={{ paddingLeft: 8 + depth * 14 }}
+      style={{ paddingLeft: `calc(var(--sp-3) + ${depth} * var(--sp-4))` }}
       title={e.path}
       role="treeitem"
       aria-expanded={e.type === "dir" && !flat ? expanded.has(e.path) : undefined}
@@ -181,7 +181,7 @@ export function FilesView({ slug, ticket = null, refreshSignal, narrow = false }
 
   const renderDir = (path: string, depth: number): React.ReactNode => {
     const d = dirs.get(path);
-    const pad = { paddingLeft: 8 + depth * 14 };
+    const pad = { paddingLeft: `calc(var(--sp-3) + ${depth} * var(--sp-4))` };
     if (!d || d === "loading") return <div className="tree-note muted small" style={pad}>Loading…</div>;
     if ("error" in d) return <div className="tree-note small err-text" style={pad}>{d.error}</div>;
     if (!d.length && depth > 0) return <div className="tree-note muted small" style={pad}>Empty</div>;
