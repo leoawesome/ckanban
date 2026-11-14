@@ -237,3 +237,36 @@ test("names and argv helpers", () => {
   expect(nameFromId("fatt-interior-whatsapp")).toBe("Fatt Interior WhatsApp");
   expect(chromeArgs("/c", "/d", "visible", "157", null)).toEqual(["/c", "--user-data-dir=/d", "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check", "about:blank"]);
 });
+
+test("one slow answer doesn't make the board forget a running Chrome; only a dead one, or 3 misses, does", async () => {
+  const root = tempDir("ck-bb-");
+  const h = harness(root);
+  let slow = false;
+  h.deps.matches = async (pf) => (slow ? false : portMatches(pf));
+  const bb = new BoardBrowsers(root, () => {}, { ...h.deps, idleMs: 60_000 });
+  const b = await bb.add("Shop");
+  await bb.ensure(b.id);
+  slow = true;
+  await bb.tick();
+  slow = false;
+  expect(bb.view().browsers[0].state).toBe("hidden");
+  h.advance(120_000);
+  await bb.tick();
+  await bb.close(b.id);
+  expect(h.byPid.get(1001)!.closeCalls).toBe(1);
+});
+
+test("Open window clicked while Remove closes the browser never starts Chrome on the removed folder", async () => {
+  const root = tempDir("ck-bb-");
+  const h = harness(root);
+  const bb = new BoardBrowsers(root, () => {}, h.deps);
+  const b = await bb.add("Shop");
+  await bb.ensure(b.id);
+  const rm = bb.remove(b.id);
+  const ow = bb.openWindow(b.id).catch((e) => e);
+  await rm;
+  const r = await ow;
+  expect(r).toBeInstanceOf(Error);
+  expect(h.spawned.length).toBe(1);
+  expect(existsSync(join(root, "browsers", b.id))).toBe(false);
+});

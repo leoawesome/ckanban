@@ -298,6 +298,7 @@ return { x, y, covered: !!top && top !== el && !el.contains(top) && !top.contain
         };
         if (action === "select") {
           const t = pick();
+          if (!/^(https?:|about:blank)/.test(t.url)) throw new ToolError("Only web page tabs can be used.");
           const s = await this.attach(t.targetId);
           return `Working in tab ${list.indexOf(t)} now.\n${await this.where(s.sessionId)}`;
         }

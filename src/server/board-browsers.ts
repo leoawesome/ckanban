@@ -264,6 +264,8 @@ export class BoardBrowsers {
   private leases = new Map<string, Set<string>>();
   private idleSince = new Map<string, number>();
   private emptyTicks = new Map<string, number>();
+  /** Checks in a row a running browser's port didn't answer (see tick). */
+  private misses = new Map<string, number>();
   private pending = new Set<string>();
   private errors = new Map<string, string>();
   private busy = new Map<string, BrowserState>();
@@ -469,6 +471,8 @@ export class BoardBrowsers {
   }
 
   private async launch(id: string, mode: BrowserMode, url: string | null): Promise<Runtime> {
+    // Removed while this waited its turn (behind remove()'s close): never start Chrome on a folder being deleted.
+    if (!this.get(id)) throw new BrowserError(404, "This browser was removed in More, Browsers.");
     const bin = this.d.chromeBin();
     if (!bin) throw new BrowserError(409, "Google Chrome isn't installed on this Mac. Board browsers need it: install it from google.com/chrome.");
     const dir = this.folder(id);
@@ -780,6 +784,13 @@ export class BoardBrowsers {
         continue;
       }
       if (!(await this.d.matches({ port: rt.port, path: rt.path }))) {
+        // A busy Mac can be slow to answer: only a dead process, or 3 checks in a row without an answer, counts as gone.
+        const misses = (this.misses.get(id) ?? 0) + 1;
+        if (rt.pid !== null && this.d.alive(rt.pid) && misses < 3) {
+          this.misses.set(id, misses);
+          continue;
+        }
+        this.misses.delete(id);
         // Quit by the user or crashed; a quit is a clean close too.
         delete this.running[id];
         if (b.lastSite && rt.pid !== null && !this.d.alive(rt.pid)) b.signedIn = true;
@@ -787,6 +798,7 @@ export class BoardBrowsers {
         if (b.keepRunning) await this.keepAlive(id);
         continue;
       }
+      this.misses.delete(id);
       const pages = await this.d.pages(rt.port);
       const site = pages?.map((p) => siteOf(p.url)).find((s) => !!s) ?? null;
       if (site && (b.lastSite?.site !== site || this.d.now() - Date.parse(b.lastSite.at) > 10 * 60_000)) {
@@ -798,7 +810,10 @@ export class BoardBrowsers {
         continue;
       }
       if (rt.mode === "hidden") {
-        if (!b.keepRunning && this.d.now() - (this.idleSince.get(id) ?? 0) >= this.d.idleMs) void this.close(id).catch(() => {});
+        if (!b.keepRunning && this.d.now() - (this.idleSince.get(id) ?? 0) >= this.d.idleMs) void this.serial(id, async () => {
+          // A run may have started using it while this waited.
+          if (!this.inUse(id) && this.running[id]?.mode === "hidden") await this.closeNow(id);
+        }).catch(() => {});
         continue;
       }
       // Visible with no window left (on a Mac, Chrome keeps running after its last window closes): put it away.

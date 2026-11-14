@@ -924,11 +924,17 @@ export function createServer(deps: ServerDeps) {
         const view = () => browsersView();
         if (parts.length === 1 && m === "GET") return json(view());
         const id = decodeURIComponent(parts[1] ?? "");
+        // A run's browser tools ask for this after its Chrome stopped mid-run: only a browser some run is using now
+        // (one the board gave a run) is started again, never any other.
         if (parts.length === 3 && parts[2] === "ensure" && m === "POST") {
+          if (!bb.get(id)) throw new HttpError(404, "There is no board browser with that name.");
+          if (!bb.inUse(id)) throw new HttpError(409, "Only a task using this browser can start it again.");
           const port = await bb.ensure(id);
           return json({ ok: true, port });
         }
-        if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user changes board browsers (More, Browsers)");
+        // Everything else (add, rename, keep running, remove with its logins, open, close) is the user's, from the
+        // board in a browser: never a run, its shell or another program.
+        await userOnly(req, "Changing board browsers");
         if (parts.length === 1 && m === "POST") {
           const b = (await body(req)) ?? {};
           const added = await bb.add(b.name);
@@ -1549,6 +1555,7 @@ export function createServer(deps: ServerDeps) {
         // The board's browsers: the old single Chrome (chrome) or a list with notes (browsers); each keeps the other in step.
         if (b.chrome !== undefined || b.browsers !== undefined) {
           if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user picks the board's browsers");
+          if (b.browsers !== undefined) await userOnly(req, "Choosing the board's browsers");
           try {
             if (b.browsers !== undefined) {
               next.browsers = browserPicks(b.browsers, knownBrowsers);
@@ -2341,6 +2348,7 @@ export function createServer(deps: ServerDeps) {
         // Or a list with notes (browsers, see chromes.ts BrowserPick); null: the ticket above it, else the board's.
         if (b.chrome !== undefined || b.browsers !== undefined) {
           if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user picks a ticket's browsers");
+          if (b.browsers !== undefined) await userOnly(req, "Choosing a ticket's browsers");
           try {
             if (b.browsers !== undefined) {
               patch.browsers = browserPicks(b.browsers, knownBrowsers);

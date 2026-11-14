@@ -342,6 +342,11 @@ test("a run gets the board browsers chosen for it as tool servers, and no Claude
     // The runs are over: nothing holds the browsers open.
     expect(board.boardBrowsers.view().browsers.map((x) => x.inUse)).toEqual([0, 0, 0]);
     expect(store.getTicket("p", plain.id)!.outcome).toBe("done");
+    // A chosen browser removed since: the run is told, and doesn't fall back to Claude in Chrome.
+    const gone = await board.runBrowsers("p", { ...store.getTicket("p", plain.id)!, browsers: [{ kind: "board", id: "gone" }] }, "x", null);
+    expect(gone.noChrome).toBe(true);
+    expect(gone.servers).toEqual({});
+    expect(gone.note).toContain("it was removed from More, Browsers");
   } finally {
     for (const f of fakes.splice(0)) if (!f.closed) f.quit();
   }

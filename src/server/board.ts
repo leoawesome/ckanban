@@ -485,6 +485,12 @@ export class Board {
     const chrome = this.chromes.choiceOf(picks);
     const own = (picks ?? []).filter((p) => p.kind === "board" && p.id && this.boardBrowsers.get(p.id));
     const board: BoardBrowserChoice[] = [];
+    // A chosen board browser that was removed since: the run hears it isn't there (and doesn't fall back to Claude in Chrome).
+    for (const p of picks ?? []) {
+      if (p.kind === "board" && p.id && !this.boardBrowsers.get(p.id)) {
+        board.push({ id: p.id, name: p.id, ...(p.note ? { note: p.note } : {}), server: serverName(p.id), available: false, why: "it was removed from More, Browsers" });
+      }
+    }
     let servers: Record<string, unknown> = {};
     if (own.length) {
       const got = await this.boardBrowsers.acquire(lease, own.map((p) => p.id!));
