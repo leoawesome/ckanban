@@ -194,7 +194,7 @@ Small numbers (0 to 7) only order parts inside one component (a resize handle ov
 
 ## 10. Phone rules (≤720px, `PHONE_QUERY`)
 
-- Touch targets at least **44x44px** (today the floor is 40px in 111 places; raise them). Links inside prose get vertical padding so the hit area is 44px tall; small icons get an invisible hit area.
+- Touch targets at least **44x44px**: phone and touch rules use `var(--tap)`, never a typed 40px. Links inside prose get vertical padding so the hit area is 44px tall; small text links and icons (`.link-btn`, `.mini-link`, `.ws-act`, `.info-tip`, chat notes) get an invisible `::after` hit area, 24px on desktop and `--tap` on phone.
 - At least 8px between neighbouring targets.
 - Every field 16px text (iPhone zooms in below that).
 - No sideways scroll at 375-390px; columns show one at a time.
