@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ChevronRightIcon, RefreshIcon } from "./icons";
 import { useLayer } from "./layers";
 import { fullTime, timeAgo } from "./time";
 import { useNow } from "./useNow";
@@ -112,7 +113,7 @@ export function StatusPill({ state, board, openRequest }: { state: UsageState; b
             <span title={usage ? fullTime(usage.fetchedAt) : undefined}>
               {usage && !error ? `Updated ${timeAgo(usage.fetchedAt)}` : ""}
             </span>
-            <button className="btn small" onClick={load} disabled={loading}>{loading ? "Refreshing…" : "↻ Refresh"}</button>
+            <button className="btn small" onClick={load} disabled={loading}>{loading ? "Refreshing…" : <><RefreshIcon size={14} aria-hidden /> Refresh</>}</button>
           </div>
         </div>
       )}
@@ -124,6 +125,7 @@ export function StatusPill({ state, board, openRequest }: { state: UsageState; b
 export function UsageBox({ state }: { state: UsageState }) {
   const { usage, loading, load, spend } = state;
   const [open, setOpen] = useState(false);
+  const spendId = useId();
   const now = useNow();
   const error = usageError(usage);
   const stale = staleNote(usage);
@@ -136,7 +138,7 @@ export function UsageBox({ state }: { state: UsageState }) {
         <span className="usage-box-updated" title={usage ? fullTime(usage.fetchedAt) : undefined}>
           {usage && !error ? `Updated ${timeAgo(usage.fetchedAt)}` : ""}
         </span>
-        <button className="btn small" onClick={load} disabled={loading}>{loading ? "Refreshing…" : "↻ Refresh"}</button>
+        <button className="btn small" onClick={load} disabled={loading}>{loading ? "Refreshing…" : <><RefreshIcon size={14} aria-hidden /> Refresh</>}</button>
       </div>
       {error && <p className="usage-error">{error}</p>}
       {!usage && <p className="muted small">Loading…</p>}
@@ -154,18 +156,20 @@ export function UsageBox({ state }: { state: UsageState }) {
       })}
       {stale && <p className="usage-stale">{stale}</p>}
       {spend && (
-        <button className="usage-box-body" aria-expanded={open} onClick={() => setOpen((v) => !v)}
-          aria-label={open ? "Hide today's spend" : "Show today's spend"}>
+        <>
+          {/* The amounts sit outside the button, so screen readers read them (a button's name would hide them). */}
           {open && (
-            <span className="usage-box-more">
+            <div id={spendId} className="usage-box-more" role="region" aria-label="Today's spend">
               <span className="usage-top usage-box-spend"><span>Spent today</span><b>{costText(spend.costUsd)}</b></span>
               {spend.boards.filter((b) => b.costUsd > 0).map((b) => (
                 <span key={b.slug} className="usage-sub spend-row"><span>{b.name}</span><span>{costText(b.costUsd)}</span></span>
               ))}
-            </span>
+            </div>
           )}
-          <span className="usage-box-hint">{open ? "Less" : "Today's spend ›"}</span>
-        </button>
+          <button className="usage-box-body" aria-expanded={open} aria-controls={open ? spendId : undefined} onClick={() => setOpen((v) => !v)}>
+            <span className="usage-box-hint">{open ? "Less" : <>Today's spend <ChevronRightIcon size={14} aria-hidden /></>}</span>
+          </button>
+        </>
       )}
     </div>
   );

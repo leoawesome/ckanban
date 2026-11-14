@@ -71,7 +71,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
         <div className="now-card-in">
           <button className="now-open" onClick={() => open(i)}>
             <span className="now-title">{i.title}</span>
-            <span className="now-act">{i.attention.label} · {waitedFor(i.attention.since, now)}{done && <span className="now-go" aria-hidden>›</span>}</span>
+            <span className="now-act">{i.attention.label} · {waitedFor(i.attention.since, now)}{done && <ChevronRightIcon size={12} className="now-go" aria-hidden />}</span>
             {line && <span className={`helper-line${line.startsWith("Urgent") ? " urgent" : ""}`}>{line}</span>}
           </button>
           <div className="now-actions">
@@ -100,17 +100,17 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
         </div>
       )}
       {!inboxLoaded && <>
-        <h3 className="now-head">Needs you</h3>
+        <h2 className="now-head">Needs you</h2>
         <NowPlaceholders n={2} />
       </>}
       {inboxLoaded && needs.length === 0 && <>
-        <h3 className="now-head">Needs you · 0</h3>
+        <h2 className="now-head">Needs you · 0</h2>
         <p className="now-empty muted small">Nothing waits on you right now.</p>
       </>}
-      {groups.waiting.length > 0 && <h3 className="now-head">{claude} is waiting on you · {groups.waiting.length}</h3>}
+      {groups.waiting.length > 0 && <h2 className="now-head">{claude} is waiting on you · {groups.waiting.length}</h2>}
       {page("waiting", groups.waiting).map(card)}
       {moreRow("waiting", groups.waiting)}
-      {groups.check.length > 0 && <h3 className="now-head">Ready to check · {groups.check.length}</h3>}
+      {groups.check.length > 0 && <h2 className="now-head">Ready to check · {groups.check.length}</h2>}
       {page("check", groups.check).map(card)}
       {moreRow("check", groups.check)}
       {groups.older.length > 0 && (
@@ -125,7 +125,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
         </>
       )}
 
-      <h3 className="now-head">Running{ticketsLoaded && <> · {running.length}</>}</h3>
+      <h2 className="now-head">Running{ticketsLoaded && <> · {running.length}</>}</h2>
       {!ticketsLoaded && <NowPlaceholders n={1} />}
       {ticketsLoaded && running.length === 0 && <p className="now-empty muted small">No run active on this board.</p>}
       {running.map((t) => (
@@ -140,7 +140,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
 
       {planning.length > 0 && (
         <>
-          <h3 className="now-head">Planning · {planning.length}</h3>
+          <h2 className="now-head">Planning · {planning.length}</h2>
           {page("planning", planning).map((t) => (
             <button key={t.id} className="now-card now-open" onClick={() => onOpen(slug, t.id)}>
               <span className="now-title">{t.title}</span>

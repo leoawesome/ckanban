@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import type { MenuItem } from "./HeaderMenu";
 import { BoardIcon, ChatIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, MoreIcon, NowIcon, TeamIcon } from "./icons";
-import { useLayer } from "./layers";
+import { useFocusTrap, useLayer } from "./layers";
+import { useBackdropClose, useSwipeClose } from "./sheet";
 
 export type PhoneTab = "now" | "board" | "ask" | "team";
 
@@ -17,22 +18,26 @@ export function PhoneNav({ tab, onTab, needYou, liveHuddles, teamAlert, onMore, 
   onMore: () => void;
   moreAlert: boolean;
 }) {
-  const item = (label: string, icon: ReactNode, on: boolean, onClick: () => void, badge?: ReactNode) => (
-    <button className={`pn-item${on ? " on" : ""}`} aria-current={on ? "page" : undefined} onClick={onClick}>
-      <span className="pn-icon">{icon}{badge}</span>
+  // The badge and dot are decoration: each button's name says what they mean ("Now, 3 need you").
+  const item = (label: string, icon: ReactNode, on: boolean, onClick: () => void, badge?: ReactNode, says?: string) => (
+    <button className={`pn-item${on ? " on" : ""}`} aria-current={on ? "page" : undefined} onClick={onClick}
+      aria-label={says ? `${label}, ${says}` : undefined}>
+      <span className="pn-icon" aria-hidden>{icon}{badge}</span>
       <span className="pn-label">{label}</span>
     </button>
   );
+  const huddles = `${liveHuddles} live ${liveHuddles === 1 ? "huddle" : "huddles"}`;
   return (
     <nav className="phone-nav" aria-label="Sections">
-      {item("Now", <NowIcon size={20} />, tab === "now", () => onTab("now"), needYou > 0 && (
-        <span className="pn-badge" title={`${needYou} on this board need you`} aria-label={`${needYou} on this board need you`}>{needYou}</span>
-      ))}
+      {item("Now", <NowIcon size={20} />, tab === "now", () => onTab("now"),
+        needYou > 0 && <span className="pn-badge">{needYou}</span>, needYou > 0 ? `${needYou} need you` : undefined)}
       {item("Board", <BoardIcon size={20} />, tab === "board", () => onTab("board"))}
       {item("Ask", <ChatIcon size={20} />, tab === "ask", () => onTab("ask"))}
       {item("Team", <TeamIcon size={20} />, tab === "team", () => onTab("team"),
-        liveHuddles > 0 ? <span className="pn-badge" title={`${liveHuddles} live ${liveHuddles === 1 ? "huddle" : "huddles"}`}>{liveHuddles}</span> : teamAlert && <span className="pn-dot" />)}
-      {item("More", <MoreIcon size={20} />, false, onMore, moreAlert && <span className="pn-dot" />)}
+        liveHuddles > 0 ? <span className="pn-badge">{liveHuddles}</span> : teamAlert && <span className="pn-dot" />,
+        liveHuddles > 0 ? huddles : teamAlert ? "new lessons" : undefined)}
+      {item("More", <MoreIcon size={20} />, false, onMore, moreAlert && <span className="pn-dot" />,
+        moreAlert ? "something needs attention" : undefined)}
     </nav>
   );
 }
@@ -53,17 +58,23 @@ export function MoreSheet({ items, rare = [], footer, onClose, label = "More", t
   /** Shown below the items, above the footer (the theme choice). */
   bottom?: ReactNode;
 }) {
+  // A dialog like Modal.tsx: focus moves in and returns, Tab stays inside, Esc and a swipe down close it.
+  // (No phone Back entry: an item closes the sheet and opens a dialog in the same moment, which would strand the entry.)
+  const box = useRef<HTMLDivElement>(null);
   useLayer(onClose);
+  useFocusTrap(box, true);
+  const swipe = useSwipeClose(box, onClose);
+  const backdrop = useBackdropClose(onClose);
   const [tools, setTools] = useState(false);
   const row = (it: MenuItem) => (
-    <button key={it.label} role="menuitem" className={`sheet-item${it.separator ? " sep" : ""}${it.danger ? " danger" : ""}`} title={it.title}
+    <button key={it.label} className={`sheet-item${it.separator ? " sep" : ""}${it.danger ? " danger" : ""}`} title={it.title}
       onClick={() => { onClose(); it.onSelect(); }}>
       <span className="sheet-icon" aria-hidden>{it.icon}</span><span className="sheet-label">{it.label}</span>{it.badge}
     </button>
   );
   return (
-    <div className="sheet-wrap" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sheet" role="menu" aria-label={label}>
+    <div className="sheet-wrap" {...backdrop}>
+      <div ref={box} className="sheet" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1} {...swipe}>
         <span className="sheet-grip" aria-hidden />
         <div className="sheet-head">
           <span className="sheet-title">{label}</span>

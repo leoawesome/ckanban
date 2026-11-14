@@ -187,7 +187,7 @@ export function TicketMenu({ runSettings, ticket, working, live, linkedLabel, bo
                 title={ticket.pinnedAt ? "Let the card go back to its usual place in the column" : "Keep the card at the top of its column, wherever it moves, until Done"}>
                 <span className="menu-icon" aria-hidden><PinIcon size={14} /></span>
                 <span className="menu-label">{ticket.pinnedAt ? "Unpin" : "Pin to top"}</span>
-                <span className="menu-hint">P</span>
+                <span className="menu-hint menu-key">P</span>
               </button>
             )}
             {ticket.status === "backlog" && onMoveToBoard && (
@@ -203,6 +203,7 @@ export function TicketMenu({ runSettings, ticket, working, live, linkedLabel, bo
               <span className="menu-icon" aria-hidden><BugIcon size={14} /></span>
               <span className="menu-label">Report a bug in ckanban</span>
             </button>
+            <div className="menu-sep" role="separator" />
             <button role="menuitem" className="menu-item danger" onClick={pick(onDelete)}>
               <span className="menu-icon" aria-hidden><TrashIcon size={14} /></span>
               <span className="menu-label">Delete ticket…</span>

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { LoopIcon } from "./icons";
 import { createPortal } from "react-dom";
 import { api, type Ticket } from "./api";
 import { followUpCount, followUpDate, followUpHistory, followUpLabel, followUpWhen } from "./followUpText";
@@ -82,7 +83,7 @@ export function FollowUpChip({ slug, ticket, onError, disabled }: {
       <button ref={button} type="button" className={`badge follow-up${f.missedAt ? " missed" : ""}`} aria-haspopup="dialog" aria-expanded={open}
         title={f.note} disabled={disabled}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }} onKeyDown={(e) => e.stopPropagation()}>
-        <span aria-hidden>↻</span> {followUpLabel(f, now)}
+        <LoopIcon size={12} aria-hidden /> {followUpLabel(f, now)}
       </button>
       {open && createPortal(
         <MenuSheet onClose={close}>

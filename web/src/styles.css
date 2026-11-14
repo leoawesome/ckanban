@@ -29,6 +29,11 @@
   --err-soft: #fbe2df;
   --info: #2b5fb8;
   --info-soft: #e1eafb;
+  /* One colour per ticket state, the same on board cards, column dots, Now and search (A13). */
+  --st-running: var(--info);
+  --st-review: var(--warn);
+  --st-planning: var(--accent-text);
+  --st-done: var(--ok);
   --star: #a67800;
   /* Behind dialogs, sheets and confirms; the soft one behind the desktop ticket panel and task sheet. */
   --scrim: rgba(20, 18, 15, 0.42);
@@ -68,6 +73,11 @@
   --err-soft: #3d2320;
   --info: #86aef0;
   --info-soft: #222d40;
+  /* One colour per ticket state, the same on board cards, column dots, Now and search (A13). */
+  --st-running: var(--info);
+  --st-review: var(--warn);
+  --st-planning: var(--accent-text);
+  --st-done: var(--ok);
   --star: #e8b23a;
   --scrim: rgba(0, 0, 0, 0.55);
   --scrim-soft: rgba(0, 0, 0, 0.35);
@@ -371,9 +381,9 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .col-ready .column-title::before, .col-in_progress .column-title::before, .col-review .column-title::before {
   content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: var(--sp-2h); vertical-align: 1px;
 }
-.col-ready .column-title::before { background: var(--info); }
-.col-in_progress .column-title::before { background: var(--info); }
-.col-review .column-title::before { background: var(--warn); }
+.col-ready .column-title::before { background: var(--st-running); }
+.col-in_progress .column-title::before { background: var(--st-running); }
+.col-review .column-title::before { background: var(--st-review); }
 /* A column's hint is its title's tooltip; a phone shows it under the column chips when the shown chip is tapped. */
 .col-jump-hint { margin: var(--sp-2h) var(--sp-4) 0; font-size: var(--fs-xs); color: var(--muted); }
 @media (max-width: 720px) {
@@ -395,7 +405,7 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 .card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .card.dragging { transform: rotate(1.5deg); box-shadow: var(--shadow-pop); cursor: grabbing; }
 /* Running: calm blue, with a slow light band moving down the left border (red stays for blocked and failed). */
-.card.is-running { position: relative; border-left: 3px solid var(--info); }
+.card.is-running { position: relative; border-left: 3px solid var(--st-running); }
 /* The band (Card.tsx .run-edge, left out when the card needs the user or is pinned) moves by transform only, so it
    costs no repaint; its strip clips it to the left border. */
 .run-edge {
@@ -404,7 +414,7 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 }
 .run-edge::before {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 50%;
-  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--info) 35%, var(--paper)), transparent);
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--st-running) 35%, var(--paper)), transparent);
   transform: translateY(-100%); animation: run-sweep 2.4s linear infinite;
 }
 @keyframes run-sweep { from { transform: translateY(-100%); } to { transform: translateY(300%); } }
@@ -476,7 +486,7 @@ body.show-hints .sortable-card:not(:focus) .key-hint.card-keys { display: none; 
 }
 .card-facts-sep { white-space: pre; }
 .card-cost.over { color: var(--err); font-weight: 600; }
-.card-run-time { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--info); }
+.card-run-time { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--st-running); }
 .card-run-time .av { flex: none; }
 .card-run-word { white-space: nowrap; }
 
@@ -772,7 +782,7 @@ textarea { resize: vertical; font-size: var(--fs-md); }
   display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-2h) var(--sp-3h) var(--sp-2h) var(--sp-2h); border-radius: var(--r-sm); cursor: pointer;
   font-weight: 500; white-space: nowrap;
 }
-.select-item.active { background: var(--surface-2); }
+.select-item.active { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
 .select-item.selected { font-weight: 600; }
 .select-item.disabled { opacity: 0.4; cursor: not-allowed; }
 .select-item.first-footer { margin-top: var(--sp-2); position: relative; }
@@ -2363,7 +2373,8 @@ button.badge.job-chip:hover { filter: brightness(0.96); text-decoration: underli
   display: flex; align-items: center; gap: var(--sp-3h); width: 100%; text-align: left; border: 0; background: none;
   padding: var(--sp-3) var(--sp-3); border-radius: var(--r-sm); cursor: pointer; font-size: var(--fs-sm);
 }
-.menu-item:hover, .menu-item:focus-visible { background: var(--surface-2); outline: none; }
+.menu-item:hover { background: var(--surface-2); }
+.menu-item:focus-visible { background: var(--surface-2); outline: none; box-shadow: inset 3px 0 0 var(--accent); }
 .menu-icon { display: inline-flex; width: 16px; color: var(--muted); }
 .menu-label { flex: 1; }
 .menu-footer { border-top: 1px solid var(--border); margin-top: var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-2); }
@@ -2465,7 +2476,7 @@ button.badge.job-chip:hover { filter: brightness(0.96); text-decoration: underli
 .cmdbar-group-note { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .cmdbar-group .spinner { width: 10px; height: 10px; border-width: 1.5px; }
 .cmdbar-item { display: flex; align-items: center; gap: var(--sp-3h); padding: var(--sp-3) var(--sp-5); cursor: pointer; font-size: var(--fs-md); }
-.cmdbar-item.active { background: var(--accent-soft); }
+.cmdbar-item.active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .cmdbar-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdbar-title mark { background: none; color: var(--accent-text); font-weight: 700; }
 .cmdbar-snippet { display: block; margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2474,10 +2485,10 @@ button.badge.job-chip:hover { filter: brightness(0.96); text-decoration: underli
 .cmdbar-board { flex: none; font-size: var(--fs-xs); color: var(--muted); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdbar-board.here { font-weight: 600; }
 .cmdbar-status { flex: none; font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-3); border-radius: var(--r-pill); background: var(--surface-2); color: var(--muted); white-space: nowrap; }
-.cmdbar-status.st-running, .cmdbar-status.st-in_progress { color: var(--accent-text); }
-.cmdbar-status.st-review { color: var(--info); }
-.cmdbar-status.st-planning { color: var(--warn); }
-.cmdbar-status.st-done { color: var(--ok); }
+.cmdbar-status.st-running, .cmdbar-status.st-in_progress, .cmdbar-status.st-ready { color: var(--st-running); }
+.cmdbar-status.st-review { color: var(--st-review); }
+.cmdbar-status.st-planning { color: var(--st-planning); }
+.cmdbar-status.st-done { color: var(--st-done); }
 .cmdbar-keys { flex: none; display: flex; gap: var(--sp-1); }
 .cmdbar-item .profile-avatar { width: 20px; height: 20px; border-radius: var(--r-sm); font-size: var(--fs-2xs); }
 .cmdbar-item .need-chip { flex: none; white-space: nowrap; }
@@ -2500,7 +2511,7 @@ input[aria-invalid="true"] { border-color: var(--err); }
   /* A still, full bar: Undo is there, with no countdown motion. */
   .toast-life { animation: none; }
 }
-.panel:focus, .modal:focus, .qc-dock:focus { outline: none; }
+.panel:focus, .modal:focus, .qc-dock:focus, .sheet:focus { outline: none; }
 
 /* Report bug dialog */
 .bug-form textarea { font-family: var(--mono); font-size: var(--fs-sm); }
@@ -3461,10 +3472,10 @@ button.hd-mode:disabled { cursor: default; }
   }
   /* Waiting cards: the border only, no coloured bar; the grey line turns red only when failed or blocked. */
   .now-card.need:is(.att-failed, .att-blocked) .now-act { color: var(--err); }
-  .now-card.run { border-left: 3px solid var(--accent); }
+  .now-card.run { border-left: 3px solid var(--st-running); }
   .now-open { background: none; border: 0; padding: 0; margin: 0; text-align: left; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: var(--sp-1); min-height: 40px; }
   .now-card.now-open { padding: var(--sp-4) var(--sp-4); background: var(--surface); border: 1px solid var(--border); margin-bottom: var(--sp-3); }
-  .now-card.run.now-open { border-left: 3px solid var(--accent); }
+  .now-card.run.now-open { border-left: 3px solid var(--st-running); }
   .now-title { font-weight: 600; overflow-wrap: anywhere; }
   .now-go { color: var(--muted); margin-left: var(--sp-2); }
   .now-act { font-size: var(--fs-sm); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3996,7 +4007,8 @@ button.tag-chip:hover { border-color: currentColor; }
 .help-btn.on { background: var(--surface-2); }
 .help-menu { width: 330px; }
 .help-item { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; text-align: left; border: 0; background: none; padding: var(--sp-3) var(--sp-3h); border-radius: var(--r-sm); cursor: pointer; color: inherit; font: inherit; }
-.help-item:hover:not(:disabled), .help-item:focus-visible { background: var(--surface-2); outline: none; }
+.help-item:hover:not(:disabled) { background: var(--surface-2); }
+.help-item:focus-visible { background: var(--surface-2); outline: none; box-shadow: inset 3px 0 0 var(--accent); }
 .help-item:disabled { cursor: default; opacity: 0.6; }
 .help-item b { font-weight: 600; font-size: var(--fs-md); }
 .help-item span { font-size: var(--fs-xs); color: var(--muted); }
@@ -5420,4 +5432,45 @@ button.composer-old:hover { color: var(--text); }
   .turn-body { gap: var(--sp-2); }
   .reply-actions { margin-top: calc(-1 * var(--sp-2h)); }
   .md .draft-copy { min-height: 40px; padding: 0 var(--sp-5); font-size: var(--fs-md); }
+}
+
+/* ============ Batch A audit fixes (design-system/kanban/audit.md): board, columns, cards, top bar, menus ============
+   Last in the file so these win over the older 40px rules at the same specificity. */
+/* A19: desktop pointer targets at least 24px, board search text the field size. */
+.search input { font-size: var(--fs-md); padding-right: var(--sp-7); }
+.search-clear { width: 24px; height: 24px; right: var(--sp-2); }
+.column-head .icon-btn.tiny { width: 24px; height: 24px; }
+.topbar > .pill { min-height: 24px; }
+/* A20: a pressed state on everything you tap, and no double-tap zoom wait. */
+:is(.btn, .chip, .col-tab, .pn-item, .now-open, .icon-btn, .link-btn, .menu-item, .cmdbar-item, .card) { touch-action: manipulation; }
+:is(.btn, .chip, .icon-btn, .menu-item, .cmdbar-item):active:not(:disabled) { background: var(--border); }
+.btn.primary:active:not(:disabled) { background: var(--accent-strong); filter: brightness(0.94); }
+:is(.col-tab, .pn-item, .now-open):active { background: var(--surface-2); }
+@media (pointer: coarse) { .card:active { background: var(--surface-2); } }
+/* A11: touch tablets (no hover, wider than a phone): the collapse button always shows, and the hover-only pin can't be
+   hit by accident (pinned cards keep theirs). */
+@media (hover: none) and (min-width: 721px) {
+  .column:not(:hover):not(:focus-within) .column-collapse,
+  .column-head .column-collapse { width: var(--tap); height: var(--tap); padding: 0; margin-left: 0; opacity: 1; overflow: visible; }
+  .card:not(.is-pinned):not(.pin-phone) > .card-pin { visibility: hidden; }
+}
+/* A05, A09, A10: phone controls at 44px (MASTER §10). */
+@media (pointer: coarse) {
+  .cmdbar-item { min-height: var(--tap); font-size: var(--fs-lg); }
+  button.badge { position: relative; }
+  button.badge::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: var(--tap); transform: translateY(-50%); }
+}
+@media (max-width: 720px) {
+  .cmdbar-cancel { flex: none; min-height: var(--tap); padding: 0 var(--sp-2); font-size: var(--fs-lg); }
+  .topbar-icon { width: var(--tap); height: var(--tap); }
+  .now-actions .btn { min-height: var(--tap); }
+  .now-actions .row-more-btn, .row-more-btn { width: var(--tap); min-height: var(--tap); }
+  .board-bar .chip, .now-elsewhere .chip, .chip { min-height: var(--tap); }
+  .col-filter-bar .link-btn { min-height: var(--tap); }
+  .theme-opt, .sheet .theme-opt { min-height: var(--tap); }
+  .usage-box-body { min-height: var(--tap); }
+  .usage-box-hint { min-height: var(--tap); }
+  .card.pin-phone > .card-pin { width: var(--tap); height: var(--tap); }
+  /* A27: no key letters in menus on a phone (no keyboard). */
+  .menu-key { display: none; }
 }

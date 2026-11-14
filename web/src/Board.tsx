@@ -102,6 +102,9 @@ const SortableCard = memo(function SortableCard({ ticket, onOpen, queued, held, 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: ticket.id,
     data: { status: ticket.status },
+    // A list item, not a button: the card holds its own buttons and links (pin, follow-up, job chip), which a button
+    // would flatten for screen readers. Space picks it up and Enter opens it as before (aria-roledescription "card").
+    attributes: { role: "listitem" },
   });
   // Claude moved it here: the card travels from where it was (arrivals.ts).
   const node = useRef<HTMLDivElement | null>(null);
@@ -248,7 +251,9 @@ function Column({ id, label, hint, claude, tickets, queue = NO_QUEUE, held = fal
     lastCount.current = count;
     if (grew && !reducedMotion()) countRef.current?.animate?.([{ transform: "scale(1)" }, { transform: "scale(1.15)" }, { transform: "scale(1)" }], { duration: 200, easing: "ease-out" });
   }, [count]);
-  const countBadge = loading ? null : <span ref={countRef} className={`count ${needYou > 0 ? "needs-you" : ""}`} title={countLabel} aria-label={countLabel}>{count}</span>;
+  const countBadge = loading ? null : <span ref={countRef} className={`count${collapsed && needYou > 0 ? " needs-you" : ""}`} role="img" title={collapsed ? countLabel : total} aria-label={collapsed ? countLabel : total}>{count}</span>;
+  // Waiting on you gets its own chip in words, not only an amber count (colour alone).
+  const needChip = loading || needYou === 0 ? null : <span className="count needs-you">{needYou} need{needYou === 1 ? "s" : ""} you</span>;
   if (collapsed) {
     // Narrow strip: still a drop target; click to expand.
     return (
@@ -269,7 +274,8 @@ function Column({ id, label, hint, claude, tickets, queue = NO_QUEUE, held = fal
         <h2 className="column-title" title={hint}>{label}</h2>
         {/* One badge: total count, turning amber with a dot while tickets wait on you. */}
         {countBadge}
-        {claude && <span className="claude-tag" title={CLAUDE_TAG} aria-label={CLAUDE_TAG}><SparkIcon /></span>}
+        {needChip}
+        {claude && <span className="claude-tag" role="img" title={CLAUDE_TAG} aria-label={CLAUDE_TAG}><SparkIcon /></span>}
         <span className="spacer" />
         <button className="icon-btn tiny column-collapse" title={`Collapse ${label}`} aria-label={`Collapse ${label}`} onClick={() => onCollapse(true)}>
           <CollapseIcon />
@@ -280,9 +286,9 @@ function Column({ id, label, hint, claude, tickets, queue = NO_QUEUE, held = fal
       </header>
       )}
       <SortableContext items={sortIds} strategy={verticalListSortingStrategy}>
-        <div ref={bodyNode} className={windowed ? "column-body windowed" : "column-body"}>
+        <div ref={bodyNode} className={windowed ? "column-body windowed" : "column-body"} role="list" aria-label={`${label} tickets`}>
           {match && !loading && (
-            <div className="col-filter-bar" aria-live="polite">
+            <div className="col-filter-bar">
               <span>{count} of {match.total} match</span>
               <button className="link-btn" onClick={match.clear}>Clear filters</button>
             </div>
@@ -346,6 +352,12 @@ const collision: CollisionDetection = (args) => {
   }
   return closestCenter(args);
 };
+
+/**
+ * Phones: the shown column and each column's scroll, kept while the Board tab is closed (Now, Ask or Team unmount it),
+ * so coming back lands where the user left. Per board; only this tab's memory, nothing is saved.
+ */
+const phoneSpot: { slug?: string; col: number; scroll: number[] } = { col: 0, scroll: [] };
 
 const POINTER_PHONE = { activationConstraint: { delay: 300, tolerance: 8 } };
 const POINTER_DESKTOP = { activationConstraint: { distance: 5 } };
@@ -431,7 +443,22 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
 
   // Phones show one column at a time (scroll snap): the chips jump to a column and follow the swipe.
   const boardRef = useRef<HTMLElement>(null);
-  const [shownCol, setShownCol] = useState(0);
+  const remembered = phone && phoneSpot.slug === slug;
+  const [shownCol, setShownCol] = useState(remembered ? phoneSpot.col : 0);
+  useEffect(() => { if (phone) Object.assign(phoneSpot, { slug, col: shownCol }); }, [phone, slug, shownCol]);
+  useLayoutEffect(() => {
+    const el = boardRef.current;
+    if (!phone || !el) return;
+    const bodies = () => [...el.querySelectorAll<HTMLElement>(":scope > .column .column-body")];
+    if (remembered) {
+      const col = el.querySelectorAll<HTMLElement>(":scope > .column")[phoneSpot.col];
+      if (col) el.scrollLeft += col.getBoundingClientRect().left - el.getBoundingClientRect().left - (parseFloat(getComputedStyle(el).paddingLeft) || 0);
+      bodies().forEach((b, i) => { b.scrollTop = phoneSpot.scroll[i] ?? 0; });
+    }
+    // Runs before the tab's DOM goes away, so the scroll positions are still readable.
+    return () => { phoneSpot.scroll = bodies().map((b) => b.scrollTop); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone, slug]);
   // A phone has no column title: a tap on the shown column's chip says what the column is for, another tap hides it.
   const [hintOpen, setHintOpen] = useState(false);
   useEffect(() => setHintOpen(false), [shownCol]);
@@ -447,7 +474,7 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
     const col = el?.querySelectorAll<HTMLElement>(":scope > .column")[i];
     if (!el || !col) return;
     const pad = parseFloat(getComputedStyle(el).paddingLeft) || 0;
-    el.scrollTo({ left: el.scrollLeft + col.getBoundingClientRect().left - el.getBoundingClientRect().left - pad, behavior: "smooth" });
+    el.scrollTo({ left: el.scrollLeft + col.getBoundingClientRect().left - el.getBoundingClientRect().left - pad, behavior: reducedMotion() ? "auto" : "smooth" });
     setShownCol(i);
   };
 
@@ -462,7 +489,7 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
             const needYou = list.some((t) => t.attention);
             return (
               <button key={c.id} className={`col-tab${i === shownCol ? " on" : ""}`} aria-current={i === shownCol || undefined} title={c.hint}
-                aria-label={`${c.label}${loading ? "" : `, ${n}`}${needYou ? ", needs you" : ""}`}
+                aria-label={`${c.label}${loading ? "" : `, ${n}`}${needYou ? ", needs you" : ""}${c.claude ? ", Claude starts work here" : ""}`}
                 aria-expanded={i === shownCol ? hintOpen : undefined} onClick={() => (i === shownCol ? setHintOpen((v) => !v) : jumpTo(i))}>
                 <span className="col-tab-count" aria-hidden>
                   {loading ? "·" : n}

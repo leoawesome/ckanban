@@ -4,7 +4,7 @@ import {
   MESSAGE_TABS, messageHash, nightQuestion, prependRows, rowIcon, rowsByBoard, itemStateKey, itemStateLabel, setHelperStatus, setUnread, stillWaitingLine, tapWord, useHelper,
   userTrail, withoutLinks, type HelperStatus, type ItemState, type ListEntry, type Message, type MessageRow, type MessageTab, type SummaryRow, type SummaryView,
 } from "./helper";
-import { ChevronDownIcon, ChevronUpIcon } from "./icons";
+import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, InboxIcon } from "./icons";
 import { KeyHint } from "./KeyHint";
 import { isTyping, panelStep } from "./keynav";
 import { openFromList, stepTo } from "./msgNav";
@@ -670,13 +670,13 @@ function channelLine(s: Message["sends"][number]): string {
 export function MessagesEntry({ unread, latest, onOpen, menuItem }: { unread: number; latest?: string | null; onOpen: () => void; menuItem?: boolean }) {
   return (
     <a href="#/~messages" role={menuItem ? "menuitem" : undefined} className={`messages-entry${unread ? " has-new" : ""}`} onClick={(e) => { e.preventDefault(); onOpen(); }}>
-      <span aria-hidden>✉</span>
+      <InboxIcon size={16} aria-hidden />
       <span className="grow">
         <span className="msg-ttl">Messages</span>
         {latest && <span className="muted small"> {latest}</span>}
       </span>
       {unread > 0 && <span className="msg-badge b-new" aria-label={`${unread} unread`}>{unread} unread</span>}
-      <span className="muted" aria-hidden>›</span>
+      <ChevronRightIcon size={14} className="muted" aria-hidden />
     </a>
   );
 }

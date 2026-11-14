@@ -160,7 +160,8 @@ const sameMap = (a: Map<string, string>, b: Map<string, string>) => a.size === b
 const FILTERS = [
   { id: "you", label: "Needs you", test: (t: Ticket) => !!t.attention },
   { id: "running", label: "Running", test: (t: Ticket) => t.status === "in_progress" || !!t.running },
-  { id: "pr", label: "Has PR", test: hasOpenPr },
+  // Only shown while a ticket on the board has one (a plain folder never does).
+  { id: "pr", label: "Review link", test: hasOpenPr },
 ] as const;
 type FilterId = (typeof FILTERS)[number]["id"];
 
@@ -1136,7 +1137,7 @@ export function App() {
             label: "Schedules", icon: <ClockIcon />, onSelect: () => openSchedules(),
             title: scheduleFails ? `${scheduleFails} schedule${scheduleFails === 1 ? "" : "s"} could not start their last run`
               : "Upcoming one-time jobs and recurring tickets",
-            badge: scheduleFails > 0 ? <span className="need-chip">{scheduleFails}</span>
+            badge: scheduleFails > 0 ? <span className="need-chip">{scheduleFails} failed</span>
               : schedules && schedules.length > 0 ? <span className="muted small">{schedules.filter((s) => s.enabled).length} active</span> : null,
           }, {
             label: "Automations", icon: <LoopIcon />, onSelect: () => setAutomationsOpen(true),
@@ -1153,7 +1154,7 @@ export function App() {
           {
             label: "Connections", icon: <PlugIcon />, onSelect: () => setConnections(true), separator: true,
             title: mcpAttention ? `${mcpAttention} MCP server${mcpAttention === 1 ? "" : "s"} failed or need you to log in again` : "Claude Code MCP servers",
-            badge: mcpAttention > 0 ? <span className="need-chip">{mcpAttention}</span> : null,
+            badge: mcpAttention > 0 ? <span className="need-chip">{mcpAttention} to fix</span> : null,
           },
           ...(profile ? [{ label: "Board settings", icon: <SlidersIcon />, onSelect: () => setProfileDialog("edit") }] : []),
           { label: "Phone access", icon: <DeviceIcon />, onSelect: () => setPhoneAccess(true), title: "Open this board from your phone over Tailscale" },
@@ -1488,6 +1489,8 @@ export function App() {
           onSeen={() => void helperApi.noticeSeen().then(setHelperStatus, () => {})} />
       )}
 
+      {/* The page's one h1 (screen readers jump by headings); columns and Now's sections are h2 under it. */}
+      {!msgRoute && profile && <h1 className="sr-only">{profile.name}</h1>}
       {msgRoute ? (
         msgRoute.id
           ? <MessagePage key={msgRoute.id} id={msgRoute.id} onBack={() => { if (backToList(history) === "replace") hashMoved(); }} onOpenTicket={openFrom} />
@@ -1546,6 +1549,7 @@ export function App() {
             <div className="filter-chips" role="group" aria-label="Filter tickets">
               {FILTERS.map((f) => {
                 const n = filterCounts.get(f.id) ?? 0;
+                if (f.id === "pr" && n === 0 && !filters.has(f.id)) return null;
                 return (
                   <button key={f.id} className={`chip${filters.has(f.id) ? " on" : ""}`} aria-pressed={filters.has(f.id)} onClick={() => toggleFilter(f.id)}>
                     {f.label}{n > 0 && <span className="chip-count">{n}</span>}
@@ -1557,10 +1561,13 @@ export function App() {
             <button className="link-btn phone-only board-search-all" onClick={() => setCommandBar(true)}>
               <SearchIcon size={16} />Search every board and action ›
             </button>
+            {/* One live region for the whole board, always mounted so the first count is read too. */}
+            <span className="sr-only" role="status">
+              {filtering ? `${shownTickets.length} of ${visibleTickets.length} ticket${visibleTickets.length === 1 ? "" : "s"} match` : ""}
+            </span>
             {filtering && (
-              <span className="muted small desktop-only" aria-live="polite">
-                {shownTickets.length} of {visibleTickets.length} ticket{visibleTickets.length === 1 ? "" : "s"}
-                {" · "}<button className="link-btn small" onClick={() => { clearSearch(); setFilters(new Set()); }}>Clear all</button>
+              <span className="muted small desktop-only">
+                <span aria-hidden>{shownTickets.length} of {visibleTickets.length} ticket{visibleTickets.length === 1 ? "" : "s"}{" · "}</span><button className="link-btn small" onClick={() => { clearSearch(); setFilters(new Set()); }}>Clear all</button>
               </span>
             )}
           </div>

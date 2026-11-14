@@ -184,7 +184,7 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
             role="combobox" aria-expanded aria-controls="cmdbar-list" aria-autocomplete="list"
             aria-activedescendant={items[at] ? optionId(items[at]) : undefined}
             onChange={(e) => { setQ(e.target.value); setActive(0); }} onKeyDown={onKey} />
-          <kbd aria-hidden>esc</kbd>
+          {phone ? <button type="button" className="link-btn cmdbar-cancel" onClick={onClose}>Cancel</button> : <kbd aria-hidden>esc</kbd>}
         </div>
         <div className="cmdbar-list" id="cmdbar-list" role="listbox" aria-label="Results">
           {items.length === 0 && <div className="picker-empty">Nothing matches “{q.trim()}”.</div>}
@@ -243,7 +243,7 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
           <span><kbd>↑</kbd> <kbd>↓</kbd> move</span>
           <span><kbd>↵</kbd> open</span>
           <span><kbd>esc</kbd> close</span>
-          <span className="cmdbar-foot-note">Searches tickets (title, description, last result, PR) on every board, actions and boards</span>
+          <span className="cmdbar-foot-note">Searches tickets (title, description, last result, review link) on every board, actions and boards</span>
         </div>
       </div>
     </div>
