@@ -144,11 +144,12 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
   const link = (id: string, title: string) => <button key={id} className="link-btn ws-link" onClick={() => onOpenTicket(id)}>{title}</button>;
   const after = () => onChanged();
   // Shown: what moves the work on, one line each. The rest sits behind "More".
-  const rows: { label: string; tone?: "you" | "bad"; body: React.ReactNode }[] = [];
+  // attn: a data-attn mark "See what Claude needs" finds and flashes (TicketDrawer's goTo).
+  const rows: { label: string; tone?: "you" | "bad"; attn?: string; body: React.ReactNode }[] = [];
   const extra: { label: string; body: React.ReactNode }[] = [];
   if (f.needsYou.length || saved?.waiting) {
     rows.push({
-      label: "Waiting on you", tone: "you", body: <>
+      label: "Waiting on you", tone: "you", attn: "waiting", body: <>
         {saved?.waiting ?? <span className="ws-titles">{f.needsYou.map((b, i) => <span key={b.id}>{i > 0 && ", "}{link(b.id, b.title)}</span>)}</span>}
       </>,
     });
@@ -248,7 +249,7 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
       </div>
       <div className="ts-bar" role="progressbar" aria-label="Tasks done" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done}><i style={{ width: `${pct}%` }} /></div>
       {rows.map((r) => (
-        <div key={r.label} className={`ts-row${r.tone ? ` ${r.tone}` : ""}`}><span className="ts-k">{r.label}</span> <span className="ts-v">{r.body}</span></div>
+        <div key={r.label} className={`ts-row${r.tone ? ` ${r.tone}` : ""}`} data-attn={r.attn}><span className="ts-k">{r.label}</span> <span className="ts-v">{r.body}</span></div>
       ))}
       {more && extra.map((r) => (
         <div key={r.label} className="ts-row"><span className="ts-k">{r.label}</span> <span className="ts-v">{r.body}</span></div>

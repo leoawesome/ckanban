@@ -1810,12 +1810,14 @@ button.your-turn.go:hover { text-decoration: underline; text-underline-offset: 2
 button.your-turn.go:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .your-turn .yt-go { flex: none; margin-left: -2px; }
 /* "Your turn" landed here: a ring that fades, so the eye finds the form, card or message. */
-.attn-flash { animation: attn-flash 2s ease-out; border-radius: var(--r-md); }
+/* The ring sits a little outside the box (outline-offset: no layout shift) so it never touches the text; the scroll
+   margin keeps it in view when the box is scrolled to the top. */
+.attn-flash { animation: attn-flash 2s ease-out; border-radius: var(--r-md); outline: 3px solid transparent; outline-offset: 6px; scroll-margin: 14px; }
 @keyframes attn-flash {
-  0%, 35% { box-shadow: 0 0 0 3px var(--accent); }
-  100% { box-shadow: 0 0 0 3px transparent; }
+  0%, 35% { outline-color: var(--accent); }
+  100% { outline-color: transparent; }
 }
-@media (prefers-reduced-motion: reduce) { .attn-flash { animation: none; box-shadow: 0 0 0 2px var(--accent); } }
+@media (prefers-reduced-motion: reduce) { .attn-flash { animation: none; outline: 2px solid var(--accent); } }
 .plan-waiting { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: var(--r-md); background: var(--surface-2); }
 .plan-waiting-row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
 .plan-waiting-row > span { min-width: 0; }
