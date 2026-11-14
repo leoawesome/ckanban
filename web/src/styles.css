@@ -4957,25 +4957,66 @@ button.composer-old:hover { color: var(--text); }
   .ctx-list summary { padding: 10px 0; border-bottom: 1px solid var(--surface-2); }
   .ctx-chip { min-height: 28px; padding: 2px 10px; }
 }
-/* More, Browsers: named Chromes and each board's default (BrowsersDialog.tsx). */
+/* More, Browsers: board browsers, your own Chromes and each board's pick (BrowsersDialog.tsx). */
 .browsers { display: flex; flex-direction: column; gap: 10px; padding: 4px 18px 18px; }
 .browsers-intro { margin: 0 0 2px; }
 .browser { border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 12px; display: flex; align-items: flex-start; gap: 12px; }
 .browser > .browser-dot { margin-top: 13px; }
+.board-browser > .browser-dot { margin-top: 6px; }
 .browser-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); flex: none; }
 .browser-dot.off { background: var(--muted); opacity: .45; }
+.browser-dot.warn { background: var(--warn); }
 .browser-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.browser-meta input { width: 180px; max-width: 100%; }
+.browser-meta > input { width: 180px; max-width: 100%; }
+.browser-name { font-weight: 600; overflow-wrap: anywhere; }
+.browser-tag { display: inline-block; background: var(--ok-soft); color: var(--ok); border-radius: var(--r-pill); padding: 1px 8px; font-size: var(--fs-2xs); font-weight: 600; margin-right: 6px; }
+.browser-tag.warn { background: var(--warn-soft); color: var(--warn); }
+.browser-tag.busy { background: var(--accent-soft); color: var(--accent-text); }
+.browser-acts { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 2px; }
+.browser-keep { display: flex; align-items: flex-start; gap: 10px; margin-top: 6px; cursor: pointer; }
+.browser-keep > span { display: flex; flex-direction: column; font-size: var(--fs-sm); }
+.browser-start { display: flex; align-items: center; gap: 8px; }
+.browser-start input { width: 220px; }
+.browser-msg { background: var(--ok-soft); color: var(--ok); border-radius: var(--r-sm); padding: 4px 8px; align-self: flex-start; }
 /* The whole id, wrapped (never cut mid-way): it is how the board tells two Chromes apart. */
 .browser-id { font-family: var(--mono); font-size: var(--fs-2xs); overflow-wrap: anywhere; }
 .browser-remove { align-self: flex-start; margin: 2px 0 0 -10px; }
-@media (max-width: 720px) {
-  .browser-meta input { width: 100%; }
-  .browser-remove { min-height: 40px; }
-}
+.browsers-add { align-self: flex-start; }
+.browsers-add-form { display: flex; flex-direction: column; gap: 6px; border: 1px dashed var(--border); border-radius: var(--r-md); padding: 10px 12px; }
+.browsers-add-form input { width: 260px; max-width: 100%; }
+.browsers-own { border: 1px solid var(--border); border-radius: var(--r-md); padding: 0 12px; }
+.browsers-own > summary { cursor: pointer; padding: 10px 0; font-weight: 600; font-size: var(--fs-sm); min-height: 40px; display: flex; align-items: center; }
+.browsers-own .own-browser { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 10px 0; }
+.browsers-own > p { margin: 0 0 10px; }
 .browsers-h { font-size: var(--fs-sm); margin: 8px 0 0; }
-.browsers-board { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.browsers-board { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.browsers-board-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.browsers-board-name { min-width: 0; overflow-wrap: anywhere; }
+.browsers-chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.browsers-chips .pill { color: var(--text); }
+.browser-pick { margin-top: 8px; background: var(--bg); border-radius: var(--r-md); padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.browser-opt { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.browser-opt > input { width: 18px; height: 18px; margin: 3px 0 0; flex: none; accent-color: var(--accent-strong); }
+.browser-opt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.browser-opt-main > label { cursor: pointer; }
+.browser-opt-main > input { width: 100%; }
 .browsers-note { background: var(--warn-soft); color: var(--warn); border-radius: var(--r-md); padding: 8px 10px; font-size: var(--fs-xs); margin-top: 4px; }
+.task-browsers .modal-head .run-sheet-done { flex: none; min-height: 34px; padding: 0 14px; }
+@media (max-width: 720px) {
+  .browser-meta > input, .browsers-add-form input, .browser-start input { width: 100%; font-size: var(--fs-lg); }
+  .browser-opt-main > input { font-size: var(--fs-lg); }
+  .browser-remove { min-height: 40px; }
+  .browser-acts .btn, .browsers-add, .browsers-board-top .btn { min-height: 42px; padding: 8px 14px; }
+  .browser-acts .btn.ghost, .browsers-board-top .btn.ghost { padding: 8px 10px; }
+  .board-browser { gap: 10px; padding: 10px; }
+  .browsers-own > summary { min-height: 44px; }
+  .browser-opt { min-height: 40px; }
+  .browser-opt > input { width: 22px; height: 22px; }
+  .browsers-board-top { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .browsers-chips { justify-content: flex-start; }
+  .browser-start { flex-direction: column; align-items: stretch; gap: 2px; }
+  .task-browsers .modal-head .run-sheet-done { min-height: 40px; padding: 0 16px; margin-right: 12px; }
+}
 
 /* Board settings: Task models (model and effort per kind of task) */
 .task-models-table { width: 100%; border-collapse: collapse; }
