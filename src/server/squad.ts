@@ -174,7 +174,7 @@ export function squadSetup(h: Huddle, presets: Map<string, HuddlePreset>, templa
 }
 
 /** The end of the chat for the call: the newest messages that fit, oldest first. */
-export function chatTail(msgs: HuddleMessage[], max = GENERIC_SQUAD_SOURCE_MAX): string {
+export function chatTail(msgs: readonly HuddleMessage[], max = GENERIC_SQUAD_SOURCE_MAX): string {
   const out: string[] = [];
   let len = 0;
   for (let i = msgs.length - 1; i >= 0; i--) {

@@ -39,6 +39,23 @@ export function groupByColumn<T extends Placed>(tickets: T[]): Map<Status, T[]> 
   return m;
 }
 
+const sameItems = <T>(a: T[], b: T[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * groupByColumn, keeping the previous array of every column whose cards didn't change (same ticket objects in the same
+ * order), so a live update to one card leaves the other columns' lists, and their drag and drop lists, as they were.
+ */
+export function regroupByColumn<T extends Placed>(tickets: T[], prev: Map<Status, T[]> | null): Map<Status, T[]> {
+  const next = groupByColumn(tickets);
+  if (prev) {
+    for (const [id, list] of next) {
+      const old = prev.get(id);
+      if (old && sameItems(old, list)) next.set(id, old);
+    }
+  }
+  return next;
+}
+
 /** 📌 Pinned cards first in every column (newest pin first), then replies waiting for a slot (oldest first), then `order`. */
 function byPlace(a: Placed, b: Placed): number {
   if (a.pinnedAt || b.pinnedAt) {

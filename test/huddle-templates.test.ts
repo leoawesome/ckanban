@@ -185,9 +185,12 @@ test("the message log is cached and read on from where it was; lastActivity send
   huddles.post("p", h.id, you(h), "two");
   expect(messages(h).slice(-2).map((m) => m.text)).toEqual(["one", "two"]);
   expect(messages(h)).toHaveLength(before + 2);
-  // A caller changing what it got doesn't change the cache.
-  messages(h).at(-1)!.text = "changed";
+  // What a caller gets is shared and frozen: changing it throws, and the cache stays as it was.
+  expect(() => ((messages(h).at(-1) as { text: string }).text = "changed")).toThrow();
+  expect(() => (messages(h) as unknown[]).push({})).toThrow();
   expect(messages(h).at(-1)!.text).toBe("two");
+  // Nothing appended: the same array again, no copy.
+  expect(messages(h)).toBe(messages(h));
   // A replaced (shorter) log is read again.
   const file = join(store.root, "profiles", "p", "huddles", `${h.id}.messages.jsonl`);
   writeFileSync(file, readFileSync(file, "utf8").split("\n")[0] + "\n");

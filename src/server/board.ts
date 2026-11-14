@@ -16,7 +16,8 @@ import { BoardBrowsers, BROWSER_FILES_DIR, browserServer, serverName, type Brows
 import { macBanner } from "./notify";
 import { type HostHuddle, STUCK_ON_QUESTIONS, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
-import { recallBlock } from "./recall";
+import { RecallIndex, recallText } from "./recall";
+import { pauser } from "./lag";
 import { askClosed, familyBelow, familyOf, featureRoot, featureRows, groupsOf, hideableCard, isFeature, levelOf, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
@@ -51,7 +52,7 @@ import { BOARD_COMMANDS, commandText, EFFORT_HELP, runOptions, ultracodeOn, vali
 import { mcpConfig } from "./agents";
 import { toolsVersion } from "../mcp-server";
 import type { OwnedSession } from "./shell";
-import type { Store } from "./store";
+import { BOARD_NOTE_RE, type Store } from "./store";
 import { boardKeyEnv, maskSaved } from "./board-keys";
 import { normalizeTags } from "./tags";
 import { autoHuddlesOn, runCapFor, workspaceOf, BOARD_NOTES_KEEP, type BoardNote, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "./types";
@@ -386,10 +387,8 @@ export function recoveryFor(error: string | null | undefined): Recovery | null {
   return null;
 }
 
-/** Board comments that aren't Claude's result (a fresh session's prompt skips them for "Last result"). */
 /** The chat note when a cold, large main or feature chat starts its next turn fresh (Board.autoFresh). */
 export const AUTO_FRESH_NOTE = "Started a fresh chat to keep this cheap: Claude starts from the status and can look up earlier messages.";
-const BOARD_NOTE_RE = /^(Run failed|Could not start|Run stopped|Planner stopped|Started a fresh session|Started a fresh chat|Took over the session|This ticket's Claude session is still open)/;
 
 export class ConflictError extends Error {}
 
@@ -421,6 +420,8 @@ export function sigChanges(before: string, after: string, rows: Ticket[]): strin
 
 export class Board {
   private runs = new Map<string, ActiveRun>();
+  /** "What we did before" word index per board (recall.ts), kept up to date as tickets change. */
+  private recallIndexes = new Map<string, RecallIndex>();
   /** Per ticket: the last form answer taken and when (repeatedAnswer). */
   private recentAnswers = new Map<string, { text: string; at: number }>();
   /** Latest live progress of each workflow (stream task_progress: every agent, waiting ones too), by ticket and Workflow call. */
@@ -606,6 +607,13 @@ export class Board {
 
   isRunning(slug: string, id: string): boolean {
     return this.runs.has(this.key(slug, id));
+  }
+
+  /** The board's tickets with a run now, as one string that changes when one starts or stops (the daemon's caches key on it). */
+  runningKey(slug: string): string {
+    const ids: string[] = [];
+    for (const r of this.runs.values()) if (r.slug === slug) ids.push(`${r.id}${takesSlot(r.chat, r.noEdit) ? "" : "~"}`);
+    return ids.sort().join(",");
   }
 
   /** Live progress of a workflow in this ticket's run (the latest task_progress agent list), if any came in. */
@@ -1186,7 +1194,7 @@ export class Board {
   private async execute(run: ActiveRun): Promise<void> {
     const startedAt = nowIso();
     await this.executeOnce(run);
-    if (run.chat?.followUp) this.followUpCost(run.slug, run.id);
+    if (run.chat?.followUp) await this.followUpCost(run.slug, run.id);
     await this.drainQueue(run);
     if (await this.nudgeStatus(run, startedAt)) await this.drainQueue(run);
   }
@@ -1223,7 +1231,7 @@ export class Board {
       run.handle = null;
       this.begin(run);
       await this.executeOnce(run);
-      if (run.chat?.followUp) this.followUpCost(run.slug, run.id);
+      if (run.chat?.followUp) await this.followUpCost(run.slug, run.id);
     }
   }
 
@@ -1263,6 +1271,20 @@ export class Board {
       return;
     }
     if (this.shuttingDown) return;
+    // A run log compressed while the ticket sat in Done comes back first (off the event loop), so this run's lines
+    // follow the old ones. If it can't (a full disk), the run stops here with a plain message: nothing is written.
+    try {
+      await this.store.restoreActivity(slug, id);
+    } catch (e) {
+      console.error(`restore run log ${slug}/${id}:`, e);
+      const full = (e as { code?: string }).code === "ENOSPC";
+      const msg = full
+        ? "Could not start: the Mac's disk is too full to bring back this ticket's old run log. Free some space, then send the message again."
+        : `Could not start: this ticket's old run log could not be brought back (${(e as Error).message}). It is kept as it was; try again.`;
+      this.store.addComment(slug, id, "ai", msg);
+      this.patch(slug, id, { ...this.endStatus(run), outcome: "failed", error: msg, lastActivity: null });
+      return;
+    }
     // Unattended runs refuse to share a session with an open terminal; chat messages are the user's call (UI warns).
     if (session.existed && !run.stopRequested && !run.chat) {
       const t0 = this.store.getTicket(slug, id)!;
@@ -1302,19 +1324,27 @@ export class Board {
     } catch (e) {
       console.error(`role of ${slug}/${id}:`, e);
     }
+    // "What we did before" goes into a chat's first Planning turn, a fresh session's prompt and a first run.
+    const wantsRecall = !resume && (run.chat ? !run.chat.raw && refine && !session.existed : fresh || t.runCount === 0 || !session.existed);
+    const recall = wantsRecall ? await this.recall(slug, t) : "";
+    // A folder without version history counts a tool ticket's changed files from its run log: read the old part now,
+    // in slices, so the count at the end reads only this run's part.
+    if (!t.worktree && !t.branch && !t.workdir && (session.repo === "plain" || session.repo === "empty")) {
+      void this.store.activityDigest(slug, id).catch(() => {});
+    }
     let prompt = resume ?? this.withSetupNote(slug, t, profile, session, refine, localizeAttachments(run.chat?.raw
       ? run.chat.text + (freshChat ? `\n\n${this.freshChatContext(slug, t)}` : "")
       : run.chat
-      ? chatPrompt(t, run.chat.text, run.chat.mode, outputDir, artifacts, session.repo, session.inPlace, refine && !session.existed ? this.recall(slug, t) : "", role,
+      ? chatPrompt(t, run.chat.text, run.chat.mode, outputDir, artifacts, session.repo, session.inPlace, recall, role,
         refine && !role ? followUpPlace(this.store.listTickets(slug), t.id) : null)
         // A turn that acts counts as a run (lastRunAt): notes left since the last one reach Claude here or never.
         + (refine || quiet ? "" : chatNotes(newComments.filter((c) => c.from)))
         + (freshChat ? `\n\n${this.freshChatContext(slug, t)}` : "")
       : fresh
-      ? this.freshPrompt(slug, t, session, outputDir)
+      ? this.freshPrompt(slug, t, session, outputDir, recall)
       : role?.kind === "tool" && (t.runCount === 0 || !session.existed)
       ? toolFirstPrompt(t, role, {
-        comments: newComments, autoHuddles: autoHuddlesOn(profile), artifacts, recall: this.recall(slug, t),
+        comments: newComments, autoHuddles: autoHuddlesOn(profile), artifacts, recall,
       })
       : t.runCount === 0 || !session.existed
       ? firstRunPrompt(t, {
@@ -1322,7 +1352,7 @@ export class Board {
         // Notes other tickets' runs left reach even a ticket's first run: nobody else passes them on.
         comments: t.workdir || t.runCount > 0 ? newComments : newComments.filter((c) => c.from), outputDir,
         schedule: t.scheduleId ? this.scheduleContext(slug, t) : undefined,
-        autoHuddles: autoHuddlesOn(profile), artifacts, recall: this.recall(slug, t), ...(role?.kind === "main" ? { main: role } : {}),
+        autoHuddles: autoHuddlesOn(profile), artifacts, recall, ...(role?.kind === "main" ? { main: role } : {}),
       })
       : resumePrompt(t, newComments, outputDir, autoHuddlesOn(profile), artifacts, session.repo, session.inPlace, { folder: profile.path, baseBranch: profile.baseBranch }, role), this.store.attachmentsDir));
     // A slash command only runs when it is the whole message: Claude Code passes everything after the name to
@@ -1917,10 +1947,12 @@ export class Board {
   }
 
   /** A follow-up run ended: its cost goes on its "woke" log entry (the menu and the next wake prompt show the total). */
-  private followUpCost(slug: string, id: string): void {
+  private async followUpCost(slug: string, id: string): Promise<void> {
+    if (!this.store.getTicket(slug, id)?.followUpLog?.length) return;
+    const runs = ticketRuns((await this.store.activityDigest(slug, id)).runEntries);
     const t = this.store.getTicket(slug, id);
     if (!t?.followUpLog?.length) return;
-    const run = ticketRuns(this.store.readActivity(slug, id)).findLast((r) => r.kind === "follow-up");
+    const run = runs.findLast((r) => r.kind === "follow-up");
     const i = t.followUpLog.findLastIndex((e) => e.kind === "woke");
     if (!run || i < 0 || t.followUpLog[i].costUsd !== undefined) return;
     const log = t.followUpLog.map((e, j) => (j === i ? { ...e, run: run.run, costUsd: Math.round(run.costUsd * 10_000) / 10_000 } : e));
@@ -2957,7 +2989,7 @@ export class Board {
     if (!s) return { id: t.scheduleId!, name: null, board: slug };
     return {
       id: s.id, name: s.name, board: slug,
-      ...(s.quiet ? { quiet: quietContext(this.store.listTickets(slug), this.store.readScheduleHistory(slug, s.id), s.id, t.id) } : {}),
+      ...(s.quiet ? { quiet: quietContext(this.store.listOpenTickets(slug), this.store.scheduleHistoryDigest(slug, s.id).lastFired, s.id, t.id) } : {}),
     };
   }
 
@@ -3494,7 +3526,7 @@ export class Board {
 
   /** The ticket's last result in words (its newest summary comment). */
   lastSummary(slug: string, id: string): string {
-    return this.store.aiComments(slug, id).findLast((c) => !BOARD_NOTE_RE.test(c.text))?.text ?? "";
+    return this.store.lastAiSummary(slug, id) ?? "";
   }
 
   /** A ticket's outputs/report.md, if it wrote one. */
@@ -3535,15 +3567,12 @@ export class Board {
     return files.size;
   }
 
-  /** Files a ticket's edit tool calls named (from its activity). */
-  private editedFiles(slug: string, id: string): string[] {
-    const files = new Set<string>();
-    for (const a of this.store.readActivity(slug, id) as any[]) {
-      const c = a?.event?.type === "assistant" ? a.event.message?.content : null;
-      if (!Array.isArray(c)) continue;
-      for (const b of c) if (b?.type === "tool_use" && ["Edit", "Write", "NotebookEdit"].includes(b.name) && typeof b.input?.file_path === "string") files.add(b.input.file_path);
-    }
-    return [...files];
+  /**
+   * Files a ticket's edit tool calls named (from its activity). Reads what the log gained since last time in one go:
+   * runs in a folder without version history warm it at their start (executeOnce), so that is about one run's worth.
+   */
+  private editedFiles(slug: string, id: string): Set<string> {
+    return this.store.activityDigestNow(slug, id).edited;
   }
 
   /** A tool ticket's result as a card for its parent's chat. */
@@ -3965,7 +3994,8 @@ export class Board {
       return items.length ? withFile({ kind: "history", items }) : null;
     }
     const files = new Set<string>();
-    for (const r of featureRows(tickets, topId)) if (r.depth === 0 || !r.ticket.main) for (const f of this.editedFiles(slug, r.ticket.id)) files.add(f);
+    const pause = pauser();
+    for (const r of featureRows(tickets, topId)) if (r.depth === 0 || !r.ticket.main) for (const f of (await this.store.activityDigest(slug, r.ticket.id, pause)).edited) files.add(f);
     const root = profile.path.endsWith("/") ? profile.path : `${profile.path}/`;
     const items = [...files].map((f) => (f.startsWith(root) ? f.slice(root.length) : f)).sort().map((text) => ({ text }));
     return items.length ? withFile({ kind: "files", items }) : null;
@@ -4178,7 +4208,7 @@ export class Board {
   // ---- One-click recovery from a lost or busy session ----
 
   /** The first prompt of a fresh session: ticket, last result, recent comments, and where to look for the work so far. */
-  private freshPrompt(slug: string, t: Ticket, session: Pick<Session, "repo" | "inPlace">, outputDir: string): string {
+  private freshPrompt(slug: string, t: Ticket, session: Pick<Session, "repo" | "inPlace">, outputDir: string, recall: string): string {
     const comments = this.store.listComments(slug, t.id);
     const last = comments.findLast((c) => c.author === "ai" && !BOARD_NOTE_RE.test(c.text));
     const recent = comments.filter((c) => !BOARD_NOTE_RE.test(c.text) && c !== last).slice(-10);
@@ -4186,7 +4216,7 @@ export class Board {
     return freshSessionPrompt(t, {
       repo: session.repo, inPlace: session.inPlace, home: profile ? { folder: profile.path, baseBranch: profile.baseBranch } : undefined, linked: !!t.workdir, baseBranch: profile?.baseBranch || "main",
       lastResult: last?.text ?? null, comments: recent, outputDir, autoHuddles: autoHuddlesOn(profile), artifacts: !!profile?.artifacts || mentionsArtifact(t.body, last?.text, ...recent.map((c) => c.text)),
-      recall: this.recall(slug, t),
+      recall,
     });
   }
 
@@ -4238,15 +4268,15 @@ export class Board {
    * learned from the user's corrections (learn.ts), and the project's saved lessons a run in a worktree can't see yet
    * (lessons.ts); "" for none.
    */
-  private recall(slug: string, t: Ticket): string {
-    const rows = this.store.listTickets(slug).map((o) => ({
-      ticket: o,
-      summary: this.store.aiComments(slug, o.id).findLast((c) => !BOARD_NOTE_RE.test(c.text))?.text ?? null,
-    }));
+  private async recall(slug: string, t: Ticket): Promise<string> {
+    let index = this.recallIndexes.get(slug);
+    if (!index) this.recallIndexes.set(slug, (index = new RecallIndex()));
+    // Tokenises only tickets that changed since the last run start (the first one after a start reads them all, in slices).
+    const picked = await index.pick(t, this.store.listTickets(slug), (id) => this.store.lastAiSummary(slug, id), (id) => this.store.commentStamp(slug, id), pauser());
     const profile = this.store.getProfile(slug);
     const now = this.store.getTicket(slug, t.id) ?? t;
     const lessons = profile ? lessonsBlock(profile.path, now.worktree ?? now.workdir ?? null) : "";
-    return [recallBlock(t, rows), learnedRulesBlock(this.store, slug), lessons].filter(Boolean).join("\n\n");
+    return [recallText(picked), learnedRulesBlock(this.store, slug), lessons].filter(Boolean).join("\n\n");
   }
 
   /** Queues the ticket's work run: it starts now if a slot is free (dispatch), otherwise when one frees up. */

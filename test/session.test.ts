@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FILES_NOTE, IMAGES_NOTE } from "../src/server/attachments";
 import { Bus, type BusEvent } from "../src/server/events";
-import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessions, pollSessionsSliced, scanSessionFiles, scanSessionFilesAsync } from "../src/server/session";
+import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessionsSliced, scanSessionFiles, scanSessionFilesAsync } from "../src/server/session";
 import { Store } from "../src/server/store";
 import { tempDir } from "./helpers";
 
@@ -105,7 +105,7 @@ test("cache keeps only recent and running parses; an evicted session is parsed a
   expect(cache.get(id(0))!.entries.length).toBe(3);
 });
 
-test("pollSessions emits session.updated when a linked session file changes", () => {
+test("pollSessionsSliced emits session.updated when a linked session file changes", async () => {
   const configDir = tempDir();
   const dir = join(configDir, "projects", "-f");
   mkdirSync(dir, { recursive: true });
@@ -121,12 +121,12 @@ test("pollSessions emits session.updated when a linked session file changes", ()
   bus.on((e) => seen.push(e));
   const cache = new SessionCache({ configDir });
   const state = new Map<string, string>();
-  pollSessions(store, bus, cache, state);
+  await pollSessionsSliced(store, bus, cache, state);
   expect(seen.length).toBe(1);
-  pollSessions(store, bus, cache, state);
+  await pollSessionsSliced(store, bus, cache, state);
   expect(seen.length).toBe(1);
   appendFileSync(file, asst([{ type: "text", text: "reply" }], "2026-09-29T01:00:01Z") + "\n");
-  pollSessions(store, bus, cache, state);
+  await pollSessionsSliced(store, bus, cache, state);
   expect(seen.length).toBe(2);
   const e = seen[1] as any;
   expect(e).toMatchObject({ type: "session.updated", profile: "p", id: t.id });
@@ -555,6 +555,58 @@ test("session summaries are kept on disk: a new cache answers without reading an
   expect(reads).toBe(1);
 });
 
+test("the summaries file is written only when a summary in it changed", () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-w");
+  mkdirSync(dir, { recursive: true });
+  const sid = "31111111-2222-3333-4444-555555555555";
+  writeFileSync(join(dir, `${sid}.jsonl`), user("first", "2026-09-29T01:00:00Z") + "\n");
+  const summaryFile = join(tempDir(), "session-summaries.json");
+  const a = new SessionCache({ configDir }, Date.now, summaryFile);
+  a.summary(sid);
+  a.flushSummaries();
+  const written = statSync(summaryFile).mtimeMs;
+  // After a restart, the same day: the saved summary is used, nothing new to write.
+  const b = new SessionCache({ configDir }, Date.now, summaryFile);
+  b.summary(sid);
+  rmSync(summaryFile);
+  b.flushSummaries();
+  expect(existsSync(summaryFile)).toBe(false);
+  // A new summary: written.
+  appendFileSync(join(dir, `${sid}.jsonl`), user("second", "2026-09-29T01:00:01Z") + "\n");
+  b.summary(sid);
+  b.flushSummaries();
+  expect(existsSync(summaryFile)).toBe(true);
+  expect(written).toBeGreaterThan(0);
+});
+
+test("saved summaries of deleted transcripts and of sessions unused for 30 days are dropped at the next write", () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-s");
+  mkdirSync(dir, { recursive: true });
+  const [kept, gone, unused] = ["61111111-2222-3333-4444-555555555555", "62111111-2222-3333-4444-555555555555", "63111111-2222-3333-4444-555555555555"];
+  for (const id of [kept, gone, unused]) writeFileSync(join(dir, `${id}.jsonl`), user(`hello ${id}`, "2026-09-29T01:00:00Z") + "\n");
+  const summaryFile = join(tempDir(), "session-summaries.json");
+  let now = Date.UTC(2026, 9, 1);
+  const a = new SessionCache({ configDir }, () => now, summaryFile);
+  for (const id of [kept, gone, unused]) a.summary(id);
+  a.flushSummaries();
+  expect(Object.keys(JSON.parse(readFileSync(summaryFile, "utf8")).items).length).toBe(3);
+
+  // A restart 20 days later: one is opened, one transcript is deleted.
+  now += 20 * 86_400_000;
+  const b = new SessionCache({ configDir }, () => now, summaryFile);
+  rmSync(join(dir, `${gone}.jsonl`));
+  b.summary(kept);
+  b.flushSummaries();
+  expect(Object.keys(JSON.parse(readFileSync(summaryFile, "utf8")).items).sort()).toEqual([kept, unused].sort());
+  // 15 more days: the one nobody opened for 35 days goes.
+  now += 15 * 86_400_000;
+  b.summary(kept);
+  b.flushSummaries();
+  expect(Object.keys(JSON.parse(readFileSync(summaryFile, "utf8")).items)).toEqual([kept]);
+});
+
 test("summaries made by older code are shown until warm() has made them again, and survive a restart meanwhile", async () => {
   const configDir = tempDir();
   const dir = join(configDir, "projects", "-s");
@@ -754,7 +806,7 @@ test("SessionCache.warm parses many transcripts without blocking the event loop 
   for (const id of ids) expect(cache.summary(id)!.lastMessage!.text).toBe(`line 2999 ${"x".repeat(300)}`);
 });
 
-test("pollSessionsSliced announces the same changes as pollSessions, pausing between tickets", async () => {
+test("pollSessionsSliced announces changed sessions, pausing between tickets", async () => {
   const configDir = tempDir();
   const dir = join(configDir, "projects", "-f");
   mkdirSync(dir, { recursive: true });

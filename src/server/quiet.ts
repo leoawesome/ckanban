@@ -19,7 +19,7 @@ export function linksIn(text: string): string[] {
 }
 
 /** What a quiet schedule's run (ticket runId) is told: its previous check and the tickets it raised that are still open. */
-export function quietContext(tickets: Ticket[], history: ScheduleHistoryEntry[], scheduleId: string, runId: string): QuietContext {
+export function quietContext(tickets: Ticket[], history: readonly ScheduleHistoryEntry[], scheduleId: string, runId: string): QuietContext {
   const runs = history.filter((e) => (e.kind === "fired" || e.kind === "quiet") && e.ticketId !== runId);
   const open = tickets
     .filter((t) => t.raisedBy?.scheduleId === scheduleId && t.status !== "done")
@@ -42,15 +42,20 @@ export function canEndQuietly(o: {
 }
 
 /** Local day key (YYYY-MM-DD) of an ISO time. */
-const day = (iso: string) => {
+export const day = (iso: string) => {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
 /** Quiet checks per local day, newest day first. */
-export function quietPerDay(history: ScheduleHistoryEntry[]): { day: string; count: number }[] {
+export function quietPerDay(history: readonly ScheduleHistoryEntry[]): { day: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const e of history) if (e.kind === "quiet") counts.set(day(e.at), (counts.get(day(e.at)) ?? 0) + 1);
+  return quietDays(counts);
+}
+
+/** quietPerDay from counts already made per day (schedule-history.ts keeps them). */
+export function quietDays(counts: ReadonlyMap<string, number>): { day: string; count: number }[] {
   return [...counts].sort((a, b) => b[0].localeCompare(a[0])).map(([d, count]) => ({ day: d, count }));
 }
 
@@ -58,7 +63,7 @@ export function quietPerDay(history: ScheduleHistoryEntry[]): { day: string; cou
  * A schedule's spend since `since`: its quiet runs (their cost is kept in the history, the tickets are gone) plus the
  * tickets it fired that still exist (costOf reads their logs).
  */
-export function scheduleSpend(history: ScheduleHistoryEntry[], since: Date, costOf: (ticketId: string) => number): number {
+export function scheduleSpend(history: readonly ScheduleHistoryEntry[], since: Date, costOf: (ticketId: string) => number): number {
   const from = since.toISOString();
   let total = 0;
   const seen = new Set<string>();
@@ -81,7 +86,7 @@ export function scheduleSpend(history: ScheduleHistoryEntry[], since: Date, cost
  * When and by whom a paused schedule was paused: its last "paused" edit, unless a later "resumed" undid it.
  * null when the history has no such edit (paused before edits were logged, or created paused).
  */
-export function lastPause(history: ScheduleHistoryEntry[]): { at: string; by: "user" | { ticketId: string } } | null {
+export function lastPause(history: readonly ScheduleHistoryEntry[]): { at: string; by: "user" | { ticketId: string } } | null {
   for (let i = history.length - 1; i >= 0; i--) {
     const e = history[i];
     if (e.kind !== "edited") continue;

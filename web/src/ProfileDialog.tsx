@@ -97,7 +97,7 @@ export function ProfileDialog({ profile, onClose, onSaved, onDeleted, onOpenTeam
       setClaudeModel(d.model);
     }).catch(() => {});
     if (isNew) api.claudeProjects().then(setRecent).catch(() => setRecent([]));
-    else api.tickets(profile!.slug).then((ts) => setTicketCount(ts.length)).catch(() => {});
+    else api.ticketCount(profile!.slug).then((n) => setTicketCount(n.total)).catch(() => {});
     if (!isNew) api.mcp().then((s) => setConnectors(s.servers
       .filter((x) => x.scope === "claude.ai" && x.status === "connected")
       .map((x) => x.name.replace(/^claude\.ai /, ""))

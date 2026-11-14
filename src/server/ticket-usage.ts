@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { atomicWrite } from "./store";
 import { pauser } from "./lag";
+import { logStat, readLog } from "./run-log";
 import type { ActivityEntry } from "./types";
 import type { UsageResult } from "./usage";
 
@@ -65,16 +66,32 @@ export function claudeProjectsDir(): string {
   return join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "projects");
 }
 
+/** Costs are kept per minute: 5h windows start at a reset time, which isn't always on the hour. */
+const BUCKET_MS = 60_000;
+/** How long a request for older activity keeps it in the index (afterwards it is dropped until asked for again). */
+const HOLD_MS = 3600_000;
+
 /**
  * Cost of every Claude Code message on this machine, read incrementally from the session logs: each file is
  * read from where the last refresh stopped, and files older than the oldest window asked for are skipped.
+ * Costs are summed per minute, and only back to the oldest window asked for in the last hour: one entry per message
+ * kept forever grew to hundreds of MB on a busy machine, and each lookup went through all of them.
  */
 export class ClaudeLogIndex {
-  private files = new Map<string, { offset: number; rest: string }>();
-  /** message id + request id → index in `entries` (a message is logged once per content block). */
-  private keys = new Map<string, number>();
-  private entries: { t: number; cost: number }[] = [];
+  private files = new Map<string, { offset: number }>();
+  /** Cost per minute (start ms / BUCKET_MS). */
+  private buckets = new Map<number, number>();
+  /**
+   * A hash of message id + request id → its minute and cost (a message is logged once per content block, later lines
+   * with the final counts; a resumed session's file can repeat earlier messages). Only messages in the index's span:
+   * dropped with their minute. Numbers, not strings and objects: a busy month is a million messages.
+   */
+  private keys = new Map<number, number>();
+  private costs = new Map<number, number>();
+  /** Activity before this isn't in the index. */
   private horizon = Infinity;
+  /** The oldest time each recent caller asked for, and when (they hold the horizon back for HOLD_MS). */
+  private asked = new Map<number, number>();
   private lastRefresh = 0;
   private running: Promise<void> | null = null;
 
@@ -83,8 +100,11 @@ export class ClaudeLogIndex {
   /** Catch up with the logs, covering at least activity since `since` (ms). */
   async refresh(since: number): Promise<void> {
     while (this.running) await this.running;
+    this.asked.set(since, this.now());
+    if (since < this.horizon) this.reset();
+    else this.trim();
     if (since >= this.horizon && this.now() - this.lastRefresh < this.minIntervalMs) return;
-    this.running = this.scan(since);
+    this.running = this.scan(Math.min(since, this.horizon));
     try {
       await this.running;
     } finally {
@@ -94,31 +114,73 @@ export class ClaudeLogIndex {
 
   costBetween(start: number, end: number): number {
     let sum = 0;
-    for (const e of this.entries) if (e.t >= start && e.t < end) sum += e.cost;
+    const from = Math.ceil(start / BUCKET_MS);
+    const to = Math.ceil(end / BUCKET_MS);
+    // A 5h window is 300 minutes: look them up, unless the index holds fewer minutes than that.
+    if (to - from <= this.buckets.size) {
+      for (let m = from; m < to; m++) sum += this.buckets.get(m) ?? 0;
+    } else {
+      for (const [m, cost] of this.buckets) if (m >= from && m < to) sum += cost;
+    }
     return sum;
+  }
+
+  /** Older activity was asked for: read every log again from the start (the index only has what is newer). */
+  private reset() {
+    this.files.clear();
+    this.buckets.clear();
+    this.keys.clear();
+    this.costs.clear();
+    this.horizon = Infinity;
+  }
+
+  /** Drops what no caller asked for in the last hour. */
+  private trim() {
+    const now = this.now();
+    let oldest = Infinity;
+    for (const [since, at] of this.asked) {
+      if (now - at > HOLD_MS) this.asked.delete(since);
+      else oldest = Math.min(oldest, since);
+    }
+    if (!(oldest > this.horizon) || oldest === Infinity) return;
+    const cut = Math.floor(oldest / BUCKET_MS);
+    for (const m of this.buckets.keys()) if (m < cut) this.buckets.delete(m);
+    for (const [k, m] of this.keys) if (m < cut) {
+      this.keys.delete(k);
+      this.costs.delete(k);
+    }
+    this.horizon = cut * BUCKET_MS;
   }
 
   private async scan(since: number): Promise<void> {
     // Thousands of files under the projects folder: listed and stat'ed off the event loop (doing it here held the
     // daemon up for seconds when the Mac was busy), a batch of stats at a time.
     let names: string[];
+    let listed = true;
     try {
       names = ((await readdir(this.root, { recursive: true })) as string[]).filter((n) => n.endsWith(".jsonl"));
     } catch {
       names = [];
+      listed = false;
     }
     const BATCH = 64;
     // Parsing what a file gained is the other cost (a first read takes in megabytes): a pause between files.
     const pause = pauser();
+    const floor = Math.floor(since / BUCKET_MS) * BUCKET_MS;
     for (let i = 0; i < names.length; i += BATCH) {
       const part = names.slice(i, i + BATCH).map((name) => join(this.root, name));
       const stats = await Promise.all(part.map((f) => stat(f).catch(() => null)));
       for (let j = 0; j < part.length; j++) {
-        await this.catchUp(part[j], stats[j], since);
+        await this.catchUp(part[j], stats[j], floor);
         await pause();
       }
     }
-    this.horizon = Math.min(this.horizon, since);
+    // Forget files that are gone (their costs stay in the minutes they were spent).
+    if (listed) {
+      const live = new Set(names.map((name) => join(this.root, name)));
+      for (const f of this.files.keys()) if (!live.has(f)) this.files.delete(f);
+    }
+    this.horizon = Math.min(this.horizon, floor);
     this.lastRefresh = this.now();
   }
 
@@ -127,20 +189,19 @@ export class ClaudeLogIndex {
     let state = this.files.get(file);
     if (!state) {
       if (st.mtimeMs < since) return;
-      state = { offset: 0, rest: "" };
+      state = { offset: 0 };
       this.files.set(file, state);
     }
-    if (st.size < state.offset) Object.assign(state, { offset: 0, rest: "" });
+    if (st.size < state.offset) state.offset = 0;
     if (st.size === state.offset) return;
     // In chunks: a first read of a long transcript all at once held hundreds of MB the daemon kept afterwards. A line
     // still being written is read again next time.
-    state.rest = "";
     state.offset = await readLines(file, state.offset, st.size, (lines) => {
-      for (const line of lines) this.add(line);
+      for (const line of lines) this.add(line, since);
     });
   }
 
-  private add(line: string) {
+  private add(line: string, since: number) {
     if (!line.includes('"usage"') || !line.includes('"assistant"')) return;
     let j: any;
     try {
@@ -151,15 +212,20 @@ export class ClaudeLogIndex {
     const m = j?.message;
     if (j?.type !== "assistant" || !m?.usage || typeof m.model !== "string" || m.model === "<synthetic>") return;
     const t = Date.parse(j.timestamp);
-    if (Number.isNaN(t)) return;
+    if (Number.isNaN(t) || t < since) return;
     const cost = messageCost(m.model, m.usage);
-    const key = `${m.id ?? j.uuid}:${j.requestId ?? ""}`;
+    // 52 bits of a 64-bit hash: a clash is about one in a billion at a million messages.
+    const key = Number(BigInt.asUintN(52, BigInt(Bun.hash(`${m.id ?? j.uuid}:${j.requestId ?? ""}`))));
     const at = this.keys.get(key);
-    // Later lines of the same message carry the final token counts.
-    if (at !== undefined) this.entries[at] = { t: this.entries[at].t, cost };
-    else {
-      this.keys.set(key, this.entries.length);
-      this.entries.push({ t, cost });
+    // Later lines of the same message carry the final token counts: they replace its cost.
+    if (at !== undefined) {
+      this.buckets.set(at, (this.buckets.get(at) ?? 0) - (this.costs.get(key) ?? 0) + cost);
+      this.costs.set(key, cost);
+    } else {
+      const minute = Math.floor(t / BUCKET_MS);
+      this.keys.set(key, minute);
+      this.costs.set(key, cost);
+      this.buckets.set(minute, (this.buckets.get(minute) ?? 0) + cost);
     }
   }
 }
@@ -391,21 +457,44 @@ export class RunLogIndex {
     return p;
   }
 
-  private async read(file: string, sliceMs: number): Promise<ActivityEntry[]> {
-    let size: number;
+  private async read(file: string, sliceMs: number, retried = false): Promise<ActivityEntry[]> {
     try {
-      size = (await stat(file)).size;
-    } catch {
+      return await this.readOnce(file, sliceMs);
+    } catch (e) {
+      // The log was swapped for its compressed copy (or restored) between two slices: what this read added is dropped
+      // (it would be counted twice) and the log is read again from its start, once.
+      this.files.delete(file);
+      if (retried) throw e;
+      return this.read(file, sliceMs, true);
+    }
+  }
+
+  private async readOnce(file: string, sliceMs: number): Promise<ActivityEntry[]> {
+    // Plain or compressed (run-log.ts): a compressed log keeps the same bytes, so the same offsets.
+    const ls = logStat(file);
+    if (!ls) {
       this.files.delete(file);
       return [];
     }
+    let size = ls.size;
     let st = this.files.get(file);
     if (!st || size < st.size) {
       st = { offset: 0, size: 0, entries: [], lastRun: null };
       this.files.set(file, st);
     }
+    if (size <= st.offset) {
+      st.size = size;
+      return st.entries;
+    }
+    let source: string | Buffer = file;
+    if (ls.gz) {
+      const bytes = await readLog(file);
+      if (!bytes) return st.entries;
+      source = bytes;
+      size = Math.min(size, bytes.length);
+    }
     const pause = pauser(sliceMs);
-    st.offset = await readLines(file, st.offset, size, async (lines) => {
+    st.offset = await readLines(source, st.offset, size, async (lines) => {
       for (const line of lines) this.add(st!, line);
       await pause();
     });
@@ -443,13 +532,14 @@ export class RunLogIndex {
  * Reads the whole lines between byte offsets from and to, a chunk at a time (decoding only up to each chunk's last
  * newline, so a character split between chunks stays whole). Returns the offset after the last whole line.
  */
-export async function readLines(file: string, from: number, to: number, each: (lines: string[]) => void | Promise<void>, chunk = LOG_CHUNK): Promise<number> {
-  const f = Bun.file(file);
+export async function readLines(file: string | Buffer, from: number, to: number, each: (lines: string[]) => void | Promise<void>, chunk = LOG_CHUNK): Promise<number> {
+  // A Buffer: a compressed run log already decompressed (run-log.ts), read the same way.
+  const f = typeof file === "string" ? Bun.file(file) : null;
   let carry: Buffer = Buffer.alloc(0);
   let pos = from;
   while (pos < to) {
     const end = Math.min(to, pos + chunk);
-    const got = Buffer.from(await f.slice(pos, end).arrayBuffer());
+    const got = f ? Buffer.from(await f.slice(pos, end).arrayBuffer()) : (file as Buffer).subarray(pos, end);
     pos = end;
     const all = carry.length ? Buffer.concat([carry, got]) : got;
     const cut = all.lastIndexOf(10);

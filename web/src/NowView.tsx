@@ -5,7 +5,7 @@ import { answers, groupInbox, marksDone } from "./inboxOrder";
 import { useSafeClear } from "./useSafeClear";
 import { elapsed, waitedFor } from "./time";
 import { useNow } from "./useNow";
-import { RowMore, type InboxHelper } from "./Inbox";
+import { RowMore, ShowMore, usePaged, type InboxHelper } from "./Inbox";
 import { isHeldLine } from "./helper";
 import { HelperStatusLine, MessagesEntry } from "./Messages";
 import { ChevronDownIcon, ChevronRightIcon } from "./icons";
@@ -38,6 +38,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
 }) {
   const now = useNow();
   const [showOlder, setShowOlder] = useState(false);
+  const { page, more } = usePaged();
   const claude = useClaudeName();
   const { clear, busy, leaving } = useSafeClear();
   const needs = inbox.filter((i) => i.profile === slug);
@@ -51,6 +52,9 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
   const running = tickets.filter((t) => t.running && !waiting.has(t.id));
   const planning = tickets.filter((t) => t.status === "planning" && !t.running && !waiting.has(t.id));
 
+  const moreRow = (group: string, list: unknown[]) => (
+    <ShowMore className="now-more" total={list.length} shown={page(group, list).length} onClick={() => more(group)} />
+  );
   const open = (i: InboxItem) => { if (!busy()) onOpen(i.profile, i.id); };
   const card = (i: InboxItem) => {
     const key = `${i.profile}/${i.id}`;
@@ -104,9 +108,11 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
         <p className="now-empty muted small">Nothing waits on you right now.</p>
       </>}
       {groups.waiting.length > 0 && <h3 className="now-head">{claude} is waiting on you · {groups.waiting.length}</h3>}
-      {groups.waiting.map(card)}
+      {page("waiting", groups.waiting).map(card)}
+      {moreRow("waiting", groups.waiting)}
       {groups.check.length > 0 && <h3 className="now-head">Ready to check · {groups.check.length}</h3>}
-      {groups.check.map(card)}
+      {page("check", groups.check).map(card)}
+      {moreRow("check", groups.check)}
       {groups.older.length > 0 && (
         <>
           <div className="now-older">
@@ -115,7 +121,7 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
             </button>
             <button className="btn small now-snooze-all" onClick={() => { if (!busy()) onSnoozeAll(groups.older); }} title="Hide every item waiting more than a week for a day">Snooze older</button>
           </div>
-          {showOlder && groups.older.map(card)}
+          {showOlder && <>{page("older", groups.older).map(card)}{moreRow("older", groups.older)}</>}
         </>
       )}
 
@@ -135,12 +141,13 @@ export function NowView({ inbox, tickets, slug, onOpen, onMarkDone, onSnooze, on
       {planning.length > 0 && (
         <>
           <h3 className="now-head">Planning · {planning.length}</h3>
-          {planning.map((t) => (
+          {page("planning", planning).map((t) => (
             <button key={t.id} className="now-card now-open" onClick={() => onOpen(slug, t.id)}>
               <span className="now-title">{t.title}</span>
               <span className="now-act">{liveLine(t.lastActivity, claude) || "Waiting for your reply"}</span>
             </button>
           ))}
+          {moreRow("planning", planning)}
         </>
       )}
 

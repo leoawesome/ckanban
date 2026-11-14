@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { boardScope, donePage, doneSearch, familyKeys, idsScope } from "../src/server/ticketScope";
-import { doneCards, joinsBoard, mergeTickets, unseenDone } from "../web/src/donePaging";
+import { doneCards, joinsBoard, mergeTickets, reloadTickets, unseenDone } from "../web/src/donePaging";
 
 type T = { id: string; title: string; status: string; createdAt: string; order: number; parentId?: string | null; partOf?: string | null; tool?: boolean; showOnBoard?: boolean | null; pinnedAt?: string | null; body?: string; tags?: string[] };
 let n = 0;
@@ -46,6 +46,15 @@ describe("ticketScope", () => {
 });
 
 describe("donePaging", () => {
+  test("a reload keeps loaded Done cards and unchanged objects, drops unfinished ones it no longer has", () => {
+    const a = { id: "a", status: "backlog", v: 1 }, b = { id: "b", status: "done", v: 1 }, c = { id: "c", status: "done", v: 1 }, gone = { id: "g", status: "review", v: 1 };
+    const freshA = { ...a }, freshB = { id: "b", status: "done", v: 2 }, n = { id: "n", status: "planning", v: 1 };
+    const out = reloadTickets([a, b, c, gone], [freshA, freshB, n]);
+    expect(out.map((t) => t.id)).toEqual(["a", "b", "n", "c"]);
+    expect(out[0]).toBe(a); // same content: the held object stays
+    expect(out[1]).toBe(freshB);
+    expect(out[3]).toBe(c);
+  });
   test("merge replaces held copies and adds new ones at the end", () => {
     expect(mergeTickets([{ id: "a", v: 1 }, { id: "b", v: 1 }], [{ id: "b", v: 2 }, { id: "c", v: 2 }])).toEqual([{ id: "a", v: 1 }, { id: "b", v: 2 }, { id: "c", v: 2 }]);
   });
@@ -58,5 +67,19 @@ describe("donePaging", () => {
   test("an event for an unloaded finished ticket doesn't put it on the board", () => {
     expect(joinsBoard({ status: "done" })).toBe(false);
     expect(joinsBoard({ status: "backlog" })).toBe(true);
+  });
+});
+
+describe("list_tickets search cap", () => {
+  test("a search past 100 matches says how many matched", async () => {
+    const { listScope } = await import("../src/server/ticketScope");
+    const { ticketListText } = await import("../src/client");
+    const all = Array.from({ length: 130 }, (_, i) => tk(`t_${String(i).padStart(3, "0")}`, "done", { title: `login ${i}` }));
+    const page = listScope(all, { q: "login" });
+    expect(page.total).toBe(100);
+    expect(page.matched).toBe(130);
+    const text = ticketListText("b", { ...page, tickets: [] } as any, { query: "login" }, () => "", "");
+    expect(text).toContain("130 tickets match; only the newest 100 are listed");
+    expect(ticketListText("b", { ...listScope(all.slice(0, 5), { q: "login" }), tickets: [] } as any, { query: "login" }, () => "", "")).not.toContain("match;");
   });
 });

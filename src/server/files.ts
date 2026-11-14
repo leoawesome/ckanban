@@ -74,6 +74,18 @@ async function gitIgnored(root: string, rels: string[]): Promise<Set<string>> {
   }
 }
 
+/**
+ * Most entries one folder listing sends (folders first, then files, each alphabetical); listDirPage says how many
+ * more there are. A folder of tens of thousands of files (generated output, a copied-in project) was a 1 MB answer.
+ */
+export const MAX_DIR_ENTRIES = 2000;
+
+/** A folder's first MAX_DIR_ENTRIES entries and how many more it has. */
+export async function listDirPage(root: string, rel: string, max = MAX_DIR_ENTRIES): Promise<{ entries: FileEntry[]; more: number }> {
+  const all = await listDir(root, rel);
+  return { entries: all.slice(0, max), more: Math.max(0, all.length - max) };
+}
+
 /** One directory level: folders first, then files, each alphabetical. Hides .git and gitignored entries. */
 export async function listDir(root: string, rel: string): Promise<FileEntry[]> {
   const dir = resolveInside(root, rel);

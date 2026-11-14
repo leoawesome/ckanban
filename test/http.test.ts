@@ -357,6 +357,26 @@ test("tickets lists a light row for every ticket on every board", async () => {
   ]);
 });
 
+test("⌘K: open tickets of every board at once, Done ones by a search with a limit", async () => {
+  const a = tempDir("ck-plain-");
+  await fetch(`${base}/api/profiles`, json("POST", { name: "Bar A", path: a }));
+  const open = (await (await fetch(`${base}/api/profiles/bar-a/tickets`, json("POST", { title: "walrus open", status: "backlog" }))).json()) as any;
+  for (let i = 0; i < 25; i++) {
+    const t = (await (await fetch(`${base}/api/profiles/bar-a/tickets`, json("POST", { title: `walrus done ${i}`, status: "backlog" }))).json()) as any;
+    store.updateTicket("bar-a", t.id, { status: "done" });
+  }
+  const rows = (await (await fetch(`${base}/api/tickets?scope=open`)).json()) as any[];
+  expect(rows.filter((r) => r.profile === "bar-a").map((r) => r.id)).toEqual([open.id]);
+  const found = (await (await fetch(`${base}/api/tickets?scope=done&q=walrus&board=bar-a`)).json()) as any[];
+  expect(found).toHaveLength(20);
+  expect(found.every((r) => r.status === "done" && r.profile === "bar-a" && r.profileName === "Bar A")).toBe(true);
+  expect(((await (await fetch(`${base}/api/tickets?scope=done&q=walrus&limit=5`)).json()) as any[])).toHaveLength(5);
+  expect((await fetch(`${base}/api/tickets?scope=nope`)).status).toBe(400);
+  // An old page still open asks without a scope: every ticket, Done ones too.
+  const old = (await (await fetch(`${base}/api/tickets`)).json()) as any[];
+  expect(old.filter((r) => r.profile === "bar-a")).toHaveLength(26);
+});
+
 test("health", async () => {
   const r = await fetch(`${base}/api/health`);
   const h = (await r.json()) as any;

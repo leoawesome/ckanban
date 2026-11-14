@@ -8,7 +8,7 @@ import { QUICK_CHAT_ENV } from "./server/scheduler";
 import { FEEDBACK_MAX, helperLineText, suggestedLineError } from "./server/helper/line";
 import {
   assertCanChange, BoardClient, bugReportText, ClientError, ConfirmPending, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
-  familyLine, ticketLine, ticketText, type GatherResult, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
+  familyLine, ticketLine, ticketListText, ticketText, type TicketListQuery, type GatherResult, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
 } from "./client";
 import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./server/huddle-presets";
 import { HUDDLE_AGENT_ENV, huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "./server/huddle-roster";
@@ -177,7 +177,7 @@ interface Tool {
 
 export interface ToolContext {
   client: Pick<BoardClient,
-    | "listProfiles" | "listTickets" | "getTicket" | "getFamily" | "createTicket" | "updateTicket" | "deleteTicket" | "chat" | "stop" | "listComments"
+    | "listProfiles" | "listTickets" | "ticketsByIds" | "getTicket" | "getFamily" | "createTicket" | "updateTicket" | "deleteTicket" | "chat" | "stop" | "listComments"
     | "comment" | "reportBug" | "setFollowUp" | "cancelFollowUp" | "notifyUser" | "takeDevices" | "releaseDevices" | "listSchedules" | "createSchedule" | "updateSchedule" | "deleteSchedule" | "runSchedule"
     | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "adopt" | "updateStatus" | "gather" | "planAction"
     | "askTicket" | "searchChat" | "readChat" | "mergeIntoMain" | "landMilestone" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
@@ -1105,7 +1105,7 @@ const PLANNING_TOOLS: Tool[] = [
       if (own && ids.includes(own)) throw new ClientError(`${own} is this chat's own ticket and can't be proposed for deletion; ask the user to delete it from the board.`);
       // Always this chat's board: the card can only delete tickets there.
       const slug = await slugFor({}, ctx);
-      const known = new Set((await ctx.client.listTickets(slug)).map((t) => t.id));
+      const known = new Set((await ctx.client.ticketsByIds(slug, ids)).tickets.map((t) => t.id));
       const missing = ids.filter((id) => !known.has(id));
       if (missing.length === ids.length) throw new ClientError(`no such ticket on board ${slug}: ${missing.join(", ")}. Check list_tickets.`);
       return SHOWN + (missing.length ? ` Not on board ${slug}, shown as skipped: ${missing.join(", ")}.` : "");
@@ -1861,12 +1861,19 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "list_tickets",
-    description: "List tickets on a board with id, column and title. Call this before create_ticket to avoid duplicates. " +
+    description: "List tickets on a board with id, column and title, newest first, a page at a time (100 unless limit says otherwise). " +
+      "Without status it lists open work only (every column but Done) and says how many Done tickets it left out; status \"done\" pages through Done. " +
+      "Call this before create_ticket to avoid duplicates: query finds tickets by words in the title, description or id in every column, Done included " +
+      "(with status: in that column only; at most 100 matches, newest first). " +
+      "A page that isn't the last ends with the after value for the next one. Open features are marked \"open feature\". " +
       "Tool tickets (the ones a main ticket made to do its work; they have no card) are left out unless includeTool is true.",
     inputSchema: {
       type: "object",
       properties: {
-        profile: PROFILE, status: { ...STATUS, description: "Only this column." },
+        profile: PROFILE, status: { ...STATUS, description: "Only this column (\"done\" for finished tickets). Leave out for open work." },
+        query: { type: "string", description: "Words to look for in the title, description or id (one phrase, any case)." },
+        limit: { type: "number", description: "Tickets per page: 100 if left out, at most 500 (100 with query)." },
+        after: { type: "string", description: "The ticket id the previous page ended with (its \"More: ... after\" line): the next page." },
         includeTool: { type: "boolean", description: "true: also list tool tickets. get_family lists one feature's tool tickets." },
       },
     },
@@ -1874,26 +1881,35 @@ export const TOOLS: Tool[] = [
     changes: false,
     async run(args, ctx) {
       const slug = await slugFor(args, ctx);
-      let ts = await ctx.client.listTickets(slug);
-      if (args?.includeTool !== true) ts = ts.filter((t) => !hiddenTool(t));
-      if (args?.status) {
-        const s = parseStatus(args.status);
-        ts = ts.filter((t) => t.status === s);
-      }
-      return ts.length ? `Board ${slug}:\n${ts.map(ticketLine).join("\n")}` : `Board ${slug}: no tickets${args?.status ? ` in ${args.status}` : ""}.`;
+      const q: TicketListQuery = {
+        status: args?.status ? parseStatus(args.status) : null, tool: args?.includeTool === true,
+        query: typeof args?.query === "string" ? args.query : null,
+        limit: typeof args?.limit === "number" && args.limit > 0 ? Math.floor(args.limit) : undefined,
+        after: typeof args?.after === "string" && args.after.trim() ? args.after.trim() : null,
+      };
+      const page = await ctx.client.listTickets(slug, q);
+      return ticketListText(slug, page, q, (after) => `call list_tickets again with the same arguments and after: "${after}"`, 'list_tickets with status "done" pages through them, or query finds one');
     },
   },
   {
     name: "get_ticket",
-    description: "Show one ticket: description, column, run state, branch/PR and comments.",
-    inputSchema: { type: "object", properties: { profile: PROFILE, id: ID }, required: ["id"] },
+    description: "Show one ticket: description, column, run state, branch/PR and its last 50 comments (commentsBefore pages back to earlier ones).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        profile: PROFILE, id: ID,
+        commentsBefore: { type: "number", description: "Show the 50 comments before this position (the number the earlier-comments note gives) instead of the last 50." },
+      },
+      required: ["id"],
+    },
     annotations: { readOnlyHint: true },
     changes: false,
     async run(args, ctx) {
       const slug = await slugFor(args, ctx);
       const id = str(args, "id")!;
-      const [t, comments] = await Promise.all([ctx.client.getTicket(slug, id), ctx.client.listComments(slug, id)]);
-      return ticketText(t, comments);
+      const before = typeof args?.commentsBefore === "number" && args.commentsBefore >= 0 ? Math.floor(args.commentsBefore) : null;
+      const [t, page] = await Promise.all([ctx.client.getTicket(slug, id), ctx.client.listComments(slug, id, before)]);
+      return ticketText(t, page.comments, { count: page.earlier, how: `call get_ticket with commentsBefore: ${page.earlier}` });
     },
   },
   {

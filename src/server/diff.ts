@@ -30,6 +30,8 @@ export interface DiffFile {
   /** Too many changed lines to show; hunks are left out. */
   tooLarge: boolean;
   hunks: DiffHunk[];
+  /** Not a file: the last row, "… and N more files (not shown)" (TicketDiff.moreFiles). */
+  more?: boolean;
 }
 
 export interface TicketDiff {
@@ -42,6 +44,11 @@ export interface TicketDiff {
   deletions: number;
   /** Shown instead of files when the changes can't be worked out (e.g. the folder's history was rewritten). */
   note?: string;
+  /**
+   * Changed files left out past MAX_DIFF_FILES (a ticket that copied a whole project in). The list then ends with a
+   * row that says so (DiffFile.more); additions and deletions count the files shown.
+   */
+  moreFiles?: number;
   /**
    * Set when the changes are compared with another version than the board's base branch, because the
    * ticket's branch was moved onto it (e.g. "flight/x"; no "origin/" prefix). The tab names it.
@@ -57,6 +64,13 @@ export class DiffError extends Error {
 
 /** Files whose patch is longer than this many lines are listed without content. */
 export const MAX_FILE_LINES = 3000;
+/**
+ * Most changed files one diff answers (in git's order, by path), and most patch lines it sends in all (files past
+ * that are listed without content, like a too-large file). A ticket that copied a whole project in changed tens of
+ * thousands of files: parsing and sending all of them took seconds and many MB.
+ */
+export const MAX_DIFF_FILES = 300;
+export const MAX_DIFF_LINES = 20_000;
 
 /**
  * The merge-base of HEAD with the base branch. Both the local branch and its origin/ copy are tried
@@ -175,18 +189,45 @@ async function diffFrom(dir: string, mb: { ref: string; sha: string }, opts: { i
     if (r.code !== 0) throw new DiffError(500, `git failed: ${r.stderr.trim()}`);
     const args = ["git", "-c", "core.quotePath=false", "diff", "--cached", "-M", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"];
     if (opts.ignoreWhitespace) args.push("-w");
-    r = await run([...args, mb.sha], dir, env);
+    // The names first (no contents compared): past MAX_DIFF_FILES only the first ones' patch is made.
+    r = await run([...args, "--name-status", "-z", mb.sha], dir, env);
+    if (r.code !== 0) throw new DiffError(500, `git diff failed: ${r.stderr.trim()}`);
+    const changed = nameStatus(r.stdout);
+    const shown = changed.slice(0, MAX_DIFF_FILES);
+    const more = changed.length - shown.length;
+    const paths = more > 0 ? ["--", ...shown.flatMap((c) => c.paths)] : [];
+    r = await run([...args, mb.sha, ...paths], dir, more > 0 ? { ...env, GIT_LITERAL_PATHSPECS: "1" } : env);
     if (r.code !== 0) throw new DiffError(500, `git diff failed: ${r.stderr.trim()}`);
     const files = parseDiff(r.stdout);
-    return {
+    const out: TicketDiff = {
       base: mb.ref, mergeBase: mb.sha, branch, files,
       additions: files.reduce((n, f) => n + f.additions, 0),
       deletions: files.reduce((n, f) => n + f.deletions, 0),
     };
+    if (more > 0) {
+      out.moreFiles = more;
+      files.push({ path: `… and ${more.toLocaleString("en-US")} more changed files (not shown)`, status: "M", additions: 0, deletions: 0, binary: false, tooLarge: false, hunks: [], more: true });
+    }
+    return out;
   } finally {
     rmSync(index, { force: true });
     rmSync(`${index}.lock`, { force: true });
   }
+}
+
+/** `git diff --name-status -z`: each changed file's paths (a rename's old and new one). */
+function nameStatus(out: string): { paths: string[] }[] {
+  const parts = out.split("\0");
+  const files: { paths: string[] }[] = [];
+  for (let i = 0; i < parts.length; ) {
+    const st = parts[i++];
+    if (!st) continue;
+    const two = st[0] === "R" || st[0] === "C";
+    const paths = parts.slice(i, i + (two ? 2 : 1)).filter(Boolean);
+    i += two ? 2 : 1;
+    if (paths.length) files.push({ paths });
+  }
+  return files;
 }
 
 /** Undo git's C-style quoting of a path ("a/t\303\251st" etc.). */
@@ -224,6 +265,8 @@ export function parseDiff(out: string): DiffFile[] {
   let oldNo = 0;
   let newNo = 0;
   let patchLines = 0;
+  /** Patch lines kept so far in all files (MAX_DIFF_LINES). */
+  let kept = 0;
   const finish = () => {
     if (f?.tooLarge) f.hunks = [];
   };
@@ -267,7 +310,8 @@ export function parseDiff(out: string): DiffFile[] {
     if (!hunk) continue;
     const c = line[0];
     if (c === "\\") continue; // "\ No newline at end of file"
-    if (++patchLines > MAX_FILE_LINES) f.tooLarge = true;
+    if (++patchLines > MAX_FILE_LINES || kept >= MAX_DIFF_LINES) f.tooLarge = true;
+    if (!f.tooLarge) kept++;
     const text = line.slice(1);
     if (c === "+") {
       f.additions++;

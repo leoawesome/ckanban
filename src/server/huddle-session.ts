@@ -237,7 +237,7 @@ const CLOSED_GRACE_MS = 2 * 60_000;
 export function pollHuddleSessions(store: Store, bus: Bus, version: (sessionId: string) => string | null, state: Map<string, string>, first: boolean, now = Date.now()): void {
   const seen = new Set<string>();
   for (const profile of store.listProfiles()) {
-    for (const h of store.listHuddles(profile.slug)) {
+    for (const h of store.huddleIndex(profile.slug)) {
       if (h.status === "closed" && !(h.closedAt && now - Date.parse(h.closedAt) < CLOSED_GRACE_MS)) continue;
       for (const p of h.participants) {
         if (p.kind !== "agent" || !p.sessionId) continue;

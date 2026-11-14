@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { newestArtifact, safeHref, waitsForSlot, type Job, type SessionMessage, type Ticket } from "./api";
 import { digestPreview } from "./huddleText";
 import { ClockIcon, CloseIcon, ExternalIcon, PinIcon } from "./icons";
@@ -17,6 +17,7 @@ import { elapsed, fullTime, plainPreview, timeAgo } from "./time";
 import { costText } from "./usage";
 import { useNow } from "./useNow";
 import { clearArrival, useArrival } from "./arrivals";
+import { watchMotion } from "./cardMotion";
 import { attentionLabel, cardFamily, familyLineText, partChip, cardHuddleLine, HUDDLE_WORKING, huddleLineText, familyWorkingNames, finishMark, foldChips, openedAt, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown, stepsText, type FinishMark } from "./cardState";
 import { boardColumnOf } from "./columns";
 import { usePhone } from "./usePhone";
@@ -81,6 +82,15 @@ function workingBadge(label: string, since?: string | null, title = label, mood?
 const seenWorking = new Map<string, boolean>();
 const finished = new Map<string, { mark: FinishMark; until: number }>();
 const FINISH_MS = 2400;
+
+/** Forget the tickets no longer on the board (deleted, another board shown), so these maps don't only grow. */
+export function pruneCardMemory(count: number, idsNow: () => { has: (id: string) => boolean }) {
+  // Cheap check first: run the full pass only once the map holds clearly more than the list.
+  if (seenWorking.size <= count + 200) return;
+  const ids = idsNow();
+  for (const id of seenWorking.keys()) if (!ids.has(id)) seenWorking.delete(id);
+  for (const id of finished.keys()) if (!ids.has(id)) finished.delete(id);
+}
 
 /**
  * For a moment after a run ends (working turns false), the mark it leaves: Claude's done, failed or waiting face (✓, ✕ or !
@@ -182,7 +192,8 @@ function FamilyLineView({ line, fc, id }: { line: NonNullable<NonNullable<Ticket
   );
 }
 
-export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, jobs, onOpenJobs, via, onPin }: {
+/** One board card. Memoised: a live update redraws only the cards whose ticket (or props) changed. */
+export const Card = memo(function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, jobs, onOpenJobs, via, onPin }: {
   /** Board cards: id prefix of the title (`-title`) and status lines (`-turn`, `-line`, `-meta`) the card is labelled by. */
   a11yId?: string;
   ticket: Ticket; onClick?: () => void; dragging?: boolean; queued?: number; held?: boolean;
@@ -226,11 +237,14 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   const finish = useFinishMark(ownWorking, ticket);
   // Claude just moved it here: a fading ring, then a "new" dot until hovered or opened.
   const arrival = useArrival(ticket.id);
-  const now = useNow();
+  const lastAt = ticket.session ? ticket.session.lastMessage?.at || ticket.session.updatedAt : null;
+  // The shared 30s ticker only for a card with something to time: its "Your turn" pulse, or a "5m ago" under a day old.
+  // Older ones read "3d ago" and change at most once a day: the shared hourly ticker keeps them moving.
+  const showsAgo = !!lastAt && !working && !(ownWorking && ticket.runStartedAt);
+  const now = useNow(att || (showsAgo && Date.now() - Date.parse(lastAt!) < 86_400_000) ? true : showsAgo ? "hourly" : false);
   const pulse = shouldPulse(att, now, openedAt(ticket.id));
   // Waiting on the user's answer: Claude's waiting face stays in place of the dot (the end-of-run mark leaves after a moment).
   const waitFace = att ? attentionMood(att.kind) : null;
-  const lastAt = ticket.session ? ticket.session.lastMessage?.at || ticket.session.updatedAt : null;
   const artifact = newestArtifact(ticket);
   const artifactHref = safeHref(artifact?.url);
   const hasJobs = !!jobs && !!jobChip(jobs, ticket.id);
@@ -283,10 +297,20 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
   // A sub-feature's "Part of …" or a shown task's "Task of …" chip on top.
   const part = partChip(ticket);
   const pill = signInChip || (finish ? finishBadge(finish) : badge) || (ticket.autoHuddle && ownWorking && autoHuddleChip(ticket.autoHuddle)) || planPill || null;
+  // Something on this card moves (a face, spinner, pulse, the running edge, the arrival ring): watched so its motion
+  // pauses while it is off screen or under the open ticket (cardMotion.ts). Generous on purpose: a card left out
+  // only keeps moving where nobody sees it, as before.
+  const moving = arrival.ring || !!finish || (!done && (!!waitFace || pulse || working || ownWorking || !!huddleLine
+    || !!ticket.huddleBusy || familyBusy || !!ticket.autoHuddle || !!ticket.terminalOpen || fc?.line?.tone === "work"));
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => (moving && ref.current ? watchMotion(ref.current) : undefined), [moving]);
+  const runEdge = (working || !!huddleLine) && !att && !pinned;
   return (
-    <article
+    <article ref={ref}
       className={`card ${dragging ? "dragging" : ""} ${done ? "is-done" : ""} ${queued && !working ? "is-queued" : ""} ${working || huddleLine ? "is-running" : ""} ${quiet ? "is-quiet" : ""} ${att ? `needs-you att-${att.kind}` : ""}${arrival.ring ? " just-arrived" : ""}${pinned ? " is-pinned" : ""}${pinBtn ? " has-pin" : ""}${pinBtn && phone ? " pin-phone" : ""}`}
       onClick={() => { clearArrival(ticket.id); onClick?.(); }} onMouseEnter={arrival.isNew ? () => clearArrival(ticket.id) : undefined}>
+      {/* Running: a light band moving down the left edge (transform only, so it costs no repaint). */}
+      {runEdge && <span className="run-edge" aria-hidden />}
       {pinBtn && <PinButton pinned={pinned} onPin={onPin} />}
       {pinned && <div className="card-pinned-label" aria-hidden><PinIcon size={12} /> Pinned</div>}
       {att && (
@@ -359,4 +383,4 @@ export function Card({ a11yId, ticket, onClick, dragging, queued, held, limit, j
       {limit && !dragging && stallWait(ticket) && <StallActions slug={limit.slug} ticket={ticket} onError={limit.onError} small secondary={false} />}
     </article>
   );
-}
+});

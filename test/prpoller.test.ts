@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "bun:test";
 import type { HostHuddle } from "../src/server/attention";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/server/events";
-import { checkPr, mergePr, refreshPr, type PrState } from "../src/server/prpoller";
+import { checkPr, mergePr, refreshPr, startPoller, type PrState } from "../src/server/prpoller";
 import { parsePrStatus } from "../src/server/prstatus";
 import type { SessionSummary } from "../src/server/session";
 import { Store } from "../src/server/store";
@@ -171,4 +171,27 @@ test("Merge & done with two PRs merges the main one and waits for the other", as
   await mergePr(board, store, "p", id, { status: async (u) => ok(u), merge: async () => ({ ok: true, error: "" }) });
   t = store.getTicket("p", id)!;
   expect(t.status).toBe("done");
+});
+
+test("the poller asks gh only about PRs not seen merged or closed, newest in Review first", async () => {
+  const add = (prs: { url: string; state: PrState }[], statusAt: string) => {
+    const t = store.createTicket("p", { title: "t", body: "", status: "review" });
+    store.updateTicket("p", t.id, { prUrl: prs.at(-1)!.url, prs, statusAt });
+    return t.id;
+  };
+  const merged = add([{ url: "https://github.com/x/y/pull/2", state: "MERGED" }], "2026-11-03T00:00:00Z");
+  const closed = add([{ url: "https://github.com/x/y/pull/3", state: "CLOSED" }], "2026-11-02T00:00:00Z");
+  const open = add([{ url: "https://github.com/x/y/pull/4", state: "OPEN" }], "2026-11-04T00:00:00Z");
+  store.updateTicket("p", id, { statusAt: "2026-11-01T00:00:00Z" });
+  const asked: string[] = [];
+  const local: string[] = [];
+  const stop = startPoller(board, store, 60, {
+    refresh: async (_b, _s, _slug, tid) => (asked.push(tid), null),
+    check: async (_b, _s, _slug, tid, gh) => (local.push(`${tid}:${await gh!(store.getTicket("p", tid)!.prUrl!)}`), null),
+  });
+  await Bun.sleep(20);
+  stop();
+  // A closed PR may have been reopened: asked about on the first tick (then hourly).
+  expect(asked).toEqual([open, closed, id]);
+  expect(local).toEqual([`${merged}:MERGED`]);
 });

@@ -240,7 +240,7 @@ test("a restart holds new messages and continues a reply it cut off", async () =
   process.env.FAKE_MODE = "ok";
   board = new Board(store, bus, { claudeBin: FAKE, isSessionLive: async () => false });
   chats = new QuickChats(store, bus, board, { claudeBin: FAKE, mcp: () => "{}" });
-  chats.recover();
+  await chats.recover();
   await chats.idle();
   const prompts = args().slice(1).map((a) => a.prompt);
   expect(prompts).toContain(CONTINUE_TEXT);
@@ -286,8 +286,15 @@ test("HTTP: list, send, conversation, rename, make ticket and delete", async () 
     const joined = await call("POST", `/${other.body.id}/ticket`, { partOf: feature.id });
     expect(joined.status).toBe(201);
     expect(joined.body.ticket.partOf).toBe(feature.id);
+    // The Ask tab's pages: newest first, next goes on after the page; the list without a limit stays for old pages.
+    const page1 = await call("GET", "?limit=1");
+    expect(page1.body.chats.map((c: any) => c.id)).toEqual([other.body.id]);
+    const page2 = await call("GET", `?limit=1&before=${encodeURIComponent(page1.body.next)}`);
+    expect(page2.body.chats.map((c: any) => c.id)).toEqual([id]);
+    expect(page2.body.next).toBeNull();
     expect((await call("DELETE", `/${id}`)).status).toBe(204);
     expect((await call("GET", `/${id}`)).status).toBe(404);
+    expect((await call("GET", "?limit=50")).body.chats.map((c: any) => c.id)).toEqual([other.body.id]);
   } finally {
     server.stop(true);
   }

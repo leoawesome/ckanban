@@ -76,6 +76,8 @@ function CodeView({ file, scroller }: { file: FileContent; scroller: React.RefOb
  */
 export function FilesView({ slug, ticket = null, refreshSignal, narrow = false }: { slug: string; ticket?: string | null; refreshSignal: number; narrow?: boolean }) {
   const [dirs, setDirs] = useState<Map<string, Dir>>(new Map());
+  // Entries a capped folder didn't send (the server sends at most 2,000 per folder).
+  const [more, setMore] = useState<Map<string, number>>(new Map());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
   const [file, setFile] = useState<FileContent | { error: string } | "loading" | null>(null);
@@ -88,7 +90,10 @@ export function FilesView({ slug, ticket = null, refreshSignal, narrow = false }
   const load = useCallback((path: string) => {
     setDirs((m) => new Map(m).set(path, "loading"));
     api.files(slug, path, ticket)
-      .then((r) => setDirs((m) => new Map(m).set(path, r.entries)))
+      .then((r) => {
+        setDirs((m) => new Map(m).set(path, r.entries));
+        setMore((m) => new Map(m).set(path, r.more ?? 0));
+      })
       .catch((e) => setDirs((m) => new Map(m).set(path, { error: e.message })));
   }, [slug, ticket]);
 
@@ -180,12 +185,22 @@ export function FilesView({ slug, ticket = null, refreshSignal, narrow = false }
     if (!d || d === "loading") return <div className="tree-note muted small" style={pad}>Loading…</div>;
     if ("error" in d) return <div className="tree-note small err-text" style={pad}>{d.error}</div>;
     if (!d.length && depth > 0) return <div className="tree-note muted small" style={pad}>Empty</div>;
-    return d.map((e) => (
-      <div key={e.path} role="none">
-        {renderRow(e, depth)}
-        {e.type === "dir" && expanded.has(e.path) && <div role="group">{renderDir(e.path, depth + 1)}</div>}
-      </div>
-    ));
+    const left = more.get(path) ?? 0;
+    return (
+      <>
+        {d.map((e) => (
+          <div key={e.path} role="none">
+            {renderRow(e, depth)}
+            {e.type === "dir" && expanded.has(e.path) && <div role="group">{renderDir(e.path, depth + 1)}</div>}
+          </div>
+        ))}
+        {left > 0 && (
+          <div className="tree-note muted small" style={pad}>
+            and {left.toLocaleString()} more {left === 1 ? "file" : "files"} (not shown)
+          </div>
+        )}
+      </>
+    );
   };
 
   const current = file && file !== "loading" && !("error" in file) ? file : null;

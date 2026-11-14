@@ -175,6 +175,74 @@ test("with the watch missing a change, the safety pass still catches it", async 
   }
 });
 
+test("the safety pass skips Done tickets until their own 10-minute pass; the feed still reaches them", async () => {
+  const { proj, store, bus, updates, cache } = setup();
+  const sids = ["11111111-2222-3333-4444-888888888881", "11111111-2222-3333-4444-888888888882"];
+  const files = sids.map((sid) => join(proj, `${sid}.jsonl`));
+  for (const f of files) writeFileSync(f, line("hello", "2026-09-29T01:00:00Z"));
+  const open = store.createTicket("p", { title: "open", body: "", status: "review" });
+  store.updateTicket("p", open.id, { sessionId: sids[0] });
+  const done = store.createTicket("p", { title: "done", body: "", status: "done" });
+  store.updateTicket("p", done.id, { sessionId: sids[1] });
+  let now = 1_000_000;
+  const feed = new FakeFeed(); // reports only what the test sends
+  const stop = startSessionWatcher(store, bus, cache, 20, { feed, safetyMs: 60_000, now: () => now });
+  const ids = () => updates().map((e) => (e as any).id);
+  try {
+    await Bun.sleep(100);
+    for (const f of files) appendFileSync(f, line("reply", "2026-09-29T01:00:01Z"));
+    now += 60_000;
+    await until(() => ids().includes(open.id), 10_000);
+    await Bun.sleep(100);
+    expect(ids()).toEqual([open.id]);
+    // The feed reports the Done ticket's session: announced at once.
+    feed.send({ sessionId: sids[1], file: null });
+    await until(() => ids().includes(done.id), 10_000);
+    // Missed by the feed: only the Done pass, 10 minutes after the last, finds it.
+    appendFileSync(files[1], line("again", "2026-09-29T01:00:02Z"));
+    now += 60_000;
+    await Bun.sleep(150);
+    expect(ids().length).toBe(2);
+    now += 10 * 60_000;
+    await until(() => ids().length === 3, 10_000);
+    expect(ids()[2]).toBe(done.id);
+  } finally {
+    stop();
+  }
+});
+
+test("terminal watcher reads Done tickets' titles every 10 minutes, the others' every minute", async () => {
+  const store = new Store(tempDir());
+  const path = tempDir();
+  store.saveProfile({ name: "P", slug: "p", path, baseBranch: "main", maxParallel: 1, createdAt: "" });
+  const open = store.createTicket("p", { title: "x", body: "", status: "review" });
+  store.updateTicket("p", open.id, { sessionId: "s1", workdir: path });
+  const done = store.createTicket("p", { title: "y", body: "", status: "done" });
+  store.updateTicket("p", done.id, { sessionId: "s2", workdir: path });
+  const reads: string[] = [];
+  const names: Record<string, string> = { s1: "alpha", s2: "beta" };
+  const sessions = { summary: (id: string) => (reads.push(id), { title: names[id] }), readIn: async () => {} } as unknown as SessionCache;
+  let now = 0;
+  const cmds = ["claude --resume 'beta'"];
+  const w = new TerminalWatcher(store, new Bus(), sessions, async () => cmds, new FakeFeed(), () => now);
+  await w.poll();
+  expect(reads.sort()).toEqual(["s1", "s2"]);
+  expect(w.isOpen("p", done.id)).toBe(true);
+  now += 60_000;
+  await w.poll();
+  expect(reads.sort()).toEqual(["s1", "s1", "s2"]);
+  now += 10 * 60_000;
+  await w.poll();
+  expect(reads.sort()).toEqual(["s1", "s1", "s1", "s2", "s2"]);
+  // A session id in a command line needs no title.
+  cmds[0] = "claude --resume s2";
+  now += 10 * 60_000;
+  await w.poll();
+  expect(reads.filter((r) => r === "s2").length).toBe(2);
+  expect(w.isOpen("p", done.id)).toBe(true);
+  expect(w.isOpen("p", open.id)).toBe(false);
+});
+
 test("huddle session watcher passes only after a huddle write or a change to a watched session", async () => {
   const store = new Store(tempDir());
   store.saveProfile({ name: "P", slug: "p", path: tempDir(), baseBranch: "main", maxParallel: 1, createdAt: "" });

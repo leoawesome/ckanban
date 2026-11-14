@@ -45,7 +45,7 @@ import { SetupRow } from "./SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "./HelpMenu";
 import { StatusNoteView, useFeatureStatus } from "./StatusBlock";
 import { ResultCardView } from "./ResultCardView";
-import { askClosed, familyOf, hiddenTool, withYouTool } from "./family";
+import { askClosed, byIdOf, familyOf, hiddenTool, withYouTool } from "./family";
 import { type StepInfo, type StepMsg, useStepMessages } from "./StepMessages";
 import { QuestionText } from "./QuestionText";
 import { TaskCard, TaskSheet, TaskTrail, useSheet, WaitingButton } from "./TaskSheet";
@@ -76,6 +76,8 @@ import { Markdown } from "./Transcript";
 import { usePersistentState } from "./usePersistentState";
 import { usePhone } from "./usePhone";
 import { enterSends } from "./enterSends";
+import { capMap, keepSame, laterCounts, MemoBlock } from "./chatMemo";
+import { recentOutputs } from "./outputsOnce";
 
 /** File cards shown under one reply; the rest are in the Outputs tab. */
 const MAX_FILE_CARDS = 8;
@@ -150,6 +152,8 @@ function speaker(b: Block): string {
 /** Copied history of a branched ticket: entries from before the branch point (at = the branch time). */
 /** Old chats the user already chose to send to, by ticket: the reply (cache.at) they confirmed for; asked once per old period. */
 const oldChatOk = new Map<string, string>();
+/** At most this many tickets in oldChatOk (oldest out): it would otherwise grow with every old chat sent to. */
+const OLD_CHAT_OK_MAX = 200;
 /** The message box's footer names an old chat only above this size; smaller ones just get the ask at Send. */
 const OLD_LINE_MIN_TOKENS = 100_000;
 
@@ -256,6 +260,9 @@ function kb(n: number): string {
 /** Whether a message the user sent is in the session file yet. */
 const delivered = (entries: SessionEntry[], text: string) => entries.some((e) => e.role === "user" && norm(e.text) === norm(text));
 
+/** Opening a chat uses the outputs list the ticket panel asked for this recently (outputsOnce.ts). */
+const OPEN_REUSE_MS = 5000;
+
 /** How long the notes beside the conversation wait for the steps' chats and the status after the conversation is in. */
 const SIDE_WAIT_MS = 3000;
 
@@ -350,6 +357,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   const phone = usePhone();
   /** The old-chat line opens the Context panel too. */
   const [contextLocal, setContextLocal] = useState(0);
+  // Relative times ("3m ago") on the messages: redrawn on this tick when their text changes (blockDeps).
   useNow();
   // Sent messages not yet in the session file (the server's queue covers ones Claude hasn't read).
   // steer: sent while Claude was working, so it waits for the server queue instead of joining the timeline.
@@ -432,9 +440,18 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     if (seq < tailApplied.current) return null;
     tailApplied.current = seq;
     setPage((prev) => {
-      if (!prev || r.start <= prev.start) return { entries: r.entries, start: r.start };
+      if (!prev) return { entries: r.entries, start: r.start };
+      // Entries that did not change keep the objects already on screen, so their blocks aren't drawn again; a
+      // refresh that changed nothing keeps the page as it is (no redraw at all).
+      if (r.start <= prev.start) {
+        const entries = keepSame(prev.entries, r.entries);
+        return entries === prev.entries && r.start === prev.start ? prev : { entries, start: r.start };
+      }
       const idx = prev.entries.findIndex((e) => e.uuid === r.entries[0]?.uuid);
-      return idx >= 0 ? { entries: [...prev.entries.slice(0, idx), ...r.entries], start: prev.start } : { entries: r.entries, start: r.start };
+      if (idx < 0) return { entries: r.entries, start: r.start };
+      const tail = prev.entries.slice(idx);
+      const fresh = keepSame(tail, r.entries);
+      return fresh === tail ? prev : { entries: [...prev.entries.slice(0, idx), ...fresh], start: prev.start };
     });
     return r.entries;
   }, [slug, ticket.id, ticket.sessionId]);
@@ -552,7 +569,13 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   // A run just finished: pick up the final message even if no more events arrive. A reply's own message that never
   // reached the session (Stop before Claude read it) can't arrive any more: drop its bubble so it doesn't stick below
   // later messages. Messages sent after this point are left alone.
+  const mounted = useRef(false);
   useEffect(() => {
+    // Opening the chat already loads the conversation (above): only a change of running counts here.
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
     endedAt.current = running ? null : Date.now();
     if (running) return;
     // A reply still streaming when the run ended stays until its saved copy shows (or briefly, if it never does).
@@ -641,11 +664,18 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     }, HANDOFF_RETRY_MS);
     return () => clearInterval(timer);
   }, [handingOff, loadTail]);
-  // Output files for the cards under replies; refreshed whenever the conversation is.
+  // Output files for the cards under replies; refreshed when the end of the conversation changes or a run starts or
+  // ends ("Load earlier" adds older messages only, so it doesn't refetch). Opening the chat reuses the list the ticket
+  // panel just asked for.
   const [files, setFiles] = useState<OutputFile[]>([]);
+  const newestUuid = entries.at(-1)?.uuid;
+  const filesAsked = useRef<string | null>(null);
   useEffect(() => {
-    if (page) api.outputs(slug, ticket.id).then(setFiles).catch(() => {});
-  }, [slug, ticket.id, page, running]);
+    if (!pageIn) return;
+    const first = filesAsked.current !== ticket.id;
+    filesAsked.current = ticket.id;
+    recentOutputs(slug, ticket.id, first ? OPEN_REUSE_MS : 0).then(setFiles).catch(() => {});
+  }, [slug, ticket.id, pageIn, newestUuid, running]);
   const pinned = !!ticket.main || !!feature.status;
   const cards = useMemo(() => filesByReply(entries, files, pinned ? STATUS_FILES : undefined), [entries, files, pinned]);
   // Drop optimistic bubbles once the session file contains the message.
@@ -708,14 +738,20 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         setAskOld(true);
         return;
       }
+      oldChatOk.delete(okKey);
       oldChatOk.set(okKey, old.at);
+      capMap(oldChatOk, OLD_CHAT_OK_MAX);
     }
     setAskOld(false);
     send(draft);
   };
   const sendingNow = useRef(new Set<string>());
   const sendFresh = () => {
-    if (old) oldChatOk.set(okKey, old.at);
+    if (old) {
+      oldChatOk.delete(okKey);
+      oldChatOk.set(okKey, old.at);
+      capMap(oldChatOk, OLD_CHAT_OK_MAX);
+    }
     setAskOld(false);
     send(draft, true);
   };
@@ -768,7 +804,9 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   // A reply still on its way to the session file counts too, so the form doesn't offer "Send answers" again.
   const replying = pending.some((p) => !p.steer);
   // Board updates (kind "board") never answer: a form they interrupt stays open, or is asked again below.
-  const answeredAfter = (index: number) => replying || entries.slice(index + 1).some((e) => e.role === "user" && e.kind === "text" && !e.huddleId && !e.peer?.automation);
+  // "N later messages" and "answered after" for every message in one pass (a long chat has thousands loaded).
+  const counts = useMemo(() => laterCounts(entries), [entries]);
+  const answeredAfter = (index: number) => replying || counts.lastAnswer > index;
   // Forms the user closed without answering (Close question), by uuid; the newest open one also when the ticket only
   // knows a close came after its last run (it closed by itself when they answered in its task's chat).
   const closedIds = useMemo(() => new Set(Object.keys(ticket.closedForms ?? {})), [ticket.closedForms]);
@@ -904,6 +942,35 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   }, [pendingProposal?.uuid]);
   useEffect(() => () => onPendingProposal?.(null), []);
 
+  // Message blocks are drawn again only when what they show changes (MemoBlock): the callbacks they hand out read the
+  // latest ones through this ref.
+  const latest = useRef({ forkFrom, rewound, onError, onOpenHuddle, onOpenOutput, onOpenTicket });
+  latest.current = { forkFrom, rewound, onError, onOpenHuddle, onOpenOutput, onOpenTicket };
+  const latestError = useCallback((m: string) => latest.current.onError(m), []);
+  const ticketById = byIdOf(tickets);
+  /**
+   * What a block shows that can change besides its entries; null: always drawn again (cards with their own state
+   * from the ticket and the board, which are few).
+   */
+  const blockDeps = (b: Block, old: boolean, l: TurnLayout, newest: boolean): unknown[] | null => {
+    // Its "3m ago": the text, not the clock, so old messages aren't drawn again every 30 seconds.
+    const first = b.kind === "entry" ? b.e : b.items[0];
+    const base = [slug, ticket.id, first.at ? timeAgo(first.at) : "", old, l.start, l.lastReply, newest];
+    if (b.kind === "tools") {
+      const live = !old && newest && stepsLive;
+      return [...base, running && !old, live, live ? activity : null, ...b.items];
+    }
+    if (b.kind !== "entry") return [...base, b.kind, ...b.items];
+    const e = b.e;
+    if (CARDS.some((k) => e[k]) || e.mockups || e.unreadable) return null;
+    if (e.kind === "board" || e.commandOutput || e.peer?.automation) return [...base, e];
+    if (e.huddleId) return [...base, e, !!onOpenHuddle];
+    if (e.peer?.ticketId) return [...base, e, ticketById.get(e.peer.ticketId)?.title];
+    if (e.role === "user") return [...base, e, actionsOff, ticket.title, counts.textAfter[b.index], commands, tgMarks.in.has(e.uuid)];
+    const files = cards.get(e.uuid);
+    return [...base, e, simpler.sig(e.uuid), tgMarks.out.has(e.uuid), files ? files.map((f) => `${f.name}:${f.size}`).join("|") : "",
+      !!ticket.canCopyFile, !!onOpenOutput];
+  };
   /** One block of the conversation; old = copied history of a branched ticket (shown dimmed); l: its place in its turn. */
   const renderBlock = (b: Block, old: boolean, l: TurnLayout, newest: boolean) => {
     const el = renderEntry(b, old, l, newest);
@@ -945,7 +1012,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           }
           if (e.huddleId) {
             return (
-              <HuddleDigest key={e.uuid} text={e.text} old={old} onOpen={onOpenHuddle}
+              <HuddleDigest key={e.uuid} text={e.text} old={old} onOpen={onOpenHuddle && (() => latest.current.onOpenHuddle?.())}
                 meta={e.at && <time className="muted small" dateTime={e.at} title={fullTime(e.at)}>{timeAgo(e.at)}</time>} />
             );
           }
@@ -972,13 +1039,13 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           if (e.role === "user") {
             const canGo = !!e.rewind && !old;
             return (
-              <UserMessage key={e.uuid} at={e.at} text={e.text} className={old ? "inherited" : undefined} off={actionsOff} onError={onError}
-                fork={canGo ? { title: ticket.title, run: () => forkFrom(e.uuid) } : undefined}
+              <UserMessage key={e.uuid} at={e.at} text={e.text} className={old ? "inherited" : undefined} off={actionsOff} onError={latestError}
+                fork={canGo ? { title: ticket.title, run: () => latest.current.forkFrom(e.uuid) } : undefined}
                 rewind={canGo ? {
-                  later: entries.slice(b.index + 1).filter((x) => x.kind === "text" && !!x.text && !x.commandOutput).length,
+                  later: counts.textAfter[b.index],
                   preview: () => api.rewindPreview(slug, ticket.id, e.uuid),
                   apply: (files) => api.rewind(slug, ticket.id, e.uuid, files),
-                  onDone: rewound,
+                  onDone: (r) => latest.current.rewound(r),
                 } : undefined}>
                 <UserText text={e.text} commands={commands} command={e.command} />
                 {tgMarks.in.has(e.uuid) && <span className="tg-mark" title="You sent this from Telegram">via Telegram</span>}
@@ -1054,7 +1121,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               )}
               {e.keys && (
                 <KeysBox slug={slug} ticketId={ticket.id} uuid={e.uuid} ask={e.keys} answered={ticket.keyCards?.[e.uuid]}
-                  old={entries.slice(b.index + 1).some((x) => x.role === "user" && x.kind === "text" && !x.huddleId && !x.peer?.automation)} onError={onError} />
+                  old={counts.lastAnswer > b.index} onError={onError} />
               )}
               {e.huddle && (
                 <HuddleCard slug={slug} ticket={ticket} tickets={tickets} uuid={e.uuid} at={e.at} roster={e.huddle.roster} reason={e.huddle.reason} template={e.huddle.template} maxCostUsd={e.huddle.maxCostUsd} topic={e.huddle.topic}
@@ -1070,7 +1137,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                 </div>
               )}
               {!!cards.get(e.uuid)?.length && (
-                <ChatFiles files={cards.get(e.uuid)!} canCopy={!!ticket.canCopyFile} onOpen={(n) => onOpenOutput?.(n)}
+                <ChatFiles files={cards.get(e.uuid)!} canCopy={!!ticket.canCopyFile} onOpen={(n) => latest.current.onOpenOutput?.(n)}
                   onCopy={(n) => copyFile(slug, ticket.id, n)} onDownload={(n) => downloadFile(slug, ticket.id, n)} />
               )}
               {e.unreadable && (
@@ -1093,7 +1160,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
 
   /** Another ticket's name on its messages: opens that ticket. */
   const peerName = (id: string, title?: string) => (
-    <button type="button" className="link-btn turn-link" onClick={() => onOpenTicket(id)}>{tickets.find((x) => x.id === id)?.title ?? title ?? id}</button>
+    <button type="button" className="link-btn turn-link" onClick={() => latest.current.onOpenTicket(id)}>{ticketById.get(id)?.title ?? title ?? id}</button>
   );
 
   // A branched ticket: a divider marks where the copied conversation ends.
@@ -1313,6 +1380,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         )}
         {blocks.map((b, i) => {
           const first = b.kind === "entry" ? b.e : b.items[0];
+          const old = before(first, bp?.at);
+          const newest = b.kind === "tools" ? i === blocks.length - 1 : i === newestReply;
           return (
             <Fragment key={first.uuid}>
               {helpAt.get(i)?.map((c) => <HelpCardView key={c.id} card={c} />)}
@@ -1321,7 +1390,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               {sideView(i)}
               {i === dividerAt && divider}
               {layout[i].divider && <TimeDivider label={layout[i].divider!} />}
-              {renderBlock(b, before(first, bp?.at), layout[i], b.kind === "tools" ? i === blocks.length - 1 : i === newestReply)}
+              {/* Drawn again only when its deps change (see blockDeps). */}
+              <MemoBlock deps={blockDeps(b, old, layout[i], newest)} render={() => renderBlock(b, old, layout[i], newest)} />
             </Fragment>
           );
         })}

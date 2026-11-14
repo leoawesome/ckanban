@@ -44,7 +44,7 @@
 // leads are warned at 80%). There is no message limit: agents talk until they reach a conclusion.
 import { boardConnectorOptions } from "./connectors";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { trackedInterval } from "./lag";
+import { pauser, trackedInterval } from "./lag";
 import { basename, dirname, join } from "node:path";
 import { summarizeEvent } from "./activity";
 import { mcpConfig } from "./agents";
@@ -53,6 +53,7 @@ import { planProposal } from "./plan-proposal";
 import { parseSession, type SessionEntry } from "./session";
 import type { Bus } from "./events";
 import { addWorktree, branchExists, hasCommits, NO_HOOKS, removeWorktree, run as git, worktreeDir } from "./git";
+import { projectNames, removeOutputCopies } from "./output-copies";
 import {
   activeHost, DEFAULT_MAX_PARTICIPANTS, handleBase, HUDDLE_AGENT_ENV, LEGACY_SUMMARY_FILE, MAIN_HANDLE, NO_EDIT_TOOLS, parseMentions, RESERVED_HANDLES,
   proposalFile, REVIEW_HUDDLE_HEADING, reviewHuddleRequest, rosterEntryError, rosterError, summaryFile, USER_HANDLE, type RosterEntry,
@@ -193,7 +194,7 @@ export interface GenericSquadResult {
 }
 
 /** The seq the user has seen up to: their last post or action (Stop, Resume, restart…). */
-export function userSeenSeq(h: Huddle, msgs: HuddleMessage[]): number {
+export function userSeenSeq(h: Huddle, msgs: readonly HuddleMessage[]): number {
   const me = h.participants.find((p) => p.handle === USER_HANDLE);
   const posted = msgs.findLast((m) => m.from === USER_HANDLE)?.seq ?? 0;
   return Math.max(me?.cursor ?? 0, posted);
@@ -208,7 +209,7 @@ export { LEGACY_SUMMARY_FILE, summaryFile };
  * The summary the board writes itself when a huddle closed without one and @main can't write it: the brief, the
  * roster with costs, the findings, each lead's last message and the output files the messages mention.
  */
-export function fallbackSummary(h: Huddle, msgs: HuddleMessage[], outputs: string[]): string {
+export function fallbackSummary(h: Huddle, msgs: readonly HuddleMessage[], outputs: string[]): string {
   const span = `${h.createdAt.slice(0, 16).replace("T", " ")}${h.closedAt ? ` to ${h.closedAt.slice(0, 16).replace("T", " ")}` : ""} UTC`;
   const agents = h.participants.filter((p) => p.kind !== "human");
   const leads = agents.filter((p) => p.lead || p.handle === MAIN_HANDLE);
@@ -331,6 +332,10 @@ export class Huddles {
   private sessionExists: (id: string) => boolean;
   /** Background work whenIdle() waits for (worktree cleanup after a close). */
   private chores = new Set<Promise<void>>();
+  /** Ticket -> the doneAt its outputs were last cleaned for (cleanOutputs); capped, oldest dropped. */
+  private doneCleaned = new Map<string, string>();
+  /** Per ticket: the outputs cleanup running now, so two never walk the same folders at once. */
+  private cleaning = new Map<string, Promise<void>>();
   /** Each huddle as this board last saved it, with its file's stamp, by "<slug>/<huddle>" (see guard). */
   private saved = new Map<string, { stamp: string | null; h: Huddle }>();
   private sweeper: ReturnType<typeof setInterval> | null = null;
@@ -353,7 +358,17 @@ export class Huddles {
       // The host ticket moved to Done: so did its huddles from before then (one started on a Done card keeps going).
       if (e.ticket.status === "done") {
         const { profile, ticket } = e;
-        if (this.store.listHuddles(profile).some((h) => h.hostTicket === ticket.id && h.status !== "closed" && endedByDone(h, ticket))) {
+        // Once per move to Done (doneAt): project copies left in its earlier huddles' helper folders go.
+        const doneKey = `${profile}/${ticket.id}`;
+        // huddleIndex is cached in memory: no file read for a Done ticket without closed huddles.
+        if (ticket.doneAt && this.doneCleaned.get(doneKey) !== ticket.doneAt
+          && this.store.huddleIndex(profile).some((x) => x.hostTicket === ticket.id && x.status === "closed")) {
+          this.doneCleaned.delete(doneKey);
+          this.doneCleaned.set(doneKey, ticket.doneAt);
+          if (this.doneCleaned.size > 2000) this.doneCleaned.delete(this.doneCleaned.keys().next().value!);
+          queueMicrotask(() => this.chore(this.cleanOutputs(profile, ticket.id)));
+        }
+        if (this.store.openHuddles(profile).some((h) => h.hostTicket === ticket.id && endedByDone(h, ticket))) {
           queueMicrotask(() => this.closeForTicket(profile, ticket.id, "the host ticket moved to Done"));
         }
       }
@@ -406,24 +421,24 @@ export class Huddles {
     const h = this.load(slug, woken.hid);
     const p = h?.participants.find((x) => x.handle === woken.handle && x.ticketId === ticketId);
     if (!h || !p || h.status === "closed") return;
-    const prev = known ?? this.priorSessionTotal(slug, ticketId, sid, total);
-    const cost = total >= prev ? total - prev : total;
-    this.updateP(slug, h.id, p.handle, { costUsd: (p.costUsd ?? 0) + cost, sessionCostUsd: total, idleAt: nowIso() });
-    this.checkBudget(slug, h.id);
+    const charge = (prev: number) => {
+      const h = this.load(slug, woken.hid);
+      const p = h?.participants.find((x) => x.handle === woken.handle && x.ticketId === ticketId);
+      if (!h || !p || h.status === "closed" || this.shuttingDown) return;
+      const cost = total >= prev ? total - prev : total;
+      this.updateP(slug, h.id, p.handle, { costUsd: (p.costUsd ?? 0) + cost, sessionCostUsd: total, idleAt: nowIso() });
+      this.checkBudget(slug, h.id);
+    };
+    if (known !== undefined) charge(known);
+    else void this.priorSessionTotal(slug, ticketId, sid, total).then(charge, (e) => console.error(`huddle cost of ${slug}/${ticketId}:`, e));
   }
 
-  /** A ticket session's running total before its latest result (already in the activity log), from that log; 0 if none. */
-  private priorSessionTotal(slug: string, ticketId: string, sid: string, latest: number): number {
-    const path = this.store.activityPath(slug, ticketId);
-    if (!existsSync(path)) return 0;
-    const totals: number[] = [];
-    for (const line of readFileSync(path, "utf8").split("\n")) {
-      if (!line.includes('"total_cost_usd"')) continue;
-      try {
-        const ev = JSON.parse(line)?.event;
-        if (ev?.type === "result" && String(ev.session_id ?? "") === sid) totals.push(Number(ev.total_cost_usd) || 0);
-      } catch {}
-    }
+  /**
+   * A ticket session's running total before its latest result (already in the activity log), from that log; 0 if none.
+   * The log's digest reads only what was appended since last time (the first time in slices).
+   */
+  private async priorSessionTotal(slug: string, ticketId: string, sid: string, latest: number): Promise<number> {
+    const totals = [...((await this.store.activityDigest(slug, ticketId)).sessionTotals.get(sid) ?? [])];
     if (totals.at(-1) === latest) totals.pop();
     return totals.at(-1) ?? 0;
   }
@@ -449,8 +464,7 @@ export class Huddles {
     if (cur.tokens === cur.saved || (ev.type !== "result" && now - cur.savedAt < ACTIVITY_THROTTLE_MS)) return;
     cur.saved = cur.tokens;
     cur.savedAt = now;
-    for (const h of this.store.listHuddles(slug)) {
-      if (h.status === "closed") continue;
+    for (const h of this.store.openHuddles(slug)) {
       for (const p of h.participants) {
         if (p.kind === "ticket-main" && p.ticketId === ticketId && p.contextTokens !== cur.tokens) this.updateP(slug, h.id, p.handle, { contextTokens: cur.tokens });
       }
@@ -626,7 +640,7 @@ export class Huddles {
   }
 
   /** Live, nobody working, nobody with an unanswered tag and no open findings; idleSince: the last message or turn. */
-  private quiet(slug: string, h: Huddle, msgs: HuddleMessage[]): { quiet: boolean; idleSince: string | null } {
+  private quiet(slug: string, h: Huddle, msgs: readonly HuddleMessage[]): { quiet: boolean; idleSince: string | null } {
     const no = { quiet: false, idleSince: null };
     const ps = h.participants.filter((p) => p.kind !== "human");
     if (h.status !== "live" || h.findings.some((f) => f.status === "open") || ps.some((p) => this.working(slug, h, p))) return no;
@@ -637,13 +651,53 @@ export class Huddles {
 
   /** What the agents of a ticket's huddles spent (see teammateSpend). */
   ticketSpend(slug: string, ticketId: string): { costUsd: number; huddles: HuddleTeammateSpend[] } {
-    return teammateSpend(this.store.huddleIndex(slug), ticketId);
+    return teammateSpend(this.hostedBy(slug).get(ticketId) ?? [], ticketId);
+  }
+
+  /**
+   * The board's huddles by host ticket, rebuilt only when the huddle list changed: ticketSpend runs once per row of a
+   * feature view or open card, and walking every huddle (thousands) for each one added up to hundreds of ms.
+   */
+  private hosted = new Map<string, { version: string; index: readonly Huddle[]; map: Map<string, Huddle[]> }>();
+  private hostedBy(slug: string): Map<string, Huddle[]> {
+    const index = this.store.huddleIndex(slug);
+    const version = this.store.huddlesVersion(slug);
+    const had = this.hosted.get(slug);
+    if (had && had.version === version && had.index === index) return had.map;
+    const map = new Map<string, Huddle[]>();
+    for (const h of index) {
+      const list = map.get(h.hostTicket);
+      if (list) list.push(h);
+      else map.set(h.hostTicket, [h]);
+    }
+    this.hosted.set(slug, { version, index, map });
+    return map;
   }
 
   list(slug: string, ticketId?: string): HuddleView[] {
-    return this.store.listHuddles(slug)
+    // Filtered on the shared index first, then only those copied: copying every huddle (thousands) per call added up.
+    return this.store.huddleIndex(slug)
       .filter((h) => !ticketId || h.hostTicket === ticketId || h.participants.some((p) => p.ticketId === ticketId))
-      .map((h) => this.view(slug, h));
+      .map((h) => this.view(slug, structuredClone(h) as Huddle));
+  }
+
+  /**
+   * list() for the HTTP route: the huddle files read in slices if a fresh daemon hasn't read them yet, then each view
+   * (a copy, two file checks for its summary, a closed one's nothing else) built with a pause between, so 2,000
+   * huddles don't freeze the daemon. open: only those not closed (the board's first load).
+   */
+  async listSliced(slug: string, q: { ticketId?: string; open?: boolean }, pause = pauser()): Promise<HuddleView[]> {
+    await this.store.loadHuddles(slug);
+    const { ticketId, open } = q;
+    const picked = (open ? this.store.openHuddles(slug) : this.store.huddleIndex(slug))
+      .filter((h) => !ticketId || h.hostTicket === ticketId || h.participants.some((p) => p.ticketId === ticketId));
+    const out: HuddleView[] = [];
+    for (const h of picked) {
+      // A huddle saved while this paused shows as it was when the list started (the next poll has the new one).
+      await pause();
+      out.push(this.view(slug, structuredClone(h) as Huddle));
+    }
+    return out;
   }
 
   /** Messages, newest page first: `before` pages back, `since` reads forward from a seq. */
@@ -681,8 +735,9 @@ export class Huddles {
       let h: Huddle | undefined;
       if (hid === "current") {
         // Its newest open huddle, preferring one it hosts.
-        const open = this.store.listHuddles(slug).filter((x) => x.status !== "closed" && mine(x)).reverse();
-        h = open.find((x) => x.hostTicket === ticketId) ?? open[0];
+        const open = this.store.openHuddles(slug).filter((x) => mine(x)).reverse();
+        const found = open.find((x) => x.hostTicket === ticketId) ?? open[0];
+        h = found && structuredClone(found);
         if (!h) throw new HuddleError(404, `ticket ${ticketId} is in no open huddle`);
       } else h = this.get(slug, hid);
       const me = mine(h);
@@ -791,7 +846,8 @@ export class Huddles {
   /** How every teammate and template has been used, from the huddles on every board (closed ones included). */
   usage(): { teammates: Record<string, Usage>; templates: Record<string, Usage> } {
     return huddleUsage(this.store.listProfiles().flatMap((p) =>
-      this.store.listHuddles(p.slug).map((h) => ({ board: p.slug, huddle: h, title: this.store.getTicket(p.slug, h.hostTicket)?.title ?? null }))));
+      // The shared frozen index (only read here): no copy of every huddle on every board.
+      this.store.huddleIndex(p.slug).map((h) => ({ board: p.slug, huddle: h as Huddle, title: this.store.getTicket(p.slug, h.hostTicket)?.title ?? null }))));
   }
 
   // ---- Role notes (huddle-notes.ts): only the user writes them ----
@@ -1192,7 +1248,7 @@ export class Huddles {
     const budgetNote = opts.maxCostUsd === undefined ? (tpl?.maxCostUsd !== undefined ? " (template default)" : " (default)")
       : asked !== undefined && asked > maxCostUsd ? ` (asked ${money(asked)}, capped at ${money(maxCostUsd)})`
       : opts.auto ? " (asked by the ticket's run)" : opts.byUser ? " (asked by the user)" : "";
-    const open = this.store.listHuddles(slug).find((h) => h.hostTicket === hostId && h.status !== "closed");
+    const open = this.store.openHuddles(slug).find((h) => h.hostTicket === hostId);
     if (open) throw new HuddleError(409, `ticket ${hostId} already has an open huddle (${open.id}); close it first`);
     const presets = this.presetMap(slug);
     const err = rosterError(roster, max, [...presets.keys()]);
@@ -1289,7 +1345,7 @@ export class Huddles {
     if (!this.board.unattendedRun(slug, hostId)) {
       throw new HuddleError(403, `start_huddle only works in an unattended run of the ticket (Ready / In Progress work, a plan child, a schedule run), not in a chat${propose}`);
     }
-    const open = this.store.listHuddles(slug).find((h) => h.hostTicket === hostId && h.status !== "closed");
+    const open = this.store.openHuddles(slug).find((h) => h.hostTicket === hostId);
     if (open) throw new HuddleError(409, `ticket ${hostId} already has an open huddle (${open.id})${propose}, or post in that one`);
     // The trigger names the rule that called for the review, so the user can check it on the ticket.
     const trigger = input.trigger?.trim();
@@ -1358,7 +1414,7 @@ export class Huddles {
 
   /** The board's live auto huddles (at most one, unless the user resumed a stopped one). */
   private liveAuto(slug: string): Huddle[] {
-    return this.store.listHuddles(slug).filter((h) => h.auto && h.status === "live");
+    return this.store.openHuddles(slug).filter((h) => h.auto && h.status === "live").map((h) => structuredClone(h));
   }
 
   /**
@@ -1905,7 +1961,8 @@ export class Huddles {
   idleSweep(now = Date.now()): void {
     if (this.shuttingDown || this.board.isRestartPending()) return;
     for (const profile of this.store.listProfiles()) {
-      for (const h of this.store.listHuddles(profile.slug)) {
+      // Open huddles only, shared (no copies): a board keeps every closed huddle.
+      for (const h of this.store.openHuddles(profile.slug)) {
         if (h.status === "live") this.idleCheck(profile.slug, h.id, now);
       }
     }
@@ -2417,6 +2474,7 @@ export class Huddles {
       for (const p of x.participants) if (p.kind === "agent" && p.status === "working") p.status = "stopped";
     });
     if (h.participants.some((p) => p.kind === "agent" && (p.worktree || p.copy))) this.chore(this.removeWorktrees(slug, hid));
+    this.chore(this.cleanOutputs(slug, h.hostTicket, hid));
     if (h.auto) this.autoEnded(slug, hid, why ? "closed" : "user", why ?? "the user closed it");
     if (summarize) this.ensureSummary(slug, hid);
     return out;
@@ -2425,8 +2483,8 @@ export class Huddles {
   /** The host ticket was deleted or moved to Done: its huddles close (a deleted one's without a summary). */
   closeForTicket(slug: string, ticketId: string, why = DELETED): void {
     const t = why === DELETED ? null : this.store.getTicket(slug, ticketId);
-    for (const h of this.store.listHuddles(slug)) {
-      if (h.hostTicket === ticketId && h.status !== "closed" && (!t || endedByDone(h, t))) this.close(slug, h.id, why, why !== DELETED);
+    for (const h of this.store.openHuddles(slug)) {
+      if (h.hostTicket === ticketId && (!t || endedByDone(h, t))) this.close(slug, h.id, why, why !== DELETED);
     }
   }
 
@@ -2545,6 +2603,49 @@ export class Huddles {
     if (lines.length) this.system(slug, hid, lines.join("\n"));
   }
 
+  /**
+   * Removes project copies and dependency folders helpers left in their folders of the ticket's outputs
+   * (output-copies.ts), for one huddle (`hid`, just closed) or every closed huddle of a ticket that moved to Done.
+   * Helpers of a huddle still open on the ticket keep their folders. Runs after the helpers' runs have ended.
+   */
+  private cleanOutputs(slug: string, ticketId: string, hid?: string): Promise<void> {
+    const key = `${slug}/${ticketId}`;
+    const next = (this.cleaning.get(key) ?? Promise.resolve()).catch(() => {}).then(() => this.cleanOutputsNow(slug, ticketId, hid));
+    const mine = next.finally(() => {
+      if (this.cleaning.get(key) === mine) this.cleaning.delete(key);
+    });
+    this.cleaning.set(key, mine);
+    return mine;
+  }
+
+  private async cleanOutputsNow(slug: string, ticketId: string, hid?: string): Promise<void> {
+    // The board's huddles are cached in memory (huddleIndex); filtering them is no file read.
+    let mine = this.store.huddleIndex(slug).filter((x) => x.hostTicket === ticketId && (!hid || x.id === hid || x.status !== "closed"));
+    if (!mine.some((x) => x.status === "closed")) return;
+    const profile = this.store.getProfile(slug);
+    if (!profile || !this.store.getTicket(slug, ticketId)) return;
+    // Their runs were just stopped: let them end first, so nothing writes while the copies go.
+    const ids = new Set(mine.filter((x) => x.status === "closed").map((x) => `${slug}/${x.id}/`));
+    await Promise.all([...this.runs.entries()].filter(([k]) => ids.has(k.slice(0, k.lastIndexOf("/") + 1))).map(([, r]) => r.promise));
+    mine = this.store.huddleIndex(slug).filter((x) => x.hostTicket === ticketId && (!hid || x.id === hid || x.status !== "closed"));
+    const busy = new Set(mine.filter((x) => x.status !== "closed").flatMap((x) => x.participants.map((p) => p.handle)));
+    const handles = mine.filter((x) => x.status === "closed" && (!hid || x.id === hid))
+      .flatMap((x) => x.participants.filter((p) => p.kind === "agent" && !busy.has(p.handle)).map((p) => p.handle));
+    if (!handles.length) return;
+    const { removed, failed, worktree } = await removeOutputCopies(this.store.outputsPath(slug, ticketId), handles, await projectNames(profile.path), profile.path);
+    // Only entries whose folder is gone are pruned; run in the project, never inside the helper-made folder.
+    if (worktree) await git(["git", "worktree", "prune"], profile.path).catch(() => null);
+    if (failed.length) console.warn(`[huddle] couldn't remove these from ${ticketId}'s outputs: ${failed.join(", ")}`);
+    if (removed.length) console.log(`[huddle] removed ${removed.length} copied or installed folders from ${ticketId}'s outputs: ${removed.join(", ")}`);
+    // The huddle may have been deleted during a long removal.
+    if (!hid || (!removed.length && !failed.length) || !this.load(slug, hid)) return;
+    const lines = [
+      ...(removed.length ? [`Removed copies of the project the helpers left in the ticket's outputs (${removed.join(", ")}). Reports and other results stay.`] : []),
+      ...(failed.length ? [`Couldn't fully remove: ${failed.join(", ")}. Delete what's left yourself if you don't need it.`] : []),
+    ];
+    this.system(slug, hid, lines.join("\n"));
+  }
+
   /** Daemon exiting: agents mid-turn are marked so recover() resumes them; every agent run is killed. */
   async shutdown(): Promise<void> {
     this.shuttingDown = true;
@@ -2567,8 +2668,7 @@ export class Huddles {
   recover(): void {
     for (const profile of this.store.listProfiles()) {
       const slug = profile.slug;
-      for (const h of this.store.listHuddles(slug)) {
-        if (h.status === "closed") continue;
+      for (const h of this.store.openHuddles(slug)) {
         const host = this.store.getTicket(slug, h.hostTicket);
         if (host?.status === "done" && endedByDone(h, host)) {
           this.close(slug, h.id, "the host ticket moved to Done");

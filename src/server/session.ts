@@ -7,7 +7,7 @@ import { basename, dirname, join } from "node:path";
 import { withoutAttachmentNote } from "./attachments";
 import { commandText, localCommandOutput, TERMINAL_COMMANDS } from "./commands";
 import type { Bus } from "./events";
-import { SAFETY_PASS_MS, type SessionChanges } from "./changefeed";
+import { DONE_PASS_MS, SAFETY_PASS_MS, type SessionChanges } from "./changefeed";
 import { proposedBudget, rosterError, type RosterEntry } from "./huddle-roster";
 import { mockupName, stripMockups } from "./mockups";
 import { parseResult } from "./result";
@@ -952,11 +952,18 @@ const MISSING_RETRY_MS = 60_000;
 const INDEX_MS = 1_000;
 /** The same while the session feed watches the folder: it adds new files to the scan, this is only a safety net. */
 const FED_INDEX_MS = 60_000;
-/** How soon new summaries are written to the summary cache file. */
-const SUMMARY_FLUSH_MS = 2_000;
+/**
+ * How soon new summaries are written to the summary cache file. The file is rewritten whole (megabytes on a big board),
+ * and running sessions make new summaries every few seconds: at most this often, and at shutdown (main.ts).
+ */
+const SUMMARY_FLUSH_MS = 30_000;
+/** A saved summary nobody used this many days is dropped (made again if that session is opened). */
+const SUMMARY_KEEP_DAYS = 30;
+const DAY_MS = 86_400_000;
 
 type StoredSummary = Omit<SessionSummary, "updatedAt">;
-type SummaryItems = Record<string, { v: string; s: StoredSummary }>;
+/** u: the day (ms / DAY_MS) the summary was last used; missing in files from older code (counts as the day it loaded). */
+type SummaryItems = Record<string, { v: string; s: StoredSummary; u?: number }>;
 interface SummaryFile {
   tag: string;
   items: SummaryItems;
@@ -1045,9 +1052,11 @@ export class SessionCache {
         if (isItems(v?.items) && sameFormat(v.tag)) {
           const older = isItems(v.stale) ? v.stale : {};
           if (v.tag === tag) [items, stale] = [v.items, older];
-          else stale = { ...older, ...v.items };
+          else (stale = { ...older, ...v.items }), (this.summariesDirty = true);
         }
       } catch {}
+      const today = this.today();
+      for (const e of Object.values(items)) if (e.u === undefined) (e.u = today), (this.summariesDirty = true);
     }
     return (this.summaries = { tag, items, ...(Object.keys(stale).length ? { stale } : {}) });
   }
@@ -1060,24 +1069,66 @@ export class SessionCache {
     return { ...this.blank, ...old.s };
   }
 
+  private today(): number {
+    return Math.floor(this.now() / DAY_MS);
+  }
+
+  /** Notes that a saved summary was used today (written with the next flush), so the prune keeps it. */
+  private used(e: { u?: number }) {
+    const today = this.today();
+    if (e.u === today) return;
+    e.u = today;
+    this.summariesDirty = true;
+  }
+
+  /** The saved summaries changed since the file was last written (flushSummaries writes only then). */
+  private summariesDirty = false;
+
   private storeSummary(sessionId: string, v: string, s: StoredSummary) {
     if (!this.summaryFile) return;
     const stored = this.storedSummaries();
-    stored.items[sessionId] = { v, s };
+    stored.items[sessionId] = { v, s, u: this.today() };
     if (stored.stale) delete stored.stale[sessionId];
+    this.summariesDirty = true;
     this.flushTimer ??= setTimeout(() => this.flushSummaries(), SUMMARY_FLUSH_MS);
     (this.flushTimer as { unref?: () => void }).unref?.();
   }
 
-  /** Writes the summary cache file now (also called on a timer after new summaries). */
+  /**
+   * Writes the summary cache file now (also called on a timer after new summaries), only when something in it changed.
+   * Whole and in one go: about 10ms per 1,000 sessions (stringify and write), so it runs at most every
+   * SUMMARY_FLUSH_MS and is tracked, so a freeze from it names it in daemon.log. A journal of changed entries would
+   * keep it flat on a very big board.
+   */
   flushSummaries(): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
     if (!this.summaryFile || !this.summaries) return;
-    try {
-      atomicWrite(this.summaryFile, JSON.stringify(this.summaries));
-    } catch (e) {
-      console.error("session summary cache", e);
+    track("session summaries write", () => {
+      this.pruneSummaries();
+      if (!this.summariesDirty) return;
+      try {
+        atomicWrite(this.summaryFile!, JSON.stringify(this.summaries));
+        this.summariesDirty = false;
+      } catch (e) {
+        console.error("session summary cache", e);
+      }
+    });
+  }
+
+  /**
+   * Drops saved summaries of sessions whose transcript is gone (from the last scan of the projects folder, so no file
+   * is read here) and those nobody used for SUMMARY_KEEP_DAYS: the file otherwise kept every session ever seen.
+   * Every ticket's summary is used at each start (warm), so only old sessions no ticket links any more go.
+   */
+  private pruneSummaries(): void {
+    const items = this.summaries?.items;
+    if (!items) return;
+    const oldest = this.today() - SUMMARY_KEEP_DAYS;
+    // An empty scan is more likely a folder that couldn't be read than every transcript gone.
+    const scan = this.index?.files.size ? this.index.files : null;
+    for (const [id, e] of Object.entries(items)) {
+      if ((e.u ?? oldest) < oldest || (scan && !scan.has(id) && !this.files.has(id))) (delete items[id], (this.summariesDirty = true));
     }
   }
 
@@ -1130,6 +1181,32 @@ export class SessionCache {
 
   /** Files the feed reported while a background scan runs: the scan may have read their folder before they came. */
   private scanAdds: Map<string, string> | null = null;
+  private firstScan: Promise<void> | null = null;
+
+  /**
+   * The first scan of the projects folder, off the event loop. Without it the first lookup after a start (a page, the
+   * warm-up) read every projects folder in one go: thousands of folders, a freeze of 100ms or more on a busy Mac.
+   */
+  scanned(): Promise<void> {
+    if (this.index) return Promise.resolve();
+    this.firstScan ??= (async () => {
+      const adds = (this.scanAdds = new Map());
+      const at = this.now();
+      try {
+        const files = await scanSessionFilesAsync(this.dirs);
+        if (!this.index) {
+          for (const [id, f] of adds) files.set(id, f);
+          this.index = { at, files };
+        }
+      } catch (e) {
+        console.error("session scan", e);
+      } finally {
+        if (this.scanAdds === adds) this.scanAdds = null;
+        this.firstScan = null;
+      }
+    })();
+    return this.firstScan;
+  }
 
   /** A fresh index from a scan off the event loop (one at a time); the old index stays until it is done. */
   private rescan(): void {
@@ -1196,7 +1273,8 @@ export class SessionCache {
       const recent = this.now() - ACTIVE_MS;
       for (const [k, v] of this.items) {
         if (this.items.size <= MAX_PARSED) break;
-        if (k !== sessionId && v.mtimeMs < recent) this.items.delete(k);
+        // One still being read in slices (readIn, warm) stays, or it would start again at byte 0 next slice.
+        if (k !== sessionId && v.mtimeMs < recent && v.offset >= v.size) this.items.delete(k);
       }
     }
     const n = Math.min(st.size - hit.offset, maxBytes);
@@ -1277,12 +1355,18 @@ export class SessionCache {
       }
     };
     const missing = async () => {
+      await this.scanned();
       for (const id of sessionIds) {
         await pause();
         const f = this.locate(id);
         if (!f) continue;
         const v = this.summaryFile ? this.version(id) : null;
-        if (v && (this.storedSummaries().items[id]?.v === v || this.staleSummary(id, v))) continue;
+        const saved = this.storedSummaries().items[id];
+        if (v && saved?.v === v) {
+          this.used(saved);
+          continue;
+        }
+        if (v && this.staleSummary(id, v)) continue;
         await read(id, f);
         this.summary(id);
       }
@@ -1307,6 +1391,7 @@ export class SessionCache {
       const stored = this.storedSummaries();
       if (stored.stale) {
         delete stored.stale;
+        this.summariesDirty = true;
         this.flushTimer ??= setTimeout(() => this.flushSummaries(), SUMMARY_FLUSH_MS);
         (this.flushTimer as { unref?: () => void }).unref?.();
       }
@@ -1344,7 +1429,7 @@ export class SessionCache {
    * made again: see warm()).
    */
   ready(): Promise<void> {
-    return this.usable;
+    return this.scanned().then(() => this.usable);
   }
 
   /** Settles when every warm() started so far has finished: every summary is made by this code. */
@@ -1374,7 +1459,10 @@ export class SessionCache {
     // Its transcript (and its subagents') unchanged since the summary was made: no need to read it.
     const v = this.summaryFile ? this.version(sessionId) : null;
     const hit = v ? this.storedSummaries().items[sessionId] : undefined;
-    if (hit && hit.v === v) return { ...hit.s, updatedAt };
+    if (hit && hit.v === v) {
+      this.used(hit);
+      return { ...hit.s, updatedAt };
+    }
     const old = this.staleSummary(sessionId, v);
     if (old) return { ...old, updatedAt };
     return this.fresh(sessionId);
@@ -1411,31 +1499,24 @@ export class SessionCache {
  * One polling pass: emit session.updated for every ticket whose session file changed since last pass. With emit
  * false it only notes the versions and readies the summaries (the watcher's first pass: nothing changed yet for pages
  * that load after it, and their first load finds the summaries ready).
+ * It pauses every ~sliceMs, also inside a long transcript read. Each ticket's look costs a few stats (its transcript,
+ * its subagents' and workflows' folders): tens of ms for a big board on an idle Mac, but seconds of frozen daemon when
+ * the Mac is busy (test suites, a virus scan). The listing can be a moment old by the time a ticket is looked at: what
+ * changed meanwhile the Store's writes and the feed report to the next pass anyway.
+ * skipDone: Done tickets are only noted (seen), not looked at; their last versions are kept.
  */
-export function pollSessions(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true, seen?: (sessionId: string | null, key: string) => void): void {
-  const live = new Set<string>();
-  for (const p of store.listProfiles()) {
-    for (const t of store.listTickets(p.slug)) {
-      seen?.(t.sessionId, `${p.slug}/${t.id}`);
-      pollOne(bus, cache, state, live, p.slug, t, emit);
-    }
-  }
-  for (const k of state.keys()) if (!live.has(k)) state.delete(k);
-}
-
-/**
- * pollSessions in slices: it pauses every ~sliceMs, also inside a long transcript read. Each ticket's look costs a few
- * stats (its transcript, its subagents' and workflows' folders): tens of ms for a big board on an idle Mac, but seconds
- * of frozen daemon when the Mac is busy (test suites, a virus scan). The listing can be a moment old by the time a
- * ticket is looked at: what changed meanwhile the Store's writes and the feed report to the next pass anyway.
- */
-export async function pollSessionsSliced(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true, seen?: (sessionId: string | null, key: string) => void, sliceMs = 30): Promise<void> {
+export async function pollSessionsSliced(store: Store, bus: Bus, cache: SessionCache, state: Map<string, string>, emit = true, seen?: (sessionId: string | null, key: string) => void, sliceMs = 30, skipDone = false): Promise<void> {
   const pause = pauser(sliceMs);
   const live = new Set<string>();
   for (const p of store.listProfiles()) {
     for (const t of store.listTickets(p.slug)) {
       await pause();
-      seen?.(t.sessionId, `${p.slug}/${t.id}`);
+      const key = `${p.slug}/${t.id}`;
+      seen?.(t.sessionId, key);
+      if (skipDone && t.status === "done") {
+        if (t.sessionId) live.add(key);
+        continue;
+      }
       await pollOneSliced(bus, cache, state, live, p.slug, t, emit, pause);
     }
   }
@@ -1473,7 +1554,7 @@ const SILENT = { emit() {} } as unknown as Bus;
 export async function primeSessions(store: Store, cache: SessionCache, state: Map<string, string>, sliceMs = 30, bus?: Bus): Promise<void> {
   const tickets = store.listProfiles().flatMap((p) => store.listTickets(p.slug).map((t) => ({ slug: p.slug, t })));
   // Huddle teammates' sessions too: a ticket's links list their artifacts.
-  const teammates = store.listProfiles().flatMap((p) => store.listHuddles(p.slug).flatMap((h) => h.participants.flatMap((x) => (x.kind === "agent" && x.sessionId ? [x.sessionId] : []))));
+  const teammates = store.listProfiles().flatMap((p) => store.huddleIndex(p.slug).flatMap((h) => h.participants.flatMap((x) => (x.kind === "agent" && x.sessionId ? [x.sessionId] : []))));
   const remade = new Set<string>();
   await cache.warm([...tickets.flatMap(({ t }) => (t.sessionId ? [t.sessionId] : [])), ...teammates], sliceMs, (id) => remade.add(id));
   const pause = pauser(sliceMs);
@@ -1524,16 +1605,20 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
   const stopFeed = o.feed?.subscribe((c) => (c ? sessions.add(c.sessionId) : (unknown = true)));
   // The first timer pass is a full one: it learns which tickets own which sessions.
   let lastFull = -Infinity;
+  // Done tickets (most of a big board) are looked at every DONE_PASS_MS while the feed is live and missed nothing.
+  let lastDone = -Infinity;
   // A full pass runs in slices (pollSessionsSliced): on a busy Mac it takes seconds, and the daemon answers meanwhile.
   // The owners it learns replace the old ones only when it is done, so changed() keeps finding them until then.
   const full = async (emit: boolean) => {
+    const skipDone = !!o.feed?.live && !unknown && now() - lastDone < DONE_PASS_MS;
+    if (!skipDone) lastDone = now();
     tickets.clear();
     sessions.clear();
     unknown = false;
     lastFull = now();
     const next = (nextOwners = new Map());
     try {
-      await pollSessionsSliced(store, bus, cache, state, emit, (id, key) => id && add(next, id, key), sliceMs);
+      await pollSessionsSliced(store, bus, cache, state, emit, (id, key) => id && add(next, id, key), sliceMs, skipDone);
       owners = next;
     } finally {
       nextOwners = null;
@@ -1575,7 +1660,10 @@ export function startSessionWatcher(store: Store, bus: Bus, cache: SessionCache,
   let priming = true;
   for (const p of store.listProfiles()) for (const t of store.listTickets(p.slug)) own(t.sessionId, `${p.slug}/${t.id}`);
   void track("session-watcher: first pass", () => primeSessions(store, cache, state, 30, bus))
-    .then(() => (primed = true), (e) => console.error("session watcher", e))
+    .then(() => {
+      primed = true;
+      lastDone = now();
+    }, (e) => console.error("session watcher", e))
     .finally(() => (priming = false));
   let passing = false;
   const timer = trackedInterval("session-watcher", () => {

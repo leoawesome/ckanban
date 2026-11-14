@@ -136,9 +136,14 @@ function fakeClient() {
   };
   const client = {
     listProfiles: rec("listProfiles", () => [prof("kanban", "/repos/kanban"), prof("site", "/repos/site")]),
-    listTickets: rec("listTickets", () => [ticket(), ticket({ id: "t_2", title: "Ship", status: "ready" })]),
+    // The board filters list_tickets (scope=list): this fake does the column filter the same way.
+    listTickets: rec("listTickets", (_s, q: { status?: string | null } = {}) => {
+      const all = [ticket(), ticket({ id: "t_2", title: "Ship", status: "ready" })].filter((t) => !q.status || t.status === q.status);
+      return { tickets: all, total: all.length, doneLeft: 0, next: null };
+    }),
+    ticketsByIds: rec("ticketsByIds", (_s, ids: string[]) => ({ tickets: [ticket(), ticket({ id: "t_2" })].filter((t) => ids.includes(t.id)), doneTotal: 0 })),
     getTicket: rec("getTicket", () => ticket()),
-    listComments: rec("listComments", () => [{ id: "c", author: "user", text: "pls", at: "now" }]),
+    listComments: rec("listComments", () => ({ comments: [{ id: "c", author: "user", text: "pls", at: "now" }], earlier: 0, total: 1 })),
     createTicket: rec("createTicket", (_s, input) => ticket(input)),
     updateTicket: rec("updateTicket", (_s, _id, patch) => ticket(patch)),
     deleteTicket: rec("deleteTicket", () => undefined),
@@ -203,7 +208,7 @@ test("tools take an explicit profile and validate input", async () => {
 test("read tools format tickets", async () => {
   const { ctx } = ctxWith();
   const list = await callTool("list_tickets", { status: "ready" }, ctx);
-  expect(list.content[0].text).toBe("Board kanban:\nt_2  [ready]  Ship");
+  expect(list.content[0].text).toBe("Board kanban, in ready, newest first: 1.\nt_2  [ready]  Ship");
   const one = await callTool("get_ticket", { id: "t_1" }, ctx);
   expect(one.content[0].text).toContain("Dark mode");
   expect(one.content[0].text).toContain("- user (now): pls");
@@ -229,7 +234,7 @@ test("inside a board run, changing tools are refused and read tools work", async
   // Defaults to the run's own board even though cwd matches nothing.
   const r = await callTool("list_tickets", {}, ctx);
   expect(r.isError).toBeUndefined();
-  expect(calls.find((c) => c.fn === "listTickets")?.args).toEqual(["site"]);
+  expect(calls.find((c) => c.fn === "listTickets")?.args).toEqual(["site", { status: null, tool: false, query: null, limit: undefined, after: null }]);
 });
 
 test("every tool advertises a profile argument; change tools are flagged", () => {
@@ -257,7 +262,9 @@ test("propose_delete shows a card for the run's own board and deletes nothing", 
   expect(r.isError).toBeUndefined();
   expect(r.content[0].text).toContain("Shown to the user as a card");
   expect(r.content[0].text).toContain("shown as skipped: t_ghost");
-  expect(calls.filter((c) => c.fn === "listTickets").map((c) => c.args)).toEqual([["kanban"]]);
+  // Only the ids asked about, never the whole board.
+  expect(calls.filter((c) => c.fn === "ticketsByIds").map((c) => c.args)).toEqual([["kanban", ["t_1", "t_ghost"]]]);
+  expect(calls.some((c) => c.fn === "listTickets")).toBe(false);
   expect(calls.some((c) => c.fn === "deleteTicket")).toBe(false);
   r = await callTool("propose_delete", { ids: ["t_9"], reason: "x" }, ctx);
   expect(r.isError).toBe(true);
@@ -356,7 +363,7 @@ test("CLI: create from inside the repo lands in backlog/interview; list, show, u
   expect(shown).toContain("mode: auto");
   expect(shown).toContain("looks good");
   expect(await cli(["delete", created.id])).toBe(`Deleted ${created.id}.`);
-  expect(await cli(["list"])).toBe("No tickets on repo.");
+  expect(await cli(["list"])).toBe("Board repo: no open tickets (not Done).");
 });
 
 test("CLI: outside every profile it fails listing profiles; --profile overrides", async () => {

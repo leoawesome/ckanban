@@ -1,6 +1,7 @@
 import {
   appendFileSync, closeSync, cpSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
+import { lstat as lstatAsync, readdir as readdirAsync } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import YAML from "yaml";
@@ -16,6 +17,10 @@ import { pauser } from "./lag";
 import { atomicWrite } from "./atomic";
 import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "./board-tools";
 import { maskSaved, maskSavedJson } from "./board-keys";
+import { ActivityDigests, type ActivityDigest } from "./activity-digest";
+import { forgetLog, gzOf, loadLog, type LogReader, openLog, readLogSync, restoreLog, restoreLogSync } from "./run-log";
+import { JsonDir } from "./json-dir";
+import { ScheduleHistoryDigests, type ScheduleHistoryDigest } from "./schedule-history";
 
 /** Dependency, build and version-history folders: never deliverables, and they can hold tens of thousands of files. */
 const SKIPPED_OUTPUT_DIRS = new Set(["node_modules", ".git", ".next", ".nuxt", ".turbo", ".cache", ".venv", "venv", "__pycache__"]);
@@ -36,8 +41,12 @@ export { atomicWrite };
 
 function readJsonl<T>(file: string): T[] {
   if (!existsSync(file)) return [];
+  return parseJsonl<T>(readFileSync(file, "utf8"));
+}
+
+function parseJsonl<T>(text: string): T[] {
   const out: T[] = [];
-  for (const line of readFileSync(file, "utf8").split("\n")) {
+  for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     try {
       out.push(JSON.parse(line));
@@ -59,39 +68,44 @@ export function readJsonlPage<T>(file: string, opts: { before?: number; maxBytes
   if (!existsSync(file)) return { entries: [], before: null };
   const fd = openSync(file, "r");
   try {
-    const size = statSync(file).size;
-    const end = Math.min(Math.max(0, opts.before ?? size), size);
-    let want = Math.max(1, opts.maxBytes ?? ACTIVITY_PAGE_BYTES);
-    for (;;) {
-      const start = Math.max(0, end - want);
-      const buf = Buffer.alloc(end - start);
-      for (let got = 0; got < buf.length;) {
-        const n = readSync(fd, buf, got, buf.length - got, start + got);
-        if (n <= 0) break;
-        got += n;
-      }
-      // The chunk starts mid-line unless it starts the file: the page begins after its first newline.
-      const skip = start === 0 ? 0 : buf.indexOf(10) + 1;
-      if (start > 0 && skip === 0) {
-        want *= 2; // one line longer than the page: read more of it
-        continue;
-      }
-      const entries: T[] = [];
-      for (const line of buf.subarray(skip).toString("utf8").split("\n")) {
-        if (!line.trim()) continue;
-        try {
-          entries.push(JSON.parse(line));
-        } catch {}
-      }
-      // Nothing whole yet (a long last line still being written filled the page): read more.
-      if (!entries.length && start > 0) {
-        want *= 2;
-        continue;
-      }
-      return { entries, before: start === 0 ? null : start + skip };
-    }
+    return readPage<T>({ size: statSync(file).size, read: (buf, off, len, pos) => readSync(fd, buf, off, len, pos), close: () => {} }, opts);
   } finally {
     closeSync(fd);
+  }
+}
+
+/** readJsonlPage over any positioned reader (a plain or compressed run log, run-log.ts). */
+export function readPage<T>(log: LogReader, opts: { before?: number; maxBytes?: number } = {}): { entries: T[]; before: number | null } {
+  const size = log.size;
+  const end = Math.min(Math.max(0, opts.before ?? size), size);
+  let want = Math.max(1, opts.maxBytes ?? ACTIVITY_PAGE_BYTES);
+  for (;;) {
+    const start = Math.max(0, end - want);
+    const buf = Buffer.alloc(end - start);
+    for (let got = 0; got < buf.length;) {
+      const n = log.read(buf, got, buf.length - got, start + got);
+      if (n <= 0) break;
+      got += n;
+    }
+    // The chunk starts mid-line unless it starts the file: the page begins after its first newline.
+    const skip = start === 0 ? 0 : buf.indexOf(10) + 1;
+    if (start > 0 && skip === 0) {
+      want *= 2; // one line longer than the page: read more of it
+      continue;
+    }
+    const entries: T[] = [];
+    for (const line of buf.subarray(skip).toString("utf8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        entries.push(JSON.parse(line));
+      } catch {}
+    }
+    // Nothing whole yet (a long last line still being written filled the page): read more.
+    if (!entries.length && start > 0) {
+      want *= 2;
+      continue;
+    }
+    return { entries, before: start === 0 ? null : start + skip };
   }
 }
 
@@ -118,6 +132,38 @@ export function withoutAddOn(meta: Record<string, unknown>): Record<string, unkn
   return { ...rest, ...(rest.partOf ? {} : { partOf: from, ...(rest.partOfVia ? { partOfVia: null } : {}) }), ...(rest.madeFrom ? {} : { madeFrom: from }) };
 }
 
+/**
+ * Puts ticket `t` (null: none) where it belongs in a list sorted by order, replacing the entry with its id: kept in
+ * place when its order didn't change, else after every ticket with the same or a lower order (where a rebuild puts a
+ * newly added ticket).
+ */
+function placeTicket(list: Ticket[], id: string, t: Ticket | null): void {
+  const i = list.findIndex((x) => x.id === id);
+  if (i >= 0 && t && list[i].order === t.order) {
+    list[i] = t;
+    return;
+  }
+  if (i >= 0) list.splice(i, 1);
+  if (!t) return;
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid].order <= t.order) lo = mid + 1;
+    else hi = mid;
+  }
+  list.splice(lo, 0, t);
+}
+
+type FoundOutput = { name: string; size: number; at: number };
+
+/** The newest MAX_OUTPUT_FILES, newest first (ties keep the walk's order), as listOutputs returns them. */
+function newestOutputs(found: FoundOutput[]): OutputFile[] {
+  // By the time in ms (what updatedAt shows), not by the ISO text: 20,000 string compares were most of the cost.
+  return found.sort((a, b) => b.at - a.at).slice(0, MAX_OUTPUT_FILES)
+    .map((f) => ({ name: f.name, size: f.size, updatedAt: new Date(f.at).toISOString() }));
+}
+
 function deepFreeze<T>(v: T): T {
   if (v && typeof v === "object" && !Object.isFrozen(v)) {
     Object.freeze(v);
@@ -131,13 +177,53 @@ function serializeTicket(t: Ticket): string {
   return `---\n${YAML.stringify(meta)}---\n${body}`;
 }
 
+/** Board comments that aren't Claude's result ("Run failed: …"; a fresh session's prompt skips them for "Last result"). */
+export const BOARD_NOTE_RE = /^(Run failed|Could not start|Run stopped|Planner stopped|Started a fresh session|Started a fresh chat|Took over the session|This ticket's Claude session is still open)/;
+/** Tickets whose last summary stays in memory (Store.aiCache). */
+const AI_CACHE_MAX = 500;
+/** Huddle message logs kept parsed in memory (Store.huddleLogs): the live ones and the last few looked at. */
+const HUDDLE_LOGS_MAX = 20;
+
+/** Plain string order (ISO times): the same order as localeCompare for them, much cheaper on big lists. */
+const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const ID_JSON = /^[a-z0-9]+\.json$/;
+
+function parseJob(raw: string): Job {
+  const j = JSON.parse(raw);
+  // Older versions kept a late job "missed" until the user ran or skipped it; that step is gone.
+  if (j.state === "missed") return { ...j, state: "skipped", result: { ...j.result, message: "was due while the computer was off" } };
+  return j;
+}
+
 export class Store {
-  /** Parsed huddle message logs by "<slug>/<huddle>", with the byte offset read up to (see readHuddleMessages). */
-  /** huddleIndex's parsed huddles per board, with the folder mtime they were read at. */
-  private huddleCache = new Map<string, { mtime: number; gen: number; list: Huddle[] }>();
-  private huddleGen = 0;
-  private huddleLogs = new Map<string, { offset: number; msgs: HuddleMessage[] }>();
-  private aiCache = new Map<string, { key: string; comments: Comment[] }>();
+  /** Each board's huddle files, parsed once and kept by file mtime and size (huddleIndex). Open huddles are live. */
+  private huddleFiles = new JsonDir<Huddle>({
+    match: (f) => /^h_[a-z0-9_]+\.json$/i.test(f), parse: JSON.parse, sort: (a, b) => cmp(a.createdAt, b.createdAt),
+    live: (h) => h.status !== "closed",
+  });
+  /** One-time jobs, schedules and automations per board: parsed once, kept by file mtime and size (json-dir.ts). */
+  private jobFiles = new JsonDir<Job>({
+    match: (f) => ID_JSON.test(f), parse: parseJob, sort: (a, b) => cmp(a.at, b.at) || cmp(a.createdAt, b.createdAt),
+    live: (j) => j.state === "scheduled" || j.state === "running",
+  });
+  private scheduleFiles = new JsonDir<Schedule>({ match: (f) => ID_JSON.test(f), parse: JSON.parse, sort: (a, b) => cmp(a.createdAt, b.createdAt) });
+  private loopFiles = new JsonDir<Loop>({ match: (f) => ID_JSON.test(f), parse: JSON.parse, sort: (a, b) => cmp(a.createdAt, b.createdAt) });
+  /** What the schedules list needs from each history file, read only as far as it grew since (schedule-history.ts). */
+  private scheduleHistories = new ScheduleHistoryDigests();
+  /**
+   * Parsed huddle message logs by "<slug>/<huddle>", with the byte offset read up to (see readHuddleMessages). At most
+   * HUDDLE_LOGS_MAX, least recently read go first.
+   */
+  private huddleLogs = new Map<string, { offset: number; msgs: readonly HuddleMessage[] }>();
+  /**
+   * Each ticket's last Claude comment and last result summary (not a board note), by comments.jsonl path, keyed by its
+   * mtime and size. Only two strings per ticket, and at most AI_CACHE_MAX tickets (least recently used go first).
+   */
+  private aiCache = new Map<string, { key: string; last: string | null; summary: string | null }>();
+  /** Writes to each comments.jsonl through addComment in this process (commentStamp). */
+  private commentWrites = new Map<string, number>();
+  /** What the daemon needs from each run log, read only as far as it grew since (activity-digest.ts). */
+  private activityDigests = new ActivityDigests();
   /**
    * Parsed ticket files by path, keyed by mtime and size: the watchers list every board's tickets every few seconds,
    * and parsing their YAML was most of the daemon's CPU.
@@ -148,7 +234,11 @@ export class Store {
    * tickets folder changes (a ticket added or removed from outside) or every TICKET_RECHECK_MS, which catches a
    * ticket.md edited from outside (a planning chat rewrites its body).
    */
-  private boards = new Map<string, { dirMtime: number; checkedAt: number; ids: Set<string>; list: readonly Ticket[] | null; version: number }>();
+  private boards = new Map<string, {
+    dirMtime: number; checkedAt: number; ids: Set<string>; list: Ticket[] | null; open: Ticket[] | null; version: number;
+    /** The listing's tickets by id, built on demand (peekTicket); a Store write patches it like the list. */
+    byId?: Map<string, Ticket> | null;
+  }>();
   private now: () => number;
   private changeFns = new Set<(c: StoreChange) => void>();
   constructor(public readonly root: string, opts: { now?: () => number } = {}) {
@@ -228,6 +318,27 @@ export class Store {
    * (`{ ...t }`, or structuredClone for its lists). The array is the caller's own.
    */
   listTickets(slug: string): Ticket[] {
+    return [...this.ticketList(slug)];
+  }
+
+  /**
+   * The board's tickets that aren't Done, by order: the open work, without going through thousands of Done tickets.
+   * Kept like the full list (a Store write patches it). Tickets shared and frozen; the array is the caller's own.
+   */
+  listOpenTickets(slug: string): Ticket[] {
+    return [...this.openList(slug)];
+  }
+
+  private openList(slug: string): readonly Ticket[] {
+    this.ticketList(slug);
+    const b = this.boards.get(slug);
+    if (!b?.list) return [];
+    b.open ??= b.list.filter((t) => t.status !== "done");
+    return b.open;
+  }
+
+  /** The board's cached ticket list, brought up to date (shared: never hand it out or change it). */
+  private ticketList(slug: string): readonly Ticket[] {
     const dir = join(this.profileDir(slug), "tickets");
     let dirMtime: number;
     try {
@@ -239,7 +350,7 @@ export class Store {
     const b = this.boards.get(slug);
     // With rechecks in the background (recheckTickets), a listing never stats every ticket file just because time passed.
     const recent = !!b && b.dirMtime === dirMtime && (this.rechecking || this.now() - b.checkedAt < TICKET_RECHECK_MS);
-    if (b?.list && recent) return [...b.list];
+    if (b?.list && recent) return b.list;
     const ids = new Set<string>();
     const out: Ticket[] = [];
     if (b && recent) {
@@ -264,8 +375,8 @@ export class Store {
     out.sort((x, y) => x.order - y.order);
     const changed = !prev || prev.length !== out.length || out.some((t, i) => t !== prev[i]);
     const version = (b?.version ?? 0) + (changed && b ? 1 : 0);
-    this.boards.set(slug, { dirMtime, checkedAt, ids, list: out, version });
-    return [...out];
+    this.boards.set(slug, { dirMtime, checkedAt, ids, list: out, open: null, version, byId: null });
+    return out;
   }
 
   /**
@@ -285,16 +396,41 @@ export class Store {
     }
     const startedAt = this.now();
     const pause = pauser(sliceMs);
-    const ids = new Set<string>();
-    const out: Ticket[] = [];
+    // Each ticket read, and whether it came from ticketCache (a corrupt file's placeholder isn't cached).
+    const got = new Map<string, { t: Ticket; cached: boolean }>();
     for (const id of names) {
       await pause();
       const t = this.readTicketOrCorrupt(slug, id);
-      if (t) (ids.add(id), out.push(t));
+      if (t) got.set(id, { t, cached: this.ticketCache.get(this.ticketPath(slug, id))?.ticket === t });
     }
     // Another listing or a Store write got there first while this one paused: the normal path is current and cheap now.
     if (this.boards.get(slug)?.list) return this.listTickets(slug);
-    return this.remember(slug, dirMtime, startedAt, ids, out);
+    // Store writes during the pauses found no list to patch (saved()): take what they left in ticketCache (no file
+    // read), so a ticket changed or moved after the read passed it doesn't stay old in the list. Gone from the cache:
+    // deleted meanwhile. A new ticket made meanwhile changed the folder: read the names again, only new ones are read.
+    const ids = new Set<string>();
+    const out: Ticket[] = [];
+    for (const [id, r] of got) {
+      const hit = this.ticketCache.get(this.ticketPath(slug, id));
+      if (hit) (ids.add(id), out.push(hit.ticket));
+      else if (!r.cached) (ids.add(id), out.push(r.t));
+    }
+    try {
+      const now = statSync(dir).mtimeMs;
+      if (now !== dirMtime) {
+        dirMtime = now;
+        const names = readdirSync(dir);
+        // Gone meanwhile without a Store write (removed from outside, or a corrupt ticket the Store deleted): dropped.
+        const there = new Set(names);
+        for (let i = out.length - 1; i >= 0; i--) if (!there.has(out[i].id)) (ids.delete(out[i].id), out.splice(i, 1));
+        for (const id of names) {
+          if (got.has(id)) continue;
+          const t = this.readTicketOrCorrupt(slug, id);
+          if (t) (ids.add(id), out.push(t));
+        }
+      }
+    } catch {}
+    return [...this.remember(slug, dirMtime, startedAt, ids, out)];
   }
 
   /** Reads every board's tickets in slices (listTicketsSliced), so the first listings after a start are quick. */
@@ -333,8 +469,21 @@ export class Store {
 
   /** A number that changes whenever the board's ticket listing changes (Store writes at once; outside edits by the next re-check). */
   ticketsVersion(slug: string): number {
-    this.listTickets(slug);
+    // The shared list: copying the whole listing per call (once per card that shows other tickets) added up.
+    this.ticketList(slug);
     return this.boards.get(slug)?.version ?? 0;
+  }
+
+  /**
+   * The ticket as the board's listing holds it, without a stat of its file (getTicket stats it): for walking links
+   * between tickets (the tickets above a card) many times per page. Shared and frozen; undefined when not listed.
+   */
+  peekTicket(slug: string, id: string): Ticket | undefined {
+    const list = this.ticketList(slug);
+    const b = this.boards.get(slug);
+    if (!b?.list) return undefined;
+    b.byId ??= new Map(list.map((t) => [t.id, t]));
+    return b.byId.get(id);
   }
 
   /** null when the ticket file doesn't exist. Parses only when the file changed (see ticketCache); the ticket is shared and frozen. */
@@ -366,13 +515,18 @@ export class Store {
     }
   }
 
-  /** After a Store write: cache the saved ticket (null: deleted) and mark the board's listing for a rebuild. */
+  /**
+   * After a Store write: cache the saved ticket (null: deleted) and patch the board's listing in place (replace,
+   * insert or remove that one ticket), instead of rebuilding and re-sorting all of it.
+   */
   private saved(slug: string, id: string, t: Ticket | null): void {
     const file = this.ticketPath(slug, id);
     const b = this.boards.get(slug);
+    let cached: Ticket | null = null;
     if (t) {
       const st = statSync(file);
-      this.ticketCache.set(file, { key: `${st.mtimeMs}:${st.size}`, ticket: deepFreeze(structuredClone(t)) });
+      cached = deepFreeze(structuredClone(t));
+      this.ticketCache.set(file, { key: `${st.mtimeMs}:${st.size}`, ticket: cached });
       b?.ids.add(id);
     } else {
       this.ticketCache.delete(file);
@@ -383,8 +537,13 @@ export class Store {
       try {
         b.dirMtime = statSync(join(this.profileDir(slug), "tickets")).mtimeMs;
       } catch {}
+      if (b.list) {
+        placeTicket(b.list, id, cached);
+        if (b.open) placeTicket(b.open, id, cached && cached.status !== "done" ? cached : null);
+        if (b.byId) cached ? b.byId.set(id, cached) : b.byId.delete(id);
+        b.version++;
+      }
     }
-    this.touchBoard(slug);
     this.changed({ kind: "ticket", slug, id });
   }
 
@@ -406,7 +565,7 @@ export class Store {
 
   private touchBoard(slug: string): void {
     const b = this.boards.get(slug);
-    if (b) b.list = null;
+    if (b) (b.list = null), (b.open = null), (b.byId = null);
   }
 
   getTicket(slug: string, id: string): Ticket | null {
@@ -414,13 +573,21 @@ export class Store {
   }
 
   nextOrder(slug: string, status: Status): number {
-    const orders = this.listTickets(slug).filter((t) => t.status === status).map((t) => t.order);
-    return orders.length ? Math.max(...orders) + 1 : 1;
+    let max = -Infinity;
+    for (const t of this.columnSource(slug, status)) if (t.status === status && t.order > max) max = t.order;
+    return max === -Infinity ? 1 : max + 1;
   }
 
   topOrder(slug: string, status: Status): number {
-    const orders = this.listTickets(slug).filter((t) => t.status === status).map((t) => t.order);
-    return orders.length ? Math.min(...orders) - 1 : 1;
+    let min = Infinity;
+    for (const t of this.columnSource(slug, status)) if (t.status === status && t.order < min) min = t.order;
+    return min === Infinity ? 1 : min - 1;
+  }
+
+  /** The tickets a column's position is worked out from: only the open ones, unless it is Done. */
+  private columnSource(slug: string, status: Status): readonly Ticket[] {
+    if (status !== "done") return this.openList(slug);
+    return this.ticketList(slug);
   }
 
   /** Where a ticket lands when it enters a column: on top, except Ready, which is a FIFO run queue. */
@@ -515,18 +682,66 @@ export class Store {
   listOutputs(slug: string, id: string): OutputFile[] {
     const dir = join(this.ticketDir(slug, id), "outputs");
     if (!existsSync(dir)) return [];
-    const out: OutputFile[] = [];
+    const found: FoundOutput[] = [];
+    // A folder or file removed while this walks (a helper's copy being cleaned up, output-copies.ts) is left out.
     const walk = (sub: string) => {
-      for (const name of readdirSync(join(dir, sub))) {
+      let names: string[];
+      try {
+        names = readdirSync(join(dir, sub));
+      } catch {
+        return;
+      }
+      for (const name of names) {
         const rel = sub ? `${sub}/${name}` : name;
-        const st = lstatSync(join(dir, rel));
+        let st: ReturnType<typeof lstatSync>;
+        try {
+          st = lstatSync(join(dir, rel));
+        } catch {
+          continue;
+        }
         if (st.isDirectory()) {
           if (!SKIPPED_OUTPUT_DIRS.has(name)) walk(rel);
-        } else if (st.isFile()) out.push({ name: rel, size: st.size, updatedAt: st.mtime.toISOString() });
+        } else if (st.isFile()) found.push({ name: rel, size: st.size, at: st.mtime.getTime() });
       }
     };
     walk("");
-    return out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, MAX_OUTPUT_FILES);
+    return newestOutputs(found);
+  }
+
+  /**
+   * listOutputs for the daemon's requests: the same result, but the folders are read and the files stat'ed off the
+   * event loop (64 at a time), with a pause every ~30ms of work, so 20,000 files don't freeze the board.
+   */
+  async listOutputsAsync(slug: string, id: string): Promise<OutputFile[]> {
+    const dir = join(this.ticketDir(slug, id), "outputs");
+    const found: FoundOutput[] = [];
+    const pause = pauser();
+    const walk = async (sub: string): Promise<void> => {
+      let names: string[];
+      try {
+        names = await readdirAsync(join(dir, sub));
+      } catch (e) {
+        // No outputs folder, or a subfolder removed meanwhile (a helper's copy being cleaned up): left out.
+        if (sub && (e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+        return;
+      }
+      for (let i = 0; i < names.length; i += 64) {
+        const batch = names.slice(i, i + 64).map((name) => (sub ? `${sub}/${name}` : name));
+        // A file removed between the folder read and its stat is left out.
+        const stats = await Promise.all(batch.map((rel) => lstatAsync(join(dir, rel)).catch(() => null)));
+        for (let k = 0; k < batch.length; k++) {
+          const st = stats[k];
+          const rel = batch[k];
+          if (!st) continue;
+          if (st.isDirectory()) {
+            if (!SKIPPED_OUTPUT_DIRS.has(rel.slice(rel.lastIndexOf("/") + 1))) await walk(rel);
+          } else if (st.isFile()) found.push({ name: rel, size: st.size, at: st.mtime.getTime() });
+        }
+        await pause();
+      }
+    };
+    await walk("");
+    return newestOutputs(found);
   }
 
   /** Resolve an output file path, refusing anything outside the ticket's outputs folder. */
@@ -543,37 +758,88 @@ export class Store {
 
   /** Text of the ticket's last Claude comment (its last result summary). */
   lastAiComment(slug: string, id: string): string | null {
-    return this.aiComments(slug, id).at(-1)?.text ?? null;
+    return this.aiTail(slug, id).last;
   }
 
-  /** The ticket's Claude comments (its result summaries), oldest first, cached until comments.jsonl changes. */
-  aiComments(slug: string, id: string): Comment[] {
+  /** The ticket's last result summary: its newest Claude comment that isn't a board note (BOARD_NOTE_RE); null for none. */
+  lastAiSummary(slug: string, id: string): string | null {
+    return this.aiTail(slug, id).summary;
+  }
+
+  /**
+   * Changes whenever addComment writes the ticket's comments: lets a cache built from lastAiSummary (the recall index)
+   * skip a stat per ticket. Only the daemon writes comments.jsonl; a hand edit shows after the ticket changes or a restart.
+   */
+  commentStamp(slug: string, id: string): number {
+    return this.commentWrites.get(join(this.ticketDir(slug, id), "comments.jsonl")) ?? 0;
+  }
+
+  private aiTail(slug: string, id: string): { last: string | null; summary: string | null } {
     const file = join(this.ticketDir(slug, id), "comments.jsonl");
     let key: string;
     try {
       const st = statSync(file);
       key = `${st.mtimeMs}:${st.size}`;
     } catch {
-      return [];
+      return { last: null, summary: null };
     }
     const hit = this.aiCache.get(file);
-    if (hit?.key === key) return hit.comments;
-    const comments = this.listComments(slug, id).filter((c) => c.author === "ai");
-    this.aiCache.set(file, { key, comments });
-    return comments;
+    if (hit?.key === key) {
+      this.aiCache.delete(file);
+      this.aiCache.set(file, hit);
+      return hit;
+    }
+    const ai = this.aiComments(slug, id);
+    const entry = { key, last: ai.at(-1)?.text ?? null, summary: ai.findLast((c) => !BOARD_NOTE_RE.test(c.text))?.text ?? null };
+    this.aiCache.delete(file);
+    this.aiCache.set(file, entry);
+    if (this.aiCache.size > AI_CACHE_MAX) this.aiCache.delete(this.aiCache.keys().next().value!);
+    return entry;
+  }
+
+  /** The ticket's Claude comments (its result summaries), oldest first. Reads the file: for one ticket at a time. */
+  aiComments(slug: string, id: string): Comment[] {
+    return this.listComments(slug, id).filter((c) => c.author === "ai");
   }
 
   addComment(slug: string, id: string, author: Comment["author"], text: string, from?: string): Comment {
     // A saved key never lands in the ticket's files, even if a run's summary or a message quotes one.
     const c: Comment = { id: newId(), author, text: maskSaved(this.root, text), at: nowIso(), ...(from ? { from } : {}) };
-    appendFileSync(join(this.ticketDir(slug, id), "comments.jsonl"), JSON.stringify(c) + "\n");
+    const file = join(this.ticketDir(slug, id), "comments.jsonl");
+    appendFileSync(file, JSON.stringify(c) + "\n");
+    this.commentWrites.set(file, (this.commentWrites.get(file) ?? 0) + 1);
     return c;
   }
 
   appendActivity(slug: string, id: string, run: number, event: unknown): void {
     const e: ActivityEntry = { run, at: nowIso(), event };
+    const file = this.activityPath(slug, id);
+    // A log compressed while the ticket sat in Done (run-log-compress.ts) comes back before anything is added to it.
+    // The board restores it before a run starts (restoreActivity); this is the safety net, checked once per log.
+    if (!this.appendChecked.has(file)) {
+      if (existsSync(gzOf(file))) restoreLogSync(file);
+      this.appendChecked.add(file);
+      if (this.appendChecked.size > 5000) this.appendChecked.delete(this.appendChecked.values().next().value!);
+    }
     // Run output that shows a saved key (a command that printed it) is stored with the key hidden.
-    appendFileSync(join(this.ticketDir(slug, id), "activity.jsonl"), maskSavedJson(this.root, JSON.stringify(e)) + "\n");
+    appendFileSync(file, maskSavedJson(this.root, JSON.stringify(e)) + "\n");
+  }
+
+  /** Logs appended to since this daemon started (their compressed copy, if any, was restored first). */
+  private appendChecked = new Set<string>();
+
+  /** Brings a compressed run log back (run-log.ts restoreLog), off the event loop; the board calls it before a run. */
+  async restoreActivity(slug: string, id: string): Promise<void> {
+    const file = this.activityPath(slug, id);
+    await restoreLog(file);
+    this.appendChecked.add(file);
+  }
+
+  /** The run log was just compressed (run-log-compress.ts): the next append checks for the copy again. */
+  activityCompressed(slug: string, id: string): void {
+    const file = this.activityPath(slug, id);
+    this.appendChecked.delete(file);
+    forgetLog(file);
   }
 
   activityPath(slug: string, id: string): string {
@@ -600,27 +866,51 @@ export class Store {
     return join(this.ticketDir(slug, id), "help.json");
   }
 
+  /** The whole run log, parsed. Tens of MB on a busy ticket: the daemon uses activityDigest or readActivityPage instead. */
   readActivity(slug: string, id: string): ActivityEntry[] {
-    return readJsonl<ActivityEntry>(this.activityPath(slug, id));
+    const bytes = readLogSync(this.activityPath(slug, id));
+    return bytes ? parseJsonl<ActivityEntry>(bytes.toString("utf8")) : [];
+  }
+
+  /** Changed files, runs and session totals from the run log, reading only what was appended since last time, in slices. */
+  activityDigest(slug: string, id: string, pause?: () => Promise<void>): Promise<ActivityDigest> {
+    return this.activityDigests.get(this.activityPath(slug, id), pause);
+  }
+
+  /** activityDigest without pausing, for callers that can't wait: warm it first (activityDigest) so this reads only a tail. */
+  activityDigestNow(slug: string, id: string): ActivityDigest {
+    return this.activityDigests.getNow(this.activityPath(slug, id));
   }
 
   /** The newest page of the activity log, or the page before byte `before` (readJsonlPage). */
   readActivityPage(slug: string, id: string, before?: number, maxBytes?: number): { entries: ActivityEntry[]; before: number | null } {
-    return readJsonlPage<ActivityEntry>(this.activityPath(slug, id), { before, maxBytes });
+    const log = openLog(this.activityPath(slug, id));
+    if (!log) return { entries: [], before: null };
+    try {
+      return readPage<ActivityEntry>(log, { before, maxBytes });
+    } finally {
+      log.close();
+    }
+  }
+
+  /** readActivityPage, decompressing a compressed log off the event loop first (then kept for the next pages). */
+  async readActivityPageAsync(slug: string, id: string, before?: number, maxBytes?: number): Promise<{ entries: ActivityEntry[]; before: number | null }> {
+    await loadLog(this.activityPath(slug, id));
+    return this.readActivityPage(slug, id, before, maxBytes);
+  }
+
+  /** Decompresses the ticket's run log off the event loop when it is compressed, so sync readers after it don't. */
+  loadActivity(slug: string, id: string): Promise<void> {
+    return loadLog(this.activityPath(slug, id));
   }
 
   private schedulesDir(slug: string) {
     return join(this.profileDir(slug), "schedules");
   }
 
-  listSchedules(slug: string): Schedule[] {
-    const dir = this.schedulesDir(slug);
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => this.getSchedule(slug, f.slice(0, -5)))
-      .filter((s): s is Schedule => s !== null)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  /** The board's schedules, oldest first. Shared and frozen: copy one before changing it. */
+  listSchedules(slug: string): readonly Schedule[] {
+    return this.scheduleFiles.list(this.schedulesDir(slug));
   }
 
   getSchedule(slug: string, id: string): Schedule | null {
@@ -635,23 +925,63 @@ export class Store {
   }
 
   saveSchedule(slug: string, s: Schedule): void {
-    atomicWrite(join(this.schedulesDir(slug), `${s.id}.json`), JSON.stringify(s, null, 2) + "\n");
+    const dir = this.schedulesDir(slug);
+    const before = this.scheduleFiles.mtime(dir);
+    atomicWrite(join(dir, `${s.id}.json`), JSON.stringify(s, null, 2) + "\n");
+    this.scheduleFiles.saved(dir, `${s.id}.json`, s, before);
     this.changed({ kind: "schedule", slug, id: s.id });
   }
 
   deleteSchedule(slug: string, id: string): void {
-    rmSync(join(this.schedulesDir(slug), `${id}.json`), { force: true });
-    rmSync(join(this.schedulesDir(slug), `${id}.history.jsonl`), { force: true });
+    const dir = this.schedulesDir(slug);
+    const before = this.scheduleFiles.mtime(dir);
+    rmSync(join(dir, `${id}.json`), { force: true });
+    rmSync(join(dir, `${id}.history.jsonl`), { force: true });
+    this.scheduleFiles.saved(dir, `${id}.json`, null, before);
     this.changed({ kind: "schedule", slug, id });
   }
 
   appendScheduleHistory(slug: string, id: string, e: ScheduleHistoryEntry): void {
-    mkdirSync(this.schedulesDir(slug), { recursive: true });
-    appendFileSync(join(this.schedulesDir(slug), `${id}.history.jsonl`), JSON.stringify(e) + "\n");
+    const dir = this.schedulesDir(slug);
+    mkdirSync(dir, { recursive: true });
+    // The first line makes a new file there: the schedule list's cache takes the folder's new mtime instead of a rescan.
+    const before = this.scheduleFiles.mtime(dir);
+    appendFileSync(join(dir, `${id}.history.jsonl`), JSON.stringify(e) + "\n");
+    this.scheduleFiles.touched(dir, before);
   }
 
+  /** The whole history, parsed. Can grow for years: the daemon uses scheduleHistoryTail or scheduleHistoryDigest. */
   readScheduleHistory(slug: string, id: string): ScheduleHistoryEntry[] {
     return readJsonl<ScheduleHistoryEntry>(join(this.schedulesDir(slug), `${id}.history.jsonl`));
+  }
+
+  /**
+   * The newest history entries, at least `min` of them (all when the file has fewer; then complete is true), oldest
+   * first. Reads the file from its end.
+   */
+  scheduleHistoryTail(slug: string, id: string, min: number): { entries: ScheduleHistoryEntry[]; complete: boolean } {
+    const file = join(this.schedulesDir(slug), `${id}.history.jsonl`);
+    const pages: ScheduleHistoryEntry[][] = [];
+    let n = 0;
+    let before: number | undefined;
+    for (;;) {
+      const page = readJsonlPage<ScheduleHistoryEntry>(file, { before, maxBytes: 64 * 1024 });
+      pages.unshift(page.entries);
+      n += page.entries.length;
+      if (page.before === null) return { entries: pages.flat(), complete: true };
+      if (n >= min) return { entries: pages.flat(), complete: false };
+      before = page.before;
+    }
+  }
+
+  /** The schedules list's figures from the history (totals, last pause, recent entries), kept up to date by mtime and size. */
+  scheduleHistoryDigest(slug: string, id: string): ScheduleHistoryDigest {
+    return this.scheduleHistories.get(join(this.schedulesDir(slug), `${id}.history.jsonl`));
+  }
+
+  /** scheduleHistoryDigest with a pause between reads (a big history read for the first time), for requests. */
+  scheduleHistoryDigestAsync(slug: string, id: string, pause: () => Promise<void>): Promise<ScheduleHistoryDigest> {
+    return this.scheduleHistories.getAsync(join(this.schedulesDir(slug), `${id}.history.jsonl`), pause);
   }
 
   private loopsDir(slug: string) {
@@ -667,14 +997,9 @@ export class Store {
     atomicWrite(this.loopScriptFile(slug, id), script);
   }
 
-  listLoops(slug: string): Loop[] {
-    const dir = this.loopsDir(slug);
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter((f) => f.endsWith(".json") && !f.endsWith(".state.json"))
-      .map((f) => this.getLoop(slug, f.slice(0, -5)))
-      .filter((l): l is Loop => l !== null)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  /** The board's automations, oldest first. Shared and frozen: copy one before changing it. */
+  listLoops(slug: string): readonly Loop[] {
+    return this.loopFiles.list(this.loopsDir(slug));
   }
 
   getLoop(slug: string, id: string): Loop | null {
@@ -689,13 +1014,19 @@ export class Store {
   }
 
   saveLoop(slug: string, l: Loop): void {
-    atomicWrite(join(this.loopsDir(slug), `${l.id}.json`), JSON.stringify(l, null, 2) + "\n");
+    const dir = this.loopsDir(slug);
+    const before = this.loopFiles.mtime(dir);
+    atomicWrite(join(dir, `${l.id}.json`), JSON.stringify(l, null, 2) + "\n");
+    this.loopFiles.saved(dir, `${l.id}.json`, l, before);
   }
 
   deleteLoop(slug: string, id: string): void {
-    rmSync(join(this.loopsDir(slug), `${id}.json`), { force: true });
-    rmSync(join(this.loopsDir(slug), `${id}.state.json`), { force: true });
+    const dir = this.loopsDir(slug);
+    const before = this.loopFiles.mtime(dir);
+    rmSync(join(dir, `${id}.json`), { force: true });
+    rmSync(join(dir, `${id}.state.json`), { force: true });
     rmSync(this.loopScriptFile(slug, id), { force: true });
+    this.loopFiles.saved(dir, `${id}.json`, null, before);
   }
 
   getLoopState(slug: string, id: string): LoopState {
@@ -717,15 +1048,14 @@ export class Store {
     return join(this.profileDir(slug), "jobs");
   }
 
-  /** One-time jobs (jobs.ts), oldest due first. */
-  listJobs(slug: string): Job[] {
-    const dir = this.jobsDir(slug);
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => this.getJob(slug, f.slice(0, -5)))
-      .filter((j): j is Job => j !== null)
-      .sort((a, b) => a.at.localeCompare(b.at) || a.createdAt.localeCompare(b.createdAt));
+  /** One-time jobs (jobs.ts), oldest due first. Shared and frozen: copy one before changing it. */
+  listJobs(slug: string): readonly Job[] {
+    return this.jobFiles.list(this.jobsDir(slug));
+  }
+
+  /** Only the jobs still to run or running (what the job tick needs), oldest due first. Shared and frozen. */
+  openJobs(slug: string): readonly Job[] {
+    return this.jobFiles.liveList(this.jobsDir(slug));
   }
 
   getJob(slug: string, id: string): Job | null {
@@ -733,18 +1063,46 @@ export class Store {
     const file = join(this.jobsDir(slug), `${id}.json`);
     if (!existsSync(file)) return null;
     try {
-      const j = JSON.parse(readFileSync(file, "utf8"));
-      // Older versions kept a late job "missed" until the user ran or skipped it; that step is gone.
-      if (j.state === "missed") return { ...j, state: "skipped", result: { ...j.result, message: "was due while the computer was off" } };
-      return j;
+      return parseJob(readFileSync(file, "utf8"));
     } catch {
       return null;
     }
   }
 
   saveJob(slug: string, j: Job): void {
-    atomicWrite(join(this.jobsDir(slug), `${j.id}.json`), JSON.stringify(j, null, 2) + "\n");
+    const dir = this.jobsDir(slug);
+    const before = this.jobFiles.mtime(dir);
+    atomicWrite(join(dir, `${j.id}.json`), JSON.stringify(j, null, 2) + "\n");
+    this.jobFiles.saved(dir, `${j.id}.json`, j, before);
     this.changed({ kind: "job", slug, id: j.id });
+  }
+
+  /**
+   * Reads every board's huddles, jobs, schedules and automations not read yet, pausing every ~sliceMs: the first read
+   * of a board with thousands of them froze the daemon. After it, their lists are cache hits.
+   */
+  async loadAllLists(sliceMs = 30): Promise<void> {
+    const pause = pauser(sliceMs);
+    for (const p of this.listProfiles()) {
+      await this.huddleFiles.load(this.huddlesDir(p.slug), pause);
+      await this.jobFiles.load(this.jobsDir(p.slug), pause);
+      await this.scheduleFiles.load(this.schedulesDir(p.slug), pause);
+      await this.loopFiles.load(this.loopsDir(p.slug), pause);
+    }
+  }
+
+  /**
+   * Stats every board's huddle, job, schedule and automation files again in slices (JsonDir.recheck), to catch one
+   * edited in place from outside. Once called, list reads leave this to it (the daemon calls it every JSON_DIR_RECHECK_MS).
+   */
+  async recheckLists(sliceMs = 30): Promise<void> {
+    const pause = pauser(sliceMs);
+    for (const p of this.listProfiles()) {
+      await this.huddleFiles.recheck(this.huddlesDir(p.slug), pause);
+      await this.jobFiles.recheck(this.jobsDir(p.slug), pause);
+      await this.scheduleFiles.recheck(this.schedulesDir(p.slug), pause);
+      await this.loopFiles.recheck(this.loopsDir(p.slug), pause);
+    }
   }
 
   /** Huddle presets at one level: a board's own (slug), or the global ones every board gets (slug null). Merge with mergePresets. */
@@ -835,40 +1193,35 @@ export class Store {
   }
 
   /**
-   * The board's huddles, parsed once and shared: read only, never change them (listHuddles gives copies to change).
-   * Read again after saveHuddle or when the folder's mtime changes: huddle files are written by rename (atomicWrite),
-   * which changes it; appending to a message log doesn't.
-   * shortcut: a huddle .json rewritten in place from outside (no rename) shows only after the next change; fine while every writer renames.
+   * The board's huddles, oldest first, parsed once and shared (frozen): read only (listHuddles gives copies to change).
+   * Kept per file by mtime and size (json-dir.ts): a save replaces its one entry; open huddles' files are stat'ed on
+   * every read; a change to the folder from outside re-stats the names and reads only the files that changed.
    */
   huddleIndex(slug: string): readonly Huddle[] {
-    const dir = this.huddlesDir(slug);
-    let mtime: number;
-    try {
-      mtime = statSync(dir).mtimeMs;
-    } catch {
-      this.huddleCache.delete(slug);
-      return [];
-    }
-    const hit = this.huddleCache.get(slug);
-    if (hit?.mtime === mtime) return hit.list;
-    const list = readdirSync(dir)
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => this.getHuddle(slug, f.slice(0, -5)))
-      .filter((h): h is Huddle => h !== null)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    this.huddleCache.set(slug, { mtime, gen: ++this.huddleGen, list });
-    return list;
+    return this.huddleFiles.list(this.huddlesDir(slug));
   }
 
-  /** The board's huddles, oldest first, as copies the caller may change. */
+  /**
+   * Reads the board's huddles in slices if they aren't read yet (a no-op stat once they are). For pages that need them
+   * right after a start, before loadAllLists got to this board: huddleIndex would read thousands of files in one go.
+   */
+  async loadHuddles(slug: string, sliceMs = 30): Promise<void> {
+    await this.huddleFiles.load(this.huddlesDir(slug), pauser(sliceMs));
+  }
+
+  /** The board's huddles that aren't closed, oldest first. Shared and frozen. */
+  openHuddles(slug: string): readonly Huddle[] {
+    return this.huddleFiles.liveList(this.huddlesDir(slug));
+  }
+
+  /** The board's huddles, oldest first, as copies the caller may change. Copies every huddle: prefer huddleIndex. */
   listHuddles(slug: string): Huddle[] {
     return structuredClone(this.huddleIndex(slug) as Huddle[]);
   }
 
-  /** Change marker for the board's huddle files: a new value whenever huddleIndex was read again. */
+  /** Change marker for the board's huddle files: a new value whenever the huddle list changed. */
   huddlesVersion(slug: string): string {
-    this.huddleIndex(slug);
-    return String(this.huddleCache.get(slug)?.gen ?? "");
+    return String(this.huddleFiles.version(this.huddlesDir(slug)));
   }
 
   getHuddle(slug: string, id: string): Huddle | null {
@@ -883,8 +1236,10 @@ export class Store {
   }
 
   saveHuddle(slug: string, h: Huddle): void {
-    atomicWrite(join(this.huddlesDir(slug), `${h.id}.json`), JSON.stringify(h, null, 2) + "\n");
-    this.huddleCache.delete(slug);
+    const dir = this.huddlesDir(slug);
+    const before = this.huddleFiles.mtime(dir);
+    atomicWrite(join(dir, `${h.id}.json`), JSON.stringify(h, null, 2) + "\n");
+    this.huddleFiles.saved(dir, `${h.id}.json`, h, before);
     this.changed({ kind: "huddle", slug, id: h.id });
   }
 
@@ -900,15 +1255,20 @@ export class Store {
 
   /** The message log is append-only: messages are never edited or removed. */
   appendHuddleMessage(slug: string, id: string, m: HuddleMessage): void {
-    mkdirSync(this.huddlesDir(slug), { recursive: true });
-    appendFileSync(join(this.huddlesDir(slug), `${id}.messages.jsonl`), maskSavedJson(this.root, JSON.stringify(m)) + "\n");
+    const dir = this.huddlesDir(slug);
+    mkdirSync(dir, { recursive: true });
+    // The first message makes a new file there: the huddle list's cache takes the folder's new mtime instead of a rescan.
+    const before = this.huddleFiles.mtime(dir);
+    appendFileSync(join(dir, `${id}.messages.jsonl`), maskSavedJson(this.root, JSON.stringify(m)) + "\n");
+    this.huddleFiles.touched(dir, before);
   }
 
   /**
-   * The huddle's messages, oldest first. The parsed log is cached per huddle with the byte offset read up to (the
-   * append index): a read parses only the lines appended since. A shorter file (replaced) is read again in full.
+   * The huddle's messages, oldest first: a shared frozen array (copy before changing). The parsed log is cached per
+   * huddle with the byte offset read up to (the append index): a read parses only the lines appended since. A shorter
+   * file (replaced) is read again in full. Only the last HUDDLE_LOGS_MAX huddles read stay in memory.
    */
-  readHuddleMessages(slug: string, id: string): HuddleMessage[] {
+  readHuddleMessages(slug: string, id: string): readonly HuddleMessage[] {
     const file = join(this.huddlesDir(slug), `${id}.messages.jsonl`);
     const key = `${slug}/${id}`;
     let size: number;
@@ -919,6 +1279,7 @@ export class Store {
       return [];
     }
     let log = this.huddleLogs.get(key);
+    this.huddleLogs.delete(key);
     if (!log || size < log.offset) log = { offset: 0, msgs: [] };
     if (size > log.offset) {
       const fd = openSync(file, "r");
@@ -931,18 +1292,21 @@ export class Store {
       }
       // Only whole lines: a line still being written is read next time.
       const end = buf.lastIndexOf(0x0a) + 1;
-      const msgs = log.msgs.slice();
+      const added: HuddleMessage[] = [];
       for (const line of buf.subarray(0, end).toString("utf8").split("\n")) {
         if (!line.trim()) continue;
         try {
-          msgs.push(JSON.parse(line));
+          const m = JSON.parse(line);
+          added.push(deepFreeze({ ...m, mentions: m.mentions ?? [] }));
         } catch {}
       }
-      log = { offset: log.offset + end, msgs };
+      // A new array only when lines were added: callers holding the old one keep a consistent snapshot.
+      if (added.length) log = { offset: log.offset + end, msgs: Object.freeze([...log.msgs, ...added]) };
+      else log = { offset: log.offset + end, msgs: log.msgs };
     }
     this.huddleLogs.set(key, log);
-    // Copies: a caller changing a message must not change the cache.
-    return log.msgs.map((m) => ({ ...m, mentions: [...(m.mentions ?? [])] }));
+    if (this.huddleLogs.size > HUDDLE_LOGS_MAX) this.huddleLogs.delete(this.huddleLogs.keys().next().value!);
+    return log.msgs;
   }
 
   /** Where a huddle participant saves reports and scripts: outputs/<handle>/ of the host ticket. */

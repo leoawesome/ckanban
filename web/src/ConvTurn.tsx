@@ -9,6 +9,7 @@ import type { AvatarMood } from "./avatarLook";
 import { liveLine, runMood } from "./avatarMood";
 import { elapsed, fullTime, timeAgo } from "./time";
 import { toast } from "./toast";
+import { stillOffscreen } from "./stillOffscreen";
 
 /**
  * The chat's message layout, shared by the ticket chat and quick chats (Claude panel, phone Ask tab): a turn is an
@@ -27,8 +28,11 @@ export function ClaudeFace({ mood = "idle", size }: { mood?: AvatarMood; size: n
  */
 export function ClaudeAvatar() {
   const label = `Change ${possessive(useClaudeName())} avatar`;
+  // Its blink pauses while scrolled out of view (stillOffscreen.ts).
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => (ref.current ? stillOffscreen(ref.current) : undefined), []);
   return (
-    <button type="button" className="turn-av claude turn-av-btn" aria-label={label} title={label}
+    <button ref={ref} type="button" className="turn-av claude turn-av-btn" aria-label={label} title={label}
       onClick={(e) => { e.stopPropagation(); openAvatarEditor("claude"); }}>
       <ClaudeFace size={36} />
     </button>

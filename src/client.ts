@@ -236,6 +236,41 @@ export interface CommentInfo {
   at: string;
 }
 
+/** The newest comments of a ticket (GET .../comments?last=), earlier: how many come before them. */
+export interface CommentPage {
+  comments: CommentInfo[];
+  earlier: number;
+  total: number;
+}
+
+/** Comments get_ticket and `ticket show` print at a time. */
+export const COMMENTS_PAGE = 50;
+
+/** What list_tickets and `ticket list` ask the board for (scope=list); the board filters, they only print. */
+export interface TicketListQuery {
+  /** One column; none: every column but Done, or every column for a search. */
+  status?: Status | null;
+  /** Also tool tickets. */
+  tool?: boolean;
+  /** Words in the title, description or id, in every column unless status says one (at most 100 matches, newest first). */
+  query?: string | null;
+  tags?: string[];
+  limit?: number;
+  /** The id the previous page ended with (its `next`). */
+  after?: string | null;
+}
+
+/** A page of the list, newest first. total: matching tickets; doneLeft: Done tickets left out (no column asked). */
+export interface TicketListPage {
+  tickets: TicketInfo[];
+  total: number;
+  /** A search's matches before the cap of 100 (missing from older daemons). */
+  matched?: number;
+  doneLeft: number;
+  /** Pass as `after` for the next page; null: this was the last one. */
+  next: string | null;
+}
+
 export interface TicketPatch {
   title?: string;
   body?: string;
@@ -392,7 +427,20 @@ export class BoardClient {
   }
 
   listProfiles = () => this.req<ProfileInfo[]>("GET", "/api/profiles");
-  listTickets = (slug: string) => this.req<TicketInfo[]>("GET", this.t(slug));
+  /** A page of the board's tickets, filtered by the board (never the whole board: it can hold thousands). */
+  listTickets = (slug: string, q: TicketListQuery = {}) => {
+    const p = new URLSearchParams({ scope: "list" });
+    if (q.status) p.set("status", q.status);
+    if (q.tool) p.set("tool", "1");
+    if (q.query?.trim()) p.set("q", q.query.trim());
+    if (q.tags?.length) p.set("tags", q.tags.join(","));
+    if (q.limit) p.set("limit", String(q.limit));
+    if (q.after) p.set("after", q.after);
+    return this.req<TicketListPage>("GET", `${this.t(slug)}?${p}`);
+  };
+  /** These tickets (with their families); ids not on the board are simply missing. */
+  ticketsByIds = (slug: string, ids: string[]) =>
+    this.req<{ tickets: TicketInfo[]; doneTotal: number }>("GET", `${this.t(slug)}?scope=ids&ids=${ids.map(encodeURIComponent).join(",")}`);
   getTicket = (slug: string, id: string) => this.req<TicketInfo>("GET", this.t(slug, id));
   getFamily = (slug: string, id: string) => this.req<FamilyRowInfo[]>("GET", `${this.t(slug, id)}/family`);
   // `run` (a board run's CKANBAN_TICKET): the daemon only lets a running plan's planner change its own children.
@@ -437,7 +485,9 @@ export class BoardClient {
   /** Waits for the setup command to finish (it may take minutes). */
   setup = (slug: string, id: string, run?: string | null) => this.req<SetupOutcome>("POST", `${this.t(slug, id)}/setup`, {}, this.by(run), true);
   stop = (slug: string, id: string, run?: string | null) => this.req<{ stopped: boolean }>("POST", `${this.t(slug, id)}/stop`, {}, this.by(run));
-  listComments = (slug: string, id: string) => this.req<CommentInfo[]>("GET", `${this.t(slug, id)}/comments`);
+  /** The newest COMMENTS_PAGE comments, or the ones before the `before`th (CommentPage.earlier of the last page). */
+  listComments = (slug: string, id: string, before?: number | null) =>
+    this.req<CommentPage>("GET", `${this.t(slug, id)}/comments?last=${COMMENTS_PAGE}${before === undefined || before === null ? "" : `&before=${before}`}`);
   comment = (slug: string, id: string, text: string, run?: string | null) =>
     this.req<CommentInfo>("POST", `${this.t(slug, id)}/comments`, { text }, this.by(run));
   setFollowUp = (slug: string, id: string, input: { after?: string; at?: string; note: string; cancelOnReply?: boolean }, run?: string | null) =>
@@ -683,7 +733,27 @@ export function ticketLine(t: TicketInfo): string {
   return `${t.id}  [${state(t)}]  ${t.important ? "⭐ " : ""}${t.title}${extra.length ? `  (${extra.join("; ")})` : ""}`;
 }
 
-export function ticketText(t: TicketInfo, comments: CommentInfo[] = []): string {
+/**
+ * list_tickets' and `ticket list`'s text: the page, then what it leaves out and how to get it. more(after) says how
+ * to ask for the next page; doneHint how to see Done tickets.
+ */
+export function ticketListText(slug: string, page: TicketListPage, q: TicketListQuery, more: (after: string) => string, doneHint: string): string {
+  const what = q.query?.trim() || q.tags?.length
+    ? `matching ${[q.query?.trim() ? `"${q.query.trim()}"` : "", ...(q.tags ?? []).map((g) => `#${g}`)].filter(Boolean).join(" ")}${q.status ? ` in ${q.status}` : " in any column"}`
+    : q.status ? `in ${q.status}` : "open work (not Done)";
+  const lines: string[] = [];
+  if (!page.tickets.length) lines.push(`Board ${slug}: no ${what === "open work (not Done)" ? "open tickets (not Done)" : `tickets ${what}`}${q.after ? ` after ${q.after}` : ""}.`);
+  else {
+    const shown = page.tickets.length < page.total ? `${page.tickets.length} of ${page.total}` : `${page.total}`;
+    lines.push(`Board ${slug}, ${what}, newest first: ${shown}${q.after ? ` (after ${q.after})` : ""}.`, ...page.tickets.map(ticketLine));
+  }
+  if (page.next) lines.push(`More: ${more(page.next)}.`);
+  if (page.matched && page.matched > page.total) lines.push(`${page.matched} tickets match; only the newest ${page.total} are listed: narrow the query or add a status.`);
+  if (page.doneLeft) lines.push(`${page.doneLeft} Done ticket${page.doneLeft === 1 ? "" : "s"} not listed: ${doneHint}.`);
+  return lines.join("\n");
+}
+
+export function ticketText(t: TicketInfo, comments: CommentInfo[] = [], earlier?: { count: number; how: string }): string {
   const lines = [
     `${t.title}`,
     `id: ${t.id}`,
@@ -710,7 +780,7 @@ export function ticketText(t: TicketInfo, comments: CommentInfo[] = []): string 
   if (t.error) lines.push(`error: ${t.error}`);
   lines.push("", t.body.trim() || "(no description)");
   if (comments.length) {
-    lines.push("", "Comments:");
+    lines.push("", earlier?.count ? `Comments (the last ${comments.length}; ${earlier.count} earlier not shown: ${earlier.how}):` : "Comments:");
     for (const c of comments) lines.push(`- ${c.author} (${c.at}): ${c.text}`);
   }
   return lines.join("\n");

@@ -3,7 +3,7 @@ import { readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
-import { folderDiff, MAX_FILE_LINES, parseDiff, REWRITTEN_NOTE, ticketDiff, type DiffFile } from "../src/server/diff";
+import { folderDiff, MAX_DIFF_FILES, MAX_DIFF_LINES, MAX_FILE_LINES, parseDiff, REWRITTEN_NOTE, ticketDiff, type DiffFile } from "../src/server/diff";
 import { Bus } from "../src/server/events";
 import { run } from "../src/server/git";
 import { createServer } from "../src/server/http";
@@ -282,3 +282,24 @@ test("the pull request's base branch wins over the board's base branch", async (
   expect(d.startedFrom).toBe("feature");
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("a ticket that copied a whole project in: the first MAX_DIFF_FILES files, then a row naming how many more", async () => {
+  const dir = await makeRepo();
+  writeFileSync(join(dir, "seed.txt"), "seed\n");
+  await git(dir, "add", ".");
+  await git(dir, "commit", "-qm", "seed");
+  const { stdout } = await git(dir, "rev-parse", "HEAD");
+  // A renamed file sorts first, so its old and new paths both reach the limited patch.
+  await git(dir, "mv", "seed.txt", "0-seed.txt");
+  for (let i = 0; i < MAX_DIFF_FILES + 150; i++) writeFileSync(join(dir, `f${String(i).padStart(4, "0")}.ts`), Array.from({ length: 200 }, (_, k) => `line ${k}`).join("\n") + "\n");
+  const d = await folderDiff(dir, stdout.trim());
+  expect(d.moreFiles).toBe(151);
+  expect(d.files).toHaveLength(MAX_DIFF_FILES + 1);
+  expect(d.files[0]).toMatchObject({ path: "0-seed.txt", oldPath: "seed.txt", status: "R" });
+  expect(d.files.at(-1)).toMatchObject({ path: "… and 151 more changed files (not shown)", more: true, hunks: [] });
+  // MAX_DIFF_LINES patch lines in all: files past it are listed without content.
+  const kept = d.files.reduce((n, f) => n + f.hunks.reduce((m, h) => m + h.lines.length, 0), 0);
+  expect(kept).toBeLessThanOrEqual(MAX_DIFF_LINES);
+  expect(d.files.filter((f) => f.tooLarge).length).toBeGreaterThan(100);
+  expect(d.additions).toBe(d.files.reduce((n, f) => n + f.additions, 0));
+}, 60_000);

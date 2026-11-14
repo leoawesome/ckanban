@@ -1,10 +1,11 @@
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { dayKey } from "./limit";
 import { pauser } from "./lag";
 import { readSideSpend } from "./side-call";
 import { helperSpendFile } from "./helper/runner";
 import { atomicWrite, type Store } from "./store";
+import { loadLog, logStat, openLog } from "./run-log";
 
 // Dollars spent, at a glance: each ticket's API-equivalent cost (the same sum as its Usage tab, see ticketRuns) and
 // what all boards spent today. Tickets are read from their activity logs, incrementally, plus their side calls'
@@ -44,6 +45,22 @@ export class SpendIndex {
     return drain(this.ticketSteps(slug, id));
   }
 
+  /**
+   * ticket() for a caller that can wait: a compressed log (run-log.ts) not counted yet is decompressed off the event
+   * loop first and read in slices, so the sync ticket() after it only reads what is new.
+   */
+  async ticketAsync(slug: string, id: string, pause: () => Promise<void> = pauser()): Promise<TicketSpend> {
+    const file = this.store.activityPath(slug, id);
+    const st = logStat(file);
+    if (st?.gz && st.size > (this.files.get(file)?.offset ?? 0)) await loadLog(file);
+    const g = this.ticketSteps(slug, id);
+    for (;;) {
+      const r = g.next();
+      if (r.done) return r.value;
+      await pause();
+    }
+  }
+
   /** ticket() in steps: it yields between chunks of a long activity log (a place to pause). */
   private *ticketSteps(slug: string, id: string): Generator<void, TicketSpend> {
     const runs = yield* this.logSteps(this.store.activityPath(slug, id));
@@ -57,13 +74,12 @@ export class SpendIndex {
   /** Cost of the result lines in one activity log (a ticket's, or a quick chat's); reads only what was appended since. */
   private *logSteps(file: string): Generator<void, TicketSpend> {
     let st = this.files.get(file);
-    let size = 0;
-    try {
-      size = statSync(file).size;
-    } catch {
+    const ls = logStat(file);
+    if (!ls) {
       this.files.delete(file);
       return { costUsd: 0, days: new Map() };
     }
+    const size = ls.size;
     // Rewritten or replaced (e.g. a deleted and re-made ticket): start over.
     if (!st || size < st.offset) {
       st = { offset: 0, totals: new Map(), costUsd: 0, days: new Map() };
@@ -75,14 +91,16 @@ export class SpendIndex {
 
   /** Yields after each chunk: a first read of a busy ticket's log is tens of MB. */
   private *read(file: string, st: FileState, size: number): Generator<void> {
-    const fd = openSync(file, "r");
+    const log = openLog(file);
+    if (!log) return;
+    size = Math.min(size, log.size);
     try {
       const buf = Buffer.allocUnsafe(Math.min(CHUNK, size - st.offset));
       // Bytes after the last whole line: decoded with the next chunk, so a character split between chunks stays whole.
       let carry: Buffer = Buffer.alloc(0);
       let pos = st.offset;
       while (pos < size) {
-        const n = readSync(fd, buf, 0, Math.min(buf.length, size - pos), pos);
+        const n = log.read(buf, 0, Math.min(buf.length, size - pos), pos);
         if (n <= 0) break;
         pos += n;
         const all = carry.length ? Buffer.concat([carry, buf.subarray(0, n)]) : buf.subarray(0, n);
@@ -103,7 +121,7 @@ export class SpendIndex {
         }
       }
     } finally {
-      closeSync(fd);
+      log.close();
     }
   }
 
@@ -173,7 +191,8 @@ export class SpendIndex {
       for (const id of existsSync(dir) ? readdirSync(dir) : []) {
         yield;
         // Untouched since midnight: nothing spent today.
-        const mtime = Math.max(mtimeOf(this.store.activityPath(p.slug, id)), mtimeOf(this.store.sideSpendPath(p.slug, id)));
+        // A compressed log (run-log.ts) keeps its original's time, so an old one is skipped here like a plain one.
+        const mtime = Math.max(logStat(this.store.activityPath(p.slug, id))?.mtimeMs ?? 0, mtimeOf(this.store.sideSpendPath(p.slug, id)));
         if (mtime >= start) cost += (yield* this.ticketSteps(p.slug, id)).days.get(day) ?? 0;
       }
       // Quick chats (quickchat.ts) log their result lines next to each chat.

@@ -1,17 +1,18 @@
 // `ckanban profiles`, `ckanban ticket ...` and `ckanban mcp ...`: the board from a terminal or another agent.
 import { readFileSync } from "node:fs";
-import { hiddenTool } from "../web/src/family";
 import {
   assertCanChange, BoardClient, RUN_ENV, bugReportText, ClientError, deviceTakeText, parseMode, parseStatus, profileList, resolveProfile, runProfile,
-  ticketLine, ticketText, type TicketPatch,
+  ticketLine, ticketListText, ticketText, type TicketListQuery, type TicketPatch,
 } from "./client";
 import { AGENT_IDS, AgentRegistry, type AgentId } from "./server/agents";
 import { normalizeTags } from "./server/tags";
 import { setupBlock, type SetupOutcome } from "./server/worktree-setup";
 
 export const TICKET_USAGE = `  ckanban profiles     List boards (profiles) and their folders
-  ckanban ticket list [--status <s>] [--include-tool]
-  ckanban ticket show <id>
+  ckanban ticket list [--status <s>] [--query <words>] [--limit <n>] [--after <id>] [--include-tool]
+                       Open work (not Done) newest first, 100 at a time; --status done pages
+                       through Done, --query finds tickets by words in any column (at most 100)
+  ckanban ticket show <id> [--comments-before <n>]
   ckanban ticket create --title <t> [--body <md> | --body-file <f>] [--status <s>] [--mode interview|auto] [--needs <r1,r2>] [--tags <t1,t2>]
   ckanban ticket update <id> [--title <t>] [--body <md> | --body-file <f>] [--status <s>] [--mode <m>] [--needs <r1,r2>] [--tags <t1,t2>] [--show-on-board true|false]
   ckanban ticket move <id> <status>
@@ -146,20 +147,25 @@ export async function ticketCommand(argv: string[], io: CliIo = defaultIo()): Pr
 
   switch (action) {
     case "list": {
-      // Tool tickets have no card and report to their main ticket: listed only with --include-tool.
-      let ts = await c.listTickets(slug);
-      if (!p.flags["include-tool"]) ts = ts.filter((t) => !hiddenTool(t));
+      // Tool tickets have no card and report to their main ticket: listed only with --include-tool. The board filters
+      // and pages: a big board has thousands of Done tickets.
       const status = flagStr(p, "status");
-      if (status) {
-        const s = parseStatus(status);
-        ts = ts.filter((t) => t.status === s);
-      }
-      return print(ts, ts.length ? ts.map(ticketLine).join("\n") : `No tickets on ${slug}${status ? ` in ${status}` : ""}.`);
+      const limit = Number(flagStr(p, "limit") ?? 0);
+      const q: TicketListQuery = {
+        status: status ? parseStatus(status) : null, tool: !!p.flags["include-tool"], query: flagStr(p, "query") ?? null,
+        limit: limit > 0 ? Math.floor(limit) : undefined, after: flagStr(p, "after") ?? null,
+      };
+      const page = await c.listTickets(slug, q);
+      const again = [status ? `--status ${status}` : "", q.query ? `--query ${JSON.stringify(q.query)}` : "", q.limit ? `--limit ${q.limit}` : "", q.tool ? "--include-tool" : ""].filter(Boolean).join(" ");
+      return print(page, ticketListText(slug, page, q, (after) => `ckanban ticket list ${again ? `${again} ` : ""}--after ${after}`, "use --status done, or --query"));
     }
     case "show": {
       const tid = need(id, "ticket show <id>");
-      const [t, comments] = await Promise.all([c.getTicket(slug, tid), c.listComments(slug, tid)]);
-      return print({ ...t, comments }, ticketText(t, comments));
+      const raw = flagStr(p, "comments-before");
+      const before = raw !== undefined && Number(raw) >= 0 ? Math.floor(Number(raw)) : null;
+      const [t, cp] = await Promise.all([c.getTicket(slug, tid), c.listComments(slug, tid, before)]);
+      return print({ ...t, comments: cp.comments, earlierComments: cp.earlier },
+        ticketText(t, cp.comments, { count: cp.earlier, how: `ckanban ticket show ${tid} --comments-before ${cp.earlier}` }));
     }
     case "create": {
       // `ticket create "Title"` works too.

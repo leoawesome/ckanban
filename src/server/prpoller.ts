@@ -171,17 +171,41 @@ export async function resolveConflicts(board: Board, store: Store, slug: string,
   return board.chat(slug, id, conflictMessage(pr, store.getProfile(slug)?.baseBranch ?? ""));
 }
 
-export function startPoller(board: Board, store: Store, minutes: number): () => void {
+/** A closed PR (it can be reopened) is still asked about this often; a merged one never again. */
+const CLOSED_RECHECK_MS = 60 * 60_000;
+
+export function startPoller(board: Board, store: Store, minutes: number, deps: { refresh?: typeof refreshPr; check?: typeof checkPr; now?: () => number } = {}): () => void {
+  const refresh = deps.refresh ?? refreshPr;
+  const check = deps.check ?? checkPr;
+  const now = deps.now ?? Date.now;
+  /** When each ticket's closed PRs were last asked about, by "slug/id". */
+  const closedAt = new Map<string, number>();
   let busy = false;
   const tick = async () => {
     if (busy) return;
     busy = true;
     try {
-      for (const p of store.listProfiles()) {
-        for (const t of store.listTickets(p.slug)) {
-          if (t.status === "review" && t.prUrl) await refreshPr(board, store, p.slug, t.id).catch(() => {});
+      // Newest in Review first: a card left in Review for weeks shouldn't delay the one just finished.
+      const due = store.listProfiles().flatMap((p) => store.listTickets(p.slug).filter((t) => t.status === "review" && t.prUrl).map((t) => ({ slug: p.slug, t })));
+      due.sort((a, b) => (b.t.statusAt ?? "").localeCompare(a.t.statusAt ?? ""));
+      const keys = new Set<string>();
+      for (const { slug, t } of due) {
+        const key = `${slug}/${t.id}`;
+        keys.add(key);
+        // Every PR already seen merged or closed: no gh call, only the local step (a merged card waiting on the user
+        // moves to Done once it doesn't). Closed ones are asked about again now and then.
+        const prs = ticketPrs(t);
+        const final = prs.length > 0 && prs.every((p) => prFinal(p.state));
+        const reopenable = prs.some((p) => p.state === "CLOSED");
+        if (final && !(reopenable && now() - (closedAt.get(key) ?? 0) >= CLOSED_RECHECK_MS)) {
+          const known = new Map(prs.map((p) => [p.url, p.state as PrState]));
+          await check(board, store, slug, t.id, async (url) => known.get(url) ?? null).catch(() => {});
+          continue;
         }
+        if (final) closedAt.set(key, now());
+        await refresh(board, store, slug, t.id).catch(() => {});
       }
+      for (const k of closedAt.keys()) if (!keys.has(k)) closedAt.delete(k);
     } finally {
       busy = false;
     }

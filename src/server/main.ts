@@ -19,6 +19,7 @@ import { PushService } from "./push";
 import { RemoteAccess, remoteListenPort, remoteUrl } from "./remote";
 import { Passes } from "./integrations/passes";
 import { ckanbanShim } from "./integrations/script";
+import { RunLogCompressor } from "./run-log-compress";
 import { freezeAlarm, pauser, startLagMonitor, track, trackedInterval } from "./lag";
 import { LoopManager } from "./loops";
 import { makeSideCaller } from "./side-call";
@@ -33,10 +34,12 @@ import { SessionFeed } from "./changefeed";
 import { ShellManager } from "./shell";
 import { TerminalWatcher } from "./terminals";
 import { defaultRoot, Store, TICKET_RECHECK_MS } from "./store";
+import { JSON_DIR_RECHECK_MS } from "./json-dir";
 import { keepAwakeOn } from "./types";
 import { VERSION } from "./version";
 import { WEB_ASSETS } from "./web-assets.gen";
 import { detectMissing } from "./worktree-setup";
+import { sweepTempFiles, trimDaemonLog } from "./housekeeping";
 
 export async function startDaemon(): Promise<void> {
   // Board runs and other children inherit this; an older launchd plist starts the daemon with no locale.
@@ -136,13 +139,17 @@ export async function startDaemon(): Promise<void> {
   // Every board's tickets read in slices first: recover() and the first pages then list them from memory instead of
   // reading thousands of ticket files in one go.
   await track("startup: load tickets", () => store.loadAllTickets());
+  // Huddles, jobs, schedules and automations too: a board keeps every finished one, so the first read can be big.
+  await track("startup: load lists", () => store.loadAllLists());
   track("startup: board.recover", () => board.recover());
   track("startup: huddles.recover", () => huddles.recover());
-  track("startup: quickChats.recover", () => quickChats.recover());
+  await track("startup: quickChats.recover", () => quickChats.recover());
   huddles.startWatchdog();
   // Board browsers: adopt the data folders and the Chromes still running from before a restart, start keep-running ones.
   void track("startup: board browsers", () => board.boardBrowsers.init().then(() => board.boardBrowsers.start()).catch((e) => console.error("board browsers", e)));
   void track("startup: sweepWorktrees", () => board.sweepWorktrees());
+  void track("startup: trim daemon.log", () => trimDaemonLog(join(store.root, "daemon.log"))).catch((e) => console.error("daemon.log trim", e));
+  void track("startup: sweep temp files", () => sweepTempFiles(store.root)).catch((e) => console.error("temp file sweep", e));
   void track("startup: detectMissing", () => detectMissing(store, (profile) => bus.emit({ type: "profile.updated", slug: profile.slug, profile })));
   const stopPoller = startPoller(board, store, config.prPollMinutes);
   // After recover(): a missed run's ticket must not be mistaken for an interrupted one.
@@ -152,12 +159,19 @@ export async function startDaemon(): Promise<void> {
   const stopLearner = learner.start();
   const stopLimits = new LimitWatcher(board, store).start();
   const stopFollowUps = new FollowUpWatcher(board, store).start();
+  // Run logs of tickets Done for over 30 days are compressed, a few at a time, losing nothing (run-log-compress.ts).
+  const stopLogCompress = new RunLogCompressor(store, (slug, id) => board.isRunning(slug, id)).start();
   const stopWatcher = startSessionWatcher(store, bus, sessions, 2000, { feed });
   // Ticket files edited outside the Store, found in slices in the background instead of inside a listing.
   let rechecking: Promise<void> | null = null;
   const recheck = () => (rechecking ??= store.recheckTickets().catch((e) => console.error("ticket recheck", e)).finally(() => (rechecking = null)));
   void recheck();
   const recheckTimer = trackedInterval("ticket-recheck", recheck, TICKET_RECHECK_MS);
+  // The same for huddle, job, schedule and automation files (json-dir.ts), instead of inside the next list read.
+  let recheckingLists: Promise<void> | null = null;
+  const recheckLists = () => (recheckingLists ??= store.recheckLists().catch((e) => console.error("list recheck", e)).finally(() => (recheckingLists = null)));
+  void recheckLists();
+  const listRecheckTimer = trackedInterval("list-recheck", recheckLists, JSON_DIR_RECHECK_MS);
   const stopHuddleWatcher = startHuddleSessionWatcher(store, bus, (id) => sessions.version(id), 2000, { feed });
   const stopTerminals = terminals.start();
   const stopMcp = mcp.start();
@@ -176,7 +190,9 @@ export async function startDaemon(): Promise<void> {
     stopLimits();
     stopFollowUps();
     stopWatcher();
+    stopLogCompress();
     clearInterval(recheckTimer);
+    clearInterval(listRecheckTimer);
     sessions.flushSummaries();
     stopHuddleWatcher();
     stopFollow();

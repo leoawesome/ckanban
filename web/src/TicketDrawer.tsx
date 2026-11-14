@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { setCoveredFrom } from "./cardMotion";
 import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, runningTools, stopTitle, toolCount } from "./familyActions";
 import { api, COLUMNS, safeHref, startWorkTarget, subscribe, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "./api";
 import { boardColumnOf, menuPick, STATUS_MENU } from "./columns";
@@ -18,6 +19,7 @@ import { HelpMenu, useHelp } from "./HelpMenu";
 import { Chat, useStop } from "./Chat";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DescriptionEditor, useDescriptionCommands } from "./DescriptionEditor";
+import { recentOutputs } from "./outputsOnce";
 import { BellIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, LinkIcon, PinIcon, SparkIcon } from "./icons";
 import { useImagePaste } from "./imagePaste";
 import { useFocusTrap, useLayer } from "./layers";
@@ -443,6 +445,18 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const [outputFocus, setOutputFocus] = useState<string | null>(null);
   const [titleSave, setTitleSave] = useState<"saving" | "saved" | null>(null);
   const panelRef = useRef<HTMLElement>(null);
+  // The board under this ticket pauses its card motion (cardMotion.ts): the part the panel covers, all of it on a phone.
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    // offsetLeft ignores the slide-in transform; the backdrop it is measured in is the fixed wrap.
+    const update = () => setCoveredFrom((el.parentElement?.getBoundingClientRect().left ?? 0) + el.offsetLeft);
+    update();
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    ro?.observe(el);
+    window.addEventListener("resize", update);
+    return () => { ro?.disconnect(); window.removeEventListener("resize", update); setCoveredFrom(null); };
+  }, []);
   // Closing slides the panel out and fades its backdrop before it goes (at once with reduced motion).
   const [leaving, setLeaving] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -606,7 +620,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   }, [tab, tabs.length]);
 
   const links = (ticket.links ?? []).filter((l) => safeHref(l.url));
-  const loadOutputs = () => api.outputs(slug, ticket.id).then((o) => setOutputCount(o.length)).catch(() => {});
+  const loadOutputs = () => recentOutputs(slug, ticket.id).then((o) => setOutputCount(o.length)).catch(() => {});
 
   useEffect(() => {
     loadOutputs();

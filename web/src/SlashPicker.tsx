@@ -9,6 +9,8 @@ const STALE_MS = 30_000;
 
 // Per ticket (its worktree decides the project skills) or per board; refetched when older than STALE_MS.
 const cache = new Map<string, { at: number; list: SlashCommand[] }>();
+/** Requests on their way, so the chat and the description box opening together ask once. */
+const asking = new Map<string, Promise<SlashCommand[]>>();
 
 /** What `/` can run in this ticket's chat, or in the board's folder without a ticket. null while loading. */
 export function useSlashCommands(slug: string, ticketId?: string): SlashCommand[] | null {
@@ -19,8 +21,16 @@ export function useSlashCommands(slug: string, ticketId?: string): SlashCommand[
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < STALE_MS) return;
     let live = true;
-    (ticketId ? api.commands(slug, ticketId) : api.boardCommands(slug)).then((l) => {
-      cache.set(key, { at: Date.now(), list: l });
+    let req = asking.get(key);
+    if (!req) {
+      req = ticketId ? api.commands(slug, ticketId) : api.boardCommands(slug);
+      asking.set(key, req);
+      const mine = req;
+      void mine.then((l) => cache.set(key, { at: Date.now(), list: l }), () => {}).finally(() => {
+        if (asking.get(key) === mine) asking.delete(key);
+      });
+    }
+    req.then((l) => {
       if (live) setList(l);
     }).catch(() => {});
     return () => { live = false; };

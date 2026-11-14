@@ -1,15 +1,27 @@
 import { useEffect, useState } from "react";
 import { api, copy, type ToolDetail } from "./api";
 import { editDiff, mainInput } from "./toolView";
+import { capMap } from "./chatMemo";
 
 /** One tool call as a row: its short label, plus the id its full input and output load by. */
 /** out: a short look at the output, shown under the label (the session viewer). */
 export type ToolItem = { key: string; label: string; toolUseId?: string; error?: boolean; current?: boolean; out?: string };
 
-/** Loaded details by ticket + tool_use id; only finished calls (with a result) are kept. */
+/**
+ * Loaded details by ticket + tool_use id; only finished calls (with a result) are kept, and only the last LOADED_MAX
+ * (oldest out): each holds a call's full output, which can be hundreds of KB. A row opened again loads it again.
+ */
 const loaded = new Map<string, ToolDetail>();
-/** Rows the user opened; module-level so they stay open across live refreshes. */
+const LOADED_MAX = 50;
+/** Rows the user opened; module-level so they stay open across live refreshes. The last OPENED_MAX are kept. */
 const opened = new Set<string>();
+const OPENED_MAX = 500;
+
+function keepLoaded(key: string, d: ToolDetail) {
+  loaded.delete(key);
+  loaded.set(key, d);
+  capMap(loaded, LOADED_MAX);
+}
 
 /** While a call still has no result and Claude is working, re-check this often. */
 const PENDING_POLL_MS = 2000;
@@ -44,7 +56,7 @@ export function ToolRow({ slug, ticketId, item, live, load: loadDetail }: {
       (loadDetail ? loadDetail(item.toolUseId!) : api.tool(slug, ticketId, item.toolUseId!))
         .then((d) => {
           if (stop) return;
-          if (d.output !== null) loaded.set(key, d);
+          if (d.output !== null) keepLoaded(key, d);
           setDetail(d);
           setFailed(false);
         })
@@ -62,8 +74,10 @@ export function ToolRow({ slug, ticketId, item, live, load: loadDetail }: {
     <details className={`tool-row${error ? " error" : ""}${item.current ? " cur" : ""}`} open={open}
       onToggle={(e) => {
         const isOpen = e.currentTarget.open;
-        if (isOpen) opened.add(key);
-        else opened.delete(key);
+        if (isOpen) {
+          opened.add(key);
+          if (opened.size > OPENED_MAX) opened.delete(opened.values().next().value!);
+        } else opened.delete(key);
         setOpen(isOpen);
       }}>
       <summary title={item.label}>

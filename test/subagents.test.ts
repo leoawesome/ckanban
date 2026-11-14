@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus, type BusEvent } from "../src/server/events";
 import { createServer } from "../src/server/http";
-import { parseSession, pollSessions, SessionCache } from "../src/server/session";
+import { parseSession, pollSessionsSliced, SessionCache } from "../src/server/session";
 import { Store } from "../src/server/store";
 import { AGENT_STEP_TAIL, parseAgentTranscript, settleAgent } from "../src/server/subagents";
 import { tempDir } from "./helpers";
@@ -156,7 +156,7 @@ test("SessionCache merges subagent transcripts into agent rows and notices their
   expect(cache.get(sid)!.entries[1].agent).toMatchObject({ status: "done", result: "Final.", endedAt: "2026-10-07T01:00:10Z", stepCount: 3 });
 });
 
-test("pollSessions emits session.updated when only a subagent transcript changes", () => {
+test("pollSessionsSliced emits session.updated when only a subagent transcript changes", async () => {
   const { configDir, sid, sub } = sessionWithAgent();
   const store = new Store(tempDir());
   store.saveProfile({ name: "P", slug: "p", path: tempDir(), baseBranch: "main", maxParallel: 1, createdAt: "" });
@@ -167,12 +167,12 @@ test("pollSessions emits session.updated when only a subagent transcript changes
   bus.on((e) => seen.push(e));
   const cache = new SessionCache({ configDir });
   const state = new Map<string, string>();
-  pollSessions(store, bus, cache, state);
+  await pollSessionsSliced(store, bus, cache, state);
   expect(seen.length).toBe(1);
   mkdirSync(sub, { recursive: true });
   writeFileSync(join(sub, "agent-abc.meta.json"), L({ toolUseId: "ag1" }));
   writeFileSync(join(sub, "agent-abc.jsonl"), TRANSCRIPT(false));
-  pollSessions(store, bus, cache, state);
+  await pollSessionsSliced(store, bus, cache, state);
   expect(seen.length).toBe(2);
 });
 

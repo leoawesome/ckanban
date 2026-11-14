@@ -135,8 +135,8 @@ The same operations work from a terminal:
 
 ```bash
 ckanban profiles
-ckanban ticket list [--status ready]
-ckanban ticket show <id>
+ckanban ticket list [--status ready] [--query words] [--limit 100] [--after <id>]   # open work by default, 100 at a time; --status done pages through Done
+ckanban ticket show <id> [--comments-before <n>]   # the last 50 comments, or the 50 before the nth
 ckanban ticket create --title "Add dark mode" --body-file notes.md   # or --body "...", or --body - (stdin)
 ckanban ticket update <id> [--title ...] [--body ...] [--status ...] [--mode interview|auto] [--needs a,b] [--tags a,b] [--show-on-board true|false]
 ckanban ticket move <id> ready     # starts a run, like dragging the card

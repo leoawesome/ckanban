@@ -1,5 +1,5 @@
 import { boardConnectorOptions } from "./connectors";
-import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { summarizeEvent } from "./activity";
 import { runOptions } from "./commands";
@@ -9,6 +9,8 @@ import { claudeSessionExists, claudeSessionFile, sessionMissing, type Board, typ
 import { forkSessionBefore, forkTitle } from "./fork";
 import { applyRewind, applyUndo, cutSession, RewindRefused, messagesFrom, undoBlocked, type RewindUndo, type UndoResult } from "./rewind";
 import { DraftTracker } from "./draft";
+import { pauser } from "./lag";
+import { CHAT_PAGE, ChatIndex } from "./quickchat-index";
 import type { Bus } from "./events";
 import { WRITING_RULE } from "./prompts";
 import { buildArgs, startRun, type RunHandle } from "./runner";
@@ -195,6 +197,8 @@ export class QuickChats {
   private shuttingDown = false;
   private sessionExists: (id: string) => boolean;
   private hooks: QuickChatHooks = {};
+  /** Every board's chats, newest first, kept between lists (quickchat-index.ts). */
+  private index = new ChatIndex<QuickChat>((slug) => this.dir(slug), (slug, id) => this.get(slug, id));
 
   constructor(private store: Store, private bus: Bus, private board: Board, private opts: QuickChatOptions) {
     this.sessionExists = opts.sessionExists ?? claudeSessionExists;
@@ -262,15 +266,14 @@ export class QuickChats {
     return c;
   }
 
-  /** The board's chats, latest first. */
+  /** The board's chats, latest first (a copy of the index's list; see ChatIndex). */
   list(slug: string): QuickChat[] {
-    const dir = this.dir(slug);
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter((f) => /^[a-z0-9]+\.json$/.test(f))
-      .map((f) => this.get(slug, f.slice(0, -5)))
-      .filter((c): c is QuickChat => c !== null)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.createdAt.localeCompare(a.createdAt));
+    return [...this.index.all(slug)];
+  }
+
+  /** A page of the board's chats, latest first, for the Ask tab ("Load older" asks with the last page's `next`). */
+  async page(slug: string, limit = CHAT_PAGE, before: string | null = null): Promise<{ chats: QuickChat[]; next: string | null }> {
+    return this.index.page(await this.index.allSliced(slug, pauser()), limit, before);
   }
 
   view(slug: string, c: QuickChat): QuickChatView {
@@ -287,7 +290,7 @@ export class QuickChats {
   }
 
   private save(slug: string, c: QuickChat): void {
-    atomicWrite(this.file(slug, c.id), JSON.stringify(c, null, 2) + "\n");
+    this.index.wrote(slug, c.id, () => atomicWrite(this.file(slug, c.id), JSON.stringify(c, null, 2) + "\n"), c);
   }
 
   /** Saves a change to a chat that still exists (a run ending after Delete must not bring it back). */
@@ -533,7 +536,7 @@ export class QuickChats {
       this.stop(slug, id);
       await Promise.race([run.done, Bun.sleep(6000)]);
     }
-    rmSync(this.file(slug, id), { force: true });
+    this.index.wrote(slug, id, () => rmSync(this.file(slug, id), { force: true }), null);
     rmSync(this.activityPath(slug, id), { force: true });
     rmSync(this.simplifiedPath(slug, id), { force: true });
     rmSync(this.sideSpendPath(slug, id), { force: true });
@@ -712,10 +715,11 @@ export class QuickChats {
     await Promise.race([Promise.all(runs.map((r) => r.done)), Bun.sleep(6000)]);
   }
 
-  /** After a restart: continue replies it cut off and send messages it held. */
-  recover(): void {
+  /** After a restart: continue replies it cut off and send messages it held. Reads the chats in slices (a board can have thousands). */
+  async recover(): Promise<void> {
+    const pause = pauser();
     for (const p of this.store.listProfiles()) {
-      for (const c of this.list(p.slug)) {
+      for (const c of [...(await this.index.allSliced(p.slug, pause))]) {
         if (!c.interrupted && !c.pending?.length) continue;
         const texts = [...(c.interrupted ? [c.interrupted.prompt ?? CONTINUE_TEXT] : []), ...(c.pending ?? [])];
         const { pending: _p, interrupted: _i, ...rest } = c;

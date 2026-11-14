@@ -3,6 +3,8 @@ import { AvatarError, CLAUDE_KEY, withAvatar, withClaudeName, withoutAvatar } fr
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { pauser, routeLabel, track } from "./lag";
+import { CMD_SEARCH_LIMIT, CommandRows } from "./cmdbar";
+import { CHAT_PAGE } from "./quickchat-index";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "./artifact";
 import { profileFor } from "./cpuprof";
 import { claudeSessionFile, ConflictError, recoveryFor, type Board } from "./board";
@@ -24,7 +26,8 @@ import { cronError, describeCron, nextRuns, parseCron } from "./cron";
 import { fromUserBrowser, outsideBoard } from "./integrations/guard";
 import { PassError, Passes } from "./integrations/passes";
 import { keysAnswerText } from "./ask-keys";
-import { maskSavedJson } from "./board-keys";
+import { maskSaved, maskSavedJson } from "./board-keys";
+import { liveJson } from "./liveCut";
 import { ckanbanShim } from "./integrations/script";
 import { LoopError, LoopManager } from "./loops";
 import { QUICK_CHAT_HEADER, RUN_HEADER, ScheduleError, Scheduler } from "./scheduler";
@@ -40,7 +43,7 @@ import { BugReportError, draftReport, submitReport, type BugBlockId, type BugSou
 import {
   AttachmentError, attachmentFile, attachmentType, cleanFileName, IMAGE_TYPES, opensInline, saveAttachment, UNSUPPORTED, uploadExt,
 } from "./attachments";
-import { FileError, findInRoots, listDir, openWithSystem, readFileForView, ticketFolder, type FileRoot } from "./files";
+import { FileError, findInRoots, listDirPage, openWithSystem, readFileForView, ticketFolder, type FileRoot } from "./files";
 import { boardToolsSource, McpError, McpManager } from "./mcp";
 import { MacOnlyError, MessageError, Notifier, TG_PAIR_FROM_MAC } from "./notify";
 import { HelperError, type HelperRunner } from "./helper/runner";
@@ -65,7 +68,7 @@ import type { TerminalWatcher } from "./terminals";
 import { attachmentHeader, canCopyFile, copyFileToClipboard, markdownPage, markdownTitle, revealFile, ShareError } from "./share";
 import { UpdateChecker } from "./update";
 import { SpendIndex } from "./spend";
-import { lastPause, quietPerDay, scheduleSpend } from "./quiet";
+import { quietDays, scheduleSpend } from "./quiet";
 import { makeSideCaller, readSideSpend, type SideCaller } from "./side-call";
 import type { SquadCardState } from "./squad";
 import { LearnError, Learner } from "./learner";
@@ -79,7 +82,7 @@ import { familyOf, familyRoot, featureRoot, fitParent, groupsOf, hiddenTool, lev
 import { STATUS_FIELDS, type StatusPatch } from "./feature";
 import { createdFromDraft } from "../../web/src/proposalMatch";
 import type { Store } from "./store";
-import { boardScope, DONE_PAGE, donePage, doneSearch, idsScope } from "./ticketScope";
+import { boardScope, byIdNewest, countScope, DONE_PAGE, donePage, doneSearch, idsScope, listScope, scopeIndex, type ScopeIndex } from "./ticketScope";
 import { runCapFor, SELF_MOVES, STATUSES, type HelperRuleCardState, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
 import { nowIso, slugify } from "./util";
 import { applyDetection, detectSetup } from "./worktree-setup";
@@ -622,6 +625,16 @@ export function createServer(deps: ServerDeps) {
       (manager ? " and of its tool tickets (get_family lists them)" : "") +
       "; other tickets' chats only in a reply to a message the user typed in this chat.");
   };
+  /**
+   * Reads these transcripts in slices (a chunk, then a pause) before a route parses them with sessions.get(): opening a
+   * chat whose transcript isn't parsed yet (tens of MB) otherwise froze the daemon for as long as the whole parse.
+   */
+  const readSessionsIn = async (ids: (string | null | undefined)[]) => {
+    const pause = pauser();
+    for (const id of ids) if (id) await sessions.readIn(id, pause, { parse: true });
+  };
+  /** readSessionsIn for a ticket's chat: every session left behind with "Send in a fresh chat", then the current one. */
+  const readChatIn = (t: Ticket) => readSessionsIn([...(t.earlierSessions ?? []).map((s) => s.sessionId), t.sessionId]);
   /** A ticket's chat, oldest session first: every one left behind with "Send in a fresh chat", then the current one. */
   const chatSources = (t: Ticket, tools: boolean): ChatSource[] =>
     [...(t.earlierSessions ?? []).map((s) => s.sessionId), ...(t.sessionId ? [t.sessionId] : [])].flatMap((sid) => {
@@ -696,30 +709,155 @@ export function createServer(deps: ServerDeps) {
     results: store.aiComments(slug, t.id),
     shareLinks: t.shareLinks,
   });
+  /**
+   * What the ticket routes and the Inbox work out from a board's whole ticket list (families, the Done column's order,
+   * open features, the tickets the Inbox looks at), kept while the listing holds the very same tickets: they are
+   * shared and frozen, so any change is a new object or a new order. Rebuilding it walked and sorted every ticket,
+   * thousands of them Done, on each load, page and Inbox poll.
+   */
+  type BoardIndex = { tickets: Ticket[]; scope: ScopeIndex<Ticket>; features: Set<string>; inboxable: Ticket[]; newest: Ticket[] };
+  const boardIndexes = new Map<string, BoardIndex>();
+  const cmdRows = new CommandRows(store, (slug, id) => board.isRunning(slug, id));
+  /** Each part is worked out the first time it is asked for: the Inbox needs only its filter, not the Done sort. */
+  const boardIndex = (slug: string, tickets = store.listTickets(slug)): BoardIndex => {
+    const hit = boardIndexes.get(slug);
+    if (hit && hit.tickets.length === tickets.length && hit.tickets.every((t, i) => t === tickets[i])) return hit;
+    let scope: ScopeIndex<Ticket> | undefined;
+    let features: Set<string> | undefined;
+    let inboxable: Ticket[] | undefined;
+    let newest: Ticket[] | undefined;
+    const built: BoardIndex = {
+      tickets,
+      // list_tickets' order (newest first by id), sorted once per listing instead of per page.
+      get newest() {
+        return (newest ??= byIdNewest(tickets));
+      },
+      get scope() {
+        return (scope ??= scopeIndex(tickets));
+      },
+      // Open features (feature.ts) are marked, so list_tickets can show which work to add new tickets to.
+      get features() {
+        return (features ??= new Set(openFeatures(tickets).map((f) => f.top.id)));
+      },
+      // Done waits on the user only for a missed follow-up (see ownAttention).
+      get inboxable() {
+        return (inboxable ??= tickets.filter((t) => t.status !== "done" || !!t.followUp?.missedAt));
+      },
+    };
+    boardIndexes.set(slug, built);
+    return built;
+  };
+  /**
+   * Most entries the per-ticket caches below keep (least recently used go first): well over a board's open tickets
+   * plus the Done pages a user opens, so a board of any size stays a few MB.
+   */
+  const VIEW_CACHE_MAX = 3000;
+  const remember = <V>(m: Map<string, V>, k: string, v: V): V => {
+    m.delete(k);
+    m.set(k, v);
+    if (m.size > VIEW_CACHE_MAX) m.delete(m.keys().next().value!);
+    return v;
+  };
+  /** Its card can show other tickets (its plan, its main ticket, the feature above it, a Chrome picked above it). */
+  const crossTicket = (t: Ticket) => !!(t.parentId || t.partOf || t.tool || t.main || t.plan);
+  /**
+   * Each ticket's waiting-on-the-user state before a snooze, kept while nothing it is worked out from changed: the
+   * ticket (frozen: a change is a new object), its session summary, its run, its huddle, and for a ticket that looks
+   * at others (plan, steps, feature) the board's tickets and runs. The Inbox polls this every few seconds per tab
+   * while runs work; recomputing all of it was most of that poll.
+   */
+  const attentionMemo = new Map<string, { t: Ticket; key: string; a: ReturnType<typeof ticketAttention> }>();
   /** hosts: the board's open huddles by host ticket, when the caller already has them (one read per board). */
   /** Whether the ticket waits on the user ("Your turn", the Inbox) and whether that is snoozed. */
-  const attentionOf = (p: Profile, t: Ticket, hosts: ReturnType<typeof board.hostHuddles>, running: boolean, session: SessionSummary | null) => {
+  /** sessionKey: the summary as JSON when the caller has it (the caches' key). */
+  const attentionOf = (p: Profile, t: Ticket, hosts: ReturnType<typeof board.hostHuddles>, running: boolean, session: SessionSummary | null, sessionKey = session ? JSON.stringify(session) : "") => {
     const huddle = hosts.get(t.id);
-    return withSnooze(t, session, ticketAttention(store, p.slug, t, session, running, huddle, (x) => board.isRunning(p.slug, x)), Date.now(), huddle);
+    const raw = () => ticketAttention(store, p.slug, t, session, running, huddle, (x) => board.isRunning(p.slug, x));
+    let a: ReturnType<typeof ticketAttention>;
+    // Waiting on a schedule delete reads the board's schedules: rare, worked out each time.
+    if (session?.pendingScheduleDeletes?.length) a = raw();
+    else {
+      const cross = crossTicket(t) || !!session?.pendingNewTickets?.length;
+      const key = [sessionKey, running ? 1 : 0, huddle ? JSON.stringify(huddle) : "", cross ? `${store.ticketsVersion(p.slug)}|${board.runningKey(p.slug)}` : ""].join("\u0000");
+      const id = `${p.slug}/${t.id}`;
+      const hit = attentionMemo.get(id);
+      a = hit && hit.t === t && hit.key === key ? hit.a : remember(attentionMemo, id, { t, key, a: raw() }).a;
+    }
+    return withSnooze(t, session, a, Date.now(), huddle);
+  };
+  /**
+   * The parts of each ticket's card that cost reads (Claude's comments for its links, the tickets above it), kept
+   * while nothing they come from changed: the ticket, its session summary, its huddles' teammates, Claude's comments
+   * (Store.commentStamp), and the board's tickets for a ticket that shows others. Everything about runs, devices,
+   * spending and the time is worked out for every view. A board's first load built every open card from scratch on
+   * each load and reconnect.
+   */
+  /**
+   * The tickets above a card (its plan's, its main ticket's and feature's chain, by parentId and by partOf), from the
+   * listing without a file stat: what its cross-ticket parts are worked out from. Frozen, so a change is a new object.
+   */
+  const ticketsAbove = (slug: string, t: Ticket): Ticket[] => {
+    const out: Ticket[] = [];
+    for (const next of [(x: Ticket) => parentLink(x)?.id, (x: Ticket) => x.parentId]) {
+      const seen = new Set([t.id]);
+      for (let cur: Ticket | undefined = t, up = next(t); up && !seen.has(up); up = cur && next(cur)) {
+        seen.add(up);
+        cur = store.peekTicket(slug, up);
+        if (cur) out.push(cur);
+      }
+    }
+    return out;
+  };
+  const viewParts = new Map<string, { t: Ticket; key: string; above: Ticket[]; links: ReturnType<typeof ticketLinks>; resume: string | null;
+    browsersAbove: ReturnType<typeof resolveBrowserPicks> | null; subFeatureOf?: { id: string; title: string } | null; mainTicket?: { id: string; title: string } | null }>();
+  const partsOf = (p: Profile, t: Ticket, session: SessionSummary | null, sessionKey: string) => {
+    const mates = teammatesOf(p.slug, t.id);
+    const build = () => ({
+      links: ticketLinks(p.slug, t, session),
+      resume: t.sessionId ? resumeCommand(t.workdir ?? t.worktree ?? p.path, t.sessionId) : null,
+      /** The browsers a ticket above it set (an old single Chrome reads as a list of one); null: the board's. */
+      browsersAbove: t.parentId ? resolveBrowserPicks({ id: t.id, parentId: t.parentId }, store.listTickets(p.slug), null) : null,
+      subFeatureOf: t.main && parentLink(t) ? (() => {
+        const up = store.getTicket(p.slug, parentLink(t)!.id);
+        const top = up ? featureRoot(store.listTickets(p.slug), up.id) : undefined;
+        return top ? { id: top.id, title: top.title } : null;
+      })() : undefined,
+      mainTicket: t.tool ? (() => {
+        const m = board.mainOf(p.slug, t);
+        return m ? { id: m.id, title: m.title } : null;
+      })() : undefined,
+    });
+    // Huddle teammates' artifacts come from their own sessions: those cards are built each time (few tickets host one).
+    if (mates.length) return build();
+    // A card that shows other tickets is keyed on the tickets above it, not on the whole board: a write to any other
+    // ticket made every such card rebuild and read its comment file again on the next Inbox poll and board load.
+    const key = [sessionKey, store.commentStamp(p.slug, t.id), p.path].join("\u0000");
+    const above = crossTicket(t) ? ticketsAbove(p.slug, t) : [];
+    const id = `${p.slug}/${t.id}`;
+    const hit = viewParts.get(id);
+    if (hit && hit.t === t && hit.key === key && hit.above.length === above.length && hit.above.every((x, i) => x === above[i])) return remember(viewParts, id, hit);
+    return remember(viewParts, id, { t, key, above, ...build() });
   };
   const view = (p: Profile, t: Ticket, hosts = board.hostHuddles(p.slug)) => {
     const running = board.isRunning(p.slug, t.id);
     const session = t.sessionId ? sessions.summary(t.sessionId) : null;
+    const sessionKey = session ? JSON.stringify(session) : "";
     const huddle = hosts.get(t.id);
-    const { attention, snoozed } = attentionOf(p, t, hosts, running, session);
+    const { attention, snoozed } = attentionOf(p, t, hosts, running, session, sessionKey);
+    const parts = partsOf(p, t, session, sessionKey);
     // Its own huddle works on it while its own run doesn't, and asks nothing of the user ("Needs you" wins).
     const huddleWorks = !running && t.status !== "in_progress" && huddleBusy(huddle) && !huddleAsk(huddle);
-    // The browsers a ticket above it set (one walk up for both fields; an old single Chrome reads as a list of one).
-    const above = t.parentId ? resolveBrowserPicks({ id: t.id, parentId: t.parentId }, store.listTickets(p.slug), null) : null;
+    // The browsers a ticket above it set (worked out once per card in partsOf, for both fields).
+    const above = parts.browsersAbove;
     return {
       ...t,
       running,
       /** Its run is a working run (Planning and peer replies aren't). */
       holdsSlot: running && board.holdsSlot(p.slug, t.id),
-      resumeCommand: t.sessionId ? resumeCommand(t.workdir ?? t.worktree ?? p.path, t.sessionId) : null,
+      resumeCommand: parts.resume,
       session,
       /** Artifacts and share links, newest first: the Outputs tab's Links, the header chips and the card's ↗ chip. */
-      links: ticketLinks(p.slug, t, session),
+      links: parts.links,
       /** Absolute outputs folder, so the Share menu can show where a file is. */
       outputDir: store.outputsPath(p.slug, t.id),
       shareJobs: [...(shareJobs.get(`${p.slug}/${t.id}`)?.values() ?? [])],
@@ -752,16 +890,9 @@ export function createServer(deps: ServerDeps) {
       /** A main ticket: its tool tickets working now (the card shows In progress meanwhile, wherever the user put it). */
       ...(t.main ? { familyWorking: board.familyWorking(p.slug, t.id), stepsRunning: board.stepsRunning(p.slug, t.id), familyCard: board.familyCard(p.slug, t.id) } : {}),
       /** A sub-feature (a main ticket linked under another): the feature it is part of, for its "Part of …" chip. */
-      ...(t.main && parentLink(t) ? { subFeatureOf: (() => {
-        const up = store.getTicket(p.slug, parentLink(t)!.id);
-        const top = up ? featureRoot(store.listTickets(p.slug), up.id) : undefined;
-        return top ? { id: top.id, title: top.title } : null;
-      })() } : {}),
+      ...(t.main && parentLink(t) ? { subFeatureOf: parts.subFeatureOf } : {}),
       /** A "with you" tool ticket's main ticket: its card's "↳ feature" chip; any tool ticket's chat names it. */
-      ...(t.tool ? { mainTicket: (() => {
-        const m = board.mainOf(p.slug, t);
-        return m ? { id: m.id, title: m.title } : null;
-      })() } : {}),
+      ...(t.tool ? { mainTicket: parts.mainTicket } : {}),
     };
   };
 
@@ -1250,13 +1381,14 @@ export function createServer(deps: ServerDeps) {
       const out = [];
       const pause = pauser();
       for (const p of store.listProfiles()) {
+        await store.loadHuddles(p.slug);
         const hosts = board.hostHuddles(p.slug);
-        for (const t of store.listTickets(p.slug)) {
+        // Done waits on the user only for a missed follow-up (see ownAttention): the board index keeps the tickets that
+        // can wait, so the thousands of Done ones aren't walked, and building just the attention instead of the whole
+        // card keeps this poll from reading every old ticket's transcript summary every few seconds. The attention of
+        // a ticket whose session, run, huddle and ticket didn't change since the last poll is reused (attentionOf).
+        for (const t of boardIndex(p.slug).inboxable) {
           await pause();
-          // Done waits on the user only for a missed follow-up (see ownAttention). Skipping the rest, and building
-          // just the attention instead of the whole card, keeps this poll from reading every old ticket's transcript
-          // summary every few seconds (most tickets are Done; it held the daemon up for seconds at a time).
-          if (t.status === "done" && !t.followUp?.missedAt) continue;
           const v = attentionOf(p, t, hosts, board.isRunning(p.slug, t.id), t.sessionId ? sessions.summary(t.sessionId) : null);
           const base = { profile: p.slug, profileName: p.name, id: t.id, title: t.title };
           if (v.attention) out.push({ ...base, attention: v.attention });
@@ -1267,8 +1399,16 @@ export function createServer(deps: ServerDeps) {
     }
 
     if (parts[0] === "tickets" && parts.length === 1 && m === "GET") {
-      // ⌘K command bar: a light row per ticket on every board (search runs in the browser). Long texts are
-      // capped: the bar only needs enough to find a word and show a snippet around it.
+      // ⌘K command bar (cmdbar.ts): scope=open, every ticket that isn't Done on every board; scope=done&q=…, the Done
+      // tickets that best match (board: the board the user is on, first on ties; limit: how many).
+      const scope = url.searchParams.get("scope");
+      if (scope === "open") return json(await cmdRows.open());
+      if (scope === "done") {
+        return json(await cmdRows.searchDone(url.searchParams.get("q") ?? "", url.searchParams.get("board"), Number(url.searchParams.get("limit")) || CMD_SEARCH_LIMIT));
+      }
+      if (scope) throw new HttpError(400, "scope must be open or done");
+      // No scope: a light row per ticket on every board, for a page opened before the bar searched Done on the
+      // daemon (it searches in the browser). Long texts are capped.
       const cap = (s: string | null) => (s && s.length > 4000 ? s.slice(0, 4000) : s ?? "");
       const out = [];
       const pause = pauser();
@@ -1424,6 +1564,8 @@ export function createServer(deps: ServerDeps) {
       const b = await body(req);
       const ref = b.ticketId ? { slug: String(b.profile ?? ""), id: String(b.ticketId) } : null;
       try {
+        // A compressed run log is decompressed off the event loop first; the report then reads its tail in place.
+        if (ref && store.getTicket(ref.slug, ref.id)) await store.loadActivity(ref.slug, ref.id).catch(() => {});
         const draft = draftReport(store, ref);
         if (parts[1] === "draft") return json(draft);
         if (parts.length !== 1) throw new HttpError(404, "not found");
@@ -1660,7 +1802,7 @@ export function createServer(deps: ServerDeps) {
       const rel = url.searchParams.get("path") ?? "";
       const { root } = panelFolder(slug, profile.path, url.searchParams.get("ticket"));
       try {
-        if (parts[2] === "files") return json({ path: rel, entries: await listDir(root, rel) });
+        if (parts[2] === "files") return json({ path: rel, ...(await listDirPage(root, rel)) });
         return json(readFileForView(root, rel));
       } catch (e) {
         if (e instanceof FileError) throw new HttpError(e.status, e.message);
@@ -1696,7 +1838,13 @@ export function createServer(deps: ServerDeps) {
     if (parts[2] === "chats") {
       // Only the user's browser: a board run, huddle agent or other program can't start Claude runs here (no runs starting runs).
       const userAsks = () => userOnly(req, "Quick chats");
-      if (parts.length === 3 && m === "GET") return json(quickChats.list(slug).map((c) => quickChats.view(slug, c)));
+      if (parts.length === 3 && m === "GET") {
+        // The Ask tab asks for a page (limit, then before=<next> for "Load older"); no limit: every chat, for a page
+        // opened before the list came in pages.
+        if (!url.searchParams.has("limit")) return json(quickChats.list(slug).map((c) => quickChats.view(slug, c)));
+        const page = await quickChats.page(slug, Number(url.searchParams.get("limit")) || CHAT_PAGE, url.searchParams.get("before"));
+        return json({ chats: page.chats.map((c) => quickChats.view(slug, c)), next: page.next });
+      }
       // A new chat starts with its first message.
       if (parts.length === 3 && m === "POST") {
         await userAsks();
@@ -1741,6 +1889,7 @@ export function createServer(deps: ServerDeps) {
       }
       // The conversation, newest last, paged like a ticket's (see the ticket conversation route).
       if (parts.length === 5 && parts[4] === "conversation" && m === "GET") {
+        await readSessionsIn([chat.sessionId]);
         const parsed = sessions.get(chat.sessionId);
         const all = parsed?.entries ?? [];
         const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 100));
@@ -1761,11 +1910,13 @@ export function createServer(deps: ServerDeps) {
       }
       // "Say it simpler" for the chat's replies, like a ticket's (see the ticket simplify routes).
       if (parts.length === 5 && parts[4] === "simplified" && m === "GET") {
+        await readSessionsIn([chat.sessionId]);
         return json(simplifier.savedIn(quickChats.simplifiedPath(slug, cid), sessions.get(chat.sessionId)?.entries ?? []));
       }
       if (parts.length === 5 && parts[4] === "simplify" && m === "POST") {
         await userAsks();
         const b = await body(req);
+        await readSessionsIn([chat.sessionId]);
         const e = typeof b?.uuid === "string" ? sessions.get(chat.sessionId)?.entries.find((x) => x.uuid === b.uuid) : null;
         if (!e) throw new HttpError(404, "no such message in this chat");
         try {
@@ -1779,6 +1930,7 @@ export function createServer(deps: ServerDeps) {
       if (parts.length === 5 && parts[4] === "rewind" && (m === "GET" || m === "POST")) {
         const b = m === "POST" ? ((await userAsks(), await body(req)) ?? {}) : {};
         const uuid = m === "POST" ? String(b.uuid ?? "") : url.searchParams.get("uuid") ?? "";
+        await readSessionsIn([chat.sessionId]);
         const entries = sessions.get(chat.sessionId)?.entries ?? [];
         const entry = entries.find((e) => e.uuid === uuid && e.rewind);
         if (!entry) throw new HttpError(404, "This message can't be rewound to.");
@@ -1796,6 +1948,7 @@ export function createServer(deps: ServerDeps) {
       if (parts.length === 5 && parts[4] === "fork" && m === "POST") {
         await userAsks();
         const uuid = String((await body(req))?.uuid ?? "");
+        await readSessionsIn([chat.sessionId]);
         const entry = sessions.get(chat.sessionId)?.entries.find((e) => e.uuid === uuid && e.rewind);
         if (!entry) throw new HttpError(404, "The chat can't be forked from this message.");
         const next = quickChats.fork(slug, cid, uuid);
@@ -1815,18 +1968,23 @@ export function createServer(deps: ServerDeps) {
       const run = req.headers.get(RUN_HEADER)?.split("/")[1] ?? "";
       const by: ScheduleEditor = /^t_[a-z0-9_]+$/i.test(run) ? { ticketId: run } : "user";
       // The list also shows each schedule's spend over 7 days and its quiet checks per day (quiet.ts).
-      const view7 = (s: Schedule) => {
-        const h = store.readScheduleHistory(slug, s.id);
+      const view7 = async (s: Schedule, pause: () => Promise<void>) => {
+        const h = await store.scheduleHistoryDigestAsync(slug, s.id, pause);
         const costOf = (tid: string) => (store.getTicket(slug, tid) ? spend.ticket(slug, tid).costUsd : 0);
         // A paused one also says when and by whom (its last "paused" edit), for the Paused section's status line.
-        const p = s.enabled ? null : lastPause(h);
+        const p = s.enabled ? null : h.lastPause;
         const paused = p ? {
           pausedAt: p.at,
           pausedBy: p.by === "user" ? "user" as const : { ticketId: p.by.ticketId, title: store.getTicket(slug, p.by.ticketId)?.title ?? null },
         } : {};
-        return { ...scheduler.view(slug, s), spend7dUsd: scheduleSpend(h, new Date(Date.now() - 7 * 86_400_000), costOf), quietPerDay: quietPerDay(h).slice(0, 7), ...paused };
+        return { ...scheduler.view(slug, s), spend7dUsd: scheduleSpend(h.recent, new Date(Date.now() - 7 * 86_400_000), costOf), quietPerDay: quietDays(h.quietPerDay).slice(0, 7), ...paused };
       };
-      if (parts.length === 3 && m === "GET") return json(store.listSchedules(slug).map(view7));
+      if (parts.length === 3 && m === "GET") {
+        const pause = pauser();
+        const out = [];
+        for (const s of store.listSchedules(slug)) out.push(await view7(s, pause));
+        return json(out);
+      }
       if (parts.length === 3 && m === "POST") return json(scheduler.view(slug, scheduler.create(slug, (await body(req)) ?? {}, by)), 201);
       const sid = parts[3];
       if (parts.length === 4 && m === "PATCH") return json(scheduler.view(slug, scheduler.update(slug, sid, (await body(req)) ?? {}, by)));
@@ -1894,6 +2052,7 @@ export function createServer(deps: ServerDeps) {
         chatReach(req, slug, t);
         const tools = url.searchParams.get("tools") === "1";
         const q = url.searchParams.get("q") ?? "";
+        await readChatIn(t);
         try {
           return json({ text: matchesText(t.id, q, searchChat(chatSources(t, tools), q, { includeTools: tools }), tools) });
         } catch (e) {
@@ -1906,6 +2065,7 @@ export function createServer(deps: ServerDeps) {
         const t = store.listTickets(slug).find((x) => x.sessionId === ref.sessionId || x.earlierSessions?.some((s) => s.sessionId === ref.sessionId));
         if (!t) throw new HttpError(404, `no ticket on this board has the chat ${ref.sessionId}`);
         chatReach(req, slug, t);
+        await readSessionsIn([ref.sessionId]);
         const src = chatSources(t, true).find((s) => s.sessionId === ref.sessionId);
         if (!src) throw new HttpError(404, `the chat ${ref.sessionId} can't be read any more (its transcript is gone)`);
         const num = (k: string) => (url.searchParams.has(k) ? Number(url.searchParams.get(k)) : undefined);
@@ -2075,18 +2235,23 @@ export function createServer(deps: ServerDeps) {
 
     // /profiles/:p/tickets
     if (parts[2] !== "tickets") throw new HttpError(404, "not found");
+    // A board not read yet (the first requests after a start) reads its ticket files in slices first: a write places
+    // the ticket among the others (Store.nextOrder and the cached lists), which otherwise read thousands of ticket
+    // files in one go (seconds of frozen daemon for a move to In progress). Once read, this costs nothing.
+    await store.listTicketsSliced(slug);
     if (parts.length === 3) {
       if (m === "GET") {
         await sessions.ready();
+        // Right after a start the board's huddles may not be read yet (loadAllLists runs while pages already load).
+        await store.loadHuddles(slug);
         const hosts = board.hostHuddles(slug);
         // The first listing after a start reads the board's ticket files in slices (seconds of frozen daemon otherwise).
-        const tickets = await store.listTicketsSliced(slug);
-        // Open features (feature.ts) are marked, so list_tickets can show which work to add new tickets to.
-        const features = new Set(openFeatures(tickets).map((f) => f.top.id));
-        const one = (t: Ticket) => ({ ...view(profile, t, hosts), ...(features.has(t.id) ? { feature: true } : {}) });
-        // The board itself asks for a scope (ticketScope.ts): the unfinished work first, Done in pages or by search.
-        // No scope: every ticket, as list_tickets and older clients expect.
-        // Views are built in slices: a whole board's (list_tickets) is seconds of work when the Mac is busy.
+        const idx = boardIndex(slug, await store.listTicketsSliced(slug));
+        const tickets = idx.tickets;
+        const one = (t: Ticket) => ({ ...view(profile, t, hosts), ...(idx.features.has(t.id) ? { feature: true } : {}) });
+        // Every caller asks for a scope (ticketScope.ts): the board the unfinished work first, Done in pages or by
+        // search; list_tickets and `ticket list` a filtered page (scope=list); board settings a count.
+        // Views are built in slices: a whole board's is seconds of work when the Mac is busy.
         const views = async (list: Ticket[]) => {
           const pause = pauser();
           const out = [];
@@ -2097,16 +2262,37 @@ export function createServer(deps: ServerDeps) {
           return out;
         };
         const scope = url.searchParams.get("scope");
-        if (!scope) return json(await views(tickets));
+        // No scope: every ticket, for older clients only (an old ckanban CLI or MCP server); nothing here asks for it.
+        // The answer is about 13 MB on a 10,000-ticket board: turned into text a slice at a time, since one
+        // JSON.stringify (plus hiding saved keys) of all of it froze the daemon for a few hundred ms on a busy Mac.
+        if (!scope) {
+          const pause = pauser();
+          const rows: string[] = [];
+          for (const t of tickets) {
+            await pause();
+            rows.push(maskSavedJson(store.root, JSON.stringify(one(t))));
+          }
+          return new Response(`[${rows.join(",")}]`, { headers: { "content-type": "application/json" } });
+        }
         const num = (k: string) => Number(url.searchParams.get(k) ?? 0) || 0;
         const list = (k: string) => (url.searchParams.get(k) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-        const picked = scope === "board" ? boardScope(tickets, { done: num("done"), ids: list("ids") })
-          : scope === "done" ? donePage(tickets, num("offset"), num("limit") || DONE_PAGE)
-          : scope === "search" ? doneSearch(tickets, url.searchParams.get("q") ?? "", list("tags"))
-          : scope === "ids" ? idsScope(tickets, list("ids"))
+        if (scope === "count") return json(countScope(tickets, idx.scope.column));
+        if (scope === "list") {
+          const status = url.searchParams.get("status");
+          if (status && !(STATUSES as readonly string[]).includes(status)) throw new HttpError(400, `status must be one of ${STATUSES.join(", ")}`);
+          const page = listScope(tickets, {
+            status, tool: url.searchParams.get("tool") === "1", q: url.searchParams.get("q"), tags: list("tags"),
+            limit: num("limit"), after: url.searchParams.get("after"),
+          }, idx.newest);
+          return json({ ...page, tickets: await views(page.tickets) });
+        }
+        const picked = scope === "board" ? boardScope(tickets, { done: num("done"), ids: list("ids"), after: url.searchParams.get("after") }, idx.scope)
+          : scope === "done" ? donePage(tickets, num("offset"), num("limit") || DONE_PAGE, idx.scope.column, url.searchParams.get("after"))
+          : scope === "search" ? doneSearch(tickets, url.searchParams.get("q") ?? "", list("tags"), idx.scope)
+          : scope === "ids" ? idsScope(tickets, list("ids"), idx.scope)
           : null;
-        if (!picked) throw new HttpError(400, "scope must be board, done, search or ids");
-        return json({ tickets: await views(picked.tickets), doneTotal: picked.doneTotal });
+        if (!picked) throw new HttpError(400, "scope must be board, done, search, ids, list or count");
+        return json({ tickets: await views(picked.tickets), doneTotal: picked.doneTotal, ...("doneHead" in picked ? { doneHead: picked.doneHead } : {}) });
       }
       if (m === "POST") {
         const b = await body(req);
@@ -2332,7 +2518,7 @@ export function createServer(deps: ServerDeps) {
         if (b.status) patch.status = b.status;
         // Starting work while the user's huddle is live on the ticket: both would work on the same thing.
         const working = (st?: string) => st === "ready" || st === "in_progress";
-        if (working(patch.status) && !working(target.status) && store.listHuddles(slug).some((h) => h.hostTicket === id && h.status === "live" && !h.auto)) {
+        if (working(patch.status) && !working(target.status) && store.openHuddles(slug).some((h) => h.hostTicket === id && h.status === "live" && !h.auto)) {
           parallelWork(req, b, "huddle-open");
         }
         if (typeof b.order === "number") patch.order = b.order;
@@ -2473,7 +2659,7 @@ export function createServer(deps: ServerDeps) {
       const raw = url.searchParams.get("before");
       const before = raw === null ? undefined : Number(raw);
       if (before !== undefined && (!Number.isInteger(before) || before < 0)) throw new HttpError(400, "before must be a byte offset from a previous page");
-      return json(store.readActivityPage(slug, id, before));
+      return json(await store.readActivityPageAsync(slug, id, before));
     }
     // The ticket's whole family from the top ticket down (web/src/family.ts), with each one's session and last result.
     if (action === "family" && m === "GET") {
@@ -2487,12 +2673,22 @@ export function createServer(deps: ServerDeps) {
     // The Family tab: the whole family from the top with each ticket's model, cost, state and last summary. The family's
     // total cost is worked out here only, never written into a ticket's own spend.
     if (action === "family-view" && m === "GET") {
-      const tickets = store.listTickets(slug);
+      // A cold daemon reads the board's tickets and huddles in slices first.
+      await store.loadHuddles(slug);
+      const tickets = await store.listTicketsSliced(slug);
       const hosts = board.hostHuddles(slug);
-      return json(familyOf(tickets, id).map(({ ticket: t, depth }) => {
+      // Each member's cost read first in slices (a compressed old log decompressed off the event loop): the rows below
+      // then only read what is new.
+      const pause = pauser();
+      const family = familyOf(tickets, id);
+      for (const { ticket: t } of family) await spend.ticketAsync(slug, t.id, pause).catch(() => {});
+      // Each row reads the ticket's last comment and checks its report file: a 300-task feature paused between rows.
+      const rows = [];
+      for (const { ticket: t, depth } of family) {
+        await pause();
         const v = view(profile, t, hosts);
         const out = store.outputsPath(slug, t.id);
-        return {
+        rows.push({
           id: t.id, depth, parent: depth ? parentLink(t)?.id ?? null : null,
           // A sub-feature row (a main ticket under another): its own card and chat; its tasks are its own.
           ...(depth && t.main ? { subFeature: true, tasks: board.toolTickets(slug, t.id, tickets).length } : {}),
@@ -2502,8 +2698,9 @@ export function createServer(deps: ServerDeps) {
           needsYou: !!v.attention && v.attention.kind !== "review",
           summary: store.lastAiComment(slug, t.id), finishedAt: v.running ? null : t.runEndedAt ?? t.doneAt ?? null,
           report: existsSync(join(out, "report.md")),
-        };
-      }));
+        });
+      }
+      return json(rows);
     }
     // "Where we are": the feature's status (feature.ts). GET reads it; POST is update_status (the user, a run of a
     // ticket in the same family, or a chat answering the user's typed message, on any board: askedBy); POST notes is
@@ -2724,7 +2921,7 @@ export function createServer(deps: ServerDeps) {
       return json({ ok: true });
     }
     if (action === "outputs" && m === "GET") {
-      if (parts.length === 5) return json(store.listOutputs(slug, id));
+      if (parts.length === 5) return json(await store.listOutputsAsync(slug, id));
       const file = store.outputPath(slug, id, parts.slice(5).join("/"));
       if (!file) throw new HttpError(404, "output not found");
       return rawFile(file, url.searchParams.get("download") === "1");
@@ -2775,6 +2972,7 @@ export function createServer(deps: ServerDeps) {
     if (action === "conversation" && m === "GET") {
       // Read-only view of the ticket's Claude session file (terminal chat + board runs), newest last.
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       const parsed = t.sessionId ? sessions.get(t.sessionId) : null;
       const all = chatEntries(t);
       const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 100));
@@ -2800,6 +2998,7 @@ export function createServer(deps: ServerDeps) {
       // GET ?uuid= says what would change; POST { uuid, files } does it. Only the user's click, never a board run.
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "Rewind is the user's click, not a board run's");
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       const b = m === "POST" ? await body(req) : {};
       const uuid = m === "POST" ? String(b.uuid ?? "") : url.searchParams.get("uuid") ?? "";
       const entry = (t.sessionId ? sessions.get(t.sessionId)?.entries : null)?.find((e) => e.uuid === uuid && e.rewind);
@@ -2843,6 +3042,7 @@ export function createServer(deps: ServerDeps) {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "Fork is the user's click, not a board run's");
       await userOnly(req, "Fork from here");
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       const uuid = String((await body(req))?.uuid ?? "");
       const entry = (t.sessionId ? sessions.get(t.sessionId)?.entries : null)?.find((e) => e.uuid === uuid && e.rewind);
       if (!t.sessionId || !entry) throw new HttpError(404, "The chat can't be forked from this message.");
@@ -2857,6 +3057,7 @@ export function createServer(deps: ServerDeps) {
     if (action === "simplified" && m === "GET") {
       // Saved plain-words versions of this ticket's Claude replies, by message.
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       return json(simplifier.saved(slug, id, chatEntries(t)));
     }
     if (action === "simplify" && m === "POST") {
@@ -2864,6 +3065,7 @@ export function createServer(deps: ServerDeps) {
       if (req.headers.get(RUN_HEADER)) throw new HttpError(403, "Say it simpler is the user's click, not a board run's");
       const b = await body(req);
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       const e = typeof b?.uuid === "string" ? chatEntries(t).find((x) => x.uuid === b.uuid) : null;
       if (!e) throw new HttpError(404, "no such message in this ticket's conversation");
       try {
@@ -2876,6 +3078,7 @@ export function createServer(deps: ServerDeps) {
     if (action === "help" && m === "GET") {
       // "Help me understand": the saved answer cards, the ones being worked out, and whether a recap has anything to tell.
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       const entries = (t.sessionId ? sessions.get(t.sessionId)?.entries : null) ?? [];
       return json({
         cards: helper.cards(slug, id), busy: helper.busy(slug, id), recap: recapAvailable(entries),
@@ -2887,6 +3090,7 @@ export function createServer(deps: ServerDeps) {
       const kind = (await body(req))?.kind as HelpKind;
       if (!HELP_KINDS.includes(kind)) throw new HttpError(400, `kind must be one of: ${HELP_KINDS.join(", ")}`);
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       const entries = (t.sessionId ? sessions.get(t.sessionId)?.entries : null) ?? [];
       let prompt: string;
       if (kind === "recap") {
@@ -2908,6 +3112,7 @@ export function createServer(deps: ServerDeps) {
     }
     if (action === "agent" && parts.length === 6 && m === "GET") {
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       const e = chatEntries(t).find((x) => x.agent?.toolUseId === parts[5]);
       if (!e?.agent) throw new HttpError(404, "no such subagent in this ticket's conversation");
       return json(settleAgent(e.agent, board.isRunning(slug, id)));
@@ -2915,6 +3120,7 @@ export function createServer(deps: ServerDeps) {
     // A workflow in the ticket's conversation: its script, one helper agent in full, or stopping it (the user's click).
     if (action === "workflow" && parts.length >= 7) {
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       const e = (t.sessionId ? sessions.get(t.sessionId)?.entries : null)?.find((x) => x.workflow?.toolUseId === parts[5]);
       if (!e?.workflow || !t.sessionId) throw new HttpError(404, "no such workflow in this ticket's conversation");
       const w = e.workflow;
@@ -2950,7 +3156,18 @@ export function createServer(deps: ServerDeps) {
       return json(d);
     }
     if (action === "comments") {
-      if (m === "GET") return json(store.listComments(slug, id));
+      if (m === "GET") {
+        const all = store.listComments(slug, id);
+        // ?last=N: the newest N (before the Nth comment with before=, for the next ones back), with how many come
+        // earlier: get_ticket and `ticket show` print a page, not a long ticket's every comment. Comments are only
+        // ever added, so a position stays put. No last: every comment, for older clients.
+        const last = Number(url.searchParams.get("last") ?? 0) || 0;
+        if (last <= 0) return json(all);
+        const before = url.searchParams.get("before");
+        const end = before === null ? all.length : Math.max(0, Math.min(all.length, Math.floor(Number(before)) || 0));
+        const start = Math.max(0, end - Math.min(last, 500));
+        return json({ comments: all.slice(start, end), earlier: start, total: all.length });
+      }
       if (m === "POST") {
         const b = await body(req);
         const text = String(b.text ?? "").trim();
@@ -3040,6 +3257,7 @@ export function createServer(deps: ServerDeps) {
       // Claimed before any await, so a second request sent at once is refused here.
       keyCardsInFlight.add(flight);
       try {
+        await readChatIn(store.getTicket(slug, id)!);
         const t = store.getTicket(slug, id)!;
         if (t.keyCards?.[uuid]) throw new HttpError(409, "This key box was already answered");
         const ask = chatEntries(t).find((e) => e.uuid === uuid && e.keys)?.keys;
@@ -3144,6 +3362,7 @@ export function createServer(deps: ServerDeps) {
       const b = (await body(req)) ?? {};
       if (b.state !== "added" && b.state !== "dismissed") throw new HttpError(400, "state must be added or dismissed");
       const t = store.getTicket(slug, id)!;
+      await readChatIn(t);
       const rule = chatEntries(t).find((e) => e.uuid === uuid && e.helperRule)?.helperRule;
       if (!rule) throw new HttpError(404, "This suggestion isn't in this ticket's chat.");
       const done = t.helperRuleCards?.[uuid];
@@ -3457,9 +3676,8 @@ export function createServer(deps: ServerDeps) {
     }
     if (rest.length === 0) {
       if (m === "GET") {
-        const all = huddles.list(slug, url.searchParams.get("ticket") ?? undefined);
         // open=1: only the huddles still going (the board's first load); the Huddles list asks for all of them.
-        return json(url.searchParams.get("open") === "1" ? all.filter((h) => h.status !== "closed") : all);
+        return json(await huddles.listSliced(slug, { ticketId: url.searchParams.get("ticket") ?? undefined, open: url.searchParams.get("open") === "1" }));
       }
       if (m === "POST") {
         userOnly("start a huddle (propose a roster with propose_huddle instead)");
@@ -3629,7 +3847,8 @@ export function createServer(deps: ServerDeps) {
       const p = store.getProfile(e.profile);
       if (p) out = { ...e, ticket: view(p, e.ticket) };
     }
-    let msg = `data: ${JSON.stringify(out)}\n\n`;
+    // A run's raw event goes out without its long strings (big tool results): see liveCut.ts.
+    let msg = `data: ${e.type === "activity" ? liveJson(out, (t) => maskSaved(store.root, t)) : JSON.stringify(out)}\n\n`;
     // Session changes (terminal chat, new questions) and the host's huddle change the ticket's "your turn" state too.
     const changed = e.type === "session.updated" ? { profile: e.profile, id: e.id }
       : e.type === "huddle.updated" ? { profile: e.profile, id: e.huddle.hostTicket } : null;

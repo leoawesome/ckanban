@@ -196,10 +196,16 @@ export class Scheduler {
   /** Newest first, with each ticket's current state (null once the ticket was deleted). */
   history(slug: string, id: string) {
     this.get(slug, id);
-    const all = this.store.readScheduleHistory(slug, id);
-    // A quiet run shows once, as its "quiet" line: the fire that made its (removed) ticket is left out.
-    const quiet = new Set(all.flatMap((e) => (e.kind === "quiet" ? [e.ticketId] : [])));
-    return all.filter((e) => !(e.kind === "fired" && quiet.has(e.ticketId))).slice(-HISTORY_LIMIT).reverse().map((e) => {
+    // A quiet run shows once, as its "quiet" line: the fire that made its (removed) ticket is left out. Its quiet line
+    // comes after it, so the newest entries read from the file's end are enough; read more while too few are left.
+    let shown: ScheduleHistoryEntry[] = [];
+    for (let want = HISTORY_LIMIT * 2; ; want *= 4) {
+      const { entries, complete } = this.store.scheduleHistoryTail(slug, id, want);
+      const quiet = new Set(entries.flatMap((e) => (e.kind === "quiet" ? [e.ticketId] : [])));
+      shown = entries.filter((e) => !(e.kind === "fired" && quiet.has(e.ticketId)));
+      if (complete || shown.length >= HISTORY_LIMIT) break;
+    }
+    return shown.slice(-HISTORY_LIMIT).reverse().map((e) => {
       // Fires and skips point at the schedule's ticket; edits at the ticket whose run made them.
       const tid = e.kind === "fired" || e.kind === "skipped" ? e.ticketId
         : e.kind === "edited" && e.by !== "user" ? e.by.ticketId : null;

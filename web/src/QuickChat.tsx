@@ -28,7 +28,8 @@ import { toast } from "./toast";
 import { ToolRows } from "./ToolRows";
 import { useClaudeName } from "./AvatarFace";
 import { ClaudeFace, ErrorTurn, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
-import { layoutTurns } from "./chatTurns";
+import { layoutTurns, type TurnLayout } from "./chatTurns";
+import { keepSame, laterCounts, MemoBlock } from "./chatMemo";
 import { useChatSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { Markdown } from "./Transcript";
@@ -79,9 +80,25 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
   // Make ticket with open features on the board: which one the new ticket joins (null: no choice open).
   const [choosing, setChoosing] = useState<{ chat: QuickChat; tickets: Ticket[] } | null>(null);
 
-  const load = useCallback(() => api.chats(slug).then(setChats).catch((e) => toast(`Couldn't load the chats: ${e.message}`, { tone: "error" })), [slug]);
+  // The list comes 50 at a time, newest first: next names where "Load older" goes on (null: no older chat).
+  const [next, setNext] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const load = useCallback(() => api.chats(slug).then((p) => {
+    setChats(p.chats);
+    setNext(p.next);
+  }).catch((e) => toast(`Couldn't load the chats: ${e.message}`, { tone: "error" })), [slug]);
+  const loadOlder = () => {
+    if (!next || loadingOlder) return;
+    setLoadingOlder(true);
+    api.chats(slug, next).then((p) => {
+      // A chat already in the list (moved up by a new message, or the open one fetched on its own) stays once.
+      setChats((cs) => [...(cs ?? []), ...p.chats.filter((c) => !cs?.some((x) => x.id === c.id))].sort(newestFirst));
+      setNext(p.next);
+    }).catch((e) => toast(`Couldn't load older chats: ${e.message}`, { tone: "error" })).finally(() => setLoadingOlder(false));
+  };
   useEffect(() => {
     setChats(null);
+    setNext(null);
     setSelected(readSelected(slug));
     setThreadKey((n) => n + 1);
     load();
@@ -92,7 +109,7 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
       setChats((cs) => {
         if (!cs) return cs;
         const rest = cs.filter((c) => c.id !== e.id);
-        return e.chat ? [e.chat, ...rest].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)) : rest;
+        return e.chat ? [e.chat, ...rest].sort(newestFirst) : rest;
       });
     } else if (e.type === "chat.activity" && e.profile === slug) {
       setChats((cs) => cs?.map((c) => (c.id === e.id ? { ...c, activity: e.activity } : c)) ?? cs);
@@ -103,10 +120,18 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
   const latest = chats?.[0];
   const currentId = selected === undefined ? (latest && !latest.ticketId ? latest.id : null) : selected;
   const current = currentId ? chats?.find((c) => c.id === currentId) ?? null : null;
-  // A picked chat that is gone (deleted elsewhere): fall back to a new one.
+  // A picked chat that isn't in the pages loaded so far is fetched on its own; one that is gone (deleted elsewhere):
+  // fall back to a new one.
+  const fetching = useRef<string | null>(null);
   useEffect(() => {
-    if (chats && currentId && !current) pick(null);
-  }, [chats, currentId, current]);
+    if (!chats || !currentId || current) return;
+    if (next === null) return pick(null);
+    if (fetching.current === currentId) return;
+    fetching.current = currentId;
+    api.chat1(slug, currentId).then((c) => {
+      setChats((cs) => (cs && !cs.some((x) => x.id === c.id) ? [...cs, c].sort(newestFirst) : cs));
+    }).catch(() => pick(null)).finally(() => { fetching.current = null; });
+  }, [chats, currentId, current, next]);
 
   const pick = (id: string | null) => {
     setSelected(id);
@@ -189,7 +214,8 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
     setMaking(true);
     let tickets: Ticket[] = [];
     try {
-      tickets = await api.tickets(slug);
+      // Open work with whole families is all openFeatures looks at (not the board's every Done ticket).
+      tickets = (await api.boardTickets(slug)).tickets;
     } catch {}
     if (openFeatures(tickets).length) {
       setMaking(false);
@@ -270,7 +296,7 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
         </div>
         {thread}
         {sheet === "list" && (
-          <ChatListSheet chats={chats} currentId={currentId} onPick={pick} onClose={() => setSheet(null)} />
+          <ChatListSheet chats={chats} currentId={currentId} onPick={pick} onClose={() => setSheet(null)} onOlder={next ? loadOlder : undefined} loadingOlder={loadingOlder} />
         )}
         {sheet === "menu" && <MoreSheet label="Chat actions" items={items} onClose={() => setSheet(null)} />}
         {dialogs}
@@ -284,7 +310,7 @@ export function QuickChatPane({ profile, phone, onOpenTicket }: {
         <button className={`qc-row qc-new${currentId === null ? " cur" : ""}`} onClick={() => pick(null)}>
           <PlusIcon size={14} /> New chat<KeyHint keys={currentId && chats?.[0]?.id === currentId ? "O · ," : "O"} inset />
         </button>
-        <ChatRows chats={chats} currentId={currentId} onPick={pick} hints />
+        <ChatRows chats={chats} currentId={currentId} onPick={pick} hints onOlder={next ? loadOlder : undefined} loadingOlder={loadingOlder} />
       </aside>
       <section className="qc-main">
         <div className="qc-head">
@@ -333,8 +359,15 @@ function MakeTicketDialog({ chat, tickets, busy, onClose, onMake }: {
   );
 }
 
+/** The daemon's order: last message first, then created, then id. */
+const newestFirst = (a: QuickChat, b: QuickChat) =>
+  b.updatedAt.localeCompare(a.updatedAt) || b.createdAt.localeCompare(a.createdAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+
 /** `hints`: the computer's list, where , and . step to the row above / below the open chat (badges on those rows). */
-function ChatRows({ chats, currentId, onPick, hints }: { chats: QuickChat[] | null; currentId: string | null; onPick: (id: string) => void; hints?: boolean }) {
+/** onOlder: older chats are left to load (the "Load older" row at the end). */
+function ChatRows({ chats, currentId, onPick, hints, onOlder, loadingOlder }: {
+  chats: QuickChat[] | null; currentId: string | null; onPick: (id: string) => void; hints?: boolean; onOlder?: () => void; loadingOlder?: boolean;
+}) {
   useNow();
   const claude = useClaudeName();
   if (chats === null) return <div className="muted small qc-list-note"><span className="spinner" /> Loading…</div>;
@@ -353,13 +386,18 @@ function ChatRows({ chats, currentId, onPick, hints }: { chats: QuickChat[] | nu
           </span>
         </button>
       ))}
+      {onOlder && (
+        <button type="button" className="show-more-row qc-older" onClick={onOlder} disabled={loadingOlder}>
+          {loadingOlder && <span className="spinner" />} Load older
+        </button>
+      )}
     </>
   );
 }
 
 /** Phone: the chat list as a bottom sheet. */
-function ChatListSheet({ chats, currentId, onPick, onClose }: {
-  chats: QuickChat[] | null; currentId: string | null; onPick: (id: string | null) => void; onClose: () => void;
+function ChatListSheet({ chats, currentId, onPick, onClose, onOlder, loadingOlder }: {
+  chats: QuickChat[] | null; currentId: string | null; onPick: (id: string | null) => void; onClose: () => void; onOlder?: () => void; loadingOlder?: boolean;
 }) {
   useLayer(onClose);
   return (
@@ -368,7 +406,7 @@ function ChatListSheet({ chats, currentId, onPick, onClose }: {
         <span className="sheet-grip" aria-hidden />
         <div className="qc-sheet-head">Chats in this folder</div>
         <button className="sheet-item qc-sheet-new" onClick={() => onPick(null)}><PlusIcon size={16} /><span className="sheet-label">New chat</span></button>
-        <ChatRows chats={chats} currentId={currentId} onPick={onPick} />
+        <ChatRows chats={chats} currentId={currentId} onPick={onPick} onOlder={onOlder} loadingOlder={loadingOlder} />
       </div>
     </div>
   );
@@ -392,17 +430,17 @@ function RenameDialog({ chat, onSave, onClose }: { chat: QuickChat; onSave: (tit
 }
 
 /** A run of tool calls folded into one line, or one message. */
-type Block = { kind: "entry"; e: SessionEntry } | { kind: "tools"; items: SessionEntry[] };
+type Block = { kind: "entry"; e: SessionEntry; index: number } | { kind: "tools"; items: SessionEntry[] };
 
 function group(entries: SessionEntry[]): Block[] {
   const out: Block[] = [];
-  for (const e of entries) {
+  entries.forEach((e, index) => {
     if (e.kind === "tool" || e.kind === "agent" || e.kind === "workflow") {
       const prev = out.at(-1);
       if (prev?.kind === "tools") prev.items.push(e);
       else out.push({ kind: "tools", items: [e] });
-    } else if (e.text || e.kind === "board") out.push({ kind: "entry", e });
-  }
+    } else if (e.text || e.kind === "board") out.push({ kind: "entry", e, index });
+  });
   return out;
 }
 
@@ -447,6 +485,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
   // When the current reply started: a message added while Claude works doesn't restart the working row's clock.
   const [replyStartedAt, setReplyStartedAt] = useState<string | null>(running ? chat?.updatedAt ?? null : null);
   useEffect(() => setReplyStartedAt(running ? (s) => s ?? new Date().toISOString() : null), [running]);
+  // Relative times on the messages: redrawn on this tick when their text changes (MemoBlock deps).
   useNow();
   // The last rewind while it can be undone (the Undo bar), and what the last Undo did.
   const [undo, setUndo] = useState<UndoInfo | null>(null);
@@ -473,9 +512,17 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
     const r = await api.chatConversation(slug, id);
     if (seq !== tailSeq.current) return null;
     setPage((prev) => {
-      if (!prev || r.start <= prev.start) return { entries: r.entries, start: r.start };
+      if (!prev) return { entries: r.entries, start: r.start };
+      // Unchanged entries keep the objects on screen (their blocks aren't drawn again); no change keeps the page.
+      if (r.start <= prev.start) {
+        const entries = keepSame(prev.entries, r.entries);
+        return entries === prev.entries && r.start === prev.start ? prev : { entries, start: r.start };
+      }
       const idx = prev.entries.findIndex((e) => e.uuid === r.entries[0]?.uuid);
-      return idx >= 0 ? { entries: [...prev.entries.slice(0, idx), ...r.entries], start: prev.start } : { entries: r.entries, start: r.start };
+      if (idx < 0) return { entries: r.entries, start: r.start };
+      const tail = prev.entries.slice(idx);
+      const fresh = keepSame(tail, r.entries);
+      return fresh === tail ? prev : { entries: [...prev.entries.slice(0, idx), ...fresh], start: prev.start };
     });
     return r.entries;
   }, [slug, id]);
@@ -635,7 +682,14 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
     return `Forked into "${r.chat.title}". It is open now.`;
   };
 
-  const loadTool = (toolUseId: string) => api.chatTool(slug, id!, toolUseId);
+  // Message blocks are drawn again only when what they show changes (MemoBlock): the callbacks they hand out read the
+  // latest ones through this ref.
+  const latest = useRef({ forkFrom, rewound, id });
+  latest.current = { forkFrom, rewound, id };
+  const loadTool = useCallback((toolUseId: string) => api.chatTool(slug, latest.current.id!, toolUseId), [slug]);
+  const toastError = useCallback((m: string) => void toast(m, { tone: "error" }), []);
+  // Rewind's "N later messages" for every message in one pass.
+  const counts = useMemo(() => laterCounts(entries), [entries]);
   const onScreen = [...waitingHandoff.map((h) => h.text), entries.findLast((e) => e.role === "assistant" && e.kind === "text")?.text ?? ""];
   const activity = chat?.activity && chat.activity !== "Starting…" && !repeats(chat.activity, onScreen) ? chat.activity : null;
   const empty = page !== null && !entries.length && !pending.length && !running && !live;
@@ -678,71 +732,83 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
             tail = "claude";
             return start;
           };
+          /** One block (a message, or a run of tool calls with its line). */
+          const drawBlock = (b: Block, i: number, l: TurnLayout) => {
+            const divider = l.divider && <TimeDivider label={l.divider} />;
+            if (b.kind === "tools") {
+              return (
+                <Fragment key={b.items[0].uuid}>
+                  {divider}
+                  <Turn start={l.start} at={b.items[0].at}>
+                    <StepsLine items={b.items} running={running && !live && i === blocks.length - 1} activity={stopping ? "Stopping…" : activity}>
+                      <ToolRows slug={slug} ticketId={`chat:${id}`} live={running} load={loadTool}
+                        items={b.items.map((t) => ({ key: t.uuid, label: t.text, toolUseId: t.toolUseId ?? t.agent?.toolUseId, error: t.error }))} />
+                    </StepsLine>
+                  </Turn>
+                </Fragment>
+              );
+            }
+            const e = b.e;
+            if (e.kind === "board") return <Fragment key={e.uuid}>{divider}<div className="chat-note">{e.text}</div></Fragment>;
+            if (e.role === "user") {
+              const canGo = !!id && !!e.rewind && !closed;
+              return (
+                <Fragment key={e.uuid}>
+                  {divider}
+                  <UserMessage at={e.at} text={e.text} off={actionsOff} onError={toastError}
+                    fork={canGo ? { title: chat!.title, chat: true, run: () => latest.current.forkFrom(e.uuid) } : undefined}
+                    rewind={canGo ? {
+                      later: counts.textAfter[b.index],
+                      preview: () => api.chatRewindPreview(slug, id!, e.uuid),
+                      apply: () => api.chatRewind(slug, id!, e.uuid),
+                      onDone: (r) => latest.current.rewound(r),
+                    } : undefined}>
+                    <Markdown text={e.text} />
+                  </UserMessage>
+                </Fragment>
+              );
+            }
+            if (e.commandOutput) {
+              return (
+                <Fragment key={e.uuid}>
+                  {divider}
+                  <div className="conv-msg assistant command-output">
+                    <div className="conv-head">
+                      <b>Claude Code</b>
+                      {e.at && <time className="muted small" dateTime={e.at} title={fullTime(e.at)}>{timeAgo(e.at)}</time>}
+                    </div>
+                    <Markdown text={e.text} />
+                  </div>
+                </Fragment>
+              );
+            }
+            const shown = () => simpler.textFor(e.uuid) ?? replyText(e.text);
+            return (
+              <Fragment key={e.uuid}>
+                {divider}
+                <Turn start={l.start} at={e.at}>
+                  <div className="reply-text"><Markdown text={shown()} drafts /></div>
+                  {replyText(e.text) && (
+                    <ReplyActions text={shown} simpler={id && simplifiable(e) ? simpler.link(e.uuid) : undefined}
+                      newest={i === newest} lastOfTurn={l.lastReply} active={simpler.active(e.uuid)} />
+                  )}
+                </Turn>
+              </Fragment>
+            );
+          };
           return (
             <>
               {blocks.map((b, i) => {
                 const l = layout[i];
-                const divider = l.divider && <TimeDivider label={l.divider} />;
-                if (b.kind === "tools") {
-                  return (
-                    <Fragment key={b.items[0].uuid}>
-                      {divider}
-                      <Turn start={l.start} at={b.items[0].at}>
-                        <StepsLine items={b.items} running={running && !live && i === blocks.length - 1} activity={stopping ? "Stopping…" : activity}>
-                          <ToolRows slug={slug} ticketId={`chat:${id}`} live={running} load={loadTool}
-                            items={b.items.map((t) => ({ key: t.uuid, label: t.text, toolUseId: t.toolUseId ?? t.agent?.toolUseId, error: t.error }))} />
-                        </StepsLine>
-                      </Turn>
-                    </Fragment>
-                  );
-                }
-                const e = b.e;
-                if (e.kind === "board") return <Fragment key={e.uuid}>{divider}<div className="chat-note">{e.text}</div></Fragment>;
-                if (e.role === "user") {
-                  const canGo = !!id && !!e.rewind && !closed;
-                  return (
-                    <Fragment key={e.uuid}>
-                      {divider}
-                      <UserMessage at={e.at} text={e.text} off={actionsOff} onError={(m) => toast(m, { tone: "error" })}
-                        fork={canGo ? { title: chat!.title, chat: true, run: () => forkFrom(e.uuid) } : undefined}
-                        rewind={canGo ? {
-                          later: entries.slice(entries.indexOf(e) + 1).filter((x) => x.kind === "text" && !!x.text && !x.commandOutput).length,
-                          preview: () => api.chatRewindPreview(slug, id!, e.uuid),
-                          apply: () => api.chatRewind(slug, id!, e.uuid),
-                          onDone: rewound,
-                        } : undefined}>
-                        <Markdown text={e.text} />
-                      </UserMessage>
-                    </Fragment>
-                  );
-                }
-                if (e.commandOutput) {
-                  return (
-                    <Fragment key={e.uuid}>
-                      {divider}
-                      <div className="conv-msg assistant command-output">
-                        <div className="conv-head">
-                          <b>Claude Code</b>
-                          {e.at && <time className="muted small" dateTime={e.at} title={fullTime(e.at)}>{timeAgo(e.at)}</time>}
-                        </div>
-                        <Markdown text={e.text} />
-                      </div>
-                    </Fragment>
-                  );
-                }
-                const shown = () => simpler.textFor(e.uuid) ?? replyText(e.text);
-                return (
-                  <Fragment key={e.uuid}>
-                    {divider}
-                    <Turn start={l.start} at={e.at}>
-                      <div className="reply-text"><Markdown text={shown()} drafts /></div>
-                      {replyText(e.text) && (
-                        <ReplyActions text={shown} simpler={id && simplifiable(e) ? simpler.link(e.uuid) : undefined}
-                          newest={i === newest} lastOfTurn={l.lastReply} active={simpler.active(e.uuid)} />
-                      )}
-                    </Turn>
-                  </Fragment>
-                );
+                const lastTools = b.kind === "tools" && running && !live && i === blocks.length - 1;
+                // Its "3m ago": the text, not the clock, so old messages aren't drawn again every 30 seconds.
+                const at = (b.kind === "tools" ? b.items[0] : b.e).at;
+                const base = [slug, id, at ? timeAgo(at) : "", l.start, l.lastReply, l.divider, i === newest];
+                // What the block shows that can change besides its entries: it is drawn again only then.
+                const deps = b.kind === "tools" ? [...base, running, lastTools, lastTools ? (stopping ? "Stopping…" : activity) : null, ...b.items]
+                  : b.e.role === "user" ? [...base, b.e, actionsOff, chat?.title, closed, counts.textAfter[b.index]]
+                  : [...base, b.e, simpler.sig(b.e.uuid)];
+                return <MemoBlock key={b.kind === "tools" ? b.items[0].uuid : b.e.uuid} deps={deps} render={() => drawBlock(b, i, l)} />;
               })}
               {pending.filter((p) => !p.steer).map((p, i) => (
                 <UserMessage key={i} text={p.text} sending off={null} onError={() => {}}><Markdown text={p.text} /></UserMessage>

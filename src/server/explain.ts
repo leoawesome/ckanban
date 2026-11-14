@@ -153,9 +153,11 @@ const STATUS_WORD: Record<DiffFile["status"], string> = { A: "added", M: "change
 
 /** The diff as a file list plus patches, cut short when too long. */
 export function diffText(d: TicketDiff): string {
-  const list = d.files.map((f) => `- ${f.path} (${STATUS_WORD[f.status]}${f.oldPath ? ` from ${f.oldPath}` : ""}, +${f.additions} -${f.deletions})`).join("\n");
+  const files = d.files.filter((f) => !f.more);
+  const list = files.map((f) => `- ${f.path} (${STATUS_WORD[f.status]}${f.oldPath ? ` from ${f.oldPath}` : ""}, +${f.additions} -${f.deletions})`).join("\n")
+    + (d.moreFiles ? `\n- … and ${d.moreFiles} more files (not listed)` : "");
   let patch = "";
-  for (const f of d.files) {
+  for (const f of files) {
     if (f.binary || f.tooLarge) continue;
     const body = f.hunks.map((h) => [h.header, ...h.lines.map((l) => (l.type === "add" ? "+" : l.type === "del" ? "-" : " ") + l.text)].join("\n")).join("\n");
     patch += `\n--- ${f.path}\n${body}\n`;
@@ -164,7 +166,7 @@ export function diffText(d: TicketDiff): string {
       break;
     }
   }
-  return `${d.files.length} file(s) changed, +${d.additions} -${d.deletions}:\n${list}\n\n<changes>${patch}\n</changes>`;
+  return `${files.length + (d.moreFiles ?? 0)} file(s) changed, +${d.additions} -${d.deletions}${d.moreFiles ? " (in the files listed)" : ""}:\n${list}\n\n<changes>${patch}\n</changes>`;
 }
 
 export interface ChangesInput {

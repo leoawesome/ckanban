@@ -236,9 +236,24 @@ export const onBoard = (t: BoardFlags | null | undefined): boolean => !!t && (t.
 /** A "with you" tool ticket: a step that needs the user live; it may ask and notify the user (in its main ticket's chat). */
 export const withYouTool = (t: { tool?: boolean; kind?: string | null } | null | undefined): boolean => !!t?.tool && t?.kind === "with_you";
 
+/** byIdOf's maps, one per tickets list (a list is a new array whenever the board's tickets change). */
+const byIdCache = new WeakMap<readonly FamilyTicket[], { n: number; map: Map<string, FamilyTicket> }>();
+
+/**
+ * The tickets by id, built once per tickets list and shared by every caller (search runs mainTicketOf once per
+ * hidden task, a chat looks up a title per message). A list changed in place to another length is rebuilt.
+ */
+export function byIdOf<T extends FamilyTicket>(tickets: readonly T[]): Map<string, T> {
+  const hit = byIdCache.get(tickets);
+  if (hit && hit.n === tickets.length) return hit.map as Map<string, T>;
+  const map = new Map(tickets.map((t) => [t.id, t]));
+  byIdCache.set(tickets, { n: tickets.length, map });
+  return map;
+}
+
 /** The ticket a tool ticket works for: its nearest main ancestor, else its family's top ticket. */
 export function mainTicketOf<T extends FamilyTicket & { main?: boolean }>(tickets: T[], id: string): T | undefined {
-  const byId = new Map(tickets.map((t) => [t.id, t]));
+  const byId = byIdOf(tickets);
   const seen = new Set<string>();
   let cur = byId.get(id);
   let top = cur;

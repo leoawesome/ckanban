@@ -42,8 +42,20 @@ const rowOf = (p: Profile, t: Ticket, summary: string, mainTicket?: { id: string
 });
 
 /**
+ * Every board's tickets that aren't Done, kept for the session: the bar shows the last list at once and refreshes it
+ * quietly each time it opens. Done tickets (thousands on a big board) are searched on the daemon as the user types.
+ */
+let openRows: TicketRow[] | null = null;
+/** Recent Done searches (query → rows), so typing back or reopening the bar with the same words shows them at once. */
+const doneFound = new Map<string, TicketRow[]>();
+const DONE_FOUND_MAX = 30;
+/** Waits this long after the last key before searching Done on the daemon. */
+const SEARCH_WAIT_MS = 180;
+
+/**
  * ⌘K: one box for tickets on every board, board actions and board switching.
- * Tickets on the shown board come from the live list; other boards load once when the bar opens.
+ * Tickets on the shown board come from the live list; other boards' open tickets load when the bar opens (kept for
+ * the session), and Done tickets on every board come from a search on the daemon a moment after typing.
  */
 export function CommandBar({ profiles, current, tickets, needYou, actions, onOpenTicket, onSwitchBoard, onClose }: {
   profiles: Profile[];
@@ -57,7 +69,10 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
 }) {
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
-  const [others, setOthers] = useState<TicketRow[] | null>(null);
+  const [others, setOthers] = useState<TicketRow[] | null>(openRows);
+  // Done tickets matching what is typed (the last search's until the next one answers: the ranking drops misses).
+  const [found, setFound] = useState<TicketRow[]>([]);
+  const [searching, setSearching] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useLayer(onClose);
   useFocusTrap(box);
@@ -65,26 +80,54 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
   const phone = usePhone();
 
   useEffect(() => {
-    api.allTickets().then(setOthers).catch(() => setOthers([]));
+    api.openTickets().then((r) => { openRows = r; setOthers(r); }).catch(() => setOthers((o) => o ?? []));
   }, []);
+
+  const query = q.trim();
+  useEffect(() => {
+    if (!query) { setSearching(false); return; }
+    const key = `${current ?? ""}\u0000${query.toLowerCase()}`;
+    // A query asked before shows its last answer at once and is still asked again (a ticket finished, renamed or
+    // deleted since), as the open rows are.
+    const hit = doneFound.get(key);
+    if (hit) setFound(hit);
+    setSearching(!hit);
+    let live = true;
+    const timer = setTimeout(() => {
+      api.findDoneTickets(query, current).then((r) => {
+        doneFound.delete(key);
+        doneFound.set(key, r);
+        if (doneFound.size > DONE_FOUND_MAX) doneFound.delete(doneFound.keys().next().value!);
+        if (live) setFound(r);
+      }).catch(() => {}).finally(() => { if (live) setSearching(false); });
+    }, SEARCH_WAIT_MS);
+    return () => { live = false; clearTimeout(timer); };
+  }, [query, current]);
 
   const here = profiles.find((p) => p.slug === current) ?? null;
   const rows = useMemo(() => {
-    const summaries = new Map((others ?? []).filter((r) => r.profile === current).map((r) => [r.id, r.summary]));
+    const fetched = [...(others ?? []), ...found];
+    const summaries = new Map(fetched.filter((r) => r.profile === current).map((r) => [r.id, r.summary]));
     const held = new Set(tickets.map((t) => t.id));
+    const listed = new Set<string>();
     return [
       ...(here ? tickets.map((t) => {
         // A hidden task stands for its main ticket's card; one shown on the board is its own card.
         const main = !onBoard(t) ? mainTicketOf(tickets, t.id) : undefined;
         return rowOf(here, t, summaries.get(t.id) ?? "", main ? { id: main.id, title: main.title } : !onBoard(t) ? null : undefined);
       }) : []),
-      // This board's finished tickets the board hasn't loaded (Done loads in pages) come from the full list.
-      ...(others ?? []).filter((r) => r.profile !== current || !held.has(r.id)),
+      // Other boards' open tickets, and Done ones the search found (this board's only when it hasn't loaded them:
+      // Done loads in pages).
+      ...fetched.filter((r) => {
+        const key = `${r.profile}/${r.id}`;
+        if ((r.profile === current && held.has(r.id)) || listed.has(key)) return false;
+        listed.add(key);
+        return true;
+      }),
     ];
-  }, [here, tickets, others, current]);
+  }, [here, tickets, others, found, current]);
 
   const items = useMemo<Item[]>(() => {
-    const query = q.trim();
     // Tool tickets are found (by query only) but open their main ticket; a tool ticket without one isn't listed.
     const ranked = rankTickets(rows.filter((r) => r.mainTicket !== null && (query || !r.mainTicket)), query, current, query ? 30 : 8);
     const seen = new Set<string>();
@@ -108,7 +151,7 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
     const boardItems: Item[] = matched(profiles, (p) => p.name)
       .map(({ x, i, at }) => ({ kind: "board", key: `b:${x.slug}`, profile: x, num: i < 9 ? i + 1 : null, at }));
     return [...ticketItems, ...actionItems, ...boardItems];
-  }, [q, rows, current, actions, profiles]);
+  }, [query, rows, current, actions, profiles]);
 
   const at = Math.min(active, Math.max(0, items.length - 1));
   const run = (item: Item | undefined) => {
@@ -154,7 +197,7 @@ export function CommandBar({ profiles, current, tickets, needYou, actions, onOpe
                   <div className="cmdbar-group" role="presentation">
                     {GROUP_TITLE[item.kind]}
                     {item.kind === "ticket" && !q.trim() && <span className="cmdbar-group-note">active, most recent first</span>}
-                    {item.kind === "ticket" && others === null && <span className="spinner" />}
+                    {item.kind === "ticket" && (others === null || searching) && <span className="spinner" />}
                   </div>
                 )}
                 <div id={optionId(item)} role="option" aria-selected={on} className={`cmdbar-item${on ? " active" : ""}`}

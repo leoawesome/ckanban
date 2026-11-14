@@ -59,6 +59,8 @@ function useSimplerFor(key: string, load: () => Promise<Record<string, string>>,
   return {
     /** The plain-words version when it is the one showing, else null. */
     textFor: (uuid: string) => (shown.has(uuid) ? saved[uuid] ?? null : null),
+    /** Everything about one reply that changes what it shows here (a chat block redraws when it changes). */
+    sig: (uuid: string) => `${busy.has(uuid) ? 1 : 0}${failed.has(uuid) ? 1 : 0}${shown.has(uuid) ? 1 : 0}${saved[uuid] ?? ""}`,
     /** Rewriting, failed, or showing the plain-words version: its actions row stays visible. */
     active: (uuid: string) => busy.has(uuid) || failed.has(uuid) || shown.has(uuid),
     link: (uuid: string) => (

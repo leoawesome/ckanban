@@ -1,6 +1,6 @@
 // Huddles: closing, summaries, pending restarts and the needs-you inbox.
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { callTool } from "../src/mcp-server";
 import { Board } from "../src/server/board";
@@ -385,4 +385,121 @@ test("restart: a failed or stopped agent is idle again and wakes now on a live h
   // A run can't restart anyone.
   const denied = await post({ [HUDDLE_HEADER]: `${h.id}/reviewer/${participant(h, "reviewer").token}` });
   expect(denied.status).toBe(403);
+}, 60_000);
+
+/** A clean `git clone` of the board's project at `dir` (its files committed first), as a helper would make one. */
+async function cloneProject(proj: string, dir: string) {
+  await git(proj, "add", "-A");
+  await git(proj, "commit", "-qm", "files", "--allow-empty");
+  mkdirSync(join(dir, ".."), { recursive: true });
+  await git(proj, "clone", "-q", proj, dir);
+}
+
+test("closing a huddle removes the project copies its helpers left in outputs; results and unclear folders stay", async () => {
+  const proj = store.getProfile("p")!.path;
+  for (const f of ["package.json", "README.md", "src/a.ts", "test/a.ts"]) {
+    mkdirSync(join(proj, f, ".."), { recursive: true });
+    writeFileSync(join(proj, f), "x");
+  }
+  const t = await host();
+  const h = huddles.create("p", t.id, [{ preset: "reviewer" }]);
+  await idle();
+  const handle = store.getHuddle("p", h.id)!.participants.find((p) => p.kind === "agent")!.handle;
+  const dir = store.huddleOutputsDir("p", t.id, handle);
+  const copy = join(dir, "copy");
+  await cloneProject(proj, copy);
+  mkdirSync(join(copy, "node_modules", "dep"), { recursive: true });
+  // A copy the helper changed stays; only its installed files go.
+  const edited = join(dir, "edited");
+  await cloneProject(proj, edited);
+  writeFileSync(join(edited, "src", "a.ts"), "the helper's fix");
+  mkdirSync(join(edited, "node_modules", "dep"), { recursive: true });
+  writeFileSync(join(dir, "report.md"), "# findings");
+  mkdirSync(join(dir, "unclear", "src"), { recursive: true });
+  writeFileSync(join(dir, "unclear", "notes.txt"), "mine");
+  huddles.close("p", h.id);
+  await until(() => !existsSync(copy) && !existsSync(join(edited, "node_modules")));
+  await idle();
+  expect(readFileSync(join(edited, "src", "a.ts"), "utf8")).toBe("the helper's fix");
+  expect(readFileSync(join(dir, "report.md"), "utf8")).toBe("# findings");
+  expect(existsSync(join(dir, "unclear", "notes.txt"))).toBe(true);
+  expect(messages(h).some((m) => m.text.includes(`${handle}/copy`))).toBe(true);
+}, 60_000);
+
+test("a ticket moving to Done removes copies left by its earlier, closed huddles", async () => {
+  const proj = store.getProfile("p")!.path;
+  for (const f of ["package.json", "README.md", "src/a.ts", "test/a.ts"]) {
+    mkdirSync(join(proj, f, ".."), { recursive: true });
+    writeFileSync(join(proj, f), "x");
+  }
+  const t = await host();
+  const h = huddles.create("p", t.id, [{ preset: "reviewer" }]);
+  await idle();
+  huddles.close("p", h.id);
+  await idle();
+  const handle = store.getHuddle("p", h.id)!.participants.find((p) => p.kind === "agent")!.handle;
+  // Left after the close (an older board): the move to Done picks it up.
+  const copy = join(store.huddleOutputsDir("p", t.id, handle), "main");
+  await cloneProject(proj, copy);
+  writeFileSync(join(store.huddleOutputsDir("p", t.id, handle), "report.md"), "r");
+  await board.updateTicket("p", t.id, { status: "done" });
+  await until(() => !existsSync(copy));
+  await idle();
+  expect(existsSync(join(store.huddleOutputsDir("p", t.id, handle), "report.md"))).toBe(true);
+}, 60_000);
+
+test("a helper folder used by a huddle still open on a Done ticket keeps its copy until that huddle closes", async () => {
+  const proj = store.getProfile("p")!.path;
+  for (const f of ["package.json", "README.md", "src/a.ts", "test/a.ts"]) {
+    mkdirSync(join(proj, f, ".."), { recursive: true });
+    writeFileSync(join(proj, f), "x");
+  }
+  const t = await host();
+  const h1 = huddles.create("p", t.id, [{ preset: "reviewer" }]);
+  await idle();
+  huddles.close("p", h1.id);
+  await idle();
+  await board.updateTicket("p", t.id, { status: "done" });
+  await idle();
+  const doneAt = store.getTicket("p", t.id)!.doneAt!;
+  await Bun.sleep(5);
+  // A huddle started on the Done card, with the same helper handle, keeps going.
+  const h2 = huddles.create("p", t.id, [{ preset: "reviewer" }]);
+  await idle();
+  const handle = store.getHuddle("p", h1.id)!.participants.find((p) => p.kind === "agent")!.handle;
+  expect(store.getHuddle("p", h2.id)!.participants.some((p) => p.handle === handle)).toBe(true);
+  const copy = join(store.huddleOutputsDir("p", t.id, handle), "copy");
+  await cloneProject(proj, copy);
+  // The Done cleanup runs again (a new doneAt still before h2 started): h1's folder is h2's too, so it stays.
+  const t2 = store.updateTicket("p", t.id, { doneAt: new Date(Date.parse(doneAt) + 1).toISOString() })!;
+  bus.emit({ type: "ticket.updated", profile: "p", ticket: t2 });
+  await idle();
+  await Bun.sleep(300);
+  expect(store.getHuddle("p", h2.id)!.status).not.toBe("closed");
+  expect(existsSync(copy)).toBe(true);
+  huddles.close("p", h2.id);
+  await until(() => !existsSync(copy));
+  await idle();
+}, 60_000);
+
+test("a helper's `git worktree add` copy in outputs is removed and unregistered, so its branch can be checked out again", async () => {
+  const proj = store.getProfile("p")!.path;
+  for (const f of ["package.json", "README.md", "src/a.ts", "test/a.ts"]) {
+    mkdirSync(join(proj, f, ".."), { recursive: true });
+    writeFileSync(join(proj, f), "x");
+  }
+  await git(proj, "add", "-A");
+  await git(proj, "commit", "-qm", "files");
+  await git(proj, "branch", "feat");
+  const t = await host();
+  const h = huddles.create("p", t.id, [{ preset: "reviewer" }]);
+  await idle();
+  const handle = store.getHuddle("p", h.id)!.participants.find((p) => p.kind === "agent")!.handle;
+  const copy = join(store.huddleOutputsDir("p", t.id, handle), "copy");
+  await git(proj, "worktree", "add", "-q", copy, "feat");
+  huddles.close("p", h.id);
+  await until(() => !existsSync(copy));
+  await idle();
+  expect(await git(proj, "worktree", "list")).not.toContain("copy");
+  await git(proj, "checkout", "-q", "feat");
 }, 60_000);

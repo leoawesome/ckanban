@@ -50,3 +50,33 @@ test("fileFinder remembers found paths and rechecks missing ones after a while",
   expect([...await find(["a.md", "b.md"])]).toEqual(["a.md", "b.md"]);
   expect(asked[1]).toEqual(["b.md"]);
 });
+
+test("fileFinder: calls made together share one request, and a path on its way is not asked twice", async () => {
+  const asked: string[][] = [];
+  const find = fileFinder(async (paths) => { asked.push(paths); return paths.filter((p) => p !== "b.md"); });
+  const [one, two] = await Promise.all([find(["a.md", "b.md"]), find(["b.md", "c.md"])]);
+  expect([...one]).toEqual(["a.md"]);
+  expect([...two]).toEqual(["c.md"]);
+  expect(asked).toEqual([["a.md", "b.md", "c.md"]]);
+  // Later calls start a new batch; the answers are remembered.
+  expect([...await find(["c.md", "d.md"])]).toEqual(["c.md", "d.md"]);
+  expect(asked[1]).toEqual(["d.md"]);
+});
+
+test("fileFinder: more paths than one request takes go in chunks, and all of them can be found", async () => {
+  const asked: string[][] = [];
+  const find = fileFinder(async (paths) => { asked.push(paths); return paths.slice(0, 200).filter((p) => p.startsWith("y")); });
+  const paths = Array.from({ length: 450 }, (_, i) => `${i % 2 ? "y" : "n"}${i}.md`);
+  const hit = await find(paths);
+  expect(asked.map((a) => a.length)).toEqual([200, 200, 50]);
+  expect(hit.size).toBe(225);
+  // Nothing marked missing without an answer: a failed chunk is asked again next time.
+  let fail = true;
+  const asked2: string[][] = [];
+  const find2 = fileFinder(async (p) => { asked2.push(p); if (fail && p[0] === "y200.md") throw new Error("down"); return p; });
+  const all = Array.from({ length: 250 }, (_, i) => `y${i}.md`);
+  expect((await find2(all)).size).toBe(200);
+  fail = false;
+  expect((await find2(all)).size).toBe(250);
+  expect(asked2[2]).toEqual(all.slice(200));
+});

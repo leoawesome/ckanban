@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_OUTPUT_FILES, readJsonlPage, Store, TICKET_RECHECK_MS } from "../src/server/store";
@@ -210,6 +210,30 @@ test("activity pages: newest first page, older pages back to the first entry, a 
   expect(readJsonlPage(file).entries).toEqual(readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l)));
   expect(readJsonlPage(file).before).toBeNull();
   expect(readJsonlPage(join(dir, "missing.jsonl"))).toEqual({ entries: [], before: null });
+});
+
+test("a ticket written or deleted while the first listing reads in slices shows as it is now", async () => {
+  for (let i = 0; i < 20; i++) store.createTicket("demo", { title: `T${i}`, body: "", status: "backlog" });
+  const names = readdirSync(join(store.root, "profiles", "demo", "tickets"));
+  const midRead = async (write: (fresh: Store) => void) => {
+    const fresh = new Store(store.root);
+    // Pauses before every ticket: the write lands after the read passed the first few.
+    const reading = fresh.listTicketsSliced("demo", -1);
+    for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+    write(fresh);
+    await reading;
+    return fresh;
+  };
+  // Same column (a status change asks for the column's order, which lists the board and so already shows it).
+  let fresh = await midRead((f) => f.updateTicket("demo", names[0], { title: "Renamed mid-read" }));
+  expect(fresh.listTickets("demo").find((t) => t.id === names[0])?.title).toBe("Renamed mid-read");
+  expect(fresh.listOpenTickets("demo").find((t) => t.id === names[0])?.title).toBe("Renamed mid-read");
+  // Another write later doesn't bring the old copy back.
+  fresh.updateTicket("demo", names[5], { title: "Other" });
+  expect(fresh.listTickets("demo").find((t) => t.id === names[0])?.title).toBe("Renamed mid-read");
+  fresh = await midRead((f) => f.deleteTicket("demo", names[1]));
+  expect(fresh.listTickets("demo").some((t) => t.id === names[1])).toBe(false);
+  expect(fresh.listTickets("demo")).toHaveLength(19);
 });
 
 test("the first listing after a start can be read in slices, with the same tickets in the same order", async () => {

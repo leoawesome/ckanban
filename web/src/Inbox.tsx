@@ -1,5 +1,5 @@
 import { useClaudeName } from "./AvatarFace";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes } from "react";
 import { openedAt, shouldPulse } from "./cardState";
 import type { InboxItem } from "./api";
 import { useLayer } from "./layers";
@@ -27,6 +27,28 @@ export interface InboxHelper {
 const keyOf = (i: InboxItem) => `${i.profile}/${i.id}`;
 /** Touch screens have no keys to press: tooltips there leave out the "(d)"-style key text. */
 export const TOUCH_QUERY = "(pointer: coarse)";
+
+/** Rows of one group drawn at first, and added by each "Show N more" (so a board with hundreds waiting stays light). */
+export const PAGE_ROWS = 30;
+
+/** Per group, how many of its rows to draw: the first PAGE_ROWS, then PAGE_ROWS more for each "Show N more". */
+export function usePaged() {
+  const [n, setN] = useState<Record<string, number>>({});
+  return {
+    page: <T,>(group: string, list: T[]): T[] => list.slice(0, n[group] ?? PAGE_ROWS),
+    more: (group: string) => setN((m) => ({ ...m, [group]: (m[group] ?? PAGE_ROWS) + PAGE_ROWS })),
+  };
+}
+
+/** The "Show N more" row under a group with more than PAGE_ROWS rows; nothing once all are drawn. */
+export function ShowMore({ total, shown, className = "", ...rest }: { total: number; shown: number } & ButtonHTMLAttributes<HTMLButtonElement>) {
+  if (shown >= total) return null;
+  return (
+    <button type="button" className={`show-more-row ${className}`} {...rest}>
+      Show {Math.min(PAGE_ROWS, total - shown)} more <span className="muted">· {total - shown} left</span>
+    </button>
+  );
+}
 
 /**
  * The ⋯ next to a row's one button: the row's other actions (Snooze, ...) in a small menu, a bottom sheet on a phone.
@@ -90,6 +112,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
   const [open, setOpen] = useState(false);
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showOlder, setShowOlder] = useState(false);
+  const { page, more } = usePaged();
   const { clear, busy, leaving } = useSafeClear();
   const root = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -185,6 +208,15 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
     setOpen(false);
     onPick(i);
   };
+  // "Show N more" is one more row for ↑↓; after it the focus lands on the first row it added.
+  const moreRow = (group: string, list: InboxItem[]) => (
+    <ShowMore key={`more-${group}`} role="menuitem" total={list.length} shown={page(group, list).length}
+      onClick={(e) => {
+        const at = entries().indexOf(e.currentTarget);
+        more(group);
+        requestAnimationFrame(() => focusAt(at));
+      }} />
+  );
   const row = (i: InboxItem) => {
     const key = keyOf(i);
     const done = () => clear(key, () => onMarkDone(i));
@@ -260,9 +292,11 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
             )}
             {!items.length && <p className="inbox-empty muted small">Nothing needs you right now.</p>}
             {groups.waiting.length > 0 && <div className="inbox-board" role="presentation">{claude} is waiting on you · {groups.waiting.length}</div>}
-            {groups.waiting.map(row)}
+            {page("waiting", groups.waiting).map(row)}
+            {moreRow("waiting", groups.waiting)}
             {groups.check.length > 0 && <div className="inbox-board" role="presentation">Ready to check · {groups.check.length}</div>}
-            {groups.check.map(row)}
+            {page("check", groups.check).map(row)}
+            {moreRow("check", groups.check)}
             {groups.older.length > 0 && (
               <>
                 <div className="inbox-older-head">
@@ -273,7 +307,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
                   <button className="btn small ghost" tabIndex={-1} onClick={() => { if (!busy()) onSnoozeAll(groups.older); }}
                     title={tip("Hide every item waiting more than a week for a day", "(s on the Older row)")}>Snooze all</button>
                 </div>
-                {showOlder && groups.older.map(row)}
+                {showOlder && <>{page("older", groups.older).map(row)}{moreRow("older", groups.older)}</>}
               </>
             )}
             {later.length > 0 && (
@@ -281,7 +315,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
                 <button role="menuitem" className="inbox-board inbox-snoozed-toggle" aria-expanded={showSnoozed} onClick={() => setShowSnoozed((v) => !v)}>
                   {showSnoozed ? "▾" : "▸"} Snoozed · {later.length}
                 </button>
-                {showSnoozed && later.map((i) => (
+                {showSnoozed && page("snoozed", later).map((i) => (
                   <div key={keyOf(i)} className={`inbox-entry snoozed${leaving(keyOf(i)) ? " leaving" : ""}`}><div className="inbox-entry-in">
                     <button role="menuitem" data-entry={keyOf(i)} className="inbox-item" onClick={() => pick(i)} title={touch ? undefined : "Enter opens · s unsnoozes · d marks done"}>
                       <span className="inbox-title">{i.title}</span>
@@ -295,6 +329,7 @@ export function Inbox({ items, snoozed = [], onPick, onMarkDone, onSnooze, onSno
                     </span>
                   </div></div>
                 ))}
+                {showSnoozed && moreRow("snoozed", later)}
               </>
             )}
           </div>

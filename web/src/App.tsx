@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { markOpened } from "./cardState";
 import { setLearnedVersions } from "./models";
 import { api, copy, COLUMNS, onReconnect, subscribe, waitsForSlot, type Health, type TicketPage, type InboxItem, type Job, type McpState, type Profile, type Schedule, type Status, type Ticket } from "./api";
@@ -27,7 +28,8 @@ import { StatusPill, UsageBox } from "./UsagePill";
 import { useUsage } from "./useUsage";
 import { onlyBaseLayers } from "./layers";
 import { Board, useCollapsedColumns } from "./Board";
-import { DONE_PAGE, joinsBoard, mergeTickets, unseenDone } from "./donePaging";
+import { doneCursor, doneDrifted, heldDoneHead, joinsBoard, mergeTickets, reloadAsk, takeReload, unseenDone } from "./donePaging";
+import { pruneCardMemory } from "./Card";
 import { boardColumnOf, columnNeighbours, columnOrder, STATUS_MENU } from "./columns";
 import { ColumnPicker } from "./ColumnPicker";
 import { setThemeChoice, type ThemeChoice } from "./theme";
@@ -152,6 +154,9 @@ function focusCard(pos: CardPos | null, grid = cardGrid()) {
 }
 
 /** Board filter chips; several on = tickets matching any of them. */
+const NO_VIA = new Map<string, string>();
+const sameMap = (a: Map<string, string>, b: Map<string, string>) => a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
+
 const FILTERS = [
   { id: "you", label: "Needs you", test: (t: Ticket) => !!t.attention },
   { id: "running", label: "Running", test: (t: Ticket) => t.status === "in_progress" || !!t.running },
@@ -171,6 +176,8 @@ function readDismissed(): Set<string> {
 const tildePath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
 
 /** Background load: retry once after a few seconds, then say so (quietly) instead of failing silently. */
+/** The Inbox's safety reload while the page is shown (live updates may miss a main ticket's change). */
+const INBOX_SAFETY_MS = 60_000;
 /** Least time between two live-update reloads of the Inbox (see refreshInboxSoon). */
 const INBOX_GAP_MS = 3000;
 
@@ -345,44 +352,75 @@ export function App() {
   // tickets also come in from the search and when opened directly (donePaging.ts, server ticketScope.ts).
   // Done cards the server has that aren't loaded: the Done count adds them, and while some are left Done can load more.
   const [doneUnseen, setDoneUnseen] = useState(0);
-  // Done cards asked for by page so far (the next page's offset), and finished tickets fetched by id or search:
-  // a reload asks for them again so they stay.
-  const donePaged = useRef(0);
+  // Ids of the Done cards that came by page (the next page starts after the last of them: donePaging.ts doneCursor),
+  // and finished tickets fetched by id or search: a reload asks for them again so they stay.
+  const donePaged = useRef(new Set<string>());
   const extraIds = useRef(new Set<string>());
   const [doneLoading, setDoneLoading] = useState(false);
   const doneLoadingRef = useRef(false);
-  const doneTotal = useRef(0);
-  /** Adds a piece of the board's tickets (late answers for a board no longer shown are dropped). */
-  const takeTickets = useCallback((board: string, page: TicketPage, replace = false) => {
+  const doneUnseenRef = useRef(0);
+  // The list as last drawn (or set by a page): reloads and pages work out what to ask from it.
+  const ticketsRef = useRef<Ticket[]>(tickets);
+  ticketsRef.current = tickets;
+  /**
+   * Adds a piece of the board's tickets (late answers for a board no longer shown are dropped). reload: the board's
+   * unfinished work plus Done's first page (or every paged card: ask.full), fetched again (takeReload).
+   */
+  const takeTickets = useCallback((board: string, page: TicketPage, reload?: { done: number; ids: string[]; full: boolean }) => {
     if (slugRef.current !== board) return false;
-    doneTotal.current = page.doneTotal;
-    setTickets((cur) => {
-      const next = replace ? page.tickets : mergeTickets(cur, page.tickets);
+    // A reload applies at once (flushSync), so loadTickets reads the Done count it left right after.
+    const apply = reload ? flushSync : (f: () => void) => f();
+    apply(() => setTickets((cur) => {
+      let next: Ticket[];
+      if (reload) {
+        const r = takeReload(cur, page.tickets, donePaged.current, extraIds.current, reload);
+        next = r.tickets;
+        donePaged.current = r.paged;
+        // Asked extras the answer lacks were deleted: stop asking for them.
+        const got = new Set(page.tickets.map((t) => t.id));
+        for (const id of reload.ids) if (!got.has(id)) extraIds.current.delete(id);
+      } else next = mergeTickets(cur, page.tickets);
       // Counted against the list it lands in (events may have changed it since the request went out).
-      setDoneUnseen(unseenDone(page.doneTotal, next));
+      doneUnseenRef.current = unseenDone(page.doneTotal, next);
+      setDoneUnseen(doneUnseenRef.current);
+      ticketsRef.current = next;
       return next;
-    });
+    }));
     return true;
   }, []);
-  // A late answer for a board no longer shown is dropped (it would show that board's cards here).
-  const loadTickets = useCallback((board: string) => api.boardTickets(board, { done: donePaged.current, ids: [...extraIds.current].slice(-150) }).then((page) => {
-    if (takeTickets(board, page, true)) setLoadedSlug(board);
-  }), [takeTickets]);
+  // A late answer for a board no longer shown is dropped (it would show that board's cards here). A reload (reconnect,
+  // snooze end, failed move) asks only for unfinished work and Done's first page, not every Done page scrolled so far
+  // (8.7 MB at 9,500 cards): the Done cards already loaded stay, and unchanged tickets keep their object (no redraw).
+  // When the server's fingerprint of Done down to the cursor then disagrees with the cards held (deleted, finished,
+  // dropped or reordered above it while away), it asks once more for every paged card and drops the ones gone. touched: a failed move's card, found wherever it is.
+  const loadTickets = useCallback(async (board: string, touched: string[] = [], full = false): Promise<void> => {
+    const ask = reloadAsk(ticketsRef.current, donePaged.current, extraIds.current, touched, full);
+    const unseenBefore = doneUnseenRef.current;
+    const page = await api.boardTickets(board, { done: ask.done, ids: ask.ids, after: ask.after });
+    if (!takeTickets(board, page, ask)) return;
+    setLoadedSlug(board);
+    const heldHead = ask.after ? heldDoneHead(ticketsRef.current, ask.after) : null;
+    if (doneDrifted(ask, page.doneHead, heldHead, unseenBefore, doneUnseenRef.current)) return loadTickets(board, touched, true);
+  }, [takeTickets]);
   const loadMoreDone = useCallback(() => {
     const board = slugRef.current;
-    if (!board || doneLoadingRef.current || donePaged.current >= doneTotal.current) return;
+    if (!board || doneLoadingRef.current || doneUnseenRef.current <= 0) return;
     doneLoadingRef.current = true;
     setDoneLoading(true);
-    const offset = donePaged.current;
-    api.doneTickets(board, offset).then((page) => {
+    const at = doneCursor(ticketsRef.current, donePaged.current);
+    api.doneTickets(board, at.offset, at.after).then((page) => {
       if (slugRef.current !== board) return;
-      donePaged.current = Math.max(donePaged.current, offset + DONE_PAGE);
+      for (const t of page.tickets) donePaged.current.add(t.id);
       takeTickets(board, page);
+      const unseen = unseenDone(page.doneTotal, ticketsRef.current);
+      // Nothing after the cursor though the count says more: the held cards are off (a card moved up in Done while
+      // the board wasn't looking). Ask again for every paged card, which also brings the count right.
+      if (!page.tickets.length && unseen > 0) return loadTickets(board, [], true);
     }).catch((e) => toast(`Couldn't load more of Done: ${(e as Error).message}`, { tone: "error" })).finally(() => {
       doneLoadingRef.current = false;
       setDoneLoading(false);
     });
-  }, [takeTickets]);
+  }, [takeTickets, loadTickets]);
   /** Finished tickets fetched outside Done's pages (search finds, a ticket opened by link): kept on reloads. */
   const takeExtra = useCallback((board: string, page: TicketPage) => {
     if (!takeTickets(board, page)) return;
@@ -413,6 +451,22 @@ export function App() {
   // Live updates refresh the Inbox, but at most one request at a time and one every INBOX_GAP_MS: the Inbox looks at
   // every ticket on every board, and with several runs going, ticket updates arrive many times a second (each one
   // used to reload it, which kept the daemon busy and the whole board slow).
+  // What the Inbox shows of each ticket in it (title, attention, snooze), from the last ticket event: an event that
+  // leaves this the same, for a ticket in the Inbox or not, doesn't reload it. Holds only tickets in the Inbox.
+  const inboxShown = useRef(new Map<string, string>());
+  const inboxLists = useRef<{ inbox: InboxItem[]; snoozed: InboxItem[] }>({ inbox: [], snoozed: [] });
+  const inboxHas = useCallback((profile: string, id: string) => inboxShown.current.has(`${profile}/${id}`)
+    || [...inboxLists.current.inbox, ...inboxLists.current.snoozed].some((i) => i.profile === profile && i.id === id), []);
+  const inboxMayChange = useCallback((profile: string, t: Ticket) => {
+    const key = `${profile}/${t.id}`;
+    const shows = t.attention || t.snoozed ? JSON.stringify([t.title, t.attention ?? null, t.snoozed ?? null]) : "";
+    const was = inboxShown.current.get(key);
+    if (shows) inboxShown.current.set(key, shows);
+    else inboxShown.current.delete(key);
+    if (was !== undefined) return was !== shows;
+    // First event for it: it changes the Inbox if it is in it now or joins it.
+    return !!shows || inboxHas(profile, t.id);
+  }, [inboxHas]);
   const inboxBusy = useRef(false);
   const inboxAgain = useRef(false);
   const inboxLast = useRef(0);
@@ -439,6 +493,16 @@ export function App() {
       }).catch(() => {}).finally(done);
     }, wait);
   }, []);
+
+  // Live updates reload the Inbox only when a ticket's own attention changes; a main ticket's comes from its tasks, which
+  // an event may not carry. A slow reload while the page is shown (and on coming back to it) catches what they miss.
+  useEffect(() => {
+    const visible = () => document.visibilityState === "visible";
+    const timer = setInterval(() => { if (visible()) refreshInboxSoon(); }, INBOX_SAFETY_MS);
+    const back = () => { if (visible()) refreshInboxSoon(); };
+    document.addEventListener("visibilitychange", back);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", back); };
+  }, [refreshInboxSoon]);
 
   useEffect(() => {
     loadProfiles().catch((e) => setError(e.message));
@@ -506,6 +570,9 @@ export function App() {
     history.replaceState({ ckDepth, ckBoard: board }, "", target);
   }, [slug]);
 
+  // The board's cards open their ticket (stable, so the memoised cards don't redraw on every render).
+  const openCard = useCallback((id: string) => openTicket(id), [openTicket]);
+
   // Prev/next in the drawer: replace the history entry, so one Close or Back still returns to the board.
   const stepTicket = useCallback((id: string) => {
     stepped.current = true;
@@ -556,6 +623,7 @@ export function App() {
     }
   }), [slug, loadProfiles, loadInbox, loadSchedules, loadJobs, loadTickets]);
 
+  inboxLists.current = { inbox, snoozed };
   const needYou = inbox.length;
   // A snooze ends by itself: reload when the first one runs out (the server only counts it again then).
   useEffect(() => {
@@ -581,6 +649,10 @@ export function App() {
     ranOutTimer.current = setTimeout(() => setRanOut(false), 10_000);
   }, [tickets]);
   useEffect(() => () => clearTimeout(ranOutTimer.current), []);
+  // Cards remember whether each ticket was working (Card.tsx): forget tickets no longer in the list.
+  useEffect(() => {
+    pruneCardMemory(tickets.length, () => new Set(tickets.map((t) => t.id)));
+  }, [tickets]);
   useEffect(() => {
     document.title = `${ranOut ? "✓ " : ""}${needYou ? `(${needYou}) ` : ""}ckanban`;
   }, [needYou, ranOut]);
@@ -740,8 +812,9 @@ export function App() {
     } catch {}
     setTickets([]);
     setDoneUnseen(0);
-    donePaged.current = 0;
-    doneTotal.current = 0;
+    doneUnseenRef.current = 0;
+    ticketsRef.current = [];
+    donePaged.current = new Set();
     extraIds.current = new Set();
     setLoadedSlug(null);
     setSchedules(null);
@@ -782,7 +855,9 @@ export function App() {
           refreshInboxSoon();
           return;
         }
-        if (e.type === "ticket.updated" || e.type === "ticket.deleted" || e.type === "session.updated" || e.type === "huddle.updated") refreshInboxSoon();
+        // Only events that can change who needs the user reload the Inbox. Session and huddle changes are followed by the
+        // ticket's own ticket.updated (server http.ts ssePayload), which carries its new attention.
+        if (e.type === "ticket.updated" ? inboxMayChange(e.profile, e.ticket) : e.type === "ticket.deleted" && inboxHas(e.profile, e.id)) refreshInboxSoon();
         if (e.type === "schedule.updated" && e.profile === slug) refreshSchedulesSoon(slug);
         if (e.type === "job.updated" && e.profile === slug) {
           const job = e.job;
@@ -894,9 +969,14 @@ export function App() {
   const activeFilters = FILTERS.filter((f) => filters.has(f.id));
   // Tasks have no card unless shown on the board: a search that finds a hidden one shows its main ticket's card, "via" the task.
   const visibleTickets = useMemo(() => tickets.filter((t) => onBoard(t)), [tickets]);
-  const { shown: shownTickets, via: searchVia } = useMemo(() => searchBoard(tickets, (t) => !q || `${t.title}\n${t.body}`.toLowerCase().includes(q),
+  const { shown: shownTickets, via: viaNow } = useMemo(() => searchBoard(tickets, (t) => !q || `${t.title}\n${t.body}`.toLowerCase().includes(q),
     (t) => hasTags(t, tagsWanted) && (!activeFilters.length || activeFilters.some((f) => f.test(t))), !!q),
   [tickets, query, tagFilter, filters]);
+  // The same Map while its content is the same (one shared empty Map without a search): a new one would redraw every card.
+  const viaRef = useRef<Map<string, string>>(NO_VIA);
+  if (!q || !viaNow.size) viaRef.current = NO_VIA;
+  else if (!sameMap(viaRef.current, viaNow)) viaRef.current = viaNow;
+  const searchVia = viaRef.current;
   const filtering = !!q || tagsWanted.length > 0 || activeFilters.length > 0;
   // The search also finds finished tickets Done hasn't loaded (the server looks through all of them).
   const tagKey = tagsWanted.join(",");
@@ -911,7 +991,8 @@ export function App() {
   // Prev/next walk the visible tickets of the column the drawer opened in, in its order at that time, so
   // moving the open ticket (e.g. Planning to Done) keeps Next in Planning, and the ends of the column stop
   // there. Stepping keeps that order; deleted tickets are skipped.
-  const liveOrder = open ? { column: boardColumnOf(open), ids: columnOrder(shownTickets, boardColumnOf(open)) } : null;
+  const openColumn = open ? boardColumnOf(open) : null;
+  const liveOrder = useMemo(() => (openColumn ? { column: openColumn, ids: columnOrder(shownTickets, openColumn) } : null), [shownTickets, openColumn]);
   const orderMissing = !!openId && !navOrder?.ids.includes(openId);
   useEffect(() => {
     if (!openId) setNavOrder(null);
@@ -919,7 +1000,8 @@ export function App() {
   }, [openId, orderMissing, tickets.length > 0]);
   // navOrder is null until the effect above runs (and whenever no ticket is open): fall back to the live order.
   const navIn = orderMissing ? liveOrder : navOrder ?? liveOrder;
-  const { prev: prevId, next: nextId } = open && navIn ? columnNeighbours(navIn.ids, navIn.column, open.id, tickets) : { prev: null, next: null };
+  const { prev: prevId, next: nextId } = useMemo(() => (open && navIn ? columnNeighbours(navIn.ids, navIn.column, open.id, tickets) : { prev: null, next: null }),
+    [open?.id, navIn, tickets]);
   const perBoard = useMemo(() => {
     const m = new Map<string, number>();
     for (const i of inbox) m.set(i.profile, (m.get(i.profile) ?? 0) + 1);
@@ -964,7 +1046,8 @@ export function App() {
       }
     } catch (e: any) {
       setError(`Couldn't move the ticket: ${e.message}`);
-      loadTickets(board).catch(() => {});
+      // Its id goes along: a Done card beyond the first page comes back where it was.
+      loadTickets(board, [id]).catch(() => {});
     }
   };
 
@@ -984,7 +1067,7 @@ export function App() {
     setTickets((ts) => ts.map((x) => (x.id === id ? { ...x, important } : x)));
     api.updateTicket(board, id, { important }).catch((e) => {
       setError(`Couldn't ${important ? "star" : "unstar"} the ticket: ${e.message}`);
-      loadTickets(board).catch(() => {});
+      loadTickets(board, [id]).catch(() => {});
     });
   };
   // 📌 Pin to the top of its column, or unpin (card button, P, ticket panel, ⌘K): shows at once, with Undo; Done cards can't be pinned.
@@ -999,7 +1082,7 @@ export function App() {
       });
     }, (e) => {
       setError(`Couldn't ${on ? "pin" : "unpin"} the ticket: ${e.message}`);
-      loadTickets(board).catch(() => {});
+      loadTickets(board, [id]).catch(() => {});
     });
   };
   const togglePin = (id: string) => {
@@ -1012,7 +1095,7 @@ export function App() {
   const scheduleFails = schedules?.filter((s) => s.lastError).length ?? 0;
   const missing = health ? (["claude", "git", "gh"] as const).filter((k) => !health[k]) : [];
   // Every active ticket run (chat replies and Planning too); slots: the working runs, as the server counts them.
-  const running = runCounts(tickets, huddles);
+  const running = useMemo(() => runCounts(tickets, huddles), [tickets, huddles]);
   // A huddle that has sat finished-looking for hours asks "Finished?" and stops counting as live.
   useHuddleIdleTick();
   const liveHuddles = liveHuddleCount(huddles);
@@ -1027,7 +1110,10 @@ export function App() {
       if (e.type === "learned.updated" && (e.profile === slug || e.profile === null)) load();
     });
   }, [slug]);
-  const queued = visibleTickets.filter((t) => t.status === "ready" || waitsForSlot(t)).length;
+  const queued = useMemo(() => visibleTickets.filter((t) => t.status === "ready" || waitsForSlot(t)).length, [visibleTickets]);
+  // The filter chips' counts.
+  const filterCounts = useMemo(() => new Map(FILTERS.map((f) => [f.id, visibleTickets.filter(f.test).length])), [visibleTickets]);
+  const knownTags = useMemo(() => boardTags(tickets), [tickets]);
 
   const updateKey = `update:${version?.latest}`;
   const pathKey = `path:${missing.join(",")}`;
@@ -1191,7 +1277,7 @@ export function App() {
     ...(cardTicket.status === "review" ? [{ id: "card-done", label: "Mark done", hint: cardTicket.title, keys: ["D"], run: afterBar(() => markDone(cardTicket.id)) }] : []),
     { id: "card-delete", label: "Delete ticket…", hint: cardTicket.title, run: afterBar(() => setDeleteAsk(cardTicket.id)) },
   ] : [];
-  const boardTagNames = boardTags(tickets).map((t) => t.name);
+  const boardTagNames = knownTags.map((t) => t.name);
   const commandActions: CommandAction[] = [
     ...(commandBar && openId ? ticketActions() : []),
     ...cardActions,
@@ -1459,7 +1545,7 @@ export function App() {
             </div>
             <div className="filter-chips" role="group" aria-label="Filter tickets">
               {FILTERS.map((f) => {
-                const n = visibleTickets.filter(f.test).length;
+                const n = filterCounts.get(f.id) ?? 0;
                 return (
                   <button key={f.id} className={`chip${filters.has(f.id) ? " on" : ""}`} aria-pressed={filters.has(f.id)} onClick={() => toggleFilter(f.id)}>
                     {f.label}{n > 0 && <span className="chip-count">{n}</span>}
@@ -1486,7 +1572,7 @@ export function App() {
                 openTicket(t.id);
               }} />
           )}
-          <Board tickets={shownTickets} loading={!ticketsLoaded} done={{ more: filtering ? 0 : doneUnseen, loading: doneLoading, loadMore: loadMoreDone }} filtered={filtering} onOpen={(id) => openTicket(id)} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
+          <Board tickets={shownTickets} loading={!ticketsLoaded} done={{ more: filtering ? 0 : doneUnseen, loading: doneLoading, loadMore: loadMoreDone }} filtered={filtering} onOpen={openCard} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
             collapsed={collapsed} onCollapse={setColumnCollapsed}
             slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia}
             filter={filtering ? { all: visibleTickets, doneMore: doneUnseen, clear: () => { clearSearch(); setFilters(new Set()); } } : undefined} />
@@ -1631,7 +1717,7 @@ export function App() {
           slug={profile.slug}
           folder={profile.path}
           profile={profile}
-          knownTags={boardTags(tickets)}
+          knownTags={knownTags}
           tickets={tickets}
           onClose={() => setNewTicket(false)}
           onCreate={async (input) => {

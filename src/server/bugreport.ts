@@ -141,6 +141,26 @@ export function logBlock(activity: ActivityEntry[]): BugBlock | null {
   return { id: "log", label: "Last run log (tail)", text: tail(lines.join("\n")) };
 }
 
+/** Pages of the log (512 KB each) read at most for a report: a run longer than that shows its end (its result is there). */
+const REPORT_LOG_PAGES = 8;
+
+/**
+ * The log's entries from the end back to the start of its last run, read page by page from the end: run logs reach
+ * tens of MB and the report only shows the last run.
+ */
+function lastRunTail(store: Store, slug: string, id: string): ActivityEntry[] {
+  let entries: ActivityEntry[] = [];
+  let before: number | undefined;
+  for (let pages = 0; pages < REPORT_LOG_PAGES; pages++) {
+    const page = store.readActivityPage(slug, id, before);
+    entries = [...page.entries, ...entries];
+    const first = page.entries[0];
+    if (page.before === null || (first && first.run !== entries.at(-1)!.run)) break;
+    before = page.before;
+  }
+  return entries;
+}
+
 /** The context blocks for a report, scrubbed; ticket blocks only when a ticket is given. */
 export function draftReport(store: Store, ref?: { slug: string; id: string } | null): BugDraft {
   const blocks: BugBlock[] = [envBlock()];
@@ -150,7 +170,7 @@ export function draftReport(store: Store, ref?: { slug: string; id: string } | n
     if (!profile) throw new BugReportError(404, `board ${ref.slug} not found`);
     const t = store.getTicket(ref.slug, ref.id);
     if (!t) throw new BugReportError(404, `ticket ${ref.id} not found`);
-    const activity = store.readActivity(ref.slug, ref.id);
+    const activity = lastRunTail(store, ref.slug, ref.id);
     blocks.push(ticketBlock(profile, t, activity));
     const log = logBlock(activity);
     if (log) blocks.push(log);

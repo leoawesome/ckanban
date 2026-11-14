@@ -64,6 +64,8 @@ export interface DiffFile {
   binary: boolean;
   tooLarge: boolean;
   hunks: { header: string; lines: DiffLine[] }[];
+  /** Not a file: the last row, "… and N more changed files (not shown)" (TicketDiff.moreFiles). */
+  more?: boolean;
 }
 
 export type Workspace = "worktree" | "folder";
@@ -145,6 +147,8 @@ export interface TicketDiff {
   note?: string;
   /** The version the changes are compared with, when it isn't the board's base branch. */
   startedFrom?: string;
+  /** Changed files not sent (past the first 300); the file list ends with a row saying so (DiffFile.more). */
+  moreFiles?: number;
 }
 
 export interface FileContent {
@@ -1622,7 +1626,7 @@ export interface TicketFile {
 }
 
 /** Some of a board's tickets and how many cards the Done column has in all. */
-export interface TicketPage { tickets: Ticket[]; doneTotal: number }
+export interface TicketPage { tickets: Ticket[]; doneTotal: number; /** Asked with after: Done's fingerprint down to it (null: not in Done). */ doneHead?: string | null }
 
 export async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const hasBody = method === "POST" || method === "PATCH" || method === "PUT";
@@ -1740,15 +1744,17 @@ export const api = {
   updateProfile: (slug: string, p: Partial<Profile>) => req<Profile>("PATCH", `/api/profiles/${slug}`, p),
   deleteProfile: (slug: string) => req<void>("DELETE", `/api/profiles/${slug}`),
   detectSetup: (slug: string) => req<SetupDetection>("POST", `/api/profiles/${slug}/detect-setup`),
-  tickets: (slug: string) => req<Ticket[]>("GET", t(slug)),
+  /** How many tickets the board has (all, open, Done column cards), without sending them. */
+  ticketCount: (slug: string) => req<{ total: number; open: number; doneTotal: number }>("GET", `${t(slug)}?scope=count`),
   /**
    * The board's first load: unfinished work with whole families, plus the first `done` cards of Done and the `ids`
    * asked for (open tickets, search finds) with their families. doneTotal: the Done column's card count.
    */
-  boardTickets: (slug: string, opts: { done?: number; ids?: string[] } = {}) => req<TicketPage>("GET",
-    `${t(slug)}?scope=board${opts.done ? `&done=${opts.done}` : ""}${opts.ids?.length ? `&ids=${opts.ids.map(encodeURIComponent).join(",")}` : ""}`),
-  /** A page of the Done column, from `offset` cards in. */
-  doneTickets: (slug: string, offset: number) => req<TicketPage>("GET", `${t(slug)}?scope=done&offset=${offset}`),
+  boardTickets: (slug: string, opts: { done?: number; ids?: string[]; after?: string | null } = {}) => req<TicketPage>("GET",
+    `${t(slug)}?scope=board${opts.done ? `&done=${opts.done}` : ""}${opts.ids?.length ? `&ids=${opts.ids.map(encodeURIComponent).join(",")}` : ""}${opts.after ? `&after=${encodeURIComponent(opts.after)}` : ""}`),
+  /** A page of the Done column, right after the card `after` (offset: cards in, if the daemon can't find it). */
+  doneTickets: (slug: string, offset: number, after?: string | null) =>
+    req<TicketPage>("GET", `${t(slug)}?scope=done&offset=${offset}${after ? `&after=${encodeURIComponent(after)}` : ""}`),
   /** These tickets with their families. */
   ticketsByIds: (slug: string, ids: string[]) => req<TicketPage>("GET", `${t(slug)}?scope=ids&ids=${ids.map(encodeURIComponent).join(",")}`),
   /** Finished tickets matching the board search (text and/or tags). */
@@ -1849,11 +1855,14 @@ export const api = {
     req<HuddleFinding[]>("POST", `${hud(slug, id)}/findings`, { action, ...arg }),
   /** ticket: in that ticket's copy of the folder (the board folder when it has none). */
   files: (slug: string, path: string, ticket?: string | null) =>
-    req<{ path: string; entries: FileEntry[] }>("GET", `/api/profiles/${encodeURIComponent(slug)}/files?path=${encodeURIComponent(path)}${inTicket(ticket)}`),
+    req<{ path: string; entries: FileEntry[]; more?: number }>("GET", `/api/profiles/${encodeURIComponent(slug)}/files?path=${encodeURIComponent(path)}${inTicket(ticket)}`),
   file: (slug: string, path: string, ticket?: string | null) =>
     req<FileContent>("GET", `/api/profiles/${encodeURIComponent(slug)}/file?path=${encodeURIComponent(path)}${inTicket(ticket)}`),
   ticket: (slug: string, id: string) => req<Ticket>("GET", t(slug, id)),
-  chats: (slug: string) => req<QuickChat[]>("GET", chatsUrl(slug)),
+  /** A page of the board's chats, latest first; next: pass it as `before` for the older ones (null: none left). */
+  chats: (slug: string, before?: string | null) =>
+    req<{ chats: QuickChat[]; next: string | null }>("GET", `${chatsUrl(slug)}?limit=50${before ? `&before=${encodeURIComponent(before)}` : ""}`),
+  chat1: (slug: string, id: string) => req<QuickChat>("GET", chatsUrl(slug, id)),
   /** A new chat starts with its first message. */
   newChat: (slug: string, text: string) => req<QuickChat>("POST", chatsUrl(slug), { text }),
   chatSend: (slug: string, id: string, text: string) => req<QuickChat>("POST", `${chatsUrl(slug, id)}/messages`, { text }),
@@ -2019,7 +2028,11 @@ export const api = {
   ticketContext: (slug: string, id: string, check = false) => req<ContextView>(check ? "POST" : "GET", `${t(slug, id)}/context`),
   chatContext: (slug: string, id: string, check = false) => req<ContextView>(check ? "POST" : "GET", `${chatsUrl(slug, id)}/context`),
   inbox: () => req<InboxItem[]>("GET", "/api/inbox"),
-  allTickets: () => req<TicketRow[]>("GET", "/api/tickets"),
+  /** ⌘K: every ticket that isn't Done, on every board. */
+  openTickets: () => req<TicketRow[]>("GET", "/api/tickets?scope=open"),
+  /** ⌘K: the Done tickets on every board that best match q (board: the one the user is on, first on ties). */
+  findDoneTickets: (q: string, board: string | null) =>
+    req<TicketRow[]>("GET", `/api/tickets?scope=done&limit=20&q=${encodeURIComponent(q)}${board ? `&board=${encodeURIComponent(board)}` : ""}`),
   snippets: (slug: string) => req<Snippet[]>("GET", `/api/snippets?profile=${encodeURIComponent(slug)}`),
   createSnippet: (input: SnippetInput) => req<Snippet>("POST", "/api/snippets", input),
   updateSnippet: (id: string, patch: Partial<SnippetInput>) => req<Snippet>("PATCH", `/api/snippets/${encodeURIComponent(id)}`, patch),

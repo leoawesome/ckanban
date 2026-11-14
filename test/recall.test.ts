@@ -106,3 +106,66 @@ test("a first run on a ticket about a topic the board already worked on gets the
   expect(prompt).toContain(`${old.id} "Export tickets as CSV" (done, 2026-10-01): Added a CSV export of the board's tickets.`);
   expect(prompt).not.toContain(other.id);
 });
+
+// The board keeps a RecallIndex between run starts. It must pick exactly what the plain scoring of every ticket picked.
+function reference(t: { id: string; title: string; body: string; parentId: string | null; madeFrom?: string | null; partOf?: string | null }, rows: RecallRow[]): string[] {
+  const weights = (title: string, rest: string) => {
+    const m = new Map<string, number>();
+    for (const w of words(rest)) m.set(w, 1);
+    for (const w of words(title)) m.set(w, 3);
+    return m;
+  };
+  const doneish = (r: RecallRow) => r.ticket.status === "done" || r.ticket.status === "review";
+  const others = rows.filter((r) => r.ticket.id !== t.id && r.ticket.parentId !== t.id);
+  const pinnedIds = [t.parentId, t.madeFrom, t.partOf].filter((x): x is string => !!x);
+  const pinned = pinnedIds.map((id) => others.find((r) => r.ticket.id === id)).filter((r): r is RecallRow => !!r);
+  const pool = others.filter((r) => !pinnedIds.includes(r.ticket.id) && (doneish(r) || r.ticket.runCount > 0));
+  const query = weights(t.title, t.body);
+  if (!query.size || !pool.length) return pinned.slice(0, RECALL_MAX).map((r) => r.ticket.id);
+  const docs = pool.map((r) => ({ r, w: weights(r.ticket.title, `${r.ticket.body}\n${r.summary ?? ""}`) }));
+  const df = new Map<string, number>();
+  for (const d of docs) for (const w of d.w.keys()) df.set(w, (df.get(w) ?? 0) + 1);
+  const idf = (w: string) => Math.log(1 + docs.length / (df.get(w) ?? 1));
+  const norm = (m: Map<string, number>) => Math.sqrt([...m].reduce((s, [w, n]) => s + (n * idf(w)) ** 2, 0)) || 1;
+  const scored = docs.map(({ r, w }) => {
+    let dot = 0;
+    for (const [word, qw] of query) dot += qw * (w.get(word) ?? 0) * idf(word) ** 2;
+    return { r, score: dot / norm(query) / norm(w) };
+  }).filter((s) => s.score >= 0.12);
+  const when = (r: RecallRow) => r.ticket.lastRunAt ?? r.ticket.updatedAt ?? "";
+  scored.sort((a, b) => Number(doneish(b.r)) - Number(doneish(a.r)) || b.score - a.score || when(b.r).localeCompare(when(a.r)));
+  return [...pinned, ...scored.map((s) => s.r)].slice(0, RECALL_MAX).map((r) => r.ticket.id);
+}
+
+test("a RecallIndex kept up to date as tickets change picks what scoring every ticket from scratch picks", () => {
+  const vocab = "export csv board dark mode phone push notification excel pdf header button theme color sync upload spend inbox huddle chat".split(" ");
+  let seed = 7;
+  const rnd = (n: number) => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) % n);
+  const text = (n: number) => Array.from({ length: n }, () => vocab[rnd(vocab.length)]).join(" ");
+  const statuses = ["done", "review", "in_progress", "backlog"] as const;
+  const make = (i: number, v = 0): RecallRow => row(`t_${i}`, text(3), {
+    body: text(8), summary: rnd(3) ? text(10) : null, status: statuses[rnd(4)], runCount: rnd(2), parentId: rnd(10) ? null : `t_${rnd(20)}`,
+    updatedAt: `2026-10-0${1 + rnd(9)}T10:00:0${v}Z`, lastRunAt: null,
+  });
+  let rows = Array.from({ length: 120 }, (_, i) => make(i));
+  const index = new (require("../src/server/recall").RecallIndex)();
+  const stamps = new Map<string, number>();
+  const check = () => {
+    const summaries = new Map(rows.map((r) => [r.ticket.id, r.summary]));
+    for (let q = 0; q < 15; q++) {
+      const t = { id: `t_${rnd(140)}`, title: text(3), body: text(5), parentId: rnd(3) ? null : `t_${rnd(120)}`, partOf: rnd(4) ? null : `t_${rnd(120)}`, madeFrom: null };
+      const got = index.pickNow(t, rows.map((r) => r.ticket), (id: string) => summaries.get(id) ?? null, (id: string) => stamps.get(id) ?? 0).map((r: RecallRow) => r.ticket.id);
+      expect(got).toEqual(reference(t, rows));
+      expect(pickRelated(t, rows).map((r) => r.ticket.id)).toEqual(got);
+    }
+  };
+  check();
+  // Tickets change (new updatedAt), get a new summary (new comment stamp), are deleted and added.
+  rows = rows.map((r, i) => (i % 7 === 0 ? make(i, 1) : r)).filter((_, i) => i % 11 !== 5);
+  for (const r of rows.filter((_, i) => i % 5 === 0)) {
+    r.summary = text(10);
+    stamps.set(r.ticket.id, (stamps.get(r.ticket.id) ?? 0) + 1);
+  }
+  rows.push(...Array.from({ length: 20 }, (_, i) => make(200 + i)));
+  check();
+});

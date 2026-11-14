@@ -183,7 +183,7 @@ export class JobRunner {
 
   private dropSource(slug: string, ticketId: string): Promise<void> {
     return this.serial(() => {
-      for (const j of this.store.listJobs(slug)) {
+      for (const j of this.store.openJobs(slug)) {
         if (j.sourceTicketId === ticketId && OPEN.includes(j.state)) this.save(slug, { ...j, state: "cancelled", result: { message: "its ticket was deleted" } });
       }
     });
@@ -219,9 +219,11 @@ export class JobRunner {
    * finishedDays: every job that finished in that many days (the board's Upcoming list) instead of the last RECENT_DONE.
    */
   list(slug: string, ticketId?: string | null, finishedDays?: number): Job[] {
-    const all = this.store.listJobs(slug).filter((j) => !ticketId || j.sourceTicketId === ticketId);
-    const open = all.filter((j) => OPEN.includes(j.state) || j.state === "running");
-    const over = all.filter((j) => !open.includes(j)).sort((a, b) => (b.firedAt ?? b.updatedAt).localeCompare(a.firedAt ?? a.updatedAt));
+    const mine = (j: Job) => !ticketId || j.sourceTicketId === ticketId;
+    const open = this.store.openJobs(slug).filter(mine);
+    // Plain string order: the same as localeCompare for ISO times, and much cheaper over thousands of finished jobs.
+    const newest = (a: Job, b: Job) => { const x = a.firedAt ?? a.updatedAt, y = b.firedAt ?? b.updatedAt; return x < y ? 1 : x > y ? -1 : 0; };
+    const over = this.store.listJobs(slug).filter((j) => mine(j) && !OPEN.includes(j.state) && j.state !== "running").sort(newest);
     if (finishedDays === undefined) return [...open, ...over.slice(0, RECENT_DONE)];
     const since = this.now().getTime() - finishedDays * 86400_000;
     return [...open, ...over.filter((j) => new Date(j.updatedAt).getTime() >= since)];
@@ -437,7 +439,7 @@ export class JobRunner {
    */
   recover(): void {
     for (const p of this.store.listProfiles()) {
-      for (const j of this.store.listJobs(p.slug)) {
+      for (const j of this.store.openJobs(p.slug)) {
         if (j.state !== "running") continue;
         if (j.action.kind === "command") {
           this.failed(p.slug, j, { ...j.result, message: "interrupted by restart: the board stopped while the command was running" });
@@ -454,7 +456,8 @@ export class JobRunner {
     return this.serial(async () => {
       const now = this.now().getTime();
       for (const p of this.store.listProfiles()) {
-        for (const j of this.store.listJobs(p.slug)) {
+        // Only jobs still to run: finished ones (thousands, kept for the list) aren't looked at.
+        for (const j of this.store.openJobs(p.slug)) {
           if (j.state !== "scheduled") continue;
           const due = new Date(j.at).getTime();
           if (Number.isNaN(due) || due > now) continue;

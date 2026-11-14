@@ -36,6 +36,9 @@ const subRow = (r: FamilyRow<Ticket>) => r.depth > 0 && !!r.ticket.main;
 /** A row that holds others: a group or round, or any ticket with children (never a sub-feature: it opens on its own). */
 const holds = (r: FamilyRow<Ticket>, kids: Map<string, unknown[]>) => !subRow(r) && ((kids.get(r.ticket.id)?.length ?? 0) > 0 || r.ticket.kind === "group" || r.ticket.kind === "round");
 
+/** Finished rows drawn when the Done fold opens, and added by each "Show more". */
+const DONE_PAGE = 50;
+
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpenTicket, onError, onMoveToDone, onAddMore }: {
@@ -75,6 +78,10 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
   // Folded: groups whose children are all settled, unless the user opened them (and the one holding the opened ticket).
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [peek, setPeek] = useState<string | null>(null);
+  // The Done fold: the user's open/fold for the opened ticket, else it follows that ticket (open when it is a finished
+  // task, so a jump to it lands on its row); donePage: finished rows drawn.
+  const [doneChoice, setDoneChoice] = useState<{ id: string; open: boolean } | null>(null);
+  const [donePage, setDonePage] = useState(DONE_PAGE);
   const [gathering, setGathering] = useState(false);
   const [report, setReport] = useState<{ title: string; text: string } | null>(null);
   const phone = usePhone();
@@ -98,14 +105,47 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
     const inside = below(r.ticket.id);
     return !inside.length || !inside.every((k) => settled(stateOf(k)));
   };
-  const shown: FamilyRow<Ticket>[] = [];
-  let hideBelow: number | null = null;
-  for (const r of rows) {
-    if (hideBelow !== null && r.depth > hideBelow) continue;
-    hideBelow = null;
-    shown.push(r);
-    if (holds(r, kids) && r.depth > 0 && !isOpen(r)) hideBelow = r.depth;
+  /** A row's state word: a group's or sub-feature's sums up what is inside it. */
+  const rowState = (r: FamilyRow<Ticket>): FamilyState => {
+    const st = stateOf(r.ticket);
+    if (subRow(r)) return subFeatureState(tickets, r.ticket.id, st);
+    if (!(holds(r, kids) && r.depth > 0)) return st;
+    const inside = below(r.ticket.id);
+    return inside.every((k) => settled(stateOf(k))) ? "done" : inside.some((k) => stateOf(k) === "needs_you") ? "needs_you" : inside.some((k) => stateOf(k) === "in_review") ? "in_review" : "working";
+  };
+  // Finished tasks fold into one "Done · N" row at the end (a big feature drew hundreds of them on every update);
+  // what still runs, waits, failed or needs you keeps its place. A unit is a top-level row with everything under it.
+  const units: FamilyRow<Ticket>[][] = [];
+  for (const r of rows.slice(1)) {
+    if (r.depth <= 1 || !units.length) units.push([r]);
+    else units.at(-1)!.push(r);
   }
+  const finished = (u: FamilyRow<Ticket>[]) => {
+    const r = u[0];
+    const over = (s: FamilyState) => s === "done" || s === "passed";
+    // A ticket that holds others is finished only when it is too (a group or sub-feature is its contents).
+    return over(rowState(r)) && (subRow(r) || r.ticket.kind === "group" || r.ticket.kind === "round" || over(stateOf(r.ticket)));
+  };
+  const openUnits = units.filter((u) => !finished(u));
+  const doneUnits = units.filter(finished);
+  // The opened ticket is a finished task: the fold opens, and its page reaches it.
+  const meAt = doneUnits.findIndex((u) => u.some((r) => r.ticket.id === ticket.id));
+  const doneIsOpen = doneChoice?.id === ticket.id ? doneChoice.open : meAt >= 0;
+  const doneShown = Math.max(donePage, meAt + 1);
+  // Groups whose rows are all settled fold to one row (isOpen); open units and the Done list are whole subtrees.
+  const unfolded = (list: FamilyRow<Ticket>[]) => {
+    const out: FamilyRow<Ticket>[] = [];
+    let hideBelow: number | null = null;
+    for (const r of list) {
+      if (hideBelow !== null && r.depth > hideBelow) continue;
+      hideBelow = null;
+      out.push(r);
+      if (holds(r, kids) && r.depth > 0 && !isOpen(r)) hideBelow = r.depth;
+    }
+    return out;
+  };
+  const shown = unfolded([rows[0], ...openUnits.flat()]);
+  const shownDone = doneIsOpen ? unfolded(doneUnits.slice(0, doneShown).flat()) : [];
   const total = rows.reduce((n, r) => n + (view.get(r.ticket.id)?.costUsd ?? 0), 0);
   const cost = (r: FamilyRow<Ticket>) => {
     const own = view.get(r.ticket.id)?.costUsd ?? 0;
@@ -125,6 +165,61 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
       onError(`Couldn't open the report: ${(e as Error).message}`);
     }
   };
+  const treeRow = (r: FamilyRow<Ticket>) => {
+    const t = r.ticket;
+    const group = holds(r, kids) && r.depth > 0;
+    const inside = group ? below(t.id) : [];
+    const groupState = rowState(r);
+    const v = view.get(t.id);
+    return (
+      <div key={t.id} role="treeitem" aria-current={t.id === ticket.id ? "true" : undefined}
+        className={`ft-row${group ? " group" : ""}${t.id === ticket.id ? " me" : ""}${peek === t.id ? " peeked" : ""}`}
+        style={{ paddingLeft: 8 + r.depth * 16 }} onClick={() => setPeek(peek === t.id ? null : t.id)} title={t.title}>
+        <button className={`ft-chev${holds(r, kids) && r.depth > 0 ? "" : " none"}`} aria-label={isOpen(r) ? "Fold" : "Unfold"} tabIndex={holds(r, kids) && r.depth > 0 ? 0 : -1}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (holds(r, kids) && r.depth > 0) setOpen((o) => ({ ...o, [t.id]: !isOpen(r) }));
+          }}>{holds(r, kids) ? (isOpen(r) || r.depth === 0 ? "▾" : "▸") : ""}</button>
+        {/* Its Claude's face in the row's state (the words beside it say the state too). */}
+        <span className="ft-face" aria-hidden><ClaudeFace mood={familyMood(groupState)} size={24} /></span>
+        <span className="ft-body">
+          <span className="ft-title">{subRow(r) && <span className="part-chip ft-sub">Sub-feature</span>}{t.important && <ImportantStar />}{t.title}</span>
+          <span className="ft-meta">
+            {subRow(r)
+              ? <span className="ft-sum">{plural(featureRows(tickets, t.id).length - 1, "task")}</span>
+              : group
+              ? <span className="ft-sum">{groupSummary(inside.map((k) => ({ kind: k.kind, state: stateOf(k) })))}</span>
+              : <span className="ft-model">{[t.kind ? KIND_WORDS[t.kind] : null, runText(resolveRun(t, profile, claude))].filter(Boolean).join(" · ")}</span>}
+            <span className={`ft-st ${STATE_CLASS[groupState]}`}>{STATE_WORDS[groupState]}</span>
+            {v && cost(r) > 0 && <span className="ft-cost">{money(cost(r))}</span>}
+          </span>
+        </span>
+        {(subRow(r) || (t.tool && r.depth > 0) || (hideableCard(t) && r.depth > 0)) && (
+          <span className="ft-actions" onClick={(e) => e.stopPropagation()}>
+            {subRow(r) ? (
+              <button className="mini-link" onClick={() => onOpenTicket(t.id)} title={`Open ${t.title}: its own chat and tasks`}>Open</button>
+            ) : !t.tool ? (
+              // A card gathered into this feature: it can leave the board like a task, keeping its chat and history.
+              <label className="ft-show" title={t.showOnBoard === false ? "Give it its card on the board again" : "Hide its card from the board; it stays in this list with its chat and history"}>
+                <input type="checkbox" checked={t.showOnBoard !== false} disabled={acting === t.id}
+                  onChange={(e) => act(t.id, api.setShowOnBoard(slug, t.id, e.target.checked))} /> Show on board
+              </label>
+            ) : (
+              <>
+                <label className="ft-show" title={t.showOnBoard ? "Hide its card again; it stays in this list" : "Give it its own card on the board; its questions still come to this chat"}>
+                  <input type="checkbox" checked={!!t.showOnBoard} disabled={acting === t.id}
+                    onChange={(e) => act(t.id, api.setShowOnBoard(slug, t.id, e.target.checked))} /> Show on board
+                </label>
+                <button className="mini-link" disabled={acting === t.id || !!t.running}
+                  title={t.running ? "Wait until it stops working" : `Becomes its own work with its own card, chat and tasks, still part of ${rows[0]?.ticket.title ?? "this feature"}`}
+                  onClick={() => act(t.id, api.makeOwnWork(slug, t.id), `${t.title} is now its own work`)}>Make it its own work</button>
+              </>
+            )}
+          </span>
+        )}
+      </div>
+    );
+  };
   return (
     <section className="family-tab">
       {feature.status && <StatusBlock slug={slug} ticket={ticket} tickets={tickets} status={feature.status} onChanged={feature.reload} onOpenTicket={onOpenTicket} />}
@@ -139,62 +234,19 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
         <button className="mini-link" onClick={() => setGathering(true)} title={`Bring tickets you already made into "${top.title}"`}>Add tickets…</button>
       </div>
       <div className="family-tab-tree" role="tree">
-        {shown.map((r) => {
-          const t = r.ticket;
-          const group = holds(r, kids) && r.depth > 0;
-          const st = stateOf(t);
-          const inside = group ? below(t.id) : [];
-          const groupState: FamilyState = subRow(r) ? subFeatureState(tickets, t.id, st) : group ? (inside.every((k) => settled(stateOf(k))) ? "done" : inside.some((k) => stateOf(k) === "needs_you") ? "needs_you" : inside.some((k) => stateOf(k) === "in_review") ? "in_review" : "working") : st;
-          const v = view.get(t.id);
-          return (
-            <div key={t.id} role="treeitem" aria-current={t.id === ticket.id ? "true" : undefined}
-              className={`ft-row${group ? " group" : ""}${t.id === ticket.id ? " me" : ""}${peek === t.id ? " peeked" : ""}`}
-              style={{ paddingLeft: 8 + r.depth * 16 }} onClick={() => setPeek(peek === t.id ? null : t.id)} title={t.title}>
-              <button className={`ft-chev${holds(r, kids) && r.depth > 0 ? "" : " none"}`} aria-label={isOpen(r) ? "Fold" : "Unfold"} tabIndex={holds(r, kids) && r.depth > 0 ? 0 : -1}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (holds(r, kids) && r.depth > 0) setOpen((o) => ({ ...o, [t.id]: !isOpen(r) }));
-                }}>{holds(r, kids) ? (isOpen(r) || r.depth === 0 ? "▾" : "▸") : ""}</button>
-              {/* Its Claude's face in the row's state (the words beside it say the state too). */}
-              <span className="ft-face" aria-hidden><ClaudeFace mood={familyMood(groupState)} size={24} /></span>
-              <span className="ft-body">
-                <span className="ft-title">{subRow(r) && <span className="part-chip ft-sub">Sub-feature</span>}{t.important && <ImportantStar />}{t.title}</span>
-                <span className="ft-meta">
-                  {subRow(r)
-                    ? <span className="ft-sum">{plural(featureRows(tickets, t.id).length - 1, "task")}</span>
-                    : group
-                    ? <span className="ft-sum">{groupSummary(inside.map((k) => ({ kind: k.kind, state: stateOf(k) })))}</span>
-                    : <span className="ft-model">{[t.kind ? KIND_WORDS[t.kind] : null, runText(resolveRun(t, profile, claude))].filter(Boolean).join(" · ")}</span>}
-                  <span className={`ft-st ${STATE_CLASS[groupState]}`}>{STATE_WORDS[groupState]}</span>
-                  {v && cost(r) > 0 && <span className="ft-cost">{money(cost(r))}</span>}
-                </span>
-              </span>
-              {(subRow(r) || (t.tool && r.depth > 0) || (hideableCard(t) && r.depth > 0)) && (
-                <span className="ft-actions" onClick={(e) => e.stopPropagation()}>
-                  {subRow(r) ? (
-                    <button className="mini-link" onClick={() => onOpenTicket(t.id)} title={`Open ${t.title}: its own chat and tasks`}>Open</button>
-                  ) : !t.tool ? (
-                    // A card gathered into this feature: it can leave the board like a task, keeping its chat and history.
-                    <label className="ft-show" title={t.showOnBoard === false ? "Give it its card on the board again" : "Hide its card from the board; it stays in this list with its chat and history"}>
-                      <input type="checkbox" checked={t.showOnBoard !== false} disabled={acting === t.id}
-                        onChange={(e) => act(t.id, api.setShowOnBoard(slug, t.id, e.target.checked))} /> Show on board
-                    </label>
-                  ) : (
-                    <>
-                      <label className="ft-show" title={t.showOnBoard ? "Hide its card again; it stays in this list" : "Give it its own card on the board; its questions still come to this chat"}>
-                        <input type="checkbox" checked={!!t.showOnBoard} disabled={acting === t.id}
-                          onChange={(e) => act(t.id, api.setShowOnBoard(slug, t.id, e.target.checked))} /> Show on board
-                      </label>
-                      <button className="mini-link" disabled={acting === t.id || !!t.running}
-                        title={t.running ? "Wait until it stops working" : `Becomes its own work with its own card, chat and tasks, still part of ${rows[0]?.ticket.title ?? "this feature"}`}
-                        onClick={() => act(t.id, api.makeOwnWork(slug, t.id), `${t.title} is now its own work`)}>Make it its own work</button>
-                    </>
-                  )}
-                </span>
-              )}
-            </div>
-          );
-        })}
+        {shown.map(treeRow)}
+        {doneUnits.length > 0 && (
+          <button type="button" role="treeitem" aria-expanded={doneIsOpen} className="ft-row ft-done-fold"
+            onClick={() => setDoneChoice({ id: ticket.id, open: !doneIsOpen })} title={doneIsOpen ? "Fold the finished tasks" : "Show the finished tasks"}>
+            Done · {doneUnits.length} <span className="ft-done-chev" aria-hidden>›</span>
+          </button>
+        )}
+        {shownDone.map(treeRow)}
+        {doneIsOpen && doneUnits.length > doneShown && (
+          <button type="button" className="show-more-row" onClick={() => setDonePage(doneShown + DONE_PAGE)}>
+            Show {Math.min(DONE_PAGE, doneUnits.length - doneShown)} more <span className="muted">· {doneUnits.length - doneShown} left</span>
+          </button>
+        )}
       </div>
       {peeked && (
         <MenuSheet onClose={() => setPeek(null)}>

@@ -151,6 +151,28 @@ test("ClaudeLogIndex sums logs incrementally, once per message, skipping files o
   expect(idx.costBetween(T0 - 72 * H, T0)).toBeCloseTo(20);
 });
 
+test("ClaudeLogIndex keeps only what was asked for in the last hour, and reads older activity again when asked", async () => {
+  const root = tempDir("ck-projects-");
+  mkdirSync(join(root, "proj"), { recursive: true });
+  const a = join(root, "proj", "a.jsonl");
+  writeFileSync(a, logLine("old", T0 - 48 * H, { output_tokens: 1e6 }) + logLine("new", T0, { output_tokens: 1e6 }));
+  // A resumed session's file repeats an earlier message: counted once.
+  writeFileSync(join(root, "proj", "b.jsonl"), logLine("new", T0, { output_tokens: 1e6 }));
+  let now = T0 + H;
+  const idx = new ClaudeLogIndex(root, 10_000, () => now);
+  await idx.refresh(T0 - 72 * H);
+  expect(idx.costBetween(T0 - 72 * H, T0 + H)).toBeCloseTo(40);
+  // Only recent windows asked for since: an hour later the older minutes are dropped.
+  now += 2 * H;
+  await idx.refresh(T0 - H);
+  expect(idx.costBetween(T0 - 72 * H, T0 - H)).toBe(0);
+  expect(idx.costBetween(T0 - H, T0 + H)).toBeCloseTo(20);
+  // Asked again: read back from the logs.
+  await idx.refresh(T0 - 72 * H);
+  expect(idx.costBetween(T0 - 72 * H, T0 - H)).toBeCloseTo(20);
+  expect(idx.costBetween(T0 - H, T0 + H)).toBeCloseTo(20);
+});
+
 test("recordWindow keeps one snapshot per 5h window", () => {
   const file = join(tempDir("ck-win-"), "usage-windows.json");
   const answer = (pct: number, resetsAt: string, fetchedAt: string): UsageResult =>

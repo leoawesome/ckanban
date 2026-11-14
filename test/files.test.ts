@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FileError, findInRoots, listDir, MAX_VIEW_BYTES, openWithSystem, readFileForView, resolveInside } from "../src/server/files";
+import { FileError, findInRoots, listDir, listDirPage, MAX_DIR_ENTRIES, MAX_VIEW_BYTES, openWithSystem, readFileForView, resolveInside } from "../src/server/files";
 import { makeRepo, tempDir } from "./helpers";
 
 const status = (fn: () => unknown) => {
@@ -109,4 +109,15 @@ test("findInRoots looks in the ticket's copy first, then the project, and never 
   // ~/ is the home folder, still only inside a root.
   expect(findInRoots(roots, "~/notes/a.md", home)).toBeNull();
   expect(findInRoots([...roots, { name: "outputs", dir: home }], "~/notes/a.md", home)).toMatchObject({ root: "outputs", rel: "notes/a.md" });
+});
+
+test("a folder of thousands of files sends the first MAX_DIR_ENTRIES (folders first) and how many more", async () => {
+  const root = tempDir("ck-files-many-");
+  mkdirSync(join(root, "zz-folder"));
+  for (let i = 0; i < MAX_DIR_ENTRIES + 500; i++) writeFileSync(join(root, `f${String(i).padStart(5, "0")}.txt`), "");
+  const page = await listDirPage(root, "");
+  expect(page.entries).toHaveLength(MAX_DIR_ENTRIES);
+  expect(page.entries[0]).toEqual({ name: "zz-folder", path: "zz-folder", type: "dir" });
+  expect(page.more).toBe(501);
+  expect((await listDirPage(root, "zz-folder")).more).toBe(0);
 });

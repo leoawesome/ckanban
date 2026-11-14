@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Status } from "../web/src/columns";
-import { boardColumnOf, columnNeighbours, columnOrder, dropOrder, groupByColumn, menuPick, STATUS_MENU } from "../web/src/columns";
+import { boardColumnOf, columnNeighbours, columnOrder, dropOrder, groupByColumn, menuPick, regroupByColumn, STATUS_MENU } from "../web/src/columns";
 import { opensNewTab } from "../web/src/links";
 
 const tk = (id: string, status: Status, order: number, extra: { slotWait?: { at: string }; pinnedAt?: string | null } = {}) => ({ id, status, order, ...extra });
@@ -104,4 +104,14 @@ test("dropOrder: a pinned card keeps its pin place in its column, and goes on to
   const backlog = [tk("b1", "backlog", 4), tk("b2", "backlog", 8)];
   expect(dropOrder(old, "backlog", backlog, 2)).toBe(3);
   expect(dropOrder(old, "done", [], 0)).toBe(1);
+});
+
+test("regroupByColumn keeps the lists of columns whose cards didn't change", () => {
+  const first = regroupByColumn(board, null);
+  const changed = board.map((t) => (t.id === "p1" ? { ...t } : t));
+  const next = regroupByColumn(changed, first);
+  expect(next.get("backlog")).toBe(first.get("backlog")!);
+  expect(next.get("done")).toBe(first.get("done")!);
+  expect(next.get("planning")).not.toBe(first.get("planning")!);
+  expect(next.get("planning")!.map((t) => t.id)).toEqual(["p1", "p2", "p3"]);
 });

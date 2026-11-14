@@ -11,24 +11,34 @@ export const RING_MS = 1500;
 const from = new Map<string, { rect: DOMRect | null; at: number }>();
 /** A move whose card doesn't show up by then (filtered out, collapsed column) isn't played later. */
 const STALE_MS = 1000;
-/** Cards that arrived and haven't been hovered or opened yet: when they arrived. */
-let arrived: ReadonlyMap<string, number> = new Map();
+/**
+ * Cards that arrived and haven't been hovered or opened yet: when they arrived, and whether the ring still shows. Each
+ * card reads only its own entry (useArrival), so a move redraws the moved card, not the whole board.
+ */
+let arrived: ReadonlyMap<string, { at: number; ring: boolean }> = new Map();
 const subs = new Set<() => void>();
 const emit = () => subs.forEach((f) => f());
 
 /** A ticket.updated put this card in another column: remember where it was, and mark it new (except in Done). */
 export function noteServerMove(id: string, toColumn: string) {
   const el = document.querySelector<HTMLElement>(`[data-ticket="${CSS.escape(id)}"] > .card`);
-  from.set(id, { rect: el ? el.getBoundingClientRect() : null, at: Date.now() });
+  const now = Date.now();
+  // Moves whose card never showed (filtered out, a folded column) are dropped once stale, so this map doesn't only grow.
+  for (const [k, v] of from) if (now - v.at > STALE_MS) from.delete(k);
+  from.set(id, { rect: el ? el.getBoundingClientRect() : null, at: now });
   if (toColumn === "done") return queueMicrotask(() => clearArrival(id));
+  const entry = { at: now, ring: true };
   const next = new Map(arrived);
-  next.set(id, Date.now());
+  next.set(id, entry);
   arrived = next;
   // Called while the board works out its new state: the cards redraw after that.
   queueMicrotask(emit);
-  // The ring has faded: draw the card again without it.
+  // The ring has faded: draw the card again without it (unless it moved again or was opened since).
   setTimeout(() => {
-    arrived = new Map(arrived);
+    if (arrived.get(id) !== entry) return;
+    const after = new Map(arrived);
+    after.set(id, { at: entry.at, ring: false });
+    arrived = after;
     emit();
   }, RING_MS + 50);
 }
@@ -42,13 +52,14 @@ export function clearArrival(id: string) {
   emit();
 }
 
+const subscribe = (f: () => void) => (subs.add(f), () => { subs.delete(f); });
+
 /** Whether a card shows the "new" dot, and whether its arrival ring is still showing. */
 export function useArrival(id: string): { isNew: boolean; ring: boolean } {
-  const m = useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => arrived);
-  const at = m.get(id);
-  if (at === undefined) return { isNew: false, ring: false };
+  const a = useSyncExternalStore(subscribe, () => arrived.get(id));
+  if (a === undefined) return { isNew: false, ring: false };
   // With reduced motion the ring is a still outline that stays until the card is hovered or opened.
-  return { isNew: true, ring: reducedMotion() || Date.now() - at < RING_MS };
+  return { isNew: true, ring: reducedMotion() || (a.ring && Date.now() - a.at < RING_MS + 50) };
 }
 
 /**

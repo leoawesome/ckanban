@@ -4,16 +4,17 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BOARD_COLUMNS, type Job, type Status, type Ticket } from "./api";
 import { Card } from "./Card";
-import { boardColumnOf, dropOrder, groupByColumn } from "./columns";
+import { boardColumnOf, dropOrder, groupByColumn, regroupByColumn } from "./columns";
 import { playMove } from "./arrivals";
 import { reducedMotion } from "./motion";
 import { useCardTabs } from "./useCardTabs";
 import { ChatIcon, CheckIcon, CollapseIcon, PlusIcon, SparkIcon } from "./icons";
 import { usePhone } from "./usePhone";
 import { toast } from "./toast";
+import { useCardWindow, WINDOW_MIN } from "./useCardWindow";
 
 const COLLAPSED_KEY = "ckanban.collapsedColumns";
 
@@ -97,7 +98,7 @@ const CARD_HELP = "Arrow keys or J and K move between cards in a column, H and L
  * One Tab stop per card: Tab enters its chips only once the card has focus (cardTabs.ts). Screen readers hear the
  * title as its name and the status lines plus CARD_HELP as its description.
  */
-function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; onOpen: (id: string) => void; queued?: number; held?: boolean; ctx: CardCtx }) {
+const SortableCard = memo(function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; onOpen: (id: string) => void; queued?: number; held?: boolean; ctx: CardCtx }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: ticket.id,
     data: { status: ticket.status },
@@ -110,6 +111,11 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
   useLayoutEffect(() => {
     playMove(ticket.id, node.current?.querySelector<HTMLElement>(":scope > .card") ?? null);
   }, [ticket.id, column]);
+  // Stable for the memoised Card: it redraws only when its ticket or the board's card props change.
+  const id = ticket.id;
+  const open = useCallback(() => onOpen(id), [onOpen, id]);
+  const ctxPin = ctx.onPin;
+  const pin = useMemo(() => ctxPin && ((on: boolean) => ctxPin(id, on)), [ctxPin, id]);
   return (
     <div
       ref={(n) => { setNodeRef(n); node.current = n; }}
@@ -130,11 +136,19 @@ function SortableCard({ ticket, onOpen, queued, held, ctx }: { ticket: Ticket; o
         listeners?.onKeyDown?.(e);
       }}
     >
-      <Card a11yId={a11y} ticket={ticket} onClick={() => onOpen(ticket.id)} queued={queued} held={held}
+      <Card a11yId={a11y} ticket={ticket} onClick={open} queued={queued} held={held}
         limit={ctx.limit} jobs={ctx.jobs} onOpenJobs={ctx.onOpenJobs} via={ctx.via?.get(ticket.id)}
-        onPin={ctx.onPin && ((on) => ctx.onPin!(ticket.id, on))} />
+        onPin={pin} />
     </div>
   );
+});
+
+/** The same array as last time while its items are the same (ids for the drag and drop list: a new array redraws every card). */
+function useSameArray<T>(next: T[]): T[] {
+  const ref = useRef(next);
+  const prev = ref.current;
+  if (prev !== next && (prev.length !== next.length || prev.some((x, i) => x !== next[i]))) ref.current = next;
+  return ref.current;
 }
 
 const EMPTY_HINT: Record<Status, string> = {
@@ -189,7 +203,9 @@ function MoreDone({ paging, loaded }: { paging: DonePaging; loaded: number }) {
   );
 }
 
-function Column({ id, label, hint, claude, tickets, queue = [], held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx, phone = false, done, match }: {
+const NO_QUEUE: Ticket[] = [];
+
+function Column({ id, label, hint, claude, tickets, queue = NO_QUEUE, held = false, onOpen, onAdd, collapsed, onCollapse, filtered, loading, ctx, phone = false, done, match, dragId = null }: {
   id: Status; label: string; hint: string; claude: boolean; tickets: Ticket[]; loading: boolean;
   /** In Progress only: tickets waiting their turn on the folder, in start order. */
   queue?: Ticket[];
@@ -201,6 +217,8 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   done?: DonePaging;
   /** Phones while filtering: the column's count before the filter, and Clear filters. */
   match?: { total: number; clear: () => void };
+  /** The card being dragged: a windowed column keeps it drawn. */
+  dragId?: string | null;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `col:${id}`, data: { status: id } });
   const all = [...tickets, ...queue];
@@ -213,6 +231,14 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
   // Only Backlog has its own +: elsewhere N and New ticket add one.
   const canAdd = id === "backlog";
   const shown = tickets;
+  // A long Done column draws only the cards in view (useCardWindow.ts); the others stay short and draw every card.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const bodyNode = useCallback((n: HTMLDivElement | null) => { setNodeRef(n); bodyRef.current = n; }, [setNodeRef]);
+  const windowed = id === "done" && !collapsed && !loading && shown.length > WINDOW_MIN;
+  const shownIds = useSameArray(useMemo(() => shown.map((t) => t.id), [shown]));
+  const win = useCardWindow(bodyRef, shownIds, windowed, dragId);
+  const drawn = windowed ? shown.slice(win.start, win.end) : shown;
+  const sortIds = useSameArray(useMemo(() => [...drawn, ...queue].map((t) => t.id), [drawn, queue]));
   // The count bumps when a card arrives.
   const countRef = useRef<HTMLSpanElement>(null);
   const lastCount = useRef(count);
@@ -253,8 +279,8 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
         ) : <span className="icon-btn-placeholder" aria-hidden />}
       </header>
       )}
-      <SortableContext items={[...shown, ...queue].map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div ref={setNodeRef} className="column-body">
+      <SortableContext items={sortIds} strategy={verticalListSortingStrategy}>
+        <div ref={bodyNode} className={windowed ? "column-body windowed" : "column-body"}>
           {match && !loading && (
             <div className="col-filter-bar" aria-live="polite">
               <span>{count} of {match.total} match</span>
@@ -262,9 +288,11 @@ function Column({ id, label, hint, claude, tickets, queue = [], held = false, on
             </div>
           )}
           {loading && Array.from({ length: PLACEHOLDERS[id] }, (_, i) => <div key={i} className="card skeleton-card" aria-hidden><i /><i /><i /></div>)}
-          {shown.map((t) => (
+          {win.top > 0 && <div className="card-spacer" aria-hidden style={{ height: win.top, flex: "none" }} />}
+          {drawn.map((t) => (
             <SortableCard key={t.id} ticket={t} onOpen={onOpen} ctx={ctx} />
           ))}
+          {win.bottom > 0 && <div className="card-spacer" aria-hidden style={{ height: win.bottom, flex: "none" }} />}
           {queue.length > 0 && <div className="queue-sep" title="These start in this order as the folder frees up">Queued</div>}
           {queue.map((t, i) => (
             <SortableCard key={t.id} ticket={t} onOpen={onOpen} queued={i + 1} held={held} ctx={ctx} />
@@ -319,6 +347,14 @@ const collision: CollisionDetection = (args) => {
   return closestCenter(args);
 };
 
+const POINTER_PHONE = { activationConstraint: { delay: 300, tolerance: 8 } };
+const POINTER_DESKTOP = { activationConstraint: { distance: 5 } };
+const KEYBOARD_OPTIONS = {
+  coordinateGetter: keyboardCoordinates,
+  keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] },
+};
+const ACCESSIBILITY = { screenReaderInstructions: { draggable: CARD_HELP } };
+
 export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtered = false, restartPending = false, slug, jobs, onOpenJobs, via, collapsed, onCollapse: setColumnCollapsed, filter, onPin, done }: Props) {
   // The latest onPin, so the cards' context doesn't change on every render.
   const pinRef = useRef(onPin);
@@ -329,17 +365,17 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
     onPin: canPin ? (id: string, on: boolean) => pinRef.current?.(id, on) : undefined,
   }), [slug, jobs, onOpenJobs, via, canPin]);
   const phone = usePhone();
+  // Options kept the same object between draws: new ones would give dnd-kit new sensors, and every card would redraw.
   const sensors = useSensors(
     // Phones: long-press picks a card up, so a swipe still scrolls the board.
-    useSensor(PointerSensor, { activationConstraint: phone ? { delay: 300, tolerance: 8 } : { distance: 5 } }),
+    useSensor(PointerSensor, phone ? POINTER_PHONE : POINTER_DESKTOP),
     // Enter is kept for opening the card, so only Space picks up / drops.
-    useSensor(KeyboardSensor, {
-      coordinateGetter: keyboardCoordinates,
-      keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] },
-    }),
+    useSensor(KeyboardSensor, KEYBOARD_OPTIONS),
   );
   const [dragId, setDragId] = useState<string | null>(null);
-  const byColumn = useMemo(() => groupByColumn(tickets), [tickets]);
+  // Columns whose cards didn't change keep their list (columns.ts), so their cards and drag lists stay as they were.
+  const lastGroups = useRef<Map<Status, Ticket[]> | null>(null);
+  const byColumn = useMemo(() => (lastGroups.current = regroupByColumn(tickets, lastGroups.current)), [tickets]);
   // While filtering on a phone: each column's count before the filter (In Progress with its queue, Done with its unloaded cards).
   const allTickets = filter?.all;
   const totals = useMemo(() => {
@@ -416,7 +452,7 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
   };
 
   return (
-    <DndContext accessibility={{ screenReaderInstructions: { draggable: CARD_HELP } }} sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
+    <DndContext accessibility={ACCESSIBILITY} sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragId(null)}>
       {phone && (
         // Five equal tabs that all fit: the count on top (✦ where Claude starts work, an amber dot when one needs you), the name under it.
         <nav className="col-jump" aria-label="Columns">
@@ -443,7 +479,7 @@ export function Board({ tickets, loading = false, onOpen, onMove, onAdd, filtere
       <main className={`board${fadeIn ? " fade-in" : ""}`} ref={boardRef} onScroll={phone ? onBoardScroll : undefined}>
         {BOARD_COLUMNS.map((c) => (
           <Column key={c.id} {...c} tickets={byColumn.get(c.id) ?? []} queue={c.id === "in_progress" ? byColumn.get("ready") : undefined} held={restartPending} onOpen={onOpen} onAdd={onAdd} filtered={filtered} loading={loading} ctx={ctx} phone={phone}
-            done={c.id === "done" ? done : undefined}
+            done={c.id === "done" ? done : undefined} dragId={dragId}
             match={phone && filter && totals ? { total: totals(c.id), clear: filter.clear } : undefined}
             collapsed={!phone && collapsed.has(c.id)} onCollapse={(v) => setColumnCollapsed(c.id, v)} />
         ))}

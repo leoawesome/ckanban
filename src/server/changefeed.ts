@@ -3,6 +3,11 @@ import { join, sep } from "node:path";
 
 /** How often watchers fed by the change feeds still look at everything, in case they missed a change. */
 export const SAFETY_PASS_MS = 60_000;
+/**
+ * The same for Done tickets, most of a big board: they change only through a Store write or a session the feed
+ * reports, which the watchers already follow, so their safety pass can wait this long.
+ */
+export const DONE_PASS_MS = 10 * 60_000;
 
 /**
  * A Claude session's files changed: its transcript (`file` is its path), or something in its folder (subagents,
