@@ -46,7 +46,8 @@ import { MacOnlyError, MessageError, Notifier, TG_PAIR_FROM_MAC } from "./notify
 import { HelperError, type HelperRunner } from "./helper/runner";
 import { asMessageTab, nearOf, needsShown, pageOf, toRow, type MessageCursor } from "./helper/messages";
 import { DeviceError, TAKE_WAIT_MS, type DeviceUser } from "./devices";
-import { ChromeError, chromeSetting, resolveChromeSetting } from "./chromes";
+import { browserPicks, ChromeError, chromeSetting, legacyChrome, ownPicks, picksFromLegacy, resolveBrowserPicks } from "./chromes";
+import { BrowserError } from "./board-browsers";
 import { PushService } from "./push";
 import { LISTENER_HEADER, LOGIN_HEADER, qrSvg, RemoteAccess, RemoteError, remoteUrl, type RemoteConfig } from "./remote";
 import { AGENT_IDS, AgentError, AgentRegistry, type AgentId } from "./agents";
@@ -318,6 +319,19 @@ export function createServer(deps: ServerDeps) {
   const callbackUrl = () => `http://localhost:${server.port ?? deps.port}/api/passes/oauth/callback`;
   const passes = deps.passes ?? new Passes(store.root, bus, { fetch: globalThis.fetch, now: () => new Date() }, callbackUrl);
   const agents = deps.agents ?? new AgentRegistry();
+  /**
+   * More → Browsers, one state for both kinds: the Claude in Chrome Chromes (chromes.ts), the board's own browsers
+   * (board-browsers.ts) with whether Google Chrome is installed, and each board's list.
+   */
+  const browsersView = () => {
+    const own = board.boardBrowsers.view();
+    return {
+      ...board.chromes.view(),
+      boardBrowsers: own.browsers, chrome: own.chrome,
+      boards: store.listProfiles().map((p) => ({ slug: p.slug, name: p.name, chrome: p.chrome ?? null, browsers: ownPicks(p) })),
+    };
+  };
+  const knownBrowsers = { chrome: (id: string) => !!board.chromes.get(id), board: (id: string) => !!board.boardBrowsers.get(id) };
   const sideCall = deps.sideCall ?? makeSideCaller({ cwd: join(store.root, "side-calls") });
   /**
    * The ticket chat's conversation: chats left behind with "Send in a fresh chat" (no rewinding into them), each followed
@@ -695,6 +709,8 @@ export function createServer(deps: ServerDeps) {
     const { attention, snoozed } = attentionOf(p, t, hosts, running, session);
     // Its own huddle works on it while its own run doesn't, and asks nothing of the user ("Needs you" wins).
     const huddleWorks = !running && t.status !== "in_progress" && huddleBusy(huddle) && !huddleAsk(huddle);
+    // The browsers a ticket above it set (one walk up for both fields; an old single Chrome reads as a list of one).
+    const above = t.parentId ? resolveBrowserPicks({ id: t.id, parentId: t.parentId }, store.listTickets(p.slug), null) : null;
     return {
       ...t,
       running,
@@ -715,7 +731,9 @@ export function createServer(deps: ServerDeps) {
       /** Shared devices its run uses now, and the ones it waits for (devices.ts); Ticket.needs is only a hint. */
       devices: board.deviceState(p.slug, t.id),
       /** The Chrome a ticket above it picked (a tool step follows its main ticket's), shown as its default; null: the board's. */
-      chromeAbove: t.parentId ? resolveChromeSetting({ id: t.id, parentId: t.parentId }, store.listTickets(p.slug), null) : null,
+      chromeAbove: legacyChrome(above),
+      /** The browser list a ticket above it set (a tool step follows its main ticket's), shown as its default; null: the board's. */
+      browsersAbove: above,
       /** It would start now but another ticket is editing the board's folder in place (see Board.folderBusy). */
       folderWait: board.folderWait(p.slug, t),
       /** A plan child waiting on the user (never started by the plan until then). */
@@ -898,10 +916,60 @@ export function createServer(deps: ServerDeps) {
       }
     }
 
+    // Board browsers (board-browsers.ts): Chromes the board starts itself, per set of logins. Runs may only ask for one
+    // to be started (ensure, from a run's browser tools after a crash); everything else is the user's.
+    if (parts[0] === "board-browsers") {
+      try {
+        const bb = board.boardBrowsers;
+        const view = () => browsersView();
+        if (parts.length === 1 && m === "GET") return json(view());
+        const id = decodeURIComponent(parts[1] ?? "");
+        // A run's browser tools ask for this after its Chrome stopped mid-run: only a browser some run is using now
+        // (one the board gave a run) is started again, never any other.
+        if (parts.length === 3 && parts[2] === "ensure" && m === "POST") {
+          if (!bb.get(id)) throw new HttpError(404, "There is no board browser with that name.");
+          if (!bb.inUse(id)) throw new HttpError(409, "Only a task using this browser can start it again.");
+          const port = await bb.ensure(id);
+          return json({ ok: true, port });
+        }
+        // Everything else (add, rename, keep running, remove with its logins, open, close) is the user's, from the
+        // board in a browser: never a run, its shell or another program.
+        await userOnly(req, "Changing board browsers");
+        if (parts.length === 1 && m === "POST") {
+          const b = (await body(req)) ?? {};
+          const added = await bb.add(b.name);
+          return json({ ...view(), added: added.id });
+        }
+        if (parts.length === 2 && m === "PATCH") {
+          const b = (await body(req)) ?? {};
+          bb.update(id, { name: b.name, keepRunning: b.keepRunning, startUrl: b.startUrl });
+          return json(view());
+        }
+        if (parts.length === 2 && m === "DELETE") {
+          await bb.remove(id);
+          // Boards and tickets that listed it keep the entry; runs skip a browser that no longer exists.
+          return json(view());
+        }
+        if (parts.length === 3 && (parts[2] === "open" || parts[2] === "sign-in") && m === "POST") {
+          const b = (await body(req)) ?? {};
+          const r = await bb.openWindow(id, b.url);
+          return json({ ...view(), ...r });
+        }
+        if (parts.length === 3 && parts[2] === "close" && m === "POST") {
+          if (bb.inUse(id)) throw new HttpError(409, "A task is using this browser now. It closes by itself once the task is done.");
+          const closed = await bb.close(id);
+          return json({ ...view(), closed, message: closed ? "Closed. Its logins are saved." : "Chrome is still closing. Try again in a minute." });
+        }
+      } catch (e) {
+        if (e instanceof BrowserError) throw new HttpError(e.status, e.message);
+        throw e;
+      }
+    }
+
     // Named Chromes (chromes.ts): the Chromes runs have listed on this Mac, the user's names, and each board's default.
     if (parts[0] === "browsers") {
       try {
-        const view = () => ({ ...board.chromes.view(), boards: store.listProfiles().map((p) => ({ slug: p.slug, name: p.name, chrome: p.chrome ?? null })) });
+        const view = () => browsersView();
         if (parts.length === 1 && m === "GET") return json(view());
         if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user names or removes Chromes (More, Browsers)");
         const deviceId = decodeURIComponent(parts[1] ?? "");
@@ -1484,10 +1552,18 @@ export function createServer(deps: ServerDeps) {
           if (v !== null && (typeof v !== "number" || !(v > 0) || v > 10_000_000)) throw new HttpError(400, "freshChatTokens must be a positive number, or null for the default");
           next.freshChatTokens = v === null ? null : Math.round(v);
         }
-        if (b.chrome !== undefined) {
-          if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user picks the board's Chrome");
+        // The board's browsers: the old single Chrome (chrome) or a list with notes (browsers); each keeps the other in step.
+        if (b.chrome !== undefined || b.browsers !== undefined) {
+          if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user picks the board's browsers");
+          if (b.browsers !== undefined) await userOnly(req, "Choosing the board's browsers");
           try {
-            next.chrome = chromeSetting(b.chrome, (id) => !!board.chromes.get(id));
+            if (b.browsers !== undefined) {
+              next.browsers = browserPicks(b.browsers, knownBrowsers);
+              next.chrome = legacyChrome(next.browsers);
+            } else {
+              next.chrome = chromeSetting(b.chrome, (id) => !!board.chromes.get(id));
+              next.browsers = picksFromLegacy(next.chrome);
+            }
           } catch (e) {
             if (e instanceof ChromeError) throw new HttpError(e.status, e.message);
             throw e;
@@ -2269,10 +2345,18 @@ export function createServer(deps: ServerDeps) {
         }
         // Ultracode for this ticket's runs: on, off, or null for the board's.
         // Chrome for this ticket's runs: a named Chrome's deviceId, "ask", or null for its main ticket's or the board's.
-        if (b.chrome !== undefined) {
-          if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user picks a ticket's Chrome");
+        // Or a list with notes (browsers, see chromes.ts BrowserPick); null: the ticket above it, else the board's.
+        if (b.chrome !== undefined || b.browsers !== undefined) {
+          if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER)) throw new HttpError(403, "only the user picks a ticket's browsers");
+          if (b.browsers !== undefined) await userOnly(req, "Choosing a ticket's browsers");
           try {
-            patch.chrome = chromeSetting(b.chrome, (cid) => !!board.chromes.get(cid));
+            if (b.browsers !== undefined) {
+              patch.browsers = browserPicks(b.browsers, knownBrowsers);
+              patch.chrome = legacyChrome(patch.browsers);
+            } else {
+              patch.chrome = chromeSetting(b.chrome, (cid) => !!board.chromes.get(cid));
+              patch.browsers = picksFromLegacy(patch.chrome);
+            }
           } catch (e) {
             if (e instanceof ChromeError) throw new HttpError(e.status, e.message);
             throw e;

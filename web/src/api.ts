@@ -227,6 +227,8 @@ export interface Profile {
   ultracode?: boolean;
   /** Default Chrome for its runs: a deviceId from More → Browsers, "ask", or none. */
   chrome?: string | null;
+  /** The browsers its runs may use, with notes (wins over chrome when set; see BrowserPick). */
+  browsers?: BrowserPick[] | null;
   createdAt: string;
   /** Git-ignored files copied into each new worktree (paths or globs relative to the folder). */
   copyFiles?: string[];
@@ -279,12 +281,51 @@ export interface ChromeBrowser {
   hint?: { site: string; at: string } | null;
 }
 
+/**
+ * One browser a board or ticket chose (server: chromes.ts BrowserPick): a Claude in Chrome Chrome (kind "chrome", id =
+ * deviceId), a board browser (kind "board", id = its id), or "ask". note: what it is for, told to the run.
+ */
+export interface BrowserPick {
+  kind: "chrome" | "board" | "ask";
+  id?: string;
+  note?: string;
+}
+
+/** A board browser (server: board-browsers.ts): a Chrome the board starts itself, with its own saved logins. */
+export interface BoardBrowserView {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  lastSite: { site: string; at: string } | null;
+  /** Started with the board and restarted if it stops; never closed when idle. */
+  keepRunning: boolean;
+  signedIn: boolean;
+  /** Page a keep-running start opens. */
+  startUrl: string | null;
+  /** stopped, starting, hidden (running for tasks, no window), visible (a window on the Mac), closing. */
+  state: "stopped" | "starting" | "hidden" | "visible" | "closing";
+  signIn: "Signed in" | "Needs sign-in";
+  /** Tasks using it now. */
+  inUse: number;
+  /** Open window was asked while a task used it: it opens once that task is done. */
+  windowPending: boolean;
+  /** Last start or close problem, in plain words. */
+  error: string | null;
+  folder: string;
+}
+
 export interface BrowsersState {
   browsers: ChromeBrowser[];
   /** When a run last listed the connected Chromes, and which were connected then. */
   listedAt: string | null;
   connected: string[];
-  boards: { slug: string; name: string; chrome: string | null }[];
+  /** The board's own browsers. */
+  boardBrowsers: BoardBrowserView[];
+  /** Google Chrome on this Mac (board browsers need it); message in plain words when missing. */
+  chrome: { installed: boolean; message: string | null };
+  /** Each board's old single Chrome and its list (the list, or the old Chrome as a list of one; null: none). */
+  boards: { slug: string; name: string; chrome: string | null; browsers: BrowserPick[] | null }[];
 }
 
 export interface DeviceView {
@@ -387,6 +428,10 @@ export interface Ticket {
   chrome?: string | null;
   /** The Chrome a ticket above it picked (a tool step follows its main ticket's); null: the board's. */
   chromeAbove?: string | null;
+  /** Browsers for its runs with notes (wins over chrome); null: the ticket above it, else the board's. */
+  browsers?: BrowserPick[] | null;
+  /** The browser list a ticket above it set; null: the board's. */
+  browsersAbove?: BrowserPick[] | null;
   /** Created by this schedule. */
   scheduleId?: string | null;
   /** Created by this one-time scheduled job. */
@@ -1642,6 +1687,15 @@ export const api = {
   browsers: () => req<BrowsersState>("GET", "/api/browsers"),
   renameBrowser: (deviceId: string, name: string) => req<BrowsersState>("PATCH", `/api/browsers/${encodeURIComponent(deviceId)}`, { name }),
   removeBrowser: (deviceId: string) => req<BrowsersState>("DELETE", `/api/browsers/${encodeURIComponent(deviceId)}`),
+  /** Board browsers (server: board-browsers.ts, routes in http.ts /api/board-browsers). */
+  addBoardBrowser: (name: string) => req<BrowsersState & { added: string }>("POST", "/api/board-browsers", { name }),
+  updateBoardBrowser: (id: string, patch: { name?: string; keepRunning?: boolean; startUrl?: string | null }) =>
+    req<BrowsersState>("PATCH", `/api/board-browsers/${encodeURIComponent(id)}`, patch),
+  /** Deletes its folder and logins; refused while a task uses it. */
+  removeBoardBrowser: (id: string) => req<BrowsersState>("DELETE", `/api/board-browsers/${encodeURIComponent(id)}`),
+  /** Sign in / Open window: a visible window on the Mac (url: the site to open). opened false: it opens once the task using it is done. */
+  openBoardBrowser: (id: string, url?: string) => req<BrowsersState & { opened: boolean; message: string }>("POST", `/api/board-browsers/${encodeURIComponent(id)}/open`, url ? { url } : {}),
+  closeBoardBrowser: (id: string) => req<BrowsersState & { closed: boolean; message: string }>("POST", `/api/board-browsers/${encodeURIComponent(id)}/close`),
   devices: () => req<DeviceView[]>("GET", "/api/devices"),
   saveDevice: (input: { name: string; description?: string; capacity?: number }) => req<DeviceView[]>("POST", "/api/devices", input),
   deleteDevice: (name: string) => req<DeviceView[]>("DELETE", `/api/devices/${encodeURIComponent(name)}`),
@@ -1853,7 +1907,7 @@ export const api = {
       "POST", `${t(slug, id)}/gather`, { tickets, newGroup }),
   plan: (slug: string, id: string, action: "start" | "pause" | "resume" | "done") =>
     req<Ticket>("POST", `${t(slug, id)}/plan`, { action }),
-  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome">> & { expectedBody?: string; pinned?: boolean }) =>
+  updateTicket: (slug: string, id: string, patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome" | "browsers">> & { expectedBody?: string; pinned?: boolean }) =>
     req<Ticket>("PATCH", t(slug, id), patch),
   deleteTicket: (slug: string, id: string) => req<void>("DELETE", t(slug, id)),
   /** Part of parent's family (null unlinks). */

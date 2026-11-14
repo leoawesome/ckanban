@@ -1,7 +1,10 @@
 // Board runs: start, finish, fail, stop, sessions and recovery of a single ticket.
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
-import { store, bus, board, setup, readArgs, untilSpawned, useBoardEnv } from "./board-env";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { store, bus, board, setup, readArgs, untilSpawned, useBoardEnv, setBoard, FAKE } from "./board-env";
+import { Board } from "../src/server/board";
+import { fakes, harness } from "./fake-chrome";
 
 useBoardEnv();
 
@@ -301,6 +304,52 @@ test("a run gets its Chrome in the system prompt: the board's default, a tool st
   }
   expect(noteOf(1)).toContain(`deviceId \`${WORK}\` (named "Work")`);
   expect(noteOf(2)).toContain(`deviceId \`${PERSONAL}\` (named "Personal")`);
+});
+
+test("a run gets the board browsers chosen for it as tool servers, and no Claude in Chrome when only those are chosen", async () => {
+  const p = await setup();
+  await board.shutdown();
+  const h = harness(store.root);
+  setBoard(new Board(store, bus, { claudeBin: FAKE, isSessionLive: async () => false, browserDeps: h.deps }));
+  for (const id of ["fatt-interior-whatsapp", "personal-whatsapp", "other"]) mkdirSync(join(store.root, "browsers", id), { recursive: true });
+  try {
+    await board.boardBrowsers.init();
+    store.saveProfile({ ...p, browsers: [{ kind: "board", id: "fatt-interior-whatsapp", note: "Business WhatsApp, for customers" }] });
+    const main = await board.createTicket("p", { title: "main", body: "", status: "backlog" });
+    await board.updateTicket("p", main.id, { browsers: [{ kind: "board", id: "fatt-interior-whatsapp", note: "Business" }, { kind: "board", id: "personal-whatsapp", note: "Personal" }] });
+    const tool = store.createTicket("p", { title: "tool", body: "", status: "backlog" });
+    store.updateTicket("p", tool.id, { parentId: main.id });
+    await board.updateTicket("p", tool.id, { status: "ready" });
+    await board.whenIdle();
+    const plain = await board.createTicket("p", { title: "plain", body: "", status: "ready" });
+    await board.whenIdle();
+    const at = (i: number) => {
+      const a = readArgs()[i].args as string[];
+      return { args: a, mcp: JSON.parse(a[a.indexOf("--mcp-config") + 1]).mcpServers, note: a[a.indexOf("--append-system-prompt") + 1], prompt: readArgs()[i].prompt as string };
+    };
+    const t = at(0);
+    expect(Object.keys(t.mcp).filter((k) => k.startsWith("browser-")).sort()).toEqual(["browser-fatt-interior-whatsapp", "browser-personal-whatsapp"]);
+    expect(t.mcp["browser-personal-whatsapp"].args).toEqual(expect.arrayContaining(["browser-mcp", "--id", "personal-whatsapp", "--dir", join(store.root, "browsers", "personal-whatsapp"), "--out", store.outputsDir("p", tool.id)]));
+    expect(t.args).toContain("--no-chrome");
+    expect(t.args).not.toContain("--chrome");
+    expect(t.note).toContain('"Personal WhatsApp" (Personal): tools `mcp__browser-personal-whatsapp__*`');
+    expect(t.prompt).not.toContain("mcp__claude-in-chrome__");
+    // The board's list for a ticket with none of its own; never a browser nobody chose.
+    const b = at(1);
+    expect(Object.keys(b.mcp).filter((k) => k.startsWith("browser-"))).toEqual(["browser-fatt-interior-whatsapp"]);
+    expect(b.note).toContain("Business WhatsApp, for customers");
+    expect(h.spawned.length).toBe(2);
+    // The runs are over: nothing holds the browsers open.
+    expect(board.boardBrowsers.view().browsers.map((x) => x.inUse)).toEqual([0, 0, 0]);
+    expect(store.getTicket("p", plain.id)!.outcome).toBe("done");
+    // A chosen browser removed since: the run is told, and doesn't fall back to Claude in Chrome.
+    const gone = await board.runBrowsers("p", { ...store.getTicket("p", plain.id)!, browsers: [{ kind: "board", id: "gone" }] }, "x", null);
+    expect(gone.noChrome).toBe(true);
+    expect(gone.servers).toEqual({});
+    expect(gone.note).toContain("it was removed from More, Browsers");
+  } finally {
+    for (const f of fakes.splice(0)) if (!f.closed) f.quit();
+  }
 });
 
 test("a ticket's own Chrome beats the board's default, in work runs and chat runs", async () => {

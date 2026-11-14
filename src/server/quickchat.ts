@@ -5,7 +5,7 @@ import { summarizeEvent } from "./activity";
 import { runOptions } from "./commands";
 import { mcpConfig } from "./agents";
 import { localizeAttachments } from "./attachments";
-import { claudeSessionExists, claudeSessionFile, sessionMissing, type Board } from "./board";
+import { claudeSessionExists, claudeSessionFile, sessionMissing, type Board, type RunBrowsers } from "./board";
 import { forkSessionBefore, forkTitle } from "./fork";
 import { applyRewind, applyUndo, cutSession, RewindRefused, messagesFrom, undoBlocked, type RewindUndo, type UndoResult } from "./rewind";
 import { DraftTracker } from "./draft";
@@ -351,7 +351,10 @@ export class QuickChats {
     run.done = this.execute(run, profile, c).catch((e) => {
       console.error(`quick chat ${slug}/${c.id}`, e);
       this.patch(slug, c.id, { error: (e as Error).message });
-    }).finally(() => this.finished(run));
+    }).finally(() => {
+      this.board.boardBrowsers.release(this.browserLease(slug, c.id));
+      this.finished(run);
+    });
   }
 
   private async execute(run: ActiveChat, profile: Profile, c: QuickChat, healed = false): Promise<void> {
@@ -361,7 +364,15 @@ export class QuickChats {
     let lastActivity = 0;
     const unbilled = new UnbilledUsage();
     const emitDraft = (text: string, final?: string) => this.bus.emit({ type: "chat.draft", profile: slug, id, text, ...(final ? { final } : {}) });
-    const { env, args } = this.runSetup(slug, profile, c, resume);
+    // The board's browsers (its list in More, Browsers): board browsers start now and stay open until the chat's run ends.
+    let browsers: RunBrowsers | null = null;
+    try {
+      browsers = await this.board.runBrowsers(slug, null, this.browserLease(slug, id), null);
+    } catch (e) {
+      console.error(`quick chat ${slug}/${id}: browsers`, e);
+    }
+    if (run.stopRequested || this.shuttingDown) return;
+    const { env, args } = this.runSetup(slug, profile, c, resume, browsers);
     run.handle = startRun({
       bin: this.opts.claudeBin,
       cwd: profile.path,
@@ -433,17 +444,22 @@ export class QuickChats {
   }
 
   /** The environment and flags a run of the chat gets; contextSpec copies them for the Context panel. */
-  private runSetup(slug: string, profile: Profile, c: QuickChat, resume: boolean): { env: Record<string, string>; args: string[] } {
+  private browserLease(slug: string, id: string): string {
+    return `quick:${slug}/${id}`;
+  }
+
+  private runSetup(slug: string, profile: Profile, c: QuickChat, resume: boolean, browsers: RunBrowsers | null = null): { env: Record<string, string>; args: string[] } {
     const connectors = boardConnectorOptions(profile);
     const extraEnv = this.hooks.env?.(slug, c) ?? null;
-    const extraNote = this.hooks.note?.(slug, c) ?? null;
+    const extraNote = [this.hooks.note?.(slug, c), browsers?.note].filter(Boolean).join("\n\n") || null;
+    const servers = browsers ? browsers.servers : this.board.browserServers(this.board.browserPicks(slug, null), null);
     const limits = this.hooks.limits?.(slug, c) ?? null;
     // A front desk chat never runs with a normal chat's rights (shell, file edits), even if the front desk isn't plugged in.
     if (c.frontDesk && !limits) throw new Error("The Telegram front desk isn't set up on this board right now, so nothing was run.");
     return {
       // QUICK_CHAT_ENV: the ckanban tools know they run in a quick chat (no delete card there; see delete_schedule).
       env: { ...connectors.env, ...(extraEnv ?? {}), [QUICK_CHAT_ENV]: `${slug}/${c.id}` },
-      args: buildArgs(c.sessionId, resume, profile.model, limits ? [...connectors.disallowed, ...limits.disallowed] : connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, this.store.boardTools(s))))(slug), extraNote ? `${quickChatNote(profile)}\n\n${extraNote}` : quickChatNote(profile), limits?.maxBudgetUsd ?? null, runOptions(null, profile, false).effort, false, limits ? { settings: limits.settings, tools: limits.tools ?? null, strictMcp: !!limits.strictMcp } : null),
+      args: buildArgs(c.sessionId, resume, profile.model, limits ? [...connectors.disallowed, ...limits.disallowed] : connectors.disallowed, (this.opts.mcp ?? ((s: string) => mcpConfig(undefined, { ...this.store.boardTools(s), ...servers })))(slug), extraNote ? `${quickChatNote(profile)}\n\n${extraNote}` : quickChatNote(profile), limits?.maxBudgetUsd ?? null, runOptions(null, profile, false).effort, false, limits ? { settings: limits.settings, tools: limits.tools ?? null, strictMcp: !!limits.strictMcp, noChrome: !!browsers?.noChrome } : browsers?.noChrome ? { noChrome: true } : null),
     };
   }
 

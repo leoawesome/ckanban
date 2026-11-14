@@ -131,6 +131,8 @@ export async function startDaemon(): Promise<void> {
   track("startup: huddles.recover", () => huddles.recover());
   track("startup: quickChats.recover", () => quickChats.recover());
   huddles.startWatchdog();
+  // Board browsers: adopt the data folders and the Chromes still running from before a restart, start keep-running ones.
+  void track("startup: board browsers", () => board.boardBrowsers.init().then(() => board.boardBrowsers.start()).catch((e) => console.error("board browsers", e)));
   void track("startup: sweepWorktrees", () => board.sweepWorktrees());
   void track("startup: detectMissing", () => detectMissing(store, (profile) => bus.emit({ type: "profile.updated", slug: profile.slug, profile })));
   const stopPoller = startPoller(board, store, config.prPollMinutes);
@@ -176,6 +178,9 @@ export async function startDaemon(): Promise<void> {
     stopNotifier();
     stopHelper();
     stopAwake();
+    // Board browsers stay running (detached from the daemon, so nothing can cut a close short and lose logins); the
+    // next daemon adopts them again.
+    board.boardBrowsers.shutdown();
     stopLag();
     await Promise.all([board.shutdown(), huddles.shutdown(), quickChats.shutdown()]);
     server.stop(true);

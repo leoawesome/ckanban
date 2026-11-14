@@ -1,6 +1,7 @@
 import type { TeammateProposal } from "./teammate-proposal";
 import type { SquadCardState, SquadProposal } from "./squad";
 import type { RewindUndo } from "./rewind";
+import type { BrowserPick } from "./chromes";
 
 import type { TicketKind } from "../../web/src/family";
 import type { ClosedForms } from "../../web/src/family";
@@ -31,6 +32,11 @@ export interface Profile {
   ultracode?: boolean;
   /** Default Chrome for this board's runs: a deviceId from More → Browsers (chromes.ts), "ask" (ask each time), or none. */
   chrome?: string | null;
+  /**
+   * The browsers this board's runs may use, each with a note on what it is for: Claude in Chrome Chromes and board
+   * browsers mixed (chromes.ts BrowserPick). Wins over chrome when set; null/missing: chrome (the old single setting).
+   */
+  browsers?: BrowserPick[] | null;
   createdAt: string;
   /** Git-ignored files (paths or globs relative to the board folder) copied into each new worktree. */
   copyFiles?: string[];
@@ -208,6 +214,8 @@ export interface Ticket {
   ultracode?: boolean | null;
   /** Chrome for this ticket's runs: a deviceId from More → Browsers, "ask", or null: its main ticket's, else the board's. */
   chrome?: string | null;
+  /** The browsers this ticket's runs may use, with notes (see Profile.browsers); null: chrome, else the ticket above it, else the board's. */
+  browsers?: BrowserPick[] | null;
   /** Set on tickets created by a schedule (see Schedule). */
   scheduleId?: string | null;
   /**

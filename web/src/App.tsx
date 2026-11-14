@@ -1052,7 +1052,7 @@ export function App() {
             title: "Claude suggests which tickets belong together (part of one piece of work); you pick the links to make",
           }] : []),
           { label: "Devices", icon: <DevicesIcon />, onSelect: () => setDevicesOpen(true), title: "Shared devices (a phone, a WhatsApp Web tab): who uses each one and who waits" },
-          { label: "Browsers", icon: <GlobeIcon />, onSelect: () => setBrowsersOpen(true), title: "Name your Chromes and pick which one each board uses" },
+          { label: "Browsers", icon: <GlobeIcon />, onSelect: () => setBrowsersOpen(true), title: "Add board browsers, sign in, and pick which browsers each board uses" },
           {
             label: "Connections", icon: <PlugIcon />, onSelect: () => setConnections(true), separator: true,
             title: mcpAttention ? `${mcpAttention} MCP server${mcpAttention === 1 ? "" : "s"} failed or need you to log in again` : "Claude Code MCP servers",
@@ -1207,7 +1207,7 @@ export function App() {
     ...(profile ? [{ id: "automations", label: "Automations", icon: <LoopIcon size={14} />, run: () => setAutomationsOpen(true) }] : []),
     { id: "connections", label: "Connections", icon: <PlugIcon size={14} />, run: () => setConnections(true) },
     { id: "devices", label: "Devices", icon: <DevicesIcon size={14} />, hint: "who uses each shared device", run: () => setDevicesOpen(true) },
-    { id: "browsers", label: "Browsers", icon: <GlobeIcon size={14} />, hint: "name your Chromes, pick each board's", run: () => setBrowsersOpen(true) },
+    { id: "browsers", label: "Browsers", icon: <GlobeIcon size={14} />, hint: "board browsers, sign in, pick each board's", run: () => setBrowsersOpen(true) },
     ...(profile ? [{ id: "snippets", label: "Snippets", icon: <AtIcon size={14} />, run: () => setSnippetsOpen(true) }] : []),
     ...(profile ? [{ id: "find-links", label: "Find links", icon: <LinkIcon size={14} />, hint: "tickets that belong together", run: () => setFindLinksOpen(true) }] : []),
     { id: "usage", label: "Usage", run: () => setUsageRequest(Date.now()) },

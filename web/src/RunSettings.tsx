@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from "react";
-import { api, type Profile, type Ticket } from "./api";
+import { createPortal } from "react-dom";
+import { api, type BrowserPick, type BrowsersState, type Profile, type Ticket } from "./api";
 import { EFFORTS, MODELS } from "./models";
 import { Select } from "./Select";
-import { ASK_CHROME, chromeLabel, useBrowsers } from "./BrowsersDialog";
+import { ASK_CHROME, BrowserPicker, picksText, useBrowsers } from "./BrowsersDialog";
 import { Modal } from "./Modal";
 
 const NEXT_RUN = "applies from the next run";
@@ -37,7 +38,7 @@ export function RunSettings({ profile, ticket, onError, startOpen = false, rows 
   profile: Profile; ticket: Ticket; onError: (msg: string) => void; startOpen?: boolean; rows?: boolean;
 }) {
   const slug = profile.slug;
-  const save = (patch: { model?: string | null; effort?: string | null; ultracode?: boolean | null; chrome?: string | null }) =>
+  const save = (patch: { model?: string | null; effort?: string | null; ultracode?: boolean | null }) =>
     api.updateTicket(slug, ticket.id, patch).catch((e) => onError(`Not saved: ${e.message}`));
   const model = ticket.model ?? "";
   // "ultracode" saved as the effort (the first version): xhigh with ultracode on.
@@ -62,7 +63,7 @@ export function RunSettings({ profile, ticket, onError, startOpen = false, rows 
       {showUltra && <RunChip rows={rows} label="Ultracode" short="Helper agents for big tasks" value={ultraValue} board={boardUltra ? "on" : "off"}
         onChange={(v) => save({ ultracode: v === "" ? null : v === "on" })} options={["on", "off"]}
         hint="Claude runs a workflow of helper agents for every big task. More thorough, uses much more of your plan." />}
-      {(open || !!ticket.chrome) && <ChromeChip rows={rows} profile={profile} ticket={ticket} onChange={(v) => save({ chrome: v || null })} />}
+      {(open || !!ownPicks(ticket)) && <BrowsersChip rows={rows} profile={profile} ticket={ticket} onError={onError} />}
       {!rows && !(showModel && showEffort) && (
         <button className="mini-link run-settings-more" onClick={() => setOpen(true)}
           title={`This ticket uses the board's ${showModel ? "effort" : showEffort ? "model" : "model and effort"}. Change it for this ticket`}>
@@ -112,33 +113,75 @@ function RunChip({ label, value, board, options, onChange, hint, short, rows }: 
   );
 }
 
+/** A board's or ticket's list, or its old single Chrome read as a list of one (server: chromes.ts ownPicks). */
+function ownPicks(x: { browsers?: BrowserPick[] | null; chrome?: string | null }): BrowserPick[] | null {
+  if (x.browsers?.length) return x.browsers;
+  if (!x.chrome) return null;
+  return x.chrome === ASK_CHROME ? [{ kind: "ask" }] : [{ kind: "chrome", id: x.chrome }];
+}
+
 /**
- * "Chrome: Work" for this ticket's runs (More → Browsers names them). Shown once two or more Chromes are named, or the
- * ticket already has its own. The default is the main ticket's pick for a tool step, else the board's.
+ * "Browsers: Fatt Interior WhatsApp" for this ticket's runs: opens a window to tick one or more browsers with notes, or
+ * to follow the main ticket's (a tool step) or the board's choice. Shown once there is a browser to pick, or the ticket
+ * already has its own.
  */
-function ChromeChip({ profile, ticket, onChange, rows }: { profile: Profile; ticket: Ticket; onChange: (v: string) => void; rows?: boolean }) {
+function BrowsersChip({ profile, ticket, onError, rows }: { profile: Profile; ticket: Ticket; onError: (msg: string) => void; rows?: boolean }) {
   const state = useBrowsers();
+  const [open, setOpen] = useState(false);
   if (!state) return null;
-  const named = state.browsers.filter((b) => b.name);
-  if (named.length < 2 && !ticket.chrome) return null;
-  const nameOf = (v: string | null | undefined) =>
-    !v ? null : v === ASK_CHROME ? "Ask each time" : chromeLabel(state.browsers.find((b) => b.deviceId === v))
-  const above = ticket.chromeAbove ?? null;
-  const fallback = nameOf(above ?? profile.chrome);
-  const own = ticket.chrome ?? "";
-  const shown = nameOf(own) ?? fallback;
-  const defaultLabel = `${above ? "Main ticket's" : "Board default"}${fallback ? ` (${fallback})` : ""}`;
-  const options = [
-    { value: "", label: defaultLabel },
-    ...named.map((b) => ({ value: b.deviceId, label: b.name })),
-    { value: ASK_CHROME, label: "Ask each time" },
-    ...(own && own !== ASK_CHROME && !named.some((b) => b.deviceId === own) ? [{ value: own, label: nameOf(own) ?? "Unnamed Chrome" }] : []),
-  ];
+  const own = ownPicks(ticket);
+  const canPick = state.boardBrowsers.length > 0 || state.browsers.some((b) => b.name);
+  if (!canPick && !own) return null;
+  const above = ticket.browsersAbove?.length ? ticket.browsersAbove : (ticket.chromeAbove ? ownPicks({ chrome: ticket.chromeAbove }) : null);
+  const fallback = picksText(above ?? ownPicks(profile), state);
+  const defaultLabel = `${above ? "Main ticket's choice" : "Board's choice"}${fallback ? ` (${fallback})` : ""}`;
+  const shown = own ? picksText(own, state) : null;
+  const value = rows ? (shown ?? defaultLabel) : shown ?? fallback;
   return (
-    <RunRowOrChip rows={rows} label="Chrome" title={`${own ? "Chrome set for this ticket" : `Chrome: ${defaultLabel.toLowerCase()}`}, ${NEXT_RUN}. Claude stops and asks if it isn't connected.`}>
-      <Select className={own ? "chip-set" : ""} ariaLabel={`Chrome for this ticket, ${NEXT_RUN}`} value={own} onChange={onChange}
-        renderValue={() => rows ? (own ? nameOf(own) ?? "Unnamed Chrome" : fallback ? defaultLabel : "Any Chrome") : shown ? <><span className="run-key">Chrome</span>{shown}</> : "Any Chrome"}
-        options={options} />
+    <RunRowOrChip rows={rows} label="Browsers" title={`${own ? "Browsers set for this ticket" : `Browsers: ${defaultLabel}`}, ${NEXT_RUN}`}>
+      <span className={`select${own ? " chip-set" : ""}`}>
+        <button type="button" className="select-trigger" aria-haspopup="dialog" aria-label={`Browsers for this ticket, ${NEXT_RUN}`} onClick={() => setOpen(true)}>
+          <span className="select-value">{rows ? value : value ? <><span className="run-key">Browsers</span>{value}</> : "Any browser"}</span>
+        </button>
+      </span>
+      {open && createPortal(<TaskBrowsers state={state} own={own} defaultLabel={defaultLabel} onClose={() => setOpen(false)}
+        onSave={(browsers) => api.updateTicket(profile.slug, ticket.id, { browsers }).then(() => setOpen(false), (e) => onError(`Not saved: ${e.message}`))} />, document.body)}
     </RunRowOrChip>
+  );
+}
+
+/** The per-task pick: follow the board's (or main ticket's) choice, or tick this task's own browsers with notes. */
+function TaskBrowsers({ state, own, defaultLabel, onSave, onClose }: {
+  state: BrowsersState; own: BrowserPick[] | null; defaultLabel: string;
+  onSave: (browsers: BrowserPick[] | null) => Promise<void>; onClose: () => void;
+}) {
+  const [mine, setMine] = useState(!!own);
+  const [draft, setDraft] = useState<BrowserPick[]>(own ?? []);
+  const [busy, setBusy] = useState(false);
+  const done = async () => {
+    const clean = draft.map((d) => (d.note?.trim() ? { ...d, note: d.note.trim() } : { kind: d.kind, ...(d.id ? { id: d.id } : {}) }));
+    const next = mine && clean.length ? clean : null;
+    if (JSON.stringify(next) === JSON.stringify(own)) return onClose();
+    setBusy(true);
+    await onSave(next);
+    setBusy(false);
+  };
+  const changed = mine !== !!own || (mine && JSON.stringify(draft) !== JSON.stringify(own ?? []));
+  return (
+    <Modal title="Browsers for this task" onClose={onClose} guard={changed} className="task-browsers"
+      action={<button className="btn primary run-sheet-done" disabled={busy} onClick={() => void done()}>{busy ? "Saving…" : "Done"}</button>}>
+      <div className="browsers">
+        <p className="muted small browsers-intro">From this task's next run. Add or sign in to browsers in More, Browsers.</p>
+        <label className="browser-opt">
+          <input type="radio" name="task-browsers" checked={!mine} onChange={() => setMine(false)} />
+          <span className="browser-opt-main">{defaultLabel}</span>
+        </label>
+        <label className="browser-opt">
+          <input type="radio" name="task-browsers" checked={mine} onChange={() => setMine(true)} />
+          <span className="browser-opt-main">Pick for this task</span>
+        </label>
+        {mine && <BrowserPicker state={state} value={draft} onChange={setDraft} />}
+      </div>
+    </Modal>
   );
 }

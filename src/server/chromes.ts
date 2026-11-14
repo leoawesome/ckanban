@@ -36,9 +36,24 @@ export const ASK_CHROME = "ask";
 
 /** What a run is told: one named Chrome, ask the user, or nothing (the rule stays as it was). */
 export type ChromeChoice =
-  | { kind: "device"; deviceId: string; name: string }
+  | { kind: "device"; deviceId: string; name: string; note?: string }
+  | { kind: "devices"; list: { deviceId: string; name: string; note?: string }[] }
   | { kind: "ask"; named: { deviceId: string; name: string }[] }
   | null;
+
+/**
+ * One browser a board or ticket chose for its runs (Profile.browsers, Ticket.browsers): a Claude in Chrome Chrome
+ * (kind "chrome", id = deviceId), a board browser (kind "board", id = its slug, see board-browsers.ts), or "ask" (ask
+ * which Chrome each time). note: what it is for, told to the run ("Business WhatsApp, for customers").
+ */
+export interface BrowserPick {
+  kind: "chrome" | "board" | "ask";
+  id?: string;
+  note?: string;
+}
+
+export const NOTE_MAX = 120;
+const PICKS_MAX = 10;
 
 const ID_RE = /^[A-Za-z0-9._:-]{1,100}$/;
 const NAME_MAX = 40;
@@ -60,6 +75,76 @@ export function chromeSetting(v: unknown, known: (id: string) => boolean): strin
   if (v === ASK_CHROME) return ASK_CHROME;
   if (!validChromeId(v) || !known(v)) throw new ChromeError(400, "chrome must be the deviceId of a Chrome in More → Browsers, \"ask\", or null");
   return v;
+}
+
+/** The old single setting (Profile.chrome, Ticket.chrome) as a list of one; nothing set: null. */
+export function picksFromLegacy(chrome: string | null | undefined): BrowserPick[] | null {
+  if (!chrome) return null;
+  if (chrome === ASK_CHROME) return [{ kind: "ask" }];
+  return validChromeId(chrome) ? [{ kind: "chrome", id: chrome }] : null;
+}
+
+/** What one board or ticket set itself: its list when it has one, else its old single setting. Null: not set here. */
+export function ownPicks(x: { browsers?: BrowserPick[] | null; chrome?: string | null } | null | undefined): BrowserPick[] | null {
+  if (!x) return null;
+  if (Array.isArray(x.browsers) && x.browsers.length) return x.browsers;
+  return picksFromLegacy(x.chrome);
+}
+
+/** The old field to keep in step with a list (an older ckanban reads it): its first Claude in Chrome pick, or null. */
+export function legacyChrome(picks: BrowserPick[] | null): string | null {
+  const p = picks?.find((x) => x.kind === "ask" || x.kind === "chrome");
+  return !p ? null : p.kind === "ask" ? ASK_CHROME : p.id ?? null;
+}
+
+/**
+ * A board's or ticket's browser list from a request: [{kind, id, note}], or null/[] for none (the ticket above it, the
+ * board's). Each id must be known; duplicates are dropped.
+ */
+export function browserPicks(v: unknown, known: { chrome: (id: string) => boolean; board: (id: string) => boolean }): BrowserPick[] | null {
+  if (v === null || v === undefined) return null;
+  if (!Array.isArray(v)) throw new ChromeError(400, "browsers must be a list of {kind, id, note}, or null");
+  if (v.length > PICKS_MAX) throw new ChromeError(400, `at most ${PICKS_MAX} browsers`);
+  const out: BrowserPick[] = [];
+  for (const raw of v) {
+    const kind = raw?.kind;
+    const note = typeof raw?.note === "string" ? raw.note.replace(/\s+/g, " ").trim().slice(0, NOTE_MAX) : "";
+    if (raw?.note !== undefined && raw?.note !== null && typeof raw.note !== "string") throw new ChromeError(400, "a browser's note must be text");
+    let pick: BrowserPick;
+    if (kind === "ask") pick = { kind };
+    else if (kind === "chrome") {
+      if (!validChromeId(raw.id) || !known.chrome(raw.id)) throw new ChromeError(400, "That Chrome isn't in More, Browsers.");
+      pick = { kind, id: raw.id };
+    } else if (kind === "board") {
+      if (typeof raw.id !== "string" || !known.board(raw.id)) throw new ChromeError(400, "That board browser isn't in More, Browsers.");
+      pick = { kind, id: raw.id };
+    } else throw new ChromeError(400, "a browser's kind must be chrome, board or ask");
+    if (note) pick.note = note;
+    if (out.some((o) => o.kind === pick.kind && o.id === pick.id)) continue;
+    out.push(pick);
+  }
+  return out.length ? out : null;
+}
+
+/**
+ * The browsers that apply to a ticket: its own list (or old single setting), else the nearest ticket above it that set
+ * one (a tool step inherits its main ticket's), else the board's. Null: nothing set anywhere (runs behave as before).
+ */
+export function resolveBrowserPicks(
+  t: { id: string; chrome?: string | null; browsers?: BrowserPick[] | null; parentId?: string | null },
+  all: { id: string; chrome?: string | null; browsers?: BrowserPick[] | null; parentId?: string | null }[],
+  board: { chrome?: string | null; browsers?: BrowserPick[] | null } | null | undefined,
+): BrowserPick[] | null {
+  const seen = new Set<string>();
+  let cur: typeof t | undefined = t;
+  while (cur && !seen.has(cur.id)) {
+    const own = ownPicks(cur);
+    if (own) return own;
+    seen.add(cur.id);
+    const up: string | null | undefined = cur.parentId;
+    cur = up ? all.find((o) => o.id === up) : undefined;
+  }
+  return ownPicks(board);
 }
 
 export class Chromes {
@@ -159,6 +244,18 @@ export class Chromes {
     return this.state.browsers.filter((b) => b.name).map((b) => ({ deviceId: b.deviceId, name: b.name }));
   }
 
+  /** The Claude in Chrome part of a browser list (board browsers left out): ask, one Chrome, several, or none. */
+  choiceOf(picks: BrowserPick[] | null): ChromeChoice {
+    if (!picks) return null;
+    if (picks.some((p) => p.kind === "ask")) return this.choice(ASK_CHROME);
+    const list = picks.filter((p) => p.kind === "chrome" && p.id && this.get(p.id)).map((p) => {
+      const b = this.get(p.id!)!;
+      return { deviceId: b.deviceId, name: b.name || b.label || "this Chrome", ...(p.note ? { note: p.note } : {}) };
+    });
+    if (!list.length) return null;
+    return list.length === 1 ? { kind: "device", ...list[0] } : { kind: "devices", list };
+  }
+
   /** What a run is told, from the setting that applies (see chromeSetting / resolveChromeSetting). */
   choice(setting: string | null | undefined): ChromeChoice {
     if (!setting) return null;
@@ -173,7 +270,7 @@ export class Chromes {
 }
 
 /**
- * The setting that applies to a ticket: its own, else the nearest ticket above it that set one (a tool step inherits its
+ * The old single setting that applies to a ticket (see resolveBrowserPicks for lists): its own, else the nearest ticket above it that set one (a tool step inherits its
  * main ticket's), else the board's default. Undefined/null means "not set here"; the walk stops on loops.
  */
 export function resolveChromeSetting(

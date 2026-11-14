@@ -76,7 +76,7 @@ export function buildArgs(
    * Narrower runs (the front desk): more --settings (permission deny rules, merged with ultracode's), an allow-list of
    * built-in tools (--tools) and only the board's MCP servers (--strict-mcp-config).
    */
-  more: { settings?: Record<string, unknown> | null; tools?: string[] | null; strictMcp?: boolean } | null = null,
+  more: { settings?: Record<string, unknown> | null; tools?: string[] | null; strictMcp?: boolean; noChrome?: boolean } | null = null,
 ): string[] {
   // Prompts go in on stdin (see startRun) so more messages can follow while Claude works;
   // --replay-user-messages echoes each one back when Claude picks it up.
@@ -95,7 +95,8 @@ export function buildArgs(
   if (maxBudgetUsd) args.push("--max-budget-usd", String(maxBudgetUsd));
   // Claude in Chrome. Its tools ask for permission even under bypassPermissions; with
   // --permission-prompt-tool stdio those asks reach the board as control requests (see controlResponse).
-  args.push("--chrome", "--permission-prompt-tool", "stdio");
+  // noChrome: the run uses only the board's own browsers (board-browsers.ts), so Claude in Chrome stays off.
+  args.push(more?.noChrome ? "--no-chrome" : "--chrome", "--permission-prompt-tool", "stdio");
   return args;
 }
 
