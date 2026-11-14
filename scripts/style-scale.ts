@@ -59,6 +59,9 @@ export function offScaleCss(source: string): Problem[] {
     else if (prop === "border-radius") ok = value.split(/\s+/).every((v) => RADIUS.test(v));
     else if (prop === "box-shadow") ok = splitTop(value).every((p) => shadowOk(p.trim()));
     else if (SPACING_PROP.test(prop)) ok = !offScaleSpacing(value);
+    // Page layers are --z-* tokens; small raw numbers (under 10) only order parts inside one component.
+    // (an offset from a token, `calc(var(--z-panel) + 5)`, is fine).
+    else if (prop === "z-index") ok = /var\(--z-[\w-]+\)/.test(value) || /^-?\d$|^auto$/.test(value);
     if (ok && !/^(?:-webkit-)?mask(?:-image)?$/.test(prop) && hasRawColour(value)) ok = false;
     if (!ok) add(m.index!, text);
   }

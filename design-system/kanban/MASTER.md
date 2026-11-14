@@ -3,7 +3,7 @@
 Source of truth for every screen in `web/`. A page file in `design-system/pages/` may override a rule here; nothing else may.
 Built with UI UX Pro Max 2.15.0 (`ui-ux-pro-max` + `design-system`) from the tokens at the top of `web/src/styles.css` as of 2026-11-15. The tokens in section 1 to 8 are live in `web/src/styles.css`; the findings it was checked against are in `audit.md` next to this file.
 
-**Enforced by `bun run test`** (`scripts/style-scale.ts`, `test/style-scale.test.ts`): in `styles.css` and in inline `style={{…}}` in `web/src/*.tsx`, a raw colour, an off-scale text size, weight, corner, shadow or icon size, or a padding, margin or gap that isn't a spacing token fails the build.
+**Enforced by `bun run test`** (`scripts/style-scale.ts`, `test/style-scale.test.ts`): in `styles.css` and in inline `style={{…}}` in `web/src/*.tsx`, a raw colour, an off-scale text size, weight, corner, shadow or icon size, or a padding, margin or gap that isn't a spacing token, or a raw `z-index` of 10 or more, fails the build.
 
 **Product:** developer productivity kanban board that runs Claude sessions. Used as much on a phone (390px, touch) as on a Mac (1280px+, keyboard).
 **Style:** Flat, warm, quiet. The skill's `--design-system` run for "developer productivity kanban tool warm minimal" picked *Flat Design* (2D, no gradients, clean lines, typography first, 150-200ms colour transitions), which matches the app today. It also offered a teal palette and Inter as a web font; both are rejected (see "Decided against" at the end). The warm neutral background and orange brand stay: the contrast checks below show they pass once three small fixes land.
@@ -68,6 +68,7 @@ Names are the CSS variables. Contrast is measured against the token in the "on" 
 | `--err`, `--err-soft` | `#b3261e`, `#fbe2df` | `#f08378`, `#3d2320` | Failed, destructive | 6.54 / 5.31, 6.15 / 5.63 |
 | `--info`, `--info-soft` | `#2b5fb8`, `#e1eafb` | `#86aef0`, `#222d40` | Running, links | 6.12 / 5.06, 6.98 / 6.15 |
 | `--star` | `#a67800` | `#e8b23a` | Star icon only (non-text) | 3.96 / 8.13 |
+| `--st-running`, `--st-review`, `--st-planning`, `--st-done` | `var(--info)`, `var(--warn)`, `var(--accent-text)`, `var(--ok)` | same | Ticket status colours: column title dots, running card edge, run timer, command bar status. Aliases, so their contrast is the token they point at | as `--info` / `--warn` / `--accent-text` / `--ok` |
 
 Rules:
 - Status is never colour alone: every status colour comes with a word ("Needs you", "Failed") or a distinct icon. (`color-not-only`)
@@ -155,6 +156,7 @@ The draft's proposal (modal 80, toast 100) didn't match the real stacking: menus
 | Token | Value | Use |
 |---|---|---|
 | `--z-raised` | 1 | Sticky heads and footers inside a scroller |
+| `--z-badge` | 30 | Key hint badges over nearby controls (under panels and dialogs) |
 | `--z-panel` | 40 | Ticket panel and its scrim; task sheet and Messages screen are `calc(var(--z-panel) + 5/6/8)` |
 | `--z-modal` | 50 | Dialogs (`.overlay`) |
 | `--z-sheet` | 60 | Phone More sheet, key hints bar |
@@ -164,7 +166,7 @@ The draft's proposal (modal 80, toast 100) didn't match the real stacking: menus
 | `--z-toast` | 120 | Toasts |
 | `--z-tip` | 200 | Tooltips |
 
-Small numbers (0 to 7) only order parts inside one component (a resize handle over its panel) and stay raw.
+Small numbers (0 to 7) only order parts inside one component (a resize handle over its panel) and stay raw. `bun run test` rejects any other raw `z-index` in `styles.css` (10 or more must be a `--z-*` token).
 
 ## 9. Components
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { shrinkStep, type ShrinkState } from "../web/src/shrinkStep";
+import { isUserScroll, NO_INPUT, shrinkStep, type ShrinkState } from "../web/src/shrinkStep";
 
 const run = (steps: [number, boolean][], from: ShrinkState = { slim: false, down: 0, up: 0 }) => {
   let s = from;
@@ -25,4 +25,12 @@ test("shrinkStep: scrolls the user didn't make (new messages, the feed resizing)
   expect(run([[80, false], [400, false]]).slim).toBe(false);
   const slim = run([[80, true], [120, true]]);
   expect(run([[120, false], [20, false]], slim).slim).toBe(true);
+});
+
+test("isUserScroll: scrolls right after page load, before any input, are not the user's (the chat's jump to the bottom)", () => {
+  expect(isUserScroll(150, NO_INPUT, 0, 600)).toBe(false);
+  expect(isUserScroll(5, NO_INPUT, 0, 600)).toBe(false);
+  expect(isUserScroll(1000, 800, 0, 600)).toBe(true);
+  expect(isUserScroll(1500, 800, 0, 600)).toBe(false);
+  expect(isUserScroll(1000, 800, 1100, 600)).toBe(false); // header still settling
 });

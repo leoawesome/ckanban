@@ -15,6 +15,7 @@ import {
 import { DEFAULT_MAX, draftError, RosterEditor, rosterDraft, SquadPeople, SquadPicker, startFromDraft, TopicBox, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
 import { ticketTopicText } from "./squadText";
 import { autoGrow } from "./autoGrow";
+import { reducedMotion } from "./motion";
 import {
   applyTemplate, brakeHeadline, BRIEF_MAX, handInLine, rosterNoise, budgetRaise, BUDGET_STEPS, clampSideWidth, clause, DEFAULT_BUDGET, handInGroups, handInStatus, participantRole, POST_MAX, SIDE_DEFAULT, stoppedWhenDone,
 } from "./huddleText";
@@ -322,7 +323,7 @@ function HuddleRoom({ slug, ticket, tickets, huddle: h, state, onError, onNew, o
     const top = el.getBoundingClientRect().top + 8;
     const all = [...el.querySelectorAll<HTMLElement>(".for-you")];
     const next = all.find((m) => m.getBoundingClientRect().top > top) ?? all[0];
-    next?.scrollIntoView({ block: "center", behavior: "smooth" });
+    next?.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
   // Two or more rounds: the bar's round picker (with + New huddle) replaces the New huddle button.

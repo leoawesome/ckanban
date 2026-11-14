@@ -35,6 +35,9 @@ test("off-scale values fail the check", () => {
   expect(offScaleCss(".a { font: 600 10px/1 var(--mono); }")).toHaveLength(1);
   expect(offScaleCss(".a { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14); }")).toHaveLength(1);
   expect(offScaleTsx("<CloseIcon size={9} />")).toHaveLength(1);
+  expect(offScaleCss(".a { z-index: 30; }")).toHaveLength(1);
+  expect(offScaleCss(".a { z-index: calc(var(--z-panel) + 5); }")).toEqual([]);
+  expect(offScaleCss(".a { z-index: 3; }")).toEqual([]);
 });
 
 test("on-scale values pass", () => {

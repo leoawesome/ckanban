@@ -17,7 +17,6 @@ import { ImagePickButton } from "./ImagePickButton";
 import { useImagePaste } from "./imagePaste";
 import { KeyHint } from "./KeyHint";
 import { escLeavesField, isTyping, quickChatKey, stepChat } from "./keynav";
-import { useLayer } from "./layers";
 import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, type Handoff } from "./liveReply";
 import { norm } from "./pendingBubbles";
 import { UndoBar, UndoneNote, UserMessage, undoFromRewind, undoFromState, type UndoInfo } from "./MessageActions";
@@ -401,20 +400,17 @@ function ChatRows({ chats, currentId, onPick, hints, onOlder, loadingOlder }: {
   );
 }
 
-/** Phone: the chat list as a bottom sheet. */
+/** Phone: the chat list as a bottom sheet (Modal.tsx: focus trap, swipe down, Back and Esc close it). */
 function ChatListSheet({ chats, currentId, onPick, onClose, onOlder, loadingOlder }: {
   chats: QuickChat[] | null; currentId: string | null; onPick: (id: string | null) => void; onClose: () => void; onOlder?: () => void; loadingOlder?: boolean;
 }) {
-  useLayer(onClose);
   return (
-    <div className="sheet-wrap" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="sheet qc-sheet" role="dialog" aria-label="Chats in this folder">
-        <span className="sheet-grip" aria-hidden />
-        <div className="qc-sheet-head">Chats in this folder</div>
+    <Modal title="Chats in this folder" onClose={onClose} className="qc-sheet" focusDialog>
+      <div className="qc-sheet-body">
         <button className="sheet-item qc-sheet-new" onClick={() => onPick(null)}><PlusIcon size={16} /><span className="sheet-label">New chat</span></button>
         <ChatRows chats={chats} currentId={currentId} onPick={onPick} onOlder={onOlder} loadingOlder={loadingOlder} />
       </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
 import { swipeCloses, swipeIntent } from "./msgNav";
+import { DUR_BASE_MS, DUR_FAST_MS } from "./motion";
 import { PHONE_QUERY } from "./usePhone";
 
 /**
@@ -136,9 +137,9 @@ export function useSwipeClose(box: RefObject<HTMLElement | null>, close: () => v
     const el = box.current;
     start.current = null;
     if (!el) return;
-    el.style.transition = "transform 160ms ease-out";
+    el.style.transition = "transform var(--dur-base) var(--ease-out)";
     el.style.transform = "";
-    setTimeout(() => { if (el) el.style.transition = ""; }, 170);
+    setTimeout(() => { if (el) el.style.transition = ""; }, DUR_BASE_MS + 10);
   };
   return {
     onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
@@ -174,9 +175,9 @@ export function useSwipeClose(box: RefObject<HTMLElement | null>, close: () => v
 export function useSwipeBack(box: RefObject<HTMLElement | null>, back: () => void) {
   const start = useRef<{ x: number; y: number; t: number; id: number; intent: "back" | "scroll" | null } | null>(null);
   const spring = (el: HTMLElement) => {
-    el.style.transition = "transform 160ms ease-out";
+    el.style.transition = "transform var(--dur-base) var(--ease-out)";
     el.style.transform = "";
-    setTimeout(() => { el.style.transition = ""; }, 170);
+    setTimeout(() => { el.style.transition = ""; }, DUR_BASE_MS + 10);
   };
   return {
     onPointerDown: (e: ReactPointerEvent<HTMLElement>) => {
@@ -210,9 +211,9 @@ export function useSwipeBack(box: RefObject<HTMLElement | null>, back: () => voi
       if (!s || s.id !== e.pointerId || s.intent !== "back" || !el) return;
       const dx = e.clientX - s.x;
       if (!swipeCloses(dx, Date.now() - s.t)) return spring(el);
-      el.style.transition = "transform 140ms ease-in";
+      el.style.transition = "transform var(--dur-fast) var(--ease-in)";
       el.style.transform = "translateX(100%)";
-      setTimeout(back, 130);
+      setTimeout(back, DUR_FAST_MS - 10);
     },
     onPointerCancel: () => {
       const el = box.current;

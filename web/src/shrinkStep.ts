@@ -20,3 +20,11 @@ export function shrinkStep(s: ShrinkState, { y, dy, user }: ShrinkInput): Shrink
   if (s.slim && up >= TRAVEL) return { slim: false, down: 0, up: 0 };
   return { slim: s.slim, down, up };
 }
+
+/** When the user last scrolled, typed or tapped before they have done any of it: never. */
+export const NO_INPUT = -Infinity;
+
+/** A scroll is the user's when it comes within `inputMs` of their last input and the header isn't settling. */
+export function isUserScroll(now: number, inputAt: number, settleUntil: number, inputMs: number): boolean {
+  return now - inputAt < inputMs && now >= settleUntil;
+}

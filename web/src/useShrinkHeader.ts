@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
-import { shrinkStep, type ShrinkState } from "./shrinkStep";
+import { isUserScroll, NO_INPUT, shrinkStep, type ShrinkState } from "./shrinkStep";
 
 /** The feeds whose scrolling shrinks the ticket header: the chat log and the huddle log. */
 const FEEDS = ".chat-log, .huddle-log";
@@ -20,7 +20,8 @@ export function useShrinkHeader(root: RefObject<HTMLElement | null>, enabled: bo
     const el = root.current;
     if (!enabled || !el) return;
     let state: ShrinkState = { slim: false, down: 0, up: 0 };
-    let inputAt = 0;
+    // No input yet: the chat's own jump to the bottom right after load must not count as the user scrolling.
+    let inputAt = NO_INPUT;
     let settleUntil = 0;
     const last = new WeakMap<Element, number>();
     // Typing in (or tapping) a box or its buttons isn't scrolling: the chat following a growing box, a warning opening in
@@ -36,7 +37,7 @@ export function useShrinkHeader(root: RefObject<HTMLElement | null>, enabled: bo
       const dy = y - (last.get(t) ?? y);
       last.set(t, y);
       const now = performance.now();
-      const next = shrinkStep(state, { y, dy, user: now - inputAt < INPUT_MS && now >= settleUntil });
+      const next = shrinkStep(state, { y, dy, user: isUserScroll(now, inputAt, settleUntil, INPUT_MS) });
       if (next.slim !== state.slim) {
         settleUntil = now + SETTLE_MS;
         setSlim(next.slim);

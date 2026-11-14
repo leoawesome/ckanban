@@ -112,6 +112,8 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, initia
   const loop = data && selected && selected !== "new" ? data.loops.find((l) => l.id === selected) ?? null : null;
   const detail = phone && phoneOpen;
   const title = detail ? (selected === "new" ? "New automation" : loop?.name ?? "Automation") : `Automations · ${profile.name}`;
+  // One "Set up with Claude" at a time: in the right pane while nothing is open there (desktop), else under the list.
+  const setUpButton = <button className="btn primary icon-label" disabled={busy} onClick={setUpWithClaude}><SparkIcon size={14} aria-hidden /> {busy ? "Starting…" : "Set up with Claude"}</button>;
 
   return (
     <Modal title={title} onClose={onClose} wide className="auto-modal" bare={detail} guard={dirty} guardKind="changes">
@@ -145,7 +147,7 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, initia
                 {phone && <div className="auto-intro">{INTRO}</div>}
               </div>}
               <div className="auto-side-actions">
-                <button className="btn primary icon-label" disabled={busy} onClick={setUpWithClaude}><SparkIcon size={14} aria-hidden /> {busy ? "Starting…" : "Set up with Claude"}</button>
+                {(phone || selected) && setUpButton}
                 {(phone || !data.loops.length) && <button className="btn icon-label" onClick={() => open("new")}><PlusIcon size={14} aria-hidden /> New automation, by hand</button>}
               </div>
             </div>
@@ -153,7 +155,7 @@ export function AutomationsDialog({ profile, boards, tickets, refreshKey, initia
           {(!phone || phoneOpen) && (
             <div className="auto-main">
               {!selected && (
-                <EmptyState title="Set one up with Claude">
+                <EmptyState title="Set one up with Claude" actions={setUpButton}>
                   Say what to watch; Claude writes and tests the check, and you save it. Or make one by hand on the left.
                 </EmptyState>
               )}

@@ -1141,6 +1141,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const costChip = usage && hasUsage ? (
     <button className="head-cost" onClick={() => openTab("usage")} title={`${usageChipText(usage)}. ${usageTitle}`}>{costText(usage.totals.costUsd)}</button>
   ) : null;
+  // A count over 99 shows as "99+" so the last tab still fits at phone width (the full number is in the title).
+  const tabCount = (n: number) => (n > 99 ? "99+" : String(n));
   const tabLabel: Record<DrawerTab, React.ReactNode> = {
     ticket: "Ticket",
     chat: <>Chat {working && <span className="dot" />}</>,
@@ -1158,8 +1160,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
         {huddle?.status === "live" && huddle.participants.some((p) => p.status === "working") && <span className="dot" />}
       </>
     ),
-    changes: <>Changes{!!diffState.diff?.files.length && <span className="tab-count">{diffState.diff.files.length}</span>}</>,
-    outputs: <>Outputs{outputCount + links.length > 0 && <span className="tab-count">{outputCount + links.length}</span>}</>,
+    changes: <>Changes{!!diffState.diff?.files.length && <span className="tab-count" title={`${diffState.diff.files.length} files`}>{tabCount(diffState.diff.files.length)}</span>}</>,
+    outputs: <>Outputs{outputCount + links.length > 0 && <span className="tab-count" title={`${outputCount + links.length} outputs`}>{tabCount(outputCount + links.length)}</span>}</>,
     usage: <>Usage{usage && hasUsage && usage.totals.pctCurrentWindow !== null && <span className="tab-count">{approxPct(usage.totals.pctCurrentWindow).replace(" ", "")}</span>}</>,
   };
   return (
