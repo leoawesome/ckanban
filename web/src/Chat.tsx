@@ -54,7 +54,8 @@ import { useSimpler } from "./Simpler";
 import { replyText, simplifiable } from "./simplifyText";
 import { ClaudeFace, ErrorTurn, LetterAvatar, ReplyActions, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
 import { fromAutomation, fromTicket, layoutTurns, placeByTime, telegramMarks, type TurnLayout, wakeLabel } from "./chatTurns";
-import { gapOf, jumpAfterScroll, NEAR_BOTTOM, onContentChange, stickAfterScroll, USER_CHANGE_MS } from "./chatFollow";
+import { gapOf, jumpAfterScroll, stickAfterScroll } from "./chatFollow";
+import { useChatFollow } from "./useChatFollow";
 import { StallActions, stallWait } from "./StallActions";
 import { useSnippetPicker } from "./SnippetPicker";
 import { useSlashCommands, useSlashPicker } from "./SlashPicker";
@@ -380,14 +381,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   const tailSeq = useRef(0);
   const tailApplied = useRef(0);
   const scroller = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
-  // Bottom gap and scroll position as last seen, to tell new content below the view from a scroll.
-  const lastGap = useRef(0);
-  const lastTop = useRef(0);
-  // The user is pressing in the chat (selecting text, dragging the scrollbar, touching): new content waits for them.
-  const pressing = useRef(false);
-  const held = useRef(false);
-  const releasedAt = useRef(0);
+  // Follows new content at the bottom; the jump state is declared above.
+  const { stickToBottom, lastGap, pressing, noteScroll } = useChatFollow(scroller, () => setJump((j) => (j?.fresh ? j : { fresh: true })));
   const keepOffset = useRef<number | null>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const running = !!ticket.running;
@@ -512,12 +507,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     setHandoff([]);
     reload();
   }, [reload]);
-  // Phones: the round box gets plain corners once the text wraps to a second line.
-  const [tallBox, setTallBox] = useState(false);
-  useLayoutEffect(() => {
-    autoGrow(composer.current);
-    setTallBox(phone && (composer.current?.offsetHeight ?? 0) > 48);
-  }, [draft, phone]);
+  useLayoutEffect(() => autoGrow(composer.current), [draft, phone]);
   // The live connection came back (board restart, laptop sleep, a long freeze): updates were missed, so reload.
   useEffect(() => onReconnect(() => void loadTail().catch(() => {})), [loadTail]);
   // While a sent message still says "sending", check the conversation now and then in case its update was missed.
@@ -688,52 +678,6 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     } else if (stickToBottom.current && !pressing.current) el.scrollTop = el.scrollHeight;
     lastGap.current = gapOf(el);
   }, [page, pending, running, live, waitingHandoff, help?.cards.length, help?.failed]);
-  // Anything new at the bottom: Claude's reply, grey board notes, step cards, "asks:" blocks, the Working line, queued
-  // messages, a picture finishing loading. Watching the log itself catches all of them, whatever state they come from.
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    const check = () => {
-      const after = gapOf(el);
-      const userCaused = Date.now() - releasedAt.current < USER_CHANGE_MS;
-      const what = onContentChange({ before: lastGap.current, after, stuck: stickToBottom.current, pressing: pressing.current, userCaused });
-      if (userCaused && after > lastGap.current) stickToBottom.current = after < NEAR_BOTTOM;
-      if (what === "scroll") el.scrollTop = el.scrollHeight;
-      else if (what === "hold") held.current = true;
-      else if (what === "button") setJump((j) => (j?.fresh ? j : { fresh: true }));
-      lastGap.current = gapOf(el);
-      lastTop.current = el.scrollTop;
-    };
-    const mo = new MutationObserver(check);
-    mo.observe(el, { childList: true, subtree: true, characterData: true });
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    el.addEventListener("load", check, true);
-    const press = () => { pressing.current = true; };
-    const release = () => {
-      if (!pressing.current) return;
-      pressing.current = false;
-      releasedAt.current = Date.now();
-      if (held.current && stickToBottom.current) el.scrollTop = el.scrollHeight;
-      held.current = false;
-      lastGap.current = gapOf(el);
-    };
-    el.addEventListener("mousedown", press);
-    el.addEventListener("touchstart", press, { passive: true });
-    window.addEventListener("mouseup", release);
-    window.addEventListener("touchend", release);
-    window.addEventListener("touchcancel", release);
-    return () => {
-      mo.disconnect();
-      ro.disconnect();
-      el.removeEventListener("load", check, true);
-      el.removeEventListener("mousedown", press);
-      el.removeEventListener("touchstart", press);
-      window.removeEventListener("mouseup", release);
-      window.removeEventListener("touchend", release);
-      window.removeEventListener("touchcancel", release);
-    };
-  }, []);
   // Asking for help scrolls down to where its card appears.
   const helpBusy = help?.busy.length ?? 0;
   const helpBusyBefore = useRef(helpBusy);
@@ -1055,7 +999,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
           const shown = () => simpler.textFor(e.uuid) ?? replyText(e.text);
           return (
             <Turn key={e.uuid} start={l.start} at={e.at} className={inherited}>
-              {e.text && <div className="reply-text"><Markdown text={shown()} /></div>}
+              {e.text && <div className="reply-text"><Markdown text={shown()} drafts /></div>}
               {tgMarks.out.has(e.uuid) && <span className="tg-mark" title="This reply was sent to you in Telegram">sent to Telegram</span>}
               {e.text && replyText(e.text) && (
                 <ReplyActions text={shown} simpler={simplifiable(e) ? simpler.link(e.uuid) : undefined}
@@ -1330,12 +1274,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     <div className="chat">
       <div className="chat-log" ref={scroller}
         onScroll={(e) => {
-          const el = e.currentTarget;
-          const gap = gapOf(el);
-          const movedUp = el.scrollTop < lastTop.current - 2;
-          stickToBottom.current = stickAfterScroll({ gap, stuck: stickToBottom.current, movedDown: el.scrollTop > lastTop.current });
-          lastTop.current = el.scrollTop;
-          lastGap.current = gap;
+          const { gap, movedUp } = noteScroll(e.currentTarget);
           setJump((j) => jumpAfterScroll(gap, j, movedUp));
         }}>
         {page === null && <div className="muted"><span className="spinner" /> Loading the conversation…</div>}
@@ -1404,19 +1343,19 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         {ticket.interrupted?.partial && (
           <Turn start={tailStart()} className="interrupted">
             <span className="turn-pill">Cut off by a board restart · {running ? "continuing below" : "resumes when the board is back"}</span>
-            <div className="reply-text"><Markdown text={ticket.interrupted.partial} /></div>
+            <div className="reply-text"><Markdown text={ticket.interrupted.partial} drafts /></div>
           </Turn>
         )}
         {waitingHandoff.map((h) => (
           <Turn key={h.at} start={tailStart()} className="live">
-            {liveView(h.text).text && <div className="reply-text"><Markdown text={liveView(h.text).text} /></div>}
+            {liveView(h.text).text && <div className="reply-text"><Markdown text={liveView(h.text).text} drafts /></div>}
             {liveView(h.text).preparing && <div className="working-row preparing"><ClaudeFace mood="working" size={24} /> <span>{liveView(h.text).preparing}</span></div>}
           </Turn>
         ))}
         {live && (
           <Turn start={tailStart()} className="live">
             <div aria-live="polite">
-              {liveView(live).text && <div className="reply-text writing"><Markdown text={liveView(live).text} /></div>}
+              {liveView(live).text && <div className="reply-text writing"><Markdown text={liveView(live).text} drafts /></div>}
               {liveView(live).preparing && <div className="working-row preparing"><ClaudeFace mood="working" size={24} /> <span>{liveView(live).preparing}</span></div>}
             </div>
           </Turn>
@@ -1535,7 +1474,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
       {undone && !undo && <UndoneNote line={undone} onClose={() => setUndone(null)} />}
       {waiting.length > 0 && <WaitingButton items={waiting} onPick={pickWaiting} />}
       {turnBar}
-      <div className={`composer${tallBox ? " tall" : ""}`}>
+      <div className="composer">
         <textarea ref={composer} rows={phone ? 1 : 2} value={draft} disabled={stopping} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
           placeholder={formWaiting && !running ? `Or type a note to ${claude}…` : phone
             ? running ? `Steer ${claude}…` : refine ? "Describe your idea…" : `Ask ${claude}…`
@@ -1571,7 +1510,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
             <button className="btn small" onClick={sendFresh}>Send in a fresh chat</button>
           </div>
         )}
-        {/* One row: + (photo, file; on a phone also snippet, skill and the old-chat line), the Context ring, then Send. */}
+        {/* One row: + (photo, file; on a phone also snippet, skill and the old-chat line), the Context ring, then Send.
+            On a phone this row sits under the text, which gets the box's full width. */}
         <div className="composer-foot one-row">
           <ImagePickButton images={images} target={composer} disabled={stopping} merged extra={phone ? plusExtras : undefined} />
           <ContextChip slug={slug} kind="ticket" id={ticket.id} openRequest={Math.max(contextRequest, contextLocal)} quietBelow={phone ? 80 : undefined} />

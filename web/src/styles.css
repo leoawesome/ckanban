@@ -46,6 +46,10 @@
   --sp-5: 16px;
   --sp-6: 24px;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Phone chats: the background behind the messages and the user's own bubble (white and light grey in the light
+     theme; dark keeps its page colour and tinted bubble). */
+  --chat-bg: var(--surface);
+  --me-bubble: #f1efe9;
   color-scheme: light;
 }
 
@@ -76,6 +80,8 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.2);
   --shadow-panel: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --chat-bg: var(--bg);
+  --me-bubble: var(--accent-soft);
   color-scheme: dark;
 }
 
@@ -1502,6 +1508,21 @@ body > .output-view.reader { position: fixed; }
 /* Text reads in a comfortable line length; code, tables and cards use the whole column. */
 .reply-text .md > :where(p, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, hr) { max-width: 72ch; }
 .reply-text .md p { margin: 0 0 0.6em; }
+/* A quote in Claude's reply (Transcript.tsx draftCards): a card with a "Draft" label and its own Copy button. */
+.md .draft-card { max-width: 72ch; margin: 4px 0 10px; padding: 2px 12px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.md .draft-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; }
+.md .draft-label { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.md .draft-copy {
+  min-height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface);
+  color: var(--text); font: inherit; font-size: var(--fs-sm); line-height: 1; cursor: pointer;
+}
+.md .draft-copy:hover { background: var(--surface-2); }
+.md .draft-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.md .draft-copy.done { color: var(--ok); }
+.md .draft-copy.failed { color: var(--err); }
+.md .draft-card > blockquote { margin: 0; padding: 0; }
+.md .draft-card > blockquote > :first-child { margin-top: 0; }
+.md .draft-card > blockquote > :last-child { margin-bottom: 0; }
 .reply-text.writing .md > :last-child::after {
   content: ""; display: inline-block; width: 7px; height: 14px; margin-left: 3px; vertical-align: -2px; background: var(--accent);
   animation: caret-blink 1s steps(2) infinite;
@@ -3582,7 +3603,12 @@ button.hd-mode:disabled { cursor: default; }
   }
   .phone-who:active { background: var(--surface-2); }
   .phone-who:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .pw-title { display: block; font-size: var(--fs-lg); font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The title shows up to two lines while the tab row shows, one line with "…" while the chat is scrolled down (head-slim). */
+  .pw-title {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
+    font-size: var(--fs-lg); font-weight: 700; line-height: 1.25;
+  }
+  .panel.head-slim .pw-title { display: block; white-space: nowrap; text-overflow: ellipsis; }
   /* The status word never shrinks; the reason after the dot is cut first. */
   .pw-status { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-sm); font-weight: 600; line-height: 1.3; color: var(--muted); }
   .pw-word { flex: none; white-space: nowrap; }
@@ -5204,25 +5230,56 @@ button.composer-old:hover { color: var(--text); }
   .chat-log .turn-body { grid-column: 1 / -1; }
   .chat-log .steps-line ul { margin-left: 8px; }
 
-  /* The message box in one row: a round +, the text, (the memory ring from 80%), a round send. */
+  /* The message box in two rows: the text at the box's full width on top, then a row of buttons (the round + and the
+     memory ring from 80% on the left, Stop and the round Send on the right). Warnings sit in a strip above the text.
+     The same box in ticket chats and the Ask tab (.qc-thread, which keeps its own side margins). */
   .chat > .composer {
-    flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 6px; padding: 4px; border-radius: var(--r-pill);
-    margin-left: max(8px, env(safe-area-inset-left)); margin-right: max(8px, env(safe-area-inset-right));
+    flex-direction: column; align-items: stretch; gap: 0; padding: 4px; border-radius: var(--r-md);
+    margin: 0 max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
   }
-  .chat > .composer > * { flex: 1 1 100%; min-width: 0; }
-  .chat > .composer.tall { border-radius: var(--r-md); }
-  .chat > .composer > textarea { order: 1; flex: 1 1 0; min-height: 40px; padding: 9px 2px; line-height: 22px; font-size: var(--fs-lg); }
-  .chat > .composer > .composer-foot.one-row { display: contents; }
+  .chat > .composer > * { min-width: 0; }
+  .chat > .composer > textarea {
+    min-height: 40px; padding: 8px 8px 4px; line-height: 22px; font-size: var(--fs-lg);
+    scrollbar-width: none; /* the text scrolls inside once it is past its limit; no track beside it */
+  }
+  .chat > .composer > textarea::-webkit-scrollbar { display: none; }
+  .chat > .composer > .composer-foot.one-row { display: flex; align-items: center; gap: 4px; }
   .chat > .composer .composer-meta { display: none; }
-  .chat > .composer .image-pick-group { order: 0; flex: none; }
+  .chat > .composer .image-pick-group { flex: none; }
   .chat > .composer .image-pick-group .btn.image-pick.add-pick { width: 40px; min-width: 40px; height: 40px; min-height: 40px; border: 0; border-radius: 50%; background: none; color: var(--muted); }
-  .chat > .composer .ctx { order: 2; flex: none; align-self: center; }
-  .chat > .composer .composer-actions { order: 3; flex: none; margin: 0; gap: 4px; }
+  .chat > .composer .ctx { flex: none; align-self: center; }
+  .chat > .composer .composer-actions { flex: none; margin: 0 0 0 auto; gap: 4px; }
   .chat > .composer .composer-actions .btn { min-height: 40px; }
   .chat > .composer .btn.send-round { width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
   .chat > .composer .btn.send-round:not(.primary), .chat > .composer .btn.send-round:disabled { background: var(--surface-2); border-color: transparent; color: var(--muted); }
   .chat > .composer .stop-btn { border-radius: var(--r-pill); }
   .chat > .composer .stop-btn.icon-only { width: 40px; padding: 0; justify-content: center; border-radius: 50%; }
   .chat > .composer > .key-hint { display: none; }
-  .chat > .composer > :is(.draft-files, .form-error, .old-chat-ask) { padding: 4px 8px 0; }
+  .chat > .composer > :is(.draft-files, .form-error) { padding: 4px 8px 0; }
+  /* "Old chat": a strip at the top of the box, the sentence on its line, then its two buttons side by side. */
+  .chat > .composer > .old-chat-ask {
+    order: -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 4px; padding: 8px; font-size: var(--fs-md);
+  }
+  .chat > .composer > .old-chat-ask > span { grid-column: 1 / -1; min-width: 0; }
+  .chat > .composer > .old-chat-ask > .btn { min-height: 40px; min-width: 0; padding: 4px 8px; justify-content: center; text-align: center; white-space: normal; line-height: 1.2; }
+}
+
+@media (max-width: 720px) {
+  /* Phone chats: a white page in the light theme (--chat-bg), the user's bubble light grey (--me-bubble). The ticket
+     panel is already --surface; the Ask tab and its Chats bar get it here. */
+  .qc-phone, .qc-phone .qc-head { background: var(--chat-bg); }
+  .chat-log .conv-msg.user { background: var(--me-bubble); }
+
+  /* The time, Copy, Fork and Rewind under the user's own message show after a tap on it (MessageActions.tsx). */
+  .user-msg:not(.shown):not(.open) > .me-actions:not(.sending) { display: none; }
+  .user-msg > .conv-msg.user { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .me-actions .act-btn { min-width: 40px; justify-content: center; }
+
+  /* Tighter: messages closer together, and a reply closer to its Copy · Say it simpler row. Text stays 16px. */
+  .panel-main .chat-log, .qc-phone .qc-thread .chat-log { gap: 10px; }
+  .chat-log > .turn:not(.start) { margin-top: -6px; }
+  .turn.start { margin-top: 4px; }
+  .turn-body { gap: 4px; }
+  .reply-actions { margin-top: -6px; }
+  .md .draft-copy { min-height: 40px; padding: 0 14px; font-size: var(--fs-md); }
 }

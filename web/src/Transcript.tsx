@@ -4,6 +4,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, copy, type ActivityEntry } from "./api";
 import { ATTACHMENT_SRC, fileHref, fileKind, formatSize, opensInline } from "./attachText";
 import { FileLinkContext } from "./fileLinkContext";
+import { draftText } from "./draftText";
 import { codePath, textPaths } from "./filePaths";
 import { opensNewTab } from "./links";
 import { ClaudeFace } from "./ConvTurn";
@@ -30,7 +31,7 @@ const PURIFY = {
 
 const IMAGE_NAME = /\.(?:png|jpg|gif|webp)$/;
 
-function thumbnails(html: string, commands?: SlashCommand[] | null, handles?: string[], files?: Set<string>): string {
+function thumbnails(html: string, commands?: SlashCommand[] | null, handles?: string[], files?: Set<string>, drafts?: boolean): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   if (commands?.length) mentionChips(doc, commands);
   if (handles?.length) handleChips(doc, handles);
@@ -51,6 +52,7 @@ function thumbnails(html: string, commands?: SlashCommand[] | null, handles?: st
   if (files?.size) fileChips(doc, files);
   foldPaths(doc);
   copyBars(doc);
+  if (drafts) draftCards(doc);
   return doc.body.innerHTML;
 }
 
@@ -166,6 +168,31 @@ function copyBars(doc: Document) {
   });
 }
 
+/**
+ * Claude's replies: a quote (usually a message it drafted for the user to send) becomes a card with a "Draft" label and
+ * its own Copy button, which copies only the quote. Quotes inside quotes stay part of their card.
+ */
+function draftCards(doc: Document) {
+  doc.querySelectorAll("blockquote").forEach((q) => {
+    if (q.parentElement?.closest("blockquote")) return;
+    const card = doc.createElement("div");
+    card.className = "draft-card";
+    const head = doc.createElement("div");
+    head.className = "draft-head";
+    const label = doc.createElement("span");
+    label.className = "draft-label";
+    label.textContent = "Draft";
+    const bar = doc.createElement("button");
+    bar.type = "button";
+    bar.className = "draft-copy";
+    bar.textContent = "Copy";
+    bar.title = "Copy this draft";
+    head.append(label, bar);
+    q.replaceWith(card);
+    card.append(head, q);
+  });
+}
+
 /** Text of a code block as written: marked ends every block with a newline that isn't part of it. */
 export function codeText(raw: string): string {
   return raw.replace(/\n$/, "");
@@ -174,13 +201,23 @@ export function codeText(raw: string): string {
 async function copyCode(bar: HTMLButtonElement) {
   const pre = bar.parentElement?.querySelector("pre");
   if (!pre) return;
-  const ok = await copy(codeText(pre.textContent ?? ""));
+  copied(bar, await copy(codeText(pre.textContent ?? "")), "Copy text");
+}
+
+async function copyDraft(bar: HTMLButtonElement) {
+  const quote = bar.closest(".draft-card")?.querySelector("blockquote");
+  if (!quote) return;
+  copied(bar, await copy(draftText(quote)), "Copy");
+}
+
+/** A copy button says it worked (or not) for a moment, then goes back to `idle`. */
+function copied(bar: HTMLButtonElement, ok: boolean, idle: string) {
   bar.textContent = ok ? "Copied ✓" : "Couldn't copy";
   bar.classList.toggle("done", ok);
   bar.classList.toggle("failed", !ok);
   clearTimeout(Number(bar.dataset.timer));
   bar.dataset.timer = String(setTimeout(() => {
-    bar.textContent = "Copy text";
+    bar.textContent = idle;
     bar.classList.remove("done", "failed");
   }, ok ? 1500 : 2500));
 }
@@ -295,8 +332,11 @@ function handleChips(doc: Document, handles: string[]) {
   }
 }
 
-/** `commands`: `/name` mentions of these render as chips (ticket descriptions). `handles`: `@handle` mentions (huddles). */
-export function Markdown({ text, commands, handles }: { text: string; commands?: SlashCommand[] | null; handles?: string[] }) {
+/**
+ * `commands`: `/name` mentions of these render as chips (ticket descriptions). `handles`: `@handle` mentions (huddles).
+ * `drafts`: Claude's replies, where a quote becomes a Draft card with its own Copy button.
+ */
+export function Markdown({ text, commands, handles, drafts }: { text: string; commands?: SlashCommand[] | null; handles?: string[]; drafts?: boolean }) {
   const links = useContext(FileLinkContext);
   const clean = useMemo(() => DOMPurify.sanitize(marked.parse(text, { async: false, breaks: true }) as string, PURIFY), [text]);
   // Inside a ticket, paths of files that exist become chips; they show once the board says which exist.
@@ -308,13 +348,19 @@ export function Markdown({ text, commands, handles }: { text: string; commands?:
     void links.find(wanted).then((s) => { if (live) setFiles(s.size ? s : undefined); });
     return () => { live = false; };
   }, [links, wanted.join("\n")]);
-  const html = useMemo(() => thumbnails(clean, commands, handles, files), [clean, commands, handles?.join(" "), files]);
+  const html = useMemo(() => thumbnails(clean, commands, handles, files, drafts), [clean, commands, handles?.join(" "), files, drafts]);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => fillSizes(ref.current), [html]);
   return (
     <div ref={ref} className="md" dangerouslySetInnerHTML={{ __html: html }}
-      onDoubleClick={(e) => { if ((e.target as HTMLElement).closest(".code-copy, .path-chip, .path-fold-btn")) e.stopPropagation(); }}
+      onDoubleClick={(e) => { if ((e.target as HTMLElement).closest(".code-copy, .draft-copy, .path-chip, .path-fold-btn")) e.stopPropagation(); }}
       onClick={(e) => {
+        const draft = (e.target as HTMLElement).closest<HTMLButtonElement>(".draft-copy");
+        if (draft) {
+          e.stopPropagation();
+          void copyDraft(draft);
+          return;
+        }
         const bar = (e.target as HTMLElement).closest<HTMLButtonElement>(".code-copy");
         if (bar) {
           e.stopPropagation(); // e.g. a click on the ticket description opens its editor

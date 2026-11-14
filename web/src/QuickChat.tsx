@@ -1,4 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { gapOf } from "./chatFollow";
+import { useChatFollow } from "./useChatFollow";
 import { ContextChip } from "./ContextPanel";
 import { api, onReconnect, subscribe, type Profile, type QuickChat, type RewindResult, type SessionEntry, type Ticket } from "./api";
 import { openFeatures } from "./family";
@@ -9,7 +11,7 @@ import { browserStore, draftKey, save } from "./drafts";
 import { FeatureChoice, useFeatureChoice } from "./FeatureChoice";
 import { Modal } from "./Modal";
 import { enterSends } from "./enterSends";
-import { ArrowDownIcon, ChatIcon, MoreIcon, PlusIcon, TrashIcon } from "./icons";
+import { ArrowDownIcon, ArrowUpIcon, ChatIcon, MoreIcon, PlusIcon, TrashIcon } from "./icons";
 import { ImagePickButton } from "./ImagePickButton";
 import { useImagePaste } from "./imagePaste";
 import { KeyHint } from "./KeyHint";
@@ -431,9 +433,10 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
   const images = useImagePaste(setDraft);
   const composer = useRef<HTMLTextAreaElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
   const keepOffset = useRef<number | null>(null);
   const [jump, setJump] = useState<{ fresh: boolean } | null>(null);
+  // Follows new content at the bottom, and stays at the bottom when the log shrinks (the message box grew).
+  const { stickToBottom, lastGap, pressing, noteScroll } = useChatFollow(scroller, () => setJump((j) => (j?.fresh ? j : { fresh: true })));
   const [sending, setSending] = useState(false);
   const [stopping, setStopping] = useState(false);
   const running = !!chat?.running;
@@ -544,8 +547,9 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
     if (keepOffset.current !== null) {
       el.scrollTop = el.scrollHeight - keepOffset.current;
       keepOffset.current = null;
-    } else if (stickToBottom.current) el.scrollTop = el.scrollHeight;
-    else setJump((j) => (j ? { fresh: true } : j));
+    } else if (stickToBottom.current && !pressing.current) el.scrollTop = el.scrollHeight;
+    else if (!stickToBottom.current) setJump((j) => (j ? { fresh: true } : j));
+    lastGap.current = gapOf(el);
   }, [page, pending, running, live, waitingHandoff]);
 
   const toBottom = () => {
@@ -641,9 +645,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
     <div className="chat qc-thread">
       <div className="chat-log" ref={scroller}
         onScroll={(e) => {
-          const el = e.currentTarget;
-          const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
-          stickToBottom.current = gap < 60;
+          const { gap } = noteScroll(e.currentTarget);
           if (gap < 60) setJump(null);
           else if (gap > 240) setJump((j) => j ?? { fresh: false });
         }}>
@@ -733,7 +735,7 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
                   <Fragment key={e.uuid}>
                     {divider}
                     <Turn start={l.start} at={e.at}>
-                      <div className="reply-text"><Markdown text={shown()} /></div>
+                      <div className="reply-text"><Markdown text={shown()} drafts /></div>
                       {replyText(e.text) && (
                         <ReplyActions text={shown} simpler={id && simplifiable(e) ? simpler.link(e.uuid) : undefined}
                           newest={i === newest} lastOfTurn={l.lastReply} active={simpler.active(e.uuid)} />
@@ -747,12 +749,12 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
               ))}
               {waitingHandoff.map((h) => (
                 <Turn key={h.at} start={tailStart()} className="live">
-                  {liveView(h.text).text && <div className="reply-text"><Markdown text={liveView(h.text).text} /></div>}
+                  {liveView(h.text).text && <div className="reply-text"><Markdown text={liveView(h.text).text} drafts /></div>}
                 </Turn>
               ))}
               {live && (
                 <Turn start={tailStart()} className="live">
-                  <div aria-live="polite">{liveView(live).text && <div className="reply-text writing"><Markdown text={liveView(live).text} /></div>}</div>
+                  <div aria-live="polite">{liveView(live).text && <div className="reply-text writing"><Markdown text={liveView(live).text} drafts /></div>}</div>
                 </Turn>
               )}
               {running && !live && blocks.at(-1)?.kind !== "tools" && (
@@ -795,7 +797,8 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
         <div className="composer">
           {!phone && <KeyHint keys="M" inset className="qc-compose-hint" />}
           <textarea ref={composer} rows={phone ? 1 : 2} value={draft} className={images.dragOver ? "drop-target" : undefined} {...images.handlers}
-            placeholder={running ? `Add to your question: ${claude} reads it at its next step…` : phone ? `Ask ${claude} about this folder…` : `Ask ${claude} about this folder… (Enter sends)`}
+            placeholder={phone ? (running ? "Add to your question…" : `Message ${claude}`)
+              : running ? `Add to your question: ${claude} reads it at its next step…` : `Ask ${claude} about this folder… (Enter sends)`}
             aria-label={`Message to ${claude}`}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -806,23 +809,41 @@ function ChatThread({ slug, chat, phone, onCreated, onForked, onOpenTicket, onNe
             }} />
           <AttachmentChips text={draft} images={images} />
           {images.error && <div className="form-error">{images.error}</div>}
-          <div className="composer-foot one-row">
-            <span className="composer-meta">
-              {chat && <ContextChip slug={slug} kind="chat" id={chat.id} />}
-              <span className="muted small composer-hint">
-                {claude} works in this board's folder.<span className="composer-keys"> Enter to send · Shift+Enter for a new line</span>
+          {phone ? (
+            // Phones: the ticket chat's two-row box (styles.css, ".chat > .composer"): the text on top, then the round +
+            // (Photo, File) and the memory ring on the left, Stop and the round Send on the right.
+            <div className="composer-foot one-row">
+              <ImagePickButton images={images} target={composer} merged />
+              {chat && <ContextChip slug={slug} kind="chat" id={chat.id} quietBelow={80} />}
+              <span className="composer-actions">
+                <SendOrStop running={running} hasDraft={!!draft.trim()} stopping={stopping} onStop={stop}
+                  send={(
+                    <button className={`btn small send-round${draft.trim() ? " primary" : ""}`} disabled={!draft.trim() || sending || images.uploading} onClick={() => send()}
+                      aria-label={images.uploading ? "Uploading…" : "Send"} title={images.uploading ? "Uploading…" : "Send"}>
+                      {images.uploading ? <span className="spinner" aria-hidden /> : <ArrowUpIcon size={20} />}
+                    </button>
+                  )} />
               </span>
-            </span>
-            <span className="composer-actions">
-              <ImagePickButton images={images} target={composer} />
-              <SendOrStop running={running} hasDraft={!!draft.trim()} stopping={stopping} onStop={stop}
-                send={(
-                  <button className="btn primary small" disabled={!draft.trim() || sending || images.uploading} onClick={() => send()}>
-                    {images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" />
-                  </button>
-                )} />
-            </span>
-          </div>
+            </div>
+          ) : (
+            <div className="composer-foot one-row">
+              <span className="composer-meta">
+                {chat && <ContextChip slug={slug} kind="chat" id={chat.id} />}
+                <span className="muted small composer-hint">
+                  {claude} works in this board's folder.<span className="composer-keys"> Enter to send · Shift+Enter for a new line</span>
+                </span>
+              </span>
+              <span className="composer-actions">
+                <ImagePickButton images={images} target={composer} />
+                <SendOrStop running={running} hasDraft={!!draft.trim()} stopping={stopping} onStop={stop}
+                  send={(
+                    <button className="btn primary small" disabled={!draft.trim() || sending || images.uploading} onClick={() => send()}>
+                      {images.uploading ? "Uploading…" : "Send"}<KeyHint keys="↵" />
+                    </button>
+                  )} />
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>

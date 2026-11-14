@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { RewindResult, RewindUndoState, UndoRewindResult } from "./api";
 import { CopyButton } from "./ConvTurn";
 import { copyText, forkPoints, forkTitle, rewoundLine, undoneLine } from "./messageText";
 import { RewindConfirm, type RewindPreview } from "./Rewind";
+import { useShownMessage } from "./shownMessage";
 import { sentTime } from "./time";
+import { usePhone } from "./usePhone";
 
 /** Rewind on a message: what the confirmation asks first and what going back does. */
 export interface RewindSpec {
@@ -25,8 +27,8 @@ export interface ForkSpec {
 
 /**
  * One of the user's messages: the bubble, then a row under it with the sent time, Copy, Fork from here and Rewind
- * (on a computer the buttons show on hover or focus; on a phone always). Fork and Rewind open their confirmation under
- * the row. sending: not in the chat yet, the row says "sending" and has no buttons.
+ * (on a computer the buttons show on hover or focus; on a phone the row shows after a tap on the message, one message at
+ * a time). Fork and Rewind open their confirmation under the row. sending: not in the chat yet, the row says "sending" and has no buttons.
  */
 export function UserMessage({ at, text, sending, className, bubbleClass, off, fork, rewind, onError, children }: {
   at?: string;
@@ -62,10 +64,19 @@ export function UserMessage({ at, text, sending, className, bubbleClass, off, fo
     back?.focus();
   };
   const time = at ? sentTime(at) : null;
+  const phone = usePhone();
+  const [shown, toggle] = useShownMessage(useId());
+  // Phones: a tap on the bubble shows or hides the row. Not a tap on a link, image or button in it, nor the end of a
+  // text selection.
+  const tap = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest("a, button, img, summary, input")) return;
+    if (window.getSelection()?.isCollapsed === false) return;
+    toggle();
+  };
   return (
-    <div className={`me-wrap user-msg${panel ? " open" : ""}${className ? ` ${className}` : ""}`}>
-      <div className={`conv-msg user${bubbleClass ? ` ${bubbleClass}` : ""}`}>{children}</div>
-      <div className="me-actions">
+    <div className={`me-wrap user-msg${panel ? " open" : ""}${shown ? " shown" : ""}${className ? ` ${className}` : ""}`}>
+      <div className={`conv-msg user${bubbleClass ? ` ${bubbleClass}` : ""}`} onClick={phone && !sending ? tap : undefined}>{children}</div>
+      <div className={`me-actions${sending ? " sending" : ""}`}>
         {sending ? <span className="msg-time">sending</span> : (
           <>
             {time?.text && <time className="msg-time" dateTime={at} title={time.title}>{time.text}</time>}
