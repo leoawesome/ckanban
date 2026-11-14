@@ -47,7 +47,7 @@ import { approxPct, costText } from "./usage";
 import { Markdown } from "./Transcript";
 import { NeedsField } from "./Needs";
 import { TagEditor } from "./Tags";
-import { RunSettings, runSettingsText } from "./RunSettings";
+import { RunSettings, RunSheet, runSettingsText } from "./RunSettings";
 import { oldChat } from "./cacheNote";
 import { useFeatureStatus } from "./StatusBlock";
 import { taskProgress } from "./tasksText";
@@ -1374,7 +1374,12 @@ function HelperIcon({ slug, ticketId }: { slug: string; ticketId: string }) {
 }
 
 /** "Model and effort" from the ⋯ menu: the dropdowns under the header's first row, with Done (Esc closes too). */
-function RunPopover({ profile, ticket, onError, onClose }: { profile: Profile; ticket: Ticket; onError: (m: string) => void; onClose: () => void }) {
+/** "Model and effort": a row under the header on a desktop, a bottom sheet with one labelled row per setting on a phone. */
+function RunPopover(props: { profile: Profile; ticket: Ticket; onError: (m: string) => void; onClose: () => void }) {
+  return usePhone() ? <RunSheet {...props} /> : <RunRow {...props} />;
+}
+
+function RunRow({ profile, ticket, onError, onClose }: { profile: Profile; ticket: Ticket; onError: (m: string) => void; onClose: () => void }) {
   useLayer(onClose);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => { requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>(".select-trigger")?.focus()); }, []);

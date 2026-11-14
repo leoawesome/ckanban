@@ -3582,12 +3582,7 @@ button.hd-mode:disabled { cursor: default; }
   }
   .phone-who:active { background: var(--surface-2); }
   .phone-who:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  /* The title shows up to two lines while the tab row shows, one line with "…" while the chat is scrolled down (head-slim). */
-  .pw-title {
-    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
-    font-size: var(--fs-lg); font-weight: 700; line-height: 1.25;
-  }
-  .panel.head-slim .pw-title { display: block; white-space: nowrap; text-overflow: ellipsis; }
+  .pw-title { display: block; font-size: var(--fs-lg); font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* The status word never shrinks; the reason after the dot is cut first. */
   .pw-status { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-sm); font-weight: 600; line-height: 1.3; color: var(--muted); }
   .pw-word { flex: none; white-space: nowrap; }
@@ -3965,6 +3960,18 @@ button.tag-chip:hover { border-color: currentColor; }
   .run-settings { margin-left: 0; padding-left: 10px; border-left: 1px solid var(--border); }
   .run-key { display: none; }
 }
+/* "Model and effort" on a phone (RunSheet): a bottom sheet, Done at the top right, one labelled row per setting. */
+.run-sheet .modal-head .run-sheet-done { flex: none; min-height: 40px; padding: 0 16px; margin-right: 12px; }
+.run-sheet-sub { margin: 0; padding: 0 18px 8px; font-size: var(--fs-sm); }
+.run-rows { display: flex; flex-direction: column; padding: 0 18px calc(16px + env(safe-area-inset-bottom)); }
+.run-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; border-top: 1px solid var(--border); }
+.run-row-label { display: flex; flex-direction: column; min-width: 0; font-weight: 600; font-size: var(--fs-md); }
+.run-row-label small { font-weight: 400; font-size: var(--fs-xs); color: var(--muted); }
+.run-row .select { flex: 0 1 auto; min-width: 0; max-width: 66%; }
+.run-row .select-trigger { min-height: 42px; font-size: var(--fs-lg); max-width: 100%; }
+.run-row .chip-set .select-trigger { border-color: var(--accent); color: var(--accent-text); }
+/* Never cut a value off: a long one wraps inside its field rather than ending in "…". */
+.run-row .select-value { white-space: normal; overflow-wrap: anywhere; }
 
 /* Automations window: the list on the left, the picked one on the right (header, tabs, Save fixed at the bottom).
    A phone shows the list full screen, then the picked one on its own screen (AutomationsDialog.tsx). */
@@ -4246,7 +4253,7 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
   .hd-chk { min-height: 40px; align-items: center; padding: 2px 0; }
   .hd-chk input { flex: none; width: 20px; height: 20px; margin: 0; }
   /* Ticket tab: linked tickets, result chips, Where we are's Hide. */
-  .field-row .link-btn.ticket-link, .ws-step-text .ws-link { min-height: 40px; }
+  .field-row .link-btn.ticket-link, .ws-step > .ws-link { min-height: 40px; }
   .result-chip { min-height: 40px; padding: 0 12px; }
   .ws-act { min-width: 40px; text-align: center; }
   /* Steps tab: Copy list / Add tickets… links, tree rows and the fold chevron (a 40px hit area, same layout). */
@@ -4359,16 +4366,18 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
 /* Features: the feature status at the top of the Tasks tab (StatusBlock.tsx), the chat's "Waiting on you" line, the
    Tasks list and Gather (FamilyTab.tsx), the New ticket suggestion (NewTicketDialog.tsx). */
 .tasks-status { display: flex; flex-direction: column; gap: 4px; padding: 2px 2px 10px; border-bottom: 1px solid var(--border); font-size: var(--fs-sm); line-height: 1.45; }
-.ts-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); }
-.ts-updated { margin-left: auto; }
-.ts-bar { height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; margin: 2px 0 6px; }
-.ts-bar i { display: block; height: 100%; background: var(--ok); border-radius: inherit; transition: width .3s; }
-.ts-row { overflow-wrap: anywhere; }
-.ts-k { color: var(--muted); font-size: var(--fs-xs); font-weight: 600; margin-right: 4px; }
-.ts-row.you .ts-k { color: var(--accent-text); }
-.ts-row.bad .ts-k { color: var(--err); }
-.ts-row .ws-lines { margin-top: 2px; }
-.ts-more, .ts-note { align-self: flex-start; }
+/* tstat-: TicketSheet.tsx owns the ts- names (its .ts-row is a flex row that squeezed these labels into a narrow column). */
+.tstat-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); }
+.tstat-updated { margin-left: auto; }
+.tstat-bar { height: 6px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; margin: 2px 0 6px; }
+.tstat-bar i { display: block; height: 100%; background: var(--ok); border-radius: inherit; transition: width .3s; }
+/* Each row: a small label on its own line, then the text at full width. */
+.tstat-row { display: block; padding: 8px 0 6px; border-top: 1px solid var(--border); overflow-wrap: anywhere; min-width: 0; }
+.tstat-k { color: var(--muted); font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 2px; }
+.tstat-row.you .tstat-k { color: var(--accent-text); }
+.tstat-row.bad .tstat-k { color: var(--err); }
+.tstat-v { min-width: 0; }
+.tstat-more, .tstat-note { align-self: flex-start; }
 .ws-act { border: 0; background: none; padding: 0; font: inherit; font-size: var(--fs-xs); font-weight: 600; color: var(--accent-text); cursor: pointer; }
 .ws-act:hover { text-decoration: underline; }
 .ws-lines { display: flex; flex-direction: column; gap: 2px; }
@@ -4384,18 +4393,23 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
 .ws-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .ws-clamp.open { display: block; }
 .ws-more { margin-top: 1px; }
-.ws-step { display: flex; align-items: flex-start; gap: 8px; }
-.ws-step + .ws-step { margin-top: 3px; }
-.ws-step-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.ws-step-text .ws-link { align-self: flex-start; text-align: left; }
+/* A failed or paused task: title, grey reason, then its button below, so the button never takes width from the text. */
+.ws-step { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); }
+.ws-step + .ws-step { margin-top: 6px; }
+.ws-step > .ws-link { align-self: flex-start; text-align: left; font-weight: 600; }
 .ws-why { font-size: var(--fs-xs); color: var(--muted); }
-.ws-step .btn { flex: none; }
+.ws-step > .ws-more { align-self: flex-start; }
+.ws-step-btn { align-self: flex-start; margin-top: 6px; min-height: 32px; }
+.ws-note { margin-top: 10px; }
+.ws-note .ws-more { margin-top: 2px; }
+.ws-inline { display: inline; padding: 0; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
 .ws-note-form { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 .ws-note-form textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-sm); }
 .ws-note-actions { display: flex; align-items: center; gap: 6px; }
 .ws-note-actions .muted { margin-right: auto; }
 .status-note { align-self: flex-start; font-size: var(--fs-xs); color: var(--muted); border-left: 3px solid var(--warn); padding: 2px 10px; }
 @media (pointer: coarse) { .ws-act { min-height: 40px; padding: 0 6px; margin: 0 -6px; } .ws-act.ws-more { display: flex; align-items: center; width: fit-content; margin: -11px -6px -12px; } }
+@media (pointer: coarse), (max-width: 720px) { .ws-step-btn { min-height: 40px; padding: 0 14px; } }
 
 .family-tab { display: flex; flex-direction: column; gap: 8px; }
 .family-tab-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
@@ -5190,36 +5204,25 @@ button.composer-old:hover { color: var(--text); }
   .chat-log .turn-body { grid-column: 1 / -1; }
   .chat-log .steps-line ul { margin-left: 8px; }
 
-  /* The message box in two rows: the text at the box's full width on top, then a row of buttons (the round + and the
-     memory ring from 80% on the left, Stop and the round Send on the right). Warnings sit in a strip above the text.
-     Quick chat (.qc-thread) keeps its own box. */
-  .chat:not(.qc-thread) > .composer {
-    flex-direction: column; align-items: stretch; gap: 0; padding: 4px; border-radius: var(--r-md);
-    margin: 0 max(8px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  /* The message box in one row: a round +, the text, (the memory ring from 80%), a round send. */
+  .chat > .composer {
+    flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 6px; padding: 4px; border-radius: var(--r-pill);
+    margin-left: max(8px, env(safe-area-inset-left)); margin-right: max(8px, env(safe-area-inset-right));
   }
-  .chat:not(.qc-thread) > .composer > * { min-width: 0; }
-  .chat:not(.qc-thread) > .composer > textarea {
-    min-height: 40px; padding: 8px 8px 4px; line-height: 22px; font-size: var(--fs-lg);
-    scrollbar-width: none; /* the text scrolls inside once it is past its limit; no track beside it */
-  }
-  .chat:not(.qc-thread) > .composer > textarea::-webkit-scrollbar { display: none; }
-  .chat:not(.qc-thread) > .composer > .composer-foot.one-row { display: flex; align-items: center; gap: 4px; }
-  .chat:not(.qc-thread) > .composer .composer-meta { display: none; }
-  .chat:not(.qc-thread) > .composer .image-pick-group { flex: none; }
-  .chat:not(.qc-thread) > .composer .image-pick-group .btn.image-pick.add-pick { width: 40px; min-width: 40px; height: 40px; min-height: 40px; border: 0; border-radius: 50%; background: none; color: var(--muted); }
-  .chat:not(.qc-thread) > .composer .ctx { flex: none; align-self: center; }
-  .chat:not(.qc-thread) > .composer .composer-actions { flex: none; margin: 0 0 0 auto; gap: 4px; }
-  .chat:not(.qc-thread) > .composer .composer-actions .btn { min-height: 40px; }
-  .chat:not(.qc-thread) > .composer .btn.send-round { width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
-  .chat:not(.qc-thread) > .composer .btn.send-round:not(.primary), .chat:not(.qc-thread) > .composer .btn.send-round:disabled { background: var(--surface-2); border-color: transparent; color: var(--muted); }
-  .chat:not(.qc-thread) > .composer .stop-btn { border-radius: var(--r-pill); }
-  .chat:not(.qc-thread) > .composer .stop-btn.icon-only { width: 40px; padding: 0; justify-content: center; border-radius: 50%; }
-  .chat:not(.qc-thread) > .composer > .key-hint { display: none; }
-  .chat:not(.qc-thread) > .composer > :is(.draft-files, .form-error) { padding: 4px 8px 0; }
-  /* "Old chat": a strip at the top of the box, the sentence on its line, then its two buttons side by side. */
-  .chat:not(.qc-thread) > .composer > .old-chat-ask {
-    order: -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 4px; padding: 8px; font-size: var(--fs-md);
-  }
-  .chat:not(.qc-thread) > .composer > .old-chat-ask > span { grid-column: 1 / -1; min-width: 0; }
-  .chat:not(.qc-thread) > .composer > .old-chat-ask > .btn { min-height: 40px; min-width: 0; padding: 4px 8px; justify-content: center; text-align: center; white-space: normal; line-height: 1.2; }
+  .chat > .composer > * { flex: 1 1 100%; min-width: 0; }
+  .chat > .composer.tall { border-radius: var(--r-md); }
+  .chat > .composer > textarea { order: 1; flex: 1 1 0; min-height: 40px; padding: 9px 2px; line-height: 22px; font-size: var(--fs-lg); }
+  .chat > .composer > .composer-foot.one-row { display: contents; }
+  .chat > .composer .composer-meta { display: none; }
+  .chat > .composer .image-pick-group { order: 0; flex: none; }
+  .chat > .composer .image-pick-group .btn.image-pick.add-pick { width: 40px; min-width: 40px; height: 40px; min-height: 40px; border: 0; border-radius: 50%; background: none; color: var(--muted); }
+  .chat > .composer .ctx { order: 2; flex: none; align-self: center; }
+  .chat > .composer .composer-actions { order: 3; flex: none; margin: 0; gap: 4px; }
+  .chat > .composer .composer-actions .btn { min-height: 40px; }
+  .chat > .composer .btn.send-round { width: 40px; min-width: 40px; height: 40px; padding: 0; border-radius: 50%; justify-content: center; }
+  .chat > .composer .btn.send-round:not(.primary), .chat > .composer .btn.send-round:disabled { background: var(--surface-2); border-color: transparent; color: var(--muted); }
+  .chat > .composer .stop-btn { border-radius: var(--r-pill); }
+  .chat > .composer .stop-btn.icon-only { width: 40px; padding: 0; justify-content: center; border-radius: 50%; }
+  .chat > .composer > .key-hint { display: none; }
+  .chat > .composer > :is(.draft-files, .form-error, .old-chat-ask) { padding: 4px 8px 0; }
 }

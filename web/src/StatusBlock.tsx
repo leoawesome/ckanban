@@ -10,6 +10,7 @@ import { familyOf, featureRows, isFeature, STATE_WORDS, workingInFamily, type Fa
 import { InfoIcon } from "./icons";
 import { pausedLine } from "./limitText";
 import { namesText, taskProgress } from "./tasksText";
+import { ticketParts } from "./ticketLinks";
 import { toast } from "./toast";
 import { timeAgo } from "./time";
 
@@ -62,8 +63,8 @@ function countText(c: Record<string, number>, total: number): string {
 export const STATUS_SOURCE = "Counts, tests, pull requests and saved changes come from the board; the summary, decisions and next step are written by Claude. " +
   "\"Add a note\" adds what happened outside the board.";
 
-/** Done, folded to about two lines with "more" when it is longer. */
-function Clamped({ children }: { children: React.ReactNode }) {
+/** Long text folded to `lines` lines (2 by default) with "Show all" / "Show less"; short text gets no button. */
+function Clamped({ children, lines, className }: { children: React.ReactNode; lines?: number; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
@@ -73,13 +74,21 @@ function Clamped({ children }: { children: React.ReactNode }) {
   });
   return (
     <>
-      <div ref={ref} className={`ws-clamp${open ? " open" : ""}`}>{children}</div>
-      {(long || open) && <button className="ws-act ws-more" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "less" : "more"}</button>}
+      <div ref={ref} className={`ws-clamp${open ? " open" : ""}${className ? ` ${className}` : ""}`}
+        style={lines ? { WebkitLineClamp: lines } : undefined}>{children}</div>
+      {(long || open) && <button className="ws-act ws-more" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Show less" : "Show all"}</button>}
     </>
   );
 }
 
-/** One failed or paused task: its title, why in one line, and the button that moves it on. */
+/** Claude's saved text with each known ticket id shown as that ticket's title, a link that opens it. */
+function Linked({ text, titles, onOpen }: { text: string; titles: ReadonlyMap<string, string>; onOpen: (id: string) => void }) {
+  return <>{ticketParts(text, titles).map((p, i) => "id" in p
+    ? <button key={i} className="link-btn ws-link ws-inline" title={p.id} onClick={() => onOpen(p.id)}>{p.title}</button>
+    : <span key={i}>{p.text}</span>)}</>;
+}
+
+/** One failed or paused task as its own block: its title, why (folded when long), then the button that moves it on. */
 function StepLine({ title, why, action, onOpen }: { title: string; why?: string; action?: { label: string; run: () => Promise<unknown> }; onOpen: () => void }) {
   const [busy, setBusy] = useState(false);
   const go = async () => {
@@ -94,11 +103,9 @@ function StepLine({ title, why, action, onOpen }: { title: string; why?: string;
   };
   return (
     <div className="ws-step">
-      <div className="ws-step-text">
-        <button className="link-btn ws-link" onClick={onOpen}>{title}</button>
-        {why && <span className="ws-why">{why}</span>}
-      </div>
-      {action && <button className="btn small" disabled={busy} onClick={() => void go()}>{action.label}</button>}
+      <button className="link-btn ws-link" onClick={onOpen}>{title}</button>
+      {why && <Clamped lines={3} className="ws-why">{why}</Clamped>}
+      {action && <button className="btn small ws-step-btn" disabled={busy} onClick={() => void go()}>{action.label}</button>}
     </div>
   );
 }
@@ -141,6 +148,9 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
   const running = f.groups.filter((g) => !g.settled && g.total);
   const looseActive = n(f.loose.counts, "working", "waiting", "needs_you", "in_review", "paused");
   const roundOf = (id: string) => f.rounds.find((r) => r.id === id);
+  // Ticket ids in Claude's saved text show as the ticket's title (only tickets on this board).
+  const titles = useMemo(() => new Map(tickets.map((t) => [t.id, t.title])), [tickets]);
+  const linked = (text: string) => <Linked text={text} titles={titles} onOpen={onOpenTicket} />;
   const link = (id: string, title: string) => <button key={id} className="link-btn ws-link" onClick={() => onOpenTicket(id)}>{title}</button>;
   const after = () => onChanged();
   // Shown: what moves the work on, one line each. The rest sits behind "More".
@@ -150,7 +160,7 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
   if (f.needsYou.length || saved?.waiting) {
     rows.push({
       label: "Waiting on you", tone: "you", attn: "waiting", body: <>
-        {saved?.waiting ?? <span className="ws-titles">{f.needsYou.map((b, i) => <span key={b.id}>{i > 0 && ", "}{link(b.id, b.title)}</span>)}</span>}
+        {saved?.waiting ? linked(saved.waiting) : <span className="ws-titles">{f.needsYou.map((b, i) => <span key={b.id}>{i > 0 && ", "}{link(b.id, b.title)}</span>)}</span>}
       </>,
     });
   }
@@ -167,7 +177,7 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
       </div>,
     });
   }
-  if (saved?.next) rows.push({ label: "Next", body: <span className="ws-next">{saved.next}</span> });
+  if (saved?.next) rows.push({ label: "Next", body: <span className="ws-next">{linked(saved.next)}</span> });
   if (f.broken.length || saved?.broken) {
     rows.push({
       label: "Broken", tone: "bad", body: <div className="ws-lines">
@@ -176,7 +186,7 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
             why={b.reason ?? (b.state === "problem" ? "Found a problem" : undefined)}
             action={b.state === "failed" ? { label: "Try again", run: () => api.updateTicket(slug, b.id, { status: "ready" }).then(after) } : undefined} />
         ))}
-        {saved?.broken && <span>{saved.broken}</span>}
+        {saved?.broken && <div className="ws-note"><Clamped lines={4}>{linked(saved.broken)}</Clamped></div>}
       </div>,
     });
   }
@@ -191,7 +201,7 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
       </div>,
     });
   }
-  if (saved?.goal) extra.push({ label: "Goal", body: saved.goal });
+  if (saved?.goal) extra.push({ label: "Goal", body: linked(saved.goal) });
   if (doneGroups.length || looseDone || saved?.done) {
     extra.push({
       label: "Done", body: <Clamped>
@@ -200,7 +210,7 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
           return <Pill key={g.id} tone="ok">{g.title}{r ? `: ${r.passed} passed${r.problem ? `, ${r.problem} problem` : ""}` : ` · ${g.total}`}</Pill>;
         })}
         {looseDone > 0 && <Pill tone="ok">{looseDone} done</Pill>}
-        {saved?.done}
+        {saved?.done && linked(saved.done)}
       </Clamped>,
     });
   }
@@ -242,17 +252,17 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
   }
   return (
     <section className="tasks-status" aria-label="Progress">
-      <div className="ts-head">
+      <div className="tstat-head">
         <b>{done} of {total} done</b>
         <span className="ws-info" title={source} aria-label={source} role="img"><InfoIcon size={12} /></span>
-        {updated && <span className="muted small ts-updated">updated {timeAgo(updated)}</span>}
+        {updated && <span className="muted small tstat-updated">updated {timeAgo(updated)}</span>}
       </div>
-      <div className="ts-bar" role="progressbar" aria-label="Tasks done" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done}><i style={{ width: `${pct}%` }} /></div>
+      <div className="tstat-bar" role="progressbar" aria-label="Tasks done" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done}><i style={{ width: `${pct}%` }} /></div>
       {rows.map((r) => (
-        <div key={r.label} className={`ts-row${r.tone ? ` ${r.tone}` : ""}`} data-attn={r.attn}><span className="ts-k">{r.label}</span> <span className="ts-v">{r.body}</span></div>
+        <div key={r.label} className={`tstat-row${r.tone ? ` ${r.tone}` : ""}`} data-attn={r.attn}><div className="tstat-k">{r.label}</div><div className="tstat-v">{r.body}</div></div>
       ))}
       {more && extra.map((r) => (
-        <div key={r.label} className="ts-row"><span className="ts-k">{r.label}</span> <span className="ts-v">{r.body}</span></div>
+        <div key={r.label} className="tstat-row"><div className="tstat-k">{r.label}</div><div className="tstat-v">{r.body}</div></div>
       ))}
       {more && (noting ? (
         <div className="ws-note-form">
@@ -268,8 +278,8 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
           </div>
           {err && <div className="form-error">{err}</div>}
         </div>
-      ) : <button className="ws-act ts-note" onClick={() => setNoting(true)}>Add a note</button>)}
-      <button className="ws-act ts-more" aria-expanded={more} onClick={() => setMore(!more)}>{more ? "Less" : "More"}</button>
+      ) : <button className="ws-act tstat-note" onClick={() => setNoting(true)}>Add a note</button>)}
+      <button className="ws-act tstat-more" aria-expanded={more} onClick={() => setMore(!more)}>{more ? "Less" : "More"}</button>
     </section>
   );
 }

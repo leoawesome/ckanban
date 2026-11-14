@@ -13,8 +13,10 @@ import { usePhone } from "./usePhone";
  * On a phone it is a bottom sheet (sheet.ts): grab handle, swipe down to close, sized to what the keyboard leaves,
  * and it doesn't open the keyboard by itself unless it has a single field. The phone's Back gesture closes it (backEntry.ts).
  */
-export function Modal({ title, onClose, children, wide, guard, focusDialog, onKeys, className, bare }: {
+export function Modal({ title, onClose, children, wide, guard, focusDialog, onKeys, className, bare, action }: {
   title: string;
+  /** Shown at the title bar's right instead of the × (e.g. a Done button that closes it). */
+  action?: ReactNode;
   /** Extra class on the dialog box. */
   className?: string;
   /** No title bar (the content draws its own, e.g. a phone screen with a back arrow); `title` stays its accessible name. */
@@ -52,7 +54,7 @@ export function Modal({ title, onClose, children, wide, guard, focusDialog, onKe
         {!bare && (
           <header className="modal-head" {...swipe}>
             <h3 id={id}>{title}</h3>
-            <button className="icon-btn" onClick={tryClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>
+            {action ?? <button className="icon-btn" onClick={tryClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>}
           </header>
         )}
         {children}
