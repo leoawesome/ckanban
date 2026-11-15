@@ -1,431 +1,71 @@
-import { boardConnectorOptions } from "../runs/connectors";
-import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { extractFinalText, summarizeEvent } from "../runs/activity";
-import { copyAttachments, deleteAttachments, localizeAttachments, localizeUrls, referencedAttachments } from "./attachments";
+import { localizeAttachments } from "./attachments";
 import type { Bus } from "../core/events";
 import { isSessionLive as psSessionLive, sessionTitle } from "../runs/claude";
-import { addWorktree, branchesWithPrefix, branchExists, FetchError, isGitRepo, latestBase, listWorktrees, removeWorktree, repoKind, resolveBaseBranch, worktreeDir, type RepoKind } from "../runs/git";
+import { FetchError, type RepoKind } from "../runs/git";
 import { MOVE_TO_PLANNING_RE, STAY_RE } from "../runs/session";
-import { forkSessionBefore, forkSessionFile, forkTitle } from "../chat/fork";
 import { saveMockups } from "./mockups";
-import { Devices, type DeviceTicketState } from "../server/devices";
+import { Devices } from "../server/devices";
 import { ChromeWatch, Chromes, ownPicks, resolveBrowserPicks, resolveChromeSetting, type BrowserPick, type ChromeChoice } from "../server/chromes";
-import { BoardBrowsers, BROWSER_FILES_DIR, browserServer, serverName, type BrowserDeps } from "../server/board-browsers";
+import { BoardBrowsers, BROWSER_FILES_DIR, browserServer, serverName } from "../server/board-browsers";
 import { macBanner } from "../server/notify";
-import { type HostHuddle, STUCK_ON_QUESTIONS, ticketAttention, userWaitReason } from "../server/attention";
-import type { Question, SessionSummary } from "../runs/session";
-import { RecallIndex, recallText } from "./recall";
-import { pauser } from "../core/lag";
-import { askClosed, familyBelow, familyOf, featureRoot, featureRows, groupsOf, hideableCard, isFeature, levelOf, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
-import { chatIsCold, FRESH_CHAT_TOKENS } from "../chat/chat-cache";
-import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
-import { followUpFor, followUpPlace } from "../../web/src/followUp";
-import { learnedRulesBlock } from "./learn";
-import { lessonsBlock } from "./lessons";
-import { canEndQuietly, quietContext } from "../server/quiet";
-import { addHuddleSpend, addTelegramSpend } from "../usage/spend";
-import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "../runs/prompts";
-import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "../runs/prompts";
+import { type HostHuddle } from "../server/attention";
+import type { SessionSummary } from "../runs/session";
+import { RecallIndex } from "./recall";
+import { familyBelow, featureRoot, featureRows, linkProblem, nextRoundTitle, type TicketKind } from "../../web/src/family";
+import { type SavedChanges } from "./feature";
+import { followUpPlace } from "../../web/src/followUp";
+import { canEndQuietly } from "../server/quiet";
+import { addTelegramSpend } from "../usage/spend";
+import { mainTicketRules, toolFirstPrompt, type RunRole } from "../runs/prompts";
 import { learnModel, useModelVersionsFile } from "../runs/model-versions";
-import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
-import { NO_EDIT_TOOLS } from "../server/huddle-roster";
-import { chatNotes, chatPrompt, chromeChoiceNote, chromeTurnNote, withoutChromeRule, type BoardBrowserChoice, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, toolsChangedNote, type ChatMode, type PlanWake, type PromptContext } from "../runs/prompts";
-import {
-  childrenOf, findCycle, isComplete, MAX_RUN_RETURNS, normalizeNeeds, RUN_CHAIN_KEEP, planActive, planProblem, planStep, planTable,
-  resolveDeps, wakeupCap,
-} from "./plan";
+import { askedNothing, familyCard, type FamilyCard, MERGE_TRIES, replyAsked } from "./main-ticket";
+import { chatNotes, chatPrompt, chromeChoiceNote, chromeTurnNote, withoutChromeRule, type BoardBrowserChoice, devicesNote, firstRunPrompt, mentionsArtifact, planningCommand, planningPrompt, resumePrompt, toolsChangedNote } from "../runs/prompts";
+import { planActive } from "./plan";
 import { run as runCmd } from "../runs/git";
-import { addPrs, ticketPrs } from "./prs";
-import { applyUndo, cutSession, RewindRefused, deleteSnapshots, takeSnapshot, undoBlocked, type RewindUndo, type UndoResult } from "../chat/rewind";
+import { addPrs } from "./prs";
+import { deleteSnapshots, takeSnapshot } from "../chat/rewind";
 import { parseResult } from "../runs/result";
-import { FOLLOW_UP_LATE_MS, FOLLOW_UP_NOTE_MAX, FOLLOW_UP_REASON_MAX, FollowUpError, followUpTime, logFollowUp } from "../server/followup";
-import { formatAt } from "../server/jobs";
-import { messageCost, ticketRuns } from "../usage/ticket-usage";
-import { transcriptDirOf, workflowDirCost } from "../runs/workflows";
-import { AUTO_CONTINUE_PER_DAY, clockTime, CONTINUE_TEXT, dayKey, limitMessage, parseReset } from "../usage/limit";
+import { limitMessage } from "../usage/limit";
 import { DraftTracker } from "../chat/draft";
-import { buildArgs, DEFAULT_STALL_MINUTES, PLANNING_DISALLOWED_TOOLS, startRun, type RunHandle } from "../runs/runner";
+import { startRun, type RunHandle } from "../runs/runner";
 import { RETRY_DELAY_MS, RETRY_TEXT, transientError } from "../runs/retry";
-import { BOARD_COMMANDS, commandText, EFFORT_HELP, runOptions, ultracodeOn, validEffort, listCommands, MODEL_HELP, parseSlash, REFUSED_COMMANDS, rememberInit, slashMessage, useBundledFile, validModel, type SlashCommand } from "../chat/commands";
-import { mcpConfig } from "../server/agents";
+import { BOARD_COMMANDS, parseSlash, REFUSED_COMMANDS, rememberInit, slashMessage, useBundledFile } from "../chat/commands";
 import { toolsVersion } from "../mcp-server";
-import type { OwnedSession } from "../server/shell";
-import { BOARD_NOTE_RE, type Store } from "../core/store";
-import { boardKeyEnv, maskSaved } from "../server/board-keys";
-import { normalizeTags } from "./tags";
-import { autoHuddlesOn, runCapFor, workspaceOf, BOARD_NOTES_KEEP, type BoardNote, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "../core/types";
-import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TIMEOUT_MS, withBoardText, type SetupOutcome, type SetupResult } from "../runs/worktree-setup";
+import { type Store } from "../core/store";
+import { maskSaved } from "../server/board-keys";
+import { autoHuddlesOn, runCapFor, type PrStatus, type QueuedMessage, type Ticket } from "../core/types";
+import { type SetupOutcome } from "../runs/worktree-setup";
+import { nowIso } from "../core/util";
+import { THINKING_LINE, RunBrowsers, BoardOptions, ActiveRun, hasText, replayText, chatFor, flags, StillRefused, ChatOptions, autoHuddleActivity, reopenable, takesSlot, ACTIVITY_THROTTLE_MS, FOLDER_WAIT, Session, STALL_RESTART_TEXT, DRAFT_THROTTLE_MS, RunSpend, spentWith, WORKFLOW_CAP_POLL_MS, claudeSessionExists, REWINDING, sessionMissing, claudeSetupHint, SESSION_OPEN_MSG, ConflictError, startError } from "./board-types";
+import * as devicesPart from "./board-devices";
+import * as rewindPart from "./board-rewind";
+import * as queuePart from "./board-queue";
+import * as limitsPart from "./board-limits";
+import * as followupsPart from "./board-followups";
+import * as repoPart from "./board-repo";
+import * as ticketsPart from "./board-tickets";
+import * as plansPart from "./board-plans";
+import * as familiesPart from "./board-families";
+import * as mainPart from "./board-main";
+import * as featuresPart from "./board-features";
+import * as recoveryPart from "./board-recovery";
 
-const INSTALLING = "Installing project dependencies…";
-/** The live line right after a message is sent, while Claude thinks (no step yet). A fixed marker: the UI shows it as
- * "<the name the user gave Claude> is thinking…" (web/src/avatarMood.ts liveLine); old tickets may still hold "Claude is replying…". */
-export const THINKING_LINE = "Claude is thinking…";
-import { nowIso, slugify, starredTitle } from "../core/util";
+export * from "./board-types";
 
-/** Where a schedule's run or an automation's new ticket goes as a task (Board.taskPlaceFor). */
-export interface TaskPlace {
-  /** The ticket that runs it as a task (its parentId): a tool group or the main ticket. */
-  managerId: string;
-  mainId: string;
-  /** The group it hangs under when that group doesn't run tasks itself. */
-  partOf?: string;
-  startFrom?: string;
-}
-
-/** What made a task in a feature (Board.createFeatureTask): it names it in the comments. */
-export type TaskMaker = { kind: "schedule" | "automation"; name: string };
-
-/** A run's board browsers (Board.runBrowsers): tool servers for --mcp-config, the prompt note, and whether to leave out Claude in Chrome. */
-export interface RunBrowsers {
-  servers: Record<string, unknown>;
-  note: string | null;
-  noChrome: boolean;
-}
-
-export interface BoardOptions {
-  claudeBin: string;
-  /** Board browsers' Chrome launcher and checks (tests pass fakes; see board-browsers.ts). */
-  browserDeps?: BrowserDeps;
-  /** Whether Claude has a stored session with this id (used to pick --resume vs --session-id). */
-  sessionExists?: (sessionId: string) => boolean;
-  /** Whether an interactive claude process currently has this session open. */
-  isSessionLive?: (sessionId: string, title: string | null) => Promise<boolean>;
-  /** The ticket's session open in one of the board's own terminals (the dock), which the board can close (Take over here). */
-  findOwnedSession?: (sessionId: string) => Promise<OwnedSession | null>;
-  /**
-   * Tells the user about board events that aren't "needs you", e.g. a plan done, about ticket `id` on board `slug`
-   * (default: a macOS banner, see notify.ts).
-   */
-  notify?: (title: string, body: string, slug: string, id: string) => void;
-  /** A ticket's run ended with this final text (Telegram sends it back to a message that came from there). */
-  turnEnded?: (slug: string, id: string, text: string) => void;
-  /** Child events that arrive within this window wake the planner once (default 3s). */
-  planWakeDelayMs?: number;
-  /** How long ask_ticket waits for an answer (default ASK_TIMEOUT_MS; tests pass a short one). */
-  askTimeoutMs?: number;
-  /** Opens a pull request for land_milestone (default: `gh pr create`); returns its URL. Tests pass a fake. */
-  openPr?: (dir: string, o: { branch: string; base: string; title: string; body: string }) => Promise<string>;
-  /** The ticket's Claude session as the board UI sees it (open questions, pending proposal); a plan skips children waiting on the user. */
-  sessionSummary?: (sessionId: string) => SessionSummary | null;
-  /** The clock for usage-limit resets and the daily auto-continue cap (tests pass a fake one). */
-  now?: () => Date;
-  /** Pause before the one automatic retry after a passing API error (default RETRY_DELAY_MS; tests pass a short one). */
-  retryDelayMs?: number;
-  /** How often a capped run with workflows adds up what it spent (default WORKFLOW_CAP_POLL_MS; tests pass a short one). */
-  capPollMs?: number;
-  /** Stall watchdog time in ms, overriding the board's stallMinutes (tests). */
-  stallMs?: number;
-}
-
-interface ActiveRun {
-  slug: string;
-  id: string;
-  /** A main ticket's run: it can't edit files, so it holds no run slot and never waits on the folder. */
-  noEdit?: boolean;
-  handle: RunHandle | null;
-  promise: Promise<void>;
-  /** Status to land on when the run ends because the user moved the card. */
-  targetStatus: Status | null;
-  /** The user asked this run, in its own chat, to move its card: the board moves it once the run ends (see requestSelfMove). */
-  selfMove?: SelfMove;
-  /** A quiet schedule's run found nothing for the user: once it is over, the board removes the ticket (endQuietly). */
-  quietEnd?: { summary: string; costUsd: number };
-  stopRequested: boolean;
-  /** Its promise runs (execute): the promise's end unregisters it. Without it the run never got going (see stopRun). */
-  started?: boolean;
-  /**
-   * Set for runs started from the ticket chat (not the Ready queue). raw: text is the full prompt (planner wake-ups);
-   * returnTo: the column such a run goes back to, since a wake-up is housekeeping, not new work to review.
-   * quiet: a reply to another ticket's Claude; the card, outcome and run count stay as they were.
-   * from: the column the card was in when the message was sent (a reply that only proposed tickets goes back there).
-   * user: answers a message the user typed in this ticket's chat, so the run may manage the ticket's own children
-   * (see plannerRights); plan wake-ups, peer replies and messages from a planner's run don't.
-   */
-  chat?: {
-    text: string; mode: ChatMode; raw?: boolean; returnTo?: Status; quiet?: boolean; from?: Pick<Ticket, "status" | "outcome">; user?: boolean;
-    /** text is a slash command (see QueuedMessage.slash). */
-    slash?: "prompt" | "local";
-    /** A wake for the ticket's own auto huddle (see QueuedMessage.hostWake): a full prompt, run as the ticket's work. */
-    hostWake?: boolean;
-    /** The board's follow-up wake (see Board.wakeFollowUp): a full prompt; afterwards the card goes back to returnTo. */
-    followUp?: boolean;
-    /** The board's one status nudge (see Board.nudgeStatus): a quiet turn that changes nothing on the card. */
-    nudge?: boolean;
-  };
-  /** This message's run already got its one automatic retry after a passing API error. */
-  retried?: boolean;
-  /** The current attempt's spending so far (executeOnce), so a steer can note where Telegram's part starts. */
-  spend?: RunSpend;
-  /**
-   * A Telegram message started this run or was steered into it: what the attempt had spent by then (0: Telegram
-   * started it). At the attempt's end the rest counts as "Spent from Telegram today" (spend.ts addTelegramSpend).
-   */
-  telegramFrom?: number;
-  /** The user chose Restart on a stalled run: once it is stopped, it resumes in the same session. */
-  restartRequested?: boolean;
-  /** Workflows pushed this run past its spending cap: the board stopped it (what the run had spent, in $). */
-  workflowCapHit?: number;
-  /** This run started an auto huddle (start_huddle): one per run. */
-  autoHuddleStarted?: boolean;
-  /** The user typed a message in the ticket's chat that was handed to this run while it worked (see userAskedRun). */
-  userSteered?: boolean;
-  /** Queued messages (ticket.queued) written to this claude process, keyed by id, with the text it was given. */
-  inFlight: Map<string, string>;
-  /** Queued message this chat run was started with; it leaves the queue once Claude reads the prompt. */
-  promptMsgId?: string;
-  /** Reply text streaming in right now; kept on the ticket if a restart cuts the run off. */
-  draft?: DraftTracker;
-  /** A chat reply or plan wake was part of this run: on a feature's top ticket it may get the status nudge. */
-  statusEligible?: boolean;
-  /** This run already got its one status nudge. */
-  nudged?: boolean;
-}
-
-/** A finished assistant message with text in it (not just thinking or a tool call). */
-function hasText(ev: any): boolean {
-  if (ev?.type !== "assistant" || ev.parent_tool_use_id) return false;
-  const c = ev.message?.content;
-  return Array.isArray(c) && c.some((b: any) => b?.type === "text" && typeof b.text === "string" && b.text.trim());
-}
-
-function replayText(ev: any): string | null {
-  if (ev?.type !== "user" || !ev.isReplay) return null;
-  const c = ev.message?.content;
-  const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b: any) => (b?.type === "text" ? b.text : "")).join("") : null;
-  // A slash command comes back as Claude Code's command tags: match it with the `/name args` the board sent.
-  return text === null ? null : commandText(text) ?? text;
-}
-
-/** Backlog/Planning chats refine the ticket (no file edits); everywhere else Claude acts on the message. */
-export function chatModeFor(status: Status): ChatMode {
-  return status === "backlog" || status === "planning" ? "refine" : "act";
-}
-
-/** How a chat run handles a queued message: a peer message (from another ticket's Claude) is sent as-is, quietly. */
-function chatFor(
-  t: Pick<Ticket, "status" | "outcome"> & { tool?: boolean }, msg: { text: string; peer?: boolean; fromPlanner?: boolean; slash?: "prompt" | "local"; hostWake?: boolean; followUp?: boolean },
-): NonNullable<ActiveRun["chat"]> {
-  // A follow-up comes back to the ticket's own work, wherever the card is; afterwards the card goes back there.
-  if (msg.followUp) return { text: msg.text, mode: "act", raw: true, returnTo: t.status === "in_progress" ? "review" : t.status, followUp: true };
-  // The ticket's auto huddle wakes it: unattended work on its own ticket, so it ends like a work run (result line, column).
-  if (msg.hostWake) return { text: msg.text, mode: "act", raw: true, hostWake: true };
-  // A tool ticket's messages come from its parent: they continue its work, in any column.
-  const mode = t.tool ? "act" : chatModeFor(t.status);
-  if (msg.peer) return { text: msg.text, mode, raw: true, quiet: true };
-  const chat: NonNullable<ActiveRun["chat"]> = { text: msg.text, mode, from: { status: t.status, outcome: t.outcome }, ...(msg.fromPlanner ? {} : { user: true }) };
-  if (!msg.slash) return chat;
-  // A local command (/compact) gets no reply from Claude: like a peer reply, the card and outcome stay as they were.
-  return { ...chat, slash: msg.slash, ...(msg.slash === "local" ? { quiet: true } : {}) };
-}
-
-/** Queued-message flags from Board.chat options. */
-function flags(o: ChatOptions): Pick<QueuedMessage, "peer" | "fromPlanner" | "from" | "automation" | "slash" | "hostWake" | "followUp" | "telegram" | "nextRun"> {
-  return {
-    ...(o.automation ? { automation: o.automation } : {}),
-    ...(o.nextRun ? { nextRun: true } : {}),
-    ...(o.from ? { from: o.from } : {}), ...(o.telegram ? { telegram: o.telegram } : {}),
-    ...(o.peer ? { peer: true } : {}), ...(o.fromPlanner ? { fromPlanner: true } : {}), ...(o.slash ? { slash: o.slash } : {}),
-    ...(o.hostWake ? { hostWake: true } : {}), ...(o.followUp ? { followUp: true } : {}),
-  };
-}
-
-/** ChatOptions.still said no: nothing was queued. */
-export class StillRefused extends Error {
-  constructor() {
-    super("not taking this message any more");
-    this.name = "StillRefused";
-  }
-}
-
-/** Telegram marks kept per ticket (telegramIn, telegramOut). */
-export const TELEGRAM_KEEP = 30;
-
-/** Board.chat options; hostWake: the ticket's own auto huddle (or a free auto-huddle slot) wakes it; followUp: its follow-up is due. */
-export interface ChatOptions {
-  /**
-   * Checked right before the message is queued (after any wait, such as the rewind snapshot): false refuses it with a
-   * StillRefused error and nothing is queued (Telegram: "Take messages" turned off meanwhile).
-   */
-  still?: () => boolean;
-  peer?: boolean;
-  fromPlanner?: boolean;
-  /** Sent by another ticket's Claude: which one (shown with the message instead of "You"). */
-  from?: { ticketId: string; title: string };
-  slash?: "prompt" | "local";
-  hostWake?: boolean;
-  followUp?: boolean;
-  /** The user's "Send in a fresh chat": this message starts a new chat; the old one stays visible above it. */
-  fresh?: boolean;
-  /** The user sent it from Telegram (a reply to an alert): kept on the queued message so a restart never sends it twice. */
-  telegram?: { updateId: number; tg: number };
-  /** Start a new run for it rather than steering a run already going (see QueuedMessage.nextRun). */
-  nextRun?: boolean;
-  /**
-   * A later item of this automation's thread (Board.automationItem): never the user's (send it with fromPlanner), shown
-   * with the automation's name, and it resumes the ticket's session even when it is cold and large (no automatic fresh chat).
-   */
-  automation?: { loopId: string; name: string };
-}
-
-/** What the card says while the ticket waits for its auto huddle. */
-export function autoHuddleActivity(a: NonNullable<Ticket["autoHuddle"]>): string {
-  return a.state === "waiting" ? "Waiting for huddle slot" : "Auto huddle: waiting for the review";
-}
-
-/** Statuses whose ticket already did its work: moving it back to Planning or Backlog remembers it (Ticket.reopenedFrom). */
-function reopenable(s: Status): boolean {
-  return s === "review" || s === "done";
-}
-
-/**
- * Runs that do the ticket's work: work runs, and chat replies that act on the ticket. Planning interviews, replies to
- * another ticket's Claude (its asker waits on them) and planner wake-ups are short housekeeping and don't count. There
- * is no limit on them (the board starts every run as soon as it is ready); the count shows on the board and decides
- * whether a reply waits for a folder that another ticket edits in place.
- */
-function takesSlot(chat?: ActiveRun["chat"], noEdit?: boolean): boolean {
-  // A main ticket's runs can't edit (they only talk and decide): they never wait for a slot.
-  if (noEdit) return false;
-  return !chat || (chat.mode === "act" && !chat.quiet && (!chat.returnTo || !!chat.followUp));
-}
-
-/** What the chat says about a message held back by a pending restart. */
-export const RESTART_HOLD_TEXT = "The board restarts soon; your message is sent right after (at most 10 minutes).";
-
-const ACTIVITY_THROTTLE_MS = 1000;
-/** A form answer ("My answers: …") identical to one taken this recently isn't sent again (two tabs, a double tap). */
-export const ANSWER_REPEAT_MS = 30_000;
-const ANSWER_PREFIX = "My answers:";
-/** How long a board folder's cached version history (see Board.repoState) is trusted. */
-const REPO_TTL_MS = 10_000;
-/** How long a feature's saved changes list (see Board.savedChanges) is trusted when its family didn't change. */
-const CHANGES_TTL_MS = 60_000;
-/** A run that would edit the board's folder while another ticket does waits with this on its card. */
-export const FOLDER_WAIT = "waiting: another ticket is using the folder";
-
-/** Where a ticket's runs work (see Board.ensureSession). */
-export interface Session {
-  dir: string;
-  sessionId: string;
-  existed: boolean;
-  isGit: boolean;
-  /** The board folder's version history. */
-  repo: RepoKind;
-  /** The run edits the board's folder itself (no worktree, not a linked session). */
-  inPlace: boolean;
-}
-/** What a stalled run's session is told when the user restarts it. */
-const STALL_RESTART_TEXT = "Your previous run stopped responding and the user restarted it. Continue where you left off.";
-/** A requested restart waits this long for active runs to finish, then restarts anyway (recover() resumes them). */
-export const RESTART_MAX_WAIT_MS = 10 * 60_000;
-const DRAFT_THROTTLE_MS = 120;
-/** What a run spent: its own messages plus its workflows' helper agents. */
-type RunSpend = { main: Map<string, number>; workflowDirs: Set<string>; files: Map<string, { key: string; cost: number }> };
-
-function spentWith(spend: RunSpend): number {
-  let total = 0;
-  for (const c of spend.main.values()) total += c;
-  for (const dir of spend.workflowDirs) total += workflowDirCost(dir, spend.files);
-  return total;
-}
-
-/** What Claude is told when the user stops one of its workflows from the board. */
-export const WORKFLOW_STOPPED_TEXT = "The user stopped your workflow from the board. Don't start it again; finish the task with the results you already have and say which parts the workflow didn't get to.";
-/** How often a capped run with workflows running adds up its spending (see executeOnce). */
-export const WORKFLOW_CAP_POLL_MS = 5_000;
-
-/** The session's transcript file under Claude's projects folder, if any. */
-export function claudeSessionFile(sessionId: string): string | null {
-  const root = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"), "projects");
-  if (!existsSync(root)) return null;
-  try {
-    const d = readdirSync(root).find((d) => existsSync(join(root, d, `${sessionId}.jsonl`)));
-    return d ? join(root, d, `${sessionId}.jsonl`) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function claudeSessionExists(sessionId: string): boolean {
-  return claudeSessionFile(sessionId) !== null;
-}
-
-/** Why a message or a second rewind waits while a rewind, undo or fork runs. */
-export const REWINDING = "The chat is being rewound, undone or forked right now. Try again in a moment.";
-
-/** Claude's answer to `--resume` with a session it has no transcript for. */
-export function sessionMissing(error: string, events: any[]): boolean {
-  const re = /No conversation found with session ID/i;
-  return re.test(error) || events.some((e) => e?.type === "result" && Array.isArray(e.errors) && e.errors.some((m: unknown) => typeof m === "string" && re.test(m)));
-}
-
-/**
- * A run that failed because Claude Code itself isn't ready (not installed, or not signed in): what to do, in plain
- * words, instead of Claude's raw error. Null for any other failure.
- */
-export function claudeSetupHint(error: string): string | null {
-  if (/failed to start .*claude|Executable not found in \$PATH: "?claude"?/i.test(error)) {
-    return "Claude Code isn't installed, or the board can't find it. Install it from https://claude.com/claude-code and sign in, then start the ticket again. If it still fails, run `ckanban install` in Terminal so the board finds Claude Code.";
-  }
-  if (/Please run \/login/i.test(error)) {
-    return "Claude Code isn't signed in. Open Terminal, type `claude`, sign in, then start the ticket again.";
-  }
-  return null;
-}
-
-export const SESSION_OPEN_MSG = "This ticket's Claude session is still open in a terminal. Exit it there (Ctrl+D or /exit), then try again.";
-
-/** Run errors the board offers a one-click fix for: Start fresh session, or Take over here. */
-export type Recovery = "session_missing" | "session_open";
-
-export function recoveryFor(error: string | null | undefined): Recovery | null {
-  if (!error) return null;
-  if (sessionMissing(error, [])) return "session_missing";
-  if (error === SESSION_OPEN_MSG) return "session_open";
-  return null;
-}
-
-/** The chat note when a cold, large main or feature chat starts its next turn fresh (Board.autoFresh). */
-export const AUTO_FRESH_NOTE = "Started a fresh chat to keep this cheap: Claude starts from the status and can look up earlier messages.";
-
-export class ConflictError extends Error {}
-
-/** Every ticket below id in its family (not id itself). */
-function subtreeIds(tickets: Ticket[], id: string): string[] {
-  const rows = familyOf(tickets, id);
-  const at = rows.findIndex((r) => r.ticket.id === id);
-  const out: string[] = [];
-  for (let i = at + 1; i < rows.length && rows[i].depth > rows[at].depth; i++) out.push(rows[i].ticket.id);
-  return out;
-}
-
-/** What changed in a feature's family between two familySig values, as short lines for the status nudge. */
-export function sigChanges(before: string, after: string, rows: Ticket[]): string[] {
-  const parse = (sig: string) => new Map(sig.split("|").filter(Boolean).map((e) => [e.slice(0, e.indexOf(":")), e.slice(e.indexOf(":") + 1)]));
-  const [a, b] = [parse(before), parse(after)];
-  const title = (id: string) => rows.find((r) => r.id === id)?.title ?? id;
-  const out: string[] = [];
-  for (const [id, v] of b) {
-    if (!a.has(id)) out.push(`"${title(id)}" joined the feature`);
-    else if (a.get(id) !== v) {
-      const [status, outcome, verdict] = v.split(":");
-      out.push(`"${title(id)}" is now ${status}${outcome ? ` (${outcome})` : ""}${verdict ? `, verdict ${verdict}` : ""}`);
-    }
-  }
-  for (const id of a.keys()) if (!b.has(id)) out.push(`${id} left the feature`);
-  return out;
-}
+// The class keeps its fields, the constructor and the core run loop (chat, start, execute). Other methods live by topic
+// in board-*.ts as functions with `this: Board`; the one-line methods here call them, so `board.x()` works as before.
 
 export class Board {
-  private runs = new Map<string, ActiveRun>();
+  runs = new Map<string, ActiveRun>();
   /** "What we did before" word index per board (recall.ts), kept up to date as tickets change. */
-  private recallIndexes = new Map<string, RecallIndex>();
+  recallIndexes = new Map<string, RecallIndex>();
   /** Per ticket: the last form answer taken and when (repeatedAnswer). */
-  private recentAnswers = new Map<string, { text: string; at: number }>();
+  recentAnswers = new Map<string, { text: string; at: number }>();
   /** Latest live progress of each workflow (stream task_progress: every agent, waiting ones too), by ticket and Workflow call. */
-  private workflowLive = new Map<string, any[]>();
+  workflowLive = new Map<string, any[]>();
   /** Shared devices every board's runs take and let go (devices.ts); a run's end frees what it still holds. */
   readonly devices: Devices;
   /** Named Chromes (More → Browsers), learned from runs' list_connected_browsers results (chromes.ts). */
@@ -433,21 +73,21 @@ export class Board {
   /** The board's own browsers (More → Browsers, board-browsers.ts): Chromes it starts per set of logins, for runs. */
   readonly boardBrowsers: BoardBrowsers;
   /** Setup commands running now (`ckanban ticket setup`; stopping the ticket's run aborts them), per ticket key. */
-  private setups = new Map<string, { done: Promise<SetupOutcome>; abort: AbortController }>();
-  private shuttingDown = false;
+  setups = new Map<string, { done: Promise<SetupOutcome>; abort: AbortController }>();
+  shuttingDown = false;
   /** A restart waits for active runs to finish: no new run starts until then (see requestRestart). */
-  private restartPending = false;
+  restartPending = false;
   /** Other work a restart waits for besides board runs (huddle agents mid-turn), see onRestartBusy. */
-  private restartBusy: (() => string[])[] = [];
+  restartBusy: (() => string[])[] = [];
   /** Each board's open huddles by host ticket (see onHostHuddles); none until Huddles registers. */
-  private hostHuddleStates: (slug: string) => Map<string, HostHuddle> = () => new Map();
-  private sessionExists: (id: string) => boolean;
-  private isSessionLive: (id: string, title: string | null) => Promise<boolean>;
-  private notify: (title: string, body: string, slug: string, id: string) => void;
+  hostHuddleStates: (slug: string) => Map<string, HostHuddle> = () => new Map();
+  sessionExists: (id: string) => boolean;
+  isSessionLive: (id: string, title: string | null) => Promise<boolean>;
+  notify: (title: string, body: string, slug: string, id: string) => void;
 
-  private sessionSummary: (sessionId: string) => SessionSummary | null;
+  sessionSummary: (sessionId: string) => SessionSummary | null;
 
-  constructor(private store: Store, private bus: Bus, private opts: BoardOptions) {
+  constructor(public store: Store, public bus: Bus, public opts: BoardOptions) {
     this.sessionSummary = opts.sessionSummary ?? (() => null);
     this.sessionExists = opts.sessionExists ?? claudeSessionExists;
     this.isSessionLive = opts.isSessionLive ?? psSessionLive;
@@ -512,15 +152,15 @@ export class Board {
     return this.chromes.choice(setting);
   }
 
-  private key(slug: string, id: string) {
+  key(slug: string, id: string) {
     return `${slug}/${id}`;
   }
 
-  private emitTicket(slug: string, t: Ticket) {
+  emitTicket(slug: string, t: Ticket) {
     this.bus.emit({ type: "ticket.updated", profile: slug, ticket: t });
   }
 
-  private patch(slug: string, id: string, patch: Partial<Ticket>): Ticket {
+  patch(slug: string, id: string, patch: Partial<Ticket>): Ticket {
     // Every new activity line is stamped, so the card can show how long ago the last step was (W7).
     if ("lastActivity" in patch && !("lastActivityAt" in patch)) patch = { ...patch, lastActivityAt: patch.lastActivity ? nowIso() : null };
     const t = this.store.updateTicket(slug, id, patch);
@@ -531,7 +171,7 @@ export class Board {
   }
 
   /** Deletes the ticket's saved copies for Rewind, wherever its Claude worked (the board's folder or a linked one). */
-  private async dropRewindCopies(slug: string, t: Ticket): Promise<void> {
+  async dropRewindCopies(slug: string, t: Ticket): Promise<void> {
     const profile = this.store.getProfile(slug);
     const dirs = new Set([profile?.path, t.workdir].filter((d): d is string => !!d && existsSync(d)));
     for (const dir of dirs) await deleteSnapshots(dir, t.id).catch(() => {});
@@ -549,162 +189,40 @@ export class Board {
 
   // ---- Shared devices (devices.ts): taken by a run only while it uses them; Ticket.needs is just a hint ----
 
-  /** Who holds or waits for devices changed: refresh those tickets' cards and the Devices screen. */
-  private devicesChanged(owners: string[]): void {
-    if (this.shuttingDown) return;
-    for (const o of owners) {
-      const i = o.indexOf("/");
-      const t = this.store.getTicket(o.slice(0, i), o.slice(i + 1));
-      if (t) this.emitTicket(o.slice(0, i), t);
-    }
-    this.bus.emit({ type: "devices.updated" });
-  }
+  private devicesChanged(...a: Parameters<typeof devicesPart.devicesChanged>): ReturnType<typeof devicesPart.devicesChanged> { return devicesPart.devicesChanged.call(this, ...a); }
 
-  /** For the card: the devices the ticket's run uses now, and the ones it waits for. */
-  deviceState(slug: string, id: string): DeviceTicketState | null {
-    return this.devices.ticketState(slug, id);
-  }
+  deviceState(...a: Parameters<typeof devicesPart.deviceState>): ReturnType<typeof devicesPart.deviceState> { return devicesPart.deviceState.call(this, ...a); }
 
-  /** The ticket waits on the user now: not working, and a question or proposal is open (userWait). */
-  waitsForAnswer(slug: string, t: Ticket): boolean {
-    return !this.isRunning(slug, t.id) && this.userWait(t) !== null;
-  }
+  waitsForAnswer(...a: Parameters<typeof devicesPart.waitsForAnswer>): ReturnType<typeof devicesPart.waitsForAnswer> { return devicesPart.waitsForAnswer.call(this, ...a); }
 
-  /** Why a plan child waits on the user (questions, a proposal to apply, in Planning), or null. */
-  userWait(t: Ticket): string | null {
-    return userWaitReason(t, t.sessionId ? this.sessionSummary(t.sessionId) : null);
-  }
+  userWait(...a: Parameters<typeof devicesPart.userWait>): ReturnType<typeof devicesPart.userWait> { return devicesPart.userWait.call(this, ...a); }
 
-  /** The card still needs the user (questions, a proposal or new tickets to apply, a failed run), not just a look. */
-  waitsOnUser(slug: string, id: string): boolean {
-    const t = this.store.getTicket(slug, id);
-    if (!t) return false;
-    // A "with you" step has no card of its own: it waits on the user while its question is unanswered.
-    if (withYouTool(t)) return youWaiting(t, this.isRunning(slug, id));
-    const a = ticketAttention(this.store, slug, t, t.sessionId ? this.sessionSummary(t.sessionId) ?? null : null, this.isRunning(slug, id),
-      this.hostHuddles(slug).get(id), (x) => this.isRunning(slug, x));
-    return !!a && a.kind !== "review";
-  }
+  waitsOnUser(...a: Parameters<typeof devicesPart.waitsOnUser>): ReturnType<typeof devicesPart.waitsOnUser> { return devicesPart.waitsOnUser.call(this, ...a); }
 
-  /** Snooze the ticket from the Inbox until a time (null: unsnooze); key: snoozeKey of what it waits for now. */
-  setSnooze(slug: string, id: string, snooze: { until: string; key: string } | null): Ticket {
-    return this.patch(slug, id, { snooze });
-  }
+  setSnooze(...a: Parameters<typeof devicesPart.setSnooze>): ReturnType<typeof devicesPart.setSnooze> { return devicesPart.setSnooze.call(this, ...a); }
 
-  /** Working runs on the board (see takesSlot). */
-  running(slug: string): number {
-    let n = 0;
-    for (const r of this.runs.values()) if (r.slug === slug && takesSlot(r.chat, r.noEdit)) n++;
-    return n;
-  }
+  running(...a: Parameters<typeof devicesPart.running>): ReturnType<typeof devicesPart.running> { return devicesPart.running.call(this, ...a); }
 
-  /** The ticket's run is a working run (see takesSlot). */
-  holdsSlot(slug: string, id: string): boolean {
-    const r = this.runs.get(this.key(slug, id));
-    return !!r && takesSlot(r.chat, r.noEdit);
-  }
+  holdsSlot(...a: Parameters<typeof devicesPart.holdsSlot>): ReturnType<typeof devicesPart.holdsSlot> { return devicesPart.holdsSlot.call(this, ...a); }
 
 
-  isRunning(slug: string, id: string): boolean {
-    return this.runs.has(this.key(slug, id));
-  }
+  isRunning(...a: Parameters<typeof devicesPart.isRunning>): ReturnType<typeof devicesPart.isRunning> { return devicesPart.isRunning.call(this, ...a); }
 
-  /** The board's tickets with a run now, as one string that changes when one starts or stops (the daemon's caches key on it). */
-  runningKey(slug: string): string {
-    const ids: string[] = [];
-    for (const r of this.runs.values()) if (r.slug === slug) ids.push(`${r.id}${takesSlot(r.chat, r.noEdit) ? "" : "~"}`);
-    return ids.sort().join(",");
-  }
+  runningKey(...a: Parameters<typeof devicesPart.runningKey>): ReturnType<typeof devicesPart.runningKey> { return devicesPart.runningKey.call(this, ...a); }
 
-  /** Live progress of a workflow in this ticket's run (the latest task_progress agent list), if any came in. */
-  workflowProgress(slug: string, id: string, toolUseId: string): any[] | null {
-    return this.workflowLive.get(`${slug}/${id}/${toolUseId}`) ?? null;
-  }
+  workflowProgress(...a: Parameters<typeof devicesPart.workflowProgress>): ReturnType<typeof devicesPart.workflowProgress> { return devicesPart.workflowProgress.call(this, ...a); }
 
-  /** Keep a run's workflow progress for the chat, and what it spends for the cap. */
-  private watchWorkflows(slug: string, id: string, ev: any, spend: { main: Map<string, number>; workflowDirs: Set<string> }): void {
-    if (ev?.type === "system" && ev.subtype === "task_progress" && typeof ev.tool_use_id === "string" && Array.isArray(ev.workflow_progress)) {
-      this.workflowLive.set(`${slug}/${id}/${ev.tool_use_id}`, ev.workflow_progress);
-    } else if (ev?.type === "assistant" && ev.message?.usage) {
-      const mid = typeof ev.message.id === "string" ? ev.message.id : `#${spend.main.size}`;
-      spend.main.set(mid, messageCost(String(ev.message.model ?? ""), ev.message.usage));
-    } else if (ev?.type === "user" && Array.isArray(ev.message?.content)) {
-      for (const b of ev.message.content) {
-        if (b?.type !== "tool_result") continue;
-        const text = typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((c: any) => c?.text ?? "").join("\n") : "";
-        const dir = text.startsWith("Workflow launched") ? transcriptDirOf(text) : null;
-        if (dir) spend.workflowDirs.add(dir);
-      }
-    }
-  }
+  private watchWorkflows(...a: Parameters<typeof devicesPart.watchWorkflows>): ReturnType<typeof devicesPart.watchWorkflows> { return devicesPart.watchWorkflows.call(this, ...a); }
 
-  /**
-   * Stop one workflow of the ticket's run and let the run go on. Claude Code answers the stop request; if it can't
-   * stop just the workflow, the whole run stops instead (the result says which).
-   */
-  async stopWorkflow(slug: string, id: string, taskId: string): Promise<{ stopped: "workflow" | "run"; error?: string }> {
-    const r = this.runs.get(this.key(slug, id));
-    if (!r?.handle) throw new Error("this ticket isn't running");
-    const res = await r.handle.stopTask(taskId);
-    if (res.ok) {
-      // Claude only hears "killed": tell it the user did it, so it doesn't report the workflow as still running.
-      r.handle.send(WORKFLOW_STOPPED_TEXT);
-      this.store.addComment(slug, id, "ai", "Workflow stopped by user. The run goes on.");
-      this.emitTicket(slug, this.store.getTicket(slug, id)!);
-      return { stopped: "workflow" };
-    }
-    this.stopRun(r);
-    return { stopped: "run", error: res.error };
-  }
+  stopWorkflow(...a: Parameters<typeof devicesPart.stopWorkflow>): ReturnType<typeof devicesPart.stopWorkflow> { return devicesPart.stopWorkflow.call(this, ...a); }
 
-  /** The ticket's current run is a quiet reply to another session's message (a peer run, e.g. a huddle's). */
-  isPeerRun(slug: string, id: string): boolean {
-    return !!this.runs.get(this.key(slug, id))?.chat?.quiet;
-  }
+  isPeerRun(...a: Parameters<typeof devicesPart.isPeerRun>): ReturnType<typeof devicesPart.isPeerRun> { return devicesPart.isPeerRun.call(this, ...a); }
 
-  dispatch(slug: string): void {
-    if (this.restartPending || this.shuttingDown) return; // Ready tickets start after the restart
-    const profile = this.store.getProfile(slug);
-    if (!profile || !existsSync(profile.path)) return;
-    const idle = this.store.listTickets(slug).filter((t) => !t.error?.startsWith("corrupt") && !this.isRunning(slug, t.id));
-    // Chat replies waiting for a slot go first, oldest first: they continue work that is already underway.
-    for (const t of idle.filter((t) => t.slotWait).sort((a, b) => a.slotWait!.at.localeCompare(b.slotWait!.at))) {
-      const next = this.waiting(slug, t.id)[0];
-      if (!next) {
-        this.cancelSlotWait(slug, t.id);
-        continue;
-      }
-      const chat = next.peer || next.hostWake ? chatFor(t, next) : next.followUp ? chatFor(t.slotWait!.from, next) : { ...chatFor(t, next), mode: "act" as const, from: t.slotWait!.from };
-      if (chat.mode === "act" && this.folderBusy(slug, t)) continue;
-      this.patch(slug, t.id, { slotWait: null });
-      this.start(slug, t.id, chat, next.id);
-    }
-    const ready = idle.filter((t) => t.status === "ready").sort((a, b) => a.order - b.order);
-    for (const t of ready) {
-      // It would edit the board's folder in place while another ticket does: it waits its turn the same way.
-      if (this.folderBusy(slug, t)) continue;
-      this.start(slug, t.id);
-    }
-  }
+  dispatch(...a: Parameters<typeof devicesPart.dispatch>): ReturnType<typeof devicesPart.dispatch> { return devicesPart.dispatch.call(this, ...a); }
 
-  /** All slots are busy (or the folder is): the card waits in In Progress with its queued message(s) until dispatch() starts it. */
-  private waitForSlot(slug: string, id: string): Ticket {
-    const t = this.store.getTicket(slug, id)!;
-    return this.patch(slug, id, {
-      status: "in_progress", outcome: null, error: null, lastActivity: FOLDER_WAIT,
-      slotWait: t.slotWait ?? { at: nowIso(), from: { status: t.status, outcome: t.outcome } },
-    });
-  }
+  waitForSlot(...a: Parameters<typeof devicesPart.waitForSlot>): ReturnType<typeof devicesPart.waitForSlot> { return devicesPart.waitForSlot.call(this, ...a); }
 
-  /** Stop (or a move) before a waiting reply started: its messages stay for the user to send or discard. */
-  private cancelSlotWait(slug: string, id: string): Ticket {
-    const t = this.store.getTicket(slug, id)!;
-    const from = t.slotWait?.from ?? { status: "review" as Status, outcome: t.outcome };
-    return this.patch(slug, id, {
-      status: from.status, outcome: from.outcome, slotWait: null, lastActivity: null,
-      queued: (t.queued ?? []).map((m) => (m.state === "queued" ? { ...m, state: "unsent" } : m)),
-    });
-  }
+  cancelSlotWait(...a: Parameters<typeof devicesPart.cancelSlotWait>): ReturnType<typeof devicesPart.cancelSlotWait> { return devicesPart.cancelSlotWait.call(this, ...a); }
 
   /**
    * Send a chat message: resumes the ticket's session right away, like typing in the terminal.
@@ -834,45 +352,14 @@ export class Board {
     return this.store.getTicket(slug, id)!;
   }
 
-  /**
-   * The folder a ticket's Claude edits, once it is known (its own copy, a linked folder, or the project folder after
-   * the first run edited it in place); null before that, so rewind never snapshots the wrong folder.
-   */
-  rewindDir(slug: string, id: string): string | null {
-    const t = this.store.getTicket(slug, id);
-    const profile = this.store.getProfile(slug);
-    if (!t || !profile) return null;
-    if (t.workdir || t.worktree) return t.workdir ?? t.worktree ?? null;
-    return t.baseSha ? profile.path : null;
-  }
+  rewindDir(...a: Parameters<typeof rewindPart.rewindDir>): ReturnType<typeof rewindPart.rewindDir> { return rewindPart.rewindDir.call(this, ...a); }
 
   /** Tickets with a rewind, undo or fork under way: one at a time, and no message starts meanwhile. */
-  private rewinding = new Set<string>();
+  rewinding = new Set<string>();
 
-  /** Why the chat can't be rewound right now, or null when it can. held: asked from inside withRewind (the lock is ours). */
-  rewindBlocked(slug: string, id: string, held = false): string | null {
-    const t = this.store.getTicket(slug, id);
-    if (!t) return "ticket not found";
-    if (!held && this.rewinding.has(this.key(slug, id))) return REWINDING;
-    if (this.isRunning(slug, id)) return "Claude is working. Stop it or wait until it has replied.";
-    if (t.queued?.length) return "A message is still waiting to be sent. Send or discard it first.";
-    // In the project folder itself, another ticket's run edits the same files: putting them back would undo its work too.
-    if (!t.workdir && !t.worktree && this.folderBusy(slug, t)) return "Another ticket is editing this folder right now. Try again when it has finished.";
-    return null;
-  }
+  rewindBlocked(...a: Parameters<typeof rewindPart.rewindBlocked>): ReturnType<typeof rewindPart.rewindBlocked> { return rewindPart.rewindBlocked.call(this, ...a); }
 
-  /**
-   * The conversation was cut by a rewind: with nothing left of it, the next message starts a new session.
-   * undo: what Undo needs to put it back (its newSessionId is filled in here).
-   */
-  rewound(slug: string, id: string, emptied: boolean, undo: RewindUndo | null = null): Ticket {
-    this.recoverable(slug, id);
-    const sessionId = emptied ? crypto.randomUUID() : null;
-    const rewindUndo = undo ? { ...undo, newSessionId: sessionId } : null;
-    return this.patch(slug, id, sessionId
-      ? { sessionId, sessionStarted: false, freshSession: true, lastActivity: null, rewindUndo }
-      : { lastActivity: null, rewindUndo });
-  }
+  rewound(...a: Parameters<typeof rewindPart.rewound>): ReturnType<typeof rewindPart.rewound> { return rewindPart.rewound.call(this, ...a); }
 
   /** Runs a rewind, undo or fork of the ticket's chat, refused while another one or a run is under way. */
   async withRewind<T>(slug: string, id: string, f: () => Promise<T>): Promise<T> {
@@ -887,212 +374,41 @@ export class Board {
     }
   }
 
-  /** Why the last rewind can't be undone now (rewindBlocked, then rewind.ts undoBlocked), or null. */
-  async undoRewindBlocked(slug: string, id: string, files: boolean, held = false): Promise<string | null> {
-    const t = this.store.getTicket(slug, id);
-    if (!t) return "ticket not found";
-    const busy = this.rewindBlocked(slug, id, held);
-    if (busy) return busy;
-    const u = t.rewindUndo;
-    const started = !!t.sessionId && t.sessionId !== u?.sessionId && (!!t.sessionStarted || this.sessionExists(t.sessionId));
-    return undoBlocked(u, u ? claudeSessionFile(u.sessionId) : null, { sessionId: t.sessionId ?? null, started }, files);
-  }
+  undoRewindBlocked(...a: Parameters<typeof rewindPart.undoRewindBlocked>): ReturnType<typeof rewindPart.undoRewindBlocked> { return rewindPart.undoRewindBlocked.call(this, ...a); }
 
-  /** Undo the last rewind: files (unless files is false) and the chat come back as they were just before it. */
-  async undoRewind(slug: string, id: string, files: boolean): Promise<UndoResult> {
-    return this.withRewind(slug, id, () => this.undoRewindNow(slug, id, files));
-  }
+  undoRewind(...a: Parameters<typeof rewindPart.undoRewind>): ReturnType<typeof rewindPart.undoRewind> { return rewindPart.undoRewind.call(this, ...a); }
 
-  private async undoRewindNow(slug: string, id: string, files: boolean): Promise<UndoResult> {
-    const blocked = await this.undoRewindBlocked(slug, id, files, true);
-    if (blocked) throw new ConflictError(blocked);
-    const t = this.store.getTicket(slug, id)!;
-    const u = t.rewindUndo!;
-    let r: UndoResult;
-    try {
-      r = await applyUndo(u, claudeSessionFile(u.sessionId)!, id, files, () => this.rewindBlocked(slug, id, true));
-    } catch (e) {
-      throw e instanceof RewindRefused ? new ConflictError(e.message) : e;
-    }
-    this.recoverable(slug, id);
-    this.patch(slug, id, {
-      rewindUndo: null, lastActivity: null,
-      ...(u.newSessionId ? { sessionId: u.sessionId, sessionStarted: true, freshSession: false } : {}),
-    });
-    return r;
-  }
+  undoRewindNow(...a: Parameters<typeof rewindPart.undoRewindNow>): ReturnType<typeof rewindPart.undoRewindNow> { return rewindPart.undoRewindNow.call(this, ...a); }
 
-  /** What `/` can run in this ticket's chat (the composer's picker lists the same). */
-  commands(slug: string, id: string): SlashCommand[] {
-    const t = this.store.getTicket(slug, id);
-    const profile = this.store.getProfile(slug);
-    if (!t || !profile) return [];
-    return listCommands(t.workdir ?? t.worktree ?? profile.path, { projects: [profile.path] });
-  }
+  commands(...a: Parameters<typeof queuePart.commands>): ReturnType<typeof queuePart.commands> { return queuePart.commands.call(this, ...a); }
 
-  /** /model: the board's own command. Claude Code's version only lasts for one run (see commands.ts). */
-  private boardCommand(slug: string, id: string, name: string, args: string): Ticket {
-    const t = this.store.getTicket(slug, id)!;
-    if (name === "model") {
-      const profile = this.store.getProfile(slug)!;
-      const fallback = profile.model ? `the board's model (${profile.model})` : "Claude Code's default model";
-      if (!args) {
-        return this.patch(slug, id, { notice: t.model ? `This ticket uses model ${t.model}. Change it with /model <name>, or /model default.` : `This ticket uses ${fallback}. Change it with /model <name>, e.g. /model sonnet.` });
-      }
-      const reset = args === "default" || args === "reset";
-      if (!reset && !validModel(args)) throw new Error(`"${args}" is not a model name. Use ${MODEL_HELP}.`);
-      const when = this.isRunning(slug, id) ? "from the next run (the current one keeps its model)" : "from the next run";
-      return this.patch(slug, id, { model: reset ? null : args, notice: reset ? `Model reset: this ticket uses ${fallback} ${when}.` : `Model set to ${args} for this ticket, ${when}.` });
-    }
-    if (name === "effort") {
-      const profile = this.store.getProfile(slug)!;
-      const level = (e: string | null | undefined) => (e === "ultracode" ? "xhigh" : e || null);
-      const boardUltra = !!runOptions(null, profile, true).ultracode;
-      const fallback = level(profile.effort) ? `the board's effort (${level(profile.effort)})` : "Claude Code's default effort";
-      const ultraText = (on: boolean) => (on ? ", ultracode on" : "");
-      const when = this.isRunning(slug, id) ? "from the next run (the current one keeps its settings)" : "from the next run";
-      if (!args) {
-        const mine = level(t.effort);
-        const ultra = ultracodeOn(t, profile);
-        return this.patch(slug, id, {
-          notice: `${mine ? `This ticket uses effort ${mine}` : `This ticket uses ${fallback}`}${ultraText(ultra)}. Change it with /effort <level>, /effort ultracode (on or off), or /effort default.`,
-        });
-      }
-      const words = args.toLowerCase().split(/\s+/);
-      // Ultracode is a switch next to the effort level, like Claude Code's: /effort ultracode, /effort ultracode off.
-      if (words[0] === "ultracode") {
-        const on = words[1] !== "off";
-        // The first version saved ultracode as the effort level: keep its level (xhigh) when switching it separately.
-        const effort = t.effort === "ultracode" ? "xhigh" : t.effort;
-        return this.patch(slug, id, {
-          ultracode: on, effort: effort ?? null,
-          notice: `Ultracode ${on ? "on" : "off"} for this ticket, ${when}.${on ? " Claude runs a workflow of helper agents for every substantial task, which uses much more of your plan." : ""}`,
-        });
-      }
-      const reset = args === "default" || args === "reset";
-      if (!reset && !validEffort(args)) throw new Error(`"${args}" is not an effort level. Use ${EFFORT_HELP}.`);
-      if (reset) {
-        return this.patch(slug, id, { effort: null, ultracode: null, notice: `Effort reset: this ticket uses ${fallback}${ultraText(boardUltra)} ${when}.` });
-      }
-      // A level set over the old "ultracode" effort keeps ultracode on.
-      const keep = t.effort === "ultracode" && t.ultracode == null ? { ultracode: true } : {};
-      const ultra = ultracodeOn({ ...t, ...keep, effort: args }, profile);
-      return this.patch(slug, id, { effort: args, ...keep, notice: `Effort set to ${args}${ultraText(ultra)} for this ticket, ${when}.` });
-    }
-    return t;
-  }
+  private boardCommand(...a: Parameters<typeof queuePart.boardCommand>): ReturnType<typeof queuePart.boardCommand> { return queuePart.boardCommand.call(this, ...a); }
 
-  /** Send a message that was left unsent by Stop, as if the user typed it now. */
-  async sendQueued(slug: string, id: string, msgId: string): Promise<Ticket> {
-    const msg = this.store.getTicket(slug, id)?.queued?.find((m) => m.id === msgId);
-    if (!msg) throw new Error("message not found");
-    if (msg.state !== "unsent") throw new ConflictError("message is already on its way to Claude");
-    this.dropQueued(slug, id, [msgId]);
-    return this.chat(slug, id, msg.text, {
-      peer: msg.peer, fromPlanner: msg.fromPlanner, from: msg.from, automation: msg.automation, slash: msg.slash, hostWake: msg.hostWake, followUp: msg.followUp, nextRun: msg.nextRun,
-    });
-  }
+  sendQueued(...a: Parameters<typeof queuePart.sendQueued>): ReturnType<typeof queuePart.sendQueued> { return queuePart.sendQueued.call(this, ...a); }
 
-  discardQueued(slug: string, id: string, msgId: string): Ticket {
-    const msg = this.held(slug, id, msgId);
-    const t = this.dropQueued(slug, id, [msgId]);
-    // The last reply waiting for a slot is gone: nothing is left to start, so the card goes back.
-    return t.slotWait && !this.waiting(slug, id).length ? this.cancelSlotWait(slug, id) : t;
-  }
+  discardQueued(...a: Parameters<typeof queuePart.discardQueued>): ReturnType<typeof queuePart.discardQueued> { return queuePart.discardQueued.call(this, ...a); }
 
-  /** Fix a message Claude hasn't received yet: it keeps its place in the queue. */
-  editQueued(slug: string, id: string, msgId: string, text: string): Ticket {
-    if (!text.trim()) throw new Error("message is empty");
-    const msg = this.held(slug, id, msgId);
-    const t = this.store.getTicket(slug, id)!;
-    return this.patch(slug, id, { queued: (t.queued ?? []).map((m) => (m.id === msg.id ? { ...m, text } : m)) });
-  }
+  editQueued(...a: Parameters<typeof queuePart.editQueued>): ReturnType<typeof queuePart.editQueued> { return queuePart.editQueued.call(this, ...a); }
 
-  /**
-   * A queued message the user can still change: left unsent by Stop, or waiting for the folder or a restart.
-   * With a run going it was written to Claude's stdin at once (peer messages included), so it is delivered.
-   */
-  private held(slug: string, id: string, msgId: string): QueuedMessage {
-    const msg = this.store.getTicket(slug, id)?.queued?.find((m) => m.id === msgId);
-    if (!msg) throw new Error("message not found");
-    if (msg.state === "unsent") return msg;
-    if (msg.peer || this.isRunning(slug, id)) throw new ConflictError("message is already on its way to Claude");
-    return msg;
-  }
+  held(...a: Parameters<typeof queuePart.held>): ReturnType<typeof queuePart.held> { return queuePart.held.call(this, ...a); }
 
-  private dropQueued(slug: string, id: string, ids: string[]): Ticket {
-    const t = this.store.getTicket(slug, id)!;
-    return this.patch(slug, id, { queued: (t.queued ?? []).filter((m) => !ids.includes(m.id)) });
-  }
+  dropQueued(...a: Parameters<typeof queuePart.dropQueued>): ReturnType<typeof queuePart.dropQueued> { return queuePart.dropQueued.call(this, ...a); }
 
-  /**
-   * A form answer ("My answers: …") identical to one already waiting on the ticket, on its way to Claude, or taken in
-   * the last ANSWER_REPEAT_MS: true (it isn't sent again). Otherwise it is noted as taken now.
-   */
-  private repeatedAnswer(slug: string, id: string, t: Ticket, text: string, opts: ChatOptions): boolean {
-    if (opts.peer || opts.hostWake || opts.followUp || opts.fromPlanner || !text.startsWith(ANSWER_PREFIX)) return false;
-    const key = this.key(slug, id);
-    const now = this.now().getTime();
-    for (const [k, v] of this.recentAnswers) if (now - v.at >= ANSWER_REPEAT_MS) this.recentAnswers.delete(k);
-    const norm = text.trim();
-    const recent = this.recentAnswers.get(key);
-    if ((recent && recent.text === norm) || (t.queued ?? []).some((m) => m.state === "queued" && m.text.trim() === norm)) {
-      console.log(`board: ${slug}/${id}: the same form answer came again within ${ANSWER_REPEAT_MS / 1000}s; sent once`);
-      return true;
-    }
-    this.recentAnswers.set(key, { text: norm, at: now });
-    return false;
-  }
+  private repeatedAnswer(...a: Parameters<typeof queuePart.repeatedAnswer>): ReturnType<typeof queuePart.repeatedAnswer> { return queuePart.repeatedAnswer.call(this, ...a); }
 
-  /** Hand a queued message to the live claude process; false when there is none to take it yet. */
-  private steer(run: ActiveRun, msg: QueuedMessage): boolean {
-    if (run.inFlight.has(msg.id) || run.promptMsgId === msg.id) return true;
-    // A slash command goes alone: anything after it would become the command's arguments.
-    const text = msg.slash ? localizeUrls(msg.text, this.store.attachmentsDir) : localizeAttachments(msg.peer || msg.hostWake || msg.followUp ? msg.text : steerPrompt(msg.text), this.store.attachmentsDir);
-    if (!run.handle?.send(text, { local: msg.slash === "local" })) return false;
-    // Claude never echoes a local command back: it is read once it is written.
-    if (msg.slash === "local") this.dropQueued(run.slug, run.id, [msg.id]);
-    else run.inFlight.set(msg.id, text);
-    if (!msg.peer && !msg.fromPlanner && !msg.hostWake && !msg.followUp && !msg.slash) run.userSteered = true;
-    // From Telegram: the rest of this attempt counts as Telegram's.
-    if (msg.telegram && run.telegramFrom === undefined) run.telegramFrom = run.spend ? spentWith(run.spend) : 0;
-    return true;
-  }
+  private steer(...a: Parameters<typeof queuePart.steer>): ReturnType<typeof queuePart.steer> { return queuePart.steer.call(this, ...a); }
 
-  /** Messages Claude has not read yet, waiting to be handed to a run. */
-  private waiting(slug: string, id: string): QueuedMessage[] {
-    return (this.store.getTicket(slug, id)?.queued ?? []).filter((m) => m.state === "queued");
-  }
+  waiting(...a: Parameters<typeof queuePart.waiting>): ReturnType<typeof queuePart.waiting> { return queuePart.waiting.call(this, ...a); }
 
-  /** Claude echoed a user message back: it has read it, so it leaves the queue. */
-  private delivered(run: ActiveRun, text: string) {
-    let msgId = [...run.inFlight].find(([, sent]) => sent === text)?.[0];
-    if (msgId) run.inFlight.delete(msgId);
-    // Anything else echoed back is the run's own prompt.
-    else if (run.promptMsgId) [msgId, run.promptMsgId] = [run.promptMsgId, undefined];
-    if (msgId) this.dropQueued(run.slug, run.id, [msgId]);
-  }
+  private delivered(...a: Parameters<typeof queuePart.delivered>): ReturnType<typeof queuePart.delivered> { return queuePart.delivered.call(this, ...a); }
 
-  /** Entering Planning means "shape this with Claude": start the interview once, without a click. */
-  private autoRefine(slug: string, id: string): void {
-    const t = this.store.getTicket(slug, id);
-    if (!t || t.status !== "planning" || t.refineStarted || this.isRunning(slug, id) || this.shuttingDown) return;
-    if (t.error?.startsWith("corrupt")) return;
-    // A linked session is already a conversation about work underway; an interview would be noise.
-    // A run stopped before Claude saved its session left nothing to talk over: interview as if new.
-    if (t.workdir || (t.sessionStarted && t.sessionId && this.sessionExists(t.sessionId))) return;
-    if (this.restartPending) {
-      this.patch(slug, id, { refineStarted: true, interrupted: { at: nowIso(), mode: "refine", prompt: { text: "" }, held: true } });
-      return;
-    }
-    this.start(slug, id, { text: "", mode: "refine" });
-  }
+  autoRefine(...a: Parameters<typeof queuePart.autoRefine>): ReturnType<typeof queuePart.autoRefine> { return queuePart.autoRefine.call(this, ...a); }
 
   /**
    * Starts the ticket's run. Returns the error when it could not even start (e.g. the disk is full): the run is not
    * registered then, and the card shows the error; the caller keeps any message it meant for the run.
    */
-  private start(slug: string, id: string, chat?: ActiveRun["chat"], promptMsgId?: string): Error | null {
+  start(slug: string, id: string, chat?: ActiveRun["chat"], promptMsgId?: string): Error | null {
     const run: ActiveRun = {
       slug, id, handle: null, promise: Promise.resolve(), targetStatus: null, stopRequested: false, chat, inFlight: new Map(), promptMsgId,
       noEdit: !!this.store.getTicket(slug, id)?.main,
@@ -1150,7 +466,7 @@ export class Board {
    * Unregisters a run that has no promise behind it (it could not start), and puts what it shows on the card. The
    * patch may fail too (a full disk): the run is gone from the board either way.
    */
-  private dropRun(run: ActiveRun, patch: Partial<Ticket>): void {
+  dropRun(run: ActiveRun, patch: Partial<Ticket>): void {
     const { slug, id } = run;
     if (this.runs.get(this.key(slug, id)) === run) this.runs.delete(this.key(slug, id));
     this.devices.releaseAll(slug, id);
@@ -1177,7 +493,7 @@ export class Board {
     }
   }
 
-  private begin(run: ActiveRun) {
+  begin(run: ActiveRun) {
     if (run.chat && !run.chat.quiet && (run.chat.mode !== "refine" || run.chat.text.trim())) run.statusEligible = true;
     const t = this.store.getTicket(run.slug, run.id);
     const followUpRun = run.chat?.followUp && run.chat.returnTo ? { returnTo: run.chat.returnTo } : null;
@@ -1236,7 +552,7 @@ export class Board {
   }
 
   /** Where the card lands after a run: refine chats and replies to other tickets never move it. */
-  private endStatus(run: ActiveRun): Partial<Ticket> {
+  endStatus(run: ActiveRun): Partial<Ticket> {
     if (run.chat?.mode === "refine" || run.chat?.quiet) return run.targetStatus ? { status: run.targetStatus } : {};
     // A main ticket's reply or wake leaves its card where it was (a wake never sends it to Review).
     if (run.chat && run.noEdit && !run.chat.hostWake) return run.targetStatus ? { status: run.targetStatus } : {};
@@ -1256,7 +572,7 @@ export class Board {
    * text as the whole prompt; the run otherwise ends as the one it continues (result line, column, card). Without a
    * saved session (it hung before Claude saved one) there is nothing to continue: the run starts over with its prompt.
    */
-  private async executeOnce(run: ActiveRun, healed = false, resumeText?: string): Promise<void> {
+  async executeOnce(run: ActiveRun, healed = false, resumeText?: string): Promise<void> {
     const { slug, id } = run;
     const startedAt = nowIso();
     let session: Session;
@@ -1723,243 +1039,39 @@ export class Board {
     }
   }
 
-  /** The watchdog time for this board's runs in ms (0: off). */
-  private stallMs(profile: Profile): number {
-    if (this.opts.stallMs !== undefined) return this.opts.stallMs;
-    const m = profile.stallMinutes ?? DEFAULT_STALL_MINUTES;
-    return m > 0 ? m * 60_000 : 0;
-  }
+  private stallMs(...a: Parameters<typeof limitsPart.stallMs>): ReturnType<typeof limitsPart.stallMs> { return limitsPart.stallMs.call(this, ...a); }
 
-  /**
-   * The Inbox's answer to a stalled run. stop: as Stop. wait: clear the flag, the watchdog counts again. restart: stop the
-   * stuck process and resume the same session.
-   */
-  stallAction(slug: string, id: string, action: "stop" | "wait" | "restart"): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    const run = this.runs.get(this.key(slug, id));
-    if (!run?.handle) {
-      if (t.stalled) return this.patch(slug, id, { stalled: null });
-      throw new Error("this ticket has no running run");
-    }
-    // A stale card (or a second click) must not stop or restart a run that is working again.
-    if (!t.stalled || run.restartRequested) throw new Error("this run is not stalled anymore");
-    if (action === "stop") {
-      this.stopRun(run);
-    } else if (action === "wait") {
-      run.handle.keepWaiting();
-      this.store.addComment(slug, id, "ai", "Kept waiting on the stalled run.");
-      if (t.stalled) this.patch(slug, id, { stalled: null });
-    } else {
-      run.restartRequested = true;
-      this.patch(slug, id, { lastActivity: "Restarting…" });
-      run.handle.stop();
-    }
-    return this.store.getTicket(slug, id)!;
-  }
+  stallAction(...a: Parameters<typeof limitsPart.stallAction>): ReturnType<typeof limitsPart.stallAction> { return limitsPart.stallAction.call(this, ...a); }
 
-  private now(): Date {
-    return this.opts.now?.() ?? new Date();
-  }
+  now(...a: Parameters<typeof limitsPart.now>): ReturnType<typeof limitsPart.now> { return limitsPart.now.call(this, ...a); }
 
-  /** A run stopped at its spending cap: blocked until the user continues it with more budget (continueAfterCap). */
-  private capReached(slug: string, id: string, base: Partial<Ticket>, cap: number, withWorkflows?: number): void {
-    const msg = `Stopped at $${cap.toFixed(2)} cap`;
-    const why = withWorkflows === undefined
-      ? "this run spent its budget before it finished"
-      : `this run and its workflow's helper agents spent $${withWorkflows.toFixed(2)}, so the board stopped the run and its workflow`;
-    this.store.addComment(slug, id, "ai", `${msg}: ${why}. Continue it with more budget, or change the ticket's cap in its ⋯ menu.`);
-    this.patch(slug, id, { ...base, outcome: "blocked", error: msg, capHit: { capUsd: cap, at: nowIso() } });
-  }
+  private capReached(...a: Parameters<typeof limitsPart.capReached>): ReturnType<typeof limitsPart.capReached> { return limitsPart.capReached.call(this, ...a); }
 
-  /** "Continue with +$Y" after a run stopped at its cap: "continue" in the same session, with a cap of addUsd for that run. */
-  async continueAfterCap(slug: string, id: string, addUsd: number): Promise<Ticket> {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (!(Number.isFinite(addUsd) && addUsd > 0)) throw new Error("addUsd must be a positive amount");
-    if (this.isRunning(slug, id)) throw new Error("this ticket is already running");
-    this.patch(slug, id, { capNextUsd: addUsd });
-    try {
-      return await this.chat(slug, id, CONTINUE_TEXT);
-    } catch (e) {
-      this.patch(slug, id, { capNextUsd: null });
-      throw e;
-    }
-  }
+  continueAfterCap(...a: Parameters<typeof limitsPart.continueAfterCap>): ReturnType<typeof limitsPart.continueAfterCap> { return limitsPart.continueAfterCap.call(this, ...a); }
 
-  /** A run ended on the usage limit: wait for the reset, then continue on its own unless turned off or capped. */
-  private limitHit(slug: string, id: string, base: Partial<Ticket>, message: string): void {
-    const t = this.store.getTicket(slug, id)!;
-    const now = this.now();
-    const resetAt = parseReset(message, now);
-    const used = t.autoContinued?.day === dayKey(now) ? t.autoContinued.count : 0;
-    const capped = used >= AUTO_CONTINUE_PER_DAY;
-    const auto = t.autoContinue !== false && !capped;
-    const limit: LimitHit = { resetAt: resetAt.toISOString(), auto, at: now.toISOString(), message, ...(capped && t.autoContinue !== false ? { capped: true } : {}) };
-    const when = clockTime(resetAt, now);
-    const next = auto ? `It continues automatically at ${when}.`
-      : limit.capped ? `It resets at ${when}; it already continued automatically ${AUTO_CONTINUE_PER_DAY} times today, so continue it yourself.`
-      : `It resets at ${when}.`;
-    this.store.addComment(slug, id, "ai", `Usage limit hit: ${message}\n${next}`);
-    this.patch(slug, id, { ...base, outcome: "limit", error: message, limit });
-  }
+  private limitHit(...a: Parameters<typeof limitsPart.limitHit>): ReturnType<typeof limitsPart.limitHit> { return limitsPart.limitHit.call(this, ...a); }
 
-  /**
-   * Continue a ticket that hit the usage limit: "continue" to the same session through the normal chat path (run
-   * slots, restart hold). auto: the board's own continue at the reset; it counts toward the daily cap.
-   */
-  async continueAfterLimit(slug: string, id: string, opts: { auto?: boolean } = {}): Promise<Ticket> {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (opts.auto) {
-      if (t.outcome !== "limit" || !t.limit?.auto || this.isRunning(slug, id)) return t;
-      const day = dayKey(this.now());
-      const count = (t.autoContinued?.day === day ? t.autoContinued.count : 0) + 1;
-      this.patch(slug, id, { autoContinued: { day, count } });
-      this.store.addComment(slug, id, "ai", "The usage limit has reset: sent \"continue\".");
-    }
-    return this.chat(slug, id, CONTINUE_TEXT);
-  }
+  continueAfterLimit(...a: Parameters<typeof limitsPart.continueAfterLimit>): ReturnType<typeof limitsPart.continueAfterLimit> { return limitsPart.continueAfterLimit.call(this, ...a); }
 
-  /** "Don't auto-continue" / "Auto-continue": for the current wait and later limit hits of this ticket. */
-  setAutoContinue(slug: string, id: string, auto: boolean): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    const limit = t.limit ? { ...t.limit, auto, capped: undefined } : t.limit;
-    const out = this.patch(slug, id, { autoContinue: auto, ...(limit ? { limit } : {}) });
-    if (t.parentId) this.advancePlans(slug);
-    return out;
-  }
+  setAutoContinue(...a: Parameters<typeof limitsPart.setAutoContinue>): ReturnType<typeof limitsPart.setAutoContinue> { return limitsPart.setAutoContinue.call(this, ...a); }
 
-  /** Tickets waiting for a usage limit to reset whose automatic continue is due (see LimitWatcher). */
-  dueContinues(slug: string, delayMs: number): string[] {
-    const now = this.now().getTime();
-    return this.store.listTickets(slug)
-      .filter((t) => t.outcome === "limit" && t.limit?.auto && !this.isRunning(slug, t.id) && t.status !== "done"
-        && new Date(t.limit.resetAt).getTime() + delayMs <= now)
-      .map((t) => t.id);
-  }
+  dueContinues(...a: Parameters<typeof limitsPart.dueContinues>): ReturnType<typeof limitsPart.dueContinues> { return limitsPart.dueContinues.call(this, ...a); }
 
   // ---- Follow-ups (followup.ts): Claude comes back to this ticket later ----
 
-  /** follow_up: when Claude (or the user) wants the ticket's conversation woken again; replaces the pending one. */
-  setFollowUp(slug: string, id: string, input: { after?: string | null; at?: string | null; note?: string | null; cancelOnReply?: boolean }): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    const note = input.note?.trim();
-    if (!note) throw new FollowUpError("note is required: why you come back, and what to check then");
-    if (note.length > FOLLOW_UP_NOTE_MAX) throw new FollowUpError(`note is too long (max ${FOLLOW_UP_NOTE_MAX} characters): keep it to why and what to check`);
-    const now = this.now();
-    const due = followUpTime(input, now);
-    const followUp: FollowUp = { dueAt: due.toISOString(), note, cancelOnReply: input.cancelOnReply !== false, setAt: now.toISOString() };
-    this.store.addComment(slug, id, "ai", `Follow-up set for ${formatAt(followUp.dueAt)}: ${note}`);
-    return this.patch(slug, id, {
-      followUp, followUpStopped: null,
-      followUpLog: logFollowUp(t.followUpLog, { at: followUp.setAt, kind: "set", dueAt: followUp.dueAt, note }),
-    });
-  }
+  setFollowUp(...a: Parameters<typeof followupsPart.setFollowUp>): ReturnType<typeof followupsPart.setFollowUp> { return followupsPart.setFollowUp.call(this, ...a); }
 
-  /**
-   * Stop following up. by "claude": cancel_follow_up, with the reason the card shows ("Stopped following up: …").
-   * by "user": Stop following up on the card; it also clears a stopped note.
-   */
-  cancelFollowUp(slug: string, id: string, by: "user" | "claude", reason?: string | null): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    const why = reason?.trim();
-    if (by === "claude" && !why) throw new FollowUpError("reason is required: one line on why you stop following up");
-    if (why && why.length > FOLLOW_UP_REASON_MAX) throw new FollowUpError(`reason is too long (max ${FOLLOW_UP_REASON_MAX} characters): one line`);
-    if (by === "user" && !t.followUp) return t.followUpStopped ? this.patch(slug, id, { followUpStopped: null }) : t;
-    const at = this.now().toISOString();
-    this.store.addComment(slug, id, "ai", by === "user" ? "Follow-up stopped by user." : `Stopped following up: ${why}`);
-    return this.patch(slug, id, {
-      followUp: null, followUpStopped: by === "claude" ? { at, reason: why! } : null,
-      followUpLog: logFollowUp(t.followUpLog, { at, kind: "cancelled", by, ...(why ? { note: why } : {}) }),
-    });
-  }
+  cancelFollowUp(...a: Parameters<typeof followupsPart.cancelFollowUp>): ReturnType<typeof followupsPart.cancelFollowUp> { return followupsPart.cancelFollowUp.call(this, ...a); }
 
-  /** The user wrote in the ticket chat: Claude hears about it on its next wake, and it cancels a cancel-on-reply follow-up. */
-  userReplied(slug: string, id: string): void {
-    const t = this.store.getTicket(slug, id);
-    if (!t?.followUp) return;
-    const at = this.now().toISOString();
-    if (!t.followUp.cancelOnReply) {
-      this.patch(slug, id, { followUpLog: logFollowUp(t.followUpLog, { at, kind: "replied" }) });
-      return;
-    }
-    this.store.addComment(slug, id, "ai", "Follow-up cancelled: you replied.");
-    this.patch(slug, id, { followUp: null, followUpLog: logFollowUp(logFollowUp(t.followUpLog, { at, kind: "replied" }), { at, kind: "cancelled", by: "reply" }) });
-  }
+  userReplied(...a: Parameters<typeof followupsPart.userReplied>): ReturnType<typeof followupsPart.userReplied> { return followupsPart.userReplied.call(this, ...a); }
 
-  /**
-   * The user opened the ticket: the follow-up wake prompt tells Claude when (at most one write per 5 minutes, unless
-   * `force`: a helper reminder is pending for it, so this open must count).
-   */
-  markSeen(slug: string, id: string, force = false): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    const now = this.now();
-    if (!force && t.seenAt && now.getTime() - new Date(t.seenAt).getTime() < 5 * 60_000) return t;
-    return this.patch(slug, id, { seenAt: now.toISOString() });
-  }
+  markSeen(...a: Parameters<typeof followupsPart.markSeen>): ReturnType<typeof followupsPart.markSeen> { return followupsPart.markSeen.call(this, ...a); }
 
-  /** Tickets whose follow-up is due and that are free to take it: not running, queued or waiting (FollowUpWatcher). */
-  dueFollowUps(slug: string): string[] {
-    const now = this.now().getTime();
-    return this.store.listTickets(slug)
-      .filter((t) => t.followUp && !t.followUp.missedAt && new Date(t.followUp.dueAt).getTime() <= now
-        && !this.isRunning(slug, t.id) && t.status !== "in_progress" && !t.slotWait && !this.waiting(slug, t.id).length
-        && !(t.outcome === "limit" && t.limit)
-        && !t.error?.startsWith("corrupt"))
-      .map((t) => t.id);
-  }
+  dueFollowUps(...a: Parameters<typeof followupsPart.dueFollowUps>): ReturnType<typeof followupsPart.dueFollowUps> { return followupsPart.dueFollowUps.call(this, ...a); }
 
-  /**
-   * Wake the ticket's conversation for its follow-up. A follow-up seen more than FOLLOW_UP_LATE_MS late waits for the
-   * user instead (missedAt). manual: the user pressed Follow up now (any time, also when missed).
-   */
-  async wakeFollowUp(slug: string, id: string, opts: { manual?: boolean } = {}): Promise<Ticket> {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    const f = t.followUp;
-    if (!f) throw new FollowUpError("this ticket has no follow-up");
-    if (this.isRunning(slug, id) || t.slotWait) {
-      if (opts.manual) throw new ConflictError("Claude is working on this ticket; follow up once it has finished");
-      return t;
-    }
-    const now = this.now();
-    const late = now.getTime() - new Date(f.dueAt).getTime();
-    if (!opts.manual && late > FOLLOW_UP_LATE_MS) {
-      if (f.missedAt) return t;
-      this.store.addComment(slug, id, "ai", `Missed follow-up: it was due ${formatAt(f.dueAt)}, while the computer was asleep or the board was off. Press Follow up now to let Claude check, or stop it.`);
-      return this.patch(slug, id, { followUp: { ...f, missedAt: now.toISOString() }, followUpLog: logFollowUp(t.followUpLog, { at: now.toISOString(), kind: "missed", dueAt: f.dueAt }) });
-    }
-    const text = followUpWakePrompt(t, now, opts.manual);
-    // Cleared before the run starts, so the next tick can't wake it twice; a follow_up call in the run sets the next one.
-    this.patch(slug, id, { followUp: null, followUpLog: logFollowUp(t.followUpLog, { at: now.toISOString(), kind: "woke", dueAt: f.dueAt, note: f.note }) });
-    try {
-      return await this.chat(slug, id, text, { followUp: true });
-    } catch (e) {
-      const cur = this.store.getTicket(slug, id);
-      if (cur && !cur.followUp) this.patch(slug, id, { followUp: f, followUpLog: t.followUpLog ?? [] });
-      throw e;
-    }
-  }
+  wakeFollowUp(...a: Parameters<typeof followupsPart.wakeFollowUp>): ReturnType<typeof followupsPart.wakeFollowUp> { return followupsPart.wakeFollowUp.call(this, ...a); }
 
-  /** A follow-up run ended: its cost goes on its "woke" log entry (the menu and the next wake prompt show the total). */
-  private async followUpCost(slug: string, id: string): Promise<void> {
-    if (!this.store.getTicket(slug, id)?.followUpLog?.length) return;
-    const runs = ticketRuns((await this.store.activityDigest(slug, id)).runEntries);
-    const t = this.store.getTicket(slug, id);
-    if (!t?.followUpLog?.length) return;
-    const run = runs.findLast((r) => r.kind === "follow-up");
-    const i = t.followUpLog.findLastIndex((e) => e.kind === "woke");
-    if (!run || i < 0 || t.followUpLog[i].costUsd !== undefined) return;
-    const log = t.followUpLog.map((e, j) => (j === i ? { ...e, run: run.run, costUsd: Math.round(run.costUsd * 10_000) / 10_000 } : e));
-    // Claude set no next follow-up and didn't say it stopped (it forgot, the run failed or was stopped): the card says so.
-    const said = t.followUp || (t.followUpStopped && t.followUpStopped.at >= t.followUpLog[i].at);
-    this.patch(slug, id, { followUpLog: log, ...(said ? {} : { followUpStopped: { at: this.now().toISOString(), reason: "no next follow-up was set" } }) });
-  }
+  private followUpCost(...a: Parameters<typeof followupsPart.followUpCost>): ReturnType<typeof followupsPart.followUpCost> { return followupsPart.followUpCost.call(this, ...a); }
 
   /** Planning replies carry mockups as blocks (they can't write files); save them for the Outputs tab. */
   private saveMockups(slug: string, id: string, outputDir: string, ev: any) {
@@ -1974,268 +1086,41 @@ export class Board {
     }
   }
 
-  private sessionLocks = new Map<string, Promise<unknown>>();
+  sessionLocks = new Map<string, Promise<unknown>>();
 
   /** Each board folder's version history as last seen, by folder path (see repoState); re-checked after REPO_TTL_MS. */
-  private repos = new Map<string, { kind: RepoKind; at: number }>();
-  private repoChecks = new Set<string>();
+  repos = new Map<string, { kind: RepoKind; at: number }>();
+  repoChecks = new Set<string>();
 
-  /**
-   * The board folder's version history, from the cache (undefined until first checked). A stale or missing entry is
-   * re-checked in the background; a change re-runs dispatch, so tickets held back by an unknown state start then.
-   */
-  repoState(slug: string): RepoKind | undefined {
-    const c = this.repos.get(this.store.getProfile(slug)?.path ?? "");
-    if (!c || Date.now() - c.at > REPO_TTL_MS) void this.checkRepo(slug);
-    return c?.kind;
-  }
+  repoState(...a: Parameters<typeof repoPart.repoState>): ReturnType<typeof repoPart.repoState> { return repoPart.repoState.call(this, ...a); }
 
-  /** Before the first check (just after a restart): guessed from the folder's .git (config names an origin or not). */
-  private guessRepo(slug: string): RepoKind {
-    const path = this.store.getProfile(slug)?.path;
-    if (!path || !existsSync(join(path, ".git"))) return "plain";
-    try {
-      return readFileSync(join(path, ".git", "config"), "utf8").includes('[remote "origin"]') ? "remote" : "local";
-    } catch {
-      return "remote";
-    }
-  }
+  guessRepo(...a: Parameters<typeof repoPart.guessRepo>): ReturnType<typeof repoPart.guessRepo> { return repoPart.guessRepo.call(this, ...a); }
 
-  /** The board folder has commits (so huddle reviewers get snapshots of committed code); true until known. */
-  committed(slug: string): boolean {
-    const k = this.repoState(slug);
-    return k === undefined || k === "local" || k === "remote";
-  }
+  committed(...a: Parameters<typeof repoPart.committed>): ReturnType<typeof repoPart.committed> { return repoPart.committed.call(this, ...a); }
 
-  private async checkRepo(slug: string): Promise<void> {
-    const profile = this.store.getProfile(slug);
-    if (!profile || this.repoChecks.has(profile.path)) return;
-    this.repoChecks.add(profile.path);
-    try {
-      this.noteRepo(slug, await repoKind(profile.path));
-    } finally {
-      this.repoChecks.delete(profile.path);
-    }
-  }
+  checkRepo(...a: Parameters<typeof repoPart.checkRepo>): ReturnType<typeof repoPart.checkRepo> { return repoPart.checkRepo.call(this, ...a); }
 
-  /** Records what the folder is now (e.g. version history was just turned on); a change re-runs dispatch. */
-  noteRepo(slug: string, kind: RepoKind): void {
-    const path = this.store.getProfile(slug)?.path;
-    if (!path) return;
-    const prev = this.repos.get(path)?.kind;
-    this.repos.set(path, { kind, at: Date.now() });
-    if (prev !== kind && !this.shuttingDown) this.dispatch(slug);
-  }
+  noteRepo(...a: Parameters<typeof repoPart.noteRepo>): ReturnType<typeof repoPart.noteRepo> { return repoPart.noteRepo.call(this, ...a); }
 
-  /**
-   * The ticket's runs edit the board's folder itself rather than a copy of their own: a plain folder or a repo with
-   * no commits (no worktree can be made), or a ticket that already ran there. Null: not known yet (the folder's
-   * version history is still being checked). Linked sessions (workdir) are the user's own and don't count.
-   * Such tickets run one at a time per board (see folderBusy), as do new tickets on a board set to work in the folder.
-   */
-  runsInFolder(slug: string, t: Ticket): boolean | null {
-    if (t.workdir || t.worktree || t.branch) return false;
-    if (t.sessionStarted || t.runCount > 0) return true;
-    if (workspaceOf(this.store.getProfile(slug)) === "folder") return true;
-    const kind = this.repoState(slug);
-    return kind === undefined ? null : kind === "plain" || kind === "empty";
-  }
+  runsInFolder(...a: Parameters<typeof repoPart.runsInFolder>): ReturnType<typeof repoPart.runsInFolder> { return repoPart.runsInFolder.call(this, ...a); }
 
-  /**
-   * Another ticket on the board is editing the folder `t` would edit in place: its run (not a read-only Planning
-   * chat) is going, or its auto huddle reviews the work there. An unknown side counts as in place, so nothing starts
-   * on a guess; the version-history check re-runs dispatch.
-   */
-  folderBusy(slug: string, t: Ticket): boolean {
-    // A main ticket never edits, so it never waits for the folder.
-    if (t.main) return false;
-    if (this.runsInFolder(slug, t) === false) return false;
-    for (const r of this.runs.values()) {
-      if (r.slug !== slug || r.id === t.id || !this.runMayEdit(r)) continue;
-      const o = this.store.getTicket(slug, r.id);
-      if (o && this.runsInFolder(slug, o) !== false) return true;
-    }
-    // Only boards whose tickets edit the folder get here, so listing them stays rare.
-    return this.store.listTickets(slug).some((o) => o.id !== t.id && !!o.autoHuddle && !this.isRunning(slug, o.id) && this.runsInFolder(slug, o) !== false);
-  }
+  folderBusy(...a: Parameters<typeof repoPart.folderBusy>): ReturnType<typeof repoPart.folderBusy> { return repoPart.folderBusy.call(this, ...a); }
 
-  /**
-   * The run may edit files: not a main ticket's (its edit tools are off), and not a Planning chat's (same), except a
-   * tool ticket's, whose runs always work.
-   */
-  private runMayEdit(r: ActiveRun): boolean {
-    if (r.noEdit) return false;
-    if (r.chat?.mode !== "refine") return true;
-    return !!this.store.getTicket(r.slug, r.id)?.tool;
-  }
+  runMayEdit(...a: Parameters<typeof repoPart.runMayEdit>): ReturnType<typeof repoPart.runMayEdit> { return repoPart.runMayEdit.call(this, ...a); }
 
-  /** For the card: it would start now (Ready, a reply waiting for a slot, a running plan's next child) but the folder is in use. */
-  folderWait(slug: string, t: Ticket): boolean {
-    if (this.isRunning(slug, t.id)) return false;
-    const parent = t.parentId ? this.store.getTicket(slug, t.parentId) : null;
-    const next = t.status === "ready" || !!t.slotWait || (t.status === "backlog" && !t.waitsForStart && planActive(parent?.plan));
-    return next && this.folderBusy(slug, t);
-  }
+  folderWait(...a: Parameters<typeof repoPart.folderWait>): ReturnType<typeof repoPart.folderWait> { return repoPart.folderWait.call(this, ...a); }
 
-  /** Serialized per ticket: a run and a "copy command" click must not both create the worktree. */
-  ensureSession(slug: string, id: string): Promise<Session> {
-    const key = this.key(slug, id);
-    const prev = this.sessionLocks.get(key) ?? Promise.resolve();
-    const next = prev.catch(() => {}).then(() => this.ensureSessionNow(slug, id));
-    this.sessionLocks.set(key, next);
-    next.finally(() => {
-      if (this.sessionLocks.get(key) === next) this.sessionLocks.delete(key);
-    }).catch(() => {});
-    return next;
-  }
+  ensureSession(...a: Parameters<typeof repoPart.ensureSession>): ReturnType<typeof repoPart.ensureSession> { return repoPart.ensureSession.call(this, ...a); }
 
-  private async ensureSessionNow(slug: string, id: string): Promise<Session> {
-    const profile = this.store.getProfile(slug);
-    if (!profile) throw new Error(`board ${slug} not found`);
-    if (!existsSync(profile.path)) throw new Error(`board folder does not exist: ${profile.path}`);
-    let t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    const repo = await repoKind(profile.path);
-    this.noteRepo(slug, repo);
-    const isGit = repo !== "plain";
-    const patch: Partial<Ticket> = {};
-    if (t.workdir && !existsSync(t.workdir)) throw new Error(`linked session folder no longer exists: ${t.workdir}`);
-    // A ticket that already ran in the folder itself stays there: its Claude session belongs to that folder.
-    // One with a branch had a worktree (removed on Done): it gets it back at the same path, so its session resumes.
-    const ranInPlace = !t.worktree && !t.branch && (!!t.sessionStarted || t.runCount > 0);
-    // Board set to "Work in the project folder": new tickets run there; one that already has a worktree keeps it.
-    const folderMode = workspaceOf(profile) === "folder" && !t.worktree && !t.branch;
-    if (isGit && !t.workdir && !ranInPlace && !folderMode && (!t.worktree || !existsSync(t.worktree))) {
-      const dir = worktreeDir(profile, id);
-      let branch = t.branch ?? `ck/${id}-${slugify(t.title)}`;
-      if (t.branch && !existsSync(dir) && !(await branchExists(profile.path, t.branch))) {
-        // Claude may have renamed the branch in its worktree: take the ticket's newest one, else start over from base.
-        const renamed = (await branchesWithPrefix(profile.path, `ck/${id}-`))[0];
-        if (renamed) branch = renamed;
-        else patch.notice = `Branch "${t.branch}" was not found, so this ticket's worktree starts again from the base branch.`;
-      }
-      const base = existsSync(dir) ? profile.baseBranch : await resolveBaseBranch(profile.path, profile.baseBranch);
-      if (base === null) {
-        // Fresh `git init` with no commits: nothing to branch from, so run in the folder rather than fail.
-        patch.notice = "This repo has no commits yet, so Claude works directly in your folder instead of an isolated worktree. Make a first commit to give new tickets their own worktree.";
-      } else {
-        if (base !== profile.baseBranch) {
-          console.log(`profile ${slug}: base branch "${profile.baseBranch}" not found, using "${base}"`);
-          const fixed = { ...profile, baseBranch: base };
-          this.store.saveProfile(fixed);
-          this.bus.emit({ type: "profile.updated", slug, profile: fixed });
-          if (profile.baseBranch) patch.notice = `Base branch "${profile.baseBranch}" was not found in this repo, so the board now uses "${base}".`;
-        }
-        const fresh = !existsSync(dir);
-        if (fresh) {
-          // A new branch starts from the remote's latest base (other tickets push there); an existing one keeps its history.
-          // A step builds on its main ticket's copy (a follow-up ticket on its ticket's work in Review), while it exists.
-          const from = t.startFrom && (await branchExists(profile.path, t.startFrom)) ? t.startFrom
-            : repo === "remote" && !(await branchExists(profile.path, branch)) ? await latestBase(profile.path, base) : base;
-          await addWorktree(profile.path, dir, branch, from);
-          // Only the cheap part now; the setup command runs when Claude asks for it (runSetup).
-          this.copyWorktreeFiles(slug, id, profile, dir);
-          patch.setupPending = true;
-          // A main ticket's Changes tab shows its whole family's work since here, landed milestones included.
-          if (t.main && !t.startSha) {
-            const head = await runCmd(["git", "rev-parse", "HEAD"], dir);
-            if (head.code === 0 && head.stdout.trim()) patch.startSha = head.stdout.trim();
-          }
-        }
-        if (t.startFrom) patch.startFrom = null;
-        patch.worktree = dir;
-        patch.branch = branch;
-      }
-    }
-    // In place on a repo with commits: the folder's HEAD at the first run is what the Changes tab diffs against.
-    if (!t.workdir && !t.worktree && !patch.worktree && !t.baseSha && (repo === "local" || repo === "remote")) {
-      const head = await runCmd(["git", "rev-parse", "HEAD"], profile.path);
-      if (head.code === 0 && head.stdout.trim()) patch.baseSha = head.stdout.trim();
-    }
-    if (!t.sessionId) patch.sessionId = crypto.randomUUID();
-    if (Object.keys(patch).length) t = this.patch(slug, id, patch);
-    const sessionId = t.sessionId!;
-    return {
-      dir: t.workdir ?? t.worktree ?? profile.path,
-      sessionId,
-      // Only a saved session can be resumed (a run stopped in its first second leaves none); a linked one is the user's.
-      existed: (!!t.workdir && !t.freshSession) || this.sessionExists(sessionId),
-      isGit,
-      repo,
-      inPlace: !t.workdir && !t.worktree,
-    };
-  }
+  ensureSessionNow(...a: Parameters<typeof repoPart.ensureSessionNow>): ReturnType<typeof repoPart.ensureSessionNow> { return repoPart.ensureSessionNow.call(this, ...a); }
 
-  /** Work runs in a worktree whose setup command hasn't run yet learn how to run it; planning chats never do. */
-  private withSetupNote(slug: string, t: Ticket, profile: Profile, session: Session, refine: boolean, prompt: string): string {
-    if (refine || !t.setupPending || !t.worktree || session.dir !== t.worktree || !profile.setupCommand?.trim()) return prompt;
-    return withBoardText(prompt, setupNote(slug, t.id), "Setup");
-  }
+  private withSetupNote(...a: Parameters<typeof repoPart.withSetupNote>): ReturnType<typeof repoPart.withSetupNote> { return repoPart.withSetupNote.call(this, ...a); }
 
-  /** Copies the board's git-ignored files (.env) into a new worktree. Quiet: missing ones are only logged. */
-  private copyWorktreeFiles(slug: string, id: string, profile: Profile, dir: string): void {
-    if (!profile.copyFiles?.length) return;
-    try {
-      const { missing } = copySetupFiles(profile.path, dir, profile.copyFiles);
-      if (missing.length) console.log(`ticket ${slug}/${id}: files to copy not found: ${missing.join(", ")}`);
-    } catch (e) {
-      console.error(`ticket ${slug}/${id}: copying files into the worktree failed: ${(e as Error).message}`);
-    }
-  }
+  copyWorktreeFiles(...a: Parameters<typeof repoPart.copyWorktreeFiles>): ReturnType<typeof repoPart.copyWorktreeFiles> { return repoPart.copyWorktreeFiles.call(this, ...a); }
 
-  /**
-   * Runs the board's setup command in the ticket's worktree, when its Claude asks (`ckanban ticket setup`). Calls while
-   * one runs share it; after a success it isn't run again for this worktree. Never throws for a failed command: the
-   * result carries its output, and Claude decides what to do.
-   */
-  runSetup(slug: string, id: string): Promise<SetupOutcome> {
-    const profile = this.store.getProfile(slug);
-    const t = this.store.getTicket(slug, id);
-    if (!profile || !t) return Promise.reject(new Error(`ticket ${id} not found`));
-    const key = this.key(slug, id);
-    const running = this.setups.get(key);
-    if (running) return running.done;
-    const command = profile.setupCommand?.trim() ?? "";
-    if (!t.worktree || !existsSync(t.worktree)) return Promise.resolve({ status: "no-worktree" });
-    if (!command) return Promise.resolve({ status: "no-command" });
-    if (!t.setupPending) return Promise.resolve({ status: "already-done" });
-    const dir = t.worktree;
-    const abort = new AbortController();
-    const done = (async (): Promise<SetupOutcome> => {
-      this.patch(slug, id, { lastActivity: INSTALLING });
-      let r: SetupResult | null = null;
-      try {
-        r = (await prepareWorktree(profile.path, dir, { setupCommand: command }, {
-          signal: abort.signal, timeoutMs: SETUP_TIMEOUT_MS, env: { CKANBAN_TICKET: `${slug}/${id}` },
-        }))!;
-      } finally {
-        // The worktree may have been removed or replaced meanwhile: only mark the one it ran in.
-        const now = this.store.getTicket(slug, id);
-        if (now) {
-          this.patch(slug, id, {
-            ...(r?.ok && now.worktree === dir ? { setupPending: false } : {}),
-            ...(now.lastActivity === INSTALLING ? { lastActivity: null } : {}),
-          });
-        }
-      }
-      if (!r.ok) console.log(`ticket ${slug}/${id}: setup failed (${r.command}): ${r.output.split("\n").slice(-3).join(" | ")}`);
-      return { status: "ran", result: r };
-    })();
-    this.setups.set(key, { done, abort });
-    done.finally(() => {
-      if (this.setups.get(key)?.done === done) this.setups.delete(key);
-    }).catch(() => {});
-    return done;
-  }
+  runSetup(...a: Parameters<typeof repoPart.runSetup>): ReturnType<typeof repoPart.runSetup> { return repoPart.runSetup.call(this, ...a); }
 
-  /** Removes a ticket's worktree, running the board's cleanup command in it first (its failure never blocks). */
-  private removeTicketWorktree(profile: Profile, dir: string): ReturnType<typeof removeWorktree> {
-    const cleanup = profile.cleanupCommand?.trim();
-    return removeWorktree(profile.path, dir, cleanup ? async () => {
-      const r = await runShell(dir, cleanup, { timeoutMs: CLEANUP_TIMEOUT_MS });
-      if (!r.ok) console.error(`worktree cleanup failed in ${dir} (${cleanup}): ${r.output.split("\n").slice(-5).join(" | ")}`);
-    } : undefined);
-  }
+  removeTicketWorktree(...a: Parameters<typeof repoPart.removeTicketWorktree>): ReturnType<typeof repoPart.removeTicketWorktree> { return repoPart.removeTicketWorktree.call(this, ...a); }
 
   async planningCommand(slug: string, id: string): Promise<string> {
     const s = await this.ensureSession(slug, id);
@@ -2243,37 +1128,13 @@ export class Board {
     return planningCommand(s.dir, s.sessionId, localizeAttachments(planningPrompt(t, this.store.ticketPath(slug, id)), this.store.attachmentsDir), s.existed);
   }
 
-  async createTicket(
-    slug: string,
-    input: {
-      title: string; body: string; status: Status; mode?: TicketMode; scheduleId?: string; jobId?: string; source?: TicketSource; parentId?: string; planKey?: string; dependsOn?: string[];
-      needs?: string[]; tags?: string[]; important?: boolean; partOf?: string; partOfVia?: "chat";
-      model?: string | null; raisedBy?: { scheduleId: string; ticketId: string } | null; proposedAs?: string; madeFrom?: string; kind?: TicketKind | null;
-      effort?: string | null; main?: boolean; tool?: boolean; startFrom?: string | null; waitsForStart?: boolean;
-    },
-  ): Promise<Ticket> {
-    const status = input.status === "in_progress" ? "ready" : input.status;
-    input = this.placeInFeature(slug, input);
-    const star = starredTitle(input.title);
-    const t = this.store.createTicket(slug, {
-      ...input, status, needs: normalizeNeeds(input.needs), tags: normalizeTags(input.tags),
-      ...(star.important && star.title.trim() ? { title: star.title, important: true } : {}),
-    });
-    this.emitTicket(slug, t);
-    // The planner's "Review proposal" badge depends on which of its proposed tickets exist.
-    const parent = input.parentId ? this.store.getTicket(slug, input.parentId) : null;
-    if (parent) this.emitTicket(slug, parent);
-    if (status === "ready") this.dispatch(slug);
-    if (status === "planning") this.autoRefine(slug, t.id);
-    if (parent) this.advancePlans(slug);
-    return this.store.getTicket(slug, t.id)!;
-  }
+  createTicket(...a: Parameters<typeof ticketsPart.createTicket>): ReturnType<typeof ticketsPart.createTicket> { return ticketsPart.createTicket.call(this, ...a); }
 
   /**
    * Where a new ticket goes in its family: a round is titled "Testing round N" by the board and always hangs right under
    * the feature's top ticket (also when created under a group); any other link below level 2 is refused with a hint.
    */
-  private placeInFeature<T extends { title: string; kind?: TicketKind | null; partOf?: string; partOfVia?: "chat"; parentId?: string; main?: boolean }>(slug: string, input: T): T {
+  placeInFeature<T extends { title: string; kind?: TicketKind | null; partOf?: string; partOfVia?: "chat"; parentId?: string; main?: boolean }>(slug: string, input: T): T {
     const tickets = this.store.listTickets(slug);
     const parent = input.partOf ?? input.parentId ?? null;
     if (input.kind === "round") {
@@ -2288,1348 +1149,164 @@ export class Board {
     return input;
   }
 
-  async updateTicket(
-    slug: string,
-    id: string,
-    patch: Partial<Pick<Ticket, "title" | "body" | "status" | "order" | "mode" | "notice" | "dependsOn" | "needs" | "tags" | "suggestedTags" | "important" | "runCapUsd" | "model" | "effort" | "ultracode" | "chrome" | "browsers">> & {
-      expectedBody?: string;
-      /** null: take the ticket out of its plan (only clearing is allowed here; adoptTickets sets it). */
-      parentId?: null;
-      /** true pins the card to the top of its column (pinnedAt now), false unpins it. */
-      pinned?: boolean;
-    },
-    /** byUser: the user's own move (on the board, or asked for in the ticket's chat), not a run's or a planner's. */
-    opts: { byUser?: boolean } = {},
-  ): Promise<Ticket> {
-    let current = this.store.getTicket(slug, id);
-    if (!current) throw new Error(`ticket ${id} not found`);
-    if (patch.body !== undefined && patch.expectedBody !== undefined && patch.expectedBody !== current.body) {
-      throw new ConflictError("description changed since you started editing (Claude may have updated it); reload and retry");
-    }
-    const clean: Partial<Ticket> = {};
-    if (patch.title !== undefined) {
-      const star = starredTitle(patch.title);
-      clean.title = star.important && star.title.trim() ? star.title : patch.title;
-      if (clean.title !== patch.title) clean.important = true;
-    }
-    if (patch.body !== undefined) clean.body = patch.body;
-    if (patch.order !== undefined) clean.order = patch.order;
-    if (patch.mode !== undefined) clean.mode = patch.mode;
-    if (patch.notice !== undefined) clean.notice = patch.notice;
-    if (patch.runCapUsd !== undefined) clean.runCapUsd = patch.runCapUsd;
-    if (patch.model !== undefined) clean.model = patch.model;
-    if (patch.effort !== undefined) clean.effort = patch.effort;
-    if (patch.ultracode !== undefined) clean.ultracode = patch.ultracode;
-    if (patch.chrome !== undefined) clean.chrome = patch.chrome;
-    if (patch.browsers !== undefined) clean.browsers = patch.browsers;
-    if (patch.needs !== undefined) clean.needs = normalizeNeeds(patch.needs);
-    if (patch.tags !== undefined) clean.tags = normalizeTags(patch.tags);
-    if (patch.suggestedTags !== undefined || patch.tags !== undefined) {
-      // A suggestion that is now a tag is no longer a suggestion.
-      const tags = clean.tags ?? current.tags ?? [];
-      clean.suggestedTags = normalizeTags(patch.suggestedTags ?? current.suggestedTags).filter((s) => !tags.includes(s));
-    }
-    if (patch.important !== undefined) clean.important = !!patch.important;
-    if (patch.pinned !== undefined) clean.pinnedAt = patch.pinned ? nowIso() : null;
-    if (patch.parentId === null && current.parentId) {
-      const plannerId = current.parentId;
-      const me = current;
-      const users = childrenOf(this.store.listTickets(slug), plannerId).filter((s) => s.id !== id && resolveDeps(s, [s, me]).deps.length);
-      if (users.length) {
-        throw new Error(`${users.map((u) => `"${u.title}"`).join(", ")} ${users.length === 1 ? "depends" : "depend"} on this ticket; change their dependsOn first`);
-      }
-      // Its dependencies and key named siblings of the plan it leaves.
-      Object.assign(clean, { parentId: null, planKey: null, dependsOn: [] });
-    }
-    if (patch.dependsOn !== undefined && clean.parentId !== null) {
-      clean.dependsOn = patch.dependsOn;
-      if (current.parentId) {
-        const siblings = childrenOf(this.store.listTickets(slug), current.parentId).map((s) => (s.id === id ? { ...s, dependsOn: patch.dependsOn } : s));
-        const me = siblings.find((s) => s.id === id)!;
-        const { missing } = resolveDeps(me, siblings);
-        if (missing.length) throw new Error(`unknown dependency ${missing.map((m) => `"${m}"`).join(", ")}: use a sibling's ticket id or key`);
-        const cycle = findCycle(siblings);
-        if (cycle) throw new Error(`dependency cycle: ${cycle.join(" → ")}`);
-      }
-    }
-    let status = patch.status;
-    // A reply waiting for a slot stays put when reordered; moved elsewhere, it stops waiting.
-    if (current.slotWait && status === "in_progress") status = undefined;
-    if (status === "in_progress" && !this.isRunning(slug, id)) status = "ready";
-    if (current.slotWait && status) current = this.cancelSlotWait(slug, id);
-
-    const active = this.runs.get(this.key(slug, id));
-    if (active && status && status !== "in_progress") {
-      active.targetStatus = status;
-      this.stopRun(active);
-      await active.promise;
-      current = this.store.getTicket(slug, id)!;
-    }
-    // The store places the ticket in its new column unless the patch carries a drop position.
-    if (status && status !== current.status) clean.status = status;
-    // Moved by hand: the user takes it from here, no automatic continue, and the card no longer waits for an auto huddle.
-    if (clean.status && current.limit) clean.limit = null;
-    if (clean.status && current.autoHuddle) clean.autoHuddle = null;
-    if (clean.status && current.snooze) clean.snooze = null;
-    // A task waiting to be started (waitsForStart): once moved, the plan runs it as usual.
-    if (clean.status && current.waitsForStart) clean.waitsForStart = false;
-    // Back to Planning/Backlog from Review/Done: remember where it was, so a follow-up card can put it back there.
-    const shaping = clean.status === "planning" || clean.status === "backlog";
-    if (shaping && reopenable(current.status)) clean.reopenedFrom = { status: current.status, outcome: current.outcome };
-    else if (clean.status && !shaping && current.reopenedFrom) clean.reopenedFrom = null;
-    let t = this.patch(slug, id, clean);
-
-    if (clean.status === "done") t = await this.cleanupWorktree(slug, t);
-    if (clean.status === "planning") this.autoRefine(slug, id);
-    // The user moving a stopped main ticket back to work resumes its paused plan (before its run starts and reads it).
-    if (opts.byUser && t.main && (clean.status === "ready" || clean.status === "in_progress")) this.resumeStoppedPlan(slug, id, "you moved it to " + clean.status.replace("_", " "));
-    if (active || clean.status === "ready" || (clean.order !== undefined && t.status === "ready")) this.dispatch(slug);
-    this.advancePlans(slug);
-    return this.store.getTicket(slug, id)!;
-  }
+  updateTicket(...a: Parameters<typeof ticketsPart.updateTicket>): ReturnType<typeof ticketsPart.updateTicket> { return ticketsPart.updateTicket.call(this, ...a); }
 
   // ---- Plans: a planner ticket runs its children unattended (see plan.ts) ----
 
-  /** Start (or resume) the planner's plan: children switch to auto mode and start in dependency order. */
-  startPlan(slug: string, id: string, opts: { byPlanner?: boolean; why?: string } = {}): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    const kids = childrenOf(this.store.listTickets(slug), id);
-    const problem = planProblem(kids);
-    if (problem) throw new Error(`can't start the plan: ${problem}`);
-    const prev = t.plan;
-    const resuming = prev && prev.state !== "done";
-    const plan: Plan = resuming
-      ? {
-        ...prev,
-        state: prev.awaiting === "final" || prev.state === "finishing" ? "finishing" : "running",
-        reason: null,
-        // A stuck plan starts fresh: its last wake-up is over and the planner looks at every open child again.
-        ...(prev.state === "stuck" ? { wakeups: 0, awaiting: null, seen: {} } : {}),
-      }
-      : { state: "running", wakeups: 0, startedAt: nowIso(), originalCount: kids.length, inbox: [], seen: {}, retries: {}, awaiting: null };
-    // Unattended: children must not stop to interview the user.
-    for (const k of kids) if (k.status === "backlog" && k.mode !== "auto") this.patch(slug, k.id, { mode: "auto" });
-    const out = this.patch(slug, id, { plan, ...(t.outcome && t.outcome !== "done" ? { outcome: null } : {}) });
-    const by = opts.byPlanner ? " by the planner" : "";
-    this.store.addComment(slug, id, "ai", resuming ? `Plan resumed${by}${opts.why ? `: ${opts.why}` : ""}.` : `Plan started${by}: ${kids.length} child tickets; each starts as soon as the ones it waits for are done.`);
-    this.advancePlans(slug);
-    return this.store.getTicket(slug, id) ?? out;
-  }
+  startPlan(...a: Parameters<typeof plansPart.startPlan>): ReturnType<typeof plansPart.startPlan> { return plansPart.startPlan.call(this, ...a); }
 
-  /**
-   * Stop on a main ticket pauses its plan only until the user acts on it again: moving it to ready (or In progress),
-   * or writing or answering a form in its chat, resumes it (see updateTicket and chat). Any paused main ticket counts,
-   * also ones paused before this rule existed. True when a paused plan resumed.
-   */
-  resumeStoppedPlan(slug: string, id: string, why: string): boolean {
-    const t = this.store.getTicket(slug, id);
-    if (!t?.main || t.plan?.state !== "paused") return false;
-    try {
-      this.startPlan(slug, id, { why });
-      return true;
-    } catch (e) {
-      this.store.addComment(slug, id, "ai", `Couldn't resume the paused plan: ${(e as Error).message}`);
-      return false;
-    }
-  }
+  resumeStoppedPlan(...a: Parameters<typeof plansPart.resumeStoppedPlan>): ReturnType<typeof plansPart.resumeStoppedPlan> { return plansPart.resumeStoppedPlan.call(this, ...a); }
 
-  /**
-   * A main ticket's own run made a new tool ticket while its card was parked in Done or Backlog: the user asked it for
-   * this work, so the card goes back to Review and its plan runs the step (parked, it would sit in Backlog for good).
-   * Only for the main ticket's own runs: a tool ticket making steps doesn't undo the user's park. True when it moved.
-   */
-  unparkForNewStep(slug: string, id: string): boolean {
-    return this.unparkMain(slug, id, "it made a new step, so its steps run again");
-  }
+  unparkForNewStep(...a: Parameters<typeof plansPart.unparkForNewStep>): ReturnType<typeof plansPart.unparkForNewStep> { return plansPart.unparkForNewStep.call(this, ...a); }
 
-  /**
-   * A main ticket parked in Done or Backlog goes back to Review (why: what brought it back, shown in a note). With
-   * startedOnly, Backlog counts only once its family has started (a new main ticket in Backlog is still being shaped,
-   * and goes to Planning as usual). True when it moved.
-   */
-  private unparkMain(slug: string, id: string, why: string, startedOnly = false): boolean {
-    const t = this.store.getTicket(slug, id);
-    if (!t?.main || (t.status !== "done" && t.status !== "backlog")) return false;
-    if (startedOnly && t.status === "backlog" && !t.plan) return false;
-    const from = t.status === "done" ? "Done" : "Backlog";
-    // patch, not updateTicket: a run of the main ticket may still be going and must not be stopped.
-    this.patch(slug, id, { status: "review", reopenedFrom: null });
-    this.store.addComment(slug, id, "ai", `Moved back from ${from}: ${why}.`);
-    return true;
-  }
+  unparkMain(...a: Parameters<typeof plansPart.unparkMain>): ReturnType<typeof plansPart.unparkMain> { return plansPart.unparkMain.call(this, ...a); }
 
-  /**
-   * The PR poller leaves a main ticket in Review instead of moving it to Done on a merged PR: while its steps are open
-   * (Done would park them and its wake when they finish), and once it has been in Done before (the user or a step
-   * brought it back, so only the user's own move parks it again).
-   */
-  holdsReview(slug: string, id: string): boolean {
-    const t = this.store.getTicket(slug, id);
-    return !!t?.main && (!!t.doneAt || this.openSteps(slug, id));
-  }
+  holdsReview(...a: Parameters<typeof plansPart.holdsReview>): ReturnType<typeof plansPart.holdsReview> { return plansPart.holdsReview.call(this, ...a); }
 
-  /** A main ticket's family still has tool tickets that aren't finished (waiting, running or needing the user). */
-  private openSteps(slug: string, id: string): boolean {
-    const all = this.store.listTickets(slug);
-    const todo = childrenOf(all, id);
-    const seen = new Set<string>([id]);
-    while (todo.length) {
-      const k = todo.pop()!;
-      if (seen.has(k.id)) continue;
-      seen.add(k.id);
-      if (k.tool && (k.status !== "done" || this.isRunning(slug, k.id))) return true;
-      todo.push(...childrenOf(all, k.id));
-    }
-    return false;
-  }
+  openSteps(...a: Parameters<typeof plansPart.openSteps>): ReturnType<typeof plansPart.openSteps> { return plansPart.openSteps.call(this, ...a); }
 
-  /** Pause: no new children start and the planner isn't woken; running children finish. */
-  pausePlan(slug: string, id: string): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t?.plan) throw new Error("this ticket has no plan");
-    if (t.plan.state === "done") return t;
-    this.store.addComment(slug, id, "ai", "Plan paused.");
-    return this.patch(slug, id, { plan: { ...t.plan, state: "paused" } });
-  }
+  pausePlan(...a: Parameters<typeof plansPart.pausePlan>): ReturnType<typeof plansPart.pausePlan> { return plansPart.pausePlan.call(this, ...a); }
 
-  /** Mark the plan done as it stands, without waking the planner (e.g. a stuck plan the user resolved by hand). */
-  markPlanDone(slug: string, id: string): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t?.plan) throw new Error("this ticket has no plan");
-    if (t.plan.state === "done") return t;
-    return this.closePlan(slug, t, t.plan, "Plan marked done.");
-  }
+  markPlanDone(...a: Parameters<typeof plansPart.markPlanDone>): ReturnType<typeof plansPart.markPlanDone> { return plansPart.markPlanDone.call(this, ...a); }
 
-  /**
-   * The ticket's current run works unattended on its own ticket (a Ready / In Progress run, a plan child, a schedule
-   * run, or its auto huddle waking it), not a Planning chat, a reply to the user's message or to another ticket.
-   */
-  unattendedRun(slug: string, id: string): boolean {
-    const r = this.runs.get(this.key(slug, id));
-    if (!r || r.stopRequested) return false;
-    if (!r.chat) return true;
-    return !!r.chat.hostWake;
-  }
+  unattendedRun(...a: Parameters<typeof plansPart.unattendedRun>): ReturnType<typeof plansPart.unattendedRun> { return plansPart.unattendedRun.call(this, ...a); }
 
-  /** start_huddle in this run: false when the run already started an auto huddle (one per run). */
-  claimAutoHuddle(slug: string, id: string): boolean {
-    const r = this.runs.get(this.key(slug, id));
-    if (!r || r.autoHuddleStarted) return false;
-    r.autoHuddleStarted = true;
-    return true;
-  }
+  claimAutoHuddle(...a: Parameters<typeof plansPart.claimAutoHuddle>): ReturnType<typeof plansPart.claimAutoHuddle> { return plansPart.claimAutoHuddle.call(this, ...a); }
 
-  /** Set or clear the ticket's auto huddle state (Huddles drives it). */
-  setAutoHuddle(slug: string, id: string, autoHuddle: Ticket["autoHuddle"], extra: Partial<Ticket> = {}): Ticket | null {
-    if (!this.store.getTicket(slug, id)) return null;
-    return this.patch(slug, id, { autoHuddle, ...extra });
-  }
+  setAutoHuddle(...a: Parameters<typeof plansPart.setAutoHuddle>): ReturnType<typeof plansPart.setAutoHuddle> { return plansPart.setAutoHuddle.call(this, ...a); }
 
-  /** A stopped ticket no longer waits for an auto-huddle slot (a live auto huddle carries on; the user closes it). */
-  private dropAutoWait(slug: string, id: string): Partial<Ticket> {
-    return this.store.getTicket(slug, id)?.autoHuddle?.state === "waiting" ? { autoHuddle: null } : {};
-  }
+  private dropAutoWait(...a: Parameters<typeof plansPart.dropAutoWait>): ReturnType<typeof plansPart.dropAutoWait> { return plansPart.dropAutoWait.call(this, ...a); }
 
-  /** The ticket's current run answers a message the user typed in its chat (see ActiveRun.chat.user). */
-  userChatRun(slug: string, id: string): boolean {
-    return !!this.runs.get(this.key(slug, id))?.chat?.user;
-  }
+  userChatRun(...a: Parameters<typeof plansPart.userChatRun>): ReturnType<typeof plansPart.userChatRun> { return plansPart.userChatRun.call(this, ...a); }
 
-  /**
-   * The ticket's own chat, answering the user's own words (userAskedRun), asks to move its card: the board moves it
-   * once the run ends, so the reply isn't cut off. False when the run doesn't answer the user.
-   */
-  requestSelfMove(slug: string, id: string, status: SelfMove): boolean {
-    const run = this.runs.get(this.key(slug, id));
-    if (!run || !this.userAskedRun(slug, id)) return false;
-    run.selfMove = status;
-    return true;
-  }
+  requestSelfMove(...a: Parameters<typeof plansPart.requestSelfMove>): ReturnType<typeof plansPart.requestSelfMove> { return plansPart.requestSelfMove.call(this, ...a); }
 
-  /**
-   * The ticket's current run acts on the user's own words: it answers a message the user typed in its chat (not a
-   * slash command), or the user typed one that was handed to it while it worked. Peer messages, planner messages,
-   * huddle wakes and follow-ups don't count. start_huddle with trigger "user" needs this.
-   */
-  userAskedRun(slug: string, id: string): boolean {
-    const r = this.runs.get(this.key(slug, id));
-    if (!r || r.stopRequested) return false;
-    return (!!r.chat?.user && !r.chat.slash) || !!r.userSteered;
-  }
+  userAskedRun(...a: Parameters<typeof plansPart.userAskedRun>): ReturnType<typeof plansPart.userAskedRun> { return plansPart.userAskedRun.call(this, ...a); }
 
-  /**
-   * The planner ticket a run belongs to, if that run may manage the ticket's own children: any run of a running
-   * plan (wake-ups), or a reply to the user's chat message in any plan state, so the user can still tidy up a finished
-   * plan's children (e.g. mark them done). Restarting a done plan stays refused (see plan_control in http.ts).
-   */
-  plannerRights(slug: string, runTicketId: string): Ticket | null {
-    const t = this.store.getTicket(slug, runTicketId);
-    if (!t) return null;
-    // A main ticket (or a tool group) manages its own family in every run, whoever started it; not in a quiet reply.
-    if (isManager(t)) {
-      const r = this.runs.get(this.key(slug, runTicketId));
-      if (r && !r.stopRequested && !r.chat?.quiet) return t;
-    }
-    if (planActive(t.plan)) return t;
-    return this.userChatRun(slug, runTicketId) ? t : null;
-  }
+  plannerRights(...a: Parameters<typeof plansPart.plannerRights>): ReturnType<typeof plansPart.plannerRights> { return plansPart.plannerRights.call(this, ...a); }
 
-  /**
-   * The ticket whose Planning chat (refine mode) is answering a message the user typed: that reply may manage
-   * other tickets on the board for the user (see plannerFor in http.ts). Plan wake-ups and peer replies don't count.
-   */
-  userRequestRights(slug: string, runTicketId: string): Ticket | null {
-    const chat = this.runs.get(this.key(slug, runTicketId))?.chat;
-    return chat?.mode === "refine" && chat.user ? this.store.getTicket(slug, runTicketId) ?? null : null;
-  }
+  userRequestRights(...a: Parameters<typeof plansPart.userRequestRights>): ReturnType<typeof plansPart.userRequestRights> { return plansPart.userRequestRights.call(this, ...a); }
 
-  /**
-   * The ticket whose run may change other tickets on its board on its own (see runRights in http.ts): a work run or a
-   * chat reply that acts on the ticket. Planning chats keep needing the user's message (userRequestRights), and a quiet
-   * reply to another session (a peer run) gets nothing, so asking a ticket a question can't hand it a chain of runs.
-   */
-  runnerRights(slug: string, runTicketId: string): Ticket | null {
-    const r = this.runs.get(this.key(slug, runTicketId));
-    if (!r || r.stopRequested || r.chat?.mode === "refine" || r.chat?.quiet) return null;
-    return this.store.getTicket(slug, runTicketId) ?? null;
-  }
+  runnerRights(...a: Parameters<typeof plansPart.runnerRights>): ReturnType<typeof plansPart.runnerRights> { return plansPart.runnerRights.call(this, ...a); }
 
-  /**
-   * A run starts another ticket's run (targetId; null for a ticket it creates). No limit on how many or how deep; only
-   * a loop is refused: the target already started this chain MAX_RUN_RETURNS times (A starts B, B starts A, ...), so
-   * runs can't keep restarting each other with nobody watching. Returns what goes in the started ticket's startedBy.
-   */
-  runStart(slug: string, runTicketId: string, targetId: string | null = null): NonNullable<Ticket["startedBy"]> {
-    const by = this.store.getTicket(slug, runTicketId)?.startedBy;
-    const depth = (by?.depth ?? 0) + 1;
-    const chain = [...(by?.chain ?? (by ? [by.ticketId] : [])), runTicketId].slice(-RUN_CHAIN_KEEP);
-    if (targetId && chain.filter((x) => x === targetId).length >= MAX_RUN_RETURNS) {
-      throw new Error(`${targetId} and this run keep starting each other (runs started by runs: ${chain.join(" → ")}): ` +
-        "to stop an endless loop, this run can't start it again. Ask the user to start it on the board");
-    }
-    return { ticketId: runTicketId, depth, chain };
-  }
+  runStart(...a: Parameters<typeof plansPart.runStart>): ReturnType<typeof plansPart.runStart> { return plansPart.runStart.call(this, ...a); }
 
-  /** Who started the ticket's latest run: another ticket's run (runStart), or null when the user started it. */
-  /**
-   * The user's reply from Telegram: the same as typing it in the ticket's chat (http.ts POST .../chat, as the user),
-   * carrying its Telegram update so it is sent once. Returns false when that update was already sent.
-   */
-  async chatFromTelegram(slug: string, id: string, text: string, from: { updateId: number; tg: number; chatId: number; key?: string | null; still?: () => boolean }): Promise<boolean> {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (t.telegramIn?.some((m) => m.updateId === from.updateId) || t.queued?.some((m) => m.telegram?.updateId === from.updateId)) return false;
-    const startedBy = this.isRunning(slug, id) ? undefined : null;
-    const after = await this.chat(slug, id, text, { telegram: { updateId: from.updateId, tg: from.tg }, ...(from.still ? { still: from.still } : {}) });
-    // Written before anything else can run: the queued message (which also carries the update) is still there.
-    const at = nowIso();
-    const now = this.store.getTicket(slug, id) ?? after;
-    this.patch(slug, id, {
-      telegramIn: [...(now.telegramIn ?? []), { updateId: from.updateId, tg: from.tg, chatId: from.chatId, at, text: text.slice(0, 2000), key: from.key ?? null }].slice(-TELEGRAM_KEEP),
-      telegramReport: { tg: from.tg, chatId: from.chatId, at },
-    });
-    if (startedBy !== undefined) this.markStartedBy(slug, id, startedBy);
-    if (!text.startsWith("/")) this.userReplied(slug, id);
-    if (after.tool && !withYouTool(after)) this.noteUserMessage(slug, id, text);
-    return true;
-  }
+  chatFromTelegram(...a: Parameters<typeof plansPart.chatFromTelegram>): ReturnType<typeof plansPart.chatFromTelegram> { return plansPart.chatFromTelegram.call(this, ...a); }
 
-  /**
-   * Telegram stopped taking messages (Pause, /lock, Unpair): messages from Telegram that wait in a ticket's queue and
-   * Claude hasn't been handed yet are dropped, so none of them reaches a ticket afterwards. Returns how many.
-   */
-  dropTelegramQueued(): number {
-    let dropped = 0;
-    for (const p of this.store.listProfiles()) {
-      for (const t of this.store.listTickets(p.slug)) {
-        const run = this.runs.get(this.key(p.slug, t.id));
-        const drop = (t.queued ?? []).filter((m) => m.telegram && !run?.inFlight.has(m.id) && run?.promptMsgId !== m.id);
-        if (!drop.length) continue;
-        this.dropQueued(p.slug, t.id, drop.map((m) => m.id));
-        dropped += drop.length;
-      }
-    }
-    return dropped;
-  }
+  dropTelegramQueued(...a: Parameters<typeof plansPart.dropTelegramQueued>): ReturnType<typeof plansPart.dropTelegramQueued> { return plansPart.dropTelegramQueued.call(this, ...a); }
 
-  /** Changes a ticket's Telegram marks (telegramIn / telegramOut / telegramReport) and tells the board UI. */
-  patchTelegram(slug: string, id: string, patch: Pick<Partial<Ticket>, "telegramIn" | "telegramOut" | "telegramReport">): Ticket | null {
-    if (!this.store.getTicket(slug, id)) return null;
-    return this.patch(slug, id, patch);
-  }
+  patchTelegram(...a: Parameters<typeof plansPart.patchTelegram>): ReturnType<typeof plansPart.patchTelegram> { return plansPart.patchTelegram.call(this, ...a); }
 
-  markStartedBy(slug: string, id: string, by: Ticket["startedBy"]): void {
-    const t = this.store.getTicket(slug, id);
-    if (!t || (!t.startedBy && !by)) return;
-    this.patch(slug, id, { startedBy: by ?? null });
-  }
+  markStartedBy(...a: Parameters<typeof plansPart.markStartedBy>): ReturnType<typeof plansPart.markStartedBy> { return plansPart.markStartedBy.call(this, ...a); }
 
-  /**
-   * Manager mode: make existing tickets children of this one, so its plan runs them. Tickets on another board, the
-   * ticket itself or its ancestors (a cycle), tickets in another plan and finished ones are skipped with a reason.
-   */
-  adoptTickets(slug: string, plannerId: string, ids: string[]): { adopted: Ticket[]; skipped: { id: string; reason: string }[] } {
-    const planner = this.store.getTicket(slug, plannerId);
-    if (!planner) throw new Error(`ticket ${plannerId} not found`);
-    const ancestors = new Set<string>();
-    for (let p = planner.parentId; p && !ancestors.has(p); p = this.store.getTicket(slug, p)?.parentId) ancestors.add(p);
-    const adopted: Ticket[] = [];
-    const skipped: { id: string; reason: string }[] = [];
-    for (const id of [...new Set(ids.map((x) => x.trim()).filter(Boolean))]) {
-      const t = this.store.getTicket(slug, id);
-      const reason = !t ? `not found on board ${slug}`
-        : t.id === plannerId ? "that is this ticket itself"
-        : ancestors.has(t.id) ? "it is a parent of this ticket (that would make a cycle)"
-        : t.parentId === plannerId ? "already in this plan"
-        : t.parentId ? `belongs to plan ${t.parentId}`
-        : t.status === "done" ? "already done"
-        : t.error?.startsWith("corrupt") ? "its ticket file is corrupt"
-        // A sub-feature keeps its own chat and tasks: a plan never takes it in (that would make it a normal ticket).
-        : t.main && parentLink(t) ? `"${t.title}" is a sub-feature with its own chat and tasks; a plan can't take it in`
-        : !t.partOf ? linkProblem(this.store.listTickets(slug), { id: t.id, title: t.title, main: false }, plannerId)
-        : null;
-      if (reason) {
-        skipped.push({ id, reason });
-        continue;
-      }
-      adopted.push(this.patch(slug, id, { parentId: plannerId, ...(t!.main ? { main: false } : {}) }));
-      this.store.addComment(slug, id, "ai", `Adopted by plan ${plannerId} ("${planner.title}").`);
-    }
-    if (adopted.length) {
-      this.store.addComment(slug, plannerId, "ai", `Adopted ${adopted.length} ticket${adopted.length === 1 ? "" : "s"}: ${adopted.map((t) => `${t.id} "${t.title}"`).join(", ")}.`);
-      const p = this.store.getTicket(slug, plannerId)!;
-      // A plan under way grows with its new children: its create cap and wake-up budget count them.
-      if (p.plan && p.plan.state !== "done") this.patch(slug, plannerId, { plan: { ...p.plan, originalCount: p.plan.originalCount + adopted.length } });
-      else this.emitTicket(slug, p);
-      this.advancePlans(slug);
-    }
-    return { adopted, skipped };
-  }
+  adoptTickets(...a: Parameters<typeof plansPart.adoptTickets>): ReturnType<typeof plansPart.adoptTickets> { return plansPart.adoptTickets.call(this, ...a); }
 
-  /** The planner restarts a child that already ran: counted, and refused past MAX_RETRIES. */
-  countRetry(slug: string, plannerId: string, childId: string, max: number): void {
-    const p = this.store.getTicket(slug, plannerId);
-    if (!p?.plan) return;
-    const n = (p.plan.retries?.[childId] ?? 0) + 1;
-    if (n > max) throw new Error(`retry limit reached: ${childId} was already restarted ${max} times; skip or split it, or end with "blocked" for the user`);
-    this.patch(slug, plannerId, { plan: { ...p.plan, retries: { ...p.plan.retries, [childId]: n } } });
-  }
+  countRetry(...a: Parameters<typeof plansPart.countRetry>): ReturnType<typeof plansPart.countRetry> { return plansPart.countRetry.call(this, ...a); }
 
-  private advancing = new Set<string>();
+  advancing = new Set<string>();
   /** When a planner with waiting events gets woken, per planner: children that fail together arrive as one message. */
-  private wakeDue = new Map<string, number>();
-  private advanceAgain = new Set<string>();
+  wakeDue = new Map<string, number>();
+  advanceAgain = new Set<string>();
 
-  /** Move every running plan on the board forward. Cheap and idempotent: call it after any change. */
-  advancePlans(slug: string): void {
-    if (this.shuttingDown || this.restartPending) return;
-    if (this.advancing.has(slug)) {
-      this.advanceAgain.add(slug);
-      return;
-    }
-    this.advancing.add(slug);
-    try {
-      do {
-        this.advanceAgain.delete(slug);
-        const all = this.store.listTickets(slug);
-        let started = false;
-        for (const p of all) {
-          if (!p.plan || p.plan.state === "done" || p.plan.state === "paused") continue;
-          try {
-            started = this.advancePlan(slug, p, childrenOf(all, p.id)) || started;
-          } catch (e) {
-            console.error(`plan ${slug}/${p.id}:`, e);
-          }
-        }
-        if (started) this.dispatch(slug);
-      } while (this.advanceAgain.has(slug));
-    } finally {
-      this.advancing.delete(slug);
-    }
-  }
+  advancePlans(...a: Parameters<typeof plansPart.advancePlans>): ReturnType<typeof plansPart.advancePlans> { return plansPart.advancePlans.call(this, ...a); }
 
-  /** One plan; true when it moved children to Ready. */
-  private advancePlan(slug: string, planner: Ticket, kids: Ticket[]): boolean {
-    let plan = { ...planner.plan! };
-    const plannerBusy = this.isRunning(slug, planner.id);
-    // The planner's last wake-up has finished: its outcome decides whether we go on.
-    if (plan.awaiting && !plannerBusy) {
-      const o = planner.outcome;
-      // Waiting for a usage limit to reset: the planner's automatic continue picks the wake-up up again.
-      if (o === "limit" && planner.limit?.auto) return false;
-      if (o === "limit") {
-        this.stuck(slug, planner, plan, "the run that plans the steps hit the usage limit");
-        return false;
-      }
-      if (o === "blocked" || o === "needs_input" || o === "failed" || o === "stopped") {
-        this.stuck(slug, planner, plan, o === "needs_input" ? STUCK_ON_QUESTIONS : `the run that plans the steps ${o === "blocked" ? "is blocked" : o}`);
-        return false;
-      }
-      if (plan.awaiting === "final") {
-        this.patch(slug, planner.id, { plan: { ...plan, state: "done", awaiting: null, finishedAt: nowIso() } });
-        this.store.addComment(slug, planner.id, "ai", "Plan done: all child tickets finished and the final check ran.");
-        this.notify(`Plan done: ${planner.title}`, "All child tickets finished. Summary in the ticket's outputs.", slug, planner.id);
-        return false;
-      }
-      plan.awaiting = null;
-    }
-    if (plan.state === "stuck" && !planner.main) {
-      // Whatever made it stuck is gone once every child is finished (e.g. its last PR got merged): close it, no run needed.
-      if (kids.length && kids.every(isComplete)) this.closePlan(slug, planner, plan, "Plan done: every child ticket finished, so the stuck plan was closed without another run.");
-      return false;
-    }
-    if (plan.state === "finishing") {
-      if (!plan.awaiting && !plannerBusy) this.wake(slug, planner, plan, "final", [], kids);
-      else if (!sameJson(plan, planner.plan)) this.patch(slug, planner.id, { plan });
-      return false;
-    }
-    const managed = managedPlan(planner);
-    const step = planStep(plan, kids, (id) => this.isRunning(slug, id), {
-      waitingOnUser: (t) => this.userWait(t),
-      ...(managed ? { managed: { summary: (t: Ticket) => this.lastSummary(slug, t.id), report: (t: Ticket) => this.reportOf(slug, t.id) } } : {}),
-    });
-    // A main ticket parked in Backlog or Done: no new tool ticket starts and it isn't woken (running ones finish, queued
-    // ones wait); moving it back to In progress lets them go on.
-    const parked = !!planner.main && (planner.status === "backlog" || planner.status === "done");
-    // (Plans saved before the spending check-in was removed may still have a "checkin" field: nothing reads it.)
-    const held = parked;
-    // A stuck main ticket isn't woken until the user acts, but its steps still start once their dependencies are done
-    // (their results wait in the inbox for its next wake).
-    const quiet = plan.state === "stuck";
-    if (!held) for (const cid of step.start) this.patch(slug, cid, { status: "ready", mode: "auto", outcome: null, error: null });
-    if (step.events.length) {
-      plan.inbox = [...(plan.inbox ?? []), ...step.events.map((e) => e.line)];
-      plan.seen = { ...plan.seen, ...Object.fromEntries(step.events.map((e) => [e.childId, e.sig])) };
-      // Results also show in the planner's chat as cards.
-      const cards = step.events.filter((e) => e.result).map((e) => this.resultCard(slug, e.childId)).filter((c): c is ResultCard => !!c);
-      if (cards.length) this.patch(slug, planner.id, { results: [...(this.store.getTicket(slug, planner.id)?.results ?? []), ...cards].slice(-RESULTS_KEEP) });
-    }
-    if (held || quiet) {
-      if (!sameJson(plan, planner.plan)) this.patch(slug, planner.id, { plan });
-      return !held && step.start.length > 0;
-    }
-    const inbox = plan.inbox ?? [];
-    if (!plannerBusy && !plan.awaiting) {
-      if (inbox.length) {
-        if (managed) {
-          // Runaway loops: wakes in a row in which no tool ticket changed or was made mean the plan is stuck.
-          const p = progressStep(plan, familySig(kids));
-          if (p.stuck) {
-            this.stuck(slug, planner, plan, `${p.noProgress} wakes in a row without any tool ticket changing; waiting events: ${inbox.join("; ").slice(0, 600)}`);
-            return false;
-          }
-        } else if (plan.wakeups >= wakeupCap(Math.max(plan.originalCount, kids.length))) {
-          this.stuck(slug, planner, plan, `wake-up limit reached (${plan.wakeups}); waiting events: ${inbox.join("; ")}`);
-          return step.start.length > 0;
-        }
-        const key = this.key(slug, planner.id);
-        const due = this.wakeDue.get(key);
-        if (due === undefined) {
-          const delay = this.opts.planWakeDelayMs ?? 3000;
-          this.wakeDue.set(key, Date.now() + delay);
-          setTimeout(() => this.advancePlans(slug), delay + 5);
-        } else if (Date.now() >= due) {
-          this.wakeDue.delete(key);
-          this.wake(slug, planner, plan, "event", inbox, kids);
-          return step.start.length > 0;
-        }
-        if (!sameJson(plan, planner.plan)) this.patch(slug, planner.id, { plan });
-        return step.start.length > 0;
-      }
-      if (step.allComplete || (planner.main && !kids.length)) {
-        // A main ticket already heard every result: its plan just rests until a new tool ticket comes (no extra wake).
-        if (planner.main) {
-          this.patch(slug, planner.id, { plan: { ...plan, state: "done", awaiting: null, reason: null, finishedAt: nowIso() } });
-          return false;
-        }
-        this.wake(slug, planner, { ...plan, state: "finishing" }, "final", [], kids);
-        return false;
-      }
-      if (step.deadEnd && !step.start.length) {
-        this.stuck(slug, planner, plan, step.deadEnd);
-        return false;
-      }
-    }
-    if (!sameJson(plan, planner.plan)) this.patch(slug, planner.id, { plan });
-    return step.start.length > 0;
-  }
+  advancePlan(...a: Parameters<typeof plansPart.advancePlan>): ReturnType<typeof plansPart.advancePlan> { return plansPart.advancePlan.call(this, ...a); }
 
-  /** The questions form in the ticket's chat still waiting for the user's answers (empty when none). */
-  private openForm(t: Ticket): Question[] {
-    // A question the user closed isn't asked again after a board update.
-    if (askClosed(t)) return [];
-    return (t.sessionId ? this.sessionSummary(t.sessionId)?.openForm : undefined) ?? [];
-  }
+  openForm(...a: Parameters<typeof plansPart.openForm>): ReturnType<typeof plansPart.openForm> { return plansPart.openForm.call(this, ...a); }
 
-  /**
-   * Close question: the user closes a questions form (entry uuid) without answering. Nothing is sent and no run
-   * starts; the ticket stops waiting on the user for it (askClosed), until a new run asks again. Only the form still
-   * open now can be closed (a stale tab can't hide a newer question); the close remembers the run that asked it.
-   */
-  closeForm(slug: string, id: string, uuid: string): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (this.isRunning(slug, id)) throw new ConflictError("Claude is working on this ticket; close the question once it has finished");
-    if (t.closedForms?.[uuid]) return t;
-    const open = t.sessionId ? this.sessionSummary(t.sessionId)?.openFormId : undefined;
-    if (!open || open !== uuid) throw new ConflictError("This question isn't the one waiting now; reload the page to see the latest question");
-    return this.patch(slug, id, { closedForms: { ...t.closedForms, [uuid]: { at: nowIso(), by: "user", run: t.runEndedAt ?? "" } } });
-  }
+  closeForm(...a: Parameters<typeof plansPart.closeForm>): ReturnType<typeof plansPart.closeForm> { return plansPart.closeForm.call(this, ...a); }
 
-  /**
-   * The user wrote in a task's chat: a main ticket's open question about that task (ask_questions' about) is settled
-   * there, so it closes by itself (as if they pressed Close question). Only when the task was waiting on the user as
-   * the message arrived (taskWaited: a question, a proposal), so "status?" to a working task doesn't close it, and only
-   * the main ticket's form still open now. Returns the main ticket when it closed one.
-   */
-  closeQuestionsAbout(slug: string, task: Ticket, taskWaited: boolean): Ticket | null {
-    if (!taskWaited) return null;
-    const parent = parentLink(task);
-    const above = parent ? this.store.getTicket(slug, parent.id) : undefined;
-    const main = above ? this.mainOf(slug, above) : null;
-    if (!main || !main.sessionId || this.isRunning(slug, main.id) || askClosed(main)) return null;
-    const s = this.sessionSummary(main.sessionId);
-    if (!s?.openQuestions || !s.openFormId || !s.openAsk?.about?.includes(task.id) || main.closedForms?.[s.openFormId]) return null;
-    const out = this.patch(slug, main.id, { closedForms: { ...main.closedForms, [s.openFormId]: { at: nowIso(), by: "task", taskId: task.id, run: main.runEndedAt ?? "" } } });
-    this.store.addComment(slug, main.id, "ai", `Closed the question about "${task.title}": you answered it in that task's chat.`);
-    return out;
-  }
+  closeQuestionsAbout(...a: Parameters<typeof plansPart.closeQuestionsAbout>): ReturnType<typeof plansPart.closeQuestionsAbout> { return plansPart.closeQuestionsAbout.call(this, ...a); }
 
-  /** A key box (ask_keys) in the ticket's chat still waits for the user. */
-  private keysOpen(t: Ticket): boolean {
-    const pending = t.sessionId ? this.sessionSummary(t.sessionId)?.pendingKeys : undefined;
-    return !!pending?.some((id) => !t.keyCards?.[id]);
-  }
+  private keysOpen(...a: Parameters<typeof plansPart.keysOpen>): ReturnType<typeof plansPart.keysOpen> { return plansPart.keysOpen.call(this, ...a); }
 
-  /** Resume the planner's session with what happened; several events arrive as one message. */
-  private wake(slug: string, planner: Ticket, plan: Plan, kind: PlanWake, events: string[], kids: Ticket[]) {
-    const managed = managedPlan(planner);
-    // Read before autoFresh: a fresh chat no longer has the form, but Claude still asks it again from this list.
-    const open = this.openForm(planner);
-    const text = managed
-      ? mainWakePrompt(planner, { kind, events, table: wakeTable(kids, this.store.listTickets(slug), (id) => this.isRunning(slug, id)), board: slug, group: !planner.main, open })
-      : orchestratorPrompt(planner, { kind, events, table: planTable(kids), board: slug, outputDir: this.store.outputsDir(slug, planner.id), repo: this.repoState(slug) ?? this.guessRepo(slug), open });
-    const progress = managed ? progressStep(plan, familySig(kids)) : null;
-    this.patch(slug, planner.id, { plan: { ...plan, inbox: [], awaiting: kind, wakeups: plan.wakeups + 1, ...(progress ? { progressSig: progress.progressSig, noProgress: progress.noProgress } : {}) } });
-    this.autoFresh(slug, this.store.getTicket(slug, planner.id) ?? planner);
-    if (planner.main) {
-      // Its card stays where it is (a wake isn't new work to review); no slot, no folder lock (it edits nothing). A
-      // wake never leaves it in Done while its steps are still at work (parked plans aren't woken, so this is rare).
-      if (planner.status === "done" && this.openSteps(slug, planner.id)) this.unparkMain(slug, planner.id, "its steps are still at work");
-      this.start(slug, planner.id, { text, mode: "act", raw: true });
-      return;
-    }
-    // Back to where it was (In progress only if a restart cut a wake-up off).
-    const returnTo = planner.status === "in_progress" ? "review" : planner.status;
-    this.start(slug, planner.id, { text, mode: "act", raw: true, returnTo });
-  }
+  wake(...a: Parameters<typeof plansPart.wake>): ReturnType<typeof plansPart.wake> { return plansPart.wake.call(this, ...a); }
 
-  private closePlan(slug: string, planner: Ticket, plan: Plan, comment: string): Ticket {
-    const out = this.patch(slug, planner.id, { plan: { ...plan, state: "done", awaiting: null, reason: null, inbox: [], finishedAt: nowIso() } });
-    this.store.addComment(slug, planner.id, "ai", comment);
-    return out;
-  }
+  closePlan(...a: Parameters<typeof plansPart.closePlan>): ReturnType<typeof plansPart.closePlan> { return plansPart.closePlan.call(this, ...a); }
 
-  private stuck(slug: string, planner: Ticket, plan: Plan, reason: string) {
-    this.patch(slug, planner.id, { plan: { ...plan, state: "stuck", awaiting: null, reason } });
-    // The stuck planner now needs the user (attention.ts): the Notifier tells them.
-    this.store.addComment(slug, planner.id, "ai", `Plan stuck: ${reason}. Fix what's needed, then press Resume plan.`);
-  }
+  stuck(...a: Parameters<typeof plansPart.stuck>): ReturnType<typeof plansPart.stuck> { return plansPart.stuck.call(this, ...a); }
 
-  private async cleanupWorktree(slug: string, t: Ticket): Promise<Ticket> {
-    const profile = this.store.getProfile(slug);
-    if (!profile || !t.worktree) return t;
-    const r = await this.removeTicketWorktree(profile, t.worktree);
-    if (r.removed) return this.patch(slug, t.id, { worktree: null });
-    this.store.addComment(slug, t.id, "ai", `Worktree kept at ${t.worktree}: ${r.reason}`);
-    return t;
-  }
+  cleanupWorktree(...a: Parameters<typeof plansPart.cleanupWorktree>): ReturnType<typeof plansPart.cleanupWorktree> { return plansPart.cleanupWorktree.call(this, ...a); }
 
-  /**
-   * Removes worktrees left behind by Done or deleted tickets (run once at startup; never throws).
-   * Only the board's own worktree folder is looked at; ones with uncommitted changes are kept and logged.
-   */
-  async sweepWorktrees(): Promise<void> {
-    for (const profile of this.store.listProfiles()) {
-      try {
-        if (!(await isGitRepo(profile.path))) continue;
-        const root = dirname(worktreeDir(profile, "x"));
-        if (!existsSync(root)) continue;
-        const realRoot = realpathSync(root);
-        let swept = 0;
-        const kept: string[] = [];
-        for (const dir of await listWorktrees(profile.path)) {
-          if (dirname(dir) !== realRoot && dirname(dir) !== root) continue;
-          const id = basename(dir);
-          const t = this.store.getTicket(profile.slug, id);
-          const key = this.key(profile.slug, id);
-          const busy = this.isRunning(profile.slug, id) || this.setups.has(key) || this.sessionLocks.has(key);
-          if (t && (t.status !== "done" || busy)) continue;
-          const r = await this.removeTicketWorktree(profile, dir);
-          if (!r.removed) {
-            kept.push(`${id} (${r.reason})`);
-            continue;
-          }
-          swept++;
-          if (t?.worktree) this.patch(profile.slug, id, { worktree: null });
-        }
-        if (swept || kept.length) {
-          console.log(`profile ${profile.slug}: swept ${swept} orphan worktree${swept === 1 ? "" : "s"}, kept ${kept.length} with changes${kept.length ? `: ${kept.join(", ")}` : ""}`);
-        }
-      } catch (e) {
-        console.error(`profile ${profile.slug}: worktree sweep failed: ${(e as Error).message}`);
-      }
-    }
-  }
+  sweepWorktrees(...a: Parameters<typeof plansPart.sweepWorktrees>): ReturnType<typeof plansPart.sweepWorktrees> { return plansPart.sweepWorktrees.call(this, ...a); }
 
-  /** Prompt context of a schedule's ticket: which schedule, and for a quiet one what it raised that is still open. */
-  private scheduleContext(slug: string, t: Ticket): PromptContext["schedule"] {
-    const s = this.store.getSchedule(slug, t.scheduleId!);
-    if (!s) return { id: t.scheduleId!, name: null, board: slug };
-    return {
-      id: s.id, name: s.name, board: slug,
-      ...(s.quiet ? { quiet: quietContext(this.store.listOpenTickets(slug), this.store.scheduleHistoryDigest(slug, s.id).lastFired, s.id, t.id) } : {}),
-    };
-  }
+  private scheduleContext(...a: Parameters<typeof ticketsPart.scheduleContext>): ReturnType<typeof ticketsPart.scheduleContext> { return ticketsPart.scheduleContext.call(this, ...a); }
 
-  /**
-   * Remove a quiet schedule's ticket whose run found nothing for the user, and note it in the schedule's history (with
-   * its cost, which also counts in today's spend). Not when something came up meanwhile (a message, a new run, a move).
-   */
-  private async endQuietly(slug: string, id: string, end: { summary: string; costUsd: number }): Promise<boolean> {
-    const t = this.store.getTicket(slug, id);
-    if (!t?.scheduleId || t.status !== "done" || this.isRunning(slug, id) || this.waiting(slug, id).length) return false;
-    try {
-      const scheduleId = t.scheduleId;
-      await this.deleteTicket(slug, id);
-      addHuddleSpend(this.store.root, slug, end.costUsd);
-      const s = this.store.getSchedule(slug, scheduleId);
-      if (s) {
-        this.store.appendScheduleHistory(slug, scheduleId, { at: nowIso(), kind: "quiet", ticketId: id, summary: end.summary.slice(0, 500), costUsd: Math.round(end.costUsd * 10000) / 10000 });
-        this.bus.emit({ type: "schedule.updated", profile: slug, id: scheduleId, schedule: s });
-      }
-      return true;
-    } catch (e) {
-      console.error(`ticket ${slug}/${id}: could not remove the quiet schedule run`, e);
-      return false;
-    }
-  }
+  private endQuietly(...a: Parameters<typeof ticketsPart.endQuietly>): ReturnType<typeof ticketsPart.endQuietly> { return ticketsPart.endQuietly.call(this, ...a); }
 
-  /**
-   * Delete a ticket. A main ticket takes its tool tickets with it (their runs stop and their copies go, as for any
-   * deleted ticket); the rest of its family stays, unlinked. Refused while a merge into its copy runs.
-   */
-  async deleteTicket(slug: string, id: string): Promise<void> {
-    const t0 = this.store.getTicket(slug, id);
-    if (t0?.main) {
-      if (this.merging(slug, id)) throw new Error("Wait a moment: a merge is running");
-      // Deepest first, so a group never outlives its children.
-      for (const o of this.toolTickets(slug, id).reverse()) {
-        if (this.store.getTicket(slug, o.id)) await this.deleteOne(slug, o.id);
-      }
-    } else if (t0?.tool) {
-      const main = this.mainOf(slug, t0);
-      if (main && this.merging(slug, main.id)) throw new Error("Wait a moment: a merge is running");
-    }
-    await this.deleteOne(slug, id);
-  }
+  deleteTicket(...a: Parameters<typeof ticketsPart.deleteTicket>): ReturnType<typeof ticketsPart.deleteTicket> { return ticketsPart.deleteTicket.call(this, ...a); }
 
-  private async deleteOne(slug: string, id: string): Promise<void> {
-    const active = this.runs.get(this.key(slug, id));
-    if (active) {
-      this.stopRun(active);
-      await active.promise;
-    }
-    const t = this.store.getTicket(slug, id);
-    const profile = this.store.getProfile(slug);
-    if (t?.worktree && profile) await this.removeTicketWorktree(profile, t.worktree).catch(() => {});
-    if (t) await this.dropRewindCopies(slug, t);
-    if (t) deleteAttachments(this.store.attachmentsDir, this.attachmentsOf(slug, t));
-    this.store.deleteTicket(slug, id);
-    this.bus.emit({ type: "ticket.deleted", profile: slug, id });
-    // Its family stays, unlinked from it; a suggestion to link under it goes too.
-    for (const o of this.store.listTickets(slug)) {
-      if (o.partOf === id) this.patch(slug, o.id, { partOf: null, partOfVia: null });
-      if (o.parentSuggestion?.id === id) this.patch(slug, o.id, { parentSuggestion: null });
-    }
-  }
+  deleteOne(...a: Parameters<typeof ticketsPart.deleteOne>): ReturnType<typeof ticketsPart.deleteOne> { return ticketsPart.deleteOne.call(this, ...a); }
 
-  /**
-   * Move a Backlog ticket to another board: a fresh Backlog ticket there with the same title, description and tags
-   * (chat, comments and runs stay behind), then the original goes. Refused while it is linked to other tickets.
-   */
-  async moveTicket(slug: string, id: string, target: string): Promise<Ticket> {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (!this.store.getProfile(target)) throw new Error(`board ${target} not found`);
-    if (target === slug) throw new Error("The ticket is already on that board.");
-    if (t.status !== "backlog") throw new Error("Only tickets in Backlog can move to another board.");
-    if (this.runs.has(this.key(slug, id))) throw new Error("Claude is working on this ticket. Stop it first.");
-    if (t.worktree || t.branch) throw new Error("This ticket has work in a copy of the folder. Delete the ticket or finish it instead of moving it.");
-    const linked = t.parentId || t.dependsOn?.length || t.branchedFrom || t.madeFrom || t.plan
-      || this.store.listTickets(slug).some((o) => o.id !== id && (o.parentId === id || o.branchedFrom === id || o.madeFrom === id
-        || o.dependsOn?.some((d) => d === id || (!!t.planKey && d === t.planKey))));
-    if (linked) throw new Error("Can't move: this ticket is linked to other tickets. Remove the links first.");
-    // Create first, delete second: a failure in between leaves the original in place.
-    const copy = await this.createTicket(target, { title: t.title, body: t.body, status: "backlog", tags: t.tags, important: t.important });
-    try {
-      this.store.deleteTicket(slug, id);
-    } catch (e) {
-      this.store.deleteTicket(target, copy.id);
-      this.bus.emit({ type: "ticket.deleted", profile: target, id: copy.id });
-      throw e;
-    }
-    this.bus.emit({ type: "ticket.deleted", profile: slug, id });
-    return copy;
-  }
+  moveTicket(...a: Parameters<typeof ticketsPart.moveTicket>): ReturnType<typeof ticketsPart.moveTicket> { return ticketsPart.moveTicket.call(this, ...a); }
 
-  /** Images pasted into the ticket: its description, comments and chat (the Claude session transcript). */
-  private attachmentsOf(slug: string, t: Ticket): string[] {
-    const texts = [t.body, ...this.store.listComments(slug, t.id).map((c) => c.text), ...(t.queued ?? []).map((m) => m.text)];
-    const file = t.sessionId ? claudeSessionFile(t.sessionId) : null;
-    if (file) {
-      try {
-        texts.push(readFileSync(file, "utf8"));
-      } catch {}
-    }
-    return referencedAttachments(...texts);
-  }
+  attachmentsOf(...a: Parameters<typeof ticketsPart.attachmentsOf>): ReturnType<typeof ticketsPart.attachmentsOf> { return ticketsPart.attachmentsOf.call(this, ...a); }
 
-  /** Attach a Claude session the user already started in the profile folder (null unlinks). */
-  async linkSession(slug: string, id: string, sessionId: string | null): Promise<Ticket> {
-    const profile = this.store.getProfile(slug);
-    const t = this.store.getTicket(slug, id);
-    if (!profile || !t) throw new Error("ticket not found");
-    if (this.isRunning(slug, id)) throw new Error("ticket is running; stop it before linking a session");
-    if (sessionId !== null && !/^[0-9a-f-]{36}$/i.test(sessionId)) throw new Error("invalid session id");
-    if (t.worktree && sessionId !== null) {
-      const r = await this.removeTicketWorktree(profile, t.worktree);
-      if (!r.removed) throw new Error(`ticket already has a worktree with changes (${t.worktree}); cannot switch session`);
-    }
-    return this.patch(slug, id, sessionId === null
-      ? { sessionId: null, workdir: null }
-      // Linked work already exists and the next step is the user's: land in Review ("Your turn").
-      : { sessionId, workdir: profile.path, worktree: null, runCount: 0, lastRunAt: new Date().toISOString(), status: "review" });
-  }
+  linkSession(...a: Parameters<typeof ticketsPart.linkSession>): ReturnType<typeof ticketsPart.linkSession> { return ticketsPart.linkSession.call(this, ...a); }
 
-  /**
-   * Branch a ticket, like Claude Code's --fork-session: a new "Branch: <title>" ticket in Planning with a copy of
-   * the conversation (new session id) and its own git branch off the source's branch. The source is untouched.
-   * warning: something the user should know (uncommitted changes weren't copied, the source branch was gone).
-   */
-  async branchTicket(slug: string, id: string): Promise<{ ticket: Ticket; warning: string | null }> {
-    const src = this.store.getTicket(slug, id);
-    if (src && this.isRunning(slug, id)) throw new ConflictError("Claude is working on this ticket; branch it once Claude is done");
-    return this.copyTicket(slug, id, { title: `Branch: ${src?.title ?? ""}`, before: null });
-  }
+  branchTicket(...a: Parameters<typeof ticketsPart.branchTicket>): ReturnType<typeof ticketsPart.branchTicket> { return ticketsPart.branchTicket.call(this, ...a); }
 
-  /**
-   * Fork from here: like Branch, but the copied conversation ends just before the user message `uuid` (the UI puts
-   * its text back in the new chat's box). Titled "<title> (fork)", "(fork 2)"… (forkTitle). Refused while Rewind
-   * would be (a run, a waiting message). The first message forks to an empty chat that starts a new session.
-   */
-  async forkTicket(slug: string, id: string, uuid: string): Promise<{ ticket: Ticket; warning: string | null }> {
-    const src = this.store.getTicket(slug, id);
-    if (!src) throw new Error(`ticket ${id} not found`);
-    return this.withRewind(slug, id, async () => {
-      const title = forkTitle(src.title, this.store.listTickets(slug).map((t) => t.title));
-      return this.copyTicket(slug, id, { title, before: uuid });
-    });
-  }
+  forkTicket(...a: Parameters<typeof ticketsPart.forkTicket>): ReturnType<typeof ticketsPart.forkTicket> { return ticketsPart.forkTicket.call(this, ...a); }
 
-  private async copyTicket(slug: string, id: string, o: { title: string; before: string | null }): Promise<{ ticket: Ticket; warning: string | null }> {
-    const profile = this.store.getProfile(slug);
-    const src = this.store.getTicket(slug, id);
-    if (!profile || !src) throw new Error(`ticket ${id} not found`);
-    if (src.error?.startsWith("corrupt")) throw new Error("ticket file is corrupt");
-    const srcFile = src.sessionId ? claudeSessionFile(src.sessionId) : null;
-    if (!src.sessionId || !srcFile) throw new Error(`this ticket has no Claude conversation to ${o.before ? "fork" : "branch"} yet`);
-    if (src.workdir && !existsSync(src.workdir)) throw new Error(`linked session folder no longer exists: ${src.workdir}`);
-    // Checked before anything is made: a message the chat can't be cut at is refused.
-    if (o.before && !cutSession(readFileSync(srcFile, "utf8"), o.before)) throw new Error("The chat can't be forked from this message.");
+  copyTicket(...a: Parameters<typeof ticketsPart.copyTicket>): ReturnType<typeof ticketsPart.copyTicket> { return ticketsPart.copyTicket.call(this, ...a); }
 
-    const title = o.title;
-    const t = this.store.createTicket(slug, { title, body: src.body, status: "planning", mode: src.mode });
-    const warnings: string[] = [];
-    let worktree: string | null = null;
-    try {
-      const patch: Partial<Ticket> = {
-        sessionId: crypto.randomUUID(), sessionStarted: true, refineStarted: true, interviewed: src.interviewed,
-        branchedFrom: src.id, branchPoint: { at: nowIso(), sourceTitle: src.title },
-      };
-      // Same folder setup as the source: its linked folder, its own worktree branch, or the project folder.
-      if (src.workdir) patch.workdir = src.workdir;
-      else if (src.branch && (await isGitRepo(profile.path))) {
-        const dir = worktreeDir(profile, t.id);
-        const branch = `ck/${t.id}-${slugify(title)}`;
-        const hasBranch = (await runCmd(["git", "rev-parse", "--verify", "--quiet", `refs/heads/${src.branch}`], profile.path)).code === 0;
-        let base: string | null = src.branch;
-        if (!hasBranch) {
-          base = await resolveBaseBranch(profile.path, profile.baseBranch);
-          if (base === null) throw new Error(`branch ${src.branch} no longer exists and the repo has nothing to branch from`);
-          warnings.push(`The source branch ${src.branch} no longer exists, so the branch starts from ${base}.`);
-        } else if (src.worktree && existsSync(src.worktree)) {
-          const st = await runCmd(["git", "status", "--porcelain"], src.worktree);
-          if (st.code === 0 && st.stdout.trim()) warnings.push("Uncommitted changes in the source were not copied.");
-        }
-        await addWorktree(profile.path, dir, branch, base);
-        worktree = dir;
-        this.copyWorktreeFiles(slug, t.id, profile, dir);
-        Object.assign(patch, { worktree: dir, branch, setupPending: true });
-      } else {
-        // The source works in the project folder itself: so does the branch, with the same Changes base.
-        if (src.baseSha) patch.baseSha = src.baseSha;
-        warnings.push((await isGitRepo(profile.path))
-          ? "The original works in the project folder, so the branch edits the same files; they run one at a time."
-          : "This folder has no version history, so the branch edits the same files as the original; they run one at a time.");
-      }
-      const fromCwd = src.workdir ?? src.worktree ?? (src.branch ? worktreeDir(profile, src.id) : profile.path);
-      const toCwd = patch.workdir ?? worktree ?? profile.path;
-      // The branch gets its own copies of pasted images, so deleting either ticket can't break the other.
-      const rename = copyAttachments(this.store.attachmentsDir, referencedAttachments(src.body, readFileSync(srcFile, "utf8")));
-      for (const [from, to] of Object.entries(rename)) patch.body = (patch.body ?? src.body).split(from).join(to);
-      const fo = { fromId: src.sessionId, toId: patch.sessionId!, fromCwd, toCwd, rename };
-      if (!o.before) forkSessionFile(srcFile, fo);
-      else if (!forkSessionBefore(srcFile, o.before, fo)) {
-        // Forked from the first message: nothing to copy, the first message starts a new session.
-        Object.assign(patch, { sessionStarted: false, freshSession: true });
-      }
-      this.store.copyOutputs(slug, src.id, t.id);
-      const out = this.patch(slug, t.id, patch);
-      return { ticket: out, warning: warnings.join(" ") || null };
-    } catch (e) {
-      if (worktree) await removeWorktree(profile.path, worktree).catch(() => {});
-      this.store.deleteTicket(slug, t.id);
-      throw e;
-    }
-  }
-
-  /**
-   * Follow-up work the user asked for in the chat of a ticket that already ran, made by its proposal card (where it goes:
-   * web/src/followUp.ts followUpPlace). In a feature it becomes a step (a tool ticket) run by the feature's main ticket
-   * or a group above the ticket, shown under the ticket, so its result reaches the main ticket. A ticket on its own
-   * becomes a main ticket and the work its first step, so the user keeps talking to it. An old ticket under others
-   * without a main ticket gets a new ticket beside it (start: Ready, else Backlog). The ticket keeps its title and
-   * description, and goes back to Review/Done when a chat or the user had moved it to Planning/Backlog for this.
-   */
-  async followUpWork(slug: string, id: string, input: { title: string; body: string; start?: boolean; important?: boolean }): Promise<Ticket> {
-    const src = this.store.getTicket(slug, id);
-    if (!src) throw new Error(`ticket ${id} not found`);
-    const title = input.title.trim();
-    if (!title) throw new Error("title is required");
-    // Clicked again (another tab, a slow reply): what this card already made, even renamed or started since, also
-    // once the first click made this ticket a main ticket.
-    const all = this.store.listTickets(slug);
-    const made = followUpFor(all, src.id, title);
-    if (made) return made;
-    if (src.main) throw new Error("A main ticket's card updates its own plan: it adds new work as steps itself.");
-    if (src.tool) throw new Error("A step's follow-up work goes through its main ticket.");
-    const place = followUpPlace(all, src.id)!;
-    const shaping = src.status === "planning" || src.status === "backlog";
-    const was = shaping && src.reopenedFrom ? src.reopenedFrom : src;
-    const important = src.important || input.important ? { important: true } : {};
-    const tags = src.tags?.length ? { tags: src.tags } : {};
-    let t: Ticket;
-    let manager: Ticket | null = null;
-    if (place.as === "ticket") {
-      // No main ticket to report to: a plain ticket beside it, building on its work while that waits in Review.
-      t = await this.createTicket(slug, {
-        title, body: input.body, status: "backlog", mode: "auto", proposedAs: title, madeFrom: src.id, partOf: place.partOf, ...tags, ...important,
-        ...(was.status === "review" && src.branch && !src.workdir ? { startFrom: src.branch } : {}),
-      });
-    } else {
-      if (place.as === "main") {
-        this.patch(slug, src.id, { main: true });
-        this.store.addComment(slug, src.id, "ai", `Became a main ticket: follow-up work "${title}" runs as its first step, and you keep talking here.`);
-      }
-      manager = place.as === "main" ? this.store.getTicket(slug, src.id)! : this.store.getTicket(slug, place.manager)!;
-      const top = this.mainOf(slug, manager) ?? manager;
-      // A step that changes files starts from the main ticket's copy, so its work merges back there.
-      const startFrom = top.branch && top.worktree ? top.branch : null;
-      const d = kindDefaults("build", this.store.getProfile(slug))!;
-      t = await this.createTicket(slug, {
-        title, body: input.body, status: "backlog", mode: "auto", proposedAs: title, madeFrom: src.id, parentId: manager.id, kind: "build", tool: true,
-        model: d.model, effort: d.effort, ...(place.as === "step" && place.partOf ? { partOf: place.partOf } : {}), ...tags, ...important,
-        ...(startFrom ? { startFrom } : {}),
-      });
-      this.store.addComment(slug, t.id, "ai", `Tool ticket of ${manager.id} ("${manager.title}"): follow-up work the user asked for in the chat of ${src.id} ("${src.title}").`);
-      if (place.as === "step") this.store.addComment(slug, src.id, "ai", `Follow-up work "${title}" runs as a step of "${top.title}"; its result goes there.`);
-    }
-    if (shaping && src.reopenedFrom && !this.isRunning(slug, id)) {
-      // Like a move by hand (Done cleans up its worktree); then its old outcome badge comes back too.
-      await this.updateTicket(slug, id, { status: src.reopenedFrom.status });
-      this.patch(slug, id, { outcome: src.reopenedFrom.outcome });
-    }
-    if (manager) {
-      // Its manager's plan runs it in any column; a main ticket parked in Done or Backlog comes back to Review.
-      if (this.store.getTicket(slug, manager.id)?.main) this.unparkForNewStep(slug, manager.id);
-      this.ensurePlan(slug, manager.id);
-      this.advancePlans(slug);
-      return this.store.getTicket(slug, t.id)!;
-    }
-    return input.start ? this.updateTicket(slug, t.id, { status: "ready" }) : this.store.getTicket(slug, t.id)!;
-  }
+  followUpWork(...a: Parameters<typeof ticketsPart.followUpWork>): ReturnType<typeof ticketsPart.followUpWork> { return ticketsPart.followUpWork.call(this, ...a); }
 
   // ---- Families: "part of" links (see web/src/family.ts) ----
 
-  /**
-   * Makes id part of parent's family (null unlinks). via "chat": the parent's chat created it. A missing parent or a
-   * loop (a ticket under its own descendant) is refused. Any parent suggestion is settled by it.
-   * Moving it somewhere else also undoes the link that put it where it was: a plan ticket leaves its plan (refused
-   * while siblings depend on it), and a ticket made from another's card stops building on that ticket's work if it
-   * hasn't started, so the family shows where the user put it.
-   */
-  async setPartOf(slug: string, id: string, parent: string | null, via: "chat" | null = null, opts: { subtree?: boolean } = {}): Promise<Ticket> {
-    let t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (parent !== null) {
-      if (!this.store.getTicket(slug, parent)) throw new Error(`ticket ${parent} not found`);
-      const without = this.store.listTickets(slug).map((o) => (o.id === id ? { ...o, parentId: null } : o));
-      if (wouldLoop(without, id, parent)) {
-        const p = this.store.getTicket(slug, parent)!;
-        throw new Error(parent === id ? `"${t.title}" can't be part of itself` : `"${p.title}" is already inside "${t.title}", so "${t.title}" can't go under it.`);
-      }
-      // Depth (the whole part that moves) and one sub-feature level: never adjusted, refused with the reason.
-      const problem = linkProblem(without, t, parent, opts);
-      if (problem) throw new Error(problem);
-    }
-    if (t.parentId && t.parentId !== parent) t = await this.updateTicket(slug, id, { parentId: null });
-    const patch: Partial<Ticket> = { partOf: parent, partOfVia: parent ? via : null, parentSuggestion: null, parentChecked: true };
-    // A main ticket linked under another stays a main ticket: a sub-feature with its own card, chat, tasks and schedules.
-    // A task unlinked from its feature never stays hidden without a main ticket: it becomes its own work on the board
-    // (a main ticket when tasks of its own hang under it, so they keep reporting to it).
-    if (!parent && t.tool) Object.assign(patch, this.ownWorkPatch(slug, t));
-    // A ticket made from another's card that builds on its work in Review stops doing so once it moves away (not started yet).
-    if (!t.tool && t.madeFrom && t.partOf === t.madeFrom && parent !== t.madeFrom && t.startFrom && !t.worktree) patch.startFrom = null;
-    // Still in the same plan: that link already says it.
-    if (parent && t.parentId === parent) Object.assign(patch, { partOf: null, partOfVia: null });
-    return this.patch(slug, id, patch);
-  }
+  setPartOf(...a: Parameters<typeof familiesPart.setPartOf>): ReturnType<typeof familiesPart.setPartOf> { return familiesPart.setPartOf.call(this, ...a); }
 
-  /** What a task becomes when it stops being one: its own work on the board (a main ticket when tasks hang under it, or always with main). */
-  private ownWorkPatch(slug: string, t: Ticket, main = false): Partial<Ticket> {
-    const hasTasks = familyBelow(this.store.listTickets(slug), t.id).some((o) => o.id !== t.id && o.tool);
-    return { tool: false, showOnBoard: null, ...(main || hasTasks ? { main: true } : {}) };
-  }
+  ownWorkPatch(...a: Parameters<typeof familiesPart.ownWorkPatch>): ReturnType<typeof familiesPart.ownWorkPatch> { return familiesPart.ownWorkPatch.call(this, ...a); }
 
-  /**
-   * "Make it its own work": a task (tool ticket) becomes a main ticket with its own card and chat. Linked, it stays where
-   * it is as a sub-feature (refused with the reason when the family rules don't allow one there; unlinking always
-   * works); its plan link becomes a plain "part of" link, so its parent's plan no longer runs it or hears its results.
-   * Not while it runs.
-   */
-  async makeOwnWork(slug: string, id: string): Promise<Ticket> {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (!t.tool) throw new Error(`"${t.title}" is already its own work`);
-    if (this.isRunning(slug, id)) throw new Error(`"${t.title}" is working right now: make it its own work once its run ends`);
-    const all = this.store.listTickets(slug);
-    const was = this.mainOf(slug, t);
-    const link = parentLink(t);
-    const parent = link ? all.find((o) => o.id === link.id) ?? null : null;
-    if (parent) {
-      const problem = linkProblem(all.map((o) => (o.id === id ? { ...o, parentId: null } : o)), { ...t, main: true }, parent.id);
-      if (problem) {
-        // Inside a sub-feature: say so about the task itself (linkProblem names the sub-feature).
-        const sub = featureRoot(all, parent.id);
-        if (sub?.main && parentLink(sub)) {
-          throw new Error(`"${t.title}" can't become its own work here: it is inside the sub-feature "${sub.title}", and a sub-feature can't hold another sub-feature. Unlink it first to make it top-level work.`);
-        }
-        throw new Error(`${problem} Unlink it instead to make it its own work at the top of the board.`);
-      }
-      if (t.parentId) await this.updateTicket(slug, id, { parentId: null });
-    }
-    const out = this.patch(slug, id, { ...this.ownWorkPatch(slug, t, true), ...(parent ? { partOf: parent.id, partOfVia: null } : {}) });
-    this.store.addComment(slug, id, "ai", parent
-      ? `Made its own work: a sub-feature of "${parent.title}" with its own card and chat. Tasks under it report here.`
-      : "Made its own work: its own card and chat on the board.");
-    if (was && was.id !== id) this.store.addComment(slug, was.id, "ai", `"${t.title}" (${t.id}) is now its own work${parent ? `, a sub-feature of "${parent.title}"` : ""}: its results go to its own chat.`);
-    return out;
-  }
+  makeOwnWork(...a: Parameters<typeof familiesPart.makeOwnWork>): ReturnType<typeof familiesPart.makeOwnWork> { return familiesPart.makeOwnWork.call(this, ...a); }
 
-  /**
-   * "Show on board": a task gets a card like any ticket (on) or goes back to living in its feature only (off). A card
-   * gathered into a feature (hideableCard) can be hidden the same way (off) and shown again (on); it keeps its chat,
-   * results and run history and stays in the feature's Tasks list. Main tickets, sub-features and groups keep their card.
-   */
-  setShowOnBoard(slug: string, id: string, on: boolean): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (t.tool) return this.patch(slug, id, { showOnBoard: on ? true : null });
-    if (on) return t.showOnBoard === false ? this.patch(slug, id, { showOnBoard: null }) : t;
-    const all = this.store.listTickets(slug);
-    if (t.main) throw new Error(`"${t.title}" is a main ticket${parentLink(t) ? " (a sub-feature)" : ""}: it keeps its own card on the board`);
-    if (t.kind === "group" || t.kind === "round") throw new Error(`"${t.title}" is a group of its feature: it keeps its own card on the board`);
-    const top = featureRoot(all, t.id);
-    if (!hideableCard(t) || !top || top.id === t.id) {
-      throw new Error(`"${t.title}" isn't part of a feature: only a task or a card gathered into a feature can be hidden from the board`);
-    }
-    return this.patch(slug, id, { showOnBoard: false });
-  }
+  setShowOnBoard(...a: Parameters<typeof familiesPart.setShowOnBoard>): ReturnType<typeof familiesPart.setShowOnBoard> { return familiesPart.setShowOnBoard.call(this, ...a); }
 
-  /** Not related: the suggestion goes and the board doesn't suggest a parent for this ticket again. */
-  dismissParentSuggestion(slug: string, id: string): Ticket {
-    if (!this.store.getTicket(slug, id)) throw new Error(`ticket ${id} not found`);
-    return this.patch(slug, id, { parentSuggestion: null, parentChecked: true });
-  }
+  dismissParentSuggestion(...a: Parameters<typeof familiesPart.dismissParentSuggestion>): ReturnType<typeof familiesPart.dismissParentSuggestion> { return familiesPart.dismissParentSuggestion.call(this, ...a); }
 
-  /** The board's parent suggestion (linker.ts), unless the ticket got a parent or was settled meanwhile. */
-  suggestParent(slug: string, id: string, suggestion: { id: string; reason: string } | null): Ticket | null {
-    const t = this.store.getTicket(slug, id);
-    if (!t || t.parentChecked || t.partOf || t.parentId) return null;
-    if (suggestion && !this.store.getTicket(slug, suggestion.id)) suggestion = null;
-    return this.patch(slug, id, { parentSuggestion: suggestion, parentChecked: true });
-  }
+  suggestParent(...a: Parameters<typeof familiesPart.suggestParent>): ReturnType<typeof familiesPart.suggestParent> { return familiesPart.suggestParent.call(this, ...a); }
 
   // ---- Main tickets and tool tickets (main-ticket.ts) ----
 
   /** What the family spent so far (the daemon's spend index; none until it registers). */
-  private costOf: (slug: string, id: string) => number = () => 0;
+  costOf: (slug: string, id: string) => number = () => 0;
   /** ask_ticket runs in flight (forked sessions, no run slot), stopped on shutdown. */
   /** Running ask_ticket forks, each with what to tell its asker if a restart cuts it off. */
-  private asks = new Map<RunHandle, () => void>();
+  asks = new Map<RunHandle, () => void>();
   /** merge_into_main runs one at a time per main ticket. */
-  private mergeLocks = new Map<string, Promise<unknown>>();
+  mergeLocks = new Map<string, Promise<unknown>>();
 
-  onCost(f: (slug: string, id: string) => number): void {
-    this.costOf = f;
-  }
+  onCost(...a: Parameters<typeof mainPart.onCost>): ReturnType<typeof mainPart.onCost> { return mainPart.onCost.call(this, ...a); }
 
-  private newPlan(children: number): Plan {
-    return { state: "running", wakeups: 0, startedAt: nowIso(), originalCount: children, inbox: [], seen: {}, retries: {}, awaiting: null };
-  }
+  newPlan(...a: Parameters<typeof mainPart.newPlan>): ReturnType<typeof mainPart.newPlan> { return mainPart.newPlan.call(this, ...a); }
 
-  /**
-   * A main ticket (or tool group) gets a running plan once it has tool tickets or events: the engine then runs its
-   * family in any column. A finished plan starts again and keeps what it already reported (seen).
-   */
-  ensurePlan(slug: string, id: string): Ticket | null {
-    const t = this.store.getTicket(slug, id);
-    if (!t) return null;
-    if (t.plan && t.plan.state !== "done") return t;
-    const kids = childrenOf(this.store.listTickets(slug), id);
-    const plan: Plan = t.plan
-      ? { ...t.plan, state: "running", awaiting: null, reason: null, finishedAt: null, originalCount: Math.max(t.plan.originalCount, kids.length) }
-      : this.newPlan(kids.length);
-    return this.patch(slug, id, { plan });
-  }
+  ensurePlan(...a: Parameters<typeof mainPart.ensurePlan>): ReturnType<typeof mainPart.ensurePlan> { return mainPart.ensurePlan.call(this, ...a); }
 
-  /** Queue an event for a manager ticket's next wake (saved with it) and move its plan on. */
-  pushEvent(slug: string, plannerId: string, line: string): void {
-    if (!this.ensurePlan(slug, plannerId)) return;
-    const t = this.store.getTicket(slug, plannerId)!;
-    this.patch(slug, plannerId, { plan: { ...t.plan!, inbox: [...(t.plan!.inbox ?? []), line] } });
-    this.advancePlans(slug);
-  }
+  pushEvent(...a: Parameters<typeof mainPart.pushEvent>): ReturnType<typeof mainPart.pushEvent> { return mainPart.pushEvent.call(this, ...a); }
 
-  /** The main ticket a ticket belongs to: up its links to the first main ticket, or null. */
-  mainOf(slug: string, t: Ticket): Ticket | null {
-    const all = this.store.listTickets(slug);
-    const seen = new Set<string>();
-    for (let cur: Ticket | undefined = t; cur && !seen.has(cur.id); cur = all.find((o) => o.id === parentLink(cur!)?.id)) {
-      seen.add(cur.id);
-      if (cur.main) return cur;
-    }
-    return null;
-  }
+  mainOf(...a: Parameters<typeof mainPart.mainOf>): ReturnType<typeof mainPart.mainOf> { return mainPart.mainOf.call(this, ...a); }
 
-  /**
-   * Where a schedule or automation set to put its tickets in a feature (Schedule.partOf / Loop.partOf: a main ticket's
-   * id or one of its groups') puts the next one: a task of the nearest ticket there that runs tasks (a tool group, else
-   * the main ticket), like a task a run makes with create_ticket's partOf. A Done feature (or a done group of it) still
-   * takes them: createFeatureTask moves its main ticket back to Review. A problem (the feature is gone or not a
-   * feature): its own card instead.
-   */
-  taskPlaceFor(slug: string, partOf: string): TaskPlace | { problem: string } {
-    const all = this.store.listTickets(slug);
-    const at = all.find((t) => t.id === partOf);
-    if (!at) return { problem: `The feature ${partOf} it puts runs in no longer exists` };
-    const top = featureRoot(all, at.id);
-    if (!top?.main || (at.id !== top.id && !groupsOf(all, top.id).some((g) => g.id === at.id))) {
-      return { problem: `${at.id} ("${at.title}") isn't a feature's main ticket or one of its groups` };
-    }
-    const manager = isManager(at) && levelOf(all, at.id) + 1 <= MAX_LEVEL ? at : top;
-    return {
-      managerId: manager.id, mainId: top.id, ...(at.id !== manager.id ? { partOf: at.id } : {}),
-      // A task that changes files starts from the main ticket's copy (git boards), so its work merges back there.
-      ...(top.branch && top.worktree ? { startFrom: top.branch } : {}),
-    };
-  }
+  taskPlaceFor(...a: Parameters<typeof mainPart.taskPlaceFor>): ReturnType<typeof mainPart.taskPlaceFor> { return mainPart.taskPlaceFor.call(this, ...a); }
 
-  /**
-   * A schedule's run or an automation's new item as a task of a feature (taskPlaceFor): a tool ticket that keeps its
-   * schedule or source, tags, model and mode. In progress: it starts right away (the schedule or automation decides
-   * when, not the main ticket's plan). Backlog: it waits (waitsForStart) until the user or the main ticket starts it.
-   * Its main ticket's card stays where it is, except in Done: there it goes back to Review (no run, no wake, not the
-   * user's move) so the user sees that something came in. The plan picks the result up (resultWakesMain decides
-   * whether it wakes the main ticket).
-   */
-  async createFeatureTask(
-    slug: string, place: TaskPlace,
-    input: {
-      title: string; body: string; status: "in_progress" | "backlog"; mode: TicketMode; scheduleId?: string; source?: TicketSource;
-      tags?: string[]; model?: string;
-    },
-    by: TaskMaker,
-  ): Promise<Ticket> {
-    const main = this.store.getTicket(slug, place.mainId);
-    if (main?.main && main.status === "done") {
-      this.patch(slug, main.id, { status: "review", reopenedFrom: null });
-      this.store.addComment(slug, main.id, "ai", by.kind === "schedule"
-        ? `Back to Review: scheduled run "${by.name}" started.`
-        : `Back to Review: the automation "${by.name}" added a task.`);
-    }
-    const t = await this.createTicket(slug, {
-      ...input, parentId: place.managerId, tool: true, ...(place.partOf ? { partOf: place.partOf } : {}), ...(place.startFrom ? { startFrom: place.startFrom } : {}),
-      ...(input.status === "backlog" ? { waitsForStart: true } : {}),
-    });
-    const manager = this.store.getTicket(slug, place.managerId);
-    this.store.addComment(slug, t.id, "ai", `Task of ${place.managerId} ("${manager?.title ?? ""}"), made by the ${by.kind} "${by.name}".`
-      + (input.status === "backlog" ? " It waits in Backlog until you or the main ticket start it." : ""));
-    this.ensurePlan(slug, place.managerId);
-    this.advancePlans(slug);
-    return this.store.getTicket(slug, t.id)!;
-  }
+  createFeatureTask(...a: Parameters<typeof mainPart.createFeatureTask>): ReturnType<typeof mainPart.createFeatureTask> { return mainPart.createFeatureTask.call(this, ...a); }
 
-  /**
-   * A later item of an automation's thread (LoopState.threads) for the ticket its first item made. text is labelled as
-   * the automation's (threadItemText), so it never counts as the user's words.
-   * - Left as a note (a comment the ticket's next run reads, never a run of its own) when the automation's "Start Claude
-   *   by itself" is off (autoStart false: only the user starts Claude on outside text, also on a ticket that ran
-   *   before), when the ticket hasn't started its work (it never ran, waits in Backlog, Planning or Ready, or is a task
-   *   waiting to be started), and when a Planning chat is going on it.
-   * - Otherwise it goes into the chat without the user's rights: a waiting ticket resumes its own session (also when it
-   *   is cold and large), a working one gets it in a turn of its own once the current run ends (nextRun: never inside a
-   *   run that answers the user), and a ticket in Done comes back (its run moves it to In progress; a feature whose task
-   *   it is goes back to Review, as createFeatureTask does).
-   * Throws when it can't be delivered (the ticket is gone, stopping or being rewound): the caller keeps the item for its next check.
-   */
-  async automationItem(slug: string, id: string, text: string, by: { loopId: string; name: string; autoStart: boolean }): Promise<"note" | "chat"> {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    const active = this.runs.get(this.key(slug, id));
-    if (active?.stopRequested || this.shuttingDown) throw new ConflictError("Claude is stopping; the item waits for the next check");
-    const notStarted = t.waitsForStart || t.runCount === 0 || t.status === "backlog" || t.status === "planning" || t.status === "ready";
-    if (!by.autoStart || (!active && notStarted) || active?.chat?.mode === "refine") {
-      this.addComment(slug, id, text, `loop:${by.loopId}`);
-      return "note";
-    }
-    await this.chat(slug, id, text, { fromPlanner: true, automation: { loopId: by.loopId, name: by.name }, nextRun: true });
-    // Brought back once the message is on the ticket: a refused message leaves the feature where it was.
-    const main = t.main ? this.store.getTicket(slug, id) : this.mainOf(slug, t);
-    if (main?.main && main.status === "done") {
-      this.unparkMain(slug, main.id, main.id === id ? `the automation "${by.name}" sent it a new item` : `the automation "${by.name}" sent a new item to its task ${id}`);
-    }
-    return "chat";
-  }
+  automationItem(...a: Parameters<typeof mainPart.automationItem>): ReturnType<typeof mainPart.automationItem> { return mainPart.automationItem.call(this, ...a); }
 
-  /** The ticket's last result in words (its newest summary comment). */
-  lastSummary(slug: string, id: string): string {
-    return this.store.lastAiSummary(slug, id) ?? "";
-  }
+  lastSummary(...a: Parameters<typeof mainPart.lastSummary>): ReturnType<typeof mainPart.lastSummary> { return mainPart.lastSummary.call(this, ...a); }
 
-  /** A ticket's outputs/report.md, if it wrote one. */
-  reportOf(slug: string, id: string): string | null {
-    const file = join(this.store.outputsPath(slug, id), REPORT_FILE);
-    return existsSync(file) ? file : null;
-  }
+  reportOf(...a: Parameters<typeof mainPart.reportOf>): ReturnType<typeof mainPart.reportOf> { return mainPart.reportOf.call(this, ...a); }
 
-  /**
-   * Files a tool ticket changed in the project folder itself (a folder without version history): files modified while
-   * its last run went (tool tickets there run one at a time), or at least the ones its edit tool calls named.
-   */
-  private folderFiles(slug: string, id: string): number {
-    const t = this.store.getTicket(slug, id);
-    const root = this.store.getProfile(slug)?.path;
-    const files = new Set<string>();
-    const from = t?.lastRunAt ? Date.parse(t.lastRunAt) - 1000 : NaN;
-    const to = (t?.runEndedAt ? Date.parse(t.runEndedAt) : Date.now()) + 2000;
-    let seen = 0;
-    const walk = (dir: string, depth: number) => {
-      if (depth > 8 || seen > 20_000) return;
-      for (const d of readdirSync(dir, { withFileTypes: true })) {
-        if (d.name === ".git" || d.name === "node_modules" || d.name.startsWith(".ckanban")) continue;
-        const p = join(dir, d.name);
-        if (d.isDirectory()) walk(p, depth + 1);
-        else if (d.isFile() && ++seen) {
-          const m = statSync(p).mtimeMs;
-          if (m >= from && m <= to) files.add(p);
-        }
-      }
-    };
-    if (root && Number.isFinite(from)) {
-      try {
-        walk(root, 0);
-      } catch {}
-    }
-    for (const f of this.editedFiles(slug, id)) files.add(f);
-    return files.size;
-  }
+  folderFiles(...a: Parameters<typeof mainPart.folderFiles>): ReturnType<typeof mainPart.folderFiles> { return mainPart.folderFiles.call(this, ...a); }
 
-  /**
-   * Files a ticket's edit tool calls named (from its activity). Reads what the log gained since last time in one go:
-   * runs in a folder without version history warm it at their start (executeOnce), so that is about one run's worth.
-   */
-  private editedFiles(slug: string, id: string): Set<string> {
-    return this.store.activityDigestNow(slug, id).edited;
-  }
+  editedFiles(...a: Parameters<typeof mainPart.editedFiles>): ReturnType<typeof mainPart.editedFiles> { return mainPart.editedFiles.call(this, ...a); }
 
-  /** A tool ticket's result as a card for its parent's chat. */
-  private resultCard(slug: string, id: string): ResultCard | null {
-    const t = this.store.getTicket(slug, id);
-    if (!t) return null;
-    const summary = this.lastSummary(slug, id).trim();
-    const plain = !t.worktree && !t.branch && !t.workdir && (this.repoState(slug) === "plain" || this.repoState(slug) === "empty");
-    let cost: number | null = null;
-    try {
-      cost = Math.round(this.costOf(slug, id) * 100) / 100;
-    } catch {}
-    return {
-      at: nowIso(), ticketId: t.id, title: t.title, kind: t.kind ?? null, outcome: t.outcome ?? "done", verdict: t.verdict ?? null,
-      summary: summary.length > 600 ? `${summary.slice(0, 599)}…` : summary, report: this.reportOf(slug, id), model: t.model ?? null, costUsd: cost,
-      ...(plain ? { folderFiles: this.folderFiles(slug, id) } : {}),
-    };
-  }
+  resultCard(...a: Parameters<typeof mainPart.resultCard>): ReturnType<typeof mainPart.resultCard> { return mainPart.resultCard.call(this, ...a); }
 
-  /**
-   * A ticket the user added to a main ticket's feature (not one of its tool tickets) finished a run: its result also
-   * reaches the main ticket, as an event and a result card.
-   */
-  private reportToMain(slug: string, id: string, summary: string): void {
-    const t = this.store.getTicket(slug, id);
-    if (!t || t.tool || t.main) return;
-    const main = this.mainOf(slug, t);
-    if (!main || main.id === id) return;
-    const card = this.resultCard(slug, id);
-    if (card) this.patch(slug, main.id, { results: [...(this.store.getTicket(slug, main.id)?.results ?? []), card].slice(-RESULTS_KEEP) });
-    this.pushEvent(slug, main.id, finishedLine(t, summary, this.reportOf(slug, id)));
-  }
+  private reportToMain(...a: Parameters<typeof mainPart.reportToMain>): ReturnType<typeof mainPart.reportToMain> { return mainPart.reportToMain.call(this, ...a); }
 
-  /**
-   * A "with you" step ended waiting for the user: a grey board note in its main ticket's chat says so ("Staging check
-   * needs you: <its first question>"). The note doesn't wake the main ticket: only the user answers the step.
-   */
-  private noteStepWaiting(slug: string, id: string, summary: string): void {
-    const t = this.store.getTicket(slug, id);
-    if (!t || !youWaiting(t, false)) return;
-    const main = this.mainOf(slug, t);
-    if (!main || main.id === id) return;
-    const ask = this.openForm(t)[0]?.question ?? summary;
-    const first = ask.split("\n").map((l) => l.replace(/^[#>*\-\s]+/, "").trim()).find(Boolean) ?? "";
-    const line = first.length > 160 ? `${first.slice(0, 159)}…` : first;
-    const note: BoardNote = { at: nowIso(), ticketId: t.id, text: `${stepName(t)} needs you${line ? `: ${line}` : ""}` };
-    this.patch(slug, main.id, { boardNotes: [...(this.store.getTicket(slug, main.id)?.boardNotes ?? []), note].slice(-BOARD_NOTES_KEEP) });
-  }
+  private noteStepWaiting(...a: Parameters<typeof mainPart.noteStepWaiting>): ReturnType<typeof mainPart.noteStepWaiting> { return mainPart.noteStepWaiting.call(this, ...a); }
 
-  /** The user wrote in a tool ticket's chat: its parent hears the whole message before its next decision. */
-  noteUserMessage(slug: string, id: string, text: string): void {
-    const t = this.store.getTicket(slug, id);
-    if (!t?.tool) return;
-    const parent = t.parentId ?? this.mainOf(slug, t)?.id;
-    if (!parent) return;
-    this.pushEvent(slug, parent, `the user wrote in tool ticket ${t.id} "${t.title}": ${text}`);
-  }
+  noteUserMessage(...a: Parameters<typeof mainPart.noteUserMessage>): ReturnType<typeof mainPart.noteUserMessage> { return mainPart.noteUserMessage.call(this, ...a); }
 
   /** What a main ticket's card shows of its family (main-ticket.ts familyCard). */
   familyCard(slug: string, id: string): FamilyCard | null {
@@ -3646,994 +1323,127 @@ export class Board {
     return familyCard(main, family, all, (x) => this.isRunning(slug, x), Math.round(cost * 100) / 100);
   }
 
-  /**
-   * How many tickets of a main ticket's family are working now (tool tickets and tickets the user added; the main
-   * ticket itself left out). Its card shows In progress meanwhile (columns.ts familyBusy) with familyCard's working line.
-   */
-  familyWorking(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
-    return workingInFamily(familyBelow(tickets, id), id, (t) => this.isRunning(slug, t.id)).length;
-  }
+  familyWorking(...a: Parameters<typeof mainPart.familyWorking>): ReturnType<typeof mainPart.familyWorking> { return mainPart.familyWorking.call(this, ...a); }
 
-  /**
-   * How many of a main ticket's steps (tool tickets, not tickets the user added) are running now. A main card parked in
-   * Done or Backlog shows In progress meanwhile (columns.ts familyBusy); queued steps don't count there (parked, they wait).
-   */
-  stepsRunning(slug: string, id: string, tickets = this.store.listTickets(slug)): number {
-    return featureRows(tickets, id).filter((r) => r.ticket.id !== id && r.ticket.tool && this.isRunning(slug, r.ticket.id)).length;
-  }
+  stepsRunning(...a: Parameters<typeof mainPart.stepsRunning>): ReturnType<typeof mainPart.stepsRunning> { return mainPart.stepsRunning.call(this, ...a); }
 
-  /** The flags a run of the ticket's chat gets (see executeOnce); contextSpec copies them for the Context panel. */
-  private chatArgs(slug: string, t: Ticket, profile: Profile, refine: boolean, sessionId: string, resume: boolean, systemPrompt?: string, cap?: number | null, browsers?: RunBrowsers | null): string[] {
-    const effortNow = runOptions(t, profile, !refine);
-    // The board's claude.ai connector setting: hidden connectors join --disallowedTools, "none" turns them all off.
-    const connectors = boardConnectorOptions(profile);
-    return buildArgs(sessionId, resume, t.model ?? (t.main ? profile.mainModel : null) ?? profile.model,
-      // A main ticket never edits: every change goes to a tool ticket.
-      [...(refine ? PLANNING_DISALLOWED_TOOLS : []), ...(t.main ? NO_EDIT_TOOLS.split(",") : []), ...connectors.disallowed],
-      mcpConfig(undefined, { ...this.store.boardTools(slug), ...(browsers ? browsers.servers : this.browserServers(this.browserPicks(slug, t), this.store.outputsDir(slug, t.id))) }),
-      systemPrompt, cap ?? null, effortNow.effort, effortNow.ultracode, browsers?.noChrome ? { noChrome: true } : null);
-  }
+  chatArgs(...a: Parameters<typeof mainPart.chatArgs>): ReturnType<typeof mainPart.chatArgs> { return mainPart.chatArgs.call(this, ...a); }
 
-  /** The environment a run of the ticket gets. */
-  private chatEnv(slug: string, id: string, outputDir: string): Record<string, string> {
-    const connectors = boardConnectorOptions(this.store.getProfile(slug)!);
-    // CKANBAN_TICKET marks board runs: the ckanban MCP/CLI refuses board changes there (no runs starting runs).
-    // The board's saved keys (ask_keys) come first, so the board's own variables always win.
-    return { ...boardKeyEnv(this.store.root, slug), ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${id}` };
-  }
+  chatEnv(...a: Parameters<typeof mainPart.chatEnv>): ReturnType<typeof mainPart.chatEnv> { return mainPart.chatEnv.call(this, ...a); }
 
-  /**
-   * What the Context panel needs to run `/context` like the ticket's chat runs (same folder, flags and environment), or
-   * null when the ticket has no saved Claude session yet. The per-run system prompt and spending cap are left out.
-   */
-  /** The session contextSpec would check, without building the chat's command (a whole prompt): null when it has none. */
-  contextSession(slug: string, id: string): string | null {
-    const t = this.store.getTicket(slug, id);
-    const profile = this.store.getProfile(slug);
-    if (!t || !profile || !t.sessionId || !this.sessionExists(t.sessionId)) return null;
-    return existsSync(t.workdir ?? t.worktree ?? profile.path) ? t.sessionId : null;
-  }
+  contextSession(...a: Parameters<typeof mainPart.contextSession>): ReturnType<typeof mainPart.contextSession> { return mainPart.contextSession.call(this, ...a); }
 
-  contextSpec(slug: string, id: string): { sessionId: string; cwd: string; args: string[]; env: Record<string, string> } | null {
-    const sessionId = this.contextSession(slug, id);
-    if (!sessionId) return null;
-    const t = this.store.getTicket(slug, id)!;
-    const profile = this.store.getProfile(slug)!;
-    const cwd = t.workdir ?? t.worktree ?? profile.path;
-    const refine = chatModeFor(t.status) === "refine";
-    return { sessionId, cwd, args: this.chatArgs(slug, t, profile, refine, sessionId, true), env: this.chatEnv(slug, id, this.store.outputsDir(slug, id)) };
-  }
+  contextSpec(...a: Parameters<typeof mainPart.contextSpec>): ReturnType<typeof mainPart.contextSpec> { return mainPart.contextSpec.call(this, ...a); }
 
-  private runEnded: ((slug: string, id: string) => void)[] = [];
-  /** Called after each run of a ticket ends (the Context panel refreshes then). */
-  onRunEnd(fn: (slug: string, id: string) => void): void {
-    this.runEnded.push(fn);
-  }
+  runEnded: ((slug: string, id: string) => void)[] = [];
+  onRunEnd(...a: Parameters<typeof mainPart.onRunEnd>): ReturnType<typeof mainPart.onRunEnd> { return mainPart.onRunEnd.call(this, ...a); }
 
-  /** The main or tool rules a run of t gets, or undefined for other tickets. */
-  private roleOf(slug: string, t: Ticket, session: Pick<Session, "repo" | "inPlace">): RunRole | undefined {
-    if (t.main) {
-      const now = this.store.getTicket(slug, t.id) ?? t;
-      const planned = mainPlanned(this.store.listTickets(slug), now);
-      const up = parentLink(now);
-      const above = up && this.store.getTicket(slug, up.id) ? featureRoot(this.store.listTickets(slug), up.id) : undefined;
-      return {
-        kind: "main", repo: session.repo, branch: session.inPlace ? null : now.branch ?? null, inPlace: session.inPlace, ...(now.plan?.state === "paused" ? { paused: true } : {}), ...(planned ? { planned } : {}),
-        ...(above ? { subFeatureOf: { id: above.id, title: above.title } } : {}),
-        taskModels: this.store.getProfile(slug)?.taskModels ?? null,
-      } satisfies MainRole;
-    }
-    if (!t.tool) return undefined;
-    const all = this.store.listTickets(slug);
-    const main = this.mainOf(slug, t) ?? featureRoot(all, t.id) ?? t;
-    const parent = (t.parentId ? all.find((o) => o.id === t.parentId) : null) ?? main;
-    const saved = readStatus(this.store.outputsPath(slug, main.id));
-    let statusPath: string | null = null;
-    try {
-      statusPath = this.refreshStatusFile(slug, main.id);
-    } catch {}
-    const siblings = childrenOf(all, parent.id);
-    const deps = resolveDeps(t, siblings).deps.map((d) => ({ id: d.id, title: d.title, path: this.reportOf(slug, d.id) }));
-    return {
-      kind: "tool", repo: session.repo, parent: { id: parent.id, title: parent.title }, main: { id: main.id, title: main.title },
-      goal: saved?.goal?.trim() || main.title, statusPath, depReports: deps,
-      mainBranch: session.inPlace ? null : main.branch ?? null, outputDir: this.store.outputsDir(slug, t.id),
-      ...(t.kind === "with_you" ? { withYou: true } : {}),
-    } satisfies ToolRole;
-  }
+  private roleOf(...a: Parameters<typeof mainPart.roleOf>): ReturnType<typeof mainPart.roleOf> { return mainPart.roleOf.call(this, ...a); }
 
-  /**
-   * ask_ticket: a fork of the tool ticket's session at its latest saved point (its own session is untouched) answers
-   * the question in at most 5 sentences with read-only tools. It needs no run slot and works while the ticket runs. The
-   * answer reaches the asker as an event, or "no answer" after the timeout.
-   */
-  askTicket(slug: string, askerId: string, targetId: string, question: string): string {
-    const asker = this.store.getTicket(slug, askerId);
-    const target = this.store.getTicket(slug, targetId);
-    const profile = this.store.getProfile(slug);
-    if (!asker || !target || !profile) throw new Error(`ticket ${!target ? targetId : askerId} not found`);
-    if (!question.trim()) throw new Error("the question is empty");
-    const label = `${target.id} "${target.title}"`;
-    const reply = (line: string) => this.pushEvent(slug, askerId, line);
-    const src = target.sessionId ? claudeSessionFile(target.sessionId) : null;
-    const dir = target.workdir ?? target.worktree ?? profile.path;
-    if (!src || !existsSync(dir)) {
-      queueMicrotask(() => reply(`no answer from ${label} to "${question}": it has no conversation yet.`));
-      return `${target.id} has no conversation yet, so it can't answer; you'll get that as an event.`;
-    }
-    const forkId = crypto.randomUUID();
-    const file = forkSessionFile(src, { fromId: target.sessionId!, toId: forkId, fromCwd: dir, toCwd: dir });
-    const prompt = `${asker.title} (${asker.id}) asks you a question about your work on this ticket. This is a copy of your conversation: answer from what you did and know, in at most 5 sentences. You may read files, but don't change anything and don't start new work. Don't write a CKANBAN_RESULT line.\n\nQuestion: ${question.trim()}`;
-    let timedOut = false;
-    const handle = startRun({
-      bin: this.opts.claudeBin, cwd: dir,
-      args: buildArgs(forkId, true, target.model ?? profile.model, [...NO_EDIT_TOOLS.split(","), "Bash"], undefined, undefined, null, "low"),
-      input: prompt, env: { CKANBAN_OUTPUT_DIR: this.store.outputsPath(slug, target.id) }, onEvent: () => {},
-    });
-    // A restart stops the fork before it answers: shutdown() saves this "no answer" on the asker, so it is woken after.
-    this.asks.set(handle, () => reply(`no answer from ${label} to "${question}": the board restarted before it answered. Ask again if you still need it.`));
-    const timer = setTimeout(() => {
-      timedOut = true;
-      handle.stop();
-    }, this.opts.askTimeoutMs ?? ASK_TIMEOUT_MS);
-    void handle.done.then((out) => {
-      clearTimeout(timer);
-      this.asks.delete(handle);
-      try {
-        rmSync(file, { force: true });
-      } catch {}
-      if (this.shuttingDown) return; // shutdown() already saved the "no answer" event
-      const text = extractFinalText(out.events).replace(/^.*CKANBAN_RESULT:.*$/gm, "").trim();
-      const minutes = Math.round((this.opts.askTimeoutMs ?? ASK_TIMEOUT_MS) / 60_000);
-      reply(timedOut || !text
-        ? `no answer from ${label} to "${question}"${timedOut ? ` within ${minutes || "a few"} minute${minutes === 1 ? "" : "s"}` : ""}.`
-        : `answer from ${label} to "${question}": ${sentences(text)}`);
-    });
-    return `Asked ${label}. Its answer (or "no answer" after ${Math.round((this.opts.askTimeoutMs ?? ASK_TIMEOUT_MS) / 60_000) || 1} minutes) comes back as an event when you are woken; end your run if you have nothing else to do.`;
-  }
+  askTicket(...a: Parameters<typeof mainPart.askTicket>): ReturnType<typeof mainPart.askTicket> { return mainPart.askTicket.call(this, ...a); }
 
-  /**
-   * merge_into_main: fast-forwards the main ticket's copy to the tool ticket's branch, one at a time per main ticket.
-   * Refused (and counted) when the main copy moved since the tool ticket merged it; after MERGE_TRIES the tool ticket
-   * ends blocked and its parent hears about it.
-   */
-  mergeIntoMain(slug: string, toolId: string): Promise<string> {
-    const tool = this.store.getTicket(slug, toolId);
-    if (!tool) return Promise.reject(new Error(`ticket ${toolId} not found`));
-    if (!tool.tool) return Promise.reject(new Error("only a tool ticket merges into its main ticket's copy"));
-    const main = this.mainOf(slug, tool);
-    if (!main) return Promise.reject(new Error("this ticket has no main ticket to merge into"));
-    const key = this.key(slug, main.id);
-    const next = (this.mergeLocks.get(key) ?? Promise.resolve()).catch(() => {}).then(() => this.mergeNow(slug, toolId, main.id));
-    this.mergeLocks.set(key, next);
-    next.finally(() => {
-      if (this.mergeLocks.get(key) === next) this.mergeLocks.delete(key);
-    }).catch(() => {});
-    return next;
-  }
+  mergeIntoMain(...a: Parameters<typeof mainPart.mergeIntoMain>): ReturnType<typeof mainPart.mergeIntoMain> { return mainPart.mergeIntoMain.call(this, ...a); }
 
-  private async mergeNow(slug: string, toolId: string, mainId: string): Promise<string> {
-    const profile = this.store.getProfile(slug)!;
-    const tool = this.store.getTicket(slug, toolId)!;
-    const main = this.store.getTicket(slug, mainId)!;
-    if (!tool.worktree || !tool.branch) return "Nothing to merge: you edit the project folder itself, so your changes are already where the main ticket sees them.";
-    if (!main.branch) throw new Error("the main ticket has no copy of its own to merge into; end with your branch as it is and say so in your summary");
-    const dirty = await runCmd(["git", "status", "--porcelain"], tool.worktree);
-    if (dirty.code === 0 && dirty.stdout.trim()) throw new Error("you have changes that aren't committed yet: commit them, then call merge_into_main again");
-    const ancestor = await runCmd(["git", "merge-base", "--is-ancestor", main.branch, tool.branch], profile.path);
-    if (ancestor.code !== 0) {
-      const fails = (tool.mergeFails ?? 0) + 1;
-      this.patch(slug, toolId, { mergeFails: fails });
-      if (fails >= MERGE_TRIES) {
-        this.pushEvent(slug, tool.parentId ?? mainId, `merge failed: ${tool.id} "${tool.title}" couldn't merge into the main copy ${fails} times, so it ends blocked.`);
-        throw new Error(`The main ticket's copy moved again (try ${fails} of ${MERGE_TRIES}). Stop here: end your run with status "blocked" and say what is left to merge; your parent decides what happens next.`);
-      }
-      throw new Error(`The main ticket's copy moved since you last merged it (try ${fails} of ${MERGE_TRIES}): merge again and retry. Run \`git merge ${main.branch}\`, sort out any clashes, re-run the checks, commit, then call merge_into_main again.`);
-    }
-    const sha = (await runCmd(["git", "rev-parse", tool.branch], profile.path)).stdout.trim();
-    const count = Number((await runCmd(["git", "rev-list", "--count", `${main.branch}..${tool.branch}`], profile.path)).stdout.trim()) || 0;
-    if (!count) {
-      this.patch(slug, toolId, { merged: sha, mergeFails: 0 });
-      return "Nothing new to merge: the main ticket's copy already has your work.";
-    }
-    const r = main.worktree && existsSync(main.worktree)
-      ? await runCmd(["git", "merge", "--ff-only", tool.branch], main.worktree)
-      : await runCmd(["git", "branch", "-f", main.branch, tool.branch], profile.path);
-    if (r.code !== 0) throw new Error(`couldn't move the main ticket's copy forward: ${(r.stderr || r.stdout).trim().split("\n").slice(-3).join(" ")}`);
-    this.patch(slug, toolId, { merged: sha, mergeFails: 0 });
-    this.store.addComment(slug, mainId, "ai", `Merged ${count} commit${count === 1 ? "" : "s"} of ${tool.id} "${tool.title}" into this ticket's copy.`);
-    this.emitTicket(slug, this.store.getTicket(slug, mainId)!);
-    return `Merged ${count} commit${count === 1 ? "" : "s"} into the main ticket's copy (${main.branch}).`;
-  }
+  mergeNow(...a: Parameters<typeof mainPart.mergeNow>): ReturnType<typeof mainPart.mergeNow> { return mainPart.mergeNow.call(this, ...a); }
 
-  /**
-   * land_milestone: lands the main ticket's copy as the board lands work (landRule): push and one pull request on a
-   * repo with a remote (the open one is updated), a merge into the project folder without one. Plain folders only
-   * record it (the work is already there). Refused with the reason when it can't land cleanly.
-   */
-  async landMilestone(slug: string, id: string, summary: string): Promise<string> {
-    const t = this.store.getTicket(slug, id);
-    const profile = this.store.getProfile(slug);
-    if (!t || !profile) throw new Error(`ticket ${id} not found`);
-    if (!t.main) throw new Error("only a main ticket lands milestones");
-    const text = summary.trim().slice(0, 500);
-    if (!text) throw new Error("say in one line what this milestone is (summary)");
-    const record = (landed: string) => {
-      const dir = this.store.outputsDir(slug, id);
-      const saved = readStatus(dir);
-      const next: SavedStatus = { ...(saved ?? {}), updatedAt: nowIso(), milestones: [...(saved?.milestones ?? []), { at: nowIso(), summary: text, landed }].slice(-20) };
-      writeStatus(dir, this.store.getTicket(slug, id)!, next, this.facts(slug, this.store.listTickets(slug), id, next.prNotes), true);
-      this.patch(slug, id, { statusAt: nowIso() });
-      this.store.addComment(slug, id, "ai", `Milestone landed: ${text} (${landed}).`);
-    };
-    const repo = await repoKind(profile.path);
-    if (repo === "plain" || repo === "empty" || !t.branch || !t.worktree || !existsSync(t.worktree)) {
-      record("already in the project folder");
-      return "Recorded the milestone: the tool tickets already edited the project folder itself, so there is nothing else to land.";
-    }
-    const dirty = await runCmd(["git", "status", "--porcelain"], t.worktree);
-    if (dirty.code === 0 && dirty.stdout.trim()) throw new Error("the main ticket's copy has uncommitted changes, so it can't land cleanly; start a fix tool ticket to commit or drop them");
-    const base = profile.baseBranch || "main";
-    if (repo === "remote") {
-      const push = await runCmd(["git", "push", "-u", "origin", t.branch], t.worktree);
-      if (push.code !== 0) throw new Error(`couldn't push the main ticket's copy: ${(push.stderr || push.stdout).trim().split("\n").slice(-3).join(" ")}. Start a fix tool ticket (for example to merge ${base} in and sort out clashes).`);
-      const open = ticketPrs(t).find((p) => p.state !== "MERGED" && p.state !== "CLOSED");
-      let url = open?.url ?? null;
-      if (!url) {
-        try {
-          url = await (this.opts.openPr ?? openPrWithGh)(t.worktree, { branch: t.branch, base, title: t.title, body: text });
-        } catch (e) {
-          throw new Error(`pushed the copy, but couldn't open the pull request: ${(e as Error).message}`);
-        }
-        this.patch(slug, id, addPrs(this.store.getTicket(slug, id)!, [url]));
-      }
-      record(`${open ? "updated" : "opened"} ${url}`);
-      return `Landed: pushed your copy and ${open ? "updated the open" : "opened a"} pull request: ${url}`;
-    }
-    // No remote: merge the copy into the project folder, like a ticket's own run would (see localLand in prompts.ts).
-    const head = await runCmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], profile.path);
-    if (head.stdout.trim() !== base) throw new Error(`the project folder is on "${head.stdout.trim()}", not ${base}, so the board won't merge into it; ask the user to switch it back`);
-    const folderDirty = await runCmd(["git", "status", "--porcelain"], profile.path);
-    if (folderDirty.stdout.trim()) throw new Error("the project folder has uncommitted changes, so the board won't merge into it; ask the user to save or discard them first");
-    const m = await runCmd(["git", "merge", "--no-edit", t.branch], profile.path);
-    if (m.code !== 0) {
-      await runCmd(["git", "merge", "--abort"], profile.path);
-      throw new Error(`merging into ${base} clashed (${(m.stdout || m.stderr).trim().split("\n").slice(-2).join(" ")}), so nothing was landed. Start a fix tool ticket to merge ${base} into your copy and sort out the clashes`);
-    }
-    const sha = (await runCmd(["git", "rev-parse", "--short", "HEAD"], profile.path)).stdout.trim();
-    record(`merged into ${base} in the project folder at ${sha}`);
-    return `Landed: merged your copy into ${base} in the project folder (${sha}).`;
-  }
+  landMilestone(...a: Parameters<typeof mainPart.landMilestone>): ReturnType<typeof mainPart.landMilestone> { return mainPart.landMilestone.call(this, ...a); }
 
   // ---- Features: the feature status (Tasks tab), gathering tickets (feature.ts, web/src/family.ts) ----
 
-  /** The board's facts for a feature's status, its saved changes included (from the cache). */
-  private facts(slug: string, tickets: Ticket[], topId: string, prNotes?: Record<string, string>): StatusFacts {
-    // A sub-feature is one line: working while it or anything under it works, with its own status's next step.
-    const sub = (t: Ticket) => ({
-      working: this.isRunning(slug, t.id) || t.status === "ready" || t.status === "in_progress" || this.familyWorking(slug, t.id, tickets) > 0,
-      headline: (() => {
-        try {
-          return readStatus(this.store.outputsPath(slug, t.id))?.next ?? null;
-        } catch {
-          return null;
-        }
-      })(),
-    });
-    return { ...statusFacts(tickets, topId, (t) => this.waitsOnUser(slug, t.id), prNotes, sub), changes: this.savedChanges(slug, tickets, topId) };
-  }
+  facts(...a: Parameters<typeof featuresPart.facts>): ReturnType<typeof featuresPart.facts> { return featuresPart.facts.call(this, ...a); }
 
   /** Each feature's saved changes as last built, by slug and top ticket id (see savedChanges). */
-  private changesCache = new Map<string, { at: number; sig: string; value: SavedChanges | null }>();
-  private changesChecks = new Set<string>();
+  changesCache = new Map<string, { at: number; sig: string; value: SavedChanges | null }>();
+  changesChecks = new Set<string>();
 
-  /**
-   * A feature's saved changes from the cache (null until first built). The list is rebuilt in the background when the
-   * family changed (a ticket finished or merged) or after CHANGES_TTL_MS; a changed list rewrites status.md and
-   * reloads the status block. Never throws: no version history, no commits or a failing git just give no list.
-   */
-  savedChanges(slug: string, tickets: Ticket[], topId: string): SavedChanges | null {
-    const top = tickets.find((t) => t.id === topId);
-    if (!top || !(isFeature(tickets, top) || top.statusAt)) return null;
-    const key = `${slug}\u0000${topId}`;
-    const sig = familySig(featureRows(tickets, topId).map((r) => r.ticket));
-    const c = this.changesCache.get(key);
-    if (!c || c.sig !== sig || Date.now() - c.at > CHANGES_TTL_MS) void this.buildChanges(slug, topId, key, sig);
-    return c?.value ?? null;
-  }
+  savedChanges(...a: Parameters<typeof featuresPart.savedChanges>): ReturnType<typeof featuresPart.savedChanges> { return featuresPart.savedChanges.call(this, ...a); }
 
-  private async buildChanges(slug: string, topId: string, key: string, sig: string): Promise<void> {
-    if (this.changesChecks.has(key) || this.shuttingDown) return;
-    this.changesChecks.add(key);
-    try {
-      const prev = this.changesCache.get(key);
-      const value = await this.readChanges(slug, topId).catch(() => prev?.value ?? null);
-      this.changesCache.set(key, { at: Date.now(), sig, value });
-      if (JSON.stringify(value) === JSON.stringify(prev?.value ?? null)) return;
-      const top = this.store.getTicket(slug, topId);
-      if (!top || !value || this.shuttingDown) return;
-      if (value.file) {
-        try {
-          writeFileSync(value.file, savedChangesMarkdown(top, value));
-        } catch {}
-      }
-      // status.md and the open status block show the new list.
-      this.refreshStatusFile(slug, topId);
-      this.patch(slug, topId, { statusAt: nowIso() });
-    } finally {
-      this.changesChecks.delete(key);
-    }
-  }
+  buildChanges(...a: Parameters<typeof featuresPart.buildChanges>): ReturnType<typeof featuresPart.buildChanges> { return featuresPart.buildChanges.call(this, ...a); }
 
-  /**
-   * The feature's saved changes now: with version history, every entry on the base branch (and its remote copy) and
-   * on the main ticket's copy whose message carries "Ckanban-Feature: <topId>", newest first; in a folder without
-   * history, the files the family's tickets edited. Null when there is nothing to show.
-   */
-  private async readChanges(slug: string, topId: string): Promise<SavedChanges | null> {
-    const profile = this.store.getProfile(slug);
-    const tickets = this.store.listTickets(slug);
-    const top = tickets.find((t) => t.id === topId);
-    if (!profile || !top) return null;
-    // The cached kind without re-checking it (a re-check may start runs); else asked once here.
-    const repo = this.repos.get(profile.path)?.kind ?? await repoKind(profile.path);
-    const full = join(this.store.outputsDir(slug, topId), SAVED_CHANGES_FILE);
-    const withFile = (c: SavedChanges): SavedChanges => (c.items.length > CHANGES_SHOWN ? { ...c, file: full } : c);
-    if (repo === "local" || repo === "remote") {
-      const base = profile.baseBranch || "main";
-      const baseRefs = [base, ...(repo === "remote" ? [`origin/${base}`] : [])];
-      const grep = `--grep=^${FEATURE_TRAILER}: ${topId}$`;
-      const r = await runCmd(["git", "log", "--ignore-missing", "--format=%H%x09%h%x09%s", grep, ...baseRefs, ...(top.branch ? [top.branch] : []), "--"], profile.path, undefined, 20_000);
-      if (r.code !== 0) return null;
-      const all = r.stdout.split("\n").filter((l) => l.trim()).map((l) => {
-        const [full, id, ...rest] = l.split("\t");
-        return { full: full!, id: id!, text: rest.join("\t").trim() };
-      });
-      const dropped = top.branch ? await this.copyDuplicates(profile.path, grep, baseRefs, top.branch, all) : new Set<string>();
-      const items = all.filter((c) => !dropped.has(c.full)).map(({ id, text }) => ({ id, text }));
-      return items.length ? withFile({ kind: "history", items }) : null;
-    }
-    const files = new Set<string>();
-    const pause = pauser();
-    for (const r of featureRows(tickets, topId)) if (r.depth === 0 || !r.ticket.main) for (const f of (await this.store.activityDigest(slug, r.ticket.id, pause)).edited) files.add(f);
-    const root = profile.path.endsWith("/") ? profile.path : `${profile.path}/`;
-    const items = [...files].map((f) => (f.startsWith(root) ? f.slice(root.length) : f)).sort().map((text) => ({ text }));
-    return items.length ? withFile({ kind: "files", items }) : null;
-  }
+  readChanges(...a: Parameters<typeof featuresPart.readChanges>): ReturnType<typeof featuresPart.readChanges> { return featuresPart.readChanges.call(this, ...a); }
 
-  /**
-   * Entries only on the main ticket's copy whose change is already on the base branch as another entry (re-applied or
-   * squashed when it landed): same patch, or same subject line when the patch differs (e.g. after a clash was sorted
-   * out). Only the feature's own entries are compared, so it stays cheap. Empty when unsure.
-   */
-  private async copyDuplicates(cwd: string, grep: string, baseRefs: string[], branch: string, all: { full: string; text: string }[]): Promise<Set<string>> {
-    const dropped = new Set<string>();
-    const r = await runCmd(["git", "log", "--ignore-missing", "--format=%H", grep, branch, "--not", ...baseRefs, "--"], cwd, undefined, 20_000);
-    if (r.code !== 0) return dropped;
-    const copyOnly = new Set(r.stdout.split("\n").map((l) => l.trim()).filter(Boolean));
-    const onBase = all.filter((c) => !copyOnly.has(c.full));
-    if (!copyOnly.size || !onBase.length) return dropped;
-    const subjects = new Set(onBase.map((c) => c.text));
-    for (const c of all) if (copyOnly.has(c.full) && subjects.has(c.text)) dropped.add(c.full);
-    const rest = all.filter((c) => copyOnly.has(c.full) && !dropped.has(c.full)).map((c) => c.full);
-    if (!rest.length) return dropped;
-    // git patch-id prints "<patch id> <commit>" per commit; commits are passed as arguments, never through the shell text.
-    const ids = await runCmd(["sh", "-c", 'git log --no-walk=unsorted -p --no-color --format="commit %H" "$@" | git patch-id --stable', "sh", ...onBase.map((c) => c.full), ...rest], cwd, undefined, 20_000);
-    if (ids.code !== 0) return dropped;
-    const byCommit = new Map(ids.stdout.split("\n").map((l) => l.trim().split(" ")).filter((p) => p.length === 2).map(([pid, sha]) => [sha!, pid!]));
-    const basePatches = new Set(onBase.map((c) => byCommit.get(c.full)).filter(Boolean));
-    for (const sha of rest) if (basePatches.has(byCommit.get(sha))) dropped.add(sha);
-    return dropped;
-  }
+  copyDuplicates(...a: Parameters<typeof featuresPart.copyDuplicates>): ReturnType<typeof featuresPart.copyDuplicates> { return featuresPart.copyDuplicates.call(this, ...a); }
 
 
-  /** The top ticket of id's own feature (featureRoot: a sub-feature for its tickets), its saved status and the board's facts. */
-  featureStatus(slug: string, id: string): { top: Ticket; feature: boolean; saved: SavedStatus | null; facts: StatusFacts; sections: ReturnType<typeof statusSections>; path: string } {
-    const tickets = this.store.listTickets(slug);
-    const top = featureRoot(tickets, id);
-    if (!top) throw new Error(`ticket ${id} not found`);
-    const dir = this.store.outputsDir(slug, top.id);
-    const saved = readStatus(dir);
-    const facts = this.facts(slug, tickets, top.id, saved?.prNotes);
-    return { top, feature: isFeature(tickets, top), saved, facts, sections: statusSections(saved, facts), path: statusFiles(dir).md };
-  }
+  featureStatus(...a: Parameters<typeof featuresPart.featureStatus>): ReturnType<typeof featuresPart.featureStatus> { return featuresPart.featureStatus.call(this, ...a); }
 
-  /** Rewrites status.md from the saved status and the board's facts now (a feature or a ticket with a status only). */
-  refreshStatusFile(slug: string, id: string): string | null {
-    const f = this.featureStatus(slug, id);
-    if (!f.saved && !f.feature) return null;
-    writeStatus(this.store.outputsDir(slug, f.top.id), f.top, f.saved, f.facts, false);
-    return f.path;
-  }
+  refreshStatusFile(...a: Parameters<typeof featuresPart.refreshStatusFile>): ReturnType<typeof featuresPart.refreshStatusFile> { return featuresPart.refreshStatusFile.call(this, ...a); }
 
-  /** update_status: replaces only the sections the patch names, on the top ticket of id's family (making it a feature). */
-  updateStatus(slug: string, id: string, patch: StatusPatch): ReturnType<Board["featureStatus"]> & { markdown: string } {
-    const tickets = this.store.listTickets(slug);
-    const top = featureRoot(tickets, id);
-    if (!top) throw new Error(`ticket ${id} not found`);
-    const dir = this.store.outputsDir(slug, top.id);
-    const now = nowIso();
-    const saved = applyPatch(readStatus(dir), patch, now, familySig(featureRows(tickets, top.id).slice(1).map((r) => r.ticket)));
-    const facts = this.facts(slug, tickets, top.id, saved.prNotes);
-    const markdown = writeStatus(dir, top, saved, facts, true);
-    this.patch(slug, top.id, { statusAt: now });
-    return { ...this.featureStatus(slug, top.id), markdown };
-  }
+  updateStatus(...a: Parameters<typeof featuresPart.updateStatus>): ReturnType<typeof featuresPart.updateStatus> { return featuresPart.updateStatus.call(this, ...a); }
 
-  /** "Add a note": saved in the status under its date; the main chat gets it at its next turn without a run starting. */
-  addStatusNote(slug: string, id: string, text: string): ReturnType<Board["featureStatus"]> {
-    const note = text.trim().slice(0, STATUS_NOTE_MAX);
-    if (!note) throw new Error("the note is empty");
-    const tickets = this.store.listTickets(slug);
-    const top = featureRoot(tickets, id);
-    if (!top) throw new Error(`ticket ${id} not found`);
-    const dir = this.store.outputsDir(slug, top.id);
-    const now = nowIso();
-    const old = readStatus(dir);
-    const saved: SavedStatus = { ...(old ?? {}), updatedAt: now, notes: [...(old?.notes ?? []), { at: now, text: note, delivered: false }] };
-    writeStatus(dir, top, saved, this.facts(slug, tickets, top.id, saved.prNotes), true);
-    this.patch(slug, top.id, { statusAt: now });
-    return this.featureStatus(slug, top.id);
-  }
+  addStatusNote(...a: Parameters<typeof featuresPart.addStatusNote>): ReturnType<typeof featuresPart.addStatusNote> { return featuresPart.addStatusNote.call(this, ...a); }
 
-  /** The user's status notes the top ticket's Claude hasn't had yet, as a prompt block (marked delivered); null for none. */
-  private takeStatusNotes(slug: string, id: string): string | null {
-    const dir = this.store.outputsPath(slug, id);
-    const saved = existsSync(dir) ? readStatus(dir) : null;
-    const fresh = saved?.notes?.filter((n) => !n.delivered) ?? [];
-    if (!saved || !fresh.length) return null;
-    const t = this.store.getTicket(slug, id)!;
-    const next = { ...saved, notes: saved.notes!.map((n) => ({ ...n, delivered: true })) };
-    const f = this.facts(slug, this.store.listTickets(slug), id, next.prNotes);
-    writeStatus(dir, t, next, f, true);
-    return statusNotesBlock(fresh);
-  }
+  private takeStatusNotes(...a: Parameters<typeof featuresPart.takeStatusNotes>): ReturnType<typeof featuresPart.takeStatusNotes> { return featuresPart.takeStatusNotes.call(this, ...a); }
 
-  /** What a run in a feature is told about the status: the main chat reads and keeps it; family runs may update it. */
-  private featureNote(slug: string, t: Ticket): string | null {
-    const tickets = this.store.listTickets(slug);
-    const top = featureRoot(tickets, t.id);
-    if (!top || !isFeature(tickets, top)) return null;
-    const path = this.refreshStatusFile(slug, top.id);
-    if (!path) return null;
-    return top.id === t.id ? featureMainNote(path) : featureMemberNote(top, path);
-  }
+  private featureNote(...a: Parameters<typeof featuresPart.featureNote>): ReturnType<typeof featuresPart.featureNote> { return featuresPart.featureNote.call(this, ...a); }
 
-  /**
-   * After a chat reply or plan wake of a feature's top ticket that didn't call update_status while the family changed
-   * since the status was last updated: one short quiet turn asking Claude to update it. At most once per run.
-   */
-  private async nudgeStatus(run: ActiveRun, startedAt: string): Promise<boolean> {
-    if (run.nudged || !run.statusEligible || run.stopRequested || this.shuttingDown || this.restartPending) return false;
-    if (this.waiting(run.slug, run.id).length) return false;
-    const tickets = this.store.listTickets(run.slug);
-    const top = featureRoot(tickets, run.id);
-    if (!top || top.id !== run.id || !isFeature(tickets, top)) return false;
-    const saved = readStatus(this.store.outputsPath(run.slug, run.id));
-    if (!saved || (saved.claudeAt && saved.claudeAt >= startedAt)) return false;
-    const rows = featureRows(tickets, top.id).slice(1).map((r) => r.ticket);
-    const sig = familySig(rows);
-    if (saved.familySig === sig) return false;
-    run.nudged = true;
-    const path = this.refreshStatusFile(run.slug, run.id)!;
-    // Same mode as the reply it follows: a Planning chat's nudge can't change files either.
-    const mode = run.chat?.mode ?? "act";
-    const t = this.store.getTicket(run.slug, run.id);
-    run.chat = { text: statusNudgePrompt(path, sigChanges(saved.familySig ?? "", sig, rows), t ? this.openForm(t) : []), mode, raw: true, quiet: true, nudge: true };
-    run.promptMsgId = undefined;
-    run.inFlight = new Map();
-    run.handle = null;
-    run.retried = false;
-    run.restartRequested = false;
-    this.begin(run);
-    await this.executeOnce(run);
-    return true;
-  }
+  private nudgeStatus(...a: Parameters<typeof featuresPart.nudgeStatus>): ReturnType<typeof featuresPart.nudgeStatus> { return featuresPart.nudgeStatus.call(this, ...a); }
 
-  /**
-   * Gather tickets into the feature: each picked one links under its group (an existing group of the feature, "new" for
-   * a new group named newGroup, or none: under the feature itself). Chats, work and pull requests stay; running tickets
-   * keep running. A ticket in another family moves (setPartOf rules). Its own tickets that would sit deeper than level 2
-   * move up beside it (still in their plan, if any). by: who to credit, for a chat outside the feature ("by the chat of ...").
-   */
-  async gather(slug: string, featureId: string, items: { id: string; group?: string | null }[], newGroup?: string | null, by?: string | null, opts: { hide?: boolean } = {}): Promise<{
-    gathered: Ticket[]; movedUp: { id: string; title: string; to: string }[]; skipped: { id: string; reason: string }[]; group: Ticket | null;
-    /** hide: what kept its card and why (main tickets, sub-features, groups); hidden cards are the rest of gathered. */
-    kept: { id: string; reason: string }[];
-  }> {
-    const top = featureRoot(this.store.listTickets(slug), featureId);
-    if (!top) throw new Error(`ticket ${featureId} not found`);
-    let group: Ticket | null = null;
-    if (items.some((i) => i.group === "new")) {
-      group = await this.createTicket(slug, { title: newGroup?.trim() || "New group", body: "", status: "backlog", mode: "auto", kind: "group", partOf: top.id });
-    }
-    const groups = new Set(groupsOf(this.store.listTickets(slug), top.id).map((g) => g.id));
-    const gathered: Ticket[] = [];
-    const skipped: { id: string; reason: string }[] = [];
-    const movedUp: { id: string; title: string; to: string }[] = [];
-    const kept: { id: string; reason: string }[] = [];
-    for (const item of items) {
-      const target = item.group === "new" ? group!.id : item.group || top.id;
-      const t = this.store.getTicket(slug, item.id);
-      if (!t) {
-        skipped.push({ id: item.id, reason: "not found" });
-        continue;
-      }
-      if (t.id === top.id) {
-        skipped.push({ id: t.id, reason: "that is the feature itself" });
-        continue;
-      }
-      if (target !== top.id && !groups.has(target)) {
-        skipped.push({ id: t.id, reason: `${target} is not a group of this feature` });
-        continue;
-      }
-      // Its own tickets (all levels), to keep within the depth limit once it has moved.
-      const own = new Set(subtreeIds(this.store.listTickets(slug), t.id));
-      try {
-        // Its own depth and the sub-feature rule are checked; deeper tickets of its own move up below (and say so).
-        if (parentLink(t)?.id !== target) await this.setPartOf(slug, t.id, target, null, { subtree: false });
-        // hide: off the board like the feature's tasks (setShowOnBoard); a task, main ticket or group keeps what it has.
-        const now = this.store.getTicket(slug, t.id)!;
-        if (opts.hide && !now.tool) {
-          try {
-            this.setShowOnBoard(slug, t.id, false);
-          } catch (e) {
-            kept.push({ id: t.id, reason: (e as Error).message });
-          }
-        }
-        gathered.push(this.store.getTicket(slug, t.id)!);
-        this.store.addComment(slug, t.id, "ai", `Gathered into the feature "${top.title}" (${top.id})${target !== top.id ? `, under "${this.store.getTicket(slug, target)?.title}"` : ""}${by ? ` ${by}` : ""}.`);
-      } catch (e) {
-        skipped.push({ id: t.id, reason: (e as Error).message });
-        continue;
-      }
-      // Its own tickets deeper than level 2 move up beside it: linked to its ancestor at level 1. Only inside this
-      // feature (featureRows): a sub-feature's tickets count from it and never move across its edge.
-      for (let guard = 0; guard < 500; guard++) {
-        const rows = featureRows(this.store.listTickets(slug), top.id);
-        const deep = rows.findIndex((r) => own.has(r.ticket.id) && r.depth > MAX_LEVEL);
-        if (deep < 0) break;
-        const anc = rows.slice(0, deep).findLast((r) => r.depth === 1)!;
-        const d = rows[deep].ticket;
-        this.patch(slug, d.id, { partOf: anc.ticket.id, partOfVia: null });
-        movedUp.push({ id: d.id, title: d.title, to: anc.ticket.id });
-        this.store.addComment(slug, d.id, "ai", `Moved up under "${anc.ticket.title}" so the feature "${top.title}" stays at most ${MAX_LEVEL} levels deep.`);
-      }
-    }
-    if (gathered.length) this.store.addComment(slug, top.id, "ai", `Gathered ${gathered.length} ticket${gathered.length === 1 ? "" : "s"} into this feature${by ? ` ${by}` : ""}: ${gathered.map((t) => `"${t.title}"`).join(", ")}.`);
-    this.emitTicket(slug, this.store.getTicket(slug, top.id)!);
-    return { gathered, movedUp, skipped, group, kept };
-  }
+  gather(...a: Parameters<typeof featuresPart.gather>): ReturnType<typeof featuresPart.gather> { return featuresPart.gather.call(this, ...a); }
 
   // ---- One-click recovery from a lost or busy session ----
 
-  /** The first prompt of a fresh session: ticket, last result, recent comments, and where to look for the work so far. */
-  private freshPrompt(slug: string, t: Ticket, session: Pick<Session, "repo" | "inPlace">, outputDir: string, recall: string): string {
-    const comments = this.store.listComments(slug, t.id);
-    const last = comments.findLast((c) => c.author === "ai" && !BOARD_NOTE_RE.test(c.text));
-    const recent = comments.filter((c) => !BOARD_NOTE_RE.test(c.text) && c !== last).slice(-10);
-    const profile = this.store.getProfile(slug);
-    return freshSessionPrompt(t, {
-      repo: session.repo, inPlace: session.inPlace, home: profile ? { folder: profile.path, baseBranch: profile.baseBranch } : undefined, linked: !!t.workdir, baseBranch: profile?.baseBranch || "main",
-      lastResult: last?.text ?? null, comments: recent, outputDir, autoHuddles: autoHuddlesOn(profile), artifacts: !!profile?.artifacts || mentionsArtifact(t.body, last?.text, ...recent.map((c) => c.text)),
-      recall,
-    });
-  }
+  private freshPrompt(...a: Parameters<typeof recoveryPart.freshPrompt>): ReturnType<typeof recoveryPart.freshPrompt> { return recoveryPart.freshPrompt.call(this, ...a); }
 
-  private freshChatContext(slug: string, t: Ticket): string {
-    const comments = this.store.listComments(slug, t.id);
-    const last = comments.findLast((c) => c.author === "ai" && !BOARD_NOTE_RE.test(c.text));
-    const recent = comments.filter((c) => !BOARD_NOTE_RE.test(c.text) && c !== last).slice(-10);
-    if (!this.seedsFromStatus(slug, t)) return freshChatNote(t, last?.text ?? null, recent);
-    // A main ticket or feature starts from its status and its collapsed family table; search_chat finds the rest.
-    let status: string | null = null;
-    try {
-      const path = this.refreshStatusFile(slug, t.id);
-      status = path && existsSync(path) ? readFileSync(path, "utf8") : null;
-    } catch (e) {
-      console.error(`status of ${slug}/${t.id}:`, e);
-    }
-    const all = this.store.listTickets(slug);
-    const kids = all.filter((c) => c.parentId === t.id || c.partOf === t.id);
-    const table = wakeTable(kids, all, (id) => this.isRunning(slug, id));
-    return freshChatNote(t, last?.text ?? null, recent, { status, table, auto: !!t.freshAuto });
-  }
+  private freshChatContext(...a: Parameters<typeof recoveryPart.freshChatContext>): ReturnType<typeof recoveryPart.freshChatContext> { return recoveryPart.freshChatContext.call(this, ...a); }
 
-  /** A main ticket, or the top ticket of a feature: its fresh chats start from the status (and may start by themselves). */
-  private seedsFromStatus(slug: string, t: Ticket): boolean {
-    if (t.main) return true;
-    try {
-      return isFeature(this.store.listTickets(slug), t);
-    } catch {
-      return false;
-    }
-  }
+  seedsFromStatus(...a: Parameters<typeof recoveryPart.seedsFromStatus>): ReturnType<typeof recoveryPart.seedsFromStatus> { return recoveryPart.seedsFromStatus.call(this, ...a); }
 
-  /**
-   * The next turn of a main ticket's or feature's chat that has gone cold and is large (over the board's freshChatTokens)
-   * starts as a fresh chat seeded from the status, instead of re-reading the whole conversation. Returns the ticket as it
-   * is now (unchanged when not).
-   */
-  private autoFresh(slug: string, t: Ticket): Ticket {
-    if (t.freshSession || !t.sessionId || !this.seedsFromStatus(slug, t)) return t;
-    const cache = this.sessionSummary(t.sessionId)?.cache;
-    if (!cache || !chatIsCold(cache, (this.opts.now?.() ?? new Date()).getTime())) return t;
-    const limit = this.store.getProfile(slug)?.freshChatTokens || FRESH_CHAT_TOKENS;
-    if ((cache.coldTokens ?? cache.tokens) <= limit) return t;
-    return this.startFreshChat(slug, t.id, true);
-  }
+  autoFresh(...a: Parameters<typeof recoveryPart.autoFresh>): ReturnType<typeof recoveryPart.autoFresh> { return recoveryPart.autoFresh.call(this, ...a); }
 
-  /**
-   * "What we did before on this board": related past tickets for t's first prompt (see recall.ts), the rules the board
-   * learned from the user's corrections (learn.ts), and the project's saved lessons a run in a worktree can't see yet
-   * (lessons.ts); "" for none.
-   */
-  private async recall(slug: string, t: Ticket): Promise<string> {
-    let index = this.recallIndexes.get(slug);
-    if (!index) this.recallIndexes.set(slug, (index = new RecallIndex()));
-    // Tokenises only tickets that changed since the last run start (the first one after a start reads them all, in slices).
-    const picked = await index.pick(t, this.store.listTickets(slug), (id) => this.store.lastAiSummary(slug, id), (id) => this.store.commentStamp(slug, id), pauser());
-    const profile = this.store.getProfile(slug);
-    const now = this.store.getTicket(slug, t.id) ?? t;
-    const lessons = profile ? lessonsBlock(profile.path, now.worktree ?? now.workdir ?? null) : "";
-    return [recallText(picked), learnedRulesBlock(this.store, slug), lessons].filter(Boolean).join("\n\n");
-  }
+  private recall(...a: Parameters<typeof recoveryPart.recall>): ReturnType<typeof recoveryPart.recall> { return recoveryPart.recall.call(this, ...a); }
 
-  /** Queues the ticket's work run: it starts now if a slot is free (dispatch), otherwise when one frees up. */
-  private requeue(slug: string, id: string): Ticket {
-    this.patch(slug, id, { status: "ready", outcome: null, error: null });
-    this.dispatch(slug);
-    return this.store.getTicket(slug, id)!;
-  }
+  requeue(...a: Parameters<typeof recoveryPart.requeue>): ReturnType<typeof recoveryPart.requeue> { return recoveryPart.requeue.call(this, ...a); }
 
-  private recoverable(slug: string, id: string): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (t.error?.startsWith("corrupt")) throw new Error("ticket file is corrupt");
-    if (this.isRunning(slug, id)) throw new ConflictError("Claude is already working on this ticket");
-    return t;
-  }
+  recoverable(...a: Parameters<typeof recoveryPart.recoverable>): ReturnType<typeof recoveryPart.recoverable> { return recoveryPart.recoverable.call(this, ...a); }
 
-  /**
-   * Start fresh session: drops the ticket's Claude session (its conversation can't be resumed) but keeps the
-   * worktree and branch, then queues a work run whose prompt tells Claude to continue from the branch's state.
-   */
-  startFresh(slug: string, id: string): Ticket {
-    this.recoverable(slug, id);
-    this.patch(slug, id, { sessionId: crypto.randomUUID(), sessionStarted: false, freshSession: true });
-    this.store.addComment(slug, id, "ai", "Started a fresh session: the previous conversation is gone, so Claude continues from the ticket, its last result and the branch as it is now.");
-    return this.requeue(slug, id);
-  }
+  startFresh(...a: Parameters<typeof recoveryPart.startFresh>): ReturnType<typeof recoveryPart.startFresh> { return recoveryPart.startFresh.call(this, ...a); }
 
-  /**
-   * "Fresh chat (keeps status)" in the ticket panel: like "Send in a fresh chat" without a message. The next message
-   * starts a new Claude session; the chat history, the feature status, outputs and the card's column stay as they are.
-   */
-  freshChat(slug: string, id: string): Ticket {
-    const t = this.store.getTicket(slug, id);
-    if (!t) throw new Error(`ticket ${id} not found`);
-    if (t.error?.startsWith("corrupt")) throw new Error("ticket file is corrupt");
-    if (this.runs.get(this.key(slug, id))) throw new ConflictError("Claude is working on this ticket; start a fresh chat once Claude is done");
-    if (t.freshSession) return t;
-    return this.startFreshChat(slug, id);
-  }
+  freshChat(...a: Parameters<typeof recoveryPart.freshChat>): ReturnType<typeof recoveryPart.freshChat> { return recoveryPart.freshChat.call(this, ...a); }
 
-  /**
-   * "Send in a fresh chat" (an old chat would be re-read in full): the next message starts a new session that gets the
-   * ticket, its last result and recent comments instead of the old conversation. Unlike startFresh, nothing is queued
-   * and the card stays where it is; the old session is kept so the ticket chat still shows it.
-   */
-  private startFreshChat(slug: string, id: string, auto = false): Ticket {
-    const t = this.store.getTicket(slug, id)!;
-    const earlier = t.sessionId && (t.sessionStarted || this.sessionExists(t.sessionId))
-      ? [...(t.earlierSessions ?? []), { sessionId: t.sessionId, endedAt: nowIso() }]
-      : t.earlierSessions;
-    this.store.addComment(slug, id, "ai", auto
-      ? AUTO_FRESH_NOTE
-      : this.seedsFromStatus(slug, t)
-      ? "Started a fresh chat: Claude starts from the status and can look up earlier messages."
-      : "Started a fresh chat: Claude no longer sees the earlier messages; it gets the ticket, its last result and recent comments instead.");
-    return this.patch(slug, id, {
-      sessionId: crypto.randomUUID(), sessionStarted: false, freshSession: true, freshAuto: auto || null, ...(earlier ? { earlierSessions: earlier } : {}),
-    });
-  }
+  startFreshChat(...a: Parameters<typeof recoveryPart.startFreshChat>): ReturnType<typeof recoveryPart.startFreshChat> { return recoveryPart.startFreshChat.call(this, ...a); }
 
-  /**
-   * Take over here: the ticket's session is open in a terminal. If that's the board's own (dock) terminal, it is
-   * closed and the run resumes here; one in an external terminal can't be closed (external: the UI offers
-   * Start fresh session instead).
-   */
-  async takeOver(slug: string, id: string): Promise<{ ticket: Ticket; external: boolean }> {
-    const t = this.recoverable(slug, id);
-    if (t.sessionId) {
-      const owned = await this.opts.findOwnedSession?.(t.sessionId) ?? null;
-      if (owned) {
-        if (!(await owned.close())) throw new Error("Couldn't close the session in the board's terminal. Exit it there (Ctrl+D or /exit), then try again.");
-        this.store.addComment(slug, id, "ai", "Took over the session: closed it in the board's terminal and resumed the run here.");
-        return { ticket: this.requeue(slug, id), external: false };
-      }
-      const title = t.workdir ? sessionTitle(t.workdir, t.sessionId) : null;
-      if (await this.isSessionLive(t.sessionId, title)) return { ticket: t, external: true };
-    }
-    this.store.addComment(slug, id, "ai", "Took over the session: it was no longer open in a terminal, so the run resumed here.");
-    return { ticket: this.requeue(slug, id), external: false };
-  }
+  takeOver(...a: Parameters<typeof recoveryPart.takeOver>): ReturnType<typeof recoveryPart.takeOver> { return recoveryPart.takeOver.call(this, ...a); }
 
-  /** A comment: the user's (or a planner's), or with from, a note another ticket's run left (shown as Claude's). */
-  addComment(slug: string, id: string, text: string, from?: string) {
-    const c = this.store.addComment(slug, id, from ? "ai" : "user", text, from);
-    this.emitTicket(slug, this.store.getTicket(slug, id)!);
-    return c;
-  }
+  addComment(...a: Parameters<typeof recoveryPart.addComment>): ReturnType<typeof recoveryPart.addComment> { return recoveryPart.addComment.call(this, ...a); }
 
-  private stopRun(run: ActiveRun) {
-    // A run with nothing behind it (no promise, no claude, no setup) has nothing to wait for: clear it at once.
-    if (!run.started && !run.handle && !this.setups.has(this.key(run.slug, run.id))) {
-      const end = this.endStatus(run);
-      this.dropRun(run, { ...end, ...(end.status ? { outcome: "stopped" as const } : {}), lastActivity: null, runStartedAt: null });
-      try {
-        this.store.addComment(run.slug, run.id, "ai", "Run stopped by user (it had never started).");
-      } catch {}
-      return;
-    }
-    // Show the stop at once: setup (worktree, session checks) or SIGTERM can take a while to finish.
-    if (!run.stopRequested && this.store.getTicket(run.slug, run.id)) this.patch(run.slug, run.id, { lastActivity: "Stopping…" });
-    run.stopRequested = true;
-    run.handle?.stop();
-    this.setups.get(this.key(run.slug, run.id))?.abort.abort();
-  }
+  stopRun(...a: Parameters<typeof recoveryPart.stopRun>): ReturnType<typeof recoveryPart.stopRun> { return recoveryPart.stopRun.call(this, ...a); }
 
-  /** A main ticket's own tool tickets (hidden, shown on the board and with you), from featureRows: not a sub-feature's. */
-  toolTickets(slug: string, mainId: string, tickets = this.store.listTickets(slug)): Ticket[] {
-    return featureRows(tickets, mainId).map((r) => r.ticket).filter((t) => t.id !== mainId && t.tool);
-  }
+  toolTickets(...a: Parameters<typeof recoveryPart.toolTickets>): ReturnType<typeof recoveryPart.toolTickets> { return recoveryPart.toolTickets.call(this, ...a); }
 
-  /** Stop a main ticket and its running tool tickets (other family members are left alone). How many tool tickets stopped. */
-  stopFamily(slug: string, id: string): { stopped: boolean; tools: number } {
-    const stopped = this.stop(slug, id);
-    let tools = 0;
-    let subStopped = false;
-    const t = this.store.getTicket(slug, id);
-    if (t?.main) {
-      let queued = 0;
-      for (const o of this.toolTickets(slug, id)) {
-        if (this.isRunning(slug, o.id) || o.status === "in_progress") {
-          if (this.stop(slug, o.id)) tools++;
-        } else if (o.status === "ready") {
-          // Queued to start: back to waiting (Backlog), so nothing new starts behind the user's Stop.
-          this.patch(slug, o.id, { status: "backlog" });
-          queued++;
-        }
-      }
-      // Nothing new starts behind the user's Stop: the plan pauses until the user acts on the ticket again (moves it to
-      // ready, writes or answers in its chat: resumeStoppedPlan). A Stop that only cut off the main ticket's own reply
-      // held no step back, so it doesn't pause at all.
-      const now = this.store.getTicket(slug, id);
-      if ((tools > 0 || queued > 0) && now?.plan && (now.plan.state === "running" || now.plan.state === "finishing")) {
-        this.patch(slug, id, { plan: { ...now.plan, state: "paused", awaiting: null } });
-        this.store.addComment(slug, id, "ai", `Stopped by you with ${tools} running tool ticket${tools === 1 ? "" : "s"}; new tasks wait until you move this ticket to ready, write in its chat or press Resume.`);
-      }
-      // Stop reaches into its sub-features too (each stops like its own Stop and resumes on its own).
-      for (const sub of subFeaturesOf(this.store.listTickets(slug), id)) {
-        const was = sub.plan?.state;
-        const r = this.stopFamily(slug, sub.id);
-        const paused = was !== "paused" && this.store.getTicket(slug, sub.id)?.plan?.state === "paused";
-        if (r.stopped || paused) {
-          tools += r.tools;
-          subStopped ||= r.stopped;
-          this.store.addComment(slug, sub.id, "ai", `Stopped with the feature "${t.title}" it is part of.`);
-        }
-      }
-    }
-    return { stopped: stopped || tools > 0 || subStopped, tools };
-  }
+  stopFamily(...a: Parameters<typeof recoveryPart.stopFamily>): ReturnType<typeof recoveryPart.stopFamily> { return recoveryPart.stopFamily.call(this, ...a); }
 
-  /** A merge_into_main into this main ticket's copy is running. */
-  merging(slug: string, mainId: string): boolean {
-    return this.mergeLocks.has(this.key(slug, mainId));
-  }
+  merging(...a: Parameters<typeof recoveryPart.merging>): ReturnType<typeof recoveryPart.merging> { return recoveryPart.merging.call(this, ...a); }
 
-  stop(slug: string, id: string): boolean {
-    const r = this.runs.get(this.key(slug, id));
-    if (r) {
-      this.stopRun(r);
-      return true;
-    }
-    const t = this.store.getTicket(slug, id);
-    if (t?.slotWait) {
-      this.cancelSlotWait(slug, id);
-      return true;
-    }
-    // In Progress with no run behind it (e.g. the daemon lost it, or it waits for its auto huddle): clear the card.
-    if (t?.status !== "in_progress") return false;
-    this.store.addComment(slug, id, "ai", t.autoHuddle ? "Stopped by user while waiting for its auto huddle." : "Run stopped by user.");
-    this.patch(slug, id, { status: "review", outcome: "stopped", error: null, lastActivity: null, ...(t.autoHuddle ? { autoHuddle: null } : {}) });
-    return true;
-  }
+  stop(...a: Parameters<typeof recoveryPart.stop>): ReturnType<typeof recoveryPart.stop> { return recoveryPart.stop.call(this, ...a); }
 
-  stopAll(): void {
-    for (const r of this.runs.values()) this.stopRun(r);
-  }
+  stopAll(...a: Parameters<typeof recoveryPart.stopAll>): ReturnType<typeof recoveryPart.stopAll> { return recoveryPart.stopAll.call(this, ...a); }
 
-  /** Kill all runs without recording an outcome; tickets stay in_progress for recover(). */
-  async shutdown(): Promise<void> {
-    this.shuttingDown = true;
-    for (const r of this.runs.values()) this.markInterrupted(r);
-    for (const r of this.runs.values()) {
-      r.stopRequested = true;
-      r.handle?.stop();
-    }
-    for (const s of this.setups.values()) s.abort.abort();
-    for (const [a, cutOff] of this.asks) {
-      cutOff(); // saved on the asker now (the fork's own end may come after the process exits); recover() wakes it
-      a.stop();
-    }
-    this.asks.clear();
-    await Promise.race([this.whenIdle(), Bun.sleep(6000)]);
-  }
+  shutdown(...a: Parameters<typeof recoveryPart.shutdown>): ReturnType<typeof recoveryPart.shutdown> { return recoveryPart.shutdown.call(this, ...a); }
 
-  /** A chat reply is being cut off by shutdown: remember it so recover() resumes it (work runs stay in_progress). */
-  private markInterrupted(r: ActiveRun): void {
-    const t = this.store.getTicket(r.slug, r.id);
-    if (!t || !r.chat || r.stopRequested || t.status === "in_progress") return;
-    // Not spawned yet with a queued message: it is still in the queue, and recover() answers it.
-    if (!r.handle && r.promptMsgId) return;
-    const i: Interrupted = { at: nowIso(), mode: r.chat.mode };
-    if (r.chat.quiet) i.quiet = true;
-    if (r.chat.user) i.user = true;
-    if (r.draft?.text) i.partial = r.draft.text;
-    // Claude never got the prompt: send it again rather than asking it to continue.
-    if (!r.handle) i.prompt = r.chat.raw ? { text: r.chat.text, raw: true } : { text: r.chat.text };
-    this.patch(r.slug, r.id, { interrupted: i, lastActivity: null, runStartedAt: null });
-  }
+  markInterrupted(...a: Parameters<typeof recoveryPart.markInterrupted>): ReturnType<typeof recoveryPart.markInterrupted> { return recoveryPart.markInterrupted.call(this, ...a); }
 
-  /** Huddles tells the board about its host tickets' huddles, which change whether those tickets need the user. */
-  onHostHuddles(f: (slug: string) => Map<string, HostHuddle>): void {
-    this.hostHuddleStates = f;
-  }
+  onHostHuddles(...a: Parameters<typeof recoveryPart.onHostHuddles>): ReturnType<typeof recoveryPart.onHostHuddles> { return recoveryPart.onHostHuddles.call(this, ...a); }
 
-  /** Open huddles by host ticket on a board. */
-  hostHuddles(slug: string): Map<string, HostHuddle> {
-    return this.hostHuddleStates(slug);
-  }
+  hostHuddles(...a: Parameters<typeof recoveryPart.hostHuddles>): ReturnType<typeof recoveryPart.hostHuddles> { return recoveryPart.hostHuddles.call(this, ...a); }
 
-  /** Count more active work a restart waits for: busy() lists the board of each piece of work active now. */
-  onRestartBusy(busy: () => string[]): void {
-    this.restartBusy.push(busy);
-  }
+  onRestartBusy(...a: Parameters<typeof recoveryPart.onRestartBusy>): ReturnType<typeof recoveryPart.onRestartBusy> { return recoveryPart.onRestartBusy.call(this, ...a); }
 
-  /** Board runs plus other active work a restart waits for. */
-  private activeWork(): number {
-    return this.busyBoards().length;
-  }
+  activeWork(...a: Parameters<typeof recoveryPart.activeWork>): ReturnType<typeof recoveryPart.activeWork> { return recoveryPart.activeWork.call(this, ...a); }
 
-  /** The board of each piece of active work (runs, chat replies, huddle agents mid-turn, job commands), repeats included. */
-  busyBoards(): string[] {
-    return [...[...this.runs.values()].map((r) => r.slug), ...this.restartBusy.flatMap((f) => f())];
-  }
+  busyBoards(...a: Parameters<typeof recoveryPart.busyBoards>): ReturnType<typeof recoveryPart.busyBoards> { return recoveryPart.busyBoards.call(this, ...a); }
 
-  /**
-   * Restart once no run is active. Until then nothing new starts: Ready tickets wait, chat messages queue and
-   * Planning interviews are held; recover() starts them after the restart. After maxWaitMs it restarts anyway.
-   */
-  requestRestart(onIdle: () => void, maxWaitMs = RESTART_MAX_WAIT_MS): { running: number; alreadyPending: boolean } {
-    const running = this.activeWork();
-    if (this.restartPending) return { running, alreadyPending: true };
-    this.restartPending = true;
-    this.emitRestart();
-    void (async () => {
-      const deadline = Date.now() + maxWaitMs;
-      // Always yield first, so the caller's HTTP response goes out before the daemon exits.
-      do await Bun.sleep(200);
-      while (this.activeWork() && Date.now() < deadline);
-      const left = this.activeWork();
-      if (left) console.log(`restart: ${left} run(s) still active after ${Math.round(maxWaitMs / 1000)}s; restarting anyway`);
-      onIdle();
-    })();
-    return { running, alreadyPending: false };
-  }
+  requestRestart(...a: Parameters<typeof recoveryPart.requestRestart>): ReturnType<typeof recoveryPart.requestRestart> { return recoveryPart.requestRestart.call(this, ...a); }
 
-  isRestartPending(): boolean {
-    return this.restartPending;
-  }
+  isRestartPending(...a: Parameters<typeof recoveryPart.isRestartPending>): ReturnType<typeof recoveryPart.isRestartPending> { return recoveryPart.isRestartPending.call(this, ...a); }
 
-  /** pending: a restart holds new runs; waiting: active runs it waits for. */
-  restartState(): { pending: boolean; waiting: number } {
-    return { pending: this.restartPending, waiting: this.activeWork() };
-  }
+  restartState(...a: Parameters<typeof recoveryPart.restartState>): ReturnType<typeof recoveryPart.restartState> { return recoveryPart.restartState.call(this, ...a); }
 
-  /** Other active work (see onRestartBusy) changed: update the pending restart's count. */
-  restartWorkChanged(): void {
-    if (this.restartPending) this.emitRestart();
-  }
+  restartWorkChanged(...a: Parameters<typeof recoveryPart.restartWorkChanged>): ReturnType<typeof recoveryPart.restartWorkChanged> { return recoveryPart.restartWorkChanged.call(this, ...a); }
 
-  private emitRestart(): void {
-    this.bus.emit({ type: "restart.updated", ...this.restartState() });
-  }
+  emitRestart(...a: Parameters<typeof recoveryPart.emitRestart>): ReturnType<typeof recoveryPart.emitRestart> { return recoveryPart.emitRestart.call(this, ...a); }
 
-  recover(): void {
-    for (const p of this.store.listProfiles()) {
-      for (const t of this.store.listTickets(p.slug)) {
-        // Replies waiting for a slot keep waiting: dispatch() below starts them first.
-        // Tickets waiting for their auto huddle stay put: the huddle (or a freed slot) wakes them.
-        if (t.status !== "in_progress" || t.slotWait || t.autoHuddle || this.isRunning(p.slug, t.id)) continue;
-        if (t.followUpRun) {
-          // A follow-up wake was cut off: continue it as a follow-up, and the card goes back where it was.
-          this.store.addComment(p.slug, t.id, "ai", "Follow-up interrupted by daemon restart; resuming.");
-          const returnTo = t.followUpRun.returnTo;
-          this.patch(p.slug, t.id, { status: returnTo, lastActivity: null });
-          this.start(p.slug, t.id, { text: interruptedPrompt(), mode: "act", raw: true, returnTo, followUp: true });
-          continue;
-        }
-        if (t.main) {
-          // A main ticket never gets a work run from a restart: it is woken again from its saved events.
-          this.store.addComment(p.slug, t.id, "ai", "Interrupted by daemon restart; waking it again from its saved events.");
-          const plan = t.plan ?? this.newPlan(0);
-          this.patch(p.slug, t.id, {
-            status: "review", outcome: null, lastActivity: null,
-            plan: {
-              ...plan, state: plan.awaiting === "final" || plan.state === "done" || plan.state === "finishing" ? "running" : plan.state, awaiting: null,
-              inbox: [...(plan.inbox ?? []), "The board restarted while your last run was going; check where things stand before you continue."],
-            },
-          });
-          continue;
-        }
-        if (t.plan?.awaiting && planActive(t.plan)) {
-          // A planner wake-up was cut off: wake it again with the children's current state.
-          this.store.addComment(p.slug, t.id, "ai", "Planner interrupted by daemon restart; waking it again.");
-          this.patch(p.slug, t.id, {
-            status: "review", outcome: null, lastActivity: null,
-            plan: { ...t.plan, state: t.plan.awaiting === "final" ? "finishing" : t.plan.state, awaiting: null, seen: {} },
-          });
-          continue;
-        }
-        this.store.addComment(p.slug, t.id, "ai", "Interrupted by daemon restart; resuming.");
-        this.patch(p.slug, t.id, { status: "ready" });
-      }
-      this.dispatch(p.slug);
-      this.advancePlans(p.slug);
-      // Chat replies a restart cut off (or held back): continue them in the same session and mode.
-      for (const t of this.store.listTickets(p.slug)) {
-        const i = t.interrupted;
-        if (!i || this.isRunning(p.slug, t.id) || t.status === "in_progress" || t.error?.startsWith("corrupt")) continue;
-        if (!i.held) this.store.addComment(p.slug, t.id, "ai", "Reply interrupted by daemon restart; resuming.");
-        const user = i.user ? { user: true } : {};
-        if (i.prompt) this.start(p.slug, t.id, { text: i.prompt.text, mode: i.mode, raw: i.prompt.raw, quiet: i.quiet, ...user });
-        // With a queued message waiting, the pass below answers it instead (one reply, not two).
-        else if (!this.waiting(p.slug, t.id).length) this.start(p.slug, t.id, { text: interruptedPrompt(), mode: i.mode, raw: true, quiet: i.quiet, ...user });
-      }
-      // Messages a restarted chat run never got to: answer them in a chat reply now.
-      for (const t of this.store.listTickets(p.slug)) {
-        const next = this.waiting(p.slug, t.id)[0];
-        if (!next || this.isRunning(p.slug, t.id) || t.status === "ready" || t.slotWait || t.error?.startsWith("corrupt")) continue;
-        const chat = chatFor(t, next);
-        if (takesSlot(chat, t.main) && chat.mode === "act" && this.folderBusy(p.slug, t)) this.waitForSlot(p.slug, t.id);
-        else this.start(p.slug, t.id, chat, next.id);
-      }
-    }
-  }
+  recover(...a: Parameters<typeof recoveryPart.recover>): ReturnType<typeof recoveryPart.recover> { return recoveryPart.recover.call(this, ...a); }
 
-  async whenIdle(): Promise<void> {
-    while (this.runs.size) {
-      await Promise.all([...this.runs.values()].map((r) => r.promise));
-    }
-  }
-}
-
-/** What the card says when a run couldn't even start. */
-export function startError(e: unknown): string {
-  if ((e as NodeJS.ErrnoException)?.code === "ENOSPC") return "Couldn't start: no space left on the disk";
-  return String((e as Error)?.message ?? e);
-}
-
-function sameJson(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-/** Opens a pull request with the GitHub CLI; returns its URL (land_milestone). */
-async function openPrWithGh(dir: string, o: { branch: string; base: string; title: string; body: string }): Promise<string> {
-  const r = await runCmd(["gh", "pr", "create", "--head", o.branch, "--base", o.base, "--title", o.title, "--body", o.body], dir);
-  const url = /https:\/\/\S+\/pull\/\d+/.exec(r.stdout)?.[0];
-  if (r.code !== 0 || !url) throw new Error((r.stderr || r.stdout).trim().split("\n").slice(-2).join(" ") || "gh pr create failed");
-  return url;
+  whenIdle(...a: Parameters<typeof recoveryPart.whenIdle>): ReturnType<typeof recoveryPart.whenIdle> { return recoveryPart.whenIdle.call(this, ...a); }
 }
