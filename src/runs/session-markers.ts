@@ -4,15 +4,15 @@ import { commandText, TERMINAL_COMMANDS } from "../server/commands";
 import { proposedBudget, rosterError, type RosterEntry } from "../server/huddle-roster";
 import { mockupName, stripMockups } from "../server/mockups";
 import { parseResult } from "./result";
-import { type ChatCache } from "../server/chat-cache";
+import type { ChatCache } from "../server/chat-cache";
 import { parseTeammateProposal, type TeammateProposal } from "../server/teammate-proposal";
 import { parseSquadProposal, type SquadProposal } from "../server/squad";
 import { TOPIC_MAX } from "../server/huddle-templates";
 import { parseAutomationProposal, type AutomationProposal } from "../server/automation-proposal";
 import { parseKeysAsk, type KeysAsk } from "../server/ask-keys";
 import { normalizeTags } from "../server/tags";
-import { type AgentInfo } from "./subagents";
-import { type WorkflowInfo } from "./workflows";
+import type { AgentInfo } from "./subagents";
+import type { WorkflowInfo } from "./workflows";
 import { parseSetupBlock, type SetupResult } from "./worktree-setup";
 import { starredTitle } from "../core/util";
 

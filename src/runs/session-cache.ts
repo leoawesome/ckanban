@@ -11,7 +11,7 @@ import type { Ticket } from "../core/types";
 import { SubagentCache, subagentFiles, withTranscript } from "./subagents";
 import { WorkflowCache, withRun, type WorkflowRun } from "./workflows";
 import { findToolDetailIn, type ToolDetail } from "../server/tooldetail";
-import { type ParsedSession, type SessionSummary } from "./session-markers";
+import type { ParsedSession, SessionSummary } from "./session-markers";
 import { scanSessionFiles, scanSessionFilesAsync, type Dirs } from "./session-files";
 import { SessionParser } from "./session-parser";
 
