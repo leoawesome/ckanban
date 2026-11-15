@@ -1,7 +1,7 @@
 # ckanban-core
 
 The Rust port trial's library for plan usage (`GET /api/usage`) and today's spend (`GET /api/spend`). It has no HTTP
-server and no proxy: the `ckanban-rs` front server calls it (step 3b of the trial). Every answer is a
+server and no proxy: the `ckanban-rs` front server in `rust/` calls it (`src/routes.rs`), as a member of that workspace. Every answer is a
 `serde_json::Value` with Bun's keys, key order and number formatting, so the server sends it as is.
 
 ## What it matches in `src/`
@@ -17,7 +17,7 @@ server and no proxy: the `ckanban-rs` front server calls it (step 3b of the tria
 | `spend.rs` (`SpendIndex`) | `SpendIndex.today()`/`recent()` in `src/usage/spend.ts`, `readSideSpend` in `src/runs/side-call.ts`, compressed logs from `src/runs/run-log.ts` |
 | `time.rs`, `jsnum.rs` | `toISOString`, `Date.parse`, `dayKey`, and how `JSON.stringify` writes numbers |
 
-Wiring it into a server (3b): `UsageCache::for_daemon(&DataDir::from_env(), UsageClient::from_env())` and
+How the server uses it: `UsageCache::for_daemon(&DataDir::from_env(), UsageClient::from_env())` and
 `cache.get(fresh).await` for `/api/usage` (always 200); `Arc::new(SpendIndex::new(DataDir::from_env()))` and
 `index.recent().await?.to_json()` for `/api/spend` (an error means `profiles/` is missing, a 500 in Bun too).
 
@@ -31,7 +31,7 @@ Wiring it into a server (3b): `UsageCache::for_daemon(&DataDir::from_env(), Usag
 ## Testing
 
 ```sh
-cd rust/core && ~/.cargo/bin/cargo test
+cd rust && ~/.cargo/bin/cargo test   # the whole workspace (or -p ckanban-core)
 ```
 
 `tests/fixtures/` holds inputs with Bun's answers in `expect` (usage bodies, logins, HTTP replies, cache scenarios

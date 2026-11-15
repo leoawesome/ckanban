@@ -1,6 +1,6 @@
 //! `ckanban-rs dev`: the Rust front server of the ckanban trial. It listens on the board's port, starts the Bun
-//! daemon (`bun src/cli.ts dev`) as a child on an internal port and passes every request to it (proxy.rs). Later
-//! steps move routes to Rust one at a time; everything else keeps going to Bun.
+//! daemon (`bun src/cli.ts dev`) as a child on an internal port. `GET /api/usage` and `GET /api/spend` are answered
+//! here (routes.rs, with `ckanban-core`); every other request is passed to the child (proxy.rs).
 //!
 //! The child gets CKANBAN_PORT (its internal port), CKANBAN_FRONT_PORT (the board's port) and, on stdin, "<secret> <our pid>"
 //! that marks this server's requests (`src/core/front.ts`). Stdin stays open: when this process dies, even killed
@@ -8,6 +8,7 @@
 //! launchd and `ckanban restart` work as with Bun alone. SIGTERM/SIGINT stop the child first.
 
 mod proxy;
+mod routes;
 mod settings;
 
 use std::net::{Ipv4Addr, SocketAddrV4};
@@ -145,7 +146,8 @@ async fn dev() -> u8 {
     }
     eprintln!("ckanban-rs {} listening on http://localhost:{public_port}, daemon on internal port {internal_port}", env!("CARGO_PKG_VERSION"));
 
-    let accept = tokio::spawn(serve(listener, proxy));
+    let native = routes::Native::new(root.clone(), public_port);
+    let accept = tokio::spawn(serve(listener, proxy, native));
     let code = tokio::select! {
         status = child.wait() => match status {
             Ok(s) => exit_code(s),
@@ -165,7 +167,7 @@ fn log_hint(root: &std::path::Path) -> String {
     if log.is_file() { format!(" ({} when started by launchd)", log.display()) } else { String::new() }
 }
 
-async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>) {
+async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<routes::Native>) {
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(x) => x,
@@ -177,10 +179,17 @@ async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>) {
         };
         let _ = stream.set_nodelay(true);
         let proxy = proxy.clone();
+        let native = native.clone();
         tokio::spawn(async move {
             let svc = service_fn(move |req| {
                 let proxy = proxy.clone();
-                async move { Ok::<_, std::convert::Infallible>(proxy.forward(req, peer).await) }
+                let native = native.clone();
+                async move {
+                    if let Some(res) = native.answer(&req).await {
+                        return Ok::<_, std::convert::Infallible>(res);
+                    }
+                    Ok(proxy.forward(req, peer).await)
+                }
             });
             let _ = http1::Builder::new().half_close(true).serve_connection(TokioIo::new(stream), svc).with_upgrades().await;
         });

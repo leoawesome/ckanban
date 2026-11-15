@@ -31,7 +31,9 @@ export function commandFromEnv(name: string, fallback: string[], env: Record<str
  * The one place that says how to start the server and run the CLI. Another server (a port) is tested by setting
  * CKANBAN_CONTRACT_DAEMON and CKANBAN_CONTRACT_CLI to JSON arrays, e.g. '["/tmp/ckanban-rs","dev"]'.
  */
-export const DAEMON_CMD = commandFromEnv("CKANBAN_CONTRACT_DAEMON", [process.execPath, join(REPO, "src", "cli.ts"), "dev"]);
+/** The Bun daemon alone, whatever CKANBAN_CONTRACT_DAEMON says (the parity test runs it next to the other server). */
+export const BUN_DAEMON_CMD = [process.execPath, join(REPO, "src", "cli.ts"), "dev"];
+export const DAEMON_CMD = commandFromEnv("CKANBAN_CONTRACT_DAEMON", BUN_DAEMON_CMD);
 export const CLI_CMD = commandFromEnv("CKANBAN_CONTRACT_CLI", [process.execPath, join(REPO, "src", "cli.ts")]);
 export const FAKE_CLAUDE = join(REPO, "test", "fixtures", "fake-claude.ts");
 
@@ -78,6 +80,8 @@ function stubBin(): string {
 }
 
 export interface StartOptions {
+  /** The server to start; DAEMON_CMD when unset. */
+  cmd?: string[];
   fakeMode?: string;
   /** Extra env for the daemon and the CLI (wins over the defaults below). */
   env?: Record<string, string>;
@@ -119,7 +123,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
   };
   opts.before?.({ home, claudeDir, project });
   const logFile = join(root, "daemon.log");
-  const proc = Bun.spawn(DAEMON_CMD, { env, cwd: project, stdout: Bun.file(logFile), stderr: Bun.file(join(root, "daemon.err.log")) });
+  const proc = Bun.spawn(opts.cmd ?? DAEMON_CMD, { env, cwd: project, stdout: Bun.file(logFile), stderr: Bun.file(join(root, "daemon.err.log")) });
   const url = `http://127.0.0.1:${port}`;
   const log = () => {
     let out = "";

@@ -1,5 +1,5 @@
 // The shared fixtures of the Rust port (rust/core/tests/fixtures): inputs for plan usage and today's spend, with the
-// answer Bun gives in `expect`. This test checks Bun still gives exactly those answers; `cargo test` in rust/core
+// answer Bun gives in `expect`. This test checks Bun still gives exactly those answers; `cargo test` in rust/
 // checks Rust gives them too, so both sides are held to the same JSON. After a deliberate change to Bun's usage or
 // spend code, run `UPDATE_RUST_FIXTURES=1 bun test test/rust-fixtures.test.ts` to rewrite `expect`, then make
 // `cargo test` pass again.

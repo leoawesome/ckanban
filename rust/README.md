@@ -1,18 +1,58 @@
 # rust
 
-The Rust front server `ckanban-rs` (step 2 of the Rust port trial). `ckanban-rs dev` listens on the board's port and
-starts the Bun daemon (`bun src/cli.ts dev`) as a child on an internal port, then passes every request to it
-unchanged: method, path, query, headers (Host and Origin as sent; only hop-by-hop headers are dropped), body and
-status, streamed both ways (the event stream goes out as Bun writes it) and WebSocket upgrades (the terminal). Later
-steps move routes to Rust one at a time; anything not moved keeps going to Bun. The real board's daemon is never
-switched to it during the trial.
+The Rust front server `ckanban-rs` of the Rust port trial. `ckanban-rs dev` listens on the board's port and starts
+the Bun daemon (`bun src/cli.ts dev`) as a child on an internal port. It answers two routes itself (below, with the
+`ckanban-core` library in `core/`) and passes every other request to the child unchanged: method, path, query,
+headers (Host and Origin as sent; only hop-by-hop headers are dropped), body and status, streamed both ways (the event
+stream goes out as Bun writes it) and WebSocket upgrades (the terminal). The real board's daemon is never switched to
+it during the trial.
 
 - `src/main.rs`: the `dev` command: settings, starting the child, waiting until it answers (`GET /api/profiles`, 30 s,
   then it exits naming the child's log), serving, signals and the exit code.
+- `src/routes.rs`: the routes Rust answers itself (below).
 - `src/proxy.rs`: passing one request and its answer, hop-by-hop headers, upgrades.
+- `core/`: `ckanban-core`, the usage and spend logic ported from `src/usage/` ([README](core/README.md)). One
+  workspace: one `Cargo.lock`, one toolchain pin, one `target/`.
 - `src/settings.rs`: the board's port (`CKANBAN_PORT`, else `config.json` in the data folder, else 7777), the phone
   access port, finding Bun (`CKANBAN_BUN`, else the Bun that started this process, else `bun` on `PATH`) and the repo
   (`CKANBAN_REPO`, else the nearest folder above the binary with `src/cli.ts`), the free internal port, the secret.
+
+## Routes Rust answers
+
+| Route | Answer |
+| --- | --- |
+| `GET /api/usage` (`?fresh=1`, the Refresh button) | Claude plan usage, as `src/usage/usage-cache.ts` gives it; always 200 |
+| `GET /api/spend` | What every board spent today, as `SpendIndex.recent()` in `src/usage/spend.ts` gives it; 500 `{"error"}` if it can't count |
+
+Only these exact paths with GET. Everything else goes to Bun: other methods (Bun's 404), other spellings Bun also
+accepts (`/api/usage/`, `/api/usage/x`), WebSocket upgrades and any request from the Telegram front desk
+(`x-ckanban-frontdesk`, which goes through Bun's gate). Rust answers with `content-type: application/json` and no
+caching headers, as Bun does, and makes the same Host check (`localhost` or `127.0.0.1` on the board's port, else a
+plain-text 403 `forbidden`). The phone access port stays on Bun, so phone requests always get Bun's answers. Waiting
+on Anthropic happens in that request's own task, so other requests through the proxy never wait for it; spend is
+counted on a blocking-pool thread.
+
+Not ported: Bun runs every JSON answer through `maskSavedJson` (hides keys saved on this Mac). Usage and spend answers
+hold only fixed texts, numbers, board slugs and board names, so Rust skips it.
+
+### Files shared with Bun
+
+Both processes use the same data folder (`CKANBAN_HOME`, default `~/.claude-kanban`); the Bun child keeps running its
+own usage code (helper, limits, ticket Usage tabs).
+
+- `usage-last.json` (the usage cache): both read it again when its size or change time moves and both write it by
+  atomic rename (`<file>.tmp-<8 chars>`, then rename) in the same format. A check either side made counts for both
+  (the one-minute gap, the four-minute reuse, the wait after a 429), so the pair never asks Anthropic more often than
+  Bun alone.
+- `usage-windows.json`: each check either side makes records its five-hour window there, same format.
+- Spend files (activity logs, side-spend ledgers, `spend-days.json`, quick chat logs, `helper-spend.jsonl`): Rust only
+  reads them.
+
+Bun sends no event to the UI when usage changes (the header pill and phone box ask `/api/usage` themselves), so a
+check Rust makes reaches the UI the same way; there is no event gap.
+
+Log lines: each call to Anthropic prints Bun's `[usage] asked Anthropic: ...` line on this process's output (the same
+`daemon.log` under launchd).
 
 ## Who is calling
 
@@ -40,10 +80,12 @@ Rust is pinned in `rust-toolchain.toml` (rustup installs it on first use). Use r
 ```sh
 cd rust
 ~/.cargo/bin/cargo build --release   # target/release/ckanban-rs
-~/.cargo/bin/cargo test              # unit tests
-cd .. && bun run test:contract:rust  # every test/contract test through ckanban-rs
+~/.cargo/bin/cargo test              # unit tests of the server and of core/ (fixtures shared with Bun)
+cd .. && bun run test:contract:rust  # every test/contract test through ckanban-rs, plus the parity test
 ```
 
-`bun run test` never runs cargo. To try it by hand, use a temp `CKANBAN_HOME` and a project folder outside the real
+The parity test (`test/contract/rust-parity.test.ts`) starts Bun alone and `ckanban-rs` on the same data, walks
+both through the same usage scenarios (a fake Anthropic) and spend data, and checks the answers and the shared files
+match; `bun run test` skips it. `bun run test` never runs cargo. To try it by hand, use a temp `CKANBAN_HOME` and a project folder outside the real
 repo (a daemon on the real data folder sweeps ticket worktrees):
 `CKANBAN_HOME=/tmp/ck-try CKANBAN_PORT=47811 rust/target/release/ckanban-rs dev`.
