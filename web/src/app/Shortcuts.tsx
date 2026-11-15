@@ -5,8 +5,8 @@ import { fuzzyMatch } from "../lib/fuzzy";
 import { boardDigit } from "./keynav";
 import { CheckIcon } from "../components/icons";
 import { Modal } from "../components/Modal";
+import { isMac } from "../lib/platform";
 
-export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 export const MOD = isMac ? "⌘" : "Ctrl";
 
 // Every row matches a real handler (App.tsx, TicketDrawer.tsx, Inbox.tsx, Changes.tsx, Dock.tsx, QuickChat.tsx, …). Single keys stay

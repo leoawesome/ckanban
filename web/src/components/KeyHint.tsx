@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { hintParts, hintStep } from "../app/keynav";
-import { isMac } from "../app/Shortcuts";
+import { isMac } from "../lib/platform";
 
 const REVEAL_MS = 300;
 const CLASS = "show-hints";

@@ -11,7 +11,7 @@ import { KeyHint } from "./components/KeyHint";
 import { useLayer } from "./lib/layers";
 import { MenuSheet } from "./components/MenuSheet";
 import { QuickChatPane } from "./QuickChat";
-import { isMac } from "./app/Shortcuts";
+import { isMac } from "./lib/platform";
 import { clampChatWidth, COLUMN_MIN } from "./sideChatLayout";
 import { useClaudeName } from "./AvatarFace";
 import { PANELS, panelLabel, resizePair, shareOf, whereHint, type PanelId } from "./app/panelState";

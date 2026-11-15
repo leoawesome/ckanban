@@ -4,7 +4,8 @@ import { COLUMN_LABEL, COLUMN_MEANING, EVERY_CHOICES, everyLabel, groupLastItems
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FeaturePicker } from "./FeaturePicker";
 import { ChevronLeftIcon, ChevronRightIcon, LoopIcon, MoreIcon, PlusIcon, SparkIcon } from "./components/icons";
-import { EmptyState, FormError, LoadState, useDiscardAsk } from "./components/formParts";
+import { EmptyState, FormError, LoadState } from "./components/formParts";
+import { useDiscardAsk } from "./hooks/useDiscardAsk";
 import { tabKeys } from "./lib/tabKeys";
 import { MenuSheet } from "./components/MenuSheet";
 import { Modal } from "./components/Modal";
