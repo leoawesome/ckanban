@@ -1,7 +1,7 @@
 import type { RepoKind } from "./git";
 import type { Ticket } from "../core/types";
 import { fromAutomation, type Question } from "./session";
-import { taskModelsText, type TaskModels } from "../../web/src/models";
+import { taskModelsText, type TaskModels } from "../../web/src/lib/models";
 import { CHAT_PLAIN_WORDS, CHROME_RULE, JOB_RULE, MAIN_QUESTIONS_RULE, REPLY_RULE, RESULT_RULE, SCHEDULES_RULE, SELF_MOVE_RULE, artifactRule, autoSection, bugReportRule, canCommit, context, notesSection, recallSection, reviewFileRule, type PromptContext, wakeSummary, whereRule } from "./prompts-rules";
 import { openQuestionsRule, type PlanWake } from "./prompts-planning";
 

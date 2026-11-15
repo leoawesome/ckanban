@@ -1,7 +1,7 @@
-import { useFormDirty } from "./Modal";
-import { FormError, SecretInput } from "./formParts";
+import { useFormDirty } from "./components/Modal";
+import { FormError, SecretInput } from "./components/formParts";
 import { useState } from "react";
-import { api, type Pass } from "./api";
+import { api, type Pass } from "./lib/api";
 
 /**
  * Sends the tab opened before the wait to a service's sign-in page: only a web address (http/https), never a

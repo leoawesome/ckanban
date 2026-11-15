@@ -1,24 +1,24 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import type { Huddle, Profile, Ticket } from "./api";
+import type { Huddle, Profile, Ticket } from "./lib/api";
 import { Changes, useTicketDiff } from "./Changes";
-import { ConfirmDialog } from "./ConfirmDialog";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { FilesView } from "./FilesView";
 import {
   ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, CloseIcon, MaximizeIcon, MoreIcon, PlusIcon, RestoreIcon,
-} from "./icons";
-import { isNewChatKey, isTyping } from "./keynav";
-import { KeyHint } from "./KeyHint";
-import { useLayer } from "./layers";
-import { MenuSheet } from "./MenuSheet";
+} from "./components/icons";
+import { isNewChatKey, isTyping } from "./app/keynav";
+import { KeyHint } from "./components/KeyHint";
+import { useLayer } from "./lib/layers";
+import { MenuSheet } from "./components/MenuSheet";
 import { QuickChatPane } from "./QuickChat";
-import { isMac } from "./Shortcuts";
+import { isMac } from "./lib/platform";
 import { clampChatWidth, COLUMN_MIN } from "./sideChatLayout";
 import { useClaudeName } from "./AvatarFace";
-import { PANELS, panelLabel, resizePair, shareOf, whereHint, type PanelId } from "./panelState";
+import { PANELS, panelLabel, resizePair, shareOf, whereHint, type PanelId } from "./app/panelState";
 import { TeamTab, type HuddleSeed, type TeamRequest } from "./Team";
 import { TerminalView } from "./TerminalView";
-import { toast } from "./toast";
-import type { Panels } from "./usePanels";
+import { toast } from "./components/toast";
+import type { Panels } from "./hooks/usePanels";
 
 /** What the column and the phone's panel screen need from the App. */
 export interface PanelsProps {

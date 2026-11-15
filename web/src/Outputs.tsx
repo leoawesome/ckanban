@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, copy, isArtifactLink, safeHref, subscribe, type OutputFile, type Ticket, type TicketLink } from "./api";
-import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, ExternalIcon, FileCodeIcon, FileIcon, FileImageIcon, FileTextIcon, LinkIcon } from "./icons";
-import { fullTime, timeAgo } from "./time";
-import { useNow } from "./useNow";
+import { api, copy, isArtifactLink, safeHref, subscribe, type OutputFile, type Ticket, type TicketLink } from "./lib/api";
+import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, ExternalIcon, FileCodeIcon, FileIcon, FileImageIcon, FileTextIcon, LinkIcon } from "./components/icons";
+import { fullTime, timeAgo } from "./lib/time";
+import { useNow } from "./hooks/useNow";
 import { Markdown } from "./Transcript";
-import { baseName, BINARY, dragFile, HTML, IMAGE, MARKDOWN } from "./share";
+import { baseName, BINARY, dragFile, HTML, IMAGE, MARKDOWN } from "./lib/share";
 import { ShareMenu } from "./ShareMenu";
-import { useLayer } from "./layers";
-import { useBackEntry } from "./backEntry";
-import { usePhone } from "./usePhone";
+import { useLayer } from "./lib/layers";
+import { useBackEntry } from "./app/backEntry";
+import { usePhone } from "./hooks/usePhone";
 import { PdfView } from "./PdfView";
 
 function kb(n: number): string {

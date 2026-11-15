@@ -1,11 +1,11 @@
 import hljs from "highlight.js/lib/common";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, copy, type FileContent, type FileEntry } from "./api";
+import { api, copy, type FileContent, type FileEntry } from "./lib/api";
 import {
   CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, ExternalIcon, FileCodeIcon, FileIcon, FileImageIcon,
   FileTextIcon, FolderIcon, FolderOpenIcon,
-} from "./icons";
-import { toast } from "./toast";
+} from "./components/icons";
+import { toast } from "./components/toast";
 
 type Dir = FileEntry[] | "loading" | { error: string };
 

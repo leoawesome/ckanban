@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, copy, type RemoteState } from "./api";
-import { Modal } from "./Modal";
-import { timeAgo } from "./time";
-import { toast } from "./toast";
-import { useNow } from "./useNow";
+import { api, copy, type RemoteState } from "./lib/api";
+import { Modal } from "./components/Modal";
+import { timeAgo } from "./lib/time";
+import { toast } from "./components/toast";
+import { useNow } from "./hooks/useNow";
 
 /** Header menu → Phone access: the tailnet link, its QR code and the on/off switch (same as `ckanban remote`). */
 export function PhoneAccessDialog({ onClose }: { onClose: () => void }) {

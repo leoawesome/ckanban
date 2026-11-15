@@ -1,12 +1,12 @@
-import { EFFORTS, KIND_DEFAULTS, MODELS, modelOptions, setLearnedVersions, taskModel, TASK_ROWS, type ModelPick, type TaskModels } from "./models";
+import { EFFORTS, KIND_DEFAULTS, MODELS, modelOptions, setLearnedVersions, taskModel, TASK_ROWS, type ModelPick, type TaskModels } from "./lib/models";
 import { useEffect, useId, useMemo, useState } from "react";
-import { api, type ClaudeProject, type Profile, type RepoKind, type SetupDetection, type Workspace } from "./api";
+import { api, type ClaudeProject, type Profile, type RepoKind, type SetupDetection, type Workspace } from "./lib/api";
 import { capInputText, parseCap } from "./capText";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { Modal, ModalCancel } from "./Modal";
-import { FormError } from "./formParts";
-import { Select } from "./Select";
-import { timeAgo } from "./time";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { Modal, ModalCancel } from "./components/Modal";
+import { FormError } from "./components/formParts";
+import { Select } from "./components/Select";
+import { timeAgo } from "./lib/time";
 import { VersionHistoryOffer } from "./VersionHistoryOffer";
 
 

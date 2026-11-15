@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, type AgentInfo, type AgentStep, type SessionEntry } from "./api";
-import { duration, fullTime } from "./time";
+import { api, type AgentInfo, type AgentStep, type SessionEntry } from "./lib/api";
+import { duration, fullTime } from "./lib/time";
 import { ToolRow } from "./ToolRows";
 import { ClaudeFace } from "./ConvTurn";
 import { agentMood } from "./avatarMood";

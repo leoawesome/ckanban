@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, subscribe, type BoardBrowserView, type BrowserPick, type BrowsersState, type ChromeBrowser } from "./api";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { Modal, useFormDirty } from "./Modal";
-import { FormError, LoadState, SavedNote, useSavedFlash } from "./formParts";
-import { PlusIcon } from "./icons";
-import { timeAgo } from "./time";
-import { useNow } from "./useNow";
-import { usePhone } from "./usePhone";
+import { api, subscribe, type BoardBrowserView, type BrowserPick, type BrowsersState, type ChromeBrowser } from "./lib/api";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { Modal, useFormDirty } from "./components/Modal";
+import { FormError, LoadState, SavedNote, useSavedFlash } from "./components/formParts";
+import { PlusIcon } from "./components/icons";
+import { timeAgo } from "./lib/time";
+import { useNow } from "./hooks/useNow";
+import { usePhone } from "./hooks/usePhone";
 
 /** A board's or ticket's chrome setting meaning "ask each time" (server: chromes.ts ASK_CHROME). */
 export const ASK_CHROME = "ask";

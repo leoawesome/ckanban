@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { api, copy, type FileRootName, type TicketFile } from "./api";
-import { formatSize } from "./attachText";
-import { fileFinder, FileLinkContext, type FileLinks } from "./fileLinkContext";
-import { CheckIcon, CloseIcon, CopyIcon } from "./icons";
-import { useLayer } from "./layers";
-import { useBackEntry } from "./backEntry";
+import { api, copy, type FileRootName, type TicketFile } from "./lib/api";
+import { formatSize } from "./lib/attachText";
+import { fileFinder, FileLinkContext, type FileLinks } from "./lib/fileLinkContext";
+import { CheckIcon, CloseIcon, CopyIcon } from "./components/icons";
+import { useLayer } from "./lib/layers";
+import { useBackEntry } from "./app/backEntry";
 import { withFit } from "./Outputs";
 import { PdfView } from "./PdfView";
-import { baseName, HTML, IMAGE, MARKDOWN } from "./share";
+import { baseName, HTML, IMAGE, MARKDOWN } from "./lib/share";
 import { Markdown } from "./Transcript";
-import { usePhone } from "./usePhone";
+import { usePhone } from "./hooks/usePhone";
 
 const PDF = /\.pdf$/i;
 

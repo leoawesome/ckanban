@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { LoopIcon } from "./icons";
+import { LoopIcon } from "./components/icons";
 import { createPortal } from "react-dom";
-import { api, type Ticket } from "./api";
+import { api, type Ticket } from "./lib/api";
 import { followUpCount, followUpDate, followUpHistory, followUpLabel, followUpWhen } from "./followUpText";
-import { useLayer } from "./layers";
-import { MenuSheet } from "./MenuSheet";
+import { useLayer } from "./lib/layers";
+import { MenuSheet } from "./components/MenuSheet";
 
 const MENU_WIDTH = 340;
 

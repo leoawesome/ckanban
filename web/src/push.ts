@@ -1,6 +1,6 @@
 // Phone notifications on this device (Web Push, src/server/push.ts): what this browser supports, turning it on/off,
 // and the heartbeat that tells the daemon when the board is on screen here (no push while you look at it).
-import { api, type DroppedPushDevice, type PushDevice } from "./api";
+import { api, type DroppedPushDevice, type PushDevice } from "./lib/api";
 
 /** ok: can turn on; insecure: not https/localhost; ios-browser: iPhone/iPad Safari tab (needs Home Screen first). */
 export type PushSupport = "ok" | "insecure" | "ios-browser" | "unsupported";

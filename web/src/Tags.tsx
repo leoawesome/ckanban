@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckIcon, CloseIcon } from "./icons";
-import { useLayer } from "./layers";
-import { MenuSheet } from "./MenuSheet";
-import { usePhone } from "./usePhone";
+import { CheckIcon, CloseIcon } from "./components/icons";
+import { useLayer } from "./lib/layers";
+import { MenuSheet } from "./components/MenuSheet";
+import { usePhone } from "./hooks/usePhone";
 import { boardTags, normalizeTag, tagStyle } from "./tagText";
 
 /** One tag as a colored `#name` chip; with onClick it filters the board (cards) instead of opening the ticket. */

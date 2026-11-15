@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, safeHref, type KeysAsk } from "./api";
+import { api, safeHref, type KeysAsk } from "./lib/api";
 
 /**
  * Claude asked for keys (ask_keys): one password field per key, Save keys and "I'll do it myself". Save sends the

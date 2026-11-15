@@ -1,14 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Question } from "./api";
-import { autoGrow } from "./autoGrow";
-import { browserStore, forget, loadSaved } from "./drafts";
+import type { Question } from "./lib/api";
+import { autoGrow } from "./lib/autoGrow";
+import { browserStore, forget, loadSaved } from "./lib/drafts";
 import { type Answer, answersMessage, answerText, fresh, parseAnswers, type Progress, signature, startProgress } from "./questionForms";
-import { CheckIcon } from "./icons";
-import { usePersistentState } from "./usePersistentState";
-import { enterSends } from "./enterSends";
+import { CheckIcon } from "./components/icons";
+import { usePersistentState } from "./hooks/usePersistentState";
+import { enterSends } from "./lib/enterSends";
 import { QuestionText } from "./QuestionText";
 import { useClaudeName } from "./AvatarFace";
-import { plainMarkdown } from "./miniMarkdown";
+import { plainMarkdown } from "./lib/miniMarkdown";
 
 /** Descriptions longer than this (characters) may be cut to 3 lines, so they get a "More" toggle. */
 const LONG_DESC = 140;

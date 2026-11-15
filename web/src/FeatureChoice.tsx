@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Ticket } from "./api";
+import type { Ticket } from "./lib/api";
 import { openFeatures, partOfFor, suggestFeature } from "./family";
 
 export type FeatureChoiceValue = "add" | "own" | "other";

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { miniMarkdown } from "./miniMarkdown";
+import { miniMarkdown } from "./lib/miniMarkdown";
 
 /** Question-form text as safe, small markdown (see miniMarkdown.ts); `as` span keeps it inline in a line. */
 export function QuestionText({ text, className = "", as: Tag = "div", title }: { text: string; className?: string; as?: "div" | "span"; title?: string }) {

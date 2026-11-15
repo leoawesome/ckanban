@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { api, type HuddlePreset, type HuddleTemplate, type Level, type SquadCardRef, type SquadDraft, type TeamUsage } from "./api";
+import { api, type HuddlePreset, type HuddleTemplate, type Level, type SquadCardRef, type SquadDraft, type TeamUsage } from "./lib/api";
 import { RosterEditor, rosterDraft, templateRules, type RosterDraft } from "./HuddleRoster";
 import { DEFAULT_BUDGET } from "./huddleText";
 import { useSquadSave } from "./SquadCard";

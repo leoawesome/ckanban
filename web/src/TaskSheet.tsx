@@ -4,14 +4,14 @@
 // The sheet's task lives in the URL hash (?sheet=<id>), so browser Back closes it.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, type Question } from "./api";
-import { browserStore, forget, formKey } from "./drafts";
-import { ChevronDownIcon, CloseIcon, ExternalIcon } from "./icons";
-import { useFocusTrap, useLayer } from "./layers";
+import { api, type Question } from "./lib/api";
+import { browserStore, forget, formKey } from "./lib/drafts";
+import { ChevronDownIcon, CloseIcon, ExternalIcon } from "./components/icons";
+import { useFocusTrap, useLayer } from "./lib/layers";
 import type { StepInfo, StepMsg } from "./StepMessages";
 import { cardQuestion, oneClick, oneLine, openForm, sheetFromHash, sheetHash, waitingLabel, type WaitingItem } from "./taskCards";
-import { plainMarkdown } from "./miniMarkdown";
-import { fullTime, timeAgo } from "./time";
+import { plainMarkdown } from "./lib/miniMarkdown";
+import { fullTime, timeAgo } from "./lib/time";
 
 /**
  * The task open in the side sheet (from the URL hash), with open and close. Open adds a history entry, so browser Back

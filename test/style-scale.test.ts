@@ -8,7 +8,7 @@ import { SPACING, offScaleCss, offScaleTsx } from "../scripts/style-scale";
 const WEB = join(import.meta.dir, "../web/src");
 
 test("styles.css stays on the scale", () => {
-  expect(offScaleCss(readFileSync(join(WEB, "styles.css"), "utf8"))).toEqual([]);
+  expect(offScaleCss(readFileSync(join(WEB, "app", "styles.css"), "utf8"))).toEqual([]);
 });
 
 test("components use on-scale icon sizes, spacing and colours", () => {
@@ -20,7 +20,7 @@ test("components use on-scale icon sizes, spacing and colours", () => {
 });
 
 test("the stylesheet has at most 6 text sizes, 4 weights, 3 corners and 3 shadows, none under 11px", () => {
-  const css = readFileSync(join(WEB, "styles.css"), "utf8");
+  const css = readFileSync(join(WEB, "app", "styles.css"), "utf8");
   const tokens = (re: RegExp) => new Set([...css.matchAll(re)].map((m) => m[1]));
   expect(tokens(/^\s*(--fs-[\w-]+):/gm).size).toBe(6);
   expect(tokens(/(?<![-\w])font-weight:\s*(\d+)/g).size).toBeLessThanOrEqual(4);
@@ -87,13 +87,13 @@ test("tokens, transparent, mask alphas and spacing tokens pass", () => {
 });
 
 test("the spacing tokens in styles.css match the checker's list", () => {
-  const css = readFileSync(join(WEB, "styles.css"), "utf8");
+  const css = readFileSync(join(WEB, "app", "styles.css"), "utf8");
   const defined = Object.fromEntries([...css.matchAll(/^\s*(--sp-[\w-]+):\s*(\d+)px;/gm)].map((m) => [m[1], +m[2]]));
   expect(defined).toEqual(SPACING);
 });
 
 test("every field is 16px on a phone (iPhone zooms in below that)", () => {
-  const css = readFileSync(join(WEB, "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const css = readFileSync(join(WEB, "app", "styles.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
   // The one phone rule that sets every field to --fs-lg, winning over class rules.
   expect(css).toMatch(/@media \(max-width: 720px\)[\s\S]*?:is\(input:not\([^)]*\), select, textarea\) \{ font-size: var\(--fs-lg\) !important; \}/);
   // Nothing else may force a field's text size.

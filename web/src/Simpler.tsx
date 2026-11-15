@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "./api";
+import { api } from "./lib/api";
 
 /**
  * "Say it simpler" under Claude's replies: a plain-words version from a side call, shown in place of the reply.

@@ -3,9 +3,9 @@
 // the parts scroll, and the buttons pinned at the bottom.
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { Modal } from "./Modal";
-import { CheckIcon } from "./icons";
-import { usePhone } from "./usePhone";
+import { Modal } from "./components/Modal";
+import { CheckIcon } from "./components/icons";
+import { usePhone } from "./hooks/usePhone";
 import { AvatarFace, resetAvatar, saveAvatar, saveClaudeName, useClaudeName, useSavedAvatars } from "./AvatarFace";
 import {
   AVATAR_ACCESSORIES, AVATAR_BACKGROUNDS, AVATAR_COLORS, AVATAR_DETAILS, AVATAR_EYES, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_HATS, AVATAR_MOODS, avatarFor, avatarKey, claudeName, cleanClaudeName,

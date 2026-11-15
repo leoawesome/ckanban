@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { api, copy, type ToolDetail } from "./api";
+import { api, copy, type ToolDetail } from "./lib/api";
 import { editDiff, mainInput } from "./toolView";
 import { capMap } from "./chatMemo";
-import { toast } from "./toast";
+import { toast } from "./components/toast";
 
 /** One tool call as a row: its short label, plus the id its full input and output load by. */
 /** out: a short look at the output, shown under the label (the session viewer). */

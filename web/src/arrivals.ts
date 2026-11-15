@@ -2,7 +2,7 @@
 // the card travels from its old spot (FLIP, 250ms), arrives with a ring that fades over 1.5s, and keeps a small
 // "new" dot until it is hovered or opened. Drag and drop and the board's own moves are animated by dnd-kit instead.
 import { useSyncExternalStore } from "react";
-import { reducedMotion } from "./motion";
+import { reducedMotion } from "./lib/motion";
 
 export const TRAVEL_MS = 250;
 export const RING_MS = 1500;

@@ -1,17 +1,17 @@
 import { useClaudeName } from "./AvatarFace";
 import { useEffect, useRef, useState, type ButtonHTMLAttributes } from "react";
 import { openedAt, shouldPulse } from "./cardState";
-import type { InboxItem } from "./api";
-import { useLayer } from "./layers";
-import { MenuSheet } from "./MenuSheet";
+import type { InboxItem } from "./lib/api";
+import { useLayer } from "./lib/layers";
+import { MenuSheet } from "./components/MenuSheet";
 import { answers, groupInbox, marksDone } from "./inboxOrder";
-import { useSafeClear } from "./useSafeClear";
-import { fullTime, waitedFor } from "./time";
-import { snoozeEndText, snoozeForever, type SnoozeLength } from "./snooze";
-import { useNow } from "./useNow";
-import { useMedia } from "./usePhone";
-import { MoreIcon } from "./icons";
-import { KeyHint } from "./KeyHint";
+import { useSafeClear } from "./hooks/useSafeClear";
+import { fullTime, waitedFor } from "./lib/time";
+import { snoozeEndText, snoozeForever, type SnoozeLength } from "./lib/snooze";
+import { useNow } from "./hooks/useNow";
+import { useMedia } from "./hooks/usePhone";
+import { MoreIcon } from "./components/icons";
+import { KeyHint } from "./components/KeyHint";
 import { isHeldLine, type HelperStatus } from "./helper";
 import { HelperStatusLine, MessagesEntry } from "./Messages";
 

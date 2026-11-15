@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, showTicket, subscribe, type AutomationProposal, type Pass } from "./api";
+import { api, showTicket, subscribe, type AutomationProposal, type Pass } from "./lib/api";
 import { everyLabel, resolveProposedPass } from "./automations";
 import { connectFromClaude, KeyForm, openSignIn } from "./passConnect";
 

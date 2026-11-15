@@ -3,11 +3,11 @@
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
 import { askClosed, TICKET_KINDS, familyBelow, familyState, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
-import { KIND_DEFAULTS, taskModel, type ModelPick, type TaskModels } from "../../web/src/models";
+import { KIND_DEFAULTS, taskModel, type ModelPick, type TaskModels } from "../../web/src/lib/models";
 import { EFFORTS, MODEL_HELP, validEffort, validModel } from "./commands";
 import type { Plan, Profile, Ticket } from "../core/types";
 
-export { KIND_DEFAULTS } from "../../web/src/models";
+export { KIND_DEFAULTS } from "../../web/src/lib/models";
 
 /**
  * Model and effort a tool ticket gets from its kind when create_ticket leaves them out: the board's Task models

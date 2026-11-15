@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CommandRows, type CmdRow } from "../src/server/cmdbar";
 import { Store } from "../src/core/store";
-import { rankTickets } from "../web/src/fuzzy";
+import { rankTickets } from "../web/src/lib/fuzzy";
 import { tempDir } from "./support/helpers";
 
 const DONE = 3000;

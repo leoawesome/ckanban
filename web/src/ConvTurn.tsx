@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { copy } from "./api";
+import { copy } from "./lib/api";
 import { avatarColor, avatarLetter } from "./avatar";
 import { stepsSummary } from "./chatTurns";
-import { CheckIcon, CopyIcon } from "./icons";
+import { CheckIcon, CopyIcon } from "./components/icons";
 import { AvatarFace, useAvatar, useClaudeName } from "./AvatarFace";
 import { openAvatarEditor } from "./AvatarEditor";
 import type { AvatarMood } from "./avatarLook";
 import { liveLine, runMood } from "./avatarMood";
-import { elapsed, fullTime, timeAgo } from "./time";
-import { toast } from "./toast";
-import { stillOffscreen } from "./stillOffscreen";
+import { elapsed, fullTime, timeAgo } from "./lib/time";
+import { toast } from "./components/toast";
+import { stillOffscreen } from "./lib/stillOffscreen";
 
 /**
  * The chat's message layout, shared by the ticket chat and quick chats (Claude panel, phone Ask tab): a turn is an

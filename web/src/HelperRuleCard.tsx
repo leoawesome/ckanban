@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { api, type HelperRuleCardState } from "./api";
-import { BellIcon } from "./icons";
+import { api, type HelperRuleCardState } from "./lib/api";
+import { BellIcon } from "./components/icons";
 
 /**
  * Claude suggested a line for "What the helper knows about you" (propose_helper_rule in this ticket's chat or run).

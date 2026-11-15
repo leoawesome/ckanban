@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { copyText, draftAfterUndo, forkPoints, forkTitle, rewoundLine, undoneLine } from "../web/src/messageText";
 import { noFilesLine } from "../web/src/rewindText";
-import { sentTime } from "../web/src/time";
+import { sentTime } from "../web/src/lib/time";
 
 const now = new Date(2026, 10, 10, 18, 0); // Tue 10 Nov 2026 18:00, local
 const at = (y: number, mo: number, d: number, h: number, m: number, s = 0) => new Date(y, mo, d, h, m, s).toISOString();

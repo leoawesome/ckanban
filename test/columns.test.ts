@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Status } from "../web/src/columns";
 import { boardColumnOf, columnNeighbours, columnOrder, dropOrder, groupByColumn, menuPick, nextInColumn, regroupByColumn, STATUS_MENU } from "../web/src/columns";
-import { opensNewTab } from "../web/src/links";
+import { opensNewTab } from "../web/src/lib/links";
 
 const tk = (id: string, status: Status, order: number, extra: { slotWait?: { at: string }; pinnedAt?: string | null } = {}) => ({ id, status, order, ...extra });
 

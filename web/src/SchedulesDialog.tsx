@@ -2,24 +2,25 @@ import { useEffect, useId, useRef, useState } from "react";
 import {
   api, type CronPreview, type Job, type ScheduleTrigger, type Outcome, type Profile, type Schedule, type ScheduleHistoryItem, type ScheduleInput, type Status,
   type Ticket, type TicketMode,
-} from "./api";
-import { ConfirmDialog } from "./ConfirmDialog";
+} from "./lib/api";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { UpcomingJobs } from "./Jobs";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { FeaturePicker } from "./FeaturePicker";
-import { Modal } from "./Modal";
-import { MenuSheet } from "./MenuSheet";
-import { ClockIcon, MoreIcon, PlusIcon, SparkIcon } from "./icons";
+import { Modal } from "./components/Modal";
+import { MenuSheet } from "./components/MenuSheet";
+import { ClockIcon, MoreIcon, PlusIcon, SparkIcon } from "./components/icons";
 import { PhoneBar } from "./AutomationsDialog";
-import { EmptyState, FormError, LoadState, useDiscardAsk } from "./formParts";
-import { useBackEntry } from "./backEntry";
-import { ModeToggle } from "./ModeToggle";
+import { EmptyState, FormError, LoadState } from "./components/formParts";
+import { useDiscardAsk } from "./hooks/useDiscardAsk";
+import { useBackEntry } from "./app/backEntry";
+import { ModeToggle } from "./components/ModeToggle";
 import { TagChip, TagEditor } from "./Tags";
 import { boardTags } from "./tagText";
 import { scheduleGroup, type ScheduleGroup } from "./scheduleGroups";
-import { timeAgo, timeUntil } from "./time";
-import { useNow } from "./useNow";
-import { usePhone } from "./usePhone";
+import { timeAgo, timeUntil } from "./lib/time";
+import { useNow } from "./hooks/useNow";
+import { usePhone } from "./hooks/usePhone";
 
 export const CRON_PRESETS: { label: string; cron: string }[] = [
   { label: "Hourly", cron: "0 * * * *" },

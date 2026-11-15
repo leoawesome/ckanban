@@ -1,4 +1,4 @@
-import { fuzzyMatch } from "./fuzzy";
+import { fuzzyMatch } from "./lib/fuzzy";
 
 /** A slash command a ticket chat can run (GET <ticket>/commands). */
 export interface SlashCommand {

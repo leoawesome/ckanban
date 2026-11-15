@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { api, type Ticket } from "./api";
-import { CloseIcon } from "./icons";
-import { toast } from "./toast";
+import { api, type Ticket } from "./lib/api";
+import { CloseIcon } from "./components/icons";
+import { toast } from "./components/toast";
 
 /** The one sample ticket offered on a brand-new first board: read-only, so it is safe to try. */
 export const SAMPLE_TICKET = {

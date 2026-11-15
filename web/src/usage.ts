@@ -1,5 +1,5 @@
 // Pure helpers for the header usage pill (kept out of the component so tests can import them).
-import { aliasLabel } from "./models";
+import { aliasLabel } from "./lib/models";
 
 export interface UsageWindow {
   key: string;

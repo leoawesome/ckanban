@@ -5,7 +5,7 @@ import type { BrowserPick } from "../server/chromes";
 
 import type { TicketKind } from "../../web/src/family";
 import type { ClosedForms } from "../../web/src/family";
-import type { TaskModels } from "../../web/src/models";
+import type { TaskModels } from "../../web/src/lib/models";
 export type { TicketKind };
 export type Status = "backlog" | "planning" | "ready" | "in_progress" | "review" | "done";
 /** limit: the run ended because the Claude usage/spend limit was hit (see Ticket.limit). */
