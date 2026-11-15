@@ -27,3 +27,8 @@ test("freezeCulprit reads the ran part of a lag line", () => {
   expect(freezeCulprit(line("terminal-watcher 5026ms (async)"))).toBe("terminal-watcher 5026ms (async)");
   expect(freezeCulprit("[lag] event loop blocked 300ms")).toContain("untracked work");
 });
+
+test("freezeCulprit names the likely cause of a freeze with nothing tracked", () => {
+  expect(freezeCulprit("[lag] event loop blocked 350ms at x (up 9s); ran: nothing tracked (GC or untracked work); cpu 20ms, heap 100→101MB: likely waiting (little CPU: disk or the Mac busy); rss 500MB"))
+    .toBe("untracked work, likely waiting (little CPU: disk or the Mac busy)");
+});

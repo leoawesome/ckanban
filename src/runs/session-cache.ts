@@ -3,7 +3,7 @@ import { pauser, track, trackedInterval } from "../core/lag";
 import { dirname, join } from "node:path";
 import type { Bus } from "../core/events";
 import { DONE_PASS_MS, SAFETY_PASS_MS, type SessionChanges } from "../core/changefeed";
-import { atomicWrite } from "../core/atomic";
+import { atomicWrite, atomicWriteAsync } from "../core/atomic";
 import { VERSION } from "../core/version";
 import { maskSaved } from "../integrations/board-keys";
 import type { Store } from "../core/store";
@@ -109,6 +109,24 @@ export function summaryTag(dir = import.meta.dir, entry = "session"): string {
   return `${SUMMARY_FORMAT}:${VERSION}:${Bun.hash(hash.sort().join(",")).toString(36)}`;
 }
 
+/**
+ * JSON.stringify(file) made one summary at a time with a pause between slices, so the text of thousands of summaries
+ * doesn't block the event loop in one go. A summary replaced meanwhile is written as it is when its turn comes.
+ */
+async function summariesJson(file: SummaryFile, pause: () => Promise<void>): Promise<string> {
+  const part = async (items: SummaryItems) => {
+    const out: string[] = [];
+    for (const id of Object.keys(items)) {
+      const e = items[id];
+      if (e) out.push(`${JSON.stringify(id)}:${JSON.stringify(e)}`);
+      await pause();
+    }
+    return `{${out.join(",")}}`;
+  };
+  const stale = file.stale ? `,"stale":${await part(file.stale)}` : "";
+  return `{"tag":${JSON.stringify(file.tag)},"items":${await part(file.items)}${stale}}`;
+}
+
 /** Parses session files lazily; re-reads only when size/mtime change. */
 export class SessionCache {
   private items = new Map<string, CacheItem>();
@@ -193,19 +211,51 @@ export class SessionCache {
     (this.flushTimer as { unref?: () => void }).unref?.();
   }
 
+  /** The write in progress (flushSummaries), so writes run one after another. */
+  private flushing: Promise<void> = Promise.resolve();
+  /** Bumped by every write: an older background write that finishes later doesn't replace a newer file. */
+  private writeSeq = 0;
+
   /**
-   * Writes the summary cache file now (also called on a timer after new summaries), only when something in it changed.
-   * Whole and in one go: about 10ms per 1,000 sessions (stringify and write), so it runs at most every
-   * SUMMARY_FLUSH_MS and is tracked, so a freeze from it names it in daemon.log. A journal of changed entries would
-   * keep it flat on a very big board.
+   * Writes the summary cache file (on a timer after new summaries), only when something in it changed. The file is
+   * megabytes on a big board: its text is made in slices (pauser) and written off the event loop. A sync write of the
+   * 5.8 MB file once froze the daemon for 13s on a busy Mac. Tracked, so a freeze from it still names it in daemon.log.
    */
-  flushSummaries(): void {
+  flushSummaries(): Promise<void> {
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    if (!this.summaryFile || !this.summaries) return Promise.resolve();
+    const next = this.flushing.then(() => track("session summaries write", () => this.writeSummaries()));
+    return (this.flushing = next.catch(() => {}));
+  }
+
+  private async writeSummaries(): Promise<void> {
+    const pause = pauser();
+    await this.pruneSummaries(pause);
+    if (!this.summariesDirty || !this.summaries) return;
+    // Changes made while this write runs set it again: the next flush writes them.
+    this.summariesDirty = false;
+    const seq = ++this.writeSeq;
+    try {
+      const text = await summariesJson(this.summaries, pause);
+      if (seq !== this.writeSeq) return;
+      await atomicWriteAsync(this.summaryFile!, text, () => seq === this.writeSeq);
+    } catch (e) {
+      this.summariesDirty = true;
+      console.error("session summary cache", e);
+    }
+  }
+
+  /** The same write in one go, for shutdown (the daemon exits right after, so a short block doesn't matter). */
+  flushSummariesNow(): void {
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = null;
     if (!this.summaryFile || !this.summaries) return;
-    track("session summaries write", () => {
-      this.pruneSummaries();
+    track("session summaries write (shutdown)", () => {
+      void this.pruneSummaries();
       if (!this.summariesDirty) return;
+      // A background write still running must not rename its older text over this one.
+      this.writeSeq++;
       try {
         atomicWrite(this.summaryFile!, JSON.stringify(this.summaries));
         this.summariesDirty = false;
@@ -220,7 +270,7 @@ export class SessionCache {
    * is read here) and those nobody used for SUMMARY_KEEP_DAYS: the file otherwise kept every session ever seen.
    * Every ticket's summary is used at each start (warm), so only old sessions no ticket links any more go.
    */
-  private pruneSummaries(): void {
+  private async pruneSummaries(pause?: () => Promise<void>): Promise<void> {
     const items = this.summaries?.items;
     if (!items) return;
     const oldest = this.today() - SUMMARY_KEEP_DAYS;
@@ -228,6 +278,7 @@ export class SessionCache {
     const scan = this.index?.files.size ? this.index.files : null;
     for (const [id, e] of Object.entries(items)) {
       if ((e.u ?? oldest) < oldest || (scan && !scan.has(id) && !this.files.has(id))) (delete items[id], (this.summariesDirty = true));
+      if (pause) await pause();
     }
   }
 

@@ -196,7 +196,7 @@ export async function startDaemon(): Promise<void> {
     stopLogCompress();
     clearInterval(recheckTimer);
     clearInterval(listRecheckTimer);
-    sessions.flushSummaries();
+    sessions.flushSummariesNow();
     stopHuddleWatcher();
     stopFollow();
     feed.stop();

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { FILES_NOTE, IMAGES_NOTE } from "../board/attachments";
 import { Bus, type BusEvent } from "../core/events";
 import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseProposal, parseSession, pollSessionsSliced, scanSessionFiles, scanSessionFilesAsync } from "./session";
@@ -505,7 +505,7 @@ test("a session file missing for a while is searched for less often", () => {
   expect(cache.file(gone)).toBe(join(dir, `${gone}.jsonl`));
 });
 
-test("session summaries are kept on disk: a new cache answers without reading an unchanged transcript", () => {
+test("session summaries are kept on disk: a new cache answers without reading an unchanged transcript", async () => {
   const configDir = tempDir();
   const dir = join(configDir, "projects", "-f");
   mkdirSync(dir, { recursive: true });
@@ -515,7 +515,7 @@ test("session summaries are kept on disk: a new cache answers without reading an
   const summaryFile = join(tempDir(), "session-summaries.json");
   const a = new SessionCache({ configDir }, Date.now, summaryFile);
   expect(a.summary(sid)?.lastMessage?.text).toBe("first");
-  a.flushSummaries();
+  await a.flushSummaries();
 
   // After a restart: the stored summary is used while the transcript is unchanged (even if unreadable now).
   const b = new SessionCache({ configDir }, Date.now, summaryFile);
@@ -531,7 +531,7 @@ test("session summaries are kept on disk: a new cache answers without reading an
   expect(reads).toBe(1);
 });
 
-test("the summaries file is written only when a summary in it changed", () => {
+test("the summaries file is written only when a summary in it changed", async () => {
   const configDir = tempDir();
   const dir = join(configDir, "projects", "-w");
   mkdirSync(dir, { recursive: true });
@@ -540,23 +540,23 @@ test("the summaries file is written only when a summary in it changed", () => {
   const summaryFile = join(tempDir(), "session-summaries.json");
   const a = new SessionCache({ configDir }, Date.now, summaryFile);
   a.summary(sid);
-  a.flushSummaries();
+  await a.flushSummaries();
   const written = statSync(summaryFile).mtimeMs;
   // After a restart, the same day: the saved summary is used, nothing new to write.
   const b = new SessionCache({ configDir }, Date.now, summaryFile);
   b.summary(sid);
   rmSync(summaryFile);
-  b.flushSummaries();
+  await b.flushSummaries();
   expect(existsSync(summaryFile)).toBe(false);
   // A new summary: written.
   appendFileSync(join(dir, `${sid}.jsonl`), user("second", "2026-09-29T01:00:01Z") + "\n");
   b.summary(sid);
-  b.flushSummaries();
+  await b.flushSummaries();
   expect(existsSync(summaryFile)).toBe(true);
   expect(written).toBeGreaterThan(0);
 });
 
-test("saved summaries of deleted transcripts and of sessions unused for 30 days are dropped at the next write", () => {
+test("saved summaries of deleted transcripts and of sessions unused for 30 days are dropped at the next write", async () => {
   const configDir = tempDir();
   const dir = join(configDir, "projects", "-s");
   mkdirSync(dir, { recursive: true });
@@ -566,7 +566,7 @@ test("saved summaries of deleted transcripts and of sessions unused for 30 days 
   let now = Date.UTC(2026, 9, 1);
   const a = new SessionCache({ configDir }, () => now, summaryFile);
   for (const id of [kept, gone, unused]) a.summary(id);
-  a.flushSummaries();
+  await a.flushSummaries();
   expect(Object.keys(JSON.parse(readFileSync(summaryFile, "utf8")).items).length).toBe(3);
 
   // A restart 20 days later: one is opened, one transcript is deleted.
@@ -574,12 +574,12 @@ test("saved summaries of deleted transcripts and of sessions unused for 30 days 
   const b = new SessionCache({ configDir }, () => now, summaryFile);
   rmSync(join(dir, `${gone}.jsonl`));
   b.summary(kept);
-  b.flushSummaries();
+  await b.flushSummaries();
   expect(Object.keys(JSON.parse(readFileSync(summaryFile, "utf8")).items).sort()).toEqual([kept, unused].sort());
   // 15 more days: the one nobody opened for 35 days goes.
   now += 15 * 86_400_000;
   b.summary(kept);
-  b.flushSummaries();
+  await b.flushSummaries();
   expect(Object.keys(JSON.parse(readFileSync(summaryFile, "utf8")).items)).toEqual([kept]);
 });
 
@@ -592,7 +592,7 @@ test("summaries made by older code are shown until warm() has made them again, a
   const summaryFile = join(tempDir(), "session-summaries.json");
   const a = new SessionCache({ configDir }, Date.now, summaryFile);
   for (const id of [same, differs, grown]) a.summary(id);
-  a.flushSummaries();
+  await a.flushSummaries();
   // The file as older code left it: another tag, one summary that the new code makes differently, and no `cache` field.
   const saved = JSON.parse(readFileSync(summaryFile, "utf8"));
   saved.tag = saved.tag.replace(/[^:]+$/, "older");
@@ -614,7 +614,7 @@ test("summaries made by older code are shown until warm() has made them again, a
   expect(reads).toBe(1);
 
   // A restart before the warm-up: the older summaries are still there.
-  b.flushSummaries();
+  await b.flushSummaries();
   const c = new SessionCache({ configDir }, Date.now, summaryFile);
   expect(c.summary(differs)?.lastMessage?.text).toBe("as the old code read it");
 
@@ -626,7 +626,7 @@ test("summaries made by older code are shown until warm() has made them again, a
   await done;
   expect(remade).toEqual([differs]);
   expect(c.summary(differs)?.lastMessage?.text).toBe(`hello ${differs}`);
-  c.flushSummaries();
+  await c.flushSummaries();
   const after = JSON.parse(readFileSync(summaryFile, "utf8"));
   expect(after.stale).toBeUndefined();
   expect(Object.keys(after.items).sort()).toEqual([same, differs, grown].sort());
@@ -862,9 +862,32 @@ test("readIn reads a changed transcript in chunks, pausing between them, and ski
   await cache.readIn(sid, async () => void pauses++);
   expect(pauses).toBeGreaterThan(1);
   expect(cache.summary(sid)!.lastMessage!.text).toBe("last");
-  cache.flushSummaries();
+  await cache.flushSummaries();
   const again = new SessionCache({ configDir }, Date.now, cache["summaryFile"]);
   let more = 0;
   await again.readIn(sid, async () => void more++);
   expect(more).toBe(0);
+});
+
+test("a summaries write still running in the background never replaces the one written at shutdown", async () => {
+  const configDir = tempDir();
+  const dir = join(configDir, "projects", "-z");
+  mkdirSync(dir, { recursive: true });
+  const sid = "71111111-2222-3333-4444-555555555555";
+  writeFileSync(join(dir, `${sid}.jsonl`), user("first", "2026-09-29T01:00:00Z") + "\n");
+  const summaryFile = join(tempDir(), "session-summaries.json");
+  const a = new SessionCache({ configDir }, Date.now, summaryFile);
+  a.summary(sid);
+  const background = a.flushSummaries();
+  appendFileSync(join(dir, `${sid}.jsonl`), user("second", "2026-09-29T01:00:01Z") + "\n");
+  a.summary(sid);
+  a.flushSummariesNow();
+  await background;
+  const b = new SessionCache({ configDir }, Date.now, summaryFile);
+  (b as any).parsed = () => {
+    throw new Error("read the transcript");
+  };
+  expect(b.summary(sid)?.lastMessage?.text).toBe("second");
+  // Nothing left behind: no temp files next to it.
+  expect(readdirSync(dirname(summaryFile))).toEqual(["session-summaries.json"]);
 });

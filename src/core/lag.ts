@@ -4,6 +4,8 @@
  * requests (`track`), with how long each took. Nothing tracked = GC or untracked work.
  */
 
+import { heapSize } from "bun:jsc";
+
 type Record = { label: string; ms: number; async: boolean };
 
 const ran: Record[] = [];
@@ -60,12 +62,19 @@ export function startLagMonitor(o: LagOptions = {}): () => void {
   const sleep = o.sleepMs ?? 60_000;
   const log = o.log ?? ((line: string) => console.warn(line));
   let last = performance.now();
+  let lastCpu = process.cpuUsage();
+  let lastHeap = heapBytes();
   const timer = setInterval(() => {
     const now = performance.now();
     const lag = now - last - interval;
     last = now;
+    const cpu = process.cpuUsage();
+    const heap = heapBytes();
+    const used = { cpuMs: (cpu.user - lastCpu.user + cpu.system - lastCpu.system) / 1000, heapFrom: lastHeap, heapTo: heap };
+    lastCpu = cpu;
+    lastHeap = heap;
     if (lag > threshold && lag < sleep) {
-      const line = lagLine(lag, now);
+      const line = lagLine(lag, now, used);
       log(line);
       o.onLag?.(lag, line);
     }
@@ -75,7 +84,31 @@ export function startLagMonitor(o: LagOptions = {}): () => void {
   return () => clearInterval(timer);
 }
 
-function lagLine(lag: number, now: number): string {
+/** The JS heap's size now: a cheap counter (no walk of the heap), read every tick of the monitor. */
+function heapBytes(): number {
+  try {
+    return heapSize();
+  } catch {
+    return process.memoryUsage().heapUsed;
+  }
+}
+
+/**
+ * What the process did while the event loop was blocked, so a line with nothing tracked can still tell its cause:
+ * CPU time near the freeze's length is work (JS, or memory clean-up when the heap fell by much), little CPU is
+ * waiting (a sync file read or write on a busy disk, or the Mac not giving the process time).
+ */
+type Used = { cpuMs: number; heapFrom: number; heapTo: number };
+
+function usedPart(lag: number, u: Used | undefined): string {
+  if (!u) return "";
+  const mb = (n: number) => Math.round(n / 1048576);
+  const fell = u.heapFrom - u.heapTo;
+  const why = fell >= 16 * 1048576 ? "memory clean-up (heap fell)" : u.cpuMs >= lag * 0.6 ? "busy (CPU)" : "waiting (little CPU: disk or the Mac busy)";
+  return `; cpu ${Math.round(u.cpuMs)}ms, heap ${mb(u.heapFrom)}→${mb(u.heapTo)}MB: likely ${why}`;
+}
+
+function lagLine(lag: number, now: number, used?: Used): string {
   const top = ran.filter((r) => r.ms >= 20).sort((a, b) => b.ms - a.ms).slice(0, 5)
     .map((r) => `${r.label} ${Math.round(r.ms)}ms${r.async ? " (async)" : ""}`);
   const pending = [...busy.values()].filter((b) => now - b.start >= 20).slice(0, 5)
@@ -84,14 +117,16 @@ function lagLine(lag: number, now: number): string {
   const mb = (n: number) => Math.round(n / 1048576);
   return `[lag] event loop blocked ${Math.round(lag)}ms at ${new Date().toISOString()}` +
     ` (up ${Math.round(process.uptime())}s); ran: ${top.join(", ") || "nothing tracked (GC or untracked work)"}` +
-    (pending.length ? `; still running: ${pending.join(", ")}` : "") +
+    (pending.length ? `; still running: ${pending.join(", ")}` : "") + usedPart(lag, used) +
     `; rss ${mb(mem.rss)}MB heap ${mb(mem.heapUsed)}MB external ${mb(mem.external)}MB buffers ${mb(mem.arrayBuffers)}MB`;
 }
 
 /** What a lag line says ran during the freeze (its longest few), or "untracked work" when nothing tracked ran. */
 export function freezeCulprit(line: string): string {
   const ran = /; ran: ([^;]*)/.exec(line)?.[1]?.trim();
-  return !ran || ran.startsWith("nothing tracked") ? "untracked work (memory clean-up or a job without track())" : ran;
+  if (ran && !ran.startsWith("nothing tracked")) return ran;
+  const likely = /: likely ([^;]*)/.exec(line)?.[1]?.trim();
+  return likely ? `untracked work, likely ${likely}` : "untracked work (memory clean-up or a job without track())";
 }
 
 export type FreezeAlarmOptions = {

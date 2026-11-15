@@ -1,4 +1,5 @@
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { newId } from "./util";
 
@@ -16,6 +17,28 @@ export function atomicWrite(file: string, content: string) {
     renameSync(tmp, file);
   } catch (e) {
     rmSync(tmp, { force: true });
+    throw e;
+  }
+}
+
+/**
+ * atomicWrite off the event loop: the write and the rename run on Bun's file threads, so a big file on a busy Mac
+ * (security software checking every write) doesn't freeze the daemon for the seconds the disk takes. When `keep`
+ * says no once the content is written (a newer write took over), the temp file is dropped instead of renamed.
+ */
+export async function atomicWriteAsync(file: string, content: string, keep: () => boolean = () => true): Promise<boolean> {
+  await mkdir(dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${newId()}`;
+  try {
+    await writeFile(tmp, content);
+    if (!keep()) {
+      await rm(tmp, { force: true });
+      return false;
+    }
+    await rename(tmp, file);
+    return true;
+  } catch (e) {
+    await rm(tmp, { force: true }).catch(() => {});
     throw e;
   }
 }

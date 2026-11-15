@@ -61,3 +61,23 @@ test("a request that does all its work before its first await is named once", as
     stop();
   }
 });
+
+test("a lag line tells work from waiting: CPU time and heap size during the freeze", async () => {
+  const lines: string[] = [];
+  const stop = startLagMonitor({ thresholdMs: 200, intervalMs: 20, log: (l) => lines.push(l) });
+  try {
+    await wait(60);
+    busy(300);
+    await wait(60);
+    // A sync wait (like a write on a busy disk): the process uses almost no CPU.
+    Bun.sleepSync(300);
+    await wait(60);
+    // On a loaded Mac the busy loop may get less CPU than its length, so only the waiting one's cause is checked.
+    expect(lines.length).toBe(2);
+    const cpu = lines.map((l) => Number(/; cpu (\d+)ms, heap \d+→\d+MB: likely /.exec(l)![1]));
+    expect(cpu[0]).toBeGreaterThan(cpu[1]);
+    expect(lines[1]).toContain("likely waiting (little CPU: disk or the Mac busy)");
+  } finally {
+    stop();
+  }
+});
