@@ -2,10 +2,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { BoardClient } from "../src/client";
 import { callTool, proposalError, type ToolContext } from "../src/mcp-server";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { candidates, Linker, parseFound, parseSuggestion } from "../src/server/linker";
+import { candidates, Linker, parseFound, parseSuggestion } from "../src/board/linker";
 import { RUN_HEADER } from "../src/server/scheduler";
 import { parseProposal } from "../src/runs/session";
 import type { SideCallInput, SideCallResult } from "../src/runs/side-call";

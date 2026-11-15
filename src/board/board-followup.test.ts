@@ -1,16 +1,16 @@
 // Follow-ups: Claude comes back to its own ticket later; the board wakes the same conversation when it is due.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { join } from "node:path";
-import { ticketAttention } from "../src/server/attention";
-import { Board } from "../src/server/board";
-import { Bus } from "../src/core/events";
-import { FollowUpError, FollowUpWatcher, followUpSpend, followUpTime, parseDelay } from "../src/server/followup";
-import { followUpWakePrompt } from "../src/runs/prompts";
-import { Store } from "../src/core/store";
-import type { Profile, Ticket } from "../src/core/types";
-import { makeRepo, readJsonl, tempDir, until } from "./support/helpers";
+import { ticketAttention } from "../server/attention";
+import { Board } from "./board";
+import { Bus } from "../core/events";
+import { FollowUpError, FollowUpWatcher, followUpSpend, followUpTime, parseDelay } from "../server/followup";
+import { followUpWakePrompt } from "../runs/prompts";
+import { Store } from "../core/store";
+import type { Profile, Ticket } from "../core/types";
+import { makeRepo, readJsonl, tempDir, until } from "../../test/support/helpers";
 
-const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
+const FAKE = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-claude.ts");
 let store: Store;
 let board: Board;
 let clock: Date;

@@ -1,6 +1,6 @@
 import { basename } from "node:path";
-import { commandText, localCommandOutput } from "../server/commands";
-import { ChatCacheTracker } from "../server/chat-cache";
+import { commandText, localCommandOutput } from "../chat/commands";
+import { ChatCacheTracker } from "../chat/chat-cache";
 import { AGENT_TOOL, notifiedStatus, parseTaskNotification, toolLabel, type AgentInfo } from "./subagents";
 import { WORKFLOW_TOOL, workflowFromCall, workflowLaunched, workflowNotified, type WorkflowInfo } from "./workflows";
 import { parseSetupBlock } from "./worktree-setup";

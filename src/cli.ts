@@ -8,7 +8,7 @@ import { serveStdio } from "./mcp-server";
 import { serveBrowserMcp } from "./browser-mcp";
 import { runArtifactJob } from "./runs/artifact";
 import { LABEL, PLIST_PATH, plistXml } from "./server/launchd";
-import { RESTART_MAX_WAIT_MS } from "./server/board";
+import { RESTART_MAX_WAIT_MS } from "./board/board";
 import { startDaemon } from "./server/main";
 import { AgentError, AgentRegistry } from "./server/agents";
 import { defaultRoot, Store } from "./core/store";

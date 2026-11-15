@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Bus } from "../src/core/events";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { reportParts } from "../src/server/helper/tgreply";
 import { LOCKED_NOTE, LOCKED_NOTE_MS, safeCut, telegramText } from "../src/server/helper/telegram";
 import { ACTION_TTL_MS, PendingActions, UpdateQueue } from "../src/server/helper/tgstores";

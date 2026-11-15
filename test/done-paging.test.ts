@@ -1,7 +1,7 @@
 // The Done column pages by a cursor: cards leaving, joining or being deleted between pages, a failed move and a
 // reconnect leave no gaps and no doubles. A small model of App.tsx's paging (same helpers) against the server's scopes.
 import { describe, expect, test } from "bun:test";
-import { boardScope, donePage, doneColumn } from "../src/server/ticketScope";
+import { boardScope, donePage, doneColumn } from "../src/board/ticket-scope";
 import { doneCursor, doneDrifted, doneNotDrawn, heldDoneColumn, heldDoneHead, mergeTickets, reloadAsk, takeReload, unseenDone } from "../web/src/donePaging";
 
 type T = { id: string; title: string; status: any; order: number; createdAt: string; pinnedAt?: string | null; updatedAt?: string };

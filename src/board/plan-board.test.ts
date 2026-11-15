@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
-import { Bus } from "../src/core/events";
-import { Store } from "../src/core/store";
-import type { Profile } from "../src/core/types";
-import { makeRepo, tempDir } from "./support/helpers";
+import { Board } from "./board";
+import { Bus } from "../core/events";
+import { Store } from "../core/store";
+import type { Profile } from "../core/types";
+import { makeRepo, tempDir } from "../../test/support/helpers";
 
-const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
+const FAKE = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-claude.ts");
 
 let store: Store;
 let bus: Bus;

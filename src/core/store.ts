@@ -8,7 +8,7 @@ import YAML from "yaml";
 import type {
   ActivityEntry, Comment, Config, Huddle, HuddleMessage, Job, Loop, LoopState, OutputFile, Profile, Schedule, ScheduleHistoryEntry, Status, Ticket, TicketKind, TicketMode, TicketSource,
 } from "./types";
-import { cleanAvatars, type SavedAvatarMap } from "../server/avatars";
+import { cleanAvatars, type SavedAvatarMap } from "../board/avatars";
 import { cleanPresets, type HuddlePreset } from "../server/huddle-presets";
 import { cleanTemplates, type HuddleTemplate } from "../server/huddle-templates";
 import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "../server/huddle-notes";

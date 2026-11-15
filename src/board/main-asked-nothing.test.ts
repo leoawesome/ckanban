@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { ticketAttention } from "../src/server/attention";
-import { Board } from "../src/server/board";
-import { askedNothing, replyAsked } from "../src/server/main-ticket";
-import { MAIN_QUESTIONS_RULE, mainTicketRules } from "../src/runs/prompts";
-import type { Question, SessionSummary } from "../src/runs/session";
-import type { Plan, Ticket } from "../src/core/types";
-import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "./support/board-env";
+import { ticketAttention } from "../server/attention";
+import { Board } from "./board";
+import { askedNothing, replyAsked } from "./main-ticket";
+import { MAIN_QUESTIONS_RULE, mainTicketRules } from "../runs/prompts";
+import type { Question, SessionSummary } from "../runs/session";
+import type { Plan, Ticket } from "../core/types";
+import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 

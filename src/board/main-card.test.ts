@@ -1,12 +1,12 @@
 // The main ticket's card tells the truth while its feature works: any family ticket working (tool tickets from the
 // first one, tickets the user added) keeps it working, a failed step says "Step failed" in red, progress is in words.
 import { expect, test } from "bun:test";
-import { attentionFor } from "../src/server/attention";
-import { familyCard, stepWait } from "../src/server/main-ticket";
-import type { Ticket } from "../src/core/types";
-import { attentionLabel, cardFamily, featureBusy, stepsText } from "../web/src/cardState";
-import { groupByColumn } from "../web/src/columns";
-import { board, setup, store, useBoardEnv } from "./support/board-env";
+import { attentionFor } from "../server/attention";
+import { familyCard, stepWait } from "./main-ticket";
+import type { Ticket } from "../core/types";
+import { attentionLabel, cardFamily, featureBusy, stepsText } from "../../web/src/cardState";
+import { groupByColumn } from "../../web/src/columns";
+import { board, setup, store, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 

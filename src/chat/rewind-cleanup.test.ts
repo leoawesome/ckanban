@@ -1,9 +1,9 @@
 // Rewind's saved copies of the folder: removed when their ticket is deleted or done, never another ticket's;
 // and a copy that takes too long is skipped instead of holding up the message.
 import { expect, test } from "bun:test";
-import { run } from "../src/runs/git";
-import { listSnapshots, takeSnapshot } from "../src/server/rewind";
-import { board, setup, useBoardEnv } from "./support/board-env";
+import { run } from "../runs/git";
+import { listSnapshots, takeSnapshot } from "./rewind";
+import { board, setup, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 
@@ -42,11 +42,11 @@ test("a copy that runs past its time limit is skipped and leaves nothing behind"
 });
 
 test("the copy starts from the folder's own index: same files, real index untouched, only the folder's own changes count", async () => {
-  const { makeRepo } = await import("./support/helpers");
+  const { makeRepo } = await import("../../test/support/helpers");
   const repo = await makeRepo();
   const { mkdirSync, readFileSync, writeFileSync } = await import("node:fs");
   const { join } = await import("node:path");
-  const { changesSince } = await import("../src/server/rewind");
+  const { changesSince } = await import("./rewind");
   const sub = join(repo, "app");
   mkdirSync(sub);
   writeFileSync(join(sub, "a.txt"), "a\n");

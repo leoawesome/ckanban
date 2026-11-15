@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
-import { resultWakesMain } from "../src/server/main-ticket";
-import { planStep } from "../src/server/plan";
+import { resultWakesMain } from "../src/board/main-ticket";
+import { planStep } from "../src/board/plan";
 import { featureChoices } from "../web/src/featureChoices";
 import { Scheduler } from "../src/server/scheduler";
 import { Store } from "../src/core/store";

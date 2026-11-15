@@ -2,7 +2,7 @@
 // the ckanban repo, with `gh issue create`, or a prefilled "new issue" URL when gh can't do it.
 import { homedir, platform, arch, release } from "node:os";
 import { extractFinalText, summarizeEvent } from "../runs/activity";
-import { ATTACHMENT_NAME_SRC } from "./attachments";
+import { ATTACHMENT_NAME_SRC } from "../board/attachments";
 import { run, type RunResult } from "../runs/git";
 import { maskSecrets } from "./mcp";
 import type { Store } from "../core/store";

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { join } from "node:path";
 import { attentionFor } from "../server/attention";
-import { Board } from "../server/board";
+import { Board } from "../board/board";
 import { Bus } from "../core/events";
 import { clockTime, dayKey, isLimitText, limitMessage, LimitWatcher, nextFullHour, parseReset } from "./limit";
-import { planStep } from "../server/plan";
+import { planStep } from "../board/plan";
 import { Store } from "../core/store";
 import type { Plan, Profile, Ticket } from "../core/types";
 import { makeRepo, readJsonl, tempDir } from "../../test/support/helpers";

@@ -2,10 +2,10 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "../src/runs/git";
-import { applyRewind, previewRewind, takeSnapshot } from "../src/server/rewind";
-import { parseSession } from "../src/runs/session";
-import { tempDir } from "./support/helpers";
+import { run } from "../runs/git";
+import { applyRewind, previewRewind, takeSnapshot } from "./rewind";
+import { parseSession } from "../runs/session";
+import { tempDir } from "../../test/support/helpers";
 
 async function project(history: boolean) {
   const dir = tempDir("ck-proj-");

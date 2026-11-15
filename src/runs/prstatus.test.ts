@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
-import { Board } from "../server/board";
+import { Board } from "../board/board";
 import { Bus } from "../core/events";
 import { mergePr, PrError, refreshPr, resolveConflicts, sendFailures } from "./prpoller";
 import { actionsIds, conflictMessage, failureMessage, mergeBlock, parsePrStatus, PER_CHECK_LOG, TOTAL_LOG } from "./prstatus";
@@ -209,7 +209,7 @@ test("the UI's merge guard matches the server", async () => {
 
 test("the panel's PR list: old tickets, repo, number, summary, and the same main PR as the server", async () => {
   const web = await import("../../web/src/prText");
-  const { ticketPrs, mainPr } = await import("../server/prs");
+  const { ticketPrs, mainPr } = await import("../board/prs");
   expect(web.ticketPrs({ prUrl: URL, pr: parsePrStatus(URL, raw({ baseRefName: "dev" })) })).toEqual([{ url: URL, state: "OPEN", base: "dev" }]);
   expect(web.ticketPrs({ prUrl: null })).toEqual([]);
   expect(web.prRepo("https://github.com/respond-io/respond-io-voice/pull/392")).toBe("respond-io-voice");

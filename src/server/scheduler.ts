@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { trackedInterval } from "../core/lag";
-import type { Board } from "./board";
+import type { Board } from "../board/board";
 import { cronError, describeCron, nextRun, parseCron } from "./cron";
 import type { Bus } from "../core/events";
 import type { Store } from "../core/store";
-import { normalizeTags } from "./tags";
+import { normalizeTags } from "../board/tags";
 import type { Schedule, ScheduleEditAction, ScheduleEditor, ScheduleHistoryEntry, SchedulePrevious, ScheduleTrigger, Ticket } from "../core/types";
 import { newId } from "../core/util";
 

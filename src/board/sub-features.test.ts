@@ -4,11 +4,11 @@
 import { expect, test } from "bun:test";
 import {
   featureRoot, featureRows, levelOf, linkProblem, mainTicketOf, onBoard, shownTool, subFeatureState, subFeaturesWorking, workingInFamily, type FeatureTicket,
-} from "../web/src/family";
-import { oldestStep } from "../src/server/attention";
-import { statusFacts, statusSections } from "../src/server/feature";
-import type { Ticket } from "../src/core/types";
-import { board, setup, store, useBoardEnv } from "./support/board-env";
+} from "../../web/src/family";
+import { oldestStep } from "../server/attention";
+import { statusFacts, statusSections } from "./feature";
+import type { Ticket } from "../core/types";
+import { board, setup, store, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 

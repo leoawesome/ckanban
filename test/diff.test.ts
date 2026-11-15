@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { folderDiff, MAX_DIFF_FILES, MAX_DIFF_LINES, MAX_FILE_LINES, parseDiff, REWRITTEN_NOTE, ticketDiff, type DiffFile } from "../src/runs/diff";
 import { Bus } from "../src/core/events";
 import { run } from "../src/runs/git";

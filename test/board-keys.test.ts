@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, symlinkSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { keysAnswerText, keysAsk, parseKeysAsk } from "../src/server/ask-keys";
-import { claudeSessionFile } from "../src/server/board";
+import { claudeSessionFile } from "../src/board/board";
 import { boardKeyEnv, keyNameError, maskSaved } from "../src/server/board-keys";
 import { Bus } from "../src/core/events";
 import { backupFile, backupFolderName, BACKUPS_DIR, BACKUPS_KEPT } from "../src/server/file-backup";

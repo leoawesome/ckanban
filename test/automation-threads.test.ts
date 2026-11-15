@@ -3,13 +3,13 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
 import { callTool } from "../src/mcp-server";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Passes } from "../src/server/integrations/passes";
 import { parseItems, type Item } from "../src/server/integrations/script";
-import { whoWrote } from "../src/server/chat-search";
-import { sinceLastMessage, transcript } from "../src/server/explain";
+import { whoWrote } from "../src/chat/chat-search";
+import { sinceLastMessage, transcript } from "../src/chat/explain";
 import { threadItemText, ticketBody } from "../src/server/integrations/ticket-text";
-import { corrections } from "../src/server/lessons";
+import { corrections } from "../src/board/lessons";
 import { LoopManager, type LoopInput } from "../src/server/loops";
 import { parseSession, type SessionSummary } from "../src/runs/session";
 import { board, bus, FAKE, readArgs, replays, restartBoard, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";

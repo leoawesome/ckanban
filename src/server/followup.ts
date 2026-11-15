@@ -1,7 +1,7 @@
 // Follow-ups: Claude comes back to its own ticket later (follow_up). The board saves the time on the ticket and, when
 // it is due, wakes the same conversation with what happened since (followUpWakePrompt); Claude checks, acts, and sets
 // the next follow-up or stops. A board run is `claude -p`, so Claude Code's own timers die with it: the daemon owns this one.
-import type { Board } from "./board";
+import type { Board } from "../board/board";
 import { trackedInterval } from "../core/lag";
 import { parseAt } from "./jobs";
 import type { Store } from "../core/store";

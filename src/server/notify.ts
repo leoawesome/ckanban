@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { featureRows, hiddenTool, mainTicketOf, withYouTool } from "../../web/src/family";
 import { type AttentionKind, type HostHuddle, ticketAttention } from "./attention";
-import { stepWait } from "./main-ticket";
+import { stepWait } from "../board/main-ticket";
 import type { Bus } from "../core/events";
 import { run as runCmd } from "../runs/git";
 import type { PushPayload, PushService } from "./push";

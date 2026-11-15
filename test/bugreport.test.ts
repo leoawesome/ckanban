@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { BoardClient } from "../src/client";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import {
   buildIssueBody, draftReport, fileIssue, LOG_MAX_BYTES, logBlock, MAX_URL_LENGTH, newIssueUrl, screenshotNames, scrub,
   submitReport, tail, type BugBlock, type GhRunner,

@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BoardClient } from "../src/client";
 import { callTool, type ToolContext } from "../src/mcp-server";
-import { Board, type ChatOptions } from "../src/server/board";
+import { Board, type ChatOptions } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { AUTO_MAX_COST_USD, Huddles, summaryFile } from "../src/server/huddle";

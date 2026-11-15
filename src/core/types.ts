@@ -1,6 +1,6 @@
 import type { TeammateProposal } from "../server/teammate-proposal";
 import type { SquadCardState, SquadProposal } from "../server/squad";
-import type { RewindUndo } from "../server/rewind";
+import type { RewindUndo } from "../chat/rewind";
 import type { BrowserPick } from "../server/chromes";
 
 import type { TicketKind } from "../../web/src/family";

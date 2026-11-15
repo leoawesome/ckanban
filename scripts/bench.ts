@@ -16,7 +16,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { startLagMonitor } from "../src/core/lag";

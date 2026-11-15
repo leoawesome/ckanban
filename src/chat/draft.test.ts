@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DraftTracker } from "../src/server/draft";
+import { DraftTracker } from "./draft";
 
 const se = (event: any, extra: object = {}) => ({ type: "stream_event", event, ...extra });
 const delta = (text: string) => se({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text } });

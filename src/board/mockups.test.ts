@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { extractMockups, mockupName, saveMockups, stripMockups } from "../src/server/mockups";
-import { parseSession } from "../src/runs/session";
-import { chatPrompt, firstRunPrompt, resumePrompt } from "../src/runs/prompts";
-import type { Ticket } from "../src/core/types";
-import { tempDir } from "./support/helpers";
+import { extractMockups, mockupName, saveMockups, stripMockups } from "./mockups";
+import { parseSession } from "../runs/session";
+import { chatPrompt, firstRunPrompt, resumePrompt } from "../runs/prompts";
+import type { Ticket } from "../core/types";
+import { tempDir } from "../../test/support/helpers";
 
 const reply = `Here are two layouts.
 <ckanban-mockup name="a-compact.html">

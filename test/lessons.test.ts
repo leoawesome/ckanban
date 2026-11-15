@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { Learner } from "../src/server/learner";
-import { lessonBullets, lessonsBlock } from "../src/server/lessons";
+import { Learner } from "../src/board/learner";
+import { lessonBullets, lessonsBlock } from "../src/board/lessons";
 import { SessionCache } from "../src/runs/session";
 import type { SideCallInput, SideCallResult } from "../src/runs/side-call";
 import { Store } from "../src/core/store";

@@ -2,12 +2,12 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { encodeProjectDir } from "../src/runs/claude";
-import { contextArgs, ContextUsage, parseContextReport, parseTokens } from "../src/server/context-usage";
-import { readJsonl, tempDir } from "./support/helpers";
+import { encodeProjectDir } from "../runs/claude";
+import { contextArgs, ContextUsage, parseContextReport, parseTokens } from "./context-usage";
+import { readJsonl, tempDir } from "../../test/support/helpers";
 
-const FIX = join(import.meta.dir, "fixtures", "context");
-const FAKE = join(import.meta.dir, "fixtures", "fake-claude-context.ts");
+const FIX = join(import.meta.dir, "..", "..", "test", "fixtures", "context");
+const FAKE = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-claude-context.ts");
 const sample = (name: string) => readFileSync(join(FIX, name), "utf8");
 
 test("parseTokens reads k, m, plain, approximate and comma numbers", () => {

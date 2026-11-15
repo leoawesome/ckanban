@@ -2,9 +2,9 @@
 // Outreach): its replies and wakes never move its card, so it stayed in the (collapsed) Done column. Now the user's
 // message brings it back to Review, where it stays until the user parks it again.
 import { expect, test } from "bun:test";
-import { Board } from "../src/server/board";
-import type { Ticket } from "../src/core/types";
-import { board, bus, FAKE, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
+import { Board } from "./board";
+import type { Ticket } from "../core/types";
+import { board, bus, FAKE, setBoard, setup, store, untilSpawned, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 
@@ -106,8 +106,8 @@ test("an ordinary ticket in Done: the user's message that asks for work ends in 
 // fix step and ended done, and minutes later the PR poller saw its milestone PR (merged long before) and moved the card
 // to Done while the step still ran. Parked in Done, its wake for the finished step never came either.
 test("a Done main ticket with a merged PR: a message, a new step, the poller: In progress until the step ends, then Review", async () => {
-  const { checkPr } = await import("../src/runs/prpoller");
-  const { groupByColumn } = await import("../web/src/columns");
+  const { checkPr } = await import("../runs/prpoller");
+  const { groupByColumn } = await import("../../web/src/columns");
   const main = await mkMain("done");
   store.updateTicket("p", main.id, { prUrl: "https://github.com/x/y/pull/12" });
   await board.chat("p", main.id, "three more fixes please");
@@ -142,7 +142,7 @@ test("a Done main ticket with a merged PR: a message, a new step, the poller: In
 }, 60_000);
 
 test("a main ticket never in Done with no open steps still goes to Done when its PR merges", async () => {
-  const { checkPr } = await import("../src/runs/prpoller");
+  const { checkPr } = await import("../runs/prpoller");
   const main = await mkMain("review");
   store.updateTicket("p", main.id, { prUrl: "https://github.com/x/y/pull/12" });
   await checkPr(board, store, "p", main.id, async () => "MERGED");
@@ -150,8 +150,8 @@ test("a main ticket never in Done with no open steps still goes to Done when its
 }, 60_000);
 
 test("a main card in Done shows In progress while one of its steps runs, not for a ticket the user added", async () => {
-  const { groupByColumn } = await import("../web/src/columns");
-  const { cardFamily } = await import("../web/src/cardState");
+  const { groupByColumn } = await import("../../web/src/columns");
+  const { cardFamily } = await import("../../web/src/cardState");
   const main = await mkMain("done");
   const step = await mkTool(main.id, "in_progress");
   const added = await board.createTicket("p", { title: "Landing copy", body: "", status: "backlog", mode: "auto", partOf: main.id });

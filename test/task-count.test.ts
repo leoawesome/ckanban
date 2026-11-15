@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { featureRows, featureTasks, newestFirst, taskTally } from "../web/src/family";
 import { taskProgress } from "../web/src/tasksText";
-import { statusFacts } from "../src/server/feature";
+import { statusFacts } from "../src/board/feature";
 import type { Ticket } from "../src/core/types";
 
 let n = 0;

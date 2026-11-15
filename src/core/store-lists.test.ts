@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, readFileSync, renameSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../server/board";
+import { Board } from "../board/board";
 import { Bus } from "./events";
 import { JsonDir, JSON_DIR_RECHECK_MS } from "./json-dir";
 import { lastPause, quietContext, quietDays, quietPerDay, scheduleSpend } from "../server/quiet";

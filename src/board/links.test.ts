@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { artifactUrlsIn, collectLinks, isArtifact } from "../src/server/links";
-import { parseSession } from "../src/runs/session";
+import { artifactUrlsIn, collectLinks, isArtifact } from "./links";
+import { parseSession } from "../runs/session";
 
 const line = (o: object) => JSON.stringify(o);
 /** A huddle teammate's transcript that published one artifact through the publish_artifact MCP tool. */

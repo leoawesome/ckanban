@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cleanFileName as serverClean, FILE_EXTS as SERVER_EXTS, MAX_ATTACHMENT_BYTES as SERVER_MAX } from "../../../src/server/attachments";
+import { cleanFileName as serverClean, FILE_EXTS as SERVER_EXTS, MAX_ATTACHMENT_BYTES as SERVER_MAX } from "../../../src/board/attachments";
 import {
   ACCEPT, ATTACHMENT_SRC, PHOTO_ACCEPT, cleanFileName, draftFiles, FILE_EXTS, fileHolder, fileHref, fileKind, formatSize, MAX_ATTACHMENT_BYTES, refusal,
 } from "./attachText";

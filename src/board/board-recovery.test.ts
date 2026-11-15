@@ -1,7 +1,7 @@
 // Board: one-click session recovery and spending caps.
 import { expect, test } from "bun:test";
-import { Board, claudeSetupHint, ConflictError, recoveryFor, SESSION_OPEN_MSG } from "../src/server/board";
-import { FAKE, store, bus, board, liveSessions, setBoard, setup, readArgs, useBoardEnv } from "./support/board-env";
+import { Board, claudeSetupHint, ConflictError, recoveryFor, SESSION_OPEN_MSG } from "./board";
+import { FAKE, store, bus, board, liveSessions, setBoard, setup, readArgs, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 

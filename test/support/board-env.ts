@@ -2,7 +2,7 @@
 // Call useBoardEnv() at the top of a test file; the exported bindings are live and change per test.
 import { afterEach, beforeEach } from "bun:test";
 import { join } from "node:path";
-import { Board } from "../../src/server/board";
+import { Board } from "../../src/board/board";
 import { Bus } from "../../src/core/events";
 import { Store } from "../../src/core/store";
 import type { Profile } from "../../src/core/types";

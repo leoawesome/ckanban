@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FILES_NOTE, IMAGES_NOTE } from "../server/attachments";
+import { FILES_NOTE, IMAGES_NOTE } from "../board/attachments";
 import { Bus, type BusEvent } from "../core/events";
 import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessionsSliced, scanSessionFiles, scanSessionFilesAsync } from "./session";
 import { Store } from "../core/store";

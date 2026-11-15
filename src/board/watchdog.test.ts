@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { attentionFor, ticketAttention } from "../src/server/attention";
-import { Board } from "../src/server/board";
-import { Bus } from "../src/core/events";
-import { isTransientText, transientError } from "../src/runs/retry";
-import { buildArgs, startRun } from "../src/runs/runner";
-import { Store } from "../src/core/store";
-import type { Ticket } from "../src/core/types";
-import { makeRepo, readJsonl, tempDir } from "./support/helpers";
+import { attentionFor, ticketAttention } from "../server/attention";
+import { Board } from "./board";
+import { Bus } from "../core/events";
+import { isTransientText, transientError } from "../runs/retry";
+import { buildArgs, startRun } from "../runs/runner";
+import { Store } from "../core/store";
+import type { Ticket } from "../core/types";
+import { makeRepo, readJsonl, tempDir } from "../../test/support/helpers";
 
-const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
+const FAKE = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-claude.ts");
 const STREAM = buildArgs("u1", false, null);
 
 let store: Store;

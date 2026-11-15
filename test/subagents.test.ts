@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus, type BusEvent } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { parseSession, pollSessionsSliced, SessionCache } from "../src/runs/session";

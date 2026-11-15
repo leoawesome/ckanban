@@ -3,11 +3,11 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { familyOf, familyState, groupSummary, settled, STATE_WORDS, suggestFeature } from "../web/src/family";
-import { parseResult } from "../src/runs/result";
-import type { Ticket } from "../src/core/types";
-import { board, readArgs, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
-import { until } from "./support/helpers";
+import { familyOf, familyState, groupSummary, settled, STATE_WORDS, suggestFeature } from "../../web/src/family";
+import { parseResult } from "../runs/result";
+import type { Ticket } from "../core/types";
+import { board, readArgs, setup, store, untilSpawned, useBoardEnv } from "../../test/support/board-env";
+import { until } from "../../test/support/helpers";
 
 useBoardEnv();
 

@@ -3,10 +3,10 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CommandRows, type CmdRow } from "../src/server/cmdbar";
-import { Store } from "../src/core/store";
-import { rankTickets } from "../web/src/lib/fuzzy";
-import { tempDir } from "./support/helpers";
+import { CommandRows, type CmdRow } from "./cmdbar";
+import { Store } from "../core/store";
+import { rankTickets } from "../../web/src/lib/fuzzy";
+import { tempDir } from "../../test/support/helpers";
 
 const DONE = 3000;
 const WORDS = "retry upload phone layout cache spend inbox huddle schedule theme sync modal".split(" ");

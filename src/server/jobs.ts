@@ -4,7 +4,7 @@
 // run decides whether the work still makes sense; a command job is skipped unless its action says ifLate: "run".
 import { existsSync } from "node:fs";
 import { trackedInterval } from "../core/lag";
-import type { Board } from "./board";
+import type { Board } from "../board/board";
 import type { Bus } from "../core/events";
 import type { Store } from "../core/store";
 import type { Job, JobAction, JobResult, JobState } from "../core/types";

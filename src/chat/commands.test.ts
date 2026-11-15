@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { commandText, frontmatter, listCommands, localCommandOutput, parseSlash, rememberInit, slashMessage, useBundledFile, validModel } from "../src/server/commands";
-import { parseSession } from "../src/runs/session";
-import { commandNote, inlineSlashQuery, insertInlineCommand, matchCommands, messageCommand, slashQuery, splitCommandMentions, type SlashCommand } from "../web/src/slashText";
-import { tempDir } from "./support/helpers";
+import { commandText, frontmatter, listCommands, localCommandOutput, parseSlash, rememberInit, slashMessage, useBundledFile, validModel } from "./commands";
+import { parseSession } from "../runs/session";
+import { commandNote, inlineSlashQuery, insertInlineCommand, matchCommands, messageCommand, slashQuery, splitCommandMentions, type SlashCommand } from "../../web/src/slashText";
+import { tempDir } from "../../test/support/helpers";
 
 function write(file: string, text: string) {
   mkdirSync(dirname(file), { recursive: true });

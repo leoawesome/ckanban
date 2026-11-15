@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { Passes } from "../src/server/integrations/passes";
 import { runScript, type ScriptRun } from "../src/server/integrations/script";

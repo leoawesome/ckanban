@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { SessionCache } from "../src/runs/session";
@@ -9,7 +9,7 @@ import { makeSideCaller, parseSideResult, sideCallArgs, type SideCallInput, type
 import { SpendIndex } from "../src/usage/spend";
 import { Store } from "../src/core/store";
 import { simplifiable as webSimplifiable } from "../web/src/simplifyText";
-import { SIMPLIFY_SYSTEM, SIMPLIFY_VERSION, simplifiable } from "../src/server/simplify";
+import { SIMPLIFY_SYSTEM, SIMPLIFY_VERSION, simplifiable } from "../src/chat/simplify";
 import { tempDir } from "./support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { attentionFor, STUCK_ON_QUESTIONS, userWaitReason } from "../src/server/attention";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { stepWait, youWaiting } from "../src/server/main-ticket";
+import { stepWait, youWaiting } from "../src/board/main-ticket";
 import type { SessionSummary } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import type { Ticket } from "../src/core/types";

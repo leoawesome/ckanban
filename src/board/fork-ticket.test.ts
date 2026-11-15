@@ -2,11 +2,11 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { applyRewind } from "../src/server/rewind";
-import { QuickChats } from "../src/server/quickchat";
-import { parseSession } from "../src/runs/session";
-import { tempDir } from "./support/helpers";
-import { board, bus, setup, store, useBoardEnv, FAKE } from "./support/board-env";
+import { applyRewind } from "../chat/rewind";
+import { QuickChats } from "../chat/quickchat";
+import { parseSession } from "../runs/session";
+import { tempDir } from "../../test/support/helpers";
+import { board, bus, setup, store, useBoardEnv, FAKE } from "../../test/support/board-env";
 
 useBoardEnv();
 

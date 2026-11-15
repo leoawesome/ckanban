@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus, type BusEvent } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { DESK_DISALLOWED, DESK_TOOLS, deskDenyRules } from "../src/server/helper/frontdesk";
-import { autoTitle, CONTINUE_TEXT, QuickChats, quickChatNote, UnbilledUsage } from "../src/server/quickchat";
+import { autoTitle, CONTINUE_TEXT, QuickChats, quickChatNote, UnbilledUsage } from "../src/chat/quickchat";
 import { messageCost } from "../src/usage/ticket-usage";
 import { buildArgs } from "../src/runs/runner";
 import { SessionCache } from "../src/runs/session";

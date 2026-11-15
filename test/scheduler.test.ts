@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus, type BusEvent } from "../src/core/events";
 import { fillTitle, Scheduler } from "../src/server/scheduler";
 import { Store } from "../src/core/store";

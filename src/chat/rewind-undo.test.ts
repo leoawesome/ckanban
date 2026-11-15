@@ -2,11 +2,11 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { forkSessionBefore, forkTitle } from "../src/server/fork";
-import { run } from "../src/runs/git";
-import { applyRewind, applyUndo, listSnapshots, takeSnapshot, undoBlocked, UNDO_REFS, type RewindUndo } from "../src/server/rewind";
-import { parseSession } from "../src/runs/session";
-import { tempDir } from "./support/helpers";
+import { forkSessionBefore, forkTitle } from "./fork";
+import { run } from "../runs/git";
+import { applyRewind, applyUndo, listSnapshots, takeSnapshot, undoBlocked, UNDO_REFS, type RewindUndo } from "./rewind";
+import { parseSession } from "../runs/session";
+import { tempDir } from "../../test/support/helpers";
 
 const line = (type: "user" | "assistant", uuid: string, ms: number, text: string, sid = "s1", cwd = "/w") => JSON.stringify({
   type, uuid, sessionId: sid, cwd, timestamp: new Date(ms).toISOString(),
@@ -157,7 +157,7 @@ test("a second rewind replaces the first one's undo", async () => {
 });
 
 test("the undo copies are dropped with the ticket's other saved copies", async () => {
-  const { deleteSnapshots } = await import("../src/server/rewind");
+  const { deleteSnapshots } = await import("./rewind");
   const dir = await project();
   const { sessionFile, entry } = await chat(dir);
   await applyRewind({ dir, ticketId: "t_1", entry, sessionFile, files: true, sessionId: "s1" });
@@ -168,7 +168,7 @@ test("the undo copies are dropped with the ticket's other saved copies", async (
 });
 
 test("a rewind stopped right before the cut (the chat got busy) puts the files back and keeps no undo copies", async () => {
-  const { RewindRefused } = await import("../src/server/rewind");
+  const { RewindRefused } = await import("./rewind");
   const dir = await project();
   const { sessionFile, entry, raw } = await chat(dir);
   writeFileSync(join(dir, "README.md"), "edited by hand\n");

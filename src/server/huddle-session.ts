@@ -10,7 +10,7 @@ import { HuddleError, type Huddles } from "./huddle";
 import { USER_HANDLE } from "./huddle-roster";
 import type { Store } from "../core/store";
 import { toolLabel } from "../runs/subagents";
-import type { ToolDetail } from "./tooldetail";
+import type { ToolDetail } from "../chat/tooldetail";
 import type { HuddleMode, HuddleParticipantKind, HuddleParticipantStatus } from "../core/types";
 
 /** One thing the agent did, in session order. */

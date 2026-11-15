@@ -2,7 +2,7 @@
 // Hand-rolled instead of @modelcontextprotocol/sdk: we only need initialize, tools/list and tools/call.
 import { createHash } from "node:crypto";
 import { hiddenTool, withYouTool } from "../web/src/family";
-import { TOOL_NO_NOTIFY } from "./server/main-ticket";
+import { TOOL_NO_NOTIFY } from "./board/main-ticket";
 import { FRONT_DESK_ENV, HUDDLE_AGENT_ENV, QUICK_CHAT_ENV } from "./core/env";
 import { FEEDBACK_MAX, helperLineText, suggestedLineError } from "./server/helper/line";
 import {
@@ -14,7 +14,7 @@ import { huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, ro
 import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, MAX_TEXT, PLAN_REVIEW, templateLine, TOPIC_MAX, topicInput } from "./server/huddle-templates";
 import { squadProposal } from "./server/squad";
 import { CLAUDE_MESSAGE_GAP_MS, CLAUDE_MESSAGE_MAX, type MessageResult } from "./server/notify";
-import { normalizeTags } from "./server/tags";
+import { normalizeTags } from "./board/tags";
 import { teammateProposal } from "./server/teammate-proposal";
 import { automationProposal } from "./server/automation-proposal";
 import { keysAsk, MAX_ASKED_KEYS } from "./server/ask-keys";

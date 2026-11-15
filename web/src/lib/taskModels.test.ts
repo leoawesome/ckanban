@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { kindDefaults, parseTaskModels } from "../../../src/server/main-ticket";
+import { kindDefaults, parseTaskModels } from "../../../src/board/main-ticket";
 import { learnedVersions, learnModel, useModelVersionsFile } from "../../../src/runs/model-versions";
 import { mainTicketRules } from "../../../src/runs/prompts";
 import { buildArgs } from "../../../src/runs/runner";

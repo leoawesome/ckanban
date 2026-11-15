@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { checkDecision, channelFor, parseDecision, type CheckContext, type ItemState } from "../src/server/helper/decide";
 import { backoffMs, HelperRunner, keptQuietLine, lookBeforeDigest, meetingTime, PRACTICE_STOPPED, reminderCount } from "../src/server/helper/runner";

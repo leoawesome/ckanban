@@ -3,9 +3,9 @@
 import { expect, test } from "bun:test";
 import { BoardClient } from "../src/client";
 import { callTool, type ToolContext } from "../src/mcp-server";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { createServer } from "../src/server/http";
-import { planStep } from "../src/server/plan";
+import { planStep } from "../src/board/plan";
 import type { Plan, Ticket } from "../src/core/types";
 import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "./support/board-env";
 import { tempDir } from "./support/helpers";

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { attentionFor } from "../src/server/attention";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { HelperSettingsStore } from "../src/server/helper/settings";
 import { HUDDLE_HEADER } from "../src/server/huddle-roster";

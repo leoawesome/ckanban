@@ -2,10 +2,10 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ArtifactJob } from "../src/runs/artifact";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { attachmentHeader, copyFileArgv, markdownPage, markdownTitle, revealArgv } from "../src/server/share";
+import { attachmentHeader, copyFileArgv, markdownPage, markdownTitle, revealArgv } from "../src/board/share";
 import { Store } from "../src/core/store";
 import { tempDir } from "./support/helpers";
 

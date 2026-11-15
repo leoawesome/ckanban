@@ -1,6 +1,6 @@
 // A ticket's PRs: replies to its huddle that report a result, and several PRs on one ticket.
 import { afterEach, expect, test } from "bun:test";
-import { store, board, setup, useBoardEnv } from "./support/board-env";
+import { store, board, setup, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 

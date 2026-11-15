@@ -18,7 +18,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, join, sep } from "node:path";
-import type { QuickChat, QuickChatHooks, QuickChatView, RunLimits } from "../quickchat";
+import type { QuickChat, QuickChatHooks, QuickChatView, RunLimits } from "../../chat/quickchat";
 import { describeCron } from "../cron";
 import { describeAt, parseAt } from "../jobs";
 import { addDeskSpend, deskSpendToday } from "../../usage/spend";

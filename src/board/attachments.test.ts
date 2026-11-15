@@ -3,8 +3,8 @@ import { join } from "node:path";
 import {
   AttachmentError, attachmentFile, attachmentType, cleanFileName, FILES_NOTE, IMAGES_NOTE, isAttachmentName, localizeAttachments,
   MAX_ATTACHMENT_BYTES, opensInline, referencedAttachments, saveAttachment, uploadExt, withoutAttachmentNote,
-} from "../src/server/attachments";
-import { tempDir } from "./support/helpers";
+} from "./attachments";
+import { tempDir } from "../../test/support/helpers";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 const NAME = "0123456789abcdef0123456789abcdef.png";

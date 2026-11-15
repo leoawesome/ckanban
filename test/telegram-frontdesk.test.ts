@@ -8,7 +8,7 @@ import { ACTION_TTL_MS } from "../src/server/helper/tgstores";
 import { SEND_AGAIN, TEXT_ONLY } from "../src/server/helper/telegram";
 import { describeAt } from "../src/server/jobs";
 import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../src/server/notify";
-import type { QuickChat, QuickChatHooks, QuickChatView } from "../src/server/quickchat";
+import type { QuickChat, QuickChatHooks, QuickChatView } from "../src/chat/quickchat";
 import { addDeskSpend, addTelegramSpend, deskSpendToday, telegramSpendToday } from "../src/usage/spend";
 import { Store } from "../src/core/store";
 import type { Profile } from "../src/core/types";
@@ -593,7 +593,7 @@ describe("closing in place, files, first message", () => {
 
 describe("through the board's HTTP API", () => {
   test("a front desk request that starts work is held (202, nothing created); Confirm replays it as the user; a missing secret is refused", async () => {
-    const { Board } = await import("../src/server/board");
+    const { Board } = await import("../src/board/board");
     const { createServer } = await import("../src/server/http");
     const api = fakeApi();
     const s = normalizeSettings({}, undefined, false);

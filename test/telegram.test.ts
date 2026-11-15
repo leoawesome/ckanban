@@ -7,7 +7,7 @@ import {
   maskToken, PAIR_TRIES, scrub, TELEGRAM_MAX, TelegramBot, telegramText, type TelegramActions, type TelegramSettings,
 } from "../src/server/helper/telegram";
 import { createServer } from "../src/server/http";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../src/server/notify";
 import { Store } from "../src/core/store";
 import type { Profile } from "../src/core/types";

@@ -6,10 +6,10 @@ import { BoardClient } from "../src/client";
 import { callTool, type ToolContext } from "../src/mcp-server";
 import { attentionFor, boardTitles, ticketAttention } from "../src/server/attention";
 import { createServer } from "../src/server/http";
-import { Linker } from "../src/server/linker";
-import { familyCard, KIND_DEFAULTS, stepName, stepWait, TOOL_NO_NOTIFY, youWaiting } from "../src/server/main-ticket";
-import { statusFacts, statusSections } from "../src/server/feature";
-import { pickRelated } from "../src/server/recall";
+import { Linker } from "../src/board/linker";
+import { familyCard, KIND_DEFAULTS, stepName, stepWait, TOOL_NO_NOTIFY, youWaiting } from "../src/board/main-ticket";
+import { statusFacts, statusSections } from "../src/board/feature";
+import { pickRelated } from "../src/board/recall";
 import type { Ticket } from "../src/core/types";
 import { ticketCommand } from "../src/ticket-cli";
 import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, stopTitle } from "../web/src/familyActions";
@@ -353,7 +353,7 @@ test("list_tickets and the CLI skip tool tickets unless asked; recall and the li
 });
 
 test("a with-you step waiting for the user doesn't wake its main ticket or make the plan stuck", async () => {
-  const { planStep } = await import("../src/server/plan");
+  const { planStep } = await import("../src/board/plan");
   const w = tk("W", { parentId: "M", tool: true, kind: "with_you", status: "review", outcome: "needs_input", runCount: 1 });
   const done = tk("D", { parentId: "M", tool: true, kind: "build", status: "done", outcome: "done", runCount: 1 });
   const plan = { state: "running", wakeups: 0, startedAt: at(0), originalCount: 0, inbox: [], seen: { D: "1:done:" }, retries: {}, awaiting: null } as any;

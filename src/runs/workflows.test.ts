@@ -3,8 +3,8 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board, WORKFLOW_STOPPED_TEXT } from "../server/board";
-import { EFFORTS, runOptions, validEffort } from "../server/commands";
+import { Board, WORKFLOW_STOPPED_TEXT } from "../board/board";
+import { EFFORTS, runOptions, validEffort } from "../chat/commands";
 import { buildArgs } from "./runner";
 import { parseSession, SessionCache } from "./session";
 import {

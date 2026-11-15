@@ -5,7 +5,7 @@ import {
   ticketLine, ticketListText, ticketText, type TicketListQuery, type TicketPatch,
 } from "./client";
 import { AGENT_IDS, AgentRegistry, type AgentId } from "./server/agents";
-import { normalizeTags } from "./server/tags";
+import { normalizeTags } from "./board/tags";
 import { setupBlock, type SetupOutcome } from "./runs/worktree-setup";
 
 export const TICKET_USAGE = `  ckanban profiles     List boards (profiles) and their folders

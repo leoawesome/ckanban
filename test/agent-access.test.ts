@@ -6,7 +6,7 @@ import {
 } from "../src/client";
 import { callTool, handleMessage, TOOLS, type ToolContext } from "../src/mcp-server";
 import { AgentRegistry, readCodexServer, removeCodexServer, setCodexServer } from "../src/server/agents";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { Store } from "../src/core/store";

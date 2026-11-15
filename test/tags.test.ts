@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { callTool, ticketsError, type ToolContext } from "../src/mcp-server";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { Scheduler } from "../src/server/scheduler";
 import { parseNewTickets } from "../src/runs/session";
 import { Store } from "../src/core/store";
-import { normalizeTag as serverNormalizeTag, normalizeTags } from "../src/server/tags";
+import { normalizeTag as serverNormalizeTag, normalizeTags } from "../src/board/tags";
 import { boardTags, hasTags, normalizeTag, parseSearch, tagHue } from "../web/src/tagText";
 import { tempDir } from "./support/helpers";
 

@@ -2,9 +2,9 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { store, bus, board, setup, readArgs, untilSpawned, useBoardEnv, setBoard, FAKE } from "./support/board-env";
-import { Board } from "../src/server/board";
-import { fakes, harness } from "./support/fake-chrome";
+import { store, bus, board, setup, readArgs, untilSpawned, useBoardEnv, setBoard, FAKE } from "../../test/support/board-env";
+import { Board } from "./board";
+import { fakes, harness } from "../../test/support/fake-chrome";
 
 useBoardEnv();
 

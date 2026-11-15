@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { callTool } from "../src/mcp-server";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { fallbackSummary, Huddles, LEGACY_SUMMARY_FILE, summaryFile } from "../src/server/huddle";
 import { HUDDLE_HEADER } from "../src/server/huddle-roster";
 import type { Huddle } from "../src/core/types";

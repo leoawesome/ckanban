@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { store, bus, board, liveSessions, setup, readArgs, untilSpawned, useBoardEnv } from "./support/board-env";
+import { store, bus, board, liveSessions, setup, readArgs, untilSpawned, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 

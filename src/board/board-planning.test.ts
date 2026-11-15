@@ -2,8 +2,8 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { until } from "./support/helpers";
-import { store, bus, board, liveSessions, restartBoard, setup, readArgs, untilSpawned, useBoardEnv } from "./support/board-env";
+import { until } from "../../test/support/helpers";
+import { store, bus, board, liveSessions, restartBoard, setup, readArgs, untilSpawned, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 
@@ -137,7 +137,7 @@ test("streams Claude's text as draft events without persisting them", async () =
 test("prompts get image file paths; deleting the ticket deletes its images", async () => {
   await setup({ git: false });
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]);
-  const { saveAttachment } = await import("../src/server/attachments");
+  const { saveAttachment } = await import("./attachments");
   const inBody = saveAttachment(store.attachmentsDir, "png", png);
   const inComment = saveAttachment(store.attachmentsDir, "png", png);
   const other = saveAttachment(store.attachmentsDir, "png", png);

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
-import { recapAvailable, recapPrompt, sinceLastMessage, transcript } from "../src/server/explain";
+import { recapAvailable, recapPrompt, sinceLastMessage, transcript } from "../src/chat/explain";
 import { createServer } from "../src/server/http";
 import { SessionCache, type SessionEntry } from "../src/runs/session";
 import { READ_TOOLS, sideCallArgs, type SideCallInput, type SideCallResult } from "../src/runs/side-call";

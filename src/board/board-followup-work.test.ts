@@ -3,12 +3,12 @@
 // first step. Old add-on links load as plain family links.
 import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
-import { chatPrompt, followUpRule } from "../src/runs/prompts";
-import { withoutAddOn } from "../src/core/store";
-import type { Ticket } from "../src/core/types";
-import { familyOf, levelOf, parentLink } from "../web/src/family";
-import { followUpFor, followUpPlace, followUpState } from "../web/src/followUp";
-import { store, board, setup, useBoardEnv } from "./support/board-env";
+import { chatPrompt, followUpRule } from "../runs/prompts";
+import { withoutAddOn } from "../core/store";
+import type { Ticket } from "../core/types";
+import { familyOf, levelOf, parentLink } from "../../web/src/family";
+import { followUpFor, followUpPlace, followUpState } from "../../web/src/followUp";
+import { store, board, setup, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 

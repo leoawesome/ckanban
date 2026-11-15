@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { transcript } from "./explain";
+import { transcript } from "../chat/explain";
 import { parseResult } from "../runs/result";
 import type { SessionEntry } from "../runs/session";
 import type { Ticket } from "../core/types";

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { forkSessionFile, rewriteSession } from "../src/server/fork";
-import { tempDir } from "./support/helpers";
+import { forkSessionFile, rewriteSession } from "./fork";
+import { tempDir } from "../../test/support/helpers";
 
 const o = { fromId: "old", toId: "new", fromCwd: "/a/wt", toCwd: "/a/wt2" };
 

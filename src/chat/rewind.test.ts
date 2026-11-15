@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "../src/runs/git";
-import { parseSession } from "../src/runs/session";
+import { run } from "../runs/git";
+import { parseSession } from "../runs/session";
 import {
   changesSince, cutSession, listSnapshots, pruneSnapshots, restoreSnapshot, rewindSessionFile, snapshotFor, takeSnapshot, textKey,
-} from "../src/server/rewind";
-import { filesLine, laterLine, noFilesLine, restoredDraft, rewindOff } from "../web/src/rewindText";
-import { tempDir } from "./support/helpers";
+} from "./rewind";
+import { filesLine, laterLine, noFilesLine, restoredDraft, rewindOff } from "../../web/src/rewindText";
+import { tempDir } from "../../test/support/helpers";
 
 const commit = (dir: string, msg: string) =>
   run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "commit", "-qm", msg], dir);

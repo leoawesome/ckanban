@@ -3,9 +3,9 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { latestBase, run } from "../src/runs/git";
-import { tempDir, until } from "./support/helpers";
-import { board, readArgs, restartBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
+import { latestBase, run } from "../runs/git";
+import { tempDir, until } from "../../test/support/helpers";
+import { board, readArgs, restartBoard, setup, store, untilSpawned, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();
 

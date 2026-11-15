@@ -1,9 +1,9 @@
 // Recall: a run's first prompt lists related past tickets of the board (plain word matching, no model call).
 import { expect, test } from "bun:test";
-import { pickRelated, RECALL_CHARS, RECALL_MAX, recallBlock, words, type RecallRow } from "../src/server/recall";
-import { chatPrompt, firstRunPrompt, freshSessionPrompt } from "../src/runs/prompts";
-import type { Ticket } from "../src/core/types";
-import { board, readArgs, setup, store, useBoardEnv } from "./support/board-env";
+import { pickRelated, RECALL_CHARS, RECALL_MAX, recallBlock, words, type RecallRow } from "./recall";
+import { chatPrompt, firstRunPrompt, freshSessionPrompt } from "../runs/prompts";
+import type { Ticket } from "../core/types";
+import { board, readArgs, setup, store, useBoardEnv } from "../../test/support/board-env";
 
 const row = (id: string, title: string, o: Partial<RecallRow["ticket"]> & { summary?: string | null } = {}): RecallRow => {
   const { summary = null, ...rest } = o;
@@ -148,7 +148,7 @@ test("a RecallIndex kept up to date as tickets change picks what scoring every t
     updatedAt: `2026-10-0${1 + rnd(9)}T10:00:0${v}Z`, lastRunAt: null,
   });
   let rows = Array.from({ length: 120 }, (_, i) => make(i));
-  const index = new (require("../src/server/recall").RecallIndex)();
+  const index = new (require("./recall").RecallIndex)();
   const stamps = new Map<string, number>();
   const check = () => {
     const summaries = new Map(rows.map((r) => [r.ticket.id, r.summary]));

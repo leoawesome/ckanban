@@ -1,7 +1,7 @@
 // A card's costly parts (its links from Claude's comments, the tickets above it) are kept while what they come from
 // is the same: a write to an unrelated ticket doesn't rebuild every card that shows other tickets.
 import { afterAll, expect, test } from "bun:test";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { SessionCache } from "../src/runs/session";

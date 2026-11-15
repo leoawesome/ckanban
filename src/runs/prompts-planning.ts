@@ -1,6 +1,6 @@
 import type { RepoKind } from "./git";
-import { FEATURE_TRAILER } from "../server/feature";
-import { MAX_RETRIES } from "../server/plan";
+import { FEATURE_TRAILER } from "../board/feature";
+import { MAX_RETRIES } from "../board/plan";
 import type { Ticket } from "../core/types";
 import { shellQuote } from "../core/util";
 import type { Question } from "./session";

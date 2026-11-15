@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { RUN_HEADER } from "../src/server/scheduler";
 import { Store } from "../src/core/store";
-import * as server from "../src/server/avatars";
+import * as server from "../src/board/avatars";
 import {
   AVATAR_ACCESSORIES, AVATAR_BACKGROUNDS, AVATAR_DETAILS, AVATAR_EYES, AVATAR_FACES, AVATAR_HAIRS, AVATAR_HATS, avatarFor, avatarKey, CLAUDE_LOOK, claudeName, cleanAvatarLook, cleanClaudeName, defaultAvatar, MAX_CLAUDE_NAME,
   TEAMMATE_LOOKS, YOU_LOOK,

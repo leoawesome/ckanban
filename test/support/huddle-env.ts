@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BoardClient } from "../../src/client";
 import type { ToolContext } from "../../src/mcp-server";
-import { Board } from "../../src/server/board";
+import { Board } from "../../src/board/board";
 import { Bus, type BusEvent } from "../../src/core/events";
 import { createServer } from "../../src/server/http";
 import { Huddles } from "../../src/server/huddle";

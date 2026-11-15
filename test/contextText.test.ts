@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseContextReport } from "../src/server/context-usage";
+import { parseContextReport } from "../src/chat/context-usage";
 import { checkedText, chipText, contextRows, phoneRows, shortPath, tokenText } from "../web/src/contextText";
 
 const report = (name: string) => parseContextReport(readFileSync(join(import.meta.dir, "fixtures", "context", name), "utf8"));

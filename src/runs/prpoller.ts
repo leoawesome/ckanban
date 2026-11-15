@@ -1,8 +1,8 @@
-import type { Board } from "../server/board";
+import type { Board } from "../board/board";
 import { trackedInterval } from "../core/lag";
 import { run } from "./git";
 import { conflictMessage, failureMessage, ghFailedLog, ghMerge, ghPrStatus, mergeBlock } from "./prstatus";
-import { prFinal, ticketPrs, updatePrs } from "../server/prs";
+import { prFinal, ticketPrs, updatePrs } from "../board/prs";
 import type { Store } from "../core/store";
 import type { PrCheck, PrStatus, Ticket, TicketPr } from "../core/types";
 

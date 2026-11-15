@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Bus } from "../src/core/events";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/runs/session";
 import { Store } from "../src/core/store";

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { attentionFor } from "../src/server/attention";
-import { Board } from "../src/server/board";
+import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { HUDDLE_HEADER } from "../src/server/huddle-roster";
 import { createServer } from "../src/server/http";
