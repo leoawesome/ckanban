@@ -1,10 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { afterBackSteps } from "./backEntry";
 import { useViewportFit } from "../lib/sheet";
-import { flushSync } from "react-dom";
 import { markOpened } from "../features/board/cardState";
 import { setLearnedVersions } from "../lib/models";
-import { api, copy, COLUMNS, onReconnect, subscribe, waitsForSlot, type Health, type TicketPage, type InboxItem, type Job, type McpState, type Profile, type Schedule, type Status, type Ticket } from "../lib/api";
+import { api, copy, onReconnect, subscribe, waitsForSlot, type Health, type InboxItem, type Job, type McpState, type Profile, type Schedule, type Status, type Ticket } from "../lib/api";
 import { avatarColor, avatarLetter } from "../features/avatar/avatar";
 import { BugReportDialog } from "../features/settings/BugReportDialog";
 import { AutomationsDialog } from "../features/schedules/AutomationsDialog";
@@ -28,9 +27,8 @@ import { QuickChatPane } from "../features/quickchat/QuickChat";
 import { usePhone } from "../hooks/usePhone";
 import { StatusPill, UsageBox } from "../features/usage/UsagePill";
 import { useUsage } from "../hooks/useUsage";
-import { onlyBaseLayers } from "../lib/layers";
 import { Board, useCollapsedColumns } from "../features/board/Board";
-import { doneCursor, doneDrifted, doneNotDrawn, heldDoneHead, joinsBoard, mergeTickets, reloadAsk, takeReload, unseenDone } from "../features/board/donePaging";
+import { doneNotDrawn, joinsBoard } from "../features/board/donePaging";
 import { pruneCardMemory } from "../features/board/Card";
 import { boardColumnOf, columnNeighbours, columnOrder, nextInColumn, STATUS_MENU } from "../features/board/columns";
 import { ColumnPicker } from "../components/ColumnPicker";
@@ -48,7 +46,6 @@ import { FindLinksDialog } from "../features/ticket/FindLinksDialog";
 import { Select } from "../components/Select";
 import { BoardSwitcher, ShortcutsDialog } from "./Shortcuts";
 import { CommandBar, type CommandAction } from "./CommandBar";
-import { boardDigit, cardDir, cardKey, inDock, isBoardPickerKey, isInboxKey, isTyping, isUndoKey, panelBoardKey, stepBoard, stepCard, type CardPos } from "./keynav";
 import { HintLegend, KeyHint, useHintReveal } from "../components/KeyHint";
 import { teamButtonText } from "../features/huddle/huddleText";
 import { TicketDrawer } from "../features/ticket/TicketDrawer";
@@ -56,20 +53,29 @@ import { clampChatWidth, COLUMN_DEFAULT } from "../features/chat/sideChatLayout"
 import type { PanelId } from "./panelState";
 import { usePanels, useWindowWidth } from "../hooks/usePanels";
 import { PanelsButton } from "./PanelsButton";
-import { toast, Toaster, undoLatest } from "../components/toast";
+import { toast, Toaster } from "../components/toast";
 import { clearArrival, noteServerMove } from "../features/board/arrivals";
 import { SampleOffer } from "../features/board/SampleOffer";
 
 import type { HuddleSeed, TeamRequest } from "../features/team/Team";
 import { liveHuddleCount, useBoardHuddles, useHuddleIdleTick } from "../features/huddle/huddle";
-import { hasOpenPr, runCounts } from "../features/board/boardStats";
+import { runCounts } from "../features/board/boardStats";
 import { ParallelConfirm } from "../features/ticket/ParallelConfirm";
 import { AvatarEditorHost } from "../features/avatar/AvatarEditor";
 import { closeSteps, openDepth } from "../features/board/ticketHistory";
 import { hashMoved, helperApi, messageHash, messagesRoute, MESSAGES_HASH, setHelperStatus, takeReadFromHash, useHelper } from "../features/helper/helper";
 import { backToBoard, backToList, settleMessagesEntry } from "../features/chat/msgNav";
 import { HelperNotice, MessagePage, MessagesHistory } from "../features/chat/Messages";
-import { snoozeBody, snoozeUntil, snoozeWords, type SnoozeLength } from "../lib/snooze";
+import { LAST_PROFILE, SAMPLE_OFFER, NO_VIA, sameMap, FILTERS, type FilterId, DISMISSED, readDismissed, tildePath, quiet, readLast, checkinOffer } from "./appState";
+import { parseHash, hashFor, refocusCard } from "./hash";
+import { useInboxActions } from "./useInboxActions";
+import { useCardMoves } from "./useCardMoves";
+import { useAppKeys } from "./useAppKeys";
+import { useInbox } from "./useInbox";
+import { useBoardData } from "./useBoardData";
+
+// Opened from a tap on an urgent alert about one ticket: mark that message read before the first parseHash.
+takeReadFromHash();
 
 // xterm.js and highlight.js only load once the panel is opened. After an upgrade the old chunk is gone:
 // reload once to get the new build instead of blanking the whole page.
@@ -92,127 +98,6 @@ const panelsModule = (): Promise<PanelsModule> => import("../features/chat/SideP
 const SidePanels = lazy(panelsModule);
 const PhonePanels = lazy(() => panelsModule().then((m) => ({ default: m.PhonePanels })));
 
-const LAST_PROFILE = "ckanban.profile";
-/** Board slug the sample ticket is offered on, until it is started or dismissed. */
-const SAMPLE_OFFER = "ckanban.sample-offer";
-
-/**
- * URL hash is the source of truth for what's open: #/<profile> or #/<profile>/<ticketId>. Pages that aren't a board
- * start with "~" (#/~messages, helper.ts) and leave the board and ticket as they are.
- */
-function parseHash(): { slug: string | null; ticket: string | null } {
-  if (location.hash.startsWith("#/~")) return { slug: null, ticket: null };
-  let path = location.hash.replace(/^#/, "").replace(/\?.*$/, "");
-  try {
-    path = decodeURIComponent(path);
-  } catch {}
-  const [, slug, ticket] = path.split("/");
-  return { slug: slug || null, ticket: ticket || null };
-}
-
-// Opened from a tap on an urgent alert about one ticket: mark that message read before the first parseHash.
-takeReadFromHash();
-
-function hashFor(slug: string | null, ticket?: string | null): string {
-  if (!slug) return "#/";
-  return `#/${encodeURIComponent(slug)}${ticket ? `/${encodeURIComponent(ticket)}` : ""}`;
-}
-
-/** Cards on screen, per expanded column, in board order. */
-function cardGrid(): HTMLElement[][] {
-  return [...document.querySelectorAll<HTMLElement>(".board > .column:not(.collapsed)")]
-    .map((c) => [...c.querySelectorAll<HTMLElement>(".column-body > .sortable-card")]);
-}
-
-function focusedCard(grid: HTMLElement[][]): CardPos | null {
-  const el = (document.activeElement as HTMLElement | null)?.closest?.(".sortable-card");
-  for (let col = 0; col < grid.length; col++) {
-    const row = grid[col].findIndex((c) => c === el);
-    if (row >= 0) return { col, row };
-  }
-  return null;
-}
-
-/** The board card that has the keyboard, if any (its ticket id). */
-function focusedCardId(): string | null {
-  return (document.activeElement as HTMLElement | null)?.closest?.(".sortable-card")?.getAttribute("data-ticket") ?? null;
-}
-
-/** Give a card the keyboard again by ticket id (after it moved to another column, its element is a new one). */
-function refocusCard(id: string) {
-  setTimeout(() => {
-    const el = [...document.querySelectorAll<HTMLElement>(".sortable-card")].find((c) => c.dataset.ticket === id);
-    el?.focus({ preventScroll: true });
-    el?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  });
-}
-
-function focusCard(pos: CardPos | null, grid = cardGrid()) {
-  const col = pos && grid[pos.col];
-  const el = col && col[Math.min(pos.row, col.length - 1)];
-  if (!el) return;
-  el.focus({ preventScroll: true });
-  el.scrollIntoView({ block: "nearest", inline: "nearest" });
-}
-
-/** Board filter chips; several on = tickets matching any of them. */
-const NO_VIA = new Map<string, string>();
-const sameMap = (a: Map<string, string>, b: Map<string, string>) => a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
-
-const FILTERS = [
-  { id: "you", label: "Needs you", test: (t: Ticket) => !!t.attention },
-  { id: "running", label: "Running", test: (t: Ticket) => t.status === "in_progress" || !!t.running },
-  // Only shown while a ticket on the board has one (a plain folder never does).
-  { id: "pr", label: "Review link", test: hasOpenPr },
-] as const;
-type FilterId = (typeof FILTERS)[number]["id"];
-
-const DISMISSED = "ckanban.dismissedBanners";
-function readDismissed(): Set<string> {
-  try {
-    return new Set(JSON.parse(sessionStorage.getItem(DISMISSED) ?? "[]"));
-  } catch {
-    return new Set();
-  }
-}
-
-const tildePath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
-
-/** Background load: retry once after a few seconds, then say so (quietly) instead of failing silently. */
-/** The Inbox's safety reload while the page is shown (live updates may miss a main ticket's change). */
-const INBOX_SAFETY_MS = 60_000;
-/** Least time between two live-update reloads of the Inbox (see refreshInboxSoon). */
-const INBOX_GAP_MS = 3000;
-
-function quiet<T>(load: () => Promise<T>, what: string, set: (v: T) => void) {
-  load().then(set).catch(() => {
-    setTimeout(() => load().then(set).catch(() => toast(`Couldn't load ${what}. It will retry when the connection comes back.`, { tone: "error" })), 3000);
-  });
-}
-
-function readLast(): string | null {
-  try {
-    return localStorage.getItem(LAST_PROFILE);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The one-time offer to set up proactive check-ins: what Claude could check (e.g. "Slack and Linear"), when a connected
- * Claude server for messages, issues, code or a calendar exists, the board has no check-in schedule yet and the user
- * hasn't dismissed it. Null: don't offer.
- */
-function checkinOffer(profile: Profile, mcp: McpState | null, schedules: Schedule[] | null): string | null {
-  if (profile.checkinOfferDismissed || !mcp || !schedules) return null;
-  if (schedules.some((s) => s.quiet || s.tags?.includes("check-in"))) return null;
-  const found: string[] = [];
-  for (const [re, name] of [[/slack/i, "Slack"], [/linear/i, "Linear"], [/github/i, "GitHub"], [/gmail/i, "Gmail"], [/calendar/i, "your calendar"]] as const) {
-    if (mcp.servers.some((x) => x.status === "connected" && re.test(x.name)) && !found.includes(name)) found.push(name);
-  }
-  if (!found.length) return null;
-  return found.length === 1 ? found[0] : `${found.slice(0, -1).join(", ")} and ${found.at(-1)}`;
-}
 
 export function App() {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
@@ -354,161 +239,18 @@ export function App() {
 
   const slugRef = useRef(slug);
   slugRef.current = slug;
-  // The board loads its unfinished work first; Done arrives a page at a time when its column is shown, and finished
-  // tickets also come in from the search and when opened directly (donePaging.ts, server ticketScope.ts).
-  // Done cards the server has that aren't loaded: the Done count adds them, and while some are left Done can load more.
-  const [doneUnseen, setDoneUnseen] = useState(0);
-  // Ids of the Done cards that came by page (the next page starts after the last of them: donePaging.ts doneCursor),
-  // and finished tickets fetched by id or search: a reload asks for them again so they stay.
-  const donePaged = useRef(new Set<string>());
-  const extraIds = useRef(new Set<string>());
-  const [doneLoading, setDoneLoading] = useState(false);
-  const doneLoadingRef = useRef(false);
-  const doneUnseenRef = useRef(0);
-  // The list as last drawn (or set by a page): reloads and pages work out what to ask from it.
-  const ticketsRef = useRef<Ticket[]>(tickets);
-  ticketsRef.current = tickets;
-  /**
-   * Adds a piece of the board's tickets (late answers for a board no longer shown are dropped). reload: the board's
-   * unfinished work plus Done's first page (or every paged card: ask.full), fetched again (takeReload).
-   */
-  const takeTickets = useCallback((board: string, page: TicketPage, reload?: { done: number; ids: string[]; full: boolean }) => {
-    if (slugRef.current !== board) return false;
-    // A reload applies at once (flushSync), so loadTickets reads the Done count it left right after.
-    const apply = reload ? flushSync : (f: () => void) => f();
-    apply(() => setTickets((cur) => {
-      let next: Ticket[];
-      if (reload) {
-        const r = takeReload(cur, page.tickets, donePaged.current, extraIds.current, reload);
-        next = r.tickets;
-        donePaged.current = r.paged;
-        // Asked extras the answer lacks were deleted: stop asking for them.
-        const got = new Set(page.tickets.map((t) => t.id));
-        for (const id of reload.ids) if (!got.has(id)) extraIds.current.delete(id);
-      } else next = mergeTickets(cur, page.tickets);
-      // Counted against the list it lands in (events may have changed it since the request went out).
-      doneUnseenRef.current = unseenDone(page.doneTotal, next);
-      setDoneUnseen(doneUnseenRef.current);
-      ticketsRef.current = next;
-      return next;
-    }));
-    return true;
-  }, []);
-  // A late answer for a board no longer shown is dropped (it would show that board's cards here). A reload (reconnect,
-  // snooze end, failed move) asks only for unfinished work and Done's first page, not every Done page scrolled so far
-  // (8.7 MB at 9,500 cards): the Done cards already loaded stay, and unchanged tickets keep their object (no redraw).
-  // When the server's fingerprint of Done down to the cursor then disagrees with the cards held (deleted, finished,
-  // dropped or reordered above it while away), it asks once more for every paged card and drops the ones gone. touched: a failed move's card, found wherever it is.
-  const loadTickets = useCallback(async (board: string, touched: string[] = [], full = false): Promise<void> => {
-    const ask = reloadAsk(ticketsRef.current, donePaged.current, extraIds.current, touched, full);
-    const unseenBefore = doneUnseenRef.current;
-    const page = await api.boardTickets(board, { done: ask.done, ids: ask.ids, after: ask.after });
-    if (!takeTickets(board, page, ask)) return;
-    setLoadedSlug(board);
-    const heldHead = ask.after ? heldDoneHead(ticketsRef.current, ask.after) : null;
-    if (doneDrifted(ask, page.doneHead, heldHead, unseenBefore, doneUnseenRef.current)) return loadTickets(board, touched, true);
-  }, [takeTickets]);
-  const loadMoreDone = useCallback(() => {
-    const board = slugRef.current;
-    if (!board || doneLoadingRef.current || doneUnseenRef.current <= 0) return;
-    doneLoadingRef.current = true;
-    setDoneLoading(true);
-    const at = doneCursor(ticketsRef.current, donePaged.current);
-    api.doneTickets(board, at.offset, at.after).then((page) => {
-      if (slugRef.current !== board) return;
-      for (const t of page.tickets) donePaged.current.add(t.id);
-      takeTickets(board, page);
-      const unseen = unseenDone(page.doneTotal, ticketsRef.current);
-      // Nothing after the cursor though the count says more: the held cards are off (a card moved up in Done while
-      // the board wasn't looking). Ask again for every paged card, which also brings the count right.
-      if (!page.tickets.length && unseen > 0) return loadTickets(board, [], true);
-    }).catch((e) => toast(`Couldn't load more of Done: ${(e as Error).message}`, { tone: "error" })).finally(() => {
-      doneLoadingRef.current = false;
-      setDoneLoading(false);
-    });
-  }, [takeTickets, loadTickets]);
-  /** Finished tickets fetched outside Done's pages (search finds, a ticket opened by link): kept on reloads. */
-  const takeExtra = useCallback((board: string, page: TicketPage) => {
-    if (!takeTickets(board, page)) return;
-    for (const t of page.tickets) if (t.status === "done") extraIds.current.add(t.id);
-  }, [takeTickets]);
-  const loadSchedules = useCallback((board: string) => api.schedules(board).then((list) => {
-    // Ignore a late answer for a board we already left.
-    if (slugRef.current === board) setSchedules(list);
-  }).catch(() => {}), []);
-  const loadJobs = useCallback((board: string) => api.jobs(board).then((list) => {
-    if (slugRef.current === board) setJobs(list);
-  }).catch(() => {}), []);
-  // Fires and ticket changes move "next run", "running" and errors: refetch for the computed fields.
-  const refreshSchedulesSoon = useCallback((board: string) => {
-    if (schedulesTimer.current) return;
-    schedulesTimer.current = setTimeout(() => {
-      schedulesTimer.current = null;
-      loadSchedules(board);
-    }, 300);
-  }, [loadSchedules]);
+  const {
+    doneLoading, donePaged, doneUnseen, doneUnseenRef, extraIds, loadJobs, loadMoreDone, loadSchedules, loadTickets,
+    refreshSchedulesSoon, setDoneUnseen, takeExtra, ticketsRef,
+  } = useBoardData({
+    schedulesTimer, setJobs, setLoadedSlug, setSchedules, setTickets, slugRef, tickets,
+  });
 
-  const [snoozed, setSnoozed] = useState<InboxItem[]>([]);
-  const loadInbox = useCallback(() => quiet(api.inbox, "the inbox", (list) => {
-    setInbox(list.filter((i) => !i.snoozedUntil));
-    setSnoozed(list.filter((i) => i.snoozedUntil));
-    setInboxLoaded(true);
-  }), []);
-  // Live updates refresh the Inbox, but at most one request at a time and one every INBOX_GAP_MS: the Inbox looks at
-  // every ticket on every board, and with several runs going, ticket updates arrive many times a second (each one
-  // used to reload it, which kept the daemon busy and the whole board slow).
-  // What the Inbox shows of each ticket in it (title, attention, snooze), from the last ticket event: an event that
-  // leaves this the same, for a ticket in the Inbox or not, doesn't reload it. Holds only tickets in the Inbox.
-  const inboxShown = useRef(new Map<string, string>());
-  const inboxLists = useRef<{ inbox: InboxItem[]; snoozed: InboxItem[] }>({ inbox: [], snoozed: [] });
-  const inboxHas = useCallback((profile: string, id: string) => inboxShown.current.has(`${profile}/${id}`)
-    || [...inboxLists.current.inbox, ...inboxLists.current.snoozed].some((i) => i.profile === profile && i.id === id), []);
-  const inboxMayChange = useCallback((profile: string, t: Ticket) => {
-    const key = `${profile}/${t.id}`;
-    const shows = t.attention || t.snoozed ? JSON.stringify([t.title, t.attention ?? null, t.snoozed ?? null]) : "";
-    const was = inboxShown.current.get(key);
-    if (shows) inboxShown.current.set(key, shows);
-    else inboxShown.current.delete(key);
-    if (was !== undefined) return was !== shows;
-    // First event for it: it changes the Inbox if it is in it now or joins it.
-    return !!shows || inboxHas(profile, t.id);
-  }, [inboxHas]);
-  const inboxBusy = useRef(false);
-  const inboxAgain = useRef(false);
-  const inboxLast = useRef(0);
-  const refreshInboxSoon = useCallback(() => {
-    if (inboxBusy.current) {
-      inboxAgain.current = true;
-      return;
-    }
-    if (inboxTimer.current) return;
-    const wait = Math.max(400, inboxLast.current + INBOX_GAP_MS - Date.now());
-    inboxTimer.current = setTimeout(() => {
-      inboxTimer.current = null;
-      inboxBusy.current = true;
-      inboxAgain.current = false;
-      inboxLast.current = Date.now();
-      const done = () => {
-        inboxBusy.current = false;
-        if (inboxAgain.current) refreshInboxSoon();
-      };
-      api.inbox().then((list) => {
-        setInbox(list.filter((i) => !i.snoozedUntil));
-        setSnoozed(list.filter((i) => i.snoozedUntil));
-        setInboxLoaded(true);
-      }).catch(() => {}).finally(done);
-    }, wait);
-  }, []);
-
-  // Live updates reload the Inbox only when a ticket's own attention changes; a main ticket's comes from its tasks, which
-  // an event may not carry. A slow reload while the page is shown (and on coming back to it) catches what they miss.
-  useEffect(() => {
-    const visible = () => document.visibilityState === "visible";
-    const timer = setInterval(() => { if (visible()) refreshInboxSoon(); }, INBOX_SAFETY_MS);
-    const back = () => { if (visible()) refreshInboxSoon(); };
-    document.addEventListener("visibilitychange", back);
-    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", back); };
-  }, [refreshInboxSoon]);
+  const {
+    inboxHas, inboxLists, inboxMayChange, loadInbox, refreshInboxSoon, setSnoozed, snoozed,
+  } = useInbox({
+    inboxTimer, setInbox, setInboxLoaded,
+  });
 
   useEffect(() => {
     loadProfiles().catch((e) => setError(e.message));
@@ -678,129 +420,13 @@ export function App() {
     setOpenId(null);
     setSlug(to);
   }, []);
-  // Latest values for the window key handler below, which is bound once per dialog state.
-  const live = useRef({ profiles, tickets, markDone: (_id: string) => {}, toggleStar: (_id: string) => {}, togglePin: (_id: string) => {}, inboxCount: 0 });
-
-  // Shortcuts: N new ticket, / search, ? cheatsheet, Ctrl+` Terminal, F Files, C Claude, T Team (each opens or focuses its side panel),
-  // ⌘K command bar (tickets on every board, actions, boards), I the Inbox, U the newest toast's Undo,
-  // B or ⌘B board picker, [ ] previous / next board, 1…9 board N, J/K/H/L or arrows select a card;
-  // on a focused card S stars, P pins or unpins, M moves to a column, D marks a Review card done.
-  // With a ticket panel open (and it has the keyboard) only N, ?, B, F, C, T, U, ⌘K and ⌘B; single keys stay quiet while
-  // typing and inside the side panels. Esc is handled by the panel and dialogs (one layer at a time, see layers.ts).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "`") {
-        e.preventDefault();
-        if (slug) openPanel("terminal");
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
-        if ((e.target as HTMLElement | null)?.closest?.(".xterm")) return;
-        e.preventDefault();
-        // Works without a board too, and over the ticket panel (its own entries join the list); a second ⌘K closes the bar.
-        const free = onlyBaseLayers();
-        setCmdCard(focusedCardId());
-        setCommandBar((o) => (o ? false : free));
-        return;
-      }
-      const boards = live.current.profiles ?? [];
-      if (isBoardPickerKey(e)) {
-        if ((e.target as HTMLElement | null)?.closest?.(".xterm")) return;
-        e.preventDefault();
-        // Like ⌘K: works from a text field and over the ticket panel too, and a second ⌘B closes the picker.
-        const free = onlyBaseLayers();
-        setBoardSwitcher((o) => (o ? false : free && boards.length > 0));
-        return;
-      }
-      const at = boards.findIndex((p) => p.slug === slug);
-      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e) || inDock(e)) return;
-      // U: the newest toast's Undo (Moved…, Snoozed…), from the board, the ticket panel or the open Inbox; not over a dialog.
-      if (isUndoKey(e)) {
-        if (!document.querySelector(".overlay") && undoLatest()) e.preventDefault();
-        return;
-      }
-      if (profileDialog || newTicket || connections || schedulesOpen || automationsOpen || !onlyBaseLayers() || document.querySelector(".overlay")) return;
-      if (openId) {
-        // The ticket panel has the keyboard (nothing above it, nothing typed into): N, ? and B still work.
-        const k = e.defaultPrevented ? null : panelBoardKey(e);
-        if (!k) return;
-        e.preventDefault();
-        if (k === "new") { if (slug) setNewTicket(true); }
-        else if (k === "shortcuts") setShortcuts(true);
-        else if (k === "files" || k === "team") { if (slug) openPanel(k); }
-        else if (k === "claude") { if (slug) openChat(); }
-        else if (boards.length) setBoardSwitcher(true);
-        return;
-      }
-      // Plain 1…9 (Alt+digit is taken by Chrome's tab switching); the ticket panel's questions form uses digits too.
-      const digit = e.shiftKey || e.isComposing ? null : boardDigit(e.code);
-      if (digit !== null) {
-        if (!boards[digit]) return;
-        e.preventDefault();
-        switchBoard(boards[digit].slug);
-        return;
-      }
-      const dir = e.shiftKey && e.key.startsWith("Arrow") ? null : cardDir(e.key);
-      if (dir) {
-        // A picked-up card (Space) moves with the arrows instead: leave those to the drag.
-        if (!slug || e.defaultPrevented || document.querySelector(".sortable-card[aria-pressed='true']")) return;
-        // Arrows on a focused button or menu trigger belong to it; J/K/H/L work from anywhere.
-        const focus = document.activeElement;
-        if (e.key.startsWith("Arrow") && focus && focus !== document.body && !focus.closest(".sortable-card")) return;
-        const grid = cardGrid();
-        const next = stepCard(grid.map((c) => c.length), focusedCard(grid), dir);
-        if (!next) return;
-        e.preventDefault();
-        focusCard(next, grid);
-        return;
-      }
-      // S, P, M and D on a focused card (elsewhere they do nothing).
-      const card = cardKey(e);
-      const cardId = card && focusedCardId();
-      if (card && cardId) {
-        e.preventDefault();
-        if (card === "star") live.current.toggleStar(cardId);
-        else if (card === "pin") live.current.togglePin(cardId);
-        else if (card === "move") setMoveAsk(cardId);
-        else live.current.markDone(cardId);
-        return;
-      }
-      if (isInboxKey(e)) {
-        if (!live.current.inboxCount) return;
-        e.preventDefault();
-        setInboxRequest(Date.now());
-      } else if (e.key === "n" || e.key === "N") {
-        e.preventDefault();
-        if (slug) setNewTicket(true);
-      } else if (e.key === "/") {
-        e.preventDefault();
-        searchRef.current?.focus();
-      } else if (e.key === "?") {
-        e.preventDefault();
-        setShortcuts(true);
-      } else if (e.key === "c" || e.key === "C") {
-        e.preventDefault();
-        if (slug) openChat();
-      } else if (e.key === "f" || e.key === "F") {
-        if (!slug) return;
-        e.preventDefault();
-        openPanel("files");
-      } else if (e.key === "t" || e.key === "T") {
-        e.preventDefault();
-        if (slug) openPanel("team");
-      } else if (e.key === "b" || e.key === "B") {
-        e.preventDefault();
-        if (boards.length) setBoardSwitcher(true);
-      } else if (e.key === "[" || e.key === "]") {
-        const to = boards[stepBoard(boards.length, at, e.key === "]" ? 1 : -1)];
-        if (!to) return;
-        e.preventDefault();
-        switchBoard(to.slug);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [openId, profileDialog, newTicket, connections, schedulesOpen, automationsOpen, slug, switchBoard]);
+  const {
+    live,
+  } = useAppKeys({
+    automationsOpen, connections, newTicket, openChat, openId, openPanel, profileDialog, profiles, schedulesOpen,
+    searchRef, setBoardSwitcher, setCmdCard, setCommandBar, setInboxRequest, setMoveAsk, setNewTicket, setShortcuts,
+    slug, switchBoard, tickets,
+  });
 
   const runInTerminal = (text: string) => {
     openPanel("terminal");
@@ -1045,71 +671,11 @@ export function App() {
     },
   }), [profiles, slug]);
 
-  // A feature card (main ticket with tool tickets) dragged to Backlog or Done: one confirm first (familyActions.ts).
-  const [parkAsk, setParkAsk] = useState<{ id: string; status: "backlog" | "done"; order?: number } | null>(null);
-  const move = async (id: string, status: Status, order?: number, undo = true, confirmed = false) => {
-    const board = slug!;
-    const before = tickets.find((t) => t.id === id);
-    if (!confirmed && before && parkNeedsConfirm(before, status)) {
-      setParkAsk({ id, status: status as "backlog" | "done", order });
-      return;
-    }
-    // You moved it yourself: it isn't "new" where it lands.
-    clearArrival(id);
-    setTickets((ts) => ts.map((t) => (t.id === id ? { ...t, status, ...(order === undefined ? {} : { order }) } : t)));
-    try {
-      await api.updateTicket(board, id, order === undefined ? { status } : { status, order });
-      if (undo && before && before.status !== status) {
-        const label = COLUMNS.find((c) => c.id === status)?.label ?? status;
-        toast(<>Moved <b>{before.title}</b> to {label}</>, {
-          action: { label: "Undo", run: () => { if (slugRef.current === board) move(id, before.status, before.order, false); } },
-        });
-      }
-    } catch (e: any) {
-      setError(`Couldn't move the ticket: ${e.message}`);
-      // Its id goes along: a Done card beyond the first page comes back where it was.
-      loadTickets(board, [id]).catch(() => {});
-    }
-  };
-
-  // D on a focused Review card; focus stays at the same spot on the board for the next key.
-  const markDone = (id: string) => {
-    if (tickets.find((t) => t.id === id)?.status !== "review") return;
-    const pos = focusedCard(cardGrid());
-    void move(id, "done");
-    setTimeout(() => focusCard(pos));
-  };
-  // S on a focused card: star / unstar (shows at once, the server confirms).
-  const toggleStar = (id: string) => {
-    const t = tickets.find((x) => x.id === id);
-    const board = slug;
-    if (!t || !board) return;
-    const important = !t.important;
-    setTickets((ts) => ts.map((x) => (x.id === id ? { ...x, important } : x)));
-    api.updateTicket(board, id, { important }).catch((e) => {
-      setError(`Couldn't ${important ? "star" : "unstar"} the ticket: ${e.message}`);
-      loadTickets(board, [id]).catch(() => {});
-    });
-  };
-  // 📌 Pin to the top of its column, or unpin (card button, P, ticket panel, ⌘K): shows at once, with Undo; Done cards can't be pinned.
-  const pin = (id: string, on: boolean, undo = true) => {
-    const t = live.current.tickets.find((x) => x.id === id);
-    const board = slug;
-    if (!t || !board || (on && t.status === "done") || on === !!t.pinnedAt) return;
-    setTickets((ts) => ts.map((x) => (x.id === id ? { ...x, pinnedAt: on ? new Date().toISOString() : null } : x)));
-    api.updateTicket(board, id, { pinned: on }).then(() => {
-      if (undo) toast(<>{on ? "Pinned" : "Unpinned"} <b>{t.title}</b></>, {
-        action: { label: "Undo", run: () => { if (slugRef.current === board) pin(id, !on, false); } },
-      });
-    }, (e) => {
-      setError(`Couldn't ${on ? "pin" : "unpin"} the ticket: ${e.message}`);
-      loadTickets(board, [id]).catch(() => {});
-    });
-  };
-  const togglePin = (id: string) => {
-    const t = tickets.find((x) => x.id === id);
-    if (t) pin(id, !t.pinnedAt);
-  };
+  const {
+    markDone, move, parkAsk, pin, setParkAsk, togglePin, toggleStar,
+  } = useCardMoves({
+    live, loadTickets, setError, setTickets, slug, slugRef, tickets,
+  });
   live.current = { profiles, tickets, markDone, toggleStar, togglePin, inboxCount: inbox.length + snoozed.length };
 
   const mcpAttention = mcp?.servers.filter((s) => s.attention).length ?? 0;
@@ -1199,82 +765,11 @@ export function App() {
     .map((i) => ({ ...i, separator: false }));
   const menuAlert = scheduleFails > 0 || mcpAttention > 0;
   const menuFooter = version && version.version !== "dev" ? `ckanban v${version.version} · by Leo` : "by Leo";
-  // Inbox triage on any board: the entry leaves the list (and the counts) at once, the server confirms.
-  const inboxDone = async (i: InboxItem) => {
-    setInbox((l) => l.filter((x) => x !== i));
-    setSnoozed((l) => l.filter((x) => x !== i));
-    if (i.profile === slug) return move(i.id, "done").finally(loadInbox);
-    try {
-      const before = await api.ticket(i.profile, i.id).catch(() => null);
-      await api.updateTicket(i.profile, i.id, { status: "done" });
-      toast(<>Moved <b>{i.title}</b> to Done</>, before && before.status !== "done" ? {
-        action: {
-          label: "Undo",
-          run: () => void api.updateTicket(i.profile, i.id, { status: before.status, order: before.order }).then(loadInbox,
-            (e: any) => setError(`Couldn't move the ticket back: ${e.message}`)),
-        },
-      } : undefined);
-    } catch (e: any) {
-      setError(`Couldn't move the ticket: ${e.message}`);
-      loadInbox();
-    }
-  };
-  const inboxSnooze = async (i: InboxItem, on: boolean, len: SnoozeLength = "day") => {
-    const until = snoozeUntil(len);
-    if (on) {
-      setInbox((l) => l.filter((x) => x !== i));
-      setSnoozed((l) => [...l, { ...i, snoozedUntil: until }]);
-    } else {
-      setSnoozed((l) => l.filter((x) => x !== i));
-      setInbox((l) => [...l, { ...i, snoozedUntil: undefined }]);
-    }
-    if (i.profile === slug) setTickets((ts) => ts.map((t) => (t.id === i.id ? { ...t, attention: on ? null : i.attention, snoozed: on ? { attention: i.attention, until } : null } : t)));
-    try {
-      const t = await (on ? api.snooze(i.profile, i.id, snoozeBody(len)) : api.unsnooze(i.profile, i.id));
-      const merge = (t: Ticket) => { if (i.profile === slugRef.current) setTickets((ts) => ts.map((x) => (x.id === t.id ? { ...x, ...t } : x))); };
-      if (on) toast(<>Snoozed <b>{i.title}</b> {snoozeWords(len)}</>, { action: { label: "Undo", run: () => void api.unsnooze(i.profile, i.id).then((t) => { merge(t); loadInbox(); }, () => {}) } });
-      merge(t);
-    } catch (e: any) {
-      setError(`Couldn't ${on ? "snooze" : "unsnooze"} the ticket: ${e.message}`);
-      if (i.profile === slugRef.current) loadTickets(i.profile).catch(() => {});
-    }
-    loadInbox();
-  };
-  /** Snooze all (the Inbox's Older group): each for a day, one toast with one Undo. */
-  const inboxSnoozeAll = async (list: InboxItem[]) => {
-    if (!list.length) return;
-    const until = new Date(Date.now() + 24 * 3600_000).toISOString();
-    const keys = new Set(list.map((i) => `${i.profile}/${i.id}`));
-    const hit = (x: InboxItem) => keys.has(`${x.profile}/${x.id}`);
-    setInbox((l) => l.filter((x) => !hit(x)));
-    setSnoozed((l) => [...l.filter((x) => !hit(x)), ...list.map((i) => ({ ...i, snoozedUntil: until }))]);
-    const here = new Map(list.filter((i) => i.profile === slug).map((i) => [i.id, i]));
-    if (here.size) setTickets((ts) => ts.map((t) => {
-      const i = here.get(t.id);
-      return i ? { ...t, attention: null, snoozed: { attention: i.attention, until } } : t;
-    }));
-    const done = await Promise.allSettled(list.map((i) => api.snooze(i.profile, i.id)));
-    const ok = list.filter((_, n) => done[n].status === "fulfilled");
-    if (ok.length < list.length) setError(`Couldn't snooze ${list.length - ok.length} of ${list.length} tickets.`);
-    if (ok.length) {
-      toast(<>Snoozed {ok.length} {ok.length === 1 ? "ticket" : "tickets"} for a day</>, {
-        action: {
-          label: "Undo",
-          run: () => void Promise.allSettled(ok.map((i) => api.unsnooze(i.profile, i.id))).then(() => {
-            loadInbox();
-            if (slugRef.current) loadTickets(slugRef.current).catch(() => {});
-          }),
-        },
-      });
-    }
-    if (slug) loadTickets(slug).catch(() => {});
-    loadInbox();
-  };
-
-  const openFrom = (board: string, id: string) => {
-    if (board !== slug) setSlug(board);
-    openTicket(id, board);
-  };
+  const {
+    inboxDone, inboxSnooze, inboxSnoozeAll, openFrom,
+  } = useInboxActions({
+    loadInbox, loadTickets, move, openTicket, setError, setInbox, setSlug, setSnoozed, setTickets, slug, slugRef,
+  });
 
   // The helper's part of the Inbox and the phone view (helper.ts): status, "Messages, N new", Should have pinged me.
   const inboxHelper: InboxHelper | undefined = helper.status ? {

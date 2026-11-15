@@ -7,7 +7,10 @@ import { browserStore, draftKey, save } from "../../lib/drafts";
 import { toast } from "../../components/toast";
 
 /** Chat's rewind, Undo rewind and Fork from here (moved from Chat.tsx). */
-export function useChatRewind({ composer, draft, onFilesChanged, onOpenTicket, queued, reload, running, setDraft, setPage, slug, stickToBottom, ticket }: {
+export function useChatRewind({
+  composer, draft, onFilesChanged, onOpenTicket, queued, reload, running, setDraft, setPage, slug, stickToBottom,
+  ticket,
+}: {
   composer: RefObject<HTMLTextAreaElement>;
   draft: string;
   onFilesChanged: (() => void) | undefined;

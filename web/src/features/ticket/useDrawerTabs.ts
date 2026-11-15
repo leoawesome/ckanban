@@ -10,7 +10,9 @@ import { useShareNotices } from "../../lib/share";
 import { useTicketUsage } from "../usage/UsagePanel";
 
 /** The ticket panel's tabs: which show, the open one, its link, and what they count (moved from TicketDrawer.tsx). */
-export function useDrawerTabs({ children, familySize, huddleState, linked0, phone, setTab, slug, tabPick, ticket, tickets }: {
+export function useDrawerTabs({
+  children, familySize, huddleState, linked0, phone, setTab, slug, tabPick, ticket, tickets,
+}: {
   children: Ticket[];
   familySize: number;
   huddleState: HuddleState;

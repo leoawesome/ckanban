@@ -4,7 +4,9 @@ import { recentOutputs } from "../files/outputsOnce";
 import { type DrawerTab } from "../../app/keynav";
 
 /** The ticket panel's tab bar scroll, outputs count and title/description sync (moved from TicketDrawer.tsx). */
-export function useDrawerSync({ editing, setBaseBody, setBody, setLinked, setOutputCount, setTitle, slug, tab, tabs, ticket, titleRef }: {
+export function useDrawerSync({
+  editing, setBaseBody, setBody, setLinked, setOutputCount, setTitle, slug, tab, tabs, ticket, titleRef,
+}: {
   editing: boolean;
   setBaseBody: Dispatch<SetStateAction<string>>;
   setBody: Dispatch<SetStateAction<string>>;
