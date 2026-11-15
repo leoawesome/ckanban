@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { caffeinateArgv, StayAwake, type Hold } from "../src/server/awake";
+import { caffeinateArgv, StayAwake, type Hold } from "./awake";
 
 /** A stand-in for spawn: records each hold; end() makes one exit on its own. */
 function fakeSpawn() {

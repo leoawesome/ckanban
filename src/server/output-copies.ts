@@ -16,7 +16,7 @@
 // real path. The walk is shallow (MAX_DEPTH) and stops at what it removes; removal runs off the event loop (fs.promises).
 import { lstat, readdir, realpath, rm } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
-import { run } from "./git";
+import { run } from "../runs/git";
 import { pauser } from "../core/lag";
 
 /** Installed or cached files: removed wherever they sit in a helper's folder. */

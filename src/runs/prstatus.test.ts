@@ -1,10 +1,10 @@
 import { beforeEach, expect, test } from "bun:test";
-import { Board } from "../src/server/board";
-import { Bus } from "../src/core/events";
-import { mergePr, PrError, refreshPr, resolveConflicts, sendFailures } from "../src/server/prpoller";
-import { actionsIds, conflictMessage, failureMessage, mergeBlock, parsePrStatus, PER_CHECK_LOG, TOTAL_LOG } from "../src/server/prstatus";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
+import { Board } from "../server/board";
+import { Bus } from "../core/events";
+import { mergePr, PrError, refreshPr, resolveConflicts, sendFailures } from "./prpoller";
+import { actionsIds, conflictMessage, failureMessage, mergeBlock, parsePrStatus, PER_CHECK_LOG, TOTAL_LOG } from "./prstatus";
+import { Store } from "../core/store";
+import { tempDir } from "../../test/support/helpers";
 
 const URL = "https://github.com/x/y/pull/7";
 const run = (name: string, conclusion: string | null, status = "COMPLETED", job = "11") => ({
@@ -197,7 +197,7 @@ test("conflict message names the base branch and keeps force pushes on the ticke
 });
 
 test("the UI's merge guard matches the server", async () => {
-  const web = await import("../web/src/prText");
+  const web = await import("../../web/src/prText");
   const cases = [
     raw(), raw({ statusCheckRollup: [] }), raw({ state: "MERGED" }), raw({ state: "CLOSED" }),
     raw({ statusCheckRollup: [run("test", "FAILURE"), run("lint", "FAILURE")] }), raw({ statusCheckRollup: [run("test", null, "QUEUED")] }),
@@ -208,8 +208,8 @@ test("the UI's merge guard matches the server", async () => {
 });
 
 test("the panel's PR list: old tickets, repo, number, summary, and the same main PR as the server", async () => {
-  const web = await import("../web/src/prText");
-  const { ticketPrs, mainPr } = await import("../src/server/prs");
+  const web = await import("../../web/src/prText");
+  const { ticketPrs, mainPr } = await import("../server/prs");
   expect(web.ticketPrs({ prUrl: URL, pr: parsePrStatus(URL, raw({ baseRefName: "dev" })) })).toEqual([{ url: URL, state: "OPEN", base: "dev" }]);
   expect(web.ticketPrs({ prUrl: null })).toEqual([]);
   expect(web.prRepo("https://github.com/respond-io/respond-io-voice/pull/392")).toBe("respond-io-voice");

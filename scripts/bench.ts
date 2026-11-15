@@ -20,7 +20,7 @@ import { Board } from "../src/server/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { startLagMonitor } from "../src/core/lag";
-import { pollSessions, primeSessions, SessionCache } from "../src/server/session";
+import { pollSessions, primeSessions, SessionCache } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import type { Status } from "../src/core/types";
 

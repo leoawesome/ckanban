@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { liveSessionMatch } from "./claude";
-import { run } from "./git";
+import { liveSessionMatch } from "../runs/claude";
+import { run } from "../runs/git";
 import { withUtf8Locale } from "../core/locale";
 
 /** Bun ≥ 1.3.5 can spawn processes on a pseudo-terminal (`Bun.spawn({ terminal })`). */

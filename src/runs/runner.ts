@@ -1,6 +1,6 @@
 import { runDisallowed } from "./connectors";
 import { findClaude } from "./claude";
-import { NO_EDIT_TOOLS } from "./huddle-roster";
+import { NO_EDIT_TOOLS } from "../server/huddle-roster";
 import type { BackgroundTask } from "../core/types";
 
 export interface RunOutput {

@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "../src/server/git";
+import { run } from "../src/runs/git";
 import { tempDir } from "./support/helpers";
 import { store, board, setup, readArgs, untilSpawned, replays, useBoardEnv } from "./support/board-env";
 

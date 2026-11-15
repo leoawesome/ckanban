@@ -11,7 +11,7 @@ import { sinceLastMessage, transcript } from "../src/server/explain";
 import { threadItemText, ticketBody } from "../src/server/integrations/ticket-text";
 import { corrections } from "../src/server/lessons";
 import { LoopManager, type LoopInput } from "../src/server/loops";
-import { parseSession, type SessionSummary } from "../src/server/session";
+import { parseSession, type SessionSummary } from "../src/runs/session";
 import { board, bus, FAKE, readArgs, replays, restartBoard, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
 import { tempDir, until } from "./support/helpers";
 

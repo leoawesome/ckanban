@@ -1,4 +1,4 @@
-import type { Board } from "./board";
+import type { Board } from "../server/board";
 import { trackedInterval } from "../core/lag";
 import type { Store } from "../core/store";
 

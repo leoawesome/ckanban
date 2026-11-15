@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FILES_NOTE, IMAGES_NOTE } from "../src/server/attachments";
-import { Bus, type BusEvent } from "../src/core/events";
-import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessionsSliced, scanSessionFiles, scanSessionFilesAsync } from "../src/server/session";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
+import { FILES_NOTE, IMAGES_NOTE } from "../server/attachments";
+import { Bus, type BusEvent } from "../core/events";
+import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessionsSliced, scanSessionFiles, scanSessionFilesAsync } from "./session";
+import { Store } from "../core/store";
+import { tempDir } from "../../test/support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);
 const user = (text: any, at: string, extra: object = {}) =>

@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { mcpConfig } from "../src/server/agents";
-import { buildArgs, controlResponse, inheritedEnv, PLANNING_DISALLOWED_TOOLS, startRun } from "../src/server/runner";
-import { tempDir, until } from "./support/helpers";
+import { mcpConfig } from "../server/agents";
+import { buildArgs, controlResponse, inheritedEnv, PLANNING_DISALLOWED_TOOLS, startRun } from "./runner";
+import { tempDir, until } from "../../test/support/helpers";
 
-const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
+const FAKE = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-claude.ts");
 
 function withMode(mode: string, fn: () => Promise<void>) {
   return async () => {

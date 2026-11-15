@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { atomicWrite } from "../core/store";
 import { pauser } from "../core/lag";
-import { logStat, readLog } from "./run-log";
+import { logStat, readLog } from "../runs/run-log";
 import type { ActivityEntry } from "../core/types";
 import type { UsageResult } from "./usage";
 

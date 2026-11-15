@@ -4,7 +4,7 @@ import { afterAll, expect, test } from "bun:test";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { SessionCache } from "../src/server/session";
+import { SessionCache } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import { tempDir } from "./support/helpers";
 

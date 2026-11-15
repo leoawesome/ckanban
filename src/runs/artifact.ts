@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { defaultRoot } from "../core/store";
 import { join } from "node:path";
 import { findSessionFile } from "./session";
-import { ptySupported } from "./shell";
+import { ptySupported } from "../server/shell";
 import { shellQuote } from "../core/util";
 import { IS_BINARY } from "../core/version";
 

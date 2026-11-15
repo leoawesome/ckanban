@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { transcript } from "./explain";
-import { parseResult } from "./result";
-import type { SessionEntry } from "./session";
+import { parseResult } from "../runs/result";
+import type { SessionEntry } from "../runs/session";
 import type { Ticket } from "../core/types";
 
 // The user's corrections on a finished ticket (messages after a run, a reopen, a pull request review asking for

@@ -3,7 +3,7 @@ import { callTool, ticketsError, type ToolContext } from "../src/mcp-server";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/core/events";
 import { Scheduler } from "../src/server/scheduler";
-import { parseNewTickets } from "../src/server/session";
+import { parseNewTickets } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import { normalizeTag as serverNormalizeTag, normalizeTags } from "../src/server/tags";
 import { boardTags, hasTags, normalizeTag, parseSearch, tagHue } from "../web/src/tagText";
@@ -147,7 +147,7 @@ test("suggest_tags adds new suggestions to the run's own ticket", async () => {
 });
 
 test("the first run's prompt offers suggest_tags only while the ticket has no tags", async () => {
-  const { firstRunPrompt } = await import("../src/server/prompts");
+  const { firstRunPrompt } = await import("../src/runs/prompts");
   const t = await board.createTicket("p", { title: "Post 5", body: "b", status: "backlog" });
   expect(firstRunPrompt(t, { repo: "remote", outputDir: "/out" })).toContain("suggest_tags");
   expect(firstRunPrompt({ ...t, tags: ["post"] }, { repo: "remote", outputDir: "/out" })).not.toContain("suggest_tags");

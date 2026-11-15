@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Bus } from "../core/events";
 import type { Store } from "../core/store";
-import { knownConnectors, setKnownConnectors } from "./connectors";
+import { knownConnectors, setKnownConnectors } from "../runs/connectors";
 import { entryFromInput, inputFromEntry, type ToolEntry } from "./board-tools";
 
 export type McpStatus = "connected" | "needs_auth" | "failed" | "pending" | "unknown";

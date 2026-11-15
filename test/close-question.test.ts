@@ -4,7 +4,7 @@ import { Board } from "../src/server/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { stepWait, youWaiting } from "../src/server/main-ticket";
-import type { SessionSummary } from "../src/server/session";
+import type { SessionSummary } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import type { Ticket } from "../src/core/types";
 import { askClosed, familyState } from "../web/src/family";

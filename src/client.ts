@@ -6,7 +6,7 @@ import type { RosterEntry } from "./server/huddle-roster";
 import type { HuddleTemplateView } from "./server/huddle-templates";
 import type { DeviceUser } from "./server/devices";
 import type { MessageResult } from "./server/notify";
-import type { SetupOutcome } from "./server/worktree-setup";
+import type { SetupOutcome } from "./runs/worktree-setup";
 import { CONFIRM_STATUS } from "./server/helper/frontdesk-id";
 import { FRONT_DESK_ENV, FRONT_DESK_HEADER, HUDDLE_AGENT_ENV, HUDDLE_HEADER, QUICK_CHAT_ENV, QUICK_CHAT_HEADER, RUN_HEADER, SOURCE_HEADER } from "./core/env";
 import { defaultRoot, Store } from "./core/store";

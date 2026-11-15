@@ -166,7 +166,7 @@ test("take_devices and release_devices work from a ticket's own run, not outside
 });
 
 test("runs get the device list, the ticket's hint and how to take and let go", async () => {
-  const { devicesNote } = await import("../src/server/prompts");
+  const { devicesNote } = await import("../src/runs/prompts");
   expect(devicesNote([], [])).toBeNull();
   const note = devicesNote([
     { name: "chrome-whatsapp", description: "Chrome tab signed in to WhatsApp Web as Leo", capacity: 1 },

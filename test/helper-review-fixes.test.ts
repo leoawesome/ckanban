@@ -9,8 +9,8 @@ import { checkDecision, type CheckContext, type ItemState } from "../src/server/
 import { HelperRunner } from "../src/server/helper/runner";
 import { normalizeRecords } from "../src/server/helper/waits";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import type { SessionSummary } from "../src/server/session";
-import type { SideCallInput, SideCallResult } from "../src/server/side-call";
+import type { SessionSummary } from "../src/runs/session";
+import type { SideCallInput, SideCallResult } from "../src/runs/side-call";
 import { Store } from "../src/core/store";
 import type { Profile, Ticket } from "../src/core/types";
 import { tempDir } from "./support/helpers";

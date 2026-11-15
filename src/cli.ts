@@ -6,7 +6,7 @@ import { sha256, sumFor } from "./checksum";
 import { BoardClient, boardPort, ClientError } from "./client";
 import { serveStdio } from "./mcp-server";
 import { serveBrowserMcp } from "./browser-mcp";
-import { runArtifactJob } from "./server/artifact";
+import { runArtifactJob } from "./runs/artifact";
 import { LABEL, PLIST_PATH, plistXml } from "./server/launchd";
 import { RESTART_MAX_WAIT_MS } from "./server/board";
 import { startDaemon } from "./server/main";

@@ -6,7 +6,7 @@ import { callTool, type ToolContext } from "../src/mcp-server";
 import { findingTitle, POST_MAX } from "../src/server/huddle";
 import { isBuiltinPreset } from "../src/server/huddle-presets";
 import { BUILTIN_TEMPLATES, deleteTemplate, mergeTemplates, saveTemplate } from "../src/server/huddle-templates";
-import { huddleDigest } from "../src/server/prompts";
+import { huddleDigest } from "../src/runs/prompts";
 import type { Huddle } from "../src/core/types";
 import { store, huddles, client, events, idle, heardBy, host, participant, agentCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "./support/huddle-env";
 

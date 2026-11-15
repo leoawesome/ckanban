@@ -6,7 +6,7 @@ import {
 } from "./client";
 import { AGENT_IDS, AgentRegistry, type AgentId } from "./server/agents";
 import { normalizeTags } from "./server/tags";
-import { setupBlock, type SetupOutcome } from "./server/worktree-setup";
+import { setupBlock, type SetupOutcome } from "./runs/worktree-setup";
 
 export const TICKET_USAGE = `  ckanban profiles     List boards (profiles) and their folders
   ckanban ticket list [--status <s>] [--query <words>] [--limit <n>] [--after <id>] [--include-tool]

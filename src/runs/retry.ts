@@ -1,4 +1,4 @@
-import { isLimitText } from "./limit";
+import { isLimitText } from "../usage/limit";
 
 /**
  * One automatic retry for runs that die on a passing API problem (overloaded, a 5xx, a dropped connection): the board

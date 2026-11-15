@@ -21,7 +21,7 @@ import { basename, join, sep } from "node:path";
 import type { QuickChat, QuickChatHooks, QuickChatView, RunLimits } from "../quickchat";
 import { describeCron } from "../cron";
 import { describeAt, parseAt } from "../jobs";
-import { addDeskSpend, deskSpendToday } from "../spend";
+import { addDeskSpend, deskSpendToday } from "../../usage/spend";
 import { atomicWrite, type Store } from "../../core/store";
 import type { Ticket } from "../../core/types";
 import { clockTime, cut } from "./core";

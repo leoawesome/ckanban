@@ -7,7 +7,7 @@ import { Board } from "../src/server/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { Store } from "../src/core/store";
-import { parseSetupBlock } from "../src/server/worktree-setup";
+import { parseSetupBlock } from "../src/runs/worktree-setup";
 import { ticketCommand } from "../src/ticket-cli";
 import { makeRepo, tempDir } from "./support/helpers";
 

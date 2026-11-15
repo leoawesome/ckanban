@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { SessionFeed, type SessionChange, type SessionChanges } from "./changefeed";
 import { Bus, type BusEvent } from "./events";
 import { startHuddleSessionWatcher } from "../server/huddle-session";
-import { SessionCache, startSessionWatcher } from "../server/session";
+import { SessionCache, startSessionWatcher } from "../runs/session";
 import { Store, type StoreChange } from "./store";
 import { TerminalWatcher } from "../server/terminals";
 import { tempDir, until } from "../../test/support/helpers";

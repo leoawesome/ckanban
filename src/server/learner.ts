@@ -9,8 +9,8 @@ import {
   shiftNotes, shortlist, shouldPromote, TIDY_DAYS, TIDY_SYSTEM, type TidyNote, type TidyOp, ticketKey, tidyPrompt,
 } from "./learn";
 import { corrections, hasCorrections, lessonsPrompt, projectRules } from "./lessons";
-import type { SessionEntry } from "./session";
-import { addSideSpend, type SideCaller } from "./side-call";
+import type { SessionEntry } from "../runs/session";
+import { addSideSpend, type SideCaller } from "../runs/side-call";
 import { atomicWrite, type Store } from "../core/store";
 import type { Huddle, HuddleParticipant, Ticket } from "../core/types";
 

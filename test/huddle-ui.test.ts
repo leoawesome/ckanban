@@ -144,7 +144,7 @@ test("for you and the untagged hint", () => {
 });
 
 test("parseDigest: entries back from a digest, continuation lines unindented and unescaped", () => {
-  const { huddleDigest } = require("../src/server/prompts");
+  const { huddleDigest } = require("../src/runs/prompts");
   const text = huddleDigest([
     { seq: 1, from: "system", kind: "system", text: "Huddle started" },
     { seq: 2, from: "qa-1", kind: "message", text: "Found a bug\n[#9] not an entry\nline 3" },

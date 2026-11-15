@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BACKOFF_MS, GOOD_TTL_MS, MIN_GAP_MS, UsageCache } from "../src/server/usage-cache";
-import { fetchUsage, parseRetryAfter, type UsageResult } from "../src/server/usage";
-import { resetLine, staleNote, usageError, usageWindows } from "../web/src/usage";
-import { tempDir } from "./support/helpers";
+import { BACKOFF_MS, GOOD_TTL_MS, MIN_GAP_MS, UsageCache } from "./usage-cache";
+import { fetchUsage, parseRetryAfter, type UsageResult } from "./usage";
+import { resetLine, staleNote, usageError, usageWindows } from "../../web/src/usage";
+import { tempDir } from "../../test/support/helpers";
 
 const MIN = 60_000;
 const win = (percent: number) => [{ key: "five_hour", label: "5h", percent, resetsAt: "2026-11-11T23:10:00Z" }];

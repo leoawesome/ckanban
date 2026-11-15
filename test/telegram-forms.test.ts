@@ -3,7 +3,7 @@ import { Bus } from "../src/core/events";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import { TelegramBot } from "../src/server/helper/telegram";
 import { rowsOf } from "../src/server/helper/tgforms";
-import type { Question, SessionSummary } from "../src/server/session";
+import type { Question, SessionSummary } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import type { Profile } from "../src/core/types";
 import { tempDir } from "./support/helpers";

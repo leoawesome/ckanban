@@ -9,8 +9,8 @@ import {
 } from "../src/server/learn";
 import { Learner } from "../src/server/learner";
 import { corrections } from "../src/server/lessons";
-import type { SessionEntry } from "../src/server/session";
-import type { SideCallInput, SideCallResult } from "../src/server/side-call";
+import type { SessionEntry } from "../src/runs/session";
+import type { SideCallInput, SideCallResult } from "../src/runs/side-call";
 import { Store } from "../src/core/store";
 import { tempDir } from "./support/helpers";
 

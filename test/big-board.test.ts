@@ -13,14 +13,14 @@ import { createServer } from "../src/server/http";
 import { Huddles } from "../src/server/huddle";
 import { pollHuddleSessions } from "../src/server/huddle-session";
 import { JobRunner } from "../src/server/jobs";
-import { pollSessionsSliced, primeSessions, SessionCache } from "../src/server/session";
+import { pollSessionsSliced, primeSessions, SessionCache } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import { BoardBrowsers } from "../src/server/board-browsers";
 import { fakes, harness } from "./support/fake-chrome";
-import { RunLogCompressor } from "../src/server/run-log-compress";
-import { resetLogCache } from "../src/server/run-log";
+import { RunLogCompressor } from "../src/runs/run-log-compress";
+import { resetLogCache } from "../src/runs/run-log";
 import { TerminalWatcher } from "../src/server/terminals";
-import { ClaudeLogIndex } from "../src/server/ticket-usage";
+import { ClaudeLogIndex } from "../src/usage/ticket-usage";
 import { tempDir } from "./support/helpers";
 
 const BIG = 10_000;

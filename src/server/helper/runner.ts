@@ -8,8 +8,8 @@ import { join } from "node:path";
 import type { BusEvent } from "../../core/events";
 import { trackedInterval } from "../../core/lag";
 import type { NotifySettings } from "../notify";
-import { addSideSpend, readSideSpend, type SideCaller } from "../side-call";
-import { dayKey } from "../limit";
+import { addSideSpend, readSideSpend, type SideCaller } from "../../runs/side-call";
+import { dayKey } from "../../usage/limit";
 import { atomicWrite, type Store } from "../../core/store";
 import { clockTime, cut, directLabel, type HelperCore, type HelperSink, type OutBody, type WaitEventReason } from "./core";
 import {

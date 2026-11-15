@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Bus } from "../src/core/events";
 import { Board } from "../src/server/board";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import type { SessionSummary } from "../src/server/session";
+import type { SessionSummary } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import type { Profile } from "../src/core/types";
 import { makeRepo, tempDir, until } from "./support/helpers";

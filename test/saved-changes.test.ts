@@ -4,8 +4,8 @@ import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyPatch, CUT_SHORT, clipText, readStatus, STATUS_FIELD_MAX, statusFacts, statusFiles, statusMarkdown, statusSections } from "../src/server/feature";
-import { run } from "../src/server/git";
-import { featureMemberNote, featureTrailerRule } from "../src/server/prompts";
+import { run } from "../src/runs/git";
+import { featureMemberNote, featureTrailerRule } from "../src/runs/prompts";
 import { board, setup, store, useBoardEnv } from "./support/board-env";
 import { tempDir, until } from "./support/helpers";
 

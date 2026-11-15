@@ -2,10 +2,10 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ActivityDigests } from "../src/server/activity-digest";
+import { ActivityDigests } from "./activity-digest";
 import { readFileSync } from "node:fs";
-import { ticketRuns } from "../src/server/ticket-usage";
-import { tempDir } from "./support/helpers";
+import { ticketRuns } from "../usage/ticket-usage";
+import { tempDir } from "../../test/support/helpers";
 
 const L = (run: number, event: unknown) => JSON.stringify({ run, at: `2026-10-01T00:00:${String(run).padStart(2, "0")}.000Z`, event }) + "\n";
 const edit = (run: number, file: string) => L(run, { type: "assistant", message: { content: [{ type: "text", text: "ok" }, { type: "tool_use", name: "Edit", input: { file_path: file } }] } });

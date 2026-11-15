@@ -6,7 +6,7 @@ import { Bus } from "../src/core/events";
 import { Passes } from "../src/server/integrations/passes";
 import { runScript, type ScriptRun } from "../src/server/integrations/script";
 import { LoopManager, type LoopInput } from "../src/server/loops";
-import type { SideCallInput, SideCallResult } from "../src/server/side-call";
+import type { SideCallInput, SideCallResult } from "../src/runs/side-call";
 import { Store } from "../src/core/store";
 import { startFakeService, type FakeService } from "./fixtures/fake-mcp-service";
 import { tempDir } from "./support/helpers";

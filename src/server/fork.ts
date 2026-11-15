@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { encodeProjectDir } from "./claude";
+import { encodeProjectDir } from "../runs/claude";
 import { cutSession } from "./rewind";
 import { atomicWrite } from "../core/store";
 

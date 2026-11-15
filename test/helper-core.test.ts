@@ -7,7 +7,7 @@ import { HELD_MAX, MessageStore, MESSAGES_MAX } from "../src/server/helper/messa
 import { questionHash, waitIdentity, WaitStore, type WaitRecord } from "../src/server/helper/waits";
 import { messageResultText, questionsError } from "../src/mcp-server";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import { parseAskMeta, type SessionSummary } from "../src/server/session";
+import { parseAskMeta, type SessionSummary } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import type { Profile, Ticket } from "../src/core/types";
 import { tempDir } from "./support/helpers";

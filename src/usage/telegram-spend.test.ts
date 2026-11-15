@@ -1,8 +1,8 @@
 // "Spent from Telegram today": a run a Telegram message started counts; one typed on the board doesn't.
 import { expect, test } from "bun:test";
-import { addTelegramSpend, telegramSpendToday } from "../src/server/spend";
-import { board, setup, store, useBoardEnv } from "./support/board-env";
-import { tempDir } from "./support/helpers";
+import { addTelegramSpend, telegramSpendToday } from "./spend";
+import { board, setup, store, useBoardEnv } from "../../test/support/board-env";
+import { tempDir } from "../../test/support/helpers";
 
 useBoardEnv();
 

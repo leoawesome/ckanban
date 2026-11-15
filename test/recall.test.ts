@@ -1,7 +1,7 @@
 // Recall: a run's first prompt lists related past tickets of the board (plain word matching, no model call).
 import { expect, test } from "bun:test";
 import { pickRelated, RECALL_CHARS, RECALL_MAX, recallBlock, words, type RecallRow } from "../src/server/recall";
-import { chatPrompt, firstRunPrompt, freshSessionPrompt } from "../src/server/prompts";
+import { chatPrompt, firstRunPrompt, freshSessionPrompt } from "../src/runs/prompts";
 import type { Ticket } from "../src/core/types";
 import { board, readArgs, setup, store, useBoardEnv } from "./support/board-env";
 

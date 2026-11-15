@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { claudeDefaults, claudeInstallDirs, encodeProjectDir, findClaude, listClaudeProjects } from "../src/server/claude";
-import { tempDir } from "./support/helpers";
+import { claudeDefaults, claudeInstallDirs, encodeProjectDir, findClaude, listClaudeProjects } from "./claude";
+import { tempDir } from "../../test/support/helpers";
 
 function fixture() {
   const home = tempDir("ck-home-");
@@ -59,7 +59,7 @@ test("claudeDefaults reads model from settings.json", () => {
   expect(claudeDefaults({ configDir })).toEqual({ model: null, effort: null });
 });
 
-import { listSessions, liveSessionMatch } from "../src/server/claude";
+import { listSessions, liveSessionMatch } from "./claude";
 
 test("listSessions reads titles, first prompt, newest first", () => {
   const configDir = tempDir();

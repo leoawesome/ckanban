@@ -2,8 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import {
   connectorRunOptions, connectorSetting, connectorToolPrefix, parseConnectorSetting, runDisallowed, setKnownConnectors,
   boardConnectorOptions, UNUSED_TOOLS,
-} from "../src/server/connectors";
-import { buildArgs, PLANNING_DISALLOWED_TOOLS } from "../src/server/runner";
+} from "./connectors";
+import { buildArgs, PLANNING_DISALLOWED_TOOLS } from "./runner";
 
 const off = (args: string[]) => args[args.indexOf("--disallowedTools") + 1].split(",");
 const KNOWN = ["claude.ai Claude Docs", "claude.ai Gmail", "claude.ai Slack", "claude.ai Custom MCP (Notion, Google Sheets etc.)"];

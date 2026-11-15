@@ -6,8 +6,8 @@ import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { Learner } from "../src/server/learner";
 import { lessonBullets, lessonsBlock } from "../src/server/lessons";
-import { SessionCache } from "../src/server/session";
-import type { SideCallInput, SideCallResult } from "../src/server/side-call";
+import { SessionCache } from "../src/runs/session";
+import type { SideCallInput, SideCallResult } from "../src/runs/side-call";
 import { Store } from "../src/core/store";
 import { tempDir } from "./support/helpers";
 

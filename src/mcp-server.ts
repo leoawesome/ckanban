@@ -22,7 +22,7 @@ import { backupFile, backupText } from "./server/file-backup";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ArtifactJob, type ArtifactOutcome, runArtifactJob } from "./server/artifact";
+import { type ArtifactJob, type ArtifactOutcome, runArtifactJob } from "./runs/artifact";
 import { AUTO_HUDDLE_TRIGGERS, STATUSES, USER_HUDDLE_TRIGGER } from "./core/types";
 import { REPO, VERSION } from "./core/version";
 

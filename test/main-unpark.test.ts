@@ -106,7 +106,7 @@ test("an ordinary ticket in Done: the user's message that asks for work ends in 
 // fix step and ended done, and minutes later the PR poller saw its milestone PR (merged long before) and moved the card
 // to Done while the step still ran. Parked in Done, its wake for the finished step never came either.
 test("a Done main ticket with a merged PR: a message, a new step, the poller: In progress until the step ends, then Review", async () => {
-  const { checkPr } = await import("../src/server/prpoller");
+  const { checkPr } = await import("../src/runs/prpoller");
   const { groupByColumn } = await import("../web/src/columns");
   const main = await mkMain("done");
   store.updateTicket("p", main.id, { prUrl: "https://github.com/x/y/pull/12" });
@@ -142,7 +142,7 @@ test("a Done main ticket with a merged PR: a message, a new step, the poller: In
 }, 60_000);
 
 test("a main ticket never in Done with no open steps still goes to Done when its PR merges", async () => {
-  const { checkPr } = await import("../src/server/prpoller");
+  const { checkPr } = await import("../src/runs/prpoller");
   const main = await mkMain("review");
   store.updateTicket("p", main.id, { prUrl: "https://github.com/x/y/pull/12" });
   await checkPr(board, store, "p", main.id, async () => "MERGED");

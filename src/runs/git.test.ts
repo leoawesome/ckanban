@@ -1,10 +1,10 @@
 import { beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { makeRepo } from "./support/helpers";
+import { makeRepo } from "../../test/support/helpers";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { addWorktree, detectBaseBranch, enableVersionHistory, gitRuns, isGitRepo, removeWorktree, repoKind, resolveBaseBranch, run, SNAPSHOT_MAX_BYTES, worktreeDir } from "../src/server/git";
-import { tempDir } from "./support/helpers";
+import { addWorktree, detectBaseBranch, enableVersionHistory, gitRuns, isGitRepo, removeWorktree, repoKind, resolveBaseBranch, run, SNAPSHOT_MAX_BYTES, worktreeDir } from "./git";
+import { tempDir } from "../../test/support/helpers";
 
 let repo: string;
 

@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { branchExists, NO_HOOKS, run as git } from "./git";
+import { branchExists, NO_HOOKS, run as git } from "../runs/git";
 import type { HandInFile } from "../core/types";
 
 /** Folders a plain copy leaves out (and a plain folder's changes ignore): version history and installed or cached files. */

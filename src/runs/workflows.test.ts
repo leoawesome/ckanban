@@ -3,16 +3,16 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board, WORKFLOW_STOPPED_TEXT } from "../src/server/board";
-import { EFFORTS, runOptions, validEffort } from "../src/server/commands";
-import { buildArgs } from "../src/server/runner";
-import { parseSession, SessionCache } from "../src/server/session";
+import { Board, WORKFLOW_STOPPED_TEXT } from "../server/board";
+import { EFFORTS, runOptions, validEffort } from "../server/commands";
+import { buildArgs } from "./runner";
+import { parseSession, SessionCache } from "./session";
 import {
   parseJournal, parseWorkflowMeta, settleWorkflow, transcriptCost, withRun, workflowAgentDetail, workflowDirCost, WorkflowCache, workflowScript,
   type WorkflowInfo,
-} from "../src/server/workflows";
-import { FAKE, board, bus, readArgs, replays, setBoard, setup, store, useBoardEnv } from "./support/board-env";
-import { tempDir, until } from "./support/helpers";
+} from "./workflows";
+import { FAKE, board, bus, readArgs, replays, setBoard, setup, store, useBoardEnv } from "../../test/support/board-env";
+import { tempDir, until } from "../../test/support/helpers";
 
 useBoardEnv();
 

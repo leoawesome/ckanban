@@ -9,7 +9,7 @@ import { SEND_AGAIN, TEXT_ONLY } from "../src/server/helper/telegram";
 import { describeAt } from "../src/server/jobs";
 import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../src/server/notify";
 import type { QuickChat, QuickChatHooks, QuickChatView } from "../src/server/quickchat";
-import { addDeskSpend, addTelegramSpend, deskSpendToday, telegramSpendToday } from "../src/server/spend";
+import { addDeskSpend, addTelegramSpend, deskSpendToday, telegramSpendToday } from "../src/usage/spend";
 import { Store } from "../src/core/store";
 import type { Profile } from "../src/core/types";
 import { BoardClient, ConfirmPending } from "../src/client";

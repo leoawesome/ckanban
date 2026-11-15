@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chatPrompt, firstRunPrompt, MAIN_FIRST_REPLY } from "../src/server/prompts";
+import { chatPrompt, firstRunPrompt, MAIN_FIRST_REPLY } from "../src/runs/prompts";
 import { MAIN_HINT, mainHint, runsOn } from "../web/src/newTicketText";
 import { plural } from "../web/src/teamText";
 

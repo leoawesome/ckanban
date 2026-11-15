@@ -1,7 +1,7 @@
 import { askClosed, featureRows, hiddenTool } from "../../web/src/family";
 import { stepWait, type StepWait } from "./main-ticket";
 import { childrenOf, isComplete, planActive } from "./plan";
-import type { SessionSummary } from "./session";
+import type { SessionSummary } from "../runs/session";
 import type { Store } from "../core/store";
 import type { Ticket } from "../core/types";
 

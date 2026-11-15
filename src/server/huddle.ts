@@ -42,17 +42,17 @@
 //
 // The one brake, so a huddle can't overspend: it stops at maxCostUsd (agents' runs and @main's huddle replies; the
 // leads are warned at 80%). There is no message limit: agents talk until they reach a conclusion.
-import { boardConnectorOptions } from "./connectors";
+import { boardConnectorOptions } from "../runs/connectors";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { pauser, trackedInterval } from "../core/lag";
 import { basename, dirname, join } from "node:path";
-import { summarizeEvent } from "./activity";
+import { summarizeEvent } from "../runs/activity";
 import { mcpConfig } from "./agents";
 import { claudeSessionExists, claudeSessionFile, type Board, type RunBrowsers } from "./board";
 import { planProposal } from "./plan-proposal";
-import { parseSession, type SessionEntry } from "./session";
+import { parseSession, type SessionEntry } from "../runs/session";
 import type { Bus } from "../core/events";
-import { addWorktree, branchExists, hasCommits, NO_HOOKS, removeWorktree, run as git, worktreeDir } from "./git";
+import { addWorktree, branchExists, hasCommits, NO_HOOKS, removeWorktree, run as git, worktreeDir } from "../runs/git";
 import { projectNames, removeOutputCopies } from "./output-copies";
 import {
   activeHost, DEFAULT_MAX_PARTICIPANTS, handleBase, HUDDLE_AGENT_ENV, LEGACY_SUMMARY_FILE, MAIN_HANDLE, NO_EDIT_TOOLS, parseMentions, RESERVED_HANDLES,
@@ -71,13 +71,13 @@ import type { HostHuddle } from "./attention";
 import { huddleUsage, type Usage } from "./huddle-usage";
 import { isLevel, type Level, lowerLevels } from "../core/layers";
 import { accept as acceptHandIn, handIn as saveHandIn, handInDir as handInSaved, keepUnhanded, keptDir, makeFolderCopy, makeGitCopy, readState, removeCopy, unhanded } from "./huddle-copies";
-import { autoHuddleSlotPrompt, autoHuddleStoppedPrompt, huddleAgentPrompt, huddleAgentSystemPrompt, huddleDigest, huddleMainPrompt, withoutChromeRule } from "./prompts";
-import { buildArgs, MONITOR_IDLE_MS, startRun, type RunHandle } from "./runner";
-import { addHuddleSpend } from "./spend";
+import { autoHuddleSlotPrompt, autoHuddleStoppedPrompt, huddleAgentPrompt, huddleAgentSystemPrompt, huddleDigest, huddleMainPrompt, withoutChromeRule } from "../runs/prompts";
+import { buildArgs, MONITOR_IDLE_MS, startRun, type RunHandle } from "../runs/runner";
+import { addHuddleSpend } from "../usage/spend";
 import type { Store } from "../core/store";
-import { contextTokens, messageCost } from "./ticket-usage";
+import { contextTokens, messageCost } from "../usage/ticket-usage";
 import { proposalPreset, teammateProposal, type TeammateProposal } from "./teammate-proposal";
-import { addSideSpend, type SideCaller } from "./side-call";
+import { addSideSpend, type SideCaller } from "../runs/side-call";
 import {
   chatTail, GENERIC_SQUAD_MODEL, GENERIC_SQUAD_SYSTEM, GENERIC_SQUAD_TIMEOUT_MS, genericSquadPrompt, parseGenericSquad, squadProposal, ticketTopic,
   type SquadProposal, squadSavePlan, squadSetup, withNewTeammates,

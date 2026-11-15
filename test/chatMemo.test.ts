@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { capMap, keepSame, laterCounts, sameDeps, sameJson } from "../web/src/chatMemo";
-import { liveJson } from "../src/server/liveCut";
+import { liveJson } from "../src/runs/live-cut";
 import { byIdOf, mainTicketOf } from "../web/src/family";
 
 const e = (uuid: string, role = "assistant", kind = "text", text = uuid, extra: object = {}) => ({ uuid, role, kind, text, at: "", ...extra });

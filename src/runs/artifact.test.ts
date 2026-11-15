@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ERRORS, extractReadHtml, findOutcome, helperCommand, helperEnv, jobPrompts, paneState, runArtifactJob, screenText, tmuxArgs } from "../src/server/artifact";
-import { ptySupported } from "../src/server/shell";
+import { ERRORS, extractReadHtml, findOutcome, helperCommand, helperEnv, jobPrompts, paneState, runArtifactJob, screenText, tmuxArgs } from "./artifact";
+import { ptySupported } from "../server/shell";
 
 const L = (o: unknown) => JSON.stringify(o);
 const use = (id: string, input: object, name = "Artifact") =>

@@ -7,9 +7,9 @@ import { createServer } from "../src/server/http";
 import { Store } from "../src/core/store";
 import {
   ClaudeLogIndex, messageCost, priceFor, readLines, readWindows, recordWindow, RunLogIndex, ticketRuns, ticketUsage, type WindowSnapshot,
-} from "../src/server/ticket-usage";
+} from "../src/usage/ticket-usage";
 import type { ActivityEntry, Profile } from "../src/core/types";
-import type { UsageResult } from "../src/server/usage";
+import type { UsageResult } from "../src/usage/usage";
 import { approxPct, costText, modelName, tokenText } from "../web/src/usage";
 import { tempDir } from "./support/helpers";
 

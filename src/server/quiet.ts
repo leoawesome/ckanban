@@ -1,4 +1,4 @@
-import type { QuietContext } from "./prompts";
+import type { QuietContext } from "../runs/prompts";
 import type { Schedule, ScheduleHistoryEntry, Ticket } from "../core/types";
 
 // Quiet schedules (Schedule.quiet): a run that finds nothing for the user ends with "quiet": true and the board

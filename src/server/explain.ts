@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import type { DiffFile, TicketDiff } from "./diff";
-import { parseResult } from "./result";
-import type { SessionEntry } from "./session";
-import { addSideSpend, READ_TOOLS, type SideCaller } from "./side-call";
+import type { DiffFile, TicketDiff } from "../runs/diff";
+import { parseResult } from "../runs/result";
+import type { SessionEntry } from "../runs/session";
+import { addSideSpend, READ_TOOLS, type SideCaller } from "../runs/side-call";
 import { atomicWrite, type Store } from "../core/store";
 import type { HuddleFinding, Ticket } from "../core/types";
 

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { fetchUsage, normalizeUsage, parseCredentials, pickCredentials, USAGE_URL } from "../src/server/usage";
-import { limitNote, resetText, shortLabel, usageTone, worstTone } from "../web/src/usage";
+import { fetchUsage, normalizeUsage, parseCredentials, pickCredentials, USAGE_URL } from "./usage";
+import { limitNote, resetText, shortLabel, usageTone, worstTone } from "../../web/src/usage";
 
 const FULL = {
   five_hour: { utilization: 42, resets_at: "2026-10-05T16:10:00+00:00" },

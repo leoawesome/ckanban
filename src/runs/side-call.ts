@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { defaultRoot } from "../core/store";
 import { join } from "node:path";
 import { helperEnv } from "./artifact";
-import { dayKey } from "./limit";
+import { dayKey } from "../usage/limit";
 
 // A side call: one short `claude -p` answer on the cheapest model, outside any ticket's session. No resume, no
 // tools, no MCP servers, no skills, no user hooks (only project settings, and its folder has none), nothing saved

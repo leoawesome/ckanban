@@ -1,7 +1,7 @@
 // search_chat / read_chat: Claude looks up earlier messages of a ticket's chat (its current session and every session
 // left behind with "Send in a fresh chat") instead of re-reading the whole conversation. A message's ref is
 // `<sessionId>:<index>`, the index of its entry in the parsed transcript (session.ts), so it stays the same after restarts.
-import type { SessionEntry } from "./session";
+import type { SessionEntry } from "../runs/session";
 
 /** One session of a ticket's chat, oldest first in the list handed in. */
 export interface ChatSource {

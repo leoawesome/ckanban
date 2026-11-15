@@ -9,7 +9,7 @@ import type { Bus } from "../core/events";
 import { HuddleError, type Huddles } from "./huddle";
 import { USER_HANDLE } from "./huddle-roster";
 import type { Store } from "../core/store";
-import { toolLabel } from "./subagents";
+import { toolLabel } from "../runs/subagents";
 import type { ToolDetail } from "./tooldetail";
 import type { HuddleMode, HuddleParticipantKind, HuddleParticipantStatus } from "../core/types";
 

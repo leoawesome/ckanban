@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { join } from "node:path";
-import { attentionFor } from "../src/server/attention";
-import { Board } from "../src/server/board";
-import { Bus } from "../src/core/events";
-import { clockTime, dayKey, isLimitText, limitMessage, LimitWatcher, nextFullHour, parseReset } from "../src/server/limit";
-import { planStep } from "../src/server/plan";
-import { Store } from "../src/core/store";
-import type { Plan, Profile, Ticket } from "../src/core/types";
-import { makeRepo, readJsonl, tempDir } from "./support/helpers";
+import { attentionFor } from "../server/attention";
+import { Board } from "../server/board";
+import { Bus } from "../core/events";
+import { clockTime, dayKey, isLimitText, limitMessage, LimitWatcher, nextFullHour, parseReset } from "./limit";
+import { planStep } from "../server/plan";
+import { Store } from "../core/store";
+import type { Plan, Profile, Ticket } from "../core/types";
+import { makeRepo, readJsonl, tempDir } from "../../test/support/helpers";
 
 // Real messages from board runs that hit the limit (tickets t_20261005_vqm5, t_20261006_xa17, t_20261005_h89a).
 const REAL_4AM = "You've hit your individual spend limit · run /usage-credits to raise it, or visit claude.ai/admin-settings/usage · your session limit resets 4am (Asia/Kuala_Lumpur)";
@@ -89,7 +89,7 @@ test("a plan child waiting on the limit with auto on doesn't wake the planner an
 
 // ---- Board: detect, auto-continue, Continue now, opt-out, restart, daily cap ----
 
-const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
+const FAKE = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-claude.ts");
 let store: Store;
 let board: Board;
 let clock: Date;
@@ -252,7 +252,7 @@ test("a continue that hits the limit again re-arms; after 3 automatic continues 
 // ---- Card and drawer text ----
 
 test("card label: continues at HH:MM with auto on, resets HH:MM with it off", async () => {
-  const { limitLabel, limitHint } = await import("../web/src/limitText");
+  const { limitLabel, limitHint } = await import("../../web/src/limitText");
   const now = new Date(2026, 9, 7, 2, 5).getTime();
   const resetAt = new Date(2026, 9, 7, 4, 0).toISOString();
   const t = ticket({ limit: { resetAt, auto: true, at: "x", message: REAL_4AM } }) as any;

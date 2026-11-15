@@ -7,8 +7,8 @@ import { checkDecision, checkFollowed, DECISION_SCHEMA, HELPER_SYSTEM, type Chec
 import { helperSpendFile, HelperRunner } from "../src/server/helper/runner";
 import { weekRecapLine, weekStart, type RecapRecord } from "../src/server/helper/summary";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import type { SessionSummary } from "../src/server/session";
-import { addSideSpend, type SideCallInput, type SideCallResult } from "../src/server/side-call";
+import type { SessionSummary } from "../src/runs/session";
+import { addSideSpend, type SideCallInput, type SideCallResult } from "../src/runs/side-call";
 import { Store } from "../src/core/store";
 import type { Profile, Ticket } from "../src/core/types";
 import { tempDir } from "./support/helpers";

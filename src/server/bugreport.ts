@@ -1,9 +1,9 @@
 // "Report bug": turns a user's (or Claude's) bug report plus some board context into a GitHub issue on
 // the ckanban repo, with `gh issue create`, or a prefilled "new issue" URL when gh can't do it.
 import { homedir, platform, arch, release } from "node:os";
-import { extractFinalText, summarizeEvent } from "./activity";
+import { extractFinalText, summarizeEvent } from "../runs/activity";
 import { ATTACHMENT_NAME_SRC } from "./attachments";
-import { run, type RunResult } from "./git";
+import { run, type RunResult } from "../runs/git";
 import { maskSecrets } from "./mcp";
 import type { Store } from "../core/store";
 import type { ActivityEntry, Profile, Ticket } from "../core/types";

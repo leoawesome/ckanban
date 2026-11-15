@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "../src/server/git";
+import { run } from "../src/runs/git";
 import { changedFiles, codeKey, passedAt, recordPass, relatedBase, relatedPlan } from "../scripts/test-plan";
 import { makeRepo, tempDir } from "./support/helpers";
 
