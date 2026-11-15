@@ -3,7 +3,7 @@
 import { resolveRun, runText } from "./models";
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Profile, type Ticket } from "./api";
-import { childrenByParent, familyOf, familyState, featureRows, groupsOf, groupSummary, hideableCard, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, shownState, subFeatureState, type FamilyRow, type FamilyState } from "./family";
+import { childrenByParent, familyOf, familyState, featureRows, featureTasks, groupsOf, groupSummary, hideableCard, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, shownState, subFeatureState, type FamilyRow, type FamilyState } from "./family";
 import { ClaudeFace } from "./ConvTurn";
 import { familyMood } from "./avatarMood";
 import { familyText } from "./FamilyPanel";
@@ -169,6 +169,8 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
       onError(`Couldn't open the report: ${(e as Error).message}`);
     }
   };
+  // The tasks every count uses (featureTasks): a group's line counts only these, not the groups nested in it.
+  const taskIds = new Set(featureTasks(rows).map((t) => t.id));
   const treeRow = (r: FamilyRow<Ticket>) => {
     const t = r.ticket;
     const group = holds(r, kids) && r.depth > 0;
@@ -192,9 +194,9 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
           <span className="ft-title">{subRow(r) && <span className="part-chip ft-sub">Sub-feature</span>}{t.important && <ImportantStar />}{t.title}</span>
           <span className="ft-meta">
             {subRow(r)
-              ? <span className="ft-sum">{plural(featureRows(tickets, t.id).length - 1, "task")}</span>
+              ? <span className="ft-sum">{plural(featureTasks(featureRows(tickets, t.id)).length, "task")}</span>
               : group
-              ? <span className="ft-sum">{groupSummary(inside.map((k) => ({ kind: k.kind, state: stateOf(k) })))}</span>
+              ? <span className="ft-sum">{groupSummary(inside.filter((k) => taskIds.has(k.id)).map((k) => ({ kind: k.kind, state: stateOf(k) })))}</span>
               : <span className="ft-model">{[t.kind ? KIND_WORDS[t.kind] : null, runText(resolveRun(t, profile, claude))].filter(Boolean).join(" · ")}</span>}
             <span className={`ft-st ${STATE_CLASS[groupState]}`}>{shownState(groupState)}</span>
             {v && cost(r) > 0 && <span className="ft-cost">{money(cost(r))}</span>}
@@ -234,8 +236,8 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
       )}
       <div className="family-tab-head">
         <b>Tasks</b>
-        {/* Counts the tasks like the status's "N of M done": not the main ticket, not the groups that hold tasks. */}
-        <span className="muted small">{plural(rows.slice(1).filter((r) => r.ticket.kind !== "group" && r.ticket.kind !== "round").length, "task")} · {money(total)}</span>
+        {/* Counts the tasks like the status's "N of M done" and the tab badge (featureTasks). */}
+        <span className="muted small">{plural(taskIds.size, "task")} · {money(total)}</span>
         <button className="mini-link" onClick={() => copyText(familyText(rows), "Task list copied")}
           title="Copy the tasks as a list, for example to ask Claude to summarise this piece of work">Copy list</button>
         <button className="mini-link" onClick={() => setGathering(true)} title={`Bring tickets you already made into "${top.title}"`}>Add tickets…</button>

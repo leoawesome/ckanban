@@ -441,6 +441,23 @@ export function featureRows<T extends FamilyTicket>(tickets: T[], id: string): F
   return out;
 }
 
+/**
+ * The tasks of id's own feature, the one rule behind every "N of M done" (the status, the Tasks tab badge, the list
+ * head): rows below the top that hold nothing. Not the main ticket, not groups or rounds (or any ticket that holds
+ * others: its contents count), not sub-features (their tasks are their own). Walks only this feature (featureRows).
+ */
+export function featureTasks<T extends FeatureTicket>(rows: FamilyRow<T>[]): T[] {
+  return rows.filter((r, i) => r.depth > 0 && !r.ticket.main && r.ticket.kind !== "group" && r.ticket.kind !== "round"
+    && !((rows[i + 1]?.depth ?? 0) > r.depth)).map((r) => r.ticket);
+}
+
+/** Finished tasks of all of them (featureTasks): the Done column, a test's passed or problem verdict. */
+export function taskTally<T extends FeatureTicket>(rows: FamilyRow<T>[]): { done: number; total: number } {
+  const tasks = featureTasks(rows);
+  const done = tasks.filter((t) => { const s = familyState(t); return s === "done" || s === "passed" || s === "problem"; }).length;
+  return { done, total: tasks.length };
+}
+
 /** The sub-features in id's own feature, at any level of it (familyOrder). */
 export function subFeaturesOf<T extends FamilyTicket>(tickets: T[], id: string): T[] {
   return featureRows(tickets, id).filter((r) => r.depth > 0 && r.ticket.main).map((r) => r.ticket);

@@ -3,11 +3,12 @@
 // the same URL; its token goes into the entry's state (ckLayers, copied up so the entry knows every layer under it).
 // Back pops the top entry: every layer whose token is no longer in the current entry closes, others stay.
 // Closing a layer any other way (its ×, Esc, swipe down, Save) goes back over its entry, so none is left behind;
-// several layers closing at once (a confirm and the dialog under it) go back over all of theirs in one step.
+// several layers closing at once (a confirm and the dialog under it) go back over all of theirs in one step. A layer
+// that opens as another closes (a More sheet item opening its dialog) reuses the closing layer's entry.
 // Kept free of DOM types (history and window come from globalThis) so the root typecheck and bun tests can load it.
 import { useEffect, useRef, useState } from "react";
 
-type HistoryLike = { readonly state: unknown; pushState(state: unknown, unused: string): void; go(delta: number): void };
+type HistoryLike = { readonly state: unknown; pushState(state: unknown, unused: string): void; replaceState(state: unknown, unused: string): void; go(delta: number): void };
 type WindowLike = { addEventListener(type: "popstate", fn: () => void): void };
 const nav = () => (globalThis as unknown as { history: HistoryLike }).history;
 const win = () => (globalThis as unknown as { window: WindowLike }).window;
@@ -67,10 +68,19 @@ function push(l: Layer) {
     listening = true;
   }
   const s = (nav().state ?? {}) as Record<string, unknown>;
+  live.push(l);
+  // A layer closing in this same moment (a menu item closes its sheet and opens a dialog): the new layer takes over
+  // the closing one's entry instead of stacking on it, which would leave a dead entry under the dialog that the
+  // going-back flush can no longer reach (it only goes back over closed layers at the top).
+  const chain = layersOf(s);
+  if (chain.length && closing.has(chain[chain.length - 1])) {
+    closing.delete(chain[chain.length - 1]);
+    nav().replaceState({ ...s, ckLayers: [...chain.slice(0, -1), l.token] }, "");
+    return;
+  }
   // One more entry for ticketHistory.ts to go back over when the open ticket closes.
   const depth = typeof s.ckDepth === "number" ? { ckDepth: s.ckDepth + 1 } : {};
-  nav().pushState({ ...s, ...depth, ckLayers: [...layersOf(s), l.token] }, "");
-  live.push(l);
+  nav().pushState({ ...s, ...depth, ckLayers: [...chain, l.token] }, "");
 }
 
 /**

@@ -11,6 +11,7 @@ function fakeHistory() {
   const h = {
     get state() { return entries[at]; },
     pushState(state: unknown) { entries.splice(at + 1); entries.push(structuredClone(state)); at++; },
+    replaceState(state: unknown) { entries[at] = structuredClone(state); },
     go(n: number) { setTimeout(() => { at = Math.max(0, Math.min(entries.length - 1, at + n)); pops.forEach((f) => f()); }, 0); },
     back() { h.go(-1); },
     get length() { return entries.length; },
@@ -90,4 +91,38 @@ test("Back that pops a layer the page is closing anyway doesn't close the layer 
   env.h.back(); // the user's Back now closes the dialog
   await tick();
   expect(closed).toEqual(["dialog"]);
+});
+
+test("a sheet item that opens a dialog in the same moment: the dialog takes over the sheet's entry (More sheet)", async () => {
+  const closed: string[] = [];
+  const closeSheet = openBackEntry(() => closed.push("sheet"));
+  expect(env.h.index).toBe(1);
+  // The item's click: the sheet closes and its dialog opens in one render (sheet cleanup first, then the dialog's push).
+  closeSheet();
+  openBackEntry(() => closed.push("dialog"));
+  await tick();
+  expect(env.h.index).toBe(1);
+  expect(env.h.length).toBe(2);
+  expect((env.h.state as any).ckDepth).toBe(2);
+  // Back closes the dialog and lands on the board, with no dead entry left for a second Back.
+  env.h.back();
+  await tick();
+  expect(closed).toEqual(["dialog"]);
+  expect(env.h.index).toBe(0);
+  expect(layersOf(env.h.state)).toEqual([]);
+});
+
+test("closing the sheet with × leaves no entry behind; Back then goes where it would have without the sheet", async () => {
+  const closeSheet = openBackEntry(() => {});
+  closeSheet();
+  await tick();
+  expect(env.h.index).toBe(0);
+  // A dialog opened later stacks normally on the board's entry.
+  const closed: string[] = [];
+  openBackEntry(() => closed.push("dialog"));
+  expect(env.h.index).toBe(1);
+  env.h.back();
+  await tick();
+  expect(closed).toEqual(["dialog"]);
+  expect(env.h.index).toBe(0);
 });

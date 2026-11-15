@@ -1,8 +1,10 @@
 import { useRef, useState, type ReactNode } from "react";
 import type { MenuItem } from "./HeaderMenu";
 import { BoardIcon, ChatIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, MoreIcon, NowIcon, TeamIcon } from "./icons";
+import { useBackEntry } from "./backEntry";
 import { useFocusTrap, useLayer } from "./layers";
 import { useBackdropClose, useSwipeClose } from "./sheet";
+import { usePhone } from "./usePhone";
 
 export type PhoneTab = "now" | "board" | "ask" | "team";
 
@@ -58,10 +60,11 @@ export function MoreSheet({ items, rare = [], footer, onClose, label = "More", t
   /** Shown below the items, above the footer (the theme choice). */
   bottom?: ReactNode;
 }) {
-  // A dialog like Modal.tsx: focus moves in and returns, Tab stays inside, Esc and a swipe down close it.
-  // (No phone Back entry: an item closes the sheet and opens a dialog in the same moment, which would strand the entry.)
+  // A dialog like Modal.tsx: focus moves in and returns, Tab stays inside, Esc, a swipe down and the phone's Back close
+  // it. An item closes the sheet and opens its dialog in the same moment: the dialog takes over the sheet's Back entry.
   const box = useRef<HTMLDivElement>(null);
   useLayer(onClose);
+  useBackEntry(usePhone(), onClose);
   useFocusTrap(box, true);
   const swipe = useSwipeClose(box, onClose);
   const backdrop = useBackdropClose(onClose);

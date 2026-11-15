@@ -5,7 +5,7 @@
 // are saved in the top ticket's outputs folder: status.json (what the block renders from) and status.md (to read).
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { childrenByParent, familyState, featureRows, settled, STATE_WORDS, type FamilyState } from "../../web/src/family";
+import { childrenByParent, familyState, featureRows, featureTasks, settled, STATE_WORDS, type FamilyState } from "../../web/src/family";
 import { ticketPrs } from "./prs";
 import type { Ticket } from "./types";
 
@@ -167,6 +167,9 @@ export function statusFacts(
 ): StatusFacts {
   const rows = featureRows(tickets, topId);
   const kids = childrenByParent(tickets);
+  // Only tasks count in a group's total (featureTasks: no nested groups, holders or sub-features), so every
+  // "N of M done" (taskProgress over these facts, the Tasks tab badge, its list head) gives the same numbers.
+  const taskIds = new Set(featureTasks(rows).map((t) => t.id));
   const isSub = (t: Ticket) => t.id !== topId && !!t.main;
   const subFacts = new Map(rows.filter((r) => isSub(r.ticket)).map((r) => [r.ticket.id, sub(r.ticket)]));
   const stateOf = new Map(rows.map((r) => [r.ticket.id, subFacts.get(r.ticket.id)?.working ? "working" as FamilyState : familyState(r.ticket, needsYou(r.ticket))]));
@@ -187,8 +190,9 @@ export function statusFacts(
       continue;
     }
     const c: GroupFacts["counts"] = {};
-    for (const k of inside) add(c, stateOf.get(k.id)!);
-    groups.push({ id: t.id, title: t.title, kind: t.kind ?? null, total: inside.length, counts: c, settled: inside.every((k) => settled(stateOf.get(k.id)!)) });
+    const tasks = inside.filter((k) => taskIds.has(k.id));
+    for (const k of tasks) add(c, stateOf.get(k.id)!);
+    groups.push({ id: t.id, title: t.title, kind: t.kind ?? null, total: tasks.length, counts: c, settled: inside.every((k) => settled(stateOf.get(k.id)!)) });
     const tests = inside.filter((k) => k.kind === "test");
     if (t.kind === "round" || (tests.length && tests.length === inside.length)) {
       const verdicts = tests.map((k) => stateOf.get(k.id)!);

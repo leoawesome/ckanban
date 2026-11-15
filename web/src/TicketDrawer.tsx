@@ -33,9 +33,9 @@ import type { CommandAction } from "./CommandBar";
 import { attentionGoal, pickAsk } from "./attentionGoal";
 import { KeyHint } from "./KeyHint";
 import { MOD } from "./Shortcuts";
-import { complete, PlanFinished, planFinished, PlanSummary } from "./PlanPanel";
+import { PlanFinished, planFinished, PlanSummary } from "./PlanPanel";
 import { FamilyTab } from "./FamilyTab";
-import { familyOf, featureRows, isFeature } from "./family";
+import { familyOf, featureRows, isFeature, taskTally } from "./family";
 import { Outputs } from "./Outputs";
 import { PrBox } from "./PrBox";
 import { PrList } from "./PrList";
@@ -415,8 +415,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   }, [slug, ticket.id, waitingSince]);
   const huddleState = useHuddle(slug, ticket.id, huddlePick);
   const familySize = useMemo(() => familyOf(tickets, ticket.id).length, [tickets, ticket.id]);
-  // The badge counts the rows the Tasks tab lists: its own feature, a sub-feature once (featureRows).
-  const taskRows = useMemo(() => featureRows(tickets, ticket.id).length, [tickets, ticket.id]);
+  // The badge counts tasks like the status's "N of M done" and the Tasks list head (taskTally over the feature's rows).
+  const tally = useMemo(() => taskTally(featureRows(tickets, ticket.id)), [tickets, ticket.id]);
   const huddle = huddleState.latest;
   // The Family tab exists while the ticket has a family (plan children included); Changes once Claude changed files (in a worktree, or in the
   // board's folder itself); Huddle once the ticket has had a huddle (or one is being started); Usage only while open
@@ -1146,11 +1146,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const tabLabel: Record<DrawerTab, React.ReactNode> = {
     ticket: "Ticket",
     chat: <>Chat {working && <span className="dot" />}</>,
-    family: children.length > 0 ? (
-      <>Tasks<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : children.every(complete) ? "ok" : ""}`}>
-        {children.filter(complete).length}/{children.length}
-      </span></>
-    ) : <>Tasks<span className="tab-count">{taskRows}</span></>,
+    family: tally.total > 0 ? (
+      <>Tasks<span className={`tab-count ${ticket.plan?.state === "stuck" ? "warn" : tally.done === tally.total ? "ok" : ""}`}
+        title={`${tally.done} of ${tally.total} tasks done`}>{tabCount(tally.done)}/{tabCount(tally.total)}</span></>
+    ) : <>Tasks</>,
     huddle: (
       <>
         Huddle{huddle && huddle.status !== "closed" && <span className={`tab-count${huddle.status === "live" ? " ok" : ""}`}>{members(huddle).length}</span>}
