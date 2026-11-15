@@ -42,307 +42,60 @@
 //
 // The one brake, so a huddle can't overspend: it stops at maxCostUsd (agents' runs and @main's huddle replies; the
 // leads are warned at 80%). There is no message limit: agents talk until they reach a conclusion.
-import { boardConnectorOptions } from "../runs/connectors";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { pauser, trackedInterval } from "../core/lag";
-import { basename, dirname, join } from "node:path";
-import { summarizeEvent } from "../runs/activity";
-import { mcpConfig } from "../server/agents";
-import { claudeSessionExists, claudeSessionFile, type Board, type RunBrowsers } from "../board/board";
-import { planProposal } from "../board/plan-proposal";
-import { parseSession, type SessionEntry } from "../runs/session";
+import { existsSync } from "node:fs";
+import { pauser } from "../core/lag";
+import { join } from "node:path";
+import { claudeSessionExists, type Board } from "../board/board";
 import type { Bus } from "../core/events";
-import { addWorktree, branchExists, hasCommits, NO_HOOKS, removeWorktree, run as git, worktreeDir } from "../runs/git";
-import { projectNames, removeOutputCopies } from "./output-copies";
-import {
-  activeHost, DEFAULT_MAX_PARTICIPANTS, handleBase, HUDDLE_AGENT_ENV, LEGACY_SUMMARY_FILE, MAIN_HANDLE, NO_EDIT_TOOLS, parseMentions, RESERVED_HANDLES,
-  proposalFile, REVIEW_HUDDLE_HEADING, reviewHuddleRequest, rosterEntryError, rosterError, summaryFile, USER_HANDLE, type RosterEntry,
-} from "./huddle-roster";
-import {
-  BUILTIN_PRESETS, deletePreset, type HuddlePreset, type HuddlePresetView, MAIN_PRESET, mergePresets, presetName, savePreset,
-} from "./huddle-presets";
-import {
-  ALL_ROLES, cleanLessons, cleanNotes, type HuddleNote, lessonsSection, type LessonInput, NOTE_MAX, noteRole, noteText, type NoteScope, type RoleNotes,
-} from "./huddle-notes";
-import {
-  BUILTIN_TEMPLATES, customReviewBrief, deleteTemplate, type HuddleTemplate, type HuddleTemplateView, mergeTemplates, saveTemplate, templateBrief, topicInput,
-} from "./huddle-templates";
+import { LEGACY_SUMMARY_FILE, summaryFile } from "./huddle-roster";
+import { BUILTIN_PRESETS, deletePreset, type HuddlePresetView, presetName, savePreset } from "./huddle-presets";
+import { BUILTIN_TEMPLATES, deleteTemplate, type HuddleTemplateView, saveTemplate } from "./huddle-templates";
 import type { HostHuddle } from "../helper/attention";
-import { huddleUsage, type Usage } from "./huddle-usage";
-import { isLevel, type Level, lowerLevels } from "../core/layers";
-import { accept as acceptHandIn, handIn as saveHandIn, handInDir as handInSaved, keepUnhanded, keptDir, makeFolderCopy, makeGitCopy, readState, removeCopy, unhanded } from "./huddle-copies";
-import { autoHuddleSlotPrompt, autoHuddleStoppedPrompt, huddleAgentPrompt, huddleAgentSystemPrompt, huddleDigest, huddleMainPrompt, withoutChromeRule } from "../runs/prompts";
-import { buildArgs, MONITOR_IDLE_MS, startRun, type RunHandle } from "../runs/runner";
-import { addHuddleSpend } from "../usage/spend";
+import { isLevel, lowerLevels } from "../core/layers";
 import type { Store } from "../core/store";
-import { contextTokens, messageCost } from "../usage/ticket-usage";
-import { proposalPreset, teammateProposal, type TeammateProposal } from "./teammate-proposal";
-import { addSideSpend, type SideCaller } from "../runs/side-call";
-import {
-  chatTail, GENERIC_SQUAD_MODEL, GENERIC_SQUAD_SYSTEM, GENERIC_SQUAD_TIMEOUT_MS, genericSquadPrompt, parseGenericSquad, squadProposal, ticketTopic,
-  type SquadProposal, squadSavePlan, squadSetup, withNewTeammates,
-} from "./squad";
-import { AUTO_HUDDLE_TRIGGERS, autoHuddlesOn, isAutoHuddleTrigger, USER_HUDDLE_TRIGGER } from "../core/types";
-import type {
-  HandIn, Huddle, HuddleFinding, HuddleLearning, HuddleMessage, HuddleMessageKind, HuddleMode, HuddleParticipant, HuddleSource, HuddleStopReason, Profile, Ticket,
-} from "../core/types";
-import { newId, nowIso } from "../core/util";
-import { boardKeyEnv } from "../server/board-keys";
+import { contextTokens } from "../usage/ticket-usage";
+import type { Huddle, HuddleMessage, HuddleParticipant } from "../core/types";
+import { nowIso } from "../core/util";
+import { HuddleError, ACTIVITY_THROTTLE_MS, HuddleTeammateSpend, teammateSpend, HuddleView, pendingLearnings, userSeenSeq, isForYou, Caller, HuddleOptions, AgentRun, isCoordinator, endedByDone } from "./huddle-types";
+import * as presetsPart from "./huddle-presets-api";
+import * as templatesPart from "./huddle-templates-api";
+import * as changingPart from "./huddle-changing";
+import * as autoPart from "./huddle-auto";
+import * as handinPart from "./huddle-handin";
+import * as messagesPart from "./huddle-messages";
+import * as routingPart from "./huddle-routing";
+import * as agentsPart from "./huddle-agents";
+import * as lifecyclePart from "./huddle-lifecycle";
 
-export class HuddleError extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message);
-  }
-}
-
-/**
- * Most message text one wake hands a session. Normally every unread message goes in whole; only a session that slept
- * through far more than this gets the newest ones that fit, the older ones left to huddle_read, so one huge digest
- * doesn't make it compress its own memory.
- */
-export const DIGEST_MAX_CHARS = 100_000;
-
-/** The newest unread messages whose text fits in DIGEST_MAX_CHARS (always at least the newest one). */
-export function digestWindow<M extends { text: string }>(unread: M[], max = DIGEST_MAX_CHARS): M[] {
-  let total = 0;
-  let i = unread.length;
-  while (i > 0 && (i === unread.length || total + unread[i - 1].text.length <= max)) total += unread[--i].text.length;
-  return unread.slice(i);
-}
-
-/** Longest message anyone can post: longer reports go in a file. */
-export const POST_MAX = 2000;
-/** Longest pinned brief. */
-export const BRIEF_MAX = 8000;
-/** A finding's title as system lines show it (the findings list has the whole text). */
-const FINDING_TITLE = 100;
-const ACTIVITY_THROTTLE_MS = 1000;
-export const DEFAULT_MAX_COST_USD = 20;
-/** Most an auto huddle (start_huddle) may ask for; a run asking for more gets this. */
-export const AUTO_MAX_COST_USD = 100;
-const BUDGET_WARN = 0.8;
-/** Teammates one agent may have waiting for the user's review at once. */
-const MAX_PENDING_TEAMMATES = 2;
-/** A live huddle with nobody working and nothing owed for this long wakes @main (see idleSweep). */
-export const HUDDLE_IDLE_MS = 5 * 60_000;
-/** How often the idle watchdog looks at the open huddles. */
-const IDLE_SWEEP_MS = 30_000;
-
-/** What the huddle spent so far: every participant's runs (agents) and huddle replies (@main and invited tickets). */
-export const huddleCost = (h: Huddle) => h.participants.reduce((s, p) => s + (p.costUsd ?? 0), 0);
-
-/** What one huddle's teammates (its agents) spent, for the host ticket's cost. */
-export interface HuddleTeammateSpend {
-  id: string;
-  status: Huddle["status"];
-  createdAt: string;
-  costUsd: number;
-  teammates: { handle: string; role: string; costUsd: number }[];
-}
-
-/**
- * What the agents of a ticket's huddles spent: it counts on the host ticket's card and Usage tab. Ticket sessions
- * (@main, invited tickets) are left out, their huddle replies are runs of their own ticket and counted there.
- */
-export function teammateSpend(huddles: readonly Huddle[], ticketId: string): { costUsd: number; huddles: HuddleTeammateSpend[] } {
-  const out: HuddleTeammateSpend[] = [];
-  for (const h of huddles) {
-    if (h.hostTicket !== ticketId) continue;
-    const teammates = h.participants
-      .filter((p) => p.kind === "agent" && (p.costUsd ?? 0) > 0)
-      .map((p) => ({ handle: p.handle, role: p.role, costUsd: p.costUsd ?? 0 }));
-    if (teammates.length) out.push({ id: h.id, status: h.status, createdAt: h.createdAt, costUsd: teammates.reduce((a, t) => a + t.costUsd, 0), teammates });
-  }
-  return { costUsd: out.reduce((a, h) => a + h.costUsd, 0), huddles: out };
-}
-
-/** A participant's cost after a result line reporting its session's running total. */
-function costAfter(p: HuddleParticipant | undefined, total: number): Pick<HuddleParticipant, "costUsd" | "sessionCostUsd"> {
-  const prev = p?.sessionCostUsd ?? 0;
-  return { costUsd: (p?.costUsd ?? 0) + (total >= prev ? total - prev : total), sessionCostUsd: total };
-}
-
-const money = (n: number) => `$${n.toFixed(2)}`;
-
-export type ParticipantView = Omit<HuddleParticipant, "token"> & {
-  running: boolean;
-  /** Estimated cost of the turn it is in now, not yet in costUsd (≈, priced from the turn's messages). */
-  liveCostUsd?: number;
-};
-/**
- * quiet: live, nobody working, no unanswered tags and no open findings (a sign it can be wrapped up);
- * idleSince: when the last message or turn was. forYou: messages tagging @you since the user last posted or acted
- * (forYouSince: that seq), plus the learnings waiting for the user's review (learningsPending).
- */
-export type HuddleView = Omit<Huddle, "participants"> & {
-  participants: ParticipantView[]; hostTitle: string | null; quiet: boolean; idleSince: string | null; forYou: number; forYouSince: number;
-  learningsPending: number;
-  /** The huddle's summary, relative to the host ticket's outputs folder; null while there is none. */
-  summary: string | null;
-};
-
-/** Teammates and squads agents proposed, waiting for the user (lessons no longer wait: they go to the board's pile, learner.ts). */
-export const pendingLearnings = (h: Huddle) => (h.learnings ?? []).filter((l) => l.status === "pending" && (!!l.teammate || !!l.squad));
-
-/** What "Save as squad…" returns: the card (null when the call failed, with error), and the huddle's setup as it was. */
-export interface GenericSquadResult {
-  proposal: SquadProposal | null;
-  error: string | null;
-  /** The roster as it was (nothing made generic), for the filled-in editor. */
-  setup: HuddleTemplate;
-  costUsd: number;
-}
-
-/** The seq the user has seen up to: their last post or action (Stop, Resume, restart…). */
-export function userSeenSeq(h: Huddle, msgs: readonly HuddleMessage[]): number {
-  const me = h.participants.find((p) => p.handle === USER_HANDLE);
-  const posted = msgs.findLast((m) => m.from === USER_HANDLE)?.seq ?? 0;
-  return Math.max(me?.cursor ?? 0, posted);
-}
-
-/** A message that needs the user: it tags @you (brake and close-request system lines included) after `since`. */
-export const isForYou = (m: HuddleMessage, since: number) => m.seq > since && m.from !== USER_HANDLE && m.mentions.includes(USER_HANDLE);
-
-export { LEGACY_SUMMARY_FILE, summaryFile };
-
-/**
- * The summary the board writes itself when a huddle closed without one and @main can't write it: the brief, the
- * roster with costs, the findings, each lead's last message and the output files the messages mention.
- */
-export function fallbackSummary(h: Huddle, msgs: readonly HuddleMessage[], outputs: string[]): string {
-  const span = `${h.createdAt.slice(0, 16).replace("T", " ")}${h.closedAt ? ` to ${h.closedAt.slice(0, 16).replace("T", " ")}` : ""} UTC`;
-  const agents = h.participants.filter((p) => p.kind !== "human");
-  const leads = agents.filter((p) => p.lead || p.handle === MAIN_HANDLE);
-  const last = leads.map((p) => ({ p, m: msgs.findLast((m) => m.from === p.handle && m.kind !== "system") })).filter((x) => x.m);
-  const said = msgs.map((m) => m.text).join("\n");
-  const mine = summaryFile(h.id);
-  const mentioned = new Set(outputs.filter((f) => f !== mine && said.includes(f)));
-  for (const m of said.matchAll(/outputs\/([\w.\/-]+\.\w+)/g)) if (m[1] !== mine) mentioned.add(m[1]);
-  const finding = (f: HuddleFinding) =>
-    `- [${f.status === "resolved" ? "x" : " "}] ${f.text.replace(/\s*\n\s*/g, " ")} (pinned by @${f.by}${f.resolvedBy ? `, resolved by @${f.resolvedBy}` : ""})`;
-  return [
-    "# Huddle summary",
-    "",
-    `_Written by the board: huddle ${h.id} closed without a summary. ${span}, ${h.seq} messages, ${money(huddleCost(h))} spent._`,
-    "",
-    "## Brief",
-    "",
-    h.brief?.text.trim() || "No brief was pinned.",
-    "",
-    "## Participants",
-    "",
-    ...(agents.length ? agents.map((p) => `- @${p.handle}: ${p.role}${p.lead ? " (lead)" : ""} · ${p.status} · ${money(p.costUsd ?? 0)}`) : ["None."]),
-    "",
-    "## Findings",
-    "",
-    ...(h.findings.length ? h.findings.map(finding) : ["None pinned."]),
-    "",
-    ...(h.handIns?.length ? [
-      "## Changes handed in",
-      "",
-      ...h.handIns.map((x) => `- ${x.id} from @${x.from}: ${x.summary} (${handInFiles(x.files)}): ${x.status}${x.by ? ` by @${x.by}` : ""}${x.reason ? ` (${x.reason})` : ""}`),
-      "",
-    ] : []),
-    "## Last word from the leads",
-    "",
-    ...(last.length ? last.flatMap(({ p, m }) => [`### @${p.handle} (#${m!.seq})`, "", m!.text.trim(), ""]) : ["No lead posted.", ""]),
-    "## Output files mentioned",
-    "",
-    ...(mentioned.size ? [...mentioned].sort().map((f) => `- ${f}`) : ["None."]),
-    "",
-  ].join("\n");
-}
-
-/** Who is calling, from the request: a board run's ticket (RUN_HEADER) and a huddle agent (HUDDLE_HEADER). Neither: the user. */
-export interface Caller {
-  run?: string | null;
-  agent?: string | null;
-}
-
-export interface HuddleOptions {
-  claudeBin: string;
-  /** How long a monitor-mode session stays open between turns (default 30 min). */
-  idleMs?: number;
-  sessionExists?: (sessionId: string) => boolean;
-  /**
-   * Lessons an agent proposed when it turned done, with the role they would go to: they go to the board's pile of
-   * lessons (learner.ts), not to the user, and are saved once they come back. Without it they are dropped.
-   */
-  learn?: (slug: string, h: Huddle, p: HuddleParticipant, role: string, lessons: LessonInput[]) => void;
-  /** The ticket's chat, for the plan a plan review checks (default: its session file, parsed). */
-  entries?: (t: Ticket) => SessionEntry[];
-}
-
-/** A ticket's chat entries read straight from its session file; [] when it has none. */
-function sessionEntries(t: Ticket): SessionEntry[] {
-  const f = t.sessionId ? claudeSessionFile(t.sessionId) : null;
-  return f ? parseSession(readFileSync(f, "utf8")).entries : [];
-}
-
-interface AgentRun {
-  handle: RunHandle | null;
-  promise: Promise<void>;
-  /** Between Claude's result and its next turn. */
-  idle: boolean;
-  /** Monitor: messages came in mid-turn; they go in at the next turn boundary. */
-  pending: boolean;
-  /** Messages came in after input closed: deliver them in a new run once this one ends. */
-  again: boolean;
-  stopRequested: boolean;
-  /** Snapshot agent between turns: its worktree is being reset (refreshing), or was reset for the next wake (fresh). */
-  refreshing?: Promise<void> | null;
-  fresh?: boolean;
-  /** Estimated cost of the turn in progress by assistant message id (its result line gives the exact total). */
-  turn?: Map<string, number>;
-  /** Its conversation's size at the latest assistant message (saved as contextTokens with the next activity write). */
-  ctx?: number;
-}
-
-const isCoordinator = (h: Huddle, p: HuddleParticipant) => p.kind === "ticket-main" && p.ticketId === h.hostTicket;
-const canManage = (h: Huddle, p: HuddleParticipant) => p.kind === "human" || isCoordinator(h, p) || p.lead;
-/** A read-only agent in the shared workspace: it works in a detached snapshot of the host's HEAD. */
-/** A Done host's huddle started before the host last moved to Done (or the move's time isn't known) ends with it. */
-const endedByDone = (h: Pick<Huddle, "createdAt">, t: Pick<Ticket, "doneAt">) => !t.doneAt || h.createdAt <= t.doneAt;
-
-/** closeForTicket's default reason: the host ticket is gone, so nobody writes a summary. */
-const DELETED = "the host ticket was deleted";
-
-/** The queued message asking @main for a closed huddle's summary. */
-const summaryAsk = (h: Huddle, file: string) =>
-  `Huddle ${h.id} was closed without a summary. Write it to ${file}: what was decided, the findings and their state, what is left to do. ` +
-  "The huddle is closed, so don't post there; just write the file and end your turn.";
-
-const isSnapshot = (p: HuddleParticipant) => p.kind === "agent" && p.workspace === "shared" && !p.canEdit;
-/** done / blocked: set by the participant itself; its runs' turns ending don't change it. */
-const settled = (p: HuddleParticipant | undefined) => p?.status === "done" || p?.status === "blocked";
+export * from "./huddle-types";
 
 export class Huddles {
-  private runs = new Map<string, AgentRun>();
+  runs = new Map<string, AgentRun>();
   /** Ticket sessions (monitor mode) with messages waiting until their current run ends, "<slug>/<huddle>/<handle>". */
-  private mainPending = new Set<string>();
+  mainPending = new Set<string>();
   /** Closed huddles ("slug/hid") whose summary @main was asked to write; see ensureSummary. */
-  private summaryOwed = new Set<string>();
+  summaryOwed = new Set<string>();
   /** Ticket sessions by "<slug>/<ticket>": the huddle participant that last woke them (its peer runs' cost is that huddle's). */
-  private mainWoken = new Map<string, { hid: string; handle: string }>();
+  mainWoken = new Map<string, { hid: string; handle: string }>();
   /** Ticket sessions' running cost, "<slug>/<ticket>/<session>" -> total_cost_usd at its latest result. */
   private ticketTotals = new Map<string, number>();
   /** A ticket session's latest conversation size ("slug/id" -> tokens), and when it was last written to its huddles. */
   private ticketCtx = new Map<string, { tokens: number; savedAt: number; saved: number }>();
-  private shuttingDown = false;
-  private sessionExists: (id: string) => boolean;
+  shuttingDown = false;
+  sessionExists: (id: string) => boolean;
   /** Background work whenIdle() waits for (worktree cleanup after a close). */
-  private chores = new Set<Promise<void>>();
+  chores = new Set<Promise<void>>();
   /** Ticket -> the doneAt its outputs were last cleaned for (cleanOutputs); capped, oldest dropped. */
   private doneCleaned = new Map<string, string>();
   /** Per ticket: the outputs cleanup running now, so two never walk the same folders at once. */
-  private cleaning = new Map<string, Promise<void>>();
+  cleaning = new Map<string, Promise<void>>();
   /** Each huddle as this board last saved it, with its file's stamp, by "<slug>/<huddle>" (see guard). */
   private saved = new Map<string, { stamp: string | null; h: Huddle }>();
-  private sweeper: ReturnType<typeof setInterval> | null = null;
+  sweeper: ReturnType<typeof setInterval> | null = null;
   /** Per board: the ticket the board last woke because the auto-huddle slot freed; the next waiter waits until its run is over. */
-  private slotWoken = new Map<string, string>();
+  slotWoken = new Map<string, string>();
 
-  constructor(private store: Store, private board: Board, private bus: Bus, private opts: HuddleOptions) {
+  constructor(public store: Store, public board: Board, public bus: Bus, public opts: HuddleOptions) {
     this.sessionExists = opts.sessionExists ?? claudeSessionExists;
     // A pending restart waits for huddle agents mid-turn too.
     board.onRestartBusy(() => this.busyBoards());
@@ -399,7 +152,7 @@ export class Huddles {
     });
   }
 
-  private key(slug: string, hid: string, handle: string) {
+  key(slug: string, hid: string, handle: string) {
     return `${slug}/${hid}/${handle}`;
   }
 
@@ -480,7 +233,7 @@ export class Huddles {
   }
 
   /** The huddle from disk, checked against edits made outside the board (see guard). */
-  private load(slug: string, hid: string): Huddle | null {
+  load(slug: string, hid: string): Huddle | null {
     const h = this.store.getHuddle(slug, hid);
     if (!h) {
       this.saved.delete(`${slug}/${hid}`);
@@ -489,7 +242,7 @@ export class Huddles {
     return this.guard(slug, h);
   }
 
-  private save(slug: string, h: Huddle) {
+  save(slug: string, h: Huddle) {
     this.store.saveHuddle(slug, h);
     this.saved.set(`${slug}/${h.id}`, { stamp: this.store.huddleStamp(slug, h.id), h: structuredClone(h) });
   }
@@ -564,7 +317,7 @@ export class Huddles {
   }
 
   /** Doing something now: an agent mid-turn, or a ticket session with a run (its own work or a huddle reply). */
-  private working(slug: string, h: Huddle, p: HuddleParticipant): boolean {
+  working(slug: string, h: Huddle, p: HuddleParticipant): boolean {
     if (p.kind === "agent") {
       const run = this.runs.get(this.key(slug, h.id, p.handle));
       return !!run && !run.idle;
@@ -633,14 +386,14 @@ export class Huddles {
   }
 
   /** The huddle's summary file in the host's outputs: its own, or for a closed one the single file older huddles wrote. */
-  private summaryOf(slug: string, h: Huddle): string | null {
+  summaryOf(slug: string, h: Huddle): string | null {
     const dir = this.store.outputsPath(slug, h.hostTicket);
     if (existsSync(join(dir, summaryFile(h.id)))) return summaryFile(h.id);
     return h.status === "closed" && existsSync(join(dir, LEGACY_SUMMARY_FILE)) ? LEGACY_SUMMARY_FILE : null;
   }
 
   /** Live, nobody working, nobody with an unanswered tag and no open findings; idleSince: the last message or turn. */
-  private quiet(slug: string, h: Huddle, msgs: readonly HuddleMessage[]): { quiet: boolean; idleSince: string | null } {
+  quiet(slug: string, h: Huddle, msgs: readonly HuddleMessage[]): { quiet: boolean; idleSince: string | null } {
     const no = { quiet: false, idleSince: null };
     const ps = h.participants.filter((p) => p.kind !== "human");
     if (h.status !== "live" || h.findings.some((f) => f.status === "open") || ps.some((p) => this.working(slug, h, p))) return no;
@@ -751,13 +504,9 @@ export class Huddles {
 
   // ---- Role presets ("teammates"): built-ins, the global huddle-presets.json and the board's (see layers.ts) ----
 
-  presets(slug: string): HuddlePresetView[] {
-    return mergePresets(this.store.listHuddlePresets(null), this.store.listHuddlePresets(slug));
-  }
+  presets(...a: Parameters<typeof presetsPart.presets>): ReturnType<typeof presetsPart.presets> { return presetsPart.presets.call(this, ...a); }
 
-  private presetMap(slug: string): Map<string, HuddlePreset> {
-    return new Map(this.presets(slug).map((p) => [p.name, p]));
-  }
+  presetMap(...a: Parameters<typeof presetsPart.presetMap>): ReturnType<typeof presetsPart.presetMap> { return presetsPart.presetMap.call(this, ...a); }
 
   /**
    * Add or change a preset at one level: "board" (default) or "global" (every board). A lower level's name overrides it.
@@ -797,20 +546,11 @@ export class Huddles {
     return { reset: r.reset, presets: this.presets(slug) };
   }
 
-  /** The level a delete goes to: the one asked for, else the one in effect (a built-in: the board, which then says no). */
-  private levelOf(level: unknown, source: string | undefined): Level {
-    if (level !== undefined && level !== null && level !== "") {
-      if (!isLevel(level)) throw new HuddleError(400, "scope must be board or global");
-      return level;
-    }
-    return source === "global" ? "global" : "board";
-  }
+  private levelOf(...a: Parameters<typeof presetsPart.levelOf>): ReturnType<typeof presetsPart.levelOf> { return presetsPart.levelOf.call(this, ...a); }
 
   // ---- Whole-huddle templates: built-ins, the global huddle-templates.json and the board's ----
 
-  templates(slug: string): HuddleTemplateView[] {
-    return mergeTemplates(this.store.listHuddleTemplates(null), this.store.listHuddleTemplates(slug));
-  }
+  templates(...a: Parameters<typeof templatesPart.templates>): ReturnType<typeof templatesPart.templates> { return templatesPart.templates.call(this, ...a); }
 
   /** Add or change a template at one level, like savePreset (a lower level's name overrides it). */
   saveTemplate(slug: string, input: unknown, level: unknown = "board"): HuddleTemplateView {
@@ -843,1910 +583,183 @@ export class Huddles {
     return { reset: r.reset, templates: this.templates(slug) };
   }
 
-  /** How every teammate and template has been used, from the huddles on every board (closed ones included). */
-  usage(): { teammates: Record<string, Usage>; templates: Record<string, Usage> } {
-    return huddleUsage(this.store.listProfiles().flatMap((p) =>
-      // The shared frozen index (only read here): no copy of every huddle on every board.
-      this.store.huddleIndex(p.slug).map((h) => ({ board: p.slug, huddle: h as Huddle, title: this.store.getTicket(p.slug, h.hostTicket)?.title ?? null }))));
-  }
+  usage(...a: Parameters<typeof templatesPart.usage>): ReturnType<typeof templatesPart.usage> { return templatesPart.usage.call(this, ...a); }
 
   // ---- Role notes (huddle-notes.ts): only the user writes them ----
 
-  /** Every role's notes that exist on disk, general and this board's repo notes. */
-  notes(slug: string): Record<string, RoleNotes> {
-    if (!this.store.getProfile(slug)) throw new HuddleError(404, `board ${slug} not found`);
-    const out: Record<string, RoleNotes> = {};
-    for (const role of this.store.huddleNoteRoles(slug)) {
-      if (noteRole(role) !== role) continue;
-      out[role] = { general: this.store.readHuddleNotes(slug, role, "general"), repo: this.store.readHuddleNotes(slug, role, "repo") };
-    }
-    return out;
-  }
+  notes(...a: Parameters<typeof presetsPart.notes>): ReturnType<typeof presetsPart.notes> { return presetsPart.notes.call(this, ...a); }
 
-  /** Replace a role's notes in one scope (the user added, edited or deleted lines in the Team tab). */
-  setNotes(slug: string, role: string, scope: string, notes: unknown): HuddleNote[] {
-    if (!this.store.getProfile(slug)) throw new HuddleError(404, `board ${slug} not found`);
-    const r = noteRole(role);
-    if (!r) throw new HuddleError(400, `"${role}" is not a role name`);
-    if (scope !== "general" && scope !== "repo") throw new HuddleError(400, "scope must be general or repo");
-    let ns: HuddleNote[];
-    try {
-      ns = cleanNotes(notes);
-    } catch (e) {
-      throw new HuddleError(400, (e as Error).message);
-    }
-    this.store.writeHuddleNotes(slug, r, scope, ns);
-    return this.store.readHuddleNotes(slug, r, scope);
-  }
+  setNotes(...a: Parameters<typeof presetsPart.setNotes>): ReturnType<typeof presetsPart.setNotes> { return presetsPart.setNotes.call(this, ...a); }
 
-  /** The "Lessons from past huddles" section for a new agent of `preset` (or an ad-hoc one: All-roles notes only). */
-  lessonsFor(slug: string, preset: string | null): string {
-    const read = (role: string): RoleNotes => ({ general: this.store.readHuddleNotes(slug, role, "general"), repo: this.store.readHuddleNotes(slug, role, "repo") });
-    const role = preset && noteRole(preset) && preset !== ALL_ROLES ? preset : null;
-    return lessonsSection(read(ALL_ROLES), role ? read(role) : null, role);
-  }
+  lessonsFor(...a: Parameters<typeof presetsPart.lessonsFor>): ReturnType<typeof presetsPart.lessonsFor> { return presetsPart.lessonsFor.call(this, ...a); }
 
-  /** Lessons go to the board's pile (opts.learn), aimed at the agent's own role when it has one, else every role. */
-  private addLearnings(slug: string, hid: string, p: HuddleParticipant, lessons: LessonInput[]) {
-    const presets = this.presetMap(slug);
-    const target = p.preset && p.preset !== MAIN_PRESET && presets.has(p.preset) ? p.preset : ALL_ROLES;
-    this.opts.learn?.(slug, this.get(slug, hid), p, target, lessons);
-  }
+  addLearnings(...a: Parameters<typeof presetsPart.addLearnings>): ReturnType<typeof presetsPart.addLearnings> { return presetsPart.addLearnings.call(this, ...a); }
 
-  /** anyState: also one already saved or discarded. */
-  private learning(h: Huddle, id: string, anyState = false): HuddleLearning {
-    const l = (h.learnings ?? []).find((x) => x.id === id);
-    if (!l) throw new HuddleError(404, `no learning ${id} in huddle ${h.id}`);
-    if (!anyState && l.status !== "pending") throw new HuddleError(409, `learning ${id} was already ${l.status}`);
-    return l;
-  }
+  learning(...a: Parameters<typeof presetsPart.learning>): ReturnType<typeof presetsPart.learning> { return presetsPart.learning.call(this, ...a); }
 
-  /** A pending learning with the user's changes (text, scope, target) applied and checked. */
-  private patched(slug: string, l: HuddleLearning, patch: { text?: unknown; scope?: unknown; target?: unknown }): HuddleLearning {
-    const out = { ...l };
-    if (patch.text !== undefined) {
-      const t = noteText(String(patch.text ?? ""));
-      if (!t) throw new HuddleError(400, "the lesson's text is empty");
-      if (t.length > NOTE_MAX) throw new HuddleError(400, `the lesson is ${t.length} characters, over the limit of ${NOTE_MAX}`);
-      out.text = t;
-    }
-    if (patch.scope !== undefined) {
-      if (patch.scope !== "general" && patch.scope !== "repo") throw new HuddleError(400, "scope must be general or repo");
-      out.scope = patch.scope;
-    }
-    if (patch.target !== undefined && (l.teammate || l.squad)) throw new HuddleError(400, `a proposed ${l.squad ? "squad" : "teammate"} is saved as itself; pick all boards or this board with scope`);
-    if (patch.target !== undefined) {
-      const t = String(patch.target);
-      if (t !== ALL_ROLES && t !== "new" && (t === MAIN_PRESET || !this.presetMap(slug).has(t))) {
-        throw new HuddleError(400, `save to must be ${ALL_ROLES} (all roles), a role preset of this board, or new`);
-      }
-      if (t === "new" && l.preset) throw new HuddleError(400, `@${l.from} already has a role preset (${l.preset}); save to it instead`);
-      out.target = t;
-    }
-    return out;
-  }
+  patched(...a: Parameters<typeof presetsPart.patched>): ReturnType<typeof presetsPart.patched> { return presetsPart.patched.call(this, ...a); }
 
-  /** The user changes a pending learning before saving it: its text, scope or where it goes. */
-  editLearning(slug: string, hid: string, id: string, patch: { text?: unknown; scope?: unknown; target?: unknown }): HuddleLearning {
-    const next = this.patched(slug, this.learning(this.get(slug, hid), id), patch);
-    this.update(slug, hid, (x) => void Object.assign(this.learning(x, id), next));
-    return next;
-  }
+  editLearning(...a: Parameters<typeof presetsPart.editLearning>): ReturnType<typeof presetsPart.editLearning> { return presetsPart.editLearning.call(this, ...a); }
 
-  /**
-   * The user saves a learning as a role note: at the top of the target's notes file (general: every repo; repo: this
-   * board), with where it came from. Target "new" first makes a board preset from the agent's ad-hoc role (its label
-   * and prompt). Only the user gets here (the HTTP route refuses runs and huddle agents).
-   */
-  saveLearning(slug: string, hid: string, id: string, patch: { text?: unknown; scope?: unknown; target?: unknown; replace?: unknown } = {}): HuddleLearning {
-    const h = this.get(slug, hid);
-    const l = this.patched(slug, this.learning(h, id), patch);
-    if (l.squad) {
-      // A proposed squad: saved as proposed for all boards (scope general) or this board (repo), its new teammates with it.
-      this.saveSquad(slug, l.squad.squad, l.scope === "general" ? "global" : "board", { huddleId: hid, learningId: id }, patch.replace === true);
-      return this.learning(this.get(slug, hid), id, true);
-    }
-    if (l.teammate) {
-      // A proposed teammate: saved (or an existing one changed) for all boards (scope general) or this board (repo).
-      const p = this.savePreset(slug, proposalPreset(l.teammate), l.scope === "general" ? "global" : "board");
-      const saved: HuddleLearning = { ...l, status: "saved", target: p.name };
-      this.update(slug, hid, (x) => void Object.assign(this.learning(x, id), saved));
-      return saved;
-    }
-    let role = l.target;
-    if (role === "new") {
-      const p = h.participants.find((x) => x.handle === l.from);
-      const name = presetName(l.role);
-      if (!p || !name) throw new HuddleError(400, `can't make a role from "${l.role}"`);
-      if (this.presetMap(slug).has(name)) throw new HuddleError(409, `a role "${name}" already exists; save the lesson to it instead`);
-      this.savePreset(slug, { name, role: l.role, prompt: p.prompt, model: p.model, mode: p.mode, workspace: p.workspace, lead: false, canEdit: p.canEdit });
-      role = name;
-    }
-    const scope: NoteScope = l.scope;
-    const note: HuddleNote = { text: l.text, by: l.from, date: nowIso().slice(0, 10), huddle: h.id };
-    this.store.writeHuddleNotes(slug, role, scope, [note, ...this.store.readHuddleNotes(slug, role, scope)]);
-    const saved: HuddleLearning = { ...l, status: "saved", target: role, ...(l.target === "new" ? { newRole: true } : {}) };
-    this.update(slug, hid, (x) => void Object.assign(this.learning(x, id), saved));
-    return saved;
-  }
+  saveLearning(...a: Parameters<typeof presetsPart.saveLearning>): ReturnType<typeof presetsPart.saveLearning> { return presetsPart.saveLearning.call(this, ...a); }
 
-  /**
-   * A huddle agent proposes a teammate (propose_teammate): it waits under Learnings (scope general: all boards) until
-   * the user saves or discards it. Nothing is saved here.
-   */
-  proposeTeammate(slug: string, hid: string, by: HuddleParticipant, input: unknown): HuddleLearning {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (by.kind !== "agent") throw new HuddleError(400, "only huddle agents propose teammates to the huddle; a ticket chat's propose_teammate shows a card in its chat");
-    let t: TeammateProposal;
-    try {
-      t = teammateProposal(input);
-    } catch (e) {
-      throw new HuddleError(400, `${(e as Error).message}. Nothing was changed.`);
-    }
-    const waiting = pendingLearnings(h).filter((l) => l.from === by.handle && l.teammate).length;
-    if (waiting >= MAX_PENDING_TEAMMATES) {
-      throw new HuddleError(400, `you already have ${waiting} proposed teammates waiting for the user; at most ${MAX_PENDING_TEAMMATES} can wait at once. Nothing was changed.`);
-    }
-    let out!: HuddleLearning;
-    this.update(slug, hid, (x) => {
-      x.learnings ??= [];
-      out = {
-        id: `l${x.learnings.length + 1}`, from: by.handle, role: by.role, preset: by.preset ?? null, text: t.why, evidence: "", scope: "general",
-        status: "pending", target: "new", at: nowIso(), teammate: t,
-      };
-      x.learnings.push(out);
-    });
-    const known = this.presets(slug).some((p) => p.name === t.name);
-    this.system(slug, hid, `@${by.handle} proposed ${known ? `a change to teammate @${t.name}` : `a new teammate @${t.name}`}; the user reviews it under Learnings.`);
-    return out;
-  }
+  proposeTeammate(...a: Parameters<typeof presetsPart.proposeTeammate>): ReturnType<typeof presetsPart.proposeTeammate> { return presetsPart.proposeTeammate.call(this, ...a); }
 
   // ---- Squads (huddle templates to the user; see squad.ts) ----
 
-  /**
-   * A huddle agent proposes a squad (propose_squad): it waits under Learnings (scope general: all boards) until the
-   * user saves or discards it. Nothing is saved here.
-   */
-  proposeSquad(slug: string, hid: string, by: HuddleParticipant, input: unknown): HuddleLearning {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (by.kind !== "agent") throw new HuddleError(400, "only huddle agents propose squads to the huddle; a ticket chat's propose_squad shows a card in its chat");
-    let s: SquadProposal;
-    try {
-      s = squadProposal(input, this.presets(slug).map((p) => p.name));
-    } catch (e) {
-      throw new HuddleError(400, `${(e as Error).message}. Nothing was changed.`);
-    }
-    if (pendingLearnings(h).some((l) => l.from === by.handle && l.squad)) {
-      throw new HuddleError(400, "you already have a proposed squad waiting for the user; one can wait at once. Nothing was changed.");
-    }
-    let out!: HuddleLearning;
-    this.update(slug, hid, (x) => {
-      x.learnings ??= [];
-      out = {
-        id: `l${x.learnings.length + 1}`, from: by.handle, role: by.role, preset: by.preset ?? null, text: s.why, evidence: "", scope: "general",
-        status: "pending", target: s.squad.name, at: nowIso(), squad: s,
-      };
-      x.learnings.push(out);
-    });
-    this.system(slug, hid, `@${by.handle} proposed a squad "${s.squad.label}"; the user reviews it under Learnings.`);
-    return out;
-  }
+  proposeSquad(...a: Parameters<typeof templatesPart.proposeSquad>): ReturnType<typeof templatesPart.proposeSquad> { return templatesPart.proposeSquad.call(this, ...a); }
 
-  /**
-   * The user saves a squad (a squad card, or a huddle's proposed squad): first each person with no preset as a
-   * teammate at the same level (an existing teammate of that name is used as is, never changed), then the squad with
-   * those people pointed at their teammates. Everything is checked before anything is written. `learning`: the
-   * huddle's proposed squad this saves, marked saved. Only the user gets here (the HTTP routes refuse runs and agents).
-   */
-  saveSquad(slug: string, input: unknown, level: unknown = "board", learning?: { huddleId: string; learningId: string }, replace = false): {
-    squad: HuddleTemplateView; teammates: { created: string[]; reused: string[] };
-  } {
-    if (!this.store.getProfile(slug)) throw new HuddleError(404, `board ${slug} not found`);
-    if (!isLevel(level)) throw new HuddleError(400, "scope must be board or global");
-    if (learning) this.learning(this.get(slug, learning.huddleId), learning.learningId);
-    // A card never replaces a squad by surprise: the user renames it, or confirms (replace).
-    const name = presetName(typeof (input as any)?.name === "string" ? (input as any).name : "");
-    const existing = this.templates(slug).find((t) => t.name === name);
-    if (existing && !replace) throw new HuddleError(409, `a squad named "${name}" already exists (${existing.label}); rename this one, or save with replace to change that one`);
-    let plan: ReturnType<typeof squadSavePlan>;
-    try {
-      // A squad for all boards may only point at teammates every board has (built-in and global); a new one never takes a name this board has.
-      const reach = level === "global" ? new Map(lowerLevels(BUILTIN_PRESETS, this.store.listHuddlePresets(null), "board").map((p) => [p.name, p])) : this.presetMap(slug);
-      plan = squadSavePlan(input, reach, this.presetMap(slug).keys());
-    } catch (e) {
-      throw new HuddleError(400, (e as Error).message);
-    }
-    for (const p of plan.create) this.savePreset(slug, p, level);
-    const squad = this.saveTemplate(slug, plan.squad, level);
-    const teammates = { created: plan.create.map((p) => p.name), reused: plan.reused };
-    if (learning) {
-      this.update(slug, learning.huddleId, (x) => void Object.assign(this.learning(x, learning.learningId), {
-        status: "saved" as const, target: squad.name, scope: level === "global" ? "general" as const : "repo" as const,
-      }));
-    }
-    return { squad, teammates };
-  }
+  saveSquad(...a: Parameters<typeof templatesPart.saveSquad>): ReturnType<typeof templatesPart.saveSquad> { return templatesPart.saveSquad.call(this, ...a); }
 
-  /**
-   * "Save as squad…": one side call writes a generic squad from a huddle (running or closed) and returns it as a squad
-   * card, saving nothing. Its cost goes on the host ticket's side ledger. On a bad answer it asks once more, then
-   * returns the error with the huddle's setup as it was (for the filled-in editor).
-   */
-  async genericSquad(slug: string, hid: string, call: SideCaller): Promise<GenericSquadResult> {
-    const h = this.get(slug, hid);
-    const presets = this.presetMap(slug);
-    const tpl = h.template ? this.templates(slug).find((t) => t.name === h.template) : undefined;
-    const setup = squadSetup(h, presets, tpl);
-    if (!setup.roster.length) throw new HuddleError(400, "this huddle has no helpers to make a squad from");
-    const summary = this.summaryOf(slug, h);
-    let source: { kind: "summary" | "chat"; text: string } | null = null;
-    if (summary) {
-      try {
-        source = { kind: "summary", text: readFileSync(join(this.store.outputsPath(slug, h.hostTicket), summary), "utf8") };
-      } catch {}
-    }
-    source ??= { kind: "chat", text: chatTail(this.store.readHuddleMessages(slug, hid)) };
-    const learnings = (h.learnings ?? []).map((l) => `${l.teammate ? "Proposed teammate: " : l.squad ? "Proposed squad: " : ""}${l.text} (from @${l.from}, ${l.role})`);
-    // Process lessons often come back as a participant's reason for its status ("not done until the host's call").
-    for (const p of h.participants) if (p.kind === "agent" && p.statusReason?.trim()) learnings.push(`@${p.handle} (${p.role}) ended ${p.status}: ${p.statusReason.trim()}`);
-    const prompt = genericSquadPrompt({ setup, brief: h.brief?.text ?? null, learnings, source });
-    const names = [...presets.keys()];
-    let costUsd = 0;
-    let error = "";
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const r = await call({
-        system: GENERIC_SQUAD_SYSTEM, model: GENERIC_SQUAD_MODEL, timeoutMs: GENERIC_SQUAD_TIMEOUT_MS,
-        prompt: attempt ? `${prompt}\n\nYour last answer couldn't be used: ${error}. Answer with the JSON object only.` : prompt,
-      });
-      const cost = r.costUsd ?? 0;
-      costUsd += cost;
-      addSideSpend(this.store.sideSpendPath(slug, h.hostTicket), "squad", cost);
-      if (!r.ok) return { proposal: null, error: `Claude couldn't write the squad: ${r.error}`, setup, costUsd };
-      try {
-        const squad = parseGenericSquad(r.text, names);
-        return { proposal: withNewTeammates(squad, `Made from huddle ${h.id}.`), error: null, setup, costUsd };
-      } catch (e) {
-        error = (e as Error).message;
-      }
-    }
-    return { proposal: null, error: `Claude's squad couldn't be read twice (${error}); open the filled-in editor instead.`, setup, costUsd };
-  }
+  genericSquad(...a: Parameters<typeof templatesPart.genericSquad>): ReturnType<typeof templatesPart.genericSquad> { return templatesPart.genericSquad.call(this, ...a); }
 
-  /** The user discards a learning: it is never saved. */
-  discardLearning(slug: string, hid: string, id: string): HuddleLearning {
-    this.learning(this.get(slug, hid), id);
-    let out!: HuddleLearning;
-    this.update(slug, hid, (x) => {
-      out = Object.assign(this.learning(x, id), { status: "discarded" as const });
-    });
-    return out;
-  }
+  discardLearning(...a: Parameters<typeof templatesPart.discardLearning>): ReturnType<typeof templatesPart.discardLearning> { return templatesPart.discardLearning.call(this, ...a); }
 
   // ---- Changing ----
 
-  /** Read, change and save a huddle in one step (nothing else runs in between), then tell the UI. */
-  private update(slug: string, hid: string, fn: (h: Huddle) => void): Huddle {
-    const h = this.get(slug, hid);
-    const before = h.host && h.status === "live" ? activeHost(h) : null;
-    const was = h.participants.find((x) => x.handle === h.host)?.status;
-    fn(h);
-    h.updatedAt = nowIso();
-    this.save(slug, h);
-    this.bus.emit({ type: "huddle.updated", profile: slug, huddle: this.view(slug, h) });
-    const after = h.host && h.status === "live" ? activeHost(h) : null;
-    // After the caller's own note (stopped, failed…), so the room reads in order.
-    if (before && after && before !== after && !this.shuttingDown) queueMicrotask(() => this.hostMoved(slug, hid, after, was));
-    return h;
-  }
+  update(...a: Parameters<typeof changingPart.update>): ReturnType<typeof changingPart.update> { return changingPart.update.call(this, ...a); }
 
-  /**
-   * The host stopped, blocked or failed, so @main runs the huddle again and is tagged; or the host is back. A host
-   * turning done (its final report already tagged @main) or waking from done gets no note. was: its status before.
-   * Checked again here, in case it changed since.
-   */
-  private hostMoved(slug: string, hid: string, now: string, was?: string) {
-    const h = this.load(slug, hid);
-    const p = h?.participants.find((x) => x.handle === h.host);
-    if (!h || !p || h.status !== "live" || activeHost(h) !== now) return;
-    if (now === p.handle) return void (was !== "done" && this.system(slug, hid, `@${p.handle} is back and runs the huddle again.`));
-    if (p.status === "done") return;
-    const why = p.statusReason || (p.status === "failed" ? p.error : null);
-    this.system(slug, hid,
-      `@${p.handle} (the host) is ${p.status}${why ? `: ${why}` : ""}. @main runs the huddle again: the idle watchdog, the notes, the budget warnings and the hand-ins go to @main until @${p.handle} is back.`,
-      [MAIN_HANDLE]);
-  }
+  hostMoved(...a: Parameters<typeof changingPart.hostMoved>): ReturnType<typeof changingPart.hostMoved> { return changingPart.hostMoved.call(this, ...a); }
 
-  /** What an agent's turn in progress cost so far (≈); 0 between turns. */
-  private turnCost(slug: string, hid: string, handle: string): number {
-    const turn = this.runs.get(this.key(slug, hid, handle))?.turn;
-    return turn ? [...turn.values()].reduce((a, b) => a + b, 0) : 0;
-  }
+  turnCost(...a: Parameters<typeof changingPart.turnCost>): ReturnType<typeof changingPart.turnCost> { return changingPart.turnCost.call(this, ...a); }
 
-  private updateP(slug: string, hid: string, handle: string, patch: Partial<HuddleParticipant>): void {
-    if (!this.load(slug, hid)) return;
-    // Only what it is doing now and its conversation size (many times a minute): saved, and sent as a small event
-    // instead of the whole view.
-    if (Object.keys(patch).every((k) => k === "lastActivity" || k === "contextTokens")) {
-      const h = this.get(slug, hid);
-      const p = h.participants.find((x) => x.handle === handle);
-      const liveCostUsd = this.turnCost(slug, hid, handle);
-      if (!p) return;
-      const changed = (Object.keys(patch) as ("lastActivity" | "contextTokens")[]).some((k) => p[k] !== patch[k]);
-      if (!changed && !liveCostUsd) return;
-      if (changed) {
-        Object.assign(p, patch);
-        this.save(slug, h);
-      }
-      this.bus.emit({
-        type: "huddle.activity", profile: slug, huddleId: hid, handle, lastActivity: p.lastActivity ?? null,
-        ...(liveCostUsd ? { liveCostUsd } : {}), ...(p.contextTokens ? { contextTokens: p.contextTokens } : {}),
-      });
-      return;
-    }
-    this.update(slug, hid, (h) => {
-      const p = h.participants.find((x) => x.handle === handle);
-      if (p) Object.assign(p, patch);
-    });
-  }
+  updateP(...a: Parameters<typeof changingPart.updateP>): ReturnType<typeof changingPart.updateP> { return changingPart.updateP.call(this, ...a); }
 
-  /** known: handles that can be mentioned (plus "all" when allowAll). System messages mention only `known`, given as is. */
-  private append(
-    slug: string, hid: string, from: string, text: string, kind: HuddleMessageKind, known: string[], allowAll = false, source?: HuddleSource, handIn?: string,
-  ): HuddleMessage {
-    let seq = 0;
-    this.update(slug, hid, (h) => {
-      seq = h.seq = h.seq + 1;
-      // The sender has seen everything up to its own message.
-      const p = h.participants.find((x) => x.handle === from);
-      if (p && p.cursor === seq - 1) p.cursor = seq;
-    });
-    const mentions = kind === "system" ? known : parseMentions(text).filter((m) => (m === "all" ? allowAll : known.includes(m)));
-    const m: HuddleMessage = { id: `m_${newId()}`, seq, ts: nowIso(), from, text, mentions, kind, ...(source ? { source } : {}), ...(handIn ? { handIn } : {}) };
-    this.store.appendHuddleMessage(slug, hid, m);
-    this.bus.emit({ type: "huddle.message", profile: slug, huddleId: hid, message: m });
-    return m;
-  }
+  append(...a: Parameters<typeof changingPart.append>): ReturnType<typeof changingPart.append> { return changingPart.append.call(this, ...a); }
 
-  /** A system message: context only, except that `wake` (the brakes' warnings) are woken by it. */
-  private system(slug: string, hid: string, text: string, wake: string[] = []): HuddleMessage {
-    const m = this.append(slug, hid, "system", text, "system", wake);
-    const h = this.get(slug, hid);
-    if (h.status === "live") for (const p of h.participants) if (this.wakes(h, p, m)) this.wake(slug, h, p, true);
-    return m;
-  }
+  system(...a: Parameters<typeof changingPart.system>): ReturnType<typeof changingPart.system> { return changingPart.system.call(this, ...a); }
 
-  /**
-   * Start a huddle on a ticket from a roster (the user pressed Start on a proposed roster, or made one). template: a
-   * template's name; its roster is used when `roster` is empty, its budget unless one is given, and its rules become
-   * the pinned brief.
-   */
-  create(
-    slug: string, hostId: string, roster: RosterEntry[],
-    opts: {
-      maxParticipants?: number; maxCostUsd?: number; template?: string; auto?: { reason: string; askedCostUsd?: number; trigger?: string };
-      /** The ticket's run started it because the user asked in its chat (see startForUser). */
-      byUser?: { reason: string; askedCostUsd?: number };
-      /** What this run of the squad is about (the start route, propose_huddle's card); default: the host ticket. */
-      topic?: string | null;
-    } = {},
-  ): Huddle {
-    const host = this.store.getTicket(slug, hostId);
-    if (!host) throw new HuddleError(404, `ticket ${hostId} not found`);
-    if (host.error?.startsWith("corrupt")) throw new HuddleError(409, `ticket ${hostId} file is corrupt`);
-    let tpl: HuddleTemplate | undefined;
-    if (opts.template) {
-      tpl = this.templates(slug).find((t) => t.name === opts.template!.trim());
-      if (!tpl) throw new HuddleError(404, `no huddle template "${opts.template}" (templates: ${this.templates(slug).map((t) => t.name).join(", ")})`);
-      if (!roster.length) roster = tpl.roster;
-    }
-    const max = Math.max(2, Math.min(32, Math.round(opts.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS)));
-    if (opts.maxCostUsd !== undefined && !(Number.isFinite(opts.maxCostUsd) && opts.maxCostUsd > 0)) throw new HuddleError(400, "maxCostUsd must be a positive amount");
-    const maxCostUsd = opts.maxCostUsd ?? tpl?.maxCostUsd ?? DEFAULT_MAX_COST_USD;
-    const asked = opts.auto?.askedCostUsd ?? opts.byUser?.askedCostUsd;
-    const budgetNote = opts.maxCostUsd === undefined ? (tpl?.maxCostUsd !== undefined ? " (template default)" : " (default)")
-      : asked !== undefined && asked > maxCostUsd ? ` (asked ${money(asked)}, capped at ${money(maxCostUsd)})`
-      : opts.auto ? " (asked by the ticket's run)" : opts.byUser ? " (asked by the user)" : "";
-    const open = this.store.openHuddles(slug).find((h) => h.hostTicket === hostId);
-    if (open) throw new HuddleError(409, `ticket ${hostId} already has an open huddle (${open.id}); close it first`);
-    const presets = this.presetMap(slug);
-    const err = rosterError(roster, max, [...presets.keys()]);
-    if (err) throw new HuddleError(400, err);
-    const at = nowIso();
-    let topic: string | null;
-    try {
-      topic = topicInput(opts.topic);
-    } catch (e) {
-      throw new HuddleError(400, (e as Error).message);
-    }
-    const hostRules = tpl?.hostRules?.trim() || null;
-    // A squad with host rules is about a topic: with none given, the host ticket's.
-    const briefTopic = topic ?? (hostRules ? ticketTopic(host) : null);
-    const main = presets.get(MAIN_PRESET)!;
-    const base = { prompt: "", focus: undefined, sessionId: null, status: "idle" as const, cursor: 0, joinedAt: at, workspace: "shared" as const, preset: null };
-    const h: Huddle = {
-      id: `h_${newId()}`, hostTicket: hostId, status: "live", maxParticipants: max, findings: [], invited: [], seq: 0,
-      maxCostUsd, posts: 0, sinceUser: 0, stopReason: null, createdAt: at, updatedAt: at,
-      template: tpl?.name ?? null,
-      ...(topic ? { topic } : {}),
-      ...(hostRules ? { hostRules } : {}),
-      brief: tpl ? { text: templateBrief(tpl, maxCostUsd, briefTopic), by: USER_HANDLE, at }
-        : opts.auto ? { text: [customReviewBrief(maxCostUsd), topic ? `Topic: ${topic}` : ""].filter(Boolean).join("\n"), by: USER_HANDLE, at }
-        : topic ? { text: `Topic: ${topic}`, by: USER_HANDLE, at } : null,
-      ...(opts.auto ? { auto: { reason: opts.auto.reason } } : {}),
-      participants: [
-        { ...base, handle: USER_HANDLE, role: "User", model: null, mode: "monitor", lead: true, canEdit: false, kind: "human" },
-        {
-          ...base, handle: MAIN_HANDLE, role: main.role, preset: MAIN_PRESET, prompt: main.prompt, model: null, mode: main.mode, lead: true, canEdit: true,
-          kind: "ticket-main", ticketId: hostId,
-        },
-      ],
-    };
-    const agents: HuddleParticipant[] = [];
-    for (const e of roster) {
-      const ps = this.expand(e, h.participants.map((p) => p.handle), presets, true, host.status === "planning");
-      h.participants.push(...ps);
-      agents.push(...ps);
-      if (e.host) h.host = ps[0].handle;
-    }
-    // Templates and auto huddles run with a host by default: their first lead.
-    if (!h.host && (tpl || opts.auto || opts.byUser)) h.host = agents.find((p) => p.lead)?.handle ?? null;
-    this.save(slug, h);
-    if (host.status === "planning") this.writeProposal(slug, h.id, host);
-    this.bus.emit({ type: "huddle.updated", profile: slug, huddle: this.view(slug, h) });
-    this.system(slug, h.id, `${opts.auto ? "Auto huddle" : "Huddle"} started on ticket ${hostId} "${host.title}"${opts.auto ? ` by its own run (${opts.auto.trigger ? `${opts.auto.trigger}: ` : ""}${opts.auto.reason})` : opts.byUser ? ` by its own session because the user asked in the chat (${opts.byUser.reason})` : ""}${tpl ? ` from squad ${tpl.label}` : ""} with ${agents.map((p) => `@${p.handle} (${p.role})`).join(", ")}. ${h.host ? `@${h.host} hosts: it hands out the tasks, accepts the hand-ins and sends @main the final report.` : "@main coordinates."} Budget ${money(maxCostUsd)}${budgetNote}.`);
-    for (const p of agents) this.kickoff(slug, h.id, p.handle);
-    return this.get(slug, h.id);
-  }
+  create(...a: Parameters<typeof changingPart.create>): ReturnType<typeof changingPart.create> { return changingPart.create.call(this, ...a); }
 
-  /**
-   * A plan review reads the plan from a file, not the chat (see PLAN_REVIEW_READ): the latest proposed ticket and
-   * child tickets, or the ticket's own description. A failure to read the chat falls back to the description.
-   */
-  private writeProposal(slug: string, hid: string, host: Ticket): void {
-    let entries: SessionEntry[] = [];
-    try {
-      entries = (this.opts.entries ?? sessionEntries)(host);
-    } catch {}
-    try {
-      const file = join(this.store.outputsDir(slug, host.id), proposalFile(hid));
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, planProposal(host, entries));
-    } catch (e) {
-      console.error(`huddle ${hid}: couldn't write the plan for review:`, e);
-    }
-  }
+  writeProposal(...a: Parameters<typeof changingPart.writeProposal>): ReturnType<typeof changingPart.writeProposal> { return changingPart.writeProposal.call(this, ...a); }
 
   // ---- Auto huddles: an unattended run reviews its own work before landing it (start_huddle) ----
 
-  /**
-   * An unattended run of the host ticket starts its own review huddle (the HTTP route checks the caller is that run).
-   * Refused (403) when the board has auto huddles off, the run isn't unattended, it already started one, or the
-   * ticket has an open huddle. While another auto huddle is live on the board, the ticket waits for the slot instead:
-   * the card stays In Progress and freeSlot() wakes it when that one ends. Trigger "user" goes to startForUser.
-   */
-  startAuto(
-    slug: string, hostId: string, input: { reason: string; trigger?: string; template?: string; roster?: RosterEntry[]; maxCostUsd?: number; topic?: string },
-  ): { huddle: Huddle | null; waiting: boolean; template: string } {
-    const profile = this.store.getProfile(slug);
-    const host = this.store.getTicket(slug, hostId);
-    if (!profile || !host) throw new HuddleError(404, `ticket ${hostId} not found`);
-    const reason = input.reason.trim().replace(/\s+/g, " ").slice(0, 200);
-    if (!reason) throw new HuddleError(400, "reason is required: one line on why this work needs a review huddle");
-    const propose = "; use propose_huddle to propose one to the user instead (with the same maxCostUsd)";
-    if (input.maxCostUsd !== undefined && !(Number.isFinite(input.maxCostUsd) && input.maxCostUsd > 0)) throw new HuddleError(400, "maxCostUsd must be a positive amount");
-    if (input.trigger?.trim() === USER_HUDDLE_TRIGGER) return { huddle: this.startForUser(slug, host, { ...input, reason }), waiting: false, template: input.template?.trim() || "custom" };
-    // A ticket with a "## Review huddle" section asked for one in Planning: that counts as opt-in, and gives the defaults.
-    const requested = reviewHuddleRequest(host.body);
-    const asked = input.maxCostUsd ?? requested?.maxCostUsd;
-    const maxCostUsd = asked === undefined ? undefined : Math.min(asked, AUTO_MAX_COST_USD);
-    if (!autoHuddlesOn(profile) && !requested) throw new HuddleError(403, `auto huddles are off on board ${slug} and the ticket has no "${REVIEW_HUDDLE_HEADING}" section${propose}`);
-    if (!this.board.unattendedRun(slug, hostId)) {
-      throw new HuddleError(403, `start_huddle only works in an unattended run of the ticket (Ready / In Progress work, a plan child, a schedule run), not in a chat${propose}`);
-    }
-    const open = this.store.openHuddles(slug).find((h) => h.hostTicket === hostId);
-    if (open) throw new HuddleError(409, `ticket ${hostId} already has an open huddle (${open.id})${propose}, or post in that one`);
-    // The trigger names the rule that called for the review, so the user can check it on the ticket.
-    const trigger = input.trigger?.trim();
-    if (!isAutoHuddleTrigger(trigger)) {
-      throw new HuddleError(400, `trigger is required: one of ${[...AUTO_HUDDLE_TRIGGERS, USER_HUDDLE_TRIGGER].join(", ")} (the rule that calls for this review, or ${USER_HUDDLE_TRIGGER} when the user's own message asked for it)`);
-    }
-    if (trigger === "asked" && !requested) throw new HuddleError(400, `trigger "asked" is only for a ticket with a "${REVIEW_HUDDLE_HEADING}" section; this one has none`);
-    if (trigger === "important" && !host.important) throw new HuddleError(400, `trigger "important" is only for a ticket marked ⭐ Important; this one isn't`);
-    const roster = input.roster?.length ? input.roster : undefined;
-    // A huddle the ticket asks for uses the template it names; otherwise the run builds a roster for this change.
-    const template = input.template?.trim() || (roster ? "" : trigger === "asked" ? requested?.template ?? "" : "");
-    if (!roster && !(trigger === "asked" && template)) {
-      throw new HuddleError(400, `pass a roster built for this change (trigger ${trigger}): 1-4 reviewers or testers whose prompts say what to check, ` +
-        "plus a lead (e.g. qa-lead) when there are 2 or more; list_huddle_presets lists the teammates you can use");
-    }
-    if (template && !this.templates(slug).some((t) => t.name === template)) {
-      throw new HuddleError(404, `no huddle template "${template}" (templates: ${this.templates(slug).map((t) => t.name).join(", ")})`);
-    }
-    let topic: string | null;
-    try {
-      topic = topicInput(input.topic);
-    } catch (e) {
-      throw new HuddleError(400, (e as Error).message);
-    }
-    const busy = this.liveAuto(slug).find((h) => h.hostTicket !== hostId);
-    if (busy) {
-      const at = host.autoHuddle?.state === "waiting" ? host.autoHuddle.at : nowIso();
-      this.board.setAutoHuddle(slug, hostId, {
-        state: "waiting", reason, trigger, template: template || "custom", at, huddleId: null,
-        ...(maxCostUsd !== undefined ? { maxCostUsd } : {}), ...(topic ? { topic } : {}),
-      });
-      if (host.autoHuddle?.state !== "waiting") this.store.addComment(slug, hostId, "ai", `Auto huddle wanted (${trigger}: ${reason}); waiting for huddle slot: ticket ${busy.hostTicket} has the board's auto huddle.`);
-      return { huddle: null, waiting: true, template: template || "custom" };
-    }
-    if (!this.board.claimAutoHuddle(slug, hostId)) {
-      throw new HuddleError(409, "this run already started an auto huddle (one per run); finish with the findings you have");
-    }
-    const h = this.create(slug, hostId, roster ?? [], { template: template || undefined, maxCostUsd, topic, auto: { reason, askedCostUsd: asked, trigger } });
-    if (this.slotWoken.get(slug) === hostId) this.slotWoken.delete(slug);
-    this.board.setAutoHuddle(slug, hostId, { state: "live", reason, trigger, template: template || "custom", at: h.createdAt, huddleId: h.id });
-    this.store.addComment(slug, hostId, "ai", `Auto huddle started (${template || "custom roster"}, ${trigger}): ${reason}`);
-    return { huddle: h, waiting: false, template: template || "custom" };
-  }
+  startAuto(...a: Parameters<typeof autoPart.startAuto>): ReturnType<typeof autoPart.startAuto> { return autoPart.startAuto.call(this, ...a); }
 
-  /**
-   * start_huddle with trigger "user": the user typed in the ticket's chat that a huddle should start now, so the
-   * ticket's run starts it as the user's Start on a proposal card would (not an auto huddle: no board setting, no
-   * slot, the user closes it). The board decides the message was the user's (Board.userAskedRun), not Claude.
-   * Planning and Backlog keep the click: there a huddle would work the ticket before its run does.
-   */
-  private startForUser(slug: string, host: Ticket, input: { reason: string; template?: string; roster?: RosterEntry[]; maxCostUsd?: number; topic?: string }): Huddle {
-    const propose = "; call propose_huddle instead so the user can press Start on the card";
-    if (host.status === "planning" || host.status === "backlog") {
-      throw new HuddleError(403, `in ${host.status === "planning" ? "Planning" : "Backlog"} a huddle only starts when the user presses Start on a proposal card${propose}`);
-    }
-    if (!this.board.userAskedRun(slug, host.id)) {
-      throw new HuddleError(403, `trigger ${USER_HUDDLE_TRIGGER} only works while this ticket's run answers a message the user typed in its chat${propose}`);
-    }
-    const template = input.template?.trim() || undefined;
-    if (!input.roster?.length && !template) throw new HuddleError(400, "pass a template or a roster: the roles the user asked for, each prompt saying what to do, plus a lead (e.g. qa-lead) when there are 2 or more");
-    const maxCostUsd = input.maxCostUsd === undefined ? undefined : Math.min(input.maxCostUsd, AUTO_MAX_COST_USD);
-    const h = this.create(slug, host.id, input.roster ?? [], { template, maxCostUsd, topic: input.topic, byUser: { reason: input.reason, askedCostUsd: input.maxCostUsd } });
-    this.store.addComment(slug, host.id, "ai", `Huddle started because the user asked in the chat (${template ?? "custom roster"}): ${input.reason}`);
-    return h;
-  }
+  startForUser(...a: Parameters<typeof autoPart.startForUser>): ReturnType<typeof autoPart.startForUser> { return autoPart.startForUser.call(this, ...a); }
 
-  /** The board's live auto huddles (at most one, unless the user resumed a stopped one). */
-  private liveAuto(slug: string): Huddle[] {
-    return this.store.openHuddles(slug).filter((h) => h.auto && h.status === "live").map((h) => structuredClone(h));
-  }
+  liveAuto(...a: Parameters<typeof autoPart.liveAuto>): ReturnType<typeof autoPart.liveAuto> { return autoPart.liveAuto.call(this, ...a); }
 
-  /**
-   * An auto huddle ended. closed: by @main after landing, or because the host is done or deleted. halt: a brake
-   * stopped it, so the host is woken to decide whether it may land. user: the user stopped or closed it; a host that
-   * only waited for it goes to Review. Then the next ticket waiting for the slot gets it.
-   */
-  private autoEnded(slug: string, hid: string, how: "closed" | "halt" | "user", why: string) {
-    const h = this.load(slug, hid);
-    const t = h && this.store.getTicket(slug, h.hostTicket);
-    if (h && t?.autoHuddle?.huddleId === hid) {
-      const idle = t.status === "in_progress" && !this.board.isRunning(slug, t.id);
-      if (how === "user" && idle) {
-        this.store.addComment(slug, t.id, "ai", `Auto huddle ended: ${why}. The work was not landed.`);
-        this.board.setAutoHuddle(slug, t.id, null, { status: "review", outcome: "stopped", lastActivity: null });
-      } else this.board.setAutoHuddle(slug, t.id, null);
-      if (how === "halt" && t.status !== "done") {
-        const open = h.findings.filter((f) => f.status === "open").length;
-        this.board.chat(slug, t.id, autoHuddleStoppedPrompt(h, why, open), { hostWake: true }).catch((e) => {
-          this.store.addComment(slug, t.id, "ai", `Auto huddle stopped (${why}) and the ticket couldn't be woken: ${(e as Error).message}`);
-        });
-      }
-    }
-    queueMicrotask(() => this.freeSlot(slug));
-  }
+  autoEnded(...a: Parameters<typeof autoPart.autoEnded>): ReturnType<typeof autoPart.autoEnded> { return autoPart.autoEnded.call(this, ...a); }
 
-  /**
-   * No auto huddle is live on the board: wake the ticket that has waited longest for the slot (one at a time; the
-   * next one once that ticket's run is over). Also run after a restart.
-   */
-  freeSlot(slug: string): void {
-    if (this.shuttingDown || this.board.isRestartPending() || this.liveAuto(slug).length) return;
-    const woken = this.slotWoken.get(slug);
-    if (woken) {
-      const t = this.store.getTicket(slug, woken);
-      if (t && (this.board.isRunning(slug, woken) || t.queued?.some((m) => m.state === "queued" && m.hostWake))) return;
-      this.slotWoken.delete(slug);
-    }
-    const next = this.store.listTickets(slug)
-      .filter((t) => t.autoHuddle?.state === "waiting" && t.status === "in_progress")
-      .sort((a, b) => a.autoHuddle!.at.localeCompare(b.autoHuddle!.at))[0];
-    if (!next) return;
-    const a = next.autoHuddle!;
-    this.slotWoken.set(slug, next.id);
-    // It no longer waits: its run takes the slot with start_huddle, or lands without one.
-    this.board.setAutoHuddle(slug, next.id, null, { lastActivity: "Huddle slot free: resuming" });
-    this.board.chat(slug, next.id, autoHuddleSlotPrompt(a), { hostWake: true }).catch((e) => {
-      this.slotWoken.delete(slug);
-      this.board.setAutoHuddle(slug, next.id, a);
-      console.error(`couldn't wake ${slug}/${next.id} for the auto-huddle slot`, e);
-    });
-  }
+  freeSlot(...a: Parameters<typeof autoPart.freeSlot>): ReturnType<typeof autoPart.freeSlot> { return autoPart.freeSlot.call(this, ...a); }
 
-  /**
-   * Participants made from one roster entry, with handles not in `taken`. grant: the user is adding them, so the
-   * entry's lead applies (see addParticipants). readOnly: the host ticket is in Planning, which never changes the
-   * project, so everyone reads in the shared workspace. One that can change files always works in its own copy.
-   */
-  private expand(e: RosterEntry, taken: string[], presets: Map<string, HuddlePreset>, grant = true, readOnly = false): HuddleParticipant[] {
-    const preset = e.preset ? presets.get(e.preset.trim()) : undefined;
-    const count = e.count ?? 1;
-    const base = handleBase(e.handle?.trim() || e.preset?.trim() || e.role!);
-    const used = new Set([...taken, ...RESERVED_HANDLES]);
-    const out: HuddleParticipant[] = [];
-    for (let i = 0, n = 1; i < count; i++) {
-      let handle = base;
-      if (count > 1 || used.has(handle)) {
-        while (used.has(`${base}-${n}`)) n++;
-        handle = `${base}-${n}`;
-      }
-      used.add(handle);
-      const asked = e.workspace ?? preset?.workspace ?? "shared";
-      const canEdit = !readOnly && (e.canEdit ?? preset?.canEdit ?? asked === "own");
-      const workspace = readOnly ? "shared" : canEdit ? "own" : asked;
-      // The host runs the room, so it is a lead.
-      const lead = grant && (!!e.host || (e.lead ?? preset?.lead ?? false));
-      // Leads watch every message: an entry made a lead without a mode is monitor; an explicit mode wins.
-      const mode = e.mode ?? (lead && (e.lead || e.host) ? "monitor" : preset?.mode ?? (lead ? "monitor" : "tagged"));
-      out.push({
-        handle, role: e.role?.trim() || preset?.role || base, preset: e.preset?.trim() ?? null,
-        prompt: [preset?.prompt, e.prompt?.trim()].filter(Boolean).join("\n\n") || `Help with the ticket as ${e.role}.`,
-        ...(e.focus?.trim() ? { focus: e.focus.trim() } : {}),
-        model: e.model?.trim() || preset?.model || null, mode, lead,
-        canEdit, workspace, sessionId: null, status: "idle", kind: "agent", cursor: 0, joinedAt: nowIso(), token: newId() + newId(),
-      });
-    }
-    return out;
-  }
+  expand(...a: Parameters<typeof autoPart.expand>): ReturnType<typeof autoPart.expand> { return autoPart.expand.call(this, ...a); }
 
-  private nonHuman(h: Huddle): number {
-    return h.participants.filter((p) => p.kind !== "human").length;
-  }
+  nonHuman(...a: Parameters<typeof autoPart.nonHuman>): ReturnType<typeof autoPart.nonHuman> { return autoPart.nonHuman.call(this, ...a); }
 
-  private assertOpen(h: Huddle) {
-    if (h.status === "closed") throw new HuddleError(409, `huddle ${h.id} is closed (read-only)`);
-  }
+  assertOpen(...a: Parameters<typeof autoPart.assertOpen>): ReturnType<typeof autoPart.assertOpen> { return autoPart.assertOpen.call(this, ...a); }
 
-  /** Add participants (the user, the coordinator or a lead); refused once maxParticipants is reached. */
-  addParticipants(slug: string, hid: string, by: HuddleParticipant, e: RosterEntry): HuddleParticipant[] {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (!canManage(h, by)) throw new HuddleError(403, `only a lead or @main can add participants; ask them (or the user) in the huddle`);
-    const presets = this.presetMap(slug);
-    const err = rosterEntryError(e, "", [...presets.keys()]);
-    if (err) throw new HuddleError(400, err);
-    const want = e.count ?? 1;
-    const room = h.maxParticipants - this.nonHuman(h);
-    if (want > room) {
-      throw new HuddleError(409, `the huddle is full: ${this.nonHuman(h)} of ${h.maxParticipants} participants${room > 0 ? `, room for ${room} more` : ""}. ` +
-        "Don't work around the limit: ask the user (tag @you) to raise it or stop someone.");
-    }
-    // Only the user makes leads; a lead or @main may add helpers that change files (they hand their changes in).
-    // The host is named when the huddle starts.
-    const added = this.expand({ ...e, host: undefined }, h.participants.map((p) => p.handle), presets, by.kind === "human", this.store.getTicket(slug, h.hostTicket)?.status === "planning");
-    this.update(slug, hid, (x) => {
-      x.participants.push(...added);
-    });
-    this.system(slug, hid, `@${by.handle} added ${added.map((p) => `@${p.handle} (${p.role}${p.focus ? `: ${p.focus}` : ""})`).join(", ")}.`);
-    if (h.status === "live") for (const p of added) this.kickoff(slug, hid, p.handle);
-    return added;
-  }
+  addParticipants(...a: Parameters<typeof autoPart.addParticipants>): ReturnType<typeof autoPart.addParticipants> { return autoPart.addParticipants.call(this, ...a); }
 
-  /** Invite another ticket's own session (same board), e.g. as @api-main. */
-  invite(slug: string, hid: string, by: HuddleParticipant, ticketId: string, handle?: string): HuddleParticipant {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (by.kind !== "human" && !isCoordinator(h, by)) throw new HuddleError(403, "only the user or @main can invite tickets");
-    const t = this.store.getTicket(slug, ticketId);
-    if (!t) throw new HuddleError(404, `ticket ${ticketId} not found`);
-    if (h.participants.some((p) => p.ticketId === ticketId)) throw new HuddleError(409, `ticket ${ticketId} is already in this huddle`);
-    if (this.nonHuman(h) >= h.maxParticipants) throw new HuddleError(409, `the huddle is full (${h.maxParticipants} participants)`);
-    const base = handleBase(handle?.trim() || `${t.planKey || t.title.split(/\s+/)[0] || "ticket"}-main`);
-    const taken = new Set([...h.participants.map((p) => p.handle), ...RESERVED_HANDLES]);
-    let name = base;
-    for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
-    const p: HuddleParticipant = {
-      handle: name, role: `Ticket ${t.id} "${t.title}"`, preset: null, prompt: "", model: null, mode: "tagged", lead: false, canEdit: false,
-      workspace: "shared", sessionId: null, status: "idle", kind: "ticket-main", ticketId, cursor: h.seq, joinedAt: nowIso(),
-    };
-    this.update(slug, hid, (x) => {
-      x.participants.push(p);
-      x.invited.push(ticketId);
-    });
-    this.system(slug, hid, `@${by.handle} invited ticket ${t.id} "${t.title}" as @${name}.`);
-    return p;
-  }
+  invite(...a: Parameters<typeof autoPart.invite>): ReturnType<typeof autoPart.invite> { return autoPart.invite.call(this, ...a); }
 
-  setMode(slug: string, hid: string, by: HuddleParticipant, handle: string, mode: HuddleMode): HuddleParticipant {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (by.kind !== "human" && by.handle !== handle) throw new HuddleError(403, "you can only change your own mode");
-    const p = h.participants.find((x) => x.handle === handle && x.kind !== "human");
-    if (!p) throw new HuddleError(404, `no participant @${handle}`);
-    if (mode !== "tagged" && mode !== "monitor") throw new HuddleError(400, "mode must be tagged or monitor");
-    if (p.mode === mode) return p;
-    this.updateP(slug, hid, handle, { mode });
-    // A monitor session no longer needs to stay open between turns.
-    if (mode === "tagged") this.runs.get(this.key(slug, hid, handle))?.handle?.endWhenIdle();
-    this.system(slug, hid, `@${handle} switched to ${mode} mode${by.handle !== handle ? ` (by @${by.handle})` : ""}.`);
-    return { ...p, mode };
-  }
+  setMode(...a: Parameters<typeof autoPart.setMode>): ReturnType<typeof autoPart.setMode> { return autoPart.setMode.call(this, ...a); }
 
-  /** The pinned findings list: leads and the coordinator add and resolve; everyone can list. */
-  findings(slug: string, hid: string, by: HuddleParticipant, action: "add" | "resolve" | "list", arg: { text?: string; id?: string } = {}): HuddleFinding[] {
-    const h = this.get(slug, hid);
-    if (action === "list") return h.findings;
-    this.assertOpen(h);
-    if (!canManage(h, by)) throw new HuddleError(403, "only a lead or @main can change the findings list; post your finding to your lead instead");
-    if (action === "add") {
-      const text = arg.text?.trim();
-      if (!text) throw new HuddleError(400, "text is required");
-      const f: HuddleFinding = { id: `f${h.findings.length + 1}`, text, by: by.handle, status: "open", resolvedBy: null, at: nowIso() };
-      this.update(slug, hid, (x) => void x.findings.push(f));
-      this.system(slug, hid, `@${by.handle} pinned finding ${f.id}: ${findingTitle(text)}`);
-    } else if (action === "resolve") {
-      const f = h.findings.find((x) => x.id === arg.id);
-      if (!f) throw new HuddleError(404, `no finding ${arg.id}`);
-      if (f.status === "resolved") return h.findings;
-      this.update(slug, hid, (x) => {
-        const g = x.findings.find((y) => y.id === arg.id)!;
-        Object.assign(g, { status: "resolved", resolvedBy: by.handle });
-      });
-      this.system(slug, hid, `@${by.handle} resolved finding ${f.id}.`);
-    } else throw new HuddleError(400, "action must be add, resolve or list");
-    return this.get(slug, hid).findings;
-  }
+  findings(...a: Parameters<typeof autoPart.findings>): ReturnType<typeof autoPart.findings> { return autoPart.findings.call(this, ...a); }
 
   // ---- Changes helpers hand in from their own copies (see huddle-copies.ts) ----
 
-  /**
-   * A lead, @main or the user lets a helper change files: from its next run it works in its own copy of the folder
-   * (made then) with the edit tools, and hands its changes in. Not in Planning, which never changes the project.
-   */
-  allowChanges(slug: string, hid: string, by: HuddleParticipant, handle: string): HuddleParticipant {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (!canManage(h, by)) throw new HuddleError(403, "only a lead, @main or the user can let a helper change files; ask them in the huddle");
-    const p = h.participants.find((x) => x.handle === handle.replace(/^@/, "").trim());
-    if (!p || p.kind !== "agent") throw new HuddleError(404, `no helper @${handle} (only helpers the huddle runs get a copy of the folder)`);
-    if (this.store.getTicket(slug, h.hostTicket)?.status === "planning") throw new HuddleError(409, "the ticket is in Planning, which never changes files; nobody in this huddle changes them");
-    if (by.kind === "agent" && by.handle === p.handle) throw new HuddleError(403, "you can't give yourself the right to change files; ask @main or another lead");
-    if (p.canEdit) return p;
-    // Its session worked in the host's folder (no snapshot there): a new one starts in the copy, reading the huddle again.
-    const moved = !p.worktree && !!p.sessionStarted;
-    this.updateP(slug, hid, p.handle, { canEdit: true, workspace: "own", ...(moved ? { sessionId: null, sessionStarted: false, cursor: 0 } : {}) });
-    // Its edit tools and copy come with a new run: a session kept open between turns ends at its next pause.
-    this.runs.get(this.key(slug, hid, p.handle))?.handle?.endWhenIdle();
-    this.system(slug, hid, `@${by.handle} let @${p.handle} change files. @${p.handle}: you now work in your own copy of the folder; do the work there and hand it in with huddle_hand_in.`, [p.handle]);
-    return this.get(slug, hid).participants.find((x) => x.handle === p.handle)!;
-  }
+  allowChanges(...a: Parameters<typeof handinPart.allowChanges>): ReturnType<typeof handinPart.allowChanges> { return handinPart.allowChanges.call(this, ...a); }
 
-  /**
-   * A helper hands in what it changed in its copy, with a one-line summary: the files are saved aside as they are
-   * now, a card goes in the chat and @main is tagged to accept or reject them. One waits at a time per helper.
-   */
-  async handIn(slug: string, hid: string, by: HuddleParticipant, summary: string): Promise<HandIn> {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (by.kind !== "agent") throw new HuddleError(400, "only helpers hand in changes; yours are in the ticket's folder already");
-    const p = h.participants.find((x) => x.handle === by.handle)!;
-    if (!p.canEdit) throw new HuddleError(403, "you can't change files in this huddle; ask @main or a lead to let you (huddle_allow_changes)");
-    if (!p.copy || !existsSync(p.copy.dir)) throw new HuddleError(409, "you have no copy of the folder yet; it is made when your next run starts");
-    if (p.copy.fresh) throw new HuddleError(409, "your copy is out of date after a conflict; finish this turn without changing files: your fresh copy comes at your next turn");
-    const text = summary.trim().replace(/\s+/g, " ");
-    if (!text) throw new HuddleError(400, "summary is required: one line on what you changed");
-    if (text.length > HANDIN_SUMMARY_MAX) throw new HuddleError(400, `the summary is ${text.length} characters, over the limit of ${HANDIN_SUMMARY_MAX}; keep it to one line`);
-    const waiting = (h.handIns ?? []).find((x) => x.from === p.handle && x.status === "waiting");
-    if (waiting) throw new HuddleError(409, `your hand-in ${waiting.id} still waits for a decision; wait for it (you are tagged), then hand in again`);
-    const id = `c${(h.handIns?.length ?? 0) + 1}`;
-    const files = await saveHandIn(p.copy.dir, p.copy.kind, id);
-    if (!files.length) throw new HuddleError(409, "nothing changed in your copy since your last hand-in (or since it was made); nothing was handed in");
-    // Another hand-in may have been recorded while the files were saved.
-    if (this.get(slug, hid).handIns?.some((x) => x.id === id)) throw new HuddleError(409, "another hand-in came in at the same moment; hand in again");
-    const hi: HandIn = { id, from: p.handle, summary: text, files, status: "waiting", at: nowIso() };
-    this.update(slug, hid, (x) => void (x.handIns ??= []).push(hi));
-    // The host decides (unless it handed this in itself), else @main.
-    const host = activeHost(h);
-    const decider = host === p.handle ? MAIN_HANDLE : host;
-    const m = this.append(slug, hid, p.handle,
-      `${text}\n\nHand-in ${id}: ${handInFiles(files)}. @${decider}: accept or reject it with huddle_review_changes.`,
-      "handin", h.participants.map((x) => x.handle), false, undefined, id);
-    if (this.get(slug, hid).status === "live" && this.brakes(slug, hid, p, m)) this.route(slug, hid, m);
-    return hi;
-  }
+  handIn(...a: Parameters<typeof handinPart.handIn>): ReturnType<typeof handinPart.handIn> { return handinPart.handIn.call(this, ...a); }
 
-  /**
-   * A lead, @main or the user accepts a hand-in (its files go into the host ticket's folder) or rejects it (the
-   * helper is told why). When the host's folder changed some of the same files since the helper's copy was made,
-   * nothing is applied: the hand-in is a conflict, the helper gets a fresh copy and is asked to redo the work.
-   */
-  async reviewHandIn(slug: string, hid: string, by: HuddleParticipant, id: string, accept: boolean, reason = ""): Promise<HandIn> {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (!canManage(h, by)) throw new HuddleError(403, "only a lead, @main or the user accepts or rejects changes");
-    const pending = () => {
-      const x = (this.get(slug, hid).handIns ?? []).find((y) => y.id === id.trim());
-      if (!x) throw new HuddleError(404, `no hand-in ${id} in huddle ${hid}`);
-      if (x.status !== "waiting") throw new HuddleError(409, `hand-in ${x.id} was already ${x.status}`);
-      return x;
-    };
-    const hi = pending();
-    if (by.kind === "agent" && by.handle === hi.from) throw new HuddleError(403, "you can't accept or reject your own hand-in; @main or another lead decides");
-    const why = reason.trim().replace(/\s+/g, " ").slice(0, 500);
-    const decided = { by: by.handle, decidedAt: nowIso(), reason: why || null };
-    const set = (patch: Partial<HandIn>) => this.update(slug, hid, (x) => void Object.assign(x.handIns!.find((y) => y.id === hi.id)!, patch));
-    if (!accept) {
-      set({ status: "rejected", ...decided });
-      this.system(slug, hid, `@${by.handle} rejected @${hi.from}'s changes (${hi.id})${why ? `: ${why}` : "."} Nothing was changed in the ticket's folder.`, [hi.from]);
-      return this.get(slug, hid).handIns!.find((y) => y.id === hi.id)!;
-    }
-    if (this.store.getTicket(slug, h.hostTicket)?.status === "planning") throw new HuddleError(409, "the ticket is in Planning, which never changes files");
-    const helper = h.participants.find((x) => x.handle === hi.from);
-    if (!helper?.copy) throw new HuddleError(409, `@${hi.from}'s copy of the folder is gone, so its changes can't be brought in`);
-    const host = await this.board.ensureSession(slug, h.hostTicket);
-    pending();
-    let conflicts: string[];
-    try {
-      conflicts = acceptHandIn(host.dir, helper.copy.dir, hi.id, hi.files).conflicts;
-    } catch (e) {
-      throw new HuddleError(500, `couldn't bring in the changes, so nothing was changed: ${(e as Error).message}`);
-    }
-    if (!conflicts.length) {
-      set({ status: "accepted", ...decided });
-      const n = hi.files.length;
-      // With a host running the room, @main hears about them in the host's final report.
-      const tell = by.handle === MAIN_HANDLE || activeHost(this.get(slug, hid)) !== MAIN_HANDLE ? "" : ` @${MAIN_HANDLE}: they are in your folder now.`;
-      this.system(slug, hid, `@${by.handle} accepted @${hi.from}'s changes (${hi.id}): ${n} file${n === 1 ? "" : "s"} now in the ticket's folder.${tell}`, tell ? [MAIN_HANDLE] : []);
-      return this.get(slug, hid).handIns!.find((y) => y.id === hi.id)!;
-    }
-    set({ status: "conflict", conflicts, ...decided, reason: null });
-    // A fresh copy from the host's folder as it is now; failing that, the helper's next run makes one.
-    // Mid-turn, the helper may still be changing its copy: the fresh copy comes with its next run instead.
-    const run = this.runs.get(this.key(slug, hid, helper.handle));
-    run?.handle?.endWhenIdle();
-    let fresh = !run || run.idle;
-    if (fresh) {
-      try {
-        await this.copyFor(slug, this.get(slug, hid), helper, host.dir, host.isGit && (await hasCommits(host.dir)));
-      } catch (e) {
-        fresh = false;
-        console.error(`couldn't make a fresh copy for @${helper.handle}`, e);
-      }
-    }
-    if (!fresh) this.updateP(slug, hid, helper.handle, { copy: { ...helper.copy, fresh: true } });
-    const files = conflicts.length > 8 ? `${conflicts.slice(0, 8).join(", ")} and ${conflicts.length - 8} more` : conflicts.join(", ");
-    this.system(slug, hid,
-      `@${hi.from}'s changes (${hi.id}) weren't brought in: the ticket's folder also changed ${files} since @${hi.from}'s copy was made. Nothing was changed. ` +
-      `@${hi.from}: your copy ${fresh ? "is now a fresh copy of the ticket's folder" : "becomes a fresh copy of the ticket's folder at your next turn, so finish this turn without changing files"}; redo your change there and hand it in again (what you handed in is saved in ${handInSaved(helper.copy.dir, hi.id)}).`,
-      [hi.from]);
-    return this.get(slug, hid).handIns!.find((y) => y.id === hi.id)!;
-  }
+  reviewHandIn(...a: Parameters<typeof handinPart.reviewHandIn>): ReturnType<typeof handinPart.reviewHandIn> { return handinPart.reviewHandIn.call(this, ...a); }
 
-  /**
-   * Post a message as `by` (the daemon decided who that is) and route it. status: the sender is done or blocked
-   * (reason) with this message, as with setStatus.
-   */
-  post(
-    slug: string, hid: string, by: HuddleParticipant, text: string, kind: HuddleMessageKind = "message",
-    status?: { status: StatusChange; reason?: string; lessons?: unknown }, source?: HuddleSource,
-  ): HuddleMessage {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (!text.trim()) throw new HuddleError(400, "text is required");
-    const len = text.trim().length;
-    if (len > POST_MAX) {
-      throw new HuddleError(400, `your message is ${len} characters, over the huddle's limit of ${POST_MAX}. Nothing was posted. ` +
-        "Shorten it, split it into a few messages, or put the details in a file in your outputs folder and post its path.");
-    }
-    if (kind !== "message" && kind !== "finding") throw new HuddleError(400, "kind must be message or finding");
-    if (by.status === "stopped" && by.kind !== "human") throw new HuddleError(409, `@${by.handle} was stopped by the user`);
-    if (status) this.checkLessons(h, by, status.status, status.lessons);
-    if (status) this.checkStatus(by, status.status, status.reason);
-    const m = this.append(slug, hid, by.handle, text.trim(), kind, h.participants.map((p) => p.handle), canManage(h, by), source);
-    // Stopped: the log keeps it; Resume wakes whoever it tags (wakeIfOwed).
-    if (h.status === "live" && this.brakes(slug, hid, by, m)) this.route(slug, hid, m);
-    if (status) this.setStatus(slug, hid, by, status.status, status.reason, status.lessons);
-    return m;
-  }
+  post(...a: Parameters<typeof messagesPart.post>): ReturnType<typeof messagesPart.post> { return messagesPart.post.call(this, ...a); }
 
-  /** Set (or clear, with "") the pinned brief: the goal and decisions so far, at the head of every digest. Leads, @main and the user. */
-  setBrief(slug: string, hid: string, by: HuddleParticipant, text: string): Huddle {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (!canManage(h, by)) throw new HuddleError(403, "only a lead, @main or the user can change the brief; suggest the change to your lead");
-    const t = text.trim();
-    if (t.length > BRIEF_MAX) throw new HuddleError(400, `the brief is ${t.length} characters, over the limit of ${BRIEF_MAX}; keep only the goal and the decisions`);
-    if ((h.brief?.text ?? "") === t) return h;
-    this.update(slug, hid, (x) => void (x.brief = t ? { text: t, by: by.handle, at: nowIso() } : null));
-    this.system(slug, hid, t ? `@${by.handle} updated the pinned brief.` : `@${by.handle} cleared the pinned brief.`);
-    return this.get(slug, hid);
-  }
+  setBrief(...a: Parameters<typeof messagesPart.setBrief>): ReturnType<typeof messagesPart.setBrief> { return messagesPart.setBrief.call(this, ...a); }
 
-  private checkStatus(by: HuddleParticipant, status: StatusChange, reason?: string) {
-    if (by.kind === "human") throw new HuddleError(400, "the user has no huddle status");
-    if (status !== "done" && status !== "blocked" && status !== "active") throw new HuddleError(400, "status must be done, blocked or active");
-    if (status === "blocked" && !reason?.trim()) throw new HuddleError(400, "say what blocks you (reason)");
-  }
+  checkStatus(...a: Parameters<typeof messagesPart.checkStatus>): ReturnType<typeof messagesPart.checkStatus> { return messagesPart.checkStatus.call(this, ...a); }
 
-  /** Lessons proposed with a status change, checked: only an agent turning done, at most MAX_LESSONS, each a short rule. */
-  private checkLessons(h: Huddle, by: HuddleParticipant, status: StatusChange, lessons: unknown): LessonInput[] {
-    let out: LessonInput[];
-    try {
-      out = cleanLessons(lessons);
-    } catch (e) {
-      throw new HuddleError(400, `${(e as Error).message}. Nothing was changed.`);
-    }
-    if (!out.length) return out;
-    if (status !== "done") throw new HuddleError(400, "lessons go with status done, when your job is finished");
-    if (by.kind !== "agent") throw new HuddleError(400, "only huddle agents propose lessons");
-    return out;
-  }
+  checkLessons(...a: Parameters<typeof messagesPart.checkLessons>): ReturnType<typeof messagesPart.checkLessons> { return messagesPart.checkLessons.call(this, ...a); }
 
-  /**
-   * A participant says it is done (only a lead, @main or the user wakes it again; a lead wakes on any tag), blocked on something (@main is
-   * tagged; @you when @main itself is blocked), or active again. lessons (agents turning done): proposed for the
-   * user to review; they become role notes only when the user saves them.
-   */
-  setStatus(slug: string, hid: string, by: HuddleParticipant, status: StatusChange, reason?: string, lessons?: unknown): HuddleParticipant {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    const proposed = this.checkLessons(h, by, status, lessons);
-    this.checkStatus(by, status, reason);
-    const p = h.participants.find((x) => x.handle === by.handle)!;
-    if (p.status === "stopped") throw new HuddleError(409, `@${p.handle} was stopped by the user`);
-    const why = reason?.trim() || null;
-    // The host blocking itself: the note that @main runs the huddle again says why (see hostMoved).
-    const wasHost = h.status === "live" && !!h.host && activeHost(h) === p.handle;
-    if (status === "active") {
-      if (!settled(p)) return p;
-      this.updateP(slug, hid, p.handle, { status: this.working(slug, h, p) ? "working" : "idle", statusReason: null });
-      this.system(slug, hid, `@${p.handle} is active again.`);
-    } else {
-      this.updateP(slug, hid, p.handle, { status, statusReason: why });
-      if (proposed.length) this.addLearnings(slug, hid, p, proposed);
-      const n = proposed.length;
-      const learned = n ? `${why ? "." : ""} It noted ${n} lesson${n === 1 ? "" : "s"} for future huddles; the board saves ${n === 1 ? "it" : "them"} once ${n === 1 ? "it comes" : "they come"} up again (Team, Learned).` : "";
-      if (status === "done") this.system(slug, hid, `@${p.handle} is done${why ? `: ${why}` : "."}${learned}`);
-      else if (!wasHost) this.system(slug, hid, `@${p.handle} is blocked: ${why}`, [isCoordinator(h, p) ? USER_HANDLE : activeHost(h)]);
-    }
-    return this.get(slug, hid).participants.find((x) => x.handle === p.handle)!;
-  }
+  setStatus(...a: Parameters<typeof messagesPart.setStatus>): ReturnType<typeof messagesPart.setStatus> { return messagesPart.setStatus.call(this, ...a); }
 
-  /**
-   * @main or a lead asks the user to close the huddle, once it has written the summary into the host ticket's
-   * outputs. Only the user closes it.
-   */
-  requestClose(slug: string, hid: string, by: HuddleParticipant, reason: string): Huddle {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (!canManage(h, by)) throw new HuddleError(403, "only @main or a lead can ask to close the huddle; tell your lead you are done (huddle_status done)");
-    const summary = join(this.store.outputsDir(slug, h.hostTicket), summaryFile(hid));
-    if (!existsSync(summary)) {
-      throw new HuddleError(409, `write the huddle summary first: ${summary} (what was decided, the findings and their state, what is left to do), then call huddle_close again`);
-    }
-    // Without a closing full stop: the reason goes inside sentences that add their own.
-    const why = reason.trim().replace(/\.+$/, "") || "the work is done";
-    // An auto huddle runs while the user is away: its coordinator closes it itself.
-    if (h.auto && isCoordinator(h, by)) return this.close(slug, hid, `closed by @main (${why})`);
-    this.update(slug, hid, (x) => void (x.closeRequest = { by: by.handle, at: nowIso(), reason: why }));
-    this.system(slug, hid, `@${by.handle} asks to close the huddle: ${why}. The summary is in the host ticket's outputs (${summaryFile(hid)}). @you: press Close huddle to end it; only you can close it.`, [USER_HANDLE]);
-    return this.get(slug, hid);
-  }
+  requestClose(...a: Parameters<typeof messagesPart.requestClose>): ReturnType<typeof messagesPart.requestClose> { return messagesPart.requestClose.call(this, ...a); }
 
-  /** Counts a new message. The budget is the only brake: agents talk until they reach a conclusion. */
-  private brakes(slug: string, hid: string, by: HuddleParticipant, _m: HuddleMessage): boolean {
-    this.update(slug, hid, (x) => {
-      x.posts = (x.posts ?? 0) + 1;
-      x.sinceUser = by.kind === "human" ? 0 : (x.sinceUser ?? 0) + 1;
-    });
-    return true;
-  }
+  brakes(...a: Parameters<typeof messagesPart.brakes>): ReturnType<typeof messagesPart.brakes> { return messagesPart.brakes.call(this, ...a); }
 
 
 
-  /** The huddle stops by itself (see HuddleStopReason). budget and messages stop every huddle run too; loop only pauses routing. */
-  private halt(slug: string, hid: string, reason: HuddleStopReason, text: string) {
-    const h = this.get(slug, hid);
-    // The budget also stops a huddle whose routing was only paused.
-    if (h.status === "closed" || (h.status !== "live" && reason !== "budget") || h.stopReason === reason) return;
-    const hard = reason !== "loop";
-    if (hard) for (const p of h.participants) if (p.kind !== "human") this.stopParticipantRun(slug, h, p);
-    this.update(slug, hid, (x) => {
-      x.status = "stopped";
-      x.stopReason = reason;
-      if (hard) for (const p of x.participants) if (p.kind === "agent") p.status = "stopped";
-    });
-    this.system(slug, hid, text, [USER_HANDLE]);
-    if (h.auto) this.autoEnded(slug, hid, "halt", reason === "budget" ? "it hit its budget cap" : reason === "messages" ? "it hit its message limit" : "its agents kept answering each other, so routing paused");
-  }
+  halt(...a: Parameters<typeof messagesPart.halt>): ReturnType<typeof messagesPart.halt> { return messagesPart.halt.call(this, ...a); }
 
-  /** After a cost update: warn the leads at 80% of the budget, stop at 100%. */
-  private checkBudget(slug: string, hid: string) {
-    const h = this.load(slug, hid);
-    if (!h || h.status === "closed") return;
-    const max = h.maxCostUsd ?? DEFAULT_MAX_COST_USD;
-    const spent = huddleCost(h);
-    if (spent >= max) {
-      // One line: the board's brake dock shows the details (the close request, the ways on).
-      const by = h.participants.filter((p) => (p.costUsd ?? 0) > 0).map((p) => `@${p.handle} ${money(p.costUsd!)}`).join(", ");
-      const stop = `■ Paused at the ${money(max)} budget (${money(spent)} spent${by ? `: ${by}` : ""}); every run was stopped.`;
-      // The last wrap-up turn can tip it over after the work is finished: then Close is the next step, not more budget.
-      const finished = !!h.closeRequest || this.quiet(slug, h, this.store.readHuddleMessages(slug, hid)).quiet;
-      if (!finished) {
-        this.halt(slug, hid, "budget", `${stop} @you: resume it with more budget if it should go on.`);
-        return;
-      }
-      this.update(slug, hid, (x) => void (x.finishedAtStop = true));
-      this.halt(slug, hid, "budget", `${stop} @you: the work looks finished, so check the result and close the huddle.`);
-      return;
-    }
-    if (spent >= max * BUDGET_WARN && !h.budgetWarned) {
-      this.update(slug, hid, (x) => void (x.budgetWarned = true));
-      // A host running the room wraps it up; @main isn't woken for it.
-      const hosted = activeHost(h) !== MAIN_HANDLE;
-      const leads = h.participants.filter((p) => p.lead && p.kind !== "human" && p.status !== "stopped" && !(hosted && p.handle === MAIN_HANDLE)).map((p) => p.handle);
-      this.system(slug, hid,
-        `${leads.map((x) => `@${x}`).join(" ")}${leads.length ? ": t" : "T"}he huddle has spent ${money(spent)} of its ${money(max)} budget (${Math.round((spent / max) * 100)}%). ` +
-        "Wrap up: send the consolidated findings now and only start what is needed; at 100% every run stops.", leads);
-    }
-  }
+  checkBudget(...a: Parameters<typeof messagesPart.checkBudget>): ReturnType<typeof messagesPart.checkBudget> { return messagesPart.checkBudget.call(this, ...a); }
 
-  private route(slug: string, hid: string, m: HuddleMessage) {
-    const h = this.get(slug, hid);
-    const unwoken: HuddleParticipant[] = [];
-    for (const p of h.participants) {
-      const w = this.wakes(h, p, m);
-      if (w) this.wake(slug, h, p, w === "mention");
-      else if (m.mentions.includes(p.handle) && p.kind !== "human" && p.handle !== m.from) unwoken.push(p);
-    }
-    for (const p of unwoken) this.noteUnwoken(slug, hid, p, m.from);
-  }
+  route(...a: Parameters<typeof routingPart.route>): ReturnType<typeof routingPart.route> { return routingPart.route.call(this, ...a); }
 
-  /**
-   * A tag didn't wake its target because it is done, blocked or stopped: say so in a system note that tags the host
-   * or @main (the user, when the target is @main), once per target and sender until the target wakes. A held pair
-   * already has a note.
-   */
-  private noteUnwoken(slug: string, hid: string, p: HuddleParticipant, from: string) {
-    const h = this.get(slug, hid);
-    const cur = h.participants.find((x) => x.handle === p.handle);
-    if (!cur || (!settled(cur) && cur.status !== "stopped") || from === USER_HANDLE) return;
-    if (h.unwoken?.[p.handle]?.includes(from)) return;
-    this.update(slug, hid, (x) => {
-      x.unwoken ??= {};
-      x.unwoken[p.handle] = [...(x.unwoken[p.handle] ?? []), from];
-    });
-    const to = p.handle === MAIN_HANDLE ? USER_HANDLE : activeHost(h);
-    const who = cur.status === "stopped" ? "only the user can restart it" : `@${to} or a lead can wake it`;
-    this.system(slug, hid, `@${p.handle} is ${cur.status} and wasn't woken by @${from}'s tag; ${who}.`, [to]);
-  }
+  noteUnwoken(...a: Parameters<typeof routingPart.noteUnwoken>): ReturnType<typeof routingPart.noteUnwoken> { return routingPart.noteUnwoken.call(this, ...a); }
 
-  /**
-   * Whether a message wakes a participant: "mention" (tagged, or a system message naming it), "monitor" (it sees
-   * every message) or null. Done: a lead wakes on a direct tag from anyone and, in monitor mode, on a non-lead's
-   * message; anyone else only on a tag from a lead, @main or the user (or the brakes). Blocked: only a tag.
-   */
-  private wakes(h: Huddle, p: HuddleParticipant, m: HuddleMessage): "mention" | "monitor" | null {
-    if (p.kind === "human" || m.from === p.handle || p.status === "stopped") return null;
-    const mentioned = m.mentions.includes(p.handle) || m.mentions.includes("all");
-    if (m.kind === "system") return mentioned ? "mention" : null;
-    if (p.status === "done") {
-      const from = h.participants.find((x) => x.handle === m.from);
-      // @all only reaches mentions when a lead, @main or the user sent it.
-      if (mentioned && from && canManage(h, from)) return "mention";
-      if (!p.lead) return null;
-      if (m.mentions.includes(p.handle)) return "mention";
-      return p.mode === "monitor" && from && !canManage(h, from) ? "monitor" : null;
-    }
-    if (mentioned) return "mention";
-    return p.mode === "monitor" && p.status !== "blocked" ? "monitor" : null;
-  }
+  wakes(...a: Parameters<typeof routingPart.wakes>): ReturnType<typeof routingPart.wakes> { return routingPart.wakes.call(this, ...a); }
 
-  /** Wake a participant; being woken ends done or blocked, and its unwoken-tag notes start over. */
-  private wake(slug: string, h: Huddle, p: HuddleParticipant, mentioned: boolean) {
-    if (settled(p)) this.updateP(slug, h.id, p.handle, { status: "idle", statusReason: null });
-    if (this.get(slug, h.id).unwoken?.[p.handle]) this.update(slug, h.id, (x) => void delete x.unwoken![p.handle]);
-    this.deliver(slug, h, p, mentioned);
-  }
+  wake(...a: Parameters<typeof routingPart.wake>): ReturnType<typeof routingPart.wake> { return routingPart.wake.call(this, ...a); }
 
-  /**
-   * The idle watchdog (see the header): wakes the host, or @main, in each live huddle that has sat idle for
-   * HUDDLE_IDLE_MS since someone other than @main, the user or that host spoke last. now: for tests.
-   */
-  idleSweep(now = Date.now()): void {
-    if (this.shuttingDown || this.board.isRestartPending()) return;
-    for (const profile of this.store.listProfiles()) {
-      // Open huddles only, shared (no copies): a board keeps every closed huddle.
-      for (const h of this.store.openHuddles(profile.slug)) {
-        if (h.status === "live") this.idleCheck(profile.slug, h.id, now);
-      }
-    }
-  }
+  idleSweep(...a: Parameters<typeof routingPart.idleSweep>): ReturnType<typeof routingPart.idleSweep> { return routingPart.idleSweep.call(this, ...a); }
 
-  private idleCheck(slug: string, hid: string, now: number) {
-    const h = this.load(slug, hid);
-    if (!h || h.status !== "live") return;
-    const msgs = this.store.readHuddleMessages(slug, hid);
-    const last = msgs.findLast((m) => m.kind !== "system");
-    const to = activeHost(h);
-    if (!last || last.from === MAIN_HANDLE || last.from === USER_HANDLE || last.seq <= (h.idleNudged ?? 0)) return;
-    // The host speaking last is normally the host waiting on nobody, but when it tagged helpers and none of them has
-    // answered since, the huddle would sit idle forever (the host's rules have it wait for every answer).
-    const silent = last.from === to
-      ? h.participants.filter((p) => p.kind !== "human" && p.handle !== to && p.status !== "stopped" && last.mentions.includes(p.handle)).map((p) => p.handle)
-      : [];
-    if (last.from === to && !silent.length) return;
-    const times = [h.updatedAt, msgs.at(-1)?.ts, ...h.participants.map((p) => p.idleAt)].filter((t): t is string => !!t).map((t) => Date.parse(t));
-    if (now - Math.max(...times) < HUDDLE_IDLE_MS) return;
-    const ps = h.participants.filter((p) => p.kind !== "human");
-    if (ps.some((p) => this.working(slug, h, p) || this.mainPending.has(this.key(slug, hid, p.handle)))) return;
-    for (const p of ps) {
-      const run = this.runs.get(this.key(slug, hid, p.handle));
-      if (run && (run.pending || run.again || run.refreshing)) return;
-      if (msgs.some((m) => m.seq > p.cursor && this.wakes(h, p, m))) return;
-    }
-    this.update(slug, hid, (x) => void (x.idleNudged = last.seq));
-    const mins = Math.round(HUDDLE_IDLE_MS / 60_000);
-    if (silent.length) {
-      const who = silent.map((x) => `@${x}`).join(", ").replace(/, ([^,]*)$/, " and $1");
-      const one = silent.length === 1;
-      this.system(slug, hid, `Huddle idle for ${mins} min: ${who} ${one ? "hasn't" : "haven't"} answered your #${last.seq}. Count ${one ? "that answer" : "their answers"} as "no" and name ${one ? "it" : "them"} in the report, or tag ${one ? "it" : "them"} once more.`, [to]);
-      return;
-    }
-    this.system(slug, hid, `Huddle idle for ${mins} min since #${last.seq} (last: @${last.from}). Check who should act, or ask the user to close it.`, [to]);
-  }
+  idleCheck(...a: Parameters<typeof routingPart.idleCheck>): ReturnType<typeof routingPart.idleCheck> { return routingPart.idleCheck.call(this, ...a); }
 
-  /** Start the idle watchdog's sweep (the daemon, after recover()). */
-  startWatchdog(): void {
-    if (this.sweeper) return;
-    this.sweeper = trackedInterval("huddle-idle-sweep", () => {
-      try {
-        this.idleSweep();
-      } catch (e) {
-        console.error("huddle idle sweep failed", e);
-      }
-    }, IDLE_SWEEP_MS);
-    this.sweeper.unref?.();
-  }
+  startWatchdog(...a: Parameters<typeof routingPart.startWatchdog>): ReturnType<typeof routingPart.startWatchdog> { return routingPart.startWatchdog.call(this, ...a); }
 
-  /**
-   * Deliver a wake that was owed but never happened: messages that tag the participant (or, in monitor mode, any
-   * new ones) after its cursor. Run on Resume and after a restart, so nothing posted while the huddle was stopped
-   * or the daemon was going down is lost. A monitor ticket session's pending messages come back this way too.
-   */
-  private wakeIfOwed(slug: string, hid: string, handle: string): "mention" | "monitor" | null {
-    const h = this.load(slug, hid);
-    const p = h?.participants.find((x) => x.handle === handle);
-    if (!h || !p || h.status !== "live") return null;
-    let owed: "mention" | "monitor" | null = null;
-    for (const m of this.store.readHuddleMessages(slug, hid)) {
-      if (m.seq <= p.cursor) continue;
-      const w = this.wakes(h, p, m);
-      if (w === "mention") {
-        owed = w;
-        break;
-      }
-      owed ??= w;
-    }
-    if (owed) this.wake(slug, h, p, owed === "mention");
-    return owed;
-  }
+  wakeIfOwed(...a: Parameters<typeof routingPart.wakeIfOwed>): ReturnType<typeof routingPart.wakeIfOwed> { return routingPart.wakeIfOwed.call(this, ...a); }
 
-  /**
-   * Unread messages for a participant as one digest, and moves its cursor past them. Null when there is nothing
-   * to act on (only system messages, unless withSystem). undo: put the cursor back (the digest never arrived).
-   */
-  private takeUnread(slug: string, hid: string, handle: string, withSystem = false): { digest: string; tagged: boolean; undo: () => void } | null {
-    const h = this.get(slug, hid);
-    const p = h.participants.find((x) => x.handle === handle);
-    if (!p) return null;
-    const unread = this.store.readHuddleMessages(slug, hid).filter((m) => m.seq > p.cursor && m.from !== handle);
-    const prev = p.cursor;
-    if (p.cursor !== h.seq) this.updateP(slug, hid, handle, { cursor: h.seq });
-    // A system message only counts when it tags this participant (the brakes' warnings).
-    const tags = (m: HuddleMessage) => m.mentions.includes(handle) || m.mentions.includes("all");
-    if (!unread.length || (!withSystem && !unread.some((m) => m.kind !== "system" || tags(m)))) return null;
-    const shown = digestWindow(unread);
-    return { digest: huddleDigest(shown, unread.length - shown.length, h.brief), tagged: unread.some(tags), undo: () => this.updateP(slug, hid, handle, { cursor: prev }) };
-  }
+  takeUnread(...a: Parameters<typeof routingPart.takeUnread>): ReturnType<typeof routingPart.takeUnread> { return routingPart.takeUnread.call(this, ...a); }
 
-  private deliver(slug: string, h: Huddle, p: HuddleParticipant, mentioned: boolean) {
-    if (p.kind === "ticket-main") {
-      // Monitor: one message with everything once its current run is over, not a steer per message.
-      if (!mentioned && p.ticketId && this.board.isRunning(slug, p.ticketId)) {
-        this.mainPending.add(this.key(slug, h.id, p.handle));
-        return;
-      }
-      return this.deliverNow(slug, h.id, p.handle);
-    }
-    const run = this.runs.get(this.key(slug, h.id, p.handle));
-    if (run) {
-      // Mid-turn: a mention steers it now; for a monitor the rest waits for the turn boundary.
-      if (!mentioned && !run.idle) {
-        run.pending = true;
-        return;
-      }
-      return this.deliverNow(slug, h.id, p.handle);
-    }
-    this.deliverNow(slug, h.id, p.handle);
-  }
+  deliver(...a: Parameters<typeof routingPart.deliver>): ReturnType<typeof routingPart.deliver> { return routingPart.deliver.call(this, ...a); }
 
-  /** Hand the participant everything it hasn't read: into its live run, a ticket chat message, or a new run. */
-  private deliverNow(slug: string, hid: string, handle: string) {
-    const h = this.load(slug, hid);
-    const p = h?.participants.find((x) => x.handle === handle);
-    if (!h || !p || h.status !== "live" || p.status === "stopped" || p.status === "done" || this.shuttingDown) return;
-    if (p.kind === "ticket-main") {
-      const u = p.ticketId ? this.takeUnread(slug, hid, handle) : null;
-      if (!u) return;
-      this.mainWoken.set(`${slug}/${p.ticketId}`, { hid, handle });
-      // Its own auto huddle wakes the host as unattended work on the ticket (it ends with a result line and lands).
-      const own = this.store.getTicket(slug, p.ticketId!)?.autoHuddle;
-      const hostWake = !!h.auto && isCoordinator(h, p) && own?.state === "live" && own.huddleId === h.id;
-      const planning = this.store.getTicket(slug, p.ticketId!)?.status === "planning";
-      this.board.chat(slug, p.ticketId!, huddleMainPrompt(h, p, u.digest, this.board.committed(slug), planning), hostWake ? { hostWake } : { peer: true }).catch((e) => {
-        u.undo();
-        this.system(slug, hid, `Couldn't reach @${handle}: ${(e as Error).message}`);
-      });
-      return;
-    }
-    const run = this.runs.get(this.key(slug, hid, handle));
-    if (run) {
-      if (run.stopRequested) return;
-      // Still starting (worktree, setup): it gets them at its first turn boundary.
-      if (!run.handle) {
-        run.pending = true;
-        return;
-      }
-      // Between turns, a snapshot agent sees the host's latest commit first. Mid-turn its files stay put.
-      if (run.idle && isSnapshot(p) && !run.fresh) {
-        if (run.refreshing) return;
-        run.refreshing = this.workspace(slug, h, p)
-          .then(() => {}, (e) => {
-            if (!run.stopRequested) this.system(slug, hid, `Couldn't refresh @${handle}'s snapshot: ${(e as Error).message}`);
-          })
-          .finally(() => {
-            run.refreshing = null;
-            run.fresh = true;
-            this.deliverNow(slug, hid, handle);
-          });
-        this.chore(run.refreshing);
-        return;
-      }
-      if (run.refreshing) return;
-      run.fresh = false;
-      run.pending = false;
-      const u = this.takeUnread(slug, hid, handle);
-      if (!u) return;
-      const cur = this.get(slug, hid).participants.find((x) => x.handle === handle)!;
-      if (run.handle?.send(huddleAgentPrompt("wake", cur, u.digest, u.tagged, isSnapshot(cur) ? cur.snapshot : null))) {
-        if (run.idle && !settled(p)) this.updateP(slug, hid, handle, { status: "working" });
-        run.idle = false;
-      } else {
-        // Input is closing (the run is finishing): a new run picks them up.
-        u.undo();
-        run.again = true;
-      }
-      return;
-    }
-    // Before taking the unread messages: recover() hands them over after the restart.
-    if (this.holdForRestart(slug, hid, handle)) return;
-    const u = this.takeUnread(slug, hid, handle);
-    if (u) this.runAgent(slug, hid, handle, huddleAgentPrompt("wake", p, u.digest, u.tagged));
-  }
+  deliverNow(...a: Parameters<typeof routingPart.deliverNow>): ReturnType<typeof routingPart.deliverNow> { return routingPart.deliverNow.call(this, ...a); }
 
-  /** A restart is pending: no new agent run starts; the agent is marked so recover() starts it after the restart. */
-  private holdForRestart(slug: string, hid: string, handle: string): boolean {
-    if (!this.board.isRestartPending()) return false;
-    this.updateP(slug, hid, handle, { interrupted: true, lastActivity: "Waiting for the board to restart" });
-    return true;
-  }
+  holdForRestart(...a: Parameters<typeof routingPart.holdForRestart>): ReturnType<typeof routingPart.holdForRestart> { return routingPart.holdForRestart.call(this, ...a); }
 
-  /** An agent's first run: start on its job with what was said so far. */
-  private kickoff(slug: string, hid: string, handle: string) {
-    if (this.holdForRestart(slug, hid, handle)) return;
-    const p = this.get(slug, hid).participants.find((x) => x.handle === handle)!;
-    this.runAgent(slug, hid, handle, huddleAgentPrompt("start", p, this.takeUnread(slug, hid, handle, true)?.digest ?? ""));
-  }
+  kickoff(...a: Parameters<typeof routingPart.kickoff>): ReturnType<typeof routingPart.kickoff> { return routingPart.kickoff.call(this, ...a); }
 
-  private runAgent(slug: string, hid: string, handle: string, input: string) {
-    const key = this.key(slug, hid, handle);
-    if (this.runs.has(key) || this.shuttingDown || this.holdForRestart(slug, hid, handle)) return;
-    const run: AgentRun = { handle: null, promise: Promise.resolve(), idle: false, pending: false, again: false, stopRequested: false };
-    this.runs.set(key, run);
-    const cur = this.get(slug, hid).participants.find((x) => x.handle === handle);
-    this.updateP(slug, hid, handle, { status: settled(cur) ? cur!.status : "working", error: null, interrupted: false });
-    run.promise = this.executeAgent(slug, hid, handle, run, input)
-      .catch((e) => {
-        console.error(`huddle ${slug}/${hid} @${handle} crashed`, e);
-        const error = String((e as Error)?.message ?? e);
-        this.updateP(slug, hid, handle, { status: "failed", error });
-        if (this.load(slug, hid)) this.system(slug, hid, `@${handle} failed: ${error}`);
-      })
-      .finally(() => {
-        this.runs.delete(key);
-        this.board.boardBrowsers.release(this.browserLease(slug, hid, handle));
-        if (this.shuttingDown) return;
-        this.board.restartWorkChanged();
-        // Emit with running: false now that the run is gone.
-        if (this.load(slug, hid)) this.update(slug, hid, () => {});
-        if ((run.again || run.pending) && !run.stopRequested) this.deliverNow(slug, hid, handle);
-      });
-  }
+  runAgent(...a: Parameters<typeof routingPart.runAgent>): ReturnType<typeof routingPart.runAgent> { return routingPart.runAgent.call(this, ...a); }
 
-  /**
-   * Where an agent works: (workspace own) its own copy of the host's folder (see copyFor); a read-only agent, a
-   * detached snapshot of the host's HEAD (see snapshot); anyone else the host ticket's folder. In a repo with no
-   * commits there is nothing to snapshot, so read-only agents read the host's folder (as the host ticket does).
-   */
-  private async workspace(slug: string, h: Huddle, p: HuddleParticipant): Promise<string> {
-    const host = await this.board.ensureSession(slug, h.hostTicket);
-    const committed = host.isGit && (await hasCommits(host.dir));
-    if (p.workspace === "shared") return isSnapshot(p) && committed ? this.snapshot(slug, h, p, host.dir) : host.dir;
-    // An older huddle's own worktree carries on as it was.
-    if (!p.copy && p.branch && p.worktree && existsSync(p.worktree)) return p.worktree;
-    if (p.copy && !p.copy.fresh && existsSync(p.copy.dir) && readState(p.copy.dir)) return p.copy.dir;
-    return this.copyFor(slug, h, p, host.dir, committed);
-  }
+  workspace(...a: Parameters<typeof agentsPart.workspace>): ReturnType<typeof agentsPart.workspace> { return agentsPart.workspace.call(this, ...a); }
 
-  /**
-   * Make (or make again) an agent's own copy of the host's folder: a git worktree on its own branch at the host
-   * folder as it is now (uncommitted work included) when the repo has commits, else a plain copy of the folder.
-   * A read-only snapshot it had before it was allowed to change files makes way for it.
-   */
-  private async copyFor(slug: string, h: Huddle, p: HuddleParticipant, hostDir: string, committed: boolean): Promise<string> {
-    const profile = this.store.getProfile(slug)!;
-    const dir = agentDir(profile, h, p);
-    if (p.worktree && !p.branch) {
-      if (existsSync(p.worktree)) await git(["git", "worktree", "remove", "--force", p.worktree], profile.path);
-      rmSync(p.worktree, { recursive: true, force: true });
-      await git(["git", "worktree", "prune"], profile.path);
-      this.updateP(slug, h.id, p.handle, { worktree: null, snapshot: null });
-    }
-    // Made again (after a conflict): whatever it changed and never handed in is saved first, so nothing is lost.
-    const cur = this.get(slug, h.id).participants.find((x) => x.handle === p.handle)?.copy;
-    if (cur && cur.dir === dir && existsSync(cur.dir)) {
-      const kept = await keepUnhanded(cur.dir, cur.kind, nowIso().replace(/[:.]/g, "-"));
-      if (kept) this.system(slug, h.id, `Saved the changes @${p.handle} never handed in to ${kept} before giving it a fresh copy of the folder, so nothing is lost.`);
-    }
-    const branch = committed ? `ck/${h.hostTicket}-${p.handle}` : null;
-    const repo = committed ? await mainRepo(hostDir) : null;
-    if (committed) await makeGitCopy(repo!, hostDir, dir, branch!);
-    else await makeFolderCopy(hostDir, dir);
-    this.updateP(slug, h.id, p.handle, { copy: { kind: committed ? "git" : "folder", dir, repo, branch, at: nowIso() } });
-    return dir;
-  }
+  copyFor(...a: Parameters<typeof agentsPart.copyFor>): ReturnType<typeof agentsPart.copyFor> { return agentsPart.copyFor.call(this, ...a); }
 
-  /**
-   * A read-only agent's folder: a detached worktree at the host worktree's committed HEAD, made on its first run and
-   * reset at every wake (local changes and untracked files there are discarded). Nothing it does there reaches the
-   * coordinator's worktree.
-   */
-  private async snapshot(slug: string, h: Huddle, p: HuddleParticipant, hostDir: string): Promise<string> {
-    const profile = this.store.getProfile(slug)!;
-    const head = await git(["git", "rev-parse", "HEAD"], hostDir);
-    if (head.code !== 0) throw new Error(`couldn't read the host worktree's HEAD: ${head.stderr.trim()}`);
-    const sha = head.stdout.trim();
-    const branch = (await git(["git", "branch", "--show-current"], hostDir)).stdout.trim() || null;
-    const dir = p.worktree ?? agentDir(profile, h, p);
-    if (existsSync(dir)) {
-      for (const cmd of [[...NO_HOOKS, "checkout", "--quiet", "--force", "--detach", sha], ["git", "clean", "-fdq"]]) {
-        const r = await git(cmd, dir);
-        if (r.code !== 0) throw new Error(`couldn't reset the snapshot worktree ${dir}: ${r.stderr.trim()}`);
-      }
-    } else {
-      await git(["git", "worktree", "prune"], profile.path);
-      mkdirSync(dirname(dir), { recursive: true });
-      const r = await git([...NO_HOOKS, "worktree", "add", "--detach", dir, sha], profile.path);
-      if (r.code !== 0) throw new Error(`couldn't make the snapshot worktree ${dir}: ${r.stderr.trim()}`);
-    }
-    this.updateP(slug, h.id, p.handle, { worktree: dir, branch: null, snapshot: { branch, sha } });
-    return dir;
-  }
+  snapshot(...a: Parameters<typeof agentsPart.snapshot>): ReturnType<typeof agentsPart.snapshot> { return agentsPart.snapshot.call(this, ...a); }
 
-  private browserLease(slug: string, hid: string, handle: string): string {
-    return `huddle:${slug}/${hid}/${handle}`;
-  }
+  browserLease(...a: Parameters<typeof agentsPart.browserLease>): ReturnType<typeof agentsPart.browserLease> { return agentsPart.browserLease.call(this, ...a); }
 
-  private async executeAgent(slug: string, hid: string, handle: string, run: AgentRun, input: string): Promise<void> {
-    let h = this.get(slug, hid);
-    let p = h.participants.find((x) => x.handle === handle)!;
-    const host = this.store.getTicket(slug, h.hostTicket);
-    if (!host) throw new Error(`host ticket ${h.hostTicket} not found`);
-    const dir = await this.workspace(slug, h, p);
-    if (run.stopRequested || this.shuttingDown) return;
-    h = this.get(slug, hid);
-    p = h.participants.find((x) => x.handle === handle)!;
-    const profile = this.store.getProfile(slug)!;
-    const sessionId = p.sessionId ?? crypto.randomUUID();
-    const resume = !!p.sessionStarted && this.sessionExists(sessionId);
-    if (!p.sessionId) this.updateP(slug, hid, handle, { sessionId });
-    const outputDir = this.store.huddleOutputsDir(slug, h.hostTicket, handle);
-    const summary = join(this.store.outputsDir(slug, h.hostTicket), summaryFile(hid));
-    const plan = join(this.store.outputsDir(slug, h.hostTicket), proposalFile(hid));
-    const system = huddleAgentSystemPrompt(h, p, host as Ticket, outputDir, dir, profile.baseBranch, this.lessonsFor(slug, p.preset), summary, existsSync(plan) ? plan : undefined);
-    const connectors = boardConnectorOptions(profile);
-    // The host ticket's browsers: board browsers start now and stay open until this agent's run ends (runAgent).
-    let browsers: RunBrowsers | null = null;
-    try {
-      browsers = await this.board.runBrowsers(slug, host as Ticket, this.browserLease(slug, hid, handle), outputDir);
-    } catch (e) {
-      console.error(`huddle ${slug}/${hid} @${handle}: browsers`, e);
-    }
-    if (run.stopRequested || this.shuttingDown) return;
-    const args = buildArgs(sessionId, resume, p.model ?? profile.model, [...(p.canEdit ? [] : NO_EDIT_TOOLS.split(",")), ...connectors.disallowed],
-      mcpConfig(undefined, { ...this.store.boardTools(slug), ...(browsers?.servers ?? {}) }), browsers?.note ? `${browsers.noChrome ? withoutChromeRule(system) : system}\n\n${browsers.note}` : system,
-      undefined, undefined, false, browsers?.noChrome ? { noChrome: true } : null);
-    let lastWrite = 0;
-    let started = resume;
-    run.handle = startRun({
-      bin: this.opts.claudeBin, cwd: dir, args, input,
-      // Huddle agents have no board slot: CKANBAN_TICKET is the host (its board and outputs), CKANBAN_HUDDLE_AGENT who they are.
-      // The board's saved keys (ask_keys) first, so the board's own variables always win.
-      env: { ...boardKeyEnv(this.store.root, slug), ...connectors.env, CKANBAN_OUTPUT_DIR: outputDir, CKANBAN_TICKET: `${slug}/${h.hostTicket}`, [HUDDLE_AGENT_ENV]: `${hid}/${handle}/${p.token}` },
-      idleMs: p.mode === "monitor" ? this.opts.idleMs ?? MONITOR_IDLE_MS : undefined,
-      onEvent: (ev) => {
-        if (ev?.type === "stream_event" || this.shuttingDown) return;
-        if (ev?.type === "result") {
-          run.idle = true;
-          run.turn = undefined;
-          const cur = this.get(slug, hid).participants.find((x) => x.handle === handle);
-          const cost = costAfter(cur, Number(ev.total_cost_usd) || 0);
-          this.updateP(slug, hid, handle, { status: settled(cur) ? cur!.status : "idle", idleAt: nowIso(), ...cost, ...(run.ctx ? { contextTokens: run.ctx } : {}) });
-          try {
-            addHuddleSpend(this.store.root, slug, (cost.costUsd ?? 0) - (cur?.costUsd ?? 0));
-          } catch {}
-          this.board.restartWorkChanged();
-          this.checkBudget(slug, hid);
-          // Turn boundary: a monitor gets what came in while it worked.
-          if (run.pending) queueMicrotask(() => this.deliverNow(slug, hid, handle));
-          return;
-        }
-        // Saved at once: a restart may cut the run off before it ends, and the next run must resume this session.
-        if (ev?.type === "system" && ev.subtype === "init" && !started) {
-          started = true;
-          this.updateP(slug, hid, handle, { sessionStarted: true });
-        }
-        if (run.idle && (ev?.type === "assistant" || (ev?.type === "system" && ev.subtype === "init"))) {
-          run.idle = false;
-          if (!settled(this.get(slug, hid).participants.find((x) => x.handle === handle))) this.updateP(slug, hid, handle, { status: "working" });
-        }
-        // Live cost on the roster: the turn's messages priced from their usage until the result line.
-        if (ev?.type === "assistant" && ev.message?.id && ev.message.usage) {
-          (run.turn ??= new Map()).set(ev.message.id, messageCost(String(ev.message.model ?? p.model ?? profile.model ?? ""), ev.message.usage));
-          if (!ev.parent_tool_use_id) run.ctx = contextTokens(ev.message.usage) || run.ctx;
-        }
-        const s = summarizeEvent(ev);
-        const now = Date.now();
-        if ((s || run.ctx) && now - lastWrite >= ACTIVITY_THROTTLE_MS) {
-          lastWrite = now;
-          this.updateP(slug, hid, handle, { ...(s ? { lastActivity: s } : {}), ...(run.ctx ? { contextTokens: run.ctx } : {}) });
-        }
-      },
-    });
-    const out = await run.handle.done;
-    if (this.shuttingDown) return;
-    started ||= this.sessionExists(sessionId);
-    if (!this.load(slug, hid)) return;
-    if (run.stopRequested || run.handle.stopped) return this.updateP(slug, hid, handle, { sessionStarted: started, status: "stopped" });
-    if (out.code !== 0) {
-      const error = out.stderr.trim().split("\n").slice(-3).join("\n") || `claude exited with code ${out.code}`;
-      this.updateP(slug, hid, handle, { sessionStarted: started, status: "failed", error });
-      this.system(slug, hid, `@${handle}'s run failed: ${error}`);
-      return;
-    }
-    const cur = this.get(slug, hid).participants.find((x) => x.handle === handle);
-    this.updateP(slug, hid, handle, { sessionStarted: started, status: settled(cur) ? cur!.status : "idle", idleAt: nowIso() });
-  }
+  executeAgent(...a: Parameters<typeof agentsPart.executeAgent>): ReturnType<typeof agentsPart.executeAgent> { return agentsPart.executeAgent.call(this, ...a); }
 
-  /**
-   * Stop what the huddle runs for a participant: an agent's run, or the reply run the huddle woke a ticket's session
-   * for. A ticket's own work (its runs, slot waits, card status) is never touched.
-   */
-  private stopParticipantRun(slug: string, h: Huddle, p: HuddleParticipant) {
-    const run = this.runs.get(this.key(slug, h.id, p.handle));
-    if (run) {
-      run.stopRequested = true;
-      run.handle?.stop();
-    }
-    this.mainPending.delete(this.key(slug, h.id, p.handle));
-    if (p.kind === "ticket-main" && p.ticketId && this.board.isPeerRun(slug, p.ticketId) && this.mainWoken.get(`${slug}/${p.ticketId}`)?.hid === h.id) {
-      this.board.stop(slug, p.ticketId);
-    }
-  }
+  stopParticipantRun(...a: Parameters<typeof agentsPart.stopParticipantRun>): ReturnType<typeof agentsPart.stopParticipantRun> { return agentsPart.stopParticipantRun.call(this, ...a); }
 
-  /** The user stops one participant: its huddle run ends and nothing wakes it until the huddle is resumed. */
-  stopParticipant(slug: string, hid: string, handle: string): void {
-    const h = this.get(slug, hid);
-    const p = h.participants.find((x) => x.handle === handle && x.kind !== "human");
-    if (!p) throw new HuddleError(404, `no participant @${handle}`);
-    this.stopParticipantRun(slug, h, p);
-    this.updateP(slug, hid, handle, { status: "stopped" });
-    if (h.status !== "closed") this.system(slug, hid, `@${handle} was stopped by @you.`);
-    this.userActed(slug, hid);
-  }
+  stopParticipant(...a: Parameters<typeof lifecyclePart.stopParticipant>): ReturnType<typeof lifecyclePart.stopParticipant> { return lifecyclePart.stopParticipant.call(this, ...a); }
 
-  /**
-   * The user restarts a failed or stopped participant: it is idle again and, while the huddle is live, wakes now
-   * with what it has not read yet. On a stopped huddle it wakes when the huddle resumes.
-   */
-  restartParticipant(slug: string, hid: string, handle: string): void {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    const p = h.participants.find((x) => x.handle === handle && x.kind !== "human");
-    if (!p) throw new HuddleError(404, `no participant @${handle}`);
-    if (p.status !== "failed" && p.status !== "stopped") throw new HuddleError(409, `@${handle} is ${p.status}, not failed or stopped`);
-    this.updateP(slug, hid, handle, { status: "idle", error: null });
-    const live = h.status === "live";
-    this.system(slug, hid, `@${handle} was restarted by @you${live ? "" : "; it wakes when the huddle resumes"}.`, live ? [handle] : []);
-    this.userActed(slug, hid);
-  }
+  restartParticipant(...a: Parameters<typeof lifecyclePart.restartParticipant>): ReturnType<typeof lifecyclePart.restartParticipant> { return lifecyclePart.restartParticipant.call(this, ...a); }
 
-  /** The user viewed the huddle up to message `seq` (the Huddle tab, scrolled to the latest): the "for you" count clears up to there. */
-  markSeen(slug: string, hid: string, seq: number): Huddle {
-    const h = this.get(slug, hid);
-    const me = h.participants.find((p) => p.handle === USER_HANDLE);
-    if (!Number.isFinite(seq)) throw new HuddleError(400, "seq must be a number");
-    const to = Math.min(Math.floor(seq), h.seq);
-    if (!me || me.cursor >= to) return h;
-    return this.update(slug, hid, (x) => {
-      const m = x.participants.find((p) => p.handle === USER_HANDLE)!;
-      m.cursor = Math.max(m.cursor, to);
-    });
-  }
+  markSeen(...a: Parameters<typeof lifecyclePart.markSeen>): ReturnType<typeof lifecyclePart.markSeen> { return lifecyclePart.markSeen.call(this, ...a); }
 
-  /** The user acted on the huddle: what tagged them so far counts as seen (the "for you" count starts over). */
-  private userActed(slug: string, hid: string) {
-    if (!this.store.getHuddle(slug, hid)) return;
-    this.update(slug, hid, (x) => {
-      const me = x.participants.find((p) => p.handle === USER_HANDLE);
-      if (me) me.cursor = x.seq;
-    });
-  }
+  userActed(...a: Parameters<typeof lifecyclePart.userActed>): ReturnType<typeof lifecyclePart.userActed> { return lifecyclePart.userActed.call(this, ...a); }
 
-  /**
-   * Stop agents: every huddle agent's run and the huddle's reply runs end, and the huddle stops routing until resumed.
-   * The tickets' own sessions keep working (only their huddle replies stop).
-   */
-  stopAll(slug: string, hid: string): Huddle {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    for (const p of h.participants) if (p.kind !== "human") this.stopParticipantRun(slug, h, p);
-    this.update(slug, hid, (x) => {
-      x.status = "stopped";
-      x.stopReason = null;
-      for (const p of x.participants) if (p.kind === "agent") p.status = "stopped";
-    });
-    this.system(slug, hid, "Huddle agents stopped by @you. The tickets' own runs keep going.");
-    this.userActed(slug, hid);
-    if (h.auto) this.autoEnded(slug, hid, "user", "the user stopped it");
-    return this.get(slug, hid);
-  }
+  stopAll(...a: Parameters<typeof lifecyclePart.stopAll>): ReturnType<typeof lifecyclePart.stopAll> { return lifecyclePart.stopAll.call(this, ...a); }
 
-  /**
-   * Resume routing; stopped participants wake again when tagged (or, in monitor mode, on new messages), and whoever
-   * was tagged while the huddle was stopped wakes now. addBudgetUsd raises the budget (needed when it was spent);
-   * the agent-only count starts over.
-   */
-  resume(slug: string, hid: string, addBudgetUsd = 0): Huddle {
-    const h = this.get(slug, hid);
-    this.assertOpen(h);
-    if (!Number.isFinite(addBudgetUsd) || addBudgetUsd < 0) throw new HuddleError(400, "addBudgetUsd must be a positive amount");
-    const max = (h.maxCostUsd ?? DEFAULT_MAX_COST_USD) + addBudgetUsd;
-    const spent = huddleCost(h);
-    if (spent >= max) throw new HuddleError(409, `the huddle spent ${money(spent)} of its ${money(max)} budget: add budget to resume it`);
-    this.update(slug, hid, (x) => {
-      x.status = "live";
-      x.stopReason = null;
-      x.maxCostUsd = max;
-      x.sinceUser = 0;
-      x.held = null;
-      x.finishedAtStop = false;
-      if (spent < max * BUDGET_WARN) x.budgetWarned = false;
-      for (const p of x.participants) if (p.status === "stopped") p.status = "idle";
-    });
-    if (h.status !== "live" || addBudgetUsd) this.system(slug, hid, `Huddle resumed by @you${addBudgetUsd ? ` with ${money(addBudgetUsd)} more budget (now ${money(max)})` : ""}.`);
-    this.userActed(slug, hid);
-    let tagged = false;
-    for (const p of this.get(slug, hid).participants) if (p.kind !== "human" && this.wakeIfOwed(slug, hid, p.handle) === "mention") tagged = true;
-    // Resume only delivers tags that were owed: without one, no agent has new work and the huddle would look stuck.
-    if (!tagged) this.system(slug, hid, "Nobody was tagged while the huddle was stopped, so no agent has new work. @you: tag an agent to give it work, or close the huddle.");
-    return this.get(slug, hid);
-  }
+  resume(...a: Parameters<typeof lifecyclePart.resume>): ReturnType<typeof lifecyclePart.resume> { return lifecyclePart.resume.call(this, ...a); }
 
-  /**
-   * The user closes a huddle (or the host ticket is done or deleted: `why`): the huddle's runs stop, the history
-   * stays read-only, and the agents' own worktrees are removed when clean. The tickets' own work is untouched.
-   */
-  close(slug: string, hid: string, why?: string, summarize = true): Huddle {
-    const h = this.get(slug, hid);
-    if (h.status === "closed") return h;
-    for (const p of h.participants) if (p.kind !== "human") this.stopParticipantRun(slug, h, p);
-    this.system(slug, hid, why ? `Huddle closed: ${why}. The history stays, read-only.` : "Huddle closed by @you. The history stays, read-only.");
-    const out = this.update(slug, hid, (x) => {
-      x.status = "closed";
-      x.closedAt = nowIso();
-      for (const p of x.participants) if (p.kind === "agent" && p.status === "working") p.status = "stopped";
-    });
-    if (h.participants.some((p) => p.kind === "agent" && (p.worktree || p.copy))) this.chore(this.removeWorktrees(slug, hid));
-    this.chore(this.cleanOutputs(slug, h.hostTicket, hid));
-    if (h.auto) this.autoEnded(slug, hid, why ? "closed" : "user", why ?? "the user closed it");
-    if (summarize) this.ensureSummary(slug, hid);
-    return out;
-  }
+  close(...a: Parameters<typeof lifecyclePart.close>): ReturnType<typeof lifecyclePart.close> { return lifecyclePart.close.call(this, ...a); }
 
-  /** The host ticket was deleted or moved to Done: its huddles close (a deleted one's without a summary). */
-  closeForTicket(slug: string, ticketId: string, why = DELETED): void {
-    const t = why === DELETED ? null : this.store.getTicket(slug, ticketId);
-    for (const h of this.store.openHuddles(slug)) {
-      if (h.hostTicket === ticketId && (!t || endedByDone(h, t))) this.close(slug, h.id, why, why !== DELETED);
-    }
-  }
+  closeForTicket(...a: Parameters<typeof lifecyclePart.closeForTicket>): ReturnType<typeof lifecyclePart.closeForTicket> { return lifecyclePart.closeForTicket.call(this, ...a); }
 
-  /**
-   * A huddle just closed: make sure it has a summary. @main writes it when the host ticket can run (a queued chat
-   * message); otherwise, or when that run ends without it, the board writes fallbackSummary. An older huddle's summary
-   * in the single legacy file, written during this huddle, becomes this huddle's.
-   */
-  private ensureSummary(slug: string, hid: string): void {
-    const h = this.load(slug, hid);
-    const t = h && this.store.getTicket(slug, h.hostTicket);
-    if (!h || !t) return;
-    const dir = this.store.outputsDir(slug, t.id);
-    const file = join(dir, summaryFile(hid));
-    if (existsSync(file)) return;
-    const legacy = join(dir, LEGACY_SUMMARY_FILE);
-    if (existsSync(legacy) && statSync(legacy).mtime.toISOString() >= h.createdAt) {
-      mkdirSync(dirname(file), { recursive: true });
-      copyFileSync(legacy, file);
-      return this.touch(slug, hid);
-    }
-    const canRun = t.status !== "done" && !!t.sessionId && !!t.sessionStarted && this.sessionExists(t.sessionId);
-    if (!canRun) return this.writeFallbackSummary(slug, hid);
-    this.summaryOwed.add(`${slug}/${hid}`);
-    this.board.chat(slug, t.id, summaryAsk(h, file), { peer: true }).catch(() => {
-      this.summaryOwed.delete(`${slug}/${hid}`);
-      this.writeFallbackSummary(slug, hid);
-    });
-  }
+  ensureSummary(...a: Parameters<typeof lifecyclePart.ensureSummary>): ReturnType<typeof lifecyclePart.ensureSummary> { return lifecyclePart.ensureSummary.call(this, ...a); }
 
-  /** The board's own summary (fallbackSummary), unless one exists by now. */
-  writeFallbackSummary(slug: string, hid: string): void {
-    const h = this.load(slug, hid);
-    if (!h || !this.store.getTicket(slug, h.hostTicket)) return;
-    const file = join(this.store.outputsDir(slug, h.hostTicket), summaryFile(hid));
-    if (existsSync(file)) return;
-    mkdirSync(dirname(file), { recursive: true });
-    const outputs = this.store.listOutputs(slug, h.hostTicket).map((o) => o.name);
-    writeFileSync(file, fallbackSummary(h, this.store.readHuddleMessages(slug, hid), outputs));
-    this.touch(slug, hid);
-  }
+  writeFallbackSummary(...a: Parameters<typeof lifecyclePart.writeFallbackSummary>): ReturnType<typeof lifecyclePart.writeFallbackSummary> { return lifecyclePart.writeFallbackSummary.call(this, ...a); }
 
-  /** Tell the UI the huddle changed (its summary appeared) without changing it. */
-  private touch(slug: string, hid: string) {
-    const h = this.load(slug, hid);
-    if (h) this.bus.emit({ type: "huddle.updated", profile: slug, huddle: this.view(slug, h) });
-  }
+  touch(...a: Parameters<typeof lifecyclePart.touch>): ReturnType<typeof lifecyclePart.touch> { return lifecyclePart.touch.call(this, ...a); }
 
-  private chore(p: Promise<void>) {
-    const tracked = p.catch((e) => console.error("huddle cleanup failed", e)).finally(() => this.chores.delete(tracked));
-    this.chores.add(tracked);
-  }
+  chore(...a: Parameters<typeof lifecyclePart.chore>): ReturnType<typeof lifecyclePart.chore> { return lifecyclePart.chore.call(this, ...a); }
 
-  /**
-   * After a close: remove the read-only snapshots, and each helper's copy of the folder when nothing would be lost
-   * (every change in it was handed in and none still waits for a decision); a system note lists the ones kept.
-   * Older huddles' own worktrees go when they have no uncommitted changes or commits the host's branch lacks.
-   */
-  private async removeWorktrees(slug: string, hid: string): Promise<void> {
-    // The agents' runs were just stopped: let them end first.
-    await Promise.all([...this.runs.entries()].filter(([k]) => k.startsWith(`${slug}/${hid}/`)).flatMap(([, r]) => [r.promise, r.refreshing ?? undefined]));
-    const h = this.load(slug, hid);
-    const profile = this.store.getProfile(slug);
-    if (!h || !profile) return;
-    const base = this.store.getTicket(slug, h.hostTicket)?.branch ?? profile.baseBranch;
-    const removed: string[] = [];
-    const kept: string[] = [];
-    for (const p of h.participants) {
-      if (p.kind !== "agent") continue;
-      if (p.copy) {
-        const c = p.copy;
-        // Only the folder the board made for it: a stored path elsewhere is never removed.
-        if (c.dir !== agentDir(profile, h, p)) {
-          kept.push(`@${p.handle}: ${c.dir} (not where the board keeps copies, so it was left alone)`);
-          continue;
-        }
-        const mine = (h.handIns ?? []).filter((x) => x.from === p.handle);
-        const waiting = mine.some((x) => x.status === "waiting");
-        // Its last hand-in hit a conflict and was never redone: what it handed in stays saved.
-        const redo = mine.at(-1)?.status === "conflict";
-        let keep: string | null = waiting ? "changes it handed in still wait for a decision" : null;
-        try {
-          if (!keep && (await unhanded(c.dir, c.kind))) keep = "it has changes that were never handed in";
-          if (!keep) await removeCopy(c.dir, c.kind === "git" ? c.repo ?? profile.path : undefined, c.branch, redo);
-          if (!keep && redo) kept.push(`@${p.handle}: ${c.dir}.handins (changes that weren't brought in because of a conflict)`);
-        } catch (e) {
-          keep = `couldn't remove it: ${(e as Error).message}`;
-        }
-        if (existsSync(keptDir(c.dir))) kept.push(`@${p.handle}: ${keptDir(c.dir)} (changes saved before a fresh copy was made)`);
-        if (keep) kept.push(`@${p.handle}: ${c.dir} (${keep})`);
-        else {
-          removed.push(`@${p.handle}`);
-          this.updateP(slug, hid, p.handle, { copy: null });
-        }
-        continue;
-      }
-      if (!p.worktree) continue;
-      if (!p.branch) {
-        // A read-only snapshot: nothing in it is anyone's work, so it goes without a note.
-        const r = existsSync(p.worktree) ? await git(["git", "worktree", "remove", "--force", p.worktree], profile.path) : null;
-        if (r && r.code !== 0) kept.push(`@${p.handle}: ${p.worktree}: ${r.stderr.trim() || "couldn't remove it"}`);
-        else this.updateP(slug, hid, p.handle, { worktree: null });
-        continue;
-      }
-      const why = await removeOwnWorktree(profile.path, p.worktree, p.branch ?? null, base);
-      if (why) kept.push(`@${p.handle}: ${p.worktree}${p.branch ? ` (branch ${p.branch})` : ""}: ${why}`);
-      else {
-        removed.push(`@${p.handle}`);
-        this.updateP(slug, hid, p.handle, { worktree: null, branch: null });
-      }
-    }
-    const lines = [
-      ...(removed.length ? [`Removed the copies of the folder of ${removed.join(", ")} (all their changes were handed in).`] : []),
-      ...(kept.length ? ["Kept these copies of the folder, so nothing is lost; take what you need from them, then delete them yourself:", ...kept.map((k) => `- ${k}`)] : []),
-    ];
-    if (lines.length) this.system(slug, hid, lines.join("\n"));
-  }
+  removeWorktrees(...a: Parameters<typeof lifecyclePart.removeWorktrees>): ReturnType<typeof lifecyclePart.removeWorktrees> { return lifecyclePart.removeWorktrees.call(this, ...a); }
 
-  /**
-   * Removes project copies and dependency folders helpers left in their folders of the ticket's outputs
-   * (output-copies.ts), for one huddle (`hid`, just closed) or every closed huddle of a ticket that moved to Done.
-   * Helpers of a huddle still open on the ticket keep their folders. Runs after the helpers' runs have ended.
-   */
-  private cleanOutputs(slug: string, ticketId: string, hid?: string): Promise<void> {
-    const key = `${slug}/${ticketId}`;
-    const next = (this.cleaning.get(key) ?? Promise.resolve()).catch(() => {}).then(() => this.cleanOutputsNow(slug, ticketId, hid));
-    const mine = next.finally(() => {
-      if (this.cleaning.get(key) === mine) this.cleaning.delete(key);
-    });
-    this.cleaning.set(key, mine);
-    return mine;
-  }
+  cleanOutputs(...a: Parameters<typeof lifecyclePart.cleanOutputs>): ReturnType<typeof lifecyclePart.cleanOutputs> { return lifecyclePart.cleanOutputs.call(this, ...a); }
 
-  private async cleanOutputsNow(slug: string, ticketId: string, hid?: string): Promise<void> {
-    // The board's huddles are cached in memory (huddleIndex); filtering them is no file read.
-    let mine = this.store.huddleIndex(slug).filter((x) => x.hostTicket === ticketId && (!hid || x.id === hid || x.status !== "closed"));
-    if (!mine.some((x) => x.status === "closed")) return;
-    const profile = this.store.getProfile(slug);
-    if (!profile || !this.store.getTicket(slug, ticketId)) return;
-    // Their runs were just stopped: let them end first, so nothing writes while the copies go.
-    const ids = new Set(mine.filter((x) => x.status === "closed").map((x) => `${slug}/${x.id}/`));
-    await Promise.all([...this.runs.entries()].filter(([k]) => ids.has(k.slice(0, k.lastIndexOf("/") + 1))).map(([, r]) => r.promise));
-    mine = this.store.huddleIndex(slug).filter((x) => x.hostTicket === ticketId && (!hid || x.id === hid || x.status !== "closed"));
-    const busy = new Set(mine.filter((x) => x.status !== "closed").flatMap((x) => x.participants.map((p) => p.handle)));
-    const handles = mine.filter((x) => x.status === "closed" && (!hid || x.id === hid))
-      .flatMap((x) => x.participants.filter((p) => p.kind === "agent" && !busy.has(p.handle)).map((p) => p.handle));
-    if (!handles.length) return;
-    const { removed, failed, worktree } = await removeOutputCopies(this.store.outputsPath(slug, ticketId), handles, await projectNames(profile.path), profile.path);
-    // Only entries whose folder is gone are pruned; run in the project, never inside the helper-made folder.
-    if (worktree) await git(["git", "worktree", "prune"], profile.path).catch(() => null);
-    if (failed.length) console.warn(`[huddle] couldn't remove these from ${ticketId}'s outputs: ${failed.join(", ")}`);
-    if (removed.length) console.log(`[huddle] removed ${removed.length} copied or installed folders from ${ticketId}'s outputs: ${removed.join(", ")}`);
-    // The huddle may have been deleted during a long removal.
-    if (!hid || (!removed.length && !failed.length) || !this.load(slug, hid)) return;
-    const lines = [
-      ...(removed.length ? [`Removed copies of the project the helpers left in the ticket's outputs (${removed.join(", ")}). Reports and other results stay.`] : []),
-      ...(failed.length ? [`Couldn't fully remove: ${failed.join(", ")}. Delete what's left yourself if you don't need it.`] : []),
-    ];
-    this.system(slug, hid, lines.join("\n"));
-  }
+  cleanOutputsNow(...a: Parameters<typeof lifecyclePart.cleanOutputsNow>): ReturnType<typeof lifecyclePart.cleanOutputsNow> { return lifecyclePart.cleanOutputsNow.call(this, ...a); }
 
-  /** Daemon exiting: agents mid-turn are marked so recover() resumes them; every agent run is killed. */
-  async shutdown(): Promise<void> {
-    this.shuttingDown = true;
-    if (this.sweeper) clearInterval(this.sweeper);
-    this.sweeper = null;
-    const runs = [...this.runs.entries()];
-    for (const [key, run] of runs) {
-      const [slug, hid, handle] = key.split("/");
-      if (!run.idle && !run.stopRequested) this.updateP(slug, hid, handle, { interrupted: true });
-      run.stopRequested = true;
-      run.handle?.stop();
-    }
-    await Promise.race([Promise.all(runs.map(([, r]) => r.promise)), Bun.sleep(6000)]);
-  }
+  shutdown(...a: Parameters<typeof lifecyclePart.shutdown>): ReturnType<typeof lifecyclePart.shutdown> { return lifecyclePart.shutdown.call(this, ...a); }
 
-  /**
-   * After a daemon restart: huddles whose host is done close; agents cut off mid-turn carry on, ones held back by a
-   * pending restart start; then everyone (ticket sessions included) gets the wakes it was owed.
-   */
-  recover(): void {
-    for (const profile of this.store.listProfiles()) {
-      const slug = profile.slug;
-      for (const h of this.store.openHuddles(slug)) {
-        const host = this.store.getTicket(slug, h.hostTicket);
-        if (host?.status === "done" && endedByDone(h, host)) {
-          this.close(slug, h.id, "the host ticket moved to Done");
-          continue;
-        }
-        for (const p of h.participants) {
-          if (p.kind !== "agent") continue;
-          // working: cut off mid-turn. interrupted while idle: a wake held back by the pending restart.
-          const cut = p.status === "working" || (p.interrupted && !p.sessionStarted);
-          if (h.status === "live" && p.status !== "stopped" && (cut || p.interrupted)) {
-            if (cut) {
-              const digest = this.takeUnread(slug, h.id, p.handle, true)?.digest ?? "";
-              this.runAgent(slug, h.id, p.handle, huddleAgentPrompt(p.sessionStarted ? "interrupted" : "start", p, digest));
-              continue;
-            }
-            this.updateP(slug, h.id, p.handle, { interrupted: false });
-          } else if (p.status === "working" || p.interrupted) this.updateP(slug, h.id, p.handle, { status: "idle", interrupted: false });
-        }
-        for (const p of h.participants) if (p.kind !== "human") this.wakeIfOwed(slug, h.id, p.handle);
-      }
-      // A ticket that waits for an auto huddle that is gone (closed while the daemon was down): back to Review.
-      for (const t of this.store.listTickets(slug)) {
-        const a = t.autoHuddle;
-        if (a?.state !== "live") continue;
-        const h = a.huddleId ? this.store.getHuddle(slug, a.huddleId) : null;
-        if (h && h.status === "live") continue;
-        if (h && h.status === "stopped") continue;
-        this.store.addComment(slug, t.id, "ai", "Its auto huddle is no longer open; the work was not landed.");
-        this.board.setAutoHuddle(slug, t.id, null, this.board.isRunning(slug, t.id) ? {} : { status: "review", outcome: "stopped", lastActivity: null });
-      }
-      this.freeSlot(slug);
-    }
-  }
+  recover(...a: Parameters<typeof lifecyclePart.recover>): ReturnType<typeof lifecyclePart.recover> { return lifecyclePart.recover.call(this, ...a); }
 
-  async whenIdle(): Promise<void> {
-    while (this.runs.size || this.chores.size) await Promise.all([...this.runs.values()].map((r) => r.promise).concat([...this.chores]));
-  }
-}
-
-export type StatusChange = "done" | "blocked" | "active";
-
-/** Longest one-line summary of a hand-in. */
-export const HANDIN_SUMMARY_MAX = 300;
-
-/** A hand-in's files in plain words: "changed logo.png, added styles/new.css, removed old.txt" (the first 20). */
-export function handInFiles(files: HandIn["files"], max = 20): string {
-  const shown = files.slice(0, max).map((f) => `${f.change} ${f.path}`).join(", ");
-  return files.length > max ? `${shown} and ${files.length - max} more` : shown;
-}
-
-/** A finding's first line, cut to FINDING_TITLE characters. */
-export function findingTitle(text: string): string {
-  const line = text.trim().split("\n")[0].trim();
-  return line.length > FINDING_TITLE ? `${line.slice(0, FINDING_TITLE - 1).trimEnd()}…` : line;
-}
-
-/** An agent's own or snapshot worktree: next to the board's worktree folder, so its startup sweep (one folder per ticket id) leaves it alone. */
-function agentDir(profile: Profile, h: Huddle, p: HuddleParticipant): string {
-  return join(dirname(worktreeDir(profile, h.hostTicket)), `${h.hostTicket}.huddle`, p.handle);
-}
-
-/** The main checkout of the repo `dir` belongs to (the host's folder may be one of its worktrees, which can go away first). */
-async function mainRepo(dir: string): Promise<string> {
-  const common = (await git(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], dir)).stdout.trim();
-  return common && basename(common) === ".git" ? dirname(common) : dir;
-}
-
-/** Remove an agent's own worktree and branch; the reason it was kept instead, or null once removed. */
-async function removeOwnWorktree(repo: string, dir: string, branch: string | null, base: string): Promise<string | null> {
-  const hasBranch = !!branch && (await branchExists(repo, branch));
-  if (hasBranch) {
-    const ahead = await git(["git", "rev-list", "--count", `${base}..${branch}`], repo);
-    if (ahead.code !== 0) return `couldn't compare it with ${base}: ${ahead.stderr.trim()}`;
-    const n = Number(ahead.stdout.trim());
-    if (n > 0) return `${n} commit${n === 1 ? "" : "s"} not on ${base}`;
-  }
-  const r = await removeWorktree(repo, dir);
-  if (!r.removed) return r.reason ?? "couldn't remove it";
-  if (hasBranch) await git(["git", "branch", "-D", branch!], repo);
-  return null;
+  whenIdle(...a: Parameters<typeof lifecyclePart.whenIdle>): ReturnType<typeof lifecyclePart.whenIdle> { return lifecyclePart.whenIdle.call(this, ...a); }
 }
