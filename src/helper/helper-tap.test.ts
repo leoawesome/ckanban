@@ -1,14 +1,14 @@
 // Where a tap on a helper message lands: an urgent alert or reminder about one ticket opens that ticket (and marks
 // the message read); everything else opens the message page.
 import { describe, expect, test } from "bun:test";
-import { Channels, ntfyRequest, pushChannel, tapTicket, tapUrl, type Channel, type OutMessage } from "../src/server/helper/channels";
-import { HelperCore } from "../src/server/helper/core";
-import type { MessageItem, MessageLevel } from "../src/server/helper/messages";
-import { DEFAULT_TELEGRAM, TelegramBot, type TelegramSettings } from "../src/server/helper/telegram";
-import { normalizeSettings } from "../src/server/notify";
-import { Store } from "../src/core/store";
-import { readFromHash } from "../web/src/features/helper/helperText";
-import { tempDir } from "./support/helpers";
+import { Channels, ntfyRequest, pushChannel, tapTicket, tapUrl, type Channel, type OutMessage } from "./channels";
+import { HelperCore } from "./core";
+import type { MessageItem, MessageLevel } from "./messages";
+import { DEFAULT_TELEGRAM, TelegramBot, type TelegramSettings } from "./telegram";
+import { normalizeSettings } from "./notify";
+import { Store } from "../core/store";
+import { readFromHash } from "../../web/src/features/helper/helperText";
+import { tempDir } from "../../test/support/helpers";
 
 const BASE = "https://mac.tail.ts.net";
 const item = (board: string, ticketId: string): MessageItem => ({ board, boardName: board, ticketId, title: ticketId, question: "Stop it?" });

@@ -1,8 +1,8 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { helperCommand } from "./artifact";
-import { REVIEW_HUDDLE_HEADING, reviewHuddleRequest } from "../server/huddle-roster";
-import { AUTO_REVIEW_READ_ONLY, FRESH_HELPER_CHECK, PLAN_REVIEW } from "../server/huddle-templates";
+import { REVIEW_HUDDLE_HEADING, reviewHuddleRequest } from "../huddle/huddle-roster";
+import { AUTO_REVIEW_READ_ONLY, FRESH_HELPER_CHECK, PLAN_REVIEW } from "../huddle/huddle-templates";
 import { MOCKUPS_DIR } from "../board/mockups";
 import type { ChromeChoice } from "../server/chromes";
 import type { Device } from "../server/devices";

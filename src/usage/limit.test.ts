@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { join } from "node:path";
-import { attentionFor } from "../server/attention";
+import { attentionFor } from "../helper/attention";
 import { Board } from "../board/board";
 import { Bus } from "../core/events";
 import { clockTime, dayKey, isLimitText, limitMessage, LimitWatcher, nextFullHour, parseReset } from "./limit";

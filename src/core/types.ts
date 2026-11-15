@@ -1,5 +1,5 @@
-import type { TeammateProposal } from "../server/teammate-proposal";
-import type { SquadCardState, SquadProposal } from "../server/squad";
+import type { TeammateProposal } from "../huddle/teammate-proposal";
+import type { SquadCardState, SquadProposal } from "../huddle/squad";
 import type { RewindUndo } from "../chat/rewind";
 import type { BrowserPick } from "../server/chromes";
 

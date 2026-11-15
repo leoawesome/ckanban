@@ -3,7 +3,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { Bus } from "../core/events";
-import { type HuddleNote, parseNotes, serializeNotes } from "../server/huddle-notes";
+import { type HuddleNote, parseNotes, serializeNotes } from "../huddle/huddle-notes";
 import {
   addToPile, applyTidyOp, type Candidate, emptyPile, EXPIRE_DAYS, learnedRulesBlock, newCorrections, parseLearned, parseTidy, prune, shiftNotes, ticketKey, type TidyNote,
 } from "./learn";

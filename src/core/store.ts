@@ -9,9 +9,9 @@ import type {
   ActivityEntry, Comment, Config, Huddle, HuddleMessage, Job, Loop, LoopState, OutputFile, Profile, Schedule, ScheduleHistoryEntry, Status, Ticket, TicketKind, TicketMode, TicketSource,
 } from "./types";
 import { cleanAvatars, type SavedAvatarMap } from "../board/avatars";
-import { cleanPresets, type HuddlePreset } from "../server/huddle-presets";
-import { cleanTemplates, type HuddleTemplate } from "../server/huddle-templates";
-import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "../server/huddle-notes";
+import { cleanPresets, type HuddlePreset } from "../huddle/huddle-presets";
+import { cleanTemplates, type HuddleTemplate } from "../huddle/huddle-templates";
+import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "../huddle/huddle-notes";
 import { newId, newTicketId, nowIso } from "./util";
 import { pauser } from "./lag";
 import { atomicWrite } from "./atomic";

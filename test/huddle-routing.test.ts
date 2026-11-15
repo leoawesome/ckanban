@@ -2,8 +2,8 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { callTool } from "../src/mcp-server";
-import { BUILTIN_PRESETS } from "../src/server/huddle-presets";
-import { parseMentions, rosterError } from "../src/server/huddle-roster";
+import { BUILTIN_PRESETS } from "../src/huddle/huddle-presets";
+import { parseMentions, rosterError } from "../src/huddle/huddle-roster";
 import { store, board, huddles, server, client, events, setup, idle, heardBy, processes, host, participant, agentCtx, mainCtx, text, you, messages, until, useHuddleEnv } from "./support/huddle-env";
 
 useHuddleEnv();

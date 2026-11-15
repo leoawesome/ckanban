@@ -1,13 +1,13 @@
-import { helperLineText, suggestedLineError } from "../server/helper/line";
+import { helperLineText, suggestedLineError } from "../helper/line";
 import { withoutAttachmentNote } from "../board/attachments";
 import { commandText, TERMINAL_COMMANDS } from "../chat/commands";
-import { proposedBudget, rosterError, type RosterEntry } from "../server/huddle-roster";
+import { proposedBudget, rosterError, type RosterEntry } from "../huddle/huddle-roster";
 import { mockupName, stripMockups } from "../board/mockups";
 import { parseResult } from "./result";
 import type { ChatCache } from "../chat/chat-cache";
-import { parseTeammateProposal, type TeammateProposal } from "../server/teammate-proposal";
-import { parseSquadProposal, type SquadProposal } from "../server/squad";
-import { TOPIC_MAX } from "../server/huddle-templates";
+import { parseTeammateProposal, type TeammateProposal } from "../huddle/teammate-proposal";
+import { parseSquadProposal, type SquadProposal } from "../huddle/squad";
+import { TOPIC_MAX } from "../huddle/huddle-templates";
 import { parseAutomationProposal, type AutomationProposal } from "../server/automation-proposal";
 import { parseKeysAsk, type KeysAsk } from "../server/ask-keys";
 import { normalizeTags } from "../board/tags";

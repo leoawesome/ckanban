@@ -1,13 +1,13 @@
 // A question asked by a ticket inside a feature (a "with you" step, a tool ticket) shows on its main ticket: the wait
 // recorded for the main ticket carries the asker's urgent mark, why and question text, one wait per (asker, question).
 import { beforeEach, describe, expect, test } from "bun:test";
-import { Bus } from "../src/core/events";
-import { recordKey, WaitStore, type WaitRecord } from "../src/server/helper/waits";
-import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import type { SessionSummary } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import type { Profile, Ticket } from "../src/core/types";
-import { tempDir } from "./support/helpers";
+import { Bus } from "../core/events";
+import { recordKey, WaitStore, type WaitRecord } from "./waits";
+import { normalizeSettings, Notifier, writeNotifySettings } from "./notify";
+import type { SessionSummary } from "../runs/session";
+import { Store } from "../core/store";
+import type { Profile, Ticket } from "../core/types";
+import { tempDir } from "../../test/support/helpers";
 
 describe("questions from a feature's steps", () => {
   let store: Store;

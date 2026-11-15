@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MessageStore } from "../../../../src/server/helper/messages";
+import { MessageStore } from "../../../../src/helper/messages";
 import { asksNight, groupByDay, isHeldLine, levelLabel, levelTone, messageHash, messagesRoute, nightQuestion, sendTrail, type Message } from "./helperText";
-import { nightQuestion as serverNightQuestion } from "../../../../src/server/helper/settings";
+import { nightQuestion as serverNightQuestion } from "../../../../src/helper/settings";
 
 const msg = (over: Partial<Message>): Message => ({
   id: "m_1", at: "2026-11-09T14:10:00", level: "urgent", oneLine: "Stop the old webhook?", text: "full", why: null, items: [], sends: [], readAt: null, ...over,

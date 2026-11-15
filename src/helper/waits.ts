@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AttentionKind } from "../attention";
+import type { AttentionKind } from "./attention";
 
 /** What a record waits on: a "needs you" kind, or a message a ticket's Claude passed to the helper (notify_user). */
 export type WaitKind = AttentionKind | "message";

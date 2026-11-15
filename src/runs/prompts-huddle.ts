@@ -1,5 +1,5 @@
-import { activeHost, huddleLine, summaryFile } from "../server/huddle-roster";
-import { ticketTopic } from "../server/squad";
+import { activeHost, huddleLine, summaryFile } from "../huddle/huddle-roster";
+import { ticketTopic } from "../huddle/squad";
 import type { AutoHuddle, Huddle, HuddleMessage, HuddleParticipant, Ticket } from "../core/types";
 import { RESULT_RULE, context } from "./prompts-rules";
 

@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { committedElsewhere, looksLikeCopy, projectNames, removeOutputCopies } from "../src/server/output-copies";
+import { committedElsewhere, looksLikeCopy, projectNames, removeOutputCopies } from "./output-copies";
 
 const PROJECT = ["package.json", "README.md", "src", "test", "web", "tsconfig.json", "docs"];
 

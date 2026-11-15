@@ -4,18 +4,18 @@ import { createHash } from "node:crypto";
 import { hiddenTool, withYouTool } from "../web/src/features/family/family";
 import { TOOL_NO_NOTIFY } from "./board/main-ticket";
 import { FRONT_DESK_ENV, HUDDLE_AGENT_ENV, QUICK_CHAT_ENV } from "./core/env";
-import { FEEDBACK_MAX, helperLineText, suggestedLineError } from "./server/helper/line";
+import { FEEDBACK_MAX, helperLineText, suggestedLineError } from "./helper/line";
 import {
   assertCanChange, BoardClient, bugReportText, ClientError, ConfirmPending, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
   familyLine, ticketLine, ticketListText, ticketText, type TicketListQuery, type GatherResult, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
 } from "./client";
-import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./server/huddle-presets";
-import { huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "./server/huddle-roster";
-import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, MAX_TEXT, PLAN_REVIEW, templateLine, TOPIC_MAX, topicInput } from "./server/huddle-templates";
-import { squadProposal } from "./server/squad";
-import { CLAUDE_MESSAGE_GAP_MS, CLAUDE_MESSAGE_MAX, type MessageResult } from "./server/notify";
+import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./huddle/huddle-presets";
+import { huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "./huddle/huddle-roster";
+import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, MAX_TEXT, PLAN_REVIEW, templateLine, TOPIC_MAX, topicInput } from "./huddle/huddle-templates";
+import { squadProposal } from "./huddle/squad";
+import { CLAUDE_MESSAGE_GAP_MS, CLAUDE_MESSAGE_MAX, type MessageResult } from "./helper/notify";
 import { normalizeTags } from "./board/tags";
-import { teammateProposal } from "./server/teammate-proposal";
+import { teammateProposal } from "./huddle/teammate-proposal";
 import { automationProposal } from "./server/automation-proposal";
 import { keysAsk, MAX_ASKED_KEYS } from "./server/ask-keys";
 import { backupFile, backupText } from "./server/file-backup";

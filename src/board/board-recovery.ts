@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { isSessionLive as psSessionLive, sessionTitle } from "../runs/claude";
-import { type HostHuddle } from "../server/attention";
+import { type HostHuddle } from "../helper/attention";
 import { RecallIndex, recallText } from "./recall";
 import { pauser } from "../core/lag";
 import { featureRows, isFeature, subFeaturesOf } from "../../web/src/features/family/family";

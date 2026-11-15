@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { directLabel } from "../src/server/helper/core";
-import { lastNightEnd, SUMMARY_GAP_MS, summaryAllowedAt } from "../src/server/helper/decide";
-import { buildSummary, collapseRuns, STALE_MS, titleStem, type SummaryInput } from "../src/server/helper/summary";
+import { directLabel } from "./core";
+import { lastNightEnd, SUMMARY_GAP_MS, summaryAllowedAt } from "./decide";
+import { buildSummary, collapseRuns, STALE_MS, titleStem, type SummaryInput } from "./summary";
 
 const DAY = (h: number, m = 0, d = 9) => new Date(2026, 10, d, h, m).getTime();
 const NIGHT = { start: "22:00", end: "07:00" };
@@ -93,7 +93,7 @@ describe("summary cadence", () => {
 
 describe("message page words", () => {
   test("board links on their own line are left out of the page; other text stays", async () => {
-    const { withoutLinks, stillWaitingLine } = await import("../web/src/features/helper/helperText");
+    const { withoutLinks, stillWaitingLine } = await import("../../web/src/features/helper/helperText");
     const old = "Pricing\nStop it?\nhttps://mac.ts.net/#/kb/t_1\n\n- Docs (kanban): Ready\n  https://mac.ts.net/#/kanban/t_2\n\nSee https://ckanban.dev for more";
     expect(withoutLinks(old)).toBe("Pricing\nStop it?\n\n- Docs (kanban): Ready\n\nSee https://ckanban.dev for more");
     expect(stillWaitingLine({ stillCount: 27, oldestAt: new Date(2026, 9, 12).toISOString(), new: [{} as any] })).toBe("27 more still wait on you, oldest from 12 Oct.");
@@ -102,8 +102,8 @@ describe("message page words", () => {
 
 describe("Inbox snooze lengths", () => {
   test("a week and until-unsnoozed ends, and how the Snoozed section says them", async () => {
-    const { snoozeUntil, snoozeBody, snoozeEndText, snoozeForever, SNOOZE_FOREVER } = await import("../web/src/lib/snooze");
-    const { SNOOZE_FOREVER: server } = await import("../src/server/attention");
+    const { snoozeUntil, snoozeBody, snoozeEndText, snoozeForever, SNOOZE_FOREVER } = await import("../../web/src/lib/snooze");
+    const { SNOOZE_FOREVER: server } = await import("./attention");
     expect(SNOOZE_FOREVER).toBe(server);
     const now = new Date(2026, 10, 9, 12).getTime();
     expect(snoozeUntil("day", now)).toBe(new Date(now + 24 * 3600_000).toISOString());

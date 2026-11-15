@@ -47,7 +47,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, wr
 import { pauser, trackedInterval } from "../core/lag";
 import { basename, dirname, join } from "node:path";
 import { summarizeEvent } from "../runs/activity";
-import { mcpConfig } from "./agents";
+import { mcpConfig } from "../server/agents";
 import { claudeSessionExists, claudeSessionFile, type Board, type RunBrowsers } from "../board/board";
 import { planProposal } from "../board/plan-proposal";
 import { parseSession, type SessionEntry } from "../runs/session";
@@ -67,7 +67,7 @@ import {
 import {
   BUILTIN_TEMPLATES, customReviewBrief, deleteTemplate, type HuddleTemplate, type HuddleTemplateView, mergeTemplates, saveTemplate, templateBrief, topicInput,
 } from "./huddle-templates";
-import type { HostHuddle } from "./attention";
+import type { HostHuddle } from "../helper/attention";
 import { huddleUsage, type Usage } from "./huddle-usage";
 import { isLevel, type Level, lowerLevels } from "../core/layers";
 import { accept as acceptHandIn, handIn as saveHandIn, handInDir as handInSaved, keepUnhanded, keptDir, makeFolderCopy, makeGitCopy, readState, removeCopy, unhanded } from "./huddle-copies";
@@ -87,7 +87,7 @@ import type {
   HandIn, Huddle, HuddleFinding, HuddleLearning, HuddleMessage, HuddleMessageKind, HuddleMode, HuddleParticipant, HuddleSource, HuddleStopReason, Profile, Ticket,
 } from "../core/types";
 import { newId, nowIso } from "../core/util";
-import { boardKeyEnv } from "./board-keys";
+import { boardKeyEnv } from "../server/board-keys";
 
 export class HuddleError extends Error {
   constructor(readonly status: number, message: string) {

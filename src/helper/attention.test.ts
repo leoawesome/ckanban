@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { attentionFor, boardTitles, byWaitingAge, type HostHuddle, huddleBusy, lastChange, snoozeKey, ticketAttention, titleKey, userWaitReason, withSnooze } from "../src/server/attention";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
-import type { SessionSummary } from "../src/runs/session";
-import type { Ticket } from "../src/core/types";
+import { attentionFor, boardTitles, byWaitingAge, type HostHuddle, huddleBusy, lastChange, snoozeKey, ticketAttention, titleKey, userWaitReason, withSnooze } from "./attention";
+import { Store } from "../core/store";
+import { tempDir } from "../../test/support/helpers";
+import type { SessionSummary } from "../runs/session";
+import type { Ticket } from "../core/types";
 
 const T = (p: Partial<Ticket>): Ticket => ({
   id: "t", title: "T", status: "planning", order: 1, sessionId: "s", worktree: null, branch: null, prUrl: null,

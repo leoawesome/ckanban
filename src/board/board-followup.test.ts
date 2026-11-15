@@ -1,7 +1,7 @@
 // Follow-ups: Claude comes back to its own ticket later; the board wakes the same conversation when it is due.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { join } from "node:path";
-import { ticketAttention } from "../server/attention";
+import { ticketAttention } from "../helper/attention";
 import { Board } from "./board";
 import { Bus } from "../core/events";
 import { FollowUpError, FollowUpWatcher, followUpSpend, followUpTime, parseDelay } from "../server/followup";

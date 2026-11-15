@@ -1,8 +1,8 @@
 // Channels the board reaches the user on. Built in: "mac" (banner, or this Mac's browser when it gets notifications),
 // "push" (phones and other browsers that turned phone push on), "webhook" (ntfy or JSON) and "telegram"
 // (telegram.ts, registered by the Notifier). Each has its own on/off switch in notify.json.
-import { headerValue, isNtfy, macBanner, NTFY_TAGS, pushPayload, webhookRequest, type NotifyMessage, type NotifySettings } from "../notify";
-import type { PushService } from "../push";
+import { headerValue, isNtfy, macBanner, NTFY_TAGS, pushPayload, webhookRequest, type NotifyMessage, type NotifySettings } from "./notify";
+import type { PushService } from "./push";
 import type { MessageLevel } from "./messages";
 
 /** One message on its way out, in every shape a channel needs. */

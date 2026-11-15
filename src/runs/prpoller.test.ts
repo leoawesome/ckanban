@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
-import type { HostHuddle } from "../server/attention";
+import type { HostHuddle } from "../helper/attention";
 import { Board } from "../board/board";
 import { Bus } from "../core/events";
 import { checkPr, mergePr, refreshPr, startPoller, type PrState } from "./prpoller";

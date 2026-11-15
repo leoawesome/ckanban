@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { type HuddleNote, type NoteScope, noteText, parseNotes } from "../server/huddle-notes";
+import { type HuddleNote, type NoteScope, noteText, parseNotes } from "../huddle/huddle-notes";
 import type { Corrections } from "./lessons";
 import type { Ticket } from "../core/types";
 

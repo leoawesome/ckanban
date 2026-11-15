@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { attentionFor } from "../src/server/attention";
+import { attentionFor } from "../src/helper/attention";
 import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
-import { HelperSettingsStore } from "../src/server/helper/settings";
-import { HUDDLE_HEADER } from "../src/server/huddle-roster";
+import { HelperSettingsStore } from "../src/helper/settings";
+import { HUDDLE_HEADER } from "../src/huddle/huddle-roster";
 import { createServer } from "../src/server/http";
 import { RUN_HEADER } from "../src/server/scheduler";
 import { parseSession, SessionCache, type SessionSummary } from "../src/runs/session";

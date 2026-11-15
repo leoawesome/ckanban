@@ -1,9 +1,9 @@
 // Huddle host: a lead runs the room, so the board's watchdog, notes and warnings wake it instead of @main.
 import { expect, test } from "bun:test";
 import { callTool } from "../src/mcp-server";
-import { HUDDLE_IDLE_MS } from "../src/server/huddle";
-import { activeHost, rosterError } from "../src/server/huddle-roster";
-import { BUILTIN_TEMPLATES } from "../src/server/huddle-templates";
+import { HUDDLE_IDLE_MS } from "../src/huddle/huddle";
+import { activeHost, rosterError } from "../src/huddle/huddle-roster";
+import { BUILTIN_TEMPLATES } from "../src/huddle/huddle-templates";
 import { huddleAgentSystemPrompt, huddleMainPrompt } from "../src/runs/prompts";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";

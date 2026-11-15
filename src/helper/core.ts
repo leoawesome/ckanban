@@ -2,8 +2,8 @@
 // Helper on (and a runner plugged in and healthy): new waits become records and go to the runner (HelperSink).
 // Helper off, missing or failing: the board sends each wait directly, as before, but every send is stored as a
 // message and its record marked told, so nothing goes out twice.
-import type { NotifyMessage, NotifySettings } from "../notify";
-import type { Store } from "../../core/store";
+import type { NotifyMessage, NotifySettings } from "./notify";
+import type { Store } from "../core/store";
 import { Channels, tapTicket, type ChannelResult, type OutMessage } from "./channels";
 import { MessageStore, needsYouIds, type MessageItem, type NewMessage, type StoredMessage } from "./messages";
 import { pending, recordForMessage, WaitStore, type NewWait, type ToldVia, type WaitRecord } from "./waits";

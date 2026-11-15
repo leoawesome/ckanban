@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { attentionFor, ticketAttention } from "../server/attention";
+import { attentionFor, ticketAttention } from "../helper/attention";
 import { Board } from "./board";
 import { Bus } from "../core/events";
 import { isTransientText, transientError } from "../runs/retry";

@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import { BoardClient } from "../src/client";
 import { callTool, type ToolContext } from "../src/mcp-server";
-import { attentionFor, boardTitles, ticketAttention } from "../src/server/attention";
+import { attentionFor, boardTitles, ticketAttention } from "../src/helper/attention";
 import { createServer } from "../src/server/http";
 import { Linker } from "../src/board/linker";
 import { familyCard, KIND_DEFAULTS, stepName, stepWait, TOOL_NO_NOTIFY, youWaiting } from "../src/board/main-ticket";

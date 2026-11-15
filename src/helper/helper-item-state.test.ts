@@ -3,17 +3,17 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/core/events";
-import { itemStateKey } from "../src/server/helper/core";
-import { HelperRunner, lineMessage } from "../src/server/helper/runner";
-import { helperSpendFile, helperSpendOn } from "../src/usage/spend";
-import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import type { SessionSummary } from "../src/runs/session";
-import { addSideSpend, type SideCallResult } from "../src/runs/side-call";
-import { Store } from "../src/core/store";
-import type { Profile, Ticket } from "../src/core/types";
-import { anyItemOpen, itemStateLabel, spendLine, type Message } from "../web/src/features/helper/helperText";
-import { tempDir } from "./support/helpers";
+import { Bus } from "../core/events";
+import { itemStateKey } from "./core";
+import { HelperRunner, lineMessage } from "./runner";
+import { helperSpendFile, helperSpendOn } from "../usage/spend";
+import { normalizeSettings, Notifier, writeNotifySettings } from "./notify";
+import type { SessionSummary } from "../runs/session";
+import { addSideSpend, type SideCallResult } from "../runs/side-call";
+import { Store } from "../core/store";
+import type { Profile, Ticket } from "../core/types";
+import { anyItemOpen, itemStateLabel, spendLine, type Message } from "../../web/src/features/helper/helperText";
+import { tempDir } from "../../test/support/helpers";
 
 const DAY = (h: number, m = 0) => new Date(2026, 10, 9, h, m).getTime();
 

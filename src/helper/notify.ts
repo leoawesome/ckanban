@@ -16,16 +16,16 @@ import type { SessionSummary } from "../runs/session";
 import type { Store } from "../core/store";
 import type { Ticket } from "../core/types";
 import { nowIso } from "../core/util";
-import { Channels, macChannel, pushChannel, webhookChannel, type ChannelResult } from "./helper/channels";
-import { HelperCore } from "./helper/core";
-import { botId, DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramSettings } from "./helper/telegram";
-import { waitIdentity, type NewWait } from "./helper/waits";
-import { TelegramReplies } from "./helper/tgreply";
+import { Channels, macChannel, pushChannel, webhookChannel, type ChannelResult } from "./channels";
+import { HelperCore } from "./core";
+import { botId, DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramSettings } from "./telegram";
+import { waitIdentity, type NewWait } from "./waits";
+import { TelegramReplies } from "./tgreply";
 import { telegramSpendToday } from "../usage/spend";
-import { PendingActions, TelegramLinks } from "./helper/tgstores";
-import { TelegramForms } from "./helper/tgforms";
-import { FrontDesk } from "./helper/frontdesk";
-import { HelperSettingsStore } from "./helper/settings";
+import { PendingActions, TelegramLinks } from "./tgstores";
+import { TelegramForms } from "./tgforms";
+import { FrontDesk } from "./frontdesk";
+import { HelperSettingsStore } from "./settings";
 
 /** What the Telegram reply router needs from the board (Board implements it; plugged in with Notifier.plugBoard). */
 export interface TelegramBoard {

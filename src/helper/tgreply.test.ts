@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { Bus } from "../src/core/events";
-import { Board } from "../src/board/board";
-import { reportParts } from "../src/server/helper/tgreply";
-import { LOCKED_NOTE, LOCKED_NOTE_MS, safeCut, telegramText } from "../src/server/helper/telegram";
-import { ACTION_TTL_MS, PendingActions, UpdateQueue } from "../src/server/helper/tgstores";
-import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import type { SessionSummary } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import { addTelegramSpend } from "../src/usage/spend";
-import type { Profile } from "../src/core/types";
-import { tempDir } from "./support/helpers";
+import { Bus } from "../core/events";
+import { Board } from "../board/board";
+import { reportParts } from "./tgreply";
+import { LOCKED_NOTE, LOCKED_NOTE_MS, safeCut, telegramText } from "./telegram";
+import { ACTION_TTL_MS, PendingActions, UpdateQueue } from "./tgstores";
+import { normalizeSettings, Notifier, writeNotifySettings } from "./notify";
+import type { SessionSummary } from "../runs/session";
+import { Store } from "../core/store";
+import { addTelegramSpend } from "../usage/spend";
+import type { Profile } from "../core/types";
+import { tempDir } from "../../test/support/helpers";
 
 const TOKEN = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
 const ME = 555;
@@ -486,7 +486,7 @@ test("Board.chatFromTelegram: the message carries its update, so the same update
 });
 
 test("the board chat marks messages that came from Telegram and replies sent back there", async () => {
-  const { telegramMarks } = await import("../web/src/features/chat/chatTurns");
+  const { telegramMarks } = await import("../../web/src/features/chat/chatTurns");
   const e = (uuid: string, at: string, role: string, text: string) => ({ uuid, at, role, kind: "text", text });
   const entries = [
     e("u1", "2026-11-09T10:00:00Z", "user", "8080"),

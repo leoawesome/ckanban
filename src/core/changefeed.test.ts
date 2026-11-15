@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SessionFeed, type SessionChange, type SessionChanges } from "./changefeed";
 import { Bus, type BusEvent } from "./events";
-import { startHuddleSessionWatcher } from "../server/huddle-session";
+import { startHuddleSessionWatcher } from "../huddle/huddle-session";
 import { SessionCache, startSessionWatcher } from "../runs/session";
 import { Store, type StoreChange } from "./store";
 import { TerminalWatcher } from "../server/terminals";

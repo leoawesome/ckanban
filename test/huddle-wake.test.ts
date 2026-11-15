@@ -1,8 +1,8 @@
 // Huddles: who can wake whom, the budget brake and restarts.
 import { expect, test } from "bun:test";
 import { callTool } from "../src/mcp-server";
-import { Huddles, huddleCost } from "../src/server/huddle";
-import { HUDDLE_HEADER } from "../src/server/huddle-roster";
+import { Huddles, huddleCost } from "../src/huddle/huddle";
+import { HUDDLE_HEADER } from "../src/huddle/huddle-roster";
 import { controlResponse } from "../src/runs/runner";
 import { FAKE, store, bus, board, huddles, client, idle, heardBy, host, participant, agentCtx, mainCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "./support/huddle-env";
 

@@ -11,9 +11,9 @@
 // A form is a PendingAction (kind "form", tgstores.ts) kept on disk, so taps survive a restart; its final send takes
 // it with the update that finished it, so a send a restart cut off is finished once (Board dedups by update id).
 // Form messages and their edits are paced about one a second (TelegramBot.paced, with 429 retry_after).
-import { answersMessage, answerText } from "../../../web/src/features/ticket/questionForms";
-import type { Question, SessionSummary } from "../../runs/session";
-import type { Store } from "../../core/store";
+import { answersMessage, answerText } from "../../web/src/features/ticket/questionForms";
+import type { Question, SessionSummary } from "../runs/session";
+import type { Store } from "../core/store";
 import type { Responder, TgButton } from "./tgreply";
 import type { LinkItem, PendingAction, PendingActions, TelegramLinks } from "./tgstores";
 import { normalizeQuestion, type WaitStore } from "./waits";

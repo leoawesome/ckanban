@@ -8,7 +8,7 @@ import { familyBelow, featureRoot, featureRows, groupsOf, levelOf, MAX_LEVEL, pa
 import { readStatus, writeStatus, type SavedStatus } from "./feature";
 import { type MainRole, type RunRole, type ToolRole } from "../runs/prompts";
 import { ASK_TIMEOUT_MS, finishedLine, isManager, mainPlanned, MERGE_TRIES, REPORT_FILE, RESULTS_KEEP, sentences, youWaiting, stepName } from "./main-ticket";
-import { NO_EDIT_TOOLS } from "../server/huddle-roster";
+import { NO_EDIT_TOOLS } from "../huddle/huddle-roster";
 import { childrenOf, resolveDeps } from "./plan";
 import { run as runCmd } from "../runs/git";
 import { addPrs, ticketPrs } from "./prs";

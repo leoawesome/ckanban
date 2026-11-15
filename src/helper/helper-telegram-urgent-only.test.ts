@@ -1,13 +1,13 @@
 // Telegram gets only urgent alerts, their reminders and the Settings test; every routine message skips it and still
 // reaches the other channels that are on (and the Messages page).
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { Bus } from "../src/core/events";
-import { Channels, telegramTakes, type Channel, type OutMessage } from "../src/server/helper/channels";
-import { HELPER_SYSTEM } from "../src/server/helper/decide";
-import { normalizeSettings, Notifier, writeNotifySettings, type NotifySettings } from "../src/server/notify";
-import { Store } from "../src/core/store";
-import type { Profile } from "../src/core/types";
-import { tempDir } from "./support/helpers";
+import { Bus } from "../core/events";
+import { Channels, telegramTakes, type Channel, type OutMessage } from "./channels";
+import { HELPER_SYSTEM } from "./decide";
+import { normalizeSettings, Notifier, writeNotifySettings, type NotifySettings } from "./notify";
+import { Store } from "../core/store";
+import type { Profile } from "../core/types";
+import { tempDir } from "../../test/support/helpers";
 
 const TOKEN = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
 const ME = 555;

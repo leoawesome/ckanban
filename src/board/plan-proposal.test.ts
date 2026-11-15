@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, FRESH_READER_CHECK, PLAN_REVIEW_READ } from "../server/huddle-templates";
+import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, FRESH_READER_CHECK, PLAN_REVIEW_READ } from "../huddle/huddle-templates";
 import { planProposal } from "./plan-proposal";
 import { autoHuddleRule, chatPrompt, huddleMainPrompt, planningPrompt, TICKETS_FORMAT } from "../runs/prompts";
 import type { SessionEntry } from "../runs/session";

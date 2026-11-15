@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { track, trackedInterval } from "../core/lag";
 import { join } from "node:path";
 import type { Bus } from "../core/events";
-import { ALL_ROLES, type HuddleNote, type LessonInput, type NoteScope, noteText, parseNotes, serializeNotes } from "../server/huddle-notes";
+import { ALL_ROLES, type HuddleNote, type LessonInput, type NoteScope, noteText, parseNotes, serializeNotes } from "../huddle/huddle-notes";
 import {
   addToPile, applyTidyOp, type Candidate, CHANGES_CAP, correctionKeys, type Dest, emptyPile, type FileEdit, HUDDLE_LEARN_SYSTEM, huddleKey, huddleLearnPrompt,
   type LearnChange, LEARN_SYSTEM, type Learned, newCorrections, parseLearned, parseTidy, type Pile, pileText, prune, serializeRules,

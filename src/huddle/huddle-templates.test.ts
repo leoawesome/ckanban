@@ -1,8 +1,8 @@
 // The built-in "Plan critique debate" squad and the built-in teammates it needs.
 import { expect, test } from "bun:test";
-import { BUILTIN_PRESETS, isBuiltinPreset, mergePresets, type HuddlePreset } from "../src/server/huddle-presets";
-import { rosterError } from "../src/server/huddle-roster";
-import { BUILTIN_TEMPLATES, MAX_TEXT, mergeTemplates, PLAN_CRITIQUE, templateFromInput } from "../src/server/huddle-templates";
+import { BUILTIN_PRESETS, isBuiltinPreset, mergePresets, type HuddlePreset } from "./huddle-presets";
+import { rosterError } from "./huddle-roster";
+import { BUILTIN_TEMPLATES, MAX_TEXT, mergeTemplates, PLAN_CRITIQUE, templateFromInput } from "./huddle-templates";
 
 const squad = BUILTIN_TEMPLATES.find((t) => t.name === PLAN_CRITIQUE)!;
 

@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Bus } from "../src/core/events";
-import { cutBytes, macChannel, messagePageUrl, ntfyRequest, pushChannel, type OutMessage } from "../src/server/helper/channels";
+import { cutBytes, macChannel, messagePageUrl, ntfyRequest, pushChannel, type OutMessage } from "../src/helper/channels";
 import {
   maskToken, PAIR_TRIES, scrub, TELEGRAM_MAX, TelegramBot, telegramText, type TelegramActions, type TelegramSettings,
-} from "../src/server/helper/telegram";
+} from "../src/helper/telegram";
 import { createServer } from "../src/server/http";
 import { Board } from "../src/board/board";
-import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../src/server/notify";
+import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../src/helper/notify";
 import { Store } from "../src/core/store";
 import type { Profile } from "../src/core/types";
 import { tempDir } from "./support/helpers";
@@ -528,7 +528,7 @@ describe("the night question and the practice alert on Telegram", () => {
     // A plain hello carries no night buttons.
     await bot.send(out({ level: "hello", urgent: false }));
     expect(api.sent().at(-1)!.body.reply_markup).toBeUndefined();
-    const { telegramTakes } = await import("../src/server/helper/channels");
+    const { telegramTakes } = await import("../src/helper/channels");
     expect(telegramTakes({ level: "hello", urgent: false, nightAsk: true })).toBe(true);
     expect(telegramTakes({ level: "hello", urgent: false })).toBe(false);
   });

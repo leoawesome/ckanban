@@ -1,12 +1,12 @@
 import { beforeEach, expect, test } from "bun:test";
-import { Bus } from "../src/core/events";
+import { Bus } from "../core/events";
 import {
   DEFAULT_NOTIFY, headerValue, isNtfy, normalizeSettings, Notifier, readNotifySettings, TransitionTracker, webhookRequest, writeNotifySettings,
   type NotifyMessage,
-} from "../src/server/notify";
-import { Store } from "../src/core/store";
-import type { Profile, Ticket } from "../src/core/types";
-import { tempDir } from "./support/helpers";
+} from "./notify";
+import { Store } from "../core/store";
+import type { Profile, Ticket } from "../core/types";
+import { tempDir } from "../../test/support/helpers";
 
 test("a kind notifies once it has held for the debounce, and only once while it stays", () => {
   const t = new TransitionTracker(1000);

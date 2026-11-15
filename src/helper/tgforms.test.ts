@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { Bus } from "../src/core/events";
-import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import { TelegramBot } from "../src/server/helper/telegram";
-import { rowsOf } from "../src/server/helper/tgforms";
-import type { Question, SessionSummary } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import type { Profile } from "../src/core/types";
-import { tempDir } from "./support/helpers";
-import { answersMessage } from "../web/src/features/ticket/questionForms";
+import { Bus } from "../core/events";
+import { normalizeSettings, Notifier, writeNotifySettings } from "./notify";
+import { TelegramBot } from "./telegram";
+import { rowsOf } from "./tgforms";
+import type { Question, SessionSummary } from "../runs/session";
+import { Store } from "../core/store";
+import type { Profile } from "../core/types";
+import { tempDir } from "../../test/support/helpers";
+import { answersMessage } from "../../web/src/features/ticket/questionForms";
 
 const TOKEN = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
 const ME = 555;

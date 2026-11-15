@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWrite } from "../../core/store";
+import { atomicWrite } from "../core/store";
 
 export type HelperModel = "sonnet" | "haiku";
 export const HELPER_MODELS: HelperModel[] = ["sonnet", "haiku"];

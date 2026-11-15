@@ -5,7 +5,7 @@ import { expect, test } from "bun:test";
 import {
   featureRoot, featureRows, levelOf, linkProblem, mainTicketOf, onBoard, shownTool, subFeatureState, subFeaturesWorking, workingInFamily, type FeatureTicket,
 } from "../../web/src/features/family/family";
-import { oldestStep } from "../server/attention";
+import { oldestStep } from "../helper/attention";
 import { statusFacts, statusSections } from "./feature";
 import type { Ticket } from "../core/types";
 import { board, setup, store, useBoardEnv } from "../../test/support/board-env";

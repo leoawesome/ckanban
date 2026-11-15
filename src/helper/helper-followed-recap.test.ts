@@ -2,17 +2,17 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/core/events";
-import { checkDecision, checkFollowed, DECISION_SCHEMA, HELPER_SYSTEM, type CheckContext, type ItemState } from "../src/server/helper/decide";
-import { HelperRunner } from "../src/server/helper/runner";
-import { helperSpendFile } from "../src/usage/spend";
-import { weekRecapLine, weekStart, type RecapRecord } from "../src/server/helper/summary";
-import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import type { SessionSummary } from "../src/runs/session";
-import { addSideSpend, type SideCallInput, type SideCallResult } from "../src/runs/side-call";
-import { Store } from "../src/core/store";
-import type { Profile, Ticket } from "../src/core/types";
-import { tempDir } from "./support/helpers";
+import { Bus } from "../core/events";
+import { checkDecision, checkFollowed, DECISION_SCHEMA, HELPER_SYSTEM, type CheckContext, type ItemState } from "./decide";
+import { HelperRunner } from "./runner";
+import { helperSpendFile } from "../usage/spend";
+import { weekRecapLine, weekStart, type RecapRecord } from "./summary";
+import { normalizeSettings, Notifier, writeNotifySettings } from "./notify";
+import type { SessionSummary } from "../runs/session";
+import { addSideSpend, type SideCallInput, type SideCallResult } from "../runs/side-call";
+import { Store } from "../core/store";
+import type { Profile, Ticket } from "../core/types";
+import { tempDir } from "../../test/support/helpers";
 
 // 9 Nov 2026 is a Monday.
 const DAY = (h: number, m = 0, d = 9) => new Date(2026, 10, d, h, m).getTime();

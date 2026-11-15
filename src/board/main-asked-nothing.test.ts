@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ticketAttention } from "../server/attention";
+import { ticketAttention } from "../helper/attention";
 import { Board } from "./board";
 import { askedNothing, replyAsked } from "./main-ticket";
 import { MAIN_QUESTIONS_RULE, mainTicketRules } from "../runs/prompts";
