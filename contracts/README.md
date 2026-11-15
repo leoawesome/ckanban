@@ -17,8 +17,8 @@ the document and the contract tests in the same commit.
 | `cli.md` | Every `ckanban` command: arguments, output, exit codes, the routes it calls and the environment variables it reads. Also the `ckanban mcp` tools and the routes behind them. |
 | `schemas/*.schema.json` | JSON Schema (draft 2020-12) for the main saved records: profile, ticket, ticket run log line and schedule. Unknown fields are allowed: a port must keep fields it doesn't know. |
 
-The source of truth is still the code (`src/server/types.ts`, `src/server/http.ts`, `src/server/store.ts`,
-`src/cli.ts`, `src/ticket-cli.ts`, `src/client.ts`, `src/mcp-server.ts`). If a document and the code disagree, the
+The source of truth is still the code (`src/core/types.ts`, `src/api/server.ts`, `src/core/store.ts`,
+`src/cli/cli.ts`, `src/cli/ticket-cli.ts`, `src/cli/client.ts`, `src/mcp/server.ts`). If a document and the code disagree, the
 code wins and the document is the bug.
 
 ## Contract tests

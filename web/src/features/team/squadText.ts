@@ -15,9 +15,9 @@ export interface SquadPerson {
   host?: boolean;
 }
 
-/** Longest topic the daemon takes (TOPIC_MAX in src/server/huddle-templates.ts). */
+/** Longest topic the daemon takes (TOPIC_MAX in src/huddle/huddle-templates.ts). */
 export const TOPIC_MAX = 2000;
-/** How much of the ticket's description the topic box starts with (TICKET_TOPIC_MAX in src/server/squad.ts). */
+/** How much of the ticket's description the topic box starts with (TICKET_TOPIC_MAX in src/huddle/squad.ts). */
 const TICKET_TOPIC_MAX = 600;
 
 /** The topic box's starting text: the ticket's title, then the start of its description. */

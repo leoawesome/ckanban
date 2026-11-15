@@ -224,7 +224,7 @@ export function interruptedPrompt(): string {
 /** A message the user typed in the ticket's chat. Their text comes first; board instructions are wrapped so the UI can hide them. */
 /**
  * Planning a plain ticket that already ran: a new requirement that follows on from its work is follow-up work, which
- * its proposal card starts where place says (web/src/followUp.ts): a step of its feature, its first step as it becomes a
+ * its proposal card starts where place says (web/src/features/ticket/followUp.ts): a step of its feature, its first step as it becomes a
  * main ticket, or (old tickets under others without a main ticket) a new ticket next to it. This ticket keeps its title
  * and description, and the user keeps talking here. Empty for a ticket that never ran, a main ticket (its card updates
  * its own plan; new work goes to its steps) and a step.

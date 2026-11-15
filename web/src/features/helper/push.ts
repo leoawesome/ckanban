@@ -1,4 +1,4 @@
-// Phone notifications on this device (Web Push, src/server/push.ts): what this browser supports, turning it on/off,
+// Phone notifications on this device (Web Push, src/helper/push.ts): what this browser supports, turning it on/off,
 // and the heartbeat that tells the daemon when the board is on screen here (no push while you look at it).
 import { api, type DroppedPushDevice, type PushDevice } from "../../lib/api";
 
@@ -37,7 +37,7 @@ export function deviceLabel(): string {
   return browser ? `${device} · ${browser}${where}` : device;
 }
 
-/** The daemon's device id for an endpoint (sha256, 12 hex), see deviceId in src/server/webpush.ts. */
+/** The daemon's device id for an endpoint (sha256, 12 hex), see deviceId in src/helper/webpush.ts. */
 export async function deviceIdOf(endpoint: string): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(endpoint));
   return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 12);
@@ -127,7 +127,7 @@ export async function turnOff(): Promise<void> {
 
 /**
  * While this device gets notifications: tell the daemon every 15 s that the board is on screen, and at once when it
- * isn't (VISIBLE_MS in src/server/push.ts). Also opens the ticket a tapped notification points at (sw.js).
+ * isn't (VISIBLE_MS in src/helper/push.ts). Also opens the ticket a tapped notification points at (sw.js).
  */
 export function startPushClient(): () => void {
   if (pushSupport() !== "ok") return () => {};

@@ -1,5 +1,5 @@
-// Copy on a Draft card in Claude's reply takes only the quote's text (web/src/draftText.ts), and on a phone one of the
-// user's messages at a time shows its actions (web/src/shownMessage.ts).
+// Copy on a Draft card in Claude's reply takes only the quote's text (web/src/lib/draftText.ts), and on a phone one of the
+// user's messages at a time shows its actions (web/src/features/chat/shownMessage.ts).
 import { expect, test } from "bun:test";
 import { draftText, type DraftNode } from "./draftText";
 import { nextShown } from "../features/chat/shownMessage";

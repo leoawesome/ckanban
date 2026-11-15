@@ -1,4 +1,4 @@
-// Pure helpers for the Automations dialog and the For automations tab of Connections (tested in test/automations.test.ts).
+// Pure helpers for the Automations dialog and the For automations tab of Connections (tested in web/src/features/schedules/automations.test.ts).
 import type { AutomationProposal, Loop, LoopColumn, LoopSeenItem, Pass } from "./automationTypes";
 
 /** What boardCell needs of a Connections server (api.ts McpServer; not imported, so tests can load this file). */

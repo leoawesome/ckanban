@@ -1,4 +1,4 @@
-// The phone ticket header's one status button (web/src/phoneStatus.ts): its label and colour.
+// The phone ticket header's one status button (web/src/features/ticket/phoneStatus.ts): its label and colour.
 import { expect, test } from "bun:test";
 import { phoneStatus } from "./phoneStatus";
 

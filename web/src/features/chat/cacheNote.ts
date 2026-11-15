@@ -1,6 +1,6 @@
 /**
  * The ticket chat's old-chat line and Send ask (kept DOM-free for tests). The server sends the conversation size and
- * cache time at Claude's last reply (src/server/chat-cache.ts); this works out whether the chat is old and what to say.
+ * cache time at Claude's last reply (src/chat/chat-cache.ts); this works out whether the chat is old and what to say.
  * Nothing shows while the chat is still ready: no countdown, so a reply never feels rushed.
  */
 import { contextText } from "../huddle/huddleText";

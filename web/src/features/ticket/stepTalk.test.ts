@@ -1,4 +1,4 @@
-// A main ticket's chat shows what its "with you" steps showed the user (web/src/StepMessages.tsx stepMessages).
+// A main ticket's chat shows what its "with you" steps showed the user (web/src/features/ticket/StepMessages.tsx stepMessages).
 import { expect, test } from "bun:test";
 import type { StepEntry as SessionEntry } from "./stepTalk";
 import { stepMessages, type StepMsg } from "./stepTalk";

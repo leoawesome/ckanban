@@ -1,5 +1,5 @@
 /* ============ Design tokens (design-system/kanban/MASTER.md) ============
-   The only place raw colours and sizes live: everything below uses var(--…). test/style-scale.test.ts rejects raw
+   The only place raw colours and sizes live: everything below uses var(--…). scripts/style-scale.test.ts rejects raw
    colours, off-scale text sizes, weights, corners, shadows, icon sizes and spacing anywhere else.
    A new value needs a token here (and a line in MASTER.md) first. */
 
@@ -3490,7 +3490,7 @@ button.hd-mode:disabled { cursor: default; }
   .topbar .btn.ghost.topbar-icon { border-color: var(--border); }
   .banner { padding-left: var(--sp-4); padding-right: var(--sp-4); }
   /* iOS zooms into a field under 16px on focus. !important so no class rule (13px mono fields, the description
-     editor…) can win on a phone; test/style-scale.test.ts checks this rule stays and nothing overrides it. */
+     editor…) can win on a phone; scripts/style-scale.test.ts checks this rule stays and nothing overrides it. */
   :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea) { font-size: var(--fs-lg) !important; }
 
   .board-bar { padding: var(--sp-3) var(--sp-4) 0; gap: var(--sp-3); }

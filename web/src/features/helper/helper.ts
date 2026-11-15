@@ -1,11 +1,11 @@
 import { useSyncExternalStore } from "react";
 import { onReconnect, req, subscribe } from "../../lib/api";
 
-// The helper (src/server/helper/): its status line, the helper line per Inbox row, settings, "What the helper knows
+// The helper (src/helper/): its status line, the helper line per Inbox row, settings, "What the helper knows
 // about you", and the messages it (or the board) sent the user. One shared copy for every screen, kept fresh by the
 // live events helper.updated and messages.updated.
 
-/** GET /api/helper (src/server/helper/runner.ts HelperStatus). */
+/** GET /api/helper (src/helper/runner.ts HelperStatus). */
 export interface HelperStatus {
   on: boolean;
   model: "sonnet" | "haiku";

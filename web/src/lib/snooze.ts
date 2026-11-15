@@ -4,7 +4,7 @@ import { timeUntil } from "./time";
 /** Snooze (1 day, the s key), Snooze for a week, Snooze until I unsnooze. Any of them ends when the ticket changes. */
 export type SnoozeLength = "day" | "week" | "forever";
 
-/** "Until I unsnooze" is stored as this far-off end (src/server/attention.ts SNOOZE_FOREVER). */
+/** "Until I unsnooze" is stored as this far-off end (src/helper/attention.ts SNOOZE_FOREVER). */
 export const SNOOZE_FOREVER = "9999-12-31T23:59:59.000Z";
 const DAY_MS = 24 * 3600_000;
 

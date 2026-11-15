@@ -1,4 +1,4 @@
-// The ticket panel's open tab and Outputs file in the link (web/src/tabLink.ts).
+// The ticket panel's open tab and Outputs file in the link (web/src/lib/tabLink.ts).
 import { expect, test } from "bun:test";
 import { hashIsTicket, readTabLink, withTabLink } from "./tabLink";
 

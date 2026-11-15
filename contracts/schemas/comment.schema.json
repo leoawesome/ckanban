@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ckanban.dev/contracts/schemas/comment.schema.json",
   "title": "Comment (one line of comments.jsonl)",
-  "description": "profiles/<slug>/tickets/<id>/comments.jsonl: one compact JSON object per line, appended by Store.addComment. Type Comment in src/server/types.ts. Holds the ticket's result summaries (author ai), board notes such as 'Run failed: ...' (author ai), the user's comments, and notes left by other tickets' runs (author ai with from). Saved keys are masked in text. Unknown fields must be kept.",
+  "description": "profiles/<slug>/tickets/<id>/comments.jsonl: one compact JSON object per line, appended by Store.addComment. Type Comment in src/core/types.ts. Holds the ticket's result summaries (author ai), board notes such as 'Run failed: ...' (author ai), the user's comments, and notes left by other tickets' runs (author ai with from). Saved keys are masked in text. Unknown fields must be kept.",
   "type": "object",
   "additionalProperties": true,
   "required": ["id", "author", "text", "at"],

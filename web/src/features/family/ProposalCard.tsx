@@ -8,7 +8,7 @@ import type { FollowUpPlace } from "../ticket/followUp";
 
 /**
  * A proposal on a plain ticket that already ran (Done, In review, or ran before): follow-up work, so the ticket keeps its
- * title and description (web/src/followUp.ts). state: how the note names the ticket ("Done", "In review", null: it ran).
+ * title and description (web/src/features/ticket/followUp.ts). state: how the note names the ticket ("Done", "In review", null: it ran).
  * place: where the work goes. created: what this card already made (a step opens in its main ticket).
  */
 export interface FollowUp {

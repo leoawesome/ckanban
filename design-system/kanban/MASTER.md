@@ -1,9 +1,9 @@
 # ckanban design system (MASTER)
 
 Source of truth for every screen in `web/`. A page file in `design-system/pages/` may override a rule here; nothing else may.
-Built with UI UX Pro Max 2.15.0 (`ui-ux-pro-max` + `design-system`) from the tokens at the top of `web/src/styles.css` as of 2026-11-15. The tokens in section 1 to 8 are live in `web/src/styles.css`; the findings it was checked against are in `audit.md` next to this file.
+Built with UI UX Pro Max 2.15.0 (`ui-ux-pro-max` + `design-system`) from the tokens at the top of `web/src/app/styles.css` as of 2026-11-15. The tokens in section 1 to 8 are live in `web/src/app/styles.css`; the findings it was checked against are in `audit.md` next to this file.
 
-**Enforced by `bun run test`** (`scripts/style-scale.ts`, `test/style-scale.test.ts`): in `styles.css` and in inline `style={{…}}` in `web/src/*.tsx`, a raw colour, an off-scale text size, weight, corner, shadow or icon size, or a padding, margin or gap that isn't a spacing token, or a raw `z-index` of 10 or more, fails the build.
+**Enforced by `bun run test`** (`scripts/style-scale.ts`, `scripts/style-scale.test.ts`): in `styles.css` and in inline `style={{…}}` in any `.tsx` under `web/src/`, a raw colour, an off-scale text size, weight, corner, shadow or icon size, or a padding, margin or gap that isn't a spacing token, or a raw `z-index` of 10 or more, fails the build.
 
 **Product:** developer productivity kanban board that runs Claude sessions. Used as much on a phone (390px, touch) as on a Mac (1280px+, keyboard).
 **Style:** Flat, warm, quiet. The skill's `--design-system` run for "developer productivity kanban tool warm minimal" picked *Flat Design* (2D, no gradients, clean lines, typography first, 150-200ms colour transitions), which matches the app today. It also offered a teal palette and Inter as a web font; both are rejected (see "Decided against" at the end). The warm neutral background and orange brand stay: the contrast checks below show they pass once three small fixes land.
@@ -88,7 +88,7 @@ System stack, no web font: `-apple-system, BlinkMacSystemFont, "Inter", "Segoe U
 | `--fs-lg` | 16px | Phone body and **every field on phone**, dialog titles | 1.5 |
 | `--fs-xl` | 20px | Phone screen titles, empty-state headline | 1.3 |
 
-Weights: 400 body, 500 labels and menu items, 600 buttons, tabs, section labels, card titles, 700 column titles and the brand only. No other weights (already enforced by `test/style-scale.test.ts`).
+Weights: 400 body, 500 labels and menu items, 600 buttons, tabs, section labels, card titles, 700 column titles and the brand only. No other weights (already enforced by `scripts/style-scale.test.ts`).
 Rules: numbers that change in place (costs, counts, timers, percentages) use `font-variant-numeric: tabular-nums`. Long ids, paths and URLs wrap with `overflow-wrap: anywhere`. Prose lines stay under about 75 characters on desktop (chat column max-width). Headings use `text-wrap: balance`.
 
 ## 3. Spacing
@@ -134,7 +134,7 @@ Ring and edge bars (no blur) are not elevation and stay allowed. No change to va
 
 ## 6. Icons
 
-One set: the line icons in `web/src/icons.tsx` (1.75px stroke, round caps). Sizes: 12 (inline in meta text), 14 (menus, buttons with text), 16 (icon-only buttons on desktop), 20 (phone bottom nav, phone top bar). No emoji as icons in controls or labels (the "✦" in "Say it simpler" and "↻ Refresh", "✉" Messages row, etc. become SVG icons). An icon next to visible text gets `aria-hidden`; an icon-only button gets `aria-label` and, if it toggles, `aria-pressed` or `aria-expanded`.
+One set: the line icons in `web/src/components/icons.tsx` (1.75px stroke, round caps). Sizes: 12 (inline in meta text), 14 (menus, buttons with text), 16 (icon-only buttons on desktop), 20 (phone bottom nav, phone top bar). No emoji as icons in controls or labels (the "✦" in "Say it simpler" and "↻ Refresh", "✉" Messages row, etc. become SVG icons). An icon next to visible text gets `aria-hidden`; an icon-only button gets `aria-label` and, if it toggles, `aria-pressed` or `aria-expanded`.
 
 ## 7. Motion
 

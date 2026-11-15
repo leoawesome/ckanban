@@ -1,6 +1,6 @@
 # ckanban CLI contract
 
-What the `ckanban` command does today (Bun + TypeScript), written so a Rust port can match it. Sources: `src/cli.ts` (dispatch, daemon management, artifact, remote, call), `src/ticket-cli.ts` (profiles, ticket, mcp subcommands), `src/client.ts` (HTTP client and text formatters), `src/mcp-server.ts` (stdio MCP server), `src/browser-mcp.ts`.
+What the `ckanban` command does today (Bun + TypeScript), written so a Rust port can match it. Sources: `src/cli/cli.ts` (dispatch, daemon management, artifact, remote, call), `src/cli/ticket-cli.ts` (profiles, ticket, mcp subcommands), `src/cli/client.ts` (HTTP client and text formatters), `src/mcp/server.ts` (stdio MCP server), `src/browser/browser-mcp.ts`.
 
 Where something can't be told from the code, this file says so.
 
@@ -12,7 +12,7 @@ Where something can't be told from the code, this file says so.
 
 | Command | Handler |
 |---|---|
-| `dev`, `start` | run the daemon in the foreground (`startDaemon()` in `src/server/main.ts`) |
+| `dev`, `start` | run the daemon in the foreground (`startDaemon()` in `src/cli/daemon.ts`) |
 | `install` | write the launchd plist and start it |
 | `restart [--now]` | graceful or forced daemon restart |
 | `uninstall` | remove phone access, MCP registrations and launchd job |
@@ -98,7 +98,7 @@ ${TICKET_USAGE}
 
 (`console.log` adds one more newline after the template's trailing newline.)
 
-## 2. Daemon management commands (src/cli.ts)
+## 2. Daemon management commands (src/cli/cli.ts)
 
 ### `ckanban dev` / `ckanban start`
 
@@ -107,7 +107,7 @@ Runs `startDaemon()` in the foreground. No args. Port as in section 1, listens o
 ### `ckanban install`
 
 1. `mkdir -p <root>` and the plist's folder.
-2. Writes `~/Library/LaunchAgents/io.ckanban.daemon.plist` (label `io.ckanban.daemon`). Program args: `[execPath]` for the release binary, `[execPath, <src>/cli.ts]` from source, and `plistXml` (`src/server/launchd.ts`) appends `start`. `PATH` in the plist is the current `PATH` entries plus `~/.local/bin`, `~/.bun/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`, de-duplicated, in that order. Log file `<root>/daemon.log`. `HOME` = home dir.
+2. Writes `~/Library/LaunchAgents/io.ckanban.daemon.plist` (label `io.ckanban.daemon`). Program args: `[execPath]` for the release binary, `[execPath, <src>/cli.ts]` from source, and `plistXml` (`src/cli/launchd.ts`) appends `start`. `PATH` in the plist is the current `PATH` entries plus `~/.local/bin`, `~/.bun/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`, de-duplicated, in that order. Log file `<root>/daemon.log`. `HOME` = home dir.
 3. `launchctl bootout gui/<uid>/io.ckanban.daemon` (silent), waits up to 5 s (50 x 100 ms) for `launchctl print` to fail, then `launchctl bootstrap gui/<uid> <plist>` up to 5 tries, 500 ms apart.
 4. On failure: stderr `launchctl bootstrap failed`, exit with bootstrap's exit code.
 5. On success, stdout:
@@ -162,7 +162,7 @@ Runs `open http://localhost:<port>`. Exit code: always 0 (the `open` exit code i
 
 stdout: `VERSION` alone, e.g. `0.18.1`. From source it prints `dev` (the build defines `CKANBAN_VERSION`; unset means `dev`).
 
-## 3. Board commands (src/ticket-cli.ts)
+## 3. Board commands (src/cli/ticket-cli.ts)
 
 ### Ticket usage block (`TICKET_USAGE`, exact)
 
@@ -210,7 +210,7 @@ stdout: `VERSION` alone, e.g. `0.18.1`. From source it prints `dev` (the build d
 - A flag given twice: the last one wins.
 - `--body` / `--body-file`: both given: error `use --body or --body-file, not both`. Value `-` reads all of stdin (UTF-8). `--body-file <path>` reads that file.
 - `--needs a,b`: split on commas, trimmed, lowercased, empty dropped. `--needs ""` gives an empty list.
-- `--tags a,b`: split on commas, then `normalizeTags` (`src/server/tags.ts`).
+- `--tags a,b`: split on commas, then `normalizeTags` (`src/board/tags.ts`).
 - Status values (`parseStatus`): trimmed, lowercased, runs of spaces/dashes become `_`; must be one of `backlog, planning, ready, in_progress, review, done`. Else error `invalid status "<s>"; use one of: backlog, planning, ready, in_progress, review, done`.
 - Mode values (`parseMode`): `interview` or `auto` (case-insensitive). Else error `invalid mode "<s>"; use interview or auto`.
 - A missing required positional: error `usage: ckanban <usage>` with the usage shown per command below.
@@ -258,7 +258,7 @@ Profiles:
 ### `ckanban ticket list [--status <s>] [--query <words>] [--limit <n>] [--after <id>] [--include-tool] [--profile <slug>] [--json]`
 
 - Route: `GET /api/profiles/<slug>/tickets?scope=list[&status=<s>][&tool=1][&q=<trimmed query>][&limit=<n>][&after=<id>]` (`URLSearchParams` order: scope, status, tool, q, tags, limit, after; the CLI never sends `tags`). `--limit` is sent only when it is a number > 0 (floored).
-- Daemon side (`listScope` in `src/server/ticketScope.ts`): newest first by id. Default page 100; max 500 without a query, 100 with a query. No status and no query: every column except Done, with `doneLeft` counting the skipped Done tickets. A query matches lowercase substring of `id\ntitle\nbody` in every column (or only `status`), capped to the newest 100 (no further pages). Tool tickets are skipped unless `tool=1`.
+- Daemon side (`listScope` in `src/board/ticket-scope.ts`): newest first by id. Default page 100; max 500 without a query, 100 with a query. No status and no query: every column except Done, with `doneLeft` counting the skipped Done tickets. A query matches lowercase substring of `id\ntitle\nbody` in every column (or only `status`), capped to the newest 100 (no further pages). Tool tickets are skipped unless `tool=1`.
 - Answer (`TicketListPage`): `{ tickets: TicketInfo[], total, matched?, doneLeft, next: string | null }`. `--json` prints this.
 - Text (`ticketListText`, exact code):
 
@@ -498,7 +498,7 @@ Only <login> can open it, from devices on your tailnet (never public).
 ```
 
   When Tailscale is stopped or can't be checked, a blank line and `Tailscale is off on this Mac (state: <backendState>): phone can't connect. Open the Tailscale app; turn on "Launch Tailscale at login" in its Settings.` (or `Can't check Tailscale on this Mac: ...`) are inserted before the blank line and QR.
-- Bad action: stderr `usage: ckanban remote on|off|status`, exit 1. A `RemoteError` (Tailscale missing, not signed in, port taken...): message on stderr, exit 1. Exact Tailscale command lines and error texts live in `src/server/remote.ts`; not repeated here.
+- Bad action: stderr `usage: ckanban remote on|off|status`, exit 1. A `RemoteError` (Tailscale missing, not signed in, port taken...): message on stderr, exit 1. Exact Tailscale command lines and error texts live in `src/integrations/remote.ts`; not repeated here.
 
 ### `ckanban mcp install|uninstall [--claude] [--codex]` and `ckanban mcp status`
 
@@ -536,7 +536,7 @@ Internal, not in the usage text: the board passes it in a run's `--mcp-config`. 
 | `CODEX_HOME` | mcp install/status | Codex config folder (default `~/.codex`) |
 | `PATH` | install, artifact | copied into the plist; tmux lookup for the artifact helper |
 
-### Read by the daemon (`ckanban dev`/`start`, `src/server/**`)
+### Read by the daemon (`ckanban dev`/`start`, `src/**`)
 
 From a full grep of `process.env` and env-object reads under `src/`:
 
@@ -566,7 +566,7 @@ From a full grep of `process.env` and env-object reads under `src/`:
 
 Automation check scripts get a clean env: only `HOME, USER, LOGNAME, LANG, LC_ALL, TMPDIR, SHELL, TZ` from the daemon, plus the built `PATH`, the board keys, `CKANBAN_PORT` and `CKANBAN_CALL_TOKEN`. Key names `PATH, HOME, USER, SHELL, LANG, TMPDIR, CKANBAN_PORT, CKANBAN_CALL_TOKEN` are reserved.
 
-## 6. `ckanban mcp` (stdio MCP server, src/mcp-server.ts)
+## 6. `ckanban mcp` (stdio MCP server, src/mcp/server.ts)
 
 - Transport: newline-delimited JSON-RPC 2.0 on stdin/stdout. A line may hold one message or a batch array (each reply is written as its own line). Bad JSON: `{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"parse error"}}`. Unknown method with an id: error -32601 `method not found: <method>`; notifications get no reply. A handler crash: -32603.
 - Methods: `initialize` (echoes the client's `protocolVersion` if it is one of `2025-06-18`, `2025-03-26`, `2024-11-05`, else `2025-06-18`; `capabilities: { tools: {} }`, `serverInfo: { name: "ckanban", version }`, plus an `instructions` string), `ping`, `tools/list`, `tools/call`.
@@ -653,6 +653,6 @@ Automation check scripts get a clean env: only `HOME, USER, LOGNAME, LANG, LC_AL
 
 ## 7. Not covered here
 
-- Request and response body shapes beyond what is quoted (see `src/client.ts` interfaces such as `TicketInfo`, `ScheduleInfo`, `JobInfo`, `HuddleInfo`) and each MCP tool's input schema and text output (see `src/mcp-server.ts`).
-- The launchd plist XML (`plistXml` in `src/server/launchd.ts`) and the Tailscale command lines (`src/server/remote.ts`).
+- Request and response body shapes beyond what is quoted (see `src/cli/client.ts` interfaces such as `TicketInfo`, `ScheduleInfo`, `JobInfo`, `HuddleInfo`) and each MCP tool's input schema and text output (see `src/mcp/server.ts`).
+- The launchd plist XML (`plistXml` in `src/cli/launchd.ts`) and the Tailscale command lines (`src/integrations/remote.ts`).
 - Daemon HTTP routes the CLI and MCP don't call.

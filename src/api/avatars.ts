@@ -7,7 +7,7 @@ import { type ApiContext, HttpError, NEXT, type RouteResult, body, claudeNameOf 
 /** /api/avatars */
 export async function avatarRoutes(ctx: ApiContext, req: Request, url: URL, parts: string[], m: string): Promise<RouteResult> {
   const { store, json } = ctx;
-  // The user's avatar choices for Claude, the user and teammates: one set for every board (src/server/avatars.ts).
+  // The user's avatar choices for Claude, the user and teammates: one set for every board (src/board/avatars.ts).
   if (parts[0] === "avatars") {
     if (parts.length === 1 && m === "GET") return json(store.listAvatars());
     // PUT /api/avatars/claude/name {name}: the name shown in place of "Claude" ("" or "Claude": back to "Claude").

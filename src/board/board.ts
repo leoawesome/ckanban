@@ -1252,7 +1252,7 @@ export class Board {
 
   followUpWork(...a: Parameters<typeof ticketsPart.followUpWork>): ReturnType<typeof ticketsPart.followUpWork> { return ticketsPart.followUpWork.call(this, ...a); }
 
-  // ---- Families: "part of" links (see web/src/family.ts) ----
+  // ---- Families: "part of" links (see web/src/features/family/family.ts) ----
 
   setPartOf(...a: Parameters<typeof familiesPart.setPartOf>): ReturnType<typeof familiesPart.setPartOf> { return familiesPart.setPartOf.call(this, ...a); }
 
@@ -1348,7 +1348,7 @@ export class Board {
 
   landMilestone(...a: Parameters<typeof mainPart.landMilestone>): ReturnType<typeof mainPart.landMilestone> { return mainPart.landMilestone.call(this, ...a); }
 
-  // ---- Features: the feature status (Tasks tab), gathering tickets (feature.ts, web/src/family.ts) ----
+  // ---- Features: the feature status (Tasks tab), gathering tickets (feature.ts, web/src/features/family/family.ts) ----
 
   facts(...a: Parameters<typeof featuresPart.facts>): ReturnType<typeof featuresPart.facts> { return featuresPart.facts.call(this, ...a); }
 

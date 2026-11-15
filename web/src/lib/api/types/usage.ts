@@ -1,11 +1,11 @@
-/** What every board spent today (src/server/spend.ts). */
+/** What every board spent today (src/usage/spend.ts). */
 export interface TodaySpend {
   day: string;
   costUsd: number;
   boards: { slug: string; name: string; costUsd: number }[];
 }
 
-/** One huddle a teammate or template took part in (src/server/huddle-usage.ts). */
+/** One huddle a teammate or template took part in (src/huddle/huddle-usage.ts). */
 export interface UsageHuddle {
   board: string;
   huddle: string;

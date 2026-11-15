@@ -1,6 +1,6 @@
 /**
  * The Context panel's words and rows (kept DOM-free for tests). The server parses Claude Code's `/context` report
- * (src/server/context-usage.ts); this turns its rows into plain names, colours and the phone's shorter list.
+ * (src/chat/context-usage.ts); this turns its rows into plain names, colours and the phone's shorter list.
  */
 
 export interface ContextCategory { name: string; tokens: number; percent: number | null; deferred: boolean }

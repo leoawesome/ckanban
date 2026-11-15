@@ -1,5 +1,5 @@
 // The UI's shared scale (tokens in web/src/app/styles.css :root, documented in design-system/kanban/MASTER.md).
-// test/style-scale.test.ts runs these checks over the stylesheet and the components, so new code can't add an
+// scripts/style-scale.test.ts runs these checks over the stylesheet and the components, so new code can't add an
 // off-scale text size, weight, corner, shadow, icon size, raw colour or spacing value.
 
 export const FONT_WEIGHTS = ["400", "500", "600", "700"];

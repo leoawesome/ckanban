@@ -264,15 +264,15 @@ export interface Ticket {
   huddleLine?: HuddleLine | null;
   /** Output files published as claude.ai pages from the Share menu, one link per file. */
   shareLinks?: ShareLink[];
-  /** Artifacts and share links, newest first (src/server/links.ts). */
+  /** Artifacts and share links, newest first (src/board/links.ts). */
   links?: TicketLink[];
-  /** Teammate cards in the chat the user answered, by entry uuid (src/server/types.ts). */
+  /** Teammate cards in the chat the user answered, by entry uuid (src/core/types.ts). */
   teammateCards?: Record<string, TeammateCardState>;
   /** Squad cards in the chat the user answered, by entry uuid. */
   squadCards?: Record<string, SquadCardState>;
-  /** Schedule delete cards in the chat the user answered, by entry uuid (src/server/types.ts). */
+  /** Schedule delete cards in the chat the user answered, by entry uuid (src/core/types.ts). */
   scheduleDeleteCards?: Record<string, ScheduleDeleteCardState>;
-  /** Helper rule cards (propose_helper_rule) the user answered, by entry uuid (src/server/types.ts). */
+  /** Helper rule cards (propose_helper_rule) the user answered, by entry uuid (src/core/types.ts). */
   helperRuleCards?: Record<string, HelperRuleCardState>;
   /** Automation cards in the chat the user saved (by entry uuid). */
   automationCards?: Record<string, { loopId: string; at: string }>;
@@ -331,7 +331,7 @@ export interface ActivityEntry {
   event: any;
 }
 
-/** What a main ticket's card shows of its family (src/server/main-ticket.ts familyCard). */
+/** What a main ticket's card shows of its family (src/board/main-ticket.ts familyCard). */
 export interface FamilyCardInfo {
   tools: number;
   /** Tool tickets not finished yet (not in Done, or still running). */

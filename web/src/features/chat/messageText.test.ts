@@ -1,4 +1,4 @@
-// The row under the user's messages and the Undo rewind bar (web/src/messageText.ts, sentTime in web/src/time.ts).
+// The row under the user's messages and the Undo rewind bar (web/src/features/chat/messageText.ts, sentTime in web/src/lib/time.ts).
 import { expect, test } from "bun:test";
 import { copyText, draftAfterUndo, forkPoints, forkTitle, rewoundLine, undoneLine } from "./messageText";
 import { noFilesLine } from "../ticket/rewindText";

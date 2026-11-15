@@ -1,4 +1,4 @@
-// "Say it simpler" shows under Claude's own replies only, and not under short ones (same rule as src/server/simplify.ts).
+// "Say it simpler" shows under Claude's own replies only, and not under short ones (same rule as src/chat/simplify.ts).
 
 export const SIMPLIFY_MIN_WORDS = 25;
 

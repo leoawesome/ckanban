@@ -1,6 +1,6 @@
 import { copy } from "../request";
 
-/** Where a teammate or template is saved (src/server/layers.ts): built-in, for every board (global) or this board. */
+/** Where a teammate or template is saved (src/core/layers.ts): built-in, for every board (global) or this board. */
 export type LayerSource = "builtin" | "global" | "board";
 /** A saved level. */
 export type Level = "global" | "board";
@@ -14,7 +14,7 @@ export interface LayerInfo {
   builtin: boolean;
 }
 
-/** A huddle role preset, a "teammate" in the UI (src/server/huddle-presets.ts). */
+/** A huddle role preset, a "teammate" in the UI (src/huddle/huddle-presets.ts). */
 export interface HuddlePreset extends LayerInfo {
   name: string;
   role: string;
@@ -26,7 +26,7 @@ export interface HuddlePreset extends LayerInfo {
   workspace: "shared" | "own";
 }
 
-/** A teammate Claude proposed (src/server/teammate-proposal.ts): fields it left out keep an existing teammate's values. */
+/** A teammate Claude proposed (src/huddle/teammate-proposal.ts): fields it left out keep an existing teammate's values. */
 export type TeammateProposal = Pick<HuddlePreset, "name" | "prompt"> & Partial<Pick<HuddlePreset, "role" | "model" | "mode" | "lead" | "canEdit" | "workspace">> & { why: string };
 
 export interface TeammateCardState {
@@ -36,7 +36,7 @@ export interface TeammateCardState {
   at: string;
 }
 
-/** A whole-huddle template (src/server/huddle-templates.ts): a roster and its rules. */
+/** A whole-huddle template (src/huddle/huddle-templates.ts): a roster and its rules. */
 export interface HuddleTemplate extends LayerInfo {
   name: string;
   label: string;
@@ -55,7 +55,7 @@ export interface HuddleTemplate extends LayerInfo {
 /** A squad's fields (a template without its level info), as cards carry and the save route takes. */
 export type SquadDraft = Omit<HuddleTemplate, keyof LayerInfo>;
 
-/** A squad card's data (src/server/squad.ts): from propose_squad or "Save as squad…". */
+/** A squad card's data (src/huddle/squad.ts): from propose_squad or "Save as squad…". */
 export interface SquadProposal {
   squad: SquadDraft & { hostRules: string };
   /** One line: why this squad, or where it came from. */
@@ -89,7 +89,7 @@ export interface GenericSquadResult {
 /** Where a saved squad card goes: a ticket chat's card, or a huddle agent's proposal under Learnings. */
 export type SquadCardRef = { ticketId: string; uuid: string } | { huddleId: string; learningId: string };
 
-/** One line of a huddle roster (src/server/huddle-roster.ts): `count` participants from a preset or a free-form role. */
+/** One line of a huddle roster (src/huddle/huddle-roster.ts): `count` participants from a preset or a free-form role. */
 export interface RosterEntry {
   preset?: string;
   role?: string;
@@ -108,7 +108,7 @@ export interface RosterEntry {
 
 export type HuddleMode = "tagged" | "monitor";
 
-/** A huddle participant as the daemon shows it (src/server/huddle.ts ParticipantView). */
+/** A huddle participant as the daemon shows it (src/huddle/huddle.ts ParticipantView). */
 export interface HuddleParticipant {
   handle: string;
   role: string;
@@ -140,7 +140,7 @@ export interface HuddleParticipant {
   copy?: { kind: "git" | "folder"; dir: string; at: string } | null;
 }
 
-/** Changes a helper handed in from its copy (src/server/types.ts HandIn). */
+/** Changes a helper handed in from its copy (src/core/types.ts HandIn). */
 export interface HandIn {
   id: string;
   from: string;
@@ -154,7 +154,7 @@ export interface HandIn {
   conflicts?: string[];
 }
 
-/** One step of a huddle participant's session (src/server/huddle-session.ts SessionStep). */
+/** One step of a huddle participant's session (src/huddle/huddle-session.ts SessionStep). */
 export interface SessionStep {
   i: number;
   kind: "text" | "tool" | "post" | "wake";
@@ -167,7 +167,7 @@ export interface SessionStep {
   seq?: number;
 }
 
-/** A participant's own session for the read-only viewer (src/server/huddle-session.ts ParticipantSession). */
+/** A participant's own session for the read-only viewer (src/huddle/huddle-session.ts ParticipantSession). */
 export interface ParticipantSession {
   handle: string;
   kind: HuddleParticipant["kind"];
@@ -243,7 +243,7 @@ export interface Huddle {
   closedAt?: string | null;
 }
 
-/** A lesson an agent proposed (src/server/types.ts). target: "_all", a preset name, or "new" (a preset from the ad-hoc role). */
+/** A lesson an agent proposed (src/core/types.ts). target: "_all", a preset name, or "new" (a preset from the ad-hoc role). */
 export interface HuddleLearning {
   id: string;
   from: string;
@@ -262,7 +262,7 @@ export interface HuddleLearning {
   squad?: SquadProposal;
 }
 
-/** A role note (src/server/huddle-notes.ts): by "you" or the agent's handle. */
+/** A role note (src/huddle/huddle-notes.ts): by "you" or the agent's handle. */
 export interface HuddleNote {
   text: string;
   by: string;

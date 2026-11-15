@@ -1,4 +1,4 @@
-/** Mirrors PrCheck/PrStatus in src/server/types.ts. No imports, so tests can load this file. */
+/** Mirrors PrCheck/PrStatus in src/core/types.ts. No imports, so tests can load this file. */
 export interface PrCheck {
   name: string;
   state: "pass" | "fail" | "pending" | "skipped";
@@ -31,7 +31,7 @@ export interface TicketPr {
   base?: string | null;
 }
 
-/** The ticket's PRs, oldest first; an old ticket's prUrl is its only one. Same rule as ticketPrs in src/server/prs.ts. */
+/** The ticket's PRs, oldest first; an old ticket's prUrl is its only one. Same rule as ticketPrs in src/board/prs.ts. */
 export function ticketPrs(t: { prs?: TicketPr[] | null; prUrl: string | null; pr?: PrStatus | null }): TicketPr[] {
   if (t.prs?.length) return t.prs;
   if (!t.prUrl) return [];
@@ -66,7 +66,7 @@ export function currentPr(t: { pr?: PrStatus | null; prUrl: string | null }): Pr
   return t.pr && t.prUrl && t.pr.url === t.prUrl ? t.pr : null;
 }
 
-/** Why Merge & done is disabled, or null. Same rules as mergeBlock in src/server/prstatus.ts (the server re-checks). */
+/** Why Merge & done is disabled, or null. Same rules as mergeBlock in src/runs/prstatus.ts (the server re-checks). */
 export function mergeBlock(pr: PrStatus | null | undefined): string | null {
   if (!pr) return "PR status not loaded yet";
   if (pr.state !== "OPEN") return pr.state === "MERGED" ? "PR is already merged" : pr.state === "CLOSED" ? "PR is closed" : "PR state unknown";

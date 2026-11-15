@@ -1,7 +1,7 @@
 // The user's avatar choices (AvatarFace.tsx draws them): one look per name ("claude", "you" or a teammate), stored once
 // for every board in <home>/avatars.json. Only known part names and #rrggbb colours are kept; anything else in a
-// request or a hand-edited file is dropped, and a missing field means "the default" (web/src/avatarLook.ts).
-// The part lists match web/src/avatarLook.ts (test/avatars.test.ts checks).
+// request or a hand-edited file is dropped, and a missing field means "the default" (web/src/features/avatar/avatarLook.ts).
+// The part lists match web/src/features/avatar/avatarLook.ts (test/integration/avatars.test.ts checks).
 // Claude's entry may also hold `name`: the name the board shows in place of "Claude" (display only; missing, empty or
 // damaged means "Claude"). It lives on the "claude" entry only, and changing or resetting the look keeps it.
 
@@ -50,7 +50,7 @@ export const CLAUDE_KEY = "claude";
 export const MAX_CLAUDE_NAME = 24;
 
 /** A display name as kept: one line, spaces collapsed, trimmed, at most MAX_CLAUDE_NAME characters; "" when unusable.
- * "Claude" itself is "" (the default, so nothing is stored). Same rule as cleanClaudeName in web/src/avatarLook.ts. */
+ * "Claude" itself is "" (the default, so nothing is stored). Same rule as cleanClaudeName in web/src/features/avatar/avatarLook.ts. */
 export function cleanClaudeName(v: unknown): string {
   if (typeof v !== "string") return "";
   const one = v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/\p{Cf}+/gu, "").replace(/\s+/g, " ").trim();

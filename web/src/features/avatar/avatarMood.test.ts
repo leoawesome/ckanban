@@ -1,4 +1,4 @@
-// Which mood each screen's avatar shows (web/src/avatarMood.ts).
+// Which mood each screen's avatar shows (web/src/features/avatar/avatarMood.ts).
 import { expect, test } from "bun:test";
 import { agentMood, familyMood, finishMood, isQuietLine, isThinkingLine, liveLine, participantMood, runMood, THINKING_LINE } from "./avatarMood";
 import { THINKING_LINE as SERVER_THINKING_LINE } from "../../../../src/board/board";

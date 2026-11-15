@@ -1,4 +1,4 @@
-// Shared live connection across board tabs (web/src/liveEvents.ts): one leader tab opens the EventSource,
+// Shared live connection across board tabs (web/src/app/liveEvents.ts): one leader tab opens the EventSource,
 // the others hear events on a BroadcastChannel, handover and reconnects make every tab refetch.
 import { expect, test } from "bun:test";
 import { createLive, type ChannelLike, type LocksLike, type SourceLike } from "./liveEvents";

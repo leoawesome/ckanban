@@ -5,7 +5,7 @@ import type { KeysAsk } from "./connections";
 import type { RosterEntry, SquadProposal, TeammateProposal } from "./huddle";
 import type { Proposal, Question } from "./ticket";
 
-/** "Help me understand" questions (src/server/explain.ts). */
+/** "Help me understand" questions (src/chat/explain.ts). */
 export type HelpKind = "recap" | "changes";
 
 /** One "Help me understand" answer, shown as a card in the ticket's chat. */
@@ -19,7 +19,7 @@ export interface HelpCard {
   model: string;
 }
 
-/** A quick chat with Claude in the board's folder, no ticket (src/server/quickchat.ts QuickChatView). */
+/** A quick chat with Claude in the board's folder, no ticket (src/chat/quickchat.ts QuickChatView). */
 export interface QuickChat {
   id: string;
   sessionId: string;

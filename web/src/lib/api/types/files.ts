@@ -6,7 +6,7 @@ export interface FileEntry {
   type: "dir" | "file";
 }
 
-/** The Changes tab: a ticket worktree's diff against its merge-base with the base branch (see src/server/diff.ts). */
+/** The Changes tab: a ticket worktree's diff against its merge-base with the base branch (see src/runs/diff.ts). */
 export interface DiffLine {
   type: "ctx" | "add" | "del";
   text: string;

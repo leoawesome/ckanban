@@ -14,7 +14,7 @@ import { ticketParts } from "../board/ticketLinks";
 import { toast } from "../../components/toast";
 import { timeAgo } from "../../lib/time";
 
-/** Saved changes shown before "and N more" (as CHANGES_SHOWN in src/server/feature.ts). */
+/** Saved changes shown before "and N more" (as CHANGES_SHOWN in src/board/feature.ts). */
 const CHANGES_SHOWN = 30;
 
 /** The feature status when ticket is a feature's top ticket (its main chat), reloaded as the family changes. */

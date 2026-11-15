@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ckanban.dev/contracts/schemas/profile.schema.json",
   "title": "Profile (board settings)",
-  "description": "profiles/<slug>/profile.json: one board. Type Profile in src/server/types.ts; written by Store.saveProfile (pretty JSON, 2-space indent, final newline, atomic temp+rename). POST /api/profiles always writes name, slug, path, baseBranch, model (null when not given) and createdAt; model is not required here because files from older versions may lack it. Unknown fields must be kept.",
+  "description": "profiles/<slug>/profile.json: one board. Type Profile in src/core/types.ts; written by Store.saveProfile (pretty JSON, 2-space indent, final newline, atomic temp+rename). POST /api/profiles always writes name, slug, path, baseBranch, model (null when not given) and createdAt; model is not required here because files from older versions may lack it. Unknown fields must be kept.",
   "type": "object",
   "additionalProperties": true,
   "required": ["name", "slug", "path", "baseBranch", "createdAt"],
@@ -54,6 +54,6 @@
     "claudeAiConnectors": { "type": ["string", "array"], "items": { "type": "string" }, "description": "\"all\", \"none\" or a list of connector names. Missing: all." },
     "mainModel": { "type": ["string", "null"] },
     "freshChatTokens": { "type": ["number", "null"] },
-    "taskModels": { "type": ["object", "null"], "additionalProperties": true, "description": "Per ticket kind: model and effort (web/src/models.ts TaskModels)." }
+    "taskModels": { "type": ["object", "null"], "additionalProperties": true, "description": "Per ticket kind: model and effort (web/src/lib/models.ts TaskModels)." }
   }
 }

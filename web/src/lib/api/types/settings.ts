@@ -1,4 +1,4 @@
-/** Where a lesson the board learned came from (src/server/learn.ts). */
+/** Where a lesson the board learned came from (src/board/learn.ts). */
 export interface LearnSource {
   kind: "ticket" | "huddle";
   slug: string;
@@ -41,7 +41,7 @@ export interface LearnChange {
   undoneAt?: string | null;
 }
 
-/** The Team tab's Learned view (src/server/learner.ts). */
+/** The Team tab's Learned view (src/board/learner.ts). */
 export interface LearnedView {
   saved: LearnChange[];
   cleaned: LearnChange[];
@@ -50,7 +50,7 @@ export interface LearnedView {
   tidyAt: string | null;
 }
 
-/** Phone access over Tailscale (src/server/remote.ts). local: this page is open on the Mac, not the phone. */
+/** Phone access over Tailscale (src/integrations/remote.ts). local: this page is open on the Mac, not the phone. */
 export interface RemoteState {
   enabled: boolean;
   url: string | null;

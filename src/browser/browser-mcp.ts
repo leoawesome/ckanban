@@ -1,7 +1,7 @@
 // `ckanban browser-mcp --id <id> --name <name> --dir <data folder> --out <folder>`: a stdio MCP server that drives one
-// board browser (src/server/board-browsers.ts) over its local debugging port. Each run gets one per browser it may use,
+// board browser (src/browser/board-browsers.ts) over its local debugging port. Each run gets one per browser it may use,
 // named browser-<id>, so its tools are mcp__browser-<id>__browser_*. Hand-rolled (no Node, no Playwright): it is part of
-// the ckanban binary and talks the Chrome DevTools Protocol directly (src/server/cdp.ts).
+// the ckanban binary and talks the Chrome DevTools Protocol directly (src/browser/cdp.ts).
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import { boardPort } from "../cli/client";

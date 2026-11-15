@@ -1,4 +1,4 @@
-// The feature status at the top of the Tasks tab and the chat's "Waiting on you" line (web/src/tasksText.ts).
+// The feature status at the top of the Tasks tab and the chat's "Waiting on you" line (web/src/features/ticket/tasksText.ts).
 import { expect, test } from "bun:test";
 import { namesText, taskProgress, waitingLine } from "./tasksText";
 

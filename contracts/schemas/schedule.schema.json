@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://ckanban.dev/contracts/schemas/schedule.schema.json",
   "title": "Schedule",
-  "description": "profiles/<slug>/schedules/<id>.json: a recurring ticket template. Type Schedule in src/server/types.ts; written by Store.saveSchedule (pretty JSON, 2-space indent, final newline, atomic temp+rename) from src/server/scheduler.ts. New schedules always also have tags, quiet, model and partOf; they are not required here because older files lack them. Unknown fields must be kept.",
+  "description": "profiles/<slug>/schedules/<id>.json: a recurring ticket template. Type Schedule in src/core/types.ts; written by Store.saveSchedule (pretty JSON, 2-space indent, final newline, atomic temp+rename) from src/schedules/scheduler.ts. New schedules always also have tags, quiet, model and partOf; they are not required here because older files lack them. Unknown fields must be kept.",
   "type": "object",
   "additionalProperties": true,
   "required": ["id", "name", "title", "body", "mode", "cron", "enabled", "skipIfRunning", "createdAt", "updatedAt", "lastFiredAt", "nextRunAt", "lastError"],

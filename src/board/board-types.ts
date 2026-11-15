@@ -16,7 +16,7 @@ import { type QueuedMessage, type SelfMove, type Status, type Ticket } from "../
 
 export const INSTALLING = "Installing project dependencies…";
 /** The live line right after a message is sent, while Claude thinks (no step yet). A fixed marker: the UI shows it as
- * "<the name the user gave Claude> is thinking…" (web/src/avatarMood.ts liveLine); old tickets may still hold "Claude is replying…". */
+ * "<the name the user gave Claude> is thinking…" (web/src/features/avatar/avatarMood.ts liveLine); old tickets may still hold "Claude is replying…". */
 export const THINKING_LINE = "Claude is thinking…";
 
 /** Where a schedule's run or an automation's new ticket goes as a task (Board.taskPlaceFor). */

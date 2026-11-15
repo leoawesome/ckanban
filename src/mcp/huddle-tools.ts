@@ -8,7 +8,7 @@ import { AUTO_HUDDLE_TRIGGERS, USER_HUDDLE_TRIGGER } from "../core/types";
 import { PROFILE, BACKLOG_HUDDLE, runTicketId, type Tool, type ToolContext, slugFor, str, SHOWN } from "./shared";
 import { ROSTER_ENTRY, PRESET_FIELDS, PROPOSE_INSTEAD } from "./form-tools";
 
-// ---- Huddles: several Claude sessions working on one ticket in a shared room (see src/server/huddle.ts) ----
+// ---- Huddles: several Claude sessions working on one ticket in a shared room (see src/huddle/huddle.ts) ----
 
 export const HUDDLE = {
   type: "string",

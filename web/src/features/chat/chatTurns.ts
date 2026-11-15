@@ -49,7 +49,7 @@ export function dividerLabel(iso: string, now = Date.now()): string {
 
 /** The steps line under a reply: running "Step 4 · Reading api.ts", done "Did 6 steps"; failed: how many errored.
  *  activity: the run's live description of the step it is on ("Running gh"); while running it replaces the plain name. */
-/** File tools whose step label is "<Tool>: <path>" (src/server/subagents.ts toolLabel). */
+/** File tools whose step label is "<Tool>: <path>" (src/runs/subagents.ts toolLabel). */
 const FILE_STEP = /^(Read|Write|Edit|MultiEdit|NotebookEdit): ((?:~|\/)\S*\/([^/\s]+))$/;
 
 /** A step label for one line: a file tool's full path becomes its file name ("Read: /a/b/c.png" is "Read: c.png"). */
@@ -76,7 +76,7 @@ function serviceName(raw: string): string {
   return SERVICE[s] ?? (s.replace(/[-_]+/g, " ").replace(/^\w/, (c) => c.toUpperCase()) || "a tool");
 }
 
-/** A step label ("<Tool>: <arg>", src/server/subagents.ts toolLabel) in plain words for the one-line summary:
+/** A step label ("<Tool>: <arg>", src/runs/subagents.ts toolLabel) in plain words for the one-line summary:
  *  "Read: /a/b/api.ts" is "Read api.ts", "Bash: bun test" is "Ran a command", "mcp__linear-server__get_document: X" is "Linear: read document". */
 export function plainStep(label: string): string {
   const m = /^([\w-]+)(?:: ([\s\S]*))?$/.exec(label);
@@ -101,13 +101,13 @@ export function stepsSummary(items: { text: string; error?: true }[], running: b
   return { text: running ? `Step ${n} · ${activity || plain}` : `Did ${n} step${n === 1 ? "" : "s"}`, failed };
 }
 
-/** A message another ticket's Claude sent, as the board labels it (src/server/session.ts fromTicketText): its sender and text. */
+/** A message another ticket's Claude sent, as the board labels it (src/runs/session.ts fromTicketText): its sender and text. */
 export function fromTicket(text: string): { ticketId: string; title: string; text: string } | null {
   const m = /^Message from ticket (t_[\w-]+) \("([\s\S]*?)"\): ([\s\S]*)$/.exec(text);
   return m ? { ticketId: m[1], title: m[2], text: m[3].trim() } : null;
 }
 
-/** A later item of an automation's thread, as the board labels it (src/server/session.ts fromAutomationText). */
+/** A later item of an automation's thread, as the board labels it (src/runs/session.ts fromAutomationText). */
 export function fromAutomation(text: string): { name: string; text: string } | null {
   const m = /^Message from automation \("([^"\r\n]*)"\): ([\s\S]*)$/.exec(text);
   return m ? { name: m[1], text: m[2].trim() } : null;
@@ -135,7 +135,7 @@ export function placeByTime<T extends { at: string }>(items: readonly T[], block
 const flat = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /**
- * Which conversation messages went through Telegram (src/server/board.ts chatFromTelegram, helper/tgreply.ts):
+ * Which conversation messages went through Telegram (src/board/board.ts chatFromTelegram, helper/tgreply.ts):
  * inbound: the user's messages that came from there (the first matching text at or after it was sent); outbound: the
  * ticket's replies sent back there (the last reply starting with that text, from before it was sent).
  */
@@ -160,7 +160,7 @@ export function telegramMarks(
   return { in: inbound, out: outbound };
 }
 
-/** A board wake's grey line: "1 update from a tool ticket" (src/server/prompts.ts wakeSummary) is "Update from 1 task", others "Board update: …". */
+/** A board wake's grey line: "1 update from a tool ticket" (src/runs/prompts.ts wakeSummary) is "Update from 1 task", others "Board update: …". */
 export function wakeLabel(wake: string): string {
   const m = /^(\d+) updates? from (?:a |)(?:tool )?tickets?(?: in this group)?$/.exec(wake);
   if (m) return m[1] === "1" ? "Update from 1 task" : `Updates from ${m[1]} tasks`;

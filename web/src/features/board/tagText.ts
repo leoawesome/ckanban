@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-/** Same rules as the server's normalizeTag (src/server/tags.ts): trimmed, lowercase, no leading #, spaces become dashes. */
+/** Same rules as the server's normalizeTag (src/board/tags.ts): trimmed, lowercase, no leading #, spaces become dashes. */
 export const TAG_MAX_LEN = 24;
 export function normalizeTag(v: string): string {
   return v.trim().replace(/^#+/, "").trim().toLowerCase().replace(/\s+/g, "-").slice(0, TAG_MAX_LEN).replace(/-+$/, "");

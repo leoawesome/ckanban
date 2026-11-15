@@ -3,7 +3,7 @@ interface Entry { uuid: string; at: string; role: "user" | "assistant"; kind: st
 interface OutFile { name: string; updatedAt: string }
 
 const NO_SKIP: ReadonlySet<string> = new Set();
-/** A feature's "Where we are" files in its main ticket's outputs (src/server/feature.ts statusFiles). */
+/** A feature's "Where we are" files in its main ticket's outputs (src/board/feature.ts statusFiles). */
 export const STATUS_FILES: ReadonlySet<string> = new Set(["status.json", "status.md"]);
 
 /**

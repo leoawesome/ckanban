@@ -1,4 +1,4 @@
-// Card state rules (web/src/cardState.ts): which "Your turn" dots pulse, sign-in errors, finish marks, chip folding.
+// Card state rules (web/src/features/board/cardState.ts): which "Your turn" dots pulse, sign-in errors, finish marks, chip folding.
 import { expect, test } from "bun:test";
 import { cardHuddleLine, finishMark, foldChips, huddleLineText, overCap, previewShown, shouldPulse, signInError, stepAge, stepsShown } from "./cardState";
 

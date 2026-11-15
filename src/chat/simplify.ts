@@ -8,7 +8,7 @@ import { atomicWrite, type Store } from "../core/store";
 // ticket's session gains no turn. Rewrites are kept per message in the ticket's simplified.json: a second click,
 // a reload or another device gets the saved one for free.
 
-/** Replies shorter than this have nothing to simplify (web/src/simplifyText.ts uses the same rule). */
+/** Replies shorter than this have nothing to simplify (web/src/features/ticket/simplifyText.ts uses the same rule). */
 export const SIMPLIFY_MIN_WORDS = 25;
 
 const RESULT_LINE = /^.*CKANBAN_RESULT:.*$/m;

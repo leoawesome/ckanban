@@ -1,8 +1,8 @@
 # ckanban daemon web API (contract)
 
-This file describes the daemon's HTTP API as it behaves today (source: `src/server/http.ts`), so another implementation
-can answer the same requests. Record types named here live in `src/server/types.ts` unless another file is given.
-`src/client.ts` (the CLI and MCP server) and `web/src` (the board UI) are the callers.
+This file describes the daemon's HTTP API as it behaves today (source: `src/api/server.ts`), so another implementation
+can answer the same requests. Record types named here live in `src/core/types.ts` unless another file is given.
+`src/cli/client.ts` (the CLI and MCP server) and `web/src` (the board UI) are the callers.
 
 ## Basics
 
@@ -100,7 +100,7 @@ Most ticket routes return a `TicketView`: a `Ticket` plus these fields (built by
 ### Event stream
 
 `GET /api/events` returns `text/event-stream` (`cache-control: no-cache`). It starts with the comment `: connected`
-and sends `: ping` every 15 s. Each bus event is one `data: <json>` message. Event `type` values (`src/server/events.ts`):
+and sends `: ping` every 15 s. Each bus event is one `data: <json>` message. Event `type` values (`src/core/events.ts`):
 `ticket.updated`, `ticket.deleted`, `activity`, `profile.updated`, `session.updated`, `draft`, `mcp.updated`,
 `schedule.updated`, `loop.updated`, `integration.updated`, `job.updated`, `snippets.updated`, `devices.updated`,
 `browsers.updated`, `restart.updated`, `awake.updated`, `helper.updated`, `helper.message`, `messages.updated`,

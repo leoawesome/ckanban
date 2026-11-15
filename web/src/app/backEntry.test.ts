@@ -1,4 +1,4 @@
-// The phone's Back gesture closes the layer on top (web/src/backEntry.ts): each layer adds a history entry; Back pops
+// The phone's Back gesture closes the layer on top (web/src/app/backEntry.ts): each layer adds a history entry; Back pops
 // only the top one, and closing a layer another way goes back over its entry so none is left behind.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { afterBackSteps, layersOf, openBackEntry, resetBackEntries } from "./backEntry";

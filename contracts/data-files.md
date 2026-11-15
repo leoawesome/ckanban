@@ -1,7 +1,7 @@
 # Data files
 
 Every file and folder the daemon keeps under its data folder, as of v0.18.1. Paths below are relative to the data
-folder (`root`), which is `defaultRoot()` in `src/server/store.ts`: `$CKANBAN_HOME` if set, else `~/.claude-kanban`.
+folder (`root`), which is `defaultRoot()` in `src/core/store.ts`: `$CKANBAN_HOME` if set, else `~/.claude-kanban`.
 `Store` creates `root/profiles/` when it starts; every other file and folder is created on its first write.
 
 ## Conventions
@@ -19,7 +19,7 @@ Each entry is marked with one of:
 
 ### Write styles
 
-- **atomic** (`atomicWrite` in `src/server/atomic.ts`): `mkdir -p` the parent, write `<file>.tmp-<8 base36 chars>`,
+- **atomic** (`atomicWrite` in `src/core/atomic.ts`): `mkdir -p` the parent, write `<file>.tmp-<8 base36 chars>`,
   `rename` it over `<file>`. On a failed write or rename the temp file is removed. No file mode is set (umask).
 - **fixed-tmp**: write `<file>.tmp` (always the same name), then `rename`. Atomic, but two writers at once can collide.
 - **plain**: `writeFileSync` straight over the file (not atomic).
@@ -47,10 +47,10 @@ is noticed:
 
 | What | Format | Made by |
 | --- | --- | --- |
-| Ticket id | `t_<YYYYMMDD>_<4 base36>`, e.g. `t_20261115_qjnt`. The date is the **UTC** date of creation. Regex: `^t_\d{8}_[0-9a-z]{4}$` | `newTicketId()` in `src/server/util.ts` |
+| Ticket id | `t_<YYYYMMDD>_<4 base36>`, e.g. `t_20261115_qjnt`. The date is the **UTC** date of creation. Regex: `^t_\d{8}_[0-9a-z]{4}$` | `newTicketId()` in `src/core/util.ts` |
 | Short id | 8 chars of `[0-9a-z]`, e.g. `k3x9a2bq` (comments, schedules, jobs, automations, quick chats, temp file suffixes) | `newId()` in `util.ts` |
 | Huddle id | `h_` + short id, e.g. `h_4f2kq9zb`. Files are matched with `^h_[a-z0-9_]+\.json$` (case-insensitive) | `huddle.ts` |
-| Board slug | `slugify(name)`: Unicode NFKD, lowercase, every run of chars outside `[a-z0-9]` becomes `-`, leading and trailing `-` trimmed, cut to 40 chars, trailing `-` trimmed again; empty result becomes `task`. A taken slug gets `-2`, `-3`, ... (`slugify(name) + "-" + i`) | `POST /api/profiles` in `src/server/http.ts` |
+| Board slug | `slugify(name)`: Unicode NFKD, lowercase, every run of chars outside `[a-z0-9]` becomes `-`, leading and trailing `-` trimmed, cut to 40 chars, trailing `-` trimmed again; empty result becomes `task`. A taken slug gets `-2`, `-3`, ... (`slugify(name) + "-" + i`) | `POST /api/profiles` in `src/api/server.ts` |
 | Ticket branch | `ck/<ticket id>-<slugify(title)>` (40 chars max for the title part) | `board.ts` |
 | Attachment name | `randomUUID()` without dashes + extension: `^[0-9a-f]{32}\.[a-z0-9]+$` | `attachments.ts` |
 | Timestamps | ISO 8601 UTC with milliseconds, from `new Date().toISOString()`: `2026-11-15T08:01:02.345Z`. Some state files store epoch milliseconds instead; noted where so | `nowIso()` in `util.ts` |
@@ -203,7 +203,7 @@ the daemon; Claude runs or the user put them there. A port must leave unknown fi
 
 ### `config.json`
 
-- **Format:** JSON object. **Type:** `Config` (`src/server/types.ts`): `{ port: number, prPollMinutes: number,
+- **Format:** JSON object. **Type:** `Config` (`src/core/types.ts`): `{ port: number, prPollMinutes: number,
   remotePort?: number }`.
 - **Writer:** none. The daemon and CLI only read it; the user creates it by hand.
 - **Reader:** `Store.config()`. Missing or unparseable: the defaults `{ "port": 7777, "prPollMinutes": 5 }`. Present:
@@ -433,7 +433,7 @@ Fix it.
 
 ### `chats/<id>.json`
 
-- **Format:** JSON object, pretty +nl. **Type:** `QuickChat` (`src/server/quickchat.ts`): `{ id, sessionId, title,
+- **Format:** JSON object, pretty +nl. **Type:** `QuickChat` (`src/chat/quickchat.ts`): `{ id, sessionId, title,
   firstMessage, createdAt, updatedAt, started, ticketId, error, pending?, interrupted?, frontDesk?, rewindUndo? }`.
   Always set at creation: `id`, `sessionId` (a random UUID), `title` (or null), `firstMessage`, `createdAt`,
   `updatedAt`, `started: false`, `ticketId: null`, `error: null`.

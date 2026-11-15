@@ -52,7 +52,7 @@ export interface Schedule {
   pausedBy?: "user" | { ticketId: string; title: string | null };
 }
 
-/** What a one-time scheduled job does when it runs (src/server/jobs.ts). */
+/** What a one-time scheduled job does when it runs (src/schedules/jobs.ts). */
 export type JobAction =
   | { kind: "ticket"; title: string; body: string; mode: TicketMode }
   | { kind: "command"; command: string; timeoutSec?: number; ifLate?: "skip" | "run" };

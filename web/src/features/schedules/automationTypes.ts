@@ -1,4 +1,4 @@
-// Shapes of the automations API (src/server/loops.ts, src/server/integrations/passes.ts), kept apart from api.ts.
+// Shapes of the automations API (src/schedules/loops.ts, src/integrations/passes.ts), kept apart from api.ts.
 
 export type LoopColumn = "backlog" | "planning" | "ready";
 
@@ -93,7 +93,7 @@ export interface LoopTest {
   durationMs: number;
 }
 
-/** An automation the setup chat proposed (src/server/automation-proposal.ts). */
+/** An automation the setup chat proposed (src/schedules/automation-proposal.ts). */
 export interface AutomationProposal {
   name: string;
   service: string;

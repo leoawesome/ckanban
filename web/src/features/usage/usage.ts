@@ -9,7 +9,7 @@ export interface UsageWindow {
 }
 
 /**
- * GET /api/usage (src/server/usage-cache.ts UsageView): the last good numbers, with `stale` and the error when a later
+ * GET /api/usage (src/usage/usage-cache.ts UsageView): the last good numbers, with `stale` and the error when a later
  * check failed, or the error alone when there are no numbers.
  */
 export type UsageResult =
@@ -98,7 +98,7 @@ export function resetLine(iso: string | null, now = Date.now()): string | null {
 
 export type RunKind = "work" | "planning" | "chat" | "reply" | "follow-up" | "run";
 
-/** What the agents of a ticket's huddles spent (src/server/ticket-usage.ts TeammateUsage). */
+/** What the agents of a ticket's huddles spent (src/usage/ticket-usage.ts TeammateUsage). */
 export interface TeammateUsage {
   costUsd: number;
   huddles: { id: string; status: string; createdAt: string; costUsd: number; teammates: { handle: string; role: string; costUsd: number }[] }[];

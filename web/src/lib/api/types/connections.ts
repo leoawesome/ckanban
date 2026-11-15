@@ -65,7 +65,7 @@ export interface McpConfig extends McpAddInput {
   commandLine: string | null;
 }
 
-/** ask_keys' input as the chat shows it (src/server/ask-keys.ts). */
+/** ask_keys' input as the chat shows it (src/integrations/ask-keys.ts). */
 export interface KeysAsk {
   keys: { envName: string; label: string; help?: string; createUrl?: string }[];
   reason: string;

@@ -1,4 +1,4 @@
-// The follow-up badge and menu words (web/src/followUpText.ts).
+// The follow-up badge and menu words (web/src/features/ticket/followUpText.ts).
 import { expect, test } from "bun:test";
 import { followUpCount, followUpHistory, followUpLabel, followUpWhen } from "./followUpText";
 

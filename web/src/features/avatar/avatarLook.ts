@@ -1,6 +1,6 @@
 // Customizable avatar looks (AvatarFace.tsx draws them): the parts, the default look for Claude, the user and every
 // teammate, and the lookup that puts a saved choice over the default. Saved choices come from the daemon
-// (GET /api/avatars, <home>/avatars.json, src/server/avatars.ts); anything unknown in them is ignored here too.
+// (GET /api/avatars, <home>/avatars.json, src/board/avatars.ts); anything unknown in them is ignored here too.
 import { faceLookKey, faceLook, handleBase } from "../huddle/huddleText";
 
 export const AVATAR_FACES = ["robot", "person", "critter", "cat", "bear", "alien", "ghost"] as const;
@@ -45,11 +45,11 @@ export type SavedAvatars = Record<string, Partial<AvatarLook> & { name?: string 
 
 /** The name the board shows for Claude when the user gave none. */
 export const DEFAULT_CLAUDE_NAME = "Claude";
-/** Longest name kept (characters); the server (src/server/avatars.ts) keeps the same. */
+/** Longest name kept (characters); the server (src/board/avatars.ts) keeps the same. */
 export const MAX_CLAUDE_NAME = 24;
 
 /** A name as kept: one line, spaces collapsed, trimmed, at most MAX_CLAUDE_NAME characters; "" when unusable or "Claude".
- * Same rule as cleanClaudeName in src/server/avatars.ts (test/avatars.test.ts checks). */
+ * Same rule as cleanClaudeName in src/board/avatars.ts (test/integration/avatars.test.ts checks). */
 export function cleanClaudeName(v: unknown): string {
   if (typeof v !== "string") return "";
   const one = v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/\p{Cf}+/gu, "").replace(/\s+/g, " ").trim();
@@ -108,7 +108,7 @@ const OLD_HAT_ACCESSORIES = ["crown", "bow"] as const;
 /** The known fields of one saved look; anything else (unknown parts, bad colours, other types) is dropped.
  * An entry saved before hats had their own slot (an `accessory` and no usable `hat`) keeps its face: a crown or bow
  * accessory becomes that hat with no accessory, any other accessory means no hat. Same rule as cleanLook in
- * src/server/avatars.ts (test/avatars.test.ts checks). */
+ * src/board/avatars.ts (test/integration/avatars.test.ts checks). */
 export function cleanAvatarLook(v: unknown): Partial<AvatarLook> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return {};
   const x = v as Record<string, unknown>;

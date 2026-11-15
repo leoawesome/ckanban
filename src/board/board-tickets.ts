@@ -367,7 +367,7 @@ export async function copyTicket(this: Board, slug: string, id: string, o: { tit
 
 /**
  * Follow-up work the user asked for in the chat of a ticket that already ran, made by its proposal card (where it goes:
- * web/src/followUp.ts followUpPlace). In a feature it becomes a step (a tool ticket) run by the feature's main ticket
+ * web/src/features/ticket/followUp.ts followUpPlace). In a feature it becomes a step (a tool ticket) run by the feature's main ticket
  * or a group above the ticket, shown under the ticket, so its result reaches the main ticket. A ticket on its own
  * becomes a main ticket and the work its first step, so the user keeps talking to it. An old ticket under others
  * without a main ticket gets a new ticket beside it (start: Ready, else Backlog). The ticket keeps its title and

@@ -1,4 +1,4 @@
-// Question forms: small safe markdown (web/src/miniMarkdown.ts), the optional context, and replies that only repeat a form.
+// Question forms: small safe markdown (web/src/lib/miniMarkdown.ts), the optional context, and replies that only repeat a form.
 import { expect, test } from "bun:test";
 import { inlineMarkdown, miniMarkdown, plainMarkdown } from "../../lib/miniMarkdown";
 import { repeatsForm, signature } from "./questionForms";

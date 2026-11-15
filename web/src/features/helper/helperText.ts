@@ -11,7 +11,7 @@ export interface MessageItem {
   question: string;
 }
 
-/** One row of a summary's page (src/server/helper/messages.ts SummaryRow). */
+/** One row of a summary's page (src/helper/messages.ts SummaryRow). */
 export interface SummaryRow {
   key?: string | null;
   board: string;
@@ -46,7 +46,7 @@ export interface MessageSend {
   error?: string | null;
 }
 
-/** One message the board sent (src/server/helper/messages.ts StoredMessage). */
+/** One message the board sent (src/helper/messages.ts StoredMessage). */
 export interface Message {
   id: string;
   at: string;
@@ -71,7 +71,7 @@ export interface Message {
   itemState?: Record<string, ItemState>;
 }
 
-/** src/server/helper/core.ts ItemState: still open, answered (seen, no longer waiting) or the ticket was removed. */
+/** src/helper/core.ts ItemState: still open, answered (seen, no longer waiting) or the ticket was removed. */
 export interface ItemState {
   state: "open" | "answered" | "removed";
   at?: string | null;
@@ -241,7 +241,7 @@ export function stillWaitingLine(v: Pick<SummaryView, "stillCount" | "oldestAt" 
   return `${n}${v.new.length ? " more" : ""} still ${n === 1 ? "waits" : "wait"} on you${day ? `, oldest from ${day}` : ""}.`;
 }
 
-/** The night question, as the board asks it (src/server/helper/settings.ts nightQuestion). */
+/** The night question, as the board asks it (src/helper/settings.ts nightQuestion). */
 export function nightQuestion(night: { start: string; end: string }): string {
   return `Should urgent alerts wake you at night (${night.start}-${night.end})? I'd only do it when harm keeps growing, like customers billed twice.`;
 }
@@ -261,14 +261,14 @@ export function spendLine(today: { checks: number; costUsd: number } | undefined
 
 // ---- the Messages list: tabs, light rows, folding ----
 
-/** The Messages screen's tabs (src/server/helper/messages.ts MessageTab); Needs you opens first. */
+/** The Messages screen's tabs (src/helper/messages.ts MessageTab); Needs you opens first. */
 export type MessageTab = "needs" | "all" | "summaries" | "quiet";
 export const MESSAGE_TABS: { id: MessageTab; label: string }[] = [
   { id: "needs", label: "Needs you" }, { id: "all", label: "All" }, { id: "summaries", label: "Summaries" }, { id: "quiet", label: "Kept quiet" },
 ];
 export const asTab = (v: unknown): MessageTab => (MESSAGE_TABS.some((t) => t.id === v) ? (v as MessageTab) : "needs");
 
-/** One row of the list (GET /api/messages; src/server/helper/messages.ts MessageRow). */
+/** One row of the list (GET /api/messages; src/helper/messages.ts MessageRow). */
 export interface MessageRow {
   id: string;
   at: string;

@@ -16,7 +16,7 @@ export interface HelperRuleCardState {
   already?: boolean;
 }
 
-/** A device that turned phone notifications on (src/server/push.ts). */
+/** A device that turned phone notifications on (src/helper/push.ts). */
 export interface PushDevice {
   id: string;
   label: string;
@@ -30,7 +30,7 @@ export interface DroppedPushDevice {
   at: string;
 }
 
-/** "Needs you" notifications (src/server/notify.ts): webhook (ntfy or JSON), macOS banner, per-kind toggles. */
+/** "Needs you" notifications (src/helper/notify.ts): webhook (ntfy or JSON), macOS banner, per-kind toggles. */
 export type NotifyKind = "stalled" | "questions" | "proposal" | "review" | "failed" | "limit" | "blocked" | "huddle" | "reply" | "message";
 export interface NotifyState {
   webhookUrl: string;
@@ -59,7 +59,7 @@ export interface NotifyState {
   focusHint: string;
 }
 
-/** One channel as Settings lists it (src/server/notify.ts ChannelState). */
+/** One channel as Settings lists it (src/helper/notify.ts ChannelState). */
 export interface ChannelState {
   name: "mac" | "push" | "webhook" | "telegram";
   label: string;

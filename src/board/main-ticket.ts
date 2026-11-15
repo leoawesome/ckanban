@@ -88,7 +88,7 @@ export function askedNothing(t: Pick<Ticket, "main" | "tool" | "plan">, status: 
   return status === "questions" && !!t.main && !t.tool && t.plan?.state === "running" && !asked;
 }
 
-/** plannedMain (web/src/family.ts) in words, for the Planning prompt (MainRole.planned); null when not planned. */
+/** plannedMain (web/src/features/family/family.ts) in words, for the Planning prompt (MainRole.planned); null when not planned. */
 export function mainPlanned(tickets: Ticket[], t: Ticket): string | null {
   const why = plannedMain(tickets, t);
   return why === "family" ? "it already has tickets in its family" : why === "status" ? "its \"Where we are\" status is already written" : null;

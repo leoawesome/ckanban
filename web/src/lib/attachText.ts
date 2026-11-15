@@ -1,7 +1,7 @@
 /** What can be attached and how attachments look in markdown (kept free of React/DOM so they can be unit tested). */
 
 export const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
-/** Same lists as src/server/attachments.ts (a test keeps them in sync). */
+/** Same lists as src/board/attachments.ts (a test keeps them in sync). */
 export const DOC_EXTS = ["pdf", "docx", "xlsx", "pptx"];
 export const TEXT_EXTS = [
   "txt", "md", "csv", "tsv", "json", "js", "jsx", "ts", "tsx", "py", "rb", "go", "java", "c", "h", "cpp", "cs", "php",
@@ -34,7 +34,7 @@ export function refusal(f: { name: string; type: string; size: number }): string
 /**
  * The original name shown in the markdown link (`[name](/api/attachments/…)`). Cleaned so it can't break the
  * link: square brackets become round ones; no line breaks, control characters, `<>` backticks or backslashes.
- * Same rules as cleanFileName in src/server/attachments.ts.
+ * Same rules as cleanFileName in src/board/attachments.ts.
  */
 export function cleanFileName(name: string): string {
   const out = name.replace(/\[/g, "(").replace(/]/g, ")").replace(/[<>`\\]/g, "")

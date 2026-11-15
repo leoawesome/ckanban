@@ -20,7 +20,7 @@ export class ClientError extends Error {}
  */
 export class ConfirmPending extends ClientError {}
 
-/** A board pass as the daemon shows it (src/server/integrations/passes.ts PassView). */
+/** A board pass as the daemon shows it (src/integrations/passes.ts PassView). */
 export interface PassInfo {
   id: string;
   kind: "mcp" | "key" | "local";

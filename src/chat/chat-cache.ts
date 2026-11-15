@@ -4,7 +4,7 @@ import { contextTokens, priceFor } from "../usage/ticket-usage";
 // within plan usage) or 5 minutes (API key, usage credits, over the plan limit), restarted by every request that
 // hits it. After that the next message re-reads the whole conversation as a cache write: 2x the input price for a
 // 1-hour write, 1.25x for a 5-minute one (https://code.claude.com/docs/en/prompt-caching). The board shows this
-// above the ticket chat's box (web/src/cacheNote.ts).
+// above the ticket chat's box (web/src/features/chat/cacheNote.ts).
 
 export type CacheTtl = "1h" | "5m";
 

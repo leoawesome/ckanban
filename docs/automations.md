@@ -50,8 +50,8 @@ Open **⋯ → Automations** and press **Set up with Claude**. A Planning chat o
 
 ## For developers
 
-- `src/server/loops.ts`: automations, checks, `ckanban call` grants, tickets.
-- `src/server/automation-proposal.ts`: the automation card Claude proposes (always Backlog, never starts Claude by itself).
-- `src/server/integrations/`: `passes.ts` (board passes, renewal, calls), `oauth.ts` (generic MCP sign-in), `mcp-client.ts` / `stdio-client.ts` (tool servers), `script.ts` (running a check), `ticket-text.ts` (outside-content block), `ask-claude.ts`, `guard.ts` (who may save), `types.ts`.
-- UI: `web/src/AutomationsDialog.tsx`, `AutomationCard.tsx`, `automations.ts`, and the For automations tab in `ConnectionsDialog.tsx`.
+- `src/schedules/loops.ts`: automations, checks, `ckanban call` grants, tickets.
+- `src/schedules/automation-proposal.ts`: the automation card Claude proposes (always Backlog, never starts Claude by itself).
+- `src/integrations/`: `passes.ts` (board passes, renewal, calls), `oauth.ts` (generic MCP sign-in), `mcp-client.ts` / `stdio-client.ts` (tool servers), `script.ts` (running a check), `ticket-text.ts` (outside-content block), `ask-claude.ts`, `guard.ts` (who may save), `types.ts`.
+- UI: `web/src/features/schedules/AutomationsDialog.tsx`, `AutomationCard.tsx`, `automations.ts`, and the For automations tab in `ConnectionsDialog.tsx`.
 - Nothing there knows a service: a new service needs no code.

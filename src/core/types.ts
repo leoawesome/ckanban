@@ -80,7 +80,7 @@ export interface Profile {
   freshChatTokens?: number | null;
   /**
    * Board setting "Task models": model and effort per kind of tool ticket, only the kinds the user changed (the rest
-   * use KIND_DEFAULTS in web/src/models.ts). A model or effort create_ticket passes for one task still wins.
+   * use KIND_DEFAULTS in web/src/lib/models.ts). A model or effort create_ticket passes for one task still wins.
    */
   taskModels?: TaskModels | null;
 }
@@ -254,17 +254,17 @@ export interface Ticket {
   /** When the branch was made: conversation entries before this are the copied history. */
   branchPoint?: BranchPoint | null;
   /**
-   * The ticket whose chat card made this one: follow-up work asked for there after it ran (web/src/followUp.ts), or an
+   * The ticket whose chat card made this one: follow-up work asked for there after it ran (web/src/features/ticket/followUp.ts), or an
    * old add-on ticket (store.ts loads addOnOf as partOf plus madeFrom). Not a family link: the learner reads it as a
    * correction of that ticket, and the card finds what it made by it.
    */
   madeFrom?: string | null;
   /**
-   * Ticket this one is part of (its family's parent, see web/src/family.ts): a plain link, set by the user or by the
+   * Ticket this one is part of (its family's parent, see web/src/features/family/family.ts): a plain link, set by the user or by the
    * chat that created it. It changes nothing about how work runs.
    */
   partOf?: string | null;
-  /** What the ticket is for, set when it is created (see web/src/family.ts TicketKind). Missing on old tickets. */
+  /** What the ticket is for, set when it is created (see web/src/features/family/family.ts TicketKind). Missing on old tickets. */
   kind?: TicketKind | null;
   /** A test ticket's result ("verdict" on its result line); a test that ended done without one counts as passed. */
   verdict?: "passed" | "problem" | null;

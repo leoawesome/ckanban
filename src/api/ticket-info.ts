@@ -33,7 +33,7 @@ export async function ticketInfoRoutes(ctx: ApiContext, req: Request, url: URL, 
     if (before !== undefined && (!Number.isInteger(before) || before < 0)) throw new HttpError(400, "before must be a byte offset from a previous page");
     return json(await store.readActivityPageAsync(slug, id, before));
   }
-  // The ticket's whole family from the top ticket down (web/src/family.ts), with each one's session and last result.
+  // The ticket's whole family from the top ticket down (web/src/features/family/family.ts), with each one's session and last result.
   if (action === "family" && m === "GET") {
     return json(familyOf(store.listTickets(slug), id).map(({ ticket: t, depth, how }) => ({
       id: t.id, title: t.title, status: t.status, depth, how: how && LINK_WORDS[how], parent: depth ? parentLink(t)?.id ?? null : null,

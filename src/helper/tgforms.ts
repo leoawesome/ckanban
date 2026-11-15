@@ -1,6 +1,6 @@
 // A ticket's question form (ask_questions) answered from Telegram. Any text a ticket gets closes its form
 // (session.ts pendingSince), so the answers are collected first and go in as ONE message, in exactly the board's
-// format (web/src/questionForms.ts answersMessage):
+// format (web/src/features/ticket/questionForms.ts answersMessage):
 // - when an alert names a ticket waiting on a form, one message per question follows it: "(1 of 2) <question>", the
 //   options as a numbered list in the text, numbered buttons (up to 8) and "Type my own";
 // - single choice: a tap marks it ✓; multi-select: taps toggle ✓, and the last question has "Done, send my answers";

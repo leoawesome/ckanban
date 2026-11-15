@@ -6,27 +6,27 @@ Local kanban web UI (Bun + TypeScript server in `src/`, React + Vite UI in `web/
 
 Many ckanban users don't know git. Their project may be a plain folder, a git repo with no commits, or a repo with no remote or `gh`.
 - Never assume git, commits, an `origin` remote or `gh`. Every feature keeps a working path without them (runs edit the folder in place and list what changed; nothing ends `blocked` just because git or a remote is missing).
-- Run prompts say the same, so every user's Claude adapts (see `PLAIN_WORDS` and `landRule` in `src/server/prompts.ts`).
+- Run prompts say the same, so every user's Claude adapts (see `PLAIN_WORDS` and `landRule` in `src/runs/prompts.ts`).
 - Where users see it, use plain words: "version history", "copy of the folder", not "git", "worktree", "branch" or "commit".
 
 <!-- TEMPORARY: direct-to-main workflow. Remove this whole section when Leo says so. -->
 ## Every UI change works on desktop and phone
 
 The board is used on phones as much as on a Mac.
-- Every change in `web/` must work at phone width (about 390px, touch) and at a desktop width; the breakpoint is `PHONE_QUERY` (720px) in `web/src/usePhone.ts`.
+- Every change in `web/` must work at phone width (about 390px, touch) and at a desktop width; the breakpoint is `PHONE_QUERY` (720px) in `web/src/hooks/usePhone.ts`.
 - Before it lands, check it at both: take screenshots at about 390x844 and at a desktop size (e.g. 1280x800) of every screen you changed, and look at them.
 - Phone basics: tap targets at least 40-44px, 16px text in fields (no iPhone zoom), no sideways scroll, nothing hidden behind the keyboard. Dialogs use `Modal.tsx`, which already gives the phone sheet, keyboard fit and swipe to close; long settings windows follow the Automations window (list then detail on phone).
 
 ## Every UI change follows the design system
 
 - Use the UI UX Pro Max skill (`ui-ux-pro-max:ui-ux-pro-max`) and follow `design-system/kanban/MASTER.md`.
-- Build from existing components (`Modal.tsx`, `Select.tsx`, `MenuSheet.tsx`, `.btn`, `.chip`…) and the tokens at the top of `web/src/styles.css`. A new colour, size, spacing, duration or layer needs a token in the system first (styles.css and MASTER.md); `bun run test` rejects raw colours and off-token spacing in `styles.css` and inline styles.
+- Build from existing components (`Modal.tsx`, `Select.tsx`, `MenuSheet.tsx`, `.btn`, `.chip`…) and the tokens at the top of `web/src/app/styles.css`. A new colour, size, spacing, duration or layer needs a token in the system first (styles.css and MASTER.md); `bun run test` rejects raw colours and off-token spacing in `styles.css` and inline styles.
 - Before landing, run the skill's pre-delivery checklist (`references/pro-rules.md`) and take phone and desktop screenshots in light and dark.
 
 ## The daemon stays responsive on big boards
 
 The daemon is one event loop: while one job runs, pages, sends and run starts all wait. Real boards have thousands of tickets (most of them Done) and long chat logs, and the Mac is often busy (test suites, security software checking every file), where each file read is slow.
-- Daemon code never reads every ticket, chat file or log in one go. Skip what hasn't changed (cache by file mtime/size, the Store's own writes, the session feed), and do the rest in slices with `pauser()` from `src/server/lag.ts` (`await pause()` inside the loop), or off the event loop.
+- Daemon code never reads every ticket, chat file or log in one go. Skip what hasn't changed (cache by file mtime/size, the Store's own writes, the session feed), and do the rest in slices with `pauser()` from `src/core/lag.ts` (`await pause()` inside the loop), or off the event loop.
 - Startup steps, timers and other regular jobs are wrapped in `track()` / `trackedInterval()` so a freeze names them in `daemon.log` (`[lag]` lines). A daemon run from source also shows a Mac banner for a freeze of 2s or more.
 - `test/big-board.test.ts` measures the longest freeze of the daemon's jobs on a 10,000-ticket board. A new job that goes over every ticket, chat or log gets a line there.
 
@@ -47,4 +47,4 @@ Only Leo uses this repo, so no review step for now. **This overrides the board's
 - **After changing code while the daemon runs from source:** `bun run build:web && bun src/cli.ts restart`.
 - **Releasing:** in `CHANGELOG.md`, rename `## Unreleased` to `## [X.Y.Z] - <date>` (first check it covers every user-facing `feat:`/`fix:` since the last tag: `git log vPREV..HEAD --oneline`; write plain user-facing lines, not commit subjects), add a fresh empty `## Unreleased` and the compare link at the bottom; bump `package.json` version; commit `chore: release vX.Y.Z`, push, then `git tag vX.Y.Z && git push origin vX.Y.Z`. GitHub Actions builds and publishes the GitHub release and the `npx ckanban` installer on npm (if npm stages it, approve it on npmjs.com), using that CHANGELOG section as the release notes (the release fails early if the section is missing).
 - **Changelog:** tickets don't edit `CHANGELOG.md` (parallel tickets would conflict); it is written at release time from the commits.
-- `src/server/web-assets.gen.ts` is a stub; `scripts/build-bin.ts` overwrites it during binary builds and restores it. Never commit a generated version.
+- `src/api/web-assets.gen.ts` is a stub; `scripts/build-bin.ts` overwrites it during binary builds and restores it. Never commit a generated version.

@@ -1,4 +1,4 @@
-// A main ticket's chat while tasks wait on the user (web/src/taskCards.ts): short grey notes, the card's question and
+// A main ticket's chat while tasks wait on the user (web/src/features/ticket/taskCards.ts): short grey notes, the card's question and
 // one-click answer, the "N waiting on you" list and the side sheet's URL hash.
 import { expect, test } from "bun:test";
 import { cardQuestion, oneClick, oneLine, sheetFromHash, sheetHash, shortNote, waitingItems, waitingLabel } from "./taskCards";

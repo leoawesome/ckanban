@@ -1,4 +1,4 @@
-// Ticket ids in the Tasks tab's saved status text turn into the ticket's title (web/src/ticketLinks.ts).
+// Ticket ids in the Tasks tab's saved status text turn into the ticket's title (web/src/features/board/ticketLinks.ts).
 import { expect, test } from "bun:test";
 import { ticketParts } from "./ticketLinks";
 
