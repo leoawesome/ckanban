@@ -1,6 +1,6 @@
-// Question forms: small safe markdown (web/src/lib/miniMarkdown.ts), the optional context, and replies that only repeat a form.
+// Question forms: small safe markdown (web/src/features/ticket/miniMarkdown.ts), the optional context, and replies that only repeat a form.
 import { expect, test } from "bun:test";
-import { inlineMarkdown, miniMarkdown, plainMarkdown } from "../../lib/miniMarkdown";
+import { inlineMarkdown, miniMarkdown, plainMarkdown } from "./miniMarkdown";
 import { repeatsForm, signature } from "./questionForms";
 import { parseQuestions } from "../../../../src/runs/session";
 import { openQuestionsRule } from "../../../../src/runs/prompts";

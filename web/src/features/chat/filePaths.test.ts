@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fileFinder } from "./fileLinkContext";
+import { fileFinder } from "../../lib/fileLinkContext";
 import { codePath, textPaths } from "./filePaths";
 
 test("codePath takes relative, absolute and home paths", () => {

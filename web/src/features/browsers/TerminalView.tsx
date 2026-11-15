@@ -3,7 +3,7 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import { shellSocketUrl } from "../../lib/api";
-import { KEY_ROW, keyToInput, withCtrl } from "../../lib/termKeys";
+import { KEY_ROW, keyToInput, withCtrl } from "./termKeys";
 import { useMedia } from "../../hooks/usePhone";
 import { THEME_EVENT } from "../../app/theme";
 

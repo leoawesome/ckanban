@@ -10,7 +10,7 @@ import { ChevronDownIcon, CloseIcon, ExternalIcon } from "../../components/icons
 import { useFocusTrap, useLayer } from "../../lib/layers";
 import type { StepInfo, StepMsg } from "./StepMessages";
 import { cardQuestion, oneClick, oneLine, openForm, sheetFromHash, sheetHash, waitingLabel, type WaitingItem } from "./taskCards";
-import { plainMarkdown } from "../../lib/miniMarkdown";
+import { plainMarkdown } from "./miniMarkdown";
 import { fullTime, timeAgo } from "../../lib/time";
 
 /**

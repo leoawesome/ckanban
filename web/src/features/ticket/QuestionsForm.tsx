@@ -8,7 +8,7 @@ import { usePersistentState } from "../../hooks/usePersistentState";
 import { enterSends } from "../../lib/enterSends";
 import { QuestionText } from "./QuestionText";
 import { useClaudeName } from "../avatar/AvatarFace";
-import { plainMarkdown } from "../../lib/miniMarkdown";
+import { plainMarkdown } from "./miniMarkdown";
 
 /** Descriptions longer than this (characters) may be cut to 3 lines, so they get a "More" toggle. */
 const LONG_DESC = 140;

@@ -9,7 +9,7 @@ import type { AvatarMood } from "../avatar/avatarLook";
 import { liveLine, runMood } from "../avatar/avatarMood";
 import { elapsed, fullTime, timeAgo } from "../../lib/time";
 import { toast } from "../../components/toast";
-import { stillOffscreen } from "../../lib/stillOffscreen";
+import { stillOffscreen } from "./stillOffscreen";
 
 /**
  * The chat's message layout, shared by the ticket chat and quick chats (Claude panel, phone Ask tab): a turn is an

@@ -1,5 +1,5 @@
 import { useKeyboardFit } from "../../lib/sheet";
-import { hashIsTicket, readTabLink } from "../../lib/tabLink";
+import { hashIsTicket, readTabLink } from "./tabLink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setCoveredFrom } from "../board/cardMotion";
 import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, runningTools, stopTitle, toolCount } from "../family/familyActions";

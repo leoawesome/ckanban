@@ -1,4 +1,4 @@
-import { hashIsTicket, withTabLink } from "../../lib/tabLink";
+import { hashIsTicket, withTabLink } from "./tabLink";
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import type { HuddleState } from "../huddle/huddle";
 import { type Ticket } from "../../lib/api";
