@@ -677,6 +677,19 @@ test("the summaries' tag changes with the code that makes them, not with other s
   expect(summaryTag(dir)).not.toBe(tag);
 });
 
+test("the summaries' tag follows the split files and imports from other folders", () => {
+  const root = tempDir();
+  const dir = join(root, "runs");
+  mkdirSync(join(root, "core"), { recursive: true });
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "session.ts"), 'export * from "./session-parser";\n');
+  writeFileSync(join(dir, "session-parser.ts"), 'import { c } from "../core/c";\nexport const p = c;\n');
+  writeFileSync(join(root, "core", "c.ts"), "export const c = 1;\n");
+  const tag = summaryTag(dir);
+  writeFileSync(join(root, "core", "c.ts"), "export const c = 2;\n");
+  expect(summaryTag(dir)).not.toBe(tag);
+});
+
 test("the session watcher's first pass only takes stock: no session.updated until a transcript changes", async () => {
   const configDir = tempDir();
   const dir = join(configDir, "projects", "-f");
