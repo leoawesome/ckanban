@@ -1,16 +1,14 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  api, NotStarted, onReconnect, subscribe, type Huddle, type Level, type NewTicketDraft, type OutputFile, type Proposal, type QueuedMessage, type RewindResult, type SessionEntry, type TeammateProposal, type Ticket,
+  api, onReconnect, subscribe, type Huddle, type OutputFile, type QueuedMessage, type SessionEntry, type Ticket,
 } from "../../lib/api";
 import { HuddleCard } from "../huddle/HuddleCard";
 import { HuddleDigest } from "../huddle/HuddleDigest";
-import { usePresets } from "../huddle/HuddleRoster";
 import type { TeamRequest } from "../team/Team";
 import { TeammateCard } from "../team/TeammateCard";
 import { SquadCard } from "../team/SquadCard";
 import { AutomationCard, openAutomations } from "../schedules/AutomationCard";
 import { KeysBox } from "../connections/KeysBox";
-import { oldChat } from "./cacheNote";
 import { ContextChip } from "./ContextPanel";
 import { autoGrow } from "../../lib/autoGrow";
 import { branchTicket } from "../../lib/branch";
@@ -19,33 +17,26 @@ import { DeleteCard } from "../../components/DeleteCard";
 import { ScheduleDeleteCard } from "../schedules/ScheduleDeleteCard";
 import { HelperRuleCard } from "../helper/HelperRuleCard";
 import { AgentRows } from "./AgentRow";
-import { liveLine, runMood } from "../avatar/avatarMood";
 import { useClaudeName } from "../avatar/AvatarFace";
 import { WorkflowBlocks } from "./WorkflowBlock";
 import { ToolRows } from "./ToolRows";
-import { ArrowDownIcon, ArrowUpIcon, BranchIcon, ClockIcon, CloseIcon, CopyIcon, DownloadIcon, FileCodeIcon, FileTextIcon, MoreIcon } from "../../components/icons";
-import { MoreSheet } from "../../app/PhoneNav";
+import { ArrowDownIcon, ArrowUpIcon, BranchIcon, ClockIcon, CloseIcon, FileCodeIcon } from "../../components/icons";
 import type { MenuItem } from "../../app/HeaderMenu";
 import { useTypeTrigger } from "../../lib/typeTrigger";
 import { useImagePaste } from "../../lib/imagePaste";
 import { AttachmentChips } from "../../components/AttachmentChips";
 import { ImagePickButton } from "../../components/ImagePickButton";
 import { NewTicketsCard } from "../board/NewTicketsCard";
-import { createdFromDraft } from "../board/proposalMatch";
 import { KeyHint } from "../../components/KeyHint";
-import { followUpFor, followUpPlace, followUpState } from "../ticket/followUp";
-import { parentLink } from "../family/family";
-import { ProposalCard, type FollowUp } from "../family/ProposalCard";
+import { ProposalCard } from "../family/ProposalCard";
 import { QuestionsForm } from "../ticket/QuestionsForm";
 import { RecoveryBanner } from "../board/RecoveryBanner";
-import { UndoBar, UndoneNote, UserMessage, undoFromRewind, undoFromState, type UndoInfo } from "./MessageActions";
-import { draftAfterUndo } from "./messageText";
-import { restoredDraft, rewindOff } from "../ticket/rewindText";
+import { UndoBar, UndoneNote, UserMessage } from "./MessageActions";
 import { SetupRow } from "../../components/SetupRow";
 import { HelpCardView, HelpPending, type HelpState } from "../../app/HelpMenu";
 import { StatusNoteView, useFeatureStatus } from "../ticket/StatusBlock";
 import { ResultCardView } from "../files/ResultCardView";
-import { askClosed, byIdOf, familyOf, hiddenTool, withYouTool } from "../family/family";
+import { byIdOf, familyOf, hiddenTool, withYouTool } from "../family/family";
 import { type StepInfo, type StepMsg, useStepMessages } from "../ticket/StepMessages";
 import { QuestionText } from "../ticket/QuestionText";
 import { TaskCard, TaskSheet, TaskTrail, useSheet, WaitingButton } from "../ticket/TaskSheet";
@@ -53,269 +44,33 @@ import { shortNote, waitingItems, type WaitingItem } from "../ticket/taskCards";
 import { useSimpler } from "../ticket/Simpler";
 import { replyText, simplifiable } from "../ticket/simplifyText";
 import { ClaudeFace, ErrorTurn, LetterAvatar, ReplyActions, ReplyAnnouncer, SendOrStop, StepsLine, TimeDivider, Turn, WorkingRow } from "./ConvTurn";
-import { fromAutomation, fromTicket, layoutTurns, placeByTime, telegramMarks, type TurnLayout, wakeLabel } from "./chatTurns";
+import { fromAutomation, fromTicket, layoutTurns, placeByTime, telegramMarks, type TurnLayout } from "./chatTurns";
 import { gapOf, jumpAfterScroll, stickAfterScroll } from "./chatFollow";
 import { useChatFollow } from "../../hooks/useChatFollow";
 import { StallActions, stallWait } from "../../components/StallActions";
 import { useSnippetPicker } from "../board/SnippetPicker";
 import { useSlashCommands, useSlashPicker } from "../../components/SlashPicker";
-import { commandNote, messageCommand, type SlashCommand } from "./slashText";
 import { filesByReply, STATUS_FILES } from "../files/fileCards";
 
 import { expired, handoff as handoffOf, liveView, repeats, saved, withHandoff, type Handoff } from "../../lib/liveReply";
-import { heldByReply, inSession, liveProgress, norm, unsentNow, userAfterSaved, type Pending } from "../../lib/pendingBubbles";
-import { baseName, copyFile, dirName, downloadFile } from "../../lib/share";
-import { browserStore, draftKey, formKey, save } from "../../lib/drafts";
-import { type FormState, formStates, repeatsForm } from "../ticket/questionForms";
-import { elapsed, fullTime, timeAgo } from "../../lib/time";
-import { stepsLine, stepsLineText, stepsWorking } from "../ticket/stepsLive";
+import { heldByReply, inSession, liveProgress, userAfterSaved, type Pending } from "../../lib/pendingBubbles";
+import { copyFile, downloadFile } from "../../lib/share";
+import { draftKey, formKey } from "../../lib/drafts";
+import { fullTime, timeAgo } from "../../lib/time";
 import { useNow } from "../../hooks/useNow";
-import { canStartFromProposal } from "../../app/keynav";
-import { toast } from "../../components/toast";
 import { Markdown } from "./Transcript";
 import { usePersistentState } from "../../hooks/usePersistentState";
 import { usePhone } from "../../hooks/usePhone";
 import { enterSends } from "../../lib/enterSends";
 import { reducedMotion } from "../../lib/motion";
-import { capMap, keepSame, laterCounts, MemoBlock } from "./chatMemo";
+import { keepSame, MemoBlock } from "./chatMemo";
 import { recentOutputs } from "../files/outputsOnce";
-
-/** File cards shown under one reply; the rest are in the Outputs tab. */
-const MAX_FILE_CARDS = 8;
-
-/** m:ss (h:mm:ss past an hour) since `iso`. */
-function clock(iso: string, now: number): string {
-  const s = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 1000));
-  const mm = String(Math.floor((s % 3600) / 60)), ss = String(s % 60).padStart(2, "0");
-  return s >= 3600 ? `${Math.floor(s / 3600)}:${mm.padStart(2, "0")}:${ss}` : `${mm}:${ss}`;
-}
-
-/** Claude ended its turn to wait for background tasks; the run stays open and it resumes when they finish. */
-function WaitingCard({ tasks }: { tasks: NonNullable<Ticket["waitingOn"]> }) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  return (
-    <div className="waiting-card" aria-live="polite">
-      <div className="waiting-title"><span className="spinner" /> Waiting for {tasks.length === 1 ? "1 background task" : `${tasks.length} background tasks`}</div>
-      <ul>
-        {tasks.map((t) => (
-          <li key={t.id}><span>{t.description}</span><span className="waiting-time" title={`Started ${fullTime(t.startedAt)}`}>{clock(t.startedAt, now)}</span></li>
-        ))}
-      </ul>
-      <div className="waiting-note">Claude continues automatically when they finish.</div>
-    </div>
-  );
-}
-
-/** A message the user sent: a slash command shows as a chip with what runs it, anything else as markdown. */
-function UserText({ text, commands, command }: { text: string; commands: SlashCommand[] | null; command?: string }) {
-  const c = command ? commands?.find((x) => x.name === command) ?? null : messageCommand(text, commands);
-  if (!command && !c) return <Markdown text={text} />;
-  const name = command ?? c!.name;
-  const args = text.trim().slice(name.length + 1).trim();
-  return (
-    <>
-      <div className="cmd-line"><span className="cmd-chip">/{name}</span>{args && <span className="cmd-args">{args}</span>}</div>
-      <div className="cmd-note">{commandNote(c)}</div>
-    </>
-  );
-}
-
-/** A message the board sent by itself (status refresh, tool ticket updates): one grey line that opens to the full text. */
-function WakeNote({ entry: e, old }: { entry: SessionEntry; old: boolean }) {
-  return (
-    <details className={`chat-note wake-note${old ? " inherited" : ""}`}>
-      <summary>{wakeLabel(e.wake ?? "")}{e.at && <span title={fullTime(e.at)}> · {timeAgo(e.at)}</span>}</summary>
-      {e.text && <div className="wake-body"><Markdown text={e.text} /></div>}
-    </details>
-  );
-}
-
-/** tools: a run of tool calls folded into one line; agents: a run of subagent rows. */
-type Block = { kind: "entry"; e: SessionEntry; index: number } | { kind: "tools"; items: SessionEntry[] } | { kind: "agents"; items: SessionEntry[] }
-  | { kind: "workflows"; items: SessionEntry[] };
-
-/** Who a block is from, for grouping rows into turns. */
-function speaker(b: Block): string {
-  if (b.kind !== "entry") return "claude";
-  const e = b.e;
-  if (e.kind === "board") return "board";
-  if (e.huddleId) return "huddle";
-  if (e.peer?.ticketId) return `peer:${e.peer.ticketId}`;
-  if (e.peer?.automation) return `automation:${e.peer.automation}`;
-  if (e.role === "user") return "user";
-  return e.commandOutput ? "command" : "claude";
-}
-
-/** Copied history of a branched ticket: entries from before the branch point (at = the branch time). */
-/** Old chats the user already chose to send to, by ticket: the reply (cache.at) they confirmed for; asked once per old period. */
-const oldChatOk = new Map<string, string>();
-/** At most this many tickets in oldChatOk (oldest out): it would otherwise grow with every old chat sent to. */
-const OLD_CHAT_OK_MAX = 200;
-/** The message box's footer names an old chat only above this size; smaller ones just get the ask at Send. */
-const OLD_LINE_MIN_TOKENS = 100_000;
-
-const before = (e: SessionEntry, at: string | undefined) => !!at && !!e.at && e.at < at;
-
-const CARDS = ["questions", "proposal", "newTickets", "branch", "huddle", "deletion", "scheduleDeletion", "helperRule", "teammate", "squad", "automation", "keys"] as const;
-
-/**
- * Tool calls (and subagents) in a row fold into one block; a branch point (splitAt) starts a new one. A reply that
- * only repeats the questions form just above it in the same run is left out: the form already says it.
- */
-function group(entries: SessionEntry[], splitAt?: string): Block[] {
-  const out: Block[] = [];
-  let form: SessionEntry["questions"] = undefined;
-  entries.forEach((e, index) => {
-    if (e.role === "user" || e.kind === "board") form = undefined;
-    if (e.questions) form = e.questions;
-    else if (form && e.role === "assistant" && e.kind === "text" && !e.commandOutput && !CARDS.some((k) => e[k]) && repeatsForm(replyText(e.text), form)) return;
-    const prev = out.at(-1);
-    if (e.kind === "tool" || e.kind === "agent" || e.kind === "workflow") {
-      const kind = e.kind === "tool" ? "tools" : e.kind === "agent" ? "agents" : "workflows";
-      if (prev?.kind === kind && before(prev.items[0], splitAt) === before(e, splitAt)) prev.items.push(e);
-      else out.push({ kind, items: [e] });
-    } else out.push({ kind: "entry", e, index });
-  });
-  return out;
-}
-
-const HANDOFF_RETRY_MS = 500;
-// A sent message shows "sending" until the loaded conversation has it. Live updates normally reload it, but they can
-// be missed (a board restart, a daemon frozen on a busy Mac, a dropped connection), so while one waits the chat
-// checks again this often on its own.
-const SENDING_RECHECK_MS = 3000;
-
-const UNREADABLE = { questions: "questions", proposal: "ticket proposal", tickets: "proposed tickets" } as const;
-
-/** What the Resend button sends: the same content again, through the matching tool. */
-const RESEND = {
-  questions: "The board couldn't read your questions. Please resend them with the ask_questions tool.",
-  proposal: "The board couldn't read your ticket proposal. Please resend it with the propose_ticket tool.",
-  tickets: "The board couldn't read your proposed tickets. Please resend them with the propose_tickets tool.",
-} as const;
-
-/** What Retry under a failed run sends. */
-const RETRY = "That run stopped with an error. Please try again from where you stopped.";
-
-const REFINE = (s: Ticket["status"]) => s === "backlog" || s === "planning";
-
-/**
- * The files a reply wrote: one compact row each (name, size, Open; Copy file and Download behind ⋯ on a phone, beside
- * Open on a wider screen). More than two fold into one "N files" row that opens the list.
- */
-function ChatFiles({ files, canCopy, onOpen, onCopy, onDownload }: {
-  files: { name: string; size: number }[]; canCopy: boolean;
-  onOpen: (name: string) => void; onCopy: (name: string) => void; onDownload: (name: string) => void;
-}) {
-  const phone = usePhone();
-  const [open, setOpen] = useState(files.length <= 2);
-  const [menu, setMenu] = useState<string | null>(null);
-  const shown = files.slice(0, MAX_FILE_CARDS);
-  return (
-    <div className="chat-files">
-      {files.length > 2 && (
-        <button className="chat-files-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-          <FileTextIcon size={14} /><span>{files.length} files</span><span className="fold-chev side" aria-hidden>▸</span>
-        </button>
-      )}
-      {open && shown.map((f) => (
-        <div key={f.name} className="chat-file">
-          <FileTextIcon size={14} />
-          <b title={f.name}>{dirName(f.name) && <span className="chat-file-dir">{dirName(f.name)}</span>}{baseName(f.name)}</b>
-          <span className="muted small chat-file-size">{kb(f.size)}</span>
-          <span className="chat-file-actions">
-            <button className="btn small view" onClick={() => onOpen(f.name)}>Open</button>
-            {phone ? (
-              <button className="btn small icon-only chat-file-more" aria-label={`More for ${baseName(f.name)}`} aria-haspopup="menu"
-                onClick={() => setMenu(f.name)}><MoreIcon size={16} /></button>
-            ) : <>
-              {canCopy && <button className="btn small" onClick={() => onCopy(f.name)}>Copy file</button>}
-              <button className="btn small" onClick={() => onDownload(f.name)}>Download</button>
-            </>}
-          </span>
-        </div>
-      ))}
-      {open && files.length > MAX_FILE_CARDS && (
-        <button className="link-btn small chat-more-files" onClick={() => onOpen(files[MAX_FILE_CARDS].name)}>
-          +{files.length - MAX_FILE_CARDS} more files in the Outputs tab
-        </button>
-      )}
-      {menu && (
-        <MoreSheet label={baseName(menu)} onClose={() => setMenu(null)} items={[
-          ...(canCopy ? [{ label: "Copy file", icon: <CopyIcon />, onSelect: () => onCopy(menu) }] : []),
-          { label: "Download", icon: <DownloadIcon />, onSelect: () => onDownload(menu) },
-        ]} />
-      )}
-    </div>
-  );
-}
-
-function kb(n: number): string {
-  return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
-/** Whether a message the user sent is in the session file yet. */
-const delivered = (entries: SessionEntry[], text: string) => entries.some((e) => e.role === "user" && norm(e.text) === norm(text));
-
-/** Opening a chat uses the outputs list the ticket panel asked for this recently (outputsOnce.ts). */
-const OPEN_REUSE_MS = 5000;
-
-/** How long the notes beside the conversation wait for the steps' chats and the status after the conversation is in. */
-const SIDE_WAIT_MS = 3000;
-
-/**
- * The ticket's single conversation with Claude, like the terminal: everything in the session
- * (terminal chat, board runs, messages typed here) in one timeline, plus a box to send more.
- */
-/** Stop Claude with instant feedback: "Stopping…" from the click until the run is gone. */
-/**
- * A main ticket's live "Working: <step>" line while steps of its feature (or tickets the user added) work; each name
- * opens that step. One working step also shows its latest activity and how long it has run.
- */
-function StepsWorking({ ticket, tickets, onOpenTicket }: { ticket: Ticket; tickets: Ticket[]; onOpenTicket: (id: string) => void }) {
-  const steps = useMemo(() => stepsWorking(tickets, ticket), [tickets, ticket]);
-  const claude = useClaudeName();
-  const line = stepsLine(steps);
-  if (!line) return null;
-  const one = steps.length === 1 && steps[0].running ? steps[0] : null;
-  return (
-    <div className="steps-live" role="status" aria-live="polite" title={stepsLineText(steps.map((t) => t.title))}>
-      <ClaudeFace mood={one ? runMood(one.lastActivity) : "working"} size={24} />
-      <span className="steps-live-text">
-        {line.lead}{" "}
-        {line.shown.map((t, i) => (
-          <Fragment key={t.id}>
-            {i > 0 && ", "}
-            <button type="button" className="link-btn" onClick={() => onOpenTicket(t.id)}>{t.title}</button>
-          </Fragment>
-        ))}
-        {line.more > 0 && ` and ${line.more} more`}
-        {one?.lastActivity && <span className="steps-live-activity"> · {liveLine(one.lastActivity, claude)}</span>}
-      </span>
-      {one?.runStartedAt && <span className="working-time">· {elapsed(one.runStartedAt)}</span>}
-    </div>
-  );
-}
-
-export function useStop(slug: string, ticket: Ticket, working: boolean, onError: (m: string) => void) {
-  const [clicked, setClicked] = useState(false);
-  useEffect(() => {
-    if (!working) setClicked(false);
-  }, [working]);
-  const stopping = working && (clicked || ticket.lastActivity === "Stopping…");
-  const stop = () => {
-    setClicked(true);
-    api.stop(slug, ticket.id).catch((e) => {
-      setClicked(false);
-      onError(e.message);
-    });
-  };
-  return { stopping, stop };
-}
+import { useStop } from "./useStop";
+import { WaitingCard, UserText, WakeNote, type Block, speaker, OLD_LINE_MIN_TOKENS, before, CARDS, group, HANDOFF_RETRY_MS, SENDING_RECHECK_MS, UNREADABLE, RESEND, RETRY, REFINE, ChatFiles, delivered, OPEN_REUSE_MS, SIDE_WAIT_MS, StepsWorking } from "./ChatParts";
+import { useChatForms } from "./useChatForms";
+import { useChatSend } from "./useChatSend";
+import { useQueuedEdits } from "./useQueuedEdits";
+import { useChatRewind } from "./useChatRewind";
 
 /** A queued peer message that carries huddle messages (see the server's huddleMainPrompt). */
 const HUDDLE_TAG = /<ckanban-context[^>]* huddle="/;
@@ -465,61 +220,12 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     });
   }, [loadTail]);
 
-  // Fork from here, Rewind and Undo rewind wait while Claude works or a message waits to be sent.
-  const actionsOff = rewindOff(running, queued.length);
-  // The last rewind while it can be undone (the Undo bar under the chat), and what the last Undo did.
-  const [undo, setUndo] = useState<UndoInfo | null>(null);
-  const [undone, setUndone] = useState<string | null>(null);
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-  // Opening the chat: a rewind that can still be undone (nothing sent or run since) shows its bar again.
-  useEffect(() => {
-    setUndo(null);
-    setUndone(null);
-    if (running) return;
-    let live = true;
-    api.rewindUndoState(slug, ticket.id, false).then((s) => live && setUndo((u) => u ?? undoFromState(s)), () => {});
-    return () => {
-      live = false;
-    };
-  }, [slug, ticket.id]);
-  // A run starting (the user's message or the board's) ends the chance to undo.
-  useEffect(() => {
-    if (!running) return;
-    setUndo(null);
-    setUndone(null);
-  }, [running]);
-  const rewound = (r: RewindResult) => {
-    const before = draftRef.current;
-    const filled = restoredDraft(r.text, before);
-    setDraft(filled);
-    setUndone(null);
-    setUndo(r.undo ? undoFromRewind(r, filled, before) : null);
-    stickToBottom.current = true;
-    setPage(null);
-    reload();
-    onFilesChanged?.();
-    composer.current?.focus();
-  };
-  const undoRewound = (r: { files: number }, line: string) => {
-    const d = undo?.draft;
-    if (d) setDraft((cur) => draftAfterUndo(cur, d.filled, d.before));
-    setUndo(null);
-    setUndone(line);
-    stickToBottom.current = true;
-    setPage(null);
-    reload();
-    if (r.files) onFilesChanged?.();
-  };
-  // Fork from here: a new ticket whose chat ends before the message; the message waits in its box.
-  const forkFrom = async (uuid: string) => {
-    const r = await api.forkTicket(slug, ticket.id, uuid);
-    save(browserStore(), draftKey(slug, r.id), r.text);
-    onOpenTicket(r.id);
-    toast(r.warning ? <>Forked into <b>{r.ticket.title}</b>. {r.warning}</> : <>Forked into <b>{r.ticket.title}</b></>,
-      { tone: r.warning ? "info" : "ok", ...(r.warning ? { ms: 9000 } : {}) });
-    return `Forked into "${r.ticket.title}". It is open now.`;
-  };
+  const {
+    actionsOff, forkFrom, rewound, setUndo, setUndone, undo, undoRewound, undone,
+  } = useChatRewind({
+    composer, draft, onFilesChanged, onOpenTicket, queued, reload, running, setDraft, setPage, slug, stickToBottom,
+    ticket,
+  });
   useEffect(() => {
     setPage(null);
     setHandoff([]);
@@ -596,45 +302,11 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
       .finally(() => setLive(""));
   }, [running]);
 
-  // A message Claude hasn't received yet (not sent after Stop, or waiting for a slot or a restart): the user can
-  // still edit or discard it. With Claude running it was handed over at once.
-  const editable = (q: QueuedMessage) => !q.from && !q.automation && (q.state === "unsent" || (!q.peer && !running));
-  // Another ticket's message: shown as that ticket's, not as the user's.
-  const fromUser = (q: QueuedMessage) => !q.peer && !q.from && !q.automation;
-  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
-  const discarded = useRef(new Set<string>());
-  const cancelEdit = () => {
-    setEditing(null);
-    composer.current?.focus();
-  };
-  const saveEdit = async () => {
-    if (!editing?.text.trim()) return;
-    try {
-      await api.editQueued(slug, ticket.id, editing.id, editing.text.trim());
-      cancelEdit();
-    } catch (e: any) {
-      onError(e.message);
-    }
-  };
-  const discard = (msgId: string) => {
-    discarded.current.add(msgId);
-    api.discardQueued(slug, ticket.id, msgId).catch((e) => {
-      discarded.current.delete(msgId);
-      onError(e.message);
-    });
-  };
-
-  // Claude read a queued message: keep its bubble until the session file shows it, so it doesn't blink out.
-  const prevQueued = useRef(queued);
-  useEffect(() => {
-    // Peer messages show up in the session as another ticket's message, not as the user's bubble.
-    const read = prevQueued.current.filter((q) => q.state === "queued" && fromUser(q) && !discarded.current.has(q.id) && !queued.some((n) => n.id === q.id)).map((q) => q.text);
-    prevQueued.current = queued;
-    // The reply's own message already has its plain bubble.
-    if (read.length) setPending((ps) => [...ps, ...read.filter((text) => !ps.some((p) => !p.steer && p.text === text)).map((text) => ({ text, steer: false }))]);
-    const unsent = unsentNow(pendingRef.current, queued);
-    if (unsent.length) setPending((ps) => ps.filter((p) => !unsent.includes(p)));
-  }, [ticket.queued]);
+  const {
+    cancelEdit, discard, editable, editing, fromUser, saveEdit, setEditing,
+  } = useQueuedEdits({
+    composer, onError, pendingRef, queued, running, setPending, slug, ticket,
+  });
 
   const entries = page?.entries ?? [];
   entriesRef.current = entries;
@@ -725,70 +397,12 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     setJump(null);
   };
 
-  // An old chat re-reads in full: the footer says so, and the first Send asks (Send anyway / Send in a fresh chat).
-  const old = oldChat({ cache: ticket.session?.cache, running, freshSession: ticket.freshSession, now: Date.now() });
-  const okKey = `${slug}/${ticket.id}`;
-  const oldUnconfirmed = !!old && oldChatOk.get(okKey) !== old.at;
-  const [askOld, setAskOld] = useState(false);
-  const asking = askOld && oldUnconfirmed && !!draft.trim();
-  /** Send or Enter in the box: asks first on an old chat; Enter (or Send) again means send anyway. */
-  const submit = () => {
-    if (!draft.trim() || stopping || images.uploading) return;
-    if (old && oldUnconfirmed) {
-      if (!asking) {
-        setAskOld(true);
-        return;
-      }
-      oldChatOk.delete(okKey);
-      oldChatOk.set(okKey, old.at);
-      capMap(oldChatOk, OLD_CHAT_OK_MAX);
-    }
-    setAskOld(false);
-    send(draft);
-  };
-  const sendingNow = useRef(new Set<string>());
-  const sendFresh = () => {
-    if (old) {
-      oldChatOk.delete(okKey);
-      oldChatOk.set(okKey, old.at);
-      capMap(oldChatOk, OLD_CHAT_OK_MAX);
-    }
-    setAskOld(false);
-    send(draft, true);
-  };
-
-  const send = async (text: string, fresh = false) => {
-    // A command goes as `/name args`, the way the server queues it and the session shows it.
-    const t = messageCommand(text, commands) ? text.trim().replace(/^(\S+)\s+/, "$1 ") : text.trim();
-    if (!t || stopping || images.uploading) return;
-    // The same text already on its way (a double tap on a form's Send): sent once.
-    if (sendingNow.current.has(t)) return;
-    sendingNow.current.add(t);
-    try {
-      await sendOnce(t, fresh);
-    } finally {
-      sendingNow.current.delete(t);
-    }
-  };
-  const sendOnce = async (t: string, fresh: boolean) => {
-    images.clearError();
-    stickToBottom.current = true;
-    const steer = running;
-    setPending((ps) => [...ps, { text: t, steer }]);
-    setDraft("");
-    setUndo(null);
-    setUndone(null);
-    try {
-      const r = await api.chat(slug, ticket.id, t, fresh);
-      // Steering or waiting for a slot: the server queue now shows it. A reply it started keeps its plain bubble while the
-      // board holds it until Claude reads it. /clear and /model: the board ran them, nothing reaches the session.
-      if ((r.queued?.some((q) => q.text === t) && (steer || !r.running)) || messageCommand(t, commands)?.source === "board") setPending((ps) => ps.filter((p) => p.text !== t));
-    } catch (e: any) {
-      setPending((ps) => ps.filter((p) => p.text !== t));
-      setDraft(t);
-      onError(e.message);
-    }
-  };
+  const {
+    asking, old, send, sendFresh, submit,
+  } = useChatSend({
+    commands, draft, images, onError, running, setDraft, setPending, setUndo, setUndone, slug, stickToBottom,
+    stopping, ticket,
+  });
 
   const loadEarlier = async () => {
     if (!page || page.start === 0) return;
@@ -802,146 +416,15 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
     }
   };
 
-  // A reply still on its way to the session file counts too, so the form doesn't offer "Send answers" again.
-  const replying = pending.some((p) => !p.steer);
-  // Board updates (kind "board") never answer: a form they interrupt stays open, or is asked again below.
-  // "N later messages" and "answered after" for every message in one pass (a long chat has thousands loaded).
-  const counts = useMemo(() => laterCounts(entries), [entries]);
-  const answeredAfter = (index: number) => replying || counts.lastAnswer > index;
-  // Forms the user closed without answering (Close question), by uuid; the newest open one also when the ticket only
-  // knows a close came after its last run (it closed by itself when they answered in its task's chat).
-  const closedIds = useMemo(() => new Set(Object.keys(ticket.closedForms ?? {})), [ticket.closedForms]);
-  const closeLatest = !running && askClosed(ticket);
-  const forms = useMemo(() => formStates(entries, replying, closedIds, closeLatest), [entries, replying, closedIds, closeLatest]);
-  /** The message that answered form index: in the chat, or still on its way. */
-  const answerOf = (index: number): string | undefined => {
-    const f = formState(index);
-    if (f.state !== "answered") return undefined;
-    return f.by !== undefined ? entries[f.by]?.text : pending.find((p) => !p.steer)?.text;
-  };
-  const closeForm = (uuid: string) => api.closeForm(slug, ticket.id, uuid).catch((err: Error) => onError(err.message));
-  const formState = (index: number): FormState => forms.get(index) ?? { state: "answered" };
-  const replacedBy = (index: number) => { const f = formState(index); return f.state === "replaced" ? f : undefined; };
-  /** Where an open form saves its progress: shared with the earlier forms it asks again. */
-  const openKey = (index: number) => { const f = formState(index); return f.state === "open" ? f.key : undefined; };
-  const isApplied = (p: Proposal) =>
-    (!p.title || p.title === ticket.title) && (!p.description || p.description.trim() === ticket.body.trim()) && (!p.important || !!ticket.important) &&
-    (p.partOf === undefined || (parentLink(ticket)?.id ?? null) === p.partOf);
-  /** What Apply does to the ticket's family, for the card; undefined when the proposal leaves it as it is. */
-  const familyNote = (p: Proposal) => {
-    if (p.partOf === undefined || (parentLink(ticket)?.id ?? null) === p.partOf) return undefined;
-    if (p.partOf === null) return "Apply also takes this ticket out of the work it is part of, so it is no longer one of its tasks.";
-    const to = tickets.find((t) => t.id === p.partOf);
-    return to ? `Apply also moves this ticket under “${to.title}”.` : undefined;
-  };
-
+  const {
+    answerOf, answeredAfter, applyProposal, canStart, childFor, closeForm, counts, createChild, dismissTeammate,
+    familyNote, followUpOf, formState, formWaiting, forms, isApplied, openKey, pendingProposal, presets, replacedBy,
+    saveTeammate, setPresetsVersion, startedProposals,
+  } = useChatForms({
+    entries, onError, onOpenTicket, onPendingProposal, pending, running, slug, ticket, tickets,
+  });
   const empty = page !== null && !loadError && entries.length === 0 && !pending.length && !queued.length && !running;
 
-  // The ticket a proposed draft became: this ticket's child with its key or proposed title (still found after a rename),
-  // else any ticket on the board with that title, which counts as handled too (the server's attention rule).
-  // A questions form still waits for answers: the message box offers a note instead of a second way to answer.
-  const formWaiting = [...forms.values()].some((f) => f.state === "open");
-  const childFor = (d: NewTicketDraft) => createdFromDraft(tickets, ticket.id, d);
-  const createChild = async (d: NewTicketDraft) => {
-    try {
-      return await api.createTicket(slug, {
-        title: d.title, body: d.description, status: "backlog", mode: "interview", parentId: ticket.id, proposedAs: d.title,
-        ...(d.key ? { planKey: d.key } : {}), ...(d.dependsOn?.length ? { dependsOn: d.dependsOn } : {}),
-        ...(d.needs?.length ? { needs: d.needs } : {}), ...(d.tags?.length ? { tags: d.tags } : {}), ...(d.important ? { important: true } : {}),
-      });
-    } catch (err: any) {
-      onError(err.message);
-      return null;
-    }
-  };
-
-  // Proposals applied with "Apply & start work" here, so their card says the ticket moved on.
-  const [startedProposals, setStartedProposals] = useState<ReadonlySet<string>>(new Set());
-  // An already-planned main ticket's card offers "Apply & start work" too: moving it to Ready is the go-ahead for its plan
-  // (the user asked for it after finding only Apply there; plain Apply still never starts anything).
-  const canStart = canStartFromProposal({ status: ticket.status, working: ticket.status === "in_progress" || running });
-  const applyProposal = async (p: Proposal, start?: { uuid: string }) => {
-    const before = { title: ticket.title, body: ticket.body, important: !!ticket.important };
-    try {
-      // The family move first: when it can't be made (a plan sibling depends on it), nothing changes.
-      if (familyNote(p)) await api.setPartOf(slug, ticket.id, p.partOf!);
-      // One update, so the ticket never sits in Ready with the old text.
-      await api.updateTicket(slug, ticket.id, {
-        ...(p.title ? { title: p.title } : {}),
-        ...(p.description ? { body: p.description } : {}),
-        ...(p.important ? { important: true } : {}),
-        ...(start ? { status: "ready" as const } : {}),
-      });
-      // No Undo once it starts: Claude may already be working from the new text.
-      if (start) {
-        setStartedProposals((s) => new Set(s).add(start.uuid));
-        return void toast("Applied to the ticket and moved to Ready", { tone: "ok" });
-      }
-      toast("Applied to the ticket", {
-        tone: "ok",
-        action: {
-          label: "Undo",
-          run: () => api.updateTicket(slug, ticket.id, before).catch((err) => toast(`Undo failed: ${err.message}`, { tone: "error" })),
-        },
-      });
-    } catch (err: any) {
-      // Start was cancelled (a huddle works on the ticket): still apply the text, without starting.
-      if (start && err instanceof NotStarted) return applyProposal(p);
-      onError(err.message);
-    }
-  };
-
-  // Teammate cards: the board's teammates tell a new one from a change; reloaded after each save.
-  const [presetsVersion, setPresetsVersion] = useState(0);
-  const presets = usePresets(slug, presetsVersion);
-  const saveTeammate = async (uuid: string, p: TeammateProposal, scope: Level) => {
-    try {
-      const { why: _w, ...fields } = p;
-      const saved = await api.saveHuddlePreset(slug, fields, scope);
-      await api.answerTeammateCard(slug, ticket.id, uuid, { state: "saved", name: saved.name, scope });
-      setPresetsVersion((n) => n + 1);
-    } catch (err: any) {
-      onError(err.message);
-    }
-  };
-  const dismissTeammate = (uuid: string) => api.answerTeammateCard(slug, ticket.id, uuid, { state: "dismissed" }).then(() => {}, (err) => onError(err.message));
-
-  // A plain ticket that already ran: proposals are follow-up work (a step of its feature, or its first step as it becomes
-  // a main ticket), so this one keeps its title and description and the user keeps talking here.
-  const onState = followUpState(ticket);
-  const place = onState === undefined ? null : followUpPlace(tickets, ticket.id);
-  const startFollowUp = async (p: Proposal, start: boolean) => {
-    try {
-      const f = await api.followUpWork(slug, ticket.id, { title: p.title, body: p.description, start, ...(p.important ? { important: true } : {}) });
-      const runner = place?.as === "step" ? tickets.find((t) => t.id === place.manager) : place?.as === "main" ? ticket : undefined;
-      const where = runner?.plan?.state === "paused" ? "Step added; it waits until you press Resume on the Plan tab"
-        : place?.as === "step" ? "Step started; follow it on the feature's card"
-        : place?.as === "main" ? "Step started; you keep talking here"
-        : start ? "Ticket created and moved to Ready" : "Ticket created in Backlog";
-      toast(where, { tone: "ok", ...(place?.as === "ticket" ? { action: { label: "Open", run: () => onOpenTicket(f.id) } } : {}) });
-    } catch (err: any) {
-      onError(err.message);
-    }
-  };
-  const followUpOf = (p: Proposal): FollowUp | undefined => {
-    const created = followUpFor(tickets, ticket.id, p.title);
-    // A card that already started its work keeps saying so, also after it made this ticket a main ticket (its Apply
-    // would otherwise overwrite the new main ticket's title and description).
-    const at = place ?? (created ? followUpPlace(tickets, ticket.id) : null);
-    if (!at || (onState === undefined && !created)) return undefined;
-    return { state: onState ?? null, place: at, created, onCreate: (start) => startFollowUp(p, start), onOpen: onOpenTicket };
-  };
-
-  const pendingProposal = entries.findLast((e) => e.proposal && !isApplied(e.proposal) && !followUpFor(tickets, ticket.id, e.proposal.title));
-  const applyPendingRef = useRef((_start: boolean) => Promise.resolve());
-  applyPendingRef.current = (start) => (!pendingProposal?.proposal ? Promise.resolve()
-    // ⌘⇧Enter on a follow-up card: start that work.
-    : place ? startFollowUp(pendingProposal.proposal, true)
-    : applyProposal(pendingProposal.proposal, start && canStart ? { uuid: pendingProposal.uuid } : undefined));
-  useEffect(() => {
-    onPendingProposal?.(pendingProposal ? (start) => applyPendingRef.current(start) : null);
-  }, [pendingProposal?.uuid]);
-  useEffect(() => () => onPendingProposal?.(null), []);
 
   // Message blocks are drawn again only when what they show changes (MemoBlock): the callbacks they hand out read the
   // latest ones through this ref.
