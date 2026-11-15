@@ -289,7 +289,7 @@ export const Card = memo(function Card({ a11yId, ticket, onClick, dragging, queu
   else if (lastAt && !working) facts.push({ key: "time", node: <time dateTime={lastAt} title={fullTime(lastAt)}>{timeAgo(lastAt)}</time> });
   // A main ticket's plan runs in the background: its card shows In progress instead, unless it stopped.
   const planPill = ticket.plan && ticket.plan.state !== "done" && !(ticket.main && (ticket.plan.state === "running" || ticket.plan.state === "finishing")) && (
-    <span className={`badge plan ${ticket.plan.state}`} title="This ticket runs a plan of child tickets">
+    <span className={`badge plan ${ticket.plan.state}`} title="This ticket's plan runs its tasks">
       Plan {ticket.plan.state === "finishing" ? "final check" : ticket.plan.state}
     </span>
   );

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, NotStarted, type Level, type NewTicketDraft, type Proposal, type SessionEntry, type TeammateProposal, type Ticket } from "../../lib/api";
+import { api, NotStarted, type Level, type Proposal, type SessionEntry, type TeammateProposal, type Ticket } from "../../lib/api";
 import { usePresets } from "../huddle/HuddleRoster";
-import { createdFromDraft } from "../board/proposalMatch";
 import { followUpFor, followUpPlace, followUpState } from "../ticket/followUp";
 import { parentLink } from "../family/family";
 import { type FollowUp } from "../family/ProposalCard";
@@ -59,23 +58,8 @@ export function useChatForms({
     return to ? `Apply also moves this ticket under “${to.title}”.` : undefined;
   };
 
-  // The ticket a proposed draft became: this ticket's child with its key or proposed title (still found after a rename),
-  // else any ticket on the board with that title, which counts as handled too (the server's attention rule).
   // A questions form still waits for answers: the message box offers a note instead of a second way to answer.
   const formWaiting = [...forms.values()].some((f) => f.state === "open");
-  const childFor = (d: NewTicketDraft) => createdFromDraft(tickets, ticket.id, d);
-  const createChild = async (d: NewTicketDraft) => {
-    try {
-      return await api.createTicket(slug, {
-        title: d.title, body: d.description, status: "backlog", mode: "interview", parentId: ticket.id, proposedAs: d.title,
-        ...(d.key ? { planKey: d.key } : {}), ...(d.dependsOn?.length ? { dependsOn: d.dependsOn } : {}),
-        ...(d.needs?.length ? { needs: d.needs } : {}), ...(d.tags?.length ? { tags: d.tags } : {}), ...(d.important ? { important: true } : {}),
-      });
-    } catch (err: any) {
-      onError(err.message);
-      return null;
-    }
-  };
 
   // Proposals applied with "Apply & start work" here, so their card says the ticket moved on.
   const [startedProposals, setStartedProposals] = useState<ReadonlySet<string>>(new Set());
@@ -136,7 +120,7 @@ export function useChatForms({
     try {
       const f = await api.followUpWork(slug, ticket.id, { title: p.title, body: p.description, start, ...(p.important ? { important: true } : {}) });
       const runner = place?.as === "step" ? tickets.find((t) => t.id === place.manager) : place?.as === "main" ? ticket : undefined;
-      const where = runner?.plan?.state === "paused" ? "Step added; it waits until you press Resume on the Plan tab"
+      const where = runner?.plan?.state === "paused" ? "Step added; it waits until you press Resume on the Tasks tab"
         : place?.as === "step" ? "Step started; follow it on the feature's card"
         : place?.as === "main" ? "Step started; you keep talking here"
         : start ? "Ticket created and moved to Ready" : "Ticket created in Backlog";
@@ -164,5 +148,5 @@ export function useChatForms({
     onPendingProposal?.(pendingProposal ? (start) => applyPendingRef.current(start) : null);
   }, [pendingProposal?.uuid]);
   useEffect(() => () => onPendingProposal?.(null), []);
-  return { answerOf, answeredAfter, applyProposal, canStart, childFor, closeForm, counts, createChild, dismissTeammate, familyNote, followUpOf, formState, formWaiting, forms, isApplied, openKey, pendingProposal, presets, replacedBy, saveTeammate, setPresetsVersion, startedProposals };
+  return { answerOf, answeredAfter, applyProposal, canStart, closeForm, counts, dismissTeammate, familyNote, followUpOf, formState, formWaiting, forms, isApplied, openKey, pendingProposal, presets, replacedBy, saveTeammate, setPresetsVersion, startedProposals };
 }

@@ -1,7 +1,7 @@
 // Follow-up work asked for in the chat of a ticket that already ran (replaces the old add-on tickets). The proposal
 // card there makes it a step that reports to the feature's main ticket, so the user keeps talking where they are.
 // No imports from ./api: the server and its tests import this file too.
-import { fitParent, levelOf, MAX_LEVEL, parentLink, type FamilyTicket } from "../family/family";
+import { fitParent, levelOf, MAX_LEVEL, parentLink, runsTasks, type FamilyTicket } from "../family/family";
 
 export interface FollowUpTicket extends FamilyTicket {
   main?: boolean;
@@ -40,8 +40,6 @@ export type FollowUpPlace =
   | { as: "main" }
   | { as: "ticket"; partOf: string };
 
-const runsSteps = (t: FollowUpTicket) => !!t.main || (!!t.tool && (t.kind === "group" || t.kind === "round"));
-
 export function followUpPlace<T extends FollowUpTicket>(tickets: T[], id: string): FollowUpPlace | null {
   const byId = new Map(tickets.map((t) => [t.id, t]));
   const t = byId.get(id);
@@ -55,7 +53,7 @@ export function followUpPlace<T extends FollowUpTicket>(tickets: T[], id: string
   }
   const main = up.find((p) => p.main);
   if (main) {
-    const manager = up.slice(0, up.indexOf(main)).find((p) => runsSteps(p) && levelOf(tickets, p.id) + 1 <= MAX_LEVEL) ?? main;
+    const manager = up.slice(0, up.indexOf(main)).find((p) => runsTasks(p) && levelOf(tickets, p.id) + 1 <= MAX_LEVEL) ?? main;
     const spot = fitParent(tickets, t.id);
     return { as: "step", main: { id: main.id, title: main.title }, manager: manager.id, partOf: spot === manager.id ? null : spot };
   }

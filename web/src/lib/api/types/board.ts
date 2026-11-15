@@ -79,8 +79,6 @@ export interface Profile {
   running?: number;
 }
 
-export type NewTicketDraft = { title: string; description: string; important?: true; key?: string; dependsOn?: string[]; needs?: string[]; tags?: string[] };
-
 export interface SetupDetection {
   at: string;
   copyFiles: string[];

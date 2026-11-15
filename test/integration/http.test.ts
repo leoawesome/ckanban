@@ -1320,11 +1320,3 @@ test("tickets a schedule's run creates are linked to that schedule; the list sho
   (board as any).runnerRights = real;
 });
 
-test("a card's key matches an older child without a proposed title, but never one a different draft made", async () => {
-  const { createdFromDraft } = await import("../../web/src/features/board/proposalMatch");
-  const old = { id: "o", title: "Renamed", parentId: "me", planKey: "fix" };
-  expect(createdFromDraft([old], "me", { title: "Original", key: "fix" })?.id).toBe("o");
-  const made = { ...old, proposedAs: "Original" };
-  expect(createdFromDraft([made], "me", { title: "A new fix", key: "fix" })).toBeUndefined();
-  expect(createdFromDraft([made], "me", { title: " original ", key: "fix" })?.id).toBe("o");
-});

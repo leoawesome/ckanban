@@ -34,9 +34,9 @@ import type { CommandAction } from "../../app/CommandBar";
 import { attentionGoal } from "../board/attentionGoal";
 import { KeyHint } from "../../components/KeyHint";
 import { MOD } from "../../app/Shortcuts";
-import { PlanFinished, planFinished, PlanSummary } from "../family/PlanPanel";
+import { PlanFinished, planFinished } from "../family/PlanPanel";
 import { FamilyTab } from "../family/FamilyTab";
-import { familyOf, featureRows, taskTally } from "../family/family";
+import { familyOf, featureRows, runsTasks, taskTally } from "../family/family";
 import { Outputs } from "../files/Outputs";
 import { PrBox } from "./PrBox";
 import { PrList } from "./PrList";
@@ -367,8 +367,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   }, []);
   const { goTo } = useGoTo({ goal, openTab, panelRef, slug, tabs, ticket, whereShown });
   const goalOnScreen = useGoalOnScreen(panelRef, goal?.targets ?? null);
-  // Every child of its plan is done: Move to Done replaces Start work.
-  const finished = planFinished(children);
+  // Every task of a main ticket's plan is done: Move to Done replaces Start work.
+  const finished = runsTasks(ticket) && planFinished(children);
   // "/" (and ⌘K "Write a message"): the Chat tab, with the cursor in its message box.
   const focusComposer = () => {
     setTab("chat");
@@ -601,8 +601,6 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
 
         {/* Rarely set by hand (plans and update_ticket set it), so only shown once the ticket has needs. */}
         {!!ticket.needs?.length && <NeedsField slug={slug} ticket={ticket} onError={onError} />}
-
-        {children.length > 0 && !whereShown && <PlanSummary ticket={ticket} children={children} onOpen={() => setTab("family")} />}
 
         {!!links.length && (
           <div className="result-chips" aria-label="Results">
@@ -878,7 +876,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             {tab === "ticket" ? (
               <div className={`panel-ticket ${editing ? "editing" : ""}`}>{details}</div>
             ) : tab === "family" ? (
-              <div className="panel-scroll panel-plan">
+              <div className="panel-scroll panel-tasks">
                 <FamilyTab slug={slug} profile={profile} ticket={ticket} tickets={tickets} planChildren={children} onOpenTicket={onOpenTicket} onError={onError}
                   onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />
               </div>

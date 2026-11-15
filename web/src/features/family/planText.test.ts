@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { checkInsText, complete, finishedLabel, planFinished, waitPhrase } from "./planText";
+import { checkInsText, complete, planFinished, waitPhrase } from "./planText";
 import { attentionGoal } from "../board/attentionGoal";
 
 const kid = (status: string, outcome: string | null = null, prUrl: string | null = null) => ({ status, outcome, prUrl });
@@ -28,14 +28,9 @@ test("a stuck plan names what its child waits on", () => {
   expect(waitPhrase("in Planning")).toBe("is waiting in Planning");
 });
 
-test("finished children in Review read as to check, not Done", () => {
-  expect(finishedLabel({ status: "review" })).toBe("Finished · to check");
-  expect(finishedLabel({ status: "done" })).toBe("Done");
-});
-
 test("Your turn leads to the thing to do, and the main button says so", () => {
   expect(attentionGoal({ kind: "questions", label: "Answer 4 questions" })).toMatchObject({ button: "Answer questions", tab: "chat", targets: [".qcard:not(.answered)", ".task-card", ".reply-text"] });
-  expect(attentionGoal({ kind: "proposal", label: "Review proposed tickets" })).toMatchObject({ button: "Review proposed tickets", tab: "chat" });
+  expect(attentionGoal({ kind: "proposal", label: "Review proposal" })).toMatchObject({ button: "Review proposal", tab: "chat" });
   expect(attentionGoal({ kind: "blocked", label: "Blocked" })).toMatchObject({ button: "See what Claude needs", tab: "chat" });
   expect(attentionGoal({ kind: "blocked", label: "Stopped at $1.00 cap" }, { capHit: { capUsd: 1 } })!.targets[0]).toBe(".cap-banner");
   expect(attentionGoal({ kind: "blocked", label: "Plan stuck" })).toMatchObject({ button: "Open plan", tab: "family" });

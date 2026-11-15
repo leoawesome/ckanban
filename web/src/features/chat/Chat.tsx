@@ -26,7 +26,6 @@ import { useTypeTrigger } from "../../lib/typeTrigger";
 import { useImagePaste } from "../../lib/imagePaste";
 import { AttachmentChips } from "../../components/AttachmentChips";
 import { ImagePickButton } from "../../components/ImagePickButton";
-import { NewTicketsCard } from "../board/NewTicketsCard";
 import { KeyHint } from "../../components/KeyHint";
 import { ProposalCard } from "../family/ProposalCard";
 import { QuestionsForm } from "../ticket/QuestionsForm";
@@ -417,7 +416,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
   };
 
   const {
-    answerOf, answeredAfter, applyProposal, canStart, childFor, closeForm, counts, createChild, dismissTeammate,
+    answerOf, answeredAfter, applyProposal, canStart, closeForm, counts, dismissTeammate,
     familyNote, followUpOf, formState, formWaiting, forms, isApplied, openKey, pendingProposal, presets, replacedBy,
     saveTeammate, setPresetsVersion, startedProposals,
   } = useChatForms({
@@ -568,9 +567,6 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
                   onApplyStart={canStart ? () => applyProposal(e.proposal!, { uuid: e.uuid }) : undefined}
                   keyHint={e === pendingProposal} followUp={followUpOf(e.proposal)} family={familyNote(e.proposal)} />
               )}
-              {e.newTickets && (
-                <NewTicketsCard drafts={e.newTickets} created={childFor} parentId={ticket.id} onCreate={createChild} onOpen={onOpenTicket} />
-              )}
               {e.branch && (
                 <BranchCard reason={e.branch.reason} here={old} running={running} onOpen={onOpenTicket}
                   branch={tickets.find((t) => t.branchedFrom === ticket.id && !!t.branchPoint && t.branchPoint.at > e.at)}
@@ -627,8 +623,8 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
               {e.unreadable && (
                 <div className="chat-unreadable" role="status">
                   <span>Couldn't read Claude's {UNREADABLE[e.unreadable]}.</span>
-                  {!answeredAfter(b.index) && (
-                    <button className="btn small" disabled={running} onClick={() => send(RESEND[e.unreadable!])}>Resend</button>
+                  {e.unreadable !== "tickets" && !answeredAfter(b.index) && (
+                    <button className="btn small" disabled={running} onClick={() => send(RESEND[e.unreadable as keyof typeof RESEND])}>Resend</button>
                   )}
                 </div>
               )}
