@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   AVATAR_ACCESSORIES, AVATAR_BACKGROUNDS, AVATAR_COLORS, AVATAR_DETAILS, AVATAR_EYES, AVATAR_FACES, AVATAR_HAIR_COLORS, AVATAR_HAIRS, AVATAR_HATS, CLAUDE_LOOK, crownBase, hairCut, shownHair, showsAntenna, TEAMMATE_LOOKS,
-} from "../web/src/avatarLook";
-import { colorName, looksRight, partLabel, sameLook, surpriseLook, swatches } from "../web/src/avatarEditorText";
+} from "./avatarLook";
+import { colorName, looksRight, partLabel, sameLook, surpriseLook, swatches } from "./avatarEditorText";
 
 test("every swatch has a name for screen readers", () => {
   for (const c of AVATAR_COLORS) expect(colorName(c)).not.toBe("Current colour");

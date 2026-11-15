@@ -11,7 +11,7 @@ import { resultWakesMain } from "../src/server/main-ticket";
 import { planStep, planTable } from "../src/server/plan";
 import { Store } from "../src/core/store";
 import type { Plan, Ticket } from "../src/core/types";
-import { featureChoices } from "../web/src/featureChoices";
+import { featureChoices } from "../web/src/features/board/featureChoices";
 import { tempDir } from "./support/helpers";
 
 // Automations that put each new ticket in a feature (Loop.partOf): a task of the feature's main ticket, as schedules do.

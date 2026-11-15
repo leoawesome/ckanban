@@ -1,15 +1,15 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { api, copy, safeHref, type AgentStatus, type McpAddInput, type McpConfig, type McpServer, type McpState, type McpTransport, type Pass } from "./lib/api";
-import { boardCell } from "./automations";
+import { api, copy, safeHref, type AgentStatus, type McpAddInput, type McpConfig, type McpServer, type McpState, type McpTransport, type Pass } from "../../lib/api";
+import { boardCell } from "../schedules/automations";
 import { connectFromClaude, KeyForm, openSignIn } from "./passConnect";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { CloseIcon, CopyIcon, PlugIcon, PlusIcon, TerminalIcon } from "./components/icons";
-import { EmptyState, FormError, LoadState, SecretInput } from "./components/formParts";
-import { tabKeys } from "./lib/tabKeys";
-import { usePhone } from "./hooks/usePhone";
-import { Modal, useFormDirty } from "./components/Modal";
-import { timeAgo } from "./lib/time";
-import { useNow } from "./hooks/useNow";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { CloseIcon, CopyIcon, PlugIcon, PlusIcon, TerminalIcon } from "../../components/icons";
+import { EmptyState, FormError, LoadState, SecretInput } from "../../components/formParts";
+import { tabKeys } from "../../lib/tabKeys";
+import { usePhone } from "../../hooks/usePhone";
+import { Modal, useFormDirty } from "../../components/Modal";
+import { timeAgo } from "../../lib/time";
+import { useNow } from "../../hooks/useNow";
 
 const SCOPE_LABEL: Record<McpServer["scope"], string> = {
   user: "user", local: "local", project: "project", "claude.ai": "claude.ai", board: "board", other: "other",

@@ -1,24 +1,24 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import type { Huddle, Profile, Ticket } from "./lib/api";
-import { Changes, useTicketDiff } from "./Changes";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { FilesView } from "./FilesView";
+import type { Huddle, Profile, Ticket } from "../../lib/api";
+import { Changes, useTicketDiff } from "../files/Changes";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { FilesView } from "../files/FilesView";
 import {
   ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, CloseIcon, MaximizeIcon, MoreIcon, PlusIcon, RestoreIcon,
-} from "./components/icons";
-import { isNewChatKey, isTyping } from "./app/keynav";
-import { KeyHint } from "./components/KeyHint";
-import { useLayer } from "./lib/layers";
-import { MenuSheet } from "./components/MenuSheet";
-import { QuickChatPane } from "./QuickChat";
-import { isMac } from "./lib/platform";
+} from "../../components/icons";
+import { isNewChatKey, isTyping } from "../../app/keynav";
+import { KeyHint } from "../../components/KeyHint";
+import { useLayer } from "../../lib/layers";
+import { MenuSheet } from "../../components/MenuSheet";
+import { QuickChatPane } from "../quickchat/QuickChat";
+import { isMac } from "../../lib/platform";
 import { clampChatWidth, COLUMN_MIN } from "./sideChatLayout";
-import { useClaudeName } from "./AvatarFace";
-import { PANELS, panelLabel, resizePair, shareOf, whereHint, type PanelId } from "./app/panelState";
-import { TeamTab, type HuddleSeed, type TeamRequest } from "./Team";
-import { TerminalView } from "./TerminalView";
-import { toast } from "./components/toast";
-import type { Panels } from "./hooks/usePanels";
+import { useClaudeName } from "../avatar/AvatarFace";
+import { PANELS, panelLabel, resizePair, shareOf, whereHint, type PanelId } from "../../app/panelState";
+import { TeamTab, type HuddleSeed, type TeamRequest } from "../team/Team";
+import { TerminalView } from "../browsers/TerminalView";
+import { toast } from "../../components/toast";
+import type { Panels } from "../../hooks/usePanels";
 
 /** What the column and the phone's panel screen need from the App. */
 export interface PanelsProps {

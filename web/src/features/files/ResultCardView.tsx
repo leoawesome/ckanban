@@ -1,9 +1,9 @@
 import { useContext } from "react";
-import type { ResultCard } from "./lib/api";
-import { FileLinkContext } from "./lib/fileLinkContext";
-import { requestTab } from "./lib/pendingTab";
-import { QuestionText } from "./QuestionText";
-import { aliasLabel } from "./lib/models";
+import type { ResultCard } from "../../lib/api";
+import { FileLinkContext } from "../../lib/fileLinkContext";
+import { requestTab } from "../../lib/pendingTab";
+import { QuestionText } from "../ticket/QuestionText";
+import { aliasLabel } from "../../lib/models";
 
 /** Short model name for the card's head ("Opus 5.5"). */
 export function modelLabel(m: string | null | undefined): string | null {

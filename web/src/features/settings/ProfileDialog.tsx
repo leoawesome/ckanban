@@ -1,13 +1,13 @@
-import { EFFORTS, KIND_DEFAULTS, MODELS, modelOptions, setLearnedVersions, taskModel, TASK_ROWS, type ModelPick, type TaskModels } from "./lib/models";
+import { EFFORTS, KIND_DEFAULTS, MODELS, modelOptions, setLearnedVersions, taskModel, TASK_ROWS, type ModelPick, type TaskModels } from "../../lib/models";
 import { useEffect, useId, useMemo, useState } from "react";
-import { api, type ClaudeProject, type Profile, type RepoKind, type SetupDetection, type Workspace } from "./lib/api";
-import { capInputText, parseCap } from "./capText";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { Modal, ModalCancel } from "./components/Modal";
-import { FormError } from "./components/formParts";
-import { Select } from "./components/Select";
-import { timeAgo } from "./lib/time";
-import { VersionHistoryOffer } from "./VersionHistoryOffer";
+import { api, type ClaudeProject, type Profile, type RepoKind, type SetupDetection, type Workspace } from "../../lib/api";
+import { capInputText, parseCap } from "../usage/capText";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { Modal, ModalCancel } from "../../components/Modal";
+import { FormError } from "../../components/formParts";
+import { Select } from "../../components/Select";
+import { timeAgo } from "../../lib/time";
+import { VersionHistoryOffer } from "../board/VersionHistoryOffer";
 
 
 /** The table's picks as the board's setting: every kind of each row (the server keeps only the ones off their default). */

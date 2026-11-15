@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckIcon, ChevronDownIcon, PanelsIcon } from "../components/icons";
 import { useLayer } from "../lib/layers";
 import { PANELS, panelLabel, type PanelId } from "./panelState";
-import { useClaudeName } from "../AvatarFace";
+import { useClaudeName } from "../features/avatar/AvatarFace";
 import type { Panels } from "../hooks/usePanels";
 
 /**

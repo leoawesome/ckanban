@@ -1,6 +1,6 @@
 // The feature status at the top of the Tasks tab and the chat's "Waiting on you" line (web/src/tasksText.ts).
 import { expect, test } from "bun:test";
-import { namesText, taskProgress, waitingLine } from "../web/src/tasksText";
+import { namesText, taskProgress, waitingLine } from "./tasksText";
 
 test("progress counts loose tasks and the tasks inside groups, not the groups", () => {
   expect(taskProgress({

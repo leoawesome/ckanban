@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import type { Ticket } from "./lib/api";
-import { openFeatures, partOfFor, suggestFeature } from "./family";
+import type { Ticket } from "../../lib/api";
+import { openFeatures, partOfFor, suggestFeature } from "../family/family";
 
 export type FeatureChoiceValue = "add" | "own" | "other";
 

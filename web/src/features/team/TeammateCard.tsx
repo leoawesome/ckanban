@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { HuddlePreset, Level, TeammateCardState, TeammateProposal } from "./lib/api";
+import type { HuddlePreset, Level, TeammateCardState, TeammateProposal } from "../../lib/api";
 import { TeammateAvatar } from "./Team";
 import { proposedTeammate, savedText, teammateDiff, teammateMeta, type TeammateDraft } from "./teammateText";
 

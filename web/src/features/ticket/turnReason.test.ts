@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { turnReason } from "../web/src/phoneStatus";
+import { turnReason } from "./phoneStatus";
 
 test("turnReason: the reason after 'Your turn ·' in plain lower-case words", () => {
   expect(turnReason(null)).toBe("");

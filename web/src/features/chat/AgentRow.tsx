@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, type AgentInfo, type AgentStep, type SessionEntry } from "./lib/api";
-import { duration, fullTime } from "./lib/time";
+import { api, type AgentInfo, type AgentStep, type SessionEntry } from "../../lib/api";
+import { duration, fullTime } from "../../lib/time";
 import { ToolRow } from "./ToolRows";
 import { ClaudeFace } from "./ConvTurn";
-import { agentMood } from "./avatarMood";
+import { agentMood } from "../avatar/avatarMood";
 import { Markdown } from "./Transcript";
 
 /** Rows the user opened; module-level so they stay open across live refreshes and ticket switches. */

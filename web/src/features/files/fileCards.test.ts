@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { filesByReply } from "../web/src/fileCards";
+import { filesByReply } from "./fileCards";
 
 const e = (uuid: string, at: string, role: "user" | "assistant", kind = "text") => ({ uuid, at, role, kind, text: uuid });
 const f = (name: string, updatedAt: string) => ({ name, size: 10, updatedAt });
@@ -41,7 +41,7 @@ test("many files under one reply stay fast", () => {
 });
 
 test("a main ticket's status files never show under a reply (Where we are pins them)", async () => {
-  const { STATUS_FILES } = await import("../web/src/fileCards");
+  const { STATUS_FILES } = await import("./fileCards");
   const entries = [e("u1", "2026-10-06T10:00:00Z", "user"), e("a1", "2026-10-06T10:00:05Z", "assistant")];
   const files = [f("status.json", "2026-10-06T10:00:02Z"), f("status.md", "2026-10-06T10:00:03Z"), f("plan.md", "2026-10-06T10:00:04Z")];
   expect(filesByReply(entries, files, STATUS_FILES).get("a1")?.map((x) => x.name)).toEqual(["plan.md"]);
@@ -50,7 +50,7 @@ test("a main ticket's status files never show under a reply (Where we are pins t
 });
 
 test("a paused step's line says when it resumes", async () => {
-  const { pausedLine } = await import("../web/src/limitText");
+  const { pausedLine } = await import("../usage/limitText");
   const at = new Date(2026, 10, 6, 14, 30).toISOString();
   const now = new Date(2026, 10, 6, 12, 0).getTime();
   expect(pausedLine({ resumeAt: at, auto: true }, now)).toBe("Hit the usage limit, resumes at 14:30");

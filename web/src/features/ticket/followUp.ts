@@ -1,7 +1,7 @@
 // Follow-up work asked for in the chat of a ticket that already ran (replaces the old add-on tickets). The proposal
 // card there makes it a step that reports to the feature's main ticket, so the user keeps talking where they are.
 // No imports from ./api: the server and its tests import this file too.
-import { fitParent, levelOf, MAX_LEVEL, parentLink, type FamilyTicket } from "./family";
+import { fitParent, levelOf, MAX_LEVEL, parentLink, type FamilyTicket } from "../family/family";
 
 export interface FollowUpTicket extends FamilyTicket {
   main?: boolean;

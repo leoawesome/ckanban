@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { api, type Ticket } from "./lib/api";
-import { CloseIcon, DeviceIcon } from "./components/icons";
-import { useNow } from "./hooks/useNow";
+import { api, type Ticket } from "../../lib/api";
+import { CloseIcon, DeviceIcon } from "../../components/icons";
+import { useNow } from "../../hooks/useNow";
 
 /** How long a device has been held or waited for, in whole minutes: "under 1 min", "12 min", "1 h 5 min". */
 export function heldFor(iso: string, at = Date.now()): string {

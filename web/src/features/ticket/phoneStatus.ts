@@ -1,7 +1,7 @@
-import { COLUMNS, familyBusy, waitsForSlot, type Status } from "./columns";
-import { HUDDLE_WORKING, type FinishMark } from "./cardState";
-import type { AvatarMood } from "./avatarLook";
-import { runMood } from "./avatarMood";
+import { COLUMNS, familyBusy, waitsForSlot, type Status } from "../board/columns";
+import { HUDDLE_WORKING, type FinishMark } from "../board/cardState";
+import type { AvatarMood } from "../avatar/avatarLook";
+import { runMood } from "../avatar/avatarMood";
 
 /** The colour of the phone header's status button. */
 export type StatusTone = "ok" | "warn" | "err" | "info" | "neutral";

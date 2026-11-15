@@ -1,4 +1,4 @@
-import type { CommandAction } from "./app/CommandBar";
+import type { CommandAction } from "../../app/CommandBar";
 
 /**
  * The open ticket panel's own ⌘K entries (Go to what needs you, Mark done, Delete ticket…). The panel provides them

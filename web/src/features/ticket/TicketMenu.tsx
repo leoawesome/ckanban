@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { copy, type Ticket } from "./lib/api";
-import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, InfoIcon, MoreIcon, MoveIcon, PinIcon, RefreshIcon, SparkIcon, TerminalIcon, TrashIcon } from "./components/icons";
-import { capInputText, parseCap } from "./capText";
-import { useLayer } from "./lib/layers";
-import { MenuSheet } from "./components/MenuSheet";
-import { costText } from "./usage";
+import { copy, type Ticket } from "../../lib/api";
+import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, InfoIcon, MoreIcon, MoveIcon, PinIcon, RefreshIcon, SparkIcon, TerminalIcon, TrashIcon } from "../../components/icons";
+import { capInputText, parseCap } from "../usage/capText";
+import { useLayer } from "../../lib/layers";
+import { MenuSheet } from "../../components/MenuSheet";
+import { costText } from "../usage/usage";
 
 /**
  * "⋯" menu in the ticket panel header: the session (resume command, branch, ID, linked session),

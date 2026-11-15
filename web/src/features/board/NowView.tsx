@@ -1,17 +1,17 @@
-import type { SnoozeLength } from "./lib/snooze";
+import type { SnoozeLength } from "../../lib/snooze";
 import { useState, type ReactNode } from "react";
-import type { InboxItem, Ticket } from "./lib/api";
+import type { InboxItem, Ticket } from "../../lib/api";
 import { answers, groupInbox, marksDone } from "./inboxOrder";
-import { useSafeClear } from "./hooks/useSafeClear";
-import { elapsed, waitedFor } from "./lib/time";
-import { useNow } from "./hooks/useNow";
-import { RowMore, ShowMore, usePaged, type InboxHelper } from "./Inbox";
-import { isHeldLine } from "./helper";
-import { HelperStatusLine, MessagesEntry } from "./Messages";
-import { ChevronDownIcon, ChevronRightIcon } from "./components/icons";
-import { ClaudeFace } from "./ConvTurn";
-import { liveLine, runMood } from "./avatarMood";
-import { useClaudeName } from "./AvatarFace";
+import { useSafeClear } from "../../hooks/useSafeClear";
+import { elapsed, waitedFor } from "../../lib/time";
+import { useNow } from "../../hooks/useNow";
+import { RowMore, ShowMore, usePaged, type InboxHelper } from "../helper/Inbox";
+import { isHeldLine } from "../helper/helper";
+import { HelperStatusLine, MessagesEntry } from "../chat/Messages";
+import { ChevronDownIcon, ChevronRightIcon } from "../../components/icons";
+import { ClaudeFace } from "../chat/ConvTurn";
+import { liveLine, runMood } from "../avatar/avatarMood";
+import { useClaudeName } from "../avatar/AvatarFace";
 
 /**
  * Phone home (≤720px), for the board shown: what needs you (what Claude is waiting on, then what is ready to check,

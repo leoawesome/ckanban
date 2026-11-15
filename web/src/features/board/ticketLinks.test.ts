@@ -1,6 +1,6 @@
 // Ticket ids in the Tasks tab's saved status text turn into the ticket's title (web/src/ticketLinks.ts).
 import { expect, test } from "bun:test";
-import { ticketParts } from "../web/src/ticketLinks";
+import { ticketParts } from "./ticketLinks";
 
 const titles = new Map([["t_20261114_ekqu", "Bookshelf size enquiry"], ["t_20261101_ab12", ""]]);
 

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { isFinished, isOneDateCron, scheduleGroup } from "../web/src/scheduleGroups";
-import { lastPause } from "../src/server/quiet";
-import type { ScheduleHistoryEntry } from "../src/core/types";
+import { isFinished, isOneDateCron, scheduleGroup } from "./scheduleGroups";
+import { lastPause } from "../../../../src/server/quiet";
+import type { ScheduleHistoryEntry } from "../../../../src/core/types";
 
 const NOW = new Date("2026-11-13T12:00:00Z").getTime();
 const days = (n: number) => new Date(NOW + n * 86_400_000).toISOString();

@@ -1,10 +1,10 @@
 // The board's side of sub-features and "Show on board": which cards show (onBoard via searchBoard), the card's
 // "Part of" / "Task of" chips, the working line's "· N sub-features running", and the Part of hover texts.
 import { expect, test } from "bun:test";
-import { familyLineText, partChip } from "../web/src/cardState";
-import { linkHints } from "../web/src/lib/linkHints";
-import { groupByColumn } from "../web/src/columns";
-import { searchBoard } from "../web/src/toolTickets";
+import { familyLineText, partChip } from "./cardState";
+import { linkHints } from "../../lib/linkHints";
+import { groupByColumn } from "./columns";
+import { searchBoard } from "../ticket/toolTickets";
 
 const tk = (id: string, x: Record<string, unknown> = {}) => ({ id, title: id, body: "", status: "review", createdAt: `2026-11-10T10:0${id.length}:00Z`, updatedAt: "2026-11-10T10:00:00Z", ...x });
 

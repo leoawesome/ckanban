@@ -1,7 +1,7 @@
-import type { HuddleLine } from "../../../cardState";
-import type { Status } from "../../../columns";
-import type { TicketKind } from "../../../family";
-import type { PrStatus, TicketPr } from "../../../prText";
+import type { HuddleLine } from "../../../features/board/cardState";
+import type { Status } from "../../../features/board/columns";
+import type { TicketKind } from "../../../features/family/family";
+import type { PrStatus, TicketPr } from "../../../features/ticket/prText";
 import type { BrowserPick, TicketDevices } from "./browsers";
 import type { QueuedMessage, SessionSummary } from "./chat";
 import type { ResultCard, ShareJob, ShareLink, TicketLink } from "./files";
@@ -9,7 +9,7 @@ import type { Attention, HelperRuleCardState } from "./helper";
 import type { SquadCardState, TeammateCardState } from "./huddle";
 import type { ScheduleDeleteCardState } from "./schedules";
 
-export type { PrCheck, PrStatus, TicketPr } from "../../../prText";
+export type { PrCheck, PrStatus, TicketPr } from "../../../features/ticket/prText";
 /** limit: the run hit the Claude usage/spend limit (see Ticket.limit). */
 export type Outcome = null | "done" | "blocked" | "failed" | "stopped" | "needs_input" | "limit";
 export type TicketMode = "interview" | "auto";

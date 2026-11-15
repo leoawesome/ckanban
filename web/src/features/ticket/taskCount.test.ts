@@ -1,10 +1,10 @@
 // One rule behind every "N of M done" (audit B24): the status's count (taskProgress over statusFacts), the Tasks tab
 // badge (taskTally over featureRows) and the Tasks list head (featureTasks over the tab's newest-first rows) agree.
 import { expect, test } from "bun:test";
-import { featureRows, featureTasks, newestFirst, taskTally } from "../web/src/family";
-import { taskProgress } from "../web/src/tasksText";
-import { statusFacts } from "../src/server/feature";
-import type { Ticket } from "../src/core/types";
+import { featureRows, featureTasks, newestFirst, taskTally } from "../family/family";
+import { taskProgress } from "./tasksText";
+import { statusFacts } from "../../../../src/server/feature";
+import type { Ticket } from "../../../../src/core/types";
 
 let n = 0;
 const tk = (id: string, x: Partial<Ticket> = {}) => ({

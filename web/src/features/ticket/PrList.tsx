@@ -1,8 +1,8 @@
 // The ticket's PRs near the top of the drawer: one compact box, or a "Pull requests" list that folds (remembered
 // per browser). In Review the main PR also gets the PR box with its checks and Merge & done (PrBox.tsx).
 import { useState } from "react";
-import { safeHref, type Ticket, type TicketPr } from "./lib/api";
-import { ExternalIcon } from "./components/icons";
+import { safeHref, type Ticket, type TicketPr } from "../../lib/api";
+import { ExternalIcon } from "../../components/icons";
 import { currentPr, prNumber, prRepo, prStateWord, prSummary, ticketPrs } from "./prText";
 
 /** Rows shown before "Show N more". */

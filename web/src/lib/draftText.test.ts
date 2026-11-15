@@ -2,7 +2,7 @@
 // user's messages at a time shows its actions (web/src/shownMessage.ts).
 import { expect, test } from "bun:test";
 import { draftText, type DraftNode } from "./draftText";
-import { nextShown } from "../shownMessage";
+import { nextShown } from "../features/chat/shownMessage";
 
 const text = (t: string): DraftNode => ({ nodeType: 3, nodeName: "#text", nodeValue: t, childNodes: [] });
 const el = (name: string, ...kids: (DraftNode | string)[]): DraftNode =>

@@ -1,12 +1,12 @@
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
-import { api, copy, type ActivityEntry } from "./lib/api";
-import { ATTACHMENT_SRC, fileHref, fileKind, formatSize, opensInline } from "./lib/attachText";
-import { FileLinkContext } from "./lib/fileLinkContext";
-import { draftText } from "./lib/draftText";
-import { codePath, textPaths } from "./lib/filePaths";
-import { opensNewTab } from "./lib/links";
+import { api, copy, type ActivityEntry } from "../../lib/api";
+import { ATTACHMENT_SRC, fileHref, fileKind, formatSize, opensInline } from "../../lib/attachText";
+import { FileLinkContext } from "../../lib/fileLinkContext";
+import { draftText } from "../../lib/draftText";
+import { codePath, textPaths } from "../../lib/filePaths";
+import { opensNewTab } from "../../lib/links";
 import { ClaudeFace } from "./ConvTurn";
 import { sourceLabel, splitCommandMentions, type SlashCommand } from "./slashText";
 

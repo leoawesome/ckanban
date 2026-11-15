@@ -3,8 +3,8 @@
 // finished is done, failed (or stopped with an error) is failed, anything else idle. Where a screen can't tell thinking
 // from working, it says working.
 import type { AvatarMood } from "./avatarLook";
-import type { FamilyState } from "./family";
-import type { FinishMark } from "./cardState";
+import type { FamilyState } from "../family/family";
+import type { FinishMark } from "../board/cardState";
 
 /** The server's live line right after a message is sent (src/server/board.ts THINKING_LINE), and the one tickets
  * saved before it ("Claude is replying…"). Both are a fixed marker: liveLine shows them with the user's name for Claude. */

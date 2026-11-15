@@ -11,7 +11,7 @@ import type { SessionSummary } from "../src/server/session";
 import { addSideSpend, type SideCallResult } from "../src/server/side-call";
 import { Store } from "../src/core/store";
 import type { Profile, Ticket } from "../src/core/types";
-import { anyItemOpen, itemStateLabel, spendLine, type Message } from "../web/src/helperText";
+import { anyItemOpen, itemStateLabel, spendLine, type Message } from "../web/src/features/helper/helperText";
 import { tempDir } from "./support/helpers";
 
 const DAY = (h: number, m = 0) => new Date(2026, 10, 9, h, m).getTime();

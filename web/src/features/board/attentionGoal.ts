@@ -1,4 +1,4 @@
-import type { DrawerTab } from "./app/keynav";
+import type { DrawerTab } from "../../app/keynav";
 
 /**
  * Where "Your turn" leads in the ticket panel: the tab to open, what to scroll to and highlight there (the first

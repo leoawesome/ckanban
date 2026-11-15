@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { workingInFamily } from "../web/src/family";
-import { stepsLine, stepsLineText, stepsWorking } from "../web/src/stepsLive";
+import { workingInFamily } from "../family/family";
+import { stepsLine, stepsLineText, stepsWorking } from "./stepsLive";
 
 const at = (n: number) => `2026-11-07T00:00:0${n}Z`;
 const t = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: `T ${id}`, status: "backlog", createdAt: at(0), running: false, ...extra });

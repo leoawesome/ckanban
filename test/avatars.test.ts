@@ -10,8 +10,8 @@ import * as server from "../src/server/avatars";
 import {
   AVATAR_ACCESSORIES, AVATAR_BACKGROUNDS, AVATAR_DETAILS, AVATAR_EYES, AVATAR_FACES, AVATAR_HAIRS, AVATAR_HATS, avatarFor, avatarKey, CLAUDE_LOOK, claudeName, cleanAvatarLook, cleanClaudeName, defaultAvatar, MAX_CLAUDE_NAME,
   TEAMMATE_LOOKS, YOU_LOOK,
-} from "../web/src/avatarLook";
-import { faceLook } from "../web/src/huddleText";
+} from "../web/src/features/avatar/avatarLook";
+import { faceLook } from "../web/src/features/huddle/huddleText";
 import { tempDir } from "./support/helpers";
 
 test("the server and the UI know the same parts", () => {

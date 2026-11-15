@@ -1,11 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronRightIcon, RefreshIcon } from "./components/icons";
-import { useLayer } from "./lib/layers";
-import { fullTime, timeAgo } from "./lib/time";
-import { useNow } from "./hooks/useNow";
-import { runStatusText } from "./boardStats";
+import { ChevronRightIcon, RefreshIcon } from "../../components/icons";
+import { useLayer } from "../../lib/layers";
+import { fullTime, timeAgo } from "../../lib/time";
+import { useNow } from "../../hooks/useNow";
+import { runStatusText } from "../board/boardStats";
 import { costText, limitNote, resetLine, resetText, shortLabel, staleNote, usageError, usageTone, usageWindows, worstTone } from "./usage";
-import type { UsageState } from "./hooks/useUsage";
+import type { UsageState } from "../../hooks/useUsage";
 
 /** What the status pill says about the board shown; null until its tickets have loaded. */
 export interface BoardRuns {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { comparedWith, fileCount, showTree, TREE_ABOVE } from "../web/src/changesText";
-import { rosterNames } from "../web/src/huddleText";
+import { comparedWith, fileCount, showTree, TREE_ABOVE } from "./changesText";
+import { rosterNames } from "../huddle/huddleText";
 
 test("Changes lists files plainly up to 8 and groups them by folder above that", () => {
   expect(TREE_ABOVE).toBe(8);

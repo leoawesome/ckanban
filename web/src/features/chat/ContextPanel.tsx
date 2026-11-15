@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, subscribe } from "./lib/api";
+import { api, subscribe } from "../../lib/api";
 import {
   checkedText, chipText, contextRows, percentText, phoneRows, shortPath, tokenText, type ContextReport, type ContextRow, type ContextView,
 } from "./contextText";
-import { CloseIcon } from "./components/icons";
-import { useLayer } from "./lib/layers";
-import { MenuSheet } from "./components/MenuSheet";
-import { useNow } from "./hooks/useNow";
-import { usePhone } from "./hooks/usePhone";
+import { CloseIcon } from "../../components/icons";
+import { useLayer } from "../../lib/layers";
+import { MenuSheet } from "../../components/MenuSheet";
+import { useNow } from "../../hooks/useNow";
+import { usePhone } from "../../hooks/usePhone";
 
 /**
  * The chat footer's Context chip ("N% used", "Context" before the first check) and its panel: how full Claude's memory

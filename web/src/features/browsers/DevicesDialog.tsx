@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { api, subscribe, type DeviceUser, type DeviceView } from "./lib/api";
-import { Modal, useFormDirty } from "./components/Modal";
-import { EmptyState, FormError, LoadState } from "./components/formParts";
-import { DevicesIcon, PlusIcon } from "./components/icons";
-import { toast } from "./components/toast";
-import { heldFor } from "./Needs";
-import { timeAgo } from "./lib/time";
-import { useNow } from "./hooks/useNow";
+import { api, subscribe, type DeviceUser, type DeviceView } from "../../lib/api";
+import { Modal, useFormDirty } from "../../components/Modal";
+import { EmptyState, FormError, LoadState } from "../../components/formParts";
+import { DevicesIcon, PlusIcon } from "../../components/icons";
+import { toast } from "../../components/toast";
+import { heldFor } from "../helper/Needs";
+import { timeAgo } from "../../lib/time";
+import { useNow } from "../../hooks/useNow";
 
 /**
  * More → Devices: the shared device list every board's runs take from (server: devices.ts). Each device has a

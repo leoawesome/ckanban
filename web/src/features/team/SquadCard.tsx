@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { api, type HuddlePreset, type HuddleTemplate, type Level, type SquadCardRef, type SquadCardState, type SquadDraft, type SquadProposal } from "./lib/api";
-import { ConfirmDialog } from "./components/ConfirmDialog";
+import { api, type HuddlePreset, type HuddleTemplate, type Level, type SquadCardRef, type SquadCardState, type SquadDraft, type SquadProposal } from "../../lib/api";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { isNameTaken, personChips, personHandle, squadSavedText, squadSummary } from "./squadText";
 
 type Saved = { squad: HuddleTemplate; teammates: { created: string[]; reused: string[] } };

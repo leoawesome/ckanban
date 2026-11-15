@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import type { Huddle } from "./lib/api";
+import type { Huddle } from "../../lib/api";
 import { huddleCost, huddleRound, huddleTitle, members } from "./huddle";
-import { useLayer } from "./lib/layers";
-import { MenuSheet } from "./components/MenuSheet";
-import { fullTime } from "./lib/time";
+import { useLayer } from "../../lib/layers";
+import { MenuSheet } from "../../components/MenuSheet";
+import { fullTime } from "../../lib/time";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 const PILL = { live: "● Live", stopped: "■ Stopped", closed: "Closed" } as const;

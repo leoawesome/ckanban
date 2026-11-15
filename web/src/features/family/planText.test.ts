@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { checkInsText, complete, finishedLabel, planFinished, waitPhrase } from "../web/src/planText";
-import { attentionGoal } from "../web/src/attentionGoal";
+import { checkInsText, complete, finishedLabel, planFinished, waitPhrase } from "./planText";
+import { attentionGoal } from "../board/attentionGoal";
 
 const kid = (status: string, outcome: string | null = null, prUrl: string | null = null) => ({ status, outcome, prUrl });
 

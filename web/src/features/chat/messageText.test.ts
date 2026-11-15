@@ -1,8 +1,8 @@
 // The row under the user's messages and the Undo rewind bar (web/src/messageText.ts, sentTime in web/src/time.ts).
 import { expect, test } from "bun:test";
-import { copyText, draftAfterUndo, forkPoints, forkTitle, rewoundLine, undoneLine } from "../web/src/messageText";
-import { noFilesLine } from "../web/src/rewindText";
-import { sentTime } from "../web/src/lib/time";
+import { copyText, draftAfterUndo, forkPoints, forkTitle, rewoundLine, undoneLine } from "./messageText";
+import { noFilesLine } from "../ticket/rewindText";
+import { sentTime } from "../../lib/time";
 
 const now = new Date(2026, 10, 10, 18, 0); // Tue 10 Nov 2026 18:00, local
 const at = (y: number, mo: number, d: number, h: number, m: number, s = 0) => new Date(y, mo, d, h, m, s).toISOString();

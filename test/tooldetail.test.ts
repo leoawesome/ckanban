@@ -7,7 +7,7 @@ import { createServer } from "../src/server/http";
 import { parseSession, SessionCache } from "../src/server/session";
 import { Store } from "../src/core/store";
 import { findToolDetail, TOOL_OUTPUT_MAX } from "../src/server/tooldetail";
-import { editDiff, mainInput } from "../web/src/toolView";
+import { editDiff, mainInput } from "../web/src/features/chat/toolView";
 import { tempDir } from "./support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);

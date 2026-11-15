@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { api, type LearnCandidate, type LearnChange, type LearnedView, type LearnSource } from "./lib/api";
-import { fullTime, timeAgo } from "./lib/time";
+import { api, type LearnCandidate, type LearnChange, type LearnedView, type LearnSource } from "../../lib/api";
+import { fullTime, timeAgo } from "../../lib/time";
 
 /**
  * The Team tab's Learned view: lessons the board saved on its own (from corrections that came back, or huddle lessons

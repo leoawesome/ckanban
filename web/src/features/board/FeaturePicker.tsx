@@ -1,5 +1,5 @@
 import { featureChoices, type FeatureMaker } from "./featureChoices";
-import type { FeatureTicket } from "./family";
+import type { FeatureTicket } from "../family/family";
 
 /**
  * "Its own card" or a feature (a main ticket or one of its groups) a schedule's runs or an automation's new tickets go

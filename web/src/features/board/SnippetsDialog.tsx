@@ -1,14 +1,14 @@
 import { useEffect, useId, useState } from "react";
-import { api, type Profile, type Snippet } from "./lib/api";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { AtIcon, ChevronRightIcon, PlusIcon } from "./components/icons";
-import { PhoneBar } from "./AutomationsDialog";
-import { EmptyState, FormError, LoadState } from "./components/formParts";
-import { useDiscardAsk } from "./hooks/useDiscardAsk";
-import { useBackEntry } from "./app/backEntry";
-import { usePhone } from "./hooks/usePhone";
-import { Modal } from "./components/Modal";
-import { Select } from "./components/Select";
+import { api, type Profile, type Snippet } from "../../lib/api";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { AtIcon, ChevronRightIcon, PlusIcon } from "../../components/icons";
+import { PhoneBar } from "../schedules/AutomationsDialog";
+import { EmptyState, FormError, LoadState } from "../../components/formParts";
+import { useDiscardAsk } from "../../hooks/useDiscardAsk";
+import { useBackEntry } from "../../app/backEntry";
+import { usePhone } from "../../hooks/usePhone";
+import { Modal } from "../../components/Modal";
+import { Select } from "../../components/Select";
 import { firstLine } from "./snippetText";
 import { reloadSnippets, useSnippets } from "./snippets";
 

@@ -3,7 +3,7 @@
  * cache time at Claude's last reply (src/server/chat-cache.ts); this works out whether the chat is old and what to say.
  * Nothing shows while the chat is still ready: no countdown, so a reply never feels rushed.
  */
-import { contextText } from "./huddleText";
+import { contextText } from "../huddle/huddleText";
 
 export interface ChatCacheInfo {
   /** Chat size at Claude's last reply. */

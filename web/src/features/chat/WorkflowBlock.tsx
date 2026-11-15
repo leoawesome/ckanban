@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, type SessionEntry, type WorkflowAgent, type WorkflowAgentDetail, type WorkflowAgentStatus, type WorkflowInfo } from "./lib/api";
-import { duration, fullTime } from "./lib/time";
-import { toast } from "./components/toast";
+import { api, type SessionEntry, type WorkflowAgent, type WorkflowAgentDetail, type WorkflowAgentStatus, type WorkflowInfo } from "../../lib/api";
+import { duration, fullTime } from "../../lib/time";
+import { toast } from "../../components/toast";
 import { ToolRow } from "./ToolRows";
 import { ClaudeFace } from "./ConvTurn";
 import { Markdown } from "./Transcript";
-import { costText } from "./usage";
+import { costText } from "../usage/usage";
 
 /** Agent rows and scripts the user opened; module-level so they stay open across live refreshes. */
 const opened = new Set<string>();

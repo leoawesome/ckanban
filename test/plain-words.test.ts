@@ -21,14 +21,14 @@ const TEXT_PROPS = new Set(["label", "hint", "title"]);
  */
 const ALLOWED: [string, string, string][] = [
   ["app/App.tsx", "git", "names the missing program to install"],
-  ["UsagePanel.tsx", "tokens", "token count only in the cost tooltip"],
-  ["ShareMenu.tsx", "Copy markdown", "names the copy format"],
-  ["TicketMenu.tsx", "Copy branch", "only shown when the folder has version history"],
-  ["TicketMenu.tsx", "{ticket.branch}", "the name that Copy branch copies"],
-  ["PrBox.tsx", "branch", "pull request box: only for folders on GitHub"],
-  ["PrBox.tsx", "{pr.base}", "pull request box: only for folders on GitHub"],
-  ["PrList.tsx", "{p.base}", "pull request list: only for folders on GitHub"],
-  ["ResolveConflicts.tsx", "base branch", "pull request conflicts: only for folders on GitHub"],
+  ["features/usage/UsagePanel.tsx", "tokens", "token count only in the cost tooltip"],
+  ["features/files/ShareMenu.tsx", "Copy markdown", "names the copy format"],
+  ["features/ticket/TicketMenu.tsx", "Copy branch", "only shown when the folder has version history"],
+  ["features/ticket/TicketMenu.tsx", "{ticket.branch}", "the name that Copy branch copies"],
+  ["features/ticket/PrBox.tsx", "branch", "pull request box: only for folders on GitHub"],
+  ["features/ticket/PrBox.tsx", "{pr.base}", "pull request box: only for folders on GitHub"],
+  ["features/ticket/PrList.tsx", "{p.base}", "pull request list: only for folders on GitHub"],
+  ["features/ticket/ResolveConflicts.tsx", "base branch", "pull request conflicts: only for folders on GitHub"],
 ];
 
 export interface Leak { file: string; line: number; text: string }

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { gapOf, jumpAfterScroll, NEAR_BOTTOM, onContentChange, SHOW_JUMP, stickAfterScroll } from "../web/src/chatFollow";
+import { gapOf, jumpAfterScroll, NEAR_BOTTOM, onContentChange, SHOW_JUMP, stickAfterScroll } from "./chatFollow";
 
 test("gapOf: distance from the bottom of the view to the bottom of the content, never negative", () => {
   expect(gapOf({ scrollHeight: 1000, scrollTop: 600, clientHeight: 400 })).toBe(0);

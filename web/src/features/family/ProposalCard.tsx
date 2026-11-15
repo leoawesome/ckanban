@@ -1,10 +1,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { Proposal } from "./lib/api";
-import { KeyHint } from "./components/KeyHint";
-import { MOD } from "./app/Shortcuts";
-import { ImportantStar } from "./components/StarToggle";
-import { Markdown } from "./Transcript";
-import type { FollowUpPlace } from "./followUp";
+import type { Proposal } from "../../lib/api";
+import { KeyHint } from "../../components/KeyHint";
+import { MOD } from "../../app/Shortcuts";
+import { ImportantStar } from "../../components/StarToggle";
+import { Markdown } from "../chat/Transcript";
+import type { FollowUpPlace } from "../ticket/followUp";
 
 /**
  * A proposal on a plain ticket that already ran (Done, In review, or ran before): follow-up work, so the ticket keeps its

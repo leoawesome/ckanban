@@ -78,9 +78,9 @@ import { ClaudeLogIndex, RunLogIndex, readWindows, recordWindow, ticketRuns, tic
 import { UsageCache } from "./usage-cache";
 import { fetchUsage, type UsageResult } from "./usage";
 import { Linker } from "./linker";
-import { familyOf, familyRoot, featureRoot, fitParent, groupsOf, hiddenTool, levelOf, MAX_LEVEL, withYouTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
+import { familyOf, familyRoot, featureRoot, fitParent, groupsOf, hiddenTool, levelOf, MAX_LEVEL, withYouTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/features/family/family";
 import { STATUS_FIELDS, type StatusPatch } from "./feature";
-import { createdFromDraft } from "../../web/src/proposalMatch";
+import { createdFromDraft } from "../../web/src/features/board/proposalMatch";
 import type { Store } from "../core/store";
 import { boardScope, byIdNewest, countScope, DONE_PAGE, donePage, doneSearch, idsScope, listScope, scopeIndex, type ScopeIndex } from "./ticketScope";
 import { runCapFor, SELF_MOVES, STATUSES, type HelperRuleCardState, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "../core/types";

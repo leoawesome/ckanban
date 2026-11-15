@@ -1,7 +1,7 @@
 // The ⌘K command bar's ticket rows (GET /api/tickets?scope=open|done). The bar used to get a row for every ticket on
 // every board each time it opened (about 2 MB at 10,000 tickets). Now it gets the tickets that aren't Done at once
 // (a few hundred), and finds Done tickets through a search here that sends only the best few matches.
-import { hiddenTool, parentLink } from "../../web/src/family";
+import { hiddenTool, parentLink } from "../../web/src/features/family/family";
 import { rankTickets } from "../../web/src/lib/fuzzy";
 import { pauser } from "../core/lag";
 import type { Store } from "../core/store";

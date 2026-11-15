@@ -1,10 +1,10 @@
 // The ticket panel's "Part of" row (link, change, unlink, the board's suggestion); the whole family is in the Family
 // tab (FamilyTab.tsx).
 import { useMemo, useState } from "react";
-import { api, COLUMNS, type Ticket } from "./lib/api";
+import { api, COLUMNS, type Ticket } from "../../lib/api";
 import { featureRows, hideableCard, LINK_WORDS, parentLink, wouldLoop, type FamilyRow, type LinkHow } from "./family";
-import { linkHints } from "./lib/linkHints";
-import { useLayer } from "./lib/layers";
+import { linkHints } from "../../lib/linkHints";
+import { useLayer } from "../../lib/layers";
 
 const columnLabel = (status: string) => COLUMNS.find((c) => c.id === status)?.label ?? status;
 

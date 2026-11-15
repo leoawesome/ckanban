@@ -1,7 +1,7 @@
 // The board loads its finished tickets in pieces (server: ticketScope.ts): Done's pages, search finds and tickets
 // opened directly. These keep the board's one list of tickets and the Done count right as the pieces arrive.
 import { boardColumnOf, groupByColumn, type Status } from "./columns";
-import { onBoard } from "./family";
+import { onBoard } from "../family/family";
 
 type Countable = { id: string; status: string; tool?: boolean; showOnBoard?: boolean | null };
 

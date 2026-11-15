@@ -1,5 +1,5 @@
-import { api, type OutputFile } from "./lib/api";
-import { capMap } from "./chatMemo";
+import { api, type OutputFile } from "../../lib/api";
+import { capMap } from "../chat/chatMemo";
 
 /**
  * A ticket's outputs list, shared between the ticket panel (the Outputs count) and its chat (file cards under

@@ -2,25 +2,25 @@ import { useEffect, useId, useRef, useState } from "react";
 import {
   api, type CronPreview, type Job, type ScheduleTrigger, type Outcome, type Profile, type Schedule, type ScheduleHistoryItem, type ScheduleInput, type Status,
   type Ticket, type TicketMode,
-} from "./lib/api";
-import { ConfirmDialog } from "./components/ConfirmDialog";
+} from "../../lib/api";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { UpcomingJobs } from "./Jobs";
-import { DescriptionEditor } from "./DescriptionEditor";
-import { FeaturePicker } from "./FeaturePicker";
-import { Modal } from "./components/Modal";
-import { MenuSheet } from "./components/MenuSheet";
-import { ClockIcon, MoreIcon, PlusIcon, SparkIcon } from "./components/icons";
+import { DescriptionEditor } from "../ticket/DescriptionEditor";
+import { FeaturePicker } from "../board/FeaturePicker";
+import { Modal } from "../../components/Modal";
+import { MenuSheet } from "../../components/MenuSheet";
+import { ClockIcon, MoreIcon, PlusIcon, SparkIcon } from "../../components/icons";
 import { PhoneBar } from "./AutomationsDialog";
-import { EmptyState, FormError, LoadState } from "./components/formParts";
-import { useDiscardAsk } from "./hooks/useDiscardAsk";
-import { useBackEntry } from "./app/backEntry";
-import { ModeToggle } from "./components/ModeToggle";
-import { TagChip, TagEditor } from "./Tags";
-import { boardTags } from "./tagText";
+import { EmptyState, FormError, LoadState } from "../../components/formParts";
+import { useDiscardAsk } from "../../hooks/useDiscardAsk";
+import { useBackEntry } from "../../app/backEntry";
+import { ModeToggle } from "../../components/ModeToggle";
+import { TagChip, TagEditor } from "../board/Tags";
+import { boardTags } from "../board/tagText";
 import { scheduleGroup, type ScheduleGroup } from "./scheduleGroups";
-import { timeAgo, timeUntil } from "./lib/time";
-import { useNow } from "./hooks/useNow";
-import { usePhone } from "./hooks/usePhone";
+import { timeAgo, timeUntil } from "../../lib/time";
+import { useNow } from "../../hooks/useNow";
+import { usePhone } from "../../hooks/usePhone";
 
 export const CRON_PRESETS: { label: string; cron: string }[] = [
   { label: "Hourly", cron: "0 * * * *" },

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, showTicket, subscribe, type AutomationProposal, type Pass } from "./lib/api";
+import { api, showTicket, subscribe, type AutomationProposal, type Pass } from "../../lib/api";
 import { everyLabel, resolveProposedPass } from "./automations";
-import { connectFromClaude, KeyForm, openSignIn } from "./passConnect";
+import { connectFromClaude, KeyForm, openSignIn } from "../connections/passConnect";
 
 /**
  * The setup chat proposed an automation (propose_automation). The card shows what it watches and the connections it

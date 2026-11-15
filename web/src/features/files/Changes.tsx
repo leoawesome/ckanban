@@ -1,15 +1,15 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { api, type DiffFile, type DiffLine, type Ticket, type TicketDiff } from "./lib/api";
-import { baseName, buildTree, isReviewComments, reviewKey, reviewMessage, treeOrder, type ReviewComment, type TreeDir } from "./review";
-import { browserStore, forget } from "./lib/drafts";
-import { usePersistentState } from "./hooks/usePersistentState";
-import { useMedia, usePhone } from "./hooks/usePhone";
-import { useLayer } from "./lib/layers";
-import { MenuSheet } from "./components/MenuSheet";
-import { TapTip } from "./components/TapTip";
-import { CheckIcon, ChevronLeftIcon, MoreIcon, RefreshIcon } from "./components/icons";
+import { api, type DiffFile, type DiffLine, type Ticket, type TicketDiff } from "../../lib/api";
+import { baseName, buildTree, isReviewComments, reviewKey, reviewMessage, treeOrder, type ReviewComment, type TreeDir } from "../ticket/review";
+import { browserStore, forget } from "../../lib/drafts";
+import { usePersistentState } from "../../hooks/usePersistentState";
+import { useMedia, usePhone } from "../../hooks/usePhone";
+import { useLayer } from "../../lib/layers";
+import { MenuSheet } from "../../components/MenuSheet";
+import { TapTip } from "../../components/TapTip";
+import { CheckIcon, ChevronLeftIcon, MoreIcon, RefreshIcon } from "../../components/icons";
 import { comparedWith, fileCount, showTree } from "./changesText";
-import { stepIndex } from "./app/keynav";
+import { stepIndex } from "../../app/keynav";
 
 /**
  * The ticket worktree's diff for the Changes tab. Lives in the drawer so the tab can show the file

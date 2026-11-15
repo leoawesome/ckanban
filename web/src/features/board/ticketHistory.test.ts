@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { closeSteps, openDepth } from "../web/src/ticketHistory";
+import { closeSteps, openDepth } from "./ticketHistory";
 
 test("tickets opened in a row on one board count up from the board", () => {
   const a = { ckDepth: openDepth(null, "kanban", "kanban"), ckBoard: "kanban" };

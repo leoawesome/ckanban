@@ -1,6 +1,6 @@
 // Models and efforts the pickers offer, the board's Task models table and how model names read to people.
 // Shared by the server (main-ticket.ts, prompts.ts) and the UI: keep it free of browser or server imports.
-import type { TicketKind } from "../family";
+import type { TicketKind } from "../features/family/family";
 
 /** Model aliases in every picker. An alias always means Claude Code's newest version of that model. */
 export const MODELS = ["opus", "fable", "sonnet", "haiku"];

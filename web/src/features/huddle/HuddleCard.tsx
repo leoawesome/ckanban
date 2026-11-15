@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
-import { api, type Huddle, type RosterEntry, type Ticket } from "./lib/api";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { formKey } from "./lib/drafts";
+import { api, type Huddle, type RosterEntry, type Ticket } from "../../lib/api";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { formKey } from "../../lib/drafts";
 import { dollars, rosterNames } from "./huddleText";
 import { applyProposedTemplate, draftError, RosterEditor, rosterDraft, SquadPicker, startFromDraft, TopicBox, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
-import { ticketTopicText } from "./squadText";
-import { usePersistentState } from "./hooks/usePersistentState";
-import { CloseIcon, HuddleIcon } from "./components/icons";
-import { TapTip } from "./components/TapTip";
+import { ticketTopicText } from "../team/squadText";
+import { usePersistentState } from "../../hooks/usePersistentState";
+import { CloseIcon, HuddleIcon } from "../../components/icons";
+import { TapTip } from "../../components/TapTip";
 
 /**
  * Claude proposed a huddle (propose_huddle): one line with who would join and the budget, Start, Edit… and ✕.

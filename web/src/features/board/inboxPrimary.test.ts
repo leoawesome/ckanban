@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { answers, marksDone } from "../web/src/inboxOrder";
+import { answers, marksDone } from "./inboxOrder";
 
 const item = (kind: string) => ({ profile: "demo", profileName: "Demo", id: kind, title: kind, attention: { kind: kind as "review", label: kind, since: "2026-11-01T12:00:00.000Z" } });
 

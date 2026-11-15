@@ -10,7 +10,7 @@ import {
 } from "../src/server/ticket-usage";
 import type { ActivityEntry, Profile } from "../src/core/types";
 import type { UsageResult } from "../src/server/usage";
-import { approxPct, costText, modelName, tokenText } from "../web/src/usage";
+import { approxPct, costText, modelName, tokenText } from "../web/src/features/usage/usage";
 import { tempDir } from "./support/helpers";
 
 const H = 3600_000;

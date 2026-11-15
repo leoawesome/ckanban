@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type Job, commandResult, jobChip, jobDate, jobRelative, jobsToShow, jobWhen, localInput, upcoming } from "../web/src/jobText";
+import { type Job, commandResult, jobChip, jobDate, jobRelative, jobsToShow, jobWhen, localInput, upcoming } from "./jobText";
 
 const NOW = new Date(2026, 9, 18, 22, 0).getTime(); // Sun 18 Oct 2026 22:00 local
 

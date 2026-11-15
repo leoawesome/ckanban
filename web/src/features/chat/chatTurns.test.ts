@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { dividerLabel, layoutTurns, placeByTime, plainStep, shortStep, stepsSummary, wakeLabel } from "../web/src/chatTurns";
+import { dividerLabel, layoutTurns, placeByTime, plainStep, shortStep, stepsSummary, wakeLabel } from "./chatTurns";
 
 const at = (min: number) => new Date(Date.UTC(2026, 9, 25, 6, 0) + min * 60_000).toISOString();
 const NOW = Date.UTC(2026, 9, 25, 8, 0);

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { childrenByParent, type FamilyTicket } from "../web/src/family";
+import { childrenByParent, type FamilyTicket } from "./family";
 
 const t = (id: string, createdAt: string, link: Partial<FamilyTicket> = {}): FamilyTicket => ({ id, title: id, status: "backlog", createdAt, ...link });
 const kids = (m: ReturnType<typeof childrenByParent>, id: string) => (m.get(id) ?? []).map((c) => `${c.ticket.id}:${c.how}`);

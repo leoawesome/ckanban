@@ -7,7 +7,7 @@ import type { Question, SessionSummary } from "../src/server/session";
 import { Store } from "../src/core/store";
 import type { Profile } from "../src/core/types";
 import { tempDir } from "./support/helpers";
-import { answersMessage } from "../web/src/questionForms";
+import { answersMessage } from "../web/src/features/ticket/questionForms";
 
 const TOKEN = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
 const ME = 555;

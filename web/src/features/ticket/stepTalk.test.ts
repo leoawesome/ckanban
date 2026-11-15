@@ -1,7 +1,7 @@
 // A main ticket's chat shows what its "with you" steps showed the user (web/src/StepMessages.tsx stepMessages).
 import { expect, test } from "bun:test";
-import type { StepEntry as SessionEntry } from "../web/src/stepTalk";
-import { stepMessages, type StepMsg } from "../web/src/stepTalk";
+import type { StepEntry as SessionEntry } from "./stepTalk";
+import { stepMessages, type StepMsg } from "./stepTalk";
 
 let n = 0;
 const e = (role: SessionEntry["role"], kind: SessionEntry["kind"], text: string, x: Partial<SessionEntry> = {}): SessionEntry =>

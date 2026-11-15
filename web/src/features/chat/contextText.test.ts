@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseContextReport } from "../src/server/context-usage";
-import { checkedText, chipText, contextRows, phoneRows, shortPath, tokenText } from "../web/src/contextText";
+import { parseContextReport } from "../../../../src/server/context-usage";
+import { checkedText, chipText, contextRows, phoneRows, shortPath, tokenText } from "./contextText";
 
-const report = (name: string) => parseContextReport(readFileSync(join(import.meta.dir, "fixtures", "context", name), "utf8"));
+const report = (name: string) => parseContextReport(readFileSync(join(import.meta.dir, "../../../../test/fixtures", "context", name), "utf8"));
 
 test("rows get plain names, the original term in the hover text, and on-demand rows last with no percent", () => {
   const rows = contextRows(report("long-chat.md").categories);

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { automationProposal } from "../src/server/automation-proposal";
-import { parseDecision } from "../src/server/integrations/ask-claude";
-import { parseItems } from "../src/server/integrations/script";
-import { ticketBody, ticketTitle } from "../src/server/integrations/ticket-text";
-import type { Pass } from "../web/src/automationTypes";
-import { boardCell, everyLabel, groupLastItems, loopStatus, loopSubtitle, resolveProposedPass, saveBlocker } from "../web/src/automations";
+import { automationProposal } from "../../../../src/server/automation-proposal";
+import { parseDecision } from "../../../../src/server/integrations/ask-claude";
+import { parseItems } from "../../../../src/server/integrations/script";
+import { ticketBody, ticketTitle } from "../../../../src/server/integrations/ticket-text";
+import type { Pass } from "./automationTypes";
+import { boardCell, everyLabel, groupLastItems, loopStatus, loopSubtitle, resolveProposedPass, saveBlocker } from "./automations";
 
 const pass = (p: Partial<Pass>): Pass => ({
   id: "p1", kind: "mcp", name: "linear", claudeName: null, url: null, envName: null, status: "connected", error: null, createdAt: "", usedBy: 0, ...p,

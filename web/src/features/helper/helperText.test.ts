@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MessageStore } from "../src/server/helper/messages";
-import { asksNight, groupByDay, isHeldLine, levelLabel, levelTone, messageHash, messagesRoute, nightQuestion, sendTrail, type Message } from "../web/src/helperText";
-import { nightQuestion as serverNightQuestion } from "../src/server/helper/settings";
+import { MessageStore } from "../../../../src/server/helper/messages";
+import { asksNight, groupByDay, isHeldLine, levelLabel, levelTone, messageHash, messagesRoute, nightQuestion, sendTrail, type Message } from "./helperText";
+import { nightQuestion as serverNightQuestion } from "../../../../src/server/helper/settings";
 
 const msg = (over: Partial<Message>): Message => ({
   id: "m_1", at: "2026-11-09T14:10:00", level: "urgent", oneLine: "Stop the old webhook?", text: "full", why: null, items: [], sends: [], readAt: null, ...over,
@@ -79,11 +79,11 @@ test("the message store reports the unread count when a message is added or read
 });
 
 test("helper screens use plain words: no watcher agent, no webhook outside the JSON option", () => {
-  for (const f of ["Messages.tsx", "Inbox.tsx", "NowView.tsx", "helper.ts"]) {
-    const src = readFileSync(join(import.meta.dir, "../web/src", f), "utf8");
+  for (const f of ["chat/Messages.tsx", "helper/Inbox.tsx", "board/NowView.tsx", "helper/helper.ts"]) {
+    const src = readFileSync(join(import.meta.dir, "..", f), "utf8");
     expect(src).not.toMatch(/watcher/i);
   }
-  const settings = readFileSync(join(import.meta.dir, "../web/src/NotificationsDialog.tsx"), "utf8");
+  const settings = readFileSync(join(import.meta.dir, "NotificationsDialog.tsx"), "utf8");
   // Text the user reads (between > and <, or in quotes after label=/title=/placeholder=) never says webhook.
   const shown = [...settings.matchAll(/>([^<>{}]+)</g)].map((m) => m[1]).join(" ");
   expect(shown).not.toMatch(/webhook|watcher/i);

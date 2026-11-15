@@ -1,5 +1,5 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
-import { swipeCloses, swipeIntent } from "../msgNav";
+import { swipeCloses, swipeIntent } from "../features/chat/msgNav";
 import { DUR_BASE_MS, DUR_FAST_MS } from "./motion";
 import { PHONE_QUERY } from "../hooks/usePhone";
 

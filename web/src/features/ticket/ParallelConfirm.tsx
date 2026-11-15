@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { setServerConfirm, type ServerConfirm } from "./lib/api";
-import { ConfirmDialog } from "./components/ConfirmDialog";
+import { setServerConfirm, type ServerConfirm } from "../../lib/api";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 
 /**
  * Answers the daemon's "Start anyway?" questions: a run and a huddle about to work the same ticket at once (e.g. a

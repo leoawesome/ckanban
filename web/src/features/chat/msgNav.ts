@@ -4,7 +4,7 @@
 // with the board under it. So the phone's back gesture (or browser Back) on a message always lands on the list, and
 // Back on the list lands on the board, however the message was opened: a row, a notification, a toast, the Now tab,
 // or a fresh page load. Prev/next replaces the entry, so it never piles up steps.
-import { MESSAGES_HASH, messageHash, messagesRoute } from "./helperText";
+import { MESSAGES_HASH, messageHash, messagesRoute } from "../helper/helperText";
 
 /** The marker in history.state: "list" for the Messages list, "msg" for a message page with the list under it. */
 export const MSG_STATE = "ckMsgs";

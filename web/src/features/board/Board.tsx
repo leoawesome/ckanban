@@ -5,16 +5,16 @@ import {
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BOARD_COLUMNS, type Job, type Status, type Ticket } from "./lib/api";
+import { BOARD_COLUMNS, type Job, type Status, type Ticket } from "../../lib/api";
 import { Card } from "./Card";
 import { boardColumnOf, dropOrder, groupByColumn, regroupByColumn } from "./columns";
 import { playMove } from "./arrivals";
-import { reducedMotion } from "./lib/motion";
-import { useCardTabs } from "./hooks/useCardTabs";
-import { ChatIcon, CheckIcon, CollapseIcon, PlusIcon, SparkIcon } from "./components/icons";
-import { usePhone } from "./hooks/usePhone";
-import { toast } from "./components/toast";
-import { useCardWindow, WINDOW_MIN } from "./hooks/useCardWindow";
+import { reducedMotion } from "../../lib/motion";
+import { useCardTabs } from "../../hooks/useCardTabs";
+import { ChatIcon, CheckIcon, CollapseIcon, PlusIcon, SparkIcon } from "../../components/icons";
+import { usePhone } from "../../hooks/usePhone";
+import { toast } from "../../components/toast";
+import { useCardWindow, WINDOW_MIN } from "../../hooks/useCardWindow";
 
 const COLLAPSED_KEY = "ckanban.collapsedColumns";
 

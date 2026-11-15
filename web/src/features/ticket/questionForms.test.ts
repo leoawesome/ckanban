@@ -1,9 +1,9 @@
 // Question forms: small safe markdown (web/src/miniMarkdown.ts), the optional context, and replies that only repeat a form.
 import { expect, test } from "bun:test";
-import { inlineMarkdown, miniMarkdown, plainMarkdown } from "../web/src/lib/miniMarkdown";
-import { repeatsForm, signature } from "../web/src/questionForms";
-import { parseQuestions } from "../src/server/session";
-import { openQuestionsRule } from "../src/server/prompts";
+import { inlineMarkdown, miniMarkdown, plainMarkdown } from "../../lib/miniMarkdown";
+import { repeatsForm, signature } from "./questionForms";
+import { parseQuestions } from "../../../../src/server/session";
+import { openQuestionsRule } from "../../../../src/server/prompts";
 
 test("markdown: raw HTML is escaped, never passed through", () => {
   expect(miniMarkdown(`<img src=x onerror="alert(1)"> & <script>x</script>`))

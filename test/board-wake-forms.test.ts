@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mainWakePrompt, orchestratorPrompt, statusNudgePrompt } from "../src/server/prompts";
 import { parseSession, type Question, type SessionEntry } from "../src/server/session";
 import type { Ticket } from "../src/core/types";
-import { formStates, fresh, startProgress, type Progress } from "../web/src/questionForms";
+import { formStates, fresh, startProgress, type Progress } from "../web/src/features/ticket/questionForms";
 
 const L = (o: unknown) => JSON.stringify(o);
 const user = (text: string, at: string) => L({ type: "user", uuid: `u${at}`, timestamp: at, message: { role: "user", content: text } });

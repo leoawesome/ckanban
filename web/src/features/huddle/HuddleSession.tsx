@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { api, copy, onReconnect, subscribe, type Huddle, type HuddleParticipant, type ParticipantSession, type SessionStep } from "./lib/api";
-import { HelperFace } from "./HelperFace";
-import { participantMood } from "./avatarMood";
-import { ChevronLeftIcon, CloseIcon, ThoughtIcon } from "./components/icons";
-import { isTyping, panelStep } from "./app/keynav";
-import { KeyHint } from "./components/KeyHint";
-import { useLayer } from "./lib/layers";
-import { mergeSteps, sessionMeta, sessionState, toolIcon } from "./sessionText";
-import { fullTime } from "./lib/time";
-import { ToolRow, type ToolItem } from "./ToolRows";
-import { usePhone } from "./hooks/usePhone";
+import { api, copy, onReconnect, subscribe, type Huddle, type HuddleParticipant, type ParticipantSession, type SessionStep } from "../../lib/api";
+import { HelperFace } from "../helper/HelperFace";
+import { participantMood } from "../avatar/avatarMood";
+import { ChevronLeftIcon, CloseIcon, ThoughtIcon } from "../../components/icons";
+import { isTyping, panelStep } from "../../app/keynav";
+import { KeyHint } from "../../components/KeyHint";
+import { useLayer } from "../../lib/layers";
+import { mergeSteps, sessionMeta, sessionState, toolIcon } from "../chat/sessionText";
+import { fullTime } from "../../lib/time";
+import { ToolRow, type ToolItem } from "../chat/ToolRows";
+import { usePhone } from "../../hooks/usePhone";
 
 /**
  * A huddle participant's own Claude session, read-only, beside the feed: its reasoning, tool calls (expand for the

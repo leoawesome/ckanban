@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, onReconnect, subscribe, type Huddle, type HuddleMessage } from "./lib/api";
-import { AVATAR_COLORS } from "./avatar";
+import { api, onReconnect, subscribe, type Huddle, type HuddleMessage } from "../../lib/api";
+import { AVATAR_COLORS } from "../avatar/avatar";
 import { huddleIdle } from "./huddleText";
 import { mergeMessages, pickHuddle, ticketHuddles, upsertHuddle, withActivity } from "./huddleText";
 

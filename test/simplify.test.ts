@@ -8,7 +8,7 @@ import { SessionCache } from "../src/server/session";
 import { makeSideCaller, parseSideResult, sideCallArgs, type SideCallInput, type SideCallResult } from "../src/server/side-call";
 import { SpendIndex } from "../src/server/spend";
 import { Store } from "../src/core/store";
-import { simplifiable as webSimplifiable } from "../web/src/simplifyText";
+import { simplifiable as webSimplifiable } from "../web/src/features/ticket/simplifyText";
 import { SIMPLIFY_SYSTEM, SIMPLIFY_VERSION, simplifiable } from "../src/server/simplify";
 import { tempDir } from "./support/helpers";
 

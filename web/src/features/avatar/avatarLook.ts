@@ -1,7 +1,7 @@
 // Customizable avatar looks (AvatarFace.tsx draws them): the parts, the default look for Claude, the user and every
 // teammate, and the lookup that puts a saved choice over the default. Saved choices come from the daemon
 // (GET /api/avatars, <home>/avatars.json, src/server/avatars.ts); anything unknown in them is ignored here too.
-import { faceLookKey, faceLook, handleBase } from "./huddleText";
+import { faceLookKey, faceLook, handleBase } from "../huddle/huddleText";
 
 export const AVATAR_FACES = ["robot", "person", "critter", "cat", "bear", "alien", "ghost"] as const;
 export const AVATAR_HAIRS = ["none", "short", "ponytail", "bun", "spiky", "long", "curly", "mohawk", "pigtails", "fringe"] as const;

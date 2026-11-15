@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { buildTree, isReviewComments, reviewKey, reviewMessage, treeOrder } from "../web/src/review";
+import { buildTree, isReviewComments, reviewKey, reviewMessage, treeOrder } from "./review";
 
 test("reviewMessage lists every comment with path:line, the quoted code and the text", () => {
   const msg = reviewMessage([

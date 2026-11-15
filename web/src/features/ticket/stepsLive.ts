@@ -1,6 +1,6 @@
 // The live line at the bottom of a main ticket's chat while steps of its feature work: "Working: Build the login page",
 // "2 tasks working: Build the login page, Test the signup". Live state only: never saved as a chat message.
-import { familyOf, workingInFamily, type FamilyTicket } from "./family";
+import { familyOf, workingInFamily, type FamilyTicket } from "../family/family";
 
 /** Names the line spells out before "and N more". */
 export const STEPS_NAMED = 2;

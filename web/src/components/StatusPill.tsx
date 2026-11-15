@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { Status, Ticket } from "../lib/api";
-import { boardColumnOf, menuPick, STATUS_MENU } from "../columns";
+import { boardColumnOf, menuPick, STATUS_MENU } from "../features/board/columns";
 import { CheckIcon } from "./icons";
 import { Modal } from "./Modal";
 import { Select } from "./Select";

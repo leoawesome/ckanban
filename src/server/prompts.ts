@@ -15,7 +15,7 @@ import type { AutoHuddle, Comment, Huddle, HuddleMessage, HuddleParticipant, Tic
 import { USER_HUDDLE_TRIGGER } from "../core/types";
 import { shellQuote } from "../core/util";
 import { fromAutomation, type Question } from "./session";
-import type { FollowUpPlace } from "../../web/src/followUp";
+import type { FollowUpPlace } from "../../web/src/features/ticket/followUp";
 import { taskModelsText, type TaskModels } from "../../web/src/lib/models";
 
 const RESULT_RULE = `When you finish this run, end your final message with exactly one line in this format (valid JSON, single line):

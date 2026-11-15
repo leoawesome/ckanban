@@ -1,10 +1,10 @@
-import type { Loop, LoopInput, LoopTest, Pass } from "../../automationTypes";
-import type { Status } from "../../columns";
-import type { ContextView } from "../../contextText";
-import type { TicketKind } from "../../family";
-import type { PrStatus } from "../../prText";
-import type { SlashCommand } from "../../slashText";
-import type { TicketUsage, UsageResult } from "../../usage";
+import type { Loop, LoopInput, LoopTest, Pass } from "../../features/schedules/automationTypes";
+import type { Status } from "../../features/board/columns";
+import type { ContextView } from "../../features/chat/contextText";
+import type { TicketKind } from "../../features/family/family";
+import type { PrStatus } from "../../features/ticket/prText";
+import type { SlashCommand } from "../../features/chat/slashText";
+import type { TicketUsage, UsageResult } from "../../features/usage/usage";
 import { isImageFile } from "../attachText";
 import { req } from "./request";
 import type { Health, Profile, RepoKind, SetupDetection, Snippet, SnippetInput, TicketPage, TicketRow, VersionHistory } from "./types/board";

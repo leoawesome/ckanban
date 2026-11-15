@@ -1,22 +1,22 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { type ClaudeSession, type Profile, type Status, type Ticket, type TicketMode } from "./lib/api";
+import { type ClaudeSession, type Profile, type Status, type Ticket, type TicketMode } from "../../lib/api";
 import { mainHint, modelWord, runsOn } from "./newTicketText";
-import { EFFORTS, modelOptions } from "./lib/models";
-import { Select } from "./components/Select";
+import { EFFORTS, modelOptions } from "../../lib/models";
+import { Select } from "../../components/Select";
 import { FeatureChoice, useFeatureChoice } from "./FeatureChoice";
-import { DescriptionEditor } from "./DescriptionEditor";
-import { useImagePaste } from "./lib/imagePaste";
-import { autoGrow } from "./lib/autoGrow";
-import { ModeToggle, modeHint } from "./components/ModeToggle";
-import { KeyHint } from "./components/KeyHint";
-import { newTicketKey } from "./app/keynav";
-import { Modal } from "./components/Modal";
-import { SessionPicker, sessionLabel } from "./components/SessionPicker";
-import { MOD } from "./app/Shortcuts";
-import { StarToggle } from "./components/StarToggle";
+import { DescriptionEditor } from "../ticket/DescriptionEditor";
+import { useImagePaste } from "../../lib/imagePaste";
+import { autoGrow } from "../../lib/autoGrow";
+import { ModeToggle, modeHint } from "../../components/ModeToggle";
+import { KeyHint } from "../../components/KeyHint";
+import { newTicketKey } from "../../app/keynav";
+import { Modal } from "../../components/Modal";
+import { SessionPicker, sessionLabel } from "../../components/SessionPicker";
+import { MOD } from "../../app/Shortcuts";
+import { StarToggle } from "../../components/StarToggle";
 import { TagEditor } from "./Tags";
-import { usePhone } from "./hooks/usePhone";
-import { FormError } from "./components/formParts";
+import { usePhone } from "../../hooks/usePhone";
+import { FormError } from "../../components/formParts";
 
 export function NewTicketDialog({ slug, folder, profile, knownTags = [], tickets = [], onClose, onCreate }: {
   slug: string;

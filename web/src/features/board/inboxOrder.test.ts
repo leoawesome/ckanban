@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { groupInbox, OLDER_MS } from "../web/src/inboxOrder";
+import { groupInbox, OLDER_MS } from "./inboxOrder";
 
 type AttentionKind = Parameters<typeof groupInbox>[0][number]["attention"]["kind"];
 interface InboxItem { profile: string; profileName: string; id: string; title: string; attention: { kind: AttentionKind; label: string; since: string } }

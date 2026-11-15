@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { lockCardTabs, unlockCardTabs } from "../web/src/cardTabs";
-import { teamButtonText } from "../web/src/huddleText";
+import { lockCardTabs, unlockCardTabs } from "./cardTabs";
+import { teamButtonText } from "../huddle/huddleText";
 
 /** A tiny stand-in for a card's controls: attribute maps, matched by the two selectors cardTabs uses. */
 function fakeCard(controls: Record<string, string>[]) {

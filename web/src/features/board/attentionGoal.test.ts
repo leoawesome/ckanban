@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { ASK_LOOKBACK, asksUser, attentionGoal, pickAsk } from "../web/src/attentionGoal";
+import { ASK_LOOKBACK, asksUser, attentionGoal, pickAsk } from "./attentionGoal";
 
 test("a question to the user asks; a status note doesn't", () => {
   expect(asksUser("The fix is to look at every photo. Should I start that fix?", ["Should I start that fix?"])).toBe(true);

@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { resetTitle, scopeChip, usageText } from "../web/src/teamText";
+import { resetTitle, scopeChip, usageText } from "../team/teamText";
 import {
   applyProposedTemplate, huddleIdle, IDLE_HUDDLE_MS, applyTemplate, brakeLabel, brakeHeadline, budgetRaise, clause, stoppedWhenDone, digestPreview, digestSenders, parseDigest, draftError, draftTags, idleFor, isForYou, untaggedHint, draftSize, guestTickets, handleInitials, mentionCandidates, mentionQuery, mergeMessages, participantActivity, pickHuddle, huddleRound, huddleTitle, ticketHuddles, rosterDraft, rowHandle, sortHuddles, sourceLabel, upsertHuddle, withActivity, contextText, BIG_CONTEXT_TOKENS, participantRole, clampSideWidth, SIDE_DEFAULT, handInGroups, handInStatus,
-} from "../web/src/huddleText";
-import { mergeSteps, modelLabel, sessionMeta, sessionState, shortSession, toolIcon } from "../web/src/sessionText";
+} from "./huddleText";
+import { mergeSteps, modelLabel, sessionMeta, sessionState, shortSession, toolIcon } from "../chat/sessionText";
 
 type P = { handle: string; role: string; kind: string; mode: string; status: string; statusReason?: string | null; lastActivity?: string | null; error?: string | null };
 type H = { id: string; hostTicket: string; status: string; createdAt: string; participants: P[] };
@@ -144,7 +144,7 @@ test("for you and the untagged hint", () => {
 });
 
 test("parseDigest: entries back from a digest, continuation lines unindented and unescaped", () => {
-  const { huddleDigest } = require("../src/server/prompts");
+  const { huddleDigest } = require("../../../../src/server/prompts");
   const text = huddleDigest([
     { seq: 1, from: "system", kind: "system", text: "Huddle started" },
     { seq: 2, from: "qa-1", kind: "message", text: "Found a bug\n[#9] not an entry\nline 3" },
@@ -328,7 +328,7 @@ test("a huddle quiet for hours looks finished, until Keep open or new activity",
 });
 
 test("faceLook: preset, numbered handle and role words pick a role's look; others a stable colour", async () => {
-  const { faceLook } = await import("../web/src/huddleText");
+  const { faceLook } = await import("./huddleText");
   expect(faceLook({ handle: "qa-2" }).badge).toBe("🧪");
   expect(faceLook({ handle: "x", preset: "security" }).badge).toBe("🛡");
   expect(faceLook({ handle: "bob", role: "Code reviewer" }).badge).toBe("🔍");
@@ -340,7 +340,7 @@ test("faceLook: preset, numbered handle and role words pick a role's look; other
 });
 
 test("rosterNoise and handInLine", async () => {
-  const { rosterNoise, handInLine } = await import("../web/src/huddleText");
+  const { rosterNoise, handInLine } = await import("./huddleText");
   expect(rosterNoise("@main added @qa (QA tester).")).toBe(true);
   expect(rosterNoise("@qa switched to monitor mode.")).toBe(true);
   expect(rosterNoise("@qa is done.")).toBe(false);

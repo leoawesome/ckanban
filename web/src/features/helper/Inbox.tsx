@@ -1,19 +1,19 @@
-import { useClaudeName } from "./AvatarFace";
+import { useClaudeName } from "../avatar/AvatarFace";
 import { useEffect, useRef, useState, type ButtonHTMLAttributes } from "react";
-import { openedAt, shouldPulse } from "./cardState";
-import type { InboxItem } from "./lib/api";
-import { useLayer } from "./lib/layers";
-import { MenuSheet } from "./components/MenuSheet";
-import { answers, groupInbox, marksDone } from "./inboxOrder";
-import { useSafeClear } from "./hooks/useSafeClear";
-import { fullTime, waitedFor } from "./lib/time";
-import { snoozeEndText, snoozeForever, type SnoozeLength } from "./lib/snooze";
-import { useNow } from "./hooks/useNow";
-import { useMedia } from "./hooks/usePhone";
-import { MoreIcon } from "./components/icons";
-import { KeyHint } from "./components/KeyHint";
+import { openedAt, shouldPulse } from "../board/cardState";
+import type { InboxItem } from "../../lib/api";
+import { useLayer } from "../../lib/layers";
+import { MenuSheet } from "../../components/MenuSheet";
+import { answers, groupInbox, marksDone } from "../board/inboxOrder";
+import { useSafeClear } from "../../hooks/useSafeClear";
+import { fullTime, waitedFor } from "../../lib/time";
+import { snoozeEndText, snoozeForever, type SnoozeLength } from "../../lib/snooze";
+import { useNow } from "../../hooks/useNow";
+import { useMedia } from "../../hooks/usePhone";
+import { MoreIcon } from "../../components/icons";
+import { KeyHint } from "../../components/KeyHint";
 import { isHeldLine, type HelperStatus } from "./helper";
-import { HelperStatusLine, MessagesEntry } from "./Messages";
+import { HelperStatusLine, MessagesEntry } from "../chat/Messages";
 
 /** What the Inbox shows of the helper: its status line, "Messages, N new", the line per row, the one-time notice. */
 export interface InboxHelper {

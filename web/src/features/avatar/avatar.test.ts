@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { AVATAR_COLORS, avatarColor, avatarLetter } from "../web/src/avatar";
+import { AVATAR_COLORS, avatarColor, avatarLetter } from "./avatar";
 
 test("avatarColor is stable and always from the palette", () => {
   for (const slug of ["kanban", "hyrox", "rocketbots", "berry-best", "", "a", "x".repeat(200)]) {

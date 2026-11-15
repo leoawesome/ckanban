@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type RepoKind, type VersionHistory } from "./lib/api";
+import { api, type RepoKind, type VersionHistory } from "../../lib/api";
 
 /**
  * "This folder has no version history": offers to turn it on (a local git repo with one first snapshot; nothing is

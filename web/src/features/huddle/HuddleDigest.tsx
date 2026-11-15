@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { digestSenders, parseDigest } from "./huddleText";
-import { Markdown } from "./Transcript";
-import { HuddleIcon, PinIcon } from "./components/icons";
+import { Markdown } from "../chat/Transcript";
+import { HuddleIcon, PinIcon } from "../../components/icons";
 
 /**
  * Huddle messages the board delivered to this ticket's session, shown as a collapsible huddle entry (not a user

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, subscribe, type Schedule, type ScheduleDeleteCardState } from "./lib/api";
-import { TrashIcon } from "./components/icons";
+import { api, subscribe, type Schedule, type ScheduleDeleteCardState } from "../../lib/api";
+import { TrashIcon } from "../../components/icons";
 import { when } from "./SchedulesDialog";
 
 /**

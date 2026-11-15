@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { CloseIcon } from "./components/icons";
+import { CloseIcon } from "../../components/icons";
 import { PUSH_HINT_KEY, pushState, pushSupport, turnOn } from "./push";
-import { toast } from "./components/toast";
+import { toast } from "../../components/toast";
 
 const done = () => {
   try {

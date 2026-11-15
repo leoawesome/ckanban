@@ -1,18 +1,18 @@
 // Ticket families: "part of" links, parent suggestions, the family tree and get_family.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { BoardClient } from "../src/client";
-import { callTool, proposalError, type ToolContext } from "../src/mcp-server";
-import { Board } from "../src/server/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { candidates, Linker, parseFound, parseSuggestion } from "../src/server/linker";
-import { RUN_HEADER } from "../src/server/scheduler";
-import { parseProposal } from "../src/server/session";
-import type { SideCallInput, SideCallResult } from "../src/server/side-call";
-import { Store } from "../src/core/store";
-import type { Ticket } from "../src/core/types";
-import { familyNearby, newestFirst, partOfFor, familyOf, parentLink, wouldLoop, type FamilyTicket } from "../web/src/family";
-import { tempDir, until } from "./support/helpers";
+import { BoardClient } from "../../../../src/client";
+import { callTool, proposalError, type ToolContext } from "../../../../src/mcp-server";
+import { Board } from "../../../../src/server/board";
+import { Bus } from "../../../../src/core/events";
+import { createServer } from "../../../../src/server/http";
+import { candidates, Linker, parseFound, parseSuggestion } from "../../../../src/server/linker";
+import { RUN_HEADER } from "../../../../src/server/scheduler";
+import { parseProposal } from "../../../../src/server/session";
+import type { SideCallInput, SideCallResult } from "../../../../src/server/side-call";
+import { Store } from "../../../../src/core/store";
+import type { Ticket } from "../../../../src/core/types";
+import { familyNearby, newestFirst, partOfFor, familyOf, parentLink, wouldLoop, type FamilyTicket } from "./family";
+import { tempDir, until } from "../../../../test/support/helpers";
 
 const at = (n: number) => `2026-10-${String(n).padStart(2, "0")}T00:00:00.000Z`;
 const tk = (id: string, n: number, links: Partial<FamilyTicket> = {}): FamilyTicket => ({ id, title: id.toUpperCase(), status: "backlog", createdAt: at(n), ...links });

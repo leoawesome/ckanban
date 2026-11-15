@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { proposedTeammate, savedText, teammateDiff, teammateMeta, type TeammateDraft } from "../web/src/teammateText";
+import { proposedTeammate, savedText, teammateDiff, teammateMeta, type TeammateDraft } from "./teammateText";
 
 const qa: TeammateDraft = { name: "qa", role: "QA tester", prompt: "Test the work.", model: null, mode: "monitor", lead: false, canEdit: false, workspace: "shared" };
 

@@ -5,14 +5,14 @@
 // broken, waiting on you and next step from Claude's update_status. The chat lists what waits on the user in its
 // "N waiting on you" button (TaskSheet.tsx).
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { api, type FeatureStatus, type Ticket } from "./lib/api";
-import { familyOf, featureRows, isFeature, STATE_WORDS, shownState, workingInFamily, type FamilyState } from "./family";
-import { InfoIcon } from "./components/icons";
-import { pausedLine } from "./limitText";
+import { api, type FeatureStatus, type Ticket } from "../../lib/api";
+import { familyOf, featureRows, isFeature, STATE_WORDS, shownState, workingInFamily, type FamilyState } from "../family/family";
+import { InfoIcon } from "../../components/icons";
+import { pausedLine } from "../usage/limitText";
 import { namesText, taskProgress } from "./tasksText";
-import { ticketParts } from "./ticketLinks";
-import { toast } from "./components/toast";
-import { timeAgo } from "./lib/time";
+import { ticketParts } from "../board/ticketLinks";
+import { toast } from "../../components/toast";
+import { timeAgo } from "../../lib/time";
 
 /** Saved changes shown before "and N more" (as CHANGES_SHOWN in src/server/feature.ts). */
 const CHANGES_SHOWN = 30;

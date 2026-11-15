@@ -252,7 +252,7 @@ test("a continue that hits the limit again re-arms; after 3 automatic continues 
 // ---- Card and drawer text ----
 
 test("card label: continues at HH:MM with auto on, resets HH:MM with it off", async () => {
-  const { limitLabel, limitHint } = await import("../web/src/limitText");
+  const { limitLabel, limitHint } = await import("../web/src/features/usage/limitText");
   const now = new Date(2026, 9, 7, 2, 5).getTime();
   const resetAt = new Date(2026, 9, 7, 4, 0).toISOString();
   const t = ticket({ limit: { resetAt, auto: true, at: "x", message: REAL_4AM } }) as any;

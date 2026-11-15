@@ -1,4 +1,4 @@
-import { featureRoot, groupsOf, type FeatureTicket } from "./family";
+import { featureRoot, groupsOf, type FeatureTicket } from "../family/family";
 
 /** What puts its tickets in the feature: the words differ ("each run" / "each new ticket"). */
 export type FeatureMaker = "schedule" | "automation";

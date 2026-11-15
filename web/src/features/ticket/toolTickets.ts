@@ -1,7 +1,7 @@
 // Tasks (a main ticket's helpers) have no card unless shown on the board: the board shows one card per feature. Search
 // still finds a hidden task and shows its main ticket's card with "via <task title>"; a task shown on the board is a
 // card like any other (onBoard). No imports from api.ts, so tests load it.
-import { mainTicketOf, onBoard, type FamilyTicket } from "./family";
+import { mainTicketOf, onBoard, type FamilyTicket } from "../family/family";
 
 type Searchable = FamilyTicket & { body: string; main?: boolean; tool?: boolean; kind?: string | null; showOnBoard?: boolean | null };
 

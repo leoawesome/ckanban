@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { BOARD_KEEP, BOARD_MIN, boardHidesBelow, clampChatWidth, COLUMN_DEFAULT, COLUMN_MAX, COLUMN_MIN, TICKET_MIN, ticketBeside } from "../web/src/sideChatLayout";
+import { BOARD_KEEP, BOARD_MIN, boardHidesBelow, clampChatWidth, COLUMN_DEFAULT, COLUMN_MAX, COLUMN_MIN, TICKET_MIN, ticketBeside } from "./sideChatLayout";
 
 test("clampChatWidth keeps the column within its limits", () => {
   expect(clampChatWidth(500, 1600)).toBe(500);

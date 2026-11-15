@@ -1,17 +1,17 @@
-import { LoadState, SavedNote, SecretInput, useSavedFlash } from "./components/formParts";
+import { LoadState, SavedNote, SecretInput, useSavedFlash } from "../../components/formParts";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, type ChannelState, type NotifyKind, type NotifyPatch, type NotifyState } from "./lib/api";
+import { api, type ChannelState, type NotifyKind, type NotifyPatch, type NotifyState } from "../../lib/api";
 import { helperApi, setHelperStatus, spendLine, useHelper, type FeedbackLine } from "./helper";
-import { HelperStatusLine, PracticeAlert } from "./Messages";
-import { PhoneBar } from "./AutomationsDialog";
-import { ChevronRightIcon } from "./components/icons";
-import { Modal } from "./components/Modal";
+import { HelperStatusLine, PracticeAlert } from "../chat/Messages";
+import { PhoneBar } from "../schedules/AutomationsDialog";
+import { ChevronRightIcon } from "../../components/icons";
+import { Modal } from "../../components/Modal";
 import { PUSH_CHANGED } from "./push";
 import { PushSection } from "./PushSection";
-import { Select } from "./components/Select";
-import { timeAgo } from "./lib/time";
-import { toast } from "./components/toast";
-import { usePhone } from "./hooks/usePhone";
+import { Select } from "../../components/Select";
+import { timeAgo } from "../../lib/time";
+import { toast } from "../../components/toast";
+import { usePhone } from "../../hooks/usePhone";
 
 const KINDS: { kind: NotifyKind; label: string }[] = [
   { kind: "questions", label: "Questions for you" },

@@ -1,9 +1,9 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { api, type Huddle, type HuddleMode, type HuddlePreset, type HuddleTemplate, type RosterEntry, type Ticket } from "./lib/api";
-import { CloseIcon } from "./components/icons";
-import { Select } from "./components/Select";
-import { modelOptions, pickerLabel } from "./lib/models";
-import { personModeLabel, TOPIC_MAX } from "./squadText";
+import { api, type Huddle, type HuddleMode, type HuddlePreset, type HuddleTemplate, type RosterEntry, type Ticket } from "../../lib/api";
+import { CloseIcon } from "../../components/icons";
+import { Select } from "../../components/Select";
+import { modelOptions, pickerLabel } from "../../lib/models";
+import { personModeLabel, TOPIC_MAX } from "../team/squadText";
 import { applyProposedTemplate, applyTemplate, DEFAULT_MAX, draftError, draftSize, dollars, handleBase, rosterDraft, rowHandle, rowKey as key, MODE_LABEL, type Draft } from "./huddleText";
 
 const MAX_COUNT = 8;

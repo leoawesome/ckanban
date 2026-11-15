@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { hasOpenPr, runCounts, runStatusText } from "../web/src/boardStats";
+import { hasOpenPr, runCounts, runStatusText } from "./boardStats";
 
 test("runCounts counts every ticket run, the slots apart, and working huddle agents", () => {
   const tickets = [

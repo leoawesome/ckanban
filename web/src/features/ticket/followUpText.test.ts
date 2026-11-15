@@ -1,6 +1,6 @@
 // The follow-up badge and menu words (web/src/followUpText.ts).
 import { expect, test } from "bun:test";
-import { followUpCount, followUpHistory, followUpLabel, followUpWhen } from "../web/src/followUpText";
+import { followUpCount, followUpHistory, followUpLabel, followUpWhen } from "./followUpText";
 
 const local = (d: number, h: number, m = 0) => new Date(2026, 9, d, h, m).toISOString();
 const now = new Date(2026, 9, 19, 14, 0); // Mon 19 Oct 14:00

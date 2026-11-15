@@ -1,6 +1,6 @@
 // The phone ticket header's one status button (web/src/phoneStatus.ts): its label and colour.
 import { expect, test } from "bun:test";
-import { phoneStatus } from "../web/src/phoneStatus";
+import { phoneStatus } from "./phoneStatus";
 
 const t = (o: Record<string, unknown> = {}) => ({ status: "backlog" as const, outcome: null, ...o }) as Parameters<typeof phoneStatus>[0];
 

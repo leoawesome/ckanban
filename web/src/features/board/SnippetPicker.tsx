@@ -1,7 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { comboAria } from "./components/SlashPicker";
+import { comboAria } from "../../components/SlashPicker";
 import { createPortal } from "react-dom";
-import { useLayer } from "./lib/layers";
+import { useLayer } from "../../lib/layers";
 import { firstLine, matchSnippets, replaceQuery, snippetQuery } from "./snippetText";
 import { useSnippets } from "./snippets";
 

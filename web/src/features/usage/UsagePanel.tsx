@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, subscribe } from "./lib/api";
-import { fullTime, timeAgo } from "./lib/time";
+import { api, subscribe } from "../../lib/api";
+import { fullTime, timeAgo } from "../../lib/time";
 import { approxPct, costText, modelName, RUN_KIND_LABEL, tokenText, type TeammateUsage, type TicketUsage } from "./usage";
 
 /** A ticket's usage, reloaded when one of its runs reports a result. */

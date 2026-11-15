@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { api, type BrowserPick, type BrowsersState, type Profile, type Ticket } from "./lib/api";
-import { EFFORTS, MODELS } from "./lib/models";
-import { Select } from "./components/Select";
-import { ASK_CHROME, BrowserPicker, picksText, useBrowsers } from "./BrowsersDialog";
-import { Modal } from "./components/Modal";
+import { api, type BrowserPick, type BrowsersState, type Profile, type Ticket } from "../../lib/api";
+import { EFFORTS, MODELS } from "../../lib/models";
+import { Select } from "../../components/Select";
+import { ASK_CHROME, BrowserPicker, picksText, useBrowsers } from "../browsers/BrowsersDialog";
+import { Modal } from "../../components/Modal";
 
 const NEXT_RUN = "applies from the next run";
 

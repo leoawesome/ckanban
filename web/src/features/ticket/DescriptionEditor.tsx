@@ -1,12 +1,12 @@
 import { useMemo, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { AttachmentChips } from "./components/AttachmentChips";
-import { ImagePickButton } from "./components/ImagePickButton";
-import type { useImagePaste } from "./lib/imagePaste";
-import { useSlashCommands, useSlashPicker } from "./components/SlashPicker";
-import { useSnippetPicker } from "./SnippetPicker";
-import type { SlashCommand } from "./slashText";
-import { useTypeTrigger } from "./lib/typeTrigger";
-import { usePhone } from "./hooks/usePhone";
+import { AttachmentChips } from "../../components/AttachmentChips";
+import { ImagePickButton } from "../../components/ImagePickButton";
+import type { useImagePaste } from "../../lib/imagePaste";
+import { useSlashCommands, useSlashPicker } from "../../components/SlashPicker";
+import { useSnippetPicker } from "../board/SnippetPicker";
+import type { SlashCommand } from "../chat/slashText";
+import { useTypeTrigger } from "../../lib/typeTrigger";
+import { usePhone } from "../../hooks/usePhone";
 
 /** What `/` offers in a description: skills and custom commands (built-ins mean nothing outside the chat). */
 export function useDescriptionCommands(slug: string, ticketId?: string): SlashCommand[] | null {

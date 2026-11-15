@@ -23,7 +23,7 @@ g.IntersectionObserver = FakeIO;
 g.window = { innerWidth: 1280 };
 g.document = { documentElement: { classList: { toggle: (c: string, on: boolean) => (on ? classes.add(c) : classes.delete(c)) } } };
 // A path tsc doesn't follow: the root typecheck has no DOM types (web/ has its own tsconfig).
-const motionPath = "../web/src/cardMotion";
+const motionPath = "./cardMotion";
 const { watchMotion, setCoveredFrom } = await import(motionPath);
 const live = () => observers[observers.length - 1];
 

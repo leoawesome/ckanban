@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { chatPrompt, firstRunPrompt, MAIN_FIRST_REPLY } from "../src/server/prompts";
-import { MAIN_HINT, mainHint, runsOn } from "../web/src/newTicketText";
-import { plural } from "../web/src/teamText";
+import { chatPrompt, firstRunPrompt, MAIN_FIRST_REPLY } from "../../../../src/server/prompts";
+import { MAIN_HINT, mainHint, runsOn } from "./newTicketText";
+import { plural } from "../team/teamText";
 
 const main = { kind: "main" as const, repo: "remote" as const, branch: "ck/x", inPlace: false };
 const ticket = (over: Record<string, unknown> = {}) => ({
@@ -41,7 +41,7 @@ test("a main ticket's first work run explains what happens next; later runs and 
 
 test("the feature chip never adds a new ticket to a feature by itself", async () => {
   // Must-not-break (U31): partOf is only set after the user taps Add or picks a feature; the default is "own".
-  const src = await Bun.file(new URL("../web/src/FeatureChoice.tsx", import.meta.url)).text();
+  const src = await Bun.file(new URL("./FeatureChoice.tsx", import.meta.url)).text();
   expect(src).toContain('useState<FeatureChoiceValue>("own")');
   expect(src).not.toContain("useEffect");
 });

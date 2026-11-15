@@ -1,9 +1,9 @@
-import type { Huddle } from "./lib/api";
-import { FaceStack } from "./HelperFace";
+import type { Huddle } from "../../lib/api";
+import { FaceStack } from "../helper/HelperFace";
 import { brakeLabel, huddleCost, huddleTitle, members, quietLabel, roundTag, sortHuddles } from "./huddle";
-import { fullTime, timeAgo } from "./lib/time";
-import { useNow } from "./hooks/useNow";
-import { costText } from "./usage";
+import { fullTime, timeAgo } from "../../lib/time";
+import { useNow } from "../../hooks/useNow";
+import { costText } from "../usage/usage";
 
 /**
  * Team's Huddles view: live huddles under "Live", the rest under "Earlier". Each row is the full title, then a small

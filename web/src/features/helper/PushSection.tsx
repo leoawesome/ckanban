@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, type DroppedPushDevice, type PushDevice } from "./lib/api";
+import { api, type DroppedPushDevice, type PushDevice } from "../../lib/api";
 import { PUSH_HINT_KEY, pushState, turnOff, turnOn, type PushStatus } from "./push";
-import { timeAgo } from "./lib/time";
-import { toast } from "./components/toast";
-import { usePhone } from "./hooks/usePhone";
+import { timeAgo } from "../../lib/time";
+import { toast } from "../../components/toast";
+import { usePhone } from "../../hooks/usePhone";
 
 /** Notifications dialog → "This phone": turn notifications on for the device the board is open on (push.ts). */
 export function PushSection({ profile }: { profile: string | null }) {

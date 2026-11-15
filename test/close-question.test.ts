@@ -7,9 +7,9 @@ import { stepWait, youWaiting } from "../src/server/main-ticket";
 import type { SessionSummary } from "../src/server/session";
 import { Store } from "../src/core/store";
 import type { Ticket } from "../src/core/types";
-import { askClosed, familyState } from "../web/src/family";
-import { answersMessage, formStates, parseAnswers } from "../web/src/questionForms";
-import { stepMessages } from "../web/src/stepTalk";
+import { askClosed, familyState } from "../web/src/features/family/family";
+import { answersMessage, formStates, parseAnswers } from "../web/src/features/ticket/questionForms";
+import { stepMessages } from "../web/src/features/ticket/stepTalk";
 import { questionsError } from "../src/mcp-server";
 import { tempDir } from "./support/helpers";
 

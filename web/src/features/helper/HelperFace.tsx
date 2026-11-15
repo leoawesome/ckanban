@@ -1,9 +1,9 @@
 // A huddle participant's face: their avatar (AvatarFace.tsx, the user's saved choice or the default for the role) with
 // a mood. One place draws it, so the huddle chat, People pane, session view, header stack and the Huddles list all
 // match. The user (@you) keeps a person face.
-import { AvatarFace, useAvatar } from "./AvatarFace";
-import type { AvatarMood } from "./avatarLook";
-import { participantMood } from "./avatarMood";
+import { AvatarFace, useAvatar } from "../avatar/AvatarFace";
+import type { AvatarMood } from "../avatar/avatarLook";
+import { participantMood } from "../avatar/avatarMood";
 
 export interface FacePerson {
   handle: string; role?: string | null; preset?: string | null; kind?: string | null;

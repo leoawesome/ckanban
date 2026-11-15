@@ -1,10 +1,10 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
-import { api, type HuddlePreset, type HuddleTemplate, type Level, type SquadCardRef, type SquadDraft, type TeamUsage } from "./lib/api";
+import { api, type HuddlePreset, type HuddleTemplate, type Level, type SquadCardRef, type SquadDraft, type TeamUsage } from "../../lib/api";
 import { RosterEditor, rosterDraft, templateRules, type RosterDraft } from "./HuddleRoster";
 import { DEFAULT_BUDGET } from "./huddleText";
-import { useSquadSave } from "./SquadCard";
-import { personHandle } from "./squadText";
-import { resetTitle, scopeChip, usageText } from "./teamText";
+import { useSquadSave } from "../team/SquadCard";
+import { personHandle } from "../team/squadText";
+import { resetTitle, scopeChip, usageText } from "../team/teamText";
 
 type Draft = { name: string; label: string; description: string; rounds: string; budget: string; report: string; hostRules: string; roster: RosterDraft };
 

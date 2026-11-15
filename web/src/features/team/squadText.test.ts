@@ -1,6 +1,6 @@
 // Squad helpers in the web UI: the topic box's text, the people chips, the card's lines.
 import { expect, test } from "bun:test";
-import { isNameTaken, personChips, personModeLabel, squadSavedText, squadSummary, ticketTopicText, TOPIC_MAX } from "../web/src/squadText";
+import { isNameTaken, personChips, personModeLabel, squadSavedText, squadSummary, ticketTopicText, TOPIC_MAX } from "./squadText";
 
 test("the topic box starts with the ticket's title and the start of its description", () => {
   expect(ticketTopicText({ title: " Fix login ", body: "" })).toBe("Fix login");
