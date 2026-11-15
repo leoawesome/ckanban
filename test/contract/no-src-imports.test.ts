@@ -29,7 +29,7 @@ test("the import check catches source imports", () => {
   // Built from pieces so this file's own text doesn't trip the check above.
   const imp = "import";
   const sample = [
-    `${imp} { Store } from "../../src/core/store";`, `const x = await ${imp}("../../web/src/App");`,
+    `${imp} { Store } from "../../src/server/store";`, `const x = await ${imp}("../../web/src/App");`,
     `const y = ${"require"}("/abs/src/cli.ts");`, `${imp} { join } from "node:path";`, `${imp} { startDaemon } from "./daemon";`,
   ].join("\n");
   expect(specifiers(sample).filter(reachesSource)).toEqual(["../../src/server/store", "../../web/src/App", "/abs/src/cli.ts"]);
