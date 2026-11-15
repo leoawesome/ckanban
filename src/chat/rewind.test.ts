@@ -6,7 +6,7 @@ import { parseSession } from "../runs/session";
 import {
   changesSince, cutSession, listSnapshots, pruneSnapshots, restoreSnapshot, rewindSessionFile, snapshotFor, takeSnapshot, textKey,
 } from "./rewind";
-import { filesLine, laterLine, noFilesLine, restoredDraft, rewindOff } from "../../web/src/rewindText";
+import { filesLine, laterLine, noFilesLine, restoredDraft, rewindOff } from "../../web/src/features/ticket/rewindText";
 import { tempDir } from "../../test/support/helpers";
 
 const commit = (dir: string, msg: string) =>

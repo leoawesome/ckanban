@@ -3,8 +3,8 @@ import type { SquadCardState, SquadProposal } from "../server/squad";
 import type { RewindUndo } from "../chat/rewind";
 import type { BrowserPick } from "../server/chromes";
 
-import type { TicketKind } from "../../web/src/family";
-import type { ClosedForms } from "../../web/src/family";
+import type { TicketKind } from "../../web/src/features/family/family";
+import type { ClosedForms } from "../../web/src/features/family/family";
 import type { TaskModels } from "../../web/src/lib/models";
 export type { TicketKind };
 export type Status = "backlog" | "planning" | "ready" | "in_progress" | "review" | "done";

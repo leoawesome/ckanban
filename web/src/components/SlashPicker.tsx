@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties
 import { createPortal } from "react-dom";
 import { api } from "../lib/api";
 import { useLayer } from "../lib/layers";
-import { inlineSlashQuery, insertInlineCommand, matchCommands, SLASH_GROUPS, slashQuery, sourceLabel, type SlashCommand } from "../slashText";
+import { inlineSlashQuery, insertInlineCommand, matchCommands, SLASH_GROUPS, slashQuery, sourceLabel, type SlashCommand } from "../features/chat/slashText";
 
 const GAP = 6;
 

@@ -1,5 +1,5 @@
-import type { Loop } from "../../../automationTypes";
-import type { Status } from "../../../columns";
+import type { Loop } from "../../../features/schedules/automationTypes";
+import type { Status } from "../../../features/board/columns";
 import type { TaskModels } from "../../models";
 import type { BrowserPick } from "./browsers";
 import type { QuickChat, SessionSummary } from "./chat";
@@ -8,9 +8,9 @@ import type { Huddle, HuddleMessage } from "./huddle";
 import type { Job, Schedule } from "./schedules";
 import type { Ticket, Workspace } from "./ticket";
 
-export type { Status } from "../../../columns";
+export type { Status } from "../../../features/board/columns";
 
-export { BOARD_COLUMNS, COLUMNS, waitsForSlot } from "../../../columns";
+export { BOARD_COLUMNS, COLUMNS, waitsForSlot } from "../../../features/board/columns";
 
 export interface Health {
   claude: boolean;

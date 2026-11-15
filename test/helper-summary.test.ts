@@ -93,7 +93,7 @@ describe("summary cadence", () => {
 
 describe("message page words", () => {
   test("board links on their own line are left out of the page; other text stays", async () => {
-    const { withoutLinks, stillWaitingLine } = await import("../web/src/helperText");
+    const { withoutLinks, stillWaitingLine } = await import("../web/src/features/helper/helperText");
     const old = "Pricing\nStop it?\nhttps://mac.ts.net/#/kb/t_1\n\n- Docs (kanban): Ready\n  https://mac.ts.net/#/kanban/t_2\n\nSee https://ckanban.dev for more";
     expect(withoutLinks(old)).toBe("Pricing\nStop it?\n\n- Docs (kanban): Ready\n\nSee https://ckanban.dev for more");
     expect(stillWaitingLine({ stillCount: 27, oldestAt: new Date(2026, 9, 12).toISOString(), new: [{} as any] })).toBe("27 more still wait on you, oldest from 12 Oct.");

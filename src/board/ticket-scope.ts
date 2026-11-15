@@ -2,10 +2,10 @@
 // A board keeps hundreds of finished tickets: the first load sends only the work that isn't finished, with whole
 // families (a ticket's steps, its main ticket and their links), so family chips, the Family tab and the search's
 // "via" all still find their tickets. Done arrives 20 at a time when the user opens the column, or by search.
-import { groupByColumn } from "../../web/src/columns";
-import { onBoard, parentLink, type FamilyTicket } from "../../web/src/family";
-import { hasTags } from "../../web/src/tagText";
-import { doneIdsHash } from "../../web/src/donePaging";
+import { groupByColumn } from "../../web/src/features/board/columns";
+import { onBoard, parentLink, type FamilyTicket } from "../../web/src/features/family/family";
+import { hasTags } from "../../web/src/features/board/tagText";
+import { doneIdsHash } from "../../web/src/features/board/donePaging";
 
 type Scoped = FamilyTicket & { status: string; order: number; pinnedAt?: string | null; tool?: boolean; showOnBoard?: boolean | null; body?: string | null; tags?: string[] };
 

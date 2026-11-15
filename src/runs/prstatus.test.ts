@@ -197,7 +197,7 @@ test("conflict message names the base branch and keeps force pushes on the ticke
 });
 
 test("the UI's merge guard matches the server", async () => {
-  const web = await import("../../web/src/prText");
+  const web = await import("../../web/src/features/ticket/prText");
   const cases = [
     raw(), raw({ statusCheckRollup: [] }), raw({ state: "MERGED" }), raw({ state: "CLOSED" }),
     raw({ statusCheckRollup: [run("test", "FAILURE"), run("lint", "FAILURE")] }), raw({ statusCheckRollup: [run("test", null, "QUEUED")] }),
@@ -208,7 +208,7 @@ test("the UI's merge guard matches the server", async () => {
 });
 
 test("the panel's PR list: old tickets, repo, number, summary, and the same main PR as the server", async () => {
-  const web = await import("../../web/src/prText");
+  const web = await import("../../web/src/features/ticket/prText");
   const { ticketPrs, mainPr } = await import("../board/prs");
   expect(web.ticketPrs({ prUrl: URL, pr: parsePrStatus(URL, raw({ baseRefName: "dev" })) })).toEqual([{ url: URL, state: "OPEN", base: "dev" }]);
   expect(web.ticketPrs({ prUrl: null })).toEqual([]);

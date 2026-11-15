@@ -6,7 +6,7 @@ import { jsonObject } from "./learn";
 import { addSideSpend, type SideCaller } from "../runs/side-call";
 import type { Store } from "../core/store";
 import type { Ticket } from "../core/types";
-import { hiddenTool, parentLink, wouldLoop } from "../../web/src/family";
+import { hiddenTool, parentLink, wouldLoop } from "../../web/src/features/family/family";
 
 /** Tickets a suggestion may point at: every open one, plus Done ones touched in the last RECENT_DAYS days. */
 export const RECENT_DAYS = 30;

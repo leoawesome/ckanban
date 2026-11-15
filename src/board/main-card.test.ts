@@ -4,8 +4,8 @@ import { expect, test } from "bun:test";
 import { attentionFor } from "../server/attention";
 import { familyCard, stepWait } from "./main-ticket";
 import type { Ticket } from "../core/types";
-import { attentionLabel, cardFamily, featureBusy, stepsText } from "../../web/src/cardState";
-import { groupByColumn } from "../../web/src/columns";
+import { attentionLabel, cardFamily, featureBusy, stepsText } from "../../web/src/features/board/cardState";
+import { groupByColumn } from "../../web/src/features/board/columns";
 import { board, setup, store, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();

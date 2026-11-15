@@ -1,6 +1,6 @@
 // What the ticket panel's Part of buttons (Change, Unlink, Link to a ticket…) will do, in plain words. No imports from
 // api.ts, so tests load it.
-import type { LinkHow } from "../family";
+import type { LinkHow } from "../features/family/family";
 
 /** What Unlink also ends, so the user knows before clicking. */
 export const UNLINK_NOTE: Partial<Record<LinkHow, string>> = {

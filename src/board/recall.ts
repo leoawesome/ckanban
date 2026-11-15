@@ -1,7 +1,7 @@
 // Recall: a short brief of related past tickets for a run's first prompt, so Claude doesn't redo or undo earlier
 // work on the same topic. Plain word matching over the board's own tickets; no model call.
 import type { Ticket } from "../core/types";
-import { hiddenTool } from "../../web/src/family";
+import { hiddenTool } from "../../web/src/features/family/family";
 
 /** A ticket on the board with its last result summary (null: none reported yet). */
 export interface RecallRow {

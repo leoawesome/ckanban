@@ -12,7 +12,7 @@ import type { SessionSummary } from "../src/runs/session";
 import type { SideCallInput, SideCallResult } from "../src/runs/side-call";
 import { Store } from "../src/core/store";
 import type { Profile, Ticket } from "../src/core/types";
-import { sendTrail, userTrail } from "../web/src/helperText";
+import { sendTrail, userTrail } from "../web/src/features/helper/helperText";
 import { tempDir } from "./support/helpers";
 
 const DAY = (h: number, m = 0) => new Date(2026, 10, 9, h, m).getTime();

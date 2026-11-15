@@ -3,7 +3,7 @@ import { basename, dirname } from "node:path";
 import { isGitRepo, listWorktrees, worktreeDir } from "../runs/git";
 import { STUCK_ON_QUESTIONS } from "../server/attention";
 import type { Question } from "../runs/session";
-import { askClosed, linkProblem, parentLink, withYouTool } from "../../web/src/family";
+import { askClosed, linkProblem, parentLink, withYouTool } from "../../web/src/features/family/family";
 import { familySig } from "./feature";
 import { mainWakePrompt } from "../runs/prompts";
 import { isManager, managedPlan, progressStep, RESULTS_KEEP, wakeTable } from "./main-ticket";

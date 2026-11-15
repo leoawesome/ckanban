@@ -107,7 +107,7 @@ test("an ordinary ticket in Done: the user's message that asks for work ends in 
 // to Done while the step still ran. Parked in Done, its wake for the finished step never came either.
 test("a Done main ticket with a merged PR: a message, a new step, the poller: In progress until the step ends, then Review", async () => {
   const { checkPr } = await import("../runs/prpoller");
-  const { groupByColumn } = await import("../../web/src/columns");
+  const { groupByColumn } = await import("../../web/src/features/board/columns");
   const main = await mkMain("done");
   store.updateTicket("p", main.id, { prUrl: "https://github.com/x/y/pull/12" });
   await board.chat("p", main.id, "three more fixes please");
@@ -150,8 +150,8 @@ test("a main ticket never in Done with no open steps still goes to Done when its
 }, 60_000);
 
 test("a main card in Done shows In progress while one of its steps runs, not for a ticket the user added", async () => {
-  const { groupByColumn } = await import("../../web/src/columns");
-  const { cardFamily } = await import("../../web/src/cardState");
+  const { groupByColumn } = await import("../../web/src/features/board/columns");
+  const { cardFamily } = await import("../../web/src/features/board/cardState");
   const main = await mkMain("done");
   const step = await mkTool(main.id, "in_progress");
   const added = await board.createTicket("p", { title: "Landing copy", body: "", status: "backlog", mode: "auto", partOf: main.id });

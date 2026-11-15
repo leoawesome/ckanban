@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { boardScope, donePage, doneSearch, familyKeys, idsScope } from "../src/board/ticket-scope";
-import { doneCards, joinsBoard, mergeTickets, reloadTickets, unseenDone } from "../web/src/donePaging";
+import { doneCards, joinsBoard, mergeTickets, reloadTickets, unseenDone } from "../web/src/features/board/donePaging";
 
 type T = { id: string; title: string; status: string; createdAt: string; order: number; parentId?: string | null; partOf?: string | null; tool?: boolean; showOnBoard?: boolean | null; pinnedAt?: string | null; body?: string; tags?: string[] };
 let n = 0;

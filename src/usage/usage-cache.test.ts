@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BACKOFF_MS, GOOD_TTL_MS, MIN_GAP_MS, UsageCache } from "./usage-cache";
 import { fetchUsage, parseRetryAfter, type UsageResult } from "./usage";
-import { resetLine, staleNote, usageError, usageWindows } from "../../web/src/usage";
+import { resetLine, staleNote, usageError, usageWindows } from "../../web/src/features/usage/usage";
 import { tempDir } from "../../test/support/helpers";
 
 const MIN = 60_000;

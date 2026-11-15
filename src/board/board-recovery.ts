@@ -3,7 +3,7 @@ import { isSessionLive as psSessionLive, sessionTitle } from "../runs/claude";
 import { type HostHuddle } from "../server/attention";
 import { RecallIndex, recallText } from "./recall";
 import { pauser } from "../core/lag";
-import { featureRows, isFeature, subFeaturesOf } from "../../web/src/family";
+import { featureRows, isFeature, subFeaturesOf } from "../../web/src/features/family/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "../chat/chat-cache";
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";

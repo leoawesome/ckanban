@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { inTab, nearOf, needsShown, needsYouIds, neighboursIn, pageOf, rowLines, stepTab, toRow, type StoredMessage } from "../src/server/helper/messages";
 import {
   appendRows, entryLines, foldByDay, foldRows, loadingMoreLine, messageHash, MESSAGES_HASH, pageQuery, prependRows, rowIcon, type MessageRow,
-} from "../web/src/helperText";
-import { backToBoard, backToList, marker, openFromList, settleMessagesEntry, stepTo, swipeCloses, swipeIntent, type Hist } from "../web/src/msgNav";
+} from "../web/src/features/helper/helperText";
+import { backToBoard, backToList, marker, openFromList, settleMessagesEntry, stepTo, swipeCloses, swipeIntent, type Hist } from "../web/src/features/chat/msgNav";
 
 const T0 = Date.parse("2026-11-13T12:00:00Z");
 const at = (min: number) => new Date(T0 - min * 60_000).toISOString();

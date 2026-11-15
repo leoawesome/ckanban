@@ -486,7 +486,7 @@ test("Board.chatFromTelegram: the message carries its update, so the same update
 });
 
 test("the board chat marks messages that came from Telegram and replies sent back there", async () => {
-  const { telegramMarks } = await import("../web/src/chatTurns");
+  const { telegramMarks } = await import("../web/src/features/chat/chatTurns");
   const e = (uuid: string, at: string, role: string, text: string) => ({ uuid, at, role, kind: "text", text });
   const entries = [
     e("u1", "2026-11-09T10:00:00Z", "user", "8080"),

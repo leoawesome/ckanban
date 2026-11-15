@@ -2,7 +2,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { repoKind } from "../runs/git";
 import { pauser } from "../core/lag";
-import { featureRoot, featureRows, groupsOf, isFeature, MAX_LEVEL, parentLink } from "../../web/src/family";
+import { featureRoot, featureRows, groupsOf, isFeature, MAX_LEVEL, parentLink } from "../../web/src/features/family/family";
 import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
 import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "../runs/prompts";
 import { run as runCmd } from "../runs/git";

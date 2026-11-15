@@ -6,7 +6,7 @@ import { Scheduler } from "../src/server/scheduler";
 import { parseNewTickets } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import { normalizeTag as serverNormalizeTag, normalizeTags } from "../src/board/tags";
-import { boardTags, hasTags, normalizeTag, parseSearch, tagHue } from "../web/src/tagText";
+import { boardTags, hasTags, normalizeTag, parseSearch, tagHue } from "../web/src/features/board/tagText";
 import { tempDir } from "./support/helpers";
 
 test("normalizeTags: trimmed, lowercase, no #, dashes for spaces, no blanks or repeats, capped", () => {

@@ -1437,7 +1437,7 @@ test("tickets a schedule's run creates are linked to that schedule; the list sho
 });
 
 test("a ticket made from a proposed-tickets card stays created after it is renamed and started, and Create can't make it twice", async () => {
-  const { createdFromDraft } = await import("../web/src/proposalMatch");
+  const { createdFromDraft } = await import("../web/src/features/board/proposalMatch");
   const path = tempDir("ck-card-");
   const p = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Card Proj", path }))).json()) as any;
   const tickets = `${base}/api/profiles/${p.slug}/tickets`;
@@ -1471,7 +1471,7 @@ test("a ticket made from a proposed-tickets card stays created after it is renam
 });
 
 test("a card's key matches an older child without a proposed title, but never one a different draft made", async () => {
-  const { createdFromDraft } = await import("../web/src/proposalMatch");
+  const { createdFromDraft } = await import("../web/src/features/board/proposalMatch");
   const old = { id: "o", title: "Renamed", parentId: "me", planKey: "fix" };
   expect(createdFromDraft([old], "me", { title: "Original", key: "fix" })?.id).toBe("o");
   const made = { ...old, proposedAs: "Original" };

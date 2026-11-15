@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type HelpCard, type HelpKind, type Ticket } from "../lib/api";
 import { useLayer } from "../lib/layers";
-import { Markdown } from "../Transcript";
-import { costText } from "../usage";
+import { Markdown } from "../features/chat/Transcript";
+import { costText } from "../features/usage/usage";
 import { fullTime, timeAgo } from "../lib/time";
 import { BulbIcon } from "../components/icons";
 

@@ -6,8 +6,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { chatPrompt, followUpRule } from "../runs/prompts";
 import { withoutAddOn } from "../core/store";
 import type { Ticket } from "../core/types";
-import { familyOf, levelOf, parentLink } from "../../web/src/family";
-import { followUpFor, followUpPlace, followUpState } from "../../web/src/followUp";
+import { familyOf, levelOf, parentLink } from "../../web/src/features/family/family";
+import { followUpFor, followUpPlace, followUpState } from "../../web/src/features/ticket/followUp";
 import { store, board, setup, useBoardEnv } from "../../test/support/board-env";
 
 useBoardEnv();

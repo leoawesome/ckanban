@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { type RepoKind } from "../runs/git";
 import { type BrowserDeps } from "../server/board-browsers";
 import type { SessionSummary } from "../runs/session";
-import { familyOf } from "../../web/src/family";
+import { familyOf } from "../../web/src/features/family/family";
 import { type ChatMode } from "../runs/prompts";
 import { run as runCmd } from "../runs/git";
 import { workflowDirCost } from "../runs/workflows";

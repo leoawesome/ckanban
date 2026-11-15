@@ -1,6 +1,6 @@
-import type { AutomationProposal, Loop, LoopInput, LoopTest, Pass } from "../../../automationTypes";
-import type { Status } from "../../../columns";
-import type { JobState } from "../../../jobText";
+import type { AutomationProposal, Loop, LoopInput, LoopTest, Pass } from "../../../features/schedules/automationTypes";
+import type { Status } from "../../../features/board/columns";
+import type { JobState } from "../../../features/schedules/jobText";
 import type { Outcome, TicketMode } from "./ticket";
 
 /** What the user did with a teammate card. */
@@ -13,7 +13,7 @@ export interface ScheduleDeleteCardState {
   scheduleId?: string;
 }
 
-export type { AutomationProposal, Loop, LoopColumn, LoopInput, LoopSeenItem, LoopTest, Pass } from "../../../automationTypes";
+export type { AutomationProposal, Loop, LoopColumn, LoopInput, LoopSeenItem, LoopTest, Pass } from "../../../features/schedules/automationTypes";
 
 export interface Schedule {
   id: string;
@@ -57,7 +57,7 @@ export type JobAction =
   | { kind: "ticket"; title: string; body: string; mode: TicketMode }
   | { kind: "command"; command: string; timeoutSec?: number; ifLate?: "skip" | "run" };
 
-export type { JobState } from "../../../jobText";
+export type { JobState } from "../../../features/schedules/jobText";
 
 export interface JobResult {
   ticketId?: string;

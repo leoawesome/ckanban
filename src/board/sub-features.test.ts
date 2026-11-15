@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import {
   featureRoot, featureRows, levelOf, linkProblem, mainTicketOf, onBoard, shownTool, subFeatureState, subFeaturesWorking, workingInFamily, type FeatureTicket,
-} from "../../web/src/family";
+} from "../../web/src/features/family/family";
 import { oldestStep } from "../server/attention";
 import { statusFacts, statusSections } from "./feature";
 import type { Ticket } from "../core/types";

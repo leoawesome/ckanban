@@ -6,7 +6,7 @@ import { BoardClient } from "../src/client";
 import { callTool, type ToolContext } from "../src/mcp-server";
 import { createServer } from "../src/server/http";
 import { ticketCommand } from "../src/ticket-cli";
-import { featureRows, onBoard } from "../web/src/family";
+import { featureRows, onBoard } from "../web/src/features/family/family";
 import { board, setup, store, useBoardEnv } from "./support/board-env";
 import { tempDir } from "./support/helpers";
 

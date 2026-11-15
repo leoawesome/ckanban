@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { commandText, frontmatter, listCommands, localCommandOutput, parseSlash, rememberInit, slashMessage, useBundledFile, validModel } from "./commands";
 import { parseSession } from "../runs/session";
-import { commandNote, inlineSlashQuery, insertInlineCommand, matchCommands, messageCommand, slashQuery, splitCommandMentions, type SlashCommand } from "../../web/src/slashText";
+import { commandNote, inlineSlashQuery, insertInlineCommand, matchCommands, messageCommand, slashQuery, splitCommandMentions, type SlashCommand } from "../../web/src/features/chat/slashText";
 import { tempDir } from "../../test/support/helpers";
 
 function write(file: string, text: string) {

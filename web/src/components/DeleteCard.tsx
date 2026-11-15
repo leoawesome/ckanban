@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Ticket } from "../lib/api";
-import { COLUMNS } from "../columns";
+import { COLUMNS } from "../features/board/columns";
 import { formKey } from "../lib/drafts";
 import { TrashIcon } from "./icons";
 import { usePersistentState } from "../hooks/usePersistentState";

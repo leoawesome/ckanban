@@ -12,10 +12,10 @@ import { statusFacts, statusSections } from "../src/board/feature";
 import { pickRelated } from "../src/board/recall";
 import type { Ticket } from "../src/core/types";
 import { ticketCommand } from "../src/ticket-cli";
-import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, stopTitle } from "../web/src/familyActions";
-import { hiddenTool, mainTicketOf, TICKET_KINDS, withYouTool } from "../web/src/family";
-import { groupByColumn } from "../web/src/columns";
-import { searchBoard } from "../web/src/toolTickets";
+import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, stopTitle } from "../web/src/features/family/familyActions";
+import { hiddenTool, mainTicketOf, TICKET_KINDS, withYouTool } from "../web/src/features/family/family";
+import { groupByColumn } from "../web/src/features/board/columns";
+import { searchBoard } from "../web/src/features/ticket/toolTickets";
 import { board, setup, store, useBoardEnv } from "./support/board-env";
 import { tempDir } from "./support/helpers";
 

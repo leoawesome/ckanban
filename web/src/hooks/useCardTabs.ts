@@ -1,5 +1,5 @@
 import { useEffect, type RefObject } from "react";
-import { lockCardTabs, unlockCardTabs } from "../cardTabs";
+import { lockCardTabs, unlockCardTabs } from "../features/board/cardTabs";
 import { isTyping } from "../app/keynav";
 
 /** Keeps the card's inner controls out of the Tab order unless focus is on or inside the card. `ref` is the focusable card. */

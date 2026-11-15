@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { extractFinalText } from "../runs/activity";
 import { repoKind } from "../runs/git";
 import { forkSessionFile } from "../chat/fork";
-import { familyBelow, featureRoot, featureRows, groupsOf, levelOf, MAX_LEVEL, parentLink, workingInFamily } from "../../web/src/family";
+import { familyBelow, featureRoot, featureRows, groupsOf, levelOf, MAX_LEVEL, parentLink, workingInFamily } from "../../web/src/features/family/family";
 import { readStatus, writeStatus, type SavedStatus } from "./feature";
 import { type MainRole, type RunRole, type ToolRole } from "../runs/prompts";
 import { ASK_TIMEOUT_MS, finishedLine, isManager, mainPlanned, MERGE_TRIES, REPORT_FILE, RESULTS_KEEP, sentences, youWaiting, stepName } from "./main-ticket";

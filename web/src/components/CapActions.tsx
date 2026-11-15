@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, type Ticket } from "../lib/api";
-import { capStep } from "../capText";
-import { costText } from "../usage";
+import { capStep } from "../features/usage/capText";
+import { costText } from "../features/usage/usage";
 
 /** "Continue with +$Y" for a ticket whose run stopped at its spending cap: "continue" with a cap of $Y for that run. */
 export function CapActions({ slug, ticket, onError, small }: { slug: string; ticket: Ticket; onError: (msg: string) => void; small?: boolean }) {

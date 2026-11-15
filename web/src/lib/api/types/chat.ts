@@ -1,5 +1,5 @@
-import type { AutomationProposal } from "../../../automationTypes";
-import type { ChatCacheInfo } from "../../../cacheNote";
+import type { AutomationProposal } from "../../../features/schedules/automationTypes";
+import type { ChatCacheInfo } from "../../../features/chat/cacheNote";
 import type { NewTicketDraft, SetupResult } from "./board";
 import type { KeysAsk } from "./connections";
 import type { RosterEntry, SquadProposal, TeammateProposal } from "./huddle";

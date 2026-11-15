@@ -1,4 +1,4 @@
-import { familyBelow, featureRoot, hideableCard, linkProblem, parentLink, wouldLoop } from "../../web/src/family";
+import { familyBelow, featureRoot, hideableCard, linkProblem, parentLink, wouldLoop } from "../../web/src/features/family/family";
 import { run as runCmd } from "../runs/git";
 import { type Ticket } from "../core/types";
 import type { Board } from "./board";

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Profile } from "../lib/api";
-import { avatarColor, avatarLetter } from "../avatar";
+import { avatarColor, avatarLetter } from "../features/avatar/avatar";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { boardDigit } from "./keynav";
 import { CheckIcon } from "../components/icons";

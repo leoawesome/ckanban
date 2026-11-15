@@ -5,8 +5,8 @@ import { addHuddleSpend, SpendIndex } from "./spend";
 import { Store } from "../core/store";
 import { ticketRuns } from "./ticket-usage";
 import type { ActivityEntry, Profile } from "../core/types";
-import { capLabel, capStep, capWait, parseCap } from "../../web/src/capText";
-import { withActivity } from "../../web/src/huddleText";
+import { capLabel, capStep, capWait, parseCap } from "../../web/src/features/usage/capText";
+import { withActivity } from "../../web/src/features/huddle/huddleText";
 import { tempDir } from "../../test/support/helpers";
 
 const NOW = new Date(2026, 9, 11, 15, 0);

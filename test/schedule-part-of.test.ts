@@ -3,7 +3,7 @@ import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { resultWakesMain } from "../src/board/main-ticket";
 import { planStep } from "../src/board/plan";
-import { featureChoices } from "../web/src/featureChoices";
+import { featureChoices } from "../web/src/features/board/featureChoices";
 import { Scheduler } from "../src/server/scheduler";
 import { Store } from "../src/core/store";
 import type { Plan, Ticket } from "../src/core/types";

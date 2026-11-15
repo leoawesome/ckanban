@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { type DeviceTicketState } from "../server/devices";
 import { ticketAttention, userWaitReason } from "../server/attention";
-import { withYouTool } from "../../web/src/family";
+import { withYouTool } from "../../web/src/features/family/family";
 import { youWaiting } from "./main-ticket";
 import { run as runCmd } from "../runs/git";
 import { messageCost } from "../usage/ticket-usage";

@@ -7,7 +7,7 @@ import { learnedVersions, learnModel, useModelVersionsFile } from "../../../src/
 import { mainTicketRules } from "../../../src/runs/prompts";
 import { buildArgs } from "../../../src/runs/runner";
 import { aliasLabel, familyVersion, KIND_DEFAULTS, KNOWN_VERSIONS, MODELS, modelOptions, pickerLabel, setLearnedVersions, taskModelsText } from "./models";
-import { modelName } from "../usage";
+import { modelName } from "../features/usage/usage";
 
 afterEach(() => {
   setLearnedVersions({});

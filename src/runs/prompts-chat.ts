@@ -2,7 +2,7 @@ import { checkinSetupPrompt } from "../server/checkin-guides";
 import { helperCommand } from "./artifact";
 import type { RepoKind } from "./git";
 import type { Comment, Ticket } from "../core/types";
-import type { FollowUpPlace } from "../../web/src/followUp";
+import type { FollowUpPlace } from "../../web/src/features/ticket/followUp";
 import { AFTER_ANSWERS, BOARD_RULE, BRANCH_FORMAT, CHAT_PLAIN_WORDS, CHROME_RULE, FEATURE_RULE, FILE_LINK_RULE, FOLLOW_UP_RULE, HELPER_RULE_RULE, HUDDLE_NOW_RULE, INTERVIEW, JOB_RULE, KEYS_RULE, MANAGE_RULE, NEW_MAIN_RULE, NOTIFY_USER_RULE, OUTBOUND_RULE, PLAIN_WORDS, PLANNING_ARTIFACT_RULE, QUESTIONS_FORMAT, REPLY_RULE, RESULT_RULE, REVIEW_HUDDLE_FORMAT, SCHEDULES_RULE, SELF_MOVE_RULE, SQUAD_FORMAT, TEAMMATE_FORMAT, TICKETS_FORMAT, TICKET_FORMAT, artifactRule, autoSection, bugReportRule, canCommit, context, deliverableRule, landRule, mockupsRule, notesSection, recallSection, reviewFileRule, sourceNote, targetDesignRule, type Home, type PromptContext, whereRule } from "./prompts-rules";
 import { MAIN_FIRST_REPLY, MAIN_PLANNING, PUSHBACK_RULE, mainPlannedRule } from "./prompts-planning";
 import { automationNote, mainChatRules, mainWhere, toolChatPrompt, toolRules, type RunRole } from "./prompts-main";

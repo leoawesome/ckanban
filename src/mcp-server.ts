@@ -1,7 +1,7 @@
 // `ckanban mcp`: a stdio MCP server (newline-delimited JSON-RPC 2.0) exposing the board as tools.
 // Hand-rolled instead of @modelcontextprotocol/sdk: we only need initialize, tools/list and tools/call.
 import { createHash } from "node:crypto";
-import { hiddenTool, withYouTool } from "../web/src/family";
+import { hiddenTool, withYouTool } from "../web/src/features/family/family";
 import { TOOL_NO_NOTIFY } from "./board/main-ticket";
 import { FRONT_DESK_ENV, HUDDLE_AGENT_ENV, QUICK_CHAT_ENV } from "./core/env";
 import { FEEDBACK_MAX, helperLineText, suggestedLineError } from "./server/helper/line";

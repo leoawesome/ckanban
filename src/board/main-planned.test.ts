@@ -1,7 +1,7 @@
 // A main ticket that is already planned (family or written status) doesn't get the "propose an improved ticket"
 // invitation in Planning: its plan goes into the status, and propose_ticket only updates the ticket (plain Apply never starts work).
 import { expect, test } from "bun:test";
-import { plannedMain } from "../../web/src/family";
+import { plannedMain } from "../../web/src/features/family/family";
 import { mainPlanned } from "./main-ticket";
 import { chatPrompt, TICKET_FORMAT, type MainRole } from "../runs/prompts";
 import type { Ticket } from "../core/types";

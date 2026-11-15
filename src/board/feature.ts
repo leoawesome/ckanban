@@ -5,7 +5,7 @@
 // are saved in the top ticket's outputs folder: status.json (what the block renders from) and status.md (to read).
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { childrenByParent, familyState, featureRows, featureTasks, settled, STATE_WORDS, type FamilyState } from "../../web/src/family";
+import { childrenByParent, familyState, featureRows, featureTasks, settled, STATE_WORDS, type FamilyState } from "../../web/src/features/family/family";
 import { ticketPrs } from "./prs";
 import type { Ticket } from "../core/types";
 

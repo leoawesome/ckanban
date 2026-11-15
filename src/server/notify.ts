@@ -6,7 +6,7 @@ import { chmodSync, existsSync, rmSync, readFileSync, renameSync, writeFileSync 
 import { pauser, track, trackedInterval } from "../core/lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { featureRows, hiddenTool, mainTicketOf, withYouTool } from "../../web/src/family";
+import { featureRows, hiddenTool, mainTicketOf, withYouTool } from "../../web/src/features/family/family";
 import { type AttentionKind, type HostHuddle, ticketAttention } from "./attention";
 import { stepWait } from "../board/main-ticket";
 import type { Bus } from "../core/events";
