@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
-import { draftFiles, fileKind, formatSize, type DraftFile } from "./attachText";
-import type { useImagePaste } from "./imagePaste";
+import { api } from "../lib/api";
+import { draftFiles, fileKind, formatSize, type DraftFile } from "../lib/attachText";
+import type { useImagePaste } from "../lib/imagePaste";
 
 /** "PDF · 2.4 MB" once the size is known, else just the type. */
 function useSizeLine(stored: string | null, type: string): string {

@@ -16,7 +16,7 @@ import { USER_HUDDLE_TRIGGER } from "../core/types";
 import { shellQuote } from "../core/util";
 import { fromAutomation, type Question } from "./session";
 import type { FollowUpPlace } from "../../web/src/followUp";
-import { taskModelsText, type TaskModels } from "../../web/src/models";
+import { taskModelsText, type TaskModels } from "../../web/src/lib/models";
 
 const RESULT_RULE = `When you finish this run, end your final message with exactly one line in this format (valid JSON, single line):
 CKANBAN_RESULT: {"status":"done"|"blocked"|"questions","prUrl":<string or null>,"summary":"<1-2 sentence summary for the user, outcome first>"}

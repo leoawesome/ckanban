@@ -1,9 +1,9 @@
 import { useId, useRef, useState, type ReactNode } from "react";
-import { useFocusTrap, useLayer } from "./layers";
-import { useBackdropClose } from "./sheet";
+import { useFocusTrap, useLayer } from "../lib/layers";
+import { useBackdropClose } from "../lib/sheet";
 import { KeyHint } from "./KeyHint";
-import { useBackEntry } from "./backEntry";
-import { usePhone } from "./usePhone";
+import { useBackEntry } from "../app/backEntry";
+import { usePhone } from "../hooks/usePhone";
 import { FormError } from "./formParts";
 
 export function ConfirmDialog({ title, children, confirmLabel, busyLabel = "Working…", tone = "danger", onConfirm, onCancel, backEntry = true, confirmDisabled }: {

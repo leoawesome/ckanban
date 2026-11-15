@@ -2,11 +2,11 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEv
 import {
   api, type HandIn, type Huddle, type HuddleLearning, type HuddleMessage, type HuddleMode, type HuddleParticipant, type HuddlePreset, type Level, type SquadDraft,
   type SquadProposal, type TeammateProposal, type Ticket,
-} from "./api";
-import { Modal } from "./Modal";
+} from "./lib/api";
+import { Modal } from "./components/Modal";
 import { SquadCardView, SquadSavedView, useSquadSave } from "./SquadCard";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { draftKey, formKey } from "./drafts";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { draftKey, formKey } from "./lib/drafts";
 import {
   BIG_CONTEXT_TOKENS, contextText, MODE_LABEL, modeLabel, dollars, huddleCost, idleFor, isForYou, members, mentionCandidates, mentionQuery, participantActivity, sourceLabel, untaggedHint,
   type HuddleState,
@@ -14,31 +14,31 @@ import {
 } from "./huddle";
 import { DEFAULT_MAX, draftError, RosterEditor, rosterDraft, SquadPeople, SquadPicker, startFromDraft, TopicBox, usePresets, useTemplates, type RosterDraft } from "./HuddleRoster";
 import { ticketTopicText } from "./squadText";
-import { autoGrow } from "./autoGrow";
-import { reducedMotion } from "./motion";
+import { autoGrow } from "./lib/autoGrow";
+import { reducedMotion } from "./lib/motion";
 import {
   applyTemplate, brakeHeadline, BRIEF_MAX, handInLine, rosterNoise, budgetRaise, BUDGET_STEPS, clampSideWidth, clause, DEFAULT_BUDGET, handInGroups, handInStatus, participantRole, POST_MAX, SIDE_DEFAULT, stoppedWhenDone,
 } from "./huddleText";
-import { ChevronDownIcon, ChevronRightIcon, CloseIcon, MoreIcon, HuddleIcon, CapIcon, WarnIcon, StopIcon } from "./icons";
-import { KeyHint } from "./KeyHint";
-import { useLayer } from "./layers";
-import { Select } from "./Select";
-import { fullTime } from "./time";
-import { useNow } from "./useNow";
+import { ChevronDownIcon, ChevronRightIcon, CloseIcon, MoreIcon, HuddleIcon, CapIcon, WarnIcon, StopIcon } from "./components/icons";
+import { KeyHint } from "./components/KeyHint";
+import { useLayer } from "./lib/layers";
+import { Select } from "./components/Select";
+import { fullTime } from "./lib/time";
+import { useNow } from "./hooks/useNow";
 import { HuddleRounds, roundLabel } from "./HuddleRounds";
 import { SessionPanel } from "./HuddleSession";
-import type { MenuItem } from "./HeaderMenu";
-import { MoreSheet } from "./PhoneNav";
-import { usePhone } from "./usePhone";
+import type { MenuItem } from "./app/HeaderMenu";
+import { MoreSheet } from "./app/PhoneNav";
+import { usePhone } from "./hooks/usePhone";
 import { Markdown } from "./Transcript";
-import { usePersistentState } from "./usePersistentState";
-import { TapTip } from "./TapTip";
+import { usePersistentState } from "./hooks/usePersistentState";
+import { TapTip } from "./components/TapTip";
 import type { HuddleSeed, TeamRequest } from "./Team";
 import { TeammateProposalView } from "./TeammateCard";
 import { savedText } from "./teammateText";
 import { FaceStack, HelperFace } from "./HelperFace";
 import { participantMood } from "./avatarMood";
-import { enterSends } from "./enterSends";
+import { enterSends } from "./lib/enterSends";
 
 const clock = (iso: string) => {
   const d = new Date(iso);

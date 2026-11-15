@@ -1,7 +1,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
-import { swipeCloses, swipeIntent } from "./msgNav";
+import { swipeCloses, swipeIntent } from "../msgNav";
 import { DUR_BASE_MS, DUR_FAST_MS } from "./motion";
-import { PHONE_QUERY } from "./usePhone";
+import { PHONE_QUERY } from "../hooks/usePhone";
 
 /**
  * Backdrop handlers: close only when the press both started and ended on the dim area itself, so a scroll or a

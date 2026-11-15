@@ -1,8 +1,8 @@
 // Copy on a Draft card in Claude's reply takes only the quote's text (web/src/draftText.ts), and on a phone one of the
 // user's messages at a time shows its actions (web/src/shownMessage.ts).
 import { expect, test } from "bun:test";
-import { draftText, type DraftNode } from "../web/src/draftText";
-import { nextShown } from "../web/src/shownMessage";
+import { draftText, type DraftNode } from "./draftText";
+import { nextShown } from "../shownMessage";
 
 const text = (t: string): DraftNode => ({ nodeType: 3, nodeName: "#text", nodeValue: t, childNodes: [] });
 const el = (name: string, ...kids: (DraftNode | string)[]): DraftNode =>

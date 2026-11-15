@@ -1,5 +1,5 @@
 import { KeyHint } from "./KeyHint";
-import { MOD } from "./Shortcuts";
+import { MOD } from "../app/Shortcuts";
 
 /** Star "Important" toggle (new-ticket dialog, drawer header): unattended runs review an important ticket in an auto huddle before landing. */
 export function StarToggle({ on, onChange, disabled, keyHint }: { on: boolean; onChange: (on: boolean) => void; disabled?: boolean; keyHint?: string }) {

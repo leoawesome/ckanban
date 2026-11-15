@@ -1,21 +1,21 @@
-import type { HuddleLine } from "./cardState";
+import type { HuddleLine } from "../cardState";
 import { isImageFile } from "./attachText";
-import { createLive, LIVE_NAME, type ChannelLike, type LocksLike, type SourceLike } from "./liveEvents";
-import type { ChatCacheInfo } from "./cacheNote";
-import type { SlashCommand } from "./slashText";
-import type { TicketUsage, UsageResult } from "./usage";
-import type { ContextView } from "./contextText";
-import type { Status } from "./columns";
-import type { TicketKind } from "./family";
+import { createLive, LIVE_NAME, type ChannelLike, type LocksLike, type SourceLike } from "../app/liveEvents";
+import type { ChatCacheInfo } from "../cacheNote";
+import type { SlashCommand } from "../slashText";
+import type { TicketUsage, UsageResult } from "../usage";
+import type { ContextView } from "../contextText";
+import type { Status } from "../columns";
+import type { TicketKind } from "../family";
 import type { TaskModels } from "./models";
-import type { PrStatus, TicketPr } from "./prText";
-export type { PrCheck, PrStatus, TicketPr } from "./prText";
-export type { Status } from "./columns";
+import type { PrStatus, TicketPr } from "../prText";
+export type { PrCheck, PrStatus, TicketPr } from "../prText";
+export type { Status } from "../columns";
 /** limit: the run hit the Claude usage/spend limit (see Ticket.limit). */
 export type Outcome = null | "done" | "blocked" | "failed" | "stopped" | "needs_input" | "limit";
 export type TicketMode = "interview" | "auto";
 
-export { BOARD_COLUMNS, COLUMNS, waitsForSlot } from "./columns";
+export { BOARD_COLUMNS, COLUMNS, waitsForSlot } from "../columns";
 
 /** Start work on a Backlog ticket nobody shaped yet goes through the Planning interview first. */
 export function startWorkTarget(t: Ticket): "planning" | "ready" {
@@ -1286,7 +1286,7 @@ const query = (q: Record<string, number | undefined>) => {
 };
 const hud = (slug: string, id?: string) => `/api/profiles/${encodeURIComponent(slug)}/huddles${id ? `/${encodeURIComponent(id)}` : ""}`;
 
-export type { AutomationProposal, Loop, LoopColumn, LoopInput, LoopSeenItem, LoopTest, Pass } from "./automationTypes";
+export type { AutomationProposal, Loop, LoopColumn, LoopInput, LoopSeenItem, LoopTest, Pass } from "../automationTypes";
 
 /** ask_keys' input as the chat shows it (src/server/ask-keys.ts). */
 export interface KeysAsk {
@@ -1294,7 +1294,7 @@ export interface KeysAsk {
   reason: string;
   replace: boolean;
 }
-import type { AutomationProposal, Loop, LoopInput, LoopTest, Pass } from "./automationTypes";
+import type { AutomationProposal, Loop, LoopInput, LoopTest, Pass } from "../automationTypes";
 
 export interface Schedule {
   id: string;
@@ -1350,8 +1350,8 @@ export type JobAction =
   | { kind: "ticket"; title: string; body: string; mode: TicketMode }
   | { kind: "command"; command: string; timeoutSec?: number; ifLate?: "skip" | "run" };
 
-export type { JobState } from "./jobText";
-import type { JobState } from "./jobText";
+export type { JobState } from "../jobText";
+import type { JobState } from "../jobText";
 
 export interface JobResult {
   ticketId?: string;

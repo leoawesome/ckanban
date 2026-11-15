@@ -1,8 +1,8 @@
-import type { Huddle } from "./api";
+import type { Huddle } from "./lib/api";
 import { FaceStack } from "./HelperFace";
 import { brakeLabel, huddleCost, huddleTitle, members, quietLabel, roundTag, sortHuddles } from "./huddle";
-import { fullTime, timeAgo } from "./time";
-import { useNow } from "./useNow";
+import { fullTime, timeAgo } from "./lib/time";
+import { useNow } from "./hooks/useNow";
 import { costText } from "./usage";
 
 /**

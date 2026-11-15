@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type Job, type Ticket } from "./api";
+import { api, type Job, type Ticket } from "./lib/api";
 import { commandResult, jobChip, jobDate, jobDoes, jobsToShow, jobWhen, localInput, STATE_LABEL } from "./jobText";
 
 const STATE_TONE: Record<Job["state"], string> = {

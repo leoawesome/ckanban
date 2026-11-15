@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { MAX_AGE, draftKey, forget, formKey, loadSaved, prune, save, type Store } from "../web/src/drafts";
+import { MAX_AGE, draftKey, forget, formKey, loadSaved, prune, save, type Store } from "./drafts";
 
 function memStore(init: Record<string, string> = {}): Store & { data: Map<string, string> } {
   const data = new Map(Object.entries(init));

@@ -2,7 +2,7 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { useEffect, useRef } from "react";
 import { api, copy, type Ticket } from "./api";
-import { dismissToast, toast } from "./toast";
+import { dismissToast, toast } from "../components/toast";
 
 /** Raster images the server serves with their real type (SVG stays text there, so it is not previewed). */
 export const IMAGE = /\.(png|jpe?g|gif|webp)$/i;

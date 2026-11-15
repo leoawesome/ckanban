@@ -1,7 +1,7 @@
 import { useState } from "react";
-import type { NewTicketDraft as Draft, Ticket } from "./api";
+import type { NewTicketDraft as Draft, Ticket } from "./lib/api";
 import { COLUMNS } from "./columns";
-import { ImportantStar } from "./StarToggle";
+import { ImportantStar } from "./components/StarToggle";
 import { TagChip } from "./Tags";
 import { Markdown } from "./Transcript";
 

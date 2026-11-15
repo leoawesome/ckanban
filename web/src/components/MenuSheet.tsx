@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
-import { usePhone } from "./usePhone";
-import { useBackdropClose, useSwipeClose } from "./sheet";
+import { usePhone } from "../hooks/usePhone";
+import { useBackdropClose, useSwipeClose } from "../lib/sheet";
 
 /**
  * Wrap a dropdown menu so it opens as a bottom sheet on a phone: dimmed backdrop (a tap on it closes),

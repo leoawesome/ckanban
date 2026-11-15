@@ -2,7 +2,7 @@
 // "Part of" / "Task of" chips, the working line's "· N sub-features running", and the Part of hover texts.
 import { expect, test } from "bun:test";
 import { familyLineText, partChip } from "../web/src/cardState";
-import { linkHints } from "../web/src/linkHints";
+import { linkHints } from "../web/src/lib/linkHints";
 import { groupByColumn } from "../web/src/columns";
 import { searchBoard } from "../web/src/toolTickets";
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isUserScroll, NO_INPUT, shrinkStep, type ShrinkState } from "../web/src/shrinkStep";
+import { isUserScroll, NO_INPUT, shrinkStep, type ShrinkState } from "./shrinkStep";
 
 const run = (steps: [number, boolean][], from: ShrinkState = { slim: false, down: 0, up: 0 }) => {
   let s = from;

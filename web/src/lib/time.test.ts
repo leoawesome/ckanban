@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { waitedFor } from "../web/src/time";
+import { waitedFor } from "./time";
 
 test("waitedFor: the Inbox's coarse waiting time", () => {
   const at = Date.parse("2026-10-10T12:00:00Z");

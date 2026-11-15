@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { cleanFileName as serverClean, FILE_EXTS as SERVER_EXTS, MAX_ATTACHMENT_BYTES as SERVER_MAX } from "../src/server/attachments";
+import { cleanFileName as serverClean, FILE_EXTS as SERVER_EXTS, MAX_ATTACHMENT_BYTES as SERVER_MAX } from "../../../src/server/attachments";
 import {
   ACCEPT, ATTACHMENT_SRC, PHOTO_ACCEPT, cleanFileName, draftFiles, FILE_EXTS, fileHolder, fileHref, fileKind, formatSize, MAX_ATTACHMENT_BYTES, refusal,
-} from "../web/src/attachText";
+} from "./attachText";
 
 const PDF = "0123456789abcdef0123456789abcdef.pdf";
 

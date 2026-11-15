@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 // board crashed (React's "Maximum update depth exceeded", 50 nested updates) when each fix moved the scroll position
 // (the browser's scroll anchoring), so the next draw's fix gave another range, and so on in one chain.
 // A path tsc doesn't follow: the root typecheck has no DOM types (web/ has its own tsconfig).
-const windowPath = "../web/src/useCardWindow";
+const windowPath = "./useCardWindow";
 const { rangeFor, SyncLimit } = await import(windowPath);
 
 const offsets = (n: number, h = 100) => Array.from({ length: n + 1 }, (_, i) => i * h);

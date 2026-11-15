@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type Ticket } from "./api";
+import { api, type Ticket } from "../lib/api";
 
 /** "Continue now" and "Don't auto-continue" / "Auto-continue" for a ticket waiting on the usage limit. */
 /** secondary: also show the auto-continue switch (the drawer's one-line banner shows it only under Details). */

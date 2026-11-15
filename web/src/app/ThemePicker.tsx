@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoonIcon, SunIcon, SystemThemeIcon } from "./icons";
+import { MoonIcon, SunIcon, SystemThemeIcon } from "../components/icons";
 import { savedThemeChoice, setThemeChoice, type ThemeChoice } from "./theme";
 
 const CHOICES: { value: ThemeChoice; label: string; icon: JSX.Element; title: string }[] = [

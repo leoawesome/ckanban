@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { browserStore, forget, loadSaved, prune, save } from "./drafts";
+import { browserStore, forget, loadSaved, prune, save } from "../lib/drafts";
 
 prune(browserStore());
 

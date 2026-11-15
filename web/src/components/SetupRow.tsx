@@ -1,4 +1,4 @@
-import type { SetupResult } from "./api";
+import type { SetupResult } from "../lib/api";
 
 function secs(ms: number): string {
   return ms < 10_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms / 1000)}s`;

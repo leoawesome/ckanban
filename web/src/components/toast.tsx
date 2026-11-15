@@ -1,7 +1,7 @@
 import { useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { CloseIcon } from "./icons";
 import { KeyHint } from "./KeyHint";
-import { reducedMotion } from "./motion";
+import { reducedMotion } from "../lib/motion";
 
 type Tone = "info" | "ok" | "error";
 interface Toast {

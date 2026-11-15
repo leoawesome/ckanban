@@ -15,7 +15,7 @@ import type { Bus, BusEvent } from "../core/events";
 import { EFFORT_HELP, listCommands, MODEL_HELP, validEffort, validModel } from "./commands";
 import { isManager, kindDefaults, parseTaskModels, TOOL_NO_NOTIFY } from "./main-ticket";
 import { learnedVersions } from "./model-versions";
-import { resolveRun } from "../../web/src/models";
+import { resolveRun } from "../../web/src/lib/models";
 import { addPrs } from "./prs";
 import { DiffError, folderDiff, ticketDiff } from "./diff";
 import { detectBaseBranch, enableVersionHistory, hasUncommittedChanges, isGitRepo, repoKind, resolveBaseBranch, which } from "./git";

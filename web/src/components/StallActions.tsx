@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type Ticket } from "./api";
+import { api, type Ticket } from "../lib/api";
 
 /** The run went silent: still running, but it needs the user's call. */
 export const stallWait = (t: Pick<Ticket, "stalled" | "running">): boolean => !!t.stalled && !!t.running;

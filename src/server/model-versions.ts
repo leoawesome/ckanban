@@ -1,7 +1,7 @@
 // Which version each model alias (opus, fable, sonnet, haiku) means today, learned from real runs: every run's
 // `system/init` event names its full model id ("claude-fable-5-2"). The newest seen per family is kept and saved, so
 // labels like "Fable (5.2)" stay right after Claude Code moves an alias to a new version.
-import { familyVersion, KNOWN_VERSIONS, newerVersion } from "../../web/src/models";
+import { familyVersion, KNOWN_VERSIONS, newerVersion } from "../../web/src/lib/models";
 import { existsSync, readFileSync } from "node:fs";
 import { atomicWrite } from "../core/store";
 

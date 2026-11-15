@@ -1,5 +1,5 @@
 import { api, type Ticket } from "./api";
-import { toast } from "./toast";
+import { toast } from "../components/toast";
 
 /** Copy a ticket (copy of its conversation + committed code) and open the new one. */
 export async function branchTicket(slug: string, ticket: Ticket, open: (id: string) => void): Promise<Ticket> {

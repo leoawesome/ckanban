@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { api, safeHref, type BugBlock, type BugBlockId, type BugReportResult } from "./api";
-import { ExternalIcon } from "./icons";
-import { useImagePaste } from "./imagePaste";
-import { AttachmentChips } from "./AttachmentChips";
-import { ImagePickButton } from "./ImagePickButton";
-import { Modal, ModalCancel } from "./Modal";
-import { FormError } from "./formParts";
+import { api, safeHref, type BugBlock, type BugBlockId, type BugReportResult } from "./lib/api";
+import { ExternalIcon } from "./components/icons";
+import { useImagePaste } from "./lib/imagePaste";
+import { AttachmentChips } from "./components/AttachmentChips";
+import { ImagePickButton } from "./components/ImagePickButton";
+import { Modal, ModalCancel } from "./components/Modal";
+import { FormError } from "./components/formParts";
 
 const TEMPLATE = `**What happened**
 

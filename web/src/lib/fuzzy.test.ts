@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { findSnippet, fuzzyMatch, highlightRuns, rankTickets, type RankRow } from "../web/src/fuzzy";
+import { findSnippet, fuzzyMatch, highlightRuns, rankTickets, type RankRow } from "./fuzzy";
 
 type Row = RankRow & { id: string };
 

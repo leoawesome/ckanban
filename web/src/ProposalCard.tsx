@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { Proposal } from "./api";
-import { KeyHint } from "./KeyHint";
-import { MOD } from "./Shortcuts";
-import { ImportantStar } from "./StarToggle";
+import type { Proposal } from "./lib/api";
+import { KeyHint } from "./components/KeyHint";
+import { MOD } from "./app/Shortcuts";
+import { ImportantStar } from "./components/StarToggle";
 import { Markdown } from "./Transcript";
 import type { FollowUpPlace } from "./followUp";
 

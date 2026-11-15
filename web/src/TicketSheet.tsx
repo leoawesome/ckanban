@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, type HelpKind } from "./api";
+import { api, type HelpKind } from "./lib/api";
 import { chipText, type ContextView } from "./contextText";
-import { HELP_ITEMS, type HelpState } from "./HelpMenu";
+import { HELP_ITEMS, type HelpState } from "./app/HelpMenu";
 import { messageHash, useHelper } from "./helper";
-import { ChevronRightIcon } from "./icons";
-import { Modal } from "./Modal";
+import { ChevronRightIcon } from "./components/icons";
+import { Modal } from "./components/Modal";
 
 /** The helper's line about this ticket's open wait (the Inbox's "Urgent: Phone 14:02; …") and its message, while the helper is on. */
 export function useHelperLine(slug: string, ticketId: string): { line: string; msg?: string } | null {

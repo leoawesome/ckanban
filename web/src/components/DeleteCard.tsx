@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { api, type Ticket } from "./api";
-import { COLUMNS } from "./columns";
-import { formKey } from "./drafts";
+import { api, type Ticket } from "../lib/api";
+import { COLUMNS } from "../columns";
+import { formKey } from "../lib/drafts";
 import { TrashIcon } from "./icons";
-import { usePersistentState } from "./usePersistentState";
+import { usePersistentState } from "../hooks/usePersistentState";
 
 /**
  * Claude asked to delete tickets (propose_delete): runs can't delete, so the user's click does it, through the

@@ -1,5 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
-import { isUserScroll, NO_INPUT, shrinkStep, type ShrinkState } from "./shrinkStep";
+import { isUserScroll, NO_INPUT, shrinkStep, type ShrinkState } from "../lib/shrinkStep";
 
 /** The feeds whose scrolling shrinks the ticket header: the chat log and the huddle log. */
 const FEEDS = ".chat-log, .huddle-log";

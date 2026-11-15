@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type HelpCard, type HelpKind, type Ticket } from "./api";
-import { useLayer } from "./layers";
-import { Markdown } from "./Transcript";
-import { costText } from "./usage";
-import { fullTime, timeAgo } from "./time";
-import { BulbIcon } from "./icons";
+import { api, type HelpCard, type HelpKind, type Ticket } from "../lib/api";
+import { useLayer } from "../lib/layers";
+import { Markdown } from "../Transcript";
+import { costText } from "../usage";
+import { fullTime, timeAgo } from "../lib/time";
+import { BulbIcon } from "../components/icons";
 
 /** The menu's questions: a bold question and a grey line saying what the answer gives. */
 export const HELP_ITEMS: { kind: HelpKind; question: string; hint: string; heading: string }[] = [

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import type { Status, Ticket } from "./api";
-import { boardColumnOf, menuPick, STATUS_MENU } from "./columns";
+import type { Status, Ticket } from "../lib/api";
+import { boardColumnOf, menuPick, STATUS_MENU } from "../columns";
 import { CheckIcon } from "./icons";
-import { listKey, stepIndex } from "./keynav";
+import { listKey, stepIndex } from "../app/keynav";
 import { Modal } from "./Modal";
 
 /**

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { heldByReply, inSession, liveProgress, unsentNow, userAfterSaved } from "../web/src/pendingBubbles";
+import { heldByReply, inSession, liveProgress, unsentNow, userAfterSaved } from "./pendingBubbles";
 
 test("the message that started a reply shows once: its plain bubble hides the board's held copy", () => {
   const pending = [{ text: "hi", steer: false }];

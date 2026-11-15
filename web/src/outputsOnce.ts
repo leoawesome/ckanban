@@ -1,4 +1,4 @@
-import { api, type OutputFile } from "./api";
+import { api, type OutputFile } from "./lib/api";
 import { capMap } from "./chatMemo";
 
 /**

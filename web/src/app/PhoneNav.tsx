@@ -1,10 +1,10 @@
 import { useRef, useState, type ReactNode } from "react";
 import type { MenuItem } from "./HeaderMenu";
-import { BoardIcon, ChatIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, MoreIcon, NowIcon, TeamIcon } from "./icons";
+import { BoardIcon, ChatIcon, ChevronDownIcon, ChevronRightIcon, CloseIcon, MoreIcon, NowIcon, TeamIcon } from "../components/icons";
 import { useBackEntry } from "./backEntry";
-import { useFocusTrap, useLayer } from "./layers";
-import { useBackdropClose, useSwipeClose } from "./sheet";
-import { usePhone } from "./usePhone";
+import { useFocusTrap, useLayer } from "../lib/layers";
+import { useBackdropClose, useSwipeClose } from "../lib/sheet";
+import { usePhone } from "../hooks/usePhone";
 
 export type PhoneTab = "now" | "board" | "ask" | "team";
 

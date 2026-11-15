@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import {
   closePanel, loadPanels, MIGRATED_KEY, migrateOldPanels, movePanel, NO_PANELS, openPanel, panelsKey, parsePanels, resizePair,
   toggleColumn, toggleFold, togglePanel, whereHint, type PanelsState,
-} from "../web/src/panelState";
+} from "./panelState";
 
 const mem = (o: Record<string, string> = {}) => {
   const data = new Map(Object.entries(o));

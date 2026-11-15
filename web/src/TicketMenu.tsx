@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { copy, type Ticket } from "./api";
-import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, InfoIcon, MoreIcon, MoveIcon, PinIcon, RefreshIcon, SparkIcon, TerminalIcon, TrashIcon } from "./icons";
+import { copy, type Ticket } from "./lib/api";
+import { BranchIcon, BugIcon, CheckIcon, CloseIcon, CopyIcon, HuddleIcon, InfoIcon, MoreIcon, MoveIcon, PinIcon, RefreshIcon, SparkIcon, TerminalIcon, TrashIcon } from "./components/icons";
 import { capInputText, parseCap } from "./capText";
-import { useLayer } from "./layers";
-import { MenuSheet } from "./MenuSheet";
+import { useLayer } from "./lib/layers";
+import { MenuSheet } from "./components/MenuSheet";
 import { costText } from "./usage";
 
 /**

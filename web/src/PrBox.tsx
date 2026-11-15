@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { api, safeHref, type PrCheck, type Profile, type Ticket } from "./api";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { ExternalIcon, RefreshIcon } from "./icons";
+import { api, safeHref, type PrCheck, type Profile, type Ticket } from "./lib/api";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { ExternalIcon, RefreshIcon } from "./components/icons";
 import { ResolveConflicts } from "./ResolveConflicts";
 import { currentPr, mergeBlock, reviewText } from "./prText";
-import { fullTime, timeAgo } from "./time";
-import { useNow } from "./useNow";
-import { toast } from "./toast";
+import { fullTime, timeAgo } from "./lib/time";
+import { useNow } from "./hooks/useNow";
+import { toast } from "./components/toast";
 
 const MARK: Record<PrCheck["state"], { sym: string; tone: string; verb: string }> = {
   pass: { sym: "✓", tone: "ok", verb: "passed" },

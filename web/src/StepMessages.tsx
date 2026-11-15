@@ -2,7 +2,7 @@
 // replies and question forms, and the user's answers) is loaded here; the main chat shows a short card or line for it
 // (TaskSheet.tsx) and the step's own chat opens in a side sheet, where answers go straight to the step's session.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, subscribe, type SessionEntry, type Ticket } from "./api";
+import { api, subscribe, type SessionEntry, type Ticket } from "./lib/api";
 import { askClosed, featureRows, withYouTool } from "./family";
 import { stepMessages, type StepMsg } from "./stepTalk";
 

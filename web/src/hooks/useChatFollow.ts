@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { gapOf, NEAR_BOTTOM, onContentChange, stickAfterScroll, USER_CHANGE_MS } from "./chatFollow";
+import { gapOf, NEAR_BOTTOM, onContentChange, stickAfterScroll, USER_CHANGE_MS } from "../chatFollow";
 
 /**
  * Keeps a chat log pinned to the bottom while it was at the bottom, like a chat app. Shared by the ticket chat and the

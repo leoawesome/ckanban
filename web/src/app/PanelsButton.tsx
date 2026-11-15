@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckIcon, ChevronDownIcon, PanelsIcon } from "./icons";
-import { useLayer } from "./layers";
+import { CheckIcon, ChevronDownIcon, PanelsIcon } from "../components/icons";
+import { useLayer } from "../lib/layers";
 import { PANELS, panelLabel, type PanelId } from "./panelState";
-import { useClaudeName } from "./AvatarFace";
-import type { Panels } from "./usePanels";
+import { useClaudeName } from "../AvatarFace";
+import type { Panels } from "../hooks/usePanels";
 
 /**
  * The top bar's Panels button: the main part shows or hides the side column (with how many panels are open); the ▾

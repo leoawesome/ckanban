@@ -1,12 +1,12 @@
 // Find links (board menu): Claude reads the board's open and recent tickets once and suggests which family each
 // unlinked ticket belongs to, grouped by parent. Nothing changes until Link selected.
 import { useEffect, useMemo, useState } from "react";
-import { api, COLUMNS, type Ticket } from "./api";
-import { FormError } from "./formParts";
-import { RefreshIcon } from "./icons";
-import { Modal, ModalCancel } from "./Modal";
-import { toast } from "./toast";
-import { useNow } from "./useNow";
+import { api, COLUMNS, type Ticket } from "./lib/api";
+import { FormError } from "./components/formParts";
+import { RefreshIcon } from "./components/icons";
+import { Modal, ModalCancel } from "./components/Modal";
+import { toast } from "./components/toast";
+import { useNow } from "./hooks/useNow";
 
 type Found = { id: string; parent: string; reason: string };
 

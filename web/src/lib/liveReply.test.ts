@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { expired, handoff, HANDOFF_AFTER_RUN_MS, HANDOFF_RUNNING_MS, liveView, repeats, saved, withHandoff } from "../web/src/liveReply";
+import { expired, handoff, HANDOFF_AFTER_RUN_MS, HANDOFF_RUNNING_MS, liveView, repeats, saved, withHandoff } from "./liveReply";
 
 const reply = (text: string) => ({ role: "assistant" as const, kind: "text", text });
 const RESULT = (summary: string) => `CKANBAN_RESULT: ${JSON.stringify({ status: "done", prUrl: null, summary })}`;

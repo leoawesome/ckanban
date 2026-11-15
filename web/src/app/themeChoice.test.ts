@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseThemeChoice, resolveTheme } from "../web/src/themeChoice";
+import { parseThemeChoice, resolveTheme } from "./themeChoice";
 
 describe("theme choice", () => {
   test("unknown or missing saved values mean System", () => {

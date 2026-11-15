@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import type { RewindResult, RewindUndoState, UndoRewindResult } from "./api";
+import type { RewindResult, RewindUndoState, UndoRewindResult } from "./lib/api";
 import { CopyButton } from "./ConvTurn";
 import { copyText, forkPoints, forkTitle, rewoundLine, undoneLine } from "./messageText";
 import { RewindConfirm, type RewindPreview } from "./Rewind";
 import { useShownMessage } from "./shownMessage";
-import { sentTime } from "./time";
-import { usePhone } from "./usePhone";
-import { MoreIcon } from "./icons";
+import { sentTime } from "./lib/time";
+import { usePhone } from "./hooks/usePhone";
+import { MoreIcon } from "./components/icons";
 
 /** Rewind on a message: what the confirmation asks first and what going back does. */
 export interface RewindSpec {

@@ -3,7 +3,7 @@
 // Decorative (aria-hidden): callers say the state in words next to it. useAvatar gives the look to draw for a name,
 // the user's saved choice (shared by every board) or the default.
 import { useEffect, useId, useState } from "react";
-import { req } from "./api";
+import { req } from "./lib/api";
 import {
   avatarFor, avatarKey, claudeName, cleanAvatarLook, COVERING_HATS, crownBase, DARK_INK_FACES, hairCut, shownHair, showsAntenna,
   type AvatarLook, type AvatarMood, type AvatarWho, type SavedAvatars,

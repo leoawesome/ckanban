@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { api, copy, onReconnect, subscribe, type Huddle, type HuddleParticipant, type ParticipantSession, type SessionStep } from "./api";
+import { api, copy, onReconnect, subscribe, type Huddle, type HuddleParticipant, type ParticipantSession, type SessionStep } from "./lib/api";
 import { HelperFace } from "./HelperFace";
 import { participantMood } from "./avatarMood";
-import { ChevronLeftIcon, CloseIcon, ThoughtIcon } from "./icons";
-import { isTyping, panelStep } from "./keynav";
-import { KeyHint } from "./KeyHint";
-import { useLayer } from "./layers";
+import { ChevronLeftIcon, CloseIcon, ThoughtIcon } from "./components/icons";
+import { isTyping, panelStep } from "./app/keynav";
+import { KeyHint } from "./components/KeyHint";
+import { useLayer } from "./lib/layers";
 import { mergeSteps, sessionMeta, sessionState, toolIcon } from "./sessionText";
-import { fullTime } from "./time";
+import { fullTime } from "./lib/time";
 import { ToolRow, type ToolItem } from "./ToolRows";
-import { usePhone } from "./usePhone";
+import { usePhone } from "./hooks/usePhone";
 
 /**
  * A huddle participant's own Claude session, read-only, beside the feed: its reasoning, tool calls (expand for the

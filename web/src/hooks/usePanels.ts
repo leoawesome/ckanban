@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   closePanel, loadPanels, movePanel, NO_PANELS, openPanel, panelsKey, toggleColumn, toggleFold, togglePanel, type PanelId, type PanelsState,
-} from "./panelState";
+} from "../app/panelState";
 
 const browser = {
   get: (k: string) => {

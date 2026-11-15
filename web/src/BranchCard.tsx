@@ -1,6 +1,6 @@
 import { useState } from "react";
-import type { Ticket } from "./api";
-import { BranchIcon } from "./icons";
+import type { Ticket } from "./lib/api";
+import { BranchIcon } from "./components/icons";
 
 /** Claude offered to branch the ticket (propose_branch); the click does the branching. */
 export function BranchCard({ reason, branch, here, running, onBranch, onOpen }: {

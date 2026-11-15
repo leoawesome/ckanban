@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, onReconnect, subscribe, type Snippet } from "./api";
+import { api, onReconnect, subscribe, type Snippet } from "./lib/api";
 
 // One fetch per board, shared by every composer on screen; refetched when snippets change anywhere.
 const cache = new Map<string, Snippet[]>();

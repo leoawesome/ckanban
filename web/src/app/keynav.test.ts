@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boardDigit, canStartFromProposal, cardDir, cardKey, escLeavesField, inDock, isInboxKey, isUndoKey, listKey, panelBoardKey, quickChatKey, stepChat, stepIndex, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isNewChatKey, isStopKey, isTyping, newTicketKey, nextStep, panelStep, stepBoard, stepCard, stepTab } from "../web/src/keynav";
+import { boardDigit, canStartFromProposal, cardDir, cardKey, escLeavesField, inDock, isInboxKey, isUndoKey, listKey, panelBoardKey, quickChatKey, stepChat, stepIndex, drawerTabs, hintParts, hintStep, isBoardPickerKey, isComboKeys, isNewChatKey, isStopKey, isTyping, newTicketKey, nextStep, panelStep, stepBoard, stepCard, stepTab } from "./keynav";
 
 test("cardDir maps J/K/H/L and arrows, ignores other keys", () => {
   expect(cardDir("j")).toBe("down");

@@ -1,10 +1,10 @@
 import { useRef, useState, type RefObject } from "react";
-import { ACCEPT, PHOTO_ACCEPT } from "./attachText";
-import type { MenuItem } from "./HeaderMenu";
+import { ACCEPT, PHOTO_ACCEPT } from "../lib/attachText";
+import type { MenuItem } from "../app/HeaderMenu";
 import { ImageIcon, PaperclipIcon, PlusIcon } from "./icons";
-import type { useImagePaste } from "./imagePaste";
-import { MoreSheet } from "./PhoneNav";
-import { usePhone } from "./usePhone";
+import type { useImagePaste } from "../lib/imagePaste";
+import { MoreSheet } from "../app/PhoneNav";
+import { usePhone } from "../hooks/usePhone";
 
 const FILE_TYPES = "PDF, Word, Excel, PowerPoint, text or code";
 

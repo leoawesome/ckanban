@@ -1,13 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { safeHref, type Ticket } from "./api";
-import { ChevronDownIcon, ClipIcon, CopyIcon, DownloadIcon, FolderOpenIcon, HashIcon, LinkIcon, MoreIcon, RefreshIcon } from "./icons";
-import { useLayer } from "./layers";
-import { MenuSheet } from "./MenuSheet";
+import { safeHref, type Ticket } from "./lib/api";
+import { ChevronDownIcon, ClipIcon, CopyIcon, DownloadIcon, FolderOpenIcon, HashIcon, LinkIcon, MoreIcon, RefreshIcon } from "./components/icons";
+import { useLayer } from "./lib/layers";
+import { MenuSheet } from "./components/MenuSheet";
 import {
   baseName, canPublish, copyFile, copyFormatted, copySource, copyText, downloadFile, isText, MARKDOWN, publishFile, revealFile,
-} from "./share";
-import { timeAgo } from "./time";
+} from "./lib/share";
+import { timeAgo } from "./lib/time";
 
 const MENU_WIDTH = 340;
 

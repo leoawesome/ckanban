@@ -1,6 +1,6 @@
 // The ticket panel's open tab and Outputs file in the link (web/src/tabLink.ts).
 import { expect, test } from "bun:test";
-import { hashIsTicket, readTabLink, withTabLink } from "../web/src/tabLink";
+import { hashIsTicket, readTabLink, withTabLink } from "./tabLink";
 
 test("reads the tab and the Outputs file from a ticket link", () => {
   expect(readTabLink("#/kanban/t_1?tab=outputs&file=a%2Freport.md")).toEqual({ tab: "outputs", file: "a/report.md" });

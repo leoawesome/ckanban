@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { onReconnect, req, subscribe } from "./api";
+import { onReconnect, req, subscribe } from "./lib/api";
 
 // The helper (src/server/helper/): its status line, the helper line per Inbox row, settings, "What the helper knows
 // about you", and the messages it (or the board) sent the user. One shared copy for every screen, kept fresh by the

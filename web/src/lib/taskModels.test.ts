@@ -2,12 +2,12 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { kindDefaults, parseTaskModels } from "../src/server/main-ticket";
-import { learnedVersions, learnModel, useModelVersionsFile } from "../src/server/model-versions";
-import { mainTicketRules } from "../src/server/prompts";
-import { buildArgs } from "../src/server/runner";
-import { aliasLabel, familyVersion, KIND_DEFAULTS, KNOWN_VERSIONS, MODELS, modelOptions, pickerLabel, setLearnedVersions, taskModelsText } from "../web/src/models";
-import { modelName } from "../web/src/usage";
+import { kindDefaults, parseTaskModels } from "../../../src/server/main-ticket";
+import { learnedVersions, learnModel, useModelVersionsFile } from "../../../src/server/model-versions";
+import { mainTicketRules } from "../../../src/server/prompts";
+import { buildArgs } from "../../../src/server/runner";
+import { aliasLabel, familyVersion, KIND_DEFAULTS, KNOWN_VERSIONS, MODELS, modelOptions, pickerLabel, setLearnedVersions, taskModelsText } from "./models";
+import { modelName } from "../usage";
 
 afterEach(() => {
   setLearnedVersions({});

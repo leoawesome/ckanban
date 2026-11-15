@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { api, type Ticket } from "./api";
-import { toast } from "./toast";
+import { api, type Ticket } from "./lib/api";
+import { toast } from "./components/toast";
 
 /** "Resolve conflicts" next to a PR's conflict chip: asks the ticket's Claude to rebase onto the base branch and push. */
 export function ResolveConflicts({ slug, ticket, onError }: { slug: string; ticket: Ticket; onError: (msg: string) => void }) {

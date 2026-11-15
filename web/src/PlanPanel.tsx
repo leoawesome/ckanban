@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type Ticket } from "./api";
+import { api, type Ticket } from "./lib/api";
 import { checkInsText, complete, planFinished, waitPhrase } from "./planText";
 
 export { complete, planFinished };

@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import type { Profile } from "./api";
-import { avatarColor, avatarLetter } from "./avatar";
-import { fuzzyMatch } from "./fuzzy";
+import type { Profile } from "../lib/api";
+import { avatarColor, avatarLetter } from "../avatar";
+import { fuzzyMatch } from "../lib/fuzzy";
 import { boardDigit } from "./keynav";
-import { CheckIcon } from "./icons";
-import { Modal } from "./Modal";
+import { CheckIcon } from "../components/icons";
+import { Modal } from "../components/Modal";
 
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 export const MOD = isMac ? "⌘" : "Ctrl";

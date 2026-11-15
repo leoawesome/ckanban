@@ -1,4 +1,4 @@
-import type { TicketMode } from "./api";
+import type { TicketMode } from "../lib/api";
 import { KeyHint } from "./KeyHint";
 
 const OPTIONS: { value: TicketMode; label: string; hint: string }[] = [

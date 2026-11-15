@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, COLUMNS, type Profile, type Ticket, type TicketRow } from "./api";
-import { avatarColor, avatarLetter } from "./avatar";
-import { mainTicketOf, onBoard } from "./family";
-import { fuzzyMatch, highlightRuns, rankTickets, type Snippet } from "./fuzzy";
-import { CheckIcon, ChevronRightIcon, SearchIcon } from "./icons";
-import { usePhone } from "./usePhone";
-import { useFocusTrap, useLayer } from "./layers";
-import { useBackdropClose } from "./sheet";
+import { api, COLUMNS, type Profile, type Ticket, type TicketRow } from "../lib/api";
+import { avatarColor, avatarLetter } from "../avatar";
+import { mainTicketOf, onBoard } from "../family";
+import { fuzzyMatch, highlightRuns, rankTickets, type Snippet } from "../lib/fuzzy";
+import { CheckIcon, ChevronRightIcon, SearchIcon } from "../components/icons";
+import { usePhone } from "../hooks/usePhone";
+import { useFocusTrap, useLayer } from "../lib/layers";
+import { useBackdropClose } from "../lib/sheet";
 
 export interface CommandAction {
   id: string;

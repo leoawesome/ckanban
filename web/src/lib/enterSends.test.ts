@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { enterSends, type EnterKeyLike } from "../web/src/enterSends";
+import { enterSends, type EnterKeyLike } from "./enterSends";
 
 const ev = (over: Partial<Omit<EnterKeyLike, "nativeEvent">> & { isComposing?: boolean } = {}): EnterKeyLike => ({
   key: over.key ?? "Enter",

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { KEY_ROW, keyToInput, withCtrl, type KeyLike } from "../web/src/termKeys";
+import { KEY_ROW, keyToInput, withCtrl, type KeyLike } from "./termKeys";
 
 const ev = (over: Partial<KeyLike>): KeyLike => ({
   type: "keydown",

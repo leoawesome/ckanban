@@ -2,10 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useId, useRef, useSt
 import { KeyHint } from "./KeyHint";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CloseIcon } from "./icons";
-import { useFocusTrap, useLayer } from "./layers";
-import { useBackdropClose, useCalmTouchFocus, useKeyboardFit, useSwipeClose } from "./sheet";
-import { useBackEntry } from "./backEntry";
-import { usePhone } from "./usePhone";
+import { useFocusTrap, useLayer } from "../lib/layers";
+import { useBackdropClose, useCalmTouchFocus, useKeyboardFit, useSwipeClose } from "../lib/sheet";
+import { useBackEntry } from "../app/backEntry";
+import { usePhone } from "../hooks/usePhone";
 
 /** Inside a Modal: close it the same way × and Esc do (asks first when the dialog has a `guard`). For Cancel buttons. */
 const CloseCtx = createContext<() => void>(() => {});

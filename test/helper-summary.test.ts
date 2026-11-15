@@ -102,7 +102,7 @@ describe("message page words", () => {
 
 describe("Inbox snooze lengths", () => {
   test("a week and until-unsnoozed ends, and how the Snoozed section says them", async () => {
-    const { snoozeUntil, snoozeBody, snoozeEndText, snoozeForever, SNOOZE_FOREVER } = await import("../web/src/snooze");
+    const { snoozeUntil, snoozeBody, snoozeEndText, snoozeForever, SNOOZE_FOREVER } = await import("../web/src/lib/snooze");
     const { SNOOZE_FOREVER: server } = await import("../src/server/attention");
     expect(SNOOZE_FOREVER).toBe(server);
     const now = new Date(2026, 10, 9, 12).getTime();

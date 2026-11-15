@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { fileFinder } from "../web/src/fileLinkContext";
-import { codePath, textPaths } from "../web/src/filePaths";
+import { fileFinder } from "./fileLinkContext";
+import { codePath, textPaths } from "./filePaths";
 
 test("codePath takes relative, absolute and home paths", () => {
   expect(codePath("applications/sierra/swe-agent/review-for-leo.md")).toBe("applications/sierra/swe-agent/review-for-leo.md");

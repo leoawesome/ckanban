@@ -4,14 +4,14 @@ import {
   MESSAGE_TABS, messageHash, nightQuestion, prependRows, rowIcon, rowsByBoard, itemStateKey, itemStateLabel, setHelperStatus, setUnread, stillWaitingLine, tapWord, useHelper,
   userTrail, withoutLinks, type HelperStatus, type ItemState, type ListEntry, type Message, type MessageRow, type MessageTab, type SummaryRow, type SummaryView,
 } from "./helper";
-import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, InboxIcon } from "./icons";
-import { KeyHint } from "./KeyHint";
-import { isTyping, panelStep } from "./keynav";
+import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon, InboxIcon } from "./components/icons";
+import { KeyHint } from "./components/KeyHint";
+import { isTyping, panelStep } from "./app/keynav";
 import { openFromList, stepTo } from "./msgNav";
-import { useSwipeBack } from "./sheet";
-import { useNow } from "./useNow";
-import { usePhone } from "./usePhone";
-import { toast } from "./toast";
+import { useSwipeBack } from "./lib/sheet";
+import { useNow } from "./hooks/useNow";
+import { usePhone } from "./hooks/usePhone";
+import { toast } from "./components/toast";
 
 /** The Messages tab chosen, kept for this browser tab so a message page's up/down walks the same list. */
 const TAB_KEY = "ck.messages.tab";

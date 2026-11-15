@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { modelLabel, resolveRun, runText } from "../web/src/models";
+import { modelLabel, resolveRun, runText } from "./models";
 
 const board = { model: "opus", mainModel: "sonnet", effort: "medium", ultracode: false };
 

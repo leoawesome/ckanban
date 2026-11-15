@@ -1,24 +1,24 @@
 // The Tasks tab (DrawerTab "family"): on a feature's top ticket its status on top (StatusBlock), then the whole feature from its top ticket down, grouped and folded, with each ticket's model, cost and
 // status, a short view of the clicked row, the plan controls of a planner, and "Add tickets…" (GatherDialog).
-import { resolveRun, runText } from "./models";
+import { resolveRun, runText } from "./lib/models";
 import { useEffect, useMemo, useState } from "react";
-import { api, COLUMNS, type FamilyViewRow, type Profile, type Ticket } from "./api";
+import { api, COLUMNS, type FamilyViewRow, type Profile, type Ticket } from "./lib/api";
 import { childrenByParent, familyOf, familyState, featureRows, featureTasks, groupsOf, groupSummary, hideableCard, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, shownState, subFeatureState, type FamilyRow, type FamilyState } from "./family";
 import { ClaudeFace } from "./ConvTurn";
 import { familyMood } from "./avatarMood";
 import { familyText } from "./FamilyPanel";
-import { Modal } from "./Modal";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { ChevronDownIcon, ChevronRightIcon } from "./icons";
-import { copyText } from "./share";
+import { Modal } from "./components/Modal";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { ChevronDownIcon, ChevronRightIcon } from "./components/icons";
+import { copyText } from "./lib/share";
 import { PlanControls } from "./PlanPanel";
-import { ImportantStar } from "./StarToggle";
+import { ImportantStar } from "./components/StarToggle";
 import { StatusBlock, useFeatureStatus } from "./StatusBlock";
-import { timeAgo } from "./time";
-import { toast } from "./toast";
+import { timeAgo } from "./lib/time";
+import { toast } from "./components/toast";
 import { Markdown } from "./Transcript";
-import { MenuSheet } from "./MenuSheet";
-import { usePhone } from "./usePhone";
+import { MenuSheet } from "./components/MenuSheet";
+import { usePhone } from "./hooks/usePhone";
 
 const columnLabel = (status: string) => COLUMNS.find((c) => c.id === status)?.label ?? status;
 

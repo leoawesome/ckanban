@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type Ticket } from "./api";
+import { api, type Ticket } from "./lib/api";
 
 /**
  * Dead-end run errors with a one-click fix. A lost session gets Start fresh session; a session open in a

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, subscribe, type TodaySpend } from "./api";
-import type { UsageResult } from "./usage";
+import { api, subscribe, type TodaySpend } from "../lib/api";
+import type { UsageResult } from "../usage";
 
 /** How often today's spend refreshes at most while runs report costs. */
 const SPEND_THROTTLE_MS = 15_000;

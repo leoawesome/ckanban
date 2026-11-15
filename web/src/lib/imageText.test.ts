@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { insertBlock, mapIndex, pickRange, swapHolder } from "../web/src/imageText";
+import { insertBlock, mapIndex, pickRange, swapHolder } from "./imageText";
 
 const A = "![uploading image 1…]()";
 const B = "![uploading image 2…]()";

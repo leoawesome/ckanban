@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, type ClaudeSession } from "./api";
+import { api, type ClaudeSession } from "../lib/api";
 import { Modal } from "./Modal";
-import { timeAgo } from "./time";
+import { timeAgo } from "../lib/time";
 
 export function sessionLabel(s: Pick<ClaudeSession, "title" | "firstPrompt" | "id">): string {
   return s.title ?? s.firstPrompt ?? s.id.slice(0, 8);

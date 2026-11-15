@@ -1,6 +1,6 @@
 // A main ticket's chat while tasks wait on the user: short task cards, the "N waiting on you" list and the grey notes
 // before the cards. No React and no api.ts, so tests can import it.
-import { plainMarkdown } from "./miniMarkdown";
+import { plainMarkdown } from "./lib/miniMarkdown";
 import { answersMessage, type Answer } from "./questionForms";
 
 // Only the fields used here (structurally the same as api.ts's).

@@ -1,5 +1,5 @@
 /** Changes tab helpers (kept free of React/DOM so they can be unit tested). */
-import { REVIEW_PREFIX } from "./drafts";
+import { REVIEW_PREFIX } from "./lib/drafts";
 
 export interface ReviewComment {
   id: string;

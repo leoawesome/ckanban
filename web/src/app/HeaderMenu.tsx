@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
-import { MoreIcon } from "./icons";
-import { useLayer } from "./layers";
-import { MenuSheet } from "./MenuSheet";
+import { MoreIcon } from "../components/icons";
+import { useLayer } from "../lib/layers";
+import { MenuSheet } from "../components/MenuSheet";
 import { ThemePicker } from "./ThemePicker";
 
 export interface MenuItem {

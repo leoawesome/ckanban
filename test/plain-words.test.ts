@@ -20,7 +20,7 @@ const TEXT_PROPS = new Set(["label", "hint", "title"]);
  * no longer matches anything fails the test, so the list can't hide new leaks.
  */
 const ALLOWED: [string, string, string][] = [
-  ["App.tsx", "git", "names the missing program to install"],
+  ["app/App.tsx", "git", "names the missing program to install"],
   ["UsagePanel.tsx", "tokens", "token count only in the cost tooltip"],
   ["ShareMenu.tsx", "Copy markdown", "names the copy format"],
   ["TicketMenu.tsx", "Copy branch", "only shown when the folder has version history"],

@@ -1,8 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { createPortal } from "react-dom";
-import { api } from "./api";
-import { useLayer } from "./layers";
-import { inlineSlashQuery, insertInlineCommand, matchCommands, SLASH_GROUPS, slashQuery, sourceLabel, type SlashCommand } from "./slashText";
+import { api } from "../lib/api";
+import { useLayer } from "../lib/layers";
+import { inlineSlashQuery, insertInlineCommand, matchCommands, SLASH_GROUPS, slashQuery, sourceLabel, type SlashCommand } from "../slashText";
 
 const GAP = 6;
 
