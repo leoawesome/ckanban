@@ -10,7 +10,7 @@ import type { Ticket } from "../../src/core/types";
 import { askClosed, familyState } from "../../web/src/features/family/family";
 import { answersMessage, formStates, parseAnswers } from "../../web/src/features/ticket/questionForms";
 import { stepMessages } from "../../web/src/features/ticket/stepTalk";
-import { questionsError } from "../../src/mcp/server";
+import { questionsError } from "../../src/mcp/form-tools";
 import { tempDir } from "../support/helpers";
 
 const T = (p: Partial<Ticket>): Ticket => ({

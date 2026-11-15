@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { RUN_ENV } from "../../src/cli/client";
-import { callTool, messageResultText, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { messageResultText, type ToolContext } from "../../src/mcp/shared";
 
 const none = { delivered: false, devices: 0, onScreen: 0, webhook: false, banner: false, reason: null, error: null };
 

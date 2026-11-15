@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { artifactFileName, artifactWaitMs, callTool, handleMessage, type ToolContext } from "../../src/mcp/server";
+import { callTool, handleMessage } from "../../src/mcp/server";
+import { artifactFileName, artifactWaitMs } from "../../src/mcp/artifact-tools";
+import { type ToolContext } from "../../src/mcp/shared";
 import type { ArtifactJob } from "../../src/runs/artifact";
 import { tempDir } from "../support/helpers";
 

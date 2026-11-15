@@ -11,7 +11,9 @@ import { createServer } from "../../src/api/server";
 import { Passes, PassError } from "../../src/integrations/passes";
 import { parseSession } from "../../src/runs/session";
 import { Store } from "../../src/core/store";
-import { callTool, TOOL_NO_KEYS, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { TOOL_NO_KEYS } from "../../src/mcp/form-tools";
+import { type ToolContext } from "../../src/mcp/shared";
 import { argsFile, board, bus, setup, store, untilSpawned, useBoardEnv } from "../support/board-env";
 import { readJsonl, tempDir, until } from "../support/helpers";
 

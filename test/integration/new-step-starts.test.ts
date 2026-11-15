@@ -2,7 +2,8 @@
 // chatting with it, so the plan was parked and every new step waited in Backlog until the main ticket moved it by hand.
 import { expect, test } from "bun:test";
 import { BoardClient } from "../../src/cli/client";
-import { callTool, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { type ToolContext } from "../../src/mcp/shared";
 import { Board } from "../../src/board/board";
 import { createServer } from "../../src/api/server";
 import { planStep } from "../../src/board/plan";

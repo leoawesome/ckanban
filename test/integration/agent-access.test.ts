@@ -4,7 +4,8 @@ import { join } from "node:path";
 import {
   assertCanChange, BoardClient, ClientError, DAEMON_DOWN, mainCheckout, parseStatus, resolveProfile, runProfile, type ProfileInfo,
 } from "../../src/cli/client";
-import { callTool, handleMessage, TOOLS, type ToolContext } from "../../src/mcp/server";
+import { callTool, handleMessage, TOOLS } from "../../src/mcp/server";
+import { type ToolContext } from "../../src/mcp/shared";
 import { AgentRegistry, readCodexServer, removeCodexServer, setCodexServer } from "../../src/integrations/agents";
 import { Board } from "../../src/board/board";
 import { Bus } from "../../src/core/events";

@@ -4,7 +4,7 @@ import { afterEach, beforeEach } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BoardClient } from "../../src/cli/client";
-import type { ToolContext } from "../../src/mcp/server";
+import type { ToolContext } from "../../src/mcp/shared";
 import { Board } from "../../src/board/board";
 import { Bus, type BusEvent } from "../../src/core/events";
 import { createServer } from "../../src/api/server";

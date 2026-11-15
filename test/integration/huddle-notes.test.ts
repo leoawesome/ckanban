@@ -2,7 +2,8 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { callTool, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { type ToolContext } from "../../src/mcp/shared";
 import { HUDDLE_IDLE_MS, teammateSpend } from "../../src/huddle/huddle";
 import { BUILTIN_PRESETS, deletePreset, mergePresets, presetSourceText, savePreset } from "../../src/huddle/huddle-presets";
 import { huddleUsage } from "../../src/huddle/huddle-usage";

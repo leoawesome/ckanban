@@ -2,7 +2,8 @@
 import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { callTool, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { type ToolContext } from "../../src/mcp/shared";
 import { findingTitle, POST_MAX } from "../../src/huddle/huddle";
 import { isBuiltinPreset } from "../../src/huddle/huddle-presets";
 import { BUILTIN_TEMPLATES, deleteTemplate, mergeTemplates, saveTemplate } from "../../src/huddle/huddle-templates";

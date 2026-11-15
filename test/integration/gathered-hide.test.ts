@@ -3,7 +3,8 @@
 // feature's Tasks list. Main tickets, sub-features and groups keep their card. MCP, CLI and API agree.
 import { expect, test } from "bun:test";
 import { BoardClient } from "../../src/cli/client";
-import { callTool, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { type ToolContext } from "../../src/mcp/shared";
 import { createServer } from "../../src/api/server";
 import { ticketCommand } from "../../src/cli/ticket-cli";
 import { featureRows, onBoard } from "../../web/src/features/family/family";

@@ -10,7 +10,8 @@ import { createServer } from "../../src/api/server";
 import { RUN_HEADER } from "../../src/schedules/scheduler";
 import { parseSession, SessionCache, type SessionSummary } from "../../src/runs/session";
 import { Store } from "../../src/core/store";
-import { callTool, NO_HELPER_RULE_CARD, TOOL_NO_HELPER_RULE, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { NO_HELPER_RULE_CARD, TOOL_NO_HELPER_RULE, type ToolContext } from "../../src/mcp/shared";
 import { HELPER_RULE_RULE } from "../../src/runs/prompts";
 import { tempDir } from "../support/helpers";
 

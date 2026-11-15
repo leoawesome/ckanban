@@ -3,7 +3,8 @@
 // tool tickets through their main card, and the other list readers skip them by default.
 import { expect, test } from "bun:test";
 import { BoardClient } from "../../src/cli/client";
-import { callTool, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { type ToolContext } from "../../src/mcp/shared";
 import { attentionFor, boardTitles, ticketAttention } from "../../src/helper/attention";
 import { createServer } from "../../src/api/server";
 import { Linker } from "../../src/board/linker";

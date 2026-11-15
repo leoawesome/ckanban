@@ -2,7 +2,8 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { callTool, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { type ToolContext } from "../../src/mcp/shared";
 import { cleanTemplates, templateBrief, templateFromInput } from "../../src/huddle/huddle-templates";
 import { huddleAgentSystemPrompt, squadHostRules } from "../../src/runs/prompts";
 import { parseSession } from "../../src/runs/session";

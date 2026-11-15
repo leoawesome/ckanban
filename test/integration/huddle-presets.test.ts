@@ -1,6 +1,7 @@
 // Huddles: tamper-proof huddle files, restart resume, propose_huddle, presets and costs.
 import { expect, test } from "bun:test";
-import { callTool, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { type ToolContext } from "../../src/mcp/shared";
 import { Huddles } from "../../src/huddle/huddle";
 import { deletePreset, mergePresets, savePreset } from "../../src/huddle/huddle-presets";
 import { parseMentions, proposedBudget } from "../../src/huddle/huddle-roster";

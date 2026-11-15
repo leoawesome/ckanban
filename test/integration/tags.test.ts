@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { callTool, ticketsError, type ToolContext } from "../../src/mcp/server";
+import { callTool } from "../../src/mcp/server";
+import { ticketsError } from "../../src/mcp/form-tools";
+import { type ToolContext } from "../../src/mcp/shared";
 import { Board } from "../../src/board/board";
 import { Bus } from "../../src/core/events";
 import { Scheduler } from "../../src/schedules/scheduler";
