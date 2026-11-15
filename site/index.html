@@ -25,9 +25,9 @@
 <meta name="twitter:image" content="https://raw.githubusercontent.com/leoawesome/ckanban/main/docs/assets/social-preview.png">
 <meta name="twitter:image:alt" content="ckanban: Kanban for Claude Code">
 <style>
-/* Colors from web/src/styles.css; the *-ink and on-* shades are darker or lighter so small text passes WCAG AA contrast. */
-:root{--bg:#f6f5f1;--surface:#fff;--border:#e2dfd6;--text:#1f1e1b;--muted:#6b6862;--accent:#c96442;--accent-ink:#9a4526;--accent-strong:#b0532f;--on-accent:#fff;--accent-soft:#f6e3da;--ok:#2f7d4f;--ok-ink:#256b42;--on-ok:#fff;--ok-soft:#dff0e5;--warn-ink:#855600;--warn-soft:#fbefd5;--err-ink:#8f2a22;--err-soft:#fbe2df;--info:#2b5fb8;--shadow:0 10px 40px rgba(0,0,0,.08);--mono:ui-monospace,SFMono-Regular,Menlo,monospace;color-scheme:light}
-@media(prefers-color-scheme:dark){:root{--bg:#1a1917;--surface:#242320;--border:#3a3834;--text:#ecebe6;--muted:#a3a096;--accent:#e0805e;--accent-ink:#ee9a7a;--accent-strong:#e0805e;--on-accent:#1a1917;--accent-soft:#3d2a22;--ok:#6cc28e;--ok-ink:#7fd09f;--on-ok:#1a1917;--ok-soft:#1f3327;--warn-ink:#e2b04a;--warn-soft:#3a3020;--err-ink:#f08378;--err-soft:#3d2320;--info:#86aef0;--shadow:0 10px 40px rgba(0,0,0,.4);color-scheme:dark}}
+/* Colours are the app's tokens (design-system/kanban/MASTER.md, web/src/styles.css): *-ink is the text colour of a status, and a pinned card uses the opposite theme like the app. */
+:root{--bg:#f6f5f1;--surface:#fff;--surface-2:#efede7;--border:#e2dfd6;--text:#1f1e1b;--muted:#65625c;--accent:#c96442;--accent-ink:#a34a2b;--accent-strong:#b0502f;--on-accent:#fff;--accent-soft:#f6e3da;--ok:#2a7046;--ok-ink:#2a7046;--on-ok:#fff;--ok-soft:#dff0e5;--warn:#8a5900;--warn-ink:#8a5900;--warn-soft:#fbefd5;--err-ink:#b3261e;--err-soft:#fbe2df;--info:#2b5fb8;--info-soft:#e1eafb;--pin-bg:#242320;--pin-text:#ecebe6;--pin-muted:#9c998f;--pin-accent:#e0805e;--shadow:0 10px 40px rgba(0,0,0,.08);--mono:ui-monospace,SFMono-Regular,Menlo,monospace;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#1a1917;--surface:#242320;--surface-2:#2d2b28;--border:#3a3834;--text:#ecebe6;--muted:#9c998f;--accent:#e0805e;--accent-ink:#e0805e;--accent-strong:#e0805e;--on-accent:#1a1917;--accent-soft:#3d2a22;--ok:#6cc28e;--ok-ink:#6cc28e;--on-ok:#1a1917;--ok-soft:#1f3327;--warn:#e2b04a;--warn-ink:#e2b04a;--warn-soft:#3a3020;--err-ink:#f08378;--err-soft:#3d2320;--info:#86aef0;--info-soft:#222d40;--pin-bg:#fff;--pin-text:#1f1e1b;--pin-muted:#65625c;--pin-accent:#a34a2b;--shadow:0 10px 40px rgba(0,0,0,.4);color-scheme:dark}}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
@@ -55,15 +55,24 @@ nav .sp{flex:1}nav a.l{color:var(--muted);text-decoration:none;font-size:14.5px}
 .bar{display:flex;gap:6px;align-items:center;padding:8px 10px 8px 14px;border-bottom:1px solid var(--border);font-size:13px;color:var(--muted)}.bar i{width:10px;height:10px;border-radius:50%;background:var(--border)}.bar span{margin-left:10px;flex:1}
 .bar button{font:inherit;font-size:12.5px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:7px;padding:3px 10px;cursor:pointer}.bar button:hover{color:var(--text)}
 .board-scroll{overflow-x:auto;background:var(--bg)}
-.board{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px;padding:14px;min-height:330px}
-.col h3{margin:0 0 8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;justify-content:space-between}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 9px;margin-bottom:8px;font-size:13px;animation:pop .45s ease both}
-.card small{display:block;color:var(--muted);font-size:12px;margin-top:3px}
-.chip{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:99px;margin-top:5px}
+.board{display:grid;grid-template-columns:repeat(5,minmax(160px,1fr));gap:8px;padding:12px;min-height:350px}
+.col{background:var(--surface-2);border-radius:12px;padding:8px;border-top:3px solid transparent}.col.hot{border-top-color:var(--accent)}
+.col h3{margin:2px 4px 8px;font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px}.col h3 span{font-size:11px;font-weight:600;color:var(--muted);background:var(--surface);border-radius:99px;padding:0 6px}
+.card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:13px;font-weight:600;animation:pop .45s ease both}
+.card.run{border-left-color:var(--info)}.card.you{border-left-color:var(--warn)}.card.rdy{border-left-color:var(--ok)}
+.card.pinned{background:var(--pin-bg);color:var(--pin-text);border-color:var(--pin-bg);border-left-color:var(--pin-accent)}.card.pinned small{color:var(--pin-muted)}.card.pinned .tag{color:var(--pin-accent)}
+.card small{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:12px;font-weight:400;margin-top:4px}
+.card .tag{display:block;font-size:11px;font-weight:600;letter-spacing:.04em;color:var(--accent-ink);margin-bottom:3px}
+.card .turn{display:flex;align-items:center;gap:5px;font-size:12px;margin-bottom:4px}.card.you .turn{color:var(--warn-ink)}.card.rdy .turn{color:var(--ok-ink)}
+.work{color:var(--info)}
+.face{width:18px;height:18px;flex:none;border-radius:50%}.face .eye{transform-box:fill-box;transform-origin:center;animation:wink 4s infinite}
+.face.busy{animation:bob 1.6s ease-in-out infinite}
+@keyframes wink{0%,92%,100%{transform:none}96%{transform:scaleY(.15)}}
+@keyframes bob{50%{transform:translateY(-1.5px)}}
+.chip{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:99px;margin-top:5px}
 .okc{background:var(--ok-soft);color:var(--ok-ink)}.wait{background:var(--warn-soft);color:var(--warn-ink)}
-.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--info);margin-right:5px;animation:blink 1s infinite}
-.q{margin-top:6px;border-top:1px dashed var(--border);padding-top:6px;font-size:12px}.q span{display:inline-block;border:1px solid var(--accent);color:var(--accent-ink);border-radius:6px;padding:0 5px;margin:3px 3px 0 0}.q span.on{background:var(--accent-strong);border-color:var(--accent-strong);color:var(--on-accent)}
-.huddle{margin-top:6px;border-top:1px dashed var(--accent);padding-top:5px;font-size:12px}.huddle div{animation:pop .3s both}.huddle b{color:var(--accent-ink)}
+.q{margin-top:6px;border-top:1px dashed var(--border);padding-top:6px;font-size:12px;font-weight:400}.q span{display:inline-block;border:1px solid var(--accent);color:var(--accent-ink);border-radius:6px;padding:0 5px;margin:3px 3px 0 0}.q span.on{background:var(--accent-strong);border-color:var(--accent-strong);color:var(--on-accent)}
+.huddle{margin-top:6px;border-top:1px dashed var(--accent);padding-top:5px;font-size:12px;font-weight:400}.huddle div{animation:pop .3s both}.huddle b{color:var(--accent-ink)}
 .steps{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:12px;border-top:1px solid var(--border);font-size:14px;margin:0;list-style:none}
 .steps a{display:inline-block;color:var(--muted);text-decoration:none;padding:4px 11px;border-radius:99px;transition:background .3s,color .3s}.steps a:hover{color:var(--text)}.steps a.on{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
 @keyframes pop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
@@ -84,7 +93,7 @@ nav .sp{flex:1}nav a.l{color:var(--muted);text-decoration:none;font-size:14.5px}
 .lane span{width:92px;flex:none;font-size:12.5px;color:var(--muted);text-align:right}
 @keyframes grow{0%{width:0;background:var(--info)}80%,100%{width:100%;background:var(--ok)}}
 .note{margin-top:14px;font-size:13px;color:var(--muted);border-top:1px dashed var(--border);padding-top:10px}
-.av{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;color:#fff;font-size:12px;font-weight:600;margin-right:6px;vertical-align:middle}
+.msg .face{width:24px;height:24px;margin-right:6px;vertical-align:middle}
 .pin{display:inline-block;font:600 11px var(--mono);border-radius:5px;padding:1px 5px;margin-right:5px;background:var(--err-soft);color:var(--err-ink)}
 .diff{font:13px var(--mono);border-radius:8px;overflow:hidden;border:1px solid var(--border)}.diff div{padding:3px 10px;white-space:pre-wrap;word-break:break-word}.add{background:var(--ok-soft)}.del{background:var(--err-soft);color:var(--err-ink)}
 .cmt{margin:8px 0 0 18px;background:var(--bg);border-left:3px solid var(--accent);border-radius:6px;padding:6px 10px;font-size:13px;animation:fade 9s infinite both;animation-delay:.8s}
@@ -126,7 +135,7 @@ footer{border-top:1px solid var(--border);padding:24px 0 40px;color:var(--muted)
 <section class="stage" aria-label="How a ticket moves across the board">
 <div class="bar"><i></i><i></i><i></i><span>shop · ckanban</span><button type="button" id="pause" aria-pressed="false">Pause</button></div>
 <div class="board-scroll" id="board-scroll" role="region" tabindex="0" aria-label="Board, scrolls sideways on small screens"><div class="board" id="board" aria-hidden="true"></div></div>
-<p class="sr-only">An animated board with the columns Backlog, Planning, In progress, Review and Done. A rough idea is planned with Claude and split into four tickets, the four run side by side, a huddle checks one of them, and each one is reviewed and merged.</p>
+<p class="sr-only">An animated board with the columns Backlog, Planning, In progress, Review and Done. A rough idea is planned with Claude and becomes a main ticket with four tasks, the tasks run side by side with Claude's avatar working on each card, a huddle checks one of them, and each one is reviewed and merged. A pinned weekly report stays at the top of its column.</p>
 <ol class="steps" id="steps">
 <li><a href="#plan">1. Plan</a></li>
 <li><a href="#run">2. Run side by side</a></li>
@@ -135,30 +144,30 @@ footer{border-top:1px solid var(--border);padding:24px 0 40px;color:var(--muted)
 </ol>
 </section>
 
-<section class="story" id="plan" aria-labelledby="plan-h"><div class="txt"><div class="num">01 PLAN</div><h2 id="plan-h">Claude asks before it builds</h2><p>Drop a rough idea in Planning. Claude asks short questions you answer with a click, and can draw a mockup for screen work. Then it writes a clear ticket, or splits a big one into a plan of smaller tickets.</p><p><b>Apply &amp; start work</b> is one click. Nothing in your folder changes while you plan.</p></div>
+<section class="story" id="plan" aria-labelledby="plan-h"><div class="txt"><div class="num">01 PLAN</div><h2 id="plan-h">Claude asks before it builds</h2><p>Drop a rough idea in Planning. Claude asks short questions you answer with a click, and can draw a mockup for screen work. Then it writes a clear ticket, or turns a big one into a main ticket with tasks.</p><p><b>Apply &amp; start work</b> is one click. Pick the model and effort right in the New ticket form. Nothing in your folder changes while you plan.</p></div>
 <div class="demo" aria-hidden="true">
 <div class="msg me">Add Stripe checkout to the shop</div>
 <div class="msg" style="animation-delay:.6s">Which plans should people buy?<br><span class="opt pick">Monthly and yearly <small>(recommended)</small></span><span class="opt">Monthly only</span></div>
-<div class="msg" style="animation-delay:1.2s">Got it. I split it into 4 tickets: pricing page, checkout API, webhooks, emails.<br><span class="btn">Start plan</span></div>
+<div class="msg" style="animation-delay:1.2s">Got it. I split it into 4 tasks: pricing page, checkout API, webhooks, emails.<br><span class="btn">Start plan</span></div>
 </div></section>
 
-<section class="story flip" id="run" aria-labelledby="run-h"><div class="txt"><div class="num">02 RUN</div><h2 id="run-h">Many tickets, side by side</h2><p>Each ticket gets its own headless Claude Code session in its own copy of the folder, up to 5 at once per board. A plan starts its tickets in the right order, a few at a time, and Claude is only woken when one needs it.</p><p>Walk away. The board tells you, also on your phone, when a ticket needs a decision.</p></div>
+<section class="story flip" id="run" aria-labelledby="run-h"><div class="txt"><div class="num">02 RUN</div><h2 id="run-h">Many tickets, side by side</h2><p>Each ticket gets its own headless Claude Code session in its own copy of the folder, as many at once as you like. A main ticket starts its tasks in the right order, each one reports back as a short card in its chat, and the Tasks tab shows where things stand. Schedules and automations can drop each run into a feature instead of a new card.</p><p>Walk away. Claude's animated face on each card shows who is working and who waits on you. On your phone, routine waits come grouped in one summary and only urgent ones interrupt you, also on Telegram.</p></div>
 <div class="demo" aria-hidden="true">
 <div class="lane"><b>Pricing page</b><div class="track"><i style="animation-duration:5s"></i></div><span>running</span></div>
 <div class="lane"><b>Checkout API</b><div class="track"><i style="animation-duration:7s"></i></div><span>running</span></div>
-<div class="lane"><b>Webhooks</b><div class="track"><i style="animation-duration:6s;animation-delay:1.5s"></i></div><span>waits its turn</span></div>
-<div class="lane"><b>Emails</b><div class="track"><i style="animation-duration:5s;animation-delay:2.5s"></i></div><span>waits its turn</span></div>
+<div class="lane"><b>Webhooks</b><div class="track"><i style="animation-duration:6s;animation-delay:1.5s"></i></div><span>waiting</span></div>
+<div class="lane"><b>Emails</b><div class="track"><i style="animation-duration:5s;animation-delay:2.5s"></i></div><span>waiting</span></div>
 <div class="note">No version history in your folder? Runs edit it in place, one at a time, and list what changed.</div>
 </div></section>
 
-<section class="story" id="check" aria-labelledby="check-h"><div class="txt"><div class="num">03 CHECK</div><h2 id="check-h">A huddle reviews the work</h2><p>Claude teammates such as a reviewer and a tester talk the change through in one room, tag each other and pin what they find. They stop at the budget you set.</p><p>Mark a ticket Important and Claude calls a review huddle on its own before the work lands.</p></div>
+<section class="story" id="check" aria-labelledby="check-h"><div class="txt"><div class="num">03 CHECK</div><h2 id="check-h">A huddle reviews the work</h2><p>Claude teammates such as a reviewer and a tester talk the change through in one room, tag each other and pin what they find. They stop at the budget you set.</p><p>Mark a ticket Important and Claude calls a review huddle on its own before the work lands. Save a huddle that worked as a squad and run it again on any ticket.</p></div>
 <div class="demo" aria-hidden="true">
-<div class="msg"><span class="av" style="background:#2b5fb8">R</span><b>Reviewer:</b> <span class="pin">MUST</span>the refund path has no test</div>
-<div class="msg" style="animation-delay:.6s"><span class="av" style="background:#256b42">Q</span><b>QA:</b> added one, the tests pass now</div>
-<div class="msg" style="animation-delay:1.2s"><span class="av" style="background:#9a4526">L</span><b>Lead:</b> no MUST findings left. Ready to land.</div>
+<div class="msg"><svg class="face" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#2b5fb8"/><rect x="5.5" y="6" width="13" height="11" rx="3.5" fill="#fff"/><circle class="eye" cx="9.5" cy="11" r="1.6" fill="#1f1e1b"/><circle class="eye" cx="14.5" cy="11" r="1.6" fill="#1f1e1b"/><rect x="7" y="9.4" width="10" height="1.2" rx=".6" fill="#1f1e1b"/></svg><b>Reviewer:</b> <span class="pin">MUST</span>the refund path has no test</div>
+<div class="msg" style="animation-delay:.6s"><svg class="face" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#2a7046"/><rect x="5.5" y="6" width="13" height="11" rx="3.5" fill="#fff"/><circle class="eye" cx="9.5" cy="11" r="1.6" fill="#1f1e1b"/><circle class="eye" cx="14.5" cy="11" r="1.6" fill="#1f1e1b"/><path d="M9 14q3 2 6 0" stroke="#1f1e1b" stroke-width="1.2" fill="none" stroke-linecap="round"/></svg><b>QA:</b> added one, the tests pass now</div>
+<div class="msg" style="animation-delay:1.2s"><svg class="face" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#7a5bb5"/><path d="M7 6l2.5 2L12 4.5 14.5 8 17 6v3H7z" fill="#e8b23a"/><rect x="5.5" y="8" width="13" height="10" rx="3.5" fill="#fff"/><circle class="eye" cx="9.5" cy="12.5" r="1.6" fill="#1f1e1b"/><circle class="eye" cx="14.5" cy="12.5" r="1.6" fill="#1f1e1b"/></svg><b>Lead:</b> no MUST findings left. Ready to land.</div>
 </div></section>
 
-<section class="story flip" id="merge" aria-labelledby="merge-h"><div class="txt"><div class="num">04 MERGE</div><h2 id="merge-h">You review, then merge</h2><p>See every change, comment on a line to send it back to Claude, and watch the pull request's checks right on the card.</p><p>When it looks right, <b>Merge &amp; done</b>.</p></div>
+<section class="story flip" id="merge" aria-labelledby="merge-h"><div class="txt"><div class="num">04 MERGE</div><h2 id="merge-h">You review, then merge</h2><p>See every change, comment on a line to send it back to Claude, and watch the pull request's checks right on the card. Pin the tickets you check every week to the top of their column.</p><p>When it looks right, <b>Merge &amp; done</b>.</p></div>
 <div class="demo" aria-hidden="true">
 <div class="diff"><div class="del">- const total = price</div><div class="add">+ const total = price * qty</div><div class="add">+ if (total &lt;= 0) throw new Error("Empty cart")</div></div>
 <div class="cmt"><b>You:</b> also show the error on the checkout page</div>
@@ -169,8 +178,9 @@ footer{border-top:1px solid var(--border);padding:24px 0 40px;color:var(--muted)
 <details open><summary>Is it safe to let it run Claude on my code?</summary><p>Runs use Claude Code with <code>--permission-mode bypassPermissions</code>, so Claude can run any command in the ticket's folder without asking first. Only add folders you are happy for Claude to change. With version history (git), each ticket works in its own copy of the folder, so your main folder isn't touched until you merge.</p></details>
 <details><summary>What leaves my machine?</summary><p>Your code and prompts go to Anthropic through your own Claude Code, the same as when you use Claude Code yourself. ckanban itself only checks GitHub for updates, shows your Claude plan usage, and talks to GitHub through <code>gh</code> for your pull requests. It has no account, no server of its own and no analytics. Phone notifications, webhooks and bug reports only go out if you turn them on.</p></details>
 <details><summary>What does it cost?</summary><p>ckanban is free and open source (MIT License). Runs use your own Claude plan or API usage, nothing on top. Each card shows what its runs cost, and huddles stop at a spending limit you set.</p></details>
+<details><summary>Does it slow down on a big board?</summary><p>No. Boards with thousands of tickets and long chats open without freezing: Done loads 20 cards at a time, and the board only rereads what changed.</p></details>
 <details><summary>Do I need git or GitHub?</summary><p>No. A board can be a plain folder. Without git the run works in the folder itself and lists every file it changed. <code>gh</code> is only needed for pull requests and their checks.</p></details>
-<details><summary>Can I use it from my phone?</summary><p>Yes, through <a href="https://tailscale.com/download">Tailscale</a>. Phone access is off until you turn it on with <code>ckanban remote on</code>, and then only your own Tailscale devices can reach the board.</p></details>
+<details><summary>Can I use it from my phone?</summary><p>Yes, through <a href="https://tailscale.com/download">Tailscale</a>. Phone access is off until you turn it on with <code>ckanban remote on</code>, and then only your own Tailscale devices can reach the board. The phone gets its own screens: a Board tab with five column tabs, full-screen chats, a Tasks tab and Messages. Urgent alerts can also go to Telegram, where you can reply to answer a ticket.</p></details>
 <details><summary>Where is my data kept?</summary><p>In plain files on your Mac, under <code>~/.claude-kanban/</code>. The board listens on <code>127.0.0.1</code> only, so other computers on your Wi-Fi can't reach it.</p></details>
 <p><a href="https://github.com/leoawesome/ckanban/blob/main/docs/faq.md">All questions and answers</a> · <a href="https://github.com/leoawesome/ckanban/blob/main/docs/features.md">Every feature in detail</a></p>
 </section>
@@ -194,15 +204,17 @@ footer{border-top:1px solid var(--border);padding:24px 0 40px;color:var(--muted)
 const still=matchMedia("(prefers-reduced-motion: reduce)");
 const COLS=["Backlog","Planning","In progress","Review","Done"];
 const STATES=[
- {k:0,f:1,c:{Backlog:[{t:"Dark mode"}],Planning:[{t:"Add Stripe checkout",s:"Claude asks a question",q:1}]}},
- {k:0,f:1,c:{Backlog:[{t:"Dark mode"},{t:"Pricing page"},{t:"Checkout API"},{t:"Webhooks"},{t:"Emails"}],Planning:[{t:"Add Stripe checkout",s:"Plan: 4 tickets",chip:["okc","Start plan"]}]}},
- {k:1,f:2,c:{Backlog:[{t:"Dark mode"},{t:"Webhooks",s:"Waits its turn"},{t:"Emails",s:"Waits its turn"}],"In progress":[{t:"Pricing page",r:"Writing the page"},{t:"Checkout API",r:"Running tests"}]}},
- {k:2,f:2,c:{Backlog:[{t:"Dark mode"},{t:"Emails",s:"Waits its turn"}],"In progress":[{t:"Checkout API",r:"Huddle checking",h:1},{t:"Webhooks",r:"Reading the docs"}],Review:[{t:"Pricing page",chip:["okc","Checks pass"]}]}},
- {k:3,f:3,c:{Backlog:[{t:"Dark mode"}],"In progress":[{t:"Emails",r:"Drafting templates"}],Review:[{t:"Checkout API",chip:["okc","Checks pass"]},{t:"Webhooks",chip:["wait","Needs you"]}],Done:[{t:"Pricing page",s:"Merged"}]}},
- {k:3,f:4,c:{Backlog:[{t:"Dark mode"}],Done:[{t:"Pricing page",s:"Merged"},{t:"Checkout API",s:"Merged"},{t:"Webhooks",s:"Merged"},{t:"Emails",s:"Merged"}]}}];
+ {k:0,f:1,c:{Backlog:[{t:"Dark mode"},{t:"Weekly sales report",pin:1}],Planning:[{t:"Add Stripe checkout",you:"Answer 1 question",q:1}]}},
+ {k:0,f:1,c:{Backlog:[{t:"Dark mode"},{t:"Weekly sales report",pin:1}],Planning:[{t:"Add Stripe checkout",s:"Plan: 4 tasks",chip:["okc","Start plan"]}]}},
+ {k:1,f:2,c:{Backlog:[{t:"Dark mode"},{t:"Weekly sales report",pin:1}],"In progress":[{t:"Stripe checkout",r:"Pricing page, Checkout API",n:"0 of 4 tasks"},{t:"Pricing page",r:"Writing the page"},{t:"Checkout API",r:"Running tests"}]}},
+ {k:2,f:2,c:{Backlog:[{t:"Dark mode"},{t:"Weekly sales report",pin:1}],"In progress":[{t:"Stripe checkout",r:"Webhooks",n:"1 of 4 tasks"},{t:"Checkout API",r:"Huddle checking",h:1}],Review:[{t:"Pricing page",ok:"Ready for review",chip:["okc","Checks pass"]}]}},
+ {k:3,f:3,c:{Backlog:[{t:"Dark mode"}],"In progress":[{t:"Stripe checkout",r:"Order emails",n:"3 of 4 tasks"}],Review:[{t:"Weekly sales report",pin:1,ok:"Ready for review"},{t:"Checkout API",ok:"Ready for review",chip:["okc","Checks pass"]}],Done:[{t:"Pricing page",s:"Merged"}]}},
+ {k:3,f:4,c:{Backlog:[{t:"Dark mode"}],Review:[{t:"Weekly sales report",pin:1,ok:"Ready for review"}],Done:[{t:"Stripe checkout",s:"4 of 4 tasks done"},{t:"Pricing page",s:"Merged"},{t:"Checkout API",s:"Merged"}]}}];
 const board=document.getElementById("board"),scroller=document.getElementById("board-scroll"),links=[...document.querySelectorAll("#steps a")],pauseBtn=document.getElementById("pause");
-const card=(k,j)=>`<div class="card" style="animation-delay:${j*80}ms">${k.t}${k.s?`<small>${k.s}</small>`:""}${k.r?`<small><span class="dot"></span>${k.r}</small>`:""}${k.chip?`<span class="chip ${k.chip[0]}">${k.chip[1]}</span>`:""}${k.q?`<div class="q">Which plans?<br><span class="on">Monthly and yearly</span><span>Monthly only</span></div>`:""}${k.h?`<div class="huddle"><div><b>Reviewer:</b> refund path has no test</div><div style="animation-delay:.6s"><b>QA:</b> added one, tests pass</div></div>`:""}</div>`;
-function show(n){const s=STATES[n];board.innerHTML=COLS.map(c=>{const cs=s.c[c]||[];return `<div class="col"><h3>${c}<span>${cs.length}</span></h3>${cs.map(card).join("")}</div>`}).join("");links.forEach((a,i)=>{a.classList.toggle("on",i===s.k);i===s.k?a.setAttribute("aria-current","step"):a.removeAttribute("aria-current")})
+// Claude's avatar as on the app's cards: a round face that blinks, and bobs while it works.
+const face=(busy,c="#c96442")=>`<svg class="face${busy?" busy":""}" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="${c}"/><rect x="11" y="3" width="2" height="3" rx="1" fill="#fff"/><rect x="5.5" y="6" width="13" height="11" rx="3.5" fill="#fff"/><circle class="eye" cx="9.5" cy="11" r="1.6" fill="#1f1e1b"/><circle class="eye" cx="14.5" cy="11" r="1.6" fill="#1f1e1b"/><rect x="10" y="14" width="4" height="1.2" rx=".6" fill="#c96442"/></svg>`;
+const card=(k,j)=>`<div class="card${k.r?" run":k.you?" you":k.ok?" rdy":""}${k.pin?" pinned":""}" style="animation-delay:${j*80}ms">${k.pin?`<span class="tag">PINNED</span>`:""}${k.you?`<div class="turn">${face(0)}Your turn · ${k.you}</div>`:""}${k.ok?`<div class="turn">● Your turn · ${k.ok}</div>`:""}${k.t}${k.s?`<small>${k.s}</small>`:""}${k.r?`<small>${k.r}</small>${k.n?`<small>${k.n}</small>`:""}<small>${face(1)}<span class="work">Working</span></small>`:""}${k.chip?`<span class="chip ${k.chip[0]}">${k.chip[1]}</span>`:""}${k.q?`<div class="q">Which plans?<br><span class="on">Monthly and yearly</span><span>Monthly only</span></div>`:""}${k.h?`<div class="huddle"><div><b>Reviewer:</b> refund path has no test</div><div style="animation-delay:.6s"><b>QA:</b> added one, tests pass</div></div>`:""}</div>`;
+function show(n){const s=STATES[n];board.innerHTML=COLS.map(c=>{const cs=s.c[c]||[];return `<div class="col${cs.some(x=>x.r||x.you)?" hot":""}"><h3>${c}<span>${cs.length}</span></h3>${cs.map(card).join("")}</div>`}).join("");links.forEach((a,i)=>{a.classList.toggle("on",i===s.k);i===s.k?a.setAttribute("aria-current","step"):a.removeAttribute("aria-current")})
  // Narrow screens show two columns at a time: bring the busy one (f) into view.
  if(scroller.scrollWidth>scroller.clientWidth)scroller.scrollTo({left:scroller.scrollLeft+board.children[s.f].getBoundingClientRect().left-scroller.getBoundingClientRect().left-14,behavior:still.matches?"auto":"smooth"})}
 let i=0,timer=null;

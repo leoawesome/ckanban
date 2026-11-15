@@ -28,7 +28,7 @@ Your code and prompts go to Anthropic through your own Claude Code, the same as 
 
 ### What is only sent when I turn it on?
 
-Notifications to a phone go through the browser's own push service (Apple, Google or Mozilla), encrypted, and only to devices where you turned them on. A webhook or ntfy address gets a short message only if you set one. claude.ai artifacts (off by default), MCP connections you add, and bug reports (you see and can untick everything before it is filed on GitHub) also only happen when you use them. Automations you set up contact the services you connect, on their timer, and with *Ask Claude first* each new item's text goes to Claude.
+Notifications to a phone go through the browser's own push service (Apple, Google or Mozilla), encrypted, and only to devices where you turned them on. A webhook or ntfy address gets a short message only if you set one. Telegram gets urgent alerts (and the messages you send it) only after you pair a bot from the Mac; *Unpair* stops it at once. claude.ai artifacts (off by default), MCP connections you add, and bug reports (you see and can untick everything before it is filed on GitHub) also only happen when you use them. Automations you set up contact the services you connect, on their timer, and with *Ask Claude first* each new item's text goes to Claude.
 
 ### What does it cost?
 
@@ -37,6 +37,10 @@ ckanban is free and open source (MIT License). Runs use your own Claude plan or 
 ### Does it work without GitHub or `gh`?
 
 Yes. `gh` is only needed for pull requests, PR checks and filing bug reports from the board. Without it, runs still finish and tell you what changed.
+
+### Does it slow down on a big board?
+
+No. Boards with thousands of tickets and long chats open without freezing: the Done column loads 20 cards at a time, and the board rereads only what changed since last time.
 
 ### How do I update?
 

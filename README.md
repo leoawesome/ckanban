@@ -16,7 +16,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/board-dark.gif">
-    <img src="docs/assets/board.gif" alt="The ckanban board in motion: an idea is planned with Claude and split into four tickets, they run side by side, a huddle checks one, and each is reviewed and merged">
+    <img src="docs/assets/board.gif" alt="The ckanban board in motion: the board with working cards and their avatars, a Planning ticket where Claude asks questions, a feature's Tasks tab and its chat with short task cards">
   </picture>
 </p>
 
@@ -24,10 +24,13 @@
 
 - 🤖 **Tickets run by headless Claude.** Move a card to Ready and a `claude -p` session works it in its own copy of the folder, with no limit on how many run at once. No git? It works in the folder itself, one ticket at a time, and lists what changed.
 - 💬 **Planning chat.** Claude interviews you with a clickable question form, draws HTML mockups for UI work and proposes a clear ticket. *Apply & start work* is one click.
-- 🗺️ **Plans.** Split a big ticket into child tickets that run unattended in dependency order; Claude is only woken when one needs it.
+- 🗺️ **Features and tasks.** Talk to one main ticket; it splits the work into tasks that run unattended in order and report back as short cards in its chat, with a *Tasks* tab that shows where things stand. Bigger work can hold sub-features with their own card, and schedules and automations can drop each run into a feature instead of a new card.
 - 🗣️ **Huddles.** A team of Claude teammates (reviewer, QA, researcher, UX critic, facilitator, ...) discuss one ticket in a shared room, tag each other and pin findings, with a budget you set. While you're away, Claude starts a review huddle on its own before landing ⭐ Important or risky work.
 - ⏰ **Follow-ups and scheduled jobs.** Claude comes back to a ticket by itself when work waits on someone ("check for a reply every morning"), and can start a ticket or run a command at a set time.
-- 📱 **Ask Claude without a ticket.** Quick chats from the *Ask* tab on your phone or the *Claude* button on your computer, the same saved chats on both. *Make ticket* turns one into a ticket.
+- 🙂 **Avatars and a name for Claude.** Claude and every teammate get an animated face that shows when they think, work, wait on you or finish. Change faces, hair, hats and colours, and give Claude a name the whole board uses.
+- 📱 **Built for your phone too.** A Board tab with five column tabs and one search button, a full-screen chat with a *Your turn* bar, a Tasks tab, and *Messages* that groups routine waits and only interrupts you for urgent ones (also on Telegram).
+- 🌐 **Board browsers.** Chromes the board starts for each set of logins (say, two WhatsApp accounts), with a sign-in check, an alert when one is logged out, and sign-in again from your phone.
+- 💬 **Ask Claude without a ticket.** Quick chats from the *Ask* tab on your phone or the *Claude* button on your computer, the same saved chats on both. *Make ticket* turns one into a ticket.
 - 📎 **Files and tags.** Attach PDFs, Office, text and code files, preview them in Outputs, tap a file name in the chat to open it. Tag tickets and filter the board by tag with the *Tags* chip.
 - 💡 **Help me understand.** Ask what happened while you were away, have the changes explained, or get a reply in simpler words. The board learns from your repeated corrections on its own, with *Undo* in *Team → Learned*.
 - ✅ **Review with PR checks.** See the diff, comment on lines, watch the PR's checks on the card, send failures back to Claude, or **Merge & done**.
@@ -65,13 +68,20 @@ Then open the board switcher (top left) → **New board…**, pick a folder you'
 
 | | |
 |---|---|
-| **One chat per ticket**, like the terminal: steer it while it runs.<br><img src="docs/assets/screenshots/ticket-chat.webp" alt="A ticket drawer: details and description on the left, Claude's chat on the right"> | **Planning**: Claude interviews you before it starts.<br><img src="docs/assets/screenshots/planning.png" alt="A Planning ticket: Claude asks questions in a clickable form with a recommended option"> |
-| **Plans** run child tickets in order, unattended.<br><img src="docs/assets/screenshots/plan.webp" alt="The Plan tab: 13 of 14 child tickets done, with their dependencies"> | **Huddles**: teammates discuss, pin findings and stay on budget.<br><img src="docs/assets/screenshots/huddle.webp" alt="The Huddle tab: a facilitator's ranked list in the feed, the brief, participants with cost and pinned findings"> |
-| **Team**: teammates, their prompts and saved notes.<br><img src="docs/assets/screenshots/team.webp" alt="The Team tab in the dock: built-in teammates and the facilitator's prompt and notes"> | **`⌘K`** finds tickets by title, description, result or PR.<br><img src="docs/assets/screenshots/command-bar.webp" alt="The command bar matching 'spend limit' in a ticket's description, with a snippet"> |
+| **One chat per ticket**, like the terminal: steer it while it runs.<br><img src="docs/assets/screenshots/ticket-chat.webp" alt="A main ticket: Where we are on the left, the chat with short cards for finished tasks on the right"> | **Planning**: Claude interviews you before it starts.<br><img src="docs/assets/screenshots/planning.webp" alt="A Planning ticket: Claude asks two questions in a clickable form with a recommended option"> |
+| **Tasks**: a main ticket's tasks run in order, unattended.<br><img src="docs/assets/screenshots/tasks.webp" alt="A main ticket's Tasks tab: 2 of 5 done, what runs now and next, and each task with its model, effort and status"> | **Huddles**: teammates discuss, pin findings and stay on budget.<br><img src="docs/assets/screenshots/huddle.webp" alt="The Huddle tab: a facilitator's ranked list in the feed, the brief, participants with cost and pinned findings"> |
+| **Avatars**: pick a face and a name for Claude.<br><img src="docs/assets/screenshots/avatars.webp" alt="The avatar editor: Claude named Juno, with face, colour, eyes and mood previews"> | **Schedules**: On, Paused and Finished, with a switch each.<br><img src="docs/assets/screenshots/schedules.webp" alt="The Schedules window: two schedules on, one paused, one finished"> |
+| **Team**: teammates, their prompts and saved notes.<br><img src="docs/assets/screenshots/team.webp" alt="The Team panel beside the board: Claude and the built-in teammates with their avatars, and the coordinator's prompt"> | **`⌘K`** finds tickets by title, description, result or PR.<br><img src="docs/assets/screenshots/command-bar.webp" alt="The command bar matching 'checkout' in ticket titles and a description, with a tag filter action"> |
+
+On a phone:
+
+| Board | Chat | Tasks |
+|---|---|---|
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/phone-board-dark.webp"><img src="docs/assets/screenshots/phone-board.webp" width="260" alt="Phone Board tab: five column tabs with counts, In Progress open with three working cards"></picture> | <img src="docs/assets/screenshots/phone-chat.webp" width="260" alt="Phone chat screen: title with status in words, task cards and the message box"> | <img src="docs/assets/screenshots/phone-tasks.webp" width="260" alt="Phone Tasks tab: 2 of 5 done, now and next, and the task list"> |
 
 ## More features
 
-Inbox of everything waiting on you, Changes tab with line comments, per-ticket folder setup (`.env` copy, install only when needed), auto-continue after a usage limit, one-click session recovery, schedules on a cron and one-time jobs, follow-up work on a finished ticket without leaving its chat, a brief of related past tickets for every run, prompt snippets, terminal and files panel, MCP connections, automations that turn new items from a service into tickets ([details](docs/automations.md)), shared devices, rewinding a ticket chat, ultracode with a live view of its helper agents, a note when a long chat has gone cold and what the next message costs, moving a ticket to another board, several PRs per ticket, a spending cap per run, a light or dark theme, branching a ticket, and keyboard shortcuts for nearly everything.
+Inbox of everything waiting on you, Changes tab with line comments, per-ticket folder setup (`.env` copy, install only when needed), auto-continue after a usage limit, one-click session recovery, schedules on a cron and one-time jobs, follow-up work on a finished ticket without leaving its chat, a brief of related past tickets for every run, prompt snippets, terminal and files panel, MCP connections, automations that turn new items from a service into tickets ([details](docs/automations.md)), shared devices, rewinding a ticket chat, pinned tickets at the top of a column, a Context ring that shows how full Claude's memory of a chat is, a key paste box so you never paste API keys into a chat, quick chat keys, a Schedules window with On, Paused and Finished, a Done column that loads 20 cards at a time, model and effort in the New ticket form, boards with thousands of tickets that stay fast, ultracode with a live view of its helper agents, a note when a long chat has gone cold and what the next message costs, moving a ticket to another board, several PRs per ticket, a spending cap per run, a light or dark theme, branching a ticket, and keyboard shortcuts for nearly everything.
 
 Every feature in detail: **[docs/features.md](docs/features.md)**. What changed in each release: **[CHANGELOG.md](CHANGELOG.md)**.
 
@@ -91,7 +101,7 @@ It runs in the background and survives restarts ([details](docs/features.md#runs
 
 ## On your phone
 
-With [Tailscale](https://tailscale.com/download) on your Mac and phone (same account, MagicDNS and HTTPS certificates on for the tailnet), run `ckanban remote on` or use **⋯ → Phone access**. You get `https://<your-mac>.<tailnet>.ts.net` and a QR code. On a phone the board opens on **Now** (what needs you, what runs, what's being planned); tickets open full screen. Add it to the Home Screen to use it like an app. Turn on **Notifications → This phone** to get a notification on the phone when a ticket needs you, no extra app needed. *More* shows your Claude plan usage and today's spend.
+With [Tailscale](https://tailscale.com/download) on your Mac and phone (same account, MagicDNS and HTTPS certificates on for the tailnet), run `ckanban remote on` or use **⋯ → Phone access**. You get `https://<your-mac>.<tailnet>.ts.net` and a QR code. On a phone the board opens on **Now** (what needs you, what runs, what's being planned, and your *Messages*); the **Board** tab shows one column at a time under five column tabs, and tickets open full screen with *Chat*, *Tasks* and *Outputs* tabs. Add it to the Home Screen to use it like an app. Turn on **Notifications → This phone** to get a notification on the phone when a ticket needs you, no extra app needed. *More* shows your Claude plan usage and today's spend.
 
 ## Use the board from Claude Code / Codex
 
