@@ -4,6 +4,73 @@ What changed in each ckanban release. Get the latest with `ckanban update`.
 
 ## Unreleased
 
+## [0.18.0] - 2026-11-15
+
+### Features, tasks and sub-features
+- **Main tickets and their tasks**: a main ticket is where you talk and decide; tool tickets in its family do the work, report back, merge into the main copy and land per milestone. Tasks start on their own as soon as they are ready, and the old family, build and board run limits are gone.
+- **One card per feature**: tasks live in the main ticket's *Tasks* tab (newest first) and roll up to the main card, which says *Working* while any task runs, shows a failed task in red and counts tasks (for example *7 of 16*). Stop, Backlog and Delete act on the whole family. You can still show tasks on the board.
+- **Where we are**: every feature has a pinned status with the next step first. Failed tasks say why with *Try again*, paused ones offer *Resume*.
+- **Sub-features**: a piece of work can sit inside a bigger feature and keep its own card, chat and tasks. A task can also become its own piece of work.
+- Claude can create a main ticket when you ask, gather existing tickets into it, and add new tickets to a feature from the New ticket form or *Make ticket*. A quiet *Part of* chip suggests a feature.
+- Main tickets ask for a clear go-ahead before starting build or fix steps, and follow-up work on a finished ticket runs as a task instead of a new card.
+- Steps that need you talk to you in the main ticket's chat, and *Needs you* rolls up to the main card.
+- Claude can search and read earlier chat messages, and a long, cold main chat starts its next turn fresh from the status.
+
+### Design system and look
+- The whole board follows one design system (`design-system/kanban/MASTER.md`): board, cards, menus, chats, dialogs, settings windows, forms, empty states and toasts use the same colours, spacing, motion and layers in light and dark.
+- Calmer UI everywhere: one style for buttons, banners and dialogs, dialogs centred on desktop, clear focus rings and bigger click areas.
+- **Pin tickets** to the top of their column (shown as a dark card).
+- **Done column**: Done starts folded and loads 20 at a time, keeps its final order on first load, and marking a ticket done opens the next card of the same column.
+- **One-tap status pill** under the ticket title.
+- Full keyboard control with honest key hints, plus quick chat keys (⌘⇧O new chat, O, comma and period, M).
+
+### Avatars and Claude's name
+- Animated, customizable avatars for Claude and every teammate: hair, hats, accessories, eye styles, cat, bear, alien and ghost faces, face details and backgrounds. Tap Claude's face in a chat to edit it.
+- Give Claude a name on the board: chats say "*Name* is thinking…".
+
+### Chats
+- Quick Claude chat as a light, resizable side panel beside the board; the side panel column on the right replaces the bottom panel.
+- Messages show the time sent, with *Copy*, *Fork from here* and *Undo rewind*. The chat follows new messages and shows a *New messages* button when you scroll up.
+- A *Context* panel and ring show how much Claude is holding in mind, checked after each run.
+- Answered question cards show the questions, answers and details. *See what Claude needs* jumps to Claude's latest question.
+- Shorter, easier-to-read replies. Pick model and effort in the New ticket form.
+
+### Phone
+- Phone-friendly board: one search button that also filters, five column tabs that fit, a title header with the status in words, a details sheet, tabs that fold on scroll, a two-row message box and a *Your turn* bar.
+- Phone *Tasks* tab, *Model and effort* sheet, stacked squad cards, a phone layout for the Automations window, and 44px tap targets everywhere. Back closes the *More* menu and the top window.
+
+### Board browsers
+- Name each Chrome and pick which one runs use, per board and per task.
+- The board can start its own Chromes per set of logins, with a one-page *Browsers* window, a real sign-in check, one urgent alert when a login runs out, and sign-in from the phone.
+
+### Schedules and automations
+- Claude can create, change, pause and run schedules and one-time jobs from any chat or run; deleting a schedule asks you on a card.
+- The *Schedules* window has On, Paused and Finished sections with a switch per schedule.
+- Schedules and automations can put each run or new ticket in a feature as a task, and scheduled runs can reopen a Done main ticket. Automation items about the same thing go into their existing ticket.
+- The Automations window is redesigned: list and tabs on desktop, list then detail on phone.
+
+### Helper, messages and Telegram
+- The helper uses one voice for notifications and is loud only when urgent. Summaries are short, grouped by board, at most every 3 hours. A new *Messages* screen has *Needs you*, *All*, *Summaries* and *Kept quiet* tabs.
+- Telegram gets only urgent alerts and their reminders. Replies go into the ticket's chat, question forms can be answered with buttons, and other text goes to a front desk chat that asks for *Confirm* before any change. Telegram has an off switch, `/lock`, *Pause* and *Unpair*.
+- Claude can suggest a helper alert rule on a card; only your tap on *Add* saves it.
+- **Key paste box**: when Claude needs an API key, you paste it in a box; the board keeps it per board and backs up files before writing a key into them.
+
+### Huddles and squads
+- **Squads**: save a huddle that worked and run it again on any ticket, including a built-in *Plan critique* squad.
+- Huddles have no message limit (the budget is the only brake), cleaner bubbles on phone and desktop, and cards show a blue working line while a huddle runs.
+
+### Speed on big boards
+- The board stays responsive with thousands of tickets and long chats and logs: logs and transcripts are read in small pieces, the board loads right after a restart, many open tabs share one live connection, and the Inbox skips Done tickets.
+- Fewer usage rate limits and no run caps. Per-board task models, including Fable.
+
+### Other fixes
+- A sent message no longer sticks on "sending".
+- A run that fails to start no longer leaves a ghost run, and Stop clears a run with nothing behind it.
+- A main ticket in Done moves to Review when you write to it.
+- *Move to Done* asks only when a task is unfinished.
+- An automation check that calls no tools no longer locks it out of every tool.
+- The *Tasks* tab badge counts tasks the same way as the status, and tasks in Review show *In review*.
+
 ## [0.17.0] - 2026-11-04
 
 ### Added
@@ -361,6 +428,7 @@ First release.
 - Terminal & file explorer panel, Connections panel for MCP servers, scheduled tickets on a cron, claude.ai artifacts from runs.
 - Standalone binary, installer, `ckanban update` and a background service that starts at login.
 
+[0.18.0]: https://github.com/leoawesome/ckanban/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/leoawesome/ckanban/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/leoawesome/ckanban/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/leoawesome/ckanban/compare/v0.14.0...v0.15.0
