@@ -1,0 +1,10 @@
+{"run":1,"at":"2026-11-15T12:00:00.000Z","event":{"type":"ckanban_run","kind":"work"}}
+{"run":1,"at":"2026-11-14T12:00:00.000Z","event":{"type":"result","subtype":"success","is_error":false,"total_cost_usd":1,"session_id":"old","result":"ok"}}
+{"run":1,"at":"2026-11-15T12:00:00.000Z","event":{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.1,"session_id":"a","result":"ok"}}
+{"run":1,"at":"2026-11-15T12:00:00.000Z","event":{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.25,"session_id":"a","result":"ok"}}
+{"run":1,"at":"2026-11-15T12:00:00.000Z","event":{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.05,"session_id":"b","result":"ok"}}
+{"run":2,"at":"2026-11-15T12:00:00.000Z","event":{"type":"assistant","text":"mentions \"total_cost_usd\" in passing"}}
+not json but has "total_cost_usd"
+{"run":1,"at":"2026-11-15T12:00:00.000Z","event":{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.02,"session_id":"a","result":"ok"}}
+{"run":1,"at":"not-a-date","event":{"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.5,"session_id":"c","result":"ok"}}
+{"run":3,"at":"2026-11-15T12:00:00.000Z","event":{"type":"result","total_cost_usd":0.75,"session_id":"half"

@@ -1,0 +1,11 @@
+{
+  "name": "Alpha board",
+  "slug": "alpha",
+  "path": "/tmp/alpha",
+  "baseBranch": "main",
+  "maxParallel": 2,
+  "createdAt": "2026-10-02T09:00:00.000Z",
+  "somethingNewer": {
+    "kept": true
+  }
+}

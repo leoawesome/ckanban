@@ -174,6 +174,17 @@ test("a fresh saved answer is served after a restart without asking", async () =
   expect(calls).toBe(0);
 });
 
+test("a check another process saved meanwhile (the Rust server) is reused, not asked again", async () => {
+  const file = join(tempDir("ck-usage-"), "usage-last.json");
+  const a = setup([ok(80)], file);
+  const b = setup([ok(81)], file);
+  await a.cache.get();
+  expect(a.box.calls).toBe(1);
+  // b started before a's check was saved; it still serves a's answer and keeps the shared minute gap.
+  expect(await b.cache.get({ fresh: true })).toMatchObject({ windows: win(80) });
+  expect(b.box.calls).toBe(0);
+});
+
 test("fetchUsage reports 429 with its retry-after", async () => {
   const creds = async () => ({ token: "t", expiresAt: null });
   const f = (async () => new Response("", { status: 429, headers: { "retry-after": "120" } })) as unknown as typeof fetch;

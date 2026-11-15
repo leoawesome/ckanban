@@ -1,0 +1,302 @@
+{
+  "about": "One usage check: the stored logins, the clock (`now`, epoch ms) and the endpoint's reply; `expect.result` is what fetchUsage (src/usage/usage.ts) returns and `expect.sent` the auth headers it sent (null: it did not ask). `expect` is written by test/rust-fixtures.test.ts.",
+  "now": 1794744000000,
+  "cases": [
+    {
+      "name": "good",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-good\",\"expiresAt\":1794747600000}}"
+      ],
+      "reply": {
+        "status": 200,
+        "body": "{\"five_hour\":{\"utilization\":42,\"resets_at\":\"2026-11-15T15:00:00.000Z\"},\"seven_day\":{\"utilization\":17.5,\"resets_at\":null}}"
+      },
+      "expect": {
+        "result": {
+          "windows": [
+            {
+              "key": "five_hour",
+              "label": "Current session (5h)",
+              "percent": 42,
+              "resetsAt": "2026-11-15T15:00:00.000Z"
+            },
+            {
+              "key": "seven_day",
+              "label": "Week · all models",
+              "percent": 17.5,
+              "resetsAt": null
+            }
+          ],
+          "fetchedAt": "2026-11-15T12:00:00.000Z"
+        },
+        "sent": {
+          "authorization": "Bearer tok-good",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "expired token: no request",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-old\",\"expiresAt\":1794744000000}}"
+      ],
+      "reply": null,
+      "expect": {
+        "result": {
+          "error": "Token expired: run any claude command to refresh it",
+          "fetchedAt": "2026-11-15T12:00:00.000Z"
+        },
+        "sent": null
+      }
+    },
+    {
+      "name": "no login: no request",
+      "raws": [
+        null
+      ],
+      "reply": null,
+      "expect": {
+        "result": {
+          "error": "Not logged in to Claude Code",
+          "fetchedAt": "2026-11-15T12:00:00.000Z"
+        },
+        "sent": null
+      }
+    },
+    {
+      "name": "unreadable login",
+      "raws": [
+        "{"
+      ],
+      "reply": null,
+      "expect": {
+        "result": {
+          "error": "Claude Code credentials are unreadable",
+          "fetchedAt": "2026-11-15T12:00:00.000Z"
+        },
+        "sent": null
+      }
+    },
+    {
+      "name": "401",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-401\"}}"
+      ],
+      "reply": {
+        "status": 401,
+        "body": "{}"
+      },
+      "expect": {
+        "result": {
+          "error": "Token rejected: run any claude command to refresh it",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 401
+        },
+        "sent": {
+          "authorization": "Bearer tok-401",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "403",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-403\"}}"
+      ],
+      "reply": {
+        "status": 403,
+        "body": "{}"
+      },
+      "expect": {
+        "result": {
+          "error": "Token rejected: run any claude command to refresh it",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 403
+        },
+        "sent": {
+          "authorization": "Bearer tok-403",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "429 retry-after seconds",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-429\"}}"
+      ],
+      "reply": {
+        "status": 429,
+        "body": "{\"error\":\"slow down\"}",
+        "headers": {
+          "retry-after": "120"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": "Anthropic is limiting usage checks",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 429,
+          "retryAfterMs": 120000
+        },
+        "sent": {
+          "authorization": "Bearer tok-429",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "429 retry-after date",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-429d\"}}"
+      ],
+      "reply": {
+        "status": 429,
+        "body": "{}",
+        "headers": {
+          "retry-after": "Sun, 15 Nov 2026 12:05:00 GMT"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": "Anthropic is limiting usage checks",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 429,
+          "retryAfterMs": 300000
+        },
+        "sent": {
+          "authorization": "Bearer tok-429d",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "429 bad retry-after",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-429b\"}}"
+      ],
+      "reply": {
+        "status": 429,
+        "body": "{}",
+        "headers": {
+          "retry-after": "later"
+        }
+      },
+      "expect": {
+        "result": {
+          "error": "Anthropic is limiting usage checks",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 429
+        },
+        "sent": {
+          "authorization": "Bearer tok-429b",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "429 no retry-after",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-429n\"}}"
+      ],
+      "reply": {
+        "status": 429,
+        "body": "{}"
+      },
+      "expect": {
+        "result": {
+          "error": "Anthropic is limiting usage checks",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 429
+        },
+        "sent": {
+          "authorization": "Bearer tok-429n",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "500",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-500\"}}"
+      ],
+      "reply": {
+        "status": 500,
+        "body": "{\"error\":\"boom\"}"
+      },
+      "expect": {
+        "result": {
+          "error": "Anthropic answered HTTP 500",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 500
+        },
+        "sent": {
+          "authorization": "Bearer tok-500",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "200 not json",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-html\"}}"
+      ],
+      "reply": {
+        "status": 200,
+        "body": "<html>hi</html>"
+      },
+      "expect": {
+        "result": {
+          "error": "Unexpected answer from the usage endpoint",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 200
+        },
+        "sent": {
+          "authorization": "Bearer tok-html",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "200 wrong shape",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-shape\"}}"
+      ],
+      "reply": {
+        "status": 200,
+        "body": "{\"extra_usage\":{}}"
+      },
+      "expect": {
+        "result": {
+          "error": "Unexpected answer from the usage endpoint",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 200
+        },
+        "sent": {
+          "authorization": "Bearer tok-shape",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    },
+    {
+      "name": "204",
+      "raws": [
+        "{\"claudeAiOauth\":{\"accessToken\":\"tok-204\"}}"
+      ],
+      "reply": {
+        "status": 204,
+        "body": ""
+      },
+      "expect": {
+        "result": {
+          "error": "Unexpected answer from the usage endpoint",
+          "fetchedAt": "2026-11-15T12:00:00.000Z",
+          "status": 204
+        },
+        "sent": {
+          "authorization": "Bearer tok-204",
+          "anthropic-beta": "oauth-2025-04-20"
+        }
+      }
+    }
+  ]
+}

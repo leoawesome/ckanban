@@ -161,7 +161,7 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 
 Caching (`UsageCache`): one call in flight for everyone; a good answer is reused for 4 minutes; never more than one call
 a minute, `fresh=1` included; after a 429 a growing wait (1, 2, 4, 10 min, or `retry-after` when longer, capped at
-30 min); the state is saved to `usage-last.json` and read once at start. The request is
+30 min); the state is saved to `usage-last.json`, read at start and again whenever another process changed it (a check either one made counts for both). The request is
 `GET <CKANBAN_USAGE_URL>` with `authorization: Bearer <token>`, `anthropic-beta: oauth-2025-04-20`. Environment:
 - `CKANBAN_USAGE_URL`: the usage endpoint (default `https://api.anthropic.com/api/oauth/usage`). Tests point it at a local fake.
 - `CKANBAN_NO_KEYCHAIN=1`: read the token only from `$CLAUDE_CONFIG_DIR/.credentials.json` (default

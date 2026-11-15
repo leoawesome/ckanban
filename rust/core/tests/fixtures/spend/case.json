@@ -1,0 +1,28 @@
+{
+  "about": "A data folder for GET /api/spend. The test copies home/ to a temp folder, sets the listed files' change times, and asks for the spend at `now` (local time, no zone). `expect` is what Bun's SpendIndex answers; test/rust-fixtures.test.ts checks it against Bun and rewrites it with UPDATE_RUST_FIXTURES=1.",
+  "now": "2026-11-15T15:00:00",
+  "mtimes": {
+    "profiles/alpha/tickets/t-old/activity.jsonl": "2026-11-14T12:00:00.000Z"
+  },
+  "expect": {
+    "day": "2026-11-15",
+    "costUsd": 2.699,
+    "boards": [
+      {
+        "slug": "beta",
+        "name": "Beta",
+        "costUsd": 1.5
+      },
+      {
+        "slug": "alpha",
+        "name": "Alpha board",
+        "costUsd": 1.188
+      },
+      {
+        "slug": "~helper",
+        "name": "Helper",
+        "costUsd": 0.011
+      }
+    ]
+  }
+}

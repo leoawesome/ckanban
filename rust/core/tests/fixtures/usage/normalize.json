@@ -1,0 +1,170 @@
+{
+  "about": "Bodies from Anthropic's usage endpoint and what normalizeUsage (src/usage/usage.ts) makes of them (null: not the expected shape). `expect` is written by test/rust-fixtures.test.ts.",
+  "cases": [
+    {
+      "name": "contract body",
+      "body": {
+        "five_hour": {
+          "utilization": 42,
+          "resets_at": "2026-11-15T15:00:00.000Z"
+        },
+        "seven_day": {
+          "utilization": 17.5,
+          "resets_at": null
+        },
+        "extra_usage": {
+          "is_enabled": false
+        }
+      },
+      "expect": [
+        {
+          "key": "five_hour",
+          "label": "Current session (5h)",
+          "percent": 42,
+          "resetsAt": "2026-11-15T15:00:00.000Z"
+        },
+        {
+          "key": "seven_day",
+          "label": "Week · all models",
+          "percent": 17.5,
+          "resetsAt": null
+        }
+      ]
+    },
+    {
+      "name": "every model, out of order",
+      "body": {
+        "seven_day_sonnet": {
+          "utilization": 3,
+          "resets_at": "2026-11-20T00:00:00Z"
+        },
+        "seven_day_opus": {
+          "utilization": 99.25,
+          "resets_at": "2026-11-20T00:00:00+00:00"
+        },
+        "seven_day_oauth_apps": {
+          "utilization": 1,
+          "resets_at": "2026-11-20T00:00:00Z"
+        },
+        "seven_day": {
+          "utilization": 50,
+          "resets_at": "2026-11-20T00:00:00Z"
+        },
+        "five_hour": {
+          "utilization": 0,
+          "resets_at": "2026-11-15T15:00:00Z"
+        }
+      },
+      "expect": [
+        {
+          "key": "five_hour",
+          "label": "Current session (5h)",
+          "percent": 0,
+          "resetsAt": "2026-11-15T15:00:00Z"
+        },
+        {
+          "key": "seven_day",
+          "label": "Week · all models",
+          "percent": 50,
+          "resetsAt": "2026-11-20T00:00:00Z"
+        },
+        {
+          "key": "seven_day_opus",
+          "label": "Week · Opus",
+          "percent": 99.25,
+          "resetsAt": "2026-11-20T00:00:00+00:00"
+        },
+        {
+          "key": "seven_day_sonnet",
+          "label": "Week · Sonnet",
+          "percent": 3,
+          "resetsAt": "2026-11-20T00:00:00Z"
+        },
+        {
+          "key": "seven_day_oauth_apps",
+          "label": "Week · oauth apps",
+          "percent": 1,
+          "resetsAt": "2026-11-20T00:00:00Z"
+        }
+      ]
+    },
+    {
+      "name": "clamped and bad parts",
+      "body": {
+        "five_hour": {
+          "utilization": 130,
+          "resets_at": "tomorrow-ish"
+        },
+        "seven_day": {
+          "utilization": -4,
+          "resets_at": 12
+        },
+        "seven_day_opus": {
+          "utilization": "12"
+        },
+        "seven_day_sonnet": null,
+        "seven_day_": {
+          "utilization": 0.0000015,
+          "resets_at": "2026-11-20"
+        }
+      },
+      "expect": [
+        {
+          "key": "five_hour",
+          "label": "Current session (5h)",
+          "percent": 100,
+          "resetsAt": null
+        },
+        {
+          "key": "seven_day",
+          "label": "Week · all models",
+          "percent": 0,
+          "resetsAt": null
+        },
+        {
+          "key": "seven_day_",
+          "label": "Week · other",
+          "percent": 0.0000015,
+          "resetsAt": "2026-11-20"
+        }
+      ]
+    },
+    {
+      "name": "window keys but nothing usable",
+      "body": {
+        "five_hour": null,
+        "seven_day": {
+          "resets_at": "2026-11-20T00:00:00Z"
+        }
+      },
+      "expect": []
+    },
+    {
+      "name": "no window keys",
+      "body": {
+        "extra_usage": {
+          "is_enabled": true
+        }
+      },
+      "expect": null
+    },
+    {
+      "name": "array",
+      "body": [
+        1,
+        2
+      ],
+      "expect": null
+    },
+    {
+      "name": "null",
+      "body": null,
+      "expect": null
+    },
+    {
+      "name": "string",
+      "body": "five_hour",
+      "expect": null
+    }
+  ]
+}

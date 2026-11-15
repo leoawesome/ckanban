@@ -1,0 +1,985 @@
+{
+  "about": "Usage cache scenarios. Each starts from `saved` (usage-last.json's text, null: no file) and asks at each step's `t` (ms after `start`, epoch ms) with `fresh`; `reply` is what the check returns if the cache asks (\"hang\": it never answers; the check times out after `timeoutMs`). `expect` holds, per step, whether the cache asked and the answer it served, then usage-last.json's final text; it is written by test/rust-fixtures.test.ts from Bun's UsageCache (src/usage/usage-cache.ts).",
+  "start": 1794744000000,
+  "cases": [
+    {
+      "name": "asks once, then answers from the cache; fresh=1 inside the minute too; again after 4 min",
+      "saved": null,
+      "steps": [
+        {
+          "t": 0,
+          "reply": {
+            "windows": [
+              {
+                "key": "five_hour",
+                "label": "Current session (5h)",
+                "percent": 42,
+                "resetsAt": "2026-11-15T15:00:00.000Z"
+              },
+              {
+                "key": "seven_day",
+                "label": "Week · all models",
+                "percent": 17.5,
+                "resetsAt": null
+              }
+            ],
+            "fetchedAt": "2026-11-15T12:00:00.000Z"
+          }
+        },
+        {
+          "t": 10000
+        },
+        {
+          "t": 20000,
+          "fresh": true
+        },
+        {
+          "t": 180000,
+          "fresh": false
+        },
+        {
+          "t": 180001,
+          "fresh": true,
+          "reply": {
+            "windows": [
+              {
+                "key": "five_hour",
+                "label": "Current session (5h)",
+                "percent": 50,
+                "resetsAt": "2026-11-15T15:00:00.000Z"
+              },
+              {
+                "key": "seven_day",
+                "label": "Week · all models",
+                "percent": 17.5,
+                "resetsAt": null
+              }
+            ],
+            "fetchedAt": "2026-11-15T12:03:00.001Z"
+          }
+        },
+        {
+          "t": 480000,
+          "reply": {
+            "windows": [
+              {
+                "key": "five_hour",
+                "label": "Current session (5h)",
+                "percent": 51,
+                "resetsAt": "2026-11-15T15:00:00.000Z"
+              },
+              {
+                "key": "seven_day",
+                "label": "Week · all models",
+                "percent": 17.5,
+                "resetsAt": null
+              }
+            ],
+            "fetchedAt": "2026-11-15T12:08:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 50,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:03:00.001Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 51,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:08:00.000Z"
+            }
+          }
+        ],
+        "file": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":51,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"},{\"key\":\"seven_day\",\"label\":\"Week · all models\",\"percent\":17.5,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T12:08:00.000Z\"},\"lastError\":null,\"attemptAt\":1794744480000,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "fresh=1 asks now; a plain GET reuses the saved answer",
+      "saved": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":7,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"}],\"fetchedAt\":\"2026-11-15T11:59:00.000Z\"},\"lastError\":null,\"attemptAt\":1794743880000,\"blockedUntil\":0,\"failures\":0}",
+      "steps": [
+        {
+          "t": 0
+        },
+        {
+          "t": 1,
+          "fresh": true,
+          "reply": {
+            "windows": [
+              {
+                "key": "five_hour",
+                "label": "Current session (5h)",
+                "percent": 42,
+                "resetsAt": "2026-11-15T15:00:00.000Z"
+              },
+              {
+                "key": "seven_day",
+                "label": "Week · all models",
+                "percent": 17.5,
+                "resetsAt": null
+              }
+            ],
+            "fetchedAt": "2026-11-15T12:00:00.001Z"
+          }
+        },
+        {
+          "t": 2
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": false,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 7,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                }
+              ],
+              "fetchedAt": "2026-11-15T11:59:00.000Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:00:00.001Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:00:00.001Z"
+            }
+          }
+        ],
+        "file": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":42,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"},{\"key\":\"seven_day\",\"label\":\"Week · all models\",\"percent\":17.5,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T12:00:00.001Z\"},\"lastError\":null,\"attemptAt\":1794744000001,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "failing with no saved numbers: the error alone, no retry inside the minute, then a retry",
+      "saved": null,
+      "steps": [
+        {
+          "t": 0,
+          "reply": {
+            "error": "Anthropic answered HTTP 500",
+            "fetchedAt": "2026-11-15T12:00:00.000Z",
+            "status": 500
+          }
+        },
+        {
+          "t": 30000,
+          "fresh": true
+        },
+        {
+          "t": 59999
+        },
+        {
+          "t": 60000,
+          "reply": {
+            "error": "Could not reach Anthropic (offline?)",
+            "fetchedAt": "2026-11-15T12:01:00.000Z"
+          }
+        },
+        {
+          "t": 120005,
+          "reply": {
+            "windows": [
+              {
+                "key": "five_hour",
+                "label": "Current session (5h)",
+                "percent": 42,
+                "resetsAt": "2026-11-15T15:00:00.000Z"
+              },
+              {
+                "key": "seven_day",
+                "label": "Week · all models",
+                "percent": 17.5,
+                "resetsAt": null
+              }
+            ],
+            "fetchedAt": "2026-11-15T12:02:00.005Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": true,
+            "view": {
+              "error": "Anthropic answered HTTP 500",
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "error": "Anthropic answered HTTP 500",
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "error": "Anthropic answered HTTP 500",
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "error": "Could not reach Anthropic (offline?)",
+              "fetchedAt": "2026-11-15T12:01:00.000Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:02:00.005Z"
+            }
+          }
+        ],
+        "file": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":42,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"},{\"key\":\"seven_day\",\"label\":\"Week · all models\",\"percent\":17.5,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T12:02:00.005Z\"},\"lastError\":null,\"attemptAt\":1794744120005,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "failing with saved numbers: stale with the error",
+      "saved": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":9,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T11:00:00.000Z\"},\"lastError\":null,\"attemptAt\":1794740400000,\"blockedUntil\":0,\"failures\":0}",
+      "steps": [
+        {
+          "t": 0,
+          "reply": {
+            "error": "Anthropic answered HTTP 500",
+            "fetchedAt": "2026-11-15T12:00:00.000Z",
+            "status": 500
+          }
+        },
+        {
+          "t": 59999
+        },
+        {
+          "t": 120000,
+          "reply": {
+            "windows": [
+              {
+                "key": "five_hour",
+                "label": "Current session (5h)",
+                "percent": 42,
+                "resetsAt": "2026-11-15T15:00:00.000Z"
+              },
+              {
+                "key": "seven_day",
+                "label": "Week · all models",
+                "percent": 17.5,
+                "resetsAt": null
+              }
+            ],
+            "fetchedAt": "2026-11-15T12:02:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 9,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T11:00:00.000Z",
+              "stale": true,
+              "error": "Anthropic answered HTTP 500"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 9,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T11:00:00.000Z",
+              "stale": true,
+              "error": "Anthropic answered HTTP 500"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:02:00.000Z"
+            }
+          }
+        ],
+        "file": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":42,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"},{\"key\":\"seven_day\",\"label\":\"Week · all models\",\"percent\":17.5,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T12:02:00.000Z\"},\"lastError\":null,\"attemptAt\":1794744120000,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "rate limited: growing waits, retry-after only lengthens them, numbers clear it",
+      "saved": null,
+      "steps": [
+        {
+          "t": 0,
+          "reply": {
+            "error": "Anthropic is limiting usage checks",
+            "fetchedAt": "2026-11-15T12:00:00.000Z",
+            "status": 429,
+            "retryAfterMs": 120000
+          }
+        },
+        {
+          "t": 61000,
+          "fresh": true
+        },
+        {
+          "t": 119999
+        },
+        {
+          "t": 120000,
+          "reply": {
+            "error": "Anthropic is limiting usage checks",
+            "fetchedAt": "2026-11-15T12:02:00.000Z",
+            "status": 429
+          }
+        },
+        {
+          "t": 150000
+        },
+        {
+          "t": 240000,
+          "reply": {
+            "error": "Anthropic is limiting usage checks",
+            "fetchedAt": "2026-11-15T12:04:00.000Z",
+            "status": 429,
+            "retryAfterMs": 5000
+          }
+        },
+        {
+          "t": 480000,
+          "reply": {
+            "error": "Anthropic is limiting usage checks",
+            "fetchedAt": "2026-11-15T12:08:00.000Z",
+            "status": 429,
+            "retryAfterMs": 5940000
+          }
+        },
+        {
+          "t": 2280000,
+          "reply": {
+            "windows": [
+              {
+                "key": "five_hour",
+                "label": "Current session (5h)",
+                "percent": 42,
+                "resetsAt": "2026-11-15T15:00:00.000Z"
+              },
+              {
+                "key": "seven_day",
+                "label": "Week · all models",
+                "percent": 17.5,
+                "resetsAt": null
+              }
+            ],
+            "fetchedAt": "2026-11-15T12:38:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": true,
+            "view": {
+              "error": "Anthropic is limiting usage checks; next try in about 2 min",
+              "fetchedAt": "2026-11-15T12:00:00.000Z",
+              "limited": true,
+              "retryAt": "2026-11-15T12:02:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "error": "Anthropic is limiting usage checks; next try in about 1 min",
+              "fetchedAt": "2026-11-15T12:00:00.000Z",
+              "limited": true,
+              "retryAt": "2026-11-15T12:02:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "error": "Anthropic is limiting usage checks; next try in about 1 min",
+              "fetchedAt": "2026-11-15T12:00:00.000Z",
+              "limited": true,
+              "retryAt": "2026-11-15T12:02:00.000Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "error": "Anthropic is limiting usage checks; next try in about 2 min",
+              "fetchedAt": "2026-11-15T12:02:00.000Z",
+              "limited": true,
+              "retryAt": "2026-11-15T12:04:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "error": "Anthropic is limiting usage checks; next try in about 2 min",
+              "fetchedAt": "2026-11-15T12:02:00.000Z",
+              "limited": true,
+              "retryAt": "2026-11-15T12:04:00.000Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "error": "Anthropic is limiting usage checks; next try in about 4 min",
+              "fetchedAt": "2026-11-15T12:04:00.000Z",
+              "limited": true,
+              "retryAt": "2026-11-15T12:08:00.000Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "error": "Anthropic is limiting usage checks; next try in about 30 min",
+              "fetchedAt": "2026-11-15T12:08:00.000Z",
+              "limited": true,
+              "retryAt": "2026-11-15T12:38:00.000Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:38:00.000Z"
+            }
+          }
+        ],
+        "file": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":42,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"},{\"key\":\"seven_day\",\"label\":\"Week · all models\",\"percent\":17.5,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T12:38:00.000Z\"},\"lastError\":null,\"attemptAt\":1794746280000,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "rate limited with saved numbers: stale, limited, retryAt",
+      "saved": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":42,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"},{\"key\":\"seven_day\",\"label\":\"Week \\u00b7 all models\",\"percent\":17.5,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T11:50:00.000Z\"},\"lastError\":null,\"attemptAt\":1794743400000,\"blockedUntil\":0,\"failures\":0}",
+      "steps": [
+        {
+          "t": 0,
+          "reply": {
+            "error": "Anthropic is limiting usage checks",
+            "fetchedAt": "2026-11-15T12:00:00.000Z",
+            "status": 429
+          }
+        },
+        {
+          "t": 30000
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T11:50:00.000Z",
+              "stale": true,
+              "error": "Anthropic is limiting usage checks",
+              "limited": true,
+              "retryAt": "2026-11-15T12:01:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T11:50:00.000Z",
+              "stale": true,
+              "error": "Anthropic is limiting usage checks",
+              "limited": true,
+              "retryAt": "2026-11-15T12:01:00.000Z"
+            }
+          }
+        ],
+        "file": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":42,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"},{\"key\":\"seven_day\",\"label\":\"Week · all models\",\"percent\":17.5,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T11:50:00.000Z\"},\"lastError\":{\"error\":\"Anthropic is limiting usage checks\",\"at\":1794744000000,\"limited\":true},\"attemptAt\":1794744000000,\"blockedUntil\":1794744060000,\"failures\":1}"
+      }
+    },
+    {
+      "name": "no login: the error, Anthropic never asked",
+      "saved": null,
+      "steps": [
+        {
+          "t": 0,
+          "reply": {
+            "error": "Not logged in to Claude Code",
+            "fetchedAt": "2026-11-15T12:00:00.000Z"
+          }
+        },
+        {
+          "t": 10
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": true,
+            "view": {
+              "error": "Not logged in to Claude Code",
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "error": "Not logged in to Claude Code",
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          }
+        ],
+        "file": "{\"last\":null,\"lastError\":{\"error\":\"Not logged in to Claude Code\",\"at\":1794744000000,\"limited\":false},\"attemptAt\":1794744000000,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "clock set back: saved times in the future don't block",
+      "saved": "{\"last\":null,\"lastError\":{\"error\":\"Anthropic is limiting usage checks\",\"at\":1794743940000,\"limited\":1},\"attemptAt\":1794747600000,\"blockedUntil\":1794830400000,\"failures\":3}",
+      "steps": [
+        {
+          "t": 0
+        },
+        {
+          "t": 1800001,
+          "reply": {
+            "windows": [
+              {
+                "key": "five_hour",
+                "label": "Current session (5h)",
+                "percent": 42,
+                "resetsAt": "2026-11-15T15:00:00.000Z"
+              },
+              {
+                "key": "seven_day",
+                "label": "Week · all models",
+                "percent": 17.5,
+                "resetsAt": null
+              }
+            ],
+            "fetchedAt": "2026-11-15T12:30:00.001Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": false,
+            "view": {
+              "error": "Anthropic is limiting usage checks; next try in about 30 min",
+              "fetchedAt": "2026-11-15T11:59:00.000Z",
+              "limited": true,
+              "retryAt": "2026-11-15T12:30:00.000Z"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:30:00.001Z"
+            }
+          }
+        ],
+        "file": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":42,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"},{\"key\":\"seven_day\",\"label\":\"Week · all models\",\"percent\":17.5,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T12:30:00.001Z\"},\"lastError\":null,\"attemptAt\":1794745800001,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "just restarted inside the gap with nothing saved",
+      "saved": "{\"last\":null,\"lastError\":null,\"attemptAt\":1794743990000,\"blockedUntil\":0,\"failures\":0}",
+      "steps": [
+        {
+          "t": 0
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": false,
+            "view": {
+              "error": "Usage not checked yet; try Refresh in a minute",
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          }
+        ],
+        "file": "{\"last\":null,\"lastError\":null,\"attemptAt\":1794743990000,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "saved answer with fields this code doesn't know: served and kept",
+      "saved": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":12.5,\"resetsAt\":null,\"future\":1}],\"fetchedAt\":\"2026-11-15T11:59:00.000Z\",\"note\":\"from a newer daemon\"},\"lastError\":null,\"attemptAt\":1794743940000,\"blockedUntil\":0,\"failures\":0,\"extraTop\":true}",
+      "steps": [
+        {
+          "t": 0
+        },
+        {
+          "t": 60000,
+          "fresh": true,
+          "reply": {
+            "error": "Anthropic answered HTTP 500",
+            "fetchedAt": "2026-11-15T12:01:00.000Z",
+            "status": 500
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": false,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 12.5,
+                  "resetsAt": null,
+                  "future": 1
+                }
+              ],
+              "fetchedAt": "2026-11-15T11:59:00.000Z",
+              "note": "from a newer daemon"
+            }
+          },
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 12.5,
+                  "resetsAt": null,
+                  "future": 1
+                }
+              ],
+              "fetchedAt": "2026-11-15T11:59:00.000Z",
+              "note": "from a newer daemon",
+              "stale": true,
+              "error": "Anthropic answered HTTP 500"
+            }
+          }
+        ],
+        "file": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":12.5,\"resetsAt\":null,\"future\":1}],\"fetchedAt\":\"2026-11-15T11:59:00.000Z\",\"note\":\"from a newer daemon\"},\"lastError\":{\"error\":\"Anthropic answered HTTP 500\",\"at\":1794744060000,\"limited\":false},\"attemptAt\":1794744060000,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "unreadable saved file: a fresh start",
+      "saved": "{nope",
+      "steps": [
+        {
+          "t": 0,
+          "reply": {
+            "windows": [
+              {
+                "key": "five_hour",
+                "label": "Current session (5h)",
+                "percent": 42,
+                "resetsAt": "2026-11-15T15:00:00.000Z"
+              },
+              {
+                "key": "seven_day",
+                "label": "Week · all models",
+                "percent": 17.5,
+                "resetsAt": null
+              }
+            ],
+            "fetchedAt": "2026-11-15T12:00:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": true,
+            "view": {
+              "windows": [
+                {
+                  "key": "five_hour",
+                  "label": "Current session (5h)",
+                  "percent": 42,
+                  "resetsAt": "2026-11-15T15:00:00.000Z"
+                },
+                {
+                  "key": "seven_day",
+                  "label": "Week · all models",
+                  "percent": 17.5,
+                  "resetsAt": null
+                }
+              ],
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          }
+        ],
+        "file": "{\"last\":{\"windows\":[{\"key\":\"five_hour\",\"label\":\"Current session (5h)\",\"percent\":42,\"resetsAt\":\"2026-11-15T15:00:00.000Z\"},{\"key\":\"seven_day\",\"label\":\"Week · all models\",\"percent\":17.5,\"resetsAt\":null}],\"fetchedAt\":\"2026-11-15T12:00:00.000Z\"},\"lastError\":null,\"attemptAt\":1794744000000,\"blockedUntil\":0,\"failures\":0}"
+      }
+    },
+    {
+      "name": "a check that hangs times out",
+      "saved": null,
+      "timeoutMs": 50,
+      "steps": [
+        {
+          "t": 0,
+          "reply": "hang"
+        },
+        {
+          "t": 10
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "asked": true,
+            "view": {
+              "error": "Usage check took over 0.05s",
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          },
+          {
+            "asked": false,
+            "view": {
+              "error": "Usage check took over 0.05s",
+              "fetchedAt": "2026-11-15T12:00:00.000Z"
+            }
+          }
+        ],
+        "file": "{\"last\":null,\"lastError\":{\"error\":\"Usage check took over 0.05s\",\"at\":1794744000000,\"limited\":false},\"attemptAt\":1794744000000,\"blockedUntil\":0,\"failures\":0}"
+      }
+    }
+  ]
+}

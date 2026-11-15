@@ -25,6 +25,7 @@ Each folder has a short `README.md`; read it before changing code there. Unit te
 - `web/src/lib/`: plain helpers and the API client `lib/api` ([README](web/src/lib/README.md)).
 - `web/src/features/<feature>/`: one folder per UI feature (board, ticket, chat, huddle, schedules...), each with a README.
 - `contracts/`: the written web API, data file and CLI contract ([README](contracts/README.md)).
+- `rust/core/`: the Rust port trial's library for usage and spend, checked against Bun with shared fixtures ([README](rust/core/README.md)).
 - `test/contract/`: outside-in tests of that contract; they start the daemon and never import from `src/` or `web/`.
 - `test/`: otherwise only cross-area tests (`integration/`, `big-board.test.ts`, `plain-words.test.ts`), fixtures and shared helpers (`support/`).
 

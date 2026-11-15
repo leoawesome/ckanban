@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { atomicWrite } from "../core/store";
 import { RATE_LIMITED, type UsageAnswer, type UsageResult, type UsageWindow } from "./usage";
 
@@ -39,6 +39,17 @@ interface Saved {
   failures: number;
 }
 
+/** usage-last.json's size and change time, to tell when another process (the Rust server) wrote it. */
+function stampOf(file: string | undefined): string | null {
+  if (!file) return null;
+  try {
+    const s = statSync(file);
+    return `${s.size}:${s.mtimeMs}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Saved times past `now` + the longest wait come from a clock set back; they must not block checks. */
 function load(file: string | undefined, now: number): Saved | null {
   if (!file) return null;
@@ -60,6 +71,8 @@ function load(file: string | undefined, now: number): Saved | null {
  * Shares the usage endpoint between the header pill, the phone box and ticket views. The endpoint rate-limits, so:
  * one request in flight for everyone, a good answer reused for GOOD_TTL_MS, at most one call a minute (Refresh too),
  * a growing wait after a 429 (retry-after when sent), and the last good answer kept, and saved to `file`, through errors.
+ * `file` is read again when another process changed it (the Rust server in the port trial shares it), so a check
+ * either side made counts for both.
  */
 export class UsageCache {
   private last: UsageAnswer | null = null;
@@ -70,6 +83,8 @@ export class UsageCache {
   private inflight: Promise<UsageView> | null = null;
   /** Times of the calls to Anthropic in the last hour, for the log line. */
   private calls: number[] = [];
+  /** usage-last.json as this cache last read or wrote it (stampOf). */
+  private stamp: string | null = null;
 
   constructor(
     private fetcher: () => Promise<UsageResult>,
@@ -79,13 +94,22 @@ export class UsageCache {
     private log: (line: string) => void = () => {},
     private timeoutMs = FETCH_TIMEOUT_MS,
   ) {
-    const saved = load(file, now());
+    this.reload();
+  }
+
+  /** Takes the saved state when the file changed since this cache last read or wrote it. */
+  private reload(): void {
+    const stamp = stampOf(this.file);
+    if (stamp === null || stamp === this.stamp) return;
+    this.stamp = stamp;
+    const saved = load(this.file, this.now());
     if (saved) Object.assign(this, saved);
   }
 
   /** Cached usage; `fresh` (the Refresh button) asks now unless a call went out in the last minute or we are backing off. */
   async get(opts: { fresh?: boolean } = {}): Promise<UsageView> {
     if (this.inflight) return this.inflight;
+    this.reload();
     const now = this.now();
     if (now < this.blockedUntil || now - this.attemptAt < MIN_GAP_MS) return this.view();
     const goodAge = this.last ? now - Date.parse(this.last.fetchedAt) : Infinity;
@@ -142,6 +166,7 @@ export class UsageCache {
     const s: Saved = { last: this.last, lastError: this.lastError, attemptAt: this.attemptAt, blockedUntil: this.blockedUntil, failures: this.failures };
     try {
       atomicWrite(this.file, JSON.stringify(s));
+      this.stamp = stampOf(this.file);
     } catch {}
   }
 

@@ -1,0 +1,17 @@
+[package]
+name = "ckanban-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "ckanban's usage and spend logic in Rust (the Rust port trial); a library, no server"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+flate2 = "1"
+libc = "0.2"
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
+tokio = { version = "1", features = ["rt", "macros", "time", "process", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "sync", "net", "io-util"] }
