@@ -1,0 +1,234 @@
+{
+  "name": "bun",
+  "server": [
+    "/opt/homebrew/Cellar/bun/1.4.2/bin/bun",
+    "{code}/src/cli.ts",
+    "dev"
+  ],
+  "usesCode": true,
+  "at": "2026-11-15T20:04:54.589Z",
+  "runs": 5,
+  "tickets": 10000,
+  "mac": {
+    "loadAvg1": 6.8759765625,
+    "cores": 10,
+    "bun": "1.4.2"
+  },
+  "routes": [
+    {
+      "name": "GET /api/usage",
+      "path": "/api/usage"
+    },
+    {
+      "name": "GET /api/spend",
+      "path": "/api/spend"
+    },
+    {
+      "name": "GET /api/profiles/:slug/tickets?scope=board",
+      "path": "/api/profiles/big/tickets?scope=board"
+    },
+    {
+      "name": "GET /api/tickets (every ticket, light rows)",
+      "path": "/api/tickets"
+    },
+    {
+      "name": "GET /api/inbox",
+      "path": "/api/inbox"
+    }
+  ],
+  "summary": {
+    "idleMb": 90.390625,
+    "bigSettledMb": 394.390625,
+    "bigAfterRoutesMb": 461.9375,
+    "firstAnswerMs": 277.31725000000006,
+    "boardAnswersMs": 2215.90625,
+    "longestStallMs": 147.68304199998965,
+    "lagLines": 0,
+    "longestLagMs": 0,
+    "routes": {
+      "GET /api/usage": {
+        "firstMs": 2.600417000001471,
+        "repeatMs": 0.15279199999349657
+      },
+      "GET /api/spend": {
+        "firstMs": 173.42791700002272,
+        "repeatMs": 0.1889159999846015
+      },
+      "GET /api/profiles/:slug/tickets?scope=board": {
+        "firstMs": 68.26183399997535,
+        "repeatMs": 64.67124999998487
+      },
+      "GET /api/tickets (every ticket, light rows)": {
+        "firstMs": 134.35483300001943,
+        "repeatMs": 112.51320799998939
+      },
+      "GET /api/inbox": {
+        "firstMs": 2.442957999999635,
+        "repeatMs": 0.9985829999932321
+      }
+    }
+  },
+  "perRun": [
+    {
+      "idleMb": 92.921875,
+      "bigSettledMb": 400.65625,
+      "bigAfterRoutesMb": 461.9375,
+      "firstAnswerMs": 277.31725000000006,
+      "boardAnswersMs": 2215.90625,
+      "longestStallMs": 149.90612499999406,
+      "lagLines": 0,
+      "longestLagMs": 0,
+      "routes": {
+        "GET /api/usage": {
+          "firstMs": 2.600417000001471,
+          "repeatMs": 0.14854200000263518
+        },
+        "GET /api/spend": {
+          "firstMs": 174.75845899999695,
+          "repeatMs": 0.20524999999906868
+        },
+        "GET /api/profiles/:slug/tickets?scope=board": {
+          "firstMs": 70.43554199999926,
+          "repeatMs": 64.48912500000006
+        },
+        "GET /api/tickets (every ticket, light rows)": {
+          "firstMs": 155.8685420000038,
+          "repeatMs": 133.6378329999934
+        },
+        "GET /api/inbox": {
+          "firstMs": 2.541291999994428,
+          "repeatMs": 0.9231670000008307
+        }
+      }
+    },
+    {
+      "idleMb": 88.765625,
+      "bigSettledMb": 377.671875,
+      "bigAfterRoutesMb": 445.078125,
+      "firstAnswerMs": 279.6962910000002,
+      "boardAnswersMs": 2212.6427079999994,
+      "longestStallMs": 138.08087499999965,
+      "lagLines": 0,
+      "longestLagMs": 0,
+      "routes": {
+        "GET /api/usage": {
+          "firstMs": 2.4754589999938617,
+          "repeatMs": 0.15279199999349657
+        },
+        "GET /api/spend": {
+          "firstMs": 171.93937500000175,
+          "repeatMs": 0.5751659999950789
+        },
+        "GET /api/profiles/:slug/tickets?scope=board": {
+          "firstMs": 67.10562499999651,
+          "repeatMs": 65.18533300000126
+        },
+        "GET /api/tickets (every ticket, light rows)": {
+          "firstMs": 128.24991600000067,
+          "repeatMs": 110.57054100000823
+        },
+        "GET /api/inbox": {
+          "firstMs": 2.442957999999635,
+          "repeatMs": 0.9985829999932321
+        }
+      }
+    },
+    {
+      "idleMb": 91.375,
+      "bigSettledMb": 375.546875,
+      "bigAfterRoutesMb": 432.84375,
+      "firstAnswerMs": 272.4106250000041,
+      "boardAnswersMs": 2235.495250000007,
+      "longestStallMs": 186.2563749999972,
+      "lagLines": 0,
+      "longestLagMs": 0,
+      "routes": {
+        "GET /api/usage": {
+          "firstMs": 2.8690419999766164,
+          "repeatMs": 0.13687499999650754
+        },
+        "GET /api/spend": {
+          "firstMs": 178.66783300001407,
+          "repeatMs": 0.17641699998057447
+        },
+        "GET /api/profiles/:slug/tickets?scope=board": {
+          "firstMs": 68.13404100001208,
+          "repeatMs": 64.67124999998487
+        },
+        "GET /api/tickets (every ticket, light rows)": {
+          "firstMs": 131.64366699999664,
+          "repeatMs": 110.86304100000416
+        },
+        "GET /api/inbox": {
+          "firstMs": 2.57341599999927,
+          "repeatMs": 1.0779589999874588
+        }
+      }
+    },
+    {
+      "idleMb": 90.390625,
+      "bigSettledMb": 394.390625,
+      "bigAfterRoutesMb": 468.984375,
+      "firstAnswerMs": 243.57224999999744,
+      "boardAnswersMs": 2134.7771249999932,
+      "longestStallMs": 123.90616700000828,
+      "lagLines": 0,
+      "longestLagMs": 0,
+      "routes": {
+        "GET /api/usage": {
+          "firstMs": 2.3072920000122394,
+          "repeatMs": 0.1770830000168644
+        },
+        "GET /api/spend": {
+          "firstMs": 161.68416599999182,
+          "repeatMs": 0.1889159999846015
+        },
+        "GET /api/profiles/:slug/tickets?scope=board": {
+          "firstMs": 68.26183399997535,
+          "repeatMs": 63.73466700001154
+        },
+        "GET /api/tickets (every ticket, light rows)": {
+          "firstMs": 152.79229200002737,
+          "repeatMs": 116.79925000001094
+        },
+        "GET /api/inbox": {
+          "firstMs": 2.2660829999949783,
+          "repeatMs": 2.0102499999920838
+        }
+      }
+    },
+    {
+      "idleMb": 90,
+      "bigSettledMb": 397.671875,
+      "bigAfterRoutesMb": 463.21875,
+      "firstAnswerMs": 317.33633399999235,
+      "boardAnswersMs": 2340.924834000005,
+      "longestStallMs": 147.68304199998965,
+      "lagLines": 0,
+      "longestLagMs": 0,
+      "routes": {
+        "GET /api/usage": {
+          "firstMs": 15.337166000012076,
+          "repeatMs": 0.1878339999821037
+        },
+        "GET /api/spend": {
+          "firstMs": 173.42791700002272,
+          "repeatMs": 0.18458400000235997
+        },
+        "GET /api/profiles/:slug/tickets?scope=board": {
+          "firstMs": 70.69587500000489,
+          "repeatMs": 66.82187499999418
+        },
+        "GET /api/tickets (every ticket, light rows)": {
+          "firstMs": 134.35483300001943,
+          "repeatMs": 112.51320799998939
+        },
+        "GET /api/inbox": {
+          "firstMs": 2.407666999992216,
+          "repeatMs": 0.8859170000068843
+        }
+      }
+    }
+  ],
+  "table": "| Measure (median of 5 runs) | Value |\n|---|---|\n| Memory, idle (empty board) | 90 MB |\n| Memory, big board settled | 394 MB |\n| Memory, big board after the route calls | 462 MB |\n| Start until the first answer (big board) | 277 ms |\n| Start until the board's tickets answer | 2216 ms |\n| Longest stall while the big board loads (outside probe) | 148 ms |\n| Longest stall in the server's own [lag] lines (Bun only) | none |\n| GET /api/usage, first call | 2.6 ms |\n| GET /api/usage, repeat call (median of 5) | 0.2 ms |\n| GET /api/spend, first call | 173 ms |\n| GET /api/spend, repeat call (median of 5) | 0.2 ms |\n| GET /api/profiles/:slug/tickets?scope=board, first call | 68.3 ms |\n| GET /api/profiles/:slug/tickets?scope=board, repeat call (median of 5) | 64.7 ms |\n| GET /api/tickets (every ticket, light rows), first call | 134 ms |\n| GET /api/tickets (every ticket, light rows), repeat call (median of 5) | 113 ms |\n| GET /api/inbox, first call | 2.4 ms |\n| GET /api/inbox, repeat call (median of 5) | 1.0 ms |"
+}
