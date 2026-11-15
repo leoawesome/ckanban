@@ -35,9 +35,18 @@ function drop(l: Layer) {
   if (i >= 0) live.splice(i, 1);
 }
 
+/** Work waiting for this module's own back steps to land (afterBackSteps). */
+const waiting: (() => void)[] = [];
+
+function settle() {
+  if (queued || ignore > 0) return;
+  for (const fn of waiting.splice(0)) fn();
+}
+
 function onPop() {
   if (ignore > 0) {
     ignore--;
+    settle();
     return;
   }
   const now = new Set(layersOf(nav().state));
@@ -60,6 +69,34 @@ function flush() {
     ignore++;
     nav().go(-n);
   }
+  settle();
+}
+
+/** How long afterBackSteps waits at most for a back step's popstate (a browser that never sends one). */
+const SETTLE_MAX_MS = 1000;
+
+/**
+ * Runs `fn` once the layers closing now (a sheet whose pick also changes the URL) have gone back over their history
+ * entries. A pick that replaces the current entry's URL (stepping to the next ticket) must wait for that: done at
+ * once, it lands on the closing layer's entry, and the back step then returns to the old URL and reopens the old
+ * ticket. With no layer open (desktop) it runs at once. Otherwise it looks after this task, when React has unmounted
+ * the closing layer and queued its back step, and waits for that step's popstate (at most SETTLE_MAX_MS).
+ */
+export function afterBackSteps(fn: () => void) {
+  if (!live.length && !queued && ignore === 0) return fn();
+  let done = false;
+  const once = () => {
+    if (done) return;
+    done = true;
+    const i = waiting.indexOf(once);
+    if (i >= 0) waiting.splice(i, 1);
+    fn();
+  };
+  setTimeout(() => {
+    waiting.push(once);
+    settle();
+    setTimeout(once, SETTLE_MAX_MS);
+  }, 0);
 }
 
 function push(l: Layer) {
@@ -123,6 +160,7 @@ export function useBackEntry(active: boolean, onBack: () => void) {
 export function resetBackEntries() {
   live.length = 0;
   closing.clear();
+  waiting.length = 0;
   ignore = 0;
   queued = false;
   listening = false;

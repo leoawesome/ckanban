@@ -1,7 +1,7 @@
 // The phone's Back gesture closes the layer on top (web/src/backEntry.ts): each layer adds a history entry; Back pops
 // only the top one, and closing a layer another way goes back over its entry so none is left behind.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { layersOf, openBackEntry, resetBackEntries } from "../web/src/backEntry";
+import { afterBackSteps, layersOf, openBackEntry, resetBackEntries } from "../web/src/backEntry";
 
 /** A browser history: entries with state, go() fires popstate later, like a real browser. */
 function fakeHistory() {
@@ -125,4 +125,48 @@ test("closing the sheet with × leaves no entry behind; Back then goes where it 
   await tick();
   expect(closed).toEqual(["dialog"]);
   expect(env.h.index).toBe(0);
+});
+
+// Phone Move to → Done: the pick steps to the next ticket (replacing the URL) while its sheet closes by going back
+// over its own entry. The step must land on the ticket's entry after that back step, or the old ticket reopens.
+test("a step asked for while a sheet closes waits for the sheet's back step, then lands on the ticket's entry", async () => {
+  const closed: string[] = [];
+  const closeSheet = openBackEntry(() => closed.push("sheet"));
+  expect(env.h.index).toBe(1);
+  const ran: number[] = [];
+  // As in the pill: the pick runs (asking for the step), then React unmounts the sheet in the same task.
+  afterBackSteps(() => ran.push(env.h.index));
+  closeSheet();
+  expect(ran).toEqual([]);
+  await tick();
+  await tick();
+  expect(ran).toEqual([0]); // ran on the ticket's own entry, after the go(-1)
+  expect(closed).toEqual([]); // the back step was the module's own, not the user's Back
+  expect(env.h.index).toBe(0);
+});
+
+test("with no layer open (desktop), a step runs at once", () => {
+  const ran: string[] = [];
+  afterBackSteps(() => ran.push("step"));
+  expect(ran).toEqual(["step"]);
+});
+
+test("with a layer open that stays open, a step runs on the next task without going back", async () => {
+  openBackEntry(() => {});
+  const ran: number[] = [];
+  afterBackSteps(() => ran.push(env.h.index));
+  await tick();
+  expect(ran).toEqual([1]);
+});
+
+test("a back step whose popstate never comes still lets the step run (once)", async () => {
+  const closeSheet = openBackEntry(() => {});
+  env.h.go = () => {}; // a browser that never fires popstate
+  let n = 0;
+  afterBackSteps(() => n++);
+  closeSheet();
+  await tick();
+  expect(n).toBe(0);
+  await new Promise((r) => setTimeout(r, 1100));
+  expect(n).toBe(1);
 });

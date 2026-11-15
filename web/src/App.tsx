@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { afterBackSteps } from "./backEntry";
 import { useViewportFit } from "./sheet";
 import { flushSync } from "react-dom";
 import { markOpened } from "./cardState";
@@ -580,11 +581,15 @@ export function App() {
 
   // Prev/next in the drawer: replace the history entry, so one Close or Back still returns to the board.
   // fresh: start a new prev/next order from the ticket's column as the board shows it now (after Done).
+  // On a phone the step may come from a sheet's pick (Move to → Done): that sheet goes back over its own history entry
+  // as it closes, so the URL is replaced only after that back step, on the ticket's own entry (backEntry.ts).
   const stepTicket = useCallback((id: string, fresh = false) => {
-    stepped.current = true;
-    if (fresh) setNavOrder(null);
-    history.replaceState(history.state, "", hashFor(slug, id));
-    setOpenId(id);
+    afterBackSteps(() => {
+      stepped.current = true;
+      if (fresh) setNavOrder(null);
+      history.replaceState(history.state, "", hashFor(slug, id));
+      setOpenId(id);
+    });
   }, [slug]);
 
   // A huddle badge or the Team panel's Huddles list: open the ticket on its Huddle tab.
