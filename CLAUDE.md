@@ -2,6 +2,32 @@
 
 Local kanban web UI (Bun + TypeScript server in `src/`, React + Vite UI in `web/`) that runs tickets through headless `claude -p` sessions. Data lives in `~/.claude-kanban/`.
 
+## Where things live
+
+Each folder has a short `README.md`; read it before changing code there. Unit tests sit next to the file they test.
+- `src/cli.ts`: the public entry (`bun src/cli.ts`, the launchd plist and MCP configs point here); it loads `src/cli/cli.ts`.
+- `src/core/`: data folder store, shared types, event bus, atomic writes, lag guard ([README](src/core/README.md)).
+- `src/api/`: the daemon's web server, one route file per feature ([README](src/api/README.md)).
+- `src/board/`: tickets, the `Board` class, plans, families, links, tags, attachments ([README](src/board/README.md)).
+- `src/runs/`: running `claude -p`, run prompts, session transcripts, git and worktrees ([README](src/runs/README.md)).
+- `src/chat/`: a ticket's chat, drafts, slash commands, quick chat ([README](src/chat/README.md)).
+- `src/huddle/`: huddles, teammates and squads ([README](src/huddle/README.md)).
+- `src/helper/`: the helper that tells the user what waits on them, notifications and push ([README](src/helper/README.md)).
+- `src/schedules/`: schedules, one-time jobs, automations ([README](src/schedules/README.md)).
+- `src/integrations/`: MCP servers, passes, keys, remote access, scripts ([README](src/integrations/README.md)).
+- `src/browser/`: board browsers, devices, terminals ([README](src/browser/README.md)).
+- `src/usage/`: plan usage, spend and caps ([README](src/usage/README.md)).
+- `src/mcp/`: the `ckanban mcp` stdio server, one file per tool group ([README](src/mcp/README.md)).
+- `src/cli/`: the `ckanban` commands, the HTTP client, the daemon start and launchd ([README](src/cli/README.md)).
+- `web/src/app/`: the UI shell, `App.tsx`, header, shortcuts and the global `styles.css` ([README](web/src/app/README.md)).
+- `web/src/components/`: shared building blocks such as `Modal.tsx`, `Select.tsx`, `MenuSheet.tsx`, `icons.tsx` ([README](web/src/components/README.md)).
+- `web/src/hooks/`: hooks shared by several features, such as `usePhone.ts` ([README](web/src/hooks/README.md)).
+- `web/src/lib/`: plain helpers and the API client `lib/api` ([README](web/src/lib/README.md)).
+- `web/src/features/<feature>/`: one folder per UI feature (board, ticket, chat, huddle, schedules...), each with a README.
+- `contracts/`: the written web API, data file and CLI contract ([README](contracts/README.md)).
+- `test/contract/`: outside-in tests of that contract; they start the daemon and never import from `src/` or `web/`.
+- `test/`: otherwise only cross-area tests (`integration/`, `big-board.test.ts`, `plain-words.test.ts`), fixtures and shared helpers (`support/`).
+
 ## Users may not be technical
 
 Many ckanban users don't know git. Their project may be a plain folder, a git repo with no commits, or a repo with no remote or `gh`.
