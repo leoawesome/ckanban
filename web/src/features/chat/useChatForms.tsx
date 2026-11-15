@@ -12,6 +12,7 @@ import { canStartFromProposal } from "../../app/keynav";
 import { toast } from "../../components/toast";
 import { laterCounts } from "./chatMemo";
 
+/** Chat's forms and proposal cards: answered state, Apply, teammate cards and follow-up work (moved from Chat.tsx). */
 export function useChatForms({ entries, onError, onOpenTicket, onPendingProposal, pending, running, slug, ticket, tickets }: {
   entries: SessionEntry[];
   onError: (m: string) => void;

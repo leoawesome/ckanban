@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type Dispatch, type MutableRefObject, type
 import { api, type QueuedMessage, type Ticket } from "../../lib/api";
 import { unsentNow, type Pending } from "../../lib/pendingBubbles";
 
+/** Chat's queued messages: edit, discard, and keeping a read one's bubble (moved from Chat.tsx). */
 export function useQueuedEdits({ composer, onError, pendingRef, queued, running, setPending, slug, ticket }: {
   composer: RefObject<HTMLTextAreaElement>;
   onError: (m: string) => void;

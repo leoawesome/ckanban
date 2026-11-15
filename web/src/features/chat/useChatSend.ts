@@ -8,6 +8,7 @@ import { type Pending } from "../../lib/pendingBubbles";
 import { capMap } from "./chatMemo";
 import { oldChatOk, OLD_CHAT_OK_MAX } from "./ChatParts";
 
+/** Chat's Send: the old-chat ask, sending once and the optimistic bubble (moved from Chat.tsx). */
 export function useChatSend({ commands, draft, images, onError, running, setDraft, setPending, setUndo, setUndone, slug, stickToBottom, stopping, ticket }: {
   commands: SlashCommand[] | null;
   draft: string;

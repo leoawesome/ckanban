@@ -1,9 +1,9 @@
 import { useKeyboardFit } from "../../lib/sheet";
-import { hashIsTicket, readTabLink, withTabLink } from "../../lib/tabLink";
+import { hashIsTicket, readTabLink } from "../../lib/tabLink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setCoveredFrom } from "../board/cardMotion";
 import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, runningTools, stopTitle, toolCount } from "../family/familyActions";
-import { api, COLUMNS, safeHref, startWorkTarget, subscribe, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "../../lib/api";
+import { api, COLUMNS, safeHref, startWorkTarget, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "../../lib/api";
 import { boardColumnOf, menuPick, STATUS_MENU } from "../board/columns";
 import { StatusPill } from "../../components/StatusPill";
 import { PANEL_LEAVE_MS, reducedMotion } from "../../lib/motion";
@@ -17,27 +17,26 @@ import { StallActions, stallWait } from "../../components/StallActions";
 import { limitHint, limitLabel, limitWait } from "../usage/limitText";
 import { branchTicket } from "../../lib/branch";
 import { BugReportDialog } from "../settings/BugReportDialog";
-import { Changes, useTicketDiff } from "../files/Changes";
-import { HelpMenu, useHelp } from "../../app/HelpMenu";
+import { Changes } from "../files/Changes";
+import { HelpMenu } from "../../app/HelpMenu";
 import { Chat } from "../chat/Chat";
 import { useStop } from "../chat/useStop";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { DescriptionEditor, useDescriptionCommands } from "./DescriptionEditor";
-import { recentOutputs } from "../files/outputsOnce";
-import { BellIcon, CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, CloseIcon, ExternalIcon, LinkIcon, PinIcon, SparkIcon } from "../../components/icons";
+import { CheckIcon, ChevronDownIcon, ChevronLeftIcon, ChevronUpIcon, CloseIcon, ExternalIcon, LinkIcon, PinIcon, SparkIcon } from "../../components/icons";
 import { useImagePaste } from "../../lib/imagePaste";
 import { useFocusTrap, useLayer } from "../../lib/layers";
 import { ticketBeside } from "../chat/sideChatLayout";
 import { takeTab } from "../../lib/pendingTab";
-import { drawerTabs, escLeavesField, inDock, isStopKey, isTyping, nextStep, panelStep, stepTab, type DrawerTab } from "../../app/keynav";
+import { escLeavesField, isStopKey, nextStep, stepTab, type DrawerTab } from "../../app/keynav";
 import { afterBar, provideTicketActions } from "../board/ticketActions";
 import type { CommandAction } from "../../app/CommandBar";
-import { attentionGoal, pickAsk } from "../board/attentionGoal";
+import { attentionGoal } from "../board/attentionGoal";
 import { KeyHint } from "../../components/KeyHint";
 import { MOD } from "../../app/Shortcuts";
 import { PlanFinished, planFinished, PlanSummary } from "../family/PlanPanel";
 import { FamilyTab } from "../family/FamilyTab";
-import { familyOf, featureRows, isFeature, taskTally } from "../family/family";
+import { familyOf, featureRows, taskTally } from "../family/family";
 import { Outputs } from "../files/Outputs";
 import { PrBox } from "./PrBox";
 import { PrList } from "./PrList";
@@ -45,18 +44,14 @@ import { Select } from "../../components/Select";
 import { attTone, phoneStatus, turnReason } from "./phoneStatus";
 import { ClaudeFace } from "../chat/ConvTurn";
 import { useClaudeName } from "../avatar/AvatarFace";
-import { useShareNotices } from "../../lib/share";
 import { SessionPicker, sessionLabel } from "../../components/SessionPicker";
 import { TicketMenu } from "./TicketMenu";
-import { missingPctReason, UsagePanel, usageChipText, useTicketUsage } from "../usage/UsagePanel";
+import { missingPctReason, UsagePanel, usageChipText } from "../usage/UsagePanel";
 import { approxPct, costText } from "../usage/usage";
 import { Markdown } from "../chat/Transcript";
 import { NeedsField } from "../helper/Needs";
 import { TagEditor } from "../board/Tags";
-import { RunSettings, RunSheet, runSettingsText } from "./RunSettings";
-import { oldChat } from "../chat/cacheNote";
-import { useFeatureStatus } from "./StatusBlock";
-import { taskProgress } from "./tasksText";
+import { runSettingsText } from "./RunSettings";
 import { boardTags } from "../board/tagText";
 import { useHuddle, members } from "../huddle/huddle";
 import { HuddlePanel } from "../huddle/HuddlePanel";
@@ -68,270 +63,15 @@ import { toast } from "../../components/toast";
 import { FollowUpChip } from "./FollowUpChip";
 import { PartOfField } from "../family/FamilyPanel";
 import { FileLinksProvider } from "../files/FileViewer";
-import { messageHash } from "../helper/helper";
-import { TicketSheet, useHelperLine } from "./TicketSheet";
-
-// v2: widths saved under the old 80% default are dropped once so the new default shows.
-const WIDTH_KEY = "ckanban.panelWidth.v2";
-const MIN_WIDTH = 640;
-
-/** Backdrop left visible beside the panel, so clicking it can always close the panel. */
-const BACKDROP_MIN = 64;
-/** Artifact and share link chips in the header; the rest are behind "+N more" (the Outputs tab). */
-const LINK_CHIPS = 3;
-
-/** The width the panel may use (the window, or the window minus the side panel column beside it) and what it leaves on its left. */
-type Room = { width: number; keep: number };
-const windowRoom = (): Room => ({ width: window.innerWidth, keep: BACKDROP_MIN });
-/** Beside the side panel column: the room left of it; whether the board shows beside the ticket is ticketBeside's call (sideChatLayout.ts). */
-const besideRoom = (columnWidth: number): Room => ({ width: window.innerWidth - columnWidth, keep: 0 });
-
-const defaultWidth = (room: Room) => Math.round(Math.min(1120, room.width * 0.72));
-
-/** Until the user resizes the panel, the Changes tab opens it this wide (clamped to the window): file list plus diff. */
-const CHANGES_WIDTH = 1280;
-
-/** Chat room for the default width: a comfortable reading column plus side padding. Dragging can go wider. */
-const CHAT_ROOM = 800;
-
-function clampWidth(w: number, room: Room = windowRoom()): number {
-  const vw = room.width;
-  // Narrow windows can't fit the minimum width plus the strip: the panel goes full width there.
-  const max = vw >= MIN_WIDTH + room.keep ? vw - room.keep : vw;
-  return Math.round(Math.min(Math.max(w, Math.min(MIN_WIDTH, max)), max));
-}
-
-const SIDE_KEY = "ckanban.sidebarWidth";
-const SIDE_DEFAULT = 340;
-const SIDE_MIN = 260;
-/** The chat column always keeps at least this much room. */
-const CHAT_MIN = 420;
-
-const clampSide = (w: number, bodyWidth: number) =>
-  Math.round(Math.max(SIDE_MIN, Math.min(w, bodyWidth ? bodyWidth - CHAT_MIN : w)));
-
-/**
- * Drag the line between the details sidebar and the chat; double-click resets to 340px.
- * The preference persists per browser and is clamped to the panel's current width when shown.
- */
-function useSidebarWidth(bodyRef: React.RefObject<HTMLDivElement | null>) {
-  const [pref, setPref] = useState(() => {
-    try {
-      return Number(localStorage.getItem(SIDE_KEY)) || SIDE_DEFAULT;
-    } catch {
-      return SIDE_DEFAULT;
-    }
-  });
-  const [bodyWidth, setBodyWidth] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const width = clampSide(pref, bodyWidth);
-  const widthRef = useRef(width);
-  widthRef.current = width;
-
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setBodyWidth(el.clientWidth));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  const persist = (w: number) => {
-    try {
-      localStorage.setItem(SIDE_KEY, String(w));
-    } catch {}
-  };
-  const set = (w: number) => {
-    const c = clampSide(w, bodyRef.current?.clientWidth ?? 0);
-    setPref(c);
-    return c;
-  };
-  const onPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setDragging(true);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    const left = bodyRef.current?.getBoundingClientRect().left ?? 0;
-    if (dragging) set(e.clientX - left);
-  };
-  const onPointerUp = () => {
-    if (!dragging) return;
-    setDragging(false);
-    persist(widthRef.current);
-  };
-  const reset = () => persist(set(SIDE_DEFAULT));
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    const step = e.shiftKey ? 120 : 40;
-    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-      e.preventDefault();
-      persist(set(widthRef.current + (e.key === "ArrowRight" ? step : -step)));
-    }
-  };
-  return { width, pref, dragging, handle: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onDoubleClick: reset, onKeyDown } };
-}
-
-const SPLIT_KEY = "ckanban.detailsSplit";
-/** Room each side of the details' drag bar keeps: a few rows on top, the Description heading and some text below. */
-const PINNED_MIN = 56;
-const DESC_MIN = 96;
-
-/** The top part's height in px for a saved share of the sidebar's height, kept inside both minimums. */
-export function splitHeight(share: number, total: number): number {
-  return Math.round(Math.max(PINNED_MIN, Math.min(share * total, total - DESC_MIN)));
-}
-
-/**
- * Drag the bar between the details' top part (status, PRs, family) and the description; double-click resets to the
- * natural layout (the top part as tall as its content, up to 65%). The height persists per browser as a share of the
- * sidebar's height.
- */
-function useDetailsSplit(detailsRef: React.RefObject<HTMLDivElement | null>, pinnedRef: React.RefObject<HTMLDivElement | null>, enabled: boolean) {
-  const [share, setShare] = useState<number | null>(() => {
-    try {
-      const v = Number(localStorage.getItem(SPLIT_KEY));
-      return v > 0 && v < 1 ? v : null;
-    } catch {
-      return null;
-    }
-  });
-  const [total, setTotal] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const shareRef = useRef(share);
-  shareRef.current = share;
-  useEffect(() => {
-    const el = detailsRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setTotal(el.clientHeight));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [enabled]); // eslint-disable-line react-hooks/exhaustive-deps
-  const persist = (v: number | null) => {
-    try {
-      if (v === null) localStorage.removeItem(SPLIT_KEY);
-      else localStorage.setItem(SPLIT_KEY, String(v));
-    } catch {}
-  };
-  const setPx = (px: number) => {
-    const h = detailsRef.current?.clientHeight ?? total;
-    if (!h) return null;
-    const v = splitHeight(px / h, h) / h;
-    setShare(v);
-    return v;
-  };
-  const onPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setDragging(true);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (dragging) setPx(e.clientY - (detailsRef.current?.getBoundingClientRect().top ?? 0));
-  };
-  const onPointerUp = () => {
-    if (!dragging) return;
-    setDragging(false);
-    persist(shareRef.current);
-  };
-  const reset = () => {
-    setShare(null);
-    persist(null);
-  };
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    e.preventDefault();
-    const step = e.shiftKey ? 96 : 24;
-    const now = pinnedRef.current?.offsetHeight ?? 0;
-    persist(setPx(now + (e.key === "ArrowDown" ? step : -step)));
-  };
-  const height = enabled && share !== null && total ? splitHeight(share, total) : null;
-  return { height, dragging, handle: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onDoubleClick: reset, onKeyDown } };
-}
-
-/** The width the user dragged to, or null when they never resized (or reset). */
-function savedWidth(): number | null {
-  try {
-    const v = Number(localStorage.getItem(WIDTH_KEY));
-    if (v) return v;
-  } catch {}
-  return null;
-}
-
-/**
- * Drag the panel's left edge to resize, up to the window minus the backdrop strip; double-click resets.
- * Width persists per browser. Until the user resizes, the default is min(1120px, 72%) but no wider than
- * `fit` (sidebar + chat reading room), so the panel doesn't open with empty space beside the chat.
- */
-function usePanelWidth(fit: number, room: Room) {
-  const [pref, setPref] = useState(savedWidth);
-  const [dragging, setDragging] = useState(false);
-  // Re-render on window resize; the width is clamped to the window on every render.
-  const [, setVw] = useState(window.innerWidth);
-  const width = clampWidth(pref ?? Math.min(defaultWidth(room), fit), room);
-  const widthRef = useRef(width);
-  widthRef.current = width;
-
-  const persist = (w: number) => {
-    try {
-      localStorage.setItem(WIDTH_KEY, String(w));
-    } catch {}
-  };
-  const set = (w: number) => {
-    const c = clampWidth(w, room);
-    setPref(c);
-    return c;
-  };
-  const onPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    setDragging(true);
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (dragging) set(room.width - e.clientX);
-  };
-  const onPointerUp = () => {
-    if (!dragging) return;
-    setDragging(false);
-    persist(widthRef.current);
-  };
-  const reset = () => {
-    setPref(null);
-    try {
-      localStorage.removeItem(WIDTH_KEY);
-    } catch {}
-  };
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    const step = e.shiftKey ? 120 : 40;
-    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-      e.preventDefault();
-      persist(set(widthRef.current + (e.key === "ArrowLeft" ? step : -step)));
-    }
-  };
-  useEffect(() => {
-    const onResize = () => setVw(window.innerWidth);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  return { width, want: pref ?? Math.min(defaultWidth(room), fit), custom: pref !== null, dragging, handle: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onDoubleClick: reset, onKeyDown } };
-}
+import { TicketSheet } from "./TicketSheet";
+import { WaitBanner, HelperIcon, RunPopover, useGoalOnScreen, WhereWeAre, OldChatNote } from "./DrawerParts";
+import { LINK_CHIPS, windowRoom, besideRoom, CHANGES_WIDTH, CHAT_ROOM, clampWidth, useSidebarWidth, useDetailsSplit, usePanelWidth } from "./drawerLayout";
+import { useGoTo } from "./useGoTo";
+import { useDrawerSync } from "./useDrawerSync";
+import { usePanelKeys } from "./usePanelKeys";
+import { useDrawerTabs } from "./useDrawerTabs";
 
 /** Ticket view: details on the left, the chat with Claude filling the right side. */
-/**
- * A run waiting on the user (usage limit, spending cap, stall): one line and its main button; "Details" opens the
- * longer explanation and the other choices.
- */
-function WaitBanner({ line, details, actions }: { line: string; details: React.ReactNode; actions: (open: boolean) => React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="banner warn inline limit-banner" role="status">
-      <span className="limit-line">
-        <strong>{line}</strong>
-        <button className="link-btn limit-details" aria-expanded={open} onClick={() => setOpen((v) => !v)}>{open ? "Less" : "Details"}</button>
-      </span>
-      {actions(open)}
-      {open && <div className="limit-more">{details}</div>}
-    </div>
-  );
-}
-
 export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: closeNow, nav, slideIn = true, beside = null, tabRequest, huddleSeed, onOpenTeam, jobs = [], onOpenJobs, moveTo, onPin }: {
   profile: Profile;
   ticket: Ticket;
@@ -421,55 +161,12 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   // The badge counts tasks like the status's "N of M done" and the Tasks list head (taskTally over the feature's rows).
   const tally = useMemo(() => taskTally(featureRows(tickets, ticket.id)), [tickets, ticket.id]);
   const huddle = huddleState.latest;
-  // The Family tab exists while the ticket has a family (plan children included); Changes once Claude changed files (in a worktree, or in the
-  // board's folder itself); Huddle once the ticket has had a huddle (or one is being started); Usage only while open
-  // from the cost chip. A tab asked for (a card badge, Start huddle, the chip) shows while it is open.
-  const inFolder = !ticket.worktree && !ticket.workdir && !ticket.branch && (ticket.runCount > 0 || !!ticket.sessionStarted || !!ticket.baseSha);
-  const diffState = useTicketDiff(slug, ticket);
-  // The tabs shown, in order ([ and ] step through them); opening one refreshes what it shows, like a click.
-  const tabs = drawerTabs({
-    phone, family: children.length > 0 || familySize > 1,
-    changes: !!(ticket.worktree || inFolder) && (!!diffState.diff?.files.length || tabPick === "changes"),
-    huddle: huddleState.list.length > 0 || tabPick === "huddle",
-    usage: tabPick === "usage",
+  const {
+    diffState, hasUsage, help, onTabKey, openTab, outputCount, outputFocus, setLinkFile, setOutputCount,
+    setOutputFocus, tab, tabs, ticketUsage, usage, whereShown,
+  } = useDrawerTabs({
+    children, familySize, huddleState, linked0, phone, setTab, slug, tabPick, ticket, tickets,
   });
-  const tab = tabs.includes(tabPick) ? tabPick : "chat";
-  // The Tasks tab shows the plan's progress (the feature status) for a feature's top ticket, so the sidebar's Plan row steps aside.
-  const whereShown = useMemo(() => isFeature(tickets, ticket), [tickets, ticket]);
-  const help = useHelp(slug, ticket, !!diffState.diff?.files.length);
-  const [outputCount, setOutputCount] = useState(0);
-  const ticketUsage = useTicketUsage(slug, ticket.id);
-  const openTab = (t: typeof tabPick) => {
-    if (t === "changes") diffState.reload();
-    else if (t === "outputs") setOutputFocus(null);
-    else if (t === "usage") ticketUsage.reload();
-    setTab(t);
-  };
-  // The tab row is one Tab stop: ←/→ (Home/End) move between tabs and open them, as tabs do.
-  const onTabKey = (e: React.KeyboardEvent<HTMLButtonElement>) => {
-    const at = tabs.indexOf(tab);
-    const to = e.key === "ArrowRight" ? at + 1 : e.key === "ArrowLeft" ? at - 1 : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : null;
-    if (to === null || e.altKey || e.metaKey || e.ctrlKey) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const next = tabs[(to + tabs.length) % tabs.length];
-    openTab(next);
-    requestAnimationFrame(() => document.getElementById(`ticket-tab-${next}`)?.focus());
-  };
-  const usage = ticketUsage.usage;
-  const hasUsage = !!usage?.runs.length;
-  useShareNotices(ticket);
-  // A file to show when the Outputs tab opens (a mockup clicked in the chat).
-  const [outputFocus, setOutputFocus] = useState<string | null>(linked0.file);
-  // The file open in Outputs, for the link (null: none picked).
-  const [linkFile, setLinkFile] = useState<{ id: string; name: string | null }>({ id: ticket.id, name: linked0.file });
-  const fileForLink = linkFile.id === ticket.id ? linkFile.name : null;
-  // Keep the open tab in the link (replace: switching tabs doesn't add Back steps).
-  useEffect(() => {
-    if (!hashIsTicket(location.hash, ticket.id)) return;
-    const next = withTabLink(location.hash, tab, fileForLink);
-    if (next !== location.hash) history.replaceState(history.state, "", next);
-  }, [tab, fileForLink, ticket.id]);
   const [titleSave, setTitleSave] = useState<"saving" | "saved" | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   // Phones: the panel fits above the keyboard, so the header and the message box both stay in view (as dialogs do).
@@ -563,28 +260,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     if (title !== ticket.title) saveTitle();
     nav.go(id, fresh);
   };
-  // Latest prev/next for the key handler below, which is bound once.
-  const stepRef = useRef((_to: "prev" | "next") => {});
-  stepRef.current = (to) => step(nav?.[to]);
-  // Plain-key shortcuts (↑↓ J K, E) only when the panel itself has the keyboard: not typing, no menu, popup or dialog above it.
-  // Not from the bottom panel either (Files, Team, Claude): its keys are its own.
-  const panelKeys = (e: KeyboardEvent) => !e.isComposing && !e.defaultPrevented && !isTyping(e) && !inDock(e) && isTopLayer() && !document.querySelector(".overlay");
-  const panelKeysRef = useRef(panelKeys);
-  panelKeysRef.current = panelKeys;
-  useEffect(() => {
-    // Alt+↑ / Alt+↓ open the previous / next ticket, also while typing; plain ↑/↓ and K/J when not typing.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.isComposing) return;
-      let dir: "prev" | "next" | null = null;
-      if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) dir = e.key === "ArrowUp" ? "prev" : "next";
-      else if (panelKeysRef.current(e)) dir = panelStep(e);
-      if (!dir) return;
-      e.preventDefault();
-      stepRef.current(dir);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  const { panelKeysRef } = usePanelKeys({ isTopLayer, nav, step });
   const working = ticket.status === "in_progress" || !!ticket.running;
   // A main ticket whose tool tickets work: Stop stops them (and it) after a confirm.
   const familyBusy = runningTools(ticket) > 0;
@@ -623,59 +299,11 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const width = fitted ? fitted.width : wide ? clampWidth(CHANGES_WIDTH, room) : panel.width;
   const boardHidden = !!fitted?.boardHidden;
   const [descScrolled, setDescScrolled] = useState(false);
-  // The tab bar scrolls sideways on narrow screens: fade its right edge while tabs are hidden there,
-  // and keep the open tab in view.
-  const tabsRef = useRef<HTMLElement>(null);
-  const [tabsMore, setTabsMore] = useState(false);
-  const checkTabs = () => {
-    const el = tabsRef.current;
-    setTabsMore(!!el && el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-  };
-  useEffect(() => {
-    const el = tabsRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(checkTabs);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  useEffect(() => {
-    const el = tabsRef.current;
-    const on = el?.querySelector<HTMLElement>("button.active");
-    if (el && on) {
-      const r = on.getBoundingClientRect();
-      const n = el.getBoundingClientRect();
-      if (r.left < n.left || r.right > n.right) el.scrollLeft += r.left - n.left - (n.width - r.width) / 2;
-    }
-    checkTabs();
-  }, [tab, tabs.length]);
-
-  const links = (ticket.links ?? []).filter((l) => safeHref(l.url));
-  const loadOutputs = () => recentOutputs(slug, ticket.id).then((o) => setOutputCount(o.length)).catch(() => {});
-
-  useEffect(() => {
-    loadOutputs();
-    api.ticket(slug, ticket.id).then((t) => { setBody(t.body); setBaseBody(t.body); setTitle(t.title); }).catch(() => {});
-  }, [slug, ticket.id]);
-
-  useEffect(() => {
-    if (!ticket.workdir || !ticket.sessionId) return setLinked(null);
-    api.sessions(slug).then((ss) => setLinked(ss.find((s) => s.id === ticket.sessionId) ?? null)).catch(() => {});
-  }, [slug, ticket.sessionId, ticket.workdir, ticket.status]);
-
-  useEffect(() => subscribe((e) => {
-    if (e.type === "ticket.updated" && e.profile === slug && e.ticket.id === ticket.id) loadOutputs();
-  }), [slug, ticket.id]);
-
-  useEffect(() => {
-    if (!editing) {
-      setBody(ticket.body);
-      setBaseBody(ticket.body);
-    }
-  }, [ticket.body]);
-  useEffect(() => {
-    if (document.activeElement !== titleRef.current) setTitle(ticket.title);
-  }, [ticket.title]);
-
+  const {
+    checkTabs, links, tabsMore, tabsRef,
+  } = useDrawerSync({
+    editing, setBaseBody, setBody, setLinked, setOutputCount, setTitle, slug, tab, tabs, ticket, titleRef,
+  });
   const act = async (fn: () => Promise<unknown>) => {
     try {
       await fn();
@@ -737,75 +365,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     applyProposalRef.current = apply;
     setProposalPending(!!apply);
   }, []);
-  // Opens the tab the ticket waits in, scrolls to the form, card or message to act on and highlights it for a moment.
-  // The chat may still be loading: it looks again on each frame for up to 3 seconds.
-  // A blocked ticket ("See what Claude needs") lands on Claude's latest reply that asks something; when none of the
-  // recent ones does, on the feature status's "Waiting on you" line in the Tasks tab; else on the last reply.
-  const goTo = () => {
-    if (!goal) return;
-    openTab(goal.tab);
-    const until = performance.now() + 3000;
-    const main = () => panelRef.current?.querySelector(".panel-main");
-    const newest = (sels: string[]) => {
-      for (const sel of sels) {
-        const all = main()?.querySelectorAll<HTMLElement>(sel);
-        if (all?.length) return all[all.length - 1];
-      }
-      return null;
-    };
-    const flash = (el: HTMLElement) => {
-      el.classList.remove("attn-flash");
-      void el.offsetWidth; // restart the highlight when pressed again
-      el.classList.add("attn-flash"); // first: its scroll margin keeps the ring in view
-      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-      el.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
-      // The keyboard lands in the form too: its first field or button (or the box itself).
-      const field = el.querySelector<HTMLElement>("input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select, button:not(:disabled)");
-      if (field) field.focus({ preventScroll: true });
-      else {
-        if (!el.hasAttribute("tabindex")) el.tabIndex = -1;
-        el.focus({ preventScroll: true });
-      }
-      setTimeout(() => el.classList.remove("attn-flash"), 2200);
-    };
-    // Waits for the target to render (the chat or Tasks tab may still be loading), then flashes it.
-    const land = (find: () => HTMLElement | null | "handled" | Promise<HTMLElement | null | "handled">) => {
-      const step = async () => {
-        const el = await find();
-        if (el === "handled") return;
-        if (el) flash(el);
-        else if (performance.now() < until) requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    };
-    if (goal.find !== "ask") return land(() => newest(goal.targets));
-    let statusAsk: Promise<string | undefined> | undefined; // fetched once per press
-    land(async () => {
-      // Only the chat's newest items: Claude's replies and the user's messages, newest last (bounded for long chats).
-      const nodes = [...(main()?.querySelectorAll<HTMLElement>(".reply-text:not(.writing), .conv-msg.user") ?? [])].slice(-40);
-      if (!nodes.length) return null;
-      const items = nodes.map((n) => {
-        if (n.matches(".conv-msg.user")) return { user: true as const };
-        const words = n.cloneNode(true) as HTMLElement;
-        words.querySelectorAll("pre, code").forEach((c) => c.remove());
-        return { text: words.textContent ?? "", bold: [...n.querySelectorAll("strong, b")].map((b) => b.textContent ?? "") };
-      });
-      const i = pickAsk(items);
-      if (i >= 0) return nodes[i];
-      const fallback = newest(goal.targets);
-      // Nothing recent asks: the feature status's saved "Waiting on you" line, in the Tasks tab, says what to do.
-      if (whereShown && tabs.includes("family")) {
-        statusAsk ??= api.featureStatus(slug, ticket.id).then((s) => s.saved?.waiting?.trim(), () => "");
-        const waiting = await statusAsk;
-        if (waiting) {
-          openTab("family");
-          land(() => main()?.querySelector<HTMLElement>("[data-attn=waiting]") ?? null);
-          return "handled";
-        }
-      }
-      return fallback;
-    });
-  };
+  const { goTo } = useGoTo({ goal, openTab, panelRef, slug, tabs, ticket, whereShown });
   const goalOnScreen = useGoalOnScreen(panelRef, goal?.targets ?? null);
   // Every child of its plan is done: Move to Done replaces Start work.
   const finished = planFinished(children);
@@ -1418,138 +978,5 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
       </aside>
     </div>
     </FileLinksProvider>
-  );
-}
-
-/**
- * What the helper did about this ticket's open wait ("Urgent: Phone 14:02; reminders stopped when you opened this",
- * "In the 16:00 summary: ..."), the same line as the Inbox's, while the helper is on: a small bell next to the title with
- * the line as its tooltip. It opens the alert's message when there is one.
- */
-function HelperIcon({ slug, ticketId }: { slug: string; ticketId: string }) {
-  const alert = useHelperLine(slug, ticketId);
-  if (!alert) return null;
-  const { line, msg } = alert;
-  const cls = `icon-btn helper-icon${line.startsWith("Urgent") ? " urgent" : ""}`;
-  return msg
-    ? <a className={cls} href={messageHash(msg)} title={`${line} · open the message`} aria-label={`${line}. Open the message`}><BellIcon size={14} /></a>
-    : <span className={cls} role="img" tabIndex={0} title={line} aria-label={line}><BellIcon size={14} /></span>;
-}
-
-/** "Model and effort" from the ⋯ menu: the dropdowns under the header's first row, with Done (Esc closes too). */
-/** "Model and effort": a row under the header on a desktop, a bottom sheet with one labelled row per setting on a phone. */
-function RunPopover(props: { profile: Profile; ticket: Ticket; onError: (m: string) => void; onClose: () => void }) {
-  return usePhone() ? <RunSheet {...props} /> : <RunRow {...props} />;
-}
-
-function RunRow({ profile, ticket, onError, onClose }: { profile: Profile; ticket: Ticket; onError: (m: string) => void; onClose: () => void }) {
-  useLayer(onClose);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => { requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>(".select-trigger")?.focus()); }, []);
-  return (
-    <div className="run-popover" ref={ref} role="group" aria-label="Model and effort for this ticket">
-      <span className="field-key">Model and effort</span>
-      <RunSettings profile={profile} ticket={ticket} onError={onError} startOpen />
-      <button className="btn small" onClick={onClose}>Done</button>
-    </div>
-  );
-}
-
-/**
- * Whether the form, card or message the ticket waits on (attentionGoal's targets, not the message box it falls back to)
- * is on screen in the panel: the sidebar's "Answer questions" button hides meanwhile. Re-checked as the chat changes.
- */
-function useGoalOnScreen(panelRef: React.RefObject<HTMLElement | null>, targets: string[] | null): boolean {
-  const [onScreen, setOnScreen] = useState(false);
-  const key = targets?.join("|") ?? "";
-  useEffect(() => {
-    setOnScreen(false);
-    const panel = panelRef.current;
-    const sels = (targets ?? []).filter((t) => t !== ".reply-text");
-    if (!panel || !sels.length || typeof IntersectionObserver === "undefined") return;
-    let watched: Element | null = null;
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) if (e.target === watched) setOnScreen(e.isIntersecting);
-    });
-    const find = () => {
-      const main = panel.querySelector(".panel-main");
-      for (const sel of sels) {
-        const all = main?.querySelectorAll(sel);
-        if (all?.length) return all[all.length - 1];
-      }
-      return null;
-    };
-    let frame = 0;
-    const check = () => {
-      frame = 0;
-      const el = find();
-      if (el === watched) return;
-      if (watched) io.unobserve(watched);
-      watched = el;
-      if (el) io.observe(el);
-      else setOnScreen(false);
-    };
-    check();
-    const mo = new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(check); });
-    mo.observe(panel, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
-    return () => {
-      mo.disconnect();
-      io.disconnect();
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, [panelRef, key]);
-  return onScreen;
-}
-
-/** The feature's "Where we are" at the top of a main ticket's sidebar: progress, what is done, what waits, what's next. */
-function WhereWeAre({ slug, ticket, tickets, onOpen }: { slug: string; ticket: Ticket; tickets: Ticket[]; onOpen: () => void }) {
-  const { status } = useFeatureStatus(slug, ticket, tickets);
-  if (!status) return null;
-  const { done, total } = taskProgress(status.facts);
-  const saved = status.saved;
-  return (
-    <section className="where-we-are" aria-label="Where we are">
-      <div className="section-head">
-        <h3 className="sec-h">Where we are</h3>
-        <button className="mini-link" onClick={onOpen} title="The whole status and every task, in the Tasks tab">Tasks ▸</button>
-      </div>
-      {total > 0 && <div className="wwa-count muted small">{done} of {total} tasks done</div>}
-      {saved?.done && <p className="wwa-line">{saved.done}</p>}
-      {saved?.waiting && <p className="wwa-line"><b>Waiting on you:</b> {saved.waiting}</p>}
-      {saved?.next && <p className="wwa-line"><b>Next:</b> {saved.next}</p>}
-      {!saved && <p className="wwa-line muted small">No status written yet.</p>}
-    </section>
-  );
-}
-
-/** The chat is old (cacheNote.ts): the next message re-reads it all. Fresh chat starts a new session; the status stays. */
-function OldChatNote({ slug, ticket, working, feature, onError }: { slug: string; ticket: Ticket; working: boolean; feature: boolean; onError: (m: string) => void }) {
-  const [busy, setBusy] = useState(false);
-  // Re-checked every minute: a chat turns old an hour (or 5 minutes) after Claude's last reply.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-  const old = oldChat({ cache: ticket.session?.cache, running: working, freshSession: ticket.freshSession, now });
-  if (!old) return null;
-  const fresh = async () => {
-    setBusy(true);
-    try {
-      await api.freshChat(slug, ticket.id);
-    } catch (e: any) {
-      onError(`Fresh chat not started: ${e.message}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="old-chat-note" title={old.title}>
-      <span>{old.line}</span>
-      <button className="btn small" disabled={busy} onClick={fresh}
-        title={`Your next message starts a new chat: Claude starts from ${feature ? "the status" : "the ticket and its last result"}. The chat history${feature ? ", status" : ""} and outputs stay.`}>
-        {busy ? "Starting…" : feature ? "Fresh chat (keeps status)" : "Fresh chat"}
-      </button>
-    </div>
   );
 }
