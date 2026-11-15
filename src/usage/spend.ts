@@ -81,7 +81,12 @@ export class SpendIndex {
       const ready = [onReady];
       this.soon.set(key, ready);
       this.soonQueue = this.soonQueue
-        .then(() => track("spend: family costs", () => this.ticketAsync(slug, id)))
+        // One pauser for the whole queue: after a restart dozens of family tickets queue up, each a few ms, and a
+        // pauser per ticket never reached its 30ms, so the queue ran as one ~300ms freeze (promise steps don't yield).
+        .then(() => track("spend: family costs", async () => {
+          await this.soonPause();
+          return this.ticketAsync(slug, id, this.soonPause);
+        }))
         .catch(() => {})
         .finally(() => {
           this.soon.delete(key);
@@ -93,6 +98,7 @@ export class SpendIndex {
   }
   private soon = new Map<string, (() => void)[]>();
   private soonQueue: Promise<unknown> = Promise.resolve();
+  private soonPause = pauser();
 
   /** ticket() in steps: it yields between chunks of a long activity log (a place to pause). */
   private *ticketSteps(slug: string, id: string): Generator<void, TicketSpend> {

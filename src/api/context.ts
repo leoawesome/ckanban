@@ -440,7 +440,7 @@ export function createContext(deps: ServerDeps) {
     let ids = costed.get(s);
     if (!ids) costed.set(s, (ids = new Set()));
     ids.add(id);
-    costTimer ??= setTimeout(sendCosted, 300);
+    costTimer ??= setTimeout(() => track("spend: send family costs", sendCosted), 300);
   };
   board.familyCostOf = (s, id) => spend.ticketSoon(s, id, () => counted(s, id)) + huddles.ticketSpend(s, id).costUsd;
   // A Review or In Progress card's own cost: the same, and that card is sent again once its log is counted.

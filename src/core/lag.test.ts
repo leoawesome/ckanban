@@ -81,3 +81,18 @@ test("a lag line tells work from waiting: CPU time and heap size during the free
     stop();
   }
 });
+
+test("a lag line adds up the short jobs it doesn't name: many small requests make a freeze too", async () => {
+  const lines: string[] = [];
+  const stop = startLagMonitor({ thresholdMs: 200, intervalMs: 20, log: (l) => lines.push(l) });
+  try {
+    await wait(60);
+    for (let i = 0; i < 30; i++) track(i % 3 ? "GET /api/inbox" : "events: ticket.updated", () => busy(10));
+    await wait(60);
+    expect(lines.length).toBe(1);
+    // On a loaded Mac a few may take 20ms or more and be named on their own.
+    expect(lines[0]).toMatch(/\d+ shorter jobs \d+ms in all \(GET \/api\/inbox ×\d+, events: ticket\.updated ×\d+\)/);
+  } finally {
+    stop();
+  }
+});

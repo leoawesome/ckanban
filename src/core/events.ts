@@ -3,6 +3,7 @@ import type { McpState } from "../integrations/mcp";
 import type { QuickChatView } from "../chat/quickchat";
 import type { SessionSummary } from "../runs/session";
 import type { HuddleMessage, Job, Profile, Schedule, Ticket } from "./types";
+import { track } from "./lag";
 
 export type BusEvent =
   | { type: "ticket.updated"; profile: string; ticket: Ticket }
@@ -65,13 +66,16 @@ export class Bus {
     return () => this.listeners.delete(fn);
   }
 
+  /** Tracked: every listener (pages, notifier, helper...) runs inside the emit, so a slow one is named in [lag] lines. */
   emit(e: BusEvent): void {
-    for (const fn of this.listeners) {
-      try {
-        fn(e);
-      } catch (err) {
-        console.error("bus listener error", err);
+    track(`bus: ${e.type}`, () => {
+      for (const fn of this.listeners) {
+        try {
+          fn(e);
+        } catch (err) {
+          console.error("bus listener error", err);
+        }
       }
-    }
+    });
   }
 }

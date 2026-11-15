@@ -125,6 +125,27 @@ test("a log longer than one read chunk, with characters split between chunks, ad
   expect(new SpendIndex(store, () => NOW).ticket("a", "t1").costUsd).toBeCloseTo(1.1);
 });
 
+test("ticketSoon's background queue lets other work in: dozens of family tickets after a restart aren't one long freeze", async () => {
+  const store = new Store(tempDir("ck-spend-"));
+  board(store, "a");
+  const filler = { run: 1, at: at(9), event: { type: "assistant", message: { content: [{ type: "text", text: "x".repeat(2_000_000) }] } } };
+  for (let i = 0; i < 60; i++) write(store, "a", `t${i}`, [filler, { run: 1, at: at(10), event: result("s1", 1) }]);
+  const spend = new SpendIndex(store, () => NOW);
+  let done = 0;
+  for (let i = 0; i < 60; i++) spend.ticketSoon("a", `t${i}`, () => done++);
+  // The longest stretch without a timer turn while the queue runs.
+  let longest = 0;
+  let last = performance.now();
+  while (done < 60) {
+    await new Promise((r) => setTimeout(r, 0));
+    const now = performance.now();
+    longest = Math.max(longest, now - last);
+    last = now;
+  }
+  expect(spend.ticket("a", "t59").costUsd).toBeCloseTo(1);
+  expect(longest).toBeLessThan(150);
+});
+
 test("ticketSoon: a small log is read at once; a big one is counted in the background, then onReady is called", async () => {
   const store = new Store(tempDir("ck-spend-"));
   board(store, "a");

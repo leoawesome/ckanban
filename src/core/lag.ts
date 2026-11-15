@@ -4,30 +4,35 @@
  * requests (`track`), with how long each took. Nothing tracked = GC or untracked work.
  */
 
-import { heapSize } from "bun:jsc";
-
-type Record = { label: string; ms: number; async: boolean };
+/** nested: ran inside another tracked sync job, whose time already counts it. */
+type Record = { label: string; ms: number; async: boolean; nested?: boolean };
 
 const ran: Record[] = [];
 const busy = new Map<number, { label: string; start: number }>();
 let nextId = 0;
 
 /** Runs `fn` and notes its label and time; for a promise, also while it is still pending. */
+let depth = 0;
+
 export function track<T>(label: string, fn: () => T): T {
   const start = performance.now();
   const id = nextId++;
+  const nested = depth > 0;
   busy.set(id, { label, start });
   let res: T;
+  depth++;
   try {
     res = fn();
   } catch (e) {
     busy.delete(id);
-    ran.push({ label, ms: performance.now() - start, async: false });
+    ran.push({ label, ms: performance.now() - start, async: false, nested });
     throw e;
+  } finally {
+    depth--;
   }
   const syncMs = performance.now() - start;
   if (res instanceof Promise) {
-    if (syncMs >= 1) ran.push({ label, ms: syncMs, async: false });
+    if (syncMs >= 1) ran.push({ label, ms: syncMs, async: false, nested });
     const done = () => {
       busy.delete(id);
       const ms = performance.now() - start;
@@ -38,7 +43,7 @@ export function track<T>(label: string, fn: () => T): T {
     res.then(done, done);
   } else {
     busy.delete(id);
-    ran.push({ label, ms: syncMs, async: false });
+    ran.push({ label, ms: syncMs, async: false, nested });
   }
   if (ran.length > 500) ran.splice(0, ran.length - 500);
   return res;
@@ -84,13 +89,12 @@ export function startLagMonitor(o: LagOptions = {}): () => void {
   return () => clearInterval(timer);
 }
 
-/** The JS heap's size now: a cheap counter (no walk of the heap), read every tick of the monitor. */
+/**
+ * The JS heap's size now, read every tick of the monitor: process.memoryUsage() is a few µs. (bun:jsc's heapSize()
+ * walks the heap: on the daemon's 200 MB heap it took about a third of its CPU when read every tick.)
+ */
 function heapBytes(): number {
-  try {
-    return heapSize();
-  } catch {
-    return process.memoryUsage().heapUsed;
-  }
+  return process.memoryUsage().heapUsed;
 }
 
 /**
@@ -108,9 +112,21 @@ function usedPart(lag: number, u: Used | undefined): string {
   return `; cpu ${Math.round(u.cpuMs)}ms, heap ${mb(u.heapFrom)}→${mb(u.heapTo)}MB: likely ${why}`;
 }
 
+/** The commonest labels of short jobs, e.g. "GET /api/inbox ×12, events: ticket.updated ×9". */
+function shortLabels(rest: Record[]): string {
+  const counts = new Map<string, number>();
+  for (const r of rest) counts.set(r.label, (counts.get(r.label) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([l, n]) => `${l} ×${n}`).join(", ");
+}
+
 function lagLine(lag: number, now: number, used?: Used): string {
-  const top = ran.filter((r) => r.ms >= 20).sort((a, b) => b.ms - a.ms).slice(0, 5)
-    .map((r) => `${r.label} ${Math.round(r.ms)}ms${r.async ? " (async)" : ""}`);
+  const shown = ran.filter((r) => r.ms >= 20).sort((a, b) => b.ms - a.ms).slice(0, 5);
+  const top = shown.map((r) => `${r.label} ${Math.round(r.ms)}ms${r.async ? " (async)" : ""}`);
+  // The sync jobs left out (under 20ms each, or past the first five): after a restart every open tab loads its pages
+  // at once, dozens of short requests that add up to a freeze no single line names.
+  const rest = ran.filter((r) => !r.async && !r.nested && !shown.includes(r));
+  const restMs = rest.reduce((n, r) => n + r.ms, 0);
+  if (restMs >= 20) top.push(`${rest.length} shorter jobs ${Math.round(restMs)}ms in all (${shortLabels(rest)})`);
   const pending = [...busy.values()].filter((b) => now - b.start >= 20).slice(0, 5)
     .map((b) => `${b.label} for ${Math.round(now - b.start)}ms`);
   const mem = process.memoryUsage();
