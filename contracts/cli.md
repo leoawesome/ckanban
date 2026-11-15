@@ -591,9 +591,8 @@ Automation check scripts get a clean env: only `HOME, USER, LOGNAME, LANG, LC_AL
 | `comment_ticket` | POST `{t}/{id}/comments` | add a comment |
 | `stop_ticket` | POST `{t}/{id}/stop` | stop a ticket's run |
 | `delete_ticket` | DELETE `{t}/{id}` | delete a ticket |
-| `plan_control` | POST `{t}/{id}/plan` body `{action: start\|resume}` | start or resume a plan |
+| `plan_control` | POST `{t}/{id}/plan` body `{action: start\|resume}` | start or resume a main ticket's tool tickets |
 | `gather_tickets` | POST `{t}/{id}/gather` | gather tickets into a feature (optionally a new group, hide) |
-| `adopt_tickets` | POST `{t}/{id}/adopt` | take tickets under a ticket |
 | `update_status` | POST `{t}/{id}/status` | update a feature's status sections, returns its markdown |
 | `ask_ticket` | POST `{t}/{own}/ask` | ask another ticket's session (a fork) a question; answer arrives later as an event |
 | `merge_into_main` | POST `{t}/{own}/merge-into-main` (long) | bring a tool ticket's work into its main ticket's copy |
@@ -620,7 +619,6 @@ Automation check scripts get a clean env: only `HOME, USER, LOGNAME, LANG, LC_AL
 | `ask_questions` | GET `{t}/{own}` (in a run) | form: ask the user questions in the ticket chat |
 | `ask_keys` | GET `{t}/{own}`, GET `/api/passes` | form: ask the user for keys (secrets) the work needs |
 | `propose_ticket` | none | card: improved title and description for this ticket |
-| `propose_tickets` | none | cards: several new tickets to create |
 | `propose_branch` | none | card: start a branch ticket from this chat |
 | `propose_delete` | GET `{t}?scope=ids&ids=...` | card: ask the user to delete tickets |
 | `propose_automation` | none | card: an automation (check script) to save |

@@ -45,11 +45,11 @@ async function settle(ms = 20000) {
   }
 }
 
-test("a plan runs its children in dependency order, every ready child at once, then the final check", async () => {
+test("a tool group runs its tickets in dependency order, every ready child at once, then the final check", async () => {
   process.env.FAKE_STEP_MS = "40";
-  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog" });
+  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog", tool: true, kind: "group" });
   const mk = (title: string, planKey: string, dependsOn?: string[]) =>
-    board.createTicket("p", { title, body: "", status: "backlog", parentId: planner.id, planKey, dependsOn });
+    board.createTicket("p", { title, body: "", status: "backlog", parentId: planner.id, tool: true, planKey, dependsOn });
   const a = await mk("A", "a");
   const b = await mk("B", "b", ["a"]);
   const c = await mk("C", "c", ["a"]);
@@ -80,18 +80,18 @@ test("a plan runs its children in dependency order, every ready child at once, t
   for (const k of [a, b, c, d, e]) expect(store.getTicket("p", k.id)!.outcome).toBe("done");
   const p = store.getTicket("p", planner.id)!;
   expect(p.plan?.state).toBe("done");
-  // Wake-ups put the planner back in its column and leave its own PR link alone.
-  expect(p.status).toBe("backlog");
+  // The group's final wake finished it, and its own PR link is left alone.
+  expect(p.status).toBe("done");
   expect(p.prUrl).toBeNull();
-  // Only the final check woke the planner.
-  expect(p.plan?.wakeups).toBe(1);
+  // A group hears its tickets' results (batched), then the final wake.
+  expect(p.plan?.wakeups).toBeGreaterThanOrEqual(2);
   expect(notes).toEqual(["Plan done: Plan"]);
 });
 
 test("children failing together wake the planner once; an unresolved dead end makes the plan stuck", async () => {
-  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog" });
-  await board.createTicket("p", { title: "X-fail", body: "", status: "backlog", parentId: planner.id });
-  await board.createTicket("p", { title: "Y-fail", body: "", status: "backlog", parentId: planner.id });
+  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog", tool: true, kind: "group" });
+  await board.createTicket("p", { title: "X-fail", body: "", status: "backlog", parentId: planner.id, tool: true });
+  await board.createTicket("p", { title: "Y-fail", body: "", status: "backlog", parentId: planner.id, tool: true });
   // Both children end within the batching window even on a busy machine (default here is 300ms).
   await board.shutdown();
   board = new Board(store, bus, { claudeBin: FAKE, isSessionLive: async () => false, notify: (t) => notes.push(t), planWakeDelayMs: 3000 });
@@ -105,24 +105,24 @@ test("children failing together wake the planner once; an unresolved dead end ma
   expect(p.plan?.reason).toContain("nothing can run");
   // A stuck plan needs the user: the Notifier (notify.ts) tells them, not a board banner.
   expect(notes).toEqual([]);
-  const wake = store.listComments("p", planner.id).find((c) => c.text.startsWith("Plan stuck"));
+  const wake = store.listComments("p", planner.id).find((c) => c.text.startsWith("Stuck:"));
   expect(wake).toBeDefined();
 });
 
 test("startPlan refuses cycles and plans without children", async () => {
-  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog" });
-  expect(() => board.startPlan("p", planner.id)).toThrow(/no child tickets/);
-  await board.createTicket("p", { title: "X", body: "", status: "backlog", parentId: planner.id, planKey: "x", dependsOn: ["y"] });
-  await board.createTicket("p", { title: "Y", body: "", status: "backlog", parentId: planner.id, planKey: "y", dependsOn: ["x"] });
+  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog", tool: true, kind: "group" });
+  expect(() => board.startPlan("p", planner.id)).toThrow(/no tool tickets/);
+  await board.createTicket("p", { title: "X", body: "", status: "backlog", parentId: planner.id, tool: true, planKey: "x", dependsOn: ["y"] });
+  await board.createTicket("p", { title: "Y", body: "", status: "backlog", parentId: planner.id, tool: true, planKey: "y", dependsOn: ["x"] });
   expect(() => board.startPlan("p", planner.id)).toThrow(/dependency cycle/);
   expect(store.getTicket("p", planner.id)!.plan).toBeUndefined();
 });
 
 /** A planner whose plan is stuck, with children in the given columns. */
 async function stuckPlan(...statuses: ("backlog" | "review" | "done")[]) {
-  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "review" });
+  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "review", tool: true, kind: "group" });
   const kids = [];
-  for (const [i, s] of statuses.entries()) kids.push(await board.createTicket("p", { title: `K${i}`, body: "", status: s, parentId: planner.id }));
+  for (const [i, s] of statuses.entries()) kids.push(await board.createTicket("p", { title: `K${i}`, body: "", status: s, parentId: planner.id, tool: true }));
   store.updateTicket("p", planner.id, {
     plan: { state: "stuck", wakeups: 1, startedAt: "", originalCount: kids.length, inbox: [], seen: {}, retries: {}, awaiting: null, reason: "the planner's run is blocked" },
   });
@@ -175,8 +175,8 @@ test("tickets that list the same device all start at once: needs is only a hint"
 
 test("a plan starts children that list the same device together", async () => {
   process.env.FAKE_STEP_MS = "40";
-  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog" });
-  const mk = (title: string) => board.createTicket("p", { title, body: "", status: "backlog", parentId: planner.id, needs: ["emulator"] });
+  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog", tool: true, kind: "group" });
+  const mk = (title: string) => board.createTicket("p", { title, body: "", status: "backlog", parentId: planner.id, tool: true, needs: ["emulator"] });
   const kids = [await mk("E1"), await mk("E2")];
   board.startPlan("p", planner.id);
   for (const k of kids) expect(store.getTicket("p", k.id)!.status).not.toBe("backlog");
@@ -198,7 +198,7 @@ test("a run's end frees the devices it still holds and hands them to the next in
 
 test("a plan never starts a child waiting on the user, and stops naming it once nothing else is left", async () => {
   (board as any).sessionSummary = (sid: string) => (sid === "s-asks" ? { openQuestions: 2, pendingProposal: null } : null);
-  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog" });
+  const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog", tool: true, kind: "group" });
   const asks = await board.createTicket("p", { title: "Asks", body: "", status: "backlog", parentId: planner.id });
   store.updateTicket("p", asks.id, { sessionId: "s-asks" });
   const ok = await board.createTicket("p", { title: "Ok", body: "", status: "backlog", parentId: planner.id });
@@ -211,70 +211,24 @@ test("a plan never starts a child waiting on the user, and stops naming it once 
   expect(p.plan?.reason).toBe('waiting for you: "Asks" (2 questions for you)');
 }, 60_000);
 
-test("adopting existing tickets: skip reasons, a growing plan, and releasing", async () => {
-  const grand = await board.createTicket("p", { title: "Grand", body: "", status: "backlog" });
-  const mgr = await board.createTicket("p", { title: "Manager", body: "", status: "review", parentId: grand.id });
-  const other = await board.createTicket("p", { title: "Other plan", body: "", status: "backlog" });
-  const a = await board.createTicket("p", { title: "A", body: "", status: "backlog", needs: ["emulator"] });
-  const b = await board.createTicket("p", { title: "B", body: "", status: "review" });
-  const taken = await board.createTicket("p", { title: "Taken", body: "", status: "backlog", parentId: other.id });
-  const fin = await board.createTicket("p", { title: "Fin", body: "", status: "done" });
-  const r = board.adoptTickets("p", mgr.id, [a.id, b.id, taken.id, fin.id, mgr.id, grand.id, "t_nope", a.id]);
-  expect(r.adopted.map((t) => t.title)).toEqual(["A", "B"]);
-  expect(r.skipped).toEqual([
-    { id: taken.id, reason: `belongs to plan ${other.id}` },
-    { id: fin.id, reason: "already done" },
-    { id: mgr.id, reason: "that is this ticket itself" },
-    { id: grand.id, reason: "it is a parent of this ticket (that would make a cycle)" },
-    { id: "t_nope", reason: "not found on board p" },
-  ]);
-  // Adopted tickets keep column and needs, and nothing starts.
-  expect(store.getTicket("p", a.id)).toMatchObject({ parentId: mgr.id, status: "backlog", needs: ["emulator"] });
-  expect(store.getTicket("p", b.id)!.status).toBe("review");
-  expect(store.listComments("p", a.id).at(-1)!.text).toContain(`Adopted by plan ${mgr.id}`);
-  expect(board.adoptTickets("p", mgr.id, [a.id]).skipped).toEqual([{ id: a.id, reason: "already in this plan" }]);
-
-  // B waits for A; A can't leave the plan while B depends on it.
-  await board.updateTicket("p", b.id, { dependsOn: [a.id] });
-  await expect(board.updateTicket("p", a.id, { parentId: null })).rejects.toThrow(/"B" depends on this ticket/);
-  await board.updateTicket("p", b.id, { parentId: null });
-  expect(store.getTicket("p", b.id)).toMatchObject({ parentId: null, dependsOn: [] });
-
-  // A plan under way counts adopted tickets toward its caps.
-  board.startPlan("p", mgr.id);
-  board.pausePlan("p", mgr.id);
-  const before = store.getTicket("p", mgr.id)!.plan!.originalCount;
-  const c = await board.createTicket("p", { title: "C", body: "", status: "backlog" });
-  board.adoptTickets("p", mgr.id, [c.id]);
-  expect(store.getTicket("p", mgr.id)!.plan!.originalCount).toBe(before + 1);
-}, 60_000);
-
-test("planner rights: a reply to the user's own chat message, or any run of a running plan", async () => {
+test("planner rights: only a main ticket or tool group, in its own runs (not a quiet reply)", async () => {
   process.env.FAKE_STEP_MS = "100";
-  const mgr = await board.createTicket("p", { title: "Manager", body: "", status: "review" });
+  // A plain ticket has no family to manage (planned tickets are retired), even in a reply to the user.
+  const plain = await board.createTicket("p", { title: "Plain", body: "", status: "review" });
+  await board.chat("p", plain.id, "manage tickets A and B");
+  expect(board.userChatRun("p", plain.id)).toBe(true);
+  expect(board.plannerRights("p", plain.id)).toBeNull();
+  await settle();
+  const mgr = await board.createTicket("p", { title: "Manager", body: "", status: "review", main: true });
   expect(board.plannerRights("p", mgr.id)).toBeNull();
   await board.chat("p", mgr.id, "manage tickets A and B");
   expect(board.userChatRun("p", mgr.id)).toBe(true);
   expect(board.plannerRights("p", mgr.id)?.id).toBe(mgr.id);
   await settle();
-  expect(board.plannerRights("p", mgr.id)).toBeNull();
-  // A message from a planner's run (chat_ticket) doesn't hand rights on.
-  await board.chat("p", mgr.id, "from the planner", { fromPlanner: true });
-  expect(board.isRunning("p", mgr.id)).toBe(true);
-  expect(board.plannerRights("p", mgr.id)).toBeNull();
-  await settle();
   // An ordinary work run doesn't either.
   const w = await board.createTicket("p", { title: "Work", body: "", status: "ready" });
   expect(board.isRunning("p", w.id)).toBe(true);
   expect(board.plannerRights("p", w.id)).toBeNull();
-  await settle();
-  // A plan that is done: the user's own message still grants rights (tidy up its children), wake-ups don't.
-  store.updateTicket("p", mgr.id, { plan: { state: "done", wakeups: 0, startedAt: "", originalCount: 1 } });
-  await board.chat("p", mgr.id, "mark all children done");
-  expect(board.plannerRights("p", mgr.id)?.id).toBe(mgr.id);
-  await settle();
-  await board.chat("p", mgr.id, "from the planner", { fromPlanner: true });
-  expect(board.plannerRights("p", mgr.id)).toBeNull();
   await settle();
 }, 60_000);
 

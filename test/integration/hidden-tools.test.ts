@@ -5,7 +5,7 @@ import { expect, test } from "bun:test";
 import { BoardClient } from "../../src/cli/client";
 import { callTool } from "../../src/mcp/server";
 import { type ToolContext } from "../../src/mcp/shared";
-import { attentionFor, boardTitles, ticketAttention } from "../../src/helper/attention";
+import { attentionFor, ticketAttention } from "../../src/helper/attention";
 import { createServer } from "../../src/api/server";
 import { Linker } from "../../src/board/linker";
 import { familyCard, KIND_DEFAULTS, stepName, stepWait, TOOL_NO_NOTIFY, youWaiting } from "../../src/board/main-ticket";
@@ -128,10 +128,6 @@ test("ticketAttention: tool tickets need nothing themselves, the main ticket say
   // Paused (the user said Stop here): the step that asks shows on the main card.
   store.updateTicket("p", main.id, { plan: { ...store.getTicket("p", main.id)!.plan!, state: "paused" } });
   expect(att(main)).toMatchObject({ kind: "questions", label: "Test: checkout sign-in asks a question" });
-  // Title dedup leaves hidden tool tickets out.
-  const titles = boardTitles(store.listTickets("p"), "x");
-  expect(titles.has("build the queue")).toBe(false);
-  expect(titles.has("phone call")).toBe(false);
 });
 
 test("the main card's line: a step that needs you, then failed or stuck, then paused, then the newest working group", () => {

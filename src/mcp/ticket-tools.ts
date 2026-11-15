@@ -245,7 +245,7 @@ export const TICKET_TOOLS: Tool[] = [
       }
       if (t.tool && (t as { planPaused?: boolean }).planPaused) {
         return `Created tool ticket ${t.id}${how ? ` (${how})` : ""}: ${t.title}. It won't start yet: this feature's tasks are paused because the user pressed Stop. ` +
-          "Tell the user it waits until they press Resume on the Plan tab or move this ticket to ready; don't say it is queued or started.";
+          "Tell the user it waits until they write in this chat or move this ticket to ready; don't say it is queued or started.";
       }
       if (t.tool) return `Created tool ticket ${t.id}${how ? ` (${how})` : ""}: ${t.title}. The board starts it when its dependsOn are done and wakes you with its result.`;
       return `Created ${t.id} on board ${slug} in ${t.status} (${t.mode} mode)${t.partOf ? `, part of ${t.partOf}` : ""}${how ? ` (${how})` : ""}: ${t.title}`;

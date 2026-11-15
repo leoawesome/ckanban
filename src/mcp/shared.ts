@@ -71,7 +71,7 @@ export const SCHEDULE_FIELDS = {
 
 export const DEPENDS_ON = {
   type: "array", items: { type: "string" },
-  description: "Sibling child tickets (ticket id or key) that must be done before a running plan starts this one. Replaces the list.",
+  description: "Sibling tool tickets (ticket id or key) that must be done before this one starts. Replaces the list.",
 };
 
 export function depList(args: any): string[] | undefined {
@@ -147,7 +147,7 @@ export interface Tool {
    * to the run's ticket on the job, and delete_schedule only shows a card the user confirms.
    */
   allowInRun?: boolean;
-  /** Inside a board run the daemon decides: only a running plan's planner may use it, on its own child tickets. */
+  /** Inside a board run the daemon decides: only a main ticket (or tool group) may use it, on its own family. */
   plannerScope?: boolean;
   run(args: any, ctx: ToolContext): Promise<string>;
 }
@@ -156,7 +156,7 @@ export interface ToolContext {
   client: Pick<BoardClient,
     | "listProfiles" | "listTickets" | "ticketsByIds" | "getTicket" | "getFamily" | "createTicket" | "updateTicket" | "deleteTicket" | "chat" | "stop" | "listComments"
     | "comment" | "reportBug" | "setFollowUp" | "cancelFollowUp" | "notifyUser" | "takeDevices" | "releaseDevices" | "listSchedules" | "createSchedule" | "updateSchedule" | "deleteSchedule" | "runSchedule"
-    | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "adopt" | "updateStatus" | "gather" | "planAction"
+    | "scheduleHistory" | "cronPreview" | "listJobs" | "createJob" | "updateJob" | "jobAction" | "updateStatus" | "gather" | "planAction"
     | "askTicket" | "searchChat" | "readChat" | "mergeIntoMain" | "landMilestone" | "huddleRead" | "huddlePost" | "huddleMode" | "huddleAdd" | "huddleFindings"
     | "huddleStatus" | "huddleCloseRequest" | "startAutoHuddle" | "huddleHandIn" | "huddleReviewHandIn" | "huddleAllowChanges"
     | "listHuddlePresets" | "saveHuddlePreset" | "deleteHuddlePreset" | "listHuddleTemplates" | "huddleBrief" | "huddleProposeTeammate" | "huddleProposeSquad"

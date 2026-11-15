@@ -520,7 +520,7 @@ test("a huddle on a Planning ticket only reads, and its findings ask @main for a
   expect(prompt).not.toContain("You may edit the code");
 });
 
-test("a plan review starts with the proposal file: latest proposed tickets, no chat text; else the description", async () => {
+test("a plan review starts with the proposal file: latest proposed ticket, no chat text; else the description", async () => {
   const t = await board.createTicket("p", { title: "Settings", body: "Plain description", status: "backlog" });
   const sid = crypto.randomUUID();
   store.updateTicket("p", t.id, { status: "planning", sessionId: sid });
@@ -531,17 +531,14 @@ test("a plan review starts with the proposal file: latest proposed tickets, no c
     L({ type: "user", uuid: "u1", timestamp: "2026-11-01T00:00:00Z", message: { role: "user", content: "secret chat words" } }),
     L({ type: "assistant", uuid: "a1", timestamp: "2026-11-01T00:00:01Z", message: { role: "assistant", content: [
       { type: "text", text: "chatty reply" },
-      { type: "tool_use", id: "tu1", name: "mcp__ckanban__propose_tickets", input: { tickets: [
-        { key: "a", title: "Ticket A", description: "do A" }, { key: "b", title: "Ticket B: improve the settings", description: "improve", dependsOn: ["a"] },
-      ] } },
-      { type: "tool_use", id: "tu2", name: "mcp__ckanban__propose_tickets", input: { tickets: [{ key: "bad", title: "Failed call", description: "x" }] } },
+      { type: "tool_use", id: "tu1", name: "mcp__ckanban__propose_ticket", input: { title: "Settings v2: improve the settings", description: "improve" } },
+      { type: "tool_use", id: "tu2", name: "mcp__ckanban__propose_ticket", input: { title: "Failed call", description: "x" } },
     ] } }),
     L({ type: "user", uuid: "u2", timestamp: "2026-11-01T00:00:02Z", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu2", is_error: true, content: "nope" }] } }),
   ].join("\n"));
   const h = huddles.create("p", t.id, [], { template: "plan-review" });
   const md = readFileSync(join(store.outputsDir("p", t.id), proposalFile(h.id)), "utf8");
-  expect(md).toContain("## Child ticket b: Ticket B: improve the settings");
-  expect(md).toContain("Depends on: a");
+  expect(md).toContain("## Proposed ticket: Settings v2: improve the settings");
   expect(md).not.toContain("Failed call");
   expect(md).not.toContain("secret chat words");
   expect(md).not.toContain("chatty reply");

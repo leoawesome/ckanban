@@ -236,6 +236,13 @@ export const onBoard = (t: BoardFlags | null | undefined): boolean => !!t && (t.
 /** A "with you" tool ticket: a step that needs the user live; it may ask and notify the user (in its main ticket's chat). */
 export const withYouTool = (t: { tool?: boolean; kind?: string | null } | null | undefined): boolean => !!t?.tool && t?.kind === "with_you";
 
+/**
+ * A ticket whose plan runs its tasks: a main ticket, or a tool ticket that groups others (the server's isManager in
+ * src/board/main-ticket.ts). Only these show plan controls (Pause, Resume, Plan finished); planned tickets are retired.
+ */
+export const runsTasks = (t: { main?: boolean; tool?: boolean; kind?: string | null } | null | undefined): boolean =>
+  !!t && (!!t.main || (!!t.tool && (t.kind === "group" || t.kind === "round")));
+
 /** byIdOf's maps, one per tickets list (a list is a new array whenever the board's tickets change). */
 const byIdCache = new WeakMap<readonly FamilyTicket[], { n: number; map: Map<string, FamilyTicket> }>();
 

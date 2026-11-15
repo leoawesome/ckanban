@@ -1,9 +1,9 @@
 // The Tasks tab (DrawerTab "family"): on a feature's top ticket its status on top (StatusBlock), then the whole feature from its top ticket down, grouped and folded, with each ticket's model, cost and
-// status, a short view of the clicked row, the plan controls of a planner, and "Add tickets…" (GatherDialog).
+// status, a short view of the clicked row, the plan controls of a main ticket, and "Add tickets…" (GatherDialog).
 import { resolveRun, runText } from "../../lib/models";
 import { useEffect, useMemo, useState } from "react";
 import { api, COLUMNS, type FamilyViewRow, type Profile, type Ticket } from "../../lib/api";
-import { childrenByParent, familyOf, familyState, featureRows, featureTasks, groupsOf, groupSummary, hideableCard, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, shownState, subFeatureState, type FamilyRow, type FamilyState } from "./family";
+import { childrenByParent, familyOf, runsTasks, familyState, featureRows, featureTasks, groupsOf, groupSummary, hideableCard, MAX_LEVEL, matchWords, newestFirst, settled, STATE_WORDS, shownState, subFeatureState, type FamilyRow, type FamilyState } from "./family";
 import { ClaudeFace } from "../chat/ConvTurn";
 import { familyMood } from "../avatar/avatarMood";
 import { familyText } from "./FamilyPanel";
@@ -49,7 +49,7 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
   profile: Profile;
   ticket: Ticket;
   tickets: Ticket[];
-  /** Children of the opened ticket's plan (its plan controls show when there are any). */
+  /** Children of the opened ticket (a main ticket's plan controls show when it has any). */
   planChildren: Ticket[];
   onOpenTicket: (id: string) => void;
   onError: (m: string) => void;
@@ -231,7 +231,7 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
   return (
     <section className="family-tab">
       {feature.status && <StatusBlock slug={slug} ticket={ticket} tickets={tickets} status={feature.status} onChanged={feature.reload} onOpenTicket={onOpenTicket} />}
-      {planChildren.length > 0 && (
+      {runsTasks(ticket) && planChildren.length > 0 && (
         <PlanControls slug={slug} ticket={ticket} children={planChildren} onOpenTicket={onOpenTicket} onError={onError} onMoveToDone={onMoveToDone} onAddMore={onAddMore} countShown={!!feature.status} />
       )}
       <div className="family-tab-head">

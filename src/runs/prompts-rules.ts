@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { helperCommand } from "./artifact";
 import { REVIEW_HUDDLE_HEADING, reviewHuddleRequest } from "../huddle/huddle-roster";
-import { AUTO_REVIEW_READ_ONLY, FRESH_HELPER_CHECK, PLAN_REVIEW } from "../huddle/huddle-templates";
+import { AUTO_REVIEW_READ_ONLY, PLAN_REVIEW } from "../huddle/huddle-templates";
 import { MOCKUPS_DIR } from "../board/mockups";
 import type { ChromeChoice } from "../browser/chromes";
 import type { Device } from "../browser/devices";
@@ -41,19 +41,11 @@ The board shows it as a card; the user clicks Apply to replace the ticket's titl
 When the ticket hangs under the wrong ticket in its family (get_family shows it), add partOf: the id of the ticket it belongs under, or "none"; Apply then moves it too.
 Only if the ckanban tools aren't available: put {"title":"...","description":"..."} in ONE <ckanban-ticket>{...}</ckanban-ticket> block in your message instead. ${BLOCK_RULE}`;
 
-/** How a planner ticket's chat proposes splitting the work into new tickets; the user creates them by clicking. */
-export const TICKETS_FORMAT = `When the user wants to split the work into separate tickets (this ticket as the planner), first call the ckanban \`list_tickets\` tool to avoid duplicates, then write the tickets, run the check below, and call the \`propose_tickets\` tool ${TOOL_NOTE}, e.g. tickets: [{"key":"api","title":"Short, specific title (under 80 characters)","description":"## Goal\\n...\\n\\n## Context\\n...\\n\\n## Acceptance criteria\\n- ..."},{"key":"ui","title":"...","description":"...","dependsOn":["api"]}]
-Each description must be self-contained (goal, context with relevant files, acceptance criteria): another Claude session works on it later without this chat. "key" is a short unique name; "dependsOn" lists the keys that must be finished first. Give a dependency to tickets that build on each other or likely edit the same files, so they don't run at the same time and conflict. Optional "needs" lists shared devices a ticket expects to use, with specific names, e.g. "needs":["chrome-whatsapp"] (not "chrome"): a hint only. Its run takes a device just before using it and lets go when done, so tickets that share a device still run side by side; don't chain dependsOn for a shared device. Optional "important": true marks a ticket ⭐ Important (its run gets a review huddle before landing) when the user or the project's rules say the work is important; set it there, not as a ⭐ in the title. The board shows one card per ticket; the user clicks Create to add it to Backlog, linked to this ticket, and can then press Start plan: the board runs the tickets in dependency order and wakes you only when one needs a decision. Don't create these tickets yourself: the cards let the user decide. If the tool returns an error, fix the input and call it again.
-${FRESH_HELPER_CHECK}
-Only if the ckanban tools aren't available: put the same JSON array in ONE <ckanban-tickets>[...]</ckanban-tickets> block in your message instead. ${BLOCK_RULE}`;
-
-/** A ticket's chat can manage other tickets when the user asks for it there (see Board.plannerRights). */
-export const MANAGE_RULE = `# Managing tickets (this ticket as manager)
-If the user asks you here to manage, run, control or take over tickets (existing ones, or the ones this ticket proposed), you can, because they asked in this chat:
-1. Find them with the ckanban \`list_tickets\` tool. To take over tickets that already exist, call \`adopt_tickets\` with their ids: they become this ticket's child tickets. Tickets that belong to another plan, finished ones and this ticket itself are skipped; tell the user what was adopted and what was skipped and why.
-2. Order them: \`update_ticket\` with dependsOn (sibling ticket ids) for tickets that build on each other or edit the same files, and needs (e.g. ["chrome-whatsapp"]) as a hint for tickets that use a shared device: their runs take it only while they use it, so they still run in parallel. Leave independent tickets without dependsOn: they run in parallel.
-3. Start the plan with \`plan_control\` (action "start", or "resume" for a paused or stuck plan). The board then moves children through Ready, In progress and Review itself, starting each as soon as the ones it waits for are done, and wakes this ticket when one needs a decision. It never starts a child that waits on the user (open questions, a proposal to apply, in Planning). Don't move children to ready yourself unless the user asks.
-If the user only asked to create or adopt tickets, don't start the plan. You can also move, update, chat with, comment on, stop or release (update_ticket release: true) this ticket's own children; every other ticket is refused.`;
+/**
+ * A ticket that isn't a main ticket and the user wants its work split: planned tickets (child cards) are retired, so
+ * Claude offers to turn it into a main ticket through propose_ticket's follow-up card (Board.followUpWork).
+ */
+export const SPLIT_RULE = `When the user wants this work split into several tickets: don't propose separate tickets or create them under this ticket. Offer to turn this ticket into a main ticket instead, in plain words: it keeps this chat, splits the work into tasks that run on their own, and reports each result here. Once the user agrees, call the \`propose_ticket\` tool ${TOOL_NOTE} with the first piece of work as the title and a description that also lists the other parts in order (which waits for which). On a ticket that already ran, the card's "Start follow-up work" makes this ticket a main ticket with that work as its first task, and the main ticket then creates the other tasks itself. On a ticket that never ran, the card's Apply only rewrites this ticket: say so, and suggest the user start a new ticket from New ticket (every new ticket is a main ticket) with this plan instead.`;
 
 /**
  * Planning chats: a huddle the user wants goes into the ticket, so the run does the work first and starts it after
@@ -479,8 +471,8 @@ export const SELF_MOVE_RULE = "Moving this ticket's own card: only when the user
 export const MAIN_QUESTIONS_RULE = `Use status "questions" only for a reply that really asks the user something: an ask_questions form, or a direct question in your text. A reply that only answers the user or reports progress while steps run ends with "done". When an ask_questions form is about one or more of your tasks (you pass on what a task found or needs), set its \`about\` to their ids: if the user answers in that task's own chat instead, the form closes by itself.`;
 
 /** The one line the chat shows for a board wake (the full text opens below it): see the wake attribute of context(). */
-export function wakeSummary(kind: PlanWake, events: number, group: boolean, who: "tool" | "child"): string {
-  const tickets = who === "child" ? "child ticket" : group ? "ticket in this group" : "tool ticket";
-  if (kind === "final") return who === "child" ? "every child ticket is done" : group ? "every ticket in this group finished" : "every tool ticket finished";
+export function wakeSummary(kind: PlanWake, events: number, group: boolean): string {
+  const tickets = group ? "ticket in this group" : "tool ticket";
+  if (kind === "final") return group ? "every ticket in this group finished" : "every tool ticket finished";
   return `${events} update${events === 1 ? "" : "s"} from ${events === 1 ? `a ${tickets}` : `${tickets.replace("ticket", "tickets")}`}`;
 }

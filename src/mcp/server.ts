@@ -75,7 +75,7 @@ export async function handleMessage(msg: JsonRpc, ctx: ToolContext): Promise<obj
           "schedule_job runs a ticket or a command once at a set time. Board chats and runs may create, change, pause, resume and run them now on their own judgment; " +
           "delete_schedule there deletes nothing: in a ticket's chat or run it shows the user a card to confirm (a tool ticket reports it to its main ticket instead), " +
           "a quick chat can't delete schedules (the user does it in the Schedules window), and the Telegram front desk asks for a Confirm tap. " +
-          "ask_questions, propose_ticket, propose_tickets, propose_branch, propose_teammate and propose_squad are for the board's ticket chats: they show a form or cards to the user. " +
+          "ask_questions, propose_ticket, propose_branch, propose_teammate and propose_squad are for the board's ticket chats: they show a form or cards to the user. " +
           "propose_helper_rule suggests a line for what the helper knows about the user, only when the user asked for that alert rule in a message they typed; the user's Add on its card saves it.",
       });
     }

@@ -1299,20 +1299,12 @@ body > .output-view.reader { position: fixed; }
   .tt-focus-row > span { padding-top: 0; }
   .sqc-actions .btn { flex: 1 1 auto; }
 }
-.new-ticket { border-top: 1px solid var(--border); padding-top: var(--sp-2h); display: flex; flex-direction: column; gap: var(--sp-2h); }
-.new-ticket-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3h); }
-.new-ticket-title { font-weight: 600; text-align: left; color: var(--text); }
-.new-ticket.applied .new-ticket-title { color: var(--muted); }
-.child-tickets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-.child-tickets li { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); }
 .ticket-link { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.child-main { display: flex; flex-direction: column; min-width: 0; }
-.child-deps { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dep-list { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3h); min-width: 0; }
 .plan-actions { display: flex; align-items: center; gap: var(--sp-3h); flex-wrap: wrap; margin-bottom: var(--sp-2h); }
 .plan-reason { color: var(--warn); }
-/* Plan tab: same centred column as the chat. */
-.panel-scroll.panel-plan { padding: var(--sp-6) max(var(--sp-7), calc((100% - var(--read-max)) / 2)); }
+/* Tasks tab: same centred column as the chat. */
+.panel-scroll.panel-tasks { padding: var(--sp-6) max(var(--sp-7), calc((100% - var(--read-max)) / 2)); }
 /* A finished plan is normal success: a muted line, Move to Done and a text link, no green banner. */
 .plan-finished { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2h) var(--sp-4); font-size: var(--fs-sm); }
 .plan-finished-line { color: var(--muted); }
@@ -1326,9 +1318,6 @@ body > .output-view.reader { position: fixed; }
 .plan-state.blocked { color: var(--warn); }
 .plan-state.ok { color: var(--ok); }
 .plan-panel .plan-reason { margin: 0; }
-.plan-panel .child-tickets { gap: 0; }
-.plan-panel .child-tickets li { padding: var(--sp-3h) var(--sp-1); border-bottom: 1px solid var(--border); }
-.plan-summary { display: inline-flex; align-items: center; gap: var(--sp-2h); }
 .tab-count.ok { background: var(--ok-soft); color: var(--ok); }
 .tab-count.warn { background: var(--warn-soft); color: var(--warn); }
 .badge.plan { background: var(--accent-soft); color: var(--accent-text); }
@@ -2682,7 +2671,6 @@ button.pill:hover { color: var(--text); }
   color: var(--muted); font: inherit; cursor: pointer;
 }
 .device-add:hover { color: var(--text); border-color: var(--muted); }
-.child-deps .res-chip { margin-right: var(--sp-2); }
 .needs-field { display: flex; flex-direction: column; gap: var(--sp-2); }
 .needs-field .field-help { margin: 0; }
 .needs-chips {
@@ -4014,7 +4002,6 @@ button.tag-chip:hover { border-color: currentColor; }
 .tag-filter-item .tag-chip { font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .tag-filter-none { margin: var(--sp-2) var(--sp-2h); }
 .tag-filter-clear { align-self: flex-start; margin: var(--sp-1) var(--sp-2h) var(--sp-1); }
-.draft-tags { display: inline-flex; flex-wrap: wrap; gap: var(--sp-2); }
 /* tag filters sit inside the search pill, before the input */
 .search.has-tags {
   gap: var(--sp-2); padding: 0 var(--sp-7) 0 var(--sp-7); border: 1px solid var(--border); border-radius: var(--r-pill); background: var(--surface);
@@ -5201,9 +5188,6 @@ button.composer-old:hover { color: var(--text); }
   .steps-line > summary { min-height: var(--tap); padding: 0; }
   .tool-rows { font-size: var(--fs-md); gap: 0; }
   .tool-row > summary { min-height: var(--tap); padding: var(--sp-3h) var(--sp-2); line-height: 20px; }
-  .new-ticket-head { flex-direction: column; align-items: stretch; gap: var(--sp-1); }
-  .new-ticket-head .new-ticket-status { min-height: var(--tap); display: flex; align-items: center; font-size: var(--fs-md); }
-  .new-ticket-head > .btn { min-height: var(--tap); align-self: flex-start; padding: 0 var(--sp-5); }
 }
 @media (max-width: 560px) {
   .qfoot { flex-wrap: wrap; row-gap: var(--sp-3); padding: var(--sp-3h) var(--sp-4); }

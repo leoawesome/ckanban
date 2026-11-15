@@ -1,3 +1,4 @@
+import { retireOldPlans } from "../board/retire-plans";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTmuxLeftovers } from "../runs/artifact";
@@ -141,6 +142,8 @@ export async function startDaemon(): Promise<void> {
   await track("startup: load tickets", () => store.loadAllTickets());
   // Huddles, jobs, schedules and automations too: a board keeps every finished one, so the first read can be big.
   await track("startup: load lists", () => store.loadAllLists());
+  // Planned tickets are retired: old plans become main tickets with tool tickets (once; a no-op after that).
+  await track("startup: retire old plans", () => retireOldPlans(store)).catch((e) => console.error("retire old plans", e));
   track("startup: board.recover", () => board.recover());
   track("startup: huddles.recover", () => huddles.recover());
   await track("startup: quickChats.recover", () => quickChats.recover());

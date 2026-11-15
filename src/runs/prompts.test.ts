@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { extractFinalText, summarizeEvent } from "./activity";
-import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, LENGTH_RULE, orchestratorPrompt, planningCommand, planningPrompt, QUESTIONS_FORMAT, REPLY_RULE, resumeCommand, resumePrompt, WRITING_RULE } from "./prompts";
+import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, LENGTH_RULE, planningCommand, planningPrompt, QUESTIONS_FORMAT, REPLY_RULE, resumeCommand, resumePrompt, WRITING_RULE } from "./prompts";
 import { parseResult } from "./result";
 import type { Ticket } from "../core/types";
 
@@ -181,8 +181,6 @@ test("every prompt the user reads replies from asks for short, plain, filler-fre
     freshSessionPrompt(ticket, fresh),
     chatPrompt(ticket, "hi", "refine", "/o"),
     planningPrompt(ticket, "/tmp/t.md"),
-    orchestratorPrompt(ticket, { kind: "event", events: ["a"], table: "-", board: "b", outputDir: "/o" }),
-    orchestratorPrompt(ticket, { kind: "final", events: [], table: "-", board: "b", outputDir: "/o" }),
     followUpWakePrompt(followUp, new Date("2026-11-02T10:00:00.000Z")),
   ]) {
     expect(p).toContain(WRITING_RULE);
@@ -262,22 +260,19 @@ test("a scheduled ticket's first run is told its schedule", () => {
   expect(plain).toContain("use `schedule_job`; a ticket job's prompt is all its future run sees");
 });
 
-test("planning and Review/Done chats can propose new tickets, first runs can't", () => {
+test("planning and Review/Done chats offer a main ticket when the user wants the work split; first runs don't", () => {
   const t = { ...ticket, runCount: 1 } as Ticket;
   const refine = chatPrompt(t, "split it", "refine", "/o");
-  expect(refine).toContain("<ckanban-tickets>");
-  expect(refine).toContain("list_tickets");
-  // Tools first; the text blocks are only the fallback.
-  for (const tool of ["ask_questions", "propose_ticket", "propose_tickets"]) expect(refine).toContain(`\`${tool}\` tool`);
-  expect(refine.indexOf("`propose_tickets` tool")).toBeLessThan(refine.indexOf("<ckanban-tickets>"));
-  expect(refine).toContain("Only if the ckanban tools aren't available");
+  for (const tool of ["ask_questions", "propose_ticket"]) expect(refine).toContain(`\`${tool}\` tool`);
+  expect(refine).toContain("turn this ticket into a main ticket");
+  expect(refine).not.toContain("propose_tickets");
   expect(refine).not.toContain("ckanban-stay");
   const act = chatPrompt(t, "create new tickets", "act", "/o");
-  expect(act).toContain("`propose_tickets` tool");
-  expect(act).toContain("list_tickets");
-  expect(act).toContain("new tickets from this ticket");
+  expect(act).toContain("split this work into several tickets");
+  expect(act).toContain("turn this ticket into a main ticket");
+  expect(act).not.toContain("propose_tickets");
   expect(act).toContain("<ckanban-stay/>");
-  expect(firstRunPrompt(t, { repo: "remote" as const, outputDir: "/o" })).not.toContain("ckanban-tickets");
+  expect(firstRunPrompt(t, { repo: "remote" as const, outputDir: "/o" })).not.toContain("turn this ticket into a main ticket");
 });
 
 test("every ticket chat can offer a branch; first runs can't", () => {
@@ -285,7 +280,7 @@ test("every ticket chat can offer a branch; first runs can't", () => {
   expect(chatPrompt(t, "branch this", "refine", "/o")).toContain("`propose_branch` tool");
   const act = chatPrompt(t, "branch this", "act", "/o");
   expect(act).toContain("`propose_branch` tool");
-  expect(act).toContain("proposing tickets, a branch, a teammate or a huddle was all");
+  expect(act).toContain("proposing a ticket, a branch, a teammate or a huddle was all");
   expect(act).toContain("Not after starting a huddle");
   expect(firstRunPrompt(t, { repo: "remote" as const, outputDir: "/o" })).not.toContain("propose_branch");
 });
@@ -299,44 +294,21 @@ test("every ticket chat may propose a teammate; it can't save one", () => {
   }
 });
 
-test("planner wake-ups: events or final check, scoped rights, one visible line first", () => {
-  const t = { ...ticket, id: "t_plan", title: "Big plan" } as Ticket;
-  const ev = orchestratorPrompt(t, { kind: "event", events: ['t_1 "A" failed (review)'], table: "- t_1 \"A\": review; failed", board: "kanban", outputDir: "/o" });
-  expect(ev.split("\n")[0]).toBe("Plan update: 1 child ticket needs a decision.");
-  expect(ev).toContain('- t_1 "A" failed (review)');
-  expect(ev).toContain("THIS plan's child tickets only");
-  expect(ev).toContain("gh pr merge");
-  expect(ev).toContain("CKANBAN_RESULT");
-  const fin = orchestratorPrompt(t, { kind: "final", events: [], table: "", board: "kanban", outputDir: "/o" });
-  expect(fin.split("\n")[0]).toStartWith("Plan finished");
-  expect(fin).toContain("/o/plan-summary.md");
-  expect(chatPrompt(t, "split it", "refine", "/o")).toContain('"dependsOn":["api"]');
-});
-
-test("a plan's child is told to rebase onto the remote base branch first", () => {
-  const t = { ...ticket, mode: "auto", parentId: "t_plan" } as Ticket;
-  expect(firstRunPrompt(t, { repo: "remote" as const, outputDir: "/o" })).toContain("part of a plan (planner ticket t_plan)");
-  expect(firstRunPrompt({ ...t, parentId: null } as Ticket, { repo: "remote" as const, outputDir: "/o" })).not.toContain("part of a plan");
-});
-
 test("API connection retries show on the card instead of looking frozen", () => {
   expect(summarizeEvent({ type: "system", subtype: "api_retry", attempt: 1, max_retries: 10 })).toBeNull();
   expect(summarizeEvent({ type: "system", subtype: "api_retry", attempt: 4, max_retries: 10 })).toBe("Can't reach Claude's API, retrying (4/10)…");
 });
 
-test("ticket chats can manage tickets when the user asks; planners hear about needs", () => {
-  const act = chatPrompt(ticket, "manage A and B", "act", "/o");
-  for (const s of ["adopt_tickets", "plan_control", "needs (e.g. [\"chrome-whatsapp\"]) as a hint", "If the user only asked to create or adopt tickets, don't start the plan"]) expect(act).toContain(s);
+test("ticket chats manage tickets only when the user asks, and offer a main ticket instead of child tickets", () => {
+  const act = chatPrompt(ticket, "split this into tickets", "act", "/o");
+  for (const s of ["turn this ticket into a main ticket", "propose_ticket", "Start follow-up work"]) expect(act).toContain(s);
+  for (const s of ["adopt_tickets", "propose_tickets", "Start plan", "Plan tab"]) expect(act).not.toContain(s);
   const refine = chatPrompt(ticket, "manage A and B", "refine", "/o");
   expect(refine).not.toContain("read-only and can't change the board");
-  for (const s of ["ONLY when the user asks for it in their message", "move_ticket", "propose_delete", "Never edit, stop or delete this ticket itself", "only when the user asks for it in a message they typed", "Say in your reply what you changed"]) {
+  for (const s of ["ONLY when the user asks for it in their message", "move_ticket", "propose_delete", "Never edit, stop or delete this ticket itself", "only when the user asks for it in a message they typed", "Say in your reply what you changed", "turn this ticket into a main ticket"]) {
     expect(refine).toContain(s);
   }
-  expect(refine).toContain('"needs":["chrome-whatsapp"] (not "chrome"): a hint only');
-  const wake = orchestratorPrompt(ticket, { kind: "event", events: [], table: "", board: "kanban", outputDir: "/o" });
-  expect(wake).not.toContain("exclusive resource");
-  expect(wake).toContain("not a dependsOn chain");
-  expect(wake).toContain("take_devices");
+  for (const s of ["adopt_tickets", "propose_tickets", "Start plan", "Plan tab"]) expect(refine).not.toContain(s);
 });
 
 test("run prompts adapt to the folder's version history and never block on missing git", () => {
@@ -362,13 +334,11 @@ test("run prompts adapt to the folder's version history and never block on missi
   expect(local).toContain("commit them on this branch");
   expect(local).not.toContain("git fetch");
   expect(local).not.toContain("gh pr create");
-  expect(local).toContain("rebase this branch onto the local base branch");
   // No pull requests: the branch is merged into the project folder so the user sees the change.
   expect(firstRunPrompt(t, { repo: "local", outputDir: "/o", home: { folder: "/p/shop", baseBranch: "main" } })).toContain("bring the work into the project folder (`/p/shop`) so the user sees it there: if that folder is on `main`");
   expect(remote).not.toContain("bring the work into");
   // Remote: the PR flow, with a way out when gh is missing.
   expect(remote).toContain("gh pr create");
-  expect(remote).toContain("`git fetch` and rebase");
   expect(remote).toContain("worktree on this ticket's own branch (`ck/t1-x`)");
   expect(remote).toContain("If `gh` isn't available");
 });
@@ -386,15 +356,6 @@ test("resume, fresh, chat and planner prompts drop git steps the folder can't do
   expect(freshSessionPrompt(t, { ...fresh, repo: "remote" })).toContain("git log --oneline main..HEAD");
   expect(chatPrompt(t, "hi", "act", "/o", false, "plain")).toContain("no version history yet");
   expect(chatPrompt(t, "hi", "act", "/o", false, "local")).toContain("no remote");
-  const base = { kind: "final" as const, events: [], table: "", board: "kanban", outputDir: "/o" };
-  expect(orchestratorPrompt(t, base)).toContain("origin/<base branch>");
-  for (const repo of ["plain", "empty", "local"] as const) {
-    const fin = orchestratorPrompt(t, { ...base, repo });
-    expect(fin).not.toContain("git fetch");
-    expect(fin).not.toContain("origin/");
-  }
-  expect(orchestratorPrompt(t, { ...base, repo: "plain" })).not.toContain("git worktree add");
-  expect(orchestratorPrompt(t, { ...base, kind: "event", repo: "local" })).not.toContain("gh pr merge");
 });
 
 test("the auto huddle and huddle prompts don't ask to commit in a folder without commits", () => {

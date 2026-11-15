@@ -1,6 +1,6 @@
 import type { AutomationProposal } from "../../../features/schedules/automationTypes";
 import type { ChatCacheInfo } from "../../../features/chat/cacheNote";
-import type { NewTicketDraft, SetupResult } from "./board";
+import type { SetupResult } from "./board";
 import type { KeysAsk } from "./connections";
 import type { RosterEntry, SquadProposal, TeammateProposal } from "./huddle";
 import type { Proposal, Question } from "./ticket";
@@ -73,7 +73,6 @@ export interface SessionSummary {
   updatedAt: string;
   openQuestions: number;
   pendingProposal: { title: string; description: string } | null;
-  pendingNewTickets?: { title: string; description: string }[];
   pendingTeammates?: string[];
   /** Squad cards since the user's last message (Ticket.squadCards says which were answered). */
   pendingSquads?: string[];
@@ -99,7 +98,6 @@ export interface SessionEntry {
   workflow?: WorkflowInfo;
   questions?: Question[];
   proposal?: Proposal;
-  newTickets?: NewTicketDraft[];
   /** Claude offered to branch this ticket (Branch button). */
   branch?: { reason: string };
   /** Claude proposed a huddle (propose_huddle): the roster card with Start. */
@@ -121,7 +119,7 @@ export interface SessionEntry {
   /** Mockups Claude sent in this reply, saved as outputs/mockups/<name>. */
   mockups?: string[];
   moved?: "planning";
-  /** A board block whose JSON couldn't be read (left visible as text). */
+  /** A board block whose JSON couldn't be read (left visible as text). "tickets": an old reply's proposed tickets (no Resend). */
   unreadable?: "questions" | "proposal" | "tickets";
   /** A message from outside the user (a huddle digest): in = into this session. */
   /** ticketId and title: a message another ticket's Claude sent (text is just the message); ticketId null: a huddle digest. */

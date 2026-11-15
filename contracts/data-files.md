@@ -294,6 +294,16 @@ removes the whole folder (`Store.deleteTicket`).
   file is left as is.
 - **Load-time migration** (nothing written): an old `addOnOf` or `followUpOf` key is dropped and becomes `partOf`
   (unless set) and `madeFrom` (unless set) (`withoutAddOn`). The file changes on the ticket's next save.
+- **Startup migration: planned tickets retired** (written once, `board/retire-plans.ts`, run by the daemon after the
+  tickets load, in slices). An old planner is a ticket with neither `main` nor `tool` that has at least one child by
+  `parentId` with neither `main` nor `tool`. It gets `main: true`, or `tool: true, kind: group` when it has a
+  `parentId` itself (a plan inside a plan). Each such child gets `tool: true` and `kind` (its own when set, else
+  `explore` for titles starting Explore/Investigate/Research, `review` for Review, otherwise `build`); a child in
+  Backlog whose planner's plan isn't `running`, `finishing`, `paused` or `stuck` also gets `waitsForStart: true`.
+  Nothing else changes: every other field, unknown keys, `plan` state, `dependsOn`, chats and outputs stay, and so
+  does `updatedAt`. An open planner gets one `ai` comment saying it became a main ticket. Main tickets, tool tickets
+  and their families are never touched. Idempotent: a migrated board has no old planner, so later starts write
+  nothing.
 - **Type:** `Ticket` (`types.ts`). Schema: `schemas/ticket.schema.json` (the front matter fields plus `body`).
 - **Writer:** `Store.createTicket`, `Store.updateTicket` (atomic). `updateTicket` re-reads and re-parses the file,
   merges the patch, sets `updatedAt` to now, sets `doneAt` when the status becomes `done` and clears `pinnedAt` then;

@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { callTool } from "../../src/mcp/server";
-import { ticketsError } from "../../src/mcp/form-tools";
 import { type ToolContext } from "../../src/mcp/shared";
 import { Board } from "../../src/board/board";
 import { Bus } from "../../src/core/events";
 import { Scheduler } from "../../src/schedules/scheduler";
-import { parseNewTickets } from "../../src/runs/session";
 import { Store } from "../../src/core/store";
 import { normalizeTag as serverNormalizeTag, normalizeTags } from "../../src/board/tags";
 import { boardTags, hasTags, normalizeTag, parseSearch, tagHue } from "../../web/src/features/board/tagText";
@@ -89,11 +87,6 @@ test("a schedule's tags go on every ticket it creates, and edits to them are log
   expect(old.tags).toEqual([]);
 });
 
-test("proposed tickets keep their tags", () => {
-  expect(parseNewTickets([{ title: "A", description: "d", tags: ["Post", 3, ""] }, { title: "B", description: "d" }]))
-    .toEqual([{ title: "A", description: "d", tags: ["post"] }, { title: "B", description: "d" }]);
-});
-
 // ---- MCP tools ------------------------------------------------------------------------------------
 
 function fake(ticket: Record<string, unknown> = {}) {
@@ -128,12 +121,6 @@ test("create_ticket, update_ticket and create_schedule take normalized tags", as
   expect(bad.content[0].text).toContain("tags must be a list");
   await callTool("create_schedule", { name: "Interview", title: "Post {date}", body: "b", cron: "0 9 * * 1", tags: ["#Post"] }, ctx({ CKANBAN_TICKET: "kanban/t_9" }));
   expect(calls.find((c) => c.fn === "createSchedule")!.args[1]).toMatchObject({ tags: ["post"] });
-});
-
-test("propose_tickets validates tags", () => {
-  const t = (tags: unknown) => ({ key: "a", title: "A ticket", description: "d", tags });
-  expect(ticketsError({ tickets: [t(["post"])] })).toBeNull();
-  expect(ticketsError({ tickets: [t("post")] })).toContain("tags must be a list");
 });
 
 test("suggest_tags adds new suggestions to the run's own ticket", async () => {

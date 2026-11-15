@@ -96,7 +96,7 @@ export const OLD_LINE_MIN_TOKENS = 100_000;
 
 export const before = (e: SessionEntry, at: string | undefined) => !!at && !!e.at && e.at < at;
 
-export const CARDS = ["questions", "proposal", "newTickets", "branch", "huddle", "deletion", "scheduleDeletion", "helperRule", "teammate", "squad", "automation", "keys"] as const;
+export const CARDS = ["questions", "proposal", "branch", "huddle", "deletion", "scheduleDeletion", "helperRule", "teammate", "squad", "automation", "keys"] as const;
 
 /**
  * Tool calls (and subagents) in a row fold into one block; a branch point (splitAt) starts a new one. A reply that
@@ -127,11 +127,10 @@ export const SENDING_RECHECK_MS = 3000;
 
 export const UNREADABLE = { questions: "questions", proposal: "ticket proposal", tickets: "proposed tickets" } as const;
 
-/** What the Resend button sends: the same content again, through the matching tool. */
+/** What the Resend button sends: the same content again, through the matching tool (none for an old reply's proposed tickets: that tool is gone). */
 export const RESEND = {
   questions: "The board couldn't read your questions. Please resend them with the ask_questions tool.",
   proposal: "The board couldn't read your ticket proposal. Please resend it with the propose_ticket tool.",
-  tickets: "The board couldn't read your proposed tickets. Please resend them with the propose_tickets tool.",
 } as const;
 
 /** What Retry under a failed run sends. */

@@ -149,10 +149,6 @@ function fakeClient() {
     updateTicket: rec("updateTicket", (_s, _id, patch) => ticket(patch)),
     deleteTicket: rec("deleteTicket", () => undefined),
     chat: rec("chat", () => ticket({ running: true })),
-    adopt: rec("adopt", (_s, _id, ids: string[]) => ({
-      adopted: ids.filter((x) => x !== "t_x").map((id) => ticket({ id, title: `T ${id}` })),
-      skipped: ids.includes("t_x") ? [{ id: "t_x", reason: "belongs to plan t_other" }] : [],
-    })),
     planAction: rec("planAction", (_s, id) => ticket({ id, plan: { state: "running" } })),
     stop: rec("stop", () => ({ stopped: true })),
     comment: rec("comment", () => ({ id: "c2", author: "user", text: "x", at: "" })),
@@ -240,12 +236,12 @@ test("inside a board run, changing tools are refused and read tools work", async
 
 test("every tool advertises a profile argument; change tools are flagged", () => {
   // The planning chat tools (forms, cards, artifacts) don't touch the board: no profile.
-  const PLANNING = ["ask_questions", "ask_keys", "propose_automation", "propose_branch", "propose_delete", "propose_helper_rule", "propose_huddle", "propose_squad", "propose_teammate", "propose_ticket", "propose_tickets", "publish_artifact", "read_artifact"];
+  const PLANNING = ["ask_questions", "ask_keys", "propose_automation", "propose_branch", "propose_delete", "propose_helper_rule", "propose_huddle", "propose_squad", "propose_teammate", "propose_ticket", "publish_artifact", "read_artifact"];
   for (const t of TOOLS.filter((t) => t.name !== "list_profiles" && t.name !== "send_file" && !PLANNING.includes(t.name))) expect(t.inputSchema.properties.profile).toBeDefined();
   expect(TOOLS.filter((t) => !t.changes).map((t) => t.name).sort()).toEqual([
     "ask_keys", "ask_questions", "backup_file", "connection_tools", "get_family", "get_ticket", "huddle_read", "list_connections", "list_huddle_presets", "list_jobs", "list_profiles", "list_schedules", "list_tickets",
     "propose_automation", "propose_branch", "propose_delete", "propose_helper_rule", "propose_huddle", "propose_squad",
-    "propose_teammate", "propose_ticket", "propose_tickets", "publish_artifact", "read_artifact", "read_chat", "report_bug", "schedule_history", "search_chat", "test_automation_script",
+    "propose_teammate", "propose_ticket", "publish_artifact", "read_artifact", "read_chat", "report_bug", "schedule_history", "search_chat", "test_automation_script",
   ]);
   // Read tools run in a Planning chat (plan mode) without a permission ask; report_bug files an issue, so it asks.
   const READ = ["connection_tools", "get_family", "get_ticket", "huddle_read", "list_connections", "list_huddle_presets", "list_jobs", "list_profiles", "list_schedules", "list_tickets", "read_chat", "schedule_history", "search_chat", "test_automation_script"];
@@ -540,7 +536,7 @@ test("run_schedule: a huddle helper is refused before reaching the daemon", asyn
 test("planner-scoped ticket tools pass the run to the daemon instead of refusing", async () => {
   const { ctx, calls } = ctxWith({ CKANBAN_TICKET: "site/t_9" }, "/elsewhere");
   expect(TOOLS.filter((t) => t.plannerScope).map((t) => t.name).sort()).toEqual([
-    "adopt_tickets", "chat_ticket", "comment_ticket", "create_ticket", "move_ticket", "plan_control", "stop_ticket", "update_ticket",
+    "chat_ticket", "comment_ticket", "create_ticket", "move_ticket", "plan_control", "stop_ticket", "update_ticket",
   ]);
   await callTool("update_ticket", { id: "t_1", dependsOn: ["api", "t_2"] }, ctx);
   expect(calls.at(-1)).toEqual({ fn: "updateTicket", args: ["site", "t_1", { dependsOn: ["api", "t_2"] }, "site/t_9"] });
@@ -583,17 +579,12 @@ test("list_schedules and schedule_history format for Claude", async () => {
   expect(h).toContain("2026-10-01 08:00  skipped (schedule): previous ticket t_4 still queued or running");
 });
 
-test("adopt_tickets and plan_control act on the run's own ticket and pass the run", async () => {
+test("plan_control acts on the run's own ticket and passes the run; adopt_tickets is gone", async () => {
   const { ctx, calls } = ctxWith({ CKANBAN_TICKET: "site/t_9" }, "/elsewhere");
-  const a = await callTool("adopt_tickets", { ids: ["t_1", "t_x"] }, ctx);
-  expect(a.isError).toBeUndefined();
-  expect(calls.at(-1)).toEqual({ fn: "adopt", args: ["site", "t_9", ["t_1", "t_x"], "site/t_9"] });
-  expect(a.content[0].text).toContain("Adopted 1:");
-  expect(a.content[0].text).toContain("t_x: belongs to plan t_other");
-  expect((await callTool("adopt_tickets", { ids: [] }, ctx)).isError).toBe(true);
+  expect(TOOLS.some((t) => t.name === "adopt_tickets" || t.name === "propose_tickets")).toBe(false);
   const p = await callTool("plan_control", { action: "resume" }, ctx);
   expect(calls.at(-1)).toEqual({ fn: "planAction", args: ["site", "t_9", "resume", "site/t_9"] });
-  expect(p.content[0].text).toContain("Plan of t_9 is running.");
+  expect(p.content[0].text).toContain("Tool tickets of t_9: running.");
   expect((await callTool("plan_control", { action: "pause" }, ctx)).content[0].text).toContain("start or resume");
   // Outside a run the ticket must be named.
   const out = ctxWith({}, "/elsewhere");

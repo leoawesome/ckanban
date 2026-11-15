@@ -63,7 +63,7 @@ function ParentPicker({ ticket, tickets, onPick, onCancel }: {
 const PARENT_ROW: Record<LinkHow | "none", { key: string; title: string; gone: string }> = {
   linked: { key: "Part of", title: "The ticket this one belongs to: the tickets of one piece of work sit under one main ticket", gone: "Ticket was deleted" },
   chat: { key: "Part of", title: "This ticket was created from that ticket's chat, as part of its work", gone: "Ticket was deleted" },
-  plan: { key: "From", title: "The ticket whose plan runs this one (it proposed or adopted it)", gone: "Ticket was deleted" },
+  plan: { key: "From", title: "The main ticket whose plan runs this one", gone: "Ticket was deleted" },
   none: { key: "Part of", title: "The ticket this one belongs to: the tickets of one piece of work sit under one main ticket", gone: "" },
 };
 

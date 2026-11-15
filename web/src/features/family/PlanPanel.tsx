@@ -14,23 +14,7 @@ const STATE_LABEL: Record<string, [string, string]> = {
 
 const stateOf = (plan: Ticket["plan"]): [string, string] => plan ? STATE_LABEL[plan.state] ?? [plan.state, "stopped"] : ["Not started", "stopped"];
 
-/** Sidebar row: "Plan · 3/9 done →", with a badge while it runs or is stuck. Opens the Plan tab. */
-export function PlanSummary({ ticket, children, onOpen }: { ticket: Ticket; children: Ticket[]; onOpen: () => void }) {
-  const done = children.filter(complete).length;
-  const state = ticket.plan?.state;
-  const [label, tone] = stateOf(ticket.plan);
-  return (
-    <div className="field-row">
-      <span className="field-key">Plan</span>
-      <span className="plan-summary">
-        {(state === "stuck" || state === "running" || state === "finishing" || state === "paused") && <span className={`badge ${tone}`}>{label}</span>}
-        <button className="link-btn" onClick={onOpen}>{done}/{children.length} done →</button>
-      </span>
-    </div>
-  );
-}
-
-/** Every child is done: a muted "Plan finished · 5 of 5" with Move to Done (while the planner isn't Done) and an Add more tickets link. */
+/** Every task of a main ticket is done: a muted "Plan finished · 5 of 5" with Move to Done (while it isn't Done) and an Add more tasks link. */
 export function PlanFinished({ ticket, total, onMoveToDone, onAddMore }: {
   ticket: Ticket;
   total: number;
@@ -41,12 +25,12 @@ export function PlanFinished({ ticket, total, onMoveToDone, onAddMore }: {
     <div className="plan-finished" role="status">
       <span className="plan-finished-line">Plan finished · {total} of {total}</span>
       {ticket.status !== "done" && <button className="btn primary small" onClick={onMoveToDone}>Move to Done</button>}
-      <button className="link-btn plan-add-more" onClick={onAddMore} title="Ask Claude in the chat for more tickets">Add more tickets</button>
+      <button className="link-btn plan-add-more" onClick={onAddMore} title="Ask Claude in the chat for more tasks">Add more tasks</button>
     </div>
   );
 }
 
-/** The plan controls at the top of a planner's Family tab: state and Start / Pause / Resume. */
+/** The plan controls at the top of a main ticket's Tasks tab: state and Start / Pause / Resume. */
 export function PlanControls({ slug, ticket, children, onOpenTicket, onError, onMoveToDone, onAddMore, countShown }: {
   slug: string;
   /** The feature's status summary above already says "N of M done": leave the count off this line. */
@@ -100,7 +84,7 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
         <div className="plan-actions">
           {!plan || plan.state === "done" ? (
             <button className="btn primary small" disabled={busy}
-              title="Children switch to auto mode and run in dependency order; Claude is woken only when one needs a decision"
+              title="Its tasks run in order on their own; Claude is woken only when one needs a decision"
               onClick={() => act("start")}>Start plan</button>
           ) : plan.state === "paused" || plan.state === "stuck" ? (
             <button className="btn primary small" disabled={busy} onClick={() => act("resume")}>Resume plan</button>

@@ -1,7 +1,7 @@
 // Huddles: changing a huddle: saving, appending messages, creating (methods of the Huddles class in huddle.ts, split by topic).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { planProposal } from "../board/plan-proposal";
+import { planProposal } from "./plan-review-file";
 import { type SessionEntry } from "../runs/session";
 import { activeHost, DEFAULT_MAX_PARTICIPANTS, MAIN_HANDLE, parseMentions, proposalFile, rosterError, USER_HANDLE, type RosterEntry } from "./huddle-roster";
 import { MAIN_PRESET } from "./huddle-presets";
@@ -187,8 +187,8 @@ export function create(this: Huddles,
 }
 
 /**
- * A plan review reads the plan from a file, not the chat (see PLAN_REVIEW_READ): the latest proposed ticket and
- * child tickets, or the ticket's own description. A failure to read the chat falls back to the description.
+ * A plan review reads the plan from a file, not the chat (see PLAN_REVIEW_READ): the latest proposed ticket, or the
+ * ticket's own description. A failure to read the chat falls back to the description.
  */
 export function writeProposal(this: Huddles, slug: string, hid: string, host: Ticket): void {
   let entries: SessionEntry[] = [];

@@ -3,7 +3,7 @@ import { hiddenTool, withYouTool } from "../../web/src/features/family/family";
 import { HUDDLE_AGENT_ENV } from "../core/env";
 import { ClientError, huddleCaller, RUN_ENV, runProfile } from "../cli/client";
 import { BUILTIN_PRESETS, MAIN_PRESET } from "../huddle/huddle-presets";
-import { FRESH_HELPER_CHECK, MAX_TEXT } from "../huddle/huddle-templates";
+import { MAX_TEXT } from "../huddle/huddle-templates";
 import { squadProposal } from "../huddle/squad";
 import { teammateProposal } from "../huddle/teammate-proposal";
 import { keysAsk, MAX_ASKED_KEYS } from "../integrations/ask-keys";
@@ -77,39 +77,6 @@ export function proposalError(args: any): string | null {
   if (args?.important !== undefined && typeof args.important !== "boolean") return "important must be true or false";
   if (args?.partOf !== undefined && args.partOf !== null && !isText(args.partOf)) return 'partOf must be a ticket id, or "none" to take the ticket out of its family';
   return titleError(args?.title, "") ?? (isText(args?.description) ? null : "description is required");
-}
-
-/** Checks propose_tickets input; returns what's wrong, or null when it's fine. */
-export function ticketsError(args: any): string | null {
-  const ts = args?.tickets;
-  if (!Array.isArray(ts) || !ts.length) return "tickets must be a non-empty list";
-  const keys = new Set<string>();
-  for (const [i, t] of ts.entries()) {
-    const at = `ticket ${i + 1}: `;
-    if (!isText(t?.key)) return `${at}key is required`;
-    if (keys.has(t.key.trim())) return `${at}key "${t.key.trim()}" is used twice; keys must be unique`;
-    keys.add(t.key.trim());
-    const e = titleError(t.title, at) ?? (isText(t.description) ? null : `${at}description is required`);
-    if (e) return e;
-  }
-  for (const [i, t] of ts.entries()) {
-    if (t.dependsOn === undefined) continue;
-    if (!Array.isArray(t.dependsOn) || t.dependsOn.some((d: unknown) => typeof d !== "string")) return `ticket ${i + 1}: dependsOn must be a list of keys`;
-    const bad = t.dependsOn.find((d: string) => !keys.has(d.trim()) || d.trim() === t.key.trim());
-    if (bad !== undefined) return `ticket ${i + 1}: dependsOn "${bad}" is not the key of another ticket in this list (keys: ${[...keys].join(", ")})`;
-  }
-  for (const [i, t] of ts.entries()) {
-    if (t.needs === undefined) continue;
-    if (!Array.isArray(t.needs) || t.needs.some((n: unknown) => typeof n !== "string")) return `ticket ${i + 1}: needs must be a list of device names, e.g. ["chrome-whatsapp"]`;
-  }
-  for (const [i, t] of ts.entries()) {
-    if (t.important !== undefined && typeof t.important !== "boolean") return `ticket ${i + 1}: important must be true or false`;
-  }
-  for (const [i, t] of ts.entries()) {
-    if (t.tags === undefined) continue;
-    if (!Array.isArray(t.tags) || t.tags.some((n: unknown) => typeof n !== "string")) return `ticket ${i + 1}: tags must be a list of tag names, e.g. ["post"]`;
-  }
-  return null;
 }
 
 export const TITLE = { type: "string", description: "Short, specific title (under 80 characters)." };
@@ -478,45 +445,4 @@ export const PLANNING_TOOLS: Tool[] = [
     },
   },
   ...CONNECTION_TOOLS,
-  {
-    name: "propose_tickets",
-    description:
-      "Board ticket chat (any column): propose new tickets, e.g. splitting the work, linked to this ticket as their parent. Call list_tickets first to avoid duplicates. " +
-      "The board shows one card per ticket; the user clicks Create to add it to Backlog, linked to this ticket. " +
-      "Each description must be self-contained (goal, context with relevant files, acceptance criteria). " +
-      "key is a short unique name; dependsOn lists keys that must be finished first: give one to tickets that build on each other or likely edit the same files. " +
-      "needs lists shared devices a ticket expects to use (e.g. [\"chrome-whatsapp\"]), as a hint: its run takes them only while it uses them, so don't chain dependsOn for them. " +
-      "tags (e.g. [\"post\"]) label the tickets so the user can filter the board by them; give the tags the user uses for this kind of work. " +
-      "important: true marks a ticket ⭐ Important (reviewed in an auto huddle before landing); use it, not a ⭐ in the title. " +
-      `Nothing is created by the call. ${FRESH_HELPER_CHECK}`,
-    inputSchema: {
-      type: "object",
-      properties: {
-        tickets: {
-          type: "array", minItems: 1,
-          items: {
-            type: "object",
-            properties: {
-              key: { type: "string", description: "Short unique name, e.g. api." },
-              title: TITLE,
-              description: { type: "string", description: "Markdown description." },
-              dependsOn: { type: "array", items: { type: "string" }, description: "Keys of tickets in this list that must be finished first." },
-              needs: { type: "array", items: { type: "string" }, description: "Shared devices it expects to use (a hint), e.g. [\"chrome-whatsapp\"]." },
-              tags: { type: "array", items: { type: "string" }, description: "Tags it gets, e.g. [\"post\"]." },
-              important: PROPOSED_IMPORTANT,
-            },
-            required: ["key", "title", "description"],
-          },
-        },
-      },
-      required: ["tickets"],
-    },
-    annotations: { readOnlyHint: true },
-    changes: false,
-    async run(args) {
-      const e = ticketsError(args);
-      if (e) throw new ClientError(`${e}. Fix it and call propose_tickets again.`);
-      return SHOWN;
-    },
-  },
 ];

@@ -635,9 +635,10 @@ export class Store {
     return t;
   }
 
-  updateTicket(slug: string, id: string, patch: Partial<Ticket>): Ticket {
+  /** keepUpdatedAt: a data migration that changes no content keeps the ticket's updatedAt (its place in sorted lists). */
+  updateTicket(slug: string, id: string, patch: Partial<Ticket>, opts: { keepUpdatedAt?: boolean } = {}): Ticket {
     const current = parseTicket(readFileSync(this.ticketPath(slug, id), "utf8"));
-    const next: Ticket = { ...current, ...patch, id, updatedAt: nowIso() };
+    const next: Ticket = { ...current, ...patch, id, updatedAt: opts.keepUpdatedAt ? current.updatedAt : nowIso() };
     // Changing column without an explicit position (drag drop) places the ticket by entryOrder().
     if (patch.status !== undefined && patch.status !== current.status && patch.order === undefined) {
       next.order = this.entryOrder(slug, patch.status);

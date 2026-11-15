@@ -54,22 +54,6 @@ test("merged PR does not touch ticket the user moved during gh call", async () =
 
 const merged = () => store.listComments("p", id).filter((c) => c.text === "PR merged.").length;
 
-test("merged PR keeps a ticket with uncreated proposed tickets in review, then moves it once they exist", async () => {
-  summary = { pendingNewTickets: [{ title: "Fix logout", description: "" }, { title: "Fix keyboard", description: "" }] };
-  for (let i = 0; i < 3; i++) await checkPr(board, store, "p", id, async () => "MERGED");
-  expect(store.getTicket("p", id)!.status).toBe("review");
-  expect(merged()).toBe(1);
-
-  store.createTicket("p", { title: "Fix logout", body: "", status: "backlog", parentId: id });
-  await checkPr(board, store, "p", id, async () => "MERGED");
-  expect(store.getTicket("p", id)!.status).toBe("review");
-
-  store.createTicket("p", { title: "Fix keyboard", body: "", status: "backlog", parentId: id });
-  await checkPr(board, store, "p", id, async () => "MERGED");
-  expect(store.getTicket("p", id)!.status).toBe("done");
-  expect(merged()).toBe(1);
-});
-
 test("merged PR keeps a ticket with open questions in review", async () => {
   summary = { openQuestions: 2 };
   await checkPr(board, store, "p", id, async () => "MERGED");

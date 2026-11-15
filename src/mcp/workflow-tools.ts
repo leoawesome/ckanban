@@ -247,51 +247,17 @@ export const WORKFLOW_TOOLS: Tool[] = [
     },
   },
   {
-    name: "adopt_tickets",
-    description:
-      "Manager mode: make existing tickets on this board children of this ticket, so its plan runs them (use when the user asks you, in this " +
-      "ticket's chat, to manage, run or take over tickets). Find them with list_tickets first. Tickets in another plan, finished ones, this " +
-      "ticket and its parents are skipped with a reason. Adopted tickets keep their column, mode, dependsOn and needs; nothing starts until " +
-      "the plan starts (plan_control). Then set dependsOn (ticket ids) and needs with update_ticket. Tell the user what was adopted and skipped. " +
-      "Inside a board run it only works in a reply to the user's own message in this ticket's chat.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        profile: PROFILE,
-        ids: { type: "array", items: { type: "string" }, description: "Ticket ids to adopt, e.g. [\"t_20261001_abcd\"]." },
-        id: { ...ID, description: "Adopting ticket. Default: the ticket of this board run." },
-      },
-      required: ["ids"],
-    },
-    changes: true,
-    plannerScope: true,
-    async run(args, ctx) {
-      const slug = await slugFor(args, ctx);
-      const id = str(args, "id", false) ?? runTicketId(ctx);
-      if (!id) throw new ClientError("id is required outside a board run");
-      if (!Array.isArray(args?.ids) || !args.ids.some((x: unknown) => typeof x === "string" && x.trim())) throw new ClientError("ids must be a non-empty list of ticket ids");
-      const r = await ctx.client.adopt(slug, id, args.ids.filter((x: unknown) => typeof x === "string"), ctx.env[RUN_ENV]);
-      const lines = [
-        r.adopted.length ? `Adopted ${r.adopted.length}:\n${r.adopted.map((t) => `- ${ticketLine(t)}`).join("\n")}` : "Adopted none.",
-        ...(r.skipped.length ? [`Skipped ${r.skipped.length}:\n${r.skipped.map((x) => `- ${x.id}: ${x.reason}`).join("\n")}`] : []),
-        "Nothing starts until the plan starts: set dependsOn / needs with update_ticket, then call plan_control.",
-      ];
-      return lines.join("\n\n");
-    },
-  },
-  {
     name: "plan_control",
     description:
-      "Start or resume this ticket's plan, so the board runs its child tickets unattended: each child starts as soon as the ones it waits for are done, " +
-      "shared devices (needs) taken in turns, never a child waiting on the user. Use it when the user asked you to run, manage or take over the " +
-      "tickets. Pausing and finishing stay with the user (Plan tab). Inside a board run it works for the ticket's own plan " +
-      "only: in a reply to the user's message in this ticket's chat, or while the plan runs.",
+      "Main tickets (and tool groups): start or resume running this ticket's tool tickets, e.g. when the user pressed Stop and now asks you to carry on. " +
+      "Each one starts as soon as the ones it waits for are done. Pausing stays with the user (Stop). Inside a board run it works for the ticket's own " +
+      "tool tickets only: in a reply to the user's message in this ticket's chat, or while its tool tickets run.",
     inputSchema: {
       type: "object",
       properties: {
         profile: PROFILE,
-        action: { type: "string", enum: ["start", "resume"], description: "start a new plan, or resume a paused or stuck one (both work either way)." },
-        id: { ...ID, description: "Planner ticket. Default: the ticket of this board run." },
+        action: { type: "string", enum: ["start", "resume"], description: "start, or resume after Stop or when stuck (both work either way)." },
+        id: { ...ID, description: "Main ticket. Default: the ticket of this board run." },
       },
       required: ["action"],
     },
@@ -305,8 +271,8 @@ export const WORKFLOW_TOOLS: Tool[] = [
       if (!action) throw new ClientError("action must be start or resume");
       const t = await ctx.client.planAction(slug, id, action, ctx.env[RUN_ENV]);
       const p = t.plan;
-      return `Plan of ${t.id} is ${p?.state ?? "not started"}. ` +
-        "The board starts children itself and wakes this ticket when one needs a decision; end your reply now.";
+      return `Tool tickets of ${t.id}: ${p?.state ?? "not started"}. ` +
+        "The board starts them itself and wakes this ticket with their results; end your reply now.";
     },
   },
 ];

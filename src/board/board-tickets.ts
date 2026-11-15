@@ -34,7 +34,7 @@ export async function createTicket(this: Board,
     ...(star.important && star.title.trim() ? { title: star.title, important: true } : {}),
   });
   this.emitTicket(slug, t);
-  // The planner's "Review proposal" badge depends on which of its proposed tickets exist.
+  // The parent's card shows its family (its task counts).
   const parent = input.parentId ? this.store.getTicket(slug, input.parentId) : null;
   if (parent) this.emitTicket(slug, parent);
   if (status === "ready") this.dispatch(slug);

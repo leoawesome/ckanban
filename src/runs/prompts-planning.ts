@@ -1,10 +1,8 @@
-import type { RepoKind } from "./git";
 import { FEATURE_TRAILER } from "../board/feature";
-import { MAX_RETRIES } from "../board/plan";
 import type { Ticket } from "../core/types";
 import { shellQuote } from "../core/util";
 import type { Question } from "./session";
-import { FEATURE_RULE, MAIN_QUESTIONS_RULE, RESULT_RULE, WRITING_RULE, canCommit, context, wakeSummary } from "./prompts-rules";
+import { FEATURE_RULE, WRITING_RULE, context } from "./prompts-rules";
 
 // ---- Features: the feature's status, shown at the top of the main ticket's Tasks tab (feature.ts) ----
 
@@ -108,51 +106,5 @@ When the discussion adds or changes something the ticket should say, you may cal
 }
 
 /** A main ticket's Planning chat makes no ticket cards: it creates tool tickets itself once the work starts. */
-export const MAIN_PLANNING = `This ticket is a main ticket: it never proposes child-ticket cards (don't call propose_tickets). Once the user says to go ahead, you create tool tickets yourself with \`create_ticket\` (kind explore, build, test, review, fix, group or round), and the board runs them and wakes you with each result. In Planning, only create tool tickets that explore or check (kind explore or review) when the user asks you to look into something; building starts once the user agrees with the plan. You never change the project's files yourself.`;
+export const MAIN_PLANNING = `This ticket is a main ticket. Once the user says to go ahead, you create tool tickets yourself with \`create_ticket\` (kind explore, build, test, review, fix, group or round), and the board runs them and wakes you with each result. In Planning, only create tool tickets that explore or check (kind explore or review) when the user asks you to look into something; building starts once the user agrees with the plan. You never change the project's files yourself.`;
 
-/**
- * Wakes a planner ticket's session while its plan runs: either child events to decide on, or the
- * final check once every child is done. The first line is what the ticket chat shows.
- */
-export function orchestratorPrompt(t: Ticket, o: { kind: PlanWake; events: string[]; table: string; board: string; outputDir: string; repo?: RepoKind; open?: Question[] }): string {
-  const repo = o.repo ?? "remote";
-  const where = repo === "remote"
-    ? "on the latest remote base branch, in a fresh temporary worktree (`git fetch`, then `git worktree add --detach <tmp dir> origin/<base branch>`; remove it afterwards), never in a folder with someone's uncommitted work"
-    : repo === "local"
-    ? "on the local base branch, in a fresh temporary worktree (`git worktree add --detach <tmp dir> <base branch>`; remove it afterwards; there is no remote to fetch from), never in a folder with someone's uncommitted work"
-    : `in the project folder itself (it has ${repo === "plain" ? "no version history" : "no commits yet"}, so there is nothing to fetch or branch; the children edited it in place), if the project has checks at all`;
-  const head = o.kind === "final"
-    ? "Plan finished: every child ticket is done. Run the final check and write the summary."
-    : `Plan update: ${o.events.length} child ticket${o.events.length === 1 ? " needs" : "s need"} a decision.\n${o.events.map((e) => `- ${e}`).join("\n")}`;
-  const job = o.kind === "final"
-    ? `# Final check
-1. Run the project's full checks (tests, typecheck, build, as its CLAUDE.md / README says) ${where}.
-2. If something is broken, fix it if it is small and safe, following the repo's instructions for landing changes; otherwise add a new child ticket with create_ticket and say so.
-3. Write ${o.outputDir}/plan-summary.md in plain words: TL;DR, what shipped per child (${canCommit(repo) ? "commit SHAs or PR links" : "the files each one changed"}), what was skipped and why, next steps.
-4. End with status "done" (or "blocked" if a human must step in).`
-    : `# What to do
-Decide each event and act with the ckanban MCP tools, then end the run; the board keeps the plan going.
-- Child failed or blocked: read it with get_ticket, add a hint with comment_ticket (the child reads new comments on its next run), fix its description with update_ticket if it was unclear, then move_ticket it to "ready" to retry (at most ${MAX_RETRIES} retries per child). Or split it: create_ticket new children (they land in Backlog and start when their dependsOn are done) and move the old one to "done" with a comment saying why. Or skip it: comment why and move it to "done".
-- Child is asking questions: answer them yourself with chat_ticket when the plan and code give you the answer; only ask the user when it is a business decision you can't make.
-${repo === "remote" ? "- Child finished with an open PR: review it (`gh pr view`, `gh pr diff`, its checks). If it is good, merge it with `gh pr merge --squash` (the board moves the child to Done once merged). If not, comment what to change and move it to \"ready\"." : `- Child finished: review what it changed (${canCommit(repo) ? "its branch's commits; there is no remote, so no pull request" : "the files its summary lists; there is no version history to diff"}). If it is good${canCommit(repo) ? " and its summary says it isn't in the project folder yet, merge its branch into the base branch in the project folder (main checkout) when that folder is clean, then" : ","} move it to "done"; if not, comment what to change and move it to "ready".`}
-- Don't do a child's work yourself in this session; keep this reply short.`;
-  return `${head}
-
-${context("Plan update from the board", `You are the planner (orchestrator) of ticket "${t.title}" (${t.id}) on board ${o.board}. The board runs this ticket's child tickets unattended, in dependency order (each starts as soon as the ones it waits for are done), and wakes you only when a decision is needed. It never starts a child that waits on the user (open questions, a proposal to apply, in Planning). The user is not watching.
-
-# Child tickets
-${o.table}
-
-${job}
-
-# Your board rights
-The ckanban MCP tools create_ticket, update_ticket (title, body, status, mode, dependsOn, needs, release), move_ticket, chat_ticket, stop_ticket and comment_ticket work on THIS plan's child tickets only; everything else on the board is refused. create_ticket here always makes a child of this plan in Backlog (auto mode). Every change is logged on the child.
-Children that share a device only a few may use at once (e.g. the WhatsApp Web tab) get needs (e.g. ["chrome-whatsapp"]) as a hint, not a dependsOn chain: they all run, and each run takes the device only while it uses it (take_devices), so they take turns just on the device.
-
-# When you need the user
-End with status "blocked" (or "questions" after asking with the ask_questions tool) only when a human must decide or fix something. That pauses the plan and notifies the user. Otherwise end with "done". ${MAIN_QUESTIONS_RULE}${openQuestionsRule(o.open ?? [])}
-
-${WRITING_RULE}
-
-${RESULT_RULE}`, { wake: wakeSummary(o.kind, o.events.length, false, "child") })}`;
-}

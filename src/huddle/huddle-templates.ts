@@ -64,25 +64,18 @@ export const PLAN_REVIEW = "plan-review";
  */
 export const PLAN_REVIEW_READ =
   `Review the plan, not code changes. The board wrote it to a file in this huddle's folder in the host ticket's outputs ` +
-  `(${proposalFile("<huddle id>")}; the full path is under "Plan under review" below): the latest ticket or child tickets proposed in the ticket's chat, ` +
+  `(${proposalFile("<huddle id>")}; the full path is under "Plan under review" below): the latest ticket proposed in the ticket's chat, ` +
   "or the ticket's description when nothing was proposed. Read only that file for the plan: don't read the ticket's chat log or Claude's session files, " +
-  "so you judge the plan as written, like the worker who gets it. When it has several child tickets, review each one and start every finding with its ticket key. " +
+  "so you judge the plan as written, like the worker who gets it. " +
   "Read the project to check it, but never edit, create or delete files, and don't run commands that change anything: planning never changes the project. ";
 
 /**
- * How a fresh reader checks a ticket it gets with no chat: the plan-review `qa` role and the planning chat's own helper
- * before propose_tickets (TICKETS_FORMAT) share it, so the two don't drift apart.
+ * How a fresh reader checks a ticket it gets with no chat (the plan-review `qa` role).
  */
 export const FRESH_READER_CHECK =
   "For each ticket, first restate its goal and the change it asks for in 2-3 plain sentences, from the ticket text alone; " +
   "a part you can't restate from the text is a MUST finding. Then list the choices the ticket leaves to the worker that the worker could plausibly get wrong " +
   "(data format, error handling, which file, UI wording, what happens on failure), each with the question the ticket should answer.";
-
-/**
- * Before propose_tickets: a fresh helper reads each child ticket with no chat, the way its worker will, so gaps get
- * fixed before the cards appear. Shared with the propose_tickets tool description.
- */
-export const FRESH_HELPER_CHECK = `Before you call \`propose_tickets\`, run one fresh-reader check: start a fresh helper with the Agent tool and give it only each ticket's title and description, plus the other tickets' keys and titles; no chat text and none of your reasoning. Tell it: "${FRESH_READER_CHECK}" Fix what it found in the tickets, then call \`propose_tickets\` and tell the user in one line what the check changed (or that it changed nothing). One check per proposal: don't run it again on the fixed tickets.`;
 
 /** Before a plan or design adds new code, check the project doesn't already have it. */
 const REUSE_CHECK =
@@ -160,11 +153,11 @@ export const BUILTIN_TEMPLATES: HuddleTemplate[] = [
   {
     name: PLAN_REVIEW,
     label: "Plan review",
-    description: "Before any work starts, a small read-only squad checks the proposed ticket or child tickets against the real project: what's missing, what's risky, whether the checks can be tested. Findings go back to the planning chat.",
+    description: "Before any work starts, a small read-only squad checks the proposed ticket against the real project: what's missing, what's risky, whether the checks can be tested. Findings go back to the planning chat.",
     rounds: null,
     maxCostUsd: 5,
     hostRules: "",
-    report: "One finding per line: [MUST|SHOULD|COULD] ticket key (for child tickets) and plan section - problem - the change to make in the ticket. MUST = the plan as written would build the wrong thing, " +
+    report: "One finding per line: [MUST|SHOULD|COULD] plan section - problem - the change to make in the ticket. MUST = the plan as written would build the wrong thing, " +
       "miss something that has to change, or can't be checked; give evidence (file:line, or the line of the plan). Workers report to @skeptic, who sends @main one list.",
     roster: [
       {

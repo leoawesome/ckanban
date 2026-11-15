@@ -70,7 +70,6 @@ function line(e: SessionEntry): string {
   const parts = [`Claude: ${text}`];
   if (e.questions?.length) parts.push(`Claude asked the user: ${e.questions.map((q) => q.question).join(" / ")}`);
   if (e.proposal) parts.push(`Claude proposed a new title and description: "${e.proposal.title}"`);
-  if (e.newTickets?.length) parts.push(`Claude proposed new tickets: ${e.newTickets.map((t) => `"${t.title}"`).join(", ")}`);
   if (e.branch) parts.push(`Claude offered to branch the ticket: ${e.branch.reason}`);
   if (e.huddle) parts.push(`Claude proposed a review huddle: ${e.huddle.reason}`);
   if (e.deletion) parts.push(`Claude asked to delete tickets: ${e.deletion.reason}`);

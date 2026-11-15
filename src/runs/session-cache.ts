@@ -586,7 +586,7 @@ export class SessionCache {
     return {
       // The preview is stored and sent to the UI: a saved key in Claude's last message is hidden there.
       title: p.title, lastMessage: p.lastMessage && this.summaryFile ? { ...p.lastMessage, text: maskSaved(dirname(this.summaryFile), p.lastMessage.text) } : p.lastMessage, artifacts: p.artifacts,
-      openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), ...(p.openFormId ? { openFormId: p.openFormId } : {}), pendingProposal: p.pendingProposal, pendingNewTickets: p.pendingNewTickets, pendingTeammates: p.pendingTeammates, pendingSquads: p.pendingSquads,
+      openQuestions: p.openQuestions, openForm: p.openForm, ...(p.openAsk ? { openAsk: p.openAsk } : {}), ...(p.openFormId ? { openFormId: p.openFormId } : {}), pendingProposal: p.pendingProposal, pendingTeammates: p.pendingTeammates, pendingSquads: p.pendingSquads,
       pendingAutomations: p.pendingAutomations, ...(p.pendingKeys.length ? { pendingKeys: p.pendingKeys } : {}),
       ...(p.pendingScheduleDeletes.length ? { pendingScheduleDeletes: p.pendingScheduleDeletes } : {}),
       ...(p.pendingHelperRules.length ? { pendingHelperRules: p.pendingHelperRules } : {}), cache: p.cache,

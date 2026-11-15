@@ -118,7 +118,7 @@ Rating: **Yes** = same or close. **Workaround** = possible but clearly worse, or
 | Chat composer: send message to the ticket | Yes | `Input` + `onSubmit` (not on mobile). Single-line feel; no multi-line textarea |
 | Paste or drop images into chat / new ticket (`useImagePaste`) | **No** | `Input` is text only; no clipboard image, no file drop. Workaround: type a file path |
 | Questions form (radio / multi-select / free text) | Yes | `Select`, `Button`, `Input` |
-| Proposal card "Apply", new tickets card "Create", plan panel "Start plan" | Yes | Buttons calling the same API |
+| Proposal card "Apply", task cards and main ticket controls | Yes | Buttons calling the same API |
 | Live "working" view while a run streams | Workaround | Polling; feels laggier than SSE |
 
 ### Outputs and files (`Outputs.tsx`, `FilesView.tsx`)

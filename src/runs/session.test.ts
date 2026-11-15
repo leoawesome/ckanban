@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync
 import { join } from "node:path";
 import { FILES_NOTE, IMAGES_NOTE } from "../board/attachments";
 import { Bus, type BusEvent } from "../core/events";
-import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseNewTickets, parseProposal, parseSession, pollSessionsSliced, scanSessionFiles, scanSessionFilesAsync } from "./session";
+import { SessionCache, SessionParser, findSessionFile, startSessionWatcher, summaryTag, fromTicket, fromTicketText, parseProposal, parseSession, pollSessionsSliced, scanSessionFiles, scanSessionFilesAsync } from "./session";
 import { Store } from "../core/store";
 import { tempDir } from "../../test/support/helpers";
 
@@ -231,40 +231,26 @@ test("stay marker is hidden from text", () => {
   expect(s.entries[0].text).toBe("Proposed 1 ticket.");
 });
 
-test("parseSession: <ckanban-tickets> becomes newTickets, stripped from the text", () => {
-  const block = '<ckanban-tickets>[{"title":"A","description":"## Goal\\nDo A"},{"title":"B"},{"description":"no title"}]</ckanban-tickets>';
+test("parseSession: an old <ckanban-tickets> block is cut from the text and shows no card", () => {
+  const block = '<ckanban-tickets>[{"title":"A","description":"## Goal\\nDo A"},{"title":"B"}]</ckanban-tickets>';
   const s = parseSession(asst([{ type: "text", text: `Here is the split.\n\n${block}\n\nApply what you like.` }], "1"));
   const e = s.entries[0];
   expect(e.text).toBe("Here is the split.\n\n\n\nApply what you like.");
-  expect(e.newTickets).toEqual([{ title: "A", description: "## Goal\nDo A" }, { title: "B", description: "" }]);
   expect(e.proposal).toBeUndefined();
-  expect(s.pendingNewTickets).toHaveLength(2);
-  expect(parseSession([asst([{ type: "text", text: block }], "1"), user("thanks", "2")].join("\n")).pendingNewTickets).toEqual([]);
-  // Only the block: the board still has something to show as the last message.
-  expect(parseSession(asst([{ type: "text", text: block }], "1")).lastMessage!.text).toBe("Proposed 2 new tickets");
+  expect(Object.keys(e)).not.toContain("newTickets");
 });
 
 test("parseSession: invalid <ckanban-tickets> JSON stays visible text", () => {
   const bad = "<ckanban-tickets>[{title: A}]</ckanban-tickets>";
   const e = parseSession(asst([{ type: "text", text: `x ${bad}` }], "1")).entries[0];
-  expect(e.newTickets).toBeUndefined();
   expect(e.text).toContain(bad);
 });
 
-test("parseSession: ticket proposal and new tickets in one reply", () => {
+test("parseSession: ticket proposal and an old tickets block in one reply", () => {
   const text = '<ckanban-ticket>{"title":"Planner","description":"D"}</ckanban-ticket>\n<ckanban-tickets>[{"title":"Child","description":"C"}]</ckanban-tickets>';
   const e = parseSession(asst([{ type: "text", text }], "1")).entries[0];
   expect(e.proposal).toEqual({ title: "Planner", description: "D" });
-  expect(e.newTickets).toEqual([{ title: "Child", description: "C" }]);
   expect(e.text).toBe("");
-});
-
-test("parseSession: proposed tickets keep key and dependsOn", () => {
-  const block = '<ckanban-tickets>[{"key":"api","title":"API","description":"d"},{"key":"ui","title":"UI","dependsOn":["api", 3, ""]}]</ckanban-tickets>';
-  expect(parseSession(asst([{ type: "text", text: block }], "1")).entries[0].newTickets).toEqual([
-    { key: "api", title: "API", description: "d" },
-    { key: "ui", title: "UI", description: "", dependsOn: ["api"] },
-  ]);
 });
 
 test("parseSession: chat blocks survive wrong, missing or quoted closing tags", () => {
@@ -289,7 +275,7 @@ test("parseSession: chat blocks survive wrong, missing or quoted closing tags", 
   expect(q.text).toBe("after");
   // ckanban-ticket never grabs a ckanban-tickets block.
   const t = entry('<ckanban-tickets>[{"title":"A"}]</parameter>');
-  expect(t.newTickets).toEqual([{ title: "A", description: "" }]);
+  expect(t.text).toBe("");
   expect(t.proposal).toBeUndefined();
 });
 
@@ -347,16 +333,12 @@ test("parseSession: planning tool calls become forms and cards keyed by the tool
     user("Red", "2026-10-04T01:00:05Z"),
     asst([
       { type: "tool_use", id: "toolu_p", name: "mcp__ckanban__propose_ticket", input: { title: " Fix chat ", description: "## Goal" } },
-      { type: "tool_use", id: "toolu_t", name: "propose_tickets", input: { tickets: [{ key: "api", title: "API", description: "A" }, { key: "ui", title: "UI", description: "B", dependsOn: ["api"] }] } },
     ], "2026-10-04T01:00:06Z"),
   ].join("\n"));
   const p = more.entries.find((e) => e.uuid === "toolu_p")!;
   expect(p.proposal).toEqual({ title: "Fix chat", description: "## Goal" });
-  const t = more.entries.find((e) => e.uuid === "toolu_t")!;
-  expect(t.newTickets).toEqual([{ key: "api", title: "API", description: "A" }, { key: "ui", title: "UI", description: "B", dependsOn: ["api"] }]);
   expect(more.entries.some((e) => e.kind === "tool")).toBe(false);
   expect(more.pendingProposal).toEqual({ title: "Fix chat", description: "## Goal" });
-  expect(more.pendingNewTickets).toHaveLength(2);
   expect(more.openQuestions).toBe(0);
 });
 
@@ -483,13 +465,7 @@ test("parseSession: a propose_huddle card with a template and no roster", () => 
   ]);
 });
 
-test("proposed tickets: important, or a ⭐ before the title, marks them Important and the star leaves the title", () => {
-  expect(parseNewTickets([{ key: "a", title: "⭐ Apply to OpenAI", description: "x" }, { key: "b", title: "Plain", description: "y", important: true }, { key: "c", title: "Other", description: "z" }]))
-    .toEqual([
-      { key: "a", title: "Apply to OpenAI", description: "x", important: true },
-      { key: "b", title: "Plain", description: "y", important: true },
-      { key: "c", title: "Other", description: "z" },
-    ]);
+test("a proposed ticket: important, or a ⭐ before the title, marks it Important and the star leaves the title", () => {
   expect(parseProposal({ title: "⭐ Fix login", description: "d" })).toEqual({ title: "Fix login", description: "d", important: true });
   expect(parseProposal({ title: "Fix login", description: "d" })).toEqual({ title: "Fix login", description: "d" });
 });
