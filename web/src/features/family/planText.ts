@@ -1,10 +1,18 @@
+import { tallyOf, type FeatureTicket } from "./family";
+
 type PlanChild = { status: string; outcome: string | null; prUrl: string | null };
 
-/** Done, or finished in Review without a PR to merge (same rule as the server's plan.ts). */
+/** Done, or finished in Review without a PR to merge (same rule as the server's plan.ts): a stuck plan's waiting list leaves these out. */
 export const complete = (t: PlanChild) => t.status === "done" || (t.status === "review" && t.outcome === "done" && !t.prUrl);
 
-/** The plan has at least one task and every task is done: the main ticket's next step is Move to Done. */
-export const planFinished = (children: PlanChild[]) => children.length > 0 && children.every(complete);
+/**
+ * Whether a main ticket's (or group's) tasks are all finished, and how many there are: the tasks under it (tasksUnder),
+ * counted like the Tasks tab badge, the list head and the status (taskTally), so Plan finished never says another number.
+ */
+export function planDone(tasks: FeatureTicket[]): { finished: boolean; done: number; total: number } {
+  const { done, total } = tallyOf(tasks);
+  return { finished: total > 0 && done === total, done, total };
+}
 
 /** The plan's wake-up count in plain words: "Claude checked in 3 times". */
 export const checkInsText = (n: number) => `Claude checked in ${n === 1 ? "once" : `${n} times`}`;

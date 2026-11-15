@@ -2,7 +2,7 @@
 // and the helpers several route files use (view, profileOr404, runRights ...). Moved verbatim from http.ts.
 import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { pauser } from "../core/lag";
+import { pauser, track } from "../core/lag";
 import { CommandRows } from "../board/cmdbar";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "../runs/artifact";
 import { claudeSessionFile, ConflictError, recoveryFor, type Board } from "../board/board";
@@ -411,6 +411,44 @@ export function createContext(deps: ServerDeps) {
   const spend = new SpendIndex(store);
   // A main ticket's card and result cards count what its family spent.
   board.onCost((s, id) => spend.ticket(s, id).costUsd + huddles.ticketSpend(s, id).costUsd);
+  // A main ticket's card: a family ticket whose log isn't counted yet (after a restart) is read in the background, and
+  // the main tickets above it are sent again once it is (batched: a family's tickets finish one after another).
+  const costed = new Map<string, Set<string>>();
+  let costTimer: ReturnType<typeof setTimeout> | null = null;
+  const sendCosted = () => {
+    costTimer = null;
+    for (const [slug, ids] of costed) {
+      const mains = new Set<string>();
+      for (const id of ids) {
+        if (own.delete(`${slug}/${id}`)) mains.add(id);
+        const seen = new Set<string>();
+        for (let t = store.getTicket(slug, id); t && !seen.has(t.id); ) {
+          seen.add(t.id);
+          const up = parentLink(t);
+          t = up ? store.getTicket(slug, up.id) : null;
+          if (t?.main) mains.add(t.id);
+        }
+      }
+      for (const id of mains) {
+        const t = store.getTicket(slug, id);
+        if (t) board.emitTicket(slug, t);
+      }
+    }
+    costed.clear();
+  };
+  const counted = (s: string, id: string) => {
+    let ids = costed.get(s);
+    if (!ids) costed.set(s, (ids = new Set()));
+    ids.add(id);
+    costTimer ??= setTimeout(sendCosted, 300);
+  };
+  board.familyCostOf = (s, id) => spend.ticketSoon(s, id, () => counted(s, id)) + huddles.ticketSpend(s, id).costUsd;
+  // A Review or In Progress card's own cost: the same, and that card is sent again once its log is counted.
+  const own = new Set<string>();
+  const cardCost = (s: string, id: string) => spend.ticketSoon(s, id, () => {
+    own.add(`${s}/${id}`);
+    counted(s, id);
+  });
   const loops = deps.loops ?? new LoopManager(store, bus, board, passes, {
     now: () => new Date(), sideCall, shimDir: () => ckanbanShim(store.root), port: () => server.port ?? deps.port,
   });
@@ -883,7 +921,7 @@ export function createContext(deps: ServerDeps) {
       /** What the card's huddle line counts while huddleBusy (helpers working and in the huddle, open findings); null otherwise. */
       huddleLine: huddleWorks && huddle ? { working: huddle.helpersWorking ?? huddle.working, helpers: huddle.helpers ?? huddle.working, findings: huddle.findings ?? 0 } : null,
       /** API-equivalent $ so far (the Usage tab's total: its runs and its huddles' teammates), for In Progress and Review cards. */
-      costUsd: running || t.status === "in_progress" || t.status === "review" ? spend.ticket(p.slug, t.id).costUsd + huddles.ticketSpend(p.slug, t.id).costUsd : null,
+      costUsd: running || t.status === "in_progress" || t.status === "review" ? cardCost(p.slug, t.id) + huddles.ticketSpend(p.slug, t.id).costUsd : null,
       /** Spending cap its next work run gets (null: none). */
       runCap: runCapFor(t, p),
       /** A main ticket: its tool tickets working now (the card shows In progress meanwhile, wherever the user put it). */
@@ -961,6 +999,10 @@ export function createContext(deps: ServerDeps) {
   const ssePayload = (e: BusEvent): string => {
     const hit = ssePayloads.get(e);
     if (hit !== undefined) return hit;
+    // Tracked, so a slow card build here is named in a freeze's [lag] line (it runs inside the event, not a request).
+    return track(`events: ${e.type}`, () => ssePayloadOf(e));
+  };
+  const ssePayloadOf = (e: BusEvent): string => {
     let out: unknown = e;
     if (e.type === "ticket.updated") {
       const p = store.getProfile(e.profile);

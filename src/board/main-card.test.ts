@@ -69,13 +69,13 @@ test("one tool ticket is enough for the card's working line and step count", () 
   expect(cardFamily({ ...main, familyCard: { ...fc, tools: 0, working: [], running: [] } }, false).fc).toBeNull();
 });
 
-test("progress in words: finished tool tickets of all of them", () => {
+test("progress in words: its tasks by the Tasks tab's rule (a ticket the user added counts, like in the badge)", () => {
   const main = tk("M", { title: "AI Outreach", main: true, status: "review" });
   const tools = Array.from({ length: 16 }, (_, i) => tk(`T${i}`, { parentId: "M", tool: true, kind: "build", status: i < 7 ? "done" : "backlog" }));
   const added = tk("U", { partOf: "M", status: "done" });
   const fc = familyCard(main, [...tools, added], [main, ...tools, added], none, 41);
-  expect(fc).toMatchObject({ tools: 16, toolsDone: 7 });
-  expect(stepsText(fc)).toBe("7 of 16 tasks");
+  expect(fc).toMatchObject({ tools: 16, toolsDone: 7, tasks: 17, tasksDone: 8 });
+  expect(stepsText(fc)).toBe("8 of 17 tasks");
 });
 
 test("a failed step reads Step failed with its reason, and the card's line is red", () => {

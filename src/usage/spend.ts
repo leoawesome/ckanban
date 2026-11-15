@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { dayKey } from "./limit";
-import { pauser } from "../core/lag";
+import { pauser, track } from "../core/lag";
 import { readSideSpend } from "../runs/side-call";
 import { atomicWrite, type Store } from "../core/store";
 import { loadLog, logStat, openLog } from "../runs/run-log";
@@ -12,6 +12,8 @@ import { loadLog, logStat, openLog } from "../runs/run-log";
 // (spend-days.json).
 
 const CHUNK = 1024 * 1024;
+/** ticketSoon() reads at most this much of a log at once; more (or a compressed log to unpack) is read in the background. */
+const SOON_BYTES = 512 * 1024;
 /** Days the huddle ledger keeps. */
 const KEEP_DAYS = 60;
 
@@ -59,6 +61,38 @@ export class SpendIndex {
       await pause();
     }
   }
+
+  /**
+   * A ticket's cost without a long read: a main ticket's card adds up every ticket of its family, and after a restart
+   * (nothing counted yet) that read whole run logs and unpacked compressed ones in one go, up to seconds for an old
+   * plan's family. With little new to read it reads it now; otherwise it returns what is counted so far, reads the
+   * rest in the background (one ticket at a time, in slices, see ticketAsync) and calls onReady once it is counted.
+   */
+  ticketSoon(slug: string, id: string, onReady: () => void): number {
+    const file = this.store.activityPath(slug, id);
+    const ls = logStat(file);
+    const st = this.files.get(file);
+    const left = !ls ? 0 : !st || ls.size < st.offset ? ls.size : ls.size - st.offset;
+    if (left === 0 || (left <= SOON_BYTES && !ls?.gz)) return this.ticket(slug, id).costUsd;
+    const key = `${slug}/${id}`;
+    const waiting = this.soon.get(key);
+    if (waiting) waiting.push(onReady);
+    else {
+      const ready = [onReady];
+      this.soon.set(key, ready);
+      this.soonQueue = this.soonQueue
+        .then(() => track("spend: family costs", () => this.ticketAsync(slug, id)))
+        .catch(() => {})
+        .finally(() => {
+          this.soon.delete(key);
+          for (const f of ready) f();
+        });
+    }
+    const counted = st && ls && ls.size >= st.offset ? st.costUsd : 0;
+    return counted + readSideSpend(this.store.sideSpendPath(slug, id)).costUsd;
+  }
+  private soon = new Map<string, (() => void)[]>();
+  private soonQueue: Promise<unknown> = Promise.resolve();
 
   /** ticket() in steps: it yields between chunks of a long activity log (a place to pause). */
   private *ticketSteps(slug: string, id: string): Generator<void, TicketSpend> {

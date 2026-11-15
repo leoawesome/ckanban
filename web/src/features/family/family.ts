@@ -460,9 +460,26 @@ export function featureTasks<T extends FeatureTicket>(rows: FamilyRow<T>[]): T[]
 
 /** Finished tasks of all of them (featureTasks): the Done column, a test's passed or problem verdict. */
 export function taskTally<T extends FeatureTicket>(rows: FamilyRow<T>[]): { done: number; total: number } {
-  const tasks = featureTasks(rows);
-  const done = tasks.filter((t) => { const s = familyState(t); return s === "done" || s === "passed" || s === "problem"; }).length;
-  return { done, total: tasks.length };
+  return tallyOf(featureTasks(rows));
+}
+
+/**
+ * The tasks under id (featureTasks over the rows below it in its own feature): a main ticket's are its feature's
+ * tasks, a group's the tasks inside it. The plan line and Plan finished count these, so a nested group's own row never
+ * counts as a task there either.
+ */
+export function tasksUnder<T extends FeatureTicket>(rows: FamilyRow<T>[], id: string): T[] {
+  const at = rows.findIndex((r) => r.ticket.id === id);
+  if (at < 0) return [];
+  const depth = rows[at].depth;
+  let end = at + 1;
+  while (end < rows.length && rows[end].depth > depth) end++;
+  return featureTasks(rows.slice(at + 1, end));
+}
+
+/** Finished tasks of tasks (taskTally's rule): Done, or a test's Passed or Found a problem. */
+export function tallyOf<T extends FeatureTicket>(tasks: T[]): { done: number; total: number } {
+  return { done: tasks.filter((t) => settled(familyState(t))).length, total: tasks.length };
 }
 
 /** The sub-features in id's own feature, at any level of it (familyOrder). */

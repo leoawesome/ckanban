@@ -78,7 +78,10 @@ export function stepAge(lastActivityAt: string | null | undefined, now: number):
 }
 
 /** A main card's family summary, as far as these rules go (main-ticket.ts FamilyCard). */
-interface FamilyLike { tools: number; toolsDone?: number; running: string[]; working?: string[] }
+interface FamilyLike { tools: number; toolsDone?: number; tasks?: number; tasksDone?: number; running: string[]; working?: string[] }
+
+/** The card's task count: its tasks by the Tasks tab's rule (an older daemon without them: its tool tickets). */
+const taskCount = (f: FamilyLike) => (f.tasks !== undefined ? { done: f.tasksDone ?? 0, total: f.tasks } : { done: f.toolsDone ?? 0, total: f.tools });
 
 /** Every family ticket working now (tool tickets and tickets the user added); older servers sent tool tickets only. */
 export const familyWorkingNames = (f: FamilyLike): string[] => f.working ?? f.running;
@@ -112,9 +115,10 @@ export function cardFamily<F extends FamilyLike, A extends { kind: string }>(t: 
   return { fc, busy, familyWorks, working, att, doneHint: t.status === "review" && !working };
 }
 
-/** Progress in words on the main card: "7 of 16 tasks" (finished tool tickets of all of them). */
+/** Progress in words on the main card: "7 of 16 tasks" (its tasks by the Tasks tab's rule). */
 export function stepsText(f: FamilyLike): string {
-  return `${f.toolsDone ?? 0} of ${f.tools} task${f.tools === 1 ? "" : "s"}`;
+  const { done, total } = taskCount(f);
+  return `${done} of ${total} task${total === 1 ? "" : "s"}`;
 }
 
 /**
@@ -129,8 +133,8 @@ export function attentionLabel(att: { kind: string; step?: string }, stepsWaitin
 
 /** The card's muted line names the steps only while some are done and some aren't (not at 0, not when all are done). */
 export function stepsShown(f: FamilyLike): boolean {
-  const done = f.toolsDone ?? 0;
-  return f.tools > 0 && done > 0 && done < f.tools;
+  const { done, total } = taskCount(f);
+  return total > 0 && done > 0 && done < total;
 }
 
 /** The card's cost turns red when the ticket's last run stopped at its per-run spending cap (the cap is per run,

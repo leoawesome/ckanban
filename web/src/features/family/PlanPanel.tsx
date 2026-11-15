@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { api, type Ticket } from "../../lib/api";
-import { checkInsText, complete, planFinished, waitPhrase } from "./planText";
+import { checkInsText, complete, planDone, waitPhrase } from "./planText";
 
-export { complete, planFinished };
+export { planDone };
 
 const STATE_LABEL: Record<string, [string, string]> = {
   running: ["Running", "running"],
@@ -31,12 +31,13 @@ export function PlanFinished({ ticket, total, onMoveToDone, onAddMore }: {
 }
 
 /** The plan controls at the top of a main ticket's Tasks tab: state and Start / Pause / Resume. */
-export function PlanControls({ slug, ticket, children, onOpenTicket, onError, onMoveToDone, onAddMore, countShown }: {
+export function PlanControls({ slug, ticket, tasks, onOpenTicket, onError, onMoveToDone, onAddMore, countShown }: {
   slug: string;
   /** The feature's status summary above already says "N of M done": leave the count off this line. */
   countShown?: boolean;
   ticket: Ticket;
-  children: Ticket[];
+  /** The tasks under it (tasksUnder): nested groups' tasks counted once, the groups themselves not. */
+  tasks: Ticket[];
   onOpenTicket: (id: string) => void;
   onError: (m: string) => void;
   onMoveToDone: () => void;
@@ -44,7 +45,7 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
 }) {
   const [busy, setBusy] = useState(false);
   const plan = ticket.plan ?? null;
-  const done = children.filter(complete).length;
+  const { finished, done, total } = planDone(tasks);
   const act = async (action: "start" | "pause" | "resume" | "done") => {
     setBusy(true);
     try {
@@ -56,15 +57,14 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
     }
   };
   const [label, tone] = stateOf(plan);
-  const finished = planFinished(children);
-  // Children only the user can move on (questions, a proposal, Planning): what a stuck plan waits for.
-  const waiting = children.filter((c) => c.userWait && !complete(c) && !c.running && c.status !== "in_progress");
+  // Tasks only the user can move on (questions, a proposal, Planning): what a stuck plan waits for.
+  const waiting = tasks.filter((c) => c.userWait && !complete(c) && !c.running && c.status !== "in_progress");
   return (
     <section className="plan-panel">
       {/* One text line: "Plan · Running · 6 of 14 done" (the state as a coloured word, no bar; no count under the status summary, which has it). */}
       {!finished && (
         <div className="plan-head">
-          <b>Plan</b> · <span className={`plan-state ${tone}`}>{label}</span>{!countShown && <> · <span>{done} of {children.length} done</span></>}
+          <b>Plan</b> · <span className={`plan-state ${tone}`}>{label}</span>{!countShown && <> · <span>{done} of {total} done</span></>}
         </div>
       )}
       {!finished && plan?.state === "stuck" && waiting.length > 0 && (
@@ -79,7 +79,7 @@ export function PlanControls({ slug, ticket, children, onOpenTicket, onError, on
       )}
       {!finished && plan?.state === "stuck" && plan.reason && <p className="field-help plan-reason">{plan.reason}</p>}
       {finished ? (
-        <PlanFinished ticket={ticket} total={children.length} onMoveToDone={onMoveToDone} onAddMore={onAddMore} />
+        <PlanFinished ticket={ticket} total={total} onMoveToDone={onMoveToDone} onAddMore={onAddMore} />
       ) : (
         <div className="plan-actions">
           {!plan || plan.state === "done" ? (

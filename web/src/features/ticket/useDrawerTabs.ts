@@ -5,7 +5,7 @@ import { type Ticket } from "../../lib/api";
 import { useTicketDiff } from "../files/Changes";
 import { useHelp } from "../../app/HelpMenu";
 import { drawerTabs, type DrawerTab } from "../../app/keynav";
-import { isFeature } from "../family/family";
+import { isFeature, parentLink, runsTasks } from "../family/family";
 import { useShareNotices } from "../../lib/share";
 import { useTicketUsage } from "../usage/UsagePanel";
 
@@ -24,14 +24,19 @@ export function useDrawerTabs({
   ticket: Ticket;
   tickets: Ticket[];
 }) {
-  // The Family tab exists while the ticket has a family (plan children included); Changes once Claude changed files (in a worktree, or in the
+  // The Family tab (Tasks) exists while the ticket runs tasks (below); Changes once Claude changed files (in a worktree, or in the
   // board's folder itself); Huddle once the ticket has had a huddle (or one is being started); Usage only while open
   // from the cost chip. A tab asked for (a card badge, Start huddle, the chip) shows while it is open.
   const inFolder = !ticket.worktree && !ticket.workdir && !ticket.branch && (ticket.runCount > 0 || !!ticket.sessionStarted || !!ticket.baseSha);
   const diffState = useTicketDiff(slug, ticket);
   // The tabs shown, in order ([ and ] step through them); opening one refreshes what it shows, like a click.
+  // The Tasks tab is the ticket that runs tasks (a main ticket or a group); a plain ticket gets it only at the top of
+  // its family. A task, or a card linked into a feature, links to its main ticket instead (Part of), so it never shows
+  // its parent's family as if it were its own.
+  const hasFamily = children.length > 0 || familySize > 1;
+  const tasksTab = runsTasks(ticket) ? hasFamily : !ticket.tool && !parentLink(ticket) && hasFamily;
   const tabs = drawerTabs({
-    phone, family: children.length > 0 || familySize > 1,
+    phone, family: tasksTab,
     changes: !!(ticket.worktree || inFolder) && (!!diffState.diff?.files.length || tabPick === "changes"),
     huddle: huddleState.list.length > 0 || tabPick === "huddle",
     usage: tabPick === "usage",

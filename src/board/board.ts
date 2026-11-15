@@ -14,7 +14,7 @@ import { macBanner } from "../helper/notify";
 import { type HostHuddle } from "../helper/attention";
 import type { SessionSummary } from "../runs/session";
 import { RecallIndex } from "./recall";
-import { familyBelow, featureRoot, featureRows, linkProblem, nextRoundTitle, type TicketKind } from "../../web/src/features/family/family";
+import { familyBelow, featureRoot, featureRows, linkProblem, nextRoundTitle, taskTally, type TicketKind } from "../../web/src/features/family/family";
 import { type SavedChanges } from "./feature";
 import { followUpPlace } from "../../web/src/features/ticket/followUp";
 import { canEndQuietly } from "../schedules/quiet";
@@ -1269,6 +1269,11 @@ export class Board {
 
   /** What the family spent so far (the daemon's spend index; none until it registers). */
   costOf: (slug: string, id: string) => number = () => 0;
+  /**
+   * One family ticket's cost for a main ticket's card, without a long read (SpendIndex.ticketSoon: a log not counted
+   * yet is read in the background, and the card is sent again once it is). Falls back to costOf.
+   */
+  familyCostOf: ((slug: string, id: string) => number) | null = null;
   /** ask_ticket runs in flight (forked sessions, no run slot), stopped on shutdown. */
   /** Running ask_ticket forks, each with what to tell its asker if a restart cuts it off. */
   asks = new Map<RunHandle, () => void>();
@@ -1312,14 +1317,15 @@ export class Board {
     const all = this.store.listTickets(slug);
     const main = all.find((t) => t.id === id);
     if (!main?.main) return null;
-    const family = featureRows(all, id).map((r) => r.ticket).filter((t) => t.id !== id);
+    const rows = featureRows(all, id);
+    const family = rows.map((r) => r.ticket).filter((t) => t.id !== id);
     let cost = 0;
     for (const t of familyBelow(all, id)) {
       try {
-        cost += this.costOf(slug, t.id);
+        cost += (this.familyCostOf ?? this.costOf)(slug, t.id);
       } catch {}
     }
-    return familyCard(main, family, all, (x) => this.isRunning(slug, x), Math.round(cost * 100) / 100);
+    return familyCard(main, family, all, (x) => this.isRunning(slug, x), Math.round(cost * 100) / 100, taskTally(rows));
   }
 
   familyWorking(...a: Parameters<typeof mainPart.familyWorking>): ReturnType<typeof mainPart.familyWorking> { return mainPart.familyWorking.call(this, ...a); }

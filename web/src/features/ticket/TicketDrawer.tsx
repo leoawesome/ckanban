@@ -34,9 +34,9 @@ import type { CommandAction } from "../../app/CommandBar";
 import { attentionGoal } from "../board/attentionGoal";
 import { KeyHint } from "../../components/KeyHint";
 import { MOD } from "../../app/Shortcuts";
-import { PlanFinished, planFinished } from "../family/PlanPanel";
+import { PlanFinished, planDone } from "../family/PlanPanel";
 import { FamilyTab } from "../family/FamilyTab";
-import { familyOf, featureRows, runsTasks, taskTally } from "../family/family";
+import { familyOf, featureRows, runsTasks, taskTally, tasksUnder } from "../family/family";
 import { Outputs } from "../files/Outputs";
 import { PrBox } from "./PrBox";
 import { PrList } from "./PrList";
@@ -62,6 +62,7 @@ import { useShrinkHeader } from "../../hooks/useShrinkHeader";
 import { toast } from "../../components/toast";
 import { FollowUpChip } from "./FollowUpChip";
 import { PartOfField } from "../family/FamilyPanel";
+import { taskStart, TASK_START_HINT } from "./taskStart";
 import { FileLinksProvider } from "../files/FileViewer";
 import { TicketSheet } from "./TicketSheet";
 import { WaitBanner, HelperIcon, RunPopover, useGoalOnScreen, WhereWeAre, OldChatNote } from "./DrawerParts";
@@ -159,7 +160,12 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const huddleState = useHuddle(slug, ticket.id, huddlePick);
   const familySize = useMemo(() => familyOf(tickets, ticket.id).length, [tickets, ticket.id]);
   // The badge counts tasks like the status's "N of M done" and the Tasks list head (taskTally over the feature's rows).
-  const tally = useMemo(() => taskTally(featureRows(tickets, ticket.id)), [tickets, ticket.id]);
+  const featRows = useMemo(() => featureRows(tickets, ticket.id), [tickets, ticket.id]);
+  // What its plan runs: the tasks under it, counted by the same rule (a nested group's own row isn't a task). A main
+  // ticket's are its feature's tasks, a group's the ones inside it; the badge then says the plan's numbers.
+  const ownTasks = useMemo(() => (runsTasks(ticket) ? tasksUnder(featRows, ticket.id) : []), [featRows, ticket]);
+  const plan = useMemo(() => planDone(ownTasks), [ownTasks]);
+  const tally = useMemo(() => (runsTasks(ticket) ? plan : taskTally(featRows)), [ticket, plan, featRows]);
   const huddle = huddleState.latest;
   const {
     diffState, hasUsage, help, onTabKey, openTab, outputCount, outputFocus, setLinkFile, setOutputCount,
@@ -355,7 +361,11 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     else if (!editing) onClose();
   };
   const col = COLUMNS.find((c) => c.id === ticket.status);
-  const statusOptions = STATUS_MENU.map((c) => ({ value: c.id, label: c.label, hint: c.hint }));
+  // A task (tool ticket) isn't shaped in Planning: no Planning column, no Refine with Claude.
+  const isTask = !!ticket.tool;
+  const statusOptions = STATUS_MENU.filter((c) => !(isTask && c.id === "planning")).map((c) => ({ value: c.id, label: c.label, hint: c.hint }));
+  // A task in Backlog: "start" waits for the user (Start this task), "waits" is started by its main ticket's plan.
+  const taskWait = taskStart(ticket);
   const startTarget = startWorkTarget(ticket);
   const startWork = () => (startTarget === "planning" ? setStatus("planning") : setConfirmStart(true));
   // The chat's newest unapplied proposal (Chat reports it), so ⌘⇧Enter can apply it and start work in one go.
@@ -368,7 +378,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const { goTo } = useGoTo({ goal, openTab, panelRef, slug, tabs, ticket, whereShown });
   const goalOnScreen = useGoalOnScreen(panelRef, goal?.targets ?? null);
   // Every task of a main ticket's plan is done: Move to Done replaces Start work.
-  const finished = runsTasks(ticket) && planFinished(children);
+  const finished = runsTasks(ticket) && plan.finished;
   // "/" (and ⌘K "Write a message"): the Chat tab, with the cursor in its message box.
   const focusComposer = () => {
     setTab("chat");
@@ -379,7 +389,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const nextStepRef = useRef(() => {});
   nextStepRef.current = () => {
     if (next === "apply" || next === "apply-start") applyProposalRef.current?.(next === "apply-start");
-    else if (next === "start") startWork();
+    else if (next === "start" && taskWait !== "waits") startWork();
     else if (next === "done") setStatus("done");
   };
   useEffect(() => {
@@ -402,7 +412,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
       if (phone) setTab("ticket");
       return startEdit(), true;
     }
-    if (k === "r" && !working && !editing && ticket.status === "backlog") return setStatus("planning"), true;
+    if (k === "r" && !working && !editing && !isTask && ticket.status === "backlog") return setStatus("planning"), true;
     if (k === "s") return toggleStar(), true;
     if (k === "p" && canPin) return togglePin(), true;
     if (k === "m") return openStatusPicker(), true;
@@ -465,8 +475,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     if (goal && !working) add("goal", "Go to what needs you", goTo, undefined, att?.label ?? "this ticket");
     add("message", "Write a message to Claude", focusComposer, ["/"]);
     if (ticket.status !== "done" && (finished || ticket.status === "review")) add("done", "Mark done", () => setStatus("done"), next === "done" ? [MOD, "Shift", "Enter"] : undefined);
-    if (!working && !finished && (ticket.status === "backlog" || ticket.status === "planning")) add("start", "Start work", startWork, next === "start" ? [MOD, "Shift", "Enter"] : undefined);
-    if (!working && !editing && ticket.status === "backlog") add("refine", "Refine with Claude", () => setStatus("planning"), ["R"]);
+    if (!working && !finished && taskWait !== "waits" && (ticket.status === "backlog" || ticket.status === "planning")) add("start", isTask ? "Start this task" : "Start work", startWork, next === "start" ? [MOD, "Shift", "Enter"] : undefined);
+    if (!working && !editing && !isTask && ticket.status === "backlog") add("refine", "Refine with Claude", () => setStatus("planning"), ["R"]);
     add("star", ticket.important ? "Remove the star" : "Star as important", toggleStar, ["S"]);
     if (canPin) add("pin", pinned ? "Unpin" : "Pin to top", togglePin, ["P"]);
     add("move", "Move to a column…", openStatusPicker, ["M"]);
@@ -520,7 +530,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
         )}
         {colHelp && (
           <p className="field-help">
-            {col!.claude && <SparkIcon className="icon spark" />}{col!.hint}
+            {taskWait ? TASK_START_HINT[taskWait] : <>{col!.claude && <SparkIcon className="icon spark" />}{col!.hint}</>}
           </p>
         )}
 
@@ -533,14 +543,14 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           )}
           {working && !familyBusy && <button className="btn danger outline" disabled={stopping} onClick={stop} title={`Stop ${claude} (${MOD}.)`}>{stopping ? "Stopping…" : `Stop ${claude}`}<KeyHint keys="⌘." /></button>}
           {familyBusy && <button className="btn danger outline" disabled={stopping} onClick={() => setConfirmStop(true)} title={`Stop this ticket and its running tasks (${MOD}.)`}>{stopping ? "Stopping…" : "Stop"}<KeyHint keys="⌘." /></button>}
-          {finished && <PlanFinished ticket={ticket} total={children.length} onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />}
-          {!working && !finished && (ticket.status === "backlog" || ticket.status === "planning") && (
+          {finished && <PlanFinished ticket={ticket} total={plan.total} onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />}
+          {!working && !finished && taskWait !== "waits" && (ticket.status === "backlog" || ticket.status === "planning") && (
             <button className={`btn ${goal ? "" : "primary"}`}
-              onClick={startWork} title={`${startTarget === "planning" ? "Claude interviews you first" : "Claude works on its own"} (${proposalPending ? `${MOD}⇧Enter applies the proposal and starts` : `${MOD}⇧Enter`})`}>
-              Start work{!proposalPending && <KeyHint keys="⌘⇧↵" />}
+              onClick={startWork} title={`${isTask ? "Claude works on it now, like its main ticket's other tasks" : startTarget === "planning" ? "Claude interviews you first" : "Claude works on its own"} (${proposalPending ? `${MOD}⇧Enter applies the proposal and starts` : `${MOD}⇧Enter`})`}>
+              {isTask ? "Start this task" : "Start work"}{!proposalPending && <KeyHint keys="⌘⇧↵" />}
             </button>
           )}
-          {!working && ticket.status === "backlog" && (
+          {!working && !isTask && ticket.status === "backlog" && (
             <button className="btn" onClick={() => setStatus("planning")} title="Move to Planning: Claude interviews you (R)">
               Refine with Claude<KeyHint keys={startTarget === "planning" && !proposalPending ? "⌘⇧↵ · R" : "R"} />
             </button>
@@ -877,7 +887,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               <div className={`panel-ticket ${editing ? "editing" : ""}`}>{details}</div>
             ) : tab === "family" ? (
               <div className="panel-scroll panel-tasks">
-                <FamilyTab slug={slug} profile={profile} ticket={ticket} tickets={tickets} planChildren={children} onOpenTicket={onOpenTicket} onError={onError}
+                <FamilyTab slug={slug} profile={profile} ticket={ticket} tickets={tickets} planTasks={ownTasks} onOpenTicket={onOpenTicket} onError={onError}
                   onMoveToDone={() => setStatus("done")} onAddMore={addMoreTickets} />
               </div>
             ) : tab === "huddle" ? (
@@ -915,10 +925,12 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
         )}
         {ticket.error?.startsWith("corrupt") && <div className="banner error inline"><pre>{ticket.error}</pre></div>}
         {confirmStart && (
-          <ConfirmDialog title="Start work?" confirmLabel="Start work" busyLabel="Starting…" tone="primary"
+          <ConfirmDialog title={isTask ? "Start this task?" : "Start work?"} confirmLabel={isTask ? "Start task" : "Start work"} busyLabel="Starting…" tone="primary"
             onCancel={() => setConfirmStart(false)}
             onConfirm={async () => { await api.updateTicket(slug, ticket.id, { status: "ready" }); setConfirmStart(false); }}>
-            <p>Claude will work on this on its own. When working: <b>{ticket.mode === "interview" ? "Interview me first" : "Just do it"}</b>.</p>
+            {isTask
+              ? <p>Claude works on it now on its own and reports to its main ticket, like its other tasks.</p>
+              : <p>Claude will work on this on its own. When working: <b>{ticket.mode === "interview" ? "Interview me first" : "Just do it"}</b>.</p>}
           </ConfirmDialog>
         )}
         {confirmStop && (

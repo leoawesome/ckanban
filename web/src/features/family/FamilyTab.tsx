@@ -43,14 +43,15 @@ const DONE_PAGE = 50;
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpenTicket, onError, onMoveToDone, onAddMore }: {
+export function FamilyTab({ slug, profile, ticket, tickets, planTasks, onOpenTicket, onError, onMoveToDone, onAddMore }: {
   slug: string;
   /** The board: its model, Main ticket model and effort fill in what a ticket leaves unset. */
   profile: Profile;
   ticket: Ticket;
   tickets: Ticket[];
   /** Children of the opened ticket (a main ticket's plan controls show when it has any). */
-  planChildren: Ticket[];
+  /** The tasks its plan runs (tasksUnder): the plan line counts these. */
+  planTasks: Ticket[];
   onOpenTicket: (id: string) => void;
   onError: (m: string) => void;
   onMoveToDone: () => void;
@@ -171,6 +172,8 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
   };
   // The tasks every count uses (featureTasks): a group's line counts only these, not the groups nested in it.
   const taskIds = new Set(featureTasks(rows).map((t) => t.id));
+  // The Done fold counts its tasks too (not its rows: a finished group is one row holding several tasks).
+  const doneTasks = doneUnits.reduce((n, u) => n + u.filter((r) => taskIds.has(r.ticket.id)).length, 0);
   const treeRow = (r: FamilyRow<Ticket>) => {
     const t = r.ticket;
     const group = holds(r, kids) && r.depth > 0;
@@ -231,8 +234,8 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
   return (
     <section className="family-tab">
       {feature.status && <StatusBlock slug={slug} ticket={ticket} tickets={tickets} status={feature.status} onChanged={feature.reload} onOpenTicket={onOpenTicket} />}
-      {runsTasks(ticket) && planChildren.length > 0 && (
-        <PlanControls slug={slug} ticket={ticket} children={planChildren} onOpenTicket={onOpenTicket} onError={onError} onMoveToDone={onMoveToDone} onAddMore={onAddMore} countShown={!!feature.status} />
+      {runsTasks(ticket) && planTasks.length > 0 && (
+        <PlanControls slug={slug} ticket={ticket} tasks={planTasks} onOpenTicket={onOpenTicket} onError={onError} onMoveToDone={onMoveToDone} onAddMore={onAddMore} countShown={!!feature.status} />
       )}
       <div className="family-tab-head">
         <b>Tasks</b>
@@ -248,7 +251,7 @@ export function FamilyTab({ slug, profile, ticket, tickets, planChildren, onOpen
           <li className="ft-done-li">
             <button type="button" aria-expanded={doneIsOpen} className="ft-row ft-done-fold"
               onClick={() => setDoneChoice({ id: ticket.id, open: !doneIsOpen })} title={doneIsOpen ? "Fold the finished tasks" : "Show the finished tasks"}>
-              Done · {doneUnits.length} <ChevronRightIcon size={12} className="ft-done-chev" aria-hidden />
+              Done · {doneTasks} <ChevronRightIcon size={12} className="ft-done-chev" aria-hidden />
             </button>
           </li>
         )}

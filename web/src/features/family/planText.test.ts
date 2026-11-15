@@ -1,16 +1,19 @@
 import { expect, test } from "bun:test";
-import { checkInsText, complete, planFinished, waitPhrase } from "./planText";
+import { checkInsText, complete, planDone, waitPhrase } from "./planText";
 import { attentionGoal } from "../board/attentionGoal";
 
 const kid = (status: string, outcome: string | null = null, prUrl: string | null = null) => ({ status, outcome, prUrl });
 
-test("planFinished needs at least one child and every child done", () => {
-  expect(planFinished([])).toBe(false);
-  expect(planFinished([kid("done"), kid("done")])).toBe(true);
-  expect(planFinished([kid("done"), kid("review", "done")])).toBe(true);
-  expect(planFinished([kid("done"), kid("review", "done", "https://github.com/o/r/pull/1")])).toBe(false);
-  // A child added later brings the normal plan UI back.
-  expect(planFinished([kid("done"), kid("done"), kid("backlog")])).toBe(false);
+const task = (id: string, status: string, x: object = {}) => ({ id, title: id, status, createdAt: "", ...x });
+
+test("planDone needs at least one task and every task finished, counted like the Tasks tab badge", () => {
+  expect(planDone([])).toEqual({ finished: false, done: 0, total: 0 });
+  expect(planDone([task("a", "done"), task("b", "done")])).toEqual({ finished: true, done: 2, total: 2 });
+  // A task in Review is still open (as on the Tasks tab), however its last run ended.
+  expect(planDone([task("a", "done"), task("b", "review", { outcome: "done" })]).finished).toBe(false);
+  // A test that found a problem is finished; a task added later brings the normal plan UI back.
+  expect(planDone([task("a", "done", { kind: "test", verdict: "problem" })]).finished).toBe(true);
+  expect(planDone([task("a", "done"), task("b", "backlog")])).toEqual({ finished: false, done: 1, total: 2 });
   expect(complete(kid("in_progress"))).toBe(false);
 });
 

@@ -124,3 +124,21 @@ test("a log longer than one read chunk, with characters split between chunks, ad
   expect(sliced.costUsd).toBeCloseTo(1.1);
   expect(new SpendIndex(store, () => NOW).ticket("a", "t1").costUsd).toBeCloseTo(1.1);
 });
+
+test("ticketSoon: a small log is read at once; a big one is counted in the background, then onReady is called", async () => {
+  const store = new Store(tempDir("ck-spend-"));
+  board(store, "a");
+  write(store, "a", "small", [{ run: 1, at: at(10), event: result("s1", 0.25) }]);
+  const filler = { run: 1, at: at(9), event: { type: "assistant", message: { content: [{ type: "text", text: "x".repeat(400_000) }] } } };
+  write(store, "a", "big", [filler, { run: 1, at: at(10), event: result("s1", 0.5) }, filler, { run: 1, at: at(11), event: result("s1", 2) }]);
+  const spend = new SpendIndex(store, () => NOW);
+  let calls = 0;
+  expect(spend.ticketSoon("a", "small", () => calls++)).toBeCloseTo(0.25);
+  // Nothing of the big one is counted yet: no long read now, one background read however often it is asked for.
+  expect(spend.ticketSoon("a", "big", () => calls++)).toBe(0);
+  expect(spend.ticketSoon("a", "big", () => calls++)).toBe(0);
+  await Bun.sleep(50);
+  expect(calls).toBe(2);
+  expect(spend.ticketSoon("a", "big", () => calls++)).toBeCloseTo(2);
+  expect(calls).toBe(2);
+});

@@ -16,6 +16,8 @@ export type TicketMode = "interview" | "auto";
 
 /** Start work on a Backlog ticket nobody shaped yet goes through the Planning interview first. */
 export function startWorkTarget(t: Ticket): "planning" | "ready" {
+  // A task is never shaped in Planning: its main ticket wrote it, and starting it runs it.
+  if (t.tool) return "ready";
   const untouched = !t.refineStarted && !t.interviewed && t.runCount === 0 && !t.workdir && !t.sessionStarted;
   return t.status === "backlog" && untouched ? "planning" : "ready";
 }
@@ -156,6 +158,8 @@ export interface Ticket {
   main?: boolean;
   /** A tool ticket: made by Claude inside a main ticket's family; reports to its parent. */
   tool?: boolean;
+  /** A task waiting in Backlog for the user or its main ticket to start it (its plan doesn't start it on its own). */
+  waitsForStart?: boolean;
   /** "Show on board": a task that also gets a card (its Your turn and needs-you still go to its main ticket's chat). */
   showOnBoard?: boolean | null;
   /** Tool tickets' results, shown in this chat as cards. */
@@ -336,8 +340,11 @@ export interface FamilyCardInfo {
   tools: number;
   /** Tool tickets not finished yet (not in Done, or still running). */
   open?: number;
-  /** Finished tool tickets: "7 of 16 steps". */
+  /** Finished tool tickets, groups included. */
   toolsDone?: number;
+  /** Its tasks and the finished ones, counted like the Tasks tab badge (a group isn't a task): "7 of 16 tasks". */
+  tasks?: number;
+  tasksDone?: number;
   /** Tool tickets working or queued now. */
   running: string[];
   /** Every family ticket working or queued now (tool tickets and tickets the user added). */

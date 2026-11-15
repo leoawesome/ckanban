@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { taskStart, TASK_START_HINT } from "../ticket/taskStart";
 import {
   api, onReconnect, subscribe, type Huddle, type OutputFile, type QueuedMessage, type SessionEntry, type Ticket,
 } from "../../lib/api";
@@ -839,7 +840,17 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
         )}
         {empty && (
           <div className="chat-empty">
-            {ticket.status === "backlog" ? (
+            {ticket.tool && ticket.status === "backlog" ? (
+              // A task isn't shaped in Planning: it waits for the user (Start this task) or its main ticket's plan.
+              <>
+                <p><b>Waiting to start.</b> {TASK_START_HINT[taskStart(ticket) ?? "waits"]}</p>
+                {ticket.waitsForStart && (
+                  <button className="btn" onClick={() => api.updateTicket(slug, ticket.id, { status: "ready" }).catch((e) => onError(e.message))}>
+                    Start this task
+                  </button>
+                )}
+              </>
+            ) : ticket.status === "backlog" ? (
               <>
                 <p><b>Parked.</b> Move it to Planning when you want Claude to help shape it: it will ask a few questions, then propose a clear title and description.</p>
                 <button className="btn" onClick={() => api.updateTicket(slug, ticket.id, { status: "planning" }).catch((e) => onError(e.message))}>

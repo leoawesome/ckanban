@@ -2,7 +2,7 @@
 // A main ticket is the conversation the user started: it talks, decides and keeps the feature's status, and never edits
 // files. Tool tickets in its family (made by Claude, `tool: true`) explore, build, test and review, unattended, and
 // report back to their parent as events and result cards.
-import { askClosed, TICKET_KINDS, familyBelow, familyState, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/features/family/family";
+import { askClosed, TICKET_KINDS, familyBelow, familyState, featureRows, taskTally, groupSummary, hiddenTool, plannedMain, withYouTool, workingInFamily, type TicketKind } from "../../web/src/features/family/family";
 import { KIND_DEFAULTS, taskModel, type ModelPick, type TaskModels } from "../../web/src/lib/models";
 import { EFFORTS, MODEL_HELP, validEffort, validModel } from "../chat/commands";
 import type { Plan, Profile, Ticket } from "../core/types";
@@ -215,8 +215,14 @@ export interface FamilyLine {
 export interface FamilyCard {
   /** Its tool tickets (hidden and with you). */
   tools: number;
-  /** Its tool tickets that finished (Done): the card's "7 of 16 steps". */
+  /** Its tool tickets that finished (Done), groups included. */
   toolsDone: number;
+  /**
+   * Its tasks and how many finished (taskTally over its feature's rows): the card's "7 of 16 tasks", counted like the
+   * Tasks tab badge and the status (a group isn't a task; the tasks in it are).
+   */
+  tasks: number;
+  tasksDone: number;
   /** Its tool tickets not finished yet (anything not in Done, or still running): Backlog / Done ask first only then. */
   open: number;
   /** Titles of the tool tickets working or queued now (Stop's count: it stops tool tickets only). */
@@ -244,7 +250,8 @@ export interface FamilyCard {
  * sub-feature is one ticket, its tasks are its own); all: the board, for groups' children and what sub-features do. The working line names the current step: one that needs the user, then failed or stuck, then paused, then
  * the most recently started working group or ticket ("Testing round 2: 4 of 6 done").
  */
-export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], running: (id: string) => boolean, costUsd: number): FamilyCard {
+export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], running: (id: string) => boolean, costUsd: number,
+  tally: { done: number; total: number } = taskTally(featureRows(all, main.id))): FamilyCard {
   const tools = family.filter((t) => t.tool);
   const startedAt = (t: Ticket) => t.runStartedAt ?? t.lastRunAt ?? t.updatedAt;
   // Any family ticket counts (tool tickets and tickets the user added), so the card never moves without a working line.
@@ -296,7 +303,7 @@ export function familyCard(main: Ticket, family: Ticket[], all: Ticket[], runnin
   }
   const open = tools.filter((t) => t.status !== "done" || running(t.id)).length;
   return {
-    tools: tools.length, open, toolsDone: tools.filter((t) => t.status === "done").length,
+    tools: tools.length, open, toolsDone: tools.filter((t) => t.status === "done").length, tasks: tally.total, tasksDone: tally.done,
     running: working.filter((t) => t.tool).map((t) => stepName(t)), working: working.map((t) => stepName(t)), costUsd, line, waiting, needsYou,
     subFeatures: family.filter((t) => t.main).map((t) => ({ id: t.id, title: t.title, working: working.some((w) => w.id === t.id) })),
     subFeaturesRunning: working.filter((t) => t.main).length,
