@@ -29,9 +29,9 @@ import { StatusPill, UsageBox } from "./UsagePill";
 import { useUsage } from "./useUsage";
 import { onlyBaseLayers } from "./layers";
 import { Board, useCollapsedColumns } from "./Board";
-import { doneCursor, doneDrifted, heldDoneHead, joinsBoard, mergeTickets, reloadAsk, takeReload, unseenDone } from "./donePaging";
+import { doneCursor, doneDrifted, doneNotDrawn, heldDoneHead, joinsBoard, mergeTickets, reloadAsk, takeReload, unseenDone } from "./donePaging";
 import { pruneCardMemory } from "./Card";
-import { boardColumnOf, columnNeighbours, columnOrder, STATUS_MENU } from "./columns";
+import { boardColumnOf, columnNeighbours, columnOrder, nextInColumn, STATUS_MENU } from "./columns";
 import { ColumnPicker } from "./ColumnPicker";
 import { setThemeChoice, type ThemeChoice } from "./theme";
 import { afterBar, ticketActions } from "./ticketActions";
@@ -579,8 +579,10 @@ export function App() {
   const openCard = useCallback((id: string) => openTicket(id), [openTicket]);
 
   // Prev/next in the drawer: replace the history entry, so one Close or Back still returns to the board.
-  const stepTicket = useCallback((id: string) => {
+  // fresh: start a new prev/next order from the ticket's column as the board shows it now (after Done).
+  const stepTicket = useCallback((id: string, fresh = false) => {
     stepped.current = true;
+    if (fresh) setNavOrder(null);
     history.replaceState(history.state, "", hashFor(slug, id));
     setOpenId(id);
   }, [slug]);
@@ -983,6 +985,11 @@ export function App() {
   else if (!sameMap(viaRef.current, viaNow)) viaRef.current = viaNow;
   const searchVia = viaRef.current;
   const filtering = !!q || tagsWanted.length > 0 || activeFilters.length > 0;
+  // While Done has cards left to load, the held ones below its last loaded page (families of open work, tickets opened
+  // by link) wait for their page: the column draws its top in its final order, and pages only add below (donePaging.ts).
+  // A search shows every match. donePaged changes only with the tickets, so `tickets` keeps this fresh.
+  const doneWaiting = useMemo(() => (!filtering && doneUnseen > 0 ? doneNotDrawn(tickets, donePaged.current) : null), [tickets, filtering, doneUnseen]);
+  const boardTickets = useMemo(() => (doneWaiting?.size ? shownTickets.filter((t) => !doneWaiting.has(t.id)) : shownTickets), [shownTickets, doneWaiting]);
   // The search also finds finished tickets Done hasn't loaded (the server looks through all of them).
   const tagKey = tagsWanted.join(",");
   useEffect(() => {
@@ -1007,6 +1014,10 @@ export function App() {
   const navIn = orderMissing ? liveOrder : navOrder ?? liveOrder;
   const { prev: prevId, next: nextId } = useMemo(() => (open && navIn ? columnNeighbours(navIn.ids, navIn.column, open.id, tickets) : { prev: null, next: null }),
     [open?.id, navIn, tickets]);
+  // Marked Done: the next card of the column the ticket is in now. Worked out only when asked (one pass over the board).
+  const shownRef = useRef(shownTickets);
+  shownRef.current = shownTickets;
+  const afterDone = useCallback((id: string) => nextInColumn(shownRef.current, id), []);
   const perBoard = useMemo(() => {
     const m = new Map<string, number>();
     for (const i of inbox) m.set(i.profile, (m.get(i.profile) ?? 0) + 1);
@@ -1583,7 +1594,7 @@ export function App() {
                 openTicket(t.id);
               }} />
           )}
-          <Board tickets={shownTickets} loading={!ticketsLoaded} done={{ more: filtering ? 0 : doneUnseen, loading: doneLoading, loadMore: loadMoreDone }} filtered={filtering} onOpen={openCard} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
+          <Board tickets={boardTickets} loading={!ticketsLoaded} done={{ more: filtering ? 0 : doneUnseen + (doneWaiting?.size ?? 0), loading: doneLoading, loadMore: loadMoreDone }} filtered={filtering} onOpen={openCard} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
             collapsed={collapsed} onCollapse={setColumnCollapsed}
             slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia}
             filter={filtering ? { all: visibleTickets, doneMore: doneUnseen, clear: () => { clearSearch(); setFilters(new Set()); } } : undefined} />
@@ -1699,7 +1710,7 @@ export function App() {
       {findLinksOpen && profile && <FindLinksDialog slug={profile.slug} tickets={tickets} onClose={() => setFindLinksOpen(false)} />}
       {open && profile && <TicketDrawer key={open.id} profile={profile} ticket={open} tickets={tickets} onOpenTicket={openTicket} onClose={closeTicket} moveTo={moveTo}
         jobs={jobs ?? []} onOpenJobs={openSchedules}
-        nav={{ prev: prevId, next: nextId, go: stepTicket }} slideIn={!stepped.current}
+        nav={{ prev: prevId, next: nextId, go: stepTicket, afterDone }} slideIn={!stepped.current}
         beside={columnShown ? { right: columnWidth, top: topbarBottom } : null}
         tabRequest={huddleTab?.id === open.id ? { tab: "huddle", n: huddleTab.n, huddleId: huddleTab.huddleId } : null}
         huddleSeed={huddleSeed?.id === open.id ? { seed: huddleSeed.seed, n: huddleSeed.n } : null}

@@ -112,6 +112,19 @@ export function columnNeighbours(order: string[], column: Status, openId: string
   return { prev: at > 0 ? ids[at - 1] : null, next: at >= 0 && at < ids.length - 1 ? ids[at + 1] : null };
 }
 
+/**
+ * Where marking a ticket Done goes next: the ticket after it in the column it sits in now (not the column the panel
+ * opened in), in the board's current order. Null when it is the column's last card or isn't on the board (then the
+ * panel closes). `tickets`: the cards the board shows.
+ */
+export function nextInColumn(tickets: Placed[], id: string): string | null {
+  const t = tickets.find((x) => x.id === id);
+  if (!t) return null;
+  const ids = columnOrder(tickets, boardColumnOf(t));
+  const at = ids.indexOf(id);
+  return at >= 0 && at < ids.length - 1 ? ids[at + 1] : null;
+}
+
 /** The status menu: no Queued entry; In Progress starts the work now, or queues it until a slot is free. */
 export const STATUS_MENU = BOARD_COLUMNS.map((c) => (c.id === "in_progress" ? { ...c, hint: "Claude starts the work now, or as soon as a slot is free" } : c));
 

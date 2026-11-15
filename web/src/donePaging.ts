@@ -1,6 +1,6 @@
 // The board loads its finished tickets in pieces (server: ticketScope.ts): Done's pages, search finds and tickets
 // opened directly. These keep the board's one list of tickets and the Done count right as the pieces arrive.
-import { groupByColumn, type Status } from "./columns";
+import { boardColumnOf, groupByColumn, type Status } from "./columns";
 import { onBoard } from "./family";
 
 type Countable = { id: string; status: string; tool?: boolean; showOnBoard?: boolean | null };
@@ -79,6 +79,21 @@ export const heldDoneColumn = <T extends Paged>(tickets: T[]): T[] => {
 export function doneCursor<T extends Paged>(held: T[], paged: Set<string>): { after: string | null; offset: number } {
   const mine = heldDoneColumn(held).filter((t) => paged.has(t.id));
   return { after: mine.length ? mine[mine.length - 1].id : null, offset: mine.length };
+}
+
+/**
+ * Held Done cards the column doesn't draw yet, while Done has cards left to load: the ones below the last card that came
+ * by page. The first load also holds finished tickets of families with open work (a run step in Review brings its main
+ * ticket and every finished run), and tickets opened by link: they sit anywhere in Done, so drawn among a partial column
+ * they would show above cards that haven't loaded yet. Hidden until their page arrives, the column draws exactly its top
+ * in its final order and each page only adds below. A card that shows in another column (a Done main ticket with a
+ * running step shows In progress) stays drawn. paged: ids of the cards Done's pages brought (none yet: nothing drawn).
+ */
+export function doneNotDrawn<T extends Paged & { familyWorking?: number; stepsRunning?: number; main?: boolean }>(held: T[], paged: Set<string>): Set<string> {
+  const column = heldDoneColumn(held);
+  let last = -1;
+  column.forEach((t, i) => { if (paged.has(t.id)) last = i; });
+  return new Set(column.slice(last + 1).filter((t) => boardColumnOf(t) === "done").map((t) => t.id));
 }
 
 /**

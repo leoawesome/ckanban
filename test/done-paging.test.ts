@@ -2,7 +2,7 @@
 // reconnect leave no gaps and no doubles. A small model of App.tsx's paging (same helpers) against the server's scopes.
 import { describe, expect, test } from "bun:test";
 import { boardScope, donePage, doneColumn } from "../src/server/ticketScope";
-import { doneCursor, doneDrifted, heldDoneColumn, heldDoneHead, mergeTickets, reloadAsk, takeReload, unseenDone } from "../web/src/donePaging";
+import { doneCursor, doneDrifted, doneNotDrawn, heldDoneColumn, heldDoneHead, mergeTickets, reloadAsk, takeReload, unseenDone } from "../web/src/donePaging";
 
 type T = { id: string; title: string; status: any; order: number; createdAt: string; pinnedAt?: string | null; updatedAt?: string };
 
@@ -238,4 +238,39 @@ test("a page worked out before a move, arriving after the move's live update, do
   expect(r.tickets.find((t) => t.id === id)!.status).toBe("review");
   const r2 = takeReload(p.held, [{ ...moved, status: "done", updatedAt: "2026-01-03T00:00:00.000Z" }], p.paged, p.extras, { done: 0, ids: [], full: false });
   expect(r2.tickets.find((t) => t.id === id)!.status).toBe("done");
+});
+
+// The fattinterior board: an open run step (Review) brings its whole family to the first load, the main ticket and its
+// finished runs, whose orders sit all through Done. Drawn among a partial column they showed above cards not loaded yet.
+test("Done draws exactly the top of its column, and each page only adds below, with a family of open work held", () => {
+  const s = board(70, 0) as any[];
+  s.push({ id: "zbno", title: "Rednote scheduled runs", status: "done", order: -155, createdAt: "2026-01-01", main: true });
+  for (const [id, order] of [["r1", 4.5], ["r2", 18.5], ["r3", 33.5], ["r4", 51.5], ["r5", 66.5]] as const) {
+    s.push({ id, title: `Rednote run ${id}`, status: "done", order, createdAt: "2026-01-01", partOf: "zbno" });
+  }
+  s.push({ id: "open-run", title: "Rednote run (open)", status: "review", order: -10, createdAt: "2026-01-01", parentId: "zbno", tool: true });
+  const full = doneColumn(structuredClone(s)).map((t) => t.id);
+  const p = new Page(s);
+  p.reload();
+  const drawn = () => {
+    const wait = p.unseen > 0 ? doneNotDrawn(p.held, p.paged) : new Set<string>();
+    return p.doneIds().filter((id) => !wait.has(id));
+  };
+  // The cause: the first load holds the family's finished runs from deep in Done.
+  expect(p.doneIds()).toEqual(["zbno", "r1", "r2", "r3", "r4", "r5"]);
+  expect(drawn()).toEqual([]);
+  let before: string[] = [];
+  while (p.more()) {
+    const now = drawn();
+    expect(now).toEqual(full.slice(0, now.length));
+    expect(now.slice(0, before.length)).toEqual(before);
+    expect(now.length).toBeGreaterThan(before.length);
+    before = now;
+  }
+  expect(drawn()).toEqual(full);
+});
+
+test("a Done main ticket with a running step below the cursor still shows (in In progress)", () => {
+  const held = [{ id: "a", status: "done", order: 1 }, { id: "b", status: "done", order: 2, main: true, stepsRunning: 1 }, { id: "c", status: "done", order: 3 }] as any[];
+  expect([...doneNotDrawn(held, new Set(["a"]))]).toEqual(["c"]);
 });
