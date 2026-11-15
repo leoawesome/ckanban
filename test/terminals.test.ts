@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Bus, type BusEvent } from "../src/core/events";
-import { SessionCache } from "../src/server/session";
+import { SessionCache } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import { TerminalWatcher } from "../src/server/terminals";
 import { tempDir } from "./support/helpers";

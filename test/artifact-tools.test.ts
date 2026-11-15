@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { artifactFileName, artifactWaitMs, callTool, handleMessage, type ToolContext } from "../src/mcp-server";
-import type { ArtifactJob } from "../src/server/artifact";
+import type { ArtifactJob } from "../src/runs/artifact";
 import { tempDir } from "./support/helpers";
 
 const URL = "https://claude.ai/artifact/AbC-123";

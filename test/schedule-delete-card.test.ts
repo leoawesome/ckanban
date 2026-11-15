@@ -5,7 +5,7 @@ import { Bus } from "../src/core/events";
 import { HUDDLE_HEADER } from "../src/server/huddle-roster";
 import { createServer } from "../src/server/http";
 import { QUICK_CHAT_HEADER, RUN_HEADER } from "../src/server/scheduler";
-import type { SessionSummary } from "../src/server/session";
+import type { SessionSummary } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import { tempDir } from "./support/helpers";
 

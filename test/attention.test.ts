@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { attentionFor, boardTitles, byWaitingAge, type HostHuddle, huddleBusy, lastChange, snoozeKey, ticketAttention, titleKey, userWaitReason, withSnooze } from "../src/server/attention";
 import { Store } from "../src/core/store";
 import { tempDir } from "./support/helpers";
-import type { SessionSummary } from "../src/server/session";
+import type { SessionSummary } from "../src/runs/session";
 import type { Ticket } from "../src/core/types";
 
 const T = (p: Partial<Ticket>): Ticket => ({

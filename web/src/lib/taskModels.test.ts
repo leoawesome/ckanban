@@ -3,9 +3,9 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { kindDefaults, parseTaskModels } from "../../../src/server/main-ticket";
-import { learnedVersions, learnModel, useModelVersionsFile } from "../../../src/server/model-versions";
-import { mainTicketRules } from "../../../src/server/prompts";
-import { buildArgs } from "../../../src/server/runner";
+import { learnedVersions, learnModel, useModelVersionsFile } from "../../../src/runs/model-versions";
+import { mainTicketRules } from "../../../src/runs/prompts";
+import { buildArgs } from "../../../src/runs/runner";
 import { aliasLabel, familyVersion, KIND_DEFAULTS, KNOWN_VERSIONS, MODELS, modelOptions, pickerLabel, setLearnedVersions, taskModelsText } from "./models";
 import { modelName } from "../features/usage/usage";
 

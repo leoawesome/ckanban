@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { encodeProjectDir } from "../src/server/claude";
+import { encodeProjectDir } from "../src/runs/claude";
 import { contextArgs, ContextUsage, parseContextReport, parseTokens } from "../src/server/context-usage";
 import { readJsonl, tempDir } from "./support/helpers";
 

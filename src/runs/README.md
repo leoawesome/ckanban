@@ -1,0 +1,5 @@
+# runs
+
+Running a ticket as a headless `claude -p` session and reading what it did: the runner (`runner.ts`, the main entry), the Claude command line (`claude.ts`, `side-call.ts`), run prompts (`prompts.ts`, a barrel over `prompts-rules/-chat/-planning/-huddle/-main.ts`), session transcripts (`session.ts`, a barrel over `session-markers/-files/-parser/-cache.ts`), results and retries (`result.ts`, `retry.ts`), git, worktrees and diffs (`git.ts`, `worktree-setup.ts`, `diff.ts`), PR status (`prstatus.ts`, `prpoller.ts`), run logs (`run-log.ts`, `run-log-compress.ts`), and subagents, workflows, artifacts and activity.
+Depends on `core/`, `usage/` and, until they move, files in `src/server/` (attachments, commands, huddle-roster, mockups, board-keys and other parsers); shared pure helpers come from `web/src`.
+Unit tests sit next to the file they test (`*.test.ts`).

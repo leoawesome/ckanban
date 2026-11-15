@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, lstat, mkdir, readdir, readlink, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { helperArgv } from "./artifact";
+import { helperArgv } from "../runs/artifact";
 import { evaluateInPage, listPages, pageCall, PORT_FILE, portMatches, readPortFile, requestBrowserClose, type PageTarget, type PortFile } from "./cdp";
 import { classifyByAddress, PAGE_PROBES, probeAnswer, siteOf, type PageSignIn } from "./sign-in-signs";
 import { trackedInterval } from "../core/lag";

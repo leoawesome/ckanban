@@ -5,7 +5,7 @@ import { ticketAttention } from "../src/server/attention";
 import { Board } from "../src/server/board";
 import { Bus } from "../src/core/events";
 import { FollowUpError, FollowUpWatcher, followUpSpend, followUpTime, parseDelay } from "../src/server/followup";
-import { followUpWakePrompt } from "../src/server/prompts";
+import { followUpWakePrompt } from "../src/runs/prompts";
 import { Store } from "../src/core/store";
 import type { Profile, Ticket } from "../src/core/types";
 import { makeRepo, readJsonl, tempDir, until } from "./support/helpers";

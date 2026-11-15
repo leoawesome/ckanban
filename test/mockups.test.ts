@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { extractMockups, mockupName, saveMockups, stripMockups } from "../src/server/mockups";
-import { parseSession } from "../src/server/session";
-import { chatPrompt, firstRunPrompt, resumePrompt } from "../src/server/prompts";
+import { parseSession } from "../src/runs/session";
+import { chatPrompt, firstRunPrompt, resumePrompt } from "../src/runs/prompts";
 import type { Ticket } from "../src/core/types";
 import { tempDir } from "./support/helpers";
 

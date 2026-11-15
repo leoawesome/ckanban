@@ -1,8 +1,8 @@
-import { isClaudeCommand, processCommands } from "./claude";
+import { isClaudeCommand, processCommands } from "../runs/claude";
 import { DONE_PASS_MS, SAFETY_PASS_MS, type SessionChanges } from "../core/changefeed";
 import { pauser, trackedInterval } from "../core/lag";
 import type { Bus } from "../core/events";
-import type { SessionCache } from "./session";
+import type { SessionCache } from "../runs/session";
 import type { Store } from "../core/store";
 
 /**

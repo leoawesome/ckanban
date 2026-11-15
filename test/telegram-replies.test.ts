@@ -5,9 +5,9 @@ import { reportParts } from "../src/server/helper/tgreply";
 import { LOCKED_NOTE, LOCKED_NOTE_MS, safeCut, telegramText } from "../src/server/helper/telegram";
 import { ACTION_TTL_MS, PendingActions, UpdateQueue } from "../src/server/helper/tgstores";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
-import type { SessionSummary } from "../src/server/session";
+import type { SessionSummary } from "../src/runs/session";
 import { Store } from "../src/core/store";
-import { addTelegramSpend } from "../src/server/spend";
+import { addTelegramSpend } from "../src/usage/spend";
 import type { Profile } from "../src/core/types";
 import { tempDir } from "./support/helpers";
 

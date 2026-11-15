@@ -2,9 +2,9 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "../src/server/git";
+import { run } from "../src/runs/git";
 import { applyRewind, previewRewind, takeSnapshot } from "../src/server/rewind";
-import { parseSession } from "../src/server/session";
+import { parseSession } from "../src/runs/session";
 import { tempDir } from "./support/helpers";
 
 async function project(history: boolean) {

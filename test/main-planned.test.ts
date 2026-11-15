@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { plannedMain } from "../web/src/features/family/family";
 import { mainPlanned } from "../src/server/main-ticket";
-import { chatPrompt, TICKET_FORMAT, type MainRole } from "../src/server/prompts";
+import { chatPrompt, TICKET_FORMAT, type MainRole } from "../src/runs/prompts";
 import type { Ticket } from "../src/core/types";
 import { board, readArgs, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
 

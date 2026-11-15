@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { Bus, type BusEvent } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { parseSession, pollSessionsSliced, SessionCache } from "../src/server/session";
+import { parseSession, pollSessionsSliced, SessionCache } from "../src/runs/session";
 import { Store } from "../src/core/store";
-import { AGENT_STEP_TAIL, parseAgentTranscript, settleAgent } from "../src/server/subagents";
+import { AGENT_STEP_TAIL, parseAgentTranscript, settleAgent } from "../src/runs/subagents";
 import { tempDir } from "./support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);

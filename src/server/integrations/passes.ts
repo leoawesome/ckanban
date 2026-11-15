@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { keyNameError, PASSES_FILE } from "../board-keys";
 import type { Bus } from "../../core/events";
 import { maskSecrets, readMcpConfig } from "../mcp";
-import { inheritedEnv } from "../runner";
+import { inheritedEnv } from "../../runs/runner";
 import { newId } from "../../core/util";
 import { McpClient } from "./mcp-client";
 import { authorizeUrl, discover, exchange, NoRegistrationError, refresh, register, webAddress, type Client } from "./oauth";

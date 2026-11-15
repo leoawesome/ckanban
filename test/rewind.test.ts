@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "../src/server/git";
-import { parseSession } from "../src/server/session";
+import { run } from "../src/runs/git";
+import { parseSession } from "../src/runs/session";
 import {
   changesSince, cutSession, listSnapshots, pruneSnapshots, restoreSnapshot, rewindSessionFile, snapshotFor, takeSnapshot, textKey,
 } from "../src/server/rewind";

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { ChatCacheTracker, coldCost } from "../src/server/chat-cache";
-import { parseSession } from "../src/server/session";
-import { priceFor } from "../src/server/ticket-usage";
+import { parseSession } from "../src/runs/session";
+import { priceFor } from "../src/usage/ticket-usage";
 import { COLD_NOTE_MIN_TOKENS, costText, oldChat, tokensText, type ChatCacheInfo } from "../web/src/features/chat/cacheNote";
 
 const T0 = Date.parse("2026-11-01T10:00:00Z");

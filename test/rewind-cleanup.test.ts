@@ -1,7 +1,7 @@
 // Rewind's saved copies of the folder: removed when their ticket is deleted or done, never another ticket's;
 // and a copy that takes too long is skipped instead of holding up the message.
 import { expect, test } from "bun:test";
-import { run } from "../src/server/git";
+import { run } from "../src/runs/git";
 import { listSnapshots, takeSnapshot } from "../src/server/rewind";
 import { board, setup, useBoardEnv } from "./support/board-env";
 

@@ -11,7 +11,7 @@
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { encodeProjectDir } from "../../src/server/claude";
+import { encodeProjectDir } from "../../src/runs/claude";
 import { Store } from "../../src/core/store";
 
 const args = process.argv.slice(2);

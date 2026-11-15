@@ -8,7 +8,7 @@ import type { Board } from "./board";
 import type { Bus } from "../core/events";
 import type { Store } from "../core/store";
 import type { Job, JobAction, JobResult, JobState } from "../core/types";
-import { inheritedEnv } from "./runner";
+import { inheritedEnv } from "../runs/runner";
 import { newId } from "../core/util";
 
 export class JobError extends Error {

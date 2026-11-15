@@ -8,8 +8,9 @@ import { join } from "node:path";
 import type { BusEvent } from "../../core/events";
 import { trackedInterval } from "../../core/lag";
 import type { NotifySettings } from "../notify";
-import { addSideSpend, readSideSpend, type SideCaller } from "../side-call";
-import { dayKey } from "../limit";
+import { addSideSpend, readSideSpend, type SideCaller } from "../../runs/side-call";
+import { dayKey } from "../../usage/limit";
+import { helperSpendFile, helperSpendOn } from "../../usage/spend";
 import { atomicWrite, type Store } from "../../core/store";
 import { clockTime, cut, directLabel, type HelperCore, type HelperSink, type OutBody, type WaitEventReason } from "./core";
 import {
@@ -63,15 +64,6 @@ export const PRACTICE_REMIND_MS = 60_000;
 export const NIGHT_ASK_MAX_MS = 24 * 3600_000;
 /** What Got it / Not urgent on a practice alert says. */
 export const PRACTICE_STOPPED = "That stopped the reminder. Real alerts work the same way.";
-/** The helper's spend, for the "Helper" line in today's spend (spend.ts). */
-export const helperSpendFile = (root: string) => join(root, "helper-spend.jsonl");
-
-/** The helper's paid checks on the local day of `at` and what they cost (failed calls that cost money count too). */
-export function helperSpendOn(root: string, at: Date): { checks: number; costUsd: number } {
-  const s = readSideSpend(helperSpendFile(root));
-  const day = dayKey(at);
-  return { checks: s.calls?.get(day) ?? 0, costUsd: s.days.get(day) ?? 0 };
-}
 
 /** Why an item's reminders had stopped before a Got it, in plain words. */
 const STOPPED_WHY: Record<string, string> = {

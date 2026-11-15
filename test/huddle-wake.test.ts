@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { callTool } from "../src/mcp-server";
 import { Huddles, huddleCost } from "../src/server/huddle";
 import { HUDDLE_HEADER } from "../src/server/huddle-roster";
-import { controlResponse } from "../src/server/runner";
+import { controlResponse } from "../src/runs/runner";
 import { FAKE, store, bus, board, huddles, client, idle, heardBy, host, participant, agentCtx, mainCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "./support/huddle-env";
 
 useHuddleEnv();

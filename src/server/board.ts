@@ -1,13 +1,13 @@
-import { boardConnectorOptions } from "./connectors";
+import { boardConnectorOptions } from "../runs/connectors";
 import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { extractFinalText, summarizeEvent } from "./activity";
+import { extractFinalText, summarizeEvent } from "../runs/activity";
 import { copyAttachments, deleteAttachments, localizeAttachments, localizeUrls, referencedAttachments } from "./attachments";
 import type { Bus } from "../core/events";
-import { isSessionLive as psSessionLive, sessionTitle } from "./claude";
-import { addWorktree, branchesWithPrefix, branchExists, FetchError, isGitRepo, latestBase, listWorktrees, removeWorktree, repoKind, resolveBaseBranch, worktreeDir, type RepoKind } from "./git";
-import { MOVE_TO_PLANNING_RE, STAY_RE } from "./session";
+import { isSessionLive as psSessionLive, sessionTitle } from "../runs/claude";
+import { addWorktree, branchesWithPrefix, branchExists, FetchError, isGitRepo, latestBase, listWorktrees, removeWorktree, repoKind, resolveBaseBranch, worktreeDir, type RepoKind } from "../runs/git";
+import { MOVE_TO_PLANNING_RE, STAY_RE } from "../runs/session";
 import { forkSessionBefore, forkSessionFile, forkTitle } from "./fork";
 import { saveMockups } from "./mockups";
 import { Devices, type DeviceTicketState } from "./devices";
@@ -15,7 +15,7 @@ import { ChromeWatch, Chromes, ownPicks, resolveBrowserPicks, resolveChromeSetti
 import { BoardBrowsers, BROWSER_FILES_DIR, browserServer, serverName, type BrowserDeps } from "./board-browsers";
 import { macBanner } from "./notify";
 import { type HostHuddle, STUCK_ON_QUESTIONS, ticketAttention, userWaitReason } from "./attention";
-import type { Question, SessionSummary } from "./session";
+import type { Question, SessionSummary } from "../runs/session";
 import { RecallIndex, recallText } from "./recall";
 import { pauser } from "../core/lag";
 import { askClosed, familyBelow, familyOf, featureRoot, featureRows, groupsOf, hideableCard, isFeature, levelOf, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/features/family/family";
@@ -25,29 +25,29 @@ import { followUpFor, followUpPlace } from "../../web/src/features/ticket/follow
 import { learnedRulesBlock } from "./learn";
 import { lessonsBlock } from "./lessons";
 import { canEndQuietly, quietContext } from "./quiet";
-import { addHuddleSpend, addTelegramSpend } from "./spend";
-import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "./prompts";
-import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "./prompts";
-import { learnModel, useModelVersionsFile } from "./model-versions";
+import { addHuddleSpend, addTelegramSpend } from "../usage/spend";
+import { featureMainNote, featureMemberNote, statusNotesBlock, statusNudgePrompt } from "../runs/prompts";
+import { mainTicketRules, mainWakePrompt, toolFirstPrompt, type MainRole, type RunRole, type ToolRole } from "../runs/prompts";
+import { learnModel, useModelVersionsFile } from "../runs/model-versions";
 import { askedNothing, ASK_TIMEOUT_MS, familyCard, type FamilyCard, finishedLine, isManager, kindDefaults, mainPlanned, managedPlan, MERGE_TRIES, progressStep, REPORT_FILE, RESULTS_KEEP, sentences, wakeTable, youWaiting, stepName, replyAsked } from "./main-ticket";
 import { NO_EDIT_TOOLS } from "./huddle-roster";
-import { chatNotes, chatPrompt, chromeChoiceNote, chromeTurnNote, withoutChromeRule, type BoardBrowserChoice, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, toolsChangedNote, type ChatMode, type PlanWake, type PromptContext } from "./prompts";
+import { chatNotes, chatPrompt, chromeChoiceNote, chromeTurnNote, withoutChromeRule, type BoardBrowserChoice, devicesNote, freshChatNote, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, interruptedPrompt, mentionsArtifact, orchestratorPrompt, planningCommand, planningPrompt, resumePrompt, setupNote, steerPrompt, toolsChangedNote, type ChatMode, type PlanWake, type PromptContext } from "../runs/prompts";
 import {
   childrenOf, findCycle, isComplete, MAX_RUN_RETURNS, normalizeNeeds, RUN_CHAIN_KEEP, planActive, planProblem, planStep, planTable,
   resolveDeps, wakeupCap,
 } from "./plan";
-import { run as runCmd } from "./git";
+import { run as runCmd } from "../runs/git";
 import { addPrs, ticketPrs } from "./prs";
 import { applyUndo, cutSession, RewindRefused, deleteSnapshots, takeSnapshot, undoBlocked, type RewindUndo, type UndoResult } from "./rewind";
-import { parseResult } from "./result";
+import { parseResult } from "../runs/result";
 import { FOLLOW_UP_LATE_MS, FOLLOW_UP_NOTE_MAX, FOLLOW_UP_REASON_MAX, FollowUpError, followUpTime, logFollowUp } from "./followup";
 import { formatAt } from "./jobs";
-import { messageCost, ticketRuns } from "./ticket-usage";
-import { transcriptDirOf, workflowDirCost } from "./workflows";
-import { AUTO_CONTINUE_PER_DAY, clockTime, CONTINUE_TEXT, dayKey, limitMessage, parseReset } from "./limit";
+import { messageCost, ticketRuns } from "../usage/ticket-usage";
+import { transcriptDirOf, workflowDirCost } from "../runs/workflows";
+import { AUTO_CONTINUE_PER_DAY, clockTime, CONTINUE_TEXT, dayKey, limitMessage, parseReset } from "../usage/limit";
 import { DraftTracker } from "./draft";
-import { buildArgs, DEFAULT_STALL_MINUTES, PLANNING_DISALLOWED_TOOLS, startRun, type RunHandle } from "./runner";
-import { RETRY_DELAY_MS, RETRY_TEXT, transientError } from "./retry";
+import { buildArgs, DEFAULT_STALL_MINUTES, PLANNING_DISALLOWED_TOOLS, startRun, type RunHandle } from "../runs/runner";
+import { RETRY_DELAY_MS, RETRY_TEXT, transientError } from "../runs/retry";
 import { BOARD_COMMANDS, commandText, EFFORT_HELP, runOptions, ultracodeOn, validEffort, listCommands, MODEL_HELP, parseSlash, REFUSED_COMMANDS, rememberInit, slashMessage, useBundledFile, validModel, type SlashCommand } from "./commands";
 import { mcpConfig } from "./agents";
 import { toolsVersion } from "../mcp-server";
@@ -56,7 +56,7 @@ import { BOARD_NOTE_RE, type Store } from "../core/store";
 import { boardKeyEnv, maskSaved } from "./board-keys";
 import { normalizeTags } from "./tags";
 import { autoHuddlesOn, runCapFor, workspaceOf, BOARD_NOTES_KEEP, type BoardNote, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "../core/types";
-import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TIMEOUT_MS, withBoardText, type SetupOutcome, type SetupResult } from "./worktree-setup";
+import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TIMEOUT_MS, withBoardText, type SetupOutcome, type SetupResult } from "../runs/worktree-setup";
 
 const INSTALLING = "Installing project dependencies…";
 /** The live line right after a message is sent, while Claude thinks (no step yet). A fixed marker: the UI shows it as

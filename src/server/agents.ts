@@ -1,8 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { helperArgv } from "./artifact";
-import { which } from "./git";
+import { helperArgv } from "../runs/artifact";
+import { which } from "../runs/git";
 import { newId } from "../core/util";
 
 /**

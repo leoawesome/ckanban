@@ -3,7 +3,7 @@
 // the user confirms every link (Board.setPartOf).
 import type { Board } from "./board";
 import { jsonObject } from "./learn";
-import { addSideSpend, type SideCaller } from "./side-call";
+import { addSideSpend, type SideCaller } from "../runs/side-call";
 import type { Store } from "../core/store";
 import type { Ticket } from "../core/types";
 import { hiddenTool, parentLink, wouldLoop } from "../../web/src/features/family/family";

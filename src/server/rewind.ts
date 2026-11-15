@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSyn
 import { atomicWrite } from "../core/store";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { hasCommits, run } from "./git";
+import { hasCommits, run } from "../runs/git";
 
 /** Rewind: go back to an earlier message of the ticket chat, with the project files as they were just before it. */
 

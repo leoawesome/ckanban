@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { createServer } from "../src/server/http";
 import { familyCard } from "../src/server/main-ticket";
-import { MAIN_PAUSED, mainTicketRules } from "../src/server/prompts";
+import { MAIN_PAUSED, mainTicketRules } from "../src/runs/prompts";
 import type { Ticket } from "../src/core/types";
 import { board, readArgs, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
 import { tempDir } from "./support/helpers";

@@ -2,8 +2,8 @@
 import { expect, test } from "bun:test";
 import { inlineMarkdown, miniMarkdown, plainMarkdown } from "../../lib/miniMarkdown";
 import { repeatsForm, signature } from "./questionForms";
-import { parseQuestions } from "../../../../src/server/session";
-import { openQuestionsRule } from "../../../../src/server/prompts";
+import { parseQuestions } from "../../../../src/runs/session";
+import { openQuestionsRule } from "../../../../src/runs/prompts";
 
 test("markdown: raw HTML is escaped, never passed through", () => {
   expect(miniMarkdown(`<img src=x onerror="alert(1)"> & <script>x</script>`))

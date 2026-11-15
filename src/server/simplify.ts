@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { addSideSpend, type SideCaller } from "./side-call";
-import type { SessionEntry } from "./session";
+import { addSideSpend, type SideCaller } from "../runs/side-call";
+import type { SessionEntry } from "../runs/session";
 import { atomicWrite, type Store } from "../core/store";
 
 // "Say it simpler": a Claude reply in a ticket chat rewritten in plain words by a side call (side-call.ts), so the

@@ -17,8 +17,8 @@ import { pauser } from "./lag";
 import { atomicWrite } from "./atomic";
 import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "../server/board-tools";
 import { maskSaved, maskSavedJson } from "../server/board-keys";
-import { ActivityDigests, type ActivityDigest } from "../server/activity-digest";
-import { forgetLog, gzOf, loadLog, type LogReader, openLog, readLogSync, restoreLog, restoreLogSync } from "../server/run-log";
+import { ActivityDigests, type ActivityDigest } from "../runs/activity-digest";
+import { forgetLog, gzOf, loadLog, type LogReader, openLog, readLogSync, restoreLog, restoreLogSync } from "../runs/run-log";
 import { JsonDir } from "./json-dir";
 import { ScheduleHistoryDigests, type ScheduleHistoryDigest } from "../server/schedule-history";
 

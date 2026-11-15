@@ -9,7 +9,7 @@ import { AUTO_FRESH_NOTE, Board } from "../src/server/board";
 import { chatIsCold } from "../src/server/chat-cache";
 import { READ_MAX_MESSAGES, readChat, searchChat, type ChatSource } from "../src/server/chat-search";
 import { createServer } from "../src/server/http";
-import type { SessionEntry, SessionSummary } from "../src/server/session";
+import type { SessionEntry, SessionSummary } from "../src/runs/session";
 import type { Ticket } from "../src/core/types";
 import { board, bus, FAKE, readArgs, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
 import { tempDir } from "./support/helpers";

@@ -4,7 +4,7 @@ import { callTool } from "../src/mcp-server";
 import { HUDDLE_IDLE_MS } from "../src/server/huddle";
 import { activeHost, rosterError } from "../src/server/huddle-roster";
 import { BUILTIN_TEMPLATES } from "../src/server/huddle-templates";
-import { huddleAgentSystemPrompt, huddleMainPrompt } from "../src/server/prompts";
+import { huddleAgentSystemPrompt, huddleMainPrompt } from "../src/runs/prompts";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { agentCtx, heardBy, host, huddles, idle, messages, participant, store, until, useHuddleEnv, you } from "./support/huddle-env";

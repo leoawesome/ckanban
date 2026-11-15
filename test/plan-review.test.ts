@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, FRESH_READER_CHECK, PLAN_REVIEW_READ } from "../src/server/huddle-templates";
 import { planProposal } from "../src/server/plan-proposal";
-import { autoHuddleRule, chatPrompt, huddleMainPrompt, planningPrompt, TICKETS_FORMAT } from "../src/server/prompts";
-import type { SessionEntry } from "../src/server/session";
+import { autoHuddleRule, chatPrompt, huddleMainPrompt, planningPrompt, TICKETS_FORMAT } from "../src/runs/prompts";
+import type { SessionEntry } from "../src/runs/session";
 import type { Huddle, HuddleParticipant, Ticket } from "../src/core/types";
 
 const T = { id: "t_1", title: "Settings", body: "Old description" };

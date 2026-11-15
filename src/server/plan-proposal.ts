@@ -1,7 +1,7 @@
 // The plan a plan review huddle checks (outputs/huddles/<id>/proposal.md): the latest ticket and child tickets the
 // Planning chat proposed, as written, with no chat text. Reviewers read only this, so they see the plan the way the
 // worker will (see PLAN_REVIEW_READ). Pure: Huddles.create reads the chat and writes the file.
-import type { NewTicketDraft, SessionEntry, TicketProposal } from "./session";
+import type { NewTicketDraft, SessionEntry, TicketProposal } from "../runs/session";
 
 interface PlanTicket {
   id: string;
