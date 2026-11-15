@@ -5,7 +5,7 @@ import { appendFileSync, chmodSync, existsSync, readdirSync, readFileSync, rmSyn
 import { dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { ActivityDigests } from "./activity-digest";
-import { draftReport } from "../server/bugreport";
+import { draftReport } from "../integrations/bugreport";
 import { COMPRESS_AFTER_MS, RunLogCompressor, STATE_FILE } from "./run-log-compress";
 import { gzOf, keptLogUsedAt, loadLog, logStat, resetLogCache, restoreLog } from "./run-log";
 import { SpendIndex } from "../usage/spend";

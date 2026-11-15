@@ -1,4 +1,4 @@
-import type { SideCaller } from "../../runs/side-call";
+import type { SideCaller } from "../runs/side-call";
 import type { Item } from "./script";
 import { outsideBlock, ticketTitle } from "./ticket-text";
 

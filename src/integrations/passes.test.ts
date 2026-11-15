@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/core/events";
-import { envNameFor, maskText, PassError, Passes } from "../src/server/integrations/passes";
-import { readScopes, resourceMetadataUrl } from "../src/server/integrations/oauth";
-import { startFakeService, type FakeService } from "./fixtures/fake-mcp-service";
-import { tempDir } from "./support/helpers";
+import { Bus } from "../core/events";
+import { envNameFor, maskText, PassError, Passes } from "./passes";
+import { readScopes, resourceMetadataUrl } from "./oauth";
+import { startFakeService, type FakeService } from "../../test/fixtures/fake-mcp-service";
+import { tempDir } from "../../test/support/helpers";
 
 let root: string;
 let svc: FakeService;
@@ -100,7 +100,7 @@ test("a key for an MCP server is its bearer token", async () => {
 
 test("a program on this computer starts from Claude's own settings, read again each time; never from a project's .mcp.json", async () => {
   const log = join(root, "stdio.log");
-  const fixture = join(import.meta.dir, "fixtures", "fake-stdio-mcp.ts");
+  const fixture = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-stdio-mcp.ts");
   const write = (greeting: string) => writeFileSync(configFile, JSON.stringify({
     mcpServers: { helper: { command: process.execPath, args: [fixture], env: { FAKE_GREETING: greeting, FAKE_STDIO_LOG: log } } },
   }));

@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BrowserDeps } from "../../src/server/board-browsers";
+import type { BrowserDeps } from "../../src/browser/board-browsers";
 
 /** A fake Chrome: answers /json/version and /json/list on 127.0.0.1 and quits on Browser.close (no real Chrome in tests). */
 export class FakeChrome {

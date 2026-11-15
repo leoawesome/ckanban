@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus, type BusEvent } from "../src/core/events";
-import { describeAt, JobRunner, MAX_CHAIN, parseAt, runCommand } from "../src/server/jobs";
-import { DEFAULT_NOTIFY, NOTIFY_KINDS } from "../src/helper/notify";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
+import { Board } from "../board/board";
+import { Bus, type BusEvent } from "../core/events";
+import { describeAt, JobRunner, MAX_CHAIN, parseAt, runCommand } from "./jobs";
+import { DEFAULT_NOTIFY, NOTIFY_KINDS } from "../helper/notify";
+import { Store } from "../core/store";
+import { tempDir } from "../../test/support/helpers";
 
 let store: Store;
 let board: Board;

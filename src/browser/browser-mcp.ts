@@ -4,9 +4,9 @@
 // the ckanban binary and talks the Chrome DevTools Protocol directly (src/server/cdp.ts).
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
-import { boardPort } from "./client";
-import { Cdp, CdpError, portMatches, readPortFile, type PortFile } from "./server/cdp";
-import { VERSION } from "./core/version";
+import { boardPort } from "../client";
+import { Cdp, CdpError, portMatches, readPortFile, type PortFile } from "./cdp";
+import { VERSION } from "../core/version";
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const SNAPSHOT_MAX = 40_000;

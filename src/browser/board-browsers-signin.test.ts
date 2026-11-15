@@ -1,10 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BoardBrowsers } from "../src/server/board-browsers";
-import { classifyByAddress, PAGE_PROBES, probeAnswer, siteName } from "../src/server/sign-in-signs";
-import { fakes, harness } from "./support/fake-chrome";
-import { tempDir } from "./support/helpers";
+import { BoardBrowsers } from "./board-browsers";
+import { classifyByAddress, PAGE_PROBES, probeAnswer, siteName } from "./sign-in-signs";
+import { fakes, harness } from "../../test/support/fake-chrome";
+import { tempDir } from "../../test/support/helpers";
 
 afterEach(() => {
   for (const f of fakes.splice(0)) if (!f.closed) f.quit();

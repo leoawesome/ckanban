@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ticketAttention } from "../helper/attention";
 import { Board } from "./board";
 import { Bus } from "../core/events";
-import { FollowUpError, FollowUpWatcher, followUpSpend, followUpTime, parseDelay } from "../server/followup";
+import { FollowUpError, FollowUpWatcher, followUpSpend, followUpTime, parseDelay } from "../schedules/followup";
 import { followUpWakePrompt } from "../runs/prompts";
 import { Store } from "../core/store";
 import type { Profile, Ticket } from "../core/types";

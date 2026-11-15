@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { automationProposal } from "../../../../src/server/automation-proposal";
-import { parseDecision } from "../../../../src/server/integrations/ask-claude";
-import { parseItems } from "../../../../src/server/integrations/script";
-import { ticketBody, ticketTitle } from "../../../../src/server/integrations/ticket-text";
+import { automationProposal } from "../../../../src/schedules/automation-proposal";
+import { parseDecision } from "../../../../src/integrations/ask-claude";
+import { parseItems } from "../../../../src/integrations/script";
+import { ticketBody, ticketTitle } from "../../../../src/integrations/ticket-text";
 import type { Pass } from "./automationTypes";
 import { boardCell, everyLabel, groupLastItems, loopStatus, loopSubtitle, resolveProposedPass, saveBlocker } from "./automations";
 

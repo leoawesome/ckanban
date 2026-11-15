@@ -1,7 +1,7 @@
 import { followUpWakePrompt } from "../runs/prompts";
 import { run as runCmd } from "../runs/git";
-import { FOLLOW_UP_LATE_MS, FOLLOW_UP_NOTE_MAX, FOLLOW_UP_REASON_MAX, FollowUpError, followUpTime, logFollowUp } from "../server/followup";
-import { formatAt } from "../server/jobs";
+import { FOLLOW_UP_LATE_MS, FOLLOW_UP_NOTE_MAX, FOLLOW_UP_REASON_MAX, FollowUpError, followUpTime, logFollowUp } from "../schedules/followup";
+import { formatAt } from "../schedules/jobs";
 import { ticketRuns } from "../usage/ticket-usage";
 import { type FollowUp, type Ticket } from "../core/types";
 import type { Board } from "./board";

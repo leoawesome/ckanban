@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { resultWakesMain } from "../src/board/main-ticket";
-import { planStep } from "../src/board/plan";
-import { featureChoices } from "../web/src/features/board/featureChoices";
-import { Scheduler } from "../src/server/scheduler";
-import { Store } from "../src/core/store";
-import type { Plan, Ticket } from "../src/core/types";
-import { tempDir } from "./support/helpers";
+import { Board } from "../board/board";
+import { Bus } from "../core/events";
+import { resultWakesMain } from "../board/main-ticket";
+import { planStep } from "../board/plan";
+import { featureChoices } from "../../web/src/features/board/featureChoices";
+import { Scheduler } from "./scheduler";
+import { Store } from "../core/store";
+import type { Plan, Ticket } from "../core/types";
+import { tempDir } from "../../test/support/helpers";
 
 // Schedules that put each run in a feature (Schedule.partOf): the run is a task of the feature's main ticket.
 

@@ -6,7 +6,7 @@ import { Bus, type BusEvent } from "./events";
 import { startHuddleSessionWatcher } from "../huddle/huddle-session";
 import { SessionCache, startSessionWatcher } from "../runs/session";
 import { Store, type StoreChange } from "./store";
-import { TerminalWatcher } from "../server/terminals";
+import { TerminalWatcher } from "../browser/terminals";
 import { tempDir, until } from "../../test/support/helpers";
 
 const line = (text: string, at: string) =>

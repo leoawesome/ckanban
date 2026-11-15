@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { type DeviceTicketState } from "../server/devices";
+import { type DeviceTicketState } from "../browser/devices";
 import { ticketAttention, userWaitReason } from "../helper/attention";
 import { withYouTool } from "../../web/src/features/family/family";
 import { youWaiting } from "./main-ticket";

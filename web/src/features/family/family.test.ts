@@ -6,7 +6,7 @@ import { Board } from "../../../../src/board/board";
 import { Bus } from "../../../../src/core/events";
 import { createServer } from "../../../../src/server/http";
 import { candidates, Linker, parseFound, parseSuggestion } from "../../../../src/board/linker";
-import { RUN_HEADER } from "../../../../src/server/scheduler";
+import { RUN_HEADER } from "../../../../src/schedules/scheduler";
 import { parseProposal } from "../../../../src/runs/session";
 import type { SideCallInput, SideCallResult } from "../../../../src/runs/side-call";
 import { Store } from "../../../../src/core/store";

@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type RepoKind } from "../runs/git";
-import { type BrowserDeps } from "../server/board-browsers";
+import { type BrowserDeps } from "../browser/board-browsers";
 import type { SessionSummary } from "../runs/session";
 import { familyOf } from "../../web/src/features/family/family";
 import { type ChatMode } from "../runs/prompts";
@@ -11,7 +11,7 @@ import { workflowDirCost } from "../runs/workflows";
 import { DraftTracker } from "../chat/draft";
 import { type RunHandle } from "../runs/runner";
 import { commandText } from "../chat/commands";
-import type { OwnedSession } from "../server/shell";
+import type { OwnedSession } from "../browser/shell";
 import { type QueuedMessage, type SelfMove, type Status, type Ticket } from "../core/types";
 
 export const INSTALLING = "Installing project dependencies…";

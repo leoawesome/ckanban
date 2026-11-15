@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { AgentRegistry, type AgentId, type AgentStatus } from "../src/server/agents";
+import { AgentRegistry, type AgentId, type AgentStatus } from "../src/integrations/agents";
 import { uninstallExtras } from "../src/uninstall-extras";
 import { tempDir } from "./support/helpers";
 

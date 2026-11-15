@@ -5,7 +5,7 @@ import type { Bus } from "../core/events";
 import { DONE_PASS_MS, SAFETY_PASS_MS, type SessionChanges } from "../core/changefeed";
 import { atomicWrite } from "../core/atomic";
 import { VERSION } from "../core/version";
-import { maskSaved } from "../server/board-keys";
+import { maskSaved } from "../integrations/board-keys";
 import type { Store } from "../core/store";
 import type { Ticket } from "../core/types";
 import { SubagentCache, subagentFiles, withTranscript } from "./subagents";

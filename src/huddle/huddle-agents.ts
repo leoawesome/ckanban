@@ -3,7 +3,7 @@ import { boardConnectorOptions } from "../runs/connectors";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { summarizeEvent } from "../runs/activity";
-import { mcpConfig } from "../server/agents";
+import { mcpConfig } from "../integrations/agents";
 import { type RunBrowsers } from "../board/board";
 import { hasCommits, NO_HOOKS, run as git } from "../runs/git";
 import { HUDDLE_AGENT_ENV, NO_EDIT_TOOLS, proposalFile, summaryFile } from "./huddle-roster";
@@ -14,7 +14,7 @@ import { addHuddleSpend } from "../usage/spend";
 import { contextTokens, messageCost } from "../usage/ticket-usage";
 import type { Huddle, HuddleParticipant, Ticket } from "../core/types";
 import { nowIso } from "../core/util";
-import { boardKeyEnv } from "../server/board-keys";
+import { boardKeyEnv } from "../integrations/board-keys";
 import type { Huddles } from "./huddle";
 import { ACTIVITY_THROTTLE_MS, costAfter, AgentRun, isSnapshot, settled, agentDir, mainRepo } from "./huddle-types";
 

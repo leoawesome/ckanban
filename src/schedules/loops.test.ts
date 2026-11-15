@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { Passes } from "../src/server/integrations/passes";
-import { runScript, type ScriptRun } from "../src/server/integrations/script";
-import { LoopManager, type LoopInput } from "../src/server/loops";
-import type { SideCallInput, SideCallResult } from "../src/runs/side-call";
-import { Store } from "../src/core/store";
-import { startFakeService, type FakeService } from "./fixtures/fake-mcp-service";
-import { tempDir } from "./support/helpers";
+import { Board } from "../board/board";
+import { Bus } from "../core/events";
+import { Passes } from "../integrations/passes";
+import { runScript, type ScriptRun } from "../integrations/script";
+import { LoopManager, type LoopInput } from "./loops";
+import type { SideCallInput, SideCallResult } from "../runs/side-call";
+import { Store } from "../core/store";
+import { startFakeService, type FakeService } from "../../test/fixtures/fake-mcp-service";
+import { tempDir } from "../../test/support/helpers";
 
 let store: Store;
 let board: Board;

@@ -1,5 +1,5 @@
 import type { Item } from "./script";
-import { fromAutomationText } from "../../runs/session";
+import { fromAutomationText } from "../runs/session";
 
 // An automation's ticket mixes two kinds of text: the user's own instructions, and text copied from another service,
 // which anyone who can write there controls. The copied text always goes in one fenced block, labelled as data, so

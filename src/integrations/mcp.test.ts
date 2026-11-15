@@ -1,14 +1,14 @@
 import { beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus, type BusEvent } from "../src/core/events";
-import { addArgs, findUrl, maskSecrets, McpManager, parseMcpGet, parseMcpList, parseSessionInit, readMcpConfig, scopeOf, shellQuote } from "../src/server/mcp";
-import { tempDir } from "./support/helpers";
+import { Bus, type BusEvent } from "../core/events";
+import { addArgs, findUrl, maskSecrets, McpManager, parseMcpGet, parseMcpList, parseSessionInit, readMcpConfig, scopeOf, shellQuote } from "./mcp";
+import { tempDir } from "../../test/support/helpers";
 
-const FAKE = join(import.meta.dir, "fixtures", "fake-claude-mcp.ts");
+const FAKE = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-claude-mcp.ts");
 
 test("parseMcpList: real CLI output", () => {
-  const { servers, unparsed } = parseMcpList(readFileSync(join(import.meta.dir, "fixtures", "mcp-list.txt"), "utf8"));
+  const { servers, unparsed } = parseMcpList(readFileSync(join(import.meta.dir, "..", "..", "test", "fixtures", "mcp-list.txt"), "utf8"));
   expect(unparsed).toEqual(["something the parser has never seen"]);
   const by = Object.fromEntries(servers.map((s) => [s.name, s]));
   expect(servers.length).toBe(8);

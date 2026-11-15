@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { GUIDES, checkinSetupPrompt } from "../src/server/checkin-guides";
-import { quietSection } from "../src/runs/prompts";
-import { canEndQuietly, linksIn, quietContext, quietPerDay, scheduleSpend } from "../src/server/quiet";
-import { parseResult } from "../src/runs/result";
-import { Scheduler } from "../src/server/scheduler";
-import type { Schedule, ScheduleHistoryEntry, Ticket } from "../src/core/types";
-import { board, bus, readArgs, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
-import { until } from "./support/helpers";
+import { GUIDES, checkinSetupPrompt } from "./checkin-guides";
+import { quietSection } from "../runs/prompts";
+import { canEndQuietly, linksIn, quietContext, quietPerDay, scheduleSpend } from "./quiet";
+import { parseResult } from "../runs/result";
+import { Scheduler } from "./scheduler";
+import type { Schedule, ScheduleHistoryEntry, Ticket } from "../core/types";
+import { board, bus, readArgs, setup, store, untilSpawned, useBoardEnv } from "../../test/support/board-env";
+import { until } from "../../test/support/helpers";
 
 useBoardEnv();
 

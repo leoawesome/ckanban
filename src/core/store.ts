@@ -15,12 +15,12 @@ import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "../
 import { newId, newTicketId, nowIso } from "./util";
 import { pauser } from "./lag";
 import { atomicWrite } from "./atomic";
-import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "../server/board-tools";
-import { maskSaved, maskSavedJson } from "../server/board-keys";
+import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "../integrations/board-tools";
+import { maskSaved, maskSavedJson } from "../integrations/board-keys";
 import { ActivityDigests, type ActivityDigest } from "../runs/activity-digest";
 import { forgetLog, gzOf, loadLog, type LogReader, openLog, readLogSync, restoreLog, restoreLogSync } from "../runs/run-log";
 import { JsonDir } from "./json-dir";
-import { ScheduleHistoryDigests, type ScheduleHistoryDigest } from "../server/schedule-history";
+import { ScheduleHistoryDigests, type ScheduleHistoryDigest } from "../schedules/schedule-history";
 
 /** Dependency, build and version-history folders: never deliverables, and they can hold tens of thousands of files. */
 const SKIPPED_OUTPUT_DIRS = new Set(["node_modules", ".git", ".next", ".nuxt", ".turbo", ".cache", ".venv", "venv", "__pycache__"]);

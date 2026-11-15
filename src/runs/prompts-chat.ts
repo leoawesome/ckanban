@@ -1,4 +1,4 @@
-import { checkinSetupPrompt } from "../server/checkin-guides";
+import { checkinSetupPrompt } from "../schedules/checkin-guides";
 import { helperCommand } from "./artifact";
 import type { RepoKind } from "./git";
 import type { Comment, Ticket } from "../core/types";

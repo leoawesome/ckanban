@@ -12,14 +12,14 @@ import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { Huddles } from "../src/huddle/huddle";
 import { pollHuddleSessions } from "../src/huddle/huddle-session";
-import { JobRunner } from "../src/server/jobs";
+import { JobRunner } from "../src/schedules/jobs";
 import { pollSessionsSliced, primeSessions, SessionCache } from "../src/runs/session";
 import { Store } from "../src/core/store";
-import { BoardBrowsers } from "../src/server/board-browsers";
+import { BoardBrowsers } from "../src/browser/board-browsers";
 import { fakes, harness } from "./support/fake-chrome";
 import { RunLogCompressor } from "../src/runs/run-log-compress";
 import { resetLogCache } from "../src/runs/run-log";
-import { TerminalWatcher } from "../src/server/terminals";
+import { TerminalWatcher } from "../src/browser/terminals";
 import { ClaudeLogIndex } from "../src/usage/ticket-usage";
 import { tempDir } from "./support/helpers";
 

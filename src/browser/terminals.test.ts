@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { Bus, type BusEvent } from "../src/core/events";
-import { SessionCache } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import { TerminalWatcher } from "../src/server/terminals";
-import { tempDir } from "./support/helpers";
+import { Bus, type BusEvent } from "../core/events";
+import { SessionCache } from "../runs/session";
+import { Store } from "../core/store";
+import { TerminalWatcher } from "./terminals";
+import { tempDir } from "../../test/support/helpers";
 
 test("TerminalWatcher flags linked tickets whose session is open and emits on change", async () => {
   const store = new Store(tempDir());

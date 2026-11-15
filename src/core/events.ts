@@ -1,5 +1,5 @@
 import type { HuddleView } from "../huddle/huddle";
-import type { McpState } from "../server/mcp";
+import type { McpState } from "../integrations/mcp";
 import type { QuickChatView } from "../chat/quickchat";
 import type { SessionSummary } from "../runs/session";
 import type { HuddleMessage, Job, Profile, Schedule, Ticket } from "./types";

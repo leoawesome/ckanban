@@ -5,7 +5,7 @@ import {
   assertCanChange, BoardClient, ClientError, DAEMON_DOWN, mainCheckout, parseStatus, resolveProfile, runProfile, type ProfileInfo,
 } from "../src/client";
 import { callTool, handleMessage, TOOLS, type ToolContext } from "../src/mcp-server";
-import { AgentRegistry, readCodexServer, removeCodexServer, setCodexServer } from "../src/server/agents";
+import { AgentRegistry, readCodexServer, removeCodexServer, setCodexServer } from "../src/integrations/agents";
 import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";

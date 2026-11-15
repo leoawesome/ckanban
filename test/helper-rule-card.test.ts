@@ -7,7 +7,7 @@ import { Bus } from "../src/core/events";
 import { HelperSettingsStore } from "../src/helper/settings";
 import { HUDDLE_HEADER } from "../src/huddle/huddle-roster";
 import { createServer } from "../src/server/http";
-import { RUN_HEADER } from "../src/server/scheduler";
+import { RUN_HEADER } from "../src/schedules/scheduler";
 import { parseSession, SessionCache, type SessionSummary } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import { callTool, NO_HELPER_RULE_CARD, TOOL_NO_HELPER_RULE, type ToolContext } from "../src/mcp-server";

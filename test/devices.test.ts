@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { Devices, STALE_WAIT_MS } from "../src/server/devices";
+import { Devices, STALE_WAIT_MS } from "../src/browser/devices";
 import { tempDir } from "./support/helpers";
 
 const fresh = (now?: () => number) => {

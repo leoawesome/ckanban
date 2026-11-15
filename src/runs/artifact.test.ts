@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ERRORS, extractReadHtml, findOutcome, helperCommand, helperEnv, jobPrompts, paneState, runArtifactJob, screenText, tmuxArgs } from "./artifact";
-import { ptySupported } from "../server/shell";
+import { ptySupported } from "../browser/shell";
 
 const L = (o: unknown) => JSON.stringify(o);
 const use = (id: string, input: object, name = "Artifact") =>

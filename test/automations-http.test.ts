@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { Board } from "../src/board/board";
-import { automationProposal } from "../src/server/automation-proposal";
+import { automationProposal } from "../src/schedules/automation-proposal";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { Store } from "../src/core/store";

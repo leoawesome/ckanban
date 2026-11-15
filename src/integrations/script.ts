@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { helperArgv } from "../../runs/artifact";
+import { helperArgv } from "../runs/artifact";
 
 // A check script: a small shell script the board runs on a timer, without Claude. It prints the items it found as
 // JSON, one per line or one list: {"id": "...", "title": "...", "text": "...", "link": "...", "thread": "..."}. The

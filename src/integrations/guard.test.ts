@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { commandMap, descendsFrom, drivenBrowser, fromUserBrowser, isBrowser, lsofPids, parentMap } from "../src/server/integrations/guard";
-import { until } from "./support/helpers";
+import { commandMap, descendsFrom, drivenBrowser, fromUserBrowser, isBrowser, lsofPids, parentMap } from "./guard";
+import { until } from "../../test/support/helpers";
 
 test("a process tree is walked up to the daemon", () => {
   const parents = parentMap("  10 1\n  20 10\n  30 20\n  40 1\n");

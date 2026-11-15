@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cronError, describeCron, nextRun, nextRuns, parseCron } from "../src/server/cron";
+import { cronError, describeCron, nextRun, nextRuns, parseCron } from "./cron";
 
 // All dates local time, like the scheduler.
 const at = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(y, mo - 1, d, h, mi);

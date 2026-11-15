@@ -6,7 +6,7 @@ import { dayEnded, dayTitle, DESK_CAP_DEFAULT, DESK_UNMEASURED_USD, DUPLICATE_MS
 import { FRONT_DESK_ENV } from "../src/helper/frontdesk-id";
 import { ACTION_TTL_MS } from "../src/helper/tgstores";
 import { SEND_AGAIN, TEXT_ONLY } from "../src/helper/telegram";
-import { describeAt } from "../src/server/jobs";
+import { describeAt } from "../src/schedules/jobs";
 import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../src/helper/notify";
 import type { QuickChat, QuickChatHooks, QuickChatView } from "../src/chat/quickchat";
 import { addDeskSpend, addTelegramSpend, deskSpendToday, telegramSpendToday } from "../src/usage/spend";

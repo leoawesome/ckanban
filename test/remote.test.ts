@@ -5,8 +5,8 @@ import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { createServer, isAllowedRequest, isAllowedSocket } from "../src/server/http";
 import { chmodSync } from "node:fs";
-import { isPhoneListener, qrSvg, qrTerminal, RemoteAccess, RemoteError, tailscaleRunner, type RemoteConfig, type TailscaleRunner } from "../src/server/remote";
-import { RUN_HEADER } from "../src/server/scheduler";
+import { isPhoneListener, qrSvg, qrTerminal, RemoteAccess, RemoteError, tailscaleRunner, type RemoteConfig, type TailscaleRunner } from "../src/integrations/remote";
+import { RUN_HEADER } from "../src/schedules/scheduler";
 import { Store } from "../src/core/store";
 import { tempDir } from "./support/helpers";
 

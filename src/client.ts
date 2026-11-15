@@ -4,7 +4,7 @@ import { dirname, isAbsolute, resolve, sep } from "node:path";
 import type { HuddlePresetView } from "./huddle/huddle-presets";
 import type { RosterEntry } from "./huddle/huddle-roster";
 import type { HuddleTemplateView } from "./huddle/huddle-templates";
-import type { DeviceUser } from "./server/devices";
+import type { DeviceUser } from "./browser/devices";
 import type { MessageResult } from "./helper/notify";
 import type { SetupOutcome } from "./runs/worktree-setup";
 import { CONFIRM_STATUS } from "./helper/frontdesk-id";

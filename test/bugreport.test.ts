@@ -6,7 +6,7 @@ import { Board } from "../src/board/board";
 import {
   buildIssueBody, draftReport, fileIssue, LOG_MAX_BYTES, logBlock, MAX_URL_LENGTH, newIssueUrl, screenshotNames, scrub,
   submitReport, tail, type BugBlock, type GhRunner,
-} from "../src/server/bugreport";
+} from "../src/integrations/bugreport";
 import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { Store } from "../src/core/store";

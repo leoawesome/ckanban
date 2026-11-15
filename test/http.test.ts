@@ -5,7 +5,7 @@ import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
 import { run } from "../src/runs/git";
 import { createServer, isAllowedRequest } from "../src/server/http";
-import { ptySupported } from "../src/server/shell";
+import { ptySupported } from "../src/browser/shell";
 import { Store } from "../src/core/store";
 import { makeRepo, tempDir } from "./support/helpers";
 

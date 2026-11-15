@@ -4,7 +4,7 @@ import { addWorktree, isGitRepo, removeWorktree, resolveBaseBranch, worktreeDir 
 import { forkSessionBefore, forkSessionFile, forkTitle } from "../chat/fork";
 import { type TicketKind } from "../../web/src/features/family/family";
 import { followUpFor, followUpPlace } from "../../web/src/features/ticket/followUp";
-import { quietContext } from "../server/quiet";
+import { quietContext } from "../schedules/quiet";
 import { addHuddleSpend } from "../usage/spend";
 import { kindDefaults } from "./main-ticket";
 import { type PromptContext } from "../runs/prompts";

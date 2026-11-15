@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { appendFileSync, chmodSync, existsSync, symlinkSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { keysAnswerText, keysAsk, parseKeysAsk } from "../src/server/ask-keys";
+import { keysAnswerText, keysAsk, parseKeysAsk } from "../src/integrations/ask-keys";
 import { claudeSessionFile } from "../src/board/board";
-import { boardKeyEnv, keyNameError, maskSaved } from "../src/server/board-keys";
+import { boardKeyEnv, keyNameError, maskSaved } from "../src/integrations/board-keys";
 import { Bus } from "../src/core/events";
-import { backupFile, backupFolderName, BACKUPS_DIR, BACKUPS_KEPT } from "../src/server/file-backup";
+import { backupFile, backupFolderName, BACKUPS_DIR, BACKUPS_KEPT } from "../src/integrations/file-backup";
 import { KEYS_RULE } from "../src/runs/prompts";
 import { createServer } from "../src/server/http";
-import { Passes, PassError } from "../src/server/integrations/passes";
+import { Passes, PassError } from "../src/integrations/passes";
 import { parseSession } from "../src/runs/session";
 import { Store } from "../src/core/store";
 import { callTool, TOOL_NO_KEYS, type ToolContext } from "../src/mcp-server";

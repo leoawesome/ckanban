@@ -1,7 +1,7 @@
 import type { TeammateProposal } from "../huddle/teammate-proposal";
 import type { SquadCardState, SquadProposal } from "../huddle/squad";
 import type { RewindUndo } from "../chat/rewind";
-import type { BrowserPick } from "../server/chromes";
+import type { BrowserPick } from "../browser/chromes";
 
 import type { TicketKind } from "../../web/src/features/family/family";
 import type { ClosedForms } from "../../web/src/features/family/family";

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { mcpConfig } from "../server/agents";
+import { mcpConfig } from "../integrations/agents";
 import { buildArgs, controlResponse, inheritedEnv, PLANNING_DISALLOWED_TOOLS, startRun } from "./runner";
 import { tempDir, until } from "../../test/support/helpers";
 

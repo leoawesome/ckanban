@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { closeSession, sessionProcessUnder, Shell, ShellManager, type ProcRow, type SpawnRequest } from "../src/server/shell";
+import { closeSession, sessionProcessUnder, Shell, ShellManager, type ProcRow, type SpawnRequest } from "./shell";
 
 class FakeShell {
   killed = false;
@@ -104,7 +104,7 @@ test("closeSession types /exit, and signals only when Claude doesn't leave in ti
 
 test.skipIf(typeof (Bun as any).Terminal !== "function")("findSession finds a session typed into the dock shell and closes it with /exit", async () => {
   const id = "11111111-2222-3333-4444-555555555555";
-  const cli = join(import.meta.dir, "fixtures", "fake-tui", "claude-code", "cli.js");
+  const cli = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-tui", "claude-code", "cli.js");
   const shells = new ShellManager((r) => new Shell(r.cwd, r.cols, r.rows, { shell: "/bin/sh", script: `${process.execPath} ${cli} --resume ${id}` }));
   const s = shells.get("p", tmpdir());
   let out = "";

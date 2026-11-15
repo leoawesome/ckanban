@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { ASK_CHROME, browserPicks, ChromeWatch, Chromes, chromeSetting, legacyChrome, ownPicks, picksFromLegacy, resolveBrowserPicks, resolveChromeSetting } from "../src/server/chromes";
-import { chromeChoiceNote, withoutChromeRule } from "../src/runs/prompts";
-import { tempDir } from "./support/helpers";
+import { ASK_CHROME, browserPicks, ChromeWatch, Chromes, chromeSetting, legacyChrome, ownPicks, picksFromLegacy, resolveBrowserPicks, resolveChromeSetting } from "./chromes";
+import { chromeChoiceNote, withoutChromeRule } from "../runs/prompts";
+import { tempDir } from "../../test/support/helpers";
 
 const WORK = "d4a71199-fd4a-427d-a310-bee508a721c5";
 const PERSONAL = "8e20160c-5cb5-4f7e-b037-33523d4791f8";

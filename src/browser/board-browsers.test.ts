@@ -1,10 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BoardBrowsers, chromeArgs, hasDataDir, nameFromId, parseListeners, LOOPBACK } from "../src/server/board-browsers";
-import { parsePortFile, portMatches } from "../src/server/cdp";
-import { FakeChrome, fakes, harness } from "./support/fake-chrome";
-import { tempDir } from "./support/helpers";
+import { BoardBrowsers, chromeArgs, hasDataDir, nameFromId, parseListeners, LOOPBACK } from "./board-browsers";
+import { parsePortFile, portMatches } from "./cdp";
+import { FakeChrome, fakes, harness } from "../../test/support/fake-chrome";
+import { tempDir } from "../../test/support/helpers";
 
 afterEach(() => {
   for (const f of fakes.splice(0)) if (!f.closed) f.quit();
