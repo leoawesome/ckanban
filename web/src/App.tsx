@@ -29,7 +29,7 @@ import { StatusPill, UsageBox } from "./UsagePill";
 import { useUsage } from "./useUsage";
 import { onlyBaseLayers } from "./layers";
 import { Board, useCollapsedColumns } from "./Board";
-import { doneCursor, doneDrifted, heldDoneHead, joinsBoard, mergeTickets, reloadAsk, takeReload, unseenDone } from "./donePaging";
+import { doneCursor, doneDrifted, doneNotDrawn, heldDoneHead, joinsBoard, mergeTickets, reloadAsk, takeReload, unseenDone } from "./donePaging";
 import { pruneCardMemory } from "./Card";
 import { boardColumnOf, columnNeighbours, columnOrder, STATUS_MENU } from "./columns";
 import { ColumnPicker } from "./ColumnPicker";
@@ -983,6 +983,11 @@ export function App() {
   else if (!sameMap(viaRef.current, viaNow)) viaRef.current = viaNow;
   const searchVia = viaRef.current;
   const filtering = !!q || tagsWanted.length > 0 || activeFilters.length > 0;
+  // While Done has cards left to load, the held ones below its last loaded page (families of open work, tickets opened
+  // by link) wait for their page: the column draws its top in its final order, and pages only add below (donePaging.ts).
+  // A search shows every match. donePaged changes only with the tickets, so `tickets` keeps this fresh.
+  const doneWaiting = useMemo(() => (!filtering && doneUnseen > 0 ? doneNotDrawn(tickets, donePaged.current) : null), [tickets, filtering, doneUnseen]);
+  const boardTickets = useMemo(() => (doneWaiting?.size ? shownTickets.filter((t) => !doneWaiting.has(t.id)) : shownTickets), [shownTickets, doneWaiting]);
   // The search also finds finished tickets Done hasn't loaded (the server looks through all of them).
   const tagKey = tagsWanted.join(",");
   useEffect(() => {
@@ -1583,7 +1588,7 @@ export function App() {
                 openTicket(t.id);
               }} />
           )}
-          <Board tickets={shownTickets} loading={!ticketsLoaded} done={{ more: filtering ? 0 : doneUnseen, loading: doneLoading, loadMore: loadMoreDone }} filtered={filtering} onOpen={openCard} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
+          <Board tickets={boardTickets} loading={!ticketsLoaded} done={{ more: filtering ? 0 : doneUnseen + (doneWaiting?.size ?? 0), loading: doneLoading, loadMore: loadMoreDone }} filtered={filtering} onOpen={openCard} onMove={move} onPin={pin} onAdd={() => setNewTicket(true)} restartPending={restart.pending}
             collapsed={collapsed} onCollapse={setColumnCollapsed}
             slug={slug ?? undefined} jobs={jobs ?? undefined} onOpenJobs={openSchedules} via={searchVia}
             filter={filtering ? { all: visibleTickets, doneMore: doneUnseen, clear: () => { clearSearch(); setFilters(new Set()); } } : undefined} />
