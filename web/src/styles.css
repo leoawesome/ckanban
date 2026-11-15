@@ -799,6 +799,39 @@ textarea { resize: vertical; font-size: var(--fs-md); }
 .topbar .profile-select .select-trigger { background: var(--surface-2); border-color: transparent; font-weight: 600; padding: var(--sp-2h) var(--sp-3h); min-width: 0; }
 .topbar .profile-select .select-trigger:hover { border-color: var(--border); }
 .status-select .select-trigger { padding: var(--sp-2) var(--sp-3h); font-weight: 600; }
+/* The column pill under the ticket's title (StatusPill.tsx): the column's colour (--st-*), a tap opens Move to. */
+.sp-col-backlog { --pill-c: var(--muted); }
+.sp-col-planning { --pill-c: var(--st-planning); }
+.sp-col-ready, .sp-col-in_progress { --pill-c: var(--st-running); }
+.sp-col-review { --pill-c: var(--st-review); }
+.sp-col-done { --pill-c: var(--st-done); }
+.status-pill .select-trigger, .status-pill.sp-button {
+  display: inline-flex; align-items: center; gap: var(--sp-2h); min-width: 0; padding: var(--sp-1) var(--sp-3h); border-radius: var(--r-pill);
+  border: 1px solid color-mix(in srgb, var(--pill-c) 55%, transparent); background: color-mix(in srgb, var(--pill-c) 12%, var(--surface));
+  color: var(--pill-c); font: inherit; font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.status-pill .select-trigger:hover, .status-pill.sp-button:hover { border-color: var(--pill-c); }
+.status-pill.open .select-trigger, .status-pill .select-trigger:focus-visible, .status-pill.sp-button:focus-visible { border-color: var(--pill-c); box-shadow: 0 0 0 1px var(--pill-c); outline: none; }
+.status-pill .select-chevron, .status-pill .sp-chev { color: currentColor; }
+.status-pill .select-value { display: inline-flex; align-items: center; gap: var(--sp-2h); }
+.sp-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--pill-c); }
+/* Move to: the desktop dropdown and the phone sheet share these rows. */
+.sp-opt { display: flex; align-items: center; gap: var(--sp-3h); min-width: 0; width: 100%; }
+.sp-opt .sp-dot { width: 10px; height: 10px; }
+.sp-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.sp-label { font-weight: 600; color: var(--text); }
+.sp-hint { font-size: var(--fs-xs); font-weight: 400; color: var(--muted); white-space: normal; }
+.sp-check { flex: none; width: 16px; display: flex; justify-content: center; color: var(--pill-c); }
+.sp-opt.current .sp-label { color: var(--pill-c); }
+.select-menu.status-pill-menu { width: 300px; }
+.status-pill-menu .select-item { align-items: center; padding: var(--sp-3) var(--sp-3h); }
+.sp-list { display: flex; flex-direction: column; padding: 0 var(--sp-5) max(var(--sp-5), env(safe-area-inset-bottom)); }
+.sp-row { min-height: 52px; padding: var(--sp-3) var(--sp-1); border: 0; border-bottom: 1px solid var(--border); background: none; font: inherit; font-size: var(--fs-lg); text-align: left; cursor: pointer; }
+.sp-row:last-child { border-bottom: 0; }
+.sp-row:active { background: var(--surface-2); }
+.sp-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sp-row .sp-hint { font-size: var(--fs-sm); }
 /* profile switcher menu: avatar, name + need-you chip on one line, path below, check on the right */
 .select-menu.profile-menu { width: min(380px, calc(100vw - 16px)); max-width: calc(100vw - 16px); padding: var(--sp-2h); border-radius: var(--r-md); }
 .profile-menu .select-item { align-items: center; gap: var(--sp-3h); padding: var(--sp-3h) var(--sp-3h); border-radius: var(--r-sm); }
@@ -3720,12 +3753,20 @@ button.hd-mode:disabled { cursor: default; }
   .pw-dot.busy { width: 10px; height: 10px; background: none; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.8s linear infinite; }
   .pw-dot.mark { width: auto; height: auto; background: none; font-weight: 700; animation: finish-pop var(--dur-slow) var(--ease-out); }
   .pw-face { flex: none; display: inline-flex; }
-  .phone-who.tone-ok .pw-status { color: var(--ok); }
-  .phone-who.tone-warn .pw-status { color: var(--warn); }
-  .phone-who.tone-err .pw-status { color: var(--err); }
-  .phone-who.tone-info .pw-status { color: var(--info); }
-  .phone-who.tone-neutral .pw-word { color: var(--text); }
-  .phone-who :is(.pw-reason, .pw-chev) { color: var(--muted); }
+  :is(.phone-who, .head-pill-row).tone-ok .pw-status { color: var(--ok); }
+  :is(.phone-who, .head-pill-row).tone-warn .pw-status { color: var(--warn); }
+  :is(.phone-who, .head-pill-row).tone-err .pw-status { color: var(--err); }
+  :is(.phone-who, .head-pill-row).tone-info .pw-status { color: var(--info); }
+  :is(.phone-who, .head-pill-row).tone-neutral .pw-word { color: var(--text); }
+  :is(.phone-who, .head-pill-row) :is(.pw-reason, .pw-chev) { color: var(--muted); }
+  /* The status in words sits beside the column pill (below); under the title only while the chat is scrolled down. */
+  .panel:not(.head-slim) .phone-who .pw-status { display: none; }
+  .head-pill-wrap { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr; transition: grid-template-rows var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out); }
+  .head-pill-row { min-height: 0; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-1) var(--sp-3) var(--sp-2); }
+  .head-pill-row .pw-status { flex: 1 1 auto; }
+  .panel.head-slim .head-pill-wrap { grid-template-rows: 0fr; opacity: 0; }
+  .panel.head-slim .head-pill-row { overflow: hidden; padding: 0; visibility: hidden; }
+  .status-pill.sp-button { min-height: var(--tap); padding: 0 var(--sp-4); font-size: var(--fs-lg); }
   .panel.head-slim .panel-head { padding-bottom: 0; }
   .head-row2 { gap: var(--sp-2); }
   .head-row2 .tabs { margin-left: 0; flex: 1 1 auto; }

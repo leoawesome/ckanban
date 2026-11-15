@@ -5,6 +5,7 @@ import { setCoveredFrom } from "./cardMotion";
 import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, runningTools, stopTitle, toolCount } from "./familyActions";
 import { api, COLUMNS, safeHref, startWorkTarget, subscribe, type ClaudeSession, type Job, type Profile, type Status, type Ticket } from "./api";
 import { boardColumnOf, menuPick, STATUS_MENU } from "./columns";
+import { StatusPill } from "./StatusPill";
 import { PANEL_LEAVE_MS, reducedMotion } from "./motion";
 import { finishBadge, huddleBadge, outcomeBadge, useFinishMark } from "./Card";
 import { featureBusy } from "./cardState";
@@ -340,7 +341,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   /** The other boards, and the move of this ticket to one (true when it moved): "Move to board" in the ticket menu. */
   moveTo?: { boards: { slug: string; name: string }[]; onMove: (id: string, board: { slug: string; name: string }) => Promise<boolean> };
   /** The previous/next visible ticket in board order (null at the ends or when this one isn't on the board view). */
-  nav?: { prev: string | null; next: string | null; go: (id: string) => void };
+  /** afterDone: the ticket to open once this one is marked Done (the next card of its current column), null to close. */
+  nav?: { prev: string | null; next: string | null; go: (id: string, fresh?: boolean) => void; afterDone?: (id: string) => string | null };
   /** Slide in when opened; off when stepping from the neighbouring ticket. */
   slideIn?: boolean;
   /** The side panel column is open: the panel sits between the board and the column (right: the column's width, top: below the header). */
@@ -555,10 +557,10 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const titleRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const revertTitle = useRef(false);
   // Leaving for the neighbouring ticket: keep a title edit, and don't drop an unsaved description edit.
-  const step = (id: string | null | undefined) => {
+  const step = (id: string | null | undefined, fresh = false) => {
     if (!id || !nav || editing || confirmDelete || confirmStart || confirmBranch || moveBoard !== null || confirmStop || confirmPark || picking || reportingBug) return;
     if (title !== ticket.title) saveTitle();
-    nav.go(id);
+    nav.go(id, fresh);
   };
   // Latest prev/next for the key handler below, which is bound once.
   const stepRef = useRef((_to: "prev" | "next") => {});
@@ -708,7 +710,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
       .then((t) => { setBaseBody(t.body); setEditing(false); })
       .catch((e) => onError(e.message));
   };
-  // Marked Done: on to the next ticket of the column the drawer walks, or back to the board after its last one,
+  // Marked Done: on to the next ticket of the column the ticket is in now (in the board's current order, not the column
+  // the panel opened in), with prev/next starting over from there, or back to the board after that column's last one,
   // at once rather than after the save, so a close in the meantime can't be undone by a late jump.
   // The drawer may be gone when the save fails, so the error goes to the board's toast.
   // A main ticket with tool tickets: Backlog and Done hold its family, after one confirm.
@@ -718,7 +721,8 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
     if (status !== "done" || ticket.status === "done") return act(() => api.updateTicket(slug, ticket.id, { status }));
     const title = ticket.title;
     api.updateTicket(slug, ticket.id, { status }).catch((e) => toast(<>Couldn't mark <b>{title}</b> done: {e.message}</>, { tone: "error" }));
-    if (nav?.next) step(nav.next);
+    const next = nav?.afterDone ? nav.afterDone(ticket.id) : nav?.next;
+    if (next) step(next, true);
     else if (!editing) onClose();
   };
   const col = COLUMNS.find((c) => c.id === ticket.status);
@@ -1123,6 +1127,16 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
         {reason && <span className="pw-reason">· {reason}</span>}<span className="pw-chev" aria-hidden>▾</span></span>
     </button>
   );
+  // The column pill under the title: one tap opens Move to (the same setStatus path as the Status picker and the sheet).
+  const pill = <StatusPill ticket={ticket} phone={phone} onPick={(s) => setStatus(s)} />;
+  // Phones, under the title: the pill and the status in words. While the chat is scrolled down (head-slim) this row folds
+  // away and the status shows under the title instead.
+  const phonePillRow = (
+    <div className="head-pill-wrap" aria-hidden={slim || undefined}><div className={`head-pill-row tone-${ps.tone}`}>
+      {pill}
+      <span className="pw-status">{statusMark}<span className="pw-word">{shortStatus}</span>{reason && <span className="pw-reason">· {reason}</span>}</span>
+    </div></div>
+  );
   // Phones, Chat tab: while the ticket waits on the user (and Claude isn't working), one slim line above the message
   // box says what for, with its one button (the same handlers as the Ticket tab's).
   const turnAction = !att || working ? null : goal ? { label: goal.button, run: goTo }
@@ -1238,6 +1252,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               onDelete={() => setConfirmDelete(true)} />
             {!phone && <button className="icon-btn" onClick={onClose} aria-label="Close" title="Close (Esc)"><CloseIcon /><KeyHint keys="Esc" /></button>}
           </div>
+          {phone && phonePillRow}
           {runOpen && <RunPopover profile={profile} ticket={ticket} onError={onError} onClose={() => setRunOpen(false)} />}
           {/* Row 2: the tabs, then the short status (desktop) and the cost. It folds away while the chat scrolls down
               (useShrinkHeader). */}
@@ -1250,6 +1265,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
             </nav>
             <span className="head-spacer" />
             {!phone && <>
+              {pill}
               {/* Only the short status; what it waits on is in the tooltip (and in the chat's waiting list). */}
               {finish ? finishBadge(finish) : att && goal ? (
                 <button className={`your-turn inline go att-${att.kind}`} onClick={goTo} title={`${attLabel}: show me where`} aria-label={`Your turn: ${attLabel}. Show me where`}>

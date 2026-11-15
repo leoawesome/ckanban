@@ -31,7 +31,7 @@ import { onlyBaseLayers } from "./layers";
 import { Board, useCollapsedColumns } from "./Board";
 import { doneCursor, doneDrifted, heldDoneHead, joinsBoard, mergeTickets, reloadAsk, takeReload, unseenDone } from "./donePaging";
 import { pruneCardMemory } from "./Card";
-import { boardColumnOf, columnNeighbours, columnOrder, STATUS_MENU } from "./columns";
+import { boardColumnOf, columnNeighbours, columnOrder, nextInColumn, STATUS_MENU } from "./columns";
 import { ColumnPicker } from "./ColumnPicker";
 import { setThemeChoice, type ThemeChoice } from "./theme";
 import { afterBar, ticketActions } from "./ticketActions";
@@ -579,8 +579,10 @@ export function App() {
   const openCard = useCallback((id: string) => openTicket(id), [openTicket]);
 
   // Prev/next in the drawer: replace the history entry, so one Close or Back still returns to the board.
-  const stepTicket = useCallback((id: string) => {
+  // fresh: start a new prev/next order from the ticket's column as the board shows it now (after Done).
+  const stepTicket = useCallback((id: string, fresh = false) => {
     stepped.current = true;
+    if (fresh) setNavOrder(null);
     history.replaceState(history.state, "", hashFor(slug, id));
     setOpenId(id);
   }, [slug]);
@@ -1007,6 +1009,10 @@ export function App() {
   const navIn = orderMissing ? liveOrder : navOrder ?? liveOrder;
   const { prev: prevId, next: nextId } = useMemo(() => (open && navIn ? columnNeighbours(navIn.ids, navIn.column, open.id, tickets) : { prev: null, next: null }),
     [open?.id, navIn, tickets]);
+  // Marked Done: the next card of the column the ticket is in now. Worked out only when asked (one pass over the board).
+  const shownRef = useRef(shownTickets);
+  shownRef.current = shownTickets;
+  const afterDone = useCallback((id: string) => nextInColumn(shownRef.current, id), []);
   const perBoard = useMemo(() => {
     const m = new Map<string, number>();
     for (const i of inbox) m.set(i.profile, (m.get(i.profile) ?? 0) + 1);
@@ -1699,7 +1705,7 @@ export function App() {
       {findLinksOpen && profile && <FindLinksDialog slug={profile.slug} tickets={tickets} onClose={() => setFindLinksOpen(false)} />}
       {open && profile && <TicketDrawer key={open.id} profile={profile} ticket={open} tickets={tickets} onOpenTicket={openTicket} onClose={closeTicket} moveTo={moveTo}
         jobs={jobs ?? []} onOpenJobs={openSchedules}
-        nav={{ prev: prevId, next: nextId, go: stepTicket }} slideIn={!stepped.current}
+        nav={{ prev: prevId, next: nextId, go: stepTicket, afterDone }} slideIn={!stepped.current}
         beside={columnShown ? { right: columnWidth, top: topbarBottom } : null}
         tabRequest={huddleTab?.id === open.id ? { tab: "huddle", n: huddleTab.n, huddleId: huddleTab.huddleId } : null}
         huddleSeed={huddleSeed?.id === open.id ? { seed: huddleSeed.seed, n: huddleSeed.n } : null}
