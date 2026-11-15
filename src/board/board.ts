@@ -33,7 +33,7 @@ import { DraftTracker } from "../chat/draft";
 import { startRun, type RunHandle } from "../runs/runner";
 import { RETRY_DELAY_MS, RETRY_TEXT, transientError } from "../runs/retry";
 import { BOARD_COMMANDS, parseSlash, REFUSED_COMMANDS, rememberInit, slashMessage, useBundledFile } from "../chat/commands";
-import { toolsVersion } from "../mcp-server";
+import { toolsVersion } from "../mcp/server";
 import { type Store } from "../core/store";
 import { maskSaved } from "../integrations/board-keys";
 import { autoHuddlesOn, runCapFor, type PrStatus, type QueuedMessage, type Ticket } from "../core/types";

@@ -18,7 +18,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
+import { createServer } from "../src/api/server";
 import { startLagMonitor } from "../src/core/lag";
 import { pollSessions, primeSessions, SessionCache } from "../src/runs/session";
 import { Store } from "../src/core/store";

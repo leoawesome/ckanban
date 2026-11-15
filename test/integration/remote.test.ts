@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer, isAllowedRequest, isAllowedSocket } from "../src/server/http";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer, isAllowedRequest, isAllowedSocket } from "../../src/api/server";
 import { chmodSync } from "node:fs";
-import { isPhoneListener, qrSvg, qrTerminal, RemoteAccess, RemoteError, tailscaleRunner, type RemoteConfig, type TailscaleRunner } from "../src/integrations/remote";
-import { RUN_HEADER } from "../src/schedules/scheduler";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
+import { isPhoneListener, qrSvg, qrTerminal, RemoteAccess, RemoteError, tailscaleRunner, type RemoteConfig, type TailscaleRunner } from "../../src/integrations/remote";
+import { RUN_HEADER } from "../../src/schedules/scheduler";
+import { Store } from "../../src/core/store";
+import { tempDir } from "../support/helpers";
 
 const HOST = "leos-mbp.tail1234.ts.net";
 const LOGIN = "leo@example.com";

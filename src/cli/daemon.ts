@@ -4,7 +4,7 @@ import { cleanupTmuxLeftovers } from "../runs/artifact";
 import { StayAwake } from "../runs/awake";
 import { Board } from "../board/board";
 import { Bus } from "../core/events";
-import { createServer } from "./http";
+import { createServer } from "../api/server";
 import { QuickChats } from "../chat/quickchat";
 import { Huddles } from "../huddle/huddle";
 import { withUtf8Locale } from "../core/locale";
@@ -37,7 +37,7 @@ import { defaultRoot, Store, TICKET_RECHECK_MS } from "../core/store";
 import { JSON_DIR_RECHECK_MS } from "../core/json-dir";
 import { keepAwakeOn } from "../core/types";
 import { VERSION } from "../core/version";
-import { WEB_ASSETS } from "./web-assets.gen";
+import { WEB_ASSETS } from "../api/web-assets.gen";
 import { detectMissing } from "../runs/worktree-setup";
 import { sweepTempFiles, trimDaemonLog } from "../core/housekeeping";
 

@@ -1,10 +1,10 @@
 // Huddle stalls: a tag at the end of a long message reaches the helper whole, and a host waiting on silent helpers
 // gets nudged instead of the huddle sitting idle forever.
 import { expect, test } from "bun:test";
-import { callTool } from "../src/mcp-server";
-import { DIGEST_MAX_CHARS, digestWindow, HUDDLE_IDLE_MS } from "../src/huddle/huddle";
-import { huddleDigest } from "../src/runs/prompts";
-import { agentCtx, heardBy, host, huddles, idle, messages, participant, useHuddleEnv } from "./support/huddle-env";
+import { callTool } from "../../src/mcp/server";
+import { DIGEST_MAX_CHARS, digestWindow, HUDDLE_IDLE_MS } from "../../src/huddle/huddle";
+import { huddleDigest } from "../../src/runs/prompts";
+import { agentCtx, heardBy, host, huddles, idle, messages, participant, useHuddleEnv } from "../support/huddle-env";
 
 useHuddleEnv();
 

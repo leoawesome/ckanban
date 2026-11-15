@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { Board } from "../src/board/board";
 import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
+import { createServer } from "../src/api/server";
 import { Huddles } from "../src/huddle/huddle";
 import { pollHuddleSessions } from "../src/huddle/huddle-session";
 import { JobRunner } from "../src/schedules/jobs";

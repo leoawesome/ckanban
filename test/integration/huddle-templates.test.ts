@@ -2,13 +2,13 @@
 import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { findingTitle, POST_MAX } from "../src/huddle/huddle";
-import { isBuiltinPreset } from "../src/huddle/huddle-presets";
-import { BUILTIN_TEMPLATES, deleteTemplate, mergeTemplates, saveTemplate } from "../src/huddle/huddle-templates";
-import { huddleDigest } from "../src/runs/prompts";
-import type { Huddle } from "../src/core/types";
-import { store, huddles, client, events, idle, heardBy, host, participant, agentCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "./support/huddle-env";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { findingTitle, POST_MAX } from "../../src/huddle/huddle";
+import { isBuiltinPreset } from "../../src/huddle/huddle-presets";
+import { BUILTIN_TEMPLATES, deleteTemplate, mergeTemplates, saveTemplate } from "../../src/huddle/huddle-templates";
+import { huddleDigest } from "../../src/runs/prompts";
+import type { Huddle } from "../../src/core/types";
+import { store, huddles, client, events, idle, heardBy, host, participant, agentCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "../support/huddle-env";
 
 useHuddleEnv();
 

@@ -4,7 +4,7 @@
 // the ckanban binary and talks the Chrome DevTools Protocol directly (src/server/cdp.ts).
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
-import { boardPort } from "../client";
+import { boardPort } from "../cli/client";
 import { Cdp, CdpError, portMatches, readPortFile, type PortFile } from "./cdp";
 import { VERSION } from "../core/version";
 

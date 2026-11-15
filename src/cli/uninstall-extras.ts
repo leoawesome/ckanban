@@ -1,5 +1,5 @@
-import type { AgentRegistry } from "./integrations/agents";
-import type { RemoteAccess } from "./integrations/remote";
+import type { AgentRegistry } from "../integrations/agents";
+import type { RemoteAccess } from "../integrations/remote";
 
 export const STEP_LIMIT_MS = 15_000;
 

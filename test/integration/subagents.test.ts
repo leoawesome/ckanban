@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus, type BusEvent } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { parseSession, pollSessionsSliced, SessionCache } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import { AGENT_STEP_TAIL, parseAgentTranscript, settleAgent } from "../src/runs/subagents";
-import { tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus, type BusEvent } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { parseSession, pollSessionsSliced, SessionCache } from "../../src/runs/session";
+import { Store } from "../../src/core/store";
+import { AGENT_STEP_TAIL, parseAgentTranscript, settleAgent } from "../../src/runs/subagents";
+import { tempDir } from "../support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);
 const user = (content: any, at: string, extra: object = {}) =>

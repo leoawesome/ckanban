@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
-import { tempDir, until } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
+import { tempDir, until } from "../support/helpers";
 
 // create_ticket's partOf from a board run: any ticket of the run's own feature (rounds, groups, other steps, at any
 // depth, also while the main ticket sits in Done), another open feature's top ticket or group, and otherwise a fallback

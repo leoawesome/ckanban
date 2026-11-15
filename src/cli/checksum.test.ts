@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { sha256, sumFor } from "../src/checksum";
+import { sha256, sumFor } from "./checksum";
 
 const A = "a".repeat(64);
 const B = "b".repeat(64);

@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { callTool, ticketsError, type ToolContext } from "../src/mcp-server";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { Scheduler } from "../src/schedules/scheduler";
-import { parseNewTickets } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import { normalizeTag as serverNormalizeTag, normalizeTags } from "../src/board/tags";
-import { boardTags, hasTags, normalizeTag, parseSearch, tagHue } from "../web/src/features/board/tagText";
-import { tempDir } from "./support/helpers";
+import { callTool, ticketsError, type ToolContext } from "../../src/mcp/server";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { Scheduler } from "../../src/schedules/scheduler";
+import { parseNewTickets } from "../../src/runs/session";
+import { Store } from "../../src/core/store";
+import { normalizeTag as serverNormalizeTag, normalizeTags } from "../../src/board/tags";
+import { boardTags, hasTags, normalizeTag, parseSearch, tagHue } from "../../web/src/features/board/tagText";
+import { tempDir } from "../support/helpers";
 
 test("normalizeTags: trimmed, lowercase, no #, dashes for spaces, no blanks or repeats, capped", () => {
   expect(normalizeTags(["Post", "#XHS", " post ", "", "  ", "Kitchen Reno", 3, "##deep"])).toEqual(["post", "xhs", "kitchen-reno", "deep"]);
@@ -147,7 +147,7 @@ test("suggest_tags adds new suggestions to the run's own ticket", async () => {
 });
 
 test("the first run's prompt offers suggest_tags only while the ticket has no tags", async () => {
-  const { firstRunPrompt } = await import("../src/runs/prompts");
+  const { firstRunPrompt } = await import("../../src/runs/prompts");
   const t = await board.createTicket("p", { title: "Post 5", body: "b", status: "backlog" });
   expect(firstRunPrompt(t, { repo: "remote", outputDir: "/out" })).toContain("suggest_tags");
   expect(firstRunPrompt({ ...t, tags: ["post"] }, { repo: "remote", outputDir: "/out" })).not.toContain("suggest_tags");

@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { SessionCache } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { SessionCache } from "../../src/runs/session";
+import { Store } from "../../src/core/store";
+import { tempDir } from "../support/helpers";
 
 let server: ReturnType<typeof createServer>;
 let store: Store;

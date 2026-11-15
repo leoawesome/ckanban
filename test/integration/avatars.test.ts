@@ -1,18 +1,18 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { RUN_HEADER } from "../src/schedules/scheduler";
-import { Store } from "../src/core/store";
-import * as server from "../src/board/avatars";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { RUN_HEADER } from "../../src/schedules/scheduler";
+import { Store } from "../../src/core/store";
+import * as server from "../../src/board/avatars";
 import {
   AVATAR_ACCESSORIES, AVATAR_BACKGROUNDS, AVATAR_DETAILS, AVATAR_EYES, AVATAR_FACES, AVATAR_HAIRS, AVATAR_HATS, avatarFor, avatarKey, CLAUDE_LOOK, claudeName, cleanAvatarLook, cleanClaudeName, defaultAvatar, MAX_CLAUDE_NAME,
   TEAMMATE_LOOKS, YOU_LOOK,
-} from "../web/src/features/avatar/avatarLook";
-import { faceLook } from "../web/src/features/huddle/huddleText";
-import { tempDir } from "./support/helpers";
+} from "../../web/src/features/avatar/avatarLook";
+import { faceLook } from "../../web/src/features/huddle/huddleText";
+import { tempDir } from "../support/helpers";
 
 test("the server and the UI know the same parts", () => {
   expect([...server.AVATAR_FACES]).toEqual([...AVATAR_FACES]);

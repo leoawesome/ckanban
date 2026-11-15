@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
+import { tempDir } from "../support/helpers";
 
 // create_ticket's main: true (and gather): a chat answering the user's typed message makes a new main ticket.
 let server: ReturnType<typeof createServer>;

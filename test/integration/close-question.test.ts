@@ -1,17 +1,17 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { attentionFor, STUCK_ON_QUESTIONS, userWaitReason } from "../src/helper/attention";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { stepWait, youWaiting } from "../src/board/main-ticket";
-import type { SessionSummary } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import type { Ticket } from "../src/core/types";
-import { askClosed, familyState } from "../web/src/features/family/family";
-import { answersMessage, formStates, parseAnswers } from "../web/src/features/ticket/questionForms";
-import { stepMessages } from "../web/src/features/ticket/stepTalk";
-import { questionsError } from "../src/mcp-server";
-import { tempDir } from "./support/helpers";
+import { attentionFor, STUCK_ON_QUESTIONS, userWaitReason } from "../../src/helper/attention";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { stepWait, youWaiting } from "../../src/board/main-ticket";
+import type { SessionSummary } from "../../src/runs/session";
+import { Store } from "../../src/core/store";
+import type { Ticket } from "../../src/core/types";
+import { askClosed, familyState } from "../../web/src/features/family/family";
+import { answersMessage, formStates, parseAnswers } from "../../web/src/features/ticket/questionForms";
+import { stepMessages } from "../../web/src/features/ticket/stepTalk";
+import { questionsError } from "../../src/mcp/server";
+import { tempDir } from "../support/helpers";
 
 const T = (p: Partial<Ticket>): Ticket => ({
   id: "t", title: "T", status: "review", order: 1, sessionId: "s", worktree: null, branch: null, prUrl: null,

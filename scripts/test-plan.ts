@@ -26,7 +26,7 @@ const FULL_IF_UNDER = ["test/fixtures/"];
 
 /** Test files that start a source file as a program instead of importing it, so bun's import graph doesn't link them. */
 const STARTED_BY_PATH: Record<string, string[]> = {
-  "src/cli.ts": ["test/agent-access.test.ts"],
+  "src/cli/cli.ts": ["test/integration/agent-access.test.ts"],
 };
 
 function git(cwd: string, args: string[], env?: Record<string, string>): string | null {

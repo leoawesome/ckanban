@@ -1,14 +1,14 @@
 // Huddles: tamper-proof huddle files, restart resume, propose_huddle, presets and costs.
 import { expect, test } from "bun:test";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { Huddles } from "../src/huddle/huddle";
-import { deletePreset, mergePresets, savePreset } from "../src/huddle/huddle-presets";
-import { parseMentions, proposedBudget } from "../src/huddle/huddle-roster";
-import { parseSession } from "../src/runs/session";
-import { huddleAgentPrompt, huddleDigest, huddleMainPrompt } from "../src/runs/prompts";
-import { BUILTIN_PRESETS } from "../src/huddle/huddle-presets";
-import type { Huddle } from "../src/core/types";
-import { FAKE, store, bus, board, huddles, server, client, idle, heardBy, processes, host, participant, mainCtx, text, you, messages, until, useHuddleEnv } from "./support/huddle-env";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { Huddles } from "../../src/huddle/huddle";
+import { deletePreset, mergePresets, savePreset } from "../../src/huddle/huddle-presets";
+import { parseMentions, proposedBudget } from "../../src/huddle/huddle-roster";
+import { parseSession } from "../../src/runs/session";
+import { huddleAgentPrompt, huddleDigest, huddleMainPrompt } from "../../src/runs/prompts";
+import { BUILTIN_PRESETS } from "../../src/huddle/huddle-presets";
+import type { Huddle } from "../../src/core/types";
+import { FAKE, store, bus, board, huddles, server, client, idle, heardBy, processes, host, participant, mainCtx, text, you, messages, until, useHuddleEnv } from "../support/huddle-env";
 
 useHuddleEnv();
 

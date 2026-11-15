@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdirSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../src/runs/git";
-import { changedFiles, codeKey, passedAt, recordPass, relatedBase, relatedPlan } from "../scripts/test-plan";
-import { makeRepo, tempDir } from "./support/helpers";
+import { changedFiles, codeKey, passedAt, recordPass, relatedBase, relatedPlan } from "./test-plan";
+import { makeRepo, tempDir } from "../test/support/helpers";
 
 test("the code fingerprint follows code changes, new files included, and ignores docs and timings", async () => {
   const dir = await makeRepo();
@@ -70,10 +70,10 @@ test("changed files count the branch's commits since main plus uncommitted and n
 });
 
 test("--related runs everything when shared setup changes, and adds tests that start a changed file by path", () => {
-  expect(relatedPlan(["src/server/board.ts"])).toEqual({ full: false, extra: [] });
-  expect(relatedPlan(["src/server/board.ts", "package.json"])).toEqual({ full: true, reason: "package.json" });
+  expect(relatedPlan(["src/board/board.ts"])).toEqual({ full: false, extra: [] });
+  expect(relatedPlan(["src/board/board.ts", "package.json"])).toEqual({ full: true, reason: "package.json" });
   expect(relatedPlan(["test/fixtures/fake-claude.ts"])).toEqual({ full: true, reason: "test/fixtures/fake-claude.ts" });
   expect(relatedPlan(["test/preload.ts"]).full).toBe(true);
-  expect(relatedPlan(["src/cli.ts"])).toEqual({ full: false, extra: ["test/agent-access.test.ts"] });
-  expect(relatedPlan(["src/cli.ts", "test/agent-access.test.ts"])).toEqual({ full: false, extra: [] });
+  expect(relatedPlan(["src/cli/cli.ts"])).toEqual({ full: false, extra: ["test/integration/agent-access.test.ts"] });
+  expect(relatedPlan(["src/cli/cli.ts", "test/integration/agent-access.test.ts"])).toEqual({ full: false, extra: [] });
 });

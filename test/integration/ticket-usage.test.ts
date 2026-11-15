@@ -1,17 +1,17 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
 import {
   ClaudeLogIndex, messageCost, priceFor, readLines, readWindows, recordWindow, RunLogIndex, ticketRuns, ticketUsage, type WindowSnapshot,
-} from "../src/usage/ticket-usage";
-import type { ActivityEntry, Profile } from "../src/core/types";
-import type { UsageResult } from "../src/usage/usage";
-import { approxPct, costText, modelName, tokenText } from "../web/src/features/usage/usage";
-import { tempDir } from "./support/helpers";
+} from "../../src/usage/ticket-usage";
+import type { ActivityEntry, Profile } from "../../src/core/types";
+import type { UsageResult } from "../../src/usage/usage";
+import { approxPct, costText, modelName, tokenText } from "../../web/src/features/usage/usage";
+import { tempDir } from "../support/helpers";
 
 const H = 3600_000;
 const T0 = Date.parse("2026-10-06T10:00:00Z");

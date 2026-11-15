@@ -1,14 +1,14 @@
 // A new tool ticket starts on its own (t_20261106_1045): seen on AI Outreach, whose card sat in Done while the user kept
 // chatting with it, so the plan was parked and every new step waited in Backlog until the main ticket moved it by hand.
 import { expect, test } from "bun:test";
-import { BoardClient } from "../src/client";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { Board } from "../src/board/board";
-import { createServer } from "../src/server/http";
-import { planStep } from "../src/board/plan";
-import type { Plan, Ticket } from "../src/core/types";
-import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "./support/board-env";
-import { tempDir } from "./support/helpers";
+import { BoardClient } from "../../src/cli/client";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { Board } from "../../src/board/board";
+import { createServer } from "../../src/api/server";
+import { planStep } from "../../src/board/plan";
+import type { Plan, Ticket } from "../../src/core/types";
+import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "../support/board-env";
+import { tempDir } from "../support/helpers";
 
 useBoardEnv();
 

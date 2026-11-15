@@ -3,15 +3,15 @@ import { mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync, chmodSyn
 import { join } from "node:path";
 import {
   assertCanChange, BoardClient, ClientError, DAEMON_DOWN, mainCheckout, parseStatus, resolveProfile, runProfile, type ProfileInfo,
-} from "../src/client";
-import { callTool, handleMessage, TOOLS, type ToolContext } from "../src/mcp-server";
-import { AgentRegistry, readCodexServer, removeCodexServer, setCodexServer } from "../src/integrations/agents";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
-import { agentsFrom, bodyFrom, parseArgs, ticketCommand } from "../src/ticket-cli";
-import { makeRepo, tempDir } from "./support/helpers";
+} from "../../src/cli/client";
+import { callTool, handleMessage, TOOLS, type ToolContext } from "../../src/mcp/server";
+import { AgentRegistry, readCodexServer, removeCodexServer, setCodexServer } from "../../src/integrations/agents";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
+import { agentsFrom, bodyFrom, parseArgs, ticketCommand } from "../../src/cli/ticket-cli";
+import { makeRepo, tempDir } from "../support/helpers";
 
 const prof = (slug: string, path: string): ProfileInfo => ({ name: slug, slug, path, baseBranch: "main" });
 
@@ -309,7 +309,7 @@ test("JSON-RPC: initialize, tools/list, tools/call, notifications, unknown metho
 });
 
 test("`ckanban mcp` speaks MCP over stdio", async () => {
-  const p = Bun.spawn(["bun", join(import.meta.dir, "..", "src/cli.ts"), "mcp"], {
+  const p = Bun.spawn(["bun", join(import.meta.dir, "..", "..", "src", "cli.ts"), "mcp"], {
     stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, CKANBAN_PORT: "1" },
   });
   const msgs = [

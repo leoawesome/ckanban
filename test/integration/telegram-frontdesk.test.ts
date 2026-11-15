@@ -1,20 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/core/events";
-import { dayEnded, dayTitle, DESK_CAP_DEFAULT, DESK_UNMEASURED_USD, DUPLICATE_MS, FrontDesk, heldKind, type DeskChats } from "../src/helper/frontdesk";
-import { FRONT_DESK_ENV } from "../src/helper/frontdesk-id";
-import { ACTION_TTL_MS } from "../src/helper/tgstores";
-import { SEND_AGAIN, TEXT_ONLY } from "../src/helper/telegram";
-import { describeAt } from "../src/schedules/jobs";
-import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../src/helper/notify";
-import type { QuickChat, QuickChatHooks, QuickChatView } from "../src/chat/quickchat";
-import { addDeskSpend, addTelegramSpend, deskSpendToday, telegramSpendToday } from "../src/usage/spend";
-import { Store } from "../src/core/store";
-import type { Profile } from "../src/core/types";
-import { BoardClient, ConfirmPending } from "../src/client";
-import { callTool } from "../src/mcp-server";
-import { tempDir, until } from "./support/helpers";
+import { Bus } from "../../src/core/events";
+import { dayEnded, dayTitle, DESK_CAP_DEFAULT, DESK_UNMEASURED_USD, DUPLICATE_MS, FrontDesk, heldKind, type DeskChats } from "../../src/helper/frontdesk";
+import { FRONT_DESK_ENV } from "../../src/helper/frontdesk-id";
+import { ACTION_TTL_MS } from "../../src/helper/tgstores";
+import { SEND_AGAIN, TEXT_ONLY } from "../../src/helper/telegram";
+import { describeAt } from "../../src/schedules/jobs";
+import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../../src/helper/notify";
+import type { QuickChat, QuickChatHooks, QuickChatView } from "../../src/chat/quickchat";
+import { addDeskSpend, addTelegramSpend, deskSpendToday, telegramSpendToday } from "../../src/usage/spend";
+import { Store } from "../../src/core/store";
+import type { Profile } from "../../src/core/types";
+import { BoardClient, ConfirmPending } from "../../src/cli/client";
+import { callTool } from "../../src/mcp/server";
+import { tempDir, until } from "../support/helpers";
 
 const TOKEN = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
 const ME = 555;
@@ -593,8 +593,8 @@ describe("closing in place, files, first message", () => {
 
 describe("through the board's HTTP API", () => {
   test("a front desk request that starts work is held (202, nothing created); Confirm replays it as the user; a missing secret is refused", async () => {
-    const { Board } = await import("../src/board/board");
-    const { createServer } = await import("../src/server/http");
+    const { Board } = await import("../../src/board/board");
+    const { createServer } = await import("../../src/api/server");
     const api = fakeApi();
     const s = normalizeSettings({}, undefined, false);
     writeNotifySettings(root, { ...s, telegram: { ...s.telegram, on: true, token: TOKEN, chatId: ME, chatName: "Leo", pairedAt: "x", takeMessages: true, lockedAt: null, frontDesk: "kb", briefedAt: "x" } });

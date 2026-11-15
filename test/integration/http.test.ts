@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { run } from "../src/runs/git";
-import { createServer, isAllowedRequest } from "../src/server/http";
-import { ptySupported } from "../src/browser/shell";
-import { Store } from "../src/core/store";
-import { makeRepo, tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { run } from "../../src/runs/git";
+import { createServer, isAllowedRequest } from "../../src/api/server";
+import { ptySupported } from "../../src/browser/shell";
+import { Store } from "../../src/core/store";
+import { makeRepo, tempDir } from "../support/helpers";
 
 let server: ReturnType<typeof createServer>;
 let userBrowser = true;
@@ -1437,7 +1437,7 @@ test("tickets a schedule's run creates are linked to that schedule; the list sho
 });
 
 test("a ticket made from a proposed-tickets card stays created after it is renamed and started, and Create can't make it twice", async () => {
-  const { createdFromDraft } = await import("../web/src/features/board/proposalMatch");
+  const { createdFromDraft } = await import("../../web/src/features/board/proposalMatch");
   const path = tempDir("ck-card-");
   const p = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Card Proj", path }))).json()) as any;
   const tickets = `${base}/api/profiles/${p.slug}/tickets`;
@@ -1471,7 +1471,7 @@ test("a ticket made from a proposed-tickets card stays created after it is renam
 });
 
 test("a card's key matches an older child without a proposed title, but never one a different draft made", async () => {
-  const { createdFromDraft } = await import("../web/src/features/board/proposalMatch");
+  const { createdFromDraft } = await import("../../web/src/features/board/proposalMatch");
   const old = { id: "o", title: "Renamed", parentId: "me", planKey: "fix" };
   expect(createdFromDraft([old], "me", { title: "Original", key: "fix" })?.id).toBe("o");
   const made = { ...old, proposedAs: "Original" };

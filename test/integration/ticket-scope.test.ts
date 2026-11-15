@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { boardScope, donePage, doneSearch, familyKeys, idsScope } from "../src/board/ticket-scope";
-import { doneCards, joinsBoard, mergeTickets, reloadTickets, unseenDone } from "../web/src/features/board/donePaging";
+import { boardScope, donePage, doneSearch, familyKeys, idsScope } from "../../src/board/ticket-scope";
+import { doneCards, joinsBoard, mergeTickets, reloadTickets, unseenDone } from "../../web/src/features/board/donePaging";
 
 type T = { id: string; title: string; status: string; createdAt: string; order: number; parentId?: string | null; partOf?: string | null; tool?: boolean; showOnBoard?: boolean | null; pinnedAt?: string | null; body?: string; tags?: string[] };
 let n = 0;
@@ -72,8 +72,8 @@ describe("donePaging", () => {
 
 describe("list_tickets search cap", () => {
   test("a search past 100 matches says how many matched", async () => {
-    const { listScope } = await import("../src/board/ticket-scope");
-    const { ticketListText } = await import("../src/client");
+    const { listScope } = await import("../../src/board/ticket-scope");
+    const { ticketListText } = await import("../../src/cli/client");
     const all = Array.from({ length: 130 }, (_, i) => tk(`t_${String(i).padStart(3, "0")}`, "done", { title: `login ${i}` }));
     const page = listScope(all, { q: "login" });
     expect(page.total).toBe(100);

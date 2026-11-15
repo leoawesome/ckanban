@@ -1,19 +1,19 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BoardClient } from "../src/client";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { Board, type ChatOptions } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { AUTO_MAX_COST_USD, Huddles, summaryFile } from "../src/huddle/huddle";
-import { proposalFile, reviewHuddleRequest } from "../src/huddle/huddle-roster";
-import { chatPrompt, firstRunPrompt, freshSessionPrompt, huddleMainPrompt, planningPrompt, resumePrompt } from "../src/runs/prompts";
-import { Store } from "../src/core/store";
-import { autoHuddlesOn, type Profile, type Ticket } from "../src/core/types";
-import { makeRepo, tempDir } from "./support/helpers";
+import { BoardClient } from "../../src/cli/client";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { Board, type ChatOptions } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { AUTO_MAX_COST_USD, Huddles, summaryFile } from "../../src/huddle/huddle";
+import { proposalFile, reviewHuddleRequest } from "../../src/huddle/huddle-roster";
+import { chatPrompt, firstRunPrompt, freshSessionPrompt, huddleMainPrompt, planningPrompt, resumePrompt } from "../../src/runs/prompts";
+import { Store } from "../../src/core/store";
+import { autoHuddlesOn, type Profile, type Ticket } from "../../src/core/types";
+import { makeRepo, tempDir } from "../support/helpers";
 
-const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
+const FAKE = join(import.meta.dir, "..", "fixtures", "fake-claude.ts");
 
 let store: Store;
 let bus: Bus;
@@ -202,7 +202,7 @@ test("the auto huddle rule: real risk only, named trigger, a roster built for th
   expect(star).toContain("build a `roster`");
   expect(star).not.toContain("When unsure, don't huddle");
   // The tool's own descriptions don't call user-facing work a risk either.
-  const { TOOLS } = await import("../src/mcp-server");
+  const { TOOLS } = await import("../../src/mcp/server");
   const tool = TOOLS.find((x: { name: string }) => x.name === "start_huddle")!;
   expect(JSON.stringify(tool).toLowerCase()).not.toContain("user-facing");
   expect(tool.inputSchema.required).toEqual(["trigger", "reason"]);

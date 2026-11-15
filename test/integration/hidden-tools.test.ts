@@ -2,22 +2,22 @@
 // tickets (hidden too) talk to the user in the main ticket's chat and may notify, Stop / Backlog / Delete on the main ticket act on its tool tickets, search finds
 // tool tickets through their main card, and the other list readers skip them by default.
 import { expect, test } from "bun:test";
-import { BoardClient } from "../src/client";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { attentionFor, boardTitles, ticketAttention } from "../src/helper/attention";
-import { createServer } from "../src/server/http";
-import { Linker } from "../src/board/linker";
-import { familyCard, KIND_DEFAULTS, stepName, stepWait, TOOL_NO_NOTIFY, youWaiting } from "../src/board/main-ticket";
-import { statusFacts, statusSections } from "../src/board/feature";
-import { pickRelated } from "../src/board/recall";
-import type { Ticket } from "../src/core/types";
-import { ticketCommand } from "../src/ticket-cli";
-import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, stopTitle } from "../web/src/features/family/familyActions";
-import { hiddenTool, mainTicketOf, TICKET_KINDS, withYouTool } from "../web/src/features/family/family";
-import { groupByColumn } from "../web/src/features/board/columns";
-import { searchBoard } from "../web/src/features/ticket/toolTickets";
-import { board, setup, store, useBoardEnv } from "./support/board-env";
-import { tempDir } from "./support/helpers";
+import { BoardClient } from "../../src/cli/client";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { attentionFor, boardTitles, ticketAttention } from "../../src/helper/attention";
+import { createServer } from "../../src/api/server";
+import { Linker } from "../../src/board/linker";
+import { familyCard, KIND_DEFAULTS, stepName, stepWait, TOOL_NO_NOTIFY, youWaiting } from "../../src/board/main-ticket";
+import { statusFacts, statusSections } from "../../src/board/feature";
+import { pickRelated } from "../../src/board/recall";
+import type { Ticket } from "../../src/core/types";
+import { ticketCommand } from "../../src/cli/ticket-cli";
+import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, stopTitle } from "../../web/src/features/family/familyActions";
+import { hiddenTool, mainTicketOf, TICKET_KINDS, withYouTool } from "../../web/src/features/family/family";
+import { groupByColumn } from "../../web/src/features/board/columns";
+import { searchBoard } from "../../web/src/features/ticket/toolTickets";
+import { board, setup, store, useBoardEnv } from "../support/board-env";
+import { tempDir } from "../support/helpers";
 
 useBoardEnv();
 
@@ -353,7 +353,7 @@ test("list_tickets and the CLI skip tool tickets unless asked; recall and the li
 });
 
 test("a with-you step waiting for the user doesn't wake its main ticket or make the plan stuck", async () => {
-  const { planStep } = await import("../src/board/plan");
+  const { planStep } = await import("../../src/board/plan");
   const w = tk("W", { parentId: "M", tool: true, kind: "with_you", status: "review", outcome: "needs_input", runCount: 1 });
   const done = tk("D", { parentId: "M", tool: true, kind: "build", status: "done", outcome: "done", runCount: 1 });
   const plan = { state: "running", wakeups: 0, startedAt: at(0), originalCount: 0, inbox: [], seen: { D: "1:done:" }, retries: {}, awaiting: null } as any;

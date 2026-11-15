@@ -4,9 +4,9 @@ import {
   assertCanChange, BoardClient, RUN_ENV, bugReportText, ClientError, deviceTakeText, parseMode, parseStatus, profileList, resolveProfile, runProfile,
   ticketLine, ticketListText, ticketText, type TicketListQuery, type TicketPatch,
 } from "./client";
-import { AGENT_IDS, AgentRegistry, type AgentId } from "./integrations/agents";
-import { normalizeTags } from "./board/tags";
-import { setupBlock, type SetupOutcome } from "./runs/worktree-setup";
+import { AGENT_IDS, AgentRegistry, type AgentId } from "../integrations/agents";
+import { normalizeTags } from "../board/tags";
+import { setupBlock, type SetupOutcome } from "../runs/worktree-setup";
 
 export const TICKET_USAGE = `  ckanban profiles     List boards (profiles) and their folders
   ckanban ticket list [--status <s>] [--query <words>] [--limit <n>] [--after <id>] [--include-tool]

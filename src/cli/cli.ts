@@ -4,17 +4,17 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { sha256, sumFor } from "./checksum";
 import { BoardClient, boardPort, ClientError } from "./client";
-import { serveStdio } from "./mcp-server";
-import { serveBrowserMcp } from "./browser/browser-mcp";
-import { runArtifactJob } from "./runs/artifact";
-import { LABEL, PLIST_PATH, plistXml } from "./server/launchd";
-import { RESTART_MAX_WAIT_MS } from "./board/board";
-import { startDaemon } from "./server/main";
-import { AgentError, AgentRegistry } from "./integrations/agents";
-import { defaultRoot, Store } from "./core/store";
-import { qrTerminal, RemoteAccess, RemoteError, remoteListenPort, type RemoteStatus } from "./integrations/remote";
-import { latestRelease } from "./core/update";
-import { IS_BINARY, VERSION } from "./core/version";
+import { serveStdio } from "../mcp/server";
+import { serveBrowserMcp } from "../browser/browser-mcp";
+import { runArtifactJob } from "../runs/artifact";
+import { LABEL, PLIST_PATH, plistXml } from "./launchd";
+import { RESTART_MAX_WAIT_MS } from "../board/board";
+import { startDaemon } from "./daemon";
+import { AgentError, AgentRegistry } from "../integrations/agents";
+import { defaultRoot, Store } from "../core/store";
+import { qrTerminal, RemoteAccess, RemoteError, remoteListenPort, type RemoteStatus } from "../integrations/remote";
+import { latestRelease } from "../core/update";
+import { IS_BINARY, VERSION } from "../core/version";
 import { uninstallExtras } from "./uninstall-extras";
 import { mcpCommand, profilesCommand, ticketCommand, TICKET_USAGE } from "./ticket-cli";
 
@@ -86,7 +86,7 @@ async function install() {
   const extra = [join(homedir(), ".local/bin"), join(homedir(), ".bun/bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
   const pathDirs = [...new Set([...(process.env.PATH ?? "").split(":").filter(Boolean), ...extra])];
   writeFileSync(PLIST_PATH, plistXml({
-    programArgs: IS_BINARY ? [process.execPath] : [process.execPath, join(import.meta.dir, "cli.ts")],
+    programArgs: IS_BINARY ? [process.execPath] : [process.execPath, join(import.meta.dir, "..", "cli.ts")],
     path: pathDirs.join(":"),
     logFile: join(root, "daemon.log"),
     home: homedir(),

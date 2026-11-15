@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { LABEL, plistXml } from "../src/server/launchd";
+import { LABEL, plistXml } from "./launchd";
 
 test("plistXml", () => {
   const xml = plistXml({ programArgs: ["/opt/bun", "/x/src/cli.ts"], path: "/usr/bin:/a&b", logFile: "/h/daemon.log", home: "/h" });

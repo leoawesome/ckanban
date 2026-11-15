@@ -1,16 +1,16 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { recapAvailable, recapPrompt, sinceLastMessage, transcript } from "../src/chat/explain";
-import { createServer } from "../src/server/http";
-import { SessionCache, type SessionEntry } from "../src/runs/session";
-import { READ_TOOLS, sideCallArgs, type SideCallInput, type SideCallResult } from "../src/runs/side-call";
-import { SpendIndex } from "../src/usage/spend";
-import { Store } from "../src/core/store";
-import type { Ticket } from "../src/core/types";
-import { tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { recapAvailable, recapPrompt, sinceLastMessage, transcript } from "../../src/chat/explain";
+import { createServer } from "../../src/api/server";
+import { SessionCache, type SessionEntry } from "../../src/runs/session";
+import { READ_TOOLS, sideCallArgs, type SideCallInput, type SideCallResult } from "../../src/runs/side-call";
+import { SpendIndex } from "../../src/usage/spend";
+import { Store } from "../../src/core/store";
+import type { Ticket } from "../../src/core/types";
+import { tempDir } from "../support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);
 const user = (uuid: string, at: string, text: string) => L({ type: "user", uuid, timestamp: at, message: { role: "user", content: text } });

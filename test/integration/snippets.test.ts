@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus, type BusEvent } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
-import { matchSnippets, replaceQuery, snippetQuery } from "../web/src/features/board/snippetText";
-import { tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus, type BusEvent } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
+import { matchSnippets, replaceQuery, snippetQuery } from "../../web/src/features/board/snippetText";
+import { tempDir } from "../support/helpers";
 
 let server: ReturnType<typeof createServer>;
 let store: Store;

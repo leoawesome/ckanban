@@ -2,12 +2,12 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { callTool } from "../src/mcp-server";
-import { Board } from "../src/board/board";
-import { fallbackSummary, Huddles, LEGACY_SUMMARY_FILE, summaryFile } from "../src/huddle/huddle";
-import { HUDDLE_HEADER } from "../src/huddle/huddle-roster";
-import type { Huddle } from "../src/core/types";
-import { FAKE, git, store, bus, board, huddles, client, idle, heard, heardBy, host, participant, agentCtx, mainCtx, text, you, messages, until, useHuddleEnv } from "./support/huddle-env";
+import { callTool } from "../../src/mcp/server";
+import { Board } from "../../src/board/board";
+import { fallbackSummary, Huddles, LEGACY_SUMMARY_FILE, summaryFile } from "../../src/huddle/huddle";
+import { HUDDLE_HEADER } from "../../src/huddle/huddle-roster";
+import type { Huddle } from "../../src/core/types";
+import { FAKE, git, store, bus, board, huddles, client, idle, heard, heardBy, host, participant, agentCtx, mainCtx, text, you, messages, until, useHuddleEnv } from "../support/huddle-env";
 
 useHuddleEnv();
 

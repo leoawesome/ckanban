@@ -3,15 +3,15 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BoardClient } from "../src/client";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
-import { countScope, LIST_PAGE, listScope, SEARCH_LIMIT } from "../src/board/ticket-scope";
-import { ticketCommand } from "../src/ticket-cli";
-import { tempDir } from "./support/helpers";
+import { BoardClient } from "../../src/cli/client";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
+import { countScope, LIST_PAGE, listScope, SEARCH_LIMIT } from "../../src/board/ticket-scope";
+import { ticketCommand } from "../../src/cli/ticket-cli";
+import { tempDir } from "../support/helpers";
 
 const BIG = 10_000;
 const OPEN = 500;

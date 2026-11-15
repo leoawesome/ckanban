@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { parseSession, SessionCache } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import { findToolDetail, TOOL_OUTPUT_MAX } from "../src/chat/tooldetail";
-import { editDiff, mainInput } from "../web/src/features/chat/toolView";
-import { tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { parseSession, SessionCache } from "../../src/runs/session";
+import { Store } from "../../src/core/store";
+import { findToolDetail, TOOL_OUTPUT_MAX } from "../../src/chat/tooldetail";
+import { editDiff, mainInput } from "../../web/src/features/chat/toolView";
+import { tempDir } from "../support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);
 const user = (content: any, at: string) => L({ type: "user", uuid: `u${at}`, timestamp: at, message: { role: "user", content } });

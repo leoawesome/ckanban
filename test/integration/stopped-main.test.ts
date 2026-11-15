@@ -1,12 +1,12 @@
 // Stop on a main ticket holds its steps only until the user acts on it again (moves it to ready, writes in its chat),
 // a Stop that only cut off its own reply doesn't pause at all, and a still-paused main ticket's Claude is told so.
 import { expect, test } from "bun:test";
-import { createServer } from "../src/server/http";
-import { familyCard } from "../src/board/main-ticket";
-import { MAIN_PAUSED, mainTicketRules } from "../src/runs/prompts";
-import type { Ticket } from "../src/core/types";
-import { board, readArgs, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
-import { tempDir } from "./support/helpers";
+import { createServer } from "../../src/api/server";
+import { familyCard } from "../../src/board/main-ticket";
+import { MAIN_PAUSED, mainTicketRules } from "../../src/runs/prompts";
+import type { Ticket } from "../../src/core/types";
+import { board, readArgs, setup, store, untilSpawned, useBoardEnv } from "../support/board-env";
+import { tempDir } from "../support/helpers";
 
 useBoardEnv();
 

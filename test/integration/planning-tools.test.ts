@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { callTool, proposalError, questionsError, ticketsError, TOOLS, type ToolContext } from "../src/mcp-server";
+import { callTool, proposalError, questionsError, ticketsError, TOOLS, type ToolContext } from "../../src/mcp/server";
 
 const opt = (label: string, recommended?: boolean) => ({ label, ...(recommended ? { recommended } : {}) });
 const q = (options = [opt("Red", true), opt("Blue")], extra = {}) => ({ question: "Color?", options, ...extra });

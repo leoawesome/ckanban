@@ -3,14 +3,14 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { claudeSessionFile } from "../src/board/board";
-import { ContextUsage } from "../src/chat/context-usage";
-import { createServer } from "../src/server/http";
-import { readJsonl, tempDir, until } from "./support/helpers";
-import { board, bus, readArgs, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
+import { claudeSessionFile } from "../../src/board/board";
+import { ContextUsage } from "../../src/chat/context-usage";
+import { createServer } from "../../src/api/server";
+import { readJsonl, tempDir, until } from "../support/helpers";
+import { board, bus, readArgs, setup, store, untilSpawned, useBoardEnv } from "../support/board-env";
 
 useBoardEnv();
-const FAKE_CTX = join(import.meta.dir, "fixtures", "fake-claude-context.ts");
+const FAKE_CTX = join(import.meta.dir, "..", "fixtures", "fake-claude-context.ts");
 
 test("contextSpec copies the chat run's folder and flags; a check leaves the ticket's session file as it was", async () => {
   await setup();

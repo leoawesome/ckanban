@@ -1,30 +1,30 @@
 // `ckanban mcp`: a stdio MCP server (newline-delimited JSON-RPC 2.0) exposing the board as tools.
 // Hand-rolled instead of @modelcontextprotocol/sdk: we only need initialize, tools/list and tools/call.
 import { createHash } from "node:crypto";
-import { hiddenTool, withYouTool } from "../web/src/features/family/family";
-import { TOOL_NO_NOTIFY } from "./board/main-ticket";
-import { FRONT_DESK_ENV, HUDDLE_AGENT_ENV, QUICK_CHAT_ENV } from "./core/env";
-import { FEEDBACK_MAX, helperLineText, suggestedLineError } from "./helper/line";
+import { hiddenTool, withYouTool } from "../../web/src/features/family/family";
+import { TOOL_NO_NOTIFY } from "../board/main-ticket";
+import { FRONT_DESK_ENV, HUDDLE_AGENT_ENV, QUICK_CHAT_ENV } from "../core/env";
+import { FEEDBACK_MAX, helperLineText, suggestedLineError } from "../helper/line";
 import {
   assertCanChange, BoardClient, bugReportText, ClientError, ConfirmPending, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
   familyLine, ticketLine, ticketListText, ticketText, type TicketListQuery, type GatherResult, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
-} from "./client";
-import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./huddle/huddle-presets";
-import { huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "./huddle/huddle-roster";
-import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, MAX_TEXT, PLAN_REVIEW, templateLine, TOPIC_MAX, topicInput } from "./huddle/huddle-templates";
-import { squadProposal } from "./huddle/squad";
-import { CLAUDE_MESSAGE_GAP_MS, CLAUDE_MESSAGE_MAX, type MessageResult } from "./helper/notify";
-import { normalizeTags } from "./board/tags";
-import { teammateProposal } from "./huddle/teammate-proposal";
-import { automationProposal } from "./schedules/automation-proposal";
-import { keysAsk, MAX_ASKED_KEYS } from "./integrations/ask-keys";
-import { backupFile, backupText } from "./integrations/file-backup";
+} from "../cli/client";
+import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "../huddle/huddle-presets";
+import { huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "../huddle/huddle-roster";
+import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, MAX_TEXT, PLAN_REVIEW, templateLine, TOPIC_MAX, topicInput } from "../huddle/huddle-templates";
+import { squadProposal } from "../huddle/squad";
+import { CLAUDE_MESSAGE_GAP_MS, CLAUDE_MESSAGE_MAX, type MessageResult } from "../helper/notify";
+import { normalizeTags } from "../board/tags";
+import { teammateProposal } from "../huddle/teammate-proposal";
+import { automationProposal } from "../schedules/automation-proposal";
+import { keysAsk, MAX_ASKED_KEYS } from "../integrations/ask-keys";
+import { backupFile, backupText } from "../integrations/file-backup";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { type ArtifactJob, type ArtifactOutcome, runArtifactJob } from "./runs/artifact";
-import { AUTO_HUDDLE_TRIGGERS, STATUSES, USER_HUDDLE_TRIGGER } from "./core/types";
-import { REPO, VERSION } from "./core/version";
+import { type ArtifactJob, type ArtifactOutcome, runArtifactJob } from "../runs/artifact";
+import { AUTO_HUDDLE_TRIGGERS, STATUSES, USER_HUDDLE_TRIGGER } from "../core/types";
+import { REPO, VERSION } from "../core/version";
 
 /** What gathering tickets into a feature did, for gather_tickets and create_ticket's gather. */
 const gatherText = (r: GatherResult): string => [

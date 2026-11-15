@@ -2,15 +2,15 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { cleanTemplates, templateBrief, templateFromInput } from "../src/huddle/huddle-templates";
-import { huddleAgentSystemPrompt, squadHostRules } from "../src/runs/prompts";
-import { parseSession } from "../src/runs/session";
-import type { SideCallInput, SideCallResult } from "../src/runs/side-call";
-import { GENERIC_SQUAD_SYSTEM, genericSquadPrompt, parseGenericSquad, squadSavePlan, squadSetup } from "../src/huddle/squad";
-import { reviewHuddleRequest, summaryFile } from "../src/huddle/huddle-roster";
-import type { Huddle } from "../src/core/types";
-import { agentCtx, api, client, host, huddles, idle, postJson, store, text, useHuddleEnv } from "./support/huddle-env";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { cleanTemplates, templateBrief, templateFromInput } from "../../src/huddle/huddle-templates";
+import { huddleAgentSystemPrompt, squadHostRules } from "../../src/runs/prompts";
+import { parseSession } from "../../src/runs/session";
+import type { SideCallInput, SideCallResult } from "../../src/runs/side-call";
+import { GENERIC_SQUAD_SYSTEM, genericSquadPrompt, parseGenericSquad, squadSavePlan, squadSetup } from "../../src/huddle/squad";
+import { reviewHuddleRequest, summaryFile } from "../../src/huddle/huddle-roster";
+import type { Huddle } from "../../src/core/types";
+import { agentCtx, api, client, host, huddles, idle, postJson, store, text, useHuddleEnv } from "../support/huddle-env";
 
 useHuddleEnv();
 

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { Devices, STALE_WAIT_MS } from "../src/browser/devices";
-import { tempDir } from "./support/helpers";
+import { Devices, STALE_WAIT_MS } from "../../src/browser/devices";
+import { tempDir } from "../support/helpers";
 
 const fresh = (now?: () => number) => {
   const changed: string[][] = [];
@@ -143,8 +143,8 @@ test("removing a device is refused while it is in use", async () => {
 });
 
 test("take_devices and release_devices work from a ticket's own run, not outside runs or from a huddle", async () => {
-  const { RUN_ENV } = await import("../src/client");
-  const { callTool } = await import("../src/mcp-server");
+  const { RUN_ENV } = await import("../../src/cli/client");
+  const { callTool } = await import("../../src/mcp/server");
   const calls: unknown[][] = [];
   const client = {
     listProfiles: async () => [{ name: "Kanban", slug: "kb", path: "/tmp/kb" }],
@@ -166,7 +166,7 @@ test("take_devices and release_devices work from a ticket's own run, not outside
 });
 
 test("runs get the device list, the ticket's hint and how to take and let go", async () => {
-  const { devicesNote } = await import("../src/runs/prompts");
+  const { devicesNote } = await import("../../src/runs/prompts");
   expect(devicesNote([], [])).toBeNull();
   const note = devicesNote([
     { name: "chrome-whatsapp", description: "Chrome tab signed in to WhatsApp Web as Leo", capacity: 1 },

@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
-import { fakes, harness } from "./support/fake-chrome";
-import { tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
+import { fakes, harness } from "../support/fake-chrome";
+import { tempDir } from "../support/helpers";
 
 // The board browser routes: a run, its shell or any other program can list them and restart one a run is using,
 // never remove one (its logins), add, rename, open or close it.

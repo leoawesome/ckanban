@@ -3,11 +3,11 @@
 import { afterEach, beforeEach } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BoardClient } from "../../src/client";
-import type { ToolContext } from "../../src/mcp-server";
+import { BoardClient } from "../../src/cli/client";
+import type { ToolContext } from "../../src/mcp/server";
 import { Board } from "../../src/board/board";
 import { Bus, type BusEvent } from "../../src/core/events";
-import { createServer } from "../../src/server/http";
+import { createServer } from "../../src/api/server";
 import { Huddles } from "../../src/huddle/huddle";
 import type { LessonInput } from "../../src/huddle/huddle-notes";
 import { Store } from "../../src/core/store";

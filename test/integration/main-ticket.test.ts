@@ -4,18 +4,18 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BoardClient } from "../src/client";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { Board } from "../src/board/board";
-import { folderDiff } from "../src/runs/diff";
-import { run as git } from "../src/runs/git";
-import { createServer } from "../src/server/http";
-import { KIND_DEFAULTS, progressStep, wakeTable } from "../src/board/main-ticket";
-import { isComplete, planStep } from "../src/board/plan";
-import { MAIN_GO_AHEAD, mainWakePrompt } from "../src/runs/prompts";
-import type { Ticket } from "../src/core/types";
-import { argsFile, board, bus, FAKE, readArgs, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
-import { tempDir, until } from "./support/helpers";
+import { BoardClient } from "../../src/cli/client";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { Board } from "../../src/board/board";
+import { folderDiff } from "../../src/runs/diff";
+import { run as git } from "../../src/runs/git";
+import { createServer } from "../../src/api/server";
+import { KIND_DEFAULTS, progressStep, wakeTable } from "../../src/board/main-ticket";
+import { isComplete, planStep } from "../../src/board/plan";
+import { MAIN_GO_AHEAD, mainWakePrompt } from "../../src/runs/prompts";
+import type { Ticket } from "../../src/core/types";
+import { argsFile, board, bus, FAKE, readArgs, setBoard, setup, store, untilSpawned, useBoardEnv } from "../support/board-env";
+import { tempDir, until } from "../support/helpers";
 
 useBoardEnv();
 

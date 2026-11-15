@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
-import { SPACING, offScaleCss, offScaleTsx } from "../scripts/style-scale";
+import { SPACING, offScaleCss, offScaleTsx } from "./style-scale";
 
 const WEB = join(import.meta.dir, "../web/src");
 

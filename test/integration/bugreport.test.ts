@@ -1,18 +1,18 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { BoardClient } from "../src/client";
-import { Board } from "../src/board/board";
+import { BoardClient } from "../../src/cli/client";
+import { Board } from "../../src/board/board";
 import {
   buildIssueBody, draftReport, fileIssue, LOG_MAX_BYTES, logBlock, MAX_URL_LENGTH, newIssueUrl, screenshotNames, scrub,
   submitReport, tail, type BugBlock, type GhRunner,
-} from "../src/integrations/bugreport";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
-import type { ActivityEntry } from "../src/core/types";
-import { ticketCommand } from "../src/ticket-cli";
-import { makeRepo, tempDir } from "./support/helpers";
+} from "../../src/integrations/bugreport";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
+import type { ActivityEntry } from "../../src/core/types";
+import { ticketCommand } from "../../src/cli/ticket-cli";
+import { makeRepo, tempDir } from "../support/helpers";
 
 const SHOT = "0123456789abcdef0123456789abcdef.png";
 

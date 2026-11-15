@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
-import { tempDir, until } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
+import { tempDir, until } from "../support/helpers";
 
 test("a ticket change is built once and sent the same to every open tab", async () => {
   const store = new Store(tempDir("ck-home-"));

@@ -2,18 +2,18 @@
 // first one made, instead of a new card each time.
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { callTool } from "../src/mcp-server";
-import { Board } from "../src/board/board";
-import { Passes } from "../src/integrations/passes";
-import { parseItems, type Item } from "../src/integrations/script";
-import { whoWrote } from "../src/chat/chat-search";
-import { sinceLastMessage, transcript } from "../src/chat/explain";
-import { threadItemText, ticketBody } from "../src/integrations/ticket-text";
-import { corrections } from "../src/board/lessons";
-import { LoopManager, type LoopInput } from "../src/schedules/loops";
-import { parseSession, type SessionSummary } from "../src/runs/session";
-import { board, bus, FAKE, readArgs, replays, restartBoard, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
-import { tempDir, until } from "./support/helpers";
+import { callTool } from "../../src/mcp/server";
+import { Board } from "../../src/board/board";
+import { Passes } from "../../src/integrations/passes";
+import { parseItems, type Item } from "../../src/integrations/script";
+import { whoWrote } from "../../src/chat/chat-search";
+import { sinceLastMessage, transcript } from "../../src/chat/explain";
+import { threadItemText, ticketBody } from "../../src/integrations/ticket-text";
+import { corrections } from "../../src/board/lessons";
+import { LoopManager, type LoopInput } from "../../src/schedules/loops";
+import { parseSession, type SessionSummary } from "../../src/runs/session";
+import { board, bus, FAKE, readArgs, replays, restartBoard, setBoard, setup, store, untilSpawned, useBoardEnv } from "../support/board-env";
+import { tempDir, until } from "../support/helpers";
 
 useBoardEnv();
 

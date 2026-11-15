@@ -3,16 +3,16 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BoardClient } from "../src/client";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { AUTO_FRESH_NOTE, Board } from "../src/board/board";
-import { chatIsCold } from "../src/chat/chat-cache";
-import { READ_MAX_MESSAGES, readChat, searchChat, type ChatSource } from "../src/chat/chat-search";
-import { createServer } from "../src/server/http";
-import type { SessionEntry, SessionSummary } from "../src/runs/session";
-import type { Ticket } from "../src/core/types";
-import { board, bus, FAKE, readArgs, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
-import { tempDir } from "./support/helpers";
+import { BoardClient } from "../../src/cli/client";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { AUTO_FRESH_NOTE, Board } from "../../src/board/board";
+import { chatIsCold } from "../../src/chat/chat-cache";
+import { READ_MAX_MESSAGES, readChat, searchChat, type ChatSource } from "../../src/chat/chat-search";
+import { createServer } from "../../src/api/server";
+import type { SessionEntry, SessionSummary } from "../../src/runs/session";
+import type { Ticket } from "../../src/core/types";
+import { board, bus, FAKE, readArgs, setBoard, setup, store, untilSpawned, useBoardEnv } from "../support/board-env";
+import { tempDir } from "../support/helpers";
 
 useBoardEnv();
 

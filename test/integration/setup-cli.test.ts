@@ -2,14 +2,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BoardClient } from "../src/client";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Store } from "../src/core/store";
-import { parseSetupBlock } from "../src/runs/worktree-setup";
-import { ticketCommand } from "../src/ticket-cli";
-import { makeRepo, tempDir } from "./support/helpers";
+import { BoardClient } from "../../src/cli/client";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Store } from "../../src/core/store";
+import { parseSetupBlock } from "../../src/runs/worktree-setup";
+import { ticketCommand } from "../../src/cli/ticket-cli";
+import { makeRepo, tempDir } from "../support/helpers";
 
 let store: Store;
 let board: Board;

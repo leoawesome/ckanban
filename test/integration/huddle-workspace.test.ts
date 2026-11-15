@@ -2,9 +2,9 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { callTool } from "../src/mcp-server";
-import { git, store, board, huddles, server, client, setup, idle, heard, heardBy, processes, host, participant, agentCtx, you, messages, until, useHuddleEnv } from "./support/huddle-env";
-import { tempDir } from "./support/helpers";
+import { callTool } from "../../src/mcp/server";
+import { git, store, board, huddles, server, client, setup, idle, heard, heardBy, processes, host, participant, agentCtx, you, messages, until, useHuddleEnv } from "../support/huddle-env";
+import { tempDir } from "../support/helpers";
 
 useHuddleEnv();
 

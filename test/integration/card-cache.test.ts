@@ -1,12 +1,12 @@
 // A card's costly parts (its links from Claude's comments, the tickets above it) are kept while what they come from
 // is the same: a write to an unrelated ticket doesn't rebuild every card that shows other tickets.
 import { afterAll, expect, test } from "bun:test";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { SessionCache } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { SessionCache } from "../../src/runs/session";
+import { Store } from "../../src/core/store";
+import { tempDir } from "../support/helpers";
 
 const store = new Store(tempDir("ck-cardcache-"));
 store.saveProfile({ name: "C", slug: "c", path: tempDir("ck-plain-"), baseBranch: "main", maxParallel: 1, model: null, createdAt: new Date().toISOString() });

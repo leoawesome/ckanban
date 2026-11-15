@@ -2,17 +2,17 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { HUDDLE_IDLE_MS, teammateSpend } from "../src/huddle/huddle";
-import { BUILTIN_PRESETS, deletePreset, mergePresets, presetSourceText, savePreset } from "../src/huddle/huddle-presets";
-import { huddleUsage } from "../src/huddle/huddle-usage";
-import { cleanLessons, LESSON_MAX, noteRole, parseNotes, serializeNotes } from "../src/huddle/huddle-notes";
-import { HUDDLE_HEADER, rosterError } from "../src/huddle/huddle-roster";
-import { BUILTIN_TEMPLATES } from "../src/huddle/huddle-templates";
-import { HUDDLE_DESCRIPTION_MAX, hostDescription } from "../src/runs/prompts";
-import type { Huddle, Profile } from "../src/core/types";
-import { store, board, huddles, server, client, events, learned, idle, heardBy, processes, host, participant, agentCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "./support/huddle-env";
-import { makeRepo } from "./support/helpers";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { HUDDLE_IDLE_MS, teammateSpend } from "../../src/huddle/huddle";
+import { BUILTIN_PRESETS, deletePreset, mergePresets, presetSourceText, savePreset } from "../../src/huddle/huddle-presets";
+import { huddleUsage } from "../../src/huddle/huddle-usage";
+import { cleanLessons, LESSON_MAX, noteRole, parseNotes, serializeNotes } from "../../src/huddle/huddle-notes";
+import { HUDDLE_HEADER, rosterError } from "../../src/huddle/huddle-roster";
+import { BUILTIN_TEMPLATES } from "../../src/huddle/huddle-templates";
+import { HUDDLE_DESCRIPTION_MAX, hostDescription } from "../../src/runs/prompts";
+import type { Huddle, Profile } from "../../src/core/types";
+import { store, board, huddles, server, client, events, learned, idle, heardBy, processes, host, participant, agentCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "../support/huddle-env";
+import { makeRepo } from "../support/helpers";
 
 useHuddleEnv();
 

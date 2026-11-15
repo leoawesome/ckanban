@@ -2,13 +2,13 @@
 // (showOnBoard false, or gather_tickets with hide), keeping their chats, results and run history and staying in the
 // feature's Tasks list. Main tickets, sub-features and groups keep their card. MCP, CLI and API agree.
 import { expect, test } from "bun:test";
-import { BoardClient } from "../src/client";
-import { callTool, type ToolContext } from "../src/mcp-server";
-import { createServer } from "../src/server/http";
-import { ticketCommand } from "../src/ticket-cli";
-import { featureRows, onBoard } from "../web/src/features/family/family";
-import { board, setup, store, useBoardEnv } from "./support/board-env";
-import { tempDir } from "./support/helpers";
+import { BoardClient } from "../../src/cli/client";
+import { callTool, type ToolContext } from "../../src/mcp/server";
+import { createServer } from "../../src/api/server";
+import { ticketCommand } from "../../src/cli/ticket-cli";
+import { featureRows, onBoard } from "../../web/src/features/family/family";
+import { board, setup, store, useBoardEnv } from "../support/board-env";
+import { tempDir } from "../support/helpers";
 
 useBoardEnv();
 

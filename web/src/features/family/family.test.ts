@@ -1,10 +1,10 @@
 // Ticket families: "part of" links, parent suggestions, the family tree and get_family.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { BoardClient } from "../../../../src/client";
-import { callTool, proposalError, type ToolContext } from "../../../../src/mcp-server";
+import { BoardClient } from "../../../../src/cli/client";
+import { callTool, proposalError, type ToolContext } from "../../../../src/mcp/server";
 import { Board } from "../../../../src/board/board";
 import { Bus } from "../../../../src/core/events";
-import { createServer } from "../../../../src/server/http";
+import { createServer } from "../../../../src/api/server";
 import { candidates, Linker, parseFound, parseSuggestion } from "../../../../src/board/linker";
 import { RUN_HEADER } from "../../../../src/schedules/scheduler";
 import { parseProposal } from "../../../../src/runs/session";

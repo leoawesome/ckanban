@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { attentionFor } from "../src/helper/attention";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { HUDDLE_HEADER } from "../src/huddle/huddle-roster";
-import { createServer } from "../src/server/http";
-import { QUICK_CHAT_HEADER, RUN_HEADER } from "../src/schedules/scheduler";
-import type { SessionSummary } from "../src/runs/session";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
+import { attentionFor } from "../../src/helper/attention";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { HUDDLE_HEADER } from "../../src/huddle/huddle-roster";
+import { createServer } from "../../src/api/server";
+import { QUICK_CHAT_HEADER, RUN_HEADER } from "../../src/schedules/scheduler";
+import type { SessionSummary } from "../../src/runs/session";
+import { Store } from "../../src/core/store";
+import { tempDir } from "../support/helpers";
 
 // Claude's delete_schedule in a board chat or run only shows a card; the daemon refuses a real delete from any run,
 // and the user's click on the card (or the Schedules window) deletes it.

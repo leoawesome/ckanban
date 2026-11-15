@@ -1,16 +1,16 @@
 // Talks to the local daemon's HTTP API for the `ckanban ticket` CLI and the `ckanban mcp` server.
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
-import type { HuddlePresetView } from "./huddle/huddle-presets";
-import type { RosterEntry } from "./huddle/huddle-roster";
-import type { HuddleTemplateView } from "./huddle/huddle-templates";
-import type { DeviceUser } from "./browser/devices";
-import type { MessageResult } from "./helper/notify";
-import type { SetupOutcome } from "./runs/worktree-setup";
-import { CONFIRM_STATUS } from "./helper/frontdesk-id";
-import { FRONT_DESK_ENV, FRONT_DESK_HEADER, HUDDLE_AGENT_ENV, HUDDLE_HEADER, QUICK_CHAT_ENV, QUICK_CHAT_HEADER, RUN_HEADER, SOURCE_HEADER } from "./core/env";
-import { defaultRoot, Store } from "./core/store";
-import { STATUSES, type HandIn, type HuddleFinding, type HuddleLearning, type HuddleMessage, type HuddleMode, type Status, type TicketMode } from "./core/types";
+import type { HuddlePresetView } from "../huddle/huddle-presets";
+import type { RosterEntry } from "../huddle/huddle-roster";
+import type { HuddleTemplateView } from "../huddle/huddle-templates";
+import type { DeviceUser } from "../browser/devices";
+import type { MessageResult } from "../helper/notify";
+import type { SetupOutcome } from "../runs/worktree-setup";
+import { CONFIRM_STATUS } from "../helper/frontdesk-id";
+import { FRONT_DESK_ENV, FRONT_DESK_HEADER, HUDDLE_AGENT_ENV, HUDDLE_HEADER, QUICK_CHAT_ENV, QUICK_CHAT_HEADER, RUN_HEADER, SOURCE_HEADER } from "../core/env";
+import { defaultRoot, Store } from "../core/store";
+import { STATUSES, type HandIn, type HuddleFinding, type HuddleLearning, type HuddleMessage, type HuddleMode, type Status, type TicketMode } from "../core/types";
 
 export class ClientError extends Error {}
 

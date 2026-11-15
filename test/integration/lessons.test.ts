@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/board/board";
-import { Bus } from "../src/core/events";
-import { createServer } from "../src/server/http";
-import { Learner } from "../src/board/learner";
-import { lessonBullets, lessonsBlock } from "../src/board/lessons";
-import { SessionCache } from "../src/runs/session";
-import type { SideCallInput, SideCallResult } from "../src/runs/side-call";
-import { Store } from "../src/core/store";
-import { tempDir } from "./support/helpers";
+import { Board } from "../../src/board/board";
+import { Bus } from "../../src/core/events";
+import { createServer } from "../../src/api/server";
+import { Learner } from "../../src/board/learner";
+import { lessonBullets, lessonsBlock } from "../../src/board/lessons";
+import { SessionCache } from "../../src/runs/session";
+import type { SideCallInput, SideCallResult } from "../../src/runs/side-call";
+import { Store } from "../../src/core/store";
+import { tempDir } from "../support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);
 const user = (uuid: string, at: string, text: string) => L({ type: "user", uuid, timestamp: at, message: { role: "user", content: text } });
