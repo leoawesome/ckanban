@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { dayKey } from "./limit";
 import { pauser } from "../core/lag";
 import { readSideSpend } from "../runs/side-call";
-import { helperSpendFile } from "../server/helper/runner";
 import { atomicWrite, type Store } from "../core/store";
 import { loadLog, logStat, openLog } from "../runs/run-log";
 
@@ -290,4 +289,14 @@ export function deskSpendToday(root: string, now = new Date()): number {
 /** What turns Telegram started cost today (local day), in USD. */
 export function telegramSpendToday(root: string, now = new Date()): number {
   return readTelegramLedger(root)[dayKey(now)] ?? 0;
+}
+
+/** The helper's spend, for the "Helper" line in today's spend (spend.ts). */
+export const helperSpendFile = (root: string) => join(root, "helper-spend.jsonl");
+
+/** The helper's paid checks on the local day of `at` and what they cost (failed calls that cost money count too). */
+export function helperSpendOn(root: string, at: Date): { checks: number; costUsd: number } {
+  const s = readSideSpend(helperSpendFile(root));
+  const day = dayKey(at);
+  return { checks: s.calls?.get(day) ?? 0, costUsd: s.days.get(day) ?? 0 };
 }
