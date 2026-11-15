@@ -24,6 +24,7 @@ Each folder has a short `README.md`; read it before changing code there. Unit te
 - `web/src/hooks/`: hooks shared by several features, such as `usePhone.ts` ([README](web/src/hooks/README.md)).
 - `web/src/lib/`: plain helpers and the API client `lib/api` ([README](web/src/lib/README.md)).
 - `web/src/features/<feature>/`: one folder per UI feature (board, ticket, chat, huddle, schedules...), each with a README.
+- `rust/`: the Rust front server `ckanban-rs` (trial): sits in front of the Bun daemon and passes every request to it ([README](rust/README.md)).
 - `contracts/`: the written web API, data file and CLI contract ([README](contracts/README.md)).
 - `rust/core/`: the Rust port trial's library for usage and spend, checked against Bun with shared fixtures ([README](rust/core/README.md)).
 - `test/contract/`: outside-in tests of that contract; they start the daemon and never import from `src/` or `web/`.

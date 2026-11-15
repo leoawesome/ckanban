@@ -2,7 +2,7 @@
 // Fake `claude` CLI for tests. Behaviour controlled by env:
 // FAKE_QUIET=1: the result line says "quiet": true (a quiet schedule's run that found nothing).
 // FAKE_VERDICT=passed|problem: the result line carries a test verdict.
-// FAKE_MODE=ok|fail|limit|budget|slow|partial|blocked|noresult|background|bgsilent|asks|nosession|overloaded|badrequest|silent, FAKE_PR=<url>, FAKE_ARGS_FILE=<path to append argv JSON>
+// FAKE_MODE=call: see "call" below. FAKE_MODE=ok|fail|limit|budget|slow|partial|blocked|noresult|background|bgsilent|asks|nosession|overloaded|badrequest|silent, FAKE_PR=<url>, FAKE_ARGS_FILE=<path to append argv JSON>
 // FAKE_ONCE_FILE=<path>: overloaded/silent only misbehave on the first run (the file marks it); later runs are ok.
 // FAKE_SILENT_MS: how long silent mode goes quiet after init before carrying on (default 30s).
 // FAKE_HEARD_FILE=<path>: appends {session, text} for every user message it reads (huddle routing tests).
@@ -174,6 +174,21 @@ if (process.env.FAKE_TRANSCRIPT) {
   emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu_ls", content: "app.ts\nlib.ts" }] } });
   emit({ type: "assistant", message: { content: [{ type: "tool_use", id: "tu_post", name: "mcp__ckanban__huddle_post", input: { text: "@main found it" } }] } });
   emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu_post", content: [{ type: "text", text: "Posted #7 as @qa." }] }] } });
+}
+
+// Calls the board's API the way a run's shell could: no run header, at CKANBAN_PORT as the run got it. FAKE_CALLS_FILE
+// holds [{method, path, headers?, body?}]; each answer {method, path, status, text} is appended to FAKE_CALL_OUT (JSON lines).
+if (mode === "call" && process.env.FAKE_CALLS_FILE && process.env.FAKE_CALL_OUT) {
+  const { readFileSync } = await import("node:fs");
+  const calls: { method: string; path: string; headers?: Record<string, string>; body?: unknown }[] = JSON.parse(readFileSync(process.env.FAKE_CALLS_FILE, "utf8"));
+  for (const c of calls) {
+    const res = await fetch(`http://127.0.0.1:${process.env.CKANBAN_PORT}${c.path}`, {
+      method: c.method,
+      headers: { ...(c.body === undefined ? {} : { "content-type": "application/json" }), ...c.headers },
+      body: c.body === undefined ? undefined : JSON.stringify(c.body),
+    }).catch((e) => new Response(String(e), { status: 599 }));
+    appendFileSync(process.env.FAKE_CALL_OUT, JSON.stringify({ method: c.method, path: c.path, status: res.status, text: await res.text() }) + "\n");
+  }
 }
 
 if (mode === "child") {

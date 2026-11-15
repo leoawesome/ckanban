@@ -6,6 +6,11 @@
 // It keeps runs, check scripts and the board's terminal from saving by themselves; it isn't a wall against code that
 // runs as the user, which could also edit the board's data folder directly.
 
+import { frontInfo } from "../core/front";
+
+/** The Rust front server's pid (core/front.ts), 0 without one: its end of a caller's connection is not the caller. */
+const frontPid = () => frontInfo()?.pid ?? 0;
+
 /** Runs a command and returns its stdout; "" when it fails. */
 async function out(argv: string[]): Promise<string> {
   try {
@@ -70,7 +75,7 @@ export function drivenBrowser(pid: number, parents: Map<number, number>, args: M
  */
 export async function fromUserBrowser(peerPort: number, daemonPid = process.pid): Promise<boolean> {
   if (!peerPort) return false;
-  const pids = lsofPids(await out(["lsof", "-nP", `-iTCP:${peerPort}`, "-sTCP:ESTABLISHED", "-Fp"])).filter((p) => p !== daemonPid);
+  const pids = lsofPids(await out(["lsof", "-nP", `-iTCP:${peerPort}`, "-sTCP:ESTABLISHED", "-Fp"])).filter((p) => p !== daemonPid && p !== frontPid());
   if (!pids.length) return false;
   const [parents, commands, args] = await Promise.all([
     out(["ps", "-A", "-o", "pid=,ppid="]).then(parentMap), out(["ps", "-A", "-o", "pid=,comm="]).then(commandMap),
@@ -86,7 +91,7 @@ export async function fromUserBrowser(peerPort: number, daemonPid = process.pid)
  */
 export async function outsideBoard(peerPort: number, daemonPid = process.pid): Promise<boolean> {
   if (!peerPort) return false;
-  const pids = lsofPids(await out(["lsof", "-nP", `-iTCP:${peerPort}`, "-sTCP:ESTABLISHED", "-Fp"])).filter((p) => p !== daemonPid);
+  const pids = lsofPids(await out(["lsof", "-nP", `-iTCP:${peerPort}`, "-sTCP:ESTABLISHED", "-Fp"])).filter((p) => p !== daemonPid && p !== frontPid());
   if (!pids.length) return false;
   const parents = parentMap(await out(["ps", "-A", "-o", "pid=,ppid="]));
   return pids.every((p) => !descendsFrom(p, daemonPid, parents));

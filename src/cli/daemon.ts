@@ -40,14 +40,36 @@ import { keepAwakeOn } from "../core/types";
 import { VERSION } from "../core/version";
 import { WEB_ASSETS } from "../api/web-assets.gen";
 import { detectMissing } from "../runs/worktree-setup";
+import { readFront, setFront } from "../core/front";
 import { sweepTempFiles, trimDaemonLog } from "../core/housekeeping";
 
 export async function startDaemon(): Promise<void> {
   // Board runs and other children inherit this; an older launchd plist starts the daemon with no locale.
   Object.assign(process.env, withUtf8Locale(process.env));
+  // Behind the Rust front server (core/front.ts): its secret comes on stdin, and end of stdin means it is gone.
+  let frontGone: () => void = () => process.exit(0);
+  let front: Awaited<ReturnType<typeof readFront>>;
+  try {
+    front = await readFront(process.env, Bun.stdin.stream(), () => {
+      console.log("ckanban: the front server is gone; stopping");
+      frontGone();
+    });
+  } catch (e) {
+    console.error(`ckanban: ${(e as Error).message}`);
+    process.exit(1);
+  }
+  setFront(front);
   const store = new Store(defaultRoot());
   const config = store.config();
-  const port = Number(process.env.CKANBAN_PORT) || config.port;
+  /** Where this daemon listens: an internal port behind the front server, else the board's port. */
+  const listenPort = Number(process.env.CKANBAN_PORT) || config.port;
+  /** The board's port as callers see it; what runs, scripts and links get. */
+  const port = front?.publicPort ?? listenPort;
+  if (front) {
+    // Children (runs, MCP tools, scripts, the CLI) reach the board through the front server.
+    process.env.CKANBAN_PORT = String(port);
+    delete process.env.CKANBAN_FRONT_PORT;
+  }
   const bus = new Bus();
   const sessions = new SessionCache({}, Date.now, join(store.root, "session-summaries.json"));
   // One watch on Claude's projects folder: watchers look only at sessions that changed (they poll if it can't start).
@@ -72,7 +94,7 @@ export async function startDaemon(): Promise<void> {
     hostHuddles: (slug) => board.hostHuddles(slug),
     baseUrl: () => {
       const r = remoteConfig.active();
-      return r ? remoteUrl(r.host) : `http://localhost:${server.port}`;
+      return r ? remoteUrl(r.host) : `http://localhost:${port}`;
     },
   });
   notifier.plugBoard(board);
@@ -130,8 +152,8 @@ export async function startDaemon(): Promise<void> {
     onChange: (held) => bus.emit({ type: "awake.updated", held }),
   });
   const remotePort = remoteListenPort(port, config.remotePort);
-  const server = createServer({ store, bus, board, port, remotePort, webDir, sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
-  console.log(`ckanban v${VERSION} listening on http://localhost:${server.port} (data: ${store.root})`);
+  const server = createServer({ store, bus, board, port: listenPort, remotePort, webDir, sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
+  console.log(`ckanban v${VERSION} listening on http://localhost:${front ? port : server.port} (data: ${store.root})${front ? ` behind the front server (internal port ${server.port})` : ""}`);
   // Running from source (developing ckanban): a freeze of seconds raises a Mac banner naming what ran. Installed
   // copies only log it; their users can't act on it.
   const stopLag = startLagMonitor(VERSION === "dev" ? {
@@ -215,6 +237,7 @@ export async function startDaemon(): Promise<void> {
     server.remoteServer?.stop(true);
     process.exit(0);
   };
+  frontGone = () => void shutdown();
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }

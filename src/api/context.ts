@@ -59,6 +59,7 @@ import type { Store } from "../core/store";
 import { byIdNewest, scopeIndex, type ScopeIndex } from "../board/ticket-scope";
 import { runCapFor, type Profile, type Ticket, type Workspace } from "../core/types";
 import { nowIso } from "../core/util";
+import { frontInfo } from "../core/front";
 import type { Server } from "bun";
 
 
@@ -301,6 +302,8 @@ export type RouteResult = Response | undefined | typeof NEXT;
 export function createContext(deps: ServerDeps) {
   // Set by createServer once it has them (Bun.serve's servers, its dispatcher); only read while answering requests.
   let server!: Server<ShellSocket>;
+  /** The board's port as callers see it: the Rust front server's when the daemon runs behind it (core/front.ts). */
+  const publicPort = () => frontInfo()?.publicPort ?? server.port ?? deps.port;
   let remoteServer: Server<ShellSocket> | null = null;
   let api!: (req: Request, url: URL) => Promise<Response | undefined>;
   const { store, bus, board } = deps;
@@ -318,7 +321,7 @@ export function createContext(deps: ServerDeps) {
   const scheduler = deps.scheduler ?? new Scheduler(board, store, bus);
   const jobs = deps.jobs ?? new JobRunner(board, store, bus);
   // The address a service sends the user back to after signing in: always localhost, on this board's port.
-  const callbackUrl = () => `http://localhost:${server.port ?? deps.port}/api/passes/oauth/callback`;
+  const callbackUrl = () => `http://localhost:${publicPort()}/api/passes/oauth/callback`;
   const passes = deps.passes ?? new Passes(store.root, bus, { fetch: globalThis.fetch, now: () => new Date() }, callbackUrl);
   const agents = deps.agents ?? new AgentRegistry();
   /**
@@ -450,7 +453,7 @@ export function createContext(deps: ServerDeps) {
     counted(s, id);
   });
   const loops = deps.loops ?? new LoopManager(store, bus, board, passes, {
-    now: () => new Date(), sideCall, shimDir: () => ckanbanShim(store.root), port: () => server.port ?? deps.port,
+    now: () => new Date(), sideCall, shimDir: () => ckanbanShim(store.root), port: () => publicPort(),
   });
   const isUserBrowser = deps.isUserBrowser ?? ((peerPort: number) => fromUserBrowser(peerPort));
   const isOutsideBoard = deps.isOutsideBoard ?? ((peerPort: number) => outsideBoard(peerPort));
@@ -474,8 +477,7 @@ export function createContext(deps: ServerDeps) {
     const v = via.get(req);
     // Phone access: only the tailnet owner's browser gets here (requestRefusal checks the login and the Origin).
     if (v?.listener === "remote") return;
-    const peer = v?.srv.requestIP(req)?.port ?? 0;
-    if (!(await isUserBrowser(peer))) throw new HttpError(403, refusal);
+    if (!(await isUserBrowser(v?.peer ?? 0))) throw new HttpError(403, refusal);
   };
   /**
    * Who may really delete a schedule: the user, from the Schedules window (their browser, as userOnly checks), their
@@ -497,7 +499,7 @@ export function createContext(deps: ServerDeps) {
     if (req.headers.get("origin")) return userOnly(req, "Deleting a schedule");
     const v = via.get(req);
     if (v?.listener === "remote") throw new HttpError(403, refusal);
-    if (!(await isOutsideBoard(v?.srv.requestIP(req)?.port ?? 0))) throw new HttpError(403, refusal);
+    if (!(await isOutsideBoard(v?.peer ?? 0))) throw new HttpError(403, refusal);
   };  const simplifier = new Simplifier(store, sideCall);
   const helper = new Helper(store, sideCall);
   const linker = deps.linker ?? new Linker(store, board, sideCall);
@@ -511,14 +513,15 @@ export function createContext(deps: ServerDeps) {
   // No listener (not bound): 0, so `on` refuses instead of pointing serve at whatever holds the port.
   const remote = deps.remote ?? new RemoteAccess(store.root, () => remoteServer?.port ?? 0);
   // The listener each request came in on, for the routes that care (WebSocket upgrades, /api/remote).
-  const via = new WeakMap<Request, { listener: Listener; srv: import("bun").Server<ShellSocket> }>();
+  // `peer`: the caller's TCP port on the local listener (the front server's header behind it, core/front.ts); 0 on remote.
+  const via = new WeakMap<Request, { listener: Listener; srv: import("bun").Server<ShellSocket>; peer: number }>();
   const listenerOf = (req: Request): Listener => via.get(req)?.listener ?? "local";
   /** Notification settings plus whether this request is from this Mac (phone access can't turn Telegram back on or pair). */
   const notifyView = <T extends object>(req: Request, st: T): T & { local: boolean } => ({ ...st, local: listenerOf(req) === "local" });
   const push = deps.push ?? new PushService(store.root);
   const notifier = deps.notifier ?? new Notifier(store, bus, {
     root: store.root, push, sessionSummary: (id) => sessions.summary(id), isRunning: (s, id) => board.isRunning(s, id),
-    hostHuddles: (s) => board.hostHuddles(s), baseUrl: () => (remote.active() ? remoteUrl(remote.active()!.host) : `http://localhost:${server.port ?? deps.port}`),
+    hostHuddles: (s) => board.hostHuddles(s), baseUrl: () => (remote.active() ? remoteUrl(remote.active()!.host) : `http://localhost:${publicPort()}`),
   });
   if (!deps.notifier) notifier.plugBoard(board);
   // The front desk lives in the quick chats; a tap on its Confirm runs the held request here, as the user.
@@ -1115,6 +1118,7 @@ export function createContext(deps: ServerDeps) {
     publishArtifact,
     remote,
     via,
+    publicPort,
     listenerOf,
     notifyView,
     push,

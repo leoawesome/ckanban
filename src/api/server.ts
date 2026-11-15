@@ -18,6 +18,7 @@ import type { Shell } from "../browser/shell";
 import { QuickChatError } from "../chat/quickchat";
 import { FRONT_DESK_HEADER } from "../helper/frontdesk-id";
 import { nowIso } from "../core/util";
+import { callerPort, fromFront } from "../core/front";
 import { HttpError, type Listener, NEXT, type RouteResult, type ServerDeps, type ShellSocket, body, requestRefusal } from "./context";
 import { attachmentRoutes } from "./attachments";
 import { remoteRoutes } from "./remote";
@@ -46,7 +47,7 @@ export { isAllowedRequest, isAllowedSocket, refuseSharedFolder, requestRefusal, 
 
 export function createServer(deps: ServerDeps) {
   const ctx = createContext(deps);
-  const { store, json, shells, remote, via, notifier, profileOr404, ticketOr404 } = ctx;
+  const { store, json, shells, remote, via, notifier, profileOr404, ticketOr404, publicPort } = ctx;
   ctx.bind({ api });
 
   async function api(req: Request, url: URL): Promise<Response | undefined> {
@@ -173,9 +174,10 @@ export function createServer(deps: ServerDeps) {
   }
 
   async function route(req: Request, srv: import("bun").Server<ShellSocket>, listener: Listener): Promise<Response | undefined> {
-    const refusal = requestRefusal(req, server.port ?? deps.port, remote.active(), listener);
+    // Behind the Rust front server (core/front.ts) the board's port is the front's; this one only takes its requests.
+    const refusal = listener === "local" && !fromFront(req) ? "forbidden" : requestRefusal(req, publicPort(), remote.active(), listener);
     if (refusal) return new Response(refusal, { status: 403, headers: { "content-type": "text/plain; charset=utf-8" } });
-    via.set(req, { listener, srv });
+    via.set(req, { listener, srv, peer: listener === "local" ? callerPort(req, srv.requestIP(req)?.port) : 0 });
     if (listener === "remote") remote.noteVisit(nowIso());
     const url = new URL(req.url);
     if (!url.pathname.startsWith("/api/")) return staticFile(url);

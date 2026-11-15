@@ -1,0 +1,213 @@
+//! `ckanban-rs dev`: the Rust front server of the ckanban trial. It listens on the board's port, starts the Bun
+//! daemon (`bun src/cli.ts dev`) as a child on an internal port and passes every request to it (proxy.rs). Later
+//! steps move routes to Rust one at a time; everything else keeps going to Bun.
+//!
+//! The child gets CKANBAN_PORT (its internal port), CKANBAN_FRONT_PORT (the board's port) and, on stdin, "<secret> <our pid>"
+//! that marks this server's requests (`src/core/front.ts`). Stdin stays open: when this process dies, even killed
+//! hard, the child reads end of input and stops. When the child exits, this process exits with the same code, so
+//! launchd and `ckanban restart` work as with Bun alone. SIGTERM/SIGINT stop the child first.
+
+mod proxy;
+mod settings;
+
+use std::net::{Ipv4Addr, SocketAddrV4};
+use std::path::PathBuf;
+use std::process::{ExitCode, Stdio};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::TokioIo;
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
+use tokio::process::{Child, Command};
+use tokio::signal::unix::{SignalKind, signal};
+
+/// How long the Bun child gets to answer its first request.
+const READY_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long the child gets to stop after SIGTERM before it is killed.
+const STOP_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("dev") => {}
+        Some("--version") | Some("-V") => {
+            println!("ckanban-rs {}", env!("CARGO_PKG_VERSION"));
+            return ExitCode::SUCCESS;
+        }
+        _ => {
+            eprintln!("usage: ckanban-rs dev    (starts the board's daemon behind this front server; same env as `ckanban dev`)");
+            return ExitCode::from(2);
+        }
+    }
+    let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("ckanban-rs: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let code = rt.block_on(dev());
+    // Open tunnels and in-flight requests end with the process.
+    rt.shutdown_timeout(Duration::from_millis(200));
+    ExitCode::from(code)
+}
+
+fn fail(msg: impl std::fmt::Display) -> u8 {
+    eprintln!("ckanban-rs: {msg}");
+    1
+}
+
+async fn dev() -> u8 {
+    let root = settings::data_root();
+    let config = std::fs::read_to_string(root.join("config.json")).ok();
+    let env_port = std::env::var("CKANBAN_PORT").ok();
+    let public_port = settings::board_port(env_port.as_deref(), config.as_deref());
+    let remote_port = settings::remote_port(public_port, std::env::var("CKANBAN_REMOTE_PORT").ok().as_deref(), config.as_deref());
+
+    let exe = std::env::current_exe().unwrap_or_default();
+    let env_repo = std::env::var_os("CKANBAN_REPO").filter(|s| !s.is_empty()).map(PathBuf::from);
+    let repo = match settings::repo_root(env_repo.as_deref(), &exe) {
+        Ok(r) => r,
+        Err(e) => return fail(e),
+    };
+    let bun = match settings::bun_path() {
+        Ok(b) => b,
+        Err(e) => return fail(e),
+    };
+    let secret = match settings::new_secret() {
+        Ok(s) => s,
+        Err(e) => return fail(e),
+    };
+
+    // The board's port first: if it is taken, fail before starting anything.
+    let listener = match TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, public_port)).await {
+        Ok(l) => l,
+        Err(e) => return fail(format!("can't listen on 127.0.0.1:{public_port}: {e}")),
+    };
+    let internal_port = match settings::free_port(&[public_port, remote_port]) {
+        Ok(p) => p,
+        Err(e) => return fail(format!("no free internal port: {e}")),
+    };
+
+    let mut child = match Command::new(&bun)
+        .arg(repo.join("src/cli.ts"))
+        .arg("dev")
+        .env("CKANBAN_PORT", internal_port.to_string())
+        .env("CKANBAN_FRONT_PORT", public_port.to_string())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return fail(format!("can't start {} {}: {e}", bun.display(), repo.join("src/cli.ts").display())),
+    };
+    // Kept open for the child's lifetime: its end of input tells the child this server is gone.
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    if let Err(e) = stdin.write_all(format!("{secret} {}\n", std::process::id()).as_bytes()).await {
+        let _ = child.start_kill();
+        return fail(format!("can't hand the secret to the daemon: {e}"));
+    }
+    let _ = stdin.flush().await;
+
+    let proxy = proxy::Proxy::new(internal_port, &secret);
+    let mut sigterm = signal(SignalKind::terminate()).expect("SIGTERM handler");
+    let mut sigint = signal(SignalKind::interrupt()).expect("SIGINT handler");
+
+    // Wait until the child answers; meanwhile callers queue on the listener.
+    let deadline = Instant::now() + READY_TIMEOUT;
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            eprintln!("ckanban-rs: the daemon exited before it answered ({status})");
+            return exit_code(status);
+        }
+        if proxy.ready(public_port).await {
+            break;
+        }
+        if Instant::now() > deadline {
+            let _ = stop_child(&mut child).await;
+            return fail(format!(
+                "the daemon ({} {} dev) didn't answer on 127.0.0.1:{internal_port} within {}s; see its log: this process's output{}",
+                bun.display(),
+                repo.join("src/cli.ts").display(),
+                READY_TIMEOUT.as_secs(),
+                log_hint(&root),
+            ));
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+            _ = sigterm.recv() => return stop_child(&mut child).await,
+            _ = sigint.recv() => return stop_child(&mut child).await,
+        }
+    }
+    eprintln!("ckanban-rs {} listening on http://localhost:{public_port}, daemon on internal port {internal_port}", env!("CARGO_PKG_VERSION"));
+
+    let accept = tokio::spawn(serve(listener, proxy));
+    let code = tokio::select! {
+        status = child.wait() => match status {
+            Ok(s) => exit_code(s),
+            Err(e) => fail(format!("lost the daemon: {e}")),
+        },
+        _ = sigterm.recv() => stop_child(&mut child).await,
+        _ = sigint.recv() => stop_child(&mut child).await,
+    };
+    accept.abort();
+    drop(stdin);
+    code
+}
+
+/// Under launchd the output goes to the data folder's daemon.log.
+fn log_hint(root: &std::path::Path) -> String {
+    let log = root.join("daemon.log");
+    if log.is_file() { format!(" ({} when started by launchd)", log.display()) } else { String::new() }
+}
+
+async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>) {
+    loop {
+        let (stream, peer) = match listener.accept().await {
+            Ok(x) => x,
+            Err(e) => {
+                eprintln!("ckanban-rs: accept: {e}");
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            }
+        };
+        let _ = stream.set_nodelay(true);
+        let proxy = proxy.clone();
+        tokio::spawn(async move {
+            let svc = service_fn(move |req| {
+                let proxy = proxy.clone();
+                async move { Ok::<_, std::convert::Infallible>(proxy.forward(req, peer).await) }
+            });
+            let _ = http1::Builder::new().half_close(true).serve_connection(TokioIo::new(stream), svc).with_upgrades().await;
+        });
+    }
+}
+
+/// SIGTERM to the child, then its exit code; SIGKILL if it doesn't stop in time.
+async fn stop_child(child: &mut Child) -> u8 {
+    if let Some(pid) = child.id() {
+        // SAFETY: plain kill(2) on our own child's pid.
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+    }
+    match tokio::time::timeout(STOP_TIMEOUT, child.wait()).await {
+        Ok(Ok(s)) => exit_code(s),
+        _ => {
+            let _ = child.kill().await;
+            137
+        }
+    }
+}
+
+/// The child's exit code; 128 + signal when a signal ended it (as a shell reports it).
+fn exit_code(s: std::process::ExitStatus) -> u8 {
+    use std::os::unix::process::ExitStatusExt;
+    match (s.code(), s.signal()) {
+        (Some(c), _) => c as u8,
+        (None, Some(sig)) => 128u8.wrapping_add(sig as u8),
+        _ => 1,
+    }
+}

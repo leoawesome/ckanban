@@ -54,7 +54,7 @@ export async function profileListRoutes(ctx: ApiContext, req: Request, url: URL,
 
 /** /api/profiles/:p, detect-setup, commands, sessions, files, file, open-file, shell, find-links */
 export async function profileRoutes(ctx: ApiContext, req: Request, url: URL, parts: string[], m: string, slug: string, profile: Profile): Promise<RouteResult> {
-  const { deps, store, bus, board, json, shells, knownBrowsers, snippets, userOnly, linker, remote, via, listenerOf, panelFolder, server } = ctx;
+  const { deps, store, bus, board, json, shells, knownBrowsers, snippets, userOnly, linker, remote, via, listenerOf, panelFolder, server, publicPort } = ctx;
   // /profiles/:p
   if (parts.length === 2) {
     if (m === "GET") return json(profile);
@@ -202,7 +202,7 @@ export async function profileRoutes(ctx: ApiContext, req: Request, url: URL, par
   // /profiles/:p/shell[?ticket=<id>] — WebSocket to the interactive shell of the board folder, or of that ticket's copy
   if (parts[2] === "shell" && parts.length === 3 && m === "GET") {
     if (!ptySupported()) throw new HttpError(501, `terminal needs Bun 1.3.5 or newer (running ${Bun.version})`);
-    if (!isAllowedSocket(req, server.port ?? deps.port, remote.active(), listenerOf(req))) throw new HttpError(403, "forbidden");
+    if (!isAllowedSocket(req, publicPort(), remote.active(), listenerOf(req))) throw new HttpError(403, "forbidden");
     const dim = (k: string, d: number) => Math.min(1000, Math.max(1, Number(url.searchParams.get(k)) || d));
     const where = panelFolder(slug, profile.path, url.searchParams.get("ticket"));
     const data: ShellSocket = { slug, folder: where.ticket, cwd: where.root, cols: dim("cols", 80), rows: dim("rows", 24) };

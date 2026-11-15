@@ -81,6 +81,16 @@ key saved on this Mac (board keys, passes) is replaced before it leaves the daem
 local listener the peer TCP port must belong to a web browser the daemon did not start (process lookup in
 `integrations/guard.ts`); otherwise 403. The 403 text explains it is for the user only.
 
+**Behind a front server.** A server in front of the daemon (the Rust `ckanban-rs dev`, `rust/README.md`) starts it
+with `CKANBAN_PORT` set to an internal port, `CKANBAN_FRONT_PORT` set to the board's port, and the line `<secret> <its own pid>` (a fresh random secret)
+first on its stdin (not an env var: same-user processes can read another process's environment). The
+front sends every request with `x-ckanban-front: <secret>` and `x-ckanban-peer-port: <the caller's TCP port>`, after
+dropping any copies the caller sent. The daemon then answers on the internal port only with the exact secret (else
+`403 forbidden`), checks Host and Origin against the board's port, uses the peer header (not the socket) for the
+user-only and schedule-delete caller checks, ignores the front's own pid in those lookups, gives runs and scripts the
+board's port, and stops when its stdin ends (the front is gone). Without `CKANBAN_FRONT_PORT` both headers are ignored
+and stdin is not read. The remote listener (`CKANBAN_REMOTE_PORT`) is never behind the front.
+
 **Run rights (`runRights`).** Ticket changes sent with `x-ckanban-run` are allowed only for: a Planning chat answering
 the user's typed message (any ticket of its board but its own: "requester"); a main ticket or tool group on its own
 family ("planner"); an active work run or chat reply on other tickets of its board ("runner"); a chat on another board

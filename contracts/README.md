@@ -44,6 +44,9 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
 - `usage.test.ts`: `GET /api/usage` against a local fake of Anthropic's endpoint (first call, cache hits counted on
   the fake, `fresh=1`, the one-call-a-minute gap, Anthropic failing with and without saved numbers, a 429, no
   credentials) and `GET /api/spend` (an empty board; runs, side calls, huddle agents, quick chats and the helper).
+- `callers.test.ts`: a board run (the fake Claude in `call` mode, calling the API without the run header) gets 403 on
+  user-only routes while a program outside the board may delete a schedule; behind a front server its internal port
+  refuses requests without the secret; the event stream delivers events while it stays open; the terminal's WebSocket.
 - `data-files.test.ts`: after a mix of actions, every file in the data folder matches a path listed in
   `data-files.md`, and the profile, ticket and schedule files hold the fields their schemas require.
 
@@ -55,3 +58,6 @@ To test another server: build it and run
 moves too). The server must take its port from `CKANBAN_PORT`, its data folder from `CKANBAN_HOME`, the Claude
 program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_DIR`, and honour `CKANBAN_USAGE_URL`
 and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`).
+
+`bun run test:contract:rust` does this for the Rust front server (`rust/`): it builds `ckanban-rs` (release) and runs
+every contract test with it as the daemon. It needs cargo, so `bun run test` leaves it out.
