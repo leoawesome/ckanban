@@ -593,72 +593,34 @@ test("schedule edits from a board run are credited to its ticket", async () => {
   expect(h.map((e) => [e.action, e.by])).toEqual([["updated", "user"], ["created", { ticketId: "t_20261001_wxyz" }]]);
 });
 
-test("tickets created from a planner keep parentId; unknown parent is rejected", async () => {
+test("planned tickets are retired: no child tickets by POST, no plan for a plain ticket, no adopt route", async () => {
   const path = tempDir("ck-parent-");
   const p = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Parent Proj", path }))).json()) as any;
-  const tickets = `${base}/api/profiles/${p.slug}/tickets`;
-  const planner = (await (await fetch(tickets, json("POST", { title: "Plan" }))).json()) as any;
-  let r = await fetch(tickets, json("POST", { title: "Child", body: "b", status: "backlog", parentId: planner.id }));
-  expect(r.status).toBe(201);
-  const child = (await r.json()) as any;
-  expect(child.parentId).toBe(planner.id);
-  expect(child.status).toBe("backlog");
-  r = await fetch(tickets, json("POST", { title: "Orphan", parentId: "t_nope" }));
-  expect(r.status).toBe(400);
-});
-
-test("inside a board run only a running plan's planner may change tickets, and only its own children", async () => {
-  const path = tempDir("ck-scope-");
-  const p = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Scope Proj", path }))).json()) as any;
   const tickets = `${base}/api/profiles/${p.slug}/tickets`;
   const post = async (u: string, b: unknown, run?: string, method = "POST") =>
     fetch(u, { method, headers: { "content-type": "application/json", ...(run ? { "x-ckanban-run": run } : {}) }, body: JSON.stringify(b) });
   const planner = (await (await post(tickets, { title: "Plan" })).json()) as any;
-  // An old-style planner (made before main tickets): its plan keeps today's rules (caps, rights per running plan).
-  store.updateTicket(p.slug, planner.id, { main: false });
-  const child = (await (await post(tickets, { title: "Child", parentId: planner.id, planKey: "c" })).json()) as any;
-  const other = (await (await post(tickets, { title: "Other" })).json()) as any;
-  const run = `${p.slug}/${planner.id}`;
-
-  // No plan running yet: the planner's run is an ordinary board run.
-  let r = await post(`${tickets}/${child.id}`, { title: "x" }, run, "PATCH");
-  expect(r.status).toBe(403);
-  expect(((await r.json()) as any).error).toContain("disabled inside a board run");
-
-  // Start the plan paused right away so nothing runs in this test (no claude here).
-  r = await post(`${tickets}/${planner.id}/plan`, { action: "start" });
-  expect(r.status).toBe(200);
-  expect(((await r.json()) as any).plan.state).toBe("running");
-  await post(`${tickets}/${planner.id}/plan`, { action: "pause" });
-  // A paused plan doesn't grant rights.
-  r = await post(`${tickets}/${child.id}`, { body: "clearer" }, run, "PATCH");
-  expect(r.status).toBe(403);
-  await post(`${tickets}/${planner.id}/plan`, { action: "resume" });
-
-  r = await post(`${tickets}/${child.id}`, { body: "clearer", dependsOn: [] }, run, "PATCH");
-  expect(r.status).toBe(200);
-  r = await post(`${tickets}/${other.id}`, { body: "nope" }, run, "PATCH");
-  expect(r.status).toBe(403);
-  expect(((await r.json()) as any).error).toContain("is not a child ticket of plan");
-  r = await post(`${tickets}/${child.id}/comments`, { text: "try X" }, run);
-  expect(((await r.json()) as any).text).toBe("Planner: try X");
-  r = await post(tickets, { title: "Bad", dependsOn: ["ghost"] }, run);
+  let r = await post(tickets, { title: "Child", body: "b", status: "backlog", parentId: planner.id });
   expect(r.status).toBe(400);
-  r = await post(tickets, { title: "Split", status: "ready", dependsOn: ["c"] }, run);
-  expect(r.status).toBe(201);
-  const split = (await r.json()) as any;
-  expect([split.parentId, split.status, split.mode, split.dependsOn]).toEqual([planner.id, "backlog", "auto", ["c"]]);
-  // At most twice the plan's original children.
-  r = await post(tickets, { title: "One too many" }, run);
-  expect(r.status).toBe(409);
-  r = await fetch(`${tickets}/${child.id}`, { method: "DELETE", headers: { "x-ckanban-run": run } });
-  expect(r.status).toBe(403);
-  r = await post(`${tickets}/${planner.id}/plan`, { action: "pause" }, run);
-  expect(r.status).toBe(403);
-  // A different ticket's run gets nothing.
-  r = await post(`${tickets}/${child.id}`, { title: "x" }, `${p.slug}/${other.id}`, "PATCH");
-  expect(r.status).toBe(403);
-  await post(`${tickets}/${planner.id}/plan`, { action: "pause" });
+  expect(((await r.json()) as any).error).toContain("planned tickets are retired");
+  r = await post(tickets, { title: "Orphan", parentId: "t_nope" });
+  expect(r.status).toBe(400);
+  // A plain ticket (not a main ticket) has no plan to start, from the user or its own chat.
+  store.updateTicket(p.slug, planner.id, { main: false });
+  r = await post(`${tickets}/${planner.id}/plan`, { action: "start" });
+  expect(r.status).toBe(400);
+  expect(((await r.json()) as any).error).toContain("only a main ticket");
+  const real = board.userChatRun.bind(board);
+  board.userChatRun = (slug, id) => id === planner.id || real(slug, id);
+  try {
+    expect(board.plannerRights(p.slug, planner.id)).toBeNull();
+    r = await post(`${tickets}/${planner.id}/plan`, { action: "start" }, `${p.slug}/${planner.id}`);
+    expect(r.status).toBe(400);
+  } finally {
+    board.userChatRun = real;
+  }
+  r = await post(`${tickets}/${planner.id}/adopt`, { ids: ["t_x"] });
+  expect(r.status).toBe(404);
 });
 
 test("POST .../branch: refused inside a board run, 400 without a conversation", async () => {
@@ -672,84 +634,6 @@ test("POST .../branch: refused inside a board run, 400 without a conversation", 
   r = await fetch(`${tickets}/${t.id}/branch`, json("POST", {}));
   expect(r.status).toBe(400);
   expect(((await r.json()) as any).error).toContain("no Claude conversation");
-});
-
-test("the user's chat gives a ticket planner rights over its own children: adopt, change, start the plan", async () => {
-  const path = tempDir("ck-manage-");
-  const p = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Manage Proj", path }))).json()) as any;
-  const tickets = `${base}/api/profiles/${p.slug}/tickets`;
-  const post = async (u: string, b: unknown, run?: string, method = "POST") =>
-    fetch(u, { method, headers: { "content-type": "application/json", ...(run ? { "x-ckanban-run": run } : {}) }, body: JSON.stringify(b) });
-  const mgr = (await (await post(tickets, { title: "Manager" })).json()) as any;
-  // An old-style manager (made before main tickets): today's rules.
-  store.updateTicket(p.slug, mgr.id, { main: false });
-  const a = (await (await post(tickets, { title: "A" })).json()) as any;
-  const b = (await (await post(tickets, { title: "B", needs: ["Emulator"] })).json()) as any;
-  expect(b.needs).toEqual(["emulator"]);
-  const elsewhere = (await (await post(tickets, { title: "Elsewhere" })).json()) as any;
-  const kidOfElsewhere = (await (await post(tickets, { title: "Kid", parentId: elsewhere.id })).json()) as any;
-  const run = `${p.slug}/${mgr.id}`;
-
-  // No user chat behind the run: refused, like any board run.
-  let r = await post(`${tickets}/${mgr.id}/adopt`, { ids: [a.id] }, run);
-  expect(r.status).toBe(403);
-  r = await post(`${tickets}/${mgr.id}/plan`, { action: "start" }, run);
-  expect(r.status).toBe(403);
-
-  // The manager's run answers the user's message in its chat.
-  const real = board.userChatRun.bind(board);
-  board.userChatRun = (slug, id) => id === mgr.id || real(slug, id);
-  try {
-    r = await post(`${tickets}/${mgr.id}/adopt`, { ids: [a.id, b.id, kidOfElsewhere.id] }, run);
-    expect(r.status).toBe(200);
-    const adopt = (await r.json()) as any;
-    expect(adopt.adopted.map((t: any) => t.title)).toEqual(["A", "B"]);
-    expect(adopt.skipped).toEqual([{ id: kidOfElsewhere.id, reason: `belongs to plan ${elsewhere.id}` }]);
-    // Another ticket's run can't adopt for it.
-    r = await post(`${tickets}/${mgr.id}/adopt`, { ids: [elsewhere.id] }, `${p.slug}/${a.id}`);
-    expect(r.status).toBe(403);
-    r = await post(`${tickets}/${a.id}`, { dependsOn: [b.id], needs: ["emulator"] }, run, "PATCH");
-    expect(r.status).toBe(200);
-    expect(((await r.json()) as any).needs).toEqual(["emulator"]);
-    r = await post(`${tickets}/${elsewhere.id}`, { title: "x" }, run, "PATCH");
-    expect(r.status).toBe(403);
-    // Created children wait in Backlog in the mode asked for; the plan isn't running.
-    r = await post(tickets, { title: "New child", mode: "interview", status: "ready" }, run);
-    const kid = (await r.json()) as any;
-    expect([kid.parentId, kid.status, kid.mode]).toEqual([mgr.id, "backlog", "interview"]);
-    r = await post(`${tickets}/${kid.id}`, { parentId: null }, run, "PATCH");
-    expect(((await r.json()) as any).parentId).toBeNull();
-    r = await post(`${tickets}/${kid.id}`, { parentId: mgr.id }, undefined, "PATCH");
-    expect(r.status).toBe(400);
-    // Only start / resume, only its own plan.
-    r = await post(`${tickets}/${mgr.id}/plan`, { action: "pause" }, run);
-    expect(r.status).toBe(403);
-    r = await post(`${tickets}/${elsewhere.id}/plan`, { action: "start" }, run);
-    expect(r.status).toBe(403);
-    r = await post(`${tickets}/${mgr.id}/plan`, { action: "start" }, run);
-    expect(r.status).toBe(200);
-    const plan = ((await r.json()) as any).plan;
-    expect(plan.state).toBe("running");
-    expect(store.listComments(p.slug, mgr.id).some((c) => c.text.startsWith("Plan started by the planner"))).toBe(true);
-    await post(`${tickets}/${mgr.id}/plan`, { action: "pause" });
-    // Paused: the user's chat still gives rights (the plan isn't done).
-    r = await post(`${tickets}/${a.id}`, { body: "clearer" }, run, "PATCH");
-    expect(r.status).toBe(200);
-    r = await post(`${tickets}/${mgr.id}/plan`, { action: "resume" }, run);
-    expect(((await r.json()) as any).plan.state).toBe("running");
-    await post(`${tickets}/${mgr.id}/plan`, { action: "done" });
-    // Done: the user's chat may still tidy up the plan's own children, but not adopt more or restart it.
-    r = await post(`${tickets}/${a.id}`, { body: "late" }, run, "PATCH");
-    expect(r.status).toBe(200);
-    r = await post(`${tickets}/${elsewhere.id}`, { body: "late" }, run, "PATCH");
-    expect(r.status).toBe(403);
-    r = await post(`${tickets}/${mgr.id}/adopt`, { ids: [elsewhere.id] }, run);
-    expect(r.status).toBe(403);
-    r = await post(`${tickets}/${mgr.id}/plan`, { action: "resume" }, run);
-    expect(r.status).toBe(403);
-  } finally {
-    board.userChatRun = real;
-  }
 });
 
 test("a Planning chat answering the user's message may change any other ticket on its board, logged as a user request", async () => {
@@ -1434,40 +1318,6 @@ test("tickets a schedule's run creates are linked to that schedule; the list sho
   const list = (await (await fetch(url)).json()) as any[];
   expect(list[0]).toMatchObject({ id: s.id, spend7dUsd: 0, quietPerDay: [] });
   (board as any).runnerRights = real;
-});
-
-test("a ticket made from a proposed-tickets card stays created after it is renamed and started, and Create can't make it twice", async () => {
-  const { createdFromDraft } = await import("../../web/src/features/board/proposalMatch");
-  const path = tempDir("ck-card-");
-  const p = (await (await fetch(`${base}/api/profiles`, json("POST", { name: "Card Proj", path }))).json()) as any;
-  const tickets = `${base}/api/profiles/${p.slug}/tickets`;
-  const chat = (await (await fetch(tickets, json("POST", { title: "Tests" }))).json()) as any;
-  const keyed = { title: "Book in 1.5 minutes", description: "d", key: "fix" };
-  const plain = { title: "Update test docs", description: "d" };
-  const create = (d: { title: string; key?: string }) =>
-    fetch(tickets, json("POST", { title: d.title, body: "d", status: "backlog", parentId: chat.id, proposedAs: d.title, ...(d.key ? { planKey: d.key } : {}) }));
-  let r = await create(keyed);
-  expect(r.status).toBe(201);
-  const a = (await r.json()) as any;
-  expect(a.proposedAs).toBe(keyed.title);
-  const b = (await (await create(plain)).json()) as any;
-
-  // The children's own runs rename them, then they start and move on.
-  await fetch(`${tickets}/${a.id}`, json("PATCH", { title: "Round minute fractions up" }));
-  await fetch(`${tickets}/${b.id}`, json("PATCH", { title: "Docs: new guard lines" }));
-  store.updateTicket(p.slug, a.id, { status: "in_progress", runCount: 1 });
-  store.updateTicket(p.slug, b.id, { status: "review", runCount: 1 });
-  const all = (await (await fetch(tickets)).json()) as any[];
-  expect(createdFromDraft(all, chat.id, keyed)?.id).toBe(a.id);
-  expect(createdFromDraft(all, chat.id, plain)?.id).toBe(b.id);
-
-  // Create clicked again (stale card, another tab): the ticket it already made, no duplicate.
-  r = await create(keyed);
-  expect(r.status).toBe(200);
-  expect(((await r.json()) as any).id).toBe(a.id);
-  r = await create(plain);
-  expect(((await r.json()) as any).id).toBe(b.id);
-  expect(((await (await fetch(tickets)).json()) as any[]).length).toBe(3);
 });
 
 test("a card's key matches an older child without a proposed title, but never one a different draft made", async () => {

@@ -534,8 +534,8 @@ export function createContext(deps: ServerDeps) {
    * Board runs send RUN_HEADER ("<profile>/<ticket id>") with ticket changes. Who may change which ticket:
    * - a Planning chat answering the user's message (Board.userRequestRights) acts for the user on any ticket of its
    *   board but its own: returned as `requester`;
-   * - a planner on its own child tickets: any run of a running plan, or a reply to the user's message in the
-   *   planner's chat (Board.plannerRights): returned as `planner`;
+   * - a main ticket (or tool group) on its own family: any of its runs but a quiet reply (Board.plannerRights):
+   *   returned as `planner`;
    * - any other active work run or chat reply (Board.runnerRights) on any other ticket of its board, when its task
    *   calls for it: returned as `runner`. Starting runs that way is limited (Board.runStart), and so is closing work.
    * - a chat on another board answering a message the user typed there (Board.userAskedRun, checked on its own board)
@@ -575,11 +575,11 @@ export function createContext(deps: ServerDeps) {
     const runner = mine ? board.runnerRights(slug, runId) : null;
     if (runner) return { runner };
     if (planner) {
-      throw new HttpError(403, `${target!.id} is not a child ticket of plan ${planner.id}; the planner may only change its own child tickets`);
+      throw new HttpError(403, `${target!.id} is not in the family of ${planner.id}; a main ticket may only change its own tool tickets`);
     }
     throw new HttpError(403, "changing the board is disabled inside a board run that isn't working right now (or is a Planning chat " +
       "without the user's message, a reply to another ticket's question or a huddle helper): only a ticket's active run or chat reply, " +
-      "a Planning chat answering the user's message, and a planner on its own child tickets may change other tickets");
+      "a Planning chat answering the user's message, and a main ticket on its own tool tickets may change other tickets");
   };
   /** The refusal for a run reaching another board without the user's typed message (see runRights and askedBy). */
   const otherBoard = (what: string, slug: string, runSlug: string) =>
@@ -776,7 +776,7 @@ export function createContext(deps: ServerDeps) {
     // Waiting on a schedule delete reads the board's schedules: rare, worked out each time.
     if (session?.pendingScheduleDeletes?.length) a = raw();
     else {
-      const cross = crossTicket(t) || !!session?.pendingNewTickets?.length;
+      const cross = crossTicket(t);
       const key = [sessionKey, running ? 1 : 0, huddle ? JSON.stringify(huddle) : "", cross ? `${store.ticketsVersion(p.slug)}|${board.runningKey(p.slug)}` : ""].join("\u0000");
       const id = `${p.slug}/${t.id}`;
       const hit = attentionMemo.get(id);

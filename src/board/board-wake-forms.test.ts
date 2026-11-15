@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mainWakePrompt, orchestratorPrompt, statusNudgePrompt } from "../runs/prompts";
+import { mainWakePrompt, statusNudgePrompt } from "../runs/prompts";
 import { parseSession, type Question, type SessionEntry } from "../runs/session";
 import type { Ticket } from "../core/types";
 import { formStates, fresh, startProgress, type Progress } from "../../web/src/features/ticket/questionForms";
@@ -46,7 +46,6 @@ test("wake texts list the open questions and ask Claude to ask them again; witho
   for (const text of [
     wake(QS),
     statusNudgePrompt("/tmp/status.md", [], QS),
-    orchestratorPrompt(T, { kind: "event", events: ["x"], table: "", board: "b", outputDir: "/tmp", open: QS }),
   ]) {
     expect(text).toContain("# Questions still open");
     expect(text).toContain("call ask_questions again with exactly the same questions and options");

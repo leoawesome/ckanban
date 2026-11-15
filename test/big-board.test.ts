@@ -15,6 +15,7 @@ import { pollHuddleSessions } from "../src/huddle/huddle-session";
 import { JobRunner } from "../src/schedules/jobs";
 import { pollSessionsSliced, primeSessions, SessionCache } from "../src/runs/session";
 import { Store } from "../src/core/store";
+import { retireOldPlans } from "../src/board/retire-plans";
 import { BoardBrowsers } from "../src/browser/board-browsers";
 import { fakes, harness } from "./support/fake-chrome";
 import { RunLogCompressor } from "../src/runs/run-log-compress";
@@ -55,8 +56,10 @@ store.saveProfile({ name: "Big", slug: "big", path: tempDir("ck-plain-"), baseBr
 // One open feature (ticket FEATURE_AT) with 300 Done tasks under it, as a long-running feature has.
 const FEATURE_AT = BIG - 100;
 const FEATURE_ID = `t_20261001_${FEATURE_AT.toString(36).padStart(4, "0")}`;
+// And one old plan from before planned tickets were retired (ticket 1999 with 100 plain children), for the migration.
+const OLD_PLANNER = `t_20261001_${(1999).toString(36).padStart(4, "0")}`;
 const familyLines = (i: number) =>
-  i === FEATURE_AT ? "\nmain: true" : i >= 1000 && i < 1300 ? `\nparentId: ${FEATURE_ID}\ntool: true` : "";
+  i === FEATURE_AT ? "\nmain: true" : i >= 1000 && i < 1300 ? `\nparentId: ${FEATURE_ID}\ntool: true` : i >= 2000 && i < 2100 ? `\nparentId: ${OLD_PLANNER}` : "";
 // One ticket through the Store, then copies of its file (much faster than BIG Store writes).
 const first = store.createTicket("big", { title: "Ticket 0", body: "", status: "done" });
 const template = readFileSync(join(store.root, "profiles", "big", "tickets", first.id, "ticket.md"), "utf8");
@@ -353,6 +356,11 @@ const jobs: [string, () => Promise<unknown>][] = [
     expect(had).toBeGreaterThanOrEqual(5000);
     fresh.appendHuddleMessage("big", LIVE_HUDDLE, { seq: 9999, from: "main", kind: "message", text: "One more", mentions: [], at: "2026-10-02T00:00:00.000Z" } as any);
     for (let n = 0; n < 50; n++) expect(fresh.readHuddleMessages("big", LIVE_HUDDLE)).toHaveLength(had + 1);
+  }],
+  // Startup's one-time migration of old plans (101 tickets change), then its quick no-op pass on every later start.
+  ["retiring old plans (the migration, then its no-op pass)", async () => {
+    expect(await retireOldPlans(fresh)).toEqual({ big: 101 });
+    expect(await retireOldPlans(fresh)).toEqual({});
   }],
   ["the ticket list after 20 ticket writes", async () => {
     for (let n = 0; n < 20; n++) {

@@ -1,15 +1,17 @@
 import { expect, test } from "bun:test";
-import { findCycle, isComplete, planProblem, planStep, planTable, resolveDeps, wakeupCap } from "./plan";
+import { findCycle, isComplete, planProblem, planStep as rawStep, resolveDeps, type PlanStepOptions } from "./plan";
 import type { Plan, Ticket } from "../core/types";
 
 let n = 0;
 const T = (p: Partial<Ticket>): Ticket => ({
   id: `t_${++n}`, title: "x", status: "backlog", order: n, sessionId: null, worktree: null, branch: null, prUrl: null,
   outcome: null, lastActivity: null, lastRunAt: null, runCount: 0, error: null, createdAt: `2026-10-01T00:00:${String(n).padStart(2, "0")}Z`,
-  updatedAt: "", body: "", parentId: "t_plan", ...p,
+  updatedAt: "", body: "", parentId: "t_plan", tool: true, ...p,
 } as Ticket);
 const plan = (p: Partial<Plan> = {}): Plan => ({ state: "running", wakeups: 0, startedAt: "", originalCount: 5, ...p });
 const idle = () => false;
+const managed = { summary: (t: Ticket) => `did ${t.title}`, report: () => null };
+const planStep = (p: Plan, kids: Ticket[], running: (id: string) => boolean, o: Partial<PlanStepOptions> = {}) => rawStep(p, kids, running, { managed, ...o });
 
 function abcde() {
   const a = T({ title: "A", planKey: "a" });
@@ -26,7 +28,7 @@ test("dependencies resolve by key or id; unknown ones are reported", () => {
   expect(resolveDeps(c, all).deps).toEqual([a]);
   expect(resolveDeps(T({ dependsOn: ["nope"] }), all).missing).toEqual(["nope"]);
   expect(planProblem(all)).toBeNull();
-  expect(planProblem([])).toContain("no child tickets");
+  expect(planProblem([])).toContain("no tool tickets");
   expect(planProblem([...all, T({ title: "Z", dependsOn: ["ghost"] })])).toContain('"Z" depends on unknown ticket "ghost"');
 });
 
@@ -58,16 +60,17 @@ test("planStep starts every child whose dependencies are done, in order", () => 
   expect(planStep(plan(), all, idle).allComplete).toBe(true);
 });
 
-test("failures, questions and open PRs become events once; dead ends are reported", () => {
+test("every result becomes a finished event once; dead ends are reported", () => {
   const f = T({ title: "F", status: "review", outcome: "failed", runCount: 1, error: "tests failed" });
   const q = T({ title: "Q", status: "review", outcome: "needs_input", runCount: 1 });
   const p = T({ title: "P", status: "review", outcome: "done", runCount: 1, prUrl: "https://x/pull/1" });
   const s = planStep(plan(), [f, q, p], idle);
   expect(s.events.map((e) => e.line)).toEqual([
-    `${f.id} "F" failed (review): tests failed`,
-    `${q.id} "Q" is asking questions (review)`,
-    `${p.id} "P" finished with an open PR: https://x/pull/1`,
+    `finished: ${f.id} "F"; outcome failed; summary: did F; report: no report`,
+    `finished: ${q.id} "Q"; outcome questions; summary: did Q; report: no report`,
+    `finished: ${p.id} "P"; outcome done; summary: did P; report: no report`,
   ]);
+  expect(s.events.every((e) => e.result)).toBe(true);
   const seen = Object.fromEntries(s.events.map((e) => [e.childId, e.sig]));
   const again = planStep(plan({ seen }), [f, q, p], idle);
   expect(again.events).toEqual([]);
@@ -79,15 +82,11 @@ test("failures, questions and open PRs become events once; dead ends are reporte
   expect(planStep(plan({ seen }), [{ ...f, runCount: 2 }], idle).events).toHaveLength(1);
 });
 
-test("isComplete, wakeupCap, planTable", () => {
+test("isComplete", () => {
   expect(isComplete(T({ status: "done" }))).toBe(true);
   expect(isComplete(T({ status: "review", outcome: "done" }))).toBe(true);
   expect(isComplete(T({ status: "review", outcome: "done", prUrl: "u" }))).toBe(false);
   expect(isComplete(T({ status: "review", outcome: "failed" }))).toBe(false);
-  expect(wakeupCap(1)).toBe(5);
-  expect(wakeupCap(30)).toBe(90);
-  const { a, b } = abcde();
-  expect(planTable([a, b])).toBe(`- ${a.id} [a] "A": backlog\n- ${b.id} [b] "B": backlog; waits for ${a.id}`);
 });
 
 test("needs is only a hint: children that list the same device start together", () => {
@@ -98,9 +97,9 @@ test("needs is only a hint: children that list the same device start together", 
   expect(s.start).toEqual([e1.id, e2.id, free.id]);
 });
 
-test("children waiting on the user are never started; alone they end the plan with a reason naming them", () => {
-  const asks = T({ title: "Asks" });
-  const ok = T({ title: "Ok" });
+test("plain children (not tool tickets) waiting on the user are never started; alone they end the plan with a reason naming them", () => {
+  const asks = T({ title: "Asks", tool: false });
+  const ok = T({ title: "Ok", tool: false });
   const why = (t: Ticket) => (t.id === asks.id ? "2 questions for you" : null);
   const s = planStep(plan(), [asks, ok], idle, { waitingOnUser: why });
   expect(s.start).toEqual([ok.id]);
@@ -111,13 +110,9 @@ test("children waiting on the user are never started; alone they end the plan wi
   expect(end.start).toEqual([]);
   expect(end.deadEnd).toBe('waiting for you: "Asks" (2 questions for you)');
   // A child that depends on it is listed too.
-  const after = T({ title: "After", dependsOn: [asks.id] });
+  const after = T({ title: "After", dependsOn: [asks.id], tool: false });
   expect(planStep(plan(), [asks, done, after], idle, { waitingOnUser: why }).deadEnd)
     .toBe('waiting for you: "Asks" (2 questions for you); also not done: "After" (backlog)');
-});
-
-test("planTable lists what a child needs", () => {
-  expect(planTable([T({ id: "t_e", title: "E", needs: ["emulator"] })])).toContain("needs emulator");
 });
 
 test("a plan with 6 ready children starts all 6 together", () => {

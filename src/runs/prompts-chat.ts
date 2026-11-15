@@ -3,7 +3,7 @@ import { helperCommand } from "./artifact";
 import type { RepoKind } from "./git";
 import type { Comment, Ticket } from "../core/types";
 import type { FollowUpPlace } from "../../web/src/features/ticket/followUp";
-import { AFTER_ANSWERS, BOARD_RULE, BRANCH_FORMAT, CHAT_PLAIN_WORDS, CHROME_RULE, FEATURE_RULE, FILE_LINK_RULE, FOLLOW_UP_RULE, HELPER_RULE_RULE, HUDDLE_NOW_RULE, INTERVIEW, JOB_RULE, KEYS_RULE, MANAGE_RULE, NEW_MAIN_RULE, NOTIFY_USER_RULE, OUTBOUND_RULE, PLAIN_WORDS, PLANNING_ARTIFACT_RULE, QUESTIONS_FORMAT, REPLY_RULE, RESULT_RULE, REVIEW_HUDDLE_FORMAT, SCHEDULES_RULE, SELF_MOVE_RULE, SQUAD_FORMAT, TEAMMATE_FORMAT, TICKETS_FORMAT, TICKET_FORMAT, artifactRule, autoSection, bugReportRule, canCommit, context, deliverableRule, landRule, mockupsRule, notesSection, recallSection, reviewFileRule, sourceNote, targetDesignRule, type Home, type PromptContext, whereRule } from "./prompts-rules";
+import { AFTER_ANSWERS, BOARD_RULE, BRANCH_FORMAT, CHAT_PLAIN_WORDS, CHROME_RULE, FEATURE_RULE, FILE_LINK_RULE, FOLLOW_UP_RULE, HELPER_RULE_RULE, HUDDLE_NOW_RULE, INTERVIEW, JOB_RULE, KEYS_RULE, NEW_MAIN_RULE, NOTIFY_USER_RULE, OUTBOUND_RULE, PLAIN_WORDS, PLANNING_ARTIFACT_RULE, QUESTIONS_FORMAT, REPLY_RULE, RESULT_RULE, REVIEW_HUDDLE_FORMAT, SCHEDULES_RULE, SELF_MOVE_RULE, SPLIT_RULE, SQUAD_FORMAT, TEAMMATE_FORMAT, TICKET_FORMAT, artifactRule, autoSection, bugReportRule, canCommit, context, deliverableRule, landRule, mockupsRule, notesSection, recallSection, reviewFileRule, sourceNote, targetDesignRule, type Home, type PromptContext, whereRule } from "./prompts-rules";
 import { MAIN_FIRST_REPLY, MAIN_PLANNING, PUSHBACK_RULE, mainPlannedRule } from "./prompts-planning";
 import { automationNote, mainChatRules, mainWhere, toolChatPrompt, toolRules, type RunRole } from "./prompts-main";
 
@@ -66,9 +66,7 @@ export function firstRunPrompt(t: Ticket, ctx: PromptContext): string {
 ${t.body.trim() || "(no description)"}
 ${sourceNote(t)}${scheduleNote(ctx.schedule)}${comments.length ? `\n# User notes\n${comments.map((c) => `- ${c.text}`).join("\n")}\n` : ""}${notesSection(notes)}
 ${recallSection(ctx.recall)}${interview ? `${INTERVIEW}\n\n` : ""}# Rules
-- ${ctx.main ? mainWhere(ctx.main) : whereRule(t, ctx.repo, !!ctx.linked, inPlace)}${ctx.main ? "" : t.parentId && ctx.repo === "remote" && !inPlace && !ctx.linked ? `
-- This ticket is part of a plan (planner ticket ${t.parentId}): earlier tickets of the plan may have landed on the remote base branch after this worktree was created. Before you start, \`git fetch\` and rebase this branch onto the remote base branch.` : t.parentId && ctx.repo === "local" && !inPlace && !ctx.linked ? `
-- This ticket is part of a plan (planner ticket ${t.parentId}): earlier tickets of the plan may have been merged into the local base branch after this worktree was created. Before you start, rebase this branch onto the local base branch (there is no remote to fetch from).` : ""}
+- ${ctx.main ? mainWhere(ctx.main) : whereRule(t, ctx.repo, !!ctx.linked, inPlace)}
 ${ctx.main && t.runCount === 0 ? `- ${MAIN_FIRST_REPLY}
 ` : ""}${ctx.main ? "" : `- Decide whether this task requires changing files.
 - ${landRule(ctx.repo, inPlace, false, ctx.home)}
@@ -290,12 +288,12 @@ How to help:
 - ${KEYS_RULE}
 - Otherwise reply naturally, like in a normal chat.
 - Tags: if the ticket has none and one clearly fits (prefer tags the board already uses), you may suggest 1-3 with \`suggest_tags\`; the user keeps or drops them.
-- Managing the board: ONLY when the user asks for it in their message (never on your own initiative), you may change other tickets on this board with the ckanban tools: move_ticket, update_ticket, comment_ticket, create_ticket, chat_ticket, stop_ticket, and adopt_tickets / plan_control to manage or run tickets from this ticket's plan. The same tools (not adopt_tickets or plan_control) work on another board's tickets when the user asks: pass that board's \`profile\` (\`list_profiles\` lists the boards); new tickets there go to Backlog unless the user asks to start them. When the user asks, update_status, gather_tickets and the chat search tools (read_chat) also work on any feature or ticket, on this board or another (pass its \`profile\`). Every change is logged on the changed ticket. Say in your reply what you changed. ${FEATURE_RULE} ${NEW_MAIN_RULE}
+- Managing the board: ONLY when the user asks for it in their message (never on your own initiative), you may change other tickets on this board with the ckanban tools: move_ticket, update_ticket, comment_ticket, create_ticket, chat_ticket, and stop_ticket. The same tools work on another board's tickets when the user asks: pass that board's \`profile\` (\`list_profiles\` lists the boards); new tickets there go to Backlog unless the user asks to start them. When the user asks, update_status, gather_tickets and the chat search tools (read_chat) also work on any feature or ticket, on this board or another (pass its \`profile\`). Every change is logged on the changed ticket. Say in your reply what you changed. ${FEATURE_RULE} ${NEW_MAIN_RULE}
 - ${OFF_TOPIC_RULE}
 - ${SCHEDULES_RULE}
 - ${HELPER_RULE_RULE}
 - To delete tickets, call the \`propose_delete\` tool with their ids and a one-line reason: the board shows a card and the user's click deletes them (delete_ticket is refused here).
-- Never edit, stop or delete this ticket itself: ask the user to do it on the board. ${SELF_MOVE_RULE}${main || followUps ? "" : ` ${PLANNING_GO_AHEAD_RULE}`} Otherwise changing the project's files and starting this ticket's work stay off-limits while planning; to run a plan the user can also press Start plan in the Plan tab.
+- Never edit, stop or delete this ticket itself: ask the user to do it on the board. ${SELF_MOVE_RULE}${main || followUps ? "" : ` ${PLANNING_GO_AHEAD_RULE}`} Otherwise changing the project's files and starting this ticket's work stay off-limits while planning.
 ${bugReportRule(t)}
 
 ${mockupsRule(outputDir)}
@@ -306,7 +304,7 @@ ${QUESTIONS_FORMAT}
 
 ${main?.planned ? mainPlannedRule(main.planned) : TICKET_FORMAT}
 
-${main ? MAIN_PLANNING : TICKETS_FORMAT}
+${main ? MAIN_PLANNING : SPLIT_RULE}
 
 ${BRANCH_FORMAT}
 
@@ -328,15 +326,13 @@ ${main ? "" : `If the message only asks you to plan, audit, review, list ideas, 
 If you need decisions from the user, ask with the ask_questions tool.
 ${bugReportRule(t)}
 
-If the message asks for new tickets from this ticket: do not modify any files or start that work. Write each description from what you know here (files, decisions, what shipped), so the new ticket's Claude needs no other context. ${TICKETS_FORMAT}
+If the message asks to split this work into several tickets: do not modify any files or start that work. ${SPLIT_RULE}
 ${BRANCH_FORMAT}
 ${TEAMMATE_FORMAT}
 ${SQUAD_FORMAT}
 ${HUDDLE_NOW_RULE}
-If proposing tickets, a branch, a teammate or a huddle was all the message asked for, put <ckanban-stay/> on its own line before the result line: the card then stays in its column. Not after starting a huddle: the card waits in Review while it runs.
+If proposing a ticket, a branch, a teammate or a huddle was all the message asked for, put <ckanban-stay/> on its own line before the result line: the card then stays in its column. Not after starting a huddle: the card waits in Review while it runs.
 
-${MANAGE_RULE}
-If managing tickets (adopting, ordering, starting the plan) was all the message asked for, also end with <ckanban-stay/>.
 ${SELF_MOVE_RULE}`}
 
 ${targetDesignRule(outputDir)}${QUESTIONS_FORMAT}${artifactRule(artifacts)}

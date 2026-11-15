@@ -82,7 +82,7 @@ local listener the peer TCP port must belong to a web browser the daemon did not
 `integrations/guard.ts`); otherwise 403. The 403 text explains it is for the user only.
 
 **Run rights (`runRights`).** Ticket changes sent with `x-ckanban-run` are allowed only for: a Planning chat answering
-the user's typed message (any ticket of its board but its own: "requester"); a planner or main ticket on its own
+the user's typed message (any ticket of its board but its own: "requester"); a main ticket or tool group on its own
 family ("planner"); an active work run or chat reply on other tickets of its board ("runner"); a chat on another board
 answering the user's typed message ("guest"). Everything else is 403. Changes made this way get an `ai` comment on
 the changed ticket naming who made them. A run touching its own ticket is 403, except the self move described under
@@ -449,7 +449,7 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/tickets` | query `scope`, see below | 200 | 400 bad scope or status |
-| POST | `/tickets` | see below | 201 `TicketView` plus `gather?`, `planPaused?`, `note?`; 200 `TicketView` when a `proposedAs` draft already exists | 400, 403, 409 |
+| POST | `/tickets` | see below | 201 `TicketView` plus `gather?`, `planPaused?`, `note?` | 400, 403, 409 |
 | GET | `/tickets/:id` | | 200 `TicketView` | 404 |
 | PATCH | `/tickets/:id` | see below | 200 `TicketView` (plus `selfMove` for a self move) | 400, 403, 409 (with `confirm` for UI source) |
 | DELETE | `/tickets/:id` | | 204 | 403 from a run (except a main ticket deleting its own tool ticket), 409 merge running or delete failed |
@@ -468,9 +468,10 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 **POST body.** `title` (required), `body`, `status` (one of `STATUSES`, default `backlog`), `mode` (`auto` or
 `interview`, default interview), `parentId`, `planKey`, `dependsOn: string[]`, `needs: string[]`, `tags: string[]`,
 `partOf`, `important`, `kind` (`TICKET_KINDS`), `model`, `effort`, `main: boolean`, `gather: {id, group}[]` (only with
-`main: true`), `newGroup`, `sessionId` (link an existing Claude session), `proposedAs`. Rules: `main: true` from a run
-needs a run answering the user's typed message (else 403) and refuses `parentId` and `sessionId` (400). A planner run
-adds children to its own plan (409 when the child cap is reached, 400 unknown dependency). From a run, an unsuitable
+`main: true`), `newGroup`, `sessionId` (link an existing Claude session). Rules: `main: true` from a run
+needs a run answering the user's typed message (else 403) and refuses `parentId` and `sessionId` (400). A main
+ticket's (or tool group's) run adds tool tickets to its own family (400 unknown dependency). `parentId` from anyone
+else is 400: planned tickets are retired. From a run, an unsuitable
 `partOf` is replaced and explained in `note`. Starting statuses from another ticket's run are checked for loops (409).
 
 **PATCH body.** Any of: `status`, `title`, `body`, `expectedBody`, `mode`, `order`, `notice: null`, `dependsOn`,
@@ -543,8 +544,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/status/notes` | `{text}` | 200 status shape | 403 run/huddle header, 400 |
 | POST | `/own-work` | | 200 `TicketView` | 403 run without the user's message, 400 |
 | POST | `/gather` | `{tickets: {id, group?}[], newGroup?, hide?}` | 200 `{gathered, movedUp, skipped, group, kept}` | 403, 400 |
-| POST | `/adopt` | `{ids: string[]}` | 200 `{adopted: TicketView[], skipped}` | 403 run rules, 400 empty ids |
-| POST | `/plan` | `{action: "start"\|"pause"\|"resume"\|"done"}` | 200 `TicketView` | 403 run rules, 400 |
+| POST | `/plan` | `{action: "start"\|"pause"\|"resume"\|"done"}` | 200 `TicketView` | 403 run rules, 400 (start/resume on a ticket that is neither a main ticket nor a tool group) |
 | POST | `/ask` | `{target, question}`; only the run of this ticket | 202 `{message}` | 403, 404 target, 400 |
 | POST | `/merge-into-main` | only the tool ticket's own run | 200 `{message}` | 403, 409 |
 | POST | `/land` | `{summary}`; the main ticket's own run or the user | 200 `{message}` | 403, 409 |

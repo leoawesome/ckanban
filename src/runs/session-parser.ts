@@ -210,10 +210,9 @@ export class SessionParser {
       return c;
     });
     dropBlockedMoves(entries);
-    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.newTickets || e.branch || e.deletion || e.scheduleDeletion || e.helperRule || e.teammate || e.squad || e.automation || e.keys));
+    const last = entries.findLast((e) => e.kind === "text" && (e.text || e.questions || e.proposal || e.branch || e.deletion || e.scheduleDeletion || e.helperRule || e.teammate || e.squad || e.automation || e.keys));
     const lastText = !last ? "" : last.text
       || (last.questions ? `Asked ${last.questions.length} question${last.questions.length > 1 ? "s" : ""}`
-        : last.newTickets ? `Proposed ${last.newTickets.length} new ticket${last.newTickets.length > 1 ? "s" : ""}`
         : last.branch ? "Offered to branch this ticket"
         : last.deletion ? `Asked to delete ${last.deletion.ids.length} ticket${last.deletion.ids.length > 1 ? "s" : ""}`
         : last.scheduleDeletion ? "Asked to delete a schedule"
@@ -272,7 +271,7 @@ function handBack(text: string): string {
   return text.slice(m[0].length).split("\n").map((l) => l.replace(/^ {2}/, "")).join("\n").trim();
 }
 
-function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "openFormId" | "pendingProposal" | "pendingNewTickets" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys" | "pendingScheduleDeletes" | "pendingHelperRules"> {
+function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestions" | "openForm" | "openAsk" | "openFormId" | "pendingProposal" | "pendingTeammates" | "pendingSquads" | "pendingAutomations" | "pendingKeys" | "pendingScheduleDeletes" | "pendingHelperRules"> {
   let lastUser = -1;
   entries.forEach((e, i) => {
     // Huddle messages and an automation's items don't answer what Claude asked the user (another ticket's message, e.g.
@@ -289,7 +288,6 @@ function pendingSince(entries: SessionEntry[]): Pick<ParsedSession, "openQuestio
     ...(form?.ask ? { openAsk: form.ask } : {}),
     ...(form ? { openFormId: form.uuid } : {}),
     pendingProposal: after.findLast((e) => e.proposal)?.proposal ?? null,
-    pendingNewTickets: after.findLast((e) => e.newTickets)?.newTickets ?? [],
     pendingTeammates: after.filter((e) => e.teammate).map((e) => e.uuid),
     pendingSquads: after.filter((e) => e.squad).map((e) => e.uuid),
     pendingAutomations: after.filter((e) => e.automation).map((e) => e.uuid),

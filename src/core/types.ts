@@ -236,7 +236,7 @@ export interface Ticket {
   parentId?: string | null;
   /** Short name siblings use in dependsOn (from the planner's proposal). */
   planKey?: string | null;
-  /** Title of the chat proposal (a propose_tickets draft or a follow-up card) it was created from, so that card still finds it after a rename. */
+  /** Title of the chat proposal (a follow-up card, or an old proposed-tickets card) it was created from, so that card still finds it after a rename. */
   proposedAs?: string | null;
   /** Siblings (ticket id or planKey) that must be done before a running plan starts this ticket. */
   dependsOn?: string[];
@@ -842,7 +842,7 @@ export interface ActivityEntry {
 
 export type PlanState = "running" | "paused" | "finishing" | "done" | "stuck";
 
-/** A planner's unattended run of its child tickets (see plan.ts and Board.advancePlans). */
+/** A main ticket's (or tool group's) unattended run of its tool tickets (see plan.ts and Board.advancePlans). */
 export interface Plan {
   state: PlanState;
   /** Old plan files may still carry maxConcurrent (a past "at once" limit); it is ignored: every ready child starts. */

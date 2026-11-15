@@ -58,16 +58,6 @@ export interface TicketProposal {
   partOf?: string | null;
 }
 
-/** A ticket a planner's chat proposed creating; key/dependsOn order the plan. */
-export interface NewTicketDraft extends TicketProposal {
-  key?: string;
-  dependsOn?: string[];
-  /** Exclusive resources (e.g. emulator), see Ticket.needs. */
-  needs?: string[];
-  /** Tags the ticket gets when created (see Ticket.tags). */
-  tags?: string[];
-}
-
 export interface SessionEntry {
   uuid: string;
   at: string;
@@ -90,7 +80,6 @@ export interface SessionEntry {
   /** Improved title/description Claude proposed (rendered with an Apply button). */
   proposal?: TicketProposal;
   /** New tickets Claude proposed splitting the work into (rendered with Create buttons). */
-  newTickets?: NewTicketDraft[];
   /** Claude offered to branch this ticket (rendered with a Branch button). */
   branch?: { reason: string };
   /** Claude proposed a huddle roster (propose_huddle; rendered with a Start button). */
@@ -145,7 +134,7 @@ export type BlockKind = "questions" | "proposal" | "tickets";
 
 /** Marker Claude adds when a Review message only asked for planning; the board moves the card. */
 export const MOVE_TO_PLANNING_RE = /<ckanban-move\s+to="planning"\s*\/?>(?:\s*<\/ckanban-move>)?/;
-/** A Review/Done chat reply that only proposed tickets: the card stays in its column. */
+/** A Review/Done chat reply that only proposed something (a ticket, a branch, a huddle): the card stays in its column. */
 export const STAY_RE = /<ckanban-stay\s*\/?>(?:\s*<\/ckanban-stay>)?/;
 
 const CONTEXT_TAG = "<ckanban-context";
@@ -224,30 +213,8 @@ export function parseProposal(v: any): TicketProposal | null {
   } : null;
 }
 
-export function parseNewTickets(v: any): NewTicketDraft[] | null {
-  if (!Array.isArray(v)) return null;
-  const ts = v.map((x: any) => {
-    const star = starredTitle(typeof x?.title === "string" ? x.title.trim() : "");
-    const d: NewTicketDraft = {
-      title: star.title.trim(),
-      description: typeof x?.description === "string" ? x.description.trim() : "",
-    };
-    if (star.important || x?.important === true) d.important = true;
-    const key = typeof x?.key === "string" ? x.key.trim() : "";
-    if (key) d.key = key;
-    const deps = Array.isArray(x?.dependsOn) ? x.dependsOn.filter((k: unknown) => typeof k === "string" && k.trim()).map((k: string) => k.trim()) : [];
-    if (deps.length) d.dependsOn = deps;
-    const needs = Array.isArray(x?.needs) ? x.needs.filter((k: unknown) => typeof k === "string" && k.trim()).map((k: string) => k.trim().toLowerCase()) : [];
-    if (needs.length) d.needs = needs;
-    const tags = normalizeTags(x?.tags);
-    if (tags.length) d.tags = tags;
-    return d;
-  }).filter((x) => x.title);
-  return ts.length ? ts : null;
-}
-
-/** Split an assistant text block into visible text + structured questions/proposal/new tickets. */
-export function assistantBlock(text: string): Pick<SessionEntry, "text" | "questions" | "proposal" | "newTickets" | "mockups" | "moved" | "unreadable"> {
+/** Split an assistant text block into visible text + structured questions/proposal. */
+export function assistantBlock(text: string): Pick<SessionEntry, "text" | "questions" | "proposal" | "mockups" | "moved" | "unreadable"> {
   const { text: rest, names: mockups } = stripMockups(text);
   let out = rest;
   let moved: "planning" | undefined;
@@ -270,12 +237,12 @@ export function assistantBlock(text: string): Pick<SessionEntry, "text" | "quest
   };
   const questions = take("ckanban-questions", "questions", parseQuestions);
   const proposal = take("ckanban-ticket", "proposal", parseProposal);
-  const newTickets = take("ckanban-tickets", "tickets", parseNewTickets);
+  // Planned tickets are retired: an old reply's proposed-tickets block is only cut from the text (no card).
+  take("ckanban-tickets", "tickets", (v) => (Array.isArray(v) ? v : null));
   return {
     text: out.trim(),
     ...(questions ? { questions } : {}),
     ...(proposal ? { proposal } : {}),
-    ...(newTickets ? { newTickets } : {}),
     ...(mockups.length ? { mockups } : {}),
     ...(moved ? { moved } : {}),
     ...(unreadable ? { unreadable } : {}),
@@ -324,8 +291,6 @@ export interface ParsedSession {
   openFormId?: string;
   /** Latest ticket proposal since the user's last message. */
   pendingProposal: TicketProposal | null;
-  /** Latest proposed new tickets since the user's last message (some may already be created). */
-  pendingNewTickets: NewTicketDraft[];
   /** Teammate cards (their entry uuids) since the user's last message; Ticket.teammateCards says which were answered. */
   pendingTeammates: string[];
   /** Squad cards (entry uuids) since the user's last message; Ticket.squadCards says which were answered. */
@@ -359,7 +324,6 @@ export interface SessionSummary {
   /** See ParsedSession.openFormId. */
   openFormId?: string;
   pendingProposal: TicketProposal | null;
-  pendingNewTickets: NewTicketDraft[];
   pendingTeammates: string[];
   /** Squad cards (entry uuids) since the user's last message; Ticket.squadCards says which were answered. */
   pendingSquads?: string[];
@@ -456,7 +420,6 @@ export function resultText(content: unknown): string {
 /** Planning-chat tools (ckanban MCP): their input becomes a form or card, like the text blocks. */
 const QUESTIONS_TOOL = /(?:^|__)ask_questions$/;
 const PROPOSAL_TOOL = /(?:^|__)propose_ticket$/;
-const TICKETS_TOOL = /(?:^|__)propose_tickets$/;
 const BRANCH_TOOL = /(?:^|__)propose_branch$/;
 const HUDDLE_TOOL = /(?:^|__)propose_huddle$/;
 const DELETE_TOOL = /(?:^|__)propose_delete$/;
@@ -470,7 +433,7 @@ const AUTOMATION_TOOL = /(?:^|__)propose_automation$/;
 const KEYS_TOOL = /(?:^|__)ask_keys$/;
 
 /** The form or card a planning-chat tool call shows, or null for other tools (or input that can't be read). */
-export function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "newTickets" | "branch" | "huddle" | "deletion" | "scheduleDeletion" | "helperRule" | "teammate" | "squad" | "automation" | "keys"> | null {
+export function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | "proposal" | "branch" | "huddle" | "deletion" | "scheduleDeletion" | "helperRule" | "teammate" | "squad" | "automation" | "keys"> | null {
   const name = String(block.name ?? "");
   // Refused calls (a tool ticket, a line too long) come back as errors and show no card, as for delete_schedule.
   if (HELPER_RULE_TOOL.test(name)) {
@@ -495,10 +458,6 @@ export function cardEntry(block: any): Pick<SessionEntry, "questions" | "ask" | 
   if (PROPOSAL_TOOL.test(name)) {
     const proposal = parseProposal(block.input);
     return proposal && { proposal };
-  }
-  if (TICKETS_TOOL.test(name)) {
-    const newTickets = parseNewTickets(block.input?.tickets);
-    return newTickets && { newTickets };
   }
   if (BRANCH_TOOL.test(name)) return { branch: { reason: typeof block.input?.reason === "string" ? block.input.reason.trim() : "" } };
   if (DELETE_TOOL.test(name)) {

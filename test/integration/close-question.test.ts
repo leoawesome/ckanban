@@ -18,7 +18,7 @@ const T = (p: Partial<Ticket>): Ticket => ({
   outcome: null, lastActivity: null, lastRunAt: null, runCount: 0, error: null, createdAt: "", updatedAt: "", body: "b", ...p,
 });
 const S = (p: Partial<SessionSummary>): SessionSummary => ({
-  title: null, lastMessage: null, artifacts: [], updatedAt: "", openQuestions: 0, pendingProposal: null, pendingNewTickets: [], pendingTeammates: [], ...p,
+  title: null, lastMessage: null, artifacts: [], updatedAt: "", openQuestions: 0, pendingProposal: null, pendingTeammates: [], ...p,
 });
 const Q = (question: string, context?: string) => ({ question, ...(context ? { context } : {}), options: [{ label: "Yes", recommended: true }, { label: "No" }] });
 

@@ -3,22 +3,26 @@ import { basename, dirname } from "node:path";
 import { isGitRepo, listWorktrees, worktreeDir } from "../runs/git";
 import { STUCK_ON_QUESTIONS } from "../helper/attention";
 import type { Question } from "../runs/session";
-import { askClosed, linkProblem, parentLink, withYouTool } from "../../web/src/features/family/family";
+import { askClosed, parentLink, withYouTool } from "../../web/src/features/family/family";
 import { familySig } from "./feature";
 import { mainWakePrompt } from "../runs/prompts";
-import { isManager, managedPlan, progressStep, RESULTS_KEEP, wakeTable } from "./main-ticket";
-import { orchestratorPrompt, type PlanWake } from "../runs/prompts";
-import { childrenOf, isComplete, MAX_RUN_RETURNS, RUN_CHAIN_KEEP, planActive, planProblem, planStep, planTable, wakeupCap } from "./plan";
+import { isManager, progressStep, RESULTS_KEEP, wakeTable } from "./main-ticket";
+import type { PlanWake } from "../runs/prompts";
+import { childrenOf, isComplete, MAX_RUN_RETURNS, RUN_CHAIN_KEEP, planActive, planProblem, planStep } from "./plan";
 import { run as runCmd } from "../runs/git";
 import { type ResultCard, type Plan, type SelfMove, type Ticket } from "../core/types";
 import { nowIso } from "../core/util";
 import type { Board } from "./board";
 import { TELEGRAM_KEEP, ConflictError, sameJson } from "./board-types";
 
-/** Start (or resume) the planner's plan: children switch to auto mode and start in dependency order. */
+/**
+ * Start (or resume) the plan of a main ticket or tool group: its tool tickets start in dependency order. Planned tickets
+ * are retired, so other tickets have no plan to start (old ones became main tickets: retire-plans.ts).
+ */
 export function startPlan(this: Board, slug: string, id: string, opts: { byPlanner?: boolean; why?: string } = {}): Ticket {
   const t = this.store.getTicket(slug, id);
   if (!t) throw new Error(`ticket ${id} not found`);
+  if (!isManager(t)) throw new Error("only a main ticket runs tickets of its own: turn this ticket into a main ticket first");
   const kids = childrenOf(this.store.listTickets(slug), id);
   const problem = planProblem(kids);
   if (problem) throw new Error(`can't start the plan: ${problem}`);
@@ -37,7 +41,7 @@ export function startPlan(this: Board, slug: string, id: string, opts: { byPlann
   for (const k of kids) if (k.status === "backlog" && k.mode !== "auto") this.patch(slug, k.id, { mode: "auto" });
   const out = this.patch(slug, id, { plan, ...(t.outcome && t.outcome !== "done" ? { outcome: null } : {}) });
   const by = opts.byPlanner ? " by the planner" : "";
-  this.store.addComment(slug, id, "ai", resuming ? `Plan resumed${by}${opts.why ? `: ${opts.why}` : ""}.` : `Plan started${by}: ${kids.length} child tickets; each starts as soon as the ones it waits for are done.`);
+  this.store.addComment(slug, id, "ai", resuming ? `Plan resumed${by}${opts.why ? `: ${opts.why}` : ""}.` : `Plan started${by}: ${kids.length} tool tickets; each starts as soon as the ones it waits for are done.`);
   this.advancePlans(slug);
   return this.store.getTicket(slug, id) ?? out;
 }
@@ -184,18 +188,15 @@ export function userAskedRun(this: Board, slug: string, id: string): boolean {
 }
 
 /**
- * The planner ticket a run belongs to, if that run may manage the ticket's own children: any run of a running
- * plan (wake-ups), or a reply to the user's chat message in any plan state, so the user can still tidy up a finished
- * plan's children (e.g. mark them done). Restarting a done plan stays refused (see plan_control in http.ts).
+ * The main ticket (or tool group) a run belongs to, if that run may manage the ticket's own family: every run of it,
+ * whoever started it, except a quiet reply; also any moment its plan runs (wake-ups) or a reply to the user's chat
+ * message, as before. Other tickets have no family to manage (planned tickets are retired).
  */
 export function plannerRights(this: Board, slug: string, runTicketId: string): Ticket | null {
   const t = this.store.getTicket(slug, runTicketId);
-  if (!t) return null;
-  // A main ticket (or a tool group) manages its own family in every run, whoever started it; not in a quiet reply.
-  if (isManager(t)) {
-    const r = this.runs.get(this.key(slug, runTicketId));
-    if (r && !r.stopRequested && !r.chat?.quiet) return t;
-  }
+  if (!t || !isManager(t)) return null;
+  const r = this.runs.get(this.key(slug, runTicketId));
+  if (r && !r.stopRequested && !r.chat?.quiet) return t;
   if (planActive(t.plan)) return t;
   return this.userChatRun(slug, runTicketId) ? t : null;
 }
@@ -290,48 +291,6 @@ export function markStartedBy(this: Board, slug: string, id: string, by: Ticket[
   this.patch(slug, id, { startedBy: by ?? null });
 }
 
-/**
- * Manager mode: make existing tickets children of this one, so its plan runs them. Tickets on another board, the
- * ticket itself or its ancestors (a cycle), tickets in another plan and finished ones are skipped with a reason.
- */
-export function adoptTickets(this: Board, slug: string, plannerId: string, ids: string[]): { adopted: Ticket[]; skipped: { id: string; reason: string }[] } {
-  const planner = this.store.getTicket(slug, plannerId);
-  if (!planner) throw new Error(`ticket ${plannerId} not found`);
-  const ancestors = new Set<string>();
-  for (let p = planner.parentId; p && !ancestors.has(p); p = this.store.getTicket(slug, p)?.parentId) ancestors.add(p);
-  const adopted: Ticket[] = [];
-  const skipped: { id: string; reason: string }[] = [];
-  for (const id of [...new Set(ids.map((x) => x.trim()).filter(Boolean))]) {
-    const t = this.store.getTicket(slug, id);
-    const reason = !t ? `not found on board ${slug}`
-      : t.id === plannerId ? "that is this ticket itself"
-      : ancestors.has(t.id) ? "it is a parent of this ticket (that would make a cycle)"
-      : t.parentId === plannerId ? "already in this plan"
-      : t.parentId ? `belongs to plan ${t.parentId}`
-      : t.status === "done" ? "already done"
-      : t.error?.startsWith("corrupt") ? "its ticket file is corrupt"
-      // A sub-feature keeps its own chat and tasks: a plan never takes it in (that would make it a normal ticket).
-      : t.main && parentLink(t) ? `"${t.title}" is a sub-feature with its own chat and tasks; a plan can't take it in`
-      : !t.partOf ? linkProblem(this.store.listTickets(slug), { id: t.id, title: t.title, main: false }, plannerId)
-      : null;
-    if (reason) {
-      skipped.push({ id, reason });
-      continue;
-    }
-    adopted.push(this.patch(slug, id, { parentId: plannerId, ...(t!.main ? { main: false } : {}) }));
-    this.store.addComment(slug, id, "ai", `Adopted by plan ${plannerId} ("${planner.title}").`);
-  }
-  if (adopted.length) {
-    this.store.addComment(slug, plannerId, "ai", `Adopted ${adopted.length} ticket${adopted.length === 1 ? "" : "s"}: ${adopted.map((t) => `${t.id} "${t.title}"`).join(", ")}.`);
-    const p = this.store.getTicket(slug, plannerId)!;
-    // A plan under way grows with its new children: its create cap and wake-up budget count them.
-    if (p.plan && p.plan.state !== "done") this.patch(slug, plannerId, { plan: { ...p.plan, originalCount: p.plan.originalCount + adopted.length } });
-    else this.emitTicket(slug, p);
-    this.advancePlans(slug);
-  }
-  return { adopted, skipped };
-}
-
 /** The planner restarts a child that already ran: counted, and refused past MAX_RETRIES. */
 export function countRetry(this: Board, slug: string, plannerId: string, childId: string, max: number): void {
   const p = this.store.getTicket(slug, plannerId);
@@ -355,7 +314,8 @@ export function advancePlans(this: Board, slug: string): void {
       const all = this.store.listTickets(slug);
       let started = false;
       for (const p of all) {
-        if (!p.plan || p.plan.state === "done" || p.plan.state === "paused") continue;
+        // Only main tickets and tool groups run plans (an old planner's plan was migrated: retire-plans.ts).
+        if (!p.plan || p.plan.state === "done" || p.plan.state === "paused" || !isManager(p)) continue;
         try {
           started = this.advancePlan(slug, p, childrenOf(all, p.id)) || started;
         } catch (e) {
@@ -388,15 +348,15 @@ export function advancePlan(this: Board, slug: string, planner: Ticket, kids: Ti
     }
     if (plan.awaiting === "final") {
       this.patch(slug, planner.id, { plan: { ...plan, state: "done", awaiting: null, finishedAt: nowIso() } });
-      this.store.addComment(slug, planner.id, "ai", "Plan done: all child tickets finished and the final check ran.");
-      this.notify(`Plan done: ${planner.title}`, "All child tickets finished. Summary in the ticket's outputs.", slug, planner.id);
+      this.store.addComment(slug, planner.id, "ai", "Plan done: every ticket in this group finished and the final check ran.");
+      this.notify(`Plan done: ${planner.title}`, "Every ticket in this group finished.", slug, planner.id);
       return false;
     }
     plan.awaiting = null;
   }
   if (plan.state === "stuck" && !planner.main) {
-    // Whatever made it stuck is gone once every child is finished (e.g. its last PR got merged): close it, no run needed.
-    if (kids.length && kids.every(isComplete)) this.closePlan(slug, planner, plan, "Plan done: every child ticket finished, so the stuck plan was closed without another run.");
+    // A tool group: whatever made it stuck is gone once every child is finished (e.g. its last PR got merged): close it, no run needed.
+    if (kids.length && kids.every(isComplete)) this.closePlan(slug, planner, plan, "Plan done: every ticket in this group finished, so the stuck plan was closed without another run.");
     return false;
   }
   if (plan.state === "finishing") {
@@ -404,10 +364,9 @@ export function advancePlan(this: Board, slug: string, planner: Ticket, kids: Ti
     else if (!sameJson(plan, planner.plan)) this.patch(slug, planner.id, { plan });
     return false;
   }
-  const managed = managedPlan(planner);
   const step = planStep(plan, kids, (id) => this.isRunning(slug, id), {
     waitingOnUser: (t) => this.userWait(t),
-    ...(managed ? { managed: { summary: (t: Ticket) => this.lastSummary(slug, t.id), report: (t: Ticket) => this.reportOf(slug, t.id) } } : {}),
+    managed: { summary: (t: Ticket) => this.lastSummary(slug, t.id), report: (t: Ticket) => this.reportOf(slug, t.id) },
   });
   // A main ticket parked in Backlog or Done: no new tool ticket starts and it isn't woken (running ones finish, queued
   // ones wait); moving it back to In progress lets them go on.
@@ -432,16 +391,11 @@ export function advancePlan(this: Board, slug: string, planner: Ticket, kids: Ti
   const inbox = plan.inbox ?? [];
   if (!plannerBusy && !plan.awaiting) {
     if (inbox.length) {
-      if (managed) {
-        // Runaway loops: wakes in a row in which no tool ticket changed or was made mean the plan is stuck.
-        const p = progressStep(plan, familySig(kids));
-        if (p.stuck) {
-          this.stuck(slug, planner, plan, `${p.noProgress} wakes in a row without any tool ticket changing; waiting events: ${inbox.join("; ").slice(0, 600)}`);
-          return false;
-        }
-      } else if (plan.wakeups >= wakeupCap(Math.max(plan.originalCount, kids.length))) {
-        this.stuck(slug, planner, plan, `wake-up limit reached (${plan.wakeups}); waiting events: ${inbox.join("; ")}`);
-        return step.start.length > 0;
+      // Runaway loops: wakes in a row in which no tool ticket changed or was made mean the plan is stuck.
+      const p = progressStep(plan, familySig(kids));
+      if (p.stuck) {
+        this.stuck(slug, planner, plan, `${p.noProgress} wakes in a row without any tool ticket changing; waiting events: ${inbox.join("; ").slice(0, 600)}`);
+        return false;
       }
       const key = this.key(slug, planner.id);
       const due = this.wakeDue.get(key);
@@ -463,6 +417,7 @@ export function advancePlan(this: Board, slug: string, planner: Ticket, kids: Ti
         this.patch(slug, planner.id, { plan: { ...plan, state: "done", awaiting: null, reason: null, finishedAt: nowIso() } });
         return false;
       }
+      // A tool group hears once that all its tickets finished, so it reports to its main ticket.
       this.wake(slug, planner, { ...plan, state: "finishing" }, "final", [], kids);
       return false;
     }
@@ -524,14 +479,11 @@ export function keysOpen(this: Board, t: Ticket): boolean {
 
 /** Resume the planner's session with what happened; several events arrive as one message. */
 export function wake(this: Board, slug: string, planner: Ticket, plan: Plan, kind: PlanWake, events: string[], kids: Ticket[]) {
-  const managed = managedPlan(planner);
   // Read before autoFresh: a fresh chat no longer has the form, but Claude still asks it again from this list.
   const open = this.openForm(planner);
-  const text = managed
-    ? mainWakePrompt(planner, { kind, events, table: wakeTable(kids, this.store.listTickets(slug), (id) => this.isRunning(slug, id)), board: slug, group: !planner.main, open })
-    : orchestratorPrompt(planner, { kind, events, table: planTable(kids), board: slug, outputDir: this.store.outputsDir(slug, planner.id), repo: this.repoState(slug) ?? this.guessRepo(slug), open });
-  const progress = managed ? progressStep(plan, familySig(kids)) : null;
-  this.patch(slug, planner.id, { plan: { ...plan, inbox: [], awaiting: kind, wakeups: plan.wakeups + 1, ...(progress ? { progressSig: progress.progressSig, noProgress: progress.noProgress } : {}) } });
+  const text = mainWakePrompt(planner, { kind, events, table: wakeTable(kids, this.store.listTickets(slug), (id) => this.isRunning(slug, id)), board: slug, group: !planner.main, open });
+  const progress = progressStep(plan, familySig(kids));
+  this.patch(slug, planner.id, { plan: { ...plan, inbox: [], awaiting: kind, wakeups: plan.wakeups + 1, progressSig: progress.progressSig, noProgress: progress.noProgress } });
   this.autoFresh(slug, this.store.getTicket(slug, planner.id) ?? planner);
   if (planner.main) {
     // Its card stays where it is (a wake isn't new work to review); no slot, no folder lock (it edits nothing). A
@@ -540,7 +492,7 @@ export function wake(this: Board, slug: string, planner: Ticket, plan: Plan, kin
     this.start(slug, planner.id, { text, mode: "act", raw: true });
     return;
   }
-  // Back to where it was (In progress only if a restart cut a wake-up off).
+  // A tool group goes back to where it was (In progress only if a restart cut a wake-up off).
   const returnTo = planner.status === "in_progress" ? "review" : planner.status;
   this.start(slug, planner.id, { text, mode: "act", raw: true, returnTo });
 }
@@ -554,7 +506,7 @@ export function closePlan(this: Board, slug: string, planner: Ticket, plan: Plan
 export function stuck(this: Board, slug: string, planner: Ticket, plan: Plan, reason: string) {
   this.patch(slug, planner.id, { plan: { ...plan, state: "stuck", awaiting: null, reason } });
   // The stuck planner now needs the user (attention.ts): the Notifier tells them.
-  this.store.addComment(slug, planner.id, "ai", `Plan stuck: ${reason}. Fix what's needed, then press Resume plan.`);
+  this.store.addComment(slug, planner.id, "ai", `Stuck: ${reason}. ${planner.main ? "Write in its chat to carry on." : "Its main ticket can resume it once that is fixed."}`);
 }
 
 export async function cleanupWorktree(this: Board, slug: string, t: Ticket): Promise<Ticket> {

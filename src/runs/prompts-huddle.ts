@@ -185,8 +185,8 @@ ${huddleTools(h)}`, { huddle: h.id })}`;
 export const PLAN_FINDINGS_RULE = `in your chat reply, say in one plain line what the review found. Then:
   - No findings: say the review found nothing to change; no form.
   - Only COULD findings: list them in plain words; no form.
-  - Otherwise: call \`ask_questions\` once, with one question per MUST and SHOULD finding, MUST first, at most 6 questions. Each question says the finding in plain words (with its ticket key when the plan has child tickets) and has the options "Fix it" (recommended for a MUST), "Skip" and "Make a follow-up ticket"; recommend the one you would pick. List the findings that didn't fit in the form, and the COULD findings, as plain lines after it. Then end your turn and wait for the answers.
-  - After the answers: put every "Fix it" finding into an updated \`propose_ticket\`, or an updated \`propose_tickets\` when the plan was child tickets (the whole set, same keys); the user still clicks Apply or Create. Each "Make a follow-up ticket" becomes a card from \`propose_tickets\`. Say in one line what you skipped.`;
+  - Otherwise: call \`ask_questions\` once, with one question per MUST and SHOULD finding, MUST first, at most 6 questions. Each question says the finding in plain words and has the options "Fix it" (recommended for a MUST), "Skip" and "Later"; recommend the one you would pick. List the findings that didn't fit in the form, and the COULD findings, as plain lines after it. Then end your turn and wait for the answers.
+  - After the answers: put every "Fix it" finding into an updated \`propose_ticket\`; the user still clicks Apply. Each "Later" finding goes into that description as a line under a "## Later" heading. Say in one line what you skipped.`;
 
 /**
  * A huddle on a ticket still in Planning reviews the plan: nobody edits, and its findings shape the proposed ticket

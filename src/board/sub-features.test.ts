@@ -251,18 +251,6 @@ test("stop on the parent reaches into its sub-features; delete leaves them as th
   expect(get(t1.id).parentId).toBe(linear.id);
 });
 
-test("a plan never takes in a sub-feature (it would stop being one)", async () => {
-  await setup();
-  const outreach = await mk("AI Outreach", { main: true });
-  const linear = await mk("Linear mentions", { main: true, partOf: outreach.id });
-  const task = await mk("Mention 1", { parentId: linear.id, tool: true, kind: "explore" });
-  const r = board.adoptTickets("p", outreach.id, [linear.id]);
-  expect(r.adopted).toEqual([]);
-  expect(r.skipped[0]?.reason).toContain("is a sub-feature with its own chat and tasks");
-  expect(get(linear.id).main).toBe(true);
-  expect(board.mainOf("p", get(task.id))?.id).toBe(linear.id);
-});
-
 test("a sub-feature's row reads Working while one of its tasks works, and its Tasks badge counts its own rows", () => {
   const ts = board1().map((t) => (t.id === "L1" || t.id === "L2" ? { ...t, status: "backlog" } : t));
   // L itself is in Review with nothing working: its own state.

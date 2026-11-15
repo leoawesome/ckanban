@@ -69,10 +69,6 @@ export function lastChange(t: Ticket, s: SessionSummary | null): string {
 }
 
 /**
- * createdTitles: titles of the board's other tickets, to tell which proposed new tickets still wait for a click: a proposal
- * whose title is already on the board (created from this chat, or by hand, or by another ticket) counts as handled.
- * createdKeys: keys of this ticket's children made before cards saved the proposed title (proposedAs, in createdTitles), so
- * those stay handled after a rename too.
  * managed: the ticket is a child of a running plan, so its planner, not the user, handles it.
  * planComplete: every child of this ticket's plan is finished, so a stuck plan no longer needs the user.
  * huddle: the ticket's own open huddle; while it works the ticket doesn't need the user unless the huddle asks.
@@ -83,7 +79,7 @@ export function lastChange(t: Ticket, s: SessionSummary | null): string {
 export function attentionFor(
   t: Ticket, s: SessionSummary | null, running: boolean,
   o: {
-    createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null; step?: StepWait | null;
+    managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null; step?: StepWait | null;
     schedules?: Set<string>;
   } = {},
 ): Attention | null {
@@ -107,7 +103,7 @@ export function attentionFor(
 
 function ownAttention(
   t: Ticket, s: SessionSummary | null, running: boolean,
-  o: { createdTitles?: Set<string>; createdKeys?: Set<string>; managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null; schedules?: Set<string> },
+  o: { managed?: boolean; planComplete?: boolean; huddle?: HostHuddle | null; schedules?: Set<string> },
 ): Attention | null {
   // A follow-up the board saw too late to wake (computer asleep, board off) waits for the user in any column: Claude
   // meant to come back, and only the user can say whether that still makes sense.
@@ -143,7 +139,6 @@ function ownAttention(
   if (p && !((!p.title || p.title === t.title) && (!p.description || p.description.trim() === t.body.trim()))) {
     return { kind: "proposal", label: "Review proposal", since };
   }
-  if (s?.pendingNewTickets?.some((n) => !o.createdTitles?.has(titleKey(n.title)) && !(n.key && o.createdKeys?.has(n.key)))) return { kind: "proposal", label: "Review proposed tickets", since };
   if (s?.pendingTeammates?.some((id) => !t.teammateCards?.[id])) return { kind: "proposal", label: "Review proposed teammate", since };
   if (s?.pendingSquads?.some((id) => !t.squadCards?.[id])) return { kind: "proposal", label: "Review proposed squad", since };
   if (s?.pendingAutomations?.some((id) => !t.automationCards?.[id])) return { kind: "proposal", label: "Review proposed automation", since };
@@ -159,22 +154,6 @@ function ownAttention(
   return null;
 }
 
-/**
- * Titles of every ticket on the board but `self`, trimmed and case-folded the way sameTitle compares them, plus the title
- * each of self's children was proposed with (it may have been renamed since).
- */
-export function boardTitles(tickets: Pick<Ticket, "id" | "title" | "parentId" | "proposedAs" | "tool" | "kind">[], self: string): Set<string> {
-  // Tool tickets have no card: a proposal isn't "already on the board" because a hidden tool ticket has its title.
-  const others = tickets.filter((c) => c.id !== self && !hiddenTool(c));
-  return new Set([
-    ...others.map((c) => titleKey(c.title)),
-    ...others.filter((c) => c.parentId === self && c.proposedAs).map((c) => titleKey(c.proposedAs!)),
-  ]);
-}
-
-/** How two ticket titles are compared to tell a proposal is already on the board: case and spacing don't count. */
-export const titleKey = (title: string) => title.trim().replace(/\s+/g, " ").toLowerCase();
-
 /** attentionFor with its options read from the board; the other tickets are only listed when they matter. */
 export function ticketAttention(
   store: Store, slug: string, t: Ticket, s: SessionSummary | null, running: boolean, huddle?: HostHuddle | null,
@@ -186,9 +165,6 @@ export function ticketAttention(
   };
   if (hiddenTool(t)) return null;
   return attentionFor(t, s, running, {
-    createdTitles: s?.pendingNewTickets.length ? boardTitles(store.listTickets(slug), t.id) : undefined,
-    createdKeys: s?.pendingNewTickets.length
-      ? new Set(childrenOf(store.listTickets(slug), t.id).flatMap((c) => (c.planKey && !c.proposedAs ? [c.planKey] : []))) : undefined,
     managed: t.parentId ? planActive(store.getTicket(slug, t.parentId)?.plan) : false,
     step: t.main ? oldestStep(store.listTickets(slug), t.id, isRunning) : undefined,
     planComplete: t.plan?.state === "stuck" ? planComplete() : undefined,

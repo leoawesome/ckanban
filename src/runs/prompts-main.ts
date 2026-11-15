@@ -81,7 +81,7 @@ ${MAIN_PAUSED}` : ""}`;
 }
 
 /** A main ticket whose plan is paused by Stop: its Claude must not tell the user a step is queued. */
-export const MAIN_PAUSED = "- Your tasks are paused because the user pressed Stop: tool tickets you create now won't start until the user presses Resume on the Plan tab, moves this ticket to ready or writes in this chat. Never say a task is queued or started while they are paused; tell the user it waits for them. If the user asks you to go on, call `plan_control` with action \"resume\".";
+export const MAIN_PAUSED = "- Your tasks are paused because the user pressed Stop: tool tickets you create now won't start until the user moves this ticket to ready or writes in this chat. Never say a task is queued or started while they are paused; tell the user it waits for them. If the user asks you to go on, call `plan_control` with action \"resume\".";
 
 /** The Rules lines of a main ticket's work run, in place of where to edit and how to land. */
 export function mainWhere(r: MainRole): string {
@@ -200,5 +200,5 @@ End with status "blocked" (or "questions" after asking with ask_questions) only 
 
 ${RESULT_RULE}
 
-${REPLY_RULE}`, { wake: wakeSummary(o.kind, o.events.length, !!o.group, "tool") })}`;
+${REPLY_RULE}`, { wake: wakeSummary(o.kind, o.events.length, !!o.group) })}`;
 }

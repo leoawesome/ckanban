@@ -8,7 +8,7 @@ import { Passes } from "../integrations/passes";
 import { runScript } from "../integrations/script";
 import { LoopManager, type LoopInput } from "./loops";
 import { resultWakesMain } from "../board/main-ticket";
-import { planStep, planTable } from "../board/plan";
+import { planStep } from "../board/plan";
 import { Store } from "../core/store";
 import type { Plan, Ticket } from "../core/types";
 import { featureChoices } from "../../web/src/features/board/featureChoices";
@@ -178,7 +178,6 @@ test("an automation's task wakes its main ticket only when it needs attention; a
   expect(alone.start).toEqual([]);
   expect(alone.events).toEqual([]);
   expect(alone.deadEnd).toBeNull();
-  expect(planTable([waiting])).toContain("waits to be started");
 });
 
 test("the setup chat's proposal takes partOf; the picker words it for new tickets", () => {

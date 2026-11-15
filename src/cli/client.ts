@@ -289,10 +289,6 @@ export interface TicketPatch {
   showOnBoard?: boolean;
 }
 
-export interface AdoptReply {
-  adopted: TicketInfo[];
-  skipped: { id: string; reason: string }[];
-}
 
 export interface HuddleParticipantInfo {
   handle: string;
@@ -478,7 +474,6 @@ export class BoardClient {
   gather = (slug: string, id: string, tickets: { id: string; group?: string | null }[], newGroup: string | null, run?: string | null, hide?: boolean) =>
     this.req<GatherResult>(
       "POST", `${this.t(slug, id)}/gather`, { tickets, newGroup, ...(hide ? { hide: true } : {}) }, this.by(run));
-  adopt = (slug: string, id: string, ids: string[], run?: string | null) => this.req<AdoptReply>("POST", `${this.t(slug, id)}/adopt`, { ids }, this.by(run));
   updateTicket = (slug: string, id: string, patch: TicketPatch, run?: string | null) => this.req<TicketInfo>("PATCH", this.t(slug, id), patch, this.by(run));
   deleteTicket = (slug: string, id: string) => this.req<void>("DELETE", this.t(slug, id));
   chat = (slug: string, id: string, text: string, run?: string | null) => this.req<TicketInfo>("POST", `${this.t(slug, id)}/chat`, { text }, this.by(run));

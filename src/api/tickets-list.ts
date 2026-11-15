@@ -5,9 +5,7 @@ import { isManager, kindDefaults } from "../board/main-ticket";
 import { maskSavedJson } from "../integrations/board-keys";
 import { RUN_HEADER } from "../schedules/scheduler";
 import { HUDDLE_HEADER } from "../huddle/huddle-roster";
-import { planActive } from "../board/plan";
 import { featureRoot, fitParent, groupsOf, levelOf, MAX_LEVEL, isFeature, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/features/family/family";
-import { createdFromDraft } from "../../web/src/features/board/proposalMatch";
 import { boardScope, countScope, DONE_PAGE, donePage, doneSearch, idsScope, listScope } from "../board/ticket-scope";
 import { STATUSES, type Profile, type Status, type Ticket } from "../core/types";
 import { type ApiContext, HttpError, NEXT, type RouteResult, body } from "./context";
@@ -154,30 +152,21 @@ export async function ticketListRoutes(ctx: ApiContext, req: Request, url: URL, 
       const dependsOn = strings(b.dependsOn);
       const needs = strings(b.needs);
       const tags = strings(b.tags);
+      // Planned tickets are retired: only a main ticket's (or tool group's) runs add tickets under it, as tool tickets.
+      if (parentId && !planner) {
+        throw new HttpError(400, "a ticket can't be created under another one: planned tickets are retired. Create it on its own " +
+          "(a new ticket is a main ticket that splits its work into tasks), or with partOf to put it in a feature");
+      }
       if (planner) {
-        // A planner adds children to its own plan; the board starts them when their dependencies are done.
+        // A main ticket adds tool tickets to its own family; the board starts them when their dependencies are done.
         const kids = store.listTickets(slug).filter((c) => c.parentId === planner.id);
-        const running = planActive(planner.plan);
-        // Unattended plans are capped; in the user's chat the user is there to stop it. A main ticket's family has no
-        // such cap: its no-progress rule stops runaway loops instead.
-        const cap = running && !isManager(planner) ? 2 * Math.max(1, planner.plan!.originalCount) : Infinity;
-        if (kids.length >= cap) throw new HttpError(409, `child ticket limit reached (${cap}) for this plan`);
         const missing = (dependsOn ?? []).filter((d) => !kids.some((k) => k.id === d || k.planKey === d));
         if (missing.length) throw new HttpError(400, `unknown dependency ${missing.join(", ")}: use a sibling's ticket id or key`);
-        // Children wait in Backlog until the plan starts them; a running plan's children skip the interview.
-        [parentId, status] = [planner.id, "backlog"];
-        if (running || isManager(planner)) mode = "auto";
+        [parentId, status, mode] = [planner.id, "backlog", "auto"];
       }
       // A ticket Claude creates inside a main ticket's family is a tool ticket: unattended, never interviewing.
-      const tool = !!planner && isManager(planner);
+      const tool = !!planner;
       if (parentId && !store.getTicket(slug, parentId)) throw new HttpError(400, `parent ticket ${parentId} not found`);
-      // Create on a chat's proposed-tickets card: a draft that is already this parent's child (same key or proposed
-      // title, even renamed, started or moved since) answers with that ticket instead of making it twice.
-      const proposedAs = !planner && parentId && typeof b.proposedAs === "string" && b.proposedAs.trim() ? b.proposedAs.trim() : undefined;
-      if (proposedAs) {
-        const made = createdFromDraft(store.listTickets(slug), parentId!, { title: proposedAs, ...(planKey ? { key: planKey } : {}) });
-        if (made && made.parentId === parentId) return json(view(profile, made), 200);
-      }
       if (b.kind !== undefined && b.kind !== null && !TICKET_KINDS.includes(b.kind)) throw new HttpError(400, `kind must be one of ${TICKET_KINDS.join(", ")}`);
       const kind: TicketKind | undefined = b.kind ?? undefined;
       // Model and effort for its runs: from create_ticket inside a run, else a tool ticket's kind decides.
@@ -199,7 +188,6 @@ export async function ticketListRoutes(ctx: ApiContext, req: Request, url: URL, 
       try {
         t = await board.createTicket(slug, {
           title, body: String(b.body ?? ""), status: b.sessionId && !planner ? "backlog" : status, mode, parentId, planKey, dependsOn, needs, tags,
-          ...(proposedAs ? { proposedAs } : {}),
           important: b.important === true, ...(partOf && !tool ? { partOf, ...(partOfVia ? { partOfVia } : {}) } : {}),
           ...(raisedBy ? { raisedBy } : {}), ...(kind ? { kind } : {}),
           ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(main ? { main: true } : {}), ...(tool ? { tool: true } : {}),
@@ -208,7 +196,7 @@ export async function ticketListRoutes(ctx: ApiContext, req: Request, url: URL, 
       } catch (e) {
         throw new HttpError(400, (e as Error).message);
       }
-      if (planner) store.addComment(slug, t.id, "ai", tool ? `Tool ticket of ${planner.id} ("${planner.title}").` : `Created by the planner of plan ${planner.id}.`);
+      if (planner) store.addComment(slug, t.id, "ai", `Tool ticket of ${planner.id} ("${planner.title}").`);
       // Its manager's plan runs it (in any column): started now if the plan was resting.
       let planPaused = false;
       if (tool) {

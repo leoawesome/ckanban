@@ -4,6 +4,7 @@ import { checkPr, mergePr, PrError, REFRESH_MIN_MS, refreshPr, resolveConflicts,
 import { RUN_HEADER } from "../schedules/scheduler";
 import { HUDDLE_HEADER } from "../huddle/huddle-roster";
 import { familyRoot } from "../../web/src/features/family/family";
+import { isManager } from "../board/main-ticket";
 import type { Profile } from "../core/types";
 import { type ApiContext, HttpError, NEXT, type RouteResult, body } from "./context";
 
@@ -135,10 +136,14 @@ export async function ticketActionRoutes(ctx: ApiContext, req: Request, url: URL
     if (guest && stopped) store.addComment(slug, id, "ai", `Run stopped ${byGuest(guest)}.`);
     return json({ stopped });
   }
-  // Start / pause / resume / mark done a planner's plan.
+  // Start / pause / resume / mark done the plan that runs a main ticket's (or tool group's) tool tickets.
   if (m === "POST" && action === "plan") {
     const b = await body(req);
-    // A planner may start or resume its own plan (plan_control) when it has planner rights; the rest is the user's.
+    // Planned tickets are retired: only main tickets and tool groups run their tickets with a plan.
+    if ((b.action === "start" || b.action === "resume") && !isManager(store.getTicket(slug, id))) {
+      throw new HttpError(400, "only a main ticket runs tickets of its own: turn this ticket into a main ticket first");
+    }
+    // A main ticket may start or resume its own plan (plan_control) when it has planner rights; the rest is the user's.
     const byPlanner = !!req.headers.get(RUN_HEADER);
     if (byPlanner) {
       if (runTicket(req, slug) !== id || (b.action !== "start" && b.action !== "resume")) {
@@ -160,21 +165,6 @@ export async function ticketActionRoutes(ctx: ApiContext, req: Request, url: URL
       if (e instanceof HttpError) throw e;
       throw new HttpError(400, (e as Error).message);
     }
-  }
-  // Manager mode: make existing tickets children of this one (adopt_tickets). From a run, only when the user asked
-  // for it in this ticket's own chat.
-  if (m === "POST" && action === "adopt") {
-    if (req.headers.get(RUN_HEADER)) {
-      if (runTicket(req, slug) !== id || !board.userChatRun(slug, id)) {
-        throw new HttpError(403, "adopting tickets from a board run only works in a reply to the user's message in the adopting ticket's own chat");
-      }
-      if (store.getTicket(slug, id)!.plan?.state === "done") throw new HttpError(403, "this ticket's plan is done; the user can start a new one first");
-    }
-    const b = await body(req);
-    const ids = strings(b.ids);
-    if (!ids?.length) throw new HttpError(400, "ids must be a non-empty list of ticket ids");
-    const r = board.adoptTickets(slug, id, ids);
-    return json({ adopted: r.adopted.map((t) => view(profile, t)), skipped: r.skipped });
   }
   // A run stopped at its spending cap: "Continue with +$Y" ({addUsd}).
   if (m === "POST" && action === "cap-continue") {

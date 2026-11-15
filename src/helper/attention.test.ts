@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { attentionFor, boardTitles, byWaitingAge, type HostHuddle, huddleBusy, lastChange, snoozeKey, ticketAttention, titleKey, userWaitReason, withSnooze } from "./attention";
+import { attentionFor, byWaitingAge, type HostHuddle, huddleBusy, lastChange, snoozeKey, ticketAttention, userWaitReason, withSnooze } from "./attention";
 import { Store } from "../core/store";
 import { tempDir } from "../../test/support/helpers";
 import type { SessionSummary } from "../runs/session";
@@ -10,7 +10,7 @@ const T = (p: Partial<Ticket>): Ticket => ({
   outcome: null, lastActivity: null, lastRunAt: null, runCount: 0, error: null, createdAt: "", updatedAt: "", body: "b", ...p,
 });
 const S = (p: Partial<SessionSummary>): SessionSummary => ({
-  title: null, lastMessage: null, artifacts: [], updatedAt: "", openQuestions: 0, pendingProposal: null, pendingNewTickets: [], pendingTeammates: [], ...p,
+  title: null, lastMessage: null, artifacts: [], updatedAt: "", openQuestions: 0, pendingProposal: null, pendingTeammates: [], ...p,
 });
 
 test("running tickets never need the user", () => {
@@ -59,32 +59,6 @@ test("done and backlog tickets never need the user", () => {
     expect(attentionFor(T({ status }), S({ pendingProposal: prop }), false)).toBeNull();
   }
   expect(attentionFor(T({ status: "review" }), S({ openQuestions: 2 }), false)!.kind).toBe("questions");
-});
-
-test("proposed new tickets need attention until each one exists", () => {
-  const s = S({ pendingNewTickets: [{ title: "A", description: "" }, { title: "B", description: "" }] });
-  expect(attentionFor(T({}), s, false)).toMatchObject({ kind: "proposal", label: "Review proposed tickets" });
-  expect(attentionFor(T({}), s, false, { createdTitles: new Set(["a"]) })!.kind).toBe("proposal");
-  expect(attentionFor(T({}), s, false, { createdTitles: new Set(["a", "b"]) })).toBeNull();
-});
-
-test("board titles compare without case or extra spaces, and leave out the ticket itself", () => {
-  expect(titleKey("  Launch   Kit ")).toBe("launch kit");
-  const titles = boardTitles([{ id: "me", title: "Plan" }, { id: "x", title: "Launch Kit" }], "me");
-  expect([...titles]).toEqual(["launch kit"]);
-});
-
-test("a proposed ticket already on the board, anywhere, no longer needs the user", () => {
-  const store = new Store(tempDir("ck-att-"));
-  store.saveProfile({ slug: "p", name: "p", path: tempDir("ck-att-repo-") } as any);
-  const planner = store.createTicket("p", { title: "Planner", body: "", status: "review" });
-  const s = S({ pendingNewTickets: [{ title: "Launch kit", description: "" }, { title: "Docs", description: "" }] });
-  expect(ticketAttention(store, "p", planner, s, false)).toMatchObject({ kind: "proposal" });
-  // One made by hand elsewhere on the board (not a child), the other as a child: both count as handled.
-  store.createTicket("p", { title: "launch  kit", body: "", status: "backlog" });
-  expect(ticketAttention(store, "p", planner, s, false)).toMatchObject({ kind: "proposal" });
-  store.createTicket("p", { title: "Docs", body: "", status: "done", parentId: planner.id });
-  expect(ticketAttention(store, "p", planner, s, false)).toMatchObject({ kind: "review" });
 });
 
 test("a stuck plan needs the user, unless the ticket is done or every child is finished", () => {
@@ -215,12 +189,3 @@ test("a new huddle ask ends the snooze while an older one is still open", () => 
   expect(withSnooze(snoozed, null, again, now, tagged).attention).toEqual(again);
 });
 
-test("a proposed ticket created from the card stays handled after the child is renamed", () => {
-  const kid = { id: "k", title: "Renamed by its run", parentId: "me", planKey: "fix", proposedAs: "Old title" };
-  const titles = boardTitles([kid, { id: "me", title: "Planner" }], "me");
-  expect(titles.has("old title")).toBe(true);
-  expect(titles.has("planner")).toBe(false);
-  const s = S({ pendingNewTickets: [{ title: "Old title v2", description: "", key: "fix" }] });
-  expect(attentionFor(T({}), s, false, { createdTitles: titles, createdKeys: new Set(["fix"]) })).toBeNull();
-  expect(attentionFor(T({}), s, false, { createdTitles: titles, createdKeys: new Set() })!.kind).toBe("proposal");
-});

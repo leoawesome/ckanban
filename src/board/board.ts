@@ -1199,7 +1199,6 @@ export class Board {
 
   markStartedBy(...a: Parameters<typeof plansPart.markStartedBy>): ReturnType<typeof plansPart.markStartedBy> { return plansPart.markStartedBy.call(this, ...a); }
 
-  adoptTickets(...a: Parameters<typeof plansPart.adoptTickets>): ReturnType<typeof plansPart.adoptTickets> { return plansPart.adoptTickets.call(this, ...a); }
 
   countRetry(...a: Parameters<typeof plansPart.countRetry>): ReturnType<typeof plansPart.countRetry> { return plansPart.countRetry.call(this, ...a); }
 

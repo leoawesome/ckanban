@@ -1,5 +1,5 @@
-// Planner orchestration: pure decisions about a plan's children. Board.advancePlans() applies them.
-// Ordering is plain code (no tokens); the planner's Claude session is only woken for events below.
+// The plan engine: pure decisions about a main ticket's (or tool group's) tool tickets. Board.advancePlans() applies
+// them. Ordering is plain code (no tokens); the main ticket's Claude session is only woken for the events below.
 import { finishedLine, resultWakesMain } from "./main-ticket";
 import type { Plan, Ticket } from "../core/types";
 
@@ -12,11 +12,6 @@ export const MAX_RETRIES = 3;
 export const MAX_RUN_RETURNS = 2;
 /** Ticket ids kept in a ticket's startedBy.chain (the most recent starters). */
 export const RUN_CHAIN_KEEP = 20;
-
-/** Wake-ups allowed per plan before it counts as stuck: 3 per child, at least 5. */
-export function wakeupCap(children: number): number {
-  return Math.max(5, children * 3);
-}
 
 export function childrenOf(tickets: Ticket[], plannerId: string): Ticket[] {
   return tickets.filter((t) => t.parentId === plannerId).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.order - b.order);
@@ -80,7 +75,7 @@ export function findCycle(children: Ticket[]): string[] | null {
 
 /** Why a set of children can't be planned, or null when it can. */
 export function planProblem(children: Ticket[]): string | null {
-  if (!children.length) return "this ticket has no child tickets to run";
+  if (!children.length) return "this ticket has no tool tickets to run";
   for (const t of children) {
     const { missing } = resolveDeps(t, children);
     if (missing.length) return `"${t.title}" depends on unknown ticket ${missing.map((m) => `"${m}"`).join(", ")}`;
@@ -94,7 +89,7 @@ export interface PlanEvent {
   /** Child state the event is about; the planner hears about each one once. */
   sig: string;
   line: string;
-  /** A tool ticket's result: it also shows as a result card in the planner's chat. */
+  /** A tool ticket's result: it also shows as a result card in the main ticket's chat. */
   result?: boolean;
 }
 
@@ -118,11 +113,11 @@ export interface PlanStepOptions {
   /** Why this ticket waits on the user, or null. */
   waitingOnUser?: (t: Ticket) => string | null;
   /**
-   * A main ticket's (or tool group's) plan: every result is a "finished" event with its summary and report, tool
-   * tickets never wait on the user, and nothing but dependsOn holds one back: no plan limit, no build cap, and needs is
-   * only a hint (runs take devices with take_devices). No board limit either: runs start as soon as they are ready.
+   * Every result is a "finished" event with its summary and report, tool tickets never wait on the user, and nothing
+   * but dependsOn holds one back: no plan limit, no build cap, and needs is only a hint (runs take devices with
+   * take_devices). No board limit either: runs start as soon as they are ready.
    */
-  managed?: { summary: (t: Ticket) => string; report: (t: Ticket) => string | null };
+  managed: { summary: (t: Ticket) => string; report: (t: Ticket) => string | null };
 }
 
 /** A task in Backlog that waits for the user or its main ticket to start it: the plan never starts it on its own. */
@@ -131,13 +126,8 @@ const waitsToStart = (t: Ticket): boolean => t.status === "backlog" && !!t.waits
 /** Hit the usage limit and the board continues it automatically once the limit resets. */
 export const waitsOnLimit = (t: Ticket): boolean => t.outcome === "limit" && !!t.limit?.auto;
 
-function lastError(t: Ticket): string {
-  const e = (t.error ?? "").trim().split("\n").slice(-2).join(" ").slice(0, 300);
-  return e ? `: ${e}` : "";
-}
-
 /** What a running plan should do next, given its children (pure, so it is easy to test). */
-export function planStep(plan: Plan, children: Ticket[], running: (id: string) => boolean, opts: PlanStepOptions = {}): PlanStep {
+export function planStep(plan: Plan, children: Ticket[], running: (id: string) => boolean, opts: PlanStepOptions): PlanStep {
   const seen = plan.seen ?? {};
   const events: PlanEvent[] = [];
   let active = 0;
@@ -146,31 +136,23 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
   for (const t of children) {
     // Waiting for a usage limit to reset with an automatic continue coming: still at work, not failed.
     // A child running a plan of its own (a group) reports once all of its children are finished.
-    const busy = running(t.id) || t.status === "ready" || t.status === "in_progress" || waitsOnLimit(t) || (!!managed && planActive(t.plan));
+    const busy = running(t.id) || t.status === "ready" || t.status === "in_progress" || waitsOnLimit(t) || planActive(t.plan);
     if (busy) {
       active++;
       continue;
     }
     // A "with you" tool ticket waiting for the user's answer is the user's turn, not its parent's: no event (the parent
     // mustn't answer for the user), and it counts as at work, so the plan isn't stuck meanwhile.
-    if (managed && t.tool && t.kind === "with_you" && t.outcome === "needs_input" && t.status !== "done") {
+    if (t.tool && t.kind === "with_you" && t.outcome === "needs_input" && t.status !== "done") {
       active++;
       continue;
     }
     let ev: PlanEvent | null = null;
-    if (managed) {
-      // Every result reaches the parent once per run: done (with or without a PR), failed, blocked, questions; a
-      // schedule's or automation's task only when it needs attention (resultWakesMain).
-      const ended = t.outcome === "done" || t.outcome === "failed" || t.outcome === "blocked" || t.outcome === "needs_input" || t.outcome === "limit";
-      if (ended && t.status !== "backlog" && t.status !== "planning" && resultWakesMain(t)) {
-        ev = { childId: t.id, sig: `${t.runCount}:${t.outcome}:${t.prUrl ?? ""}`, line: finishedLine(t, managed.summary(t), managed.report(t)), result: true };
-      }
-    } else if (t.outcome === "failed" || t.outcome === "blocked" || t.outcome === "needs_input" || t.outcome === "limit") {
-      const what = t.outcome === "needs_input" ? "is asking questions" : t.outcome === "failed" ? "failed"
-        : t.outcome === "limit" ? "hit the usage limit and won't continue on its own" : "is blocked";
-      ev = { childId: t.id, sig: `${t.runCount}:${t.outcome}`, line: `${t.id} "${t.title}" ${what} (${t.status})${lastError(t)}` };
-    } else if (t.status === "review" && t.outcome === "done" && t.prUrl) {
-      ev = { childId: t.id, sig: `${t.runCount}:pr:${t.prUrl}`, line: `${t.id} "${t.title}" finished with an open PR: ${t.prUrl}` };
+    // Every result reaches the parent once per run: done (with or without a PR), failed, blocked, questions; a
+    // schedule's or automation's task only when it needs attention (resultWakesMain).
+    const ended = t.outcome === "done" || t.outcome === "failed" || t.outcome === "blocked" || t.outcome === "needs_input" || t.outcome === "limit";
+    if (ended && t.status !== "backlog" && t.status !== "planning" && resultWakesMain(t)) {
+      ev = { childId: t.id, sig: `${t.runCount}:${t.outcome}:${t.prUrl ?? ""}`, line: finishedLine(t, managed.summary(t), managed.report(t)), result: true };
     }
     if (ev && seen[t.id] !== ev.sig) events.push(ev);
     else if (ev && t.prUrl && t.outcome === "done") awaitingMerge++;
@@ -180,7 +162,7 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
   for (const t of children) {
     if (isComplete(t) || running(t.id) || t.status === "ready" || t.status === "in_progress") continue;
     // A tool ticket never waits on the user: its questions go to its parent.
-    if (managed && t.tool) continue;
+    if (t.tool) continue;
     const reason = opts.waitingOnUser?.(t) ?? null;
     if (reason) userWait.push({ id: t.id, reason });
   }
@@ -208,16 +190,4 @@ export function planStep(plan: Plan, children: Ticket[], running: (id: string) =
     ].filter(Boolean).join("; ");
   }
   return { start, events, allComplete, active, awaitingMerge, deadEnd, userWait };
-}
-
-/** One line per child for the planner's prompt. */
-export function planTable(children: Ticket[]): string {
-  return children.map((t) => {
-    const deps = resolveDeps(t, children).deps.map((d) => d.id);
-    const bits = [
-      t.status, waitsToStart(t) ? "waits to be started: move_ticket to ready starts it" : null, t.outcome, t.prUrl ? `PR ${t.prUrl}` : null, deps.length ? `waits for ${deps.join(", ")}` : null,
-      t.needs?.length ? `needs ${t.needs.join(", ")}` : null,
-    ].filter(Boolean);
-    return `- ${t.id}${t.planKey ? ` [${t.planKey}]` : ""} "${t.title}": ${bits.join("; ")}`;
-  }).join("\n");
 }
