@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/activity-entry.schema.json",
+  "title": "Activity entry (one line of a ticket's run log)",
+  "description": "profiles/<slug>/tickets/<id>/activity.jsonl (or its gzip copy activity.jsonl.gz), and profiles/<slug>/chats/<id>.activity.jsonl: one compact JSON object per line, appended by Store.appendActivity. Type ActivityEntry in src/server/types.ts. This is the persisted per-line record of a ticket's runs; there is no separate chat message file in the data folder (the conversation itself is Claude Code's session transcript under ~/.claude/projects, found by the ticket's sessionId). event is either the board's marker {type: 'ckanban_run', kind}, written first for each run, or one event of claude --output-format stream-json exactly as Claude Code printed it (stream_event deltas are not stored). Saved keys are masked. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["run", "at", "event"],
+  "properties": {
+    "run": { "type": "integer", "minimum": 1, "description": "The ticket's run number. Quick chats always write 1." },
+    "at": { "type": "string", "format": "date-time" },
+    "event": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "description": "ckanban_run, or a Claude Code stream-json type: system, assistant, user, result, control_request, control_response, ..." },
+        "kind": { "description": "Only on ckanban_run: what the run was.", "enum": ["work", "planning", "chat", "reply", "follow-up"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/profile.schema.json",
+  "title": "Profile (board settings)",
+  "description": "profiles/<slug>/profile.json: one board. Type Profile in src/server/types.ts; written by Store.saveProfile (pretty JSON, 2-space indent, final newline, atomic temp+rename). POST /api/profiles always writes name, slug, path, baseBranch, model (null when not given) and createdAt; model is not required here because files from older versions may lack it. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["name", "slug", "path", "baseBranch", "createdAt"],
+  "$defs": {
+    "nullableString": { "type": ["string", "null"] },
+    "browserPick": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["chrome", "board", "ask"] },
+        "id": { "type": "string" },
+        "note": { "type": "string", "maxLength": 120 }
+      }
+    }
+  },
+  "properties": {
+    "name": { "type": "string", "description": "Display name." },
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "description": "slugify(name), with -2, -3... when taken. Equals the folder name under profiles/." },
+    "path": { "type": "string", "description": "Absolute path of the board's project folder." },
+    "baseBranch": { "type": "string", "description": "Branch tickets start from; empty string for a folder without version history or commits." },
+    "maxParallel": { "type": "number", "description": "Obsolete, ignored." },
+    "model": { "type": ["string", "null"] },
+    "effort": { "type": ["string", "null"], "description": "low, medium, high, xhigh, max; empty or null: Claude's own." },
+    "ultracode": { "type": "boolean" },
+    "chrome": { "type": ["string", "null"], "description": "A Chrome deviceId, \"ask\", or null." },
+    "browsers": { "type": ["array", "null"], "items": { "$ref": "#/$defs/browserPick" } },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "copyFiles": { "type": "array", "items": { "type": "string" } },
+    "setupCommand": { "type": "string" },
+    "cleanupCommand": { "type": "string" },
+    "setupDetected": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "properties": {
+        "at": { "type": "string" },
+        "copyFiles": { "type": "array", "items": { "type": "string" } },
+        "setupCommand": { "type": "string" },
+        "setupFrom": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "autoHuddles": { "type": "boolean", "description": "Missing: on." },
+    "keepAwake": { "type": "boolean", "description": "Missing: on." },
+    "runCapUsd": { "type": ["number", "null"] },
+    "artifacts": { "type": "boolean" },
+    "checkinOfferDismissed": { "type": "boolean" },
+    "stallMinutes": { "type": "number", "description": "0: off. Missing: 20." },
+    "workspace": { "enum": ["worktree", "folder"], "description": "Missing: worktree." },
+    "claudeAiConnectors": { "type": ["string", "array"], "items": { "type": "string" }, "description": "\"all\", \"none\" or a list of connector names. Missing: all." },
+    "mainModel": { "type": ["string", "null"] },
+    "freshChatTokens": { "type": ["number", "null"] },
+    "taskModels": { "type": ["object", "null"], "additionalProperties": true, "description": "Per ticket kind: model and effort (web/src/models.ts TaskModels)." }
+  }
+}

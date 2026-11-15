@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/schedule.schema.json",
+  "title": "Schedule",
+  "description": "profiles/<slug>/schedules/<id>.json: a recurring ticket template. Type Schedule in src/server/types.ts; written by Store.saveSchedule (pretty JSON, 2-space indent, final newline, atomic temp+rename) from src/server/scheduler.ts. New schedules always also have tags, quiet, model and partOf; they are not required here because older files lack them. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "name", "title", "body", "mode", "cron", "enabled", "skipIfRunning", "createdAt", "updatedAt", "lastFiredAt", "nextRunAt", "lastError"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9]+$", "description": "8 base36 chars (newId). Equals the file name without .json." },
+    "name": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1, "description": "Ticket title; {date} and {time} are filled in when it fires." },
+    "body": { "type": "string", "description": "Ticket description (the prompt)." },
+    "mode": { "enum": ["interview", "auto"] },
+    "cron": { "type": "string", "minLength": 1, "description": "5-field cron, whitespace collapsed to single spaces." },
+    "enabled": { "type": "boolean" },
+    "skipIfRunning": { "type": "boolean" },
+    "quiet": { "type": "boolean", "description": "Missing: false." },
+    "model": { "type": ["string", "null"] },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "partOf": { "type": ["string", "null"], "description": "A main ticket's id or one of its groups'." },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "lastFiredAt": { "type": ["string", "null"], "format": "date-time" },
+    "nextRunAt": { "type": ["string", "null"], "format": "date-time", "description": "Null while paused (enabled false)." },
+    "lastError": { "type": ["string", "null"] }
+  }
+}
