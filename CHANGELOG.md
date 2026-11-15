@@ -4,6 +4,11 @@ What changed in each ckanban release. Get the latest with `ckanban update`.
 
 ## Unreleased
 
+## [0.18.1] - 2026-11-15
+
+### Fixed
+- On a phone, *Move to → Done* now opens the next card of the same column, like on desktop, instead of staying on the ticket you just finished.
+
 ## [0.18.0] - 2026-11-15
 
 ### Features, tasks and sub-features
@@ -428,6 +433,7 @@ First release.
 - Terminal & file explorer panel, Connections panel for MCP servers, scheduled tickets on a cron, claude.ai artifacts from runs.
 - Standalone binary, installer, `ckanban update` and a background service that starts at login.
 
+[0.18.1]: https://github.com/leoawesome/ckanban/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/leoawesome/ckanban/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/leoawesome/ckanban/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/leoawesome/ckanban/compare/v0.15.0...v0.16.0
