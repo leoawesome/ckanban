@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Status } from "../web/src/columns";
-import { boardColumnOf, columnNeighbours, columnOrder, dropOrder, groupByColumn, menuPick, regroupByColumn, STATUS_MENU } from "../web/src/columns";
+import { boardColumnOf, columnNeighbours, columnOrder, dropOrder, groupByColumn, menuPick, nextInColumn, regroupByColumn, STATUS_MENU } from "../web/src/columns";
 import { opensNewTab } from "../web/src/links";
 
 const tk = (id: string, status: Status, order: number, extra: { slotWait?: { at: string }; pinnedAt?: string | null } = {}) => ({ id, status, order, ...extra });
@@ -114,4 +114,20 @@ test("regroupByColumn keeps the lists of columns whose cards didn't change", () 
   expect(next.get("done")).toBe(first.get("done")!);
   expect(next.get("planning")).not.toBe(first.get("planning")!);
   expect(next.get("planning")!.map((t) => t.id)).toEqual(["p1", "p2", "p3"]);
+});
+
+test("next after Done uses the column the ticket is in now, in the board's current order", () => {
+  // Opened in In Progress (i1, i2), then moved to Review while open: Done goes on to the Review card after it.
+  const tickets = [
+    tk("i1", "in_progress", 1), tk("i2", "in_progress", 2),
+    tk("r1", "review", 1), tk("moved", "review", 2), tk("r3", "review", 3),
+  ];
+  expect(nextInColumn(tickets, "moved")).toBe("r3");
+  // The board's current order counts: r3 dragged above it means nothing is left after it.
+  const reordered = tickets.map((t) => (t.id === "r3" ? { ...t, order: 0 } : t));
+  expect(nextInColumn(reordered, "moved")).toBeNull();
+  // Queued tickets show under In Progress, after the running ones.
+  expect(nextInColumn([tk("q", "ready", 0), tk("i1", "in_progress", 5)], "i1")).toBe("q");
+  // Not on the board (hidden by a search): no next, the panel closes.
+  expect(nextInColumn(tickets, "gone")).toBeNull();
 });
