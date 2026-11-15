@@ -1,33 +1,33 @@
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, type Stats } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { helperLineText, suggestedLineError } from "./helper/line";
-import { pauser, track, trackedInterval } from "./lag";
+import { pauser, track, trackedInterval } from "../core/lag";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { withoutAttachmentNote } from "./attachments";
 import { commandText, localCommandOutput, TERMINAL_COMMANDS } from "./commands";
-import type { Bus } from "./events";
-import { DONE_PASS_MS, SAFETY_PASS_MS, type SessionChanges } from "./changefeed";
+import type { Bus } from "../core/events";
+import { DONE_PASS_MS, SAFETY_PASS_MS, type SessionChanges } from "../core/changefeed";
 import { proposedBudget, rosterError, type RosterEntry } from "./huddle-roster";
 import { mockupName, stripMockups } from "./mockups";
 import { parseResult } from "./result";
-import { atomicWrite } from "./atomic";
+import { atomicWrite } from "../core/atomic";
 import { ChatCacheTracker, type ChatCache } from "./chat-cache";
-import { VERSION } from "./version";
+import { VERSION } from "../core/version";
 import { parseTeammateProposal, type TeammateProposal } from "./teammate-proposal";
 import { parseSquadProposal, type SquadProposal } from "./squad";
 import { TOPIC_MAX } from "./huddle-templates";
 import { parseAutomationProposal, type AutomationProposal } from "./automation-proposal";
 import { parseKeysAsk, type KeysAsk } from "./ask-keys";
 import { maskSaved } from "./board-keys";
-import type { Store } from "./store";
-import type { Ticket } from "./types";
+import type { Store } from "../core/store";
+import type { Ticket } from "../core/types";
 import { normalizeTags } from "./tags";
 import { AGENT_TOOL, notifiedStatus, parseTaskNotification, SubagentCache, subagentFiles, toolLabel, withTranscript, type AgentInfo } from "./subagents";
 import { WORKFLOW_TOOL, WorkflowCache, withRun, workflowFromCall, workflowLaunched, workflowNotified, type WorkflowInfo, type WorkflowRun } from "./workflows";
 import { findToolDetailIn, type ToolDetail } from "./tooldetail";
 import { parseSetupBlock, type SetupResult } from "./worktree-setup";
-import { starredTitle } from "./util";
+import { starredTitle } from "../core/util";
 
 /** One visible item of a Claude Code session, as shown in the ticket's Conversation tab. */
 export interface QuestionOption {

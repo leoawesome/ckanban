@@ -1,10 +1,10 @@
 import { mkdirSync, readFileSync } from "node:fs";
-import { defaultRoot } from "./store";
+import { defaultRoot } from "../core/store";
 import { join } from "node:path";
 import { findSessionFile } from "./session";
 import { ptySupported } from "./shell";
-import { shellQuote } from "./util";
-import { IS_BINARY } from "./version";
+import { shellQuote } from "../core/util";
+import { IS_BINARY } from "../core/version";
 
 /**
  * Headless `claude -p` runs never get the built-in Artifact tool (off by design in SDK contexts).

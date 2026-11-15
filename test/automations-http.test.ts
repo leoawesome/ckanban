@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { Board } from "../src/server/board";
 import { automationProposal } from "../src/server/automation-proposal";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { startFakeService, type FakeService } from "./fixtures/fake-mcp-service";
-import { tempDir, until } from "./helpers";
+import { tempDir, until } from "./support/helpers";
 
 // The whole path with nothing faked inside the board: a fake service with the standard MCP sign-in, and a fake
 // service that takes a key. The setup card's proposal is saved the way the card saves it, the board runs the real

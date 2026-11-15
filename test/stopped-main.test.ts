@@ -4,9 +4,9 @@ import { expect, test } from "bun:test";
 import { createServer } from "../src/server/http";
 import { familyCard } from "../src/server/main-ticket";
 import { MAIN_PAUSED, mainTicketRules } from "../src/server/prompts";
-import type { Ticket } from "../src/server/types";
-import { board, readArgs, setup, store, untilSpawned, useBoardEnv } from "./board-env";
-import { tempDir } from "./helpers";
+import type { Ticket } from "../src/core/types";
+import { board, readArgs, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
+import { tempDir } from "./support/helpers";
 
 useBoardEnv();
 

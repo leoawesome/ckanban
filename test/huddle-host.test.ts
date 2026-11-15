@@ -7,7 +7,7 @@ import { BUILTIN_TEMPLATES } from "../src/server/huddle-templates";
 import { huddleAgentSystemPrompt, huddleMainPrompt } from "../src/server/prompts";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { agentCtx, heardBy, host, huddles, idle, messages, participant, store, until, useHuddleEnv, you } from "./huddle-env";
+import { agentCtx, heardBy, host, huddles, idle, messages, participant, store, until, useHuddleEnv, you } from "./support/huddle-env";
 
 useHuddleEnv();
 

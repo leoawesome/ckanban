@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { applyPatch, CUT_SHORT, clipText, readStatus, STATUS_FIELD_MAX, statusFacts, statusFiles, statusMarkdown, statusSections } from "../src/server/feature";
 import { run } from "../src/server/git";
 import { featureMemberNote, featureTrailerRule } from "../src/server/prompts";
-import { board, setup, store, useBoardEnv } from "./board-env";
-import { tempDir, until } from "./helpers";
+import { board, setup, store, useBoardEnv } from "./support/board-env";
+import { tempDir, until } from "./support/helpers";
 
 useBoardEnv();
 

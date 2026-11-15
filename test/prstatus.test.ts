@@ -1,10 +1,10 @@
 import { beforeEach, expect, test } from "bun:test";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { mergePr, PrError, refreshPr, resolveConflicts, sendFailures } from "../src/server/prpoller";
 import { actionsIds, conflictMessage, failureMessage, mergeBlock, parsePrStatus, PER_CHECK_LOG, TOTAL_LOG } from "../src/server/prstatus";
-import { Store } from "../src/server/store";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { tempDir } from "./support/helpers";
 
 const URL = "https://github.com/x/y/pull/7";
 const run = (name: string, conclusion: string | null, status = "COMPLETED", job = "11") => ({

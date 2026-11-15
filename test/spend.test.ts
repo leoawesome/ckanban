@@ -2,12 +2,12 @@ import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { addHuddleSpend, SpendIndex } from "../src/server/spend";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { ticketRuns } from "../src/server/ticket-usage";
-import type { ActivityEntry, Profile } from "../src/server/types";
+import type { ActivityEntry, Profile } from "../src/core/types";
 import { capLabel, capStep, capWait, parseCap } from "../web/src/capText";
 import { withActivity } from "../web/src/huddleText";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const NOW = new Date(2026, 9, 11, 15, 0);
 const at = (h: number, day = 11) => new Date(2026, 9, day, h, 0).toISOString();

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
-import { Store } from "../src/server/store";
-import { tempDir } from "./helpers";
+import { Bus } from "../src/core/events";
+import { Store } from "../src/core/store";
+import { tempDir } from "./support/helpers";
 
 function setup() {
   const store = new Store(tempDir("ck-home-"));

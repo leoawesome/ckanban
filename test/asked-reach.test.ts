@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { Store } from "../src/server/store";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { tempDir } from "./support/helpers";
 
 // update_status, gather_tickets, search_chat and read_chat from a chat answering the user's typed message: any feature
 // and any ticket, on its own board or another. Every other run keeps its old reach.

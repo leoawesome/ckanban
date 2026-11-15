@@ -10,9 +10,9 @@ import { cleanLessons, LESSON_MAX, noteRole, parseNotes, serializeNotes } from "
 import { HUDDLE_HEADER, rosterError } from "../src/server/huddle-roster";
 import { BUILTIN_TEMPLATES } from "../src/server/huddle-templates";
 import { HUDDLE_DESCRIPTION_MAX, hostDescription } from "../src/server/prompts";
-import type { Huddle, Profile } from "../src/server/types";
-import { store, board, huddles, server, client, events, learned, idle, heardBy, processes, host, participant, agentCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "./huddle-env";
-import { makeRepo } from "./helpers";
+import type { Huddle, Profile } from "../src/core/types";
+import { store, board, huddles, server, client, events, learned, idle, heardBy, processes, host, participant, agentCtx, text, you, messages, until, api, postJson, useHuddleEnv } from "./support/huddle-env";
+import { makeRepo } from "./support/helpers";
 
 useHuddleEnv();
 

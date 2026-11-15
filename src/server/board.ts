@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { extractFinalText, summarizeEvent } from "./activity";
 import { copyAttachments, deleteAttachments, localizeAttachments, localizeUrls, referencedAttachments } from "./attachments";
-import type { Bus } from "./events";
+import type { Bus } from "../core/events";
 import { isSessionLive as psSessionLive, sessionTitle } from "./claude";
 import { addWorktree, branchesWithPrefix, branchExists, FetchError, isGitRepo, latestBase, listWorktrees, removeWorktree, repoKind, resolveBaseBranch, worktreeDir, type RepoKind } from "./git";
 import { MOVE_TO_PLANNING_RE, STAY_RE } from "./session";
@@ -17,7 +17,7 @@ import { macBanner } from "./notify";
 import { type HostHuddle, STUCK_ON_QUESTIONS, ticketAttention, userWaitReason } from "./attention";
 import type { Question, SessionSummary } from "./session";
 import { RecallIndex, recallText } from "./recall";
-import { pauser } from "./lag";
+import { pauser } from "../core/lag";
 import { askClosed, familyBelow, familyOf, featureRoot, featureRows, groupsOf, hideableCard, isFeature, levelOf, linkProblem, MAX_LEVEL, nextRoundTitle, parentLink, subFeaturesOf, wouldLoop, withYouTool, workingInFamily, type TicketKind } from "../../web/src/family";
 import { chatIsCold, FRESH_CHAT_TOKENS } from "./chat-cache";
 import { applyPatch, CHANGES_SHOWN, FEATURE_TRAILER, familySig, readStatus, SAVED_CHANGES_FILE, savedChangesMarkdown, statusFacts, statusFiles, statusSections, STATUS_NOTE_MAX, writeStatus, type SavedChanges, type SavedStatus, type StatusFacts, type StatusPatch } from "./feature";
@@ -52,17 +52,17 @@ import { BOARD_COMMANDS, commandText, EFFORT_HELP, runOptions, ultracodeOn, vali
 import { mcpConfig } from "./agents";
 import { toolsVersion } from "../mcp-server";
 import type { OwnedSession } from "./shell";
-import { BOARD_NOTE_RE, type Store } from "./store";
+import { BOARD_NOTE_RE, type Store } from "../core/store";
 import { boardKeyEnv, maskSaved } from "./board-keys";
 import { normalizeTags } from "./tags";
-import { autoHuddlesOn, runCapFor, workspaceOf, BOARD_NOTES_KEEP, type BoardNote, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "./types";
+import { autoHuddlesOn, runCapFor, workspaceOf, BOARD_NOTES_KEEP, type BoardNote, type ResultCard, type FollowUp, type Interrupted, type LimitHit, type Plan, type PrStatus, type Profile, type QueuedMessage, type SelfMove, type Status, type Ticket, type TicketMode, type TicketSource } from "../core/types";
 import { CLEANUP_TIMEOUT_MS, copySetupFiles, prepareWorktree, runShell, SETUP_TIMEOUT_MS, withBoardText, type SetupOutcome, type SetupResult } from "./worktree-setup";
 
 const INSTALLING = "Installing project dependencies…";
 /** The live line right after a message is sent, while Claude thinks (no step yet). A fixed marker: the UI shows it as
  * "<the name the user gave Claude> is thinking…" (web/src/avatarMood.ts liveLine); old tickets may still hold "Claude is replying…". */
 export const THINKING_LINE = "Claude is thinking…";
-import { nowIso, slugify, starredTitle } from "./util";
+import { nowIso, slugify, starredTitle } from "../core/util";
 
 /** Where a schedule's run or an automation's new ticket goes as a task (Board.taskPlaceFor). */
 export interface TaskPlace {

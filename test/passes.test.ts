@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { envNameFor, maskText, PassError, Passes } from "../src/server/integrations/passes";
 import { readScopes, resourceMetadataUrl } from "../src/server/integrations/oauth";
 import { startFakeService, type FakeService } from "./fixtures/fake-mcp-service";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 let root: string;
 let svc: FakeService;

@@ -4,9 +4,9 @@ import { expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CommandRows, type CmdRow } from "../src/server/cmdbar";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { rankTickets } from "../web/src/fuzzy";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const DONE = 3000;
 const WORDS = "retry upload phone layout cache spend inbox huddle schedule theme sync modal".split(" ");

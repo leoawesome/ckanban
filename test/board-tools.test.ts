@@ -3,10 +3,10 @@ import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { mcpConfig } from "../src/server/agents";
 import { entryFromInput, inputFromEntry, readBoardTools, writeBoardTools } from "../src/server/board-tools";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { boardToolsSource, McpManager, type BoardToolsSource } from "../src/server/mcp";
-import { Store } from "../src/server/store";
-import { tempDir, until } from "./helpers";
+import { Store } from "../src/core/store";
+import { tempDir, until } from "./support/helpers";
 
 const FAKE = join(import.meta.dir, "fixtures", "fake-claude-mcp.ts");
 

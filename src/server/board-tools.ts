@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { newId } from "./util";
+import { newId } from "../core/util";
 import type { McpAddInput } from "./mcp";
 
 /**

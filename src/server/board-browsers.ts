@@ -4,8 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { helperArgv } from "./artifact";
 import { evaluateInPage, listPages, pageCall, PORT_FILE, portMatches, readPortFile, requestBrowserClose, type PageTarget, type PortFile } from "./cdp";
 import { classifyByAddress, PAGE_PROBES, probeAnswer, siteOf, type PageSignIn } from "./sign-in-signs";
-import { trackedInterval } from "./lag";
-import { nowIso } from "./util";
+import { trackedInterval } from "../core/lag";
+import { nowIso } from "../core/util";
 
 /**
  * Board browsers (More → Browsers): real Google Chromes the board starts itself, one per set of logins, each with its

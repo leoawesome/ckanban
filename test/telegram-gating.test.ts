@@ -3,13 +3,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { Board } from "../src/server/board";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/server/session";
-import { Store } from "../src/server/store";
-import type { Profile } from "../src/server/types";
-import { makeRepo, tempDir, until } from "./helpers";
+import { Store } from "../src/core/store";
+import type { Profile } from "../src/core/types";
+import { makeRepo, tempDir, until } from "./support/helpers";
 
 const TOKEN = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
 const ME = 555;

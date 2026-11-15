@@ -1,8 +1,8 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, sep } from "node:path";
 import { isGitRepo, run } from "./git";
-import type { Store } from "./store";
-import type { Profile, SetupDetection } from "./types";
+import type { Store } from "../core/store";
+import type { Profile, SetupDetection } from "../core/types";
 
 /**
  * Worktree setup: a fresh git worktree lacks git-ignored files (.env, node_modules). The board copies the board's

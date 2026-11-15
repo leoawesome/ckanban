@@ -3,20 +3,20 @@
 import { afterEach, beforeEach } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { BoardClient } from "../src/client";
-import type { ToolContext } from "../src/mcp-server";
-import { Board } from "../src/server/board";
-import { Bus, type BusEvent } from "../src/server/events";
-import { createServer } from "../src/server/http";
-import { Huddles } from "../src/server/huddle";
-import type { LessonInput } from "../src/server/huddle-notes";
-import { Store } from "../src/server/store";
-import type { Huddle, Profile, Ticket } from "../src/server/types";
+import { BoardClient } from "../../src/client";
+import type { ToolContext } from "../../src/mcp-server";
+import { Board } from "../../src/server/board";
+import { Bus, type BusEvent } from "../../src/core/events";
+import { createServer } from "../../src/server/http";
+import { Huddles } from "../../src/server/huddle";
+import type { LessonInput } from "../../src/server/huddle-notes";
+import { Store } from "../../src/core/store";
+import type { Huddle, Profile, Ticket } from "../../src/core/types";
 import { makeRepo, readJsonl, tempDir } from "./helpers";
 
 export { until } from "./helpers";
 
-export const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
+export const FAKE = join(import.meta.dir, "..", "fixtures", "fake-claude.ts");
 
 export async function git(cwd: string, ...args: string[]): Promise<string> {
   const p = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });

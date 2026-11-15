@@ -3,8 +3,8 @@ import type { DiffFile, TicketDiff } from "./diff";
 import { parseResult } from "./result";
 import type { SessionEntry } from "./session";
 import { addSideSpend, READ_TOOLS, type SideCaller } from "./side-call";
-import { atomicWrite, type Store } from "./store";
-import type { HuddleFinding, Ticket } from "./types";
+import { atomicWrite, type Store } from "../core/store";
+import type { HuddleFinding, Ticket } from "../core/types";
 
 // "Help me understand": answers about a ticket from a reading side call (side-call.ts) on Sonnet, read-only in the
 // ticket's folder, so the ticket's session gains no turn. Each answer is a card in the ticket's chat, kept in the

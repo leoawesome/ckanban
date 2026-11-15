@@ -2,14 +2,14 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { Learner } from "../src/server/learner";
 import { lessonBullets, lessonsBlock } from "../src/server/lessons";
 import { SessionCache } from "../src/server/session";
 import type { SideCallInput, SideCallResult } from "../src/server/side-call";
-import { Store } from "../src/server/store";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { tempDir } from "./support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);
 const user = (uuid: string, at: string, text: string) => L({ type: "user", uuid, timestamp: at, message: { role: "user", content: text } });

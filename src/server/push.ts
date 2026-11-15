@@ -3,7 +3,7 @@
 // right now (visibility heartbeat from the page) is skipped: the user already sees it.
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { nowIso } from "./util";
+import { nowIso } from "../core/util";
 import { deviceId, generateVapidKeys, pushRequest, type PushTarget, type VapidKeys } from "./webpush";
 
 export interface PushDevice extends PushTarget {

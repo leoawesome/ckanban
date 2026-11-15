@@ -2,8 +2,8 @@ import { beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MAX_OUTPUT_FILES, readJsonlPage, Store, TICKET_RECHECK_MS } from "../src/server/store";
-import type { Profile } from "../src/server/types";
+import { MAX_OUTPUT_FILES, readJsonlPage, Store, TICKET_RECHECK_MS } from "./store";
+import type { Profile } from "./types";
 
 let store: Store;
 const profile: Profile = {

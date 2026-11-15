@@ -3,10 +3,10 @@
 import { expect, test } from "bun:test";
 import { attentionFor } from "../src/server/attention";
 import { familyCard, stepWait } from "../src/server/main-ticket";
-import type { Ticket } from "../src/server/types";
+import type { Ticket } from "../src/core/types";
 import { attentionLabel, cardFamily, featureBusy, stepsText } from "../web/src/cardState";
 import { groupByColumn } from "../web/src/columns";
-import { board, setup, store, useBoardEnv } from "./board-env";
+import { board, setup, store, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

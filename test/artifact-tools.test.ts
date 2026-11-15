@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { artifactFileName, artifactWaitMs, callTool, handleMessage, type ToolContext } from "../src/mcp-server";
 import type { ArtifactJob } from "../src/server/artifact";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const URL = "https://claude.ai/artifact/AbC-123";
 

@@ -1,9 +1,9 @@
 // What the daemon needs from a ticket's run log (activity.jsonl), kept per file and brought up to date by reading only
 // the bytes appended since last time (like SpendIndex.logSteps). Run logs reach tens of MB on a real board, so reading
 // them whole (to count changed files, a follow-up's cost, a session's previous total) froze the daemon.
-import { pauser } from "./lag";
+import { pauser } from "../core/lag";
 import { loadLog, logStat, openLog } from "./run-log";
-import type { ActivityEntry } from "./types";
+import type { ActivityEntry } from "../core/types";
 
 /** Bytes read between pauses: a first read of a 50 MB log goes in slices. */
 const CHUNK = 1 << 20;

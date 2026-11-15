@@ -11,10 +11,10 @@ import { LABEL, PLIST_PATH, plistXml } from "./server/launchd";
 import { RESTART_MAX_WAIT_MS } from "./server/board";
 import { startDaemon } from "./server/main";
 import { AgentError, AgentRegistry } from "./server/agents";
-import { defaultRoot, Store } from "./server/store";
+import { defaultRoot, Store } from "./core/store";
 import { qrTerminal, RemoteAccess, RemoteError, remoteListenPort, type RemoteStatus } from "./server/remote";
-import { latestRelease } from "./server/update";
-import { IS_BINARY, VERSION } from "./server/version";
+import { latestRelease } from "./core/update";
+import { IS_BINARY, VERSION } from "./core/version";
 import { uninstallExtras } from "./uninstall-extras";
 import { mcpCommand, profilesCommand, ticketCommand, TICKET_USAGE } from "./ticket-cli";
 

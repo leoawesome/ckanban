@@ -4,16 +4,16 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { HelperRunner } from "../src/server/helper/runner";
 import { DEFAULT_TELEGRAM } from "../src/server/helper/telegram";
 import { WaitStore } from "../src/server/helper/waits";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/server/session";
 import type { SideCallResult } from "../src/server/side-call";
-import { Store } from "../src/server/store";
-import type { Profile, Ticket } from "../src/server/types";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import type { Profile, Ticket } from "../src/core/types";
+import { tempDir } from "./support/helpers";
 
 const TOKEN = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
 const ME = 555;

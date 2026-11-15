@@ -22,8 +22,8 @@ import type { QuickChat, QuickChatHooks, QuickChatView, RunLimits } from "../qui
 import { describeCron } from "../cron";
 import { describeAt, parseAt } from "../jobs";
 import { addDeskSpend, deskSpendToday } from "../spend";
-import { atomicWrite, type Store } from "../store";
-import type { Ticket } from "../types";
+import { atomicWrite, type Store } from "../../core/store";
+import type { Ticket } from "../../core/types";
 import { clockTime, cut } from "./core";
 import { FRONT_DESK_ENV } from "./frontdesk-id";
 import type { MessageStore } from "./messages";

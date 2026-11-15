@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { RUN_HEADER } from "../src/server/scheduler";
-import { Store } from "../src/server/store";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { tempDir } from "./support/helpers";
 
 // "Fresh chat (keeps status)" in the ticket panel: POST .../fresh-chat starts a new Claude session for the next
 // message. Chat history (comments, earlier sessions), status, column and outputs stay.

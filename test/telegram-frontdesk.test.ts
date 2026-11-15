@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { dayEnded, dayTitle, DESK_CAP_DEFAULT, DESK_UNMEASURED_USD, DUPLICATE_MS, FrontDesk, heldKind, type DeskChats } from "../src/server/helper/frontdesk";
 import { FRONT_DESK_ENV } from "../src/server/helper/frontdesk-id";
 import { ACTION_TTL_MS } from "../src/server/helper/tgstores";
@@ -10,11 +10,11 @@ import { describeAt } from "../src/server/jobs";
 import { normalizeSettings, Notifier, readNotifySettings, writeNotifySettings } from "../src/server/notify";
 import type { QuickChat, QuickChatHooks, QuickChatView } from "../src/server/quickchat";
 import { addDeskSpend, addTelegramSpend, deskSpendToday, telegramSpendToday } from "../src/server/spend";
-import { Store } from "../src/server/store";
-import type { Profile } from "../src/server/types";
+import { Store } from "../src/core/store";
+import type { Profile } from "../src/core/types";
 import { BoardClient, ConfirmPending } from "../src/client";
 import { callTool } from "../src/mcp-server";
-import { tempDir, until } from "./helpers";
+import { tempDir, until } from "./support/helpers";
 
 const TOKEN = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
 const ME = 555;

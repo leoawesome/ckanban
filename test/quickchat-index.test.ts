@@ -2,9 +2,9 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWrite } from "../src/server/store";
+import { atomicWrite } from "../src/core/store";
 import { ChatIndex, cursorOf, type IndexedChat } from "../src/server/quickchat-index";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 type Chat = IndexedChat & { title: string };
 const CHATS = 3000;
@@ -130,7 +130,7 @@ test("the sliced walk freezes for no more than its slices on a cold folder", asy
     worst = Math.max(worst, now - last - 5);
     last = now;
   }, 5);
-  const { pauser } = await import("../src/server/lag");
+  const { pauser } = await import("../src/core/lag");
   const list = await index.allSliced("b", pauser());
   await Bun.sleep(20);
   clearInterval(timer);

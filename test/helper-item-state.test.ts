@@ -3,16 +3,16 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { itemStateKey } from "../src/server/helper/core";
 import { helperSpendFile, helperSpendOn, HelperRunner, lineMessage } from "../src/server/helper/runner";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/server/session";
 import { addSideSpend, type SideCallResult } from "../src/server/side-call";
-import { Store } from "../src/server/store";
-import type { Profile, Ticket } from "../src/server/types";
+import { Store } from "../src/core/store";
+import type { Profile, Ticket } from "../src/core/types";
 import { anyItemOpen, itemStateLabel, spendLine, type Message } from "../web/src/helperText";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const DAY = (h: number, m = 0) => new Date(2026, 10, 9, h, m).getTime();
 

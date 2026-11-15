@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { callTool } from "../src/mcp-server";
 import { DIGEST_MAX_CHARS, digestWindow, HUDDLE_IDLE_MS } from "../src/server/huddle";
 import { huddleDigest } from "../src/server/prompts";
-import { agentCtx, heardBy, host, huddles, idle, messages, participant, useHuddleEnv } from "./huddle-env";
+import { agentCtx, heardBy, host, huddles, idle, messages, participant, useHuddleEnv } from "./support/huddle-env";
 
 useHuddleEnv();
 

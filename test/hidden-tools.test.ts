@@ -10,14 +10,14 @@ import { Linker } from "../src/server/linker";
 import { familyCard, KIND_DEFAULTS, stepName, stepWait, TOOL_NO_NOTIFY, youWaiting } from "../src/server/main-ticket";
 import { statusFacts, statusSections } from "../src/server/feature";
 import { pickRelated } from "../src/server/recall";
-import type { Ticket } from "../src/server/types";
+import type { Ticket } from "../src/core/types";
 import { ticketCommand } from "../src/ticket-cli";
 import { deleteTitle, parkNeedsConfirm, parkText, parkTitle, stopTitle } from "../web/src/familyActions";
 import { hiddenTool, mainTicketOf, TICKET_KINDS, withYouTool } from "../web/src/family";
 import { groupByColumn } from "../web/src/columns";
 import { searchBoard } from "../web/src/toolTickets";
-import { board, setup, store, useBoardEnv } from "./board-env";
-import { tempDir } from "./helpers";
+import { board, setup, store, useBoardEnv } from "./support/board-env";
+import { tempDir } from "./support/helpers";
 
 useBoardEnv();
 

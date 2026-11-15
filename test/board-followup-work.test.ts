@@ -4,11 +4,11 @@
 import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { chatPrompt, followUpRule } from "../src/server/prompts";
-import { withoutAddOn } from "../src/server/store";
-import type { Ticket } from "../src/server/types";
+import { withoutAddOn } from "../src/core/store";
+import type { Ticket } from "../src/core/types";
 import { familyOf, levelOf, parentLink } from "../web/src/family";
 import { followUpFor, followUpPlace, followUpState } from "../web/src/followUp";
-import { store, board, setup, useBoardEnv } from "./board-env";
+import { store, board, setup, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

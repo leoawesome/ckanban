@@ -4,8 +4,8 @@
 import type { Board } from "./board";
 import { jsonObject } from "./learn";
 import { addSideSpend, type SideCaller } from "./side-call";
-import type { Store } from "./store";
-import type { Ticket } from "./types";
+import type { Store } from "../core/store";
+import type { Ticket } from "../core/types";
 import { hiddenTool, parentLink, wouldLoop } from "../../web/src/family";
 
 /** Tickets a suggestion may point at: every open one, plus Done ones touched in the last RECENT_DAYS days. */

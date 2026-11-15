@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
-import { Store } from "../src/server/store";
-import type { Profile } from "../src/server/types";
-import { makeRepo, tempDir } from "./helpers";
+import { Bus } from "../src/core/events";
+import { Store } from "../src/core/store";
+import type { Profile } from "../src/core/types";
+import { makeRepo, tempDir } from "./support/helpers";
 
 const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
 

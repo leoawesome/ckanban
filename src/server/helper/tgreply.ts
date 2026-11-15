@@ -11,8 +11,8 @@
 // Buttons are PendingActions (single-use, ~10 minutes); every tap checks the ticket again before acting.
 // When a ticket that got a message from Telegram ends its turn, its reply goes back as an answer to that message.
 import type { SessionSummary } from "../session";
-import type { Store } from "../store";
-import type { Ticket } from "../types";
+import type { Store } from "../../core/store";
+import type { Ticket } from "../../core/types";
 import type { WaitStore, WaitRecord } from "./waits";
 import { NOT_TAKING, TELEGRAM_MAX, safeCut } from "./telegram";
 import type { LinkItem, PendingAction, PendingActions, TelegramLinks } from "./tgstores";

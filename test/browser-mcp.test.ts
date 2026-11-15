@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BrowserMcp, keyEvent } from "../src/browser-mcp";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 /** A fake browser endpoint speaking enough of the DevTools protocol for the tools (no real Chrome in tests). */
 function fakeBrowser() {

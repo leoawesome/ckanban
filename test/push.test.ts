@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { createECDH, createPublicKey, randomBytes, verify } from "node:crypto";
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { normalizeSettings, Notifier, pushPayload, writeNotifySettings } from "../src/server/notify";
 import { PushService, VISIBLE_MS } from "../src/server/push";
-import { Store } from "../src/server/store";
-import type { Profile } from "../src/server/types";
+import { Store } from "../src/core/store";
+import type { Profile } from "../src/core/types";
 import { b64url, decryptPayload, encryptPayload, fromB64url, generateVapidKeys, pushRequest, vapidJwt } from "../src/server/webpush";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 // RFC 8291 section 5 / appendix A.
 const RFC = {

@@ -1,6 +1,6 @@
 import { closeSync, openSync, readSync, statSync } from "node:fs";
 import { day } from "./quiet";
-import type { ScheduleHistoryEntry } from "./types";
+import type { ScheduleHistoryEntry } from "../core/types";
 
 /** Days of fires and quiet runs kept for the spend figure (the list shows 7; one more for the day boundary). */
 const RECENT_MS = 8 * 86_400_000;

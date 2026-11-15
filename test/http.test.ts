@@ -2,12 +2,12 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { run } from "../src/server/git";
 import { createServer, isAllowedRequest } from "../src/server/http";
 import { ptySupported } from "../src/server/shell";
-import { Store } from "../src/server/store";
-import { makeRepo, tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { makeRepo, tempDir } from "./support/helpers";
 
 let server: ReturnType<typeof createServer>;
 let userBrowser = true;

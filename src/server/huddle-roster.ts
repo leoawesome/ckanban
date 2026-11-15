@@ -1,14 +1,10 @@
 // Huddle rosters and @mentions: plain helpers shared by the daemon (huddle.ts) and the MCP server.
 import { MAIN_PRESET } from "./huddle-presets";
-import type { Huddle, HuddleMode, HuddleWorkspace } from "./types";
+import type { Huddle, HuddleMode, HuddleWorkspace } from "../core/types";
 
 export const DEFAULT_MAX_PARTICIPANTS = 8;
-/** Set on a huddle agent's claude process: "<huddle id>/<handle>/<token>". The token proves who is calling. */
-export const HUDDLE_AGENT_ENV = "CKANBAN_HUDDLE_AGENT";
-/** The MCP server/CLI forwards HUDDLE_AGENT_ENV to the daemon in this header. */
-export const HUDDLE_HEADER = "x-ckanban-huddle-agent";
-/** Where a request comes from: "ui" (the board's web UI) or "mcp" (BoardClient: the MCP server and CLI). Recorded on posts. */
-export const SOURCE_HEADER = "x-ckanban-source";
+// Huddle agent env and header names live in core/env.ts; re-exported for existing importers.
+export { HUDDLE_AGENT_ENV, HUDDLE_HEADER, SOURCE_HEADER } from "../core/env";
 /** The host ticket's own session: the coordinator. */
 export const MAIN_HANDLE = "main";
 /** The user, posting from the board. */

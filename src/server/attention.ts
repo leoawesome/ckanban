@@ -2,8 +2,8 @@ import { askClosed, featureRows, hiddenTool } from "../../web/src/family";
 import { stepWait, type StepWait } from "./main-ticket";
 import { childrenOf, isComplete, planActive } from "./plan";
 import type { SessionSummary } from "./session";
-import type { Store } from "./store";
-import type { Ticket } from "./types";
+import type { Store } from "../core/store";
+import type { Ticket } from "../core/types";
 
 /** Plan.reason when the planner's run ended asking the user (board.ts stuck()). */
 export const STUCK_ON_QUESTIONS = "there are questions for you";

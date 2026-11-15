@@ -5,9 +5,9 @@ import { extractFinalText, summarizeEvent } from "./activity";
 import { ATTACHMENT_NAME_SRC } from "./attachments";
 import { run, type RunResult } from "./git";
 import { maskSecrets } from "./mcp";
-import type { Store } from "./store";
-import type { ActivityEntry, Profile, Ticket } from "./types";
-import { REPO, VERSION } from "./version";
+import type { Store } from "../core/store";
+import type { ActivityEntry, Profile, Ticket } from "../core/types";
+import { REPO, VERSION } from "../core/version";
 
 export const BUG_REPO = REPO;
 export const LOG_MAX_LINES = 50;

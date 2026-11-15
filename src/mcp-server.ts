@@ -3,15 +3,14 @@
 import { createHash } from "node:crypto";
 import { hiddenTool, withYouTool } from "../web/src/family";
 import { TOOL_NO_NOTIFY } from "./server/main-ticket";
-import { FRONT_DESK_ENV } from "./server/helper/frontdesk-id";
-import { QUICK_CHAT_ENV } from "./server/scheduler";
+import { FRONT_DESK_ENV, HUDDLE_AGENT_ENV, QUICK_CHAT_ENV } from "./core/env";
 import { FEEDBACK_MAX, helperLineText, suggestedLineError } from "./server/helper/line";
 import {
   assertCanChange, BoardClient, bugReportText, ClientError, ConfirmPending, deviceTakeText, huddleCaller, parseMode, parseStatus, profileList, resolveProfile, RUN_ENV, runProfile,
   familyLine, ticketLine, ticketListText, ticketText, type TicketListQuery, type GatherResult, type HuddlePage, type JobInfo, type JobInput, type ScheduleHistoryInfo, type ScheduleInfo, type ScheduleInput, type TicketPatch,
 } from "./client";
 import { BUILTIN_PRESETS, MAIN_PRESET, presetLine, presetName } from "./server/huddle-presets";
-import { HUDDLE_AGENT_ENV, huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "./server/huddle-roster";
+import { huddleLine, PROPOSED_MAX_COST_USD, proposedBudget, rosterEntryError, rosterError } from "./server/huddle-roster";
 import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, MAX_TEXT, PLAN_REVIEW, templateLine, TOPIC_MAX, topicInput } from "./server/huddle-templates";
 import { squadProposal } from "./server/squad";
 import { CLAUDE_MESSAGE_GAP_MS, CLAUDE_MESSAGE_MAX, type MessageResult } from "./server/notify";
@@ -24,8 +23,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ArtifactJob, type ArtifactOutcome, runArtifactJob } from "./server/artifact";
-import { AUTO_HUDDLE_TRIGGERS, STATUSES, USER_HUDDLE_TRIGGER } from "./server/types";
-import { REPO, VERSION } from "./server/version";
+import { AUTO_HUDDLE_TRIGGERS, STATUSES, USER_HUDDLE_TRIGGER } from "./core/types";
+import { REPO, VERSION } from "./core/version";
 
 /** What gathering tickets into a feature did, for gather_tickets and create_ticket's gather. */
 const gatherText = (r: GatherResult): string => [

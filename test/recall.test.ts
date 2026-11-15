@@ -2,8 +2,8 @@
 import { expect, test } from "bun:test";
 import { pickRelated, RECALL_CHARS, RECALL_MAX, recallBlock, words, type RecallRow } from "../src/server/recall";
 import { chatPrompt, firstRunPrompt, freshSessionPrompt } from "../src/server/prompts";
-import type { Ticket } from "../src/server/types";
-import { board, readArgs, setup, store, useBoardEnv } from "./board-env";
+import type { Ticket } from "../src/core/types";
+import { board, readArgs, setup, store, useBoardEnv } from "./support/board-env";
 
 const row = (id: string, title: string, o: Partial<RecallRow["ticket"]> & { summary?: string | null } = {}): RecallRow => {
   const { summary = null, ...rest } = o;

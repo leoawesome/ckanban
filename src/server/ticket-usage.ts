@@ -2,10 +2,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { atomicWrite } from "./store";
-import { pauser } from "./lag";
+import { atomicWrite } from "../core/store";
+import { pauser } from "../core/lag";
 import { logStat, readLog } from "./run-log";
-import type { ActivityEntry } from "./types";
+import type { ActivityEntry } from "../core/types";
 import type { UsageResult } from "./usage";
 
 // How much of the Claude plan a ticket used. Anthropic only reports a plan-wide % per 5h window, so a ticket's

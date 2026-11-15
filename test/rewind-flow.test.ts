@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { run } from "../src/server/git";
 import { applyRewind, previewRewind, takeSnapshot } from "../src/server/rewind";
 import { parseSession } from "../src/server/session";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 async function project(history: boolean) {
   const dir = tempDir("ck-proj-");

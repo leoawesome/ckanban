@@ -1,21 +1,15 @@
 import { existsSync } from "node:fs";
-import { trackedInterval } from "./lag";
+import { trackedInterval } from "../core/lag";
 import type { Board } from "./board";
 import { cronError, describeCron, nextRun, parseCron } from "./cron";
-import type { Bus } from "./events";
-import type { Store } from "./store";
+import type { Bus } from "../core/events";
+import type { Store } from "../core/store";
 import { normalizeTags } from "./tags";
-import type { Schedule, ScheduleEditAction, ScheduleEditor, ScheduleHistoryEntry, SchedulePrevious, ScheduleTrigger, Ticket } from "./types";
-import { newId } from "./util";
+import type { Schedule, ScheduleEditAction, ScheduleEditor, ScheduleHistoryEntry, SchedulePrevious, ScheduleTrigger, Ticket } from "../core/types";
+import { newId } from "../core/util";
 
-/** Request header the ckanban MCP tools send from inside a board run (value: the run's CKANBAN_TICKET). */
-export const RUN_HEADER = "x-ckanban-run";
-/**
- * A quick chat's runs get QUICK_CHAT_ENV ("<profile>/<chat id>"), and BoardClient sends it back as QUICK_CHAT_HEADER:
- * quick chats can't show a delete card, so the daemon refuses their schedule deletes.
- */
-export const QUICK_CHAT_ENV = "CKANBAN_QUICK_CHAT";
-export const QUICK_CHAT_HEADER = "x-ckanban-quick-chat";
+// Run, quick chat env and header names live in core/env.ts; re-exported for existing importers.
+export { QUICK_CHAT_ENV, QUICK_CHAT_HEADER, RUN_HEADER } from "../core/env";
 
 export class ScheduleError extends Error {
   constructor(public status: number, message: string) {

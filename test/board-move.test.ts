@@ -1,7 +1,7 @@
 // Board: moving a Backlog ticket to another board.
 import { expect, test } from "bun:test";
-import { tempDir } from "./helpers";
-import { store, board, setup, useBoardEnv } from "./board-env";
+import { tempDir } from "./support/helpers";
+import { store, board, setup, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

@@ -7,8 +7,8 @@ import { parseMentions, proposedBudget } from "../src/server/huddle-roster";
 import { parseSession } from "../src/server/session";
 import { huddleAgentPrompt, huddleDigest, huddleMainPrompt } from "../src/server/prompts";
 import { BUILTIN_PRESETS } from "../src/server/huddle-presets";
-import type { Huddle } from "../src/server/types";
-import { FAKE, store, bus, board, huddles, server, client, idle, heardBy, processes, host, participant, mainCtx, text, you, messages, until, useHuddleEnv } from "./huddle-env";
+import type { Huddle } from "../src/core/types";
+import { FAKE, store, bus, board, huddles, server, client, idle, heardBy, processes, host, participant, mainCtx, text, you, messages, until, useHuddleEnv } from "./support/huddle-env";
 
 useHuddleEnv();
 

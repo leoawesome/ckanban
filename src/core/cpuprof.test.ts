@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { hottest, profileFor } from "../src/server/cpuprof";
-import { tempDir } from "./helpers";
+import { hottest, profileFor } from "./cpuprof";
+import { tempDir } from "../../test/support/helpers";
 
 test("hottest: self and total time by function", () => {
   const nodes = [

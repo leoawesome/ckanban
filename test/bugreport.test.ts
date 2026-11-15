@@ -7,12 +7,12 @@ import {
   buildIssueBody, draftReport, fileIssue, LOG_MAX_BYTES, logBlock, MAX_URL_LENGTH, newIssueUrl, screenshotNames, scrub,
   submitReport, tail, type BugBlock, type GhRunner,
 } from "../src/server/bugreport";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { Store } from "../src/server/store";
-import type { ActivityEntry } from "../src/server/types";
+import { Store } from "../src/core/store";
+import type { ActivityEntry } from "../src/core/types";
 import { ticketCommand } from "../src/ticket-cli";
-import { makeRepo, tempDir } from "./helpers";
+import { makeRepo, tempDir } from "./support/helpers";
 
 const SHOT = "0123456789abcdef0123456789abcdef.png";
 

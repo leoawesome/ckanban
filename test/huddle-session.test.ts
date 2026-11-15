@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { Bus, type BusEvent } from "../src/server/events";
+import { Bus, type BusEvent } from "../src/core/events";
 import { outputSummary, parseHuddleSession, pollHuddleSessions, STEP_TEXT_MAX } from "../src/server/huddle-session";
-import { Store } from "../src/server/store";
-import type { Huddle } from "../src/server/types";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import type { Huddle } from "../src/core/types";
+import { tempDir } from "./support/helpers";
 
 const line = (o: unknown) => JSON.stringify(o);
 const asst = (...content: unknown[]) => line({ type: "assistant", timestamp: "2026-10-10T10:00:00Z", message: { content } });

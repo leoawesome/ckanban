@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Profile } from "./types";
+import type { Profile } from "../core/types";
 
 export interface RunResult {
   code: number;

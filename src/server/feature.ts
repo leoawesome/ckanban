@@ -7,7 +7,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { childrenByParent, familyState, featureRows, featureTasks, settled, STATE_WORDS, type FamilyState } from "../../web/src/family";
 import { ticketPrs } from "./prs";
-import type { Ticket } from "./types";
+import type { Ticket } from "../core/types";
 
 /** The sections Claude writes, in the block's order (Pull requests sits between waiting and next). */
 export const STATUS_FIELDS = ["goal", "done", "broken", "waiting", "next"] as const;

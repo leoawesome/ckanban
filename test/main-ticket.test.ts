@@ -13,9 +13,9 @@ import { createServer } from "../src/server/http";
 import { KIND_DEFAULTS, progressStep, wakeTable } from "../src/server/main-ticket";
 import { isComplete, planStep } from "../src/server/plan";
 import { MAIN_GO_AHEAD, mainWakePrompt } from "../src/server/prompts";
-import type { Ticket } from "../src/server/types";
-import { argsFile, board, bus, FAKE, readArgs, setBoard, setup, store, untilSpawned, useBoardEnv } from "./board-env";
-import { tempDir, until } from "./helpers";
+import type { Ticket } from "../src/core/types";
+import { argsFile, board, bus, FAKE, readArgs, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
+import { tempDir, until } from "./support/helpers";
 
 useBoardEnv();
 

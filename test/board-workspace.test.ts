@@ -3,8 +3,8 @@ import { expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { run, worktreeDir } from "../src/server/git";
-import { tempDir } from "./helpers";
-import { store, bus, board, setup, readArgs, untilSpawned, useBoardEnv } from "./board-env";
+import { tempDir } from "./support/helpers";
+import { store, bus, board, setup, readArgs, untilSpawned, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

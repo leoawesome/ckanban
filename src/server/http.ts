@@ -2,16 +2,16 @@ import { parseConnectorSetting } from "./connectors";
 import { AvatarError, CLAUDE_KEY, withAvatar, withClaudeName, withoutAvatar } from "./avatars";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, normalize, resolve } from "node:path";
-import { pauser, routeLabel, track } from "./lag";
+import { pauser, routeLabel, track } from "../core/lag";
 import { CMD_SEARCH_LIMIT, CommandRows } from "./cmdbar";
 import { CHAT_PAGE } from "./quickchat-index";
 import { runArtifactJob, type ArtifactJob, type ArtifactOutcome } from "./artifact";
-import { profileFor } from "./cpuprof";
+import { profileFor } from "../core/cpuprof";
 import { claudeSessionFile, ConflictError, recoveryFor, type Board } from "./board";
 import { ContextUsage, type ContextSpec } from "./context-usage";
 import { FollowUpError } from "./followup";
 import { claudeDefaults, findClaude, listClaudeProjects, listSessions, liveSessionMatch, pickFolder, processCommands } from "./claude";
-import type { Bus, BusEvent } from "./events";
+import type { Bus, BusEvent } from "../core/events";
 import { EFFORT_HELP, listCommands, MODEL_HELP, validEffort, validModel } from "./commands";
 import { isManager, kindDefaults, parseTaskModels, TOOL_NO_NOTIFY } from "./main-ticket";
 import { learnedVersions } from "./model-versions";
@@ -43,7 +43,7 @@ import { BugReportError, draftReport, submitReport, type BugBlockId, type BugSou
 import {
   AttachmentError, attachmentFile, attachmentType, cleanFileName, IMAGE_TYPES, opensInline, saveAttachment, UNSUPPORTED, uploadExt,
 } from "./attachments";
-import { FileError, findInRoots, listDirPage, openWithSystem, readFileForView, ticketFolder, type FileRoot } from "./files";
+import { FileError, findInRoots, listDirPage, openWithSystem, readFileForView, ticketFolder, type FileRoot } from "../core/files";
 import { boardToolsSource, McpError, McpManager } from "./mcp";
 import { MacOnlyError, MessageError, Notifier, TG_PAIR_FROM_MAC } from "./notify";
 import { HelperError, type HelperRunner } from "./helper/runner";
@@ -66,7 +66,7 @@ import { QuickChatError, QuickChats } from "./quickchat";
 import { FRONT_DESK_HEADER } from "./helper/frontdesk-id";
 import type { TerminalWatcher } from "./terminals";
 import { attachmentHeader, canCopyFile, copyFileToClipboard, markdownPage, markdownTitle, revealFile, ShareError } from "./share";
-import { UpdateChecker } from "./update";
+import { UpdateChecker } from "../core/update";
 import { SpendIndex } from "./spend";
 import { quietDays, scheduleSpend } from "./quiet";
 import { makeSideCaller, readSideSpend, type SideCaller } from "./side-call";
@@ -81,10 +81,10 @@ import { Linker } from "./linker";
 import { familyOf, familyRoot, featureRoot, fitParent, groupsOf, hiddenTool, levelOf, MAX_LEVEL, withYouTool, isFeature, LINK_WORDS, openFeatures, parentLink, TICKET_KINDS, type TicketKind } from "../../web/src/family";
 import { STATUS_FIELDS, type StatusPatch } from "./feature";
 import { createdFromDraft } from "../../web/src/proposalMatch";
-import type { Store } from "./store";
+import type { Store } from "../core/store";
 import { boardScope, byIdNewest, countScope, DONE_PAGE, donePage, doneSearch, idsScope, listScope, scopeIndex, type ScopeIndex } from "./ticketScope";
-import { runCapFor, SELF_MOVES, STATUSES, type HelperRuleCardState, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "./types";
-import { nowIso, slugify } from "./util";
+import { runCapFor, SELF_MOVES, STATUSES, type HelperRuleCardState, type Profile, type SelfMove, type Schedule, type ScheduleEditor, type Status, type Ticket, type Workspace } from "../core/types";
+import { nowIso, slugify } from "../core/util";
 import { applyDetection, detectSetup } from "./worktree-setup";
 
 /** A chat on another board acting for the user here (see runRights): its board and ticket. */

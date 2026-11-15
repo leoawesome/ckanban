@@ -1,12 +1,12 @@
 import { beforeEach, expect, test } from "bun:test";
 import type { HostHuddle } from "../src/server/attention";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { checkPr, mergePr, refreshPr, startPoller, type PrState } from "../src/server/prpoller";
 import { parsePrStatus } from "../src/server/prstatus";
 import type { SessionSummary } from "../src/server/session";
-import { Store } from "../src/server/store";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { tempDir } from "./support/helpers";
 
 let store: Store;
 let board: Board;

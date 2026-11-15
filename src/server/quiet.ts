@@ -1,5 +1,5 @@
 import type { QuietContext } from "./prompts";
-import type { Schedule, ScheduleHistoryEntry, Ticket } from "./types";
+import type { Schedule, ScheduleHistoryEntry, Ticket } from "../core/types";
 
 // Quiet schedules (Schedule.quiet): a run that finds nothing for the user ends with "quiet": true and the board
 // removes its ticket, leaving one line in the schedule's history. Its runs are told what they raised that is still open.

@@ -3,7 +3,7 @@ import { BUILTIN_TEMPLATES, FRESH_HELPER_CHECK, FRESH_READER_CHECK, PLAN_REVIEW_
 import { planProposal } from "../src/server/plan-proposal";
 import { autoHuddleRule, chatPrompt, huddleMainPrompt, planningPrompt, TICKETS_FORMAT } from "../src/server/prompts";
 import type { SessionEntry } from "../src/server/session";
-import type { Huddle, HuddleParticipant, Ticket } from "../src/server/types";
+import type { Huddle, HuddleParticipant, Ticket } from "../src/core/types";
 
 const T = { id: "t_1", title: "Settings", body: "Old description" };
 const e = (x: Partial<SessionEntry>): SessionEntry => ({ uuid: crypto.randomUUID(), at: "", role: "assistant", kind: "text", text: "", ...x });

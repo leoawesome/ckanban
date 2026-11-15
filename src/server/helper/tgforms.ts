@@ -13,7 +13,7 @@
 // Form messages and their edits are paced about one a second (TelegramBot.paced, with 429 retry_after).
 import { answersMessage, answerText } from "../../../web/src/questionForms";
 import type { Question, SessionSummary } from "../session";
-import type { Store } from "../store";
+import type { Store } from "../../core/store";
 import type { Responder, TgButton } from "./tgreply";
 import type { LinkItem, PendingAction, PendingActions, TelegramLinks } from "./tgstores";
 import { normalizeQuestion, type WaitStore } from "./waits";

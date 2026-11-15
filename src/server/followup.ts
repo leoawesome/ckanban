@@ -2,10 +2,10 @@
 // it is due, wakes the same conversation with what happened since (followUpWakePrompt); Claude checks, acts, and sets
 // the next follow-up or stops. A board run is `claude -p`, so Claude Code's own timers die with it: the daemon owns this one.
 import type { Board } from "./board";
-import { trackedInterval } from "./lag";
+import { trackedInterval } from "../core/lag";
 import { parseAt } from "./jobs";
-import type { Store } from "./store";
-import type { FollowUpLogEntry } from "./types";
+import type { Store } from "../core/store";
+import type { FollowUpLogEntry } from "../core/types";
 
 /** A follow-up sooner than this is refused as a probable mistake (the watcher ticks every 30 s anyway). */
 export const FOLLOW_UP_MIN_MS = 60_000;

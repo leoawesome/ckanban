@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { Devices, STALE_WAIT_MS } from "../src/server/devices";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const fresh = (now?: () => number) => {
   const changed: string[][] = [];

@@ -12,8 +12,8 @@ import { threadItemText, ticketBody } from "../src/server/integrations/ticket-te
 import { corrections } from "../src/server/lessons";
 import { LoopManager, type LoopInput } from "../src/server/loops";
 import { parseSession, type SessionSummary } from "../src/server/session";
-import { board, bus, FAKE, readArgs, replays, restartBoard, setBoard, setup, store, untilSpawned, useBoardEnv } from "./board-env";
-import { tempDir, until } from "./helpers";
+import { board, bus, FAKE, readArgs, replays, restartBoard, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
+import { tempDir, until } from "./support/helpers";
 
 useBoardEnv();
 

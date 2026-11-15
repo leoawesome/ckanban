@@ -23,11 +23,11 @@ import { join } from "node:path";
 import { Transform, Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
-import { pauser, track, trackedInterval } from "./lag";
+import { pauser, track, trackedInterval } from "../core/lag";
 import { gzOf, removeStaleTemps, settleBoth } from "./run-log";
-import type { Store } from "./store";
-import type { Ticket } from "./types";
-import { newId } from "./util";
+import type { Store } from "../core/store";
+import type { Ticket } from "../core/types";
+import { newId } from "../core/util";
 
 /** Done for longer than this before the log is compressed. */
 export const COMPRESS_AFTER_MS = 30 * 86_400_000;

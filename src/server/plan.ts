@@ -1,7 +1,7 @@
 // Planner orchestration: pure decisions about a plan's children. Board.advancePlans() applies them.
 // Ordering is plain code (no tokens); the planner's Claude session is only woken for events below.
 import { finishedLine, resultWakesMain } from "./main-ticket";
-import type { Plan, Ticket } from "./types";
+import type { Plan, Ticket } from "../core/types";
 
 export const MAX_RETRIES = 3;
 /**

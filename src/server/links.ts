@@ -1,7 +1,7 @@
 // A ticket's links in one list: claude.ai artifacts from its own session, its huddle teammates' sessions and its result
 // summaries, plus the share links of its output files. The Outputs tab, drawer header and board card all read it.
 import type { SessionArtifact } from "./session";
-import type { Comment, ShareLink } from "./types";
+import type { Comment, ShareLink } from "../core/types";
 
 /** Where a link was found: the ticket's session, a huddle teammate's session, a result summary or the Share menu. */
 export type LinkSource = "ticket" | "chat" | `huddle:@${string}` | "result" | "share";

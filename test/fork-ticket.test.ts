@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { applyRewind } from "../src/server/rewind";
 import { QuickChats } from "../src/server/quickchat";
 import { parseSession } from "../src/server/session";
-import { tempDir } from "./helpers";
-import { board, bus, setup, store, useBoardEnv, FAKE } from "./board-env";
+import { tempDir } from "./support/helpers";
+import { board, bus, setup, store, useBoardEnv, FAKE } from "./support/board-env";
 
 useBoardEnv();
 

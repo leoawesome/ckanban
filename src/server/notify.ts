@@ -3,19 +3,19 @@
 // shows a macOS banner, per kind (notify.json).
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, rmSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { pauser, track, trackedInterval } from "./lag";
+import { pauser, track, trackedInterval } from "../core/lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { featureRows, hiddenTool, mainTicketOf, withYouTool } from "../../web/src/family";
 import { type AttentionKind, type HostHuddle, ticketAttention } from "./attention";
 import { stepWait } from "./main-ticket";
-import type { Bus } from "./events";
+import type { Bus } from "../core/events";
 import { run as runCmd } from "./git";
 import type { PushPayload, PushService } from "./push";
 import type { SessionSummary } from "./session";
-import type { Store } from "./store";
-import type { Ticket } from "./types";
-import { nowIso } from "./util";
+import type { Store } from "../core/store";
+import type { Ticket } from "../core/types";
+import { nowIso } from "../core/util";
 import { Channels, macChannel, pushChannel, webhookChannel, type ChannelResult } from "./helper/channels";
 import { HelperCore } from "./helper/core";
 import { botId, DEFAULT_TELEGRAM, maskToken, scrub, TelegramBot, telegramChannel, TOKEN_RE, type TelegramSettings } from "./helper/telegram";

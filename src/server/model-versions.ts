@@ -3,7 +3,7 @@
 // labels like "Fable (5.2)" stay right after Claude Code moves an alias to a new version.
 import { familyVersion, KNOWN_VERSIONS, newerVersion } from "../../web/src/models";
 import { existsSync, readFileSync } from "node:fs";
-import { atomicWrite } from "./store";
+import { atomicWrite } from "../core/store";
 
 let file: string | null = null;
 let versions: Record<string, string> | null = null;

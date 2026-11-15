@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { transcript } from "./explain";
 import { parseResult } from "./result";
 import type { SessionEntry } from "./session";
-import type { Ticket } from "./types";
+import type { Ticket } from "../core/types";
 
 // The user's corrections on a finished ticket (messages after a run, a reopen, a pull request review asking for
 // changes, follow-up work) and the prompt that shows them to a learning call (learn.ts reads them into the board's

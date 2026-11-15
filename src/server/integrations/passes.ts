@@ -3,10 +3,10 @@ import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { keyNameError, PASSES_FILE } from "../board-keys";
-import type { Bus } from "../events";
+import type { Bus } from "../../core/events";
 import { maskSecrets, readMcpConfig } from "../mcp";
 import { inheritedEnv } from "../runner";
-import { newId } from "../util";
+import { newId } from "../../core/util";
 import { McpClient } from "./mcp-client";
 import { authorizeUrl, discover, exchange, NoRegistrationError, refresh, register, webAddress, type Client } from "./oauth";
 import { StdioMcpClient } from "./stdio-client";

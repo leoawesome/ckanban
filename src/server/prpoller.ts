@@ -1,10 +1,10 @@
 import type { Board } from "./board";
-import { trackedInterval } from "./lag";
+import { trackedInterval } from "../core/lag";
 import { run } from "./git";
 import { conflictMessage, failureMessage, ghFailedLog, ghMerge, ghPrStatus, mergeBlock } from "./prstatus";
 import { prFinal, ticketPrs, updatePrs } from "./prs";
-import type { Store } from "./store";
-import type { PrCheck, PrStatus, Ticket, TicketPr } from "./types";
+import type { Store } from "../core/store";
+import type { PrCheck, PrStatus, Ticket, TicketPr } from "../core/types";
 
 export type PrState = "OPEN" | "MERGED" | "CLOSED" | null;
 

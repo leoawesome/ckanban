@@ -4,8 +4,8 @@ import { Board } from "../src/server/board";
 import { askedNothing, replyAsked } from "../src/server/main-ticket";
 import { MAIN_QUESTIONS_RULE, mainTicketRules } from "../src/server/prompts";
 import type { Question, SessionSummary } from "../src/server/session";
-import type { Plan, Ticket } from "../src/server/types";
-import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "./board-env";
+import type { Plan, Ticket } from "../src/core/types";
+import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

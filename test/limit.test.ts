@@ -2,12 +2,12 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { join } from "node:path";
 import { attentionFor } from "../src/server/attention";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { clockTime, dayKey, isLimitText, limitMessage, LimitWatcher, nextFullHour, parseReset } from "../src/server/limit";
 import { planStep } from "../src/server/plan";
-import { Store } from "../src/server/store";
-import type { Plan, Profile, Ticket } from "../src/server/types";
-import { makeRepo, readJsonl, tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import type { Plan, Profile, Ticket } from "../src/core/types";
+import { makeRepo, readJsonl, tempDir } from "./support/helpers";
 
 // Real messages from board runs that hit the limit (tickets t_20261005_vqm5, t_20261006_xa17, t_20261005_h89a).
 const REAL_4AM = "You've hit your individual spend limit · run /usage-credits to raise it, or visit claude.ai/admin-settings/usage · your session limit resets 4am (Asia/Kuala_Lumpur)";

@@ -7,11 +7,11 @@ import {
 import { callTool, handleMessage, TOOLS, type ToolContext } from "../src/mcp-server";
 import { AgentRegistry, readCodexServer, removeCodexServer, setCodexServer } from "../src/server/agents";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { agentsFrom, bodyFrom, parseArgs, ticketCommand } from "../src/ticket-cli";
-import { makeRepo, tempDir } from "./helpers";
+import { makeRepo, tempDir } from "./support/helpers";
 
 const prof = (slug: string, path: string): ProfileInfo => ({ name: slug, slug, path, baseBranch: "main" });
 

@@ -2,13 +2,13 @@
 // Call useBoardEnv() at the top of a test file; the exported bindings are live and change per test.
 import { afterEach, beforeEach } from "bun:test";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
-import { Store } from "../src/server/store";
-import type { Profile } from "../src/server/types";
+import { Board } from "../../src/server/board";
+import { Bus } from "../../src/core/events";
+import { Store } from "../../src/core/store";
+import type { Profile } from "../../src/core/types";
 import { makeRepo, readJsonl, tempDir, until } from "./helpers";
 
-export const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
+export const FAKE = join(import.meta.dir, "..", "fixtures", "fake-claude.ts");
 
 export let store: Store;
 export let bus: Bus;

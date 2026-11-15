@@ -1,7 +1,7 @@
 // "Spent from Telegram today" on a real Board: steered runs, mixed board/Telegram turns (from the step 2 review, qa-2).
 import { expect, test } from "bun:test";
 import { telegramSpendToday } from "../src/server/spend";
-import { board, setup, store, untilSpawned, useBoardEnv } from "./board-env";
+import { board, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

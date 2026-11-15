@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { run } from "../src/server/git";
 import { listSnapshots, takeSnapshot } from "../src/server/rewind";
-import { board, setup, useBoardEnv } from "./board-env";
+import { board, setup, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 
@@ -42,7 +42,7 @@ test("a copy that runs past its time limit is skipped and leaves nothing behind"
 });
 
 test("the copy starts from the folder's own index: same files, real index untouched, only the folder's own changes count", async () => {
-  const { makeRepo } = await import("./helpers");
+  const { makeRepo } = await import("./support/helpers");
   const repo = await makeRepo();
   const { mkdirSync, readFileSync, writeFileSync } = await import("node:fs");
   const { join } = await import("node:path");

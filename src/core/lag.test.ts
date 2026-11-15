@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { startLagMonitor, track } from "../src/server/lag";
+import { startLagMonitor, track } from "./lag";
 
 const busy = (ms: number) => {
   const end = performance.now() + ms;

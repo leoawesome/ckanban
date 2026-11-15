@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { claudeDefaults, claudeInstallDirs, encodeProjectDir, findClaude, listClaudeProjects } from "../src/server/claude";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 function fixture() {
   const home = tempDir("ck-home-");

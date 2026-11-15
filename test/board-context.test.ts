@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { claudeSessionFile } from "../src/server/board";
 import { ContextUsage } from "../src/server/context-usage";
 import { createServer } from "../src/server/http";
-import { readJsonl, tempDir, until } from "./helpers";
-import { board, bus, readArgs, setup, store, untilSpawned, useBoardEnv } from "./board-env";
+import { readJsonl, tempDir, until } from "./support/helpers";
+import { board, bus, readArgs, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 const FAKE_CTX = join(import.meta.dir, "fixtures", "fake-claude-context.ts");

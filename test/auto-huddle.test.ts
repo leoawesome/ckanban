@@ -4,14 +4,14 @@ import { join } from "node:path";
 import { BoardClient } from "../src/client";
 import { callTool, type ToolContext } from "../src/mcp-server";
 import { Board, type ChatOptions } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { AUTO_MAX_COST_USD, Huddles, summaryFile } from "../src/server/huddle";
 import { proposalFile, reviewHuddleRequest } from "../src/server/huddle-roster";
 import { chatPrompt, firstRunPrompt, freshSessionPrompt, huddleMainPrompt, planningPrompt, resumePrompt } from "../src/server/prompts";
-import { Store } from "../src/server/store";
-import { autoHuddlesOn, type Profile, type Ticket } from "../src/server/types";
-import { makeRepo, tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { autoHuddlesOn, type Profile, type Ticket } from "../src/core/types";
+import { makeRepo, tempDir } from "./support/helpers";
 
 const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
 

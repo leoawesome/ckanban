@@ -1,18 +1,18 @@
 import { randomBytes } from "node:crypto";
-import { trackedInterval } from "./lag";
+import { trackedInterval } from "../core/lag";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Board } from "./board";
-import type { Bus } from "./events";
+import type { Bus } from "../core/events";
 import { askClaude, type Decision } from "./integrations/ask-claude";
 import { PassError, type Passes } from "./integrations/passes";
 import { readScript, runScript, scriptEnv, sha256, type Item, type ScriptRun } from "./integrations/script";
 import { threadItemText, ticketBody, ticketTitle, usedVariables, VARIABLES } from "./integrations/ticket-text";
 import { RateLimitError } from "./integrations/types";
 import type { SideCaller } from "./side-call";
-import type { Store } from "./store";
-import type { Loop, LoopColumn, LoopSeenItem, LoopState } from "./types";
-import { newId } from "./util";
+import type { Store } from "../core/store";
+import type { Loop, LoopColumn, LoopSeenItem, LoopState } from "../core/types";
+import { newId } from "../core/util";
 
 export class LoopError extends Error {
   constructor(public status: number, message: string) {

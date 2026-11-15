@@ -3,11 +3,11 @@ import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ArtifactJob } from "../src/server/artifact";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { attachmentHeader, copyFileArgv, markdownPage, markdownTitle, revealArgv } from "../src/server/share";
-import { Store } from "../src/server/store";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { tempDir } from "./support/helpers";
 
 let server: ReturnType<typeof createServer>;
 let store: Store;

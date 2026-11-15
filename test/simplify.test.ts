@@ -2,15 +2,15 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { SessionCache } from "../src/server/session";
 import { makeSideCaller, parseSideResult, sideCallArgs, type SideCallInput, type SideCallResult } from "../src/server/side-call";
 import { SpendIndex } from "../src/server/spend";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { simplifiable as webSimplifiable } from "../web/src/simplifyText";
 import { SIMPLIFY_SYSTEM, SIMPLIFY_VERSION, simplifiable } from "../src/server/simplify";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);
 const LONG = "I added the ForgotLink component to LoginForm.tsx and wired it to /auth/reset via navigate(). Tests: 14 passed, tsc clean. "

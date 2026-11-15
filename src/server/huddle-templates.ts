@@ -5,7 +5,7 @@
 // become the huddle's pinned brief. Plain helpers shared by the daemon and the MCP server (no file access here).
 import { presetName } from "./huddle-presets";
 import { proposalFile, rosterError, type RosterEntry } from "./huddle-roster";
-import { type Layered, mergeLayers, withItem } from "./layers";
+import { type Layered, mergeLayers, withItem } from "../core/layers";
 
 export interface HuddleTemplate {
   /** Key, e.g. design-review. Lowercase letters, digits and dashes. */

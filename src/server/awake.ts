@@ -1,4 +1,4 @@
-import { trackedInterval } from "./lag";
+import { trackedInterval } from "../core/lag";
 
 // Keep the Mac awake while Claude works. macOS sleeps an idle Mac even with runs going, and every session on the
 // board then freezes until someone touches the keyboard. While there is active work on a board with "Keep this Mac

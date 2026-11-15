@@ -9,9 +9,9 @@ import { draftReport } from "../src/server/bugreport";
 import { COMPRESS_AFTER_MS, RunLogCompressor, STATE_FILE } from "../src/server/run-log-compress";
 import { gzOf, keptLogUsedAt, loadLog, logStat, resetLogCache, restoreLog } from "../src/server/run-log";
 import { SpendIndex } from "../src/server/spend";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { RunLogIndex, ticketRuns } from "../src/server/ticket-usage";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const L = (o: unknown) => JSON.stringify(o);
 const LATER = () => Date.now() + COMPRESS_AFTER_MS + 86_400_000;

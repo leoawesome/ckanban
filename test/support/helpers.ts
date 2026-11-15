@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { run } from "../src/server/git";
+import { run } from "../../src/server/git";
 
 /** Temp dirs made by this test file; test/preload.ts deletes them once the file's tests are done. */
 export const tempDirs: string[] = ((globalThis as any).__ckTempDirs ??= []);

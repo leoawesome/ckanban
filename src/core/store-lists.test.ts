@@ -3,15 +3,15 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, readFileSync, renameSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
-import { JsonDir, JSON_DIR_RECHECK_MS } from "../src/server/json-dir";
-import { lastPause, quietContext, quietDays, quietPerDay, scheduleSpend } from "../src/server/quiet";
-import { ScheduleHistoryDigests } from "../src/server/schedule-history";
-import { Scheduler } from "../src/server/scheduler";
-import { Store } from "../src/server/store";
-import type { Huddle, Job, ScheduleHistoryEntry, Ticket } from "../src/server/types";
-import { tempDir } from "./helpers";
+import { Board } from "../server/board";
+import { Bus } from "./events";
+import { JsonDir, JSON_DIR_RECHECK_MS } from "./json-dir";
+import { lastPause, quietContext, quietDays, quietPerDay, scheduleSpend } from "../server/quiet";
+import { ScheduleHistoryDigests } from "../server/schedule-history";
+import { Scheduler } from "../server/scheduler";
+import { Store } from "./store";
+import type { Huddle, Job, ScheduleHistoryEntry, Ticket } from "./types";
+import { tempDir } from "../../test/support/helpers";
 
 const board = () => {
   const store = new Store(tempDir("ck-home-"));

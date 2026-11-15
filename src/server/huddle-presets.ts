@@ -2,8 +2,8 @@
 // (every board) and a board's own in profiles/<slug>/huddle-presets.json. Merge order: built-in -> global -> board (see
 // layers.ts); a preset with a lower level's name overrides it there, and deleting it falls back to the level below.
 // Plain helpers shared by the daemon and the MCP server (no file access here; see Store.listHuddlePresets).
-import { type Layered, mergeLayers, withItem } from "./layers";
-import type { HuddleMode, HuddleWorkspace } from "./types";
+import { type Layered, mergeLayers, withItem } from "../core/layers";
+import type { HuddleMode, HuddleWorkspace } from "../core/types";
 
 export interface HuddlePreset {
   /** Key used in rosters, and the default handle. Lowercase letters, digits and dashes. */

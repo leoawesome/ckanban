@@ -10,8 +10,8 @@
 import { type HuddlePreset, presetFromInput, presetName } from "./huddle-presets";
 import { MAIN_HANDLE, USER_HANDLE, type RosterEntry } from "./huddle-roster";
 import { type HuddleTemplate, templateFromInput } from "./huddle-templates";
-import type { Level } from "./layers";
-import type { Huddle, HuddleMessage, Ticket } from "./types";
+import type { Level } from "../core/layers";
+import type { Huddle, HuddleMessage, Ticket } from "../core/types";
 
 /** A squad Claude proposed (propose_squad) or wrote from a huddle ("Save as squad…"): the card's data. */
 export interface SquadProposal {

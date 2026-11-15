@@ -1,7 +1,7 @@
-import type { TeammateProposal } from "./teammate-proposal";
-import type { SquadCardState, SquadProposal } from "./squad";
-import type { RewindUndo } from "./rewind";
-import type { BrowserPick } from "./chromes";
+import type { TeammateProposal } from "../server/teammate-proposal";
+import type { SquadCardState, SquadProposal } from "../server/squad";
+import type { RewindUndo } from "../server/rewind";
+import type { BrowserPick } from "../server/chromes";
 
 import type { TicketKind } from "../../web/src/family";
 import type { ClosedForms } from "../../web/src/family";

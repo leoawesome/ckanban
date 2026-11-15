@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_UTF8_LOCALE } from "./locale";
+import { DEFAULT_UTF8_LOCALE } from "../core/locale";
 
 export const LABEL = "io.ckanban.daemon";
 export const PLIST_PATH = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);

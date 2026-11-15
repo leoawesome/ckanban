@@ -17,7 +17,7 @@
 import { lstat, readdir, realpath, rm } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import { run } from "./git";
-import { pauser } from "./lag";
+import { pauser } from "../core/lag";
 
 /** Installed or cached files: removed wherever they sit in a helper's folder. */
 export const DEPENDENCY_DIRS = new Set(["node_modules", ".venv", "venv", "__pycache__", ".next", ".nuxt", ".cache", ".turbo", ".pnpm-store"]);

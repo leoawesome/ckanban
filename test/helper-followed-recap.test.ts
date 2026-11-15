@@ -2,16 +2,16 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { checkDecision, checkFollowed, DECISION_SCHEMA, HELPER_SYSTEM, type CheckContext, type ItemState } from "../src/server/helper/decide";
 import { helperSpendFile, HelperRunner } from "../src/server/helper/runner";
 import { weekRecapLine, weekStart, type RecapRecord } from "../src/server/helper/summary";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/server/session";
 import { addSideSpend, type SideCallInput, type SideCallResult } from "../src/server/side-call";
-import { Store } from "../src/server/store";
-import type { Profile, Ticket } from "../src/server/types";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import type { Profile, Ticket } from "../src/core/types";
+import { tempDir } from "./support/helpers";
 
 // 9 Nov 2026 is a Monday.
 const DAY = (h: number, m = 0, d = 9) => new Date(2026, 10, d, h, m).getTime();

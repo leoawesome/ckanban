@@ -4,9 +4,9 @@ import { quietSection } from "../src/server/prompts";
 import { canEndQuietly, linksIn, quietContext, quietPerDay, scheduleSpend } from "../src/server/quiet";
 import { parseResult } from "../src/server/result";
 import { Scheduler } from "../src/server/scheduler";
-import type { Schedule, ScheduleHistoryEntry, Ticket } from "../src/server/types";
-import { board, bus, readArgs, setup, store, untilSpawned, useBoardEnv } from "./board-env";
-import { until } from "./helpers";
+import type { Schedule, ScheduleHistoryEntry, Ticket } from "../src/core/types";
+import { board, bus, readArgs, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
+import { until } from "./support/helpers";
 
 useBoardEnv();
 

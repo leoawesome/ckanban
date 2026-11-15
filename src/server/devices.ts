@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { nowIso } from "./util";
+import { nowIso } from "../core/util";
 
 /**
  * Shared devices (a WhatsApp Web tab, a phone, an emulator): things only a few tickets may use at once, on every board.

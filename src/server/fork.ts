@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { encodeProjectDir } from "./claude";
 import { cutSession } from "./rewind";
-import { atomicWrite } from "./store";
+import { atomicWrite } from "../core/store";
 
 export interface ForkOptions {
   fromId: string;

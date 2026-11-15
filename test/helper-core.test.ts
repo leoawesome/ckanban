@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { directLabel, usageLimitLine, type HelperSink } from "../src/server/helper/core";
 import { HELD_MAX, MessageStore, MESSAGES_MAX } from "../src/server/helper/messages";
 import { questionHash, waitIdentity, WaitStore, type WaitRecord } from "../src/server/helper/waits";
 import { messageResultText, questionsError } from "../src/mcp-server";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import { parseAskMeta, type SessionSummary } from "../src/server/session";
-import { Store } from "../src/server/store";
-import type { Profile, Ticket } from "../src/server/types";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import type { Profile, Ticket } from "../src/core/types";
+import { tempDir } from "./support/helpers";
 
 test("the same question, re-asked with other spacing or case, keeps its identity; a different one doesn't", () => {
   expect(questionHash("Stop the  old webhook?\n")).toBe(questionHash("stop the old WEBHOOK?"));

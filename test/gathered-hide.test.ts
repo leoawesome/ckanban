@@ -7,8 +7,8 @@ import { callTool, type ToolContext } from "../src/mcp-server";
 import { createServer } from "../src/server/http";
 import { ticketCommand } from "../src/ticket-cli";
 import { featureRows, onBoard } from "../web/src/family";
-import { board, setup, store, useBoardEnv } from "./board-env";
-import { tempDir } from "./helpers";
+import { board, setup, store, useBoardEnv } from "./support/board-env";
+import { tempDir } from "./support/helpers";
 
 useBoardEnv();
 

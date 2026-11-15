@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { type HuddleNote, type NoteScope, noteText, parseNotes } from "./huddle-notes";
 import type { Corrections } from "./lessons";
-import type { Ticket } from "./types";
+import type { Ticket } from "../core/types";
 
 // The board learns on its own (after ACE's reflect, curate and prune loop): lessons from the user's corrections on
 // tickets and from huddle agents land in a quiet pile, and one is saved only once it comes back from another ticket or

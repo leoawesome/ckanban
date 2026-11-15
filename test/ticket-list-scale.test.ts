@@ -6,12 +6,12 @@ import { join } from "node:path";
 import { BoardClient } from "../src/client";
 import { callTool, type ToolContext } from "../src/mcp-server";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { countScope, LIST_PAGE, listScope, SEARCH_LIMIT } from "../src/server/ticketScope";
 import { ticketCommand } from "../src/ticket-cli";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const BIG = 10_000;
 const OPEN = 500;

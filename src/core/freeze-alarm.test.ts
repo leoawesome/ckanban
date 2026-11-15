@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { freezeAlarm, freezeCulprit } from "../src/server/lag";
+import { freezeAlarm, freezeCulprit } from "./lag";
 
 const line = (ran: string) => `[lag] event loop blocked 9852ms at 2026-11-13T15:32:16.630Z (up 131s); ran: ${ran}; rss 816MB heap 86MB`;
 

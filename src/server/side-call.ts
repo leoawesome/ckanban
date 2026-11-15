@@ -1,5 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { defaultRoot } from "./store";
+import { defaultRoot } from "../core/store";
 import { join } from "node:path";
 import { helperEnv } from "./artifact";
 import { dayKey } from "./limit";

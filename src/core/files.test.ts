@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FileError, findInRoots, listDir, listDirPage, MAX_DIR_ENTRIES, MAX_VIEW_BYTES, openWithSystem, readFileForView, resolveInside } from "../src/server/files";
-import { makeRepo, tempDir } from "./helpers";
+import { FileError, findInRoots, listDir, listDirPage, MAX_DIR_ENTRIES, MAX_VIEW_BYTES, openWithSystem, readFileForView, resolveInside } from "./files";
+import { makeRepo, tempDir } from "../../test/support/helpers";
 
 const status = (fn: () => unknown) => {
   try {

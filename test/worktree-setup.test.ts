@@ -3,13 +3,13 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../src/server/git";
 import { parseSession } from "../src/server/session";
-import type { Profile } from "../src/server/types";
+import type { Profile } from "../src/core/types";
 import {
   applyDetection, copySetupFiles, detectMissing, detectSetup, parseSetupBlock, prepareWorktree, runShell, setupBlock, withBoardText, type SetupResult,
 } from "../src/server/worktree-setup";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { setupText } from "../src/ticket-cli";
-import { makeRepo, tempDir } from "./helpers";
+import { makeRepo, tempDir } from "./support/helpers";
 
 function write(root: string, rel: string, text = "x\n") {
   mkdirSync(join(root, rel, ".."), { recursive: true });

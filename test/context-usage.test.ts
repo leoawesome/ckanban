@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFi
 import { join } from "node:path";
 import { encodeProjectDir } from "../src/server/claude";
 import { contextArgs, ContextUsage, parseContextReport, parseTokens } from "../src/server/context-usage";
-import { readJsonl, tempDir } from "./helpers";
+import { readJsonl, tempDir } from "./support/helpers";
 
 const FIX = join(import.meta.dir, "fixtures", "context");
 const FAKE = join(import.meta.dir, "fixtures", "fake-claude-context.ts");

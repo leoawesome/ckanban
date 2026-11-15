@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSy
 import { join } from "node:path";
 import { BoardBrowsers, chromeArgs, hasDataDir, nameFromId, parseListeners, LOOPBACK } from "../src/server/board-browsers";
 import { parsePortFile, portMatches } from "../src/server/cdp";
-import { FakeChrome, fakes, harness } from "./fake-chrome";
-import { tempDir } from "./helpers";
+import { FakeChrome, fakes, harness } from "./support/fake-chrome";
+import { tempDir } from "./support/helpers";
 
 afterEach(() => {
   for (const f of fakes.splice(0)) if (!f.closed) f.quit();

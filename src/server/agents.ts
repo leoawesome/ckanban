@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { helperArgv } from "./artifact";
 import { which } from "./git";
-import { newId } from "./util";
+import { newId } from "../core/util";
 
 /**
  * Registers `ckanban mcp` with outside agents (Claude Code, Codex) so they can use the board.

@@ -1,6 +1,6 @@
 // How each teammate (preset) and template has been used: counted from the huddle files every board keeps, closed ones
 // included. Plain helpers (the daemon reads the files, see Huddles.usage).
-import type { Huddle } from "./types";
+import type { Huddle } from "../core/types";
 
 /** One huddle a teammate or template took part in. */
 export interface UsageHuddle {

@@ -9,8 +9,8 @@ import { parseSession } from "../src/server/session";
 import type { SideCallInput, SideCallResult } from "../src/server/side-call";
 import { GENERIC_SQUAD_SYSTEM, genericSquadPrompt, parseGenericSquad, squadSavePlan, squadSetup } from "../src/server/squad";
 import { reviewHuddleRequest, summaryFile } from "../src/server/huddle-roster";
-import type { Huddle } from "../src/server/types";
-import { agentCtx, api, client, host, huddles, idle, postJson, store, text, useHuddleEnv } from "./huddle-env";
+import type { Huddle } from "../src/core/types";
+import { agentCtx, api, client, host, huddles, idle, postJson, store, text, useHuddleEnv } from "./support/huddle-env";
 
 useHuddleEnv();
 

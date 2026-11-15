@@ -4,9 +4,9 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { callTool } from "../src/mcp-server";
-import type { Huddle } from "../src/server/types";
-import { agentCtx, board, git, heardBy, host, huddles, idle, mainCtx, messages, participant, postJson, processes, store, text, until, useHuddleEnv, you } from "./huddle-env";
-import { tempDir } from "./helpers";
+import type { Huddle } from "../src/core/types";
+import { agentCtx, board, git, heardBy, host, huddles, idle, mainCtx, messages, participant, postJson, processes, store, text, until, useHuddleEnv, you } from "./support/huddle-env";
+import { tempDir } from "./support/helpers";
 
 useHuddleEnv();
 

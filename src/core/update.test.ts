@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isNewer, latestRelease, UpdateChecker } from "../src/server/update";
+import { isNewer, latestRelease, UpdateChecker } from "./update";
 
 test("isNewer", () => {
   expect(isNewer("0.2.0", "0.1.9")).toBe(true);

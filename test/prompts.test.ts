@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { extractFinalText, summarizeEvent } from "../src/server/activity";
 import { chatPrompt, firstRunPrompt, followUpWakePrompt, freshSessionPrompt, LENGTH_RULE, orchestratorPrompt, planningCommand, planningPrompt, QUESTIONS_FORMAT, REPLY_RULE, resumeCommand, resumePrompt, WRITING_RULE } from "../src/server/prompts";
 import { parseResult } from "../src/server/result";
-import type { Ticket } from "../src/server/types";
+import type { Ticket } from "../src/core/types";
 
 const ticket = { id: "t_1", title: "Add dark mode", body: "Use CSS vars." } as Ticket;
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { withUtf8Locale } from "../src/server/locale";
+import { withUtf8Locale } from "./locale";
 
 test("withUtf8Locale adds LANG when no locale is set", () => {
   expect(withUtf8Locale({ PATH: "/bin" })).toEqual({ PATH: "/bin", LANG: "en_US.UTF-8" });

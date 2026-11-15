@@ -6,8 +6,8 @@ import { callTool } from "../src/mcp-server";
 import { Board } from "../src/server/board";
 import { fallbackSummary, Huddles, LEGACY_SUMMARY_FILE, summaryFile } from "../src/server/huddle";
 import { HUDDLE_HEADER } from "../src/server/huddle-roster";
-import type { Huddle } from "../src/server/types";
-import { FAKE, git, store, bus, board, huddles, client, idle, heard, heardBy, host, participant, agentCtx, mainCtx, text, you, messages, until, useHuddleEnv } from "./huddle-env";
+import type { Huddle } from "../src/core/types";
+import { FAKE, git, store, bus, board, huddles, client, idle, heard, heardBy, host, participant, agentCtx, mainCtx, text, you, messages, until, useHuddleEnv } from "./support/huddle-env";
 
 useHuddleEnv();
 

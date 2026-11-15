@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { findCycle, isComplete, planProblem, planStep, planTable, resolveDeps, wakeupCap } from "../src/server/plan";
-import type { Plan, Ticket } from "../src/server/types";
+import type { Plan, Ticket } from "../src/core/types";
 
 let n = 0;
 const T = (p: Partial<Ticket>): Ticket => ({

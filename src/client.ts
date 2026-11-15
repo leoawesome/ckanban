@@ -2,15 +2,15 @@
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import type { HuddlePresetView } from "./server/huddle-presets";
-import { HUDDLE_AGENT_ENV, HUDDLE_HEADER, SOURCE_HEADER, type RosterEntry } from "./server/huddle-roster";
+import type { RosterEntry } from "./server/huddle-roster";
 import type { HuddleTemplateView } from "./server/huddle-templates";
 import type { DeviceUser } from "./server/devices";
 import type { MessageResult } from "./server/notify";
 import type { SetupOutcome } from "./server/worktree-setup";
-import { QUICK_CHAT_ENV, QUICK_CHAT_HEADER, RUN_HEADER } from "./server/scheduler";
-import { CONFIRM_STATUS, FRONT_DESK_ENV, FRONT_DESK_HEADER } from "./server/helper/frontdesk-id";
-import { defaultRoot, Store } from "./server/store";
-import { STATUSES, type HandIn, type HuddleFinding, type HuddleLearning, type HuddleMessage, type HuddleMode, type Status, type TicketMode } from "./server/types";
+import { CONFIRM_STATUS } from "./server/helper/frontdesk-id";
+import { FRONT_DESK_ENV, FRONT_DESK_HEADER, HUDDLE_AGENT_ENV, HUDDLE_HEADER, QUICK_CHAT_ENV, QUICK_CHAT_HEADER, RUN_HEADER, SOURCE_HEADER } from "./core/env";
+import { defaultRoot, Store } from "./core/store";
+import { STATUSES, type HandIn, type HuddleFinding, type HuddleLearning, type HuddleMessage, type HuddleMode, type Status, type TicketMode } from "./core/types";
 
 export class ClientError extends Error {}
 

@@ -44,14 +44,14 @@
 // leads are warned at 80%). There is no message limit: agents talk until they reach a conclusion.
 import { boardConnectorOptions } from "./connectors";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { pauser, trackedInterval } from "./lag";
+import { pauser, trackedInterval } from "../core/lag";
 import { basename, dirname, join } from "node:path";
 import { summarizeEvent } from "./activity";
 import { mcpConfig } from "./agents";
 import { claudeSessionExists, claudeSessionFile, type Board, type RunBrowsers } from "./board";
 import { planProposal } from "./plan-proposal";
 import { parseSession, type SessionEntry } from "./session";
-import type { Bus } from "./events";
+import type { Bus } from "../core/events";
 import { addWorktree, branchExists, hasCommits, NO_HOOKS, removeWorktree, run as git, worktreeDir } from "./git";
 import { projectNames, removeOutputCopies } from "./output-copies";
 import {
@@ -69,12 +69,12 @@ import {
 } from "./huddle-templates";
 import type { HostHuddle } from "./attention";
 import { huddleUsage, type Usage } from "./huddle-usage";
-import { isLevel, type Level, lowerLevels } from "./layers";
+import { isLevel, type Level, lowerLevels } from "../core/layers";
 import { accept as acceptHandIn, handIn as saveHandIn, handInDir as handInSaved, keepUnhanded, keptDir, makeFolderCopy, makeGitCopy, readState, removeCopy, unhanded } from "./huddle-copies";
 import { autoHuddleSlotPrompt, autoHuddleStoppedPrompt, huddleAgentPrompt, huddleAgentSystemPrompt, huddleDigest, huddleMainPrompt, withoutChromeRule } from "./prompts";
 import { buildArgs, MONITOR_IDLE_MS, startRun, type RunHandle } from "./runner";
 import { addHuddleSpend } from "./spend";
-import type { Store } from "./store";
+import type { Store } from "../core/store";
 import { contextTokens, messageCost } from "./ticket-usage";
 import { proposalPreset, teammateProposal, type TeammateProposal } from "./teammate-proposal";
 import { addSideSpend, type SideCaller } from "./side-call";
@@ -82,11 +82,11 @@ import {
   chatTail, GENERIC_SQUAD_MODEL, GENERIC_SQUAD_SYSTEM, GENERIC_SQUAD_TIMEOUT_MS, genericSquadPrompt, parseGenericSquad, squadProposal, ticketTopic,
   type SquadProposal, squadSavePlan, squadSetup, withNewTeammates,
 } from "./squad";
-import { AUTO_HUDDLE_TRIGGERS, autoHuddlesOn, isAutoHuddleTrigger, USER_HUDDLE_TRIGGER } from "./types";
+import { AUTO_HUDDLE_TRIGGERS, autoHuddlesOn, isAutoHuddleTrigger, USER_HUDDLE_TRIGGER } from "../core/types";
 import type {
   HandIn, Huddle, HuddleFinding, HuddleLearning, HuddleMessage, HuddleMessageKind, HuddleMode, HuddleParticipant, HuddleSource, HuddleStopReason, Profile, Ticket,
-} from "./types";
-import { newId, nowIso } from "./util";
+} from "../core/types";
+import { newId, nowIso } from "../core/util";
 import { boardKeyEnv } from "./board-keys";
 
 export class HuddleError extends Error {

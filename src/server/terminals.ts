@@ -1,9 +1,9 @@
 import { isClaudeCommand, processCommands } from "./claude";
-import { DONE_PASS_MS, SAFETY_PASS_MS, type SessionChanges } from "./changefeed";
-import { pauser, trackedInterval } from "./lag";
-import type { Bus } from "./events";
+import { DONE_PASS_MS, SAFETY_PASS_MS, type SessionChanges } from "../core/changefeed";
+import { pauser, trackedInterval } from "../core/lag";
+import type { Bus } from "../core/events";
 import type { SessionCache } from "./session";
-import type { Store } from "./store";
+import type { Store } from "../core/store";
 
 /**
  * Tracks which linked tickets have their Claude session open in a terminal right now.

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { commandText, frontmatter, listCommands, localCommandOutput, parseSlash, rememberInit, slashMessage, useBundledFile, validModel } from "../src/server/commands";
 import { parseSession } from "../src/server/session";
 import { commandNote, inlineSlashQuery, insertInlineCommand, matchCommands, messageCommand, slashQuery, splitCommandMentions, type SlashCommand } from "../web/src/slashText";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 function write(file: string, text: string) {
   mkdirSync(dirname(file), { recursive: true });

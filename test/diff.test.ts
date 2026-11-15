@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
 import { folderDiff, MAX_DIFF_FILES, MAX_DIFF_LINES, MAX_FILE_LINES, parseDiff, REWRITTEN_NOTE, ticketDiff, type DiffFile } from "../src/server/diff";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { run } from "../src/server/git";
 import { createServer } from "../src/server/http";
-import { Store } from "../src/server/store";
-import { makeRepo, tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { makeRepo, tempDir } from "./support/helpers";
 
 const git = (dir: string, ...args: string[]) => run(["git", "-c", "user.email=t@t", "-c", "user.name=t", ...args], dir);
 

@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { extractMockups, mockupName, saveMockups, stripMockups } from "../src/server/mockups";
 import { parseSession } from "../src/server/session";
 import { chatPrompt, firstRunPrompt, resumePrompt } from "../src/server/prompts";
-import type { Ticket } from "../src/server/types";
-import { tempDir } from "./helpers";
+import type { Ticket } from "../src/core/types";
+import { tempDir } from "./support/helpers";
 
 const reply = `Here are two layouts.
 <ckanban-mockup name="a-compact.html">

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { atomicWrite } from "./store";
+import { atomicWrite } from "../core/store";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { hasCommits, run } from "./git";

@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { AgentRegistry, type AgentId, type AgentStatus } from "../src/server/agents";
 import { uninstallExtras } from "../src/uninstall-extras";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const agent = (id: AgentId, over: Partial<AgentStatus> = {}): AgentStatus => ({
   id, label: id === "claude" ? "Claude Code" : "Codex", available: true, installed: true, current: true, command: "x", configPath: "/x", ...over,

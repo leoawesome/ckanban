@@ -6,7 +6,7 @@ import { forkSessionBefore, forkTitle } from "../src/server/fork";
 import { run } from "../src/server/git";
 import { applyRewind, applyUndo, listSnapshots, takeSnapshot, undoBlocked, UNDO_REFS, type RewindUndo } from "../src/server/rewind";
 import { parseSession } from "../src/server/session";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const line = (type: "user" | "assistant", uuid: string, ms: number, text: string, sid = "s1", cwd = "/w") => JSON.stringify({
   type, uuid, sessionId: sid, cwd, timestamp: new Date(ms).toISOString(),

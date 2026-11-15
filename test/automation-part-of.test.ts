@@ -3,16 +3,16 @@ import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { automationProposal } from "../src/server/automation-proposal";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { Passes } from "../src/server/integrations/passes";
 import { runScript } from "../src/server/integrations/script";
 import { LoopManager, type LoopInput } from "../src/server/loops";
 import { resultWakesMain } from "../src/server/main-ticket";
 import { planStep, planTable } from "../src/server/plan";
-import { Store } from "../src/server/store";
-import type { Plan, Ticket } from "../src/server/types";
+import { Store } from "../src/core/store";
+import type { Plan, Ticket } from "../src/core/types";
 import { featureChoices } from "../web/src/featureChoices";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 // Automations that put each new ticket in a feature (Loop.partOf): a task of the feature's main ticket, as schedules do.
 

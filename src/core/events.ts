@@ -1,7 +1,7 @@
-import type { HuddleView } from "./huddle";
-import type { McpState } from "./mcp";
-import type { QuickChatView } from "./quickchat";
-import type { SessionSummary } from "./session";
+import type { HuddleView } from "../server/huddle";
+import type { McpState } from "../server/mcp";
+import type { QuickChatView } from "../server/quickchat";
+import type { SessionSummary } from "../server/session";
 import type { HuddleMessage, Job, Profile, Schedule, Ticket } from "./types";
 
 export type BusEvent =

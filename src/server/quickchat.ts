@@ -9,16 +9,16 @@ import { claudeSessionExists, claudeSessionFile, sessionMissing, type Board, typ
 import { forkSessionBefore, forkTitle } from "./fork";
 import { applyRewind, applyUndo, cutSession, RewindRefused, messagesFrom, undoBlocked, type RewindUndo, type UndoResult } from "./rewind";
 import { DraftTracker } from "./draft";
-import { pauser } from "./lag";
+import { pauser } from "../core/lag";
 import { CHAT_PAGE, ChatIndex } from "./quickchat-index";
-import type { Bus } from "./events";
+import type { Bus } from "../core/events";
 import { WRITING_RULE } from "./prompts";
 import { buildArgs, startRun, type RunHandle } from "./runner";
 import { QUICK_CHAT_ENV } from "./scheduler";
 import { messageCost } from "./ticket-usage";
-import { atomicWrite, type Store } from "./store";
-import type { ActivityEntry, Profile, Ticket } from "./types";
-import { newId, nowIso } from "./util";
+import { atomicWrite, type Store } from "../core/store";
+import type { ActivityEntry, Profile, Ticket } from "../core/types";
+import { newId, nowIso } from "../core/util";
 
 // Quick chats: conversations with Claude in a board's folder that aren't tickets (the phone's Ask tab, the computer's
 // Claude panel). Each is a headless `claude -p` session, resumed for every message like a ticket's chat, kept in

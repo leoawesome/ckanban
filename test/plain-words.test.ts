@@ -65,7 +65,10 @@ export function scanSource(file: string, source: string): Leak[] {
 const WEB = join(import.meta.dir, "..", "web", "src");
 
 test("no developer words in the UI's text", () => {
-  const leaks = readdirSync(WEB).filter((f) => f.endsWith(".tsx")).flatMap((f) => scanSource(f, readFileSync(join(WEB, f), "utf8")));
+  // Recursive, keyed by the path under web/src, so files in feature folders are scanned too.
+  const leaks = readdirSync(WEB, { recursive: true, encoding: "utf8" })
+    .filter((f) => f.endsWith(".tsx") && !f.endsWith(".test.tsx") && !f.includes("node_modules"))
+    .flatMap((f) => scanSource(f, readFileSync(join(WEB, f), "utf8")));
   const used = new Set<number>();
   const open = leaks.filter((l) => {
     const i = ALLOWED.findIndex(([f, t]) => f === l.file && l.text.includes(t));

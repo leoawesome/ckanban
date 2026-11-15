@@ -1,6 +1,6 @@
 import type { Board } from "./board";
-import { trackedInterval } from "./lag";
-import type { Store } from "./store";
+import { trackedInterval } from "../core/lag";
+import type { Store } from "../core/store";
 
 /**
  * Claude usage/spend limits: a run that ends because the account hit its limit is not a failure of the work.

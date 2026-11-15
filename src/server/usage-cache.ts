@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { atomicWrite } from "./store";
+import { atomicWrite } from "../core/store";
 import { RATE_LIMITED, type UsageAnswer, type UsageResult, type UsageWindow } from "./usage";
 
 /**

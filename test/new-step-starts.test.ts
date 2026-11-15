@@ -6,9 +6,9 @@ import { callTool, type ToolContext } from "../src/mcp-server";
 import { Board } from "../src/server/board";
 import { createServer } from "../src/server/http";
 import { planStep } from "../src/server/plan";
-import type { Plan, Ticket } from "../src/server/types";
-import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "./board-env";
-import { tempDir } from "./helpers";
+import type { Plan, Ticket } from "../src/core/types";
+import { board, bus, FAKE, setBoard, setup, store, useBoardEnv } from "./support/board-env";
+import { tempDir } from "./support/helpers";
 
 useBoardEnv();
 

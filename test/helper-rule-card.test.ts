@@ -3,16 +3,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { attentionFor } from "../src/server/attention";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { HelperSettingsStore } from "../src/server/helper/settings";
 import { HUDDLE_HEADER } from "../src/server/huddle-roster";
 import { createServer } from "../src/server/http";
 import { RUN_HEADER } from "../src/server/scheduler";
 import { parseSession, SessionCache, type SessionSummary } from "../src/server/session";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { callTool, NO_HELPER_RULE_CARD, TOOL_NO_HELPER_RULE, type ToolContext } from "../src/mcp-server";
 import { HELPER_RULE_RULE } from "../src/server/prompts";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 // Claude's propose_helper_rule only shows a card in a ticket's chat; the user's Add saves the card's exact line to
 // "What the helper knows about you". Runs stay refused on the helper's own routes.

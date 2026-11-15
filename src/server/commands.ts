@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { atomicWrite } from "./store";
+import { atomicWrite } from "../core/store";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 

@@ -1,8 +1,8 @@
 // Board chat: steering a running Claude, queued messages and replies waiting for a slot.
 import { expect, test } from "bun:test";
 import { ConflictError } from "../src/server/board";
-import { until } from "./helpers";
-import { store, bus, board, restartBoard, setup, readArgs, untilSpawned, replays, useBoardEnv } from "./board-env";
+import { until } from "./support/helpers";
+import { store, bus, board, restartBoard, setup, readArgs, untilSpawned, replays, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

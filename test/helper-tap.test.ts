@@ -6,9 +6,9 @@ import { HelperCore } from "../src/server/helper/core";
 import type { MessageItem, MessageLevel } from "../src/server/helper/messages";
 import { DEFAULT_TELEGRAM, TelegramBot, type TelegramSettings } from "../src/server/helper/telegram";
 import { normalizeSettings } from "../src/server/notify";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { readFromHash } from "../web/src/helperText";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const BASE = "https://mac.tail.ts.net";
 const item = (board: string, ticketId: string): MessageItem => ({ board, boardName: board, ticketId, title: ticketId, question: "Stop it?" });

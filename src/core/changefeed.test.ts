@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { SessionFeed, type SessionChange, type SessionChanges } from "../src/server/changefeed";
-import { Bus, type BusEvent } from "../src/server/events";
-import { startHuddleSessionWatcher } from "../src/server/huddle-session";
-import { SessionCache, startSessionWatcher } from "../src/server/session";
-import { Store, type StoreChange } from "../src/server/store";
-import { TerminalWatcher } from "../src/server/terminals";
-import { tempDir, until } from "./helpers";
+import { SessionFeed, type SessionChange, type SessionChanges } from "./changefeed";
+import { Bus, type BusEvent } from "./events";
+import { startHuddleSessionWatcher } from "../server/huddle-session";
+import { SessionCache, startSessionWatcher } from "../server/session";
+import { Store, type StoreChange } from "./store";
+import { TerminalWatcher } from "../server/terminals";
+import { tempDir, until } from "../../test/support/helpers";
 
 const line = (text: string, at: string) =>
   JSON.stringify({ type: "assistant", uuid: `a${at}`, timestamp: at, message: { role: "assistant", content: [{ type: "text", text }] } }) + "\n";

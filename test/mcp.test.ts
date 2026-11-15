@@ -1,9 +1,9 @@
 import { beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus, type BusEvent } from "../src/server/events";
+import { Bus, type BusEvent } from "../src/core/events";
 import { addArgs, findUrl, maskSecrets, McpManager, parseMcpGet, parseMcpList, parseSessionInit, readMcpConfig, scopeOf, shellQuote } from "../src/server/mcp";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const FAKE = join(import.meta.dir, "fixtures", "fake-claude-mcp.ts");
 

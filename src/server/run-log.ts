@@ -11,7 +11,7 @@ import { open, readdir, readFile, rm, stat as statAsync } from "node:fs/promises
 import { basename, dirname, join } from "node:path";
 import { gunzip, gunzipSync } from "node:zlib";
 import { promisify } from "node:util";
-import { newId } from "./util";
+import { newId } from "../core/util";
 
 const gunzipAsync = promisify(gunzip);
 

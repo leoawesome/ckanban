@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Bus } from "./events";
-import { atomicWrite, type Store } from "./store";
-import { newId, nowIso } from "./util";
+import type { Bus } from "../core/events";
+import { atomicWrite, type Store } from "../core/store";
+import { newId, nowIso } from "../core/util";
 
 /** Reusable prompt text, inserted by typing `@name` in a composer. scope: "global" or a board (profile slug). */
 export interface Snippet {

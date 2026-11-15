@@ -1,6 +1,6 @@
 // A ticket's PRs: every PR its runs reported (Ticket.prs, oldest first) and the main one (Ticket.prUrl) that the
 // Merge button, the PR box and the plan work on. Old tickets have only prUrl.
-import type { Ticket, TicketPr } from "./types";
+import type { Ticket, TicketPr } from "../core/types";
 
 /** Merged or closed: the board stops watching it. */
 export function prFinal(state: TicketPr["state"]): boolean {

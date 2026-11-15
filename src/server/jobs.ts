@@ -3,13 +3,13 @@
 // A job seen more than LATE_AFTER_MS past its time (computer asleep, daemon off) is late: a ticket job still starts, and its
 // run decides whether the work still makes sense; a command job is skipped unless its action says ifLate: "run".
 import { existsSync } from "node:fs";
-import { trackedInterval } from "./lag";
+import { trackedInterval } from "../core/lag";
 import type { Board } from "./board";
-import type { Bus } from "./events";
-import type { Store } from "./store";
-import type { Job, JobAction, JobResult, JobState } from "./types";
+import type { Bus } from "../core/events";
+import type { Store } from "../core/store";
+import type { Job, JobAction, JobResult, JobState } from "../core/types";
 import { inheritedEnv } from "./runner";
-import { newId } from "./util";
+import { newId } from "../core/util";
 
 export class JobError extends Error {
   constructor(public status: number, message: string) {

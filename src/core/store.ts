@@ -8,19 +8,19 @@ import YAML from "yaml";
 import type {
   ActivityEntry, Comment, Config, Huddle, HuddleMessage, Job, Loop, LoopState, OutputFile, Profile, Schedule, ScheduleHistoryEntry, Status, Ticket, TicketKind, TicketMode, TicketSource,
 } from "./types";
-import { cleanAvatars, type SavedAvatarMap } from "./avatars";
-import { cleanPresets, type HuddlePreset } from "./huddle-presets";
-import { cleanTemplates, type HuddleTemplate } from "./huddle-templates";
-import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "./huddle-notes";
+import { cleanAvatars, type SavedAvatarMap } from "../server/avatars";
+import { cleanPresets, type HuddlePreset } from "../server/huddle-presets";
+import { cleanTemplates, type HuddleTemplate } from "../server/huddle-templates";
+import { type HuddleNote, type NoteScope, parseNotes, serializeNotes } from "../server/huddle-notes";
 import { newId, newTicketId, nowIso } from "./util";
 import { pauser } from "./lag";
 import { atomicWrite } from "./atomic";
-import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "./board-tools";
-import { maskSaved, maskSavedJson } from "./board-keys";
-import { ActivityDigests, type ActivityDigest } from "./activity-digest";
-import { forgetLog, gzOf, loadLog, type LogReader, openLog, readLogSync, restoreLog, restoreLogSync } from "./run-log";
+import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "../server/board-tools";
+import { maskSaved, maskSavedJson } from "../server/board-keys";
+import { ActivityDigests, type ActivityDigest } from "../server/activity-digest";
+import { forgetLog, gzOf, loadLog, type LogReader, openLog, readLogSync, restoreLog, restoreLogSync } from "../server/run-log";
 import { JsonDir } from "./json-dir";
-import { ScheduleHistoryDigests, type ScheduleHistoryDigest } from "./schedule-history";
+import { ScheduleHistoryDigests, type ScheduleHistoryDigest } from "../server/schedule-history";
 
 /** Dependency, build and version-history folders: never deliverables, and they can hold tens of thousands of files. */
 const SKIPPED_OUTPUT_DIRS = new Set(["node_modules", ".git", ".next", ".nuxt", ".turbo", ".cache", ".venv", "venv", "__pycache__"]);

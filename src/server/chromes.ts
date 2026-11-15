@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { nowIso } from "./util";
+import { nowIso } from "../core/util";
 
 /**
  * Named Chromes (More → Browsers). The user may have several Chromes (profiles) connected through Claude in Chrome, and

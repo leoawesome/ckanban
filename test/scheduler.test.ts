@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { Board } from "../src/server/board";
-import { Bus, type BusEvent } from "../src/server/events";
+import { Bus, type BusEvent } from "../src/core/events";
 import { fillTitle, Scheduler } from "../src/server/scheduler";
-import { Store } from "../src/server/store";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { tempDir } from "./support/helpers";
 
 let store: Store;
 let board: Board;

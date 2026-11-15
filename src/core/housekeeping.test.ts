@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { atomicWrite } from "../src/server/atomic";
-import { sweepTempFiles, trimDaemonLog } from "../src/server/housekeeping";
-import { tempDir } from "./helpers";
+import { atomicWrite } from "./atomic";
+import { sweepTempFiles, trimDaemonLog } from "./housekeeping";
+import { tempDir } from "../../test/support/helpers";
 
 test("atomicWrite leaves no temp file when the write fails", () => {
   const dir = tempDir();

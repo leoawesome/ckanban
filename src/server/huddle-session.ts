@@ -3,15 +3,15 @@
 // session file, found by the participant's sessionId under ~/.claude/projects; it stays there after the huddle closes
 // and its snapshot worktree is removed, so nothing is copied.
 import { readFileSync, statSync } from "node:fs";
-import { trackedInterval } from "./lag";
-import { SAFETY_PASS_MS, type SessionChanges } from "./changefeed";
-import type { Bus } from "./events";
+import { trackedInterval } from "../core/lag";
+import { SAFETY_PASS_MS, type SessionChanges } from "../core/changefeed";
+import type { Bus } from "../core/events";
 import { HuddleError, type Huddles } from "./huddle";
 import { USER_HANDLE } from "./huddle-roster";
-import type { Store } from "./store";
+import type { Store } from "../core/store";
 import { toolLabel } from "./subagents";
 import type { ToolDetail } from "./tooldetail";
-import type { HuddleMode, HuddleParticipantKind, HuddleParticipantStatus } from "./types";
+import type { HuddleMode, HuddleParticipantKind, HuddleParticipantStatus } from "../core/types";
 
 /** One thing the agent did, in session order. */
 export interface SessionStep {

@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { callTool, ticketsError, type ToolContext } from "../src/mcp-server";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { Scheduler } from "../src/server/scheduler";
 import { parseNewTickets } from "../src/server/session";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import { normalizeTag as serverNormalizeTag, normalizeTags } from "../src/server/tags";
 import { boardTags, hasTags, normalizeTag, parseSearch, tagHue } from "../web/src/tagText";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 test("normalizeTags: trimmed, lowercase, no #, dashes for spaces, no blanks or repeats, capped", () => {
   expect(normalizeTags(["Post", "#XHS", " post ", "", "  ", "Kitchen Reno", 3, "##deep"])).toEqual(["post", "xhs", "kitchen-reno", "deep"]);

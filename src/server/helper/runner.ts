@@ -5,12 +5,12 @@
 // restart or a killed run changes nothing; it is not a board run (a restart neither waits for it nor holds it).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BusEvent } from "../events";
-import { trackedInterval } from "../lag";
+import type { BusEvent } from "../../core/events";
+import { trackedInterval } from "../../core/lag";
 import type { NotifySettings } from "../notify";
 import { addSideSpend, readSideSpend, type SideCaller } from "../side-call";
 import { dayKey } from "../limit";
-import { atomicWrite, type Store } from "../store";
+import { atomicWrite, type Store } from "../../core/store";
 import { clockTime, cut, directLabel, type HelperCore, type HelperSink, type OutBody, type WaitEventReason } from "./core";
 import {
   checkDecision, DECISION_SCHEMA, HELPER_SYSTEM, parseDecision, REMIND_MAX_MIN, REMIND_MAX_STEPS, summaryAllowedAt, urgentRefusal, youSaid, type CheckedDecision, type CheckedSend,

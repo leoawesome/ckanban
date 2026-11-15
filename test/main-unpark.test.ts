@@ -3,8 +3,8 @@
 // message brings it back to Review, where it stays until the user parks it again.
 import { expect, test } from "bun:test";
 import { Board } from "../src/server/board";
-import type { Ticket } from "../src/server/types";
-import { board, bus, FAKE, setBoard, setup, store, untilSpawned, useBoardEnv } from "./board-env";
+import type { Ticket } from "../src/core/types";
+import { board, bus, FAKE, setBoard, setup, store, untilSpawned, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

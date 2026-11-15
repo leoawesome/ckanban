@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { track, trackedInterval } from "./lag";
+import { track, trackedInterval } from "../core/lag";
 import { join } from "node:path";
-import type { Bus } from "./events";
+import type { Bus } from "../core/events";
 import { ALL_ROLES, type HuddleNote, type LessonInput, type NoteScope, noteText, parseNotes, serializeNotes } from "./huddle-notes";
 import {
   addToPile, applyTidyOp, type Candidate, CHANGES_CAP, correctionKeys, type Dest, emptyPile, type FileEdit, HUDDLE_LEARN_SYSTEM, huddleKey, huddleLearnPrompt,
@@ -11,8 +11,8 @@ import {
 import { corrections, hasCorrections, lessonsPrompt, projectRules } from "./lessons";
 import type { SessionEntry } from "./session";
 import { addSideSpend, type SideCaller } from "./side-call";
-import { atomicWrite, type Store } from "./store";
-import type { Huddle, HuddleParticipant, Ticket } from "./types";
+import { atomicWrite, type Store } from "../core/store";
+import type { Huddle, HuddleParticipant, Ticket } from "../core/types";
 
 // The daemon's side of learn.ts: reads corrected tickets once they settle in Review or Done, takes huddle agents'
 // lessons, saves the ones that come back, tidies the notes once a week, and undoes any of it on the user's click.

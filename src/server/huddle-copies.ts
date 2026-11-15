@@ -11,7 +11,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rm
 import { dirname, join, relative, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { branchExists, NO_HOOKS, run as git } from "./git";
-import type { HandInFile } from "./types";
+import type { HandInFile } from "../core/types";
 
 /** Folders a plain copy leaves out (and a plain folder's changes ignore): version history and installed or cached files. */
 export const COPY_SKIP = new Set([".git", "node_modules", ".DS_Store", "__pycache__", ".venv", "venv", ".next", ".nuxt", ".cache"]);

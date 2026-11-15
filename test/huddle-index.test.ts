@@ -2,8 +2,8 @@
 import { expect, test } from "bun:test";
 import { renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Huddle } from "../src/server/types";
-import { api, host, huddles, idle, store, useHuddleEnv } from "./huddle-env";
+import type { Huddle } from "../src/core/types";
+import { api, host, huddles, idle, store, useHuddleEnv } from "./support/huddle-env";
 
 useHuddleEnv();
 

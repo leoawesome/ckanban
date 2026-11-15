@@ -11,8 +11,8 @@ import {
   parseJournal, parseWorkflowMeta, settleWorkflow, transcriptCost, withRun, workflowAgentDetail, workflowDirCost, WorkflowCache, workflowScript,
   type WorkflowInfo,
 } from "../src/server/workflows";
-import { FAKE, board, bus, readArgs, replays, setBoard, setup, store, useBoardEnv } from "./board-env";
-import { tempDir, until } from "./helpers";
+import { FAKE, board, bus, readArgs, replays, setBoard, setup, store, useBoardEnv } from "./support/board-env";
+import { tempDir, until } from "./support/helpers";
 
 useBoardEnv();
 

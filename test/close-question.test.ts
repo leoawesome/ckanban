@@ -1,17 +1,17 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { attentionFor, STUCK_ON_QUESTIONS, userWaitReason } from "../src/server/attention";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
 import { stepWait, youWaiting } from "../src/server/main-ticket";
 import type { SessionSummary } from "../src/server/session";
-import { Store } from "../src/server/store";
-import type { Ticket } from "../src/server/types";
+import { Store } from "../src/core/store";
+import type { Ticket } from "../src/core/types";
 import { askClosed, familyState } from "../web/src/family";
 import { answersMessage, formStates, parseAnswers } from "../web/src/questionForms";
 import { stepMessages } from "../web/src/stepTalk";
 import { questionsError } from "../src/mcp-server";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const T = (p: Partial<Ticket>): Ticket => ({
   id: "t", title: "T", status: "review", order: 1, sessionId: "s", worktree: null, branch: null, prUrl: null,

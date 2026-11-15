@@ -3,7 +3,7 @@ import { mkdirSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../src/server/git";
 import { changedFiles, codeKey, passedAt, recordPass, relatedBase, relatedPlan } from "../scripts/test-plan";
-import { makeRepo, tempDir } from "./helpers";
+import { makeRepo, tempDir } from "./support/helpers";
 
 test("the code fingerprint follows code changes, new files included, and ignores docs and timings", async () => {
   const dir = await makeRepo();

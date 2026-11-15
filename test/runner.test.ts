@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { mcpConfig } from "../src/server/agents";
 import { buildArgs, controlResponse, inheritedEnv, PLANNING_DISALLOWED_TOOLS, startRun } from "../src/server/runner";
-import { tempDir, until } from "./helpers";
+import { tempDir, until } from "./support/helpers";
 
 const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
 

@@ -12,7 +12,9 @@ test("styles.css stays on the scale", () => {
 });
 
 test("components use on-scale icon sizes, spacing and colours", () => {
-  const problems = readdirSync(WEB).filter((f) => f.endsWith(".tsx"))
+  // Recursive, so components in feature folders are checked too.
+  const problems = readdirSync(WEB, { recursive: true, encoding: "utf8" })
+    .filter((f) => f.endsWith(".tsx") && !f.endsWith(".test.tsx") && !f.includes("node_modules"))
     .flatMap((f) => offScaleTsx(readFileSync(join(WEB, f), "utf8")).map((p) => `${f}:${p.line} ${p.text}`));
   expect(problems).toEqual([]);
 });

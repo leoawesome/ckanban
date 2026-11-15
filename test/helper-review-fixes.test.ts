@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import type { Channel } from "../src/server/helper/channels";
 import { checkDecision, type CheckContext, type ItemState } from "../src/server/helper/decide";
 import { HelperRunner } from "../src/server/helper/runner";
@@ -11,9 +11,9 @@ import { normalizeRecords } from "../src/server/helper/waits";
 import { normalizeSettings, Notifier, writeNotifySettings } from "../src/server/notify";
 import type { SessionSummary } from "../src/server/session";
 import type { SideCallInput, SideCallResult } from "../src/server/side-call";
-import { Store } from "../src/server/store";
-import type { Profile, Ticket } from "../src/server/types";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import type { Profile, Ticket } from "../src/core/types";
+import { tempDir } from "./support/helpers";
 
 const DAY = (h: number, m = 0) => new Date(2026, 10, 9, h, m).getTime();
 const NIGHT = { start: "22:00", end: "07:00" };

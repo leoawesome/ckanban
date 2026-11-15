@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { run } from "./git";
-import type { PrCheck, PrStatus } from "./types";
+import type { PrCheck, PrStatus } from "../core/types";
 
 /** Fields of `gh pr view --json` the board reads. */
 export const PR_FIELDS = "number,state,baseRefName,mergeable,mergeStateStatus,statusCheckRollup,reviewDecision,comments";

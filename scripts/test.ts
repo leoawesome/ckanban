@@ -21,7 +21,10 @@ const related = rest.includes("--related");
 rest = rest.filter((a) => a !== "--force" && a !== "--related");
 
 // Which runs to make: each is a list of `bun test` arguments (paths or filters).
-let runs: string[][] = [["test"]];
+// Tests live next to the code they test (src/, web/src/, scripts/) and in test/ (outside-in, integration and
+// board-wide tests); the full run covers all four folders.
+const TEST_ROOTS = ["./src", "./web/src", "./scripts", "./test"];
+let runs: string[][] = [TEST_ROOTS];
 let full = rest.length === 0;
 if (related && rest.length === 0) {
   const base = relatedBase(cwd);

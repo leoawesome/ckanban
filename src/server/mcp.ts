@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { trackedInterval } from "./lag";
+import { trackedInterval } from "../core/lag";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Bus } from "./events";
-import type { Store } from "./store";
+import type { Bus } from "../core/events";
+import type { Store } from "../core/store";
 import { knownConnectors, setKnownConnectors } from "./connectors";
 import { entryFromInput, inputFromEntry, type ToolEntry } from "./board-tools";
 

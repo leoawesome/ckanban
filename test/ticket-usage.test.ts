@@ -2,16 +2,16 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { Store } from "../src/server/store";
+import { Store } from "../src/core/store";
 import {
   ClaudeLogIndex, messageCost, priceFor, readLines, readWindows, recordWindow, RunLogIndex, ticketRuns, ticketUsage, type WindowSnapshot,
 } from "../src/server/ticket-usage";
-import type { ActivityEntry, Profile } from "../src/server/types";
+import type { ActivityEntry, Profile } from "../src/core/types";
 import type { UsageResult } from "../src/server/usage";
 import { approxPct, costText, modelName, tokenText } from "../web/src/usage";
-import { tempDir } from "./helpers";
+import { tempDir } from "./support/helpers";
 
 const H = 3600_000;
 const T0 = Date.parse("2026-10-06T10:00:00Z");

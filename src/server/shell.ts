@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { liveSessionMatch } from "./claude";
 import { run } from "./git";
-import { withUtf8Locale } from "./locale";
+import { withUtf8Locale } from "../core/locale";
 
 /** Bun ≥ 1.3.5 can spawn processes on a pseudo-terminal (`Bun.spawn({ terminal })`). */
 export function ptySupported(): boolean {

@@ -7,8 +7,8 @@ import {
 } from "../web/src/family";
 import { oldestStep } from "../src/server/attention";
 import { statusFacts, statusSections } from "../src/server/feature";
-import type { Ticket } from "../src/server/types";
-import { board, setup, store, useBoardEnv } from "./board-env";
+import type { Ticket } from "../src/core/types";
+import { board, setup, store, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

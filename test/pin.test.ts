@@ -1,7 +1,7 @@
 // 📌 Pinned tickets: pinning sets pinnedAt, it survives a reload, and every move to Done clears it.
 import { expect, test } from "bun:test";
-import { Store } from "../src/server/store";
-import { store, board, setup, useBoardEnv } from "./board-env";
+import { Store } from "../src/core/store";
+import { store, board, setup, useBoardEnv } from "./support/board-env";
 
 useBoardEnv();
 

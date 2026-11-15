@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { newTicketId, shellQuote, slugify, starredTitle } from "../src/server/util";
+import { newTicketId, shellQuote, slugify, starredTitle } from "./util";
 
 test("slugify basic", () => {
   expect(slugify("Add Dark Mode!")).toBe("add-dark-mode");

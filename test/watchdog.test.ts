@@ -3,12 +3,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { attentionFor, ticketAttention } from "../src/server/attention";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { isTransientText, transientError } from "../src/server/retry";
 import { buildArgs, startRun } from "../src/server/runner";
-import { Store } from "../src/server/store";
-import type { Ticket } from "../src/server/types";
-import { makeRepo, readJsonl, tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import type { Ticket } from "../src/core/types";
+import { makeRepo, readJsonl, tempDir } from "./support/helpers";
 
 const FAKE = join(import.meta.dir, "fixtures", "fake-claude.ts");
 const STREAM = buildArgs("u1", false, null);

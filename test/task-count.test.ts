@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { featureRows, featureTasks, newestFirst, taskTally } from "../web/src/family";
 import { taskProgress } from "../web/src/tasksText";
 import { statusFacts } from "../src/server/feature";
-import type { Ticket } from "../src/server/types";
+import type { Ticket } from "../src/core/types";
 
 let n = 0;
 const tk = (id: string, x: Partial<Ticket> = {}) => ({

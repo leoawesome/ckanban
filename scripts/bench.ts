@@ -17,12 +17,12 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Board } from "../src/server/board";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { createServer } from "../src/server/http";
-import { startLagMonitor } from "../src/server/lag";
+import { startLagMonitor } from "../src/core/lag";
 import { pollSessions, primeSessions, SessionCache } from "../src/server/session";
-import { Store } from "../src/server/store";
-import type { Status } from "../src/server/types";
+import { Store } from "../src/core/store";
+import type { Status } from "../src/core/types";
 
 const args = process.argv.slice(2);
 const real = args.includes("--real");

@@ -2,7 +2,7 @@
 // lessons, expiry and the weekly tidy.
 import { beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { Bus } from "../src/server/events";
+import { Bus } from "../src/core/events";
 import { type HuddleNote, parseNotes, serializeNotes } from "../src/server/huddle-notes";
 import {
   addToPile, applyTidyOp, type Candidate, emptyPile, EXPIRE_DAYS, learnedRulesBlock, newCorrections, parseLearned, parseTidy, prune, shiftNotes, ticketKey, type TidyNote,
@@ -11,8 +11,8 @@ import { Learner } from "../src/server/learner";
 import { corrections } from "../src/server/lessons";
 import type { SessionEntry } from "../src/server/session";
 import type { SideCallInput, SideCallResult } from "../src/server/side-call";
-import { Store } from "../src/server/store";
-import { tempDir } from "./helpers";
+import { Store } from "../src/core/store";
+import { tempDir } from "./support/helpers";
 
 const RESULT = 'CKANBAN_RESULT: {"status":"done","prUrl":null,"summary":"Added the link."}';
 let n = 0;

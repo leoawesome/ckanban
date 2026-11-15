@@ -12,7 +12,7 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodeProjectDir } from "../../src/server/claude";
-import { Store } from "../../src/server/store";
+import { Store } from "../../src/core/store";
 
 const args = process.argv.slice(2);
 const arg = (name: string) => {
