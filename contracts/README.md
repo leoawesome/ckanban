@@ -30,8 +30,10 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
 - `daemon.ts` starts a daemon: a free port, a temp data folder (`CKANBAN_HOME`), a temp `HOME`, a temp Claude config
   folder, a temp plain project folder (no git), the fake Claude from `test/fixtures/fake-claude.ts`, and stub
   `osascript`, `caffeinate`, `open` and `tailscale` commands on `PATH` (no Mac banners, no keep-awake). It never touches
-  the real `~/.claude-kanban` or the real repo. `DAEMON_CMD` and `CLI_CMD` at its top are the only lines that say what
-  program is the server and the CLI: point them at another build to test it.
+  the real `~/.claude-kanban` or the real repo. `DAEMON_CMD` and `CLI_CMD` at its top say what program is the server
+  and the CLI; env vars `CKANBAN_CONTRACT_DAEMON` and `CKANBAN_CONTRACT_CLI` (each a JSON array of strings) override
+  them, and bad JSON stops the run. The daemon gets the test's time zone (`TZ`), `CKANBAN_NO_KEYCHAIN=1` and a
+  `CKANBAN_USAGE_URL` on a closed local port, so it never reaches the keychain or Anthropic.
 - `files.ts` reads the data files (ticket front matter, JSONL) the way `data-files.md` describes them.
 - `tickets.test.ts`: boards (create, list, read, errors, the Origin check, `ckanban profiles`); tickets over HTTP and
   the CLI (create, read, update, move between columns and to another board, list, delete, validation errors); the
@@ -39,12 +41,17 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   comments and `comments.jsonl`.
 - `schedules.test.ts`: create, list, pause, resume, history and delete a schedule, its `<id>.json` and
   `<id>.history.jsonl`, validation errors.
+- `usage.test.ts`: `GET /api/usage` against a local fake of Anthropic's endpoint (first call, cache hits counted on
+  the fake, `fresh=1`, the one-call-a-minute gap, Anthropic failing with and without saved numbers, a 429, no
+  credentials) and `GET /api/spend` (an empty board; runs, side calls, huddle agents, quick chats and the helper).
 - `data-files.test.ts`: after a mix of actions, every file in the data folder matches a path listed in
   `data-files.md`, and the profile, ticket and schedule files hold the fields their schemas require.
 
 Run them with `bun test test/contract` (each file starts its own daemon, about half a second); `bun run test` runs them
 with everything else.
 
-To test another server: build it, set `DAEMON_CMD` (and `CLI_CMD` if the CLI moves too) in `test/contract/daemon.ts`,
-and run `bun test test/contract`. The server must take its port from `CKANBAN_PORT`, its data folder from
-`CKANBAN_HOME` and the Claude program from `CKANBAN_CLAUDE_BIN`.
+To test another server: build it and run
+`CKANBAN_CONTRACT_DAEMON='["/path/to/server","dev"]' bun test test/contract` (add `CKANBAN_CONTRACT_CLI` if the CLI
+moves too). The server must take its port from `CKANBAN_PORT`, its data folder from `CKANBAN_HOME`, the Claude
+program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_DIR`, and honour `CKANBAN_USAGE_URL`
+and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`).

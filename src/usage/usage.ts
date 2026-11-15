@@ -5,7 +5,8 @@ import { join } from "node:path";
 // Claude plan usage (what `/usage` shows in Claude Code), from Anthropic's undocumented OAuth endpoint.
 // The OAuth token is read per request and never leaves this module: no logging, no caching, no response field.
 
-export const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
+/** `CKANBAN_USAGE_URL` points it elsewhere (the contract tests' local fake); unset means Anthropic's endpoint. */
+export const USAGE_URL = process.env.CKANBAN_USAGE_URL || "https://api.anthropic.com/api/oauth/usage";
 const KEYCHAIN_SERVICE = "Claude Code-credentials";
 
 export interface UsageWindow {
@@ -141,7 +142,8 @@ function readCredentialsFile(): string | null {
 
 export async function readCredentials(): Promise<Credentials> {
   const raws: (string | null)[] = [];
-  if (process.platform === "darwin") {
+  // CKANBAN_NO_KEYCHAIN=1 reads only the credentials file (tests must never reach the real Mac keychain).
+  if (process.platform === "darwin" && process.env.CKANBAN_NO_KEYCHAIN !== "1") {
     // Claude Code stores its login under the OS user's account name; the service-only lookup
     // returns whichever same-named item comes first, which may be a stale one.
     const user = currentUser();

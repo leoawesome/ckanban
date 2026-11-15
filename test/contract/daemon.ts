@@ -1,6 +1,6 @@
 // Starts a real ckanban daemon as a separate process for the contract tests, and talks to it from the outside only:
 // HTTP, the CLI and the data folder's files. Nothing here (or in any test/contract file) imports from src/ or web/,
-// so the same tests can later check another server (a Rust port) by changing DAEMON_CMD and CLI_CMD below.
+// so the same tests can check another server (a Rust port): set CKANBAN_CONTRACT_DAEMON / CKANBAN_CONTRACT_CLI (below).
 //
 // Each daemon gets its own temp data folder (CKANBAN_HOME), temp HOME, temp Claude config folder, a fake `claude`
 // (test/fixtures/fake-claude.ts) and stub osascript/caffeinate/open/tailscale on PATH, so it never touches the real
@@ -10,9 +10,29 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const REPO = resolve(import.meta.dir, "..", "..");
-/** The one place that says how to start the server and run the CLI. A port changes these two lines. */
-export const DAEMON_CMD = [process.execPath, join(REPO, "src", "cli.ts"), "dev"];
-export const CLI_CMD = [process.execPath, join(REPO, "src", "cli.ts")];
+
+/** A command from an env var holding a JSON array of strings; unset or empty gives `fallback`. Bad JSON stops the run. */
+export function commandFromEnv(name: string, fallback: string[], env: Record<string, string | undefined> = process.env): string[] {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`${name} must be a JSON array of strings, e.g. ["/path/to/server","dev"]; could not parse it: ${(e as Error).message}`);
+  }
+  if (!Array.isArray(v) || v.length === 0 || !v.every((x) => typeof x === "string" && x !== "")) {
+    throw new Error(`${name} must be a non-empty JSON array of non-empty strings, e.g. ["/path/to/server","dev"]; got ${raw}`);
+  }
+  return v as string[];
+}
+
+/**
+ * The one place that says how to start the server and run the CLI. Another server (a port) is tested by setting
+ * CKANBAN_CONTRACT_DAEMON and CKANBAN_CONTRACT_CLI to JSON arrays, e.g. '["/tmp/ckanban-rs","dev"]'.
+ */
+export const DAEMON_CMD = commandFromEnv("CKANBAN_CONTRACT_DAEMON", [process.execPath, join(REPO, "src", "cli.ts"), "dev"]);
+export const CLI_CMD = commandFromEnv("CKANBAN_CONTRACT_CLI", [process.execPath, join(REPO, "src", "cli.ts")]);
 export const FAKE_CLAUDE = join(REPO, "test", "fixtures", "fake-claude.ts");
 
 export interface Daemon {
@@ -57,7 +77,15 @@ function stubBin(): string {
   return dir;
 }
 
-export async function startDaemon(opts: { fakeMode?: string } = {}): Promise<Daemon> {
+export interface StartOptions {
+  fakeMode?: string;
+  /** Extra env for the daemon and the CLI (wins over the defaults below). */
+  env?: Record<string, string>;
+  /** Runs after the temp folders exist and before the daemon starts: seed data files or Claude credentials here. */
+  before?: (dirs: { home: string; claudeDir: string; project: string }) => void;
+}
+
+export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
   const root = tmp("ck-contract-");
   const home = join(root, "data");
   const userHome = join(root, "home");
@@ -82,7 +110,14 @@ export async function startDaemon(opts: { fakeMode?: string } = {}): Promise<Dae
     FAKE_ARGS_FILE: join(root, "claude-args.jsonl"),
     TMPDIR: tmpdir(),
     LANG: "en_US.UTF-8",
+    // The test's own time zone (bun test runs in UTC), so local day keys (spend) agree on both sides.
+    TZ: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    // Plan usage never reaches Anthropic or the Mac keychain: a closed local port unless a test starts its own fake.
+    CKANBAN_USAGE_URL: "http://127.0.0.1:9/api/oauth/usage",
+    CKANBAN_NO_KEYCHAIN: "1",
+    ...opts.env,
   };
+  opts.before?.({ home, claudeDir, project });
   const logFile = join(root, "daemon.log");
   const proc = Bun.spawn(DAEMON_CMD, { env, cwd: project, stdout: Bun.file(logFile), stderr: Bun.file(join(root, "daemon.err.log")) });
   const url = `http://127.0.0.1:${port}`;

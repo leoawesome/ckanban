@@ -131,8 +131,8 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 | POST | `/api/debug/profile` | query `seconds` (default 15) | 200 `profileFor()` result (cpuprof.ts) | 403 with `x-ckanban-run`, Host not localhost/127.0.0.1, or Host on the remote port |
 | GET | `/api/events` | | event stream (above) | |
 | GET | `/api/version` | | 200 `UpdateChecker.status()` (update.ts) | |
-| GET | `/api/usage` | query `fresh=1` asks Anthropic now | 200 `UsageResult` (usage.ts) | |
-| GET | `/api/spend` | | 200 `SpendIndex.recent()` (spend.ts): today's spend per board | |
+| GET | `/api/usage` | query `fresh=1` asks Anthropic now (still at most one call a minute) | 200 `UsageView` (usage-cache.ts), see "Plan usage" below | |
+| GET | `/api/spend` | | 200 `SpendIndex.recent()` (spend.ts): `{ day, costUsd, boards }`, see "Today's spend" below | |
 | GET | `/api/team-usage` | | 200 `Huddles.usage()`: use of each preset and template | |
 | GET | `/api/awake` | | 200 `{held: boolean}` | |
 | GET | `/api/restart` | | 200 `Board.restartState()` | |
@@ -150,6 +150,31 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 | GET | `/api/tickets` | query `scope=done`, `q`, `board?`, `limit?` | 200 best-matching Done rows | |
 | GET | `/api/tickets` | no scope | 200 one light row per ticket on every board: `{profile, profileName, id, title, status, running, updatedAt, body, summary, prUrl, mainTicket?}` (texts capped at 4000 chars) | |
 | POST | `/api/automation-call` | `{token, service, tool, args}` | 200 `{result}` (`LoopManager.call`) | `LoopError`/`PassError` status |
+
+**Plan usage (`GET /api/usage`).** Always status 200; failures are in the body. The answer is one of:
+- `{ windows, fetchedAt }`: the last good numbers. `windows` is `{ key, label, percent, resetsAt }[]` (`key` such as
+  `five_hour`, `seven_day`, `seven_day_opus`; `percent` 0-100; `resetsAt` ISO or null), only keys starting with
+  `five_hour` or `seven_day` that carry a numeric `utilization`, `five_hour` first. With `stale: true` and `error` when
+  a later check failed, plus `limited: true` and `retryAt` (ISO) after a 429.
+- `{ error, fetchedAt }` when there were never any numbers, plus `limited` and `retryAt` after a 429. No credentials,
+  an expired token, an unreachable or failing endpoint all land here.
+
+Caching (`UsageCache`): one call in flight for everyone; a good answer is reused for 4 minutes; never more than one call
+a minute, `fresh=1` included; after a 429 a growing wait (1, 2, 4, 10 min, or `retry-after` when longer, capped at
+30 min); the state is saved to `usage-last.json` and read once at start. The request is
+`GET <CKANBAN_USAGE_URL>` with `authorization: Bearer <token>`, `anthropic-beta: oauth-2025-04-20`. Environment:
+- `CKANBAN_USAGE_URL`: the usage endpoint (default `https://api.anthropic.com/api/oauth/usage`). Tests point it at a local fake.
+- `CKANBAN_NO_KEYCHAIN=1`: read the token only from `$CLAUDE_CONFIG_DIR/.credentials.json` (default
+  `~/.claude/.credentials.json`), JSON `{ "claudeAiOauth": { "accessToken", "expiresAt" (epoch ms, optional) } }`.
+  Unset on macOS: the keychain items `Claude Code-credentials` (the OS user's account, then any) are read too, and the
+  login with the latest `expiresAt` (none counts as latest) wins.
+
+**Today's spend (`GET /api/spend`).** `{ day: "YYYY-MM-DD" (local), costUsd, boards: { slug, name, costUsd }[] }`,
+one entry per board in board order, then `{ slug: "~helper", name: "Helper", costUsd }` when the helper spent
+anything today. A board's cost is today's share of: its tickets' `activity.jsonl` result lines (each line carries the
+session's running `total_cost_usd`; the growth counts, on the line's local day), its tickets' `side-spend.jsonl`, its
+quick chats' `chats/<id>.activity.jsonl` and `.side-spend.jsonl`, and its entry in `spend-days.json`. Files untouched
+since local midnight are skipped. The answer is reused for 5 seconds.
 
 ## Attachments
 
