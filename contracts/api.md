@@ -395,34 +395,37 @@ for an unknown board.
 | GET | `/api/profiles/:slug/chat/search` | query `ticket` (default: the caller's own run ticket), `q`, `tools=1` | 200 `{text}` | 400 no ticket or bad query, 404 ticket, 403 out of reach |
 | GET | `/api/profiles/:slug/chat/read` | query `ref` (`<sessionId>:<n>`), `before?`, `after?` | 200 `{text}` | 400 bad ref, 404 no such chat, 403 out of reach |
 
-Reach for chat search/read: huddle agents are refused; the user may read any; a run its own ticket, a main ticket its
-family, a chat answering the user's typed message any ticket on any board.
+Reach for chat search/read: huddle agents are refused; the user (no run header) may read any; a run its own ticket, a
+main ticket its family, a chat answering the user's typed message any ticket on any board. Anything else is 403
+`<id> is out of reach: ...`; a run of another board answering no typed message is 403 too.
 
 ## Quick chats
 
 Prefix `/api/profiles/:slug/chats`. "User only" here is the `userOnly` check. A route with `:cid` answers
-`404 chat not found` first for an unknown chat. `QuickChatView` is in quickchat.ts.
+`404 chat not found` first for an unknown chat. `QuickChatView` is in quickchat.ts. A huddle helper
+(`x-ckanban-huddle-agent`) is refused like a run; the refusal reads `Quick chats is for the user only, from the board in
+a browser: ...`.
 
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/chats` | query `limit?`, `before?` | no `limit`: 200 `QuickChatView[]`; with `limit`: 200 `{chats, next}` | |
-| POST | `/chats` | `{text}`; user only | 201 `QuickChats.send()` result (new chat) | 403, `QuickChatError` |
+| POST | `/chats` | `{text}`; user only | 201 `QuickChats.send()` result (new chat) | 403, 400 empty message, 413 message too long |
 | GET | `/chats/:cid` | | 200 `QuickChatView` | 404 |
 | PATCH | `/chats/:cid` | `{title}`; user only | 200 renamed chat | 403 |
 | DELETE | `/chats/:cid` | user only | 204 | 403 |
 | GET | `/chats/:cid/context` | | 200 cached context usage (`ContextUsage.view`) | |
 | POST | `/chats/:cid/context` | user only | 200 fresh context usage | 403, 409 |
-| POST | `/chats/:cid/messages` | `{text}`; user only | 200 send result | 403, `QuickChatError` |
+| POST | `/chats/:cid/messages` | `{text}`; user only | 200 send result | 403, 400 empty, 413 too long, 409 the chat became a ticket, is being made into one or is being rewound |
 | POST | `/chats/:cid/stop` | user only | 200 `QuickChatView` | 403 |
-| POST | `/chats/:cid/ticket` | `{partOf?}`; user only | 201 `{ticket: TicketView, chat}` | 403, 400 partOf |
+| POST | `/chats/:cid/ticket` | `{partOf?}`; user only | 201 `{ticket: TicketView, chat}` | 403, 400 bad or unknown `partOf`, 409 already a ticket, Claude still replying, no message yet, or the front desk's chat |
 | GET | `/chats/:cid/conversation` | query `limit` (1..500, default 100), `before` (index) | 200 `{entries: SessionEntry[], start, total}` | |
 | GET | `/chats/:cid/simplified` | | 200 saved plain-words versions | |
 | POST | `/chats/:cid/simplify` | `{uuid}`; user only | 200 simplified text | 403, 404 message, `SimplifyError` |
 | GET | `/chats/:cid/rewind` | query `uuid` | 200 `{blocked, files: null, filesReason: "quick-chat"}` | 404 not rewindable |
-| POST | `/chats/:cid/rewind` | `{uuid}`; user only | 200 `QuickChats.rewind()` result | 403, 404 |
+| POST | `/chats/:cid/rewind` | `{uuid}`; user only | 200 `QuickChats.rewind()` result | 403, 404 not a message it can rewind to (or the conversation file is missing), 409 blocked, 400 the cut failed |
 | GET | `/chats/:cid/rewind-undo` | | 200 `{available, blocked, messages, files: 0, filesSaved: false}` | |
 | POST | `/chats/:cid/rewind-undo` | user only | 200 undo result | 403, `QuickChatError` |
-| POST | `/chats/:cid/fork` | `{uuid}`; user only | 201 `{id, text, chat}` | 403, 404 |
+| POST | `/chats/:cid/fork` | `{uuid}`; user only | 201 `{id, text, chat}` | 403, 404 not a message it can fork from, 409 blocked, 400 the copy failed |
 | GET | `/chats/:cid/tool/:toolUseId` | | 200 tool call detail | 404 |
 
 ## Schedules

@@ -505,7 +505,8 @@ Fix it.
   Always set at creation: `id`, `sessionId` (a random UUID), `title` (or null), `firstMessage`, `createdAt`,
   `updatedAt`, `started: false`, `ticketId: null`, `error: null`. A fork (`QuickChats.fork`) starts with
   `firstMessage: null` and a made-up title, then copies the source's `firstMessage` and sets `started: true` once the
-  copied transcript is there. Schema: `schemas/quick-chat.schema.json`.
+  copied transcript is there. The view's `renamed`, `running`, `activity` and `waiting` are never saved. Delete
+  removes `<id>.json` and `<id>.activity.jsonl`. Schema: `schemas/quick-chat.schema.json`.
 - **Writer:** `QuickChats.save` (atomic). **Outside edits:** `get` reads every call; the list is an mtime/size cache
   over files matching `^[a-z0-9]+\.json$`. **Tier:** CORE.
 
