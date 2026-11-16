@@ -54,7 +54,8 @@ pub async fn from_user_browser(peer_port: u16, own_pid: u32) -> bool {
     if peer_port == 0 {
         return false;
     }
-    let lsof = out(&["lsof", "-nP", &format!("-iTCP:{peer_port}"), "-sTCP:ESTABLISHED", "-Fp"]).await;
+    let addr = caller_lsof_addr(peer_port);
+    let lsof = out(&["lsof", "-nP", &addr, "-sTCP:ESTABLISHED", "-Fp"]).await;
     let pids: Vec<u32> = lsof_pids(&lsof).into_iter().filter(|p| *p != own_pid).collect();
     if pids.is_empty() {
         return false;
@@ -64,6 +65,14 @@ pub async fn from_user_browser(peer_port: u16, own_pid: u32) -> bool {
     pids.iter().all(|p| {
         !descends_from(*p, own_pid, &parents) && is_browser(commands.get(p).map_or("", String::as_str)) && !driven_browser(*p, &parents, &args)
     })
+}
+
+/// `callerLsofArgs` in guard.ts: lsof's `-i` for both ends of the caller's connection. This server listens on
+/// 127.0.0.1 only, so the caller's end is 127.0.0.1:<peer_port>. A bare `-iTCP:<port>` also matched any other socket on
+/// the Mac with that port number (another address, or as its remote port), such as a desktop app's connection to the
+/// internet: that pid isn't a browser, so the user's own browser was refused.
+pub fn caller_lsof_addr(peer_port: u16) -> String {
+    format!("-iTCP@127.0.0.1:{peer_port}")
 }
 
 /// Pids in `lsof -F` output (lines `p<pid>`).
@@ -177,6 +186,8 @@ mod tests {
     #[test]
     fn parses_ps_and_lsof_like_guard_ts() {
         assert_eq!(lsof_pids("p123\nf7\np456\nx\np0\n"), vec![123, 456]);
+        // Only the caller's end on 127.0.0.1 (guard.test.ts checks lsof skips the same port number elsewhere).
+        assert_eq!(caller_lsof_addr(51234), "-iTCP@127.0.0.1:51234");
         let parents = parent_map("  1 0\n 50 1\n 60 50\n 70 60\nbad line\n");
         assert_eq!(parents.get(&70), Some(&60));
         assert!(descends_from(70, 50, &parents));
