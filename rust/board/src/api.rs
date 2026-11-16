@@ -43,6 +43,11 @@ pub trait RunControl: Send + Sync {
     fn busy_boards(&self) -> Vec<String>;
     /// Every ticket with a run going now, as (board, ticket id): the satellite's `runtime` mirror.
     fn running_tickets(&self) -> Vec<(String, String)>;
+    /// The card's `folderWait` (`Board.folderWait`): it would start now but another ticket edits the board's folder in
+    /// place. `ticket` is the ticket as its view shows it. False until runs exist (R7a).
+    fn folder_wait(&self, _slug: &str, _ticket: &Value) -> bool {
+        false
+    }
 }
 
 /// Claude session transcripts (`SessionCache` in `src/runs/session-cache.ts`).
@@ -61,6 +66,14 @@ pub trait HuddleInfo: Send + Sync {
     fn host_states(&self, slug: &str) -> BTreeMap<String, Value>;
     /// What a restart also waits for besides board runs (huddle agents mid-turn), one line each.
     fn restart_busy(&self) -> Vec<String>;
+    /// What a ticket's huddle teammates spent (`Huddles.ticketSpend(..).costUsd`), for its card's cost.
+    fn ticket_spend(&self, _slug: &str, _id: &str) -> f64 {
+        0.0
+    }
+    /// The ticket's huddle teammates with a session (handle, session id): their artifacts join its links.
+    fn teammates(&self, _slug: &str, _id: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
 }
 
 /// Shared devices and board browsers (`Devices`, `BoardBrowsers` in `src/browser/`).
@@ -71,6 +84,10 @@ pub trait DeviceInfo: Send + Sync {
     fn release_all(&self, slug: &str, id: &str);
     /// The browsers a ticket's runs may use (`browserPicks`); None: no list (the board's default).
     fn browser_picks(&self, slug: &str, id: Option<&str>) -> Option<Value>;
+    /// The ticket's linked session is open in a terminal now (`terminals.isOpen`).
+    fn terminal_open(&self, _slug: &str, _id: &str) -> bool {
+        false
+    }
 }
 
 /// Copies of the folder and landing (`board-main.ts`, `board-repo.ts`).
@@ -94,6 +111,10 @@ pub trait Satellite: Send + Sync {
     fn frontdesk_gate(&self, request: Value) -> BoxFuture<'_, Result<Option<Value>, Failure>>;
     /// Share to claude.ai: publish a file, give its link.
     fn publish_artifact(&self, request: Value) -> BoxFuture<'_, Result<Value, Failure>>;
+    /// The ticket's publishing jobs now (`shareJobs`), as its view lists them.
+    fn share_jobs(&self, _slug: &str, _id: &str) -> Vec<Value> {
+        Vec::new()
+    }
 }
 
 /// What `ticket.updated` events and ticket answers carry (`view()` in `src/api/context.ts`).
@@ -106,8 +127,9 @@ pub trait TicketViews: Send + Sync {
 
 /// `liveJson` (`src/runs/live-cut.ts`): a run's raw event as live events send it, long strings cut.
 pub trait ActivityCut: Send + Sync {
-    /// The JSON text of an `activity` event as the event stream sends it (before masking).
-    fn live_json(&self, event: &Value) -> String;
+    /// The JSON text of an `activity` event as the event stream sends it. `mask` hides saved keys in a long string
+    /// before it is cut (the whole text is masked again afterwards, as in Bun).
+    fn live_json(&self, event: &Value, mask: &dyn Fn(&str) -> String) -> String;
 }
 
 /// The stand-ins: nothing running, no session, no huddle, no devices, no landing, no satellite, tickets as they are.
@@ -219,7 +241,7 @@ impl TicketViews for StandIn {
 }
 
 impl ActivityCut for StandIn {
-    fn live_json(&self, event: &Value) -> String {
+    fn live_json(&self, event: &Value, _mask: &dyn Fn(&str) -> String) -> String {
         serde_json::to_string(event).unwrap_or_else(|_| "null".into())
     }
 }

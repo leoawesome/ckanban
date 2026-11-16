@@ -8,9 +8,12 @@
 //! board instead (full mode, as with board mode off) and the reason goes to this process's output (`daemon.log`
 //! under launchd) and `<data>/rust-board-status.json`.
 //!
-//! Routes the Rust board answers itself (more with each task): `GET /api/events`; the browsers, devices and terminal
-//! routes (R9, `ckanban_board::browsers::routes`). Everything else goes on to the
-//! usage, spend, passes and agents routes, then to Bun, as in front mode.
+//! Routes the Rust board answers itself (more with each task): `GET /api/events`; R1's reads from the ticket index
+//! (`GET /api/profiles`, `/api/profiles/:p`, `/api/profiles/:p/tickets`, `/api/profiles/:p/tickets/:id`,
+//! `/api/tickets`, `/api/inbox`); the session routes (R5: a ticket's conversation, tool, agent and workflow details,
+//! chat search and read, the board folder's sessions); the browsers, devices and terminal routes (R9,
+//! `ckanban_board::browsers::routes`). Everything else goes on to the usage, spend, passes and agents
+//! routes, then to Bun, as in front mode.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -22,6 +25,8 @@ use ckanban_board::events::{self, EventHooks};
 use ckanban_board::lock::{self, BoardLock};
 use ckanban_board::mode::{self, Decision};
 use ckanban_board::satellite;
+use ckanban_board::sessions::routes::{self as session_routes, HUDDLE_HEADER, RUN_HEADER};
+use ckanban_board::sessions::service::Sessions;
 use ckanban_core::time::now_ms;
 use hyper::body::Incoming;
 use hyper::header::HOST;
@@ -42,6 +47,7 @@ pub struct BoardMode {
     /// R9: devices, board browsers, named Chromes and the terminal.
     browsers: Arc<Browsers>,
     browser_routes: browsers::routes::RouteCtx,
+    sessions: Arc<Sessions>,
     hooks: Arc<EventHooks>,
     public_port: u16,
     root: PathBuf,
@@ -66,16 +72,21 @@ pub async fn prepare(root: &Path, public_port: u16) -> Option<Arc<BoardMode>> {
         Ok(l) => l,
         Err(e) => return fall_back(root, &e, crashes),
     };
+    let sessions = Sessions::new(root, text_masker(root));
     let mut services = Services::stand_ins();
+    services.sessions = sessions.clone();
     let browsers = Browsers::new(root, Arc::new(FileLookup::new(root)), services.sessions.clone());
     services.devices = browsers.clone();
     let core = Core::new(root, services);
     browsers.attach(core.bus.clone());
+    browsers.set_linked(browsers::linked_from_index(core.index.clone(), browsers.lookup.clone()));
     if let Err(e) = core.start(Core::steps()).await {
         // Let go first: Bun's full mode takes the lock next.
         drop(lock);
         return fall_back(root, &e, crashes);
     }
+    // The session watcher and the projects folder feed (R5): `session.updated` on the board's event stream.
+    sessions.start(&core);
     if let Err(e) = mode::record_board(root, crashes) {
         eprintln!("ckanban-rs: can't write {}: {e}", mode::status_path(root).display());
     }
@@ -88,7 +99,7 @@ pub async fn prepare(root: &Path, public_port: u16) -> Option<Arc<BoardMode>> {
         mask: hooks.mask.clone(),
         user_only: Arc::new(|h, peer| Box::pin(async move { crate::guard::user_only(&h, peer).await })),
     };
-    Some(Arc::new(BoardMode { core, browsers, browser_routes, hooks, public_port, root: root.to_path_buf(), _lock: lock }))
+    Some(Arc::new(BoardMode { core, sessions, browsers, browser_routes, hooks, public_port, root: root.to_path_buf(), _lock: lock }))
 }
 
 fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<BoardMode>> {
@@ -99,42 +110,96 @@ fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<Boar
     None
 }
 
-/// `maskSavedJson` with the pass store's secrets, read again only when the passes file changes.
-fn masker(root: &Path) -> events::Mask {
+/// The pass store's secrets, read again only when the passes file changes.
+fn secrets_of(root: &Path) -> impl Fn() -> Arc<Vec<String>> + Send + Sync + 'static {
     let file = root.join(passes::PASSES_FILE);
     let root = root.to_path_buf();
     let cache: Mutex<Option<((Option<SystemTime>, u64), Arc<Vec<String>>)>> = Mutex::new(None);
-    Arc::new(move |text: &str| {
+    move || {
         let stamp = std::fs::metadata(&file).map(|m| (m.modified().ok(), m.len())).unwrap_or((None, 0));
-        let secrets = {
-            let mut c = cache.lock().unwrap_or_else(|p| p.into_inner());
-            match &*c {
-                Some((s, v)) if *s == stamp => v.clone(),
-                _ => {
-                    let v = Arc::new(passes::current_secrets(&root));
-                    *c = Some((stamp, v.clone()));
-                    v
-                }
+        let mut c = cache.lock().unwrap_or_else(|p| p.into_inner());
+        match &*c {
+            Some((s, v)) if *s == stamp => v.clone(),
+            _ => {
+                let v = Arc::new(passes::current_secrets(&root));
+                *c = Some((stamp, v.clone()));
+                v
             }
-        };
-        mask::mask_saved_json(&secrets, text)
+        }
+    }
+}
+
+/// `maskSaved` (plain text, a stored chat preview) with the pass store's secrets.
+fn text_masker(root: &Path) -> Arc<dyn Fn(&str) -> String + Send + Sync> {
+    let secrets = secrets_of(root);
+    Arc::new(move |text: &str| {
+        let mut out = text.to_string();
+        for s in secrets().iter() {
+            if out.contains(s.as_str()) {
+                out = out.replace(s.as_str(), "***");
+            }
+        }
+        out
     })
+}
+
+/// `maskSavedJson` with the pass store's secrets, read again only when the passes file changes.
+fn masker(root: &Path) -> events::Mask {
+    let secrets = secrets_of(root);
+    Arc::new(move |text: &str| mask::mask_saved_json(&secrets(), text))
 }
 
 impl BoardMode {
     /// The answer when the Rust board answers this request itself; None: it goes on (Rust's other routes, then Bun).
-    pub fn answer(&self, req: &Request<Incoming>) -> Option<Response<Body>> {
+    /// The event stream, and the board's read routes (R1: boards, ticket lists and scopes, one ticket, the command
+    /// bar's rows, the Inbox), worked out on the blocking pool.
+    pub async fn answer(&self, req: &Request<Incoming>) -> Option<Response<Body>> {
         let h = req.headers();
         if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) || h.get_all(HOST).iter().count() > 1 {
             return None;
         }
-        if req.method() != Method::GET || req.uri().path() != "/api/events" {
+        if req.method() != Method::GET {
+            return None;
+        }
+        let path = req.uri().path().to_string();
+        let query = req.uri().query().unwrap_or("").to_string();
+        let events = path == "/api/events";
+        if !events && !is_read_route(&path) {
             return None;
         }
         if !local_host(h, self.public_port) {
             return Some(plain(StatusCode::FORBIDDEN, "forbidden"));
         }
-        Some(events::stream(&self.core.bus, self.hooks.clone(), events::PING_EVERY))
+        if events {
+            return Some(events::stream(&self.core.bus, self.hooks.clone(), events::PING_EVERY));
+        }
+        let reads = self.core.reads.clone();
+        let (status, body) = tokio::task::spawn_blocking(move || reads.answer(&path, &query)).await.ok()??;
+        let text = (self.hooks.mask)(&serde_json::to_string(&body).unwrap_or_else(|_| "null".into()));
+        Some(json_text(status, text))
+    }
+
+    /// The session routes (R5), answered from Claude's transcripts; None: the request goes on (to Bun).
+    pub async fn answer_sessions(&self, req: &Request<Incoming>) -> Option<Response<Body>> {
+        let h = req.headers();
+        let path = req.uri().path();
+        if !session_routes::wanted(req.method().as_str(), path) {
+            return None;
+        }
+        // Anything Bun's gate treats specially (the Telegram front desk, odd Host headers) stays with Bun.
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) || h.get_all(HOST).iter().count() > 1 || !local_host(h, self.public_port) {
+            return None;
+        }
+        let r = session_routes::Req {
+            method: req.method().as_str().to_string(),
+            path: path.to_string(),
+            query: req.uri().query().map(str::to_string),
+            run: h.get(RUN_HEADER).map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()),
+            huddle: h.contains_key(HUDDLE_HEADER),
+        };
+        let reply = self.sessions.answer(r).await?;
+        let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        Some(passes::json_answer(status, &reply.body, &passes::current_secrets(&self.root)))
     }
 
     /// The routes the Rust board answers that need the request itself (its body, an upgrade, the caller): the
@@ -169,6 +234,25 @@ impl BoardMode {
         self.core.stop();
         mode::record_stop(&self.root, code == 0);
     }
+}
+
+/// Paths the board's read routes may answer (`ckanban_board::index::routes`); the rest of `/api/profiles/...` goes
+/// on to Bun without a trip to the blocking pool.
+fn is_read_route(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+    match parts.as_slice() {
+        ["api", "inbox", ..] | ["api", "tickets"] | ["api", "profiles"] | ["api", "profiles", _] => true,
+        ["api", "profiles", _, "tickets"] | ["api", "profiles", _, "tickets", _] => true,
+        _ => false,
+    }
+}
+
+fn json_text(status: u16, text: String) -> Response<Body> {
+    use http_body_util::{BodyExt, Full};
+    let mut r = Response::new(Full::new(bytes::Bytes::from(text)).map_err(|never| match never {}).boxed());
+    *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    r.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json"));
+    r
 }
 
 /// The boards (folders under `profiles/`): a few names, read once at start.

@@ -9,8 +9,8 @@
 //! adopts Rust's after a switch back, from the same `board-browsers.json` and each Chrome's `DevToolsActivePort`.
 //!
 //! What this module needs from the board (a ticket's title and copy of the folder, a board's name, path and browser
-//! picks) comes through `BoardLookup`: files read on demand for now (one ticket or board at a time), the R1 index
-//! later. The terminal watcher's list of linked tickets comes from `set_linked` (R1); until then it watches nothing.
+//! picks) comes through `BoardLookup`: files read on demand (one ticket or board at a time). The terminal watcher's
+//! list of linked tickets comes from the R1 index (`linked_from_index`, plugged in by the server).
 
 pub mod board_browsers;
 pub mod cdp;
@@ -240,7 +240,30 @@ impl Browsers {
     }
 }
 
+/// The terminal watcher's linked tickets from the board index (R1): every board's tickets with a session and a
+/// working folder (Bun's `t.sessionId && t.workdir`). Called on a blocking thread every few seconds; the index keeps
+/// each board's listing in memory, so this walks memory, not files.
+pub fn linked_from_index(index: Arc<crate::index::Index>, lookup: Arc<dyn BoardLookup>) -> Linked {
+    Arc::new(move || {
+        let mut out = Vec::new();
+        for p in lookup.profiles() {
+            let Some(slug) = p.get("slug").and_then(Value::as_str) else { continue };
+            for t in &index.list(slug).tickets {
+                let truthy = |k: &str| t.json.get(k).and_then(Value::as_str).filter(|s| !s.is_empty());
+                if let (Some(session), Some(_)) = (truthy("sessionId"), truthy("workdir")) {
+                    out.push((slug.to_string(), t.id.clone(), session.to_string()));
+                }
+            }
+        }
+        out
+    })
+}
+
 impl DeviceInfo for Browsers {
+    fn terminal_open(&self, slug: &str, id: &str) -> bool {
+        self.terminals.is_open(slug, id)
+    }
+
     fn device_state(&self, slug: &str, id: &str) -> Option<Value> {
         self.devices.ticket_state(slug, id)
     }

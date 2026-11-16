@@ -39,12 +39,80 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   a slow connection closed).
 - `src/mode.rs`: the switch, the fallbacks and the status file. `src/lock.rs`: `board.lock`.
 - `src/satellite.rs`: `event`/`runtime` lines to the satellite's stdin; its event stream re-emitted on the bus.
-- One empty folder per later task (filled as each lands): `index` (R1), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
+- `src/index/` (R1): every board's ticket files parsed once and kept by mtime and size, each board's listing shared as
+  one `Arc<BoardList>`; the start-up load on a few threads in the background (a board's first listing waits for it);
+  the 30 s re-check; families, scopes and Done paging, a main ticket's card, attention, links, the command bar;
+  `TicketView` with live state through `Live` (the services' stand-ins until their tasks land); the read routes
+  `GET /api/profiles`, `/api/profiles/:p`, `/api/profiles/:p/tickets` (every scope), `/api/profiles/:p/tickets/:id`,
+  `/api/tickets`, `/api/inbox`. `api::TicketViews` is filled from it (`core.rs` `IndexViews`).
+- Shadow mode (`src/index/shadow.rs`, `rust/src/shadow.rs`): with `CKANBAN_RUST_SHADOW=1` and board mode off, Bun's
+  answers to the ticket list reads are served as they are and compared in the background with what the index works
+  out (live fields taken from Bun's answer, Inbox sessions from `session-summaries.json`); differences, ids and field
+  names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
+  board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
+- One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
   `huddles` (R11a), `team` (R11b), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
+## The run engine (R3, `src/runs/`)
+
+A library for the run loop (R7a); nothing calls it at run time yet except `LiveCut` (the event stream's
+`ActivityCut`). One file per Bun file, listed in `src/runs/mod.rs`. What R7a calls:
+
+- `runner::build_args(&BuildArgs { session_id, resume, model, disallowed, mcp, system_prompt, max_budget_usd, effort,
+  ultracode, settings, tools, strict_mcp, no_chrome })`, then `runner::start_run(RunOptions { bin, cwd, args, env,
+  input, input_local, planning, on_event, on_waiting, grace_ms, idle_ms, stall_ms, on_stall })` → `RunHandle`:
+  `send(text, local) -> bool`, `stop_task(id).await`, `end_when_idle()`, `keep_waiting()`, `stop()`, `stopped()`,
+  `pid()`, `wait().await -> Arc<RunOutput { code, stderr, events }>`. One task per run owns the child and its timers;
+  callbacks run on it in order and must not block. Exit codes are Bun's (`128 + signal` when killed). Unlike Bun, a
+  `stop()` before Claude has started counts (it is stopped as soon as it starts).
+- After a run: `activity::extract_final_text`, `result::parse_result`, `retry::transient_error` (resume once after
+  `RETRY_DELAY_MS` with `RETRY_TEXT`), `retry::limit_message` / `is_limit_text` (the plan-limit wait),
+  `activity::summarize_event` for the card line, `model_versions::ModelVersions::learn` on each event.
+- Run logs: `run_log::append_line` (holds the log's lock, restores a compressed log first; masking saved keys stays
+  the caller's job, as in `store.appendActivity`), `restore_log` before a run starts, `log_stat`, `open_log`,
+  `read_log`; `activity_digest::ActivityDigests::get` for edited files, run entries and session totals.
+- `run_log_compress::RunLogCompressor::new(root, board, options).start()` with a `CompressBoard` (ticket lists, running,
+  `activity_compressed`). Report-only unless `CKANBAN_RUST_DELETE=1`: it writes what it would do to
+  `<data>/rust-board-dryrun.log` and keeps its handled list in memory (`run-logs-compressed.jsonl` stays Bun's).
+- `side_call::SideCaller::call(SideCallInput)` and `add_side_spend` / `read_side_spend`; `connectors::board_connector_options`
+  (and `set_known_connectors` from the Connections list); `awake::StayAwake::new(..).start()`; `claude::find_claude`,
+  `list_sessions`, `list_claude_projects`, `claude_defaults`, `pick_folder`, `is_session_live`.
+- `js`: the JavaScript rules the ports need to give Bun's exact bytes (UTF-16 lengths and cuts, `trim`, `Number`,
+  `String`, `JSON.parse` with lone surrogates, `JSON.stringify` key order and numbers).
+
+Checked against Bun: `tests/fixtures/runs.json` holds 252 inputs with Bun's answers (written by
+`test/rust-board-runs-fixtures.test.ts`, part of `bun run test`; `UPDATE_RUST_FIXTURES=1` rewrites them) and
+`tests/runs.rs` checks Rust gives the same JSON text. `tests/runner_fake.rs` runs `start_run` against the fake Claude
+(`test/fixtures/fake-claude.ts`, needs Bun; skipped without it), never the real `claude`.
+
 Every dependency the tasks are expected to need is already in `Cargo.toml` (referenced in `lib.rs` until used), so
 parallel tasks don't clash on `Cargo.toml` and `Cargo.lock`.
+
+## Sessions and transcripts (R5, `src/sessions/`)
+
+Claude's transcripts as the chat shows them, ported from `src/runs/session-*.ts`, `subagents.ts`, `workflows.ts`,
+`src/chat/chat-cache.ts`, `tooldetail.ts`, `chat-search.ts` and `src/core/changefeed.ts`. Shapes Bun keeps as objects
+are `serde_json` maps with Bun's key order.
+- Parsing: `parser.rs` (`SessionParser`: fed new bytes, cut anywhere), with `markers.rs`, `cards.rs`, `text.rs` (text,
+  forms and cards inside a line), `chat_cache.rs`, `subagents.rs`, `workflows.rs`.
+- `cache.rs`: `SessionCache`. Reads only what a transcript gained (by size, mtime and inode; a shrunk or replaced file
+  is parsed again), keeps 30 parses plus running ones, and keeps summaries in `session-summaries.json` (tag
+  `2:rust:<hash of this code>`; Bun's summaries are shown as stale until made again). Blocking: callers use
+  `spawn_blocking`; no shared lock is held across a read or a parse.
+- `feed.rs`: the projects folder change feed on FSEvents (`notify`); `watcher.rs`: `session.updated` for the tickets
+  written and the sessions the feed reported, a full pass every minute (Done tickets every 10), the first pass only
+  takes stock.
+- `routes.rs`: in board mode Rust answers `GET` conversation, tool, agent, workflow script and helper agent,
+  `chat/search`, `chat/read` and `sessions`. Bun still answers a workflow stop and a chat search or read from another
+  ticket's run (family and "asked by the user" reach need R2b).
+- `ticket_files.rs`: `TicketSource`, read from the ticket files until the ticket store (R1/R2a) replaces it.
+- `service.rs`: `Sessions`, the `SessionInfo` the other modules use (summaries from the watcher, no file read).
+
+Parity with Bun: `tests/sessions_markers.rs`, `sessions_agents.rs`, `sessions_parse.rs` read the fixtures in
+`tests/fixtures/sessions/` (inputs with Bun's answers, filled by `test/rust-board-*-fixtures.test.ts`; after a
+deliberate change to Bun's code: `UPDATE_RUST_FIXTURES=1 bun test test/rust-board-<name>-fixtures.test.ts`). Parse
+speed: `R5_BENCH=<transcript> cargo test --release -p ckanban-board --test sessions_parse -- --ignored --nocapture`.
 
 ## Prompts (R4)
 
@@ -79,9 +147,8 @@ routes.
   very Chrome and is bound to this Mac. It writes `running` back in Bun's format, so Bun adopts Rust's after a switch
   back. Logged-out alerts go to the helper once R13 connects it (logged in `daemon.log` until then).
 - `shell.rs`: one shell per folder on a pty (`portable-pty`), scrollback for a new tab; `terminals.rs`: which linked
-  tickets are open in a terminal (R1 plugs in the linked tickets with `Browsers::set_linked`).
-- What it reads from the board goes through `BoardLookup` (`FileLookup`: one ticket or board file at a time) until
-  the R1 index replaces it.
+  tickets are open in a terminal (its linked tickets come from the R1 index, `linked_from_index`).
+- What the routes read from the board goes through `BoardLookup` (`FileLookup`: one ticket or board file at a time).
 
 ## Tests
 
