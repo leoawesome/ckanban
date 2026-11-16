@@ -69,13 +69,26 @@ export function drivenBrowser(pid: number, parents: Map<number, number>, args: M
   return false;
 }
 
+/** The `lsof` arguments that find the caller: TCP sockets with 127.0.0.1 on one end and the caller's port on either end. */
+export function callerLsofArgs(peerPort: number): string[] {
+  // The board listens on 127.0.0.1 only, so the caller's end is 127.0.0.1:<peerPort>. A bare -iTCP:<port> also
+  // matched any other socket on the Mac with that port number (another address, or as its remote port), such as a
+  // desktop app's connection to the internet: that pid isn't a browser, so the user's own browser was refused.
+  return ["lsof", "-nP", `-iTCP@127.0.0.1:${peerPort}`, "-sTCP:ESTABLISHED", "-Fp"];
+}
+
+/** Pids lsof finds for the caller's port on 127.0.0.1 (the daemon's own end included). Another such socket still adds a pid, which only refuses. */
+async function callerPids(peerPort: number): Promise<number[]> {
+  return lsofPids(await out(callerLsofArgs(peerPort)));
+}
+
 /**
  * Whether the client on `peerPort` of a local connection to the daemon is a web browser the daemon didn't start.
  * Anything else, or nothing found, is not the user.
  */
 export async function fromUserBrowser(peerPort: number, daemonPid = process.pid): Promise<boolean> {
   if (!peerPort) return false;
-  const pids = lsofPids(await out(["lsof", "-nP", `-iTCP:${peerPort}`, "-sTCP:ESTABLISHED", "-Fp"])).filter((p) => p !== daemonPid && p !== frontPid());
+  const pids = (await callerPids(peerPort)).filter((p) => p !== daemonPid && p !== frontPid());
   if (!pids.length) return false;
   const [parents, commands, args] = await Promise.all([
     out(["ps", "-A", "-o", "pid=,ppid="]).then(parentMap), out(["ps", "-A", "-o", "pid=,comm="]).then(commandMap),
@@ -91,7 +104,7 @@ export async function fromUserBrowser(peerPort: number, daemonPid = process.pid)
  */
 export async function outsideBoard(peerPort: number, daemonPid = process.pid): Promise<boolean> {
   if (!peerPort) return false;
-  const pids = lsofPids(await out(["lsof", "-nP", `-iTCP:${peerPort}`, "-sTCP:ESTABLISHED", "-Fp"])).filter((p) => p !== daemonPid && p !== frontPid());
+  const pids = (await callerPids(peerPort)).filter((p) => p !== daemonPid && p !== frontPid());
   if (!pids.length) return false;
   const parents = parentMap(await out(["ps", "-A", "-o", "pid=,ppid="]));
   return pids.every((p) => !descendsFrom(p, daemonPid, parents));

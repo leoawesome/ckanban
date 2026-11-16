@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { commandMap, descendsFrom, drivenBrowser, fromUserBrowser, isBrowser, lsofPids, parentMap } from "./guard";
+import { callerLsofArgs, commandMap, descendsFrom, drivenBrowser, fromUserBrowser, isBrowser, lsofPids, parentMap } from "./guard";
 import { until } from "../../test/support/helpers";
 
 test("a process tree is walked up to the daemon", () => {
@@ -50,4 +50,32 @@ test("a program, a child of the daemon or one that detached from it, is never th
     server.stop(true);
   }
   expect(await fromUserBrowser(0)).toBe(false);
+});
+
+test("the caller lookup finds the caller's 127.0.0.1 connection, not another program's socket with the same port number", async () => {
+  const server = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
+  const caller = await Bun.connect({ hostname: "127.0.0.1", port: server.port, socket: { data() {} } });
+  const port = caller.localPort;
+  // Another program with an open connection on the same port number at another address (::1), like a desktop app's
+  // connection that happens to use the same number: it must not count as being on the caller's end.
+  const other = Bun.spawn([process.execPath, "-e", `
+    const l = Bun.listen({ hostname: "::1", port: ${port}, socket: { data() {} } });
+    await Bun.connect({ hostname: "::1", port: ${port}, socket: { data() {} } });
+    console.log("ready");
+    await Bun.sleep(30_000);
+  `], { stdout: "pipe", stderr: "ignore" });
+  try {
+    const ready = (await other.stdout.getReader().read()).value;
+    const pids = (args: string[]) => lsofPids(Bun.spawnSync(args).stdout.toString());
+    if (!ready) return; // No IPv6 loopback here: nothing to clash with.
+    // The clash is real: a lookup by port number alone sees the other program too.
+    await until(() => pids(["lsof", "-nP", `-iTCP:${port}`, "-sTCP:ESTABLISHED", "-Fp"]).includes(other.pid));
+    const found = pids(callerLsofArgs(port));
+    expect(found).toContain(process.pid);
+    expect(found).not.toContain(other.pid);
+  } finally {
+    other.kill();
+    caller.end();
+    server.stop(true);
+  }
 });
