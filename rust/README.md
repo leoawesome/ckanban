@@ -18,6 +18,25 @@ it during the trial.
   access port, finding Bun (`CKANBAN_BUN`, else the Bun that started this process, else `bun` on `PATH`) and the repo
   (`CKANBAN_REPO`, else the nearest folder above the binary with `src/cli.ts`), the free internal port, the secret.
 
+## The `ckanban` commands
+
+`ckanban-rs` is also the `ckanban` CLI (`src/cli/`, step 2 of `docs/rust-port.md`): same arguments, output, exit codes
+and HTTP calls, as `contracts/cli.md` writes them. `bun run test:contract:rust` runs every CLI contract test with it
+(`CKANBAN_CONTRACT_CLI`). Bun's CLI stays the one launchd and the MCP configs run for now.
+
+- `src/cli/mod.rs`: dispatch, the usage text, the version (`CKANBAN_VERSION` at build time, else `dev`), handing a
+  command to Bun.
+- `src/cli/board.rs`: `profiles`, `ticket ...`/`tickets ...`, `call`; picking the board; `src/cli/text.rs`: what they
+  print; `src/cli/http.rs`: the HTTP calls (always to 127.0.0.1, Host as Bun sends it, no Origin).
+- `src/cli/launchd.rs`: `install` (the plist byte for byte; program args are this binary), `restart`, `uninstall`,
+  `open`. `src/cli/agents.rs`: `mcp install|uninstall|status` (Claude Code and Codex; the registered command is this
+  binary plus `mcp`). `src/cli/args.rs`: argument parsing.
+- `dev` and `start` are the front server below; `mcp` alone is the stdio MCP server (`src/mcp/`).
+- Still on Bun, handed to `bun src/cli.ts` with the same arguments (this process becomes Bun, so its output and exit
+  code are Bun's): `browser-mcp` (drives a board browser), `artifact` (a Claude Code session
+  in a pty), `remote` (Tailscale) and `update` (the release binary is still Bun's). `uninstall` turns phone access off
+  through `bun src/cli.ts remote off` too. Bun and the repo are found as for `dev` (below).
+
 ## Routes Rust answers
 
 | Route | Answer |
