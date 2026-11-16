@@ -147,7 +147,7 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 | GET | `/api/version` | | 200 `UpdateChecker.status()` (update.ts) | |
 | GET | `/api/usage` | query `fresh=1` asks Anthropic now (still at most one call a minute) | 200 `UsageView` (usage-cache.ts), see "Plan usage" below | |
 | GET | `/api/spend` | | 200 `SpendIndex.recent()` (spend.ts): `{ day, costUsd, boards }`, see "Today's spend" below | |
-| GET | `/api/team-usage` | | 200 `Huddles.usage()`: use of each preset and template | |
+| GET | `/api/team-usage` | | 200 `{teammates: {name: Usage}, templates: {name: Usage}}`, `Usage {huddles, lastUsed, costUsd, recent: [{board, huddle, ticket, title, at, costUsd}]}` (newest first, at most 5), over every board's huddles, closed ones included | |
 | GET | `/api/awake` | | 200 `{held: boolean}` | |
 | GET | `/api/restart` | | 200 `Board.restartState()` | |
 | POST | `/api/restart` | body ignored | 200 `{running, alreadyPending}` | 501 not running as the daemon |
@@ -483,21 +483,21 @@ Prefix `/api/profiles/:slug`. Writes here refuse `x-ckanban-run` and `x-ckanban-
 | GET | `/huddle-presets` | | 200 `Huddles.presets()` (built-in, global and board teammates) | |
 | POST | `/huddle-presets` | preset fields plus `scope?` | 201 saved preset | 403, `HuddleError` |
 | PUT | `/huddle-presets/:name` | preset fields plus `scope?` (name from the path) | 200 saved preset | 403, `HuddleError` |
-| DELETE | `/huddle-presets/:name` | query `scope?` | 200 `deletePreset()` result | 403, `HuddleError` |
+| DELETE | `/huddle-presets/:name` | query `scope?` | 200 `{reset, presets}` (`reset: true` when a lower level still has it) | 403, 404 not at this level, 409 a built-in |
 | GET | `/huddle-templates` | | 200 `Huddles.templates()` (squads) | |
 | POST | `/huddle-templates` | template fields plus `scope?` | 201 | 403, `HuddleError` |
 | PUT | `/huddle-templates/:name` | same | 200 | 403, `HuddleError` |
-| DELETE | `/huddle-templates/:name` | query `scope?` | 200 | 403, `HuddleError` |
+| DELETE | `/huddle-templates/:name` | query `scope?` | 200 `{reset, templates}` | 403, 404 not at this level, 409 a built-in |
 | POST | `/squads` | `{squad, scope?, replace?, card?: {ticketId, uuid} \| {huddleId, learningId}}` | 201 `{squad, teammates, ...}`; a ticket card is marked saved | 403, 400 bad card, 404 card ticket, 409 name taken without `replace` |
-| GET | `/learned` | query `count=1` | 200 `Learner.view()`, or `{newCount}` with `count=1` | |
-| POST | `/learned/seen` | | 200 view | 403, `LearnError` |
+| GET | `/learned` | query `count=1` | 200 `Learner.view()` `{saved, cleaned, watching, newCount, tidyAt}`, or `{newCount}` with `count=1` | |
+| POST | `/learned/seen` | | 200 view (writes `learned/pile.json` `seen[<slug>]`, `newCount` 0) | 403, `LearnError` |
 | POST | `/learned/changes/:id/undo` | | 200 result | 403, `LearnError` |
 | POST | `/learned/changes/:id/redo` | | 200 result | 403, `LearnError` |
 | POST | `/learned/lessons/:id/save` | | 200 result | 403, `LearnError` |
 | POST | `/learned/lessons/:id/drop` | | 200 result | 403, `LearnError` |
 | POST | `/learned/lessons/:id/keep` | | 200 result | 403, `LearnError` |
 | GET | `/huddle-notes` | | 200 `{notes, cap}` | |
-| PUT | `/huddle-notes/:role/:scope` | `{notes}` | 200 `setNotes()` result | 403, `HuddleError` |
+| PUT | `/huddle-notes/:role/:scope` | `{notes: [{text, by?, date?, huddle?}]}`; `scope` `general` (root `huddle-notes/<role>.md`) or `repo` (`profiles/<slug>/huddle-notes/<role>.md`) | 200 the saved list `{text, by, date, huddle}` (`by` defaults to `you`; a bad date or huddle id becomes null) | 403, 400 bad role, scope, empty note or notes not a list |
 
 ## Huddles
 
@@ -540,6 +540,33 @@ are `HuddleView` (huddle.ts); participant objects never include their `token`.
 | POST | `/huddles/:hid/hand-ins/:handle/accept` | `{reason?}` | 200 review result | `HuddleError` |
 | POST | `/huddles/:hid/hand-ins/:handle/reject` | `{reason?}` | 200 review result | `HuddleError` |
 | POST | `/huddles/:hid/findings` | `{action?: "add"\|"resolve"\|"list", text?, id?}` | 200 findings result | `HuddleError` |
+
+Details the contract tests check (`test/contract/huddle.test.ts`, `huddle-team.test.ts`):
+- `:hid` may be `current`: a helper's own huddle, or a run's newest open huddle (preferring one it hosts); the user
+  gets 400 `pass a huddle id`. A wrong helper token, or a helper header naming another huddle, is 403.
+- `POST /huddles`: 400 no ticketId, bad roster or bad `maxCostUsd`; 404 unknown ticket or squad; 409 the ticket already
+  has an open huddle.
+- `POST /huddles/auto`: 403 also for a run that isn't the host ticket's unattended work run, and when auto huddles are
+  off without a `## Review huddle` section; 400 no reason, bad trigger, no roster (except `asked` with a squad); 404
+  unknown squad; 409 an open huddle or a second start in one run; `maxCostUsd` is capped at $100. Success sets the
+  ticket's `autoHuddle {state: "live", reason, trigger, template, at, huddleId}` and adds an `ai` comment.
+- `POST .../status`: 400 for the user, a bad status, blocked without a reason, lessons with a status other than done
+  or from a non-helper; 409 the participant was stopped.
+- `POST .../close-request`: only @main or a lead (403); 409 until `outputs/huddles/<hid>/summary.md` exists in the host
+  ticket's folder; sets `closeRequest {by, at, reason}` (a trailing full stop dropped) and tags @you; an auto
+  huddle's @main closes it at once.
+- Close writes `outputs/huddles/<hid>/summary.md` in the host ticket's folder: the board writes it at once when the
+  host can't run (no session yet, or Done), otherwise @main is asked for it.
+- Participants: POST by the user, @main or a lead (403 otherwise), 400 bad entry, 409 full; PATCH `{mode}` by the user
+  for anyone, a helper only for itself (403), 404 unknown, 400 bad mode; `restart` 409 unless stopped or failed, or
+  when the huddle is closed.
+- `invite`: the user or @main only (403); 404 unknown ticket; 409 already in it or full. The handle is `<planKey or
+  first word of the title>-main`, lower-cased, with `-2`, `-3`... when taken; the invited ticket's run posts as it.
+- `seen`: 400 when `seq` isn't a number; the cursor never moves past the last message.
+- `POST .../teammates`: helpers only (400 otherwise); 400 invalid or no `why`, or 2 already waiting from this helper;
+  201 learning `{id: "l<n>", from, status: "pending", scope: "general", target: "new", teammate}`. Learnings PATCH and
+  save: 400 bad scope or a `target` on a teammate or squad proposal; 404 unknown; 409 already saved or discarded;
+  saving a teammate with scope `repo` writes the board's presets, `general` the global ones.
 
 ## Tickets: list, create, read, change, delete
 
