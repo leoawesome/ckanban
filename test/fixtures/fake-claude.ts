@@ -176,6 +176,14 @@ if (process.env.FAKE_TRANSCRIPT) {
   emit({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu_post", content: [{ type: "text", text: "Posted #7 as @qa." }] }] } });
 }
 
+// FAKE_ASK_KEYS=<ask_keys input JSON>: every run calls ask_keys (tool use id tu_keys), saved in the transcript, so the
+// chat shows a key box.
+if (process.env.FAKE_ASK_KEYS) {
+  const ask = { type: "assistant", message: { content: [{ type: "tool_use", id: "tu_keys", name: "mcp__ckanban__ask_keys", input: JSON.parse(process.env.FAKE_ASK_KEYS) }] } };
+  emit(ask);
+  if (!process.env.FAKE_TRANSCRIPT && transcriptFile) appendFileSync(transcriptFile, JSON.stringify({ ...ask, sessionId, timestamp: new Date().toISOString() }) + "\n");
+}
+
 // Calls the board's API the way a run's shell could: no run header, at CKANBAN_PORT as the run got it. FAKE_CALLS_FILE
 // holds [{method, path, headers?, body?}]; each answer {method, path, status, text} is appended to FAKE_CALL_OUT (JSON lines).
 if (mode === "call" && process.env.FAKE_CALLS_FILE && process.env.FAKE_CALL_OUT) {

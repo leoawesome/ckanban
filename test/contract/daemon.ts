@@ -3,8 +3,9 @@
 // so the same tests can check another server (a Rust port): set CKANBAN_CONTRACT_DAEMON / CKANBAN_CONTRACT_CLI (below).
 //
 // Each daemon gets its own temp data folder (CKANBAN_HOME), temp HOME, temp Claude config folder, a fake `claude`
-// (test/fixtures/fake-claude.ts) and stub osascript/caffeinate/open/tailscale/gh on PATH, so it never touches the real
-// ~/.claude-kanban, the real repo, or shows Mac banners. The board's project folder is a plain temp folder (no git).
+// (test/fixtures/fake-claude.ts), stub osascript/caffeinate/open/tailscale/gh on PATH and a stub Google Chrome
+// (CKANBAN_CHROME_BIN) for board browsers, so it never touches the real ~/.claude-kanban, the real repo or the user's
+// Chrome, or shows Mac banners. The board's project folder is a plain temp folder (no git).
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -40,10 +41,14 @@ export const FAKE_CLAUDE = join(REPO, "test", "fixtures", "fake-claude.ts");
 export interface Daemon {
   port: number;
   url: string;
+  /** The phone access listener's port (CKANBAN_REMOTE_PORT); only `tailscale serve` would call it on a real Mac. */
+  remotePort: number;
   /** The data folder (what ~/.claude-kanban is for a real install). */
   home: string;
   /** The board's project folder. */
   project: string;
+  /** Every start of the stub Chrome so far, one argv (without the binary) per start. */
+  chromeStarts(): string[][];
   env: Record<string, string>;
   /** fetch against the daemon; JSON bodies are encoded, the answer parsed when it is JSON. */
   api<T = any>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; data: T; text: string }>;
@@ -64,21 +69,27 @@ function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-/** A folder of do-nothing commands put first on PATH: no Mac banners, no keep-awake, no browser, no Tailscale. */
-function stubBin(): string {
+/**
+ * A folder of do-nothing commands put first on PATH: no Mac banners, no keep-awake, no browser, no Tailscale on PATH.
+ * (The daemon prefers /Applications/Tailscale.app's own binary when it is installed: tests must not reach the code
+ * that runs Tailscale, see remote.test.ts.)
+ */
+function stubBin(extra: Record<string, string> = {}): string {
   const dir = tmp("ck-contract-bin-");
-  for (const name of ["osascript", "caffeinate", "open", "tailscale", "terminal-notifier"]) {
+  const scripts: Record<string, string> = {};
+  for (const name of ["osascript", "caffeinate", "open", "tailscale", "terminal-notifier"]) scripts[name] = "#!/bin/sh\nexit 0\n";
+  // GitHub CLI: always "not logged in", so a bug report (report_bug, POST /api/bug-report) never reaches GitHub.
+  scripts.gh = "#!/bin/sh\necho 'To get started with GitHub CLI, please run:  gh auth login' >&2\nexit 4\n";
+  // Board browsers start Google Chrome; this stub only writes down how it was started (one JSON argv per line, in
+  // chrome-starts.jsonl next to it) and exits at once, so a start fails the way a Chrome that closes right away does.
+  scripts["google-chrome"] = `#!${process.execPath}\nrequire("node:fs").appendFileSync(${JSON.stringify(join(dir, "chrome-starts.jsonl"))}, JSON.stringify(process.argv.slice(2)) + "\\n");\nprocess.exit(1);\n`;
+  // The board runs `claude`; this is the fake one.
+  scripts.claude = `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE}" "$@"\n`;
+  for (const [name, text] of Object.entries({ ...scripts, ...extra })) {
     const f = join(dir, name);
-    writeFileSync(f, "#!/bin/sh\nexit 0\n");
+    writeFileSync(f, text);
     chmodSync(f, 0o755);
   }
-  // GitHub CLI: always "not logged in", so a bug report (report_bug, POST /api/bug-report) never reaches GitHub.
-  writeFileSync(join(dir, "gh"), "#!/bin/sh\necho 'To get started with GitHub CLI, please run:  gh auth login' >&2\nexit 4\n");
-  chmodSync(join(dir, "gh"), 0o755);
-  // The board runs `claude`; this is the fake one.
-  const claude = join(dir, "claude");
-  writeFileSync(claude, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE}" "$@"\n`);
-  chmodSync(claude, 0o755);
   return dir;
 }
 
@@ -88,6 +99,11 @@ export interface StartOptions {
   fakeMode?: string;
   /** Extra env for the daemon and the CLI (wins over the defaults below). */
   env?: Record<string, string>;
+  /**
+   * More commands for the stub folder first on PATH: name to script text (e.g. a `gh` that records its arguments).
+   * A name given here replaces the default stub of that name.
+   */
+  stubs?: Record<string, string>;
   /** Runs after the temp folders exist and before the daemon starts: seed data files or Claude credentials here. */
   before?: (dirs: { home: string; claudeDir: string; project: string }) => void;
 }
@@ -101,7 +117,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
   // claude-config/projects: where Claude keeps transcripts; the daemon watches it as on a real Mac.
   for (const d of [home, userHome, project, join(claudeDir, "projects")]) mkdirSync(d, { recursive: true });
   writeFileSync(join(project, "README.md"), "# Contract test project\n");
-  const bin = stubBin();
+  const bin = stubBin(opts.stubs);
   const port = await freePort();
   let remotePort = await freePort();
   while (remotePort === port) remotePort = await freePort();
@@ -112,6 +128,8 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     CKANBAN_PORT: String(port),
     CKANBAN_REMOTE_PORT: String(remotePort),
     CKANBAN_CLAUDE_BIN: join(bin, "claude"),
+    // Never the user's real Chrome (the daemon falls back to /Applications/Google Chrome.app without it).
+    CKANBAN_CHROME_BIN: join(bin, "google-chrome"),
     CLAUDE_CONFIG_DIR: claudeDir,
     FAKE_MODE: opts.fakeMode ?? "ok",
     FAKE_ARGS_FILE: join(root, "claude-args.jsonl"),
@@ -182,7 +200,15 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     rmSync(bin, { recursive: true, force: true });
   };
 
-  return { port, url, home, project, env, api, cli, log, stop };
+  const chromeStarts = () => {
+    try {
+      return readFileSync(join(bin, "chrome-starts.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as string[]);
+    } catch {
+      return [];
+    }
+  };
+
+  return { port, url, remotePort, home, project, env, chromeStarts, api, cli, log, stop };
 }
 
 /** Polls `fn` until it returns a truthy value (or throws after `ms`). */
