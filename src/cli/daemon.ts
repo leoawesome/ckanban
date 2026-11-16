@@ -19,6 +19,7 @@ import { ticketAttention, withSnooze } from "../helper/attention";
 import { PushService } from "../helper/push";
 import { RemoteAccess, remoteListenPort, remoteUrl } from "../integrations/remote";
 import { Passes } from "../integrations/passes";
+import { PASSES_FILE } from "../integrations/board-keys";
 import { ckanbanShim } from "../integrations/script";
 import { RunLogCompressor } from "../runs/run-log-compress";
 import { freezeAlarm, pauser, startLagMonitor, track, trackedInterval } from "../core/lag";
@@ -40,7 +41,7 @@ import { keepAwakeOn } from "../core/types";
 import { VERSION } from "../core/version";
 import { WEB_ASSETS } from "../api/web-assets.gen";
 import { detectMissing } from "../runs/worktree-setup";
-import { readFront, setFront } from "../core/front";
+import { onFrontNotice, readFront, setFront } from "../core/front";
 import { sweepTempFiles, trimDaemonLog } from "../core/housekeeping";
 
 export async function startDaemon(): Promise<void> {
@@ -71,6 +72,10 @@ export async function startDaemon(): Promise<void> {
     delete process.env.CKANBAN_FRONT_PORT;
   }
   const bus = new Bus();
+  // The front server changed a file this daemon also uses (rust/src/passes.rs): the UI hears of it as after our own writes.
+  onFrontNotice((line) => {
+    if (line === `changed ${PASSES_FILE}`) bus.emit({ type: "integration.updated" });
+  });
   const sessions = new SessionCache({}, Date.now, join(store.root, "session-summaries.json"));
   // One watch on Claude's projects folder: watchers look only at sessions that changed (they poll if it can't start).
   const feed = new SessionFeed(projectsDir());

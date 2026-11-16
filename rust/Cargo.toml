@@ -3,7 +3,7 @@ name = "ckanban-rs"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Rust front server for the ckanban daemon (trial): answers usage and spend, passes every other request to the Bun daemon; also the ckanban CLI"
+description = "Rust front server for the ckanban daemon (trial): answers usage, spend, passes and agents, passes every other request to the Bun daemon; also the ckanban CLI"
 
 [[bin]]
 name = "ckanban-rs"
@@ -20,6 +20,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 getrandom = "0.3"
 libc = "0.2"
+regex = "1"
 
 [workspace]
 # One Cargo.lock, one toolchain pin (rust-toolchain.toml) and one target/ for the server and its library.

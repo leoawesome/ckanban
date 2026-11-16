@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { callerPort, FRONT_PEER_HEADER, FRONT_SECRET_HEADER, fromFront, readFront } from "./front";
+import { callerPort, FRONT_PEER_HEADER, FRONT_SECRET_HEADER, fromFront, onFrontNotice, readFront } from "./front";
 
 const SECRET = "a".repeat(64);
 
@@ -27,6 +27,25 @@ test("reads the secret line, then calls onGone at end of input", async () => {
   s.close();
   await Bun.sleep(5);
   expect(gone).toBe(true);
+});
+
+test("later lines are notices, whole lines only, even in the secret's chunk", async () => {
+  const s = stdin();
+  const got: string[] = [];
+  onFrontNotice((line) => void got.push(line));
+  try {
+    const p = readFront({ CKANBAN_FRONT_PORT: "7777" }, s.stream, () => {}, 4242);
+    s.write(`${SECRET} 5151\nchanged a.json\nchan`);
+    await p;
+    await Bun.sleep(5);
+    expect(got).toEqual(["changed a.json"]);
+    s.write("ged b.json\n\n  \n");
+    await Bun.sleep(5);
+    expect(got).toEqual(["changed a.json", "changed b.json"]);
+    s.close();
+  } finally {
+    onFrontNotice(null);
+  }
 });
 
 test("a front port without a good secret refuses to start", async () => {

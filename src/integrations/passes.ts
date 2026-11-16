@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, constants, existsSync, openSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { keyNameError, PASSES_FILE } from "./board-keys";
@@ -93,6 +93,9 @@ interface File {
   passes: Pass[];
 }
 
+/** macOS open(2) flag: take an exclusive flock as the file opens, waiting while another process holds it. */
+const O_EXLOCK = 0x20;
+
 /** An access token is renewed when it has less than this long left. */
 const RENEW_MS = 60_000;
 /** The user has this long to finish signing in at the service. */
@@ -144,12 +147,35 @@ export class Passes {
     renameSync(tmp, this.file);
   }
 
-  private save(p: Pass) {
-    const f = this.read();
-    const i = f.passes.findIndex((x) => x.id === p.id);
-    if (i < 0) f.passes.push(p);
-    else f.passes[i] = p;
-    this.write(f);
+  /**
+   * Runs a read-modify-write of the file holding `<file>.lock` (flock). The Rust front server (rust/src/passes.rs)
+   * changes the same file under the same lock, so neither loses the other's change. It waits only while the front
+   * server rewrites this small file. Not on macOS, or when the lock can't be opened, fn runs unlocked as before.
+   */
+  private locked<T>(fn: () => T): T {
+    let fd: number | null = null;
+    if (process.platform === "darwin") {
+      try {
+        fd = openSync(`${this.file}.lock`, constants.O_RDWR | constants.O_CREAT | O_EXLOCK, 0o600);
+      } catch {}
+    }
+    try {
+      return fn();
+    } finally {
+      if (fd !== null) closeSync(fd);
+    }
+  }
+
+  /** check: runs on the file as read under the lock, before p is saved (throws to save nothing). */
+  private save(p: Pass, check?: (passes: Pass[]) => void) {
+    this.locked(() => {
+      const f = this.read();
+      check?.(f.passes);
+      const i = f.passes.findIndex((x) => x.id === p.id);
+      if (i < 0) f.passes.push(p);
+      else f.passes[i] = p;
+      this.write(f);
+    });
     this.bus.emit({ type: "integration.updated" });
   }
 
@@ -228,10 +254,13 @@ export class Passes {
         if (!ENV_NAME.test(envName) || RESERVED_ENV.has(envName)) throw new PassError(400, `"${envName}" can't be used as the key's name for scripts: use capital letters, digits and _`);
         const bad = board ? keyNameError(envName) : null;
         if (bad) throw new PassError(400, bad);
-        if (this.list().some((x) => x.envName === envName && (x.board ?? null) === (board ?? null))) throw new PassError(409, `A key named ${envName} already exists: replace that one instead`);
       }
       const p: Pass = { ...base, kind: "key", name, ...(url ? { url } : {}), ...(envName ? { envName } : {}), ...(board ? { board } : {}), secret, status: "connected" };
-      this.save(p);
+      // The name check reads the file under the save's lock: a key of the same name saved by the Rust front server
+      // in between can't make two rows.
+      this.save(p, (all) => {
+        if (envName && all.some((x) => x.envName === envName && (x.board ?? null) === (board ?? null))) throw new PassError(409, `A key named ${envName} already exists: replace that one instead`);
+      });
       return p;
     }
     throw new PassError(400, 'kind must be "mcp", "key" or "local"');
@@ -269,22 +298,26 @@ export class Passes {
       return { envName, secret, name: nameOr(k.name, envName) };
     });
     if (!clean.length) return [];
-    const f = this.read();
-    const now = this.deps.now().toISOString();
-    for (const k of clean) {
-      const i = f.passes.findIndex((p) => p.kind === "key" && p.board === slug && p.envName === k.envName && !p.url);
-      if (i >= 0) f.passes[i] = { ...f.passes[i], secret: k.secret, name: k.name, status: "connected", error: null, savedAt: now };
-      else f.passes.push({ id: newId(), kind: "key", name: k.name, claudeName: null, envName: k.envName, board: slug, secret: k.secret, status: "connected", error: null, createdAt: now, savedAt: now });
-    }
-    this.write(f);
+    this.locked(() => {
+      const f = this.read();
+      const now = this.deps.now().toISOString();
+      for (const k of clean) {
+        const i = f.passes.findIndex((p) => p.kind === "key" && p.board === slug && p.envName === k.envName && !p.url);
+        if (i >= 0) f.passes[i] = { ...f.passes[i], secret: k.secret, name: k.name, status: "connected", error: null, savedAt: now };
+        else f.passes.push({ id: newId(), kind: "key", name: k.name, claudeName: null, envName: k.envName, board: slug, secret: k.secret, status: "connected", error: null, createdAt: now, savedAt: now });
+      }
+      this.write(f);
+    });
     this.bus.emit({ type: "integration.updated" });
     return clean.map((k) => k.envName);
   }
 
   remove(id: string): void {
-    this.require(id);
-    const f = this.read();
-    this.write({ ...f, passes: f.passes.filter((p) => p.id !== id) });
+    this.locked(() => {
+      this.require(id);
+      const f = this.read();
+      this.write({ ...f, passes: f.passes.filter((p) => p.id !== id) });
+    });
     this.bus.emit({ type: "integration.updated" });
   }
 

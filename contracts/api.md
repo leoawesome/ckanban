@@ -89,7 +89,9 @@ dropping any copies the caller sent. The daemon then answers on the internal por
 `403 forbidden`), checks Host and Origin against the board's port, uses the peer header (not the socket) for the
 user-only and schedule-delete caller checks, ignores the front's own pid in those lookups, gives runs and scripts the
 board's port, and stops when its stdin ends (the front is gone). Without `CKANBAN_FRONT_PORT` both headers are ignored
-and stdin is not read. The remote listener (`CKANBAN_REMOTE_PORT`) is never behind the front.
+and stdin is not read. The remote listener (`CKANBAN_REMOTE_PORT`) is never behind the front. Later stdin lines are
+notices from the front: `changed automation-passes.json` after the front changed that file itself; the daemon then
+sends the `integration.updated` event, as after its own writes.
 
 **Run rights (`runRights`).** Ticket changes sent with `x-ckanban-run` are allowed only for: a Planning chat answering
 the user's typed message (any ticket of its board but its own: "requester"); a main ticket or tool group on its own

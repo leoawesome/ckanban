@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, combinators::BoxBody};
-use hyper::body::Incoming;
 use hyper::header::{CONNECTION, HeaderMap, HeaderName, HeaderValue, UPGRADE};
 use hyper::{Request, Response, StatusCode, Uri};
 use hyper_util::client::legacy::Client;
@@ -25,7 +24,7 @@ const HOP_BY_HOP: [&str; 8] =
     ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding"];
 
 pub struct Proxy {
-    client: Client<HttpConnector, Incoming>,
+    client: Client<HttpConnector, Body>,
     /// 127.0.0.1:<internal port> of the Bun child.
     backend: String,
     secret: HeaderValue,
@@ -43,8 +42,8 @@ impl Proxy {
         })
     }
 
-    /// One request from a caller at `peer`.
-    pub async fn forward(&self, mut req: Request<Incoming>, peer: SocketAddr) -> Response<Body> {
+    /// One request from a caller at `peer` (its body as it streams in, or as a native route already read it).
+    pub async fn forward(&self, mut req: Request<Body>, peer: SocketAddr) -> Response<Body> {
         let upgrade = wants_upgrade(req.headers());
         let caller_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
 

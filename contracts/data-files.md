@@ -104,6 +104,7 @@ it listed).
   learned/pile.json  learned/changes.json                                                         CORE
   learned/scanned-at.json                                                                         CACHE
   notify.json  push.json  remote.json  automation-passes.json  helper.json                        CORE (some secrets)
+  automation-passes.json.lock                                                                     STATE (empty lock file)
   devices.json  browsers.json  board-browsers.json  browsers/<id>/                                CORE
   spend-days.json  telegram-spend.json  telegram-desk-spend.json  helper-spend.jsonl  usage-windows.json   CORE (history)
   messages.json  waits.json  helper-state.json  telegram-*.json                                   STATE
@@ -164,6 +165,7 @@ notify.json
 push.json
 remote.json
 automation-passes.json
+automation-passes.json.lock
 helper.json
 devices.json
 browsers.json
@@ -664,7 +666,8 @@ All CORE.
 | `notify.json` | JSON object, pretty +nl, `NotifySettings` (`notify.ts`) incl. `telegram: TelegramSettings` | `writeNotifySettings`, fixed-tmp, `0600` + chmod | every read | yes (bot token, webhook URL) |
 | `push.json` | JSON object, pretty +nl, `PushFile` `{ vapid: { publicKey, privateKey }, devices, dropped? }` (`push.ts`); VAPID keys made on first read | `PushService.write`, fixed-tmp, `0600` on create | every read | yes |
 | `remote.json` | JSON object, pretty +nl, `RemoteConfig` `{ enabled, host, allowedLogin, updatedAt }` (`remote.ts`); turning phone access off writes `enabled: false` and keeps the file (it is removed only when it can't be read). Schema: `schemas/remote.schema.json` | `RemoteAccess.write` (daemon and CLI), fixed-tmp | mtime | no |
-| `automation-passes.json` | JSON object, pretty +nl, `{ version: 1, passes: Pass[] }` (`integrations/passes.ts`) | `Passes.write`, random tmp, `0600` + chmod | every read (`board-keys.ts`: mtime/size/inode cache) | yes (API keys, OAuth tokens) |
+| `automation-passes.json` | JSON object, pretty +nl, `{ version: 1, passes: Pass[] }` (`integrations/passes.ts`) | `Passes.write` (and `ckanban-rs`, `rust/src/passes.rs`, same format), random tmp, `0600` + chmod; every read-modify-write holds an exclusive `flock` on `automation-passes.json.lock` (macOS) | every read (`board-keys.ts`: mtime/size/inode cache) | yes (API keys, OAuth tokens) |
+| `automation-passes.json.lock` | empty file, `0600`; only its `flock` matters (Bun opens it with `O_EXLOCK`, `ckanban-rs` uses `flock(LOCK_EX)`) | made by the first locked write; never removed | n/a | no |
 | `helper.json` | JSON object, pretty +nl, `HelperSettings` `{ model, night, nightOptIn, feedback }` (`helper/settings.ts`) | atomic | every read | no |
 | `devices.json` | JSON **array**, pretty, **no** final newline, `Device[]` `{ name, description, capacity, addedByClaude?, lastUsedAt }` (`lastUsedAt` is always written, `null` until first used; each entry is rebuilt on load, so unknown fields are lost). Schema: `schemas/devices.schema.json` | `Devices.save`, fixed-tmp | once | no |
 | `browsers.json` | JSON object, pretty, no final newline, `ChromesState` `{ browsers, listedAt, connected }` (`chromes.ts`) | fixed-tmp | once | no |

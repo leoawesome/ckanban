@@ -1,4 +1,4 @@
-// Parity of the Rust front server's own routes (GET /api/usage, GET /api/spend) with Bun's: the same data folder
+// Parity of the Rust front server's own routes (GET /api/usage, GET /api/spend, the passes routes, GET /api/agents) with Bun's: the same data folder
 // contents, given to the Bun daemon alone and to `ckanban-rs dev`, must give the same answers after JSON parsing and
 // the same usage-last.json / usage-windows.json. Times taken from the clock (fetchedAt, retryAt, attemptAt...) only
 // have to be close. Runs only under `bun run test:contract:rust`, which sets CKANBAN_PARITY_RS to the Rust server's
@@ -7,7 +7,8 @@
 // Both daemons keep running through the scenarios: each step rewrites usage-last.json (both sides read it again when
 // it changes) and the fake's reply, so the one-minute gap between checks doesn't need a new daemon per step.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, constants, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BUN_DAEMON_CMD, commandFromEnv, type Daemon, startDaemon } from "./daemon";
 
@@ -284,5 +285,232 @@ describe.skipIf(!enabled)("requests Rust doesn't answer itself", () => {
       expect(r.headers.get("cache-control")).toBe(b.headers.get("cache-control"));
       await Promise.all([r.text(), b.text()]);
     }
+  });
+});
+
+// ---- Passes and saved keys (rust/src/passes.rs) and GET /api/agents (rust/src/agents.rs) ----
+
+/**
+ * A request from "the user's browser": the guard (src/integrations/guard.ts, rust/src/guard.rs) lets through only a
+ * process whose executable path looks like a browser's and that the board didn't start. A Bun started through a link
+ * named Firefox, by this test, is that. Prints `{ status, type, text }`.
+ */
+let browserDir = "";
+function browserBin(): string {
+  if (!browserDir) {
+    browserDir = mkdtempSync(join(tmpdir(), "ck-parity-browser-"));
+    mkdirSync(join(browserDir, "Firefox.app"));
+    symlinkSync(process.execPath, join(browserDir, "Firefox.app", "Firefox"));
+    writeFileSync(join(browserDir, "req.ts"), `
+const [url, method, body, headers] = process.argv.slice(2);
+const r = await fetch(url, { method, headers: JSON.parse(headers), body: body === "-" ? undefined : body });
+console.log(JSON.stringify({ status: r.status, type: r.headers.get("content-type"), text: await r.text() }));
+`);
+  }
+  return join(browserDir, "Firefox.app", "Firefox");
+}
+async function asBrowser(d: Daemon, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
+  const h = { origin: d.url.replace("127.0.0.1", "localhost"), ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers };
+  const raw = body === undefined ? "-" : typeof body === "string" ? body : JSON.stringify(body);
+  const p = Bun.spawn([browserBin(), join(browserDir, "req.ts"), d.url + path, method, raw, JSON.stringify(h)], { stdout: "pipe", stderr: "pipe" });
+  const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  if (!out.trim()) throw new Error(`browser request failed: ${err}`);
+  return JSON.parse(out) as { status: number; type: string | null; text: string };
+}
+
+/** Raw answers of both sides for the same request. */
+async function rawBoth(method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
+  const one = async (d: Daemon) => {
+    const r = await fetch(d.url + path, { method, headers, body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body) });
+    return { status: r.status, type: r.headers.get("content-type"), text: await r.text() };
+  };
+  return Promise.all([one(bun), one(rs)]);
+}
+
+const SECRETS = ["sk-board-key-1234567890", "sk-automation-key-abcdef", "tok-access-zyxwvut-987", "sk-replaced-value-5555", "sk-new-board-key-0000"];
+/** Ids and times each side makes itself: the same shape, not the same value. */
+const scrub = (text: string) =>
+  text.replace(/"id":"[a-z0-9]{8}"/g, '"id":"<id>"').replace(/"(createdAt|savedAt)":"[0-9T:.Z-]{24}"/g, '"$1":"<time>"');
+
+function seedPasses(d: Daemon) {
+  const at = "2026-11-01T10:00:00.000Z";
+  const passes = [
+    { id: "p1board", kind: "key", name: "Sentry token", claudeName: null, envName: "SENTRY_AUTH_TOKEN", board: "keys", secret: SECRETS[0], status: "connected", error: null, createdAt: at, savedAt: at },
+    { id: "p2auto", kind: "key", name: "Linear", claudeName: "linear", envName: "LINEAR_API_KEY", secret: SECRETS[1], status: "connected", error: null, createdAt: at },
+    {
+      id: "p3mcp", kind: "mcp", name: `Has ${SECRETS[0]} in its name`, claudeName: null, url: "https://mcp.example.com/sse", status: "needs_reconnect",
+      error: `refused Bearer ${SECRETS[2]} and ${SECRETS[1]} --token abc`, tokens: { access: SECRETS[2], refresh: "r-1234567" }, createdAt: at,
+    },
+    { id: "p4gone", kind: "key", name: "Old board key", claudeName: null, envName: "OLD_KEY", board: "gone-board", secret: "short", status: "connected", error: null, createdAt: at },
+  ];
+  writeFileSync(join(d.home, "automation-passes.json"), JSON.stringify({ version: 1, passes }, null, 2) + "\n", { mode: 0o600 });
+  const loops = join(d.home, "profiles", "keys", "loops");
+  mkdirSync(loops, { recursive: true });
+  const loop = (id: string, name: string, passes: string[], createdAt: string) => ({
+    version: 1, id, name, enabled: false, service: "Linear", passes, scriptHash: "", everyMinutes: 60, column: "backlog", autoStart: false,
+    askClaude: { on: false, prompt: "" }, instructions: "", allowedTools: null, createdAt, updatedAt: createdAt, lastCheckedAt: null, lastFiredAt: null, lastError: null,
+  });
+  writeFileSync(join(loops, "bbb.json"), JSON.stringify(loop("bbb", "Second watcher", ["p2auto"], "2026-11-02T00:00:00.000Z")));
+  writeFileSync(join(loops, "aaa.json"), JSON.stringify(loop("aaa", "First watcher", ["p2auto", "p1board", "nope"], "2026-11-01T00:00:00.000Z")));
+}
+
+describe.skipIf(!enabled)("Rust and Bun give the same passes and keys answers", () => {
+  beforeAll(async () => {
+    for (const [, d] of both()) {
+      mkdirSync(join(d.project, "Keys"), { recursive: true });
+      const p = await d.api("POST", "/api/profiles", { name: "Keys", path: join(d.project, "Keys") });
+      expect(p.data.slug).toBe("keys");
+      seedPasses(d);
+    }
+  });
+  afterAll(() => {
+    if (browserDir) rmSync(browserDir, { recursive: true, force: true });
+  });
+
+  test("the list: byte for byte, secrets masked, usage by automations, board names", async () => {
+    const [b, r] = await rawBoth("GET", "/api/passes");
+    expect(r).toEqual(b);
+    expect(b.status).toBe(200);
+    for (const s of SECRETS) expect(b.text).not.toContain(s);
+    const list = JSON.parse(b.text);
+    expect(list.automations).toBe(2);
+    const p2 = list.passes.find((p: any) => p.id === "p2auto");
+    expect([p2.usedBy, p2.usedByNames]).toEqual([2, ["First watcher", "Second watcher"]]);
+    expect(list.passes.find((p: any) => p.id === "p1board").boardName).toBe("Keys");
+    expect(list.passes.find((p: any) => p.id === "p4gone").boardName).toBe("gone-board");
+    expect(list.passes.find((p: any) => p.id === "p3mcp").error).toBe("refused Bearer *** and *** --token ***");
+  });
+
+  test("refusals: no Origin, a run, a program that isn't a browser, a foreign Origin or Host, not JSON", async () => {
+    const origin = { origin: bun.url.replace("127.0.0.1", "localhost") };
+    const cases: [string, string, unknown, (d: Daemon) => Record<string, string>][] = [
+      ["POST", "/api/passes", { kind: "key", name: "X", secret: "abcdefgh" }, () => ({ "content-type": "application/json" })],
+      ["PATCH", "/api/passes/p2auto", { secret: "x" }, (d) => ({ "content-type": "application/json", origin: d.url })],
+      ["DELETE", "/api/passes/p2auto", undefined, (d) => ({ origin: d.url, "x-ckanban-run": "t_1" })],
+      ["DELETE", "/api/passes/p2auto", undefined, (d) => ({ origin: d.url, "x-ckanban-huddle-agent": "a" })],
+      ["POST", "/api/passes", { kind: "key" }, () => ({ "content-type": "application/json", origin: "http://evil.example" })],
+      ["PATCH", "/api/passes/p2auto", { secret: "x" }, () => ({ "content-type": "text/plain", ...origin })],
+      ["GET", "/api/passes", undefined, () => ({ host: "evil.example" })],
+      ["GET", "/api/agents", undefined, () => ({ host: "localhost" })],
+    ];
+    for (const [method, path, body, headers] of cases) {
+      const one = async (d: Daemon) => {
+        const h = headers(d);
+        // Each side's own port in its Origin and Host.
+        for (const k of Object.keys(h)) h[k] = h[k].replace(String(bun.port), String(d.port));
+        const res = await fetch(d.url + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+        return { status: res.status, type: res.headers.get("content-type"), text: (await res.text()).replaceAll(String(d.port), "PORT") };
+      };
+      const [b, r] = await Promise.all([one(bun), one(rs)]);
+      expect([method, path, r]).toEqual([method, path, b]);
+      expect(b.status).toBeGreaterThanOrEqual(400);
+    }
+    // Nothing changed on either side.
+    expect(readFileSync(join(rs.home, "automation-passes.json"), "utf8")).toBe(readFileSync(join(bun.home, "automation-passes.json"), "utf8"));
+  });
+
+  test("the user's browser: add, refuse, replace and delete keys, with the same answers and the same file", async () => {
+    const steps: [string, string, unknown?][] = [
+      ["POST", "/api/passes", { kind: "key", name: "  New   board key ", envName: "NEW_BOARD_KEY", board: "keys", secret: ` ${SECRETS[4]} ` }],
+      ["POST", "/api/passes", { kind: "key", name: "Again", envName: "NEW_BOARD_KEY", board: "keys", secret: "abcdefgh1" }],
+      ["POST", "/api/passes", { kind: "key", name: "Gh", envName: "GITHUB_TOKEN", board: "keys", secret: "abcdefgh1" }],
+      ["POST", "/api/passes", { kind: "key", name: "Bad", board: "no-such-board", secret: "abcdefgh1" }],
+      ["POST", "/api/passes", { kind: "key", name: "Two\nlines", secret: "a\nb" }],
+      ["POST", "/api/passes", { kind: "key", name: "", secret: "abcdefgh1" }],
+      ["POST", "/api/passes", { kind: "key", name: "Linear API", secret: "abcdefgh2" }],
+      ["POST", "/api/passes", { kind: "key", name: "Path", envName: "PATH", secret: "abcdefgh3" }],
+      ["POST", "/api/passes", "{not json"],
+      ["POST", "/api/passes", "null"],
+      // Kinds Rust leaves to Bun: the answer is Bun's either way.
+      ["POST", "/api/passes", { kind: "mcp", name: "Online", url: "https://mcp.example.org/mcp" }],
+      ["POST", "/api/passes", { kind: "key", name: "Server key", url: "https://mcp.example.org/x", secret: "abcdefgh4" }],
+      ["PATCH", "/api/passes/p2auto", { secret: `  ${SECRETS[3]}  ` }],
+      ["PATCH", "/api/passes/p3mcp", { secret: "abcdefgh5" }],
+      ["PATCH", "/api/passes/p2auto", { secret: "" }],
+      ["PATCH", "/api/passes/missing1", { secret: "abcdefgh6" }],
+      ["DELETE", "/api/passes/p4gone"],
+      ["DELETE", "/api/passes/p4gone"],
+    ];
+    for (const [method, path, body] of steps) {
+      const [b, r] = await Promise.all([asBrowser(bun, method, path, body), asBrowser(rs, method, path, body)]);
+      expect([method, path, body, { ...r, text: scrub(r.text) }]).toEqual([method, path, body, { ...b, text: scrub(b.text) }]);
+      for (const s of SECRETS) expect(b.text).not.toContain(s);
+    }
+    const file = (d: Daemon) => scrub(JSON.stringify(JSON.parse(readFileSync(join(d.home, "automation-passes.json"), "utf8"))));
+    expect(file(rs)).toBe(file(bun));
+    expect(file(bun)).toContain(SECRETS[3]);
+    expect(statSync(join(rs.home, "automation-passes.json")).mode & 0o777).toBe(0o600);
+    const [b, r] = await rawBoth("GET", "/api/passes");
+    expect({ ...r, text: scrub(r.text) }).toEqual({ ...b, text: scrub(b.text) });
+  }, 60_000);
+
+  test("Rust answers these itself, and its change reaches the UI's event stream", async () => {
+    const child = Number(Bun.spawnSync(["pgrep", "-P", String(rs.pid)]).stdout.toString().trim().split("\n")[0]);
+    expect(child).toBeGreaterThan(1);
+    const ctl = new AbortController();
+    const events = await fetch(`${rs.url}/api/events`, { signal: ctl.signal });
+    const reader = events.body!.getReader();
+    let seen = "";
+    // Bun child paused: only Rust can answer.
+    process.kill(child, "SIGSTOP");
+    try {
+      const quick = (p: Promise<Response | { status: number }>) => Promise.race([p, Bun.sleep(3_000).then(() => ({ status: -1 }))]);
+      expect((await quick(fetch(`${rs.url}/api/passes`))).status).toBe(200);
+      expect((await quick(fetch(`${rs.url}/api/agents`))).status).toBe(200);
+      const patched = await Promise.race([asBrowser(rs, "PATCH", "/api/passes/p2auto", { secret: SECRETS[3] }), Bun.sleep(5_000).then(() => null)]);
+      expect(patched?.status).toBe(200);
+    } finally {
+      process.kill(child, "SIGCONT");
+    }
+    const end = Date.now() + 5_000;
+    while (!seen.includes('"integration.updated"') && Date.now() < end) {
+      const r = await Promise.race([reader.read(), Bun.sleep(end - Date.now()).then(() => null)]);
+      if (!r || r.done) break;
+      seen += new TextDecoder().decode(r.value);
+    }
+    ctl.abort();
+    expect(seen).toContain('"integration.updated"');
+  }, 30_000);
+
+  test("Rust waits for the lock Bun takes around its own changes", async () => {
+    const lock = openSync(join(rs.home, "automation-passes.json.lock"), constants.O_RDWR | constants.O_CREAT | 0x20, 0o600);
+    let done = false;
+    const pending = asBrowser(rs, "PATCH", "/api/passes/p2auto", { secret: "abcdefgh7" }).then((r) => ((done = true), r));
+    await Bun.sleep(1_000);
+    expect(done).toBe(false);
+    closeSync(lock);
+    expect((await pending).status).toBe(200);
+  }, 30_000);
+
+  test("Rust and its Bun child add keys to the same file at once: none lost, none half-written", async () => {
+    // POST /api/passes/ (trailing slash) is Bun's: both writers change automation-passes.json under its lock.
+    const N = 15;
+    const add = (i: number, side: "rs" | "bun") =>
+      asBrowser(rs, "POST", side === "rs" ? "/api/passes" : "/api/passes/", { kind: "key", name: `${side} ${i}`, envName: `RACE_${side.toUpperCase()}_${i}`, secret: `race-secret-${side}-${i}` });
+    const answers = await Promise.all(Array.from({ length: N }, (_, i) => [add(i, "rs"), add(i, "bun")]).flat());
+    expect(new Set(answers.map((a) => a.status))).toEqual(new Set([201]));
+    const saved = JSON.parse(readFileSync(join(rs.home, "automation-passes.json"), "utf8")).passes.map((p: any) => p.envName);
+    for (let i = 0; i < N; i++) for (const side of ["RS", "BUN"]) expect(saved).toContain(`RACE_${side}_${i}`);
+    expect(readdirSync(rs.home).filter((n) => n.includes(".tmp-"))).toEqual([]);
+    expect(statSync(join(rs.home, "automation-passes.json")).mode & 0o777).toBe(0o600);
+  }, 120_000);
+
+  test("GET /api/agents: the same, with nothing registered and with ckanban registered in Claude Code and Codex", async () => {
+    /** Each side's own temp folders, named the same. */
+    const local = (d: Daemon, text: string) => text.replaceAll(d.env.HOME, "HOME").replaceAll(d.env.CLAUDE_CONFIG_DIR, "CFG");
+    const [b0, r0] = await rawBoth("GET", "/api/agents");
+    expect({ ...r0, text: local(rs, r0.text) }).toEqual({ ...b0, text: local(bun, b0.text) });
+    const argv = JSON.parse(b0.text)[0];
+    expect(argv.installed).toBe(false);
+    for (const [, d] of both()) {
+      const cmd = [realpathSync(process.execPath), realpathSync(join(import.meta.dir, "..", "..", "src", "cli.ts"))];
+      writeFileSync(join(d.env.CLAUDE_CONFIG_DIR, ".claude.json"), JSON.stringify({ mcpServers: { ckanban: { command: cmd[0], args: [cmd[1], "mcp"] } } }));
+      mkdirSync(join(d.env.HOME, ".codex"), { recursive: true });
+      writeFileSync(join(d.env.HOME, ".codex", "config.toml"), `[mcp_servers.ckanban]\ncommand = "/old/ckanban"\nargs = ['mcp']\n`);
+    }
+    const [b, r] = await rawBoth("GET", "/api/agents");
+    expect(local(rs, r.text)).toBe(local(bun, b.text));
+    const [claude, codex] = JSON.parse(b.text);
+    expect([claude.installed, claude.current, codex.installed, codex.current, codex.available]).toEqual([true, true, true, false, true]);
   });
 });

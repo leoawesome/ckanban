@@ -39,6 +39,8 @@ export const CLI_CMD = commandFromEnv("CKANBAN_CONTRACT_CLI", [process.execPath,
 export const FAKE_CLAUDE = join(REPO, "test", "fixtures", "fake-claude.ts");
 
 export interface Daemon {
+  /** The started server's process id (`ckanban-rs` when it fronts the Bun daemon). */
+  pid: number;
   port: number;
   url: string;
   /** The phone access listener's port (CKANBAN_REMOTE_PORT); only `tailscale serve` would call it on a real Mac. */
@@ -208,7 +210,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     }
   };
 
-  return { port, url, remotePort, home, project, env, chromeStarts, api, cli, log, stop };
+  return { pid: proc.pid, port, url, remotePort, home, project, env, chromeStarts, api, cli, log, stop };
 }
 
 /** Polls `fn` until it returns a truthy value (or throws after `ms`). */
