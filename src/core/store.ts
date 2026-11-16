@@ -16,7 +16,7 @@ import { newId, newTicketId, nowIso } from "./util";
 import { pauser } from "./lag";
 import { atomicWrite } from "./atomic";
 import { BOARD_TOOLS_FILE, readBoardTools, type ToolEntry, writeBoardTools } from "../integrations/board-tools";
-import { maskSaved, maskSavedJson, maskTicketText } from "../integrations/board-keys";
+import { maskSaved, maskSavedJson } from "../integrations/board-keys";
 import { ActivityDigests, type ActivityDigest } from "../runs/activity-digest";
 import { forgetLog, gzOf, loadLog, type LogReader, openLog, readLogSync, restoreLog, restoreLogSync } from "../runs/run-log";
 import { JsonDir } from "./json-dir";
@@ -605,11 +605,10 @@ export class Store {
     },
   ): Ticket {
     const at = nowIso();
-    // A key pasted into a ticket is never written to ticket.md (maskTicketText): runs get it from their environment.
     const t: Ticket = {
-      id: newTicketId(), title: maskTicketText(this.root, slug, input.title), status: input.status, mode: input.mode ?? "auto", order: this.entryOrder(slug, input.status),
+      id: newTicketId(), title: input.title, status: input.status, mode: input.mode ?? "auto", order: this.entryOrder(slug, input.status),
       sessionId: null, worktree: null, branch: null, prUrl: null, outcome: null, lastActivity: null,
-      lastRunAt: null, runCount: 0, error: null, createdAt: at, updatedAt: at, body: maskTicketText(this.root, slug, input.body),
+      lastRunAt: null, runCount: 0, error: null, createdAt: at, updatedAt: at, body: input.body,
       ...(input.scheduleId ? { scheduleId: input.scheduleId } : {}),
       ...(input.jobId ? { jobId: input.jobId } : {}),
       ...(input.source ? { source: input.source } : {}),
@@ -640,9 +639,6 @@ export class Store {
   updateTicket(slug: string, id: string, patch: Partial<Ticket>, opts: { keepUpdatedAt?: boolean } = {}): Ticket {
     const current = parseTicket(readFileSync(this.ticketPath(slug, id), "utf8"));
     const next: Ticket = { ...current, ...patch, id, updatedAt: opts.keepUpdatedAt ? current.updatedAt : nowIso() };
-    // New text only, as in createTicket; text already on disk is left as it is.
-    if (typeof patch.title === "string") next.title = maskTicketText(this.root, slug, patch.title);
-    if (typeof patch.body === "string") next.body = maskTicketText(this.root, slug, patch.body);
     // Changing column without an explicit position (drag drop) places the ticket by entryOrder().
     if (patch.status !== undefined && patch.status !== current.status && patch.order === undefined) {
       next.order = this.entryOrder(slug, patch.status);
