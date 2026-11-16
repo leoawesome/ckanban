@@ -8,13 +8,15 @@
 //! board instead (full mode, as with board mode off) and the reason goes to this process's output (`daemon.log`
 //! under launchd) and `<data>/rust-board-status.json`.
 //!
-//! Routes the Rust board answers itself (more with each task): `GET /api/events`. Everything else goes on to the
+//! Routes the Rust board answers itself (more with each task): `GET /api/events`; the browsers, devices and terminal
+//! routes (R9, `ckanban_board::browsers::routes`). Everything else goes on to the
 //! usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+use ckanban_board::browsers::{self, Browsers, FileLookup};
 use ckanban_board::core::{Core, Services};
 use ckanban_board::events::{self, EventHooks};
 use ckanban_board::lock::{self, BoardLock};
@@ -37,6 +39,9 @@ const LOCK_WAIT: Duration = Duration::from_secs(5);
 
 pub struct BoardMode {
     pub core: Arc<Core>,
+    /// R9: devices, board browsers, named Chromes and the terminal.
+    browsers: Arc<Browsers>,
+    browser_routes: browsers::routes::RouteCtx,
     hooks: Arc<EventHooks>,
     public_port: u16,
     root: PathBuf,
@@ -61,7 +66,11 @@ pub async fn prepare(root: &Path, public_port: u16) -> Option<Arc<BoardMode>> {
         Ok(l) => l,
         Err(e) => return fall_back(root, &e, crashes),
     };
-    let core = Core::new(root, Services::stand_ins());
+    let mut services = Services::stand_ins();
+    let browsers = Browsers::new(root, Arc::new(FileLookup::new(root)), services.sessions.clone());
+    services.devices = browsers.clone();
+    let core = Core::new(root, services);
+    browsers.attach(core.bus.clone());
     if let Err(e) = core.start(Core::steps()).await {
         // Let go first: Bun's full mode takes the lock next.
         drop(lock);
@@ -71,8 +80,15 @@ pub async fn prepare(root: &Path, public_port: u16) -> Option<Arc<BoardMode>> {
         eprintln!("ckanban-rs: can't write {}: {e}", mode::status_path(root).display());
     }
     eprintln!("ckanban-rs: board mode: the Rust board owns this data folder; Bun runs as its satellite");
+    // Board browsers adopted (Bun's Chromes included), their upkeep and the terminal watcher, in the background.
+    browsers.start(&core);
     let hooks = Arc::new(EventHooks { views: core.services.views.clone(), cut: core.services.cut.clone(), mask: masker(root) });
-    Some(Arc::new(BoardMode { core, hooks, public_port, root: root.to_path_buf(), _lock: lock }))
+    let browser_routes = browsers::routes::RouteCtx {
+        public_port,
+        mask: hooks.mask.clone(),
+        user_only: Arc::new(|h, peer| Box::pin(async move { crate::guard::user_only(&h, peer).await })),
+    };
+    Some(Arc::new(BoardMode { core, browsers, browser_routes, hooks, public_port, root: root.to_path_buf(), _lock: lock }))
 }
 
 fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<BoardMode>> {
@@ -119,6 +135,17 @@ impl BoardMode {
             return Some(plain(StatusCode::FORBIDDEN, "forbidden"));
         }
         Some(events::stream(&self.core.bus, self.hooks.clone(), events::PING_EVERY))
+    }
+
+    /// The routes the Rust board answers that need the request itself (its body, an upgrade, the caller): the
+    /// browsers, devices and terminal routes (R9). Err gives the request back: it goes on (Rust's other routes, then
+    /// Bun).
+    #[allow(clippy::result_large_err)]
+    pub async fn answer_request(&self, req: Request<Incoming>, peer: std::net::SocketAddr) -> Result<Response<Body>, Request<Incoming>> {
+        if browsers::routes::owns(req.method(), req.uri().path(), req.headers()) {
+            return Ok(self.browsers.answer(req, peer.port(), &self.browser_routes).await);
+        }
+        Err(req)
     }
 
     /// After the satellite answers: follow its event stream, give it the live state, and send it the board's events.

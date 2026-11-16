@@ -21,6 +21,10 @@ tokio-tungstenite = "0.30"
 base64 = "0.23"
 sha1 = "0.10"
 percent-encoding = "2"
+# Web addresses as browsers read them (WHATWG), for board browsers' start pages and sites (R9).
+url = "2"
+# NFKD for board browser ids made from names (`slugFor`), as `String.normalize("NFKD")` (R9).
+icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
 # State: plain structs behind locks, listings swapped whole (plan 2.1).
 parking_lot = "0.12"
 arc-swap = "1"
