@@ -37,7 +37,7 @@ export let events: BusEvent[];
 /** Lessons agents noted when done, as the Huddles handed them to the board's pile (learner.ts). */
 export let learned: { slug: string; huddle: string; handle: string; role: string; lessons: LessonInput[] }[];
 
-export async function setup(idleMs = 300, maxParallel = 3) {
+export async function setup(idleMs = 100, maxParallel = 3) {
   store = new Store(tempDir("ck-home-"));
   bus = new Bus();
   events = [];

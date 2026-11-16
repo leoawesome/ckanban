@@ -4,7 +4,7 @@ import { extractFinalText, summarizeEvent } from "../runs/activity";
 import { localizeAttachments } from "./attachments";
 import type { Bus } from "../core/events";
 import { isSessionLive as psSessionLive, sessionTitle } from "../runs/claude";
-import { FetchError, type RepoKind } from "../runs/git";
+import { FetchError, forgetRepoKind, type RepoKind } from "../runs/git";
 import { MOVE_TO_PLANNING_RE, STAY_RE } from "../runs/session";
 import { saveMockups } from "./mockups";
 import { Devices } from "../browser/devices";
@@ -304,7 +304,10 @@ export class Board {
       if (!msg.nextRun) this.steer(active, msg);
       return this.store.getTicket(slug, id)!;
     }
-    if (this.restartPending) {
+    // A message the user typed is answered now even while a restart is pending (they'd wait minutes otherwise); if the
+    // restart cuts the reply off, recover() continues it. Messages from sessions, plans and automations wait.
+    const fromUser = !opts.peer && !opts.fromPlanner && !opts.hostWake && !opts.followUp && !opts.automation;
+    if (this.restartPending && !fromUser) {
       // Starts after the restart: recover() answers queued messages.
       const msg: QueuedMessage = { id: crypto.randomUUID(), text, at: nowIso(), state: "queued", ...flags(opts) };
       return this.patch(slug, id, { queued: [...(t.queued ?? []), msg] });
@@ -433,6 +436,9 @@ export class Board {
       })
       .finally(async () => {
         this.runs.delete(this.key(slug, id));
+        // The run may have changed the folder's history (git init, a first commit, a remote): ask git again next time.
+        const path = this.store.getProfile(slug)?.path;
+        if (path) forgetRepoKind(path);
         // Whatever devices the run still holds or waits for go to the next ticket in line.
         this.devices.releaseAll(slug, id);
         this.boardBrowsers.release(this.key(slug, id));

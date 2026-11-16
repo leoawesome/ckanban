@@ -901,7 +901,7 @@ export function App() {
         <StatusPill state={usage} openRequest={usageRequest}
           board={!profile ? undefined : !ticketsLoaded ? null : { ...running, queued, awake }} />
         {restart.pending && (
-          <span className="pill warn" title="The daemon restarts once every active run (on any board) has finished. Until then nothing new starts: queued tickets, chat replies and Planning interviews wait.">
+          <span className="pill warn" title="The daemon restarts once every active run (on any board) has finished, or after 2 minutes; runs it cuts off carry on after it. Until then queued tickets, huddle wakes and Planning interviews wait; your own chat messages are answered as usual.">
             Restart pending{restart.waiting > 0 ? ` · waiting for ${restart.waiting} ${restart.waiting === 1 ? "run" : "runs"}` : ""}
           </span>
         )}

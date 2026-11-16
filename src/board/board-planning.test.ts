@@ -248,7 +248,7 @@ test("a chat cut off before claude started gets its message again, not a 'contin
   expect(calls[0].prompt!.startsWith("my question")).toBe(true);
 });
 
-test("requested restart waits for active runs and holds new ones until recover()", async () => {
+test("requested restart waits for active runs and holds new ones (not the user's chat) until recover()", async () => {
   await setup();
   process.env.FAKE_STEP_MS = "300";
   try {
@@ -262,11 +262,14 @@ test("requested restart waits for active runs and holds new ones until recover()
     expect(board.restartState()).toEqual({ pending: true, waiting: 1 });
     expect(restartEvents).toEqual([{ pending: true, waiting: 1 }]);
     expect(board.requestRestart(() => {}).alreadyPending).toBe(true);
-    // Nothing new starts while the restart waits.
+    // Nothing new starts while the restart waits, except a reply to a message the user typed.
     const next = await board.createTicket("p", { title: "next", body: "", status: "ready" });
     const plan = await board.createTicket("p", { title: "plan", body: "", status: "planning" });
     const chat = await board.createTicket("p", { title: "chat", body: "", status: "backlog" });
-    await board.chat("p", chat.id, "hello?");
+    await board.chat("p", chat.id, "hello?", { hostWake: true });
+    const mine = await board.createTicket("p", { title: "mine", body: "", status: "backlog" });
+    await board.chat("p", mine.id, "are you there?");
+    expect(board.isRunning("p", mine.id)).toBe(true);
     expect(board.isRunning("p", next.id) || board.isRunning("p", plan.id) || board.isRunning("p", chat.id)).toBe(false);
     expect(store.getTicket("p", chat.id)!.queued).toMatchObject([{ text: "hello?", state: "queued" }]);
     expect(store.getTicket("p", plan.id)!.interrupted).toMatchObject({ held: true });

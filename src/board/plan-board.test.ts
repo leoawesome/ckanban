@@ -4,7 +4,7 @@ import { Board } from "./board";
 import { Bus } from "../core/events";
 import { Store } from "../core/store";
 import type { Profile } from "../core/types";
-import { makeRepo, tempDir } from "../../test/support/helpers";
+import { makeRepo, tempDir, until } from "../../test/support/helpers";
 
 const FAKE = join(import.meta.dir, "..", "..", "test", "fixtures", "fake-claude.ts");
 
@@ -34,14 +34,18 @@ afterEach(async () => {
   delete process.env.FAKE_STEP_MS;
 }, 60_000);
 
-/** Wait until no run is left and no wake-up is pending. */
+/** Wait until no run is left and no wake-up is pending, and it stays so for a moment (the next start is synchronous). */
 async function settle(ms = 20000) {
   const end = Date.now() + ms;
+  let quietSince = 0;
   for (;;) {
     await board.whenIdle();
-    await Bun.sleep(500);
-    if (!(board as any).runs.size && !(board as any).wakeDue.size) return;
+    if (!(board as any).runs.size && !(board as any).wakeDue.size) {
+      quietSince ||= Date.now();
+      if (Date.now() - quietSince >= 200) return;
+    } else quietSince = 0;
     if (Date.now() > end) throw new Error("plan did not settle");
+    await Bun.sleep(20);
   }
 }
 
@@ -90,14 +94,21 @@ test("a tool group runs its tickets in dependency order, every ready child at on
 
 test("children failing together wake the planner once; an unresolved dead end makes the plan stuck", async () => {
   const planner = await board.createTicket("p", { title: "Plan", body: "", status: "backlog", tool: true, kind: "group" });
-  await board.createTicket("p", { title: "X-fail", body: "", status: "backlog", parentId: planner.id, tool: true });
-  await board.createTicket("p", { title: "Y-fail", body: "", status: "backlog", parentId: planner.id, tool: true });
-  // Both children end within the batching window even on a busy machine (default here is 300ms).
+  const kids = [
+    await board.createTicket("p", { title: "X-fail", body: "", status: "backlog", parentId: planner.id, tool: true }),
+    await board.createTicket("p", { title: "Y-fail", body: "", status: "backlog", parentId: planner.id, tool: true }),
+  ];
+  // A batching window longer than the test: the wake is let go by hand once both children ended, so they always share it.
   await board.shutdown();
-  board = new Board(store, bus, { claudeBin: FAKE, isSessionLive: async () => false, notify: (t) => notes.push(t), planWakeDelayMs: 3000 });
+  board = new Board(store, bus, { claudeBin: FAKE, isSessionLive: async () => false, notify: (t) => notes.push(t), planWakeDelayMs: 600_000 });
   // Child runs (their prompt has "# Ticket: <title>") end blocked; the planner answers "done", so the dead end shows.
   process.env.FAKE_BLOCK_MATCH = "# Ticket: ";
   board.startPlan("p", planner.id);
+  const wakeKey = (board as any).key("p", planner.id);
+  await until(() => kids.every((k) => !board.isRunning("p", k.id) && store.getTicket("p", k.id)!.outcome) && (board as any).wakeDue.has(wakeKey));
+  expect(store.getTicket("p", planner.id)!.plan?.wakeups ?? 0).toBe(0);
+  (board as any).wakeDue.set(wakeKey, 0);
+  board.advancePlans("p");
   await settle();
   const p = store.getTicket("p", planner.id)!;
   expect(p.plan?.wakeups).toBe(1);
@@ -212,7 +223,7 @@ test("a plan never starts a child waiting on the user, and stops naming it once 
 }, 60_000);
 
 test("planner rights: only a main ticket or tool group, in its own runs (not a quiet reply)", async () => {
-  process.env.FAKE_STEP_MS = "100";
+  process.env.FAKE_STEP_MS = "50";
   // A plain ticket has no family to manage (planned tickets are retired), even in a reply to the user.
   const plain = await board.createTicket("p", { title: "Plain", body: "", status: "review" });
   await board.chat("p", plain.id, "manage tickets A and B");
@@ -233,7 +244,7 @@ test("planner rights: only a main ticket or tool group, in its own runs (not a q
 }, 60_000);
 
 test("user-request rights: only a Planning chat's reply to the user's own message", async () => {
-  process.env.FAKE_STEP_MS = "100";
+  process.env.FAKE_STEP_MS = "50";
   const t = await board.createTicket("p", { title: "Shape me", body: "", status: "backlog" });
   expect(board.userRequestRights("p", t.id)).toBeNull();
   await board.chat("p", t.id, "move X to done");

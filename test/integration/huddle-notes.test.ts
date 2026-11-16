@@ -365,7 +365,7 @@ test("idle watchdog: wakes @main once after 5 minutes of nobody working; not whi
   huddles.idleSweep(at + HUDDLE_IDLE_MS - 1000);
   expect(nudges().length).toBe(0);
   // Someone working: no nudge.
-  process.env.FAKE_STEP_MS = "400";
+  process.env.FAKE_STEP_MS = "200";
   huddles.post("p", h.id, you(h), "@w one more look please");
   await until(() => participant(h, "w").status === "working");
   const lastW = messages(h).findLast((m) => m.kind !== "system")!;
