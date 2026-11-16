@@ -27,6 +27,7 @@ import { LoopManager } from "../schedules/loops";
 import { makeSideCaller } from "../runs/side-call";
 import { Learner } from "../board/learner";
 import { Scheduler } from "../schedules/scheduler";
+import { tickMs } from "../core/env";
 import { JobRunner } from "../schedules/jobs";
 import { FollowUpWatcher } from "../schedules/followup";
 import { LimitWatcher } from "../usage/limit";
@@ -183,12 +184,15 @@ export async function startDaemon(): Promise<void> {
   void track("startup: detectMissing", () => detectMissing(store, (profile) => bus.emit({ type: "profile.updated", slug: profile.slug, profile })));
   const stopPoller = startPoller(board, store, config.prPollMinutes);
   // After recover(): a missed run's ticket must not be mistaken for an interrupted one.
-  const stopScheduler = scheduler.start();
-  const stopJobs = jobs.start();
-  const stopLoops = loops.start();
+  // CKANBAN_TICK_MS (tests only) shortens these timers; unset, each keeps its own period.
+  const tick = tickMs();
+  if (tick !== undefined) console.log(`timers: schedules, jobs, automations and follow-ups look every ${tick} ms (CKANBAN_TICK_MS)`);
+  const stopScheduler = scheduler.start(tick);
+  const stopJobs = jobs.start(tick);
+  const stopLoops = loops.start(tick);
   const stopLearner = learner.start();
   const stopLimits = new LimitWatcher(board, store).start();
-  const stopFollowUps = new FollowUpWatcher(board, store).start();
+  const stopFollowUps = new FollowUpWatcher(board, store).start(tick);
   // Run logs of tickets Done for over 30 days are compressed, a few at a time, losing nothing (run-log-compress.ts).
   const stopLogCompress = new RunLogCompressor(store, (slug, id) => board.isRunning(slug, id)).start();
   const stopWatcher = startSessionWatcher(store, bus, sessions, 2000, { feed });
