@@ -125,8 +125,10 @@ and sends `: ping` every 15 s. Each bus event is one `data: <json>` message. Eve
 `GET /api/profiles/:slug/shell?ticket=<id>&cols=<n>&rows=<n>` upgrades to a WebSocket for an interactive shell in the
 board folder, or in that ticket's copy of the folder. `cols` default 80, `rows` default 24, both clamped to 1..1000.
 The upgrade needs an `Origin` equal to the board's own origin (local) or the tailnet URL (remote).
-- Errors before the upgrade: `501` when the Bun runtime has no PTY support; `403` bad Origin; `400` invalid ticket id
-  (`^[A-Za-z0-9_-]{1,80}$`) or not a WebSocket upgrade; `404` unknown ticket.
+- Errors before the upgrade, in this order: `501` when the Bun runtime has no PTY support; `403` bad Origin; `400`
+  invalid ticket id (`^[A-Za-z0-9_-]{1,80}$`); `404` unknown ticket; `400` not a WebSocket upgrade.
+- The shell starts in the ticket's copy of the folder, or the board folder when the ticket has none or no ticket is
+  given. A `cols` or `rows` of 0 or not a number means the default; resize messages are clamped the same way.
 - Client to server (JSON text): `{"type":"input","data":"..."}`, `{"type":"resize","cols":n,"rows":n}`,
   `{"type":"restart"}`. Other or invalid messages are ignored.
 - Server to client: binary frames with terminal output (scrollback first on connect), and JSON text
@@ -221,8 +223,26 @@ Any other method or shape under `/api/attachments`: 404.
 ## Browsers and devices
 
 Board browsers (board-browsers.ts) and named Chromes (chromes.ts) share one view, here called `BrowsersView`: the
-Chromes view, plus `boardBrowsers`, `chrome` (whether Google Chrome is installed), and `boards: [{slug, name, chrome,
-browsers}]`. `:id` and `:deviceId` are percent-decoded.
+Chromes view (`browsers.json` as saved: `{browsers, listedAt, connected}`), plus `boardBrowsers` (`BoardBrowserView[]`:
+the saved entry plus `state`, `signIn` "Signed in"/"Needs sign-in"/"Not checked", `signInSite`, `checkedAt`, `inUse`
+(runs holding it), `windowPending`, `error` (last start or close problem, plain words, or null), `folder`
+(`<data>/browsers/<id>`)), `chrome: {installed, message}` (whether Google Chrome is found: `CKANBAN_CHROME_BIN`, then
+the usual app paths), and `boards: [{slug, name, chrome, browsers}]` (`browsers` is the board's own picks or null).
+`:id` and `:deviceId` are percent-decoded.
+- Add: the id is a slug of the name (`work-whatsapp`, then `-2`, `-3` on a clash); the name is trimmed, inner spaces
+  squashed, at most 40 characters; empty 400, a name equal to another one ignoring case 409. Makes `browsers/<id>/`
+  (mode 0700) and saves `board-browsers.json`; it never starts Chrome. `board-browsers.json` doesn't exist until the
+  first change.
+- PATCH `startUrl`: a web address with or without `https://` (saved as the full URL), `null` or `""` clears it, any
+  other scheme 400; `keepRunning` not boolean 400; unknown id 404.
+- Starting Chrome (open, sign-in, ensure, a run's start): a Chrome that exits before it reports its port gives 502,
+  too slow 504; the message also shows as the browser's `error`. open and sign-in start it with a window on
+  `--user-data-dir=<folder>` and the given URL; ensure and a run's start start it hidden (`--headless=new`).
+- A run whose ticket or board picked a board browser holds it (`inUse`) from its start until it ends, even when Chrome
+  couldn't start. While held: close and DELETE 409, ensure tries to start it; once let go, ensure 409.
+- close on a browser that isn't running: 200 `closed: true`. screen and input: 404 unknown, 409 when it isn't
+  running or doesn't need sign-in; input checks its shape first (400 for a tap outside 0..1, an unknown key or type).
+- DELETE moves its folder out of `browsers/` at once and deletes it in the background.
 
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
@@ -243,6 +263,22 @@ browsers}]`. `:id` and `:deviceId` are percent-decoded.
 | POST | `/api/devices` | `{name, description?, capacity?}` (upsert) | 200 device list | 403 run/huddle header, `DeviceError` |
 | DELETE | `/api/devices/:name` | | 200 device list | 403, `DeviceError` |
 | POST | `/api/devices/:name/free` | `{profile, id}` | 200 device list | 403, `DeviceError` |
+
+Devices (devices.ts): names are 1 to 48 lowercase letters, digits, `.`, `_` and `-`, starting with a letter or digit
+(input is trimmed and lowercased; anything else 400); `capacity` is clamped to 1..50, `description` trimmed and cut at 300 characters. An upsert by the user
+drops `addedByClaude`. DELETE: 404 unknown, 409 while a ticket holds it or waits for it. free: 404 when that ticket
+doesn't hold it. Holds and the waiting line live in memory only; `devices.json` keeps the list and `lastUsedAt` (the
+time of the last grant). A ticket's run takes and lets go with `POST .../tickets/:id/devices` (Ticket cards):
+- take `{names, waitMs?}`: `names` an array or a comma-separated string. Answers `{ok: true, names}` once the ticket
+  holds every one (all or nothing; asking again for what it holds is ok). Otherwise it waits up to `waitMs` (clamped
+  0..240000, default 240000) and answers `{ok: false, names, place, usedBy: [{slug, id, since, title}]}`; the ticket
+  keeps its place, and a waiting call returns as soon as the devices are granted. A ticket that holds something and
+  asks for more: 409. A name not on the list is added (capacity 1, `addedByClaude: true`).
+- release `{names?}`: lets go of those (all when missing or empty) and drops the ticket's waiting request; answers
+  `{released: [names it let go of]}`. Freed devices go to the next in line at once.
+- When a ticket's run ends, the board lets go of everything it holds or waits for.
+- `x-ckanban-run` must be exactly `<slug>/<id>` of this ticket and no huddle header, else 403; `action` other than
+  take or release 400.
 
 ## Notifications, messages, helper, push, Telegram
 
@@ -679,6 +715,8 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 - In `/api/board-browsers`, the user-only check runs before the method and shape are matched, so any non-GET or
   non-`ensure` request from a run gets 403 even when the route doesn't exist. The same holds for `/api/passes/:id/...`
   (user-only before the 404), `/loops/...` (except list and test) and non-GET `/api/helper/...`.
+- A device take's `place` is the request's position in the one waiting line shared by all devices, so requests for
+  other devices count too: two tickets each waiting for a different device are told 1 and 2.
 - `/api/notify` POST reads the body before the user-only check: invalid JSON gives 400 even for a refused caller.
 - `PUT /api/avatars/claude/name` only matches with PUT; other methods on that path fall through to 404.
 - `/api/telegram/front-desk/file` reads its body without the JSON content-type rule (it is answered before that check).
