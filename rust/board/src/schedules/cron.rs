@@ -6,7 +6,6 @@
 use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
-use chrono::{Datelike, Duration, Local, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Timelike};
 use regex::Regex;
 
 /// A parsed expression; sets of allowed values per field.
@@ -174,33 +173,60 @@ struct Parts {
     mi: i64,
 }
 
+unsafe extern "C" {
+    fn tzset();
+}
+
+/// `localtime_r`: the local fields and the offset from UTC (seconds) at an instant.
+fn local_at(ms: f64) -> (Parts, i64, i64) {
+    let secs = (ms / 1000.0).floor() as libc::time_t;
+    // SAFETY: localtime_r writes into the tm we own; tzset reads TZ again (as JS does).
+    let tm = unsafe {
+        tzset();
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&secs, &mut tm);
+        tm
+    };
+    let p = Parts { y: tm.tm_year as i64 + 1900, mon: tm.tm_mon as i64, d: tm.tm_mday as i64, h: tm.tm_hour as i64, mi: tm.tm_min as i64 };
+    (p, tm.tm_gmtoff as i64, tm.tm_wday as i64)
+}
+
 fn parts_of(ms: f64) -> Parts {
-    let t = Local.timestamp_millis_opt(ms as i64).single().expect("a valid time");
-    Parts { y: t.year() as i64, mon: t.month0() as i64, d: t.day() as i64, h: t.hour() as i64, mi: t.minute() as i64 }
+    local_at(ms).0
+}
+
+/// Days from 1970-01-01 to a proleptic Gregorian date (month 1-12).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
 }
 
 /// JS `MakeDate(MakeDay(y, mon, d), MakeTime(h, mi, 0, 0))` in local time, then `UTC()`: overflowing fields carry, a
 /// time in a DST gap moves forward (the offset before the change), a repeated time takes its first occurrence.
 fn ms_of(p: Parts) -> f64 {
     let y = p.y + p.mon.div_euclid(12);
-    let m = p.mon.rem_euclid(12) as u32 + 1;
-    let base = NaiveDate::from_ymd_opt(y as i32, m, 1).expect("a valid month").and_hms_opt(0, 0, 0).expect("midnight");
-    let naive: NaiveDateTime = base + Duration::days(p.d - 1) + Duration::hours(p.h) + Duration::minutes(p.mi);
-    let ms = match Local.from_local_datetime(&naive) {
-        LocalResult::Single(t) => t.timestamp_millis(),
-        LocalResult::Ambiguous(a, b) => a.timestamp_millis().min(b.timestamp_millis()),
-        LocalResult::None => {
-            let before = Local.offset_from_utc_datetime(&(naive - Duration::hours(6)));
-            (naive - Duration::seconds(chrono::Offset::fix(&before).local_minus_utc() as i64)).and_utc().timestamp_millis()
-        }
+    let m = p.mon.rem_euclid(12) + 1;
+    // The local time as if it were UTC, in ms.
+    let naive = ((days_from_civil(y, m, 1) + p.d - 1) * 86_400 + p.h * 3600 + p.mi * 60) as f64 * 1000.0;
+    let before = local_at(naive - 12.0 * 3600_000.0).1;
+    let after = local_at(naive + 12.0 * 3600_000.0).1;
+    let fits = |off: i64| {
+        let t = naive - off as f64 * 1000.0;
+        (local_at(t).1 == off).then_some(t)
     };
-    ms as f64
+    let mut hits: Vec<f64> = [before, after].into_iter().filter_map(fits).collect();
+    hits.sort_by(|a, b| a.total_cmp(b));
+    hits.first().copied().unwrap_or(naive - before as f64 * 1000.0)
 }
 
 fn day_matches(c: &Cron, ms: f64) -> bool {
-    let t = Local.timestamp_millis_opt(ms as i64).single().expect("a valid time");
-    let dom = c.dom.contains(&(t.day() as i64));
-    let dow = c.dow.contains(&(t.weekday().num_days_from_sunday() as i64));
+    let (p, _, wday) = local_at(ms);
+    let dom = c.dom.contains(&p.d);
+    let dow = c.dow.contains(&wday);
     // Classic cron: when both day fields are restricted, either one matching is enough.
     if !c.dom_any && !c.dow_any { dom || dow } else { dom && dow }
 }

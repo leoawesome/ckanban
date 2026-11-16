@@ -246,10 +246,12 @@ async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<rout
         let native = native.clone();
         let board = board.clone();
         tokio::spawn(async move {
-            let svc = service_fn(move |req| {
+            let svc = service_fn(move |mut req: hyper::Request<hyper::body::Incoming>| {
                 let proxy = proxy.clone();
                 let native = native.clone();
                 let board = board.clone();
+                // Route on the path Bun would see (dot segments resolved), and pass that one on.
+                proxy::normalize_target(&mut req);
                 async move {
                     if let Some(b) = &board {
                         return Ok(b.handle(req, peer, ckanban_board::gate::request::Listener::Local, &native, &proxy).await);

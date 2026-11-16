@@ -31,7 +31,8 @@ pub async fn serve(listener: TcpListener, proxy: Arc<Proxy>, native: Arc<Native>
         let _ = stream.set_nodelay(true);
         let (proxy, native, board) = (proxy.clone(), native.clone(), board.clone());
         tokio::spawn(async move {
-            let svc = service_fn(move |req| {
+            let svc = service_fn(move |mut req: hyper::Request<hyper::body::Incoming>| {
+                crate::proxy::normalize_target(&mut req);
                 let (proxy, native, board) = (proxy.clone(), native.clone(), board.clone());
                 async move { Ok::<_, std::convert::Infallible>(board.handle(req, peer, Listener::Remote, &native, &proxy).await) }
             });

@@ -124,6 +124,33 @@ impl Proxy {
     }
 }
 
+/// The request target as Bun's `new URL(req.url)` reads it (WHATWG URL parsing: `.`/`..` segments and their `%2e`
+/// forms resolved, `\` as `/`), so this server routes on the same path Bun would, and passes that path on. Without
+/// this a board run could reach a route the Rust board owns through Bun (`/api/x/../profiles/...`), whose copy of the
+/// state is stale in board mode. A target the URL parser refuses stays as it is (Bun refuses it too).
+pub fn normalize_target<B>(req: &mut Request<B>) {
+    let Some(raw) = req.uri().path_and_query().map(|p| p.as_str().to_string()) else { return };
+    if !raw.starts_with('/') {
+        return;
+    }
+    let Ok(u) = url::Url::parse(&format!("http://h{raw}")) else { return };
+    let mut target = u.path().to_string();
+    if let Some(q) = u.query() {
+        target.push('?');
+        target.push_str(q);
+    }
+    if target == raw {
+        return;
+    }
+    if let Ok(pq) = target.parse::<hyper::http::uri::PathAndQuery>() {
+        let mut parts = req.uri().clone().into_parts();
+        parts.path_and_query = Some(pq);
+        if let Ok(uri) = Uri::from_parts(parts) {
+            *req.uri_mut() = uri;
+        }
+    }
+}
+
 /// A WebSocket (or other) upgrade: `Connection: upgrade` with an `Upgrade` header.
 pub fn wants_upgrade(h: &HeaderMap) -> bool {
     h.contains_key(UPGRADE) && connection_tokens(h).iter().any(|t| t == "upgrade")
@@ -218,6 +245,22 @@ mod tests {
         assert_eq!(h["upgrade"], "websocket");
         assert_eq!(h["sec-websocket-key"], "k");
         assert!(!h.contains_key("keep-alive"));
+    }
+
+    #[test]
+    fn targets_read_like_new_url() {
+        let norm = |t: &str| {
+            let mut r = Request::get(t).body(()).unwrap();
+            normalize_target(&mut r);
+            r.uri().path_and_query().unwrap().as_str().to_string()
+        };
+        assert_eq!(norm("/api/x/../profiles/b/tickets/t/devices"), "/api/profiles/b/tickets/t/devices");
+        assert_eq!(norm("/api/x/%2e%2E/profiles"), "/api/profiles");
+        assert_eq!(norm("/api/./events?a=1"), "/api/events?a=1");
+        assert_eq!(norm("/api/x/.%2e/y"), "/api/y");
+        assert_eq!(norm("/../../api/health"), "/api/health");
+        assert_eq!(norm("/api/%68ealth?x=a%20b"), "/api/%68ealth?x=a%20b");
+        assert_eq!(norm("/api/events"), "/api/events");
     }
 
     #[test]

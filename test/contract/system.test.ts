@@ -130,6 +130,16 @@ test("from the phone: refused while phone access is off, answered with the liste
       expect({ path, status: r.status }).toEqual({ path, status: 200 });
       expect(r.headers.get("x-ckanban-listener")).toBe("remote");
     }
+    // Caller identity on the phone: the owner's phone passes the user-only check (find-links: 403 would be the check);
+    // a board run's header and a request without an Origin don't.
+    const user = await phone(d, "POST", `/api/profiles/${SLUG}/find-links`, {});
+    expect(user.status).not.toBe(403);
+    expect((await phone(d, "POST", `/api/profiles/${SLUG}/find-links`, {}, { "x-ckanban-run": `${SLUG}/t_x` })).status).toBe(403);
+    const bare = await phone(d, "POST", `/api/profiles/${SLUG}/find-links`, {}, { origin: "" });
+    expect(bare.status).toBe(403);
+    expect(bare.data.error).toMatch(/for the user only/);
+    // The same from this Mac with no browser behind it: refused by the user check.
+    expect((await d.api("POST", `/api/profiles/${SLUG}/find-links`, {}, { origin: d.url })).status).toBe(403);
     // The debug profile is this Mac's only.
     const prof = await phone(d, "POST", "/api/debug/profile?seconds=1", {});
     expect(prof.status).toBe(403);
@@ -140,4 +150,37 @@ test("from the phone: refused while phone access is off, answered with the liste
   } finally {
     writeRemoteJson(d.home, false);
   }
+});
+
+/** One request written as is on a socket (fetch would resolve `..` itself): the status and the body. */
+async function raw(port: number, method: string, target: string, headers: Record<string, string | string[]> = {}): Promise<{ status: number; body: string }> {
+  const { connect } = await import("node:net");
+  return new Promise((done, fail) => {
+    const s = connect(port, "127.0.0.1");
+    let buf = "";
+    s.on("data", (c) => (buf += c.toString()));
+    s.on("error", fail);
+    s.on("end", () => {
+      const status = Number(buf.split(" ")[1]);
+      const body = buf.slice(buf.indexOf("\r\n\r\n") + 4);
+      done({ status, body });
+    });
+    const h = { host: `127.0.0.1:${port}`, connection: "close", ...headers };
+    s.write(`${method} ${target} HTTP/1.1\r\n${Object.entries(h).flatMap(([k, v]) => (Array.isArray(v) ? v : [v]).map((x) => `${k}: ${x}`)).join("\r\n")}\r\n\r\n`);
+  });
+}
+
+test("dot segments in the path are resolved before routing, as a browser's URL would be", async () => {
+  // Answered as /api/cron/preview, whichever server owns it, never as another route.
+  for (const target of ["/api/x/../cron/preview?expr=@daily", "/api/x/%2e%2e/cron/preview?expr=@daily", "/api/./x/.%2E/cron/preview?expr=@daily"]) {
+    const r = await raw(d.port, "GET", target);
+    expect({ target, status: r.status }).toEqual({ target, status: 200 });
+    expect(r.body).toContain('"summary":"Every day at 00:00"');
+  }
+  // The debug profile's run check holds through a dot path too.
+  const run = await raw(d.port, "POST", "/api/x/../debug/profile?seconds=1", { "x-ckanban-run": `${SLUG}/t_x`, "content-type": "application/json", "content-length": "2" });
+  expect(run.status).toBe(403);
+  // Two run header lines, the first empty, are a board run (Fetch joins them): find-links refuses.
+  const two = await raw(d.port, "POST", `/api/profiles/${SLUG}/find-links`, { origin: d.url, "content-type": "application/json", "content-length": "0", "x-ckanban-run": ["", `${SLUG}/t_x`] });
+  expect(two.status).toBe(403);
 });
