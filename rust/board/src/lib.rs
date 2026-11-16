@@ -8,6 +8,7 @@
 pub mod api;
 pub mod bus;
 pub mod core;
+pub mod dryrun;
 pub mod events;
 pub mod lock;
 pub mod mode;
@@ -35,4 +36,3 @@ pub mod tickets; // R2a
 // Dependencies of later tasks, added once by R0 so parallel tasks don't each change Cargo.toml and Cargo.lock:
 // referenced here so the build doesn't warn until a task uses them (then remove its line).
 use arc_swap as _;
-use getrandom as _;

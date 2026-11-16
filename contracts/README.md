@@ -93,6 +93,10 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   `merge-into-main` (and its refusals); `land` pushes and opens one pull request through a stub `gh`, or merges into
   the project folder without a remote; PR routes (`pr/refresh`, `pr/merge`, `check-pr`); `find-files`, `file`;
   `version-history`; `branch`.
+- `board-files.test.ts`: boards and tickets seeded as files before the daemon starts (no run, so it also runs on the
+  Rust board): a ticket's `outputs` (list, serve, download, Show in Finder, Copy file, the board-run refusal),
+  `find-files` and `file` (and paths that leave their folder), `diff` for a copy, a main ticket, a ticket in the folder
+  itself and a plain folder; the board's `files`, `file`, `open-file`; `detect-setup`; `version-history`.
 - `runs-control.test.ts`: queued messages (send, edit, delete); fresh chat, fresh session, take-over, link-session;
   the spending cap and `cap-continue`; a stalled run and `stall` restart (about a minute: the stall time is whole
   minutes); a device let go at a run's end; `activity` paging; the ticket's `/usage`.
