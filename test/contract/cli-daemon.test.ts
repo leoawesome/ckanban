@@ -137,8 +137,8 @@ describe("restart", () => {
       fb.reset(() => ({ json: { running: n } }));
       const p = await run([]);
       expect(p.code).toBe(0);
-      expect(p.stdout).toBe(`Restart pending: waiting for ${n} active ${word} to finish (at most 10 min).
-New runs, chat replies and Planning interviews start after the restart. Use \`ckanban restart --now\` to restart at once.\n`);
+      expect(p.stdout).toBe(`Restart pending: waiting for ${n} active ${word} to finish (at most 2 min).
+New runs, huddle wakes and Planning interviews start after the restart; your chat messages are answered as usual. Use \`ckanban restart --now\` to restart at once.\n`);
     }
   });
 
