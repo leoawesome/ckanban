@@ -8,11 +8,12 @@
 //! board instead (full mode, as with board mode off) and the reason goes to this process's output (`daemon.log`
 //! under launchd) and `<data>/rust-board-status.json`.
 //!
-//! Routes the Rust board answers itself (more with each task): `GET /api/events`; the session routes (R5: a ticket's
-//! conversation, tool, agent and workflow details, chat search and read, the board folder's sessions); a ticket's
-//! outputs, the files its chat mentions, its Changes tab, the board's Files panel, `detect-setup` and
-//! `/api/version-history` (R6, `ckanban_board::git::routes`). Everything else goes on to the usage, spend, passes and
-//! agents routes, then to Bun, as in front mode.
+//! Routes the Rust board answers itself (more with each task): `GET /api/events`; R1's reads from the ticket index
+//! (`GET /api/profiles`, `/api/profiles/:p`, `/api/profiles/:p/tickets`, `/api/profiles/:p/tickets/:id`,
+//! `/api/tickets`, `/api/inbox`); the session routes (R5: a ticket's conversation, tool, agent and workflow details,
+//! chat search and read, the board folder's sessions); a ticket's outputs, the files its chat mentions, its Changes
+//! tab, the board's Files panel, `detect-setup` and `/api/version-history` (R6, `ckanban_board::git::routes`).
+//! Everything else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -141,18 +142,32 @@ fn masker(root: &Path) -> events::Mask {
 
 impl BoardMode {
     /// The answer when the Rust board answers this request itself; None: it goes on (Rust's other routes, then Bun).
-    pub fn answer(&self, req: &Request<Incoming>) -> Option<Response<Body>> {
+    /// The event stream, and the board's read routes (R1: boards, ticket lists and scopes, one ticket, the command
+    /// bar's rows, the Inbox), worked out on the blocking pool.
+    pub async fn answer(&self, req: &Request<Incoming>) -> Option<Response<Body>> {
         let h = req.headers();
         if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) || h.get_all(HOST).iter().count() > 1 {
             return None;
         }
-        if req.method() != Method::GET || req.uri().path() != "/api/events" {
+        if req.method() != Method::GET {
+            return None;
+        }
+        let path = req.uri().path().to_string();
+        let query = req.uri().query().unwrap_or("").to_string();
+        let events = path == "/api/events";
+        if !events && !is_read_route(&path) {
             return None;
         }
         if !local_host(h, self.public_port) {
             return Some(plain(StatusCode::FORBIDDEN, "forbidden"));
         }
-        Some(events::stream(&self.core.bus, self.hooks.clone(), events::PING_EVERY))
+        if events {
+            return Some(events::stream(&self.core.bus, self.hooks.clone(), events::PING_EVERY));
+        }
+        let reads = self.core.reads.clone();
+        let (status, body) = tokio::task::spawn_blocking(move || reads.answer(&path, &query)).await.ok()??;
+        let text = (self.hooks.mask)(&serde_json::to_string(&body).unwrap_or_else(|_| "null".into()));
+        Some(json_text(status, text))
     }
 
     /// The session routes (R5), answered from Claude's transcripts; None: the request goes on (to Bun).
@@ -205,6 +220,25 @@ impl BoardMode {
         self.core.stop();
         mode::record_stop(&self.root, code == 0);
     }
+}
+
+/// Paths the board's read routes may answer (`ckanban_board::index::routes`); the rest of `/api/profiles/...` goes
+/// on to Bun without a trip to the blocking pool.
+fn is_read_route(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+    match parts.as_slice() {
+        ["api", "inbox", ..] | ["api", "tickets"] | ["api", "profiles"] | ["api", "profiles", _] => true,
+        ["api", "profiles", _, "tickets"] | ["api", "profiles", _, "tickets", _] => true,
+        _ => false,
+    }
+}
+
+fn json_text(status: u16, text: String) -> Response<Body> {
+    use http_body_util::{BodyExt, Full};
+    let mut r = Response::new(Full::new(bytes::Bytes::from(text)).map_err(|never| match never {}).boxed());
+    *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    r.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json"));
+    r
 }
 
 /// The boards (folders under `profiles/`): a few names, read once at start.
