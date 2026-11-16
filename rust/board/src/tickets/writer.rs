@@ -755,3 +755,101 @@ pub fn find_cycle(children: &[Arc<Tk>]) -> Option<Vec<String>> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::StandIn;
+
+    fn board() -> (tempfile::TempDir, Arc<Tickets>) {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("profiles/b/tickets")).unwrap();
+        let index = Index::new(d.path());
+        let t = Tickets::new(index, Arc::new(Bus::new()), Arc::new(StandIn), Arc::new(|s: &str| s.replace("sk-secret-1", "***")));
+        (d, t)
+    }
+
+    fn input(title: &str, status: &str) -> Map<String, Value> {
+        let mut m = Map::new();
+        m.insert("title".into(), title.into());
+        m.insert("status".into(), status.into());
+        m
+    }
+
+    #[test]
+    fn create_update_delete_keep_the_listing_and_files_in_step() {
+        let (_d, t) = board();
+        let a = t.create("b", input("⭐ A", "backlog")).unwrap();
+        let b = t.create("b", input("B", "backlog")).unwrap();
+        let r1 = t.create("b", input("R1", "ready")).unwrap();
+        let r2 = t.create("b", input("R2", "in_progress")).unwrap();
+        assert_eq!((a.title.as_str(), a.get("important")), ("A", Some(&Value::Bool(true))));
+        // Backlog: each new card on top; Ready: a queue (In progress queues there too).
+        assert!(b.order < a.order);
+        assert_eq!((r2.status.as_str(), r2.order), ("ready", r1.order + 1.0));
+        let list = t.list("b");
+        assert_eq!(list.tickets.len(), 4);
+        assert!(t.ticket_file("b", &a.id).exists());
+
+        let mut p = Map::new();
+        p.insert("status".into(), "done".into());
+        p.insert("pinned".into(), true.into());
+        let done = t.update("b", &a.id, &p, true).unwrap();
+        assert_eq!(done.status, "done");
+        assert!(done.get("doneAt").is_some_and(Value::is_string));
+        assert_eq!(done.get("pinnedAt"), Some(&Value::Null));
+        let mut p = Map::new();
+        p.insert("status".into(), "backlog".into());
+        let back = t.update("b", &a.id, &p, true).unwrap();
+        assert_eq!(back.get("reopenedFrom"), Some(&serde_json::json!({ "status": "done", "outcome": null })));
+        // The file says the same as the listing.
+        let file = tfile::read(&t.ticket_file("b", &a.id)).unwrap().unwrap().unwrap();
+        assert_eq!(file.to_json()["reopenedFrom"], back.json["reopenedFrom"]);
+
+        let mut p = Map::new();
+        p.insert("body".into(), "x".into());
+        p.insert("expectedBody".into(), "not it".into());
+        assert_eq!(t.update("b", &a.id, &p, true).unwrap_err().0, 409);
+
+        t.delete("b", &b.id).unwrap();
+        assert!(!t.ticket_dir("b", &b.id).exists());
+        assert!(t.list("b").get(&b.id).is_none());
+    }
+
+    #[test]
+    fn comments_are_masked_as_they_are_written() {
+        let (_d, t) = board();
+        let a = t.create("b", input("A", "backlog")).unwrap();
+        let c = t.add_comment("b", &a.id, "key sk-secret-1 here", None).unwrap();
+        assert_eq!((c["author"].as_str(), c["text"].as_str()), (Some("user"), Some("key *** here")));
+        let n = t.add_comment("b", &a.id, "from a run", Some("t_x")).unwrap();
+        assert_eq!((n["author"].as_str(), n["from"].as_str()), (Some("ai"), Some("t_x")));
+        let all = t.comments("b", &a.id);
+        assert_eq!(all.len(), 2);
+        let raw = std::fs::read_to_string(t.ticket_dir("b", &a.id).join("comments.jsonl")).unwrap();
+        assert!(!raw.contains("sk-secret-1"));
+        assert!(raw.starts_with("{\"id\":"));
+    }
+
+    #[test]
+    fn moves_only_a_free_backlog_ticket() {
+        let (d, t) = board();
+        std::fs::create_dir_all(d.path().join("profiles/o")).unwrap();
+        std::fs::write(d.path().join("profiles/o/profile.json"), "{\"name\":\"O\",\"slug\":\"o\",\"path\":\"/tmp\",\"createdAt\":\"x\"}\n").unwrap();
+        let a = t.create("b", input("A", "backlog")).unwrap();
+        let r = t.create("b", input("R", "review")).unwrap();
+        assert_eq!(t.move_to("b", &r.id, "o").unwrap_err().1, "Only tickets in Backlog can move to another board.");
+        let moved = t.move_to("b", &a.id, "o").unwrap();
+        assert_eq!(moved.title, "A");
+        assert!(t.get("b", &a.id).is_none());
+        assert!(t.get("o", &moved.id).is_some());
+    }
+
+    #[test]
+    fn cycles_and_dependencies() {
+        let mk = |id: &str, title: &str, deps: &[&str]| Arc::new(Tk::from_json(serde_json::json!({ "id": id, "title": title, "dependsOn": deps }).as_object().unwrap().clone(), false));
+        let kids = vec![mk("a", "A", &["b"]), mk("b", "B", &["a"]), mk("c", "C", &["zz"])];
+        assert_eq!(find_cycle(&kids), Some(vec!["A".to_string(), "B".to_string(), "A".to_string()]));
+        assert_eq!(resolve_deps(&kids[2], &kids).1, vec!["zz".to_string()]);
+    }
+}

@@ -117,13 +117,11 @@ impl Who<'_> {
         let mine = run_slug == slug && !run_id.is_empty() && !huddle;
         let target_id = target.map(|t| t.id.as_str());
         let self_t = if mine && target_id != Some(run_id.as_str()) { self.tickets.get(slug, &run_id) } else { None };
-        if let Some(s) = self_t.filter(|s| is_manager(s)) {
-            let _ = s;
-            if let Some(planner) = self.planner_rights(slug, &run_id) {
-                if target_id.is_none_or(|t| self.in_family(slug, &planner.id, t)) {
-                    return Ok(Rights { planner: Some(planner), ..Default::default() });
-                }
-            }
+        if self_t.is_some_and(|s| is_manager(&s))
+            && let Some(planner) = self.planner_rights(slug, &run_id)
+            && target_id.is_none_or(|t| self.in_family(slug, &planner.id, t))
+        {
+            return Ok(Rights { planner: Some(planner), ..Default::default() });
         }
         let requester = if mine { self.user_request_rights(slug, &run_id) } else { None };
         if let Some(requester) = requester {
