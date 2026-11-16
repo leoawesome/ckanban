@@ -43,6 +43,38 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   `sessions` (R5), `git` (R6), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
   `huddles` (R11a), `team` (R11b), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
+## The run engine (R3, `src/runs/`)
+
+A library for the run loop (R7a); nothing calls it at run time yet except `LiveCut` (the event stream's
+`ActivityCut`). One file per Bun file, listed in `src/runs/mod.rs`. What R7a calls:
+
+- `runner::build_args(&BuildArgs { session_id, resume, model, disallowed, mcp, system_prompt, max_budget_usd, effort,
+  ultracode, settings, tools, strict_mcp, no_chrome })`, then `runner::start_run(RunOptions { bin, cwd, args, env,
+  input, input_local, planning, on_event, on_waiting, grace_ms, idle_ms, stall_ms, on_stall })` → `RunHandle`:
+  `send(text, local) -> bool`, `stop_task(id).await`, `end_when_idle()`, `keep_waiting()`, `stop()`, `stopped()`,
+  `pid()`, `wait().await -> Arc<RunOutput { code, stderr, events }>`. One task per run owns the child and its timers;
+  callbacks run on it in order and must not block. Exit codes are Bun's (`128 + signal` when killed). Unlike Bun, a
+  `stop()` before Claude has started counts (it is stopped as soon as it starts).
+- After a run: `activity::extract_final_text`, `result::parse_result`, `retry::transient_error` (resume once after
+  `RETRY_DELAY_MS` with `RETRY_TEXT`), `retry::limit_message` / `is_limit_text` (the plan-limit wait),
+  `activity::summarize_event` for the card line, `model_versions::ModelVersions::learn` on each event.
+- Run logs: `run_log::append_line` (holds the log's lock, restores a compressed log first; masking saved keys stays
+  the caller's job, as in `store.appendActivity`), `restore_log` before a run starts, `log_stat`, `open_log`,
+  `read_log`; `activity_digest::ActivityDigests::get` for edited files, run entries and session totals.
+- `run_log_compress::RunLogCompressor::new(root, board, options).start()` with a `CompressBoard` (ticket lists, running,
+  `activity_compressed`). Report-only unless `CKANBAN_RUST_DELETE=1`: it writes what it would do to
+  `<data>/rust-board-dryrun.log` and keeps its handled list in memory (`run-logs-compressed.jsonl` stays Bun's).
+- `side_call::SideCaller::call(SideCallInput)` and `add_side_spend` / `read_side_spend`; `connectors::board_connector_options`
+  (and `set_known_connectors` from the Connections list); `awake::StayAwake::new(..).start()`; `claude::find_claude`,
+  `list_sessions`, `list_claude_projects`, `claude_defaults`, `pick_folder`, `is_session_live`.
+- `js`: the JavaScript rules the ports need to give Bun's exact bytes (UTF-16 lengths and cuts, `trim`, `Number`,
+  `String`, `JSON.parse` with lone surrogates, `JSON.stringify` key order and numbers).
+
+Checked against Bun: `tests/fixtures/runs.json` holds 252 inputs with Bun's answers (written by
+`test/rust-board-runs-fixtures.test.ts`, part of `bun run test`; `UPDATE_RUST_FIXTURES=1` rewrites them) and
+`tests/runs.rs` checks Rust gives the same JSON text. `tests/runner_fake.rs` runs `start_run` against the fake Claude
+(`test/fixtures/fake-claude.ts`, needs Bun; skipped without it), never the real `claude`.
+
 Every dependency the tasks are expected to need is already in `Cargo.toml` (referenced in `lib.rs` until used), so
 parallel tasks don't clash on `Cargo.toml` and `Cargo.lock`.
 

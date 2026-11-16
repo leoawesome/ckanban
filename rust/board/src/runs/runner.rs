@@ -725,7 +725,7 @@ async fn run(mut opts: RunOptions, ctl: Arc<Ctl>) -> RunOutput {
         Ok(c) => c,
         Err(e) => return RunOutput { code: -1, stderr: format!("failed to start {}: {e}", opts.bin), events: Vec::new() },
     };
-    ctl.pid.store(child.id().unwrap_or(0), Ordering::SeqCst);
+    let pid = child.id().unwrap_or(0);
     let stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
     let stderr_task = tokio::spawn(async move {
@@ -775,6 +775,8 @@ async fn run(mut opts: RunOptions, ctl: Arc<Ctl>) -> RunOutput {
         let local = r.opts.input_local;
         r.write(&text, local);
     }
+    // Set once input is open, so `pid()` also says messages can be sent.
+    ctl.pid.store(pid, Ordering::SeqCst);
     // A stop that came before Claude started.
     if ctl.stopped.load(Ordering::SeqCst) {
         r.drain();
