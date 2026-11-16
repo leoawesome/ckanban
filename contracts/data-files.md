@@ -407,6 +407,8 @@ Fix it.
   failed: ..."), user comments and notes from other tickets' runs (`from` = that ticket's id).
 - **Writer:** `Store.addComment` (append). Saved keys are masked in `text` before writing (`maskSaved`).
 - **Reader:** whole file (`listComments`); bad lines are skipped. The "last summary" cache is keyed by mtime/size.
+  A card's links (artifact URLs in `ai` comments) are rebuilt only after the daemon's own next comment write
+  (`commentStamp`), so a line appended from outside shows there after that.
 - **Tier:** CORE.
 
 ```json
