@@ -10,6 +10,11 @@
 rust-board-mode.test.ts
 callers.test.ts | event stream carries
 
+# R5: a ticket's conversation, tool, agent and workflow details, chat search and read, the board folder's sessions and
+# session.updated, over transcripts written before the start. The run-based conversation tests (chat-session.test.ts,
+# quickchat.test.ts's search_chat) need runs (R7a) and quick chats (R8).
+sessions-read.test.ts
+
 # R6: a ticket's outputs, the files its chat mentions, its Changes tab, the board's Files panel, detect-setup and
 # version-history, answered by Rust. runs-git.test.ts and runs-life.test.ts (copies, merge into main, land, branch, PR
 # routes) need ticket writes and runs: they come with R2a and R7a, which call rust/board/src/git (landing, pr).

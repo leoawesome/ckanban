@@ -234,6 +234,11 @@ async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<rout
                     if let Some(res) = board.as_ref().and_then(|b| b.answer(&req)) {
                         return Ok(res);
                     }
+                    if let Some(b) = &board
+                        && let Some(res) = b.answer_sessions(&req).await
+                    {
+                        return Ok(res);
+                    }
                     let req = match &board {
                         Some(b) => match b.answer_async(req).await {
                             Ok(res) => return Ok(res),
