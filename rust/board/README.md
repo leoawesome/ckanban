@@ -39,7 +39,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   a slow connection closed).
 - `src/mode.rs`: the switch, the fallbacks and the status file. `src/lock.rs`: `board.lock`.
 - `src/satellite.rs`: `event`/`runtime` lines to the satellite's stdin; its event stream re-emitted on the bus.
-- One empty folder per later task: `index` (R1), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4),
+- One empty folder per later task (filled as each lands): `index` (R1), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
   `huddles` (R11a), `team` (R11b), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
@@ -77,6 +77,22 @@ Checked against Bun: `tests/fixtures/runs.json` holds 252 inputs with Bun's answ
 
 Every dependency the tasks are expected to need is already in `Cargo.toml` (referenced in `lib.rs` until used), so
 parallel tasks don't clash on `Cargo.toml` and `Cargo.lock`.
+
+## Prompts (R4)
+
+`src/prompts/`: the run prompts of `src/runs/prompts-*.ts` (`rules`, `chat`, `planning`, `huddle`, `main_role`) and
+`web/src/features/ticket/questionForms.ts` (`question_forms`), the same bytes as Bun's. `deps` holds the helpers
+they need from other areas (helper command, review huddle section, digest lines, huddle topic, check-in setup chat,
+Task models line, automation label), `js` the JavaScript string behaviours (`trim`, UTF-16 lengths, `toFixed`,
+`path.join`), `types` the fields of Bun's types they read (same JSON names). The helper command a prompt names is this
+program unless `deps::set_helper_command` sets it.
+
+`tests/fixtures/prompts.json` is the parity table: about 800 cases over tickets, boards, roles, huddles and forms,
+each with Bun's answer (texts as SHA-1 and length). `test/rust-prompt-fixtures.test.ts` (in `bun run test`) checks
+Bun still gives them; `tests/prompts.rs` checks Rust does. After a deliberate prompt change in Bun:
+`UPDATE_RUST_FIXTURES=1 bun test test/rust-prompt-fixtures.test.ts`, then change the Rust text until
+`cargo test -p ckanban-board --test prompts` passes (it writes its differing texts to `rust/target/prompt-fixtures/`;
+`DUMP_PROMPTS=<dir>` makes the Bun test write Bun's, numbered the same).
 
 ## Tests
 

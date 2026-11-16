@@ -80,6 +80,25 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   into every tool group, checking the answer and its effect over HTTP. Calls "in a run" set `CKANBAN_TICKET` like the
   board does, to reach the run-only tools and the refusals a run gets. The daemon's `gh` is a stub that is never logged
   in, so `report_bug` never reaches GitHub.
+- `runs.ts` helps the run tests: per-ticket fake Claude scripts (`FAKE_SCRIPT_DIR` in `test/fixtures/fake-claude.ts`:
+  a ticket whose text holds `[fake:<name>]` follows `<name>.json`, one step per run: files, shell commands, outputs,
+  board calls with the run header, a wait for a gate file, a mode, a status, a summary, a PR link), the event stream
+  and waits. `daemon.ts` can also `kill` the server and `respawn` it on the same data folder (what launchd does).
+- `runs-life.test.ts`: a plain folder board: which column moves start a run (Ready, In Progress, Planning) and which
+  don't; the CKANBAN_RESULT line (done, blocked, questions as `needs_input`, no line, a failed run, a PR link);
+  `activity.jsonl` and the event stream; resume after a message; Stop and a move back to Backlog; a message while the
+  run works; a usage-limit wait and continue; a follow-up run now; `outputs/`; land on a plain folder.
+- `runs-git.test.ts`: a temp git repo with a temp bare remote, and one without a remote: a ticket's own copy and
+  branch, `diff`; a main ticket's run creates a tool ticket that starts from the main copy, commits and calls
+  `merge-into-main` (and its refusals); `land` pushes and opens one pull request through a stub `gh`, or merges into
+  the project folder without a remote; PR routes (`pr/refresh`, `pr/merge`, `check-pr`); `find-files`, `file`;
+  `version-history`; `branch`.
+- `runs-control.test.ts`: queued messages (send, edit, delete); fresh chat, fresh session, take-over, link-session;
+  the spending cap and `cap-continue`; a stalled run and `stall` restart (about a minute: the stall time is whole
+  minutes); a device let go at a run's end; `activity` paging; the ticket's `/usage`.
+- `runs-restart.test.ts`: `POST /api/restart` holds new runs until the active one ends, then the daemon exits and
+  the held ticket runs after the next start; a daemon stopped mid-run resumes a work run in its session, a follow-up
+  wake as a follow-up, and wakes a main ticket from its saved events.
 - `mcp-parity.test.ts`: with `CKANBAN_PARITY_MCP` (a JSON array naming a port of the MCP server), Bun's `ckanban mcp`
   and the port run side by side against one daemon and must give the same answers: `initialize`, `tools/list` byte
   for byte, and about 100 calls across every group, in and outside a run, refusals and argument errors included (ids and
