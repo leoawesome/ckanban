@@ -59,6 +59,8 @@ export const TOKEN_RE = /^\d{5,15}:[A-Za-z0-9_-]{30,60}$/;
 
 /** Longest Telegram message. */
 export const TELEGRAM_MAX = 4096;
+/** The Bot API's address; CKANBAN_TELEGRAM_URL points it at a local fake (contract tests), never set on a real Mac. */
+export const telegramApiBase = (): string => (process.env.CKANBAN_TELEGRAM_URL || "https://api.telegram.org").replace(/\/+$/, "");
 /** A pairing code is good for this long. */
 export const PAIR_MS = 10 * 60_000;
 /** Wrong codes allowed during one pairing before it is cancelled (6 digits: guessing has no real chance). */
@@ -237,7 +239,7 @@ export class TelegramBot {
     const token = this.token;
     if (!TOKEN_RE.test(token)) return { ok: false, error_code: 401, description: "no bot token" };
     try {
-      const r = await this.d.fetch(`https://api.telegram.org/bot${token}/${method}`, {
+      const r = await this.d.fetch(`${telegramApiBase()}/bot${token}/${method}`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         signal: signal ?? AbortSignal.timeout(method === "getUpdates" ? (POLL_TIMEOUT_S + 15) * 1000 : 10_000),
       });
@@ -700,7 +702,7 @@ export class TelegramBot {
       form.set("disable_notification", "true");
       if (replyTo !== null) form.set("reply_parameters", JSON.stringify({ message_id: replyTo, allow_sending_without_reply: true }));
       form.set("document", Bun.file(file), file.split("/").pop() ?? "file");
-      const r = await this.d.fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: "POST", body: form, signal: AbortSignal.timeout(120_000) });
+      const r = await this.d.fetch(`${telegramApiBase()}/bot${token}/sendDocument`, { method: "POST", body: form, signal: AbortSignal.timeout(120_000) });
       let j: ApiReply;
       try {
         j = (await r.json()) as ApiReply;

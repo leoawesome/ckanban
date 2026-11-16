@@ -13,6 +13,11 @@
 // it with a stop_task control request (workflow-nostop refuses, like a CLI that can't).
 // FAKE_SIDE_JSON=1: a side call (`-p --output-format json`, e.g. simplify or "help me understand") prints one JSON
 // result like the real CLI (text FAKE_SIDE_TEXT, cost $0.002) and exits; without it side calls get stream lines and fail.
+// FAKE_PLAN_FILE=<path>: JSON [{match, tools?: [{name, input}], text?, status?}]. A turn whose message contains `match` (the first
+// that does) calls those tools (tool use ids tu_plan_<n>) and adds `text` to its reply (ending with `status` when set); that turn's assistant messages
+// are saved in the transcript, so the chat shows forms, proposals and blocks (contract tests of the chat).
+// FAKE_UUIDS=1: transcript lines carry a uuid and parentUuid like the real CLI's (rewind and fork need them).
+// FAKE_UUIDS=1: every line it saves in the transcript gets a uuid, like the real CLI's (rewind and fork cut there).
 // FAKE_TRANSCRIPT=1: it also thinks, runs a Bash call and posts to its huddle, and writes what it emits to the transcript.
 // FAKE_SCRIPT_DIR=<dir>: per-ticket scripts (outside-in contract tests, test/contract/runs-*.test.ts). A first prompt
 // containing `[fake:<name>]` ties the run's ticket (CKANBAN_TICKET) to <dir>/<name>.json, remembered in
@@ -118,6 +123,19 @@ if (process.env.FAKE_SCRIPT_DIR && process.env.CKANBAN_TICKET && !sideCall) {
     }
   }
 }
+type Plan = { match: string; tools?: { name: string; input: unknown }[]; text?: string; status?: string };
+function planFor(msg: string | null): Plan | null {
+  const f = process.env.FAKE_PLAN_FILE;
+  if (!f || msg === null || !existsSync(f)) return null;
+  const list: Plan[] = JSON.parse(require("node:fs").readFileSync(f, "utf8"));
+  return list.find((p) => msg.includes(p.match)) ?? null;
+}
+let plan = planFor(first);
+let planTool = 0;
+/** The plan's tool calls for this turn, saved in the transcript by emit(). */
+function planTools() {
+  for (const t of plan?.tools ?? []) emit({ type: "assistant", message: { content: [{ type: "tool_use", id: `tu_plan_${++planTool}`, name: t.name, input: t.input }] } });
+}
 // FAKE_BLOCK_MATCH: runs whose first prompt contains this text end "blocked" (per-ticket behaviour in one test).
 // FAKE_CALL_MATCH: only runs whose first prompt contains this text are in "call" mode; the others are "ok" (so the
 // tickets a call creates don't replay the calls when the board starts them). A script step's mode wins over both.
@@ -133,11 +151,24 @@ const transcriptFile = process.env.CLAUDE_CONFIG_DIR && sessionId !== "none" && 
   ? `${process.env.CLAUDE_CONFIG_DIR}/projects/${process.cwd().replace(/[^a-zA-Z0-9]/g, "-")}/${sessionId}.jsonl`
   : null;
 
+let lastUuid: string | null = null;
+/** uuid and parentUuid for the next transcript line (FAKE_UUIDS), chained like the real CLI's. */
+function lineIds(): { uuid?: string; parentUuid?: string | null } {
+  if (!process.env.FAKE_UUIDS) return {};
+  const uuid = crypto.randomUUID();
+  const ids = { uuid, parentUuid: lastUuid };
+  lastUuid = uuid;
+  return ids;
+}
+function lineUuid(): { uuid?: string } {
+  return process.env.FAKE_UUIDS ? { uuid: crypto.randomUUID() } : {};
+}
+
 function emit(obj: any) {
   process.stdout.write(JSON.stringify(obj) + "\n");
   // Like the real CLI's transcript: assistant blocks and tool results, with timestamps.
-  if (process.env.FAKE_TRANSCRIPT && transcriptFile && (obj.type === "assistant" || obj.type === "user") && !obj.isReplay) {
-    appendFileSync(transcriptFile, JSON.stringify({ ...obj, sessionId, timestamp: new Date().toISOString() }) + "\n");
+  if ((process.env.FAKE_TRANSCRIPT || plan) && transcriptFile && (obj.type === "assistant" || obj.type === "user") && !obj.isReplay) {
+    appendFileSync(transcriptFile, JSON.stringify({ ...obj, ...lineIds(), sessionId, timestamp: new Date().toISOString() }) + "\n");
   }
 }
 
@@ -158,7 +189,13 @@ if (process.env.CLAUDE_CONFIG_DIR && sessionId !== "none" && !process.env.FAKE_N
   const { mkdirSync } = await import("node:fs");
   const dir = `${process.env.CLAUDE_CONFIG_DIR}/projects/${process.cwd().replace(/[^a-zA-Z0-9]/g, "-")}`;
   mkdirSync(dir, { recursive: true });
-  appendFileSync(`${dir}/${sessionId}.jsonl`, JSON.stringify({ type: "user", sessionId, cwd: process.cwd(), message: { role: "user", content: first ?? "" } }) + "\n");
+  if (process.env.FAKE_UUIDS && existsSync(`${dir}/${sessionId}.jsonl`)) {
+    // A resumed session's lines chain on from the transcript's last one.
+    const { readFileSync } = await import("node:fs");
+    const prev = readFileSync(`${dir}/${sessionId}.jsonl`, "utf8").split("\n").filter(Boolean).at(-1);
+    lastUuid = prev ? JSON.parse(prev).uuid ?? null : null;
+  }
+  appendFileSync(`${dir}/${sessionId}.jsonl`, JSON.stringify({ type: "user", ...lineIds(), sessionId, cwd: process.cwd(), message: { role: "user", content: first ?? "" } }) + "\n");
 }
 if (first !== null) take(first);
 
@@ -260,6 +297,8 @@ if (process.env.FAKE_ASK_KEYS) {
   emit(ask);
   if (!process.env.FAKE_TRANSCRIPT && transcriptFile) appendFileSync(transcriptFile, JSON.stringify({ ...ask, sessionId, timestamp: new Date().toISOString() }) + "\n");
 }
+
+planTools();
 
 // Calls the board's API the way a run's shell could: no run header, at CKANBAN_PORT as the run got it. FAKE_CALLS_FILE
 // holds [{method, path, headers?, body?}]; each answer {method, path, status, text} is appended to FAKE_CALL_OUT (JSON lines).
@@ -367,10 +406,10 @@ if (background) emit({ type: "system", subtype: "background_tasks_changed", task
 
 drain();
 const steered = heard.slice(1);
-const status = step?.status ?? (mode === "blocked" ? "blocked" : mode === "questions" ? "questions" : "done");
+const status = step?.status ?? plan?.status ?? (mode === "blocked" ? "blocked" : mode === "questions" ? "questions" : "done");
 const text = mode === "noresult"
   ? "All done, no result line."
-  : `Work complete.${steered.length ? `\nSteered: ${steered.join(" | ")}` : ""}${decisions.length ? `\nAsks: ${decisions.join(" ")}` : ""}${process.env.FAKE_EXTRA ?? ""}\nCKANBAN_RESULT: ${JSON.stringify({ status, prUrl: pr, ...(process.env.FAKE_PRS ? { prUrls: process.env.FAKE_PRS.split(",") } : {}), ...(process.env.FAKE_QUIET ? { quiet: true } : {}), ...(process.env.FAKE_VERDICT ? { verdict: process.env.FAKE_VERDICT } : {}), summary: step?.summary ?? `fake ${status}` })}`;
+  : `Work complete.${steered.length ? `\nSteered: ${steered.join(" | ")}` : ""}${decisions.length ? `\nAsks: ${decisions.join(" ")}` : ""}${process.env.FAKE_EXTRA ?? ""}${plan?.text ? `\n${plan.text}` : ""}\nCKANBAN_RESULT: ${JSON.stringify({ status, prUrl: pr, ...(process.env.FAKE_PRS ? { prUrls: process.env.FAKE_PRS.split(",") } : {}), ...(process.env.FAKE_QUIET ? { quiet: true } : {}), ...(process.env.FAKE_VERDICT ? { verdict: process.env.FAKE_VERDICT } : {}), summary: step?.summary ?? `fake ${status}` })}`;
 for (const chunk of ["Work ", "complete."]) {
   if (process.env.FAKE_STREAM_DELAY) await Bun.sleep(Number(process.env.FAKE_STREAM_DELAY));
   emit({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: chunk } } });
@@ -405,7 +444,9 @@ while (streamIn) {
   const next = await nextMessage();
   if (next === null) break;
   take(next);
-  const reply = `Reply: ${next}\nCKANBAN_RESULT: ${JSON.stringify({ status: "done", prUrl: pr, summary: `reply ${next}` })}`;
+  plan = planFor(next);
+  planTools();
+  const reply = `Reply: ${next}${plan?.text ? `\n${plan.text}` : ""}\nCKANBAN_RESULT: ${JSON.stringify({ status: plan?.status ?? "done", prUrl: pr, summary: `reply ${next}` })}`;
   emit({ type: "assistant", message: { content: [{ type: "text", text: reply }] } });
   emit({ type: "result", subtype: "success", is_error: false, result: reply, session_id: sessionId });
 }
