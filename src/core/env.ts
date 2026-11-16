@@ -19,3 +19,17 @@ export const SOURCE_HEADER = "x-ckanban-source";
 /** The Telegram front desk's runs get FRONT_DESK_ENV ("<board>/<chat id>/<secret>"); BoardClient sends it back as FRONT_DESK_HEADER. */
 export const FRONT_DESK_ENV = "CKANBAN_FRONTDESK";
 export const FRONT_DESK_HEADER = "x-ckanban-frontdesk";
+
+/**
+ * Test hook: how often (ms) the schedule, one-time job, automation and follow-up timers look for due work. Unset (every
+ * real install): their own periods (30 s, 30 s, 60 s, 30 s). Contract tests set it low so work fires within seconds.
+ */
+export const TICK_MS_ENV = "CKANBAN_TICK_MS";
+
+/** CKANBAN_TICK_MS as a whole number of ms from 50 to 60000; anything else (or unset) gives undefined: the defaults. */
+export function tickMs(env: Record<string, string | undefined> = process.env): number | undefined {
+  const raw = env[TICK_MS_ENV]?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const n = Number(raw);
+  return n >= 50 && n <= 60_000 ? n : undefined;
+}

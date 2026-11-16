@@ -411,6 +411,8 @@ Fix it.
   failed: ..."), user comments and notes from other tickets' runs (`from` = that ticket's id).
 - **Writer:** `Store.addComment` (append). Saved keys are masked in `text` before writing (`maskSaved`).
 - **Reader:** whole file (`listComments`); bad lines are skipped. The "last summary" cache is keyed by mtime/size.
+  A card's links (artifact URLs in `ai` comments) are rebuilt only after the daemon's own next comment write
+  (`commentStamp`), so a line appended from outside shows there after that.
 - **Tier:** CORE.
 
 ```json
@@ -599,6 +601,10 @@ chat.
 - **Created** (`jobs.ts`) with `id, name, at, action, state: "scheduled", sourceTicketId, createdAt, updatedAt,
   firedAt: null, result: null`. `action` is `{ kind: "ticket", title, body, mode }` or `{ kind: "command", command,
   timeoutSec?, ifLate?: "skip" | "run" }`. `state`: `scheduled`, `running`, `done`, `failed`, `cancelled`, `skipped`.
+  `ifLate` is only written when `"run"`. Once it fired: `firedAt` and `result`, `{ ticketId }` for a ticket job,
+  `{ exitCode, durationMs, output, timedOut, message? }` for a command (output: the last 4 KB), `{ message }` when
+  skipped or cancelled because its ticket was deleted. A change, cancel or run now from a board run adds
+  `changedBy: { ticketId, action: "changed" | "cancelled" | "run now", at }`; the user's next change removes it.
 - **Load-time migration:** an old `state: "missed"` reads as `skipped` with `result.message` "was due while the
   computer was off" (nothing written).
 - **Writer:** `Store.saveJob` (atomic). **Reader:** `JsonDir` like schedules; jobs that are `scheduled` or `running`
