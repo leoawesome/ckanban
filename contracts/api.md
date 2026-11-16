@@ -154,7 +154,7 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 | GET | `/api/claude/projects` | | 200 list of Claude Code projects (`listClaudeProjects`) each with `hasProfile` | |
 | GET | `/api/claude/defaults` | | 200 `claudeDefaults()` plus `versions` (learned model versions) | |
 | POST | `/api/pick-folder` | body ignored | 200 `{path}` from the native folder picker | |
-| GET | `/api/version-history` | query `path` (absolute) | 200 `{git, repo}`: git binary path or null; `repoKind()` or null | 400 path missing or not absolute |
+| GET | `/api/version-history` | query `path` (absolute) | 200 `{git, repo}`: `git` true when git is installed (else false); `repo` is `repoKind()` (`plain`, `empty`, `local` or `remote`) or null when git is missing or the folder doesn't exist | 400 path missing or not absolute |
 | POST | `/api/version-history` | `{path}` (absolute) | 200 `enableVersionHistory()` result plus `repo` | 400 path, 400 git not installed, 404 folder missing, 409 a run is editing that folder, 500 git failed |
 | GET | `/api/cron/preview` | query `expr` | 200 `{valid, error, summary, next: ISO[3]}`; invalid gives `valid:false` with `error` | |
 | POST | `/api/bug-report/draft` | `{profile?, ticketId?}` | 200 `draftReport()` (bugreport.ts) | `BugReportError` status |

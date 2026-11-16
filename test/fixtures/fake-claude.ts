@@ -17,11 +17,12 @@
 // FAKE_SCRIPT_DIR=<dir>: per-ticket scripts (outside-in contract tests, test/contract/runs-*.test.ts). A first prompt
 // containing `[fake:<name>]` ties the run's ticket (CKANBAN_TICKET) to <dir>/<name>.json, remembered in
 // <dir>/<slug>--<id>.name so later runs of that ticket use it too. The file is a JSON array of steps, one per run: the
-// first is taken and removed; none left behaves as FAKE_MODE. A step: { mode?, status?, summary?, prUrl?, files?: {rel: text}
+// first is taken and removed; none left behaves as FAKE_MODE. A step: { mode?, status?, summary?, prUrl?, noiseKb? (that
+// many assistant text events of about 1 KB each, for a long run log), files?: {rel: text}
 // (written in cwd), sh?: string[] (each run with sh -c in cwd), outputs?: {rel: text} (in CKANBAN_OUTPUT_DIR),
 // calls?: [{method, path, body?}] (sent to the board with x-ckanban-run: CKANBAN_TICKET, `{ticket}` standing for its id; each answer appended to
 // <dir>/<name>.out.jsonl as {method, path, status, data}), waitFile?: path (waits until it exists before it ends) }.
-// Side calls (`--output-format json`) never take a step. Every run that takes a step appends {name, cwd, ticket, args} to <dir>/<name>.runs.jsonl.
+// Side calls (`--output-format json`) never take a step. Every run that takes a step appends {name, cwd, ticket, args, prompt} to <dir>/<name>.runs.jsonl.
 // With --input-format stream-json it reads user messages from stdin like the real CLI: messages that
 // arrive mid-run are picked up at the next step (replayed with --replay-user-messages), later ones
 // get their own turn, and it exits at end of input.
@@ -95,7 +96,7 @@ if (process.env.FAKE_ARGS_FILE) {
     ...(envKeys.length ? { env: Object.fromEntries(envKeys.map((k) => [k, process.env[k] ?? null])) } : {}),
   }) + "\n");
 }
-type Step = { mode?: string; status?: string; summary?: string; prUrl?: string; files?: Record<string, string>; sh?: string[]; outputs?: Record<string, string>;
+type Step = { mode?: string; status?: string; summary?: string; prUrl?: string; noiseKb?: number; files?: Record<string, string>; sh?: string[]; outputs?: Record<string, string>;
   calls?: { method: string; path: string; body?: unknown }[]; waitFile?: string };
 let scriptName: string | null = null;
 let step: Step | null = null;
@@ -113,7 +114,7 @@ if (process.env.FAKE_SCRIPT_DIR && process.env.CKANBAN_TICKET && !sideCall) {
     step = steps.shift() ?? null;
     if (step) {
       writeFileSync(file, JSON.stringify(steps));
-      appendFileSync(`${dir}/${scriptName}.runs.jsonl`, JSON.stringify({ name: scriptName, cwd: process.cwd(), ticket: process.env.CKANBAN_TICKET, args }) + "\n");
+      appendFileSync(`${dir}/${scriptName}.runs.jsonl`, JSON.stringify({ name: scriptName, cwd: process.cwd(), ticket: process.env.CKANBAN_TICKET, args, prompt: first }) + "\n");
     }
   }
 }
@@ -189,6 +190,7 @@ if (step) {
     } catch {}
     appendFileSync(`${process.env.FAKE_SCRIPT_DIR}/${scriptName}.out.jsonl`, JSON.stringify({ method: c.method, path: c.path, status: res.status, data }) + "\n");
   }
+  for (let i = 0; i < (step.noiseKb ?? 0); i++) emit({ type: "assistant", message: { content: [{ type: "text", text: `note ${i} ${"x".repeat(1000)}` }] } });
   if (step.waitFile) while (!existsSync(step.waitFile)) await Bun.sleep(25);
 }
 

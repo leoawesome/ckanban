@@ -323,3 +323,21 @@ describe("outputs", () => {
     expect(readdirSync(join(dir(t.id), "outputs")).sort()).toEqual(["data", "report.md"]);
   }, 60_000);
 });
+
+describe("landing on a plain folder", () => {
+  test("land_milestone records the milestone: the work is already in the project folder", async () => {
+    const t = await create("Plain main", `x ${s.set("plainland", [{ files: { "made.txt": "made\n" } }])}`, "ready");
+    const v = await settled(d, SLUG, t.id, (x) => x.status === "review");
+    expect(v.main).toBe(true);
+    expect(readFileSync(join(d.project, "made.txt"), "utf8")).toBe("made\n");
+    const r = await d.api("POST", `${T}/${t.id}/land`, { summary: "Plain milestone" });
+    expect(r.status).toBe(200);
+    expect(r.data.message).toBe("Recorded the milestone: the tool tickets already edited the project folder itself, so there is nothing else to land.");
+    const status = JSON.parse(readFileSync(join(dir(t.id), "outputs", "status.json"), "utf8"));
+    expect(status.milestones.at(-1)).toMatchObject({ summary: "Plain milestone", landed: "already in the project folder" });
+    // merge_into_main from a ticket with no copy: nothing to merge (a plain folder is edited in place).
+    const m = await d.api("POST", `${T}/${t.id}/merge-into-main`, {}, { "x-ckanban-run": `${SLUG}/${t.id}` });
+    expect(m.status).toBe(409);
+    expect(m.data.error).toBe("only a tool ticket merges into its main ticket's copy");
+  }, 60_000);
+});

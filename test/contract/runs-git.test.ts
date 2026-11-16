@@ -42,11 +42,25 @@ beforeAll(async () => {
   initRepo(local);
   const ghLog = join(root, "gh-calls.jsonl");
   d = await startDaemon({
-    env: { FAKE_SCRIPT_DIR: s.dir, GH_LOG: ghLog },
-    // gh: `pr create` opens a fake pull request; everything else is "not logged in" (no GitHub is ever reached).
+    env: { FAKE_SCRIPT_DIR: s.dir, GH_LOG: ghLog, GH_STATE: join(root, "gh-state") },
+    // gh: `pr create` opens a fake pull request; `pr view` answers from GH_STATE (OPEN unless the file says otherwise);
+    // `pr merge` marks it MERGED; everything else is "not logged in" (no GitHub is ever reached).
     stubs: {
-      gh: `#!${process.execPath}\nconst a = process.argv.slice(2);\nrequire("node:fs").appendFileSync(process.env.GH_LOG, JSON.stringify({ args: a, cwd: process.cwd() }) + "\\n");\n` +
-        `if (a[0] === "pr" && a[1] === "create") { console.log("${PR}"); process.exit(0); }\nconsole.error("To get started with GitHub CLI, please run:  gh auth login"); process.exit(4);\n`,
+      gh: `#!${process.execPath}
+const fs = require("node:fs");
+const a = process.argv.slice(2);
+fs.appendFileSync(process.env.GH_LOG, JSON.stringify({ args: a, cwd: process.cwd() }) + "\\n");
+const state = () => (fs.existsSync(process.env.GH_STATE) ? fs.readFileSync(process.env.GH_STATE, "utf8").trim() : "OPEN");
+if (a[0] === "pr" && a[1] === "create") { console.log("${PR}"); process.exit(0); }
+if (a[0] === "pr" && a[1] === "view" && a.includes("-q")) { console.log(state()); process.exit(0); }
+if (a[0] === "pr" && a[1] === "view") {
+  console.log(JSON.stringify({ number: 42, state: state(), baseRefName: "main", mergeable: "MERGEABLE", mergeStateStatus: "CLEAN",
+    statusCheckRollup: [{ __typename: "CheckRun", name: "ci", status: "COMPLETED", conclusion: "SUCCESS", detailsUrl: "https://ci.example/1" }], reviewDecision: "", comments: [] }));
+  process.exit(0);
+}
+if (a[0] === "pr" && a[1] === "merge") { fs.writeFileSync(process.env.GH_STATE, "MERGED"); process.exit(0); }
+console.error("To get started with GitHub CLI, please run:  gh auth login"); process.exit(4);
+`,
     },
     before: ({ project }) => {
       initRepo(project);
@@ -289,4 +303,98 @@ describe("land without a remote", () => {
     expect(existsSync(join(local, "second.txt"))).toBe(false);
     sh(["git", "checkout", "README.md"], local);
   }, 90_000);
+});
+
+describe("pull request routes (stub gh)", () => {
+  test("refresh reads the PR's status; merge squashes it; check-pr sees it merged and moves the card to Done", async () => {
+    const url = "https://github.com/test/repo/pull/77";
+    const t = await create(SLUG, "Has a PR", `x ${s.set("prroutes", [{ prUrl: url }])}`);
+    const v = await settled(d, SLUG, t.id, (x) => x.status === "review");
+    expect(v.prUrl).toBe(url);
+    expect((await d.api("POST", `${T(SLUG)}/${t.id}/pr/merge`, {}, { "x-ckanban-run": `${SLUG}/${t.id}` })).status).toBe(403);
+
+    const r = await d.api("POST", `${T(SLUG)}/${t.id}/pr/refresh`, { force: true });
+    expect(r.status).toBe(200);
+    expect(r.data.pr).toMatchObject({ url, number: 42, state: "OPEN", failing: 0, pending: 0, mergeable: "MERGEABLE", conflicts: false, base: "main" });
+    expect(r.data.pr.checks).toEqual([{ name: "ci", state: "pass", url: "https://ci.example/1", at: null }]);
+    expect(meta(SLUG, t.id).pr).toMatchObject({ url, state: "OPEN" });
+
+    const open = await d.api("POST", `${T(SLUG)}/${t.id}/check-pr`, {});
+    expect(open.status).toBe(200);
+    expect(open.data.state).toBe("OPEN");
+    expect(open.data.ticket.status).toBe("review");
+
+    const merged = await d.api("POST", `${T(SLUG)}/${t.id}/pr/merge`, {});
+    expect(merged.status).toBe(200);
+    expect(ghCalls().some((c) => c.args.join(" ") === `pr merge ${url} --squash --delete-branch`)).toBe(true);
+    const after = await until(async () => {
+      const c = await d.api("POST", `${T(SLUG)}/${t.id}/check-pr`, {});
+      const x = await view(d, SLUG, t.id);
+      return x.status === "done" ? { c, x } : null;
+    }, 15_000, "the card in Done");
+    expect(after.x.status).toBe("done");
+    rmSync(join(root, "gh-state"), { force: true });
+  }, 60_000);
+});
+
+describe("files the chat mentions, and version history", () => {
+  test("find-files and file look in the ticket's copy, then the project folder, then its outputs", async () => {
+    const t = await create(SLUG, "Has files", `x ${s.set("files", [{ files: { "src/in-copy.ts": "export const a = 1;\n" }, outputs: { "out.md": "# Out\n" } }])}`);
+    const v = await settled(d, SLUG, t.id, (x) => x.status === "review");
+    const r = await d.api("POST", `${T(SLUG)}/${t.id}/find-files`, { paths: ["src/in-copy.ts", "README.md", "out.md", "nope.txt", "../../etc/hosts"] });
+    expect(r.status).toBe(200);
+    expect(Object.keys(r.data.found).sort()).toEqual(["README.md", "out.md", "src/in-copy.ts"]);
+    expect(r.data.found["src/in-copy.ts"].rel).toBe("src/in-copy.ts");
+    const f = await d.api("GET", `${T(SLUG)}/${t.id}/file?path=${encodeURIComponent("src/in-copy.ts")}`);
+    expect(f.status).toBe(200);
+    expect(f.data.dir).toBe(real(v.worktree));
+    expect(JSON.stringify(f.data)).toContain("export const a = 1;");
+    const raw = await fetch(`${d.url}${T(SLUG)}/${t.id}/file?path=out.md&raw=1`);
+    expect(raw.status).toBe(200);
+    expect(await raw.text()).toBe("# Out\n");
+    expect((await d.api("GET", `${T(SLUG)}/${t.id}/file?path=nope.txt`)).status).toBe(404);
+    expect((await d.api("GET", `${T(SLUG)}/${t.id}/file?path=${encodeURIComponent("/etc/hosts")}`)).status).toBe(404);
+  }, 60_000);
+
+  test("version-history: GET tells a plain folder from a repo; POST turns it on, and the board's next ticket gets a copy", async () => {
+    const folder = join(root, "turn-on");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "notes.txt"), "hello\n");
+    expect((await d.api("GET", "/api/version-history?path=relative")).status).toBe(400);
+    const before = await d.api("GET", `/api/version-history?path=${encodeURIComponent(folder)}`);
+    expect(before.status).toBe(200);
+    expect(before.data.git).toBe(true);
+    expect(before.data.repo).toBe("plain");
+    expect((await d.api("POST", "/api/version-history", { path: join(root, "missing") })).status).toBe(404);
+    expect((await d.api("POST", "/api/profiles", { name: "Turn on", path: folder })).status).toBe(201);
+    const on = await d.api("POST", "/api/version-history", { path: folder });
+    expect(on.status).toBe(200);
+    expect(on.data.changed).toBe(true);
+    expect(on.data.sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(on.data.repo).toBe("local");
+    expect(sh(["git", "rev-parse", "HEAD"], folder)).toBe(on.data.sha);
+    expect(existsSync(join(folder, ".gitignore"))).toBe(true);
+    const again = await d.api("POST", "/api/version-history", { path: folder });
+    expect(again.data).toMatchObject({ changed: false, sha: on.data.sha });
+    const t = await create("turn-on", "After turning on", `x ${s.set("turnon", [{}])}`);
+    const v = await settled(d, "turn-on", t.id, (x) => x.status === "review");
+    expect(v.worktree).toBe(join(root, ".ckanban-worktrees", "turn-on", t.id));
+  }, 60_000);
+});
+
+describe("branch", () => {
+  test("POST /branch makes a \"Branch: <title>\" ticket in Planning with its own branch off the source's", async () => {
+    const t = await create(SLUG, "Source", `x ${s.set("branchsrc", [{ files: { "b.txt": "b\n" }, sh: ["git add b.txt", "git commit -q -m b"] }])}`);
+    const v = await settled(d, SLUG, t.id, (x) => x.status === "review");
+    expect((await d.api("POST", `${T(SLUG)}/${t.id}/branch`, {}, { "x-ckanban-run": `${SLUG}/${t.id}` })).status).toBe(403);
+    const r = await d.api("POST", `${T(SLUG)}/${t.id}/branch`, {});
+    expect(r.status).toBe(201);
+    const b = r.data.ticket;
+    expect(b).toMatchObject({ title: "Branch: Source", status: "planning" });
+    expect(b.id).not.toBe(t.id);
+    expect(b.sessionId).not.toBe(v.sessionId);
+    const branched = await settled(d, SLUG, b.id, (x) => !!x.branch && x.branch !== v.branch, 30_000);
+    // The new branch starts from the source's committed work.
+    expect(sh(["git", "merge-base", "--is-ancestor", v.branch, branched.branch], d.project)).toBe("");
+  }, 60_000);
 });

@@ -11,6 +11,7 @@ export interface Step {
   status?: "done" | "blocked" | "questions";
   summary?: string;
   prUrl?: string;
+  noiseKb?: number;
   files?: Record<string, string>;
   sh?: string[];
   outputs?: Record<string, string>;
@@ -36,8 +37,8 @@ export class Scripts {
   out(name: string): { method: string; path: string; status: number; data: any }[] {
     return readJsonl(join(this.dir, `${name}.out.jsonl`));
   }
-  /** One line per run that took a step: {cwd, ticket, args}. */
-  runs(name: string): { cwd: string; ticket: string; args: string[] }[] {
+  /** One line per run that took a step: {cwd, ticket, args, prompt (its first message)}. */
+  runs(name: string): { cwd: string; ticket: string; args: string[]; prompt: string | null }[] {
     return readJsonl(join(this.dir, `${name}.runs.jsonl`));
   }
   /** A file a step can wait for (`waitFile`); `release` creates it. */
