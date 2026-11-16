@@ -105,6 +105,7 @@ it listed).
   learned/scanned-at.json                                                                         CACHE
   notify.json  push.json  remote.json  automation-passes.json  helper.json                        CORE (some secrets)
   automation-passes.json.lock                                                                     STATE (empty lock file)
+  board.lock  rust-board  rust-board-status.json                                                  STATE (who owns the board)
   devices.json  browsers.json  board-browsers.json  browsers/<id>/                                CORE
   spend-days.json  telegram-spend.json  telegram-desk-spend.json  helper-spend.jsonl  usage-windows.json   CORE (history)
   messages.json  waits.json  helper-state.json  telegram-*.json                                   STATE
@@ -166,6 +167,9 @@ push.json
 remote.json
 automation-passes.json
 automation-passes.json.lock
+board.lock                        # empty; locked by the daemon that owns the board
+rust-board                        # the user (or scripts/rust-trial.sh board) writes it; the daemon only reads it
+rust-board-status.json            # only `ckanban-rs dev` writes it
 helper.json
 devices.json
 browsers.json
@@ -709,6 +713,9 @@ Read once and held in memory; the daemon's next save overwrites outside edits.
 | `telegram-updates.json` | compact JSON +nl `{ bot, items, seen }` | same |
 | `telegram-offset.json` | compact JSON +nl `{ bot, offset }` | `helper/telegram.ts`, fixed-tmp |
 | `telegram-frontdesk.json` | compact JSON +nl `DeskState` without `token` | `helper/frontdesk.ts`, atomic |
+| `board.lock` | empty; an exclusive `flock` held for as long as a daemon owns the board (macOS `O_EXLOCK` in Bun) | Bun in full mode (`core/board-lock.ts`) and `ckanban-rs dev` in board mode (`rust/board/src/lock.rs`) take it before loading the board and refuse to start without it (waiting up to 10 s and 5 s); Bun as the Rust board's satellite doesn't |
+| `rust-board` | `on` (whitespace around it ignored) turns the Rust board on when `CKANBAN_RUST_BOARD` is unset; anything else, or no file, is off | the user or `scripts/rust-trial.sh board` (`on`/`off` remove it); read by `ckanban-rs dev` at start; Bun alone ignores it |
+| `rust-board-status.json` | JSON (indent 2) +nl `{ mode: "rust" \| "bun", reason: string \| null, at, pid, running, crashes: iso[] }`: what this start of `ckanban-rs dev` runs and why; `running` stays true until a board-mode start stops cleanly (a crash otherwise, counted at the next start) | `ckanban-rs dev` (`rust/board/src/mode.rs`), atomic; written only when board mode was asked for, or to say it is off when the file already exists |
 
 ## Caches (rebuildable)
 

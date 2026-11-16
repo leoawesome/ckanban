@@ -148,6 +148,8 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     // Plan usage never reaches Anthropic or the Mac keychain: a closed local port unless a test starts its own fake.
     CKANBAN_USAGE_URL: "http://127.0.0.1:9/api/oauth/usage",
     CKANBAN_NO_KEYCHAIN: "1",
+    // `bun run test:contract:rust-board`: the server under test runs the board in Rust (ckanban-rs board mode).
+    ...(process.env.CKANBAN_RUST_BOARD ? { CKANBAN_RUST_BOARD: process.env.CKANBAN_RUST_BOARD } : {}),
     ...opts.env,
   };
   opts.before?.({ home, claudeDir, project });

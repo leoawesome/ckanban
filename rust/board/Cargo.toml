@@ -1,0 +1,40 @@
+[package]
+name = "ckanban-board"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "The board, runs and chat of ckanban in Rust (Rust port step 7, board mode); see docs/rust-port-board-plan.md"
+
+# Every dependency the board tasks (R1 to R13) are expected to need is listed here once, by R0, so parallel tasks don't
+# each change Cargo.toml and Cargo.lock. A task that needs one more adds it in its own commit.
+[dependencies]
+ckanban-core = { path = "../core" }
+# Runtime, HTTP and the event stream.
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "1", features = ["http1", "server", "client"] }
+hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
+http-body-util = "0.1"
+bytes = "1"
+futures-util = "0.3"
+# The terminal's WebSocket (R9) and URL pieces in routes.
+tokio-tungstenite = "0.30"
+base64 = "0.23"
+sha1 = "0.10"
+percent-encoding = "2"
+# State: plain structs behind locks, listings swapped whole (plan 2.1).
+parking_lot = "0.12"
+arc-swap = "1"
+# Data and text.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+flate2 = "1"
+getrandom = "0.3"
+libc = "0.2"
+# Claude's projects folder change feed on FSEvents (R5), the shell's pty (R9).
+notify = "8"
+portable-pty = "0.9"
+
+[dev-dependencies]
+tempfile = "3"

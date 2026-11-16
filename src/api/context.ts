@@ -1039,7 +1039,8 @@ export function createContext(deps: ServerDeps) {
           } catch {}
         };
         send(": connected\n\n");
-        unsubscribe = bus.on((e: BusEvent) => send(ssePayload(e)));
+        // Satellite mode: events the Rust board sent here are already on its own stream.
+        unsubscribe = bus.on((e: BusEvent) => void (bus.isMirrored(e) || send(ssePayload(e))));
         ping = setInterval(() => send(": ping\n\n"), 15_000);
         req.signal.addEventListener("abort", () => {
           unsubscribe();

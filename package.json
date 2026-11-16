@@ -11,6 +11,7 @@
     "test": "bun scripts/test.ts",
     "test:timings": "bun scripts/test.ts --update-timings",
     "test:contract:rust": "bun scripts/test-contract-rust.ts",
+    "test:contract:rust-board": "bun scripts/test-contract-rust-board.ts",
     "build:web": "cd web && bun install && bun run build",
     "typecheck": "tsc --noEmit",
     "build:bin": "bun scripts/build-bin.ts",

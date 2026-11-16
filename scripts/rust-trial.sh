@@ -4,9 +4,13 @@
 #
 #   scripts/rust-trial.sh on     build ckanban-rs if needed, back up the launchd file, point it at `ckanban-rs dev`, reload
 #   scripts/rust-trial.sh off    put the backed-up launchd file back and reload (works even if `on` stopped half way)
+#   scripts/rust-trial.sh board  the Rust board (docs/rust-port-board-plan.md 3.1): write <data>/rust-board, then
+#                                restart once runs finish (`on` first, in one reload, if the front isn't installed yet)
+#
+# `on` and `off` also remove <data>/rust-board: the board goes back to Bun (front mode, or Bun alone).
 #
 # Run it from Terminal, not from a board chat: switching restarts the board, which would cut off that chat's run, so
-# `on` and `off` refuse while board runs are active.
+# `on` and `off` refuse while board runs are active. `board` waits for them instead (the board's own restart).
 #
 # Settings (for testing on a throwaway launchd job; the defaults are the real ones from src/cli/launchd.ts):
 #   CKANBAN_TRIAL_PLIST      the launchd file    (default ~/Library/LaunchAgents/io.ckanban.daemon.plist)
@@ -16,6 +20,7 @@
 #   CKANBAN_TRIAL_LAUNCHCTL  the launchctl command (default launchctl)
 #   CKANBAN_TRIAL_CARGO      the cargo command (default ~/.cargo/bin/cargo)
 #   CKANBAN_TRIAL_WAIT       seconds to wait for the board to answer after the switch (default 60; 0 skips the check)
+#   CKANBAN_HOME             the board's data folder (default ~/.claude-kanban), where the rust-board file goes
 set -u
 
 ACTION="${1:-}"
@@ -27,6 +32,8 @@ WAIT="${CKANBAN_TRIAL_WAIT:-60}"
 BACKUP="$PLIST.before-rust-trial"
 DOMAIN="gui/$(id -u)"
 SCRIPT_REPO="$(cd "$(dirname "$0")/.." && pwd)"
+DATA="${CKANBAN_HOME:-$HOME/.claude-kanban}"
+SWITCH="$DATA/rust-board"
 
 say() { printf '%s\n' "$*"; }
 fail() { printf '%s\n' "$*" >&2; exit 1; }
@@ -88,6 +95,7 @@ wait_for_board() {
 
 json_string() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"; }
 
+# `on keep`: leave the rust-board file (the `board` action switches the front and the board in one reload).
 on() {
   [ -f "$PLIST" ] || fail "There is no launchd file at $PLIST, so the board isn't installed to start on its own. Nothing changed.
 Install it first with: ckanban install"
@@ -115,6 +123,7 @@ Install it first with: ckanban install"
 
   check_no_runs
 
+  [ "${1:-}" = "keep" ] || rm -f "$SWITCH"
   if [ ! -f "$BACKUP" ]; then
     cp -p "$PLIST" "$BACKUP" || fail "Couldn't save a copy of $PLIST. Nothing changed."
   fi
@@ -148,10 +157,12 @@ off() {
     if [ -f "$PLIST" ] && grep -q "ckanban-rs" "$PLIST"; then
       fail "The launchd file points at the Rust server but its backup is gone. Put the Bun version back with: ckanban install"
     fi
+    rm -f "$SWITCH"
     say "The board already runs on Bun (no Rust trial backup at $BACKUP). Nothing to do."
     return 0
   fi
   check_no_runs off
+  rm -f "$SWITCH"
   cp -p "$BACKUP" "$PLIST" || fail "Couldn't put the backup back over $PLIST. The backup is still at $BACKUP."
   if ! reload; then
     fail "The launchd file is back to Bun, but launchd wouldn't load it. Try: ckanban install
@@ -164,8 +175,29 @@ The backup is still at $BACKUP."
   say "The board runs on Bun again."
 }
 
+board() {
+  mkdir -p "$DATA" || fail "Couldn't create the data folder $DATA. Nothing changed."
+  if [ ! -f "$BACKUP" ] || ! grep -q "ckanban-rs" "$PLIST" 2>/dev/null; then
+    # The front isn't installed: install it with the switch already on, in one reload.
+    printf 'on\n' > "$SWITCH" || fail "Couldn't write $SWITCH. Nothing changed."
+    ( on keep ) || { rm -f "$SWITCH"; exit 1; }
+    say "The Rust board is on. Go back to Bun's board with: $0 on   (or all the way back with: $0 off)"
+    return 0
+  fi
+  local url answer
+  url="$(board_url)"
+  printf 'on\n' > "$SWITCH" || fail "Couldn't write $SWITCH. Nothing changed."
+  # The board's own restart: no new run starts, active ones finish (at most 2 minutes), then launchd starts it again.
+  if ! answer="$(curl -fsS --max-time 5 -X POST -H 'content-type: application/json' -d '{}' "$url/api/restart" 2>/dev/null)"; then
+    fail "Wrote $SWITCH, but the board isn't answering at $url to restart. It takes effect at the board's next start
+(or remove the file to cancel: rm $SWITCH)."
+  fi
+  say "Switching to the Rust board at the board's next idle moment ($answer). Go back to Bun's board with: $0 on"
+}
+
 case "$ACTION" in
   on) on ;;
   off) off ;;
-  *) fail "Usage: $0 on|off   (on: run the board on the Rust server; off: back to Bun)" ;;
+  board) board ;;
+  *) fail "Usage: $0 on|off|board   (on: run the board on the Rust server; off: back to Bun; board: the Rust board)" ;;
 esac
