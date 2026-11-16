@@ -42,6 +42,17 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   the CLI (create, read, update, move between columns and to another board, list, delete, validation errors); the
   ticket chat (a message starts a run on the fake Claude; the conversation, the run log and `activity.jsonl` read back);
   comments and `comments.jsonl`.
+- `board-families.test.ts`: a main ticket's run (the fake Claude in `call` mode, only for prompts with
+  `FAKE_CALL_MATCH`) adds tool tickets; the second starts only after its dependency is done; the tool and main
+  `ticket.md` fields (plan, results), `/family`, `/family-view`, the family card, `POST .../plan`; the feature status
+  (`status.json` against its schema, `status.md`, who may update it, notes, errors); partOf, sub-features, groups,
+  gather and deleting a feature's top ticket.
+- `board-items.test.ts`: tags (normalized, limits), attachments (upload, serve, info, refusals, size limit, removed
+  with the ticket), ticket links from `ai` comments, card order, pin, important and Done, the list scopes,
+  `/api/tickets`, `/api/inbox` with snooze, and the event stream's `ticket.updated` / `ticket.deleted`.
+- `board-cards.test.ts`: card routes (user-only refusals, squad and teammate answers saved), `seen`, follow-up set
+  and stop, `own-work` refusals, Done paging (offset, cursor, `doneHead`, `scope=list` with `next`) on a board with 45
+  Done tickets, board PATCH (`profile.json`) and DELETE.
 - `schedules.test.ts`: create, list, pause, resume, history and delete a schedule, its `<id>.json` and
   `<id>.history.jsonl`, validation errors.
 - `usage.test.ts`: `GET /api/usage` against a local fake of Anthropic's endpoint (first call, cache hits counted on
@@ -116,7 +127,8 @@ To test another server: build it and run
 `CKANBAN_CONTRACT_DAEMON='["/path/to/server","dev"]' bun test test/contract` (add `CKANBAN_CONTRACT_CLI` if the CLI
 moves too, and `CKANBAN_CONTRACT_MCP` for the MCP server). The server must take its port from `CKANBAN_PORT`, its data folder from `CKANBAN_HOME`, the Claude
 program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_DIR`, and honour `CKANBAN_USAGE_URL`
-and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`).
+and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`), and `CKANBAN_TICK_MS` (the period of the timers that fire
+schedules, jobs, automations and follow-ups; see "Work the board starts by itself" in `api.md`).
 
 `bun run test:contract:rust` does this for the Rust front server (`rust/`): it builds `ckanban-rs` (release) and runs
 every contract test with it as the daemon, and `ckanban-rs mcp` as the MCP server (`mcp.test.ts`, `mcp-parity.test.ts`). It needs cargo, so `bun run test` leaves it out.

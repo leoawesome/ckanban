@@ -107,7 +107,9 @@ Most ticket routes return a `TicketView`: a `Ticket` plus these fields (built by
 `canCopyFile`, `terminalOpen`, `recovery`, `devices`, `chromeAbove`, `browsersAbove`, `folderWait`, `userWait`,
 `attention`, `snoozed`, `huddleBusy`, `huddleLine`, `costUsd`, `runCap`; for a main ticket also `familyWorking`,
 `stepsRunning`, `familyCard`; for a sub-feature `subFeatureOf`; for a tool ticket `mainTicket`. Board listings add
-`feature: true` on open features.
+`feature: true` on open features. `links` is `{url, label, at, source}[]` newest first (`board/links.ts`): claude.ai
+artifact URLs from the ticket's session, its huddle teammates' sessions (`huddle:@<handle>`) and its `ai` comments
+(`result`; label from the Markdown link text, else `claude.ai artifact`), plus its share links (`share`).
 
 ### Event stream
 
@@ -200,7 +202,17 @@ Handled before the JSON content-type rule.
 | GET | `/api/attachments/:name` | query `download` (present), `name` (shown file name) | 200 file bytes with its type, `nosniff`, `content-security-policy: sandbox`, `cache-control: private, max-age=31536000, immutable`; `content-disposition` attachment for downloads and Office files, inline when only `name` is given | 404 not found |
 | GET | `/api/attachments/:name/info` | | 200 `{size}` | 404 |
 
-Any other method or shape under `/api/attachments`: 404.
+Any other method or shape under `/api/attachments`: `404 {"error":"not found"}`; there is no list or delete route. A
+name that isn't a generated one (`<32 hex>.<ext>`, so no `../`) or a missing file: `404 {"error":"attachment not
+found"}`, also for `/info`.
+- Upload errors (`AttachmentError`): `415` for another content type or a file kind that can't be attached (the
+  extension comes from `x-file-name` when it has one, else from the image type), `400 file is empty`,
+  `400 file is not a valid <EXT> file` (first bytes don't match: PNG/JPEG/GIF/WebP/PDF magic, a zip for Office files,
+  no NUL in the first 8 KB of text), `413 file is larger than 25 MB` (exactly 25 MB is accepted).
+- Served types: images with their type, PDF and Office files with theirs, every text or code kind (`.html` too) as
+  `text/plain; charset=utf-8`.
+- Attachments are files of the data folder, not of a ticket: deleting a ticket deletes the ones its description,
+  comments, queued messages and chat transcript refer to; moving a ticket to another board keeps the same names.
 
 ## Remote (phone access)
 
@@ -444,6 +456,12 @@ enabled, skipIfRunning, tags, quiet, model, partOf`. The view is `Schedule` plus
 Who may delete a schedule: a request replayed after a Telegram Confirm; with an `Origin`, the user-only check; without
 one, a program on this Mac the daemon did not start (the user's own terminal or Claude).
 
+Firing by itself (see "Work the board starts by itself" for when the daemon looks): a due one first gets its next `nextRunAt` saved, then fires: a ticket in `in_progress` (title with `{date}`/`{time}` filled
+in, local time) and a `fired` history line with `trigger: "schedule"`, or `"missed"` when it was due over 90 s ago
+(only one catch-up however many slots were missed). Paused ones never fire. With `skipIfRunning`, a fire while the
+schedule's last ticket is `ready`, `in_progress` or running writes a `skipped` line instead. Fires and "run now" go one
+at a time, so two "run now" calls at once give `fired` then `skipped`.
+
 ## Automations (loops)
 
 Prefix `/api/profiles/:slug/loops`. Input fields (`LoopInput`, loops.ts): `name, enabled, service, passes, script,
@@ -452,12 +470,20 @@ everyMinutes, column, autoStart, askClaude, instructions, partOf`.
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/loops` | | 200 `LoopView[]` | |
-| POST | `/loops/test` | `LoopInput` (script to try) | 200 `LoopManager.test()` result | `LoopError` |
-| POST | `/loops` | `LoopInput`; user only | 201 `Loop`; a first check starts in the background | 403, `LoopError` |
-| PATCH | `/loops/:lid` | partial `LoopInput`; user only | 200 `Loop` | 403, `LoopError` |
+| POST | `/loops/test` | `LoopInput` (script to try); user only when `passes` holds a key the script would get as a variable | 200 `LoopManager.test()` result | 403, `LoopError` |
+| POST | `/loops` | `LoopInput`; user only | 201 `LoopView`; a first check starts in the background | 403, `LoopError` |
+| PATCH | `/loops/:lid` | partial `LoopInput`; user only | 200 `LoopView`; a new script or switching it on starts a first check in the background | 403, `LoopError` |
 | DELETE | `/loops/:lid` | user only | 204 | 403, `LoopError` |
-| POST | `/loops/:lid/check` | user only | 200 `checkNow()` result | 403, `LoopError` |
-| POST | `/loops/:lid/copy` | `{to}` (board slug); user only | 201 copied loop | 403, `LoopError` |
+| POST | `/loops/:lid/check` | user only | 200 `LoopView` after the check (a switched-off loop is not checked) | 403, `LoopError` |
+| POST | `/loops/:lid/copy` | `{to}` (board slug); user only | 201 `LoopView` of the copy (switched off, nothing seen yet) | 403, `LoopError` |
+
+`LoopView` is the saved `Loop` plus `state` (`ok`, `unsupported`, `needs_connection`, `script_changed`), `problems`,
+`script` (the file's text now), `passViews`, and what the last check found: `seenCount`, `lastFound`, `lastItems`
+(each `{id, title, link?, state, ticketId?, note?}`; `state` `new`, `added`, `waiting`, `skipped`, `first`, `seen`).
+There is no separate history route: these fields and `lastCheckedAt`, `lastFiredAt`, `lastError` are the history.
+The first check after a save or switching on only notes what is there (`first`, no tickets). A failed check sets
+`lastError` and a wait (`backoffUntil` in the state file, 2 minutes doubling up to 30). The daemon's timer (see "Work the
+board starts by itself") checks each switched-on loop at most every `everyMinutes` (less 5 s); `check` ignores both.
 
 ## Jobs (one-time)
 
@@ -471,7 +497,25 @@ Changes from `x-ckanban-run` are credited to that ticket.
 | POST | `/jobs` | `JobInput` | 201 job view | 403 huddle agent, 403 run from another board, 404 run ticket, `JobError` |
 | PATCH | `/jobs/:jid` | partial `JobInput` | 200 job view | same |
 | POST | `/jobs/:jid/cancel` | body ignored | 200 job view | same |
-| POST | `/jobs/:jid/run` | body ignored | 200 job view | same |
+| POST | `/jobs/:jid/run` | body ignored | 200 job view once it started: a ticket job is `done` with `result.ticketId`; a command job may still be `running` | same |
+
+Only a `scheduled` job can be changed, cancelled or run: otherwise `409 {"error":"job <id> is <state>: only a
+scheduled job can be changed"}`. `at` must be in the future (400). A PATCH `action` replaces the whole action.
+Firing by itself (see "Work the board starts by itself"): a job seen over 10 minutes after its `at` is late: a ticket job still makes its ticket (its body starts with a "This was due ...
+because the computer was off" paragraph); a command job is saved `skipped` (`result.message` "skipped: the computer
+was off at <Tue 20 Oct 22:00>") unless `ifLate` is `"run"`. A command runs with `/bin/sh -c` in the board folder with
+`CKANBAN_BOARD`, `CKANBAN_JOB`, `CKANBAN_SOURCE_TICKET`; its `result` is `{exitCode, durationMs, output, timedOut,
+message?}` (`failed` with `message` "exited with code N" or "stopped after N s (time limit)").
+
+## Work the board starts by itself: timers
+
+Four timers look for due work: schedules (every 30 s), one-time jobs (30 s), automations (60 s) and follow-ups (30 s).
+Each also looks once right at start, so work that came due while the daemon was off fires then (as `missed` for a
+schedule, late for a job, `missedAt` for a follow-up over 12 hours late). There is no test clock: times are the real
+clock. **Test hook:** `CKANBAN_TICK_MS` (a whole number of ms, 50 to 60000) sets all four periods, so tests see jobs
+and schedules fire within a second of their time; unset or out of range, the periods above apply. It doesn't change
+any limit: a job's `at` and a schedule's cron minute still decide when it is due, a follow-up is still at least 1
+minute away, and an automation is still checked at most every `everyMinutes`. The daemon logs the period it uses.
 
 ## Team: presets, templates, squads, learned, notes
 
@@ -558,10 +602,11 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 - none: every ticket as a JSON array of `TicketView` (old clients).
 - `scope=count`: `countScope()` counts per column.
 - `scope=list`: query `status?` (one of `STATUSES`), `tool=1`, `q`, `tags` (comma list), `limit`, `after`; 200
-  `listScope()` page with `tickets: TicketView[]`.
+  `listScope()` page with `tickets: TicketView[]`. Without `status` only open tickets; tool tickets (tasks without a
+  card) only with `tool=1`.
 - `scope=board`: query `done` (how many Done), `ids` (comma list), `after`.
 - `scope=done`: query `offset`, `limit` (default `DONE_PAGE`), `after`.
-- `scope=search`: query `q`, `tags`.
+- `scope=search`: query `q`, `tags`; searches Done tickets only.
 - `scope=ids`: query `ids`.
 - board, done, search and ids answer `{tickets: TicketView[], doneTotal, doneHead?}`.
 
@@ -714,6 +759,9 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 - `GET /api/cron/preview` answers 200 with `valid: false` and an `error` field for a bad or empty expression.
 - `POST /api/huddles/:hid/generic-squad` always answers 200, with any failure in its `error` field.
 - `POST /api/bug-report` answers 201 when an issue was filed and 200 otherwise (the result says why).
+- `PATCH /api/profiles/:slug` doesn't check `path` (a missing folder is saved) or `name` (an empty name is saved);
+  only `POST` checks them.
+- `DELETE .../follow-up` answers 200 also when there is no follow-up to stop.
 - Status codes for similar actions differ: `POST .../chat`, `queued` POST, `key-cards`, `follow-up/now`,
   `cap-continue`, `limit` continue, `pr/send-failures` and `pr/resolve-conflicts` answer 202; `pr/merge`, `stall`,
   `limit` auto, `plan` answer 200; `ask` answers 202; `move`, `branch`, `follow-up-work` and `follow-up` (set) answer
