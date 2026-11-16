@@ -38,6 +38,12 @@ board-files.test.ts
 huddle.test.ts | built-ins, a board teammate
 huddle-team.test.ts | role notes
 
+# R8: quick chats saved before the start (list, pages, one chat, conversation, tool details) and who may change them.
+# quickchat.test.ts needs the phone access port in Rust (R13: its user actions come that way), ticket writes (R2a),
+# ticket runs (R7a, search_chat) and the chat extras (R7b: context, simplify, rewind, fork, Make ticket); the sending,
+# stopping, deleting and restart steps it covers are checked against the fake Claude in rust/board/tests/quickchat_fake.rs.
+quickchat-read.test.ts
+
 # R13: the request gate, the phone access listener and the system routes in Rust; the satellite's routes behind them.
 # The filtered files' other tests write tickets or start runs (R2a, R7a); data-files.test.ts writes tickets in its
 # set-up, so it waits for R2a whole. remote.test.ts's phone user checks follow its ticket-writing "on" test;

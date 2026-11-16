@@ -122,7 +122,7 @@ satellite's own calls, then the gate (`gate::request::refusal`, Bun's `requestRe
 on the phone access listener phone access on in `remote.json`, the tailnet host, the owner's login), then the system
 routes (`/api/events`, `health`, `version`, `claude/projects`, `claude/defaults`, `pick-folder`, `cron/preview`,
 `debug/profile`), each after the front desk's gate (asked of the satellite) and the JSON-only rule; then the other
-tasks' routes (R1, R5, R6, R9, R11b); then the front's native routes and Bun, which checks the gate again. Before
+tasks' routes (R1, R5, R8, R6, R9, R11b); then the front's native routes and Bun, which checks the gate again. Before
 any of it the request target is read as Bun's `new URL` reads it (`proxy::normalize_target`: `..`, `.` and their
 `%2e` forms resolved), so a path like `/api/x/../profiles/...` can't reach Bun's stale copy of a Rust-owned route.
 On the phone listener the other tasks' routes see the phone request with this Mac's Host and Origin (their own
@@ -145,6 +145,32 @@ checks); their user-only checks look at the caller (`tailscale serve`) and refus
 - `tests/fixtures/gate.json`: Bun's answers for `requestRefusal`, `isAllowedSocket`, `cronError`, `describeCron`,
   `nextRuns` (in America/Los_Angeles, DST days included) and `isNewer`, written by
   `test/rust-board-gate-fixtures.test.ts`; `tests/gate.rs` checks Rust gives the same.
+
+## Quick chats (R8, `src/quickchat/`)
+
+Chats with Claude in a board's folder that aren't tickets (the Ask tab, the Claude panel), ported from
+`src/chat/quickchat.ts`, `quickchat-index.ts` and `src/api/chats.ts`. Files under `profiles/<slug>/chats/` are written
+in Bun's exact format (key order kept), so Bun and Rust read each other's chats.
+- `text.rs`: titles, the run note, attachment paths, live drafts, "session missing", the error line.
+- `index.rs`: the chat list newest first, kept between lists (a chat file is read again only when it changed; the
+  folder isn't walked while its mtime stays the same); pages for "Load older". The lock is taken per file during a walk.
+- `service.rs`: `QuickChats`: send (new chat, to a reply in progress, or a new reply), runs on the R3 engine (drafts
+  every 120 ms, the activity line every second, result lines in `<id>.activity.jsonl`), stop, rename, delete, a lost
+  conversation carried on in a new one, `shutdown` (replies in progress marked `interrupted`) and `recover`.
+- `routes.rs`: in board mode Rust answers every `/api/profiles/:p/chats...` route. User actions use the same caller check
+  as the passes routes (`guard::user_only`).
+
+Stand-ins, each marked `STAND-IN` in the code: the restart gate (`RestartGate`, R7a: never "pending" until then; R7a
+also counts `restart_busy()` among what a restart waits for), board browsers for the runs (R9), the Telegram front desk
+hooks (R13/P1: a front desk chat refuses to run, as Bun does without them), and the routes Context panel, Say it
+simpler, Rewind, Undo rewind, Fork (R7b) and Make ticket (R2a, R7b), which answer 501 for now (the satellite has no
+quick chats to hand them to). User actions from the phone come through the phone access port, which Bun still holds
+until R13.
+
+Checked: `tests/quickchat_text.rs` against Bun's answers in `tests/fixtures/quickchat.json`
+(`test/rust-board-quickchat-fixtures.test.ts`); `tests/quickchat_fake.rs` runs whole chats against the fake Claude;
+`test/contract/quickchat-read.test.ts` in board mode. A title cut through an emoji keeps half of it in Bun and drops it
+in Rust (the same known gap as R3 and R5).
 
 ## Prompts (R4)
 

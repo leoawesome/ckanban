@@ -24,7 +24,8 @@
 //! tab, the board's Files panel, `detect-setup` and `/api/version-history` (R6, `ckanban_board::git::routes`); the browsers,
 //! devices and terminal routes (R9, `ckanban_board::browsers::routes`); the team routes (R11b:
 //! `/api/profiles/:p/huddle-presets`, `/huddle-templates`, `POST /squads`, `/huddle-notes`, after the same Host,
-//! Origin and JSON type checks Bun makes).
+//! Origin and JSON type checks Bun makes); the quick chat routes (R8: `/api/profiles/:p/chats...`; quick chats
+//! replying when board mode stops are continued at the next start).
 //! Everything else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::net::SocketAddr;
@@ -46,6 +47,8 @@ use ckanban_board::git::{self, routes::GitRoutes};
 pub use ckanban_board::git::routes::Next;
 use ckanban_board::lock::{self, BoardLock};
 use ckanban_board::mode::{self, Decision};
+use ckanban_board::quickchat::routes::{self as chat_routes, ChatReq, UserCheck};
+use ckanban_board::quickchat::{QuickChatOptions, QuickChats};
 use ckanban_board::satellite;
 use ckanban_board::sessions::routes::{self as session_routes, HUDDLE_HEADER, RUN_HEADER};
 use ckanban_board::sessions::service::Sessions;
@@ -58,10 +61,14 @@ use hyper::body::Incoming;
 use hyper::header::{CONTENT_TYPE, HOST, HeaderMap, HeaderValue, ORIGIN};
 use hyper::{Method, Request, Response, StatusCode};
 
+use crate::guard;
 use crate::mask;
 use crate::passes;
 use crate::proxy::{Body, Proxy, full, plain, wants_upgrade};
-use crate::routes::{Native, local_host, query_param};
+use crate::routes::{Native, json_type, local_host, local_origin, query_param};
+
+/// The largest quick chat request body Rust reads (a message is at most 100,000 characters; Bun takes up to 128 MB).
+const CHAT_BODY_LIMIT: usize = 8 << 20;
 
 /// The Telegram front desk's header: its requests go through Bun's gate (as in routes.rs).
 const FRONT_DESK_HEADER: &str = "x-ckanban-frontdesk";
@@ -81,6 +88,7 @@ pub struct BoardMode {
     /// `listener === "remote"`; the phone listener's gate already checked the login).
     phone_routes: browsers::routes::RouteCtx,
     sessions: Arc<Sessions>,
+    chats: Arc<QuickChats>,
     hooks: Arc<EventHooks>,
     git: Arc<GitRoutes>,
     public_port: u16,
@@ -131,6 +139,13 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     }
     // The session watcher and the projects folder feed (R5): `session.updated` on the board's event stream.
     sessions.start(&core);
+    // Quick chats (R8): replies a stop cut off are continued and held messages sent (`quickChats.recover`); at the
+    // stop, replies in progress are marked for the next start.
+    let chats = QuickChats::new(root, core.bus.clone(), QuickChatOptions::from_env());
+    let c = chats.clone();
+    let _ = tokio::task::spawn_blocking(move || c.recover()).await;
+    let c = chats.clone();
+    core.on_stop("quick chats", move || c.shutdown());
     if let Err(e) = mode::record_board(root, crashes) {
         eprintln!("ckanban-rs: can't write {}: {e}", mode::status_path(root).display());
     }
@@ -159,6 +174,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         core,
         team,
         sessions,
+        chats,
         browsers,
         browser_routes,
         phone_routes,
@@ -371,6 +387,64 @@ impl BoardMode {
         Some(passes::json_answer(status, &reply.body, &passes::current_secrets(&self.root)))
     }
 
+    /// The quick chat routes (R8); Err hands the request on (to Rust's other routes, then Bun).
+    pub async fn answer_chats(&self, req: Request<Incoming>, peer_port: u16, via: Listener) -> Result<Response<Body>, Request<Incoming>> {
+        let path = req.uri().path().to_string();
+        if !chat_routes::wanted(&path) {
+            return Err(req);
+        }
+        let h = req.headers();
+        // Anything Bun's gate treats specially (the Telegram front desk, odd or doubled headers) stays with Bun, whose
+        // gate answers it before any route.
+        if h.contains_key(FRONT_DESK_HEADER)
+            || wants_upgrade(h)
+            || [HOST, hyper::header::ORIGIN, hyper::header::CONTENT_TYPE].iter().any(|n| h.get_all(n).iter().count() > 1)
+            || !local_host(h, self.public_port)
+        {
+            return Err(req);
+        }
+        let secrets = passes::current_secrets(&self.root);
+        let method = req.method().as_str().to_string();
+        let mutation = method != "GET" && method != "HEAD";
+        if mutation && !local_origin(h, self.public_port) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        if matches!(method.as_str(), "POST" | "PATCH" | "PUT") && !json_type(h) {
+            return Ok(passes::json_answer(StatusCode::UNSUPPORTED_MEDIA_TYPE, &serde_json::json!({ "error": "content-type must be application/json" }), &secrets));
+        }
+        let headers = h.clone();
+        // The owner's phone (its gate passed) is the user after the header checks, as in Bun's `userOnly`.
+        let user: UserCheck = match via {
+            Listener::Remote => Box::new(move || Box::pin(async move { guard::headers_allow(&headers) })),
+            Listener::Local => Box::new(move || Box::pin(async move { guard::user_only(&headers, peer_port).await })),
+        };
+        let query = req.uri().query().map(str::to_string);
+        let body = if chat_routes::reads_body(&method) {
+            match Limited::new(req.into_body(), CHAT_BODY_LIMIT).collect().await {
+                Ok(b) => {
+                    let bytes: Bytes = b.to_bytes();
+                    match std::str::from_utf8(&bytes).ok().and_then(ckanban_board::runs::js::parse) {
+                        Some(v) => Ok(Some(ckanban_core::jsnum::normalize(v))),
+                        None => Err(()),
+                    }
+                }
+                Err(_) => return Ok(passes::json_answer(StatusCode::PAYLOAD_TOO_LARGE, &serde_json::json!({ "error": "message is too long" }), &secrets)),
+            }
+        } else {
+            Ok(None)
+        };
+        let reply = self.chats.answer(&self.sessions, ChatReq { method, path, query, body }, user).await;
+        let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(match reply.body {
+            Some(v) => passes::json_answer(status, &v, &secrets),
+            None => {
+                let mut r = Response::new(Full::new(Bytes::new()).map_err(|never| match never {}).boxed());
+                *r.status_mut() = status;
+                r
+            }
+        })
+    }
+
     /// The team routes (`ckanban_board::team::routes`), or the request back when they don't take it. Bun's gate
     /// first, as `src/api/server.ts` runs it: the Host (403), the Origin of a change (403), then a JSON body type for
     /// POST, PATCH and PUT (415). Headers sent twice are joined, as Bun's `headers.get` does.
@@ -520,6 +594,10 @@ impl BoardMode {
         if let Some(res) = self.answer_sessions(&req).await {
             return res;
         }
+        let req = match self.answer_chats(req, peer.port(), via).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
         let req = match self.answer_request(req, peer, via).await {
             Ok(res) => return res,
             Err(r) => r,

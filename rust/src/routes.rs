@@ -136,7 +136,7 @@ pub(crate) fn local_host(headers: &HeaderMap, port: u16) -> bool {
 }
 
 /// `requestRefusal` for a change: an Origin, when sent (and not empty), must be the board's own page.
-fn local_origin(headers: &HeaderMap, port: u16) -> bool {
+pub(crate) fn local_origin(headers: &HeaderMap, port: u16) -> bool {
     match headers.get(ORIGIN) {
         None => true,
         Some(o) if o.is_empty() => true,
@@ -145,7 +145,7 @@ fn local_origin(headers: &HeaderMap, port: u16) -> bool {
 }
 
 /// Bun's `type === "application/json"`: the content type before any `;`, trimmed, any case.
-fn json_type(headers: &HeaderMap) -> bool {
+pub(crate) fn json_type(headers: &HeaderMap) -> bool {
     let raw = headers.get(CONTENT_TYPE).map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()).unwrap_or_default();
     crate::js::trim(raw.split(';').next().unwrap_or("")).to_lowercase() == "application/json"
 }
