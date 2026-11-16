@@ -151,7 +151,7 @@ pub(crate) fn json_type(headers: &HeaderMap) -> bool {
 }
 
 /// `URLSearchParams.get(name)`: the first value for `name`, decoded like a form (`+` is a space, `%XX` a byte).
-fn query_param(query: &str, name: &str) -> Option<String> {
+pub(crate) fn query_param(query: &str, name: &str) -> Option<String> {
     query.split('&').filter(|p| !p.is_empty()).find_map(|pair| {
         let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
         (form_decode(k) == name).then(|| form_decode(v))

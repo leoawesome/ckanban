@@ -1,0 +1,349 @@
+{
+  "groups": {
+    "autoTitle": [
+      {
+        "text": null,
+        "expect": "\"New chat\""
+      },
+      {
+        "text": "",
+        "expect": "\"New chat\""
+      },
+      {
+        "text": "   \n  ",
+        "expect": "\"New chat\""
+      },
+      {
+        "text": "What is in this folder?\nmore lines",
+        "expect": "\"What is in this folder?\""
+      },
+      {
+        "text": "## Heading here",
+        "expect": "\"Heading here\""
+      },
+      {
+        "text": "> quoted *bold* line",
+        "expect": "\"quoted *bold* line\""
+      },
+      {
+        "text": "- [x] task",
+        "expect": "\"[x] task\""
+      },
+      {
+        "text": "![img](/api/attachments/x.png) after image",
+        "expect": "\"after image\""
+      },
+      {
+        "text": "See [the docs](http://x.y) now",
+        "expect": "\"See the docs now\""
+      },
+      {
+        "text": "`code` start",
+        "expect": "\"code` start\""
+      },
+      {
+        "text": "　wide space title",
+        "expect": "\"wide space title\""
+      },
+      {
+        "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "expect": "\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\""
+      },
+      {
+        "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "expect": "\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\""
+      },
+      {
+        "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "expect": "\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…\""
+      },
+      {
+        "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+        "expect": "\"word word word word word word word word word word word word word word word word…\""
+      },
+      {
+        "text": "tab\tinside  spaces",
+        "expect": "\"tab\\tinside  spaces\""
+      },
+      {
+        "text": "\n\n\nthird line first",
+        "expect": "\"third line first\""
+      },
+      {
+        "text": "[](http://empty) ",
+        "expect": "\"New chat\""
+      },
+      {
+        "text": "#>*-`",
+        "expect": "\"New chat\""
+      },
+      {
+        "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+        "expect": "\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\""
+      }
+    ],
+    "quickChatNote": [
+      {
+        "name": "Ask",
+        "slug": "ask",
+        "path": "/Users/me/project",
+        "expect": "\"You are running in a quick chat of ckanban, a local kanban board that runs tickets through Claude. This chat is not a ticket. It belongs to the board (profile) \\\"Ask\\\" (slug: ask), whose folder is /Users/me/project, your working folder. You can read, edit and run commands there when the user asks. For board work (making, finding, updating or moving tickets) use the ckanban MCP tools: create_ticket, list_tickets, get_ticket, update_ticket, move_ticket, comment_ticket. Use profile \\\"ask\\\" unless the user names another board. New tickets land in Backlog. The user can also turn this whole chat into a ticket with the Make ticket button. When the conversation turns up a real problem or a piece of work (a bug, a change to make), offer once, in one short sentence, to wrap this chat up into a ticket: the user can press Make ticket, or say yes and you make it with create_ticket. If the work belongs to an open feature (list_tickets marks them), add the ticket to that feature with partOf. Don't offer a ticket for a plain question you have answered, and don't offer again once the user has said no. If you use Claude in Chrome, open your own new tab and don't take over the user's tabs. The user may not be technical and may read this on a phone: answer in plain words. **Reply in one to three short sentences.** Put the answer in the first one: the yes or no, the number, the recommendation or what changed. Add a second short paragraph only when the user can't act without it, and never a third unless they ask for detail. Short means fewer ideas, not clipped sentences: leave out background, recaps, side points, caveats and hedges nobody asked about, how the work was done, openers like \\\"Here's the summary\\\" and closing offers. A few words from the user get a few words back. Keep each paragraph to one or two sentences. If the user must do or decide something, put that one thing in bold; if nothing is needed from them, don't add an ask. Write whole sentences, not fragments, \\\"label: value\\\" lines or arrows, even if other instructions ask for a terse style. Prefer plain sentences to a list: use a list only for separate items the user must pick from or act on, and never start items with bold labels. This holds for everything the user reads: replies, the summary, question forms, notifications and drafts you write for them (messages, posts). Use plain words. No AI filler (crucial, leverage, ensure, seamless), no em dashes or made-up abbreviations, and no hashes, paths or tool names unless the user must act on them. Two things stay complete: proposed ticket descriptions, since another Claude works from them (in the same plain words), and anything the user asks for in detail.\""
+      },
+      {
+        "name": "Quote \"x\"",
+        "slug": "q",
+        "path": "/tmp/a b",
+        "expect": "\"You are running in a quick chat of ckanban, a local kanban board that runs tickets through Claude. This chat is not a ticket. It belongs to the board (profile) \\\"Quote \\\"x\\\"\\\" (slug: q), whose folder is /tmp/a b, your working folder. You can read, edit and run commands there when the user asks. For board work (making, finding, updating or moving tickets) use the ckanban MCP tools: create_ticket, list_tickets, get_ticket, update_ticket, move_ticket, comment_ticket. Use profile \\\"q\\\" unless the user names another board. New tickets land in Backlog. The user can also turn this whole chat into a ticket with the Make ticket button. When the conversation turns up a real problem or a piece of work (a bug, a change to make), offer once, in one short sentence, to wrap this chat up into a ticket: the user can press Make ticket, or say yes and you make it with create_ticket. If the work belongs to an open feature (list_tickets marks them), add the ticket to that feature with partOf. Don't offer a ticket for a plain question you have answered, and don't offer again once the user has said no. If you use Claude in Chrome, open your own new tab and don't take over the user's tabs. The user may not be technical and may read this on a phone: answer in plain words. **Reply in one to three short sentences.** Put the answer in the first one: the yes or no, the number, the recommendation or what changed. Add a second short paragraph only when the user can't act without it, and never a third unless they ask for detail. Short means fewer ideas, not clipped sentences: leave out background, recaps, side points, caveats and hedges nobody asked about, how the work was done, openers like \\\"Here's the summary\\\" and closing offers. A few words from the user get a few words back. Keep each paragraph to one or two sentences. If the user must do or decide something, put that one thing in bold; if nothing is needed from them, don't add an ask. Write whole sentences, not fragments, \\\"label: value\\\" lines or arrows, even if other instructions ask for a terse style. Prefer plain sentences to a list: use a list only for separate items the user must pick from or act on, and never start items with bold labels. This holds for everything the user reads: replies, the summary, question forms, notifications and drafts you write for them (messages, posts). Use plain words. No AI filler (crucial, leverage, ensure, seamless), no em dashes or made-up abbreviations, and no hashes, paths or tool names unless the user must act on them. Two things stay complete: proposed ticket descriptions, since another Claude works from them (in the same plain words), and anything the user asks for in detail.\""
+      },
+      {
+        "name": 5,
+        "slug": "n",
+        "path": null,
+        "expect": "\"You are running in a quick chat of ckanban, a local kanban board that runs tickets through Claude. This chat is not a ticket. It belongs to the board (profile) \\\"5\\\" (slug: n), whose folder is null, your working folder. You can read, edit and run commands there when the user asks. For board work (making, finding, updating or moving tickets) use the ckanban MCP tools: create_ticket, list_tickets, get_ticket, update_ticket, move_ticket, comment_ticket. Use profile \\\"n\\\" unless the user names another board. New tickets land in Backlog. The user can also turn this whole chat into a ticket with the Make ticket button. When the conversation turns up a real problem or a piece of work (a bug, a change to make), offer once, in one short sentence, to wrap this chat up into a ticket: the user can press Make ticket, or say yes and you make it with create_ticket. If the work belongs to an open feature (list_tickets marks them), add the ticket to that feature with partOf. Don't offer a ticket for a plain question you have answered, and don't offer again once the user has said no. If you use Claude in Chrome, open your own new tab and don't take over the user's tabs. The user may not be technical and may read this on a phone: answer in plain words. **Reply in one to three short sentences.** Put the answer in the first one: the yes or no, the number, the recommendation or what changed. Add a second short paragraph only when the user can't act without it, and never a third unless they ask for detail. Short means fewer ideas, not clipped sentences: leave out background, recaps, side points, caveats and hedges nobody asked about, how the work was done, openers like \\\"Here's the summary\\\" and closing offers. A few words from the user get a few words back. Keep each paragraph to one or two sentences. If the user must do or decide something, put that one thing in bold; if nothing is needed from them, don't add an ask. Write whole sentences, not fragments, \\\"label: value\\\" lines or arrows, even if other instructions ask for a terse style. Prefer plain sentences to a list: use a list only for separate items the user must pick from or act on, and never start items with bold labels. This holds for everything the user reads: replies, the summary, question forms, notifications and drafts you write for them (messages, posts). Use plain words. No AI filler (crucial, leverage, ensure, seamless), no em dashes or made-up abbreviations, and no hashes, paths or tool names unless the user must act on them. Two things stay complete: proposed ticket descriptions, since another Claude works from them (in the same plain words), and anything the user asks for in detail.\""
+      }
+    ],
+    "localizeAttachments": [
+      {
+        "prompt": "no attachments here",
+        "expect": "\"no attachments here\""
+      },
+      {
+        "prompt": "look /api/attachments/0123456789abcdef0123456789abcdef.png please",
+        "expect": "\"look /data/attachments/0123456789abcdef0123456789abcdef.png please\\n\\nImages in this message are local files; open them with the Read tool to see them.\""
+      },
+      {
+        "prompt": "two /api/attachments/0123456789abcdef0123456789abcdef.png and /api/attachments/0123456789abcdef0123456789abcdef.pdf",
+        "expect": "\"two /data/attachments/0123456789abcdef0123456789abcdef.png and /data/attachments/0123456789abcdef0123456789abcdef.pdf\\n\\nFiles attached to this message are local files. Open images, PDFs and text files with the Read tool. For Word, Excel or PowerPoint files, convert them to text yourself with what this computer already has (for example unzip the file and read its XML, textutil on macOS, python or pandoc); don't ask the user to install anything. If you can't read a file, tell the user which one.\""
+      },
+      {
+        "prompt": "/api/attachments/0123456789abcdef0123456789abcdef.jsx and /api/attachments/0123456789abcdef0123456789abcdef.js",
+        "expect": "\"/data/attachments/0123456789abcdef0123456789abcdef.jsx and /data/attachments/0123456789abcdef0123456789abcdef.js\\n\\nFiles attached to this message are local files. Open images, PDFs and text files with the Read tool. For Word, Excel or PowerPoint files, convert them to text yourself with what this computer already has (for example unzip the file and read its XML, textutil on macOS, python or pandoc); don't ask the user to install anything. If you can't read a file, tell the user which one.\""
+      },
+      {
+        "prompt": "<ckanban-context>x</ckanban-context> /api/attachments/0123456789abcdef0123456789abcdef.webp",
+        "expect": "\"<ckanban-context>x\\nImages in this message are local files; open them with the Read tool to see them.\\n</ckanban-context> /data/attachments/0123456789abcdef0123456789abcdef.webp\""
+      },
+      {
+        "prompt": "head /api/attachments/0123456789abcdef0123456789abcdef.txt\n<ckanban-context>a</ckanban-context>\n<ckanban-context>b</ckanban-context>",
+        "expect": "\"head /data/attachments/0123456789abcdef0123456789abcdef.txt\\n<ckanban-context>a</ckanban-context>\\n<ckanban-context>b\\nFiles attached to this message are local files. Open images, PDFs and text files with the Read tool. For Word, Excel or PowerPoint files, convert them to text yourself with what this computer already has (for example unzip the file and read its XML, textutil on macOS, python or pandoc); don't ask the user to install anything. If you can't read a file, tell the user which one.\\n</ckanban-context>\""
+      },
+      {
+        "prompt": "bad /api/attachments/0123456789abcdef0123456789abcde.png",
+        "expect": "\"bad /api/attachments/0123456789abcdef0123456789abcde.png\\n\\nImages in this message are local files; open them with the Read tool to see them.\""
+      },
+      {
+        "prompt": "/api/attachments/ only",
+        "expect": "\"/api/attachments/ only\\n\\nImages in this message are local files; open them with the Read tool to see them.\""
+      },
+      {
+        "prompt": "/api/attachments/0123456789abcdef0123456789abcdef.PNG",
+        "expect": "\"/api/attachments/0123456789abcdef0123456789abcdef.PNG\\n\\nImages in this message are local files; open them with the Read tool to see them.\""
+      },
+      {
+        "prompt": "/api/attachments/0123456789abcdef0123456789abcdef.pngx",
+        "expect": "\"/api/attachments/0123456789abcdef0123456789abcdef.pngx\\n\\nImages in this message are local files; open them with the Read tool to see them.\""
+      }
+    ],
+    "draft": [
+      {
+        "events": [
+          {
+            "type": "stream_event",
+            "event": {
+              "type": "message_start"
+            }
+          },
+          {
+            "type": "stream_event",
+            "event": {
+              "type": "content_block_delta",
+              "delta": {
+                "type": "text_delta",
+                "text": "Work "
+              }
+            }
+          },
+          {
+            "type": "stream_event",
+            "event": {
+              "type": "content_block_delta",
+              "delta": {
+                "type": "text_delta",
+                "text": "complete."
+              }
+            }
+          },
+          {
+            "type": "stream_event",
+            "event": {
+              "type": "content_block_start"
+            }
+          },
+          {
+            "type": "stream_event",
+            "event": {
+              "type": "content_block_delta",
+              "delta": {
+                "type": "text_delta",
+                "text": "Second"
+              }
+            }
+          },
+          {
+            "type": "assistant",
+            "message": {}
+          },
+          {
+            "type": "assistant",
+            "message": {}
+          }
+        ],
+        "expect": "{\"seen\":[null,\"Work \",\"Work complete.\",null,\"Work complete.\\n\\nSecond\",\"\",null],\"text\":\"\",\"finished\":\"Work complete.\\n\\nSecond\"}"
+      },
+      {
+        "events": [
+          {
+            "type": "stream_event",
+            "event": {
+              "type": "content_block_delta",
+              "delta": {
+                "type": "text_delta",
+                "text": ""
+              }
+            }
+          },
+          {
+            "type": "stream_event",
+            "parent_tool_use_id": "tu",
+            "event": {
+              "type": "content_block_delta",
+              "delta": {
+                "type": "text_delta",
+                "text": "sub"
+              }
+            }
+          },
+          {
+            "type": "stream_event",
+            "event": {
+              "type": "content_block_delta",
+              "delta": {
+                "type": "text_delta",
+                "text": "a"
+              }
+            }
+          },
+          {
+            "type": "assistant",
+            "parent_tool_use_id": "tu"
+          },
+          {
+            "type": "stream_event",
+            "event": {
+              "type": "message_start"
+            }
+          },
+          {
+            "type": "stream_event",
+            "event": {
+              "type": "content_block_delta",
+              "delta": {
+                "type": "input_json_delta",
+                "partial_json": "{"
+              }
+            }
+          },
+          {
+            "type": "user"
+          },
+          {
+            "type": "stream_event"
+          }
+        ],
+        "expect": "{\"seen\":[\"\",null,\"a\",null,\"\",null,null,null],\"text\":\"\",\"finished\":\"a\"}"
+      }
+    ],
+    "sessionMissing": [
+      {
+        "error": "No conversation found with session ID: abc",
+        "events": [],
+        "expect": "true"
+      },
+      {
+        "error": "no CONVERSATION found with session id",
+        "events": [],
+        "expect": "true"
+      },
+      {
+        "error": "boom",
+        "events": [
+          {
+            "type": "result",
+            "errors": [
+              "No conversation found with session ID: x"
+            ]
+          }
+        ],
+        "expect": "true"
+      },
+      {
+        "error": "boom",
+        "events": [
+          {
+            "type": "result",
+            "errors": "No conversation found with session ID"
+          }
+        ],
+        "expect": "false"
+      },
+      {
+        "error": "boom",
+        "events": [
+          {
+            "type": "assistant",
+            "errors": [
+              "No conversation found with session ID"
+            ]
+          }
+        ],
+        "expect": "false"
+      },
+      {
+        "error": "",
+        "events": [
+          null,
+          {
+            "type": "result",
+            "errors": [
+              5,
+              "nope"
+            ]
+          }
+        ],
+        "expect": "false"
+      }
+    ],
+    "errorLine": [
+      {
+        "error": "one line",
+        "expect": "\"one line\""
+      },
+      {
+        "error": "first\nlast line  \n  \n",
+        "expect": "\"last line\""
+      },
+      {
+        "error": "  ",
+        "expect": "\"  \""
+      },
+      {
+        "error": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "expect": "\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\""
+      },
+      {
+        "error": "a\néééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+        "expect": "\"éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\""
+      }
+    ]
+  }
+}

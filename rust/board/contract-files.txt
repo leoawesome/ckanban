@@ -30,6 +30,17 @@ browsers.test.ts | browsers view|named Chromes|changes are the user's only|POST 
 # routes) need ticket writes and runs: they come with R2a and R7a, which call rust/board/src/git (landing, pr).
 board-files.test.ts
 
+# R11b: teammates and role notes. The squads test also saves a squad card on a ticket it creates first, which needs
+# R2a's ticket writes; it joins the list then.
+huddle.test.ts | built-ins, a board teammate
+huddle-team.test.ts | role notes
+
+# R8: quick chats saved before the start (list, pages, one chat, conversation, tool details) and who may change them.
+# quickchat.test.ts needs the phone access port in Rust (R13: its user actions come that way), ticket writes (R2a),
+# ticket runs (R7a, search_chat) and the chat extras (R7b: context, simplify, rewind, fork, Make ticket); the sending,
+# stopping, deleting and restart steps it covers are checked against the fake Claude in rust/board/tests/quickchat_fake.rs.
+quickchat-read.test.ts
+
 # R2a: ticket and board writes without a run (create, change, move, delete, comments, snooze, seen, the chat's
 # cards, boards, attachments, avatars, snippets), the same answers and file bytes as Bun on one script, saved keys
 # masked. Left out until their step: a chat message (R7a), the Inbox wait after a work run (R7a), follow-ups (R7a),
