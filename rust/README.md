@@ -36,6 +36,22 @@ counted on a blocking-pool thread.
 Not ported: Bun runs every JSON answer through `maskSavedJson` (hides keys saved on this Mac). Usage and spend answers
 hold only fixed texts, numbers, board slugs and board names, so Rust skips it.
 
+### Browsers and devices stay on Bun (step 5b)
+
+Every `src/browser/` route still goes to Bun, on purpose: each one reads or changes state that only Bun's memory holds,
+and every answer includes it, so Rust can't give the same answer from the files.
+
+| Routes | Why Bun keeps them |
+| --- | --- |
+| `/api/devices` (list, add or change, remove, free) and the ticket `POST .../devices` (take, release) | Who holds and who waits live in memory (`devices.ts`), takes wait up to 4 minutes for a release, the board frees a ticket's devices when its run ends, ticket cards show them, and each change sends a UI event |
+| `/api/board-browsers` (list, add, change, remove, open, sign-in, screen, input, close, ensure) | Each answer has the running Chrome, which run holds it, errors and the sign-in check, all in memory (`board-browsers.ts`); most routes start or stop Chrome |
+| `/api/browsers` (list, rename, remove) | Bun keeps `browsers.json` in memory and rewrites it from every run's output (`ChromeWatch`), and the answer includes the board browsers above |
+| `/api/terminal` (WebSocket) | The shells are Bun's child processes |
+
+Moving them now would mean Rust owning device holds and Bun asking it over HTTP on every ticket view and run end, a
+link step 7 would throw away. They move with the board, runs and chat (step 7 of `docs/rust-port.md`).
+`bun run test:contract:rust` runs `test/contract/browsers.test.ts` through `ckanban-rs`, so the pass-through is tested.
+
 ### Files shared with Bun
 
 Both processes use the same data folder (`CKANBAN_HOME`, default `~/.claude-kanban`); the Bun child keeps running its
