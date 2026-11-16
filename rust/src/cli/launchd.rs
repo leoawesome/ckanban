@@ -12,7 +12,7 @@ use super::{board_port, home, out};
 
 pub const LABEL: &str = "io.ckanban.daemon";
 /// How long the daemon may take to restart once its runs end (`RESTART_MAX_WAIT_MS` in `src/board/board.ts`), in min.
-const RESTART_MAX_WAIT_MIN: u32 = 10;
+const RESTART_MAX_WAIT_MIN: u32 = 2;
 /// Each uninstall step's limit (`STEP_LIMIT_MS`).
 const STEP_LIMIT: Duration = Duration::from_secs(15);
 
@@ -194,7 +194,7 @@ pub fn restart(now: bool) -> u8 {
         }
         Some(0) => out(&format!("Restarting. Board: {}", board_url())),
         Some(n) => out(&format!(
-            "Restart pending: waiting for {n} active run{} to finish (at most {RESTART_MAX_WAIT_MIN} min).\nNew runs, chat replies and Planning interviews start after the restart. Use `ckanban restart --now` to restart at once.",
+            "Restart pending: waiting for {n} active run{} to finish (at most {RESTART_MAX_WAIT_MIN} min).\nNew runs, huddle wakes and Planning interviews start after the restart; your chat messages are answered as usual. Use `ckanban restart --now` to restart at once.",
             if n == 1 { "" } else { "s" }
         )),
     }
