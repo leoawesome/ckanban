@@ -675,22 +675,29 @@ impl Writes {
 
     /// `countRetry`: the planner restarts a child that already ran, at most `MAX_RETRIES` times.
     fn count_retry(&self, slug: &str, planner: &str, child: &str) -> Result<(), Refusal> {
-        let Some(p) = self.tickets.get(slug, planner) else { return Ok(()) };
-        let Some(Value::Object(plan)) = p.get("plan").filter(|v| truthy(Some(v))) else { return Ok(()) };
-        let n = plan.get("retries").and_then(|r| r.get(child)).and_then(Value::as_f64).unwrap_or(0.0) + 1.0;
-        if n > super::norm::MAX_RETRIES {
-            return Err((
-                409,
-                format!("retry limit reached: {child} was already restarted 3 times; skip or split it, or end with \"blocked\" for the user"),
-            ));
+        if self.tickets.get(slug, planner).is_none_or(|p| !truthy(p.get("plan"))) {
+            return Ok(());
         }
-        let mut plan = plan.clone();
-        let mut retries = plan.get("retries").and_then(Value::as_object).cloned().unwrap_or_default();
-        retries.insert(child.into(), ckanban_core::jsnum::num(n));
-        plan.insert("retries".into(), Value::Object(retries));
-        let mut patch = Map::new();
-        patch.insert("plan".into(), Value::Object(plan));
-        self.tickets.patch(slug, planner, patch).map(|_| ())
+        // Counted from the planner's file under the board's lock: two restarts at once both count.
+        self.tickets
+            .update_with(slug, planner, |meta| {
+                let Some(Value::Object(plan)) = meta.get("plan").filter(|v| truthy(Some(v))) else { return Ok(Map::new()) };
+                let n = plan.get("retries").and_then(|r| r.get(child)).and_then(Value::as_f64).unwrap_or(0.0) + 1.0;
+                if n > super::norm::MAX_RETRIES {
+                    return Err((
+                        409,
+                        format!("retry limit reached: {child} was already restarted 3 times; skip or split it, or end with \"blocked\" for the user"),
+                    ));
+                }
+                let mut plan = plan.clone();
+                let mut retries = plan.get("retries").and_then(Value::as_object).cloned().unwrap_or_default();
+                retries.insert(child.into(), ckanban_core::jsnum::num(n));
+                plan.insert("retries".into(), Value::Object(retries));
+                let mut patch = Map::new();
+                patch.insert("plan".into(), Value::Object(plan));
+                Ok(patch)
+            })
+            .map(|_| ())
     }
 
     /// `setShowOnBoard`.
@@ -879,13 +886,9 @@ impl Writes {
     // ---- The chat's cards ----
 
     fn card(&self, req: &Req, slug: &str, id: &str, card: &str, uuid: &str) -> Result<Reply, Refusal> {
-        let put = |t: &Tk, field: &str, value: Value| -> Result<Reply, Refusal> {
-            let mut cards = t.get(field).and_then(Value::as_object).cloned().unwrap_or_default();
-            cards.insert(uuid.to_string(), value);
-            let mut p = Map::new();
-            p.insert(field.into(), Value::Object(cards));
-            let t = self.tickets.update_quiet(slug, id, p)?;
-            self.tickets.emit(slug, &t);
+        // The card's answer is merged into the ticket's map under the board's lock (two answers at once both stay).
+        let put = |_: &Tk, field: &str, value: Value| -> Result<Reply, Refusal> {
+            let t = self.tickets.set_entry(slug, id, field, uuid, value)?;
             Ok(Reply::Json(200, self.view(slug, &t)))
         };
         let current = || self.tickets.get(slug, id).ok_or_else(|| (404, format!("ticket {id} not found")));
@@ -1072,20 +1075,13 @@ impl Writes {
         }
         let saved = (self.save_keys)(slug, &input)?;
         let mark = || -> Result<(), Refusal> {
-            let now_t = self.tickets.get(slug, id).ok_or_else(|| (404, format!("ticket {id} not found")))?;
-            let mut cards = now_t.get("keyCards").and_then(Value::as_object).cloned().unwrap_or_default();
             let mut c = Map::new();
             c.insert("saved".into(), json!(saved));
             if self_ {
                 c.insert("self".into(), true.into());
             }
             c.insert("at".into(), now().into());
-            cards.insert(uuid.to_string(), Value::Object(c));
-            let mut p = Map::new();
-            p.insert("keyCards".into(), Value::Object(cards));
-            let t = self.tickets.update_quiet(slug, id, p)?;
-            self.tickets.emit(slug, &t);
-            Ok(())
+            self.tickets.set_entry(slug, id, "keyCards", uuid, Value::Object(c)).map(|_| ())
         };
         let text = keys_answer_text(&asked, &saved, self_);
         if let Err(e) = block(self.hooks().chat_next_run(slug, id, &text)) {

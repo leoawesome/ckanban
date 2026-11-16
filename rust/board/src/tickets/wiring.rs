@@ -165,13 +165,6 @@ impl crate::team::store::TicketCards for SquadCards {
         self.tickets.get(slug, id).is_some()
     }
     fn mark_saved(&self, slug: &str, id: &str, uuid: &str, state: Value) -> Result<(), String> {
-        let t = self.tickets.get(slug, id).ok_or_else(|| format!("ticket {id} not found"))?;
-        let mut cards = t.get("squadCards").and_then(Value::as_object).cloned().unwrap_or_default();
-        cards.insert(uuid.to_string(), state);
-        let mut p = Map::new();
-        p.insert("squadCards".into(), Value::Object(cards));
-        let t = self.tickets.update_quiet(slug, id, p).map_err(|(_, e)| e)?;
-        self.tickets.emit(slug, &t);
-        Ok(())
+        self.tickets.set_entry(slug, id, "squadCards", uuid, state).map(|_| ()).map_err(|(_, e)| e)
     }
 }

@@ -192,6 +192,18 @@ impl Tickets {
 
     /// `Store.updateTicket` (the board's lock held): the file read now, the patch merged, written back.
     fn store_update(&self, slug: &str, id: &str, patch: &Map<String, Value>, keep_updated_at: bool) -> Result<Arc<Tk>, Refusal> {
+        self.store_update_with(slug, id, keep_updated_at, |_| Ok(patch.clone()))
+    }
+
+    /// `Store.updateTicket` with the patch worked out from the ticket as its file is now (the board's lock held), so a
+    /// read-modify-write of a field (a card map, a plan) can't lose a change made in between.
+    fn store_update_with(
+        &self,
+        slug: &str,
+        id: &str,
+        keep_updated_at: bool,
+        make: impl FnOnce(&Map<String, Value>) -> Result<Map<String, Value>, Refusal>,
+    ) -> Result<Arc<Tk>, Refusal> {
         let file = self.ticket_file(slug, id);
         let current = match tfile::read(&file) {
             Ok(Some(Ok(t))) => t,
@@ -199,24 +211,29 @@ impl Tickets {
             Ok(None) => return Err((404, format!("ticket {id} not found"))),
             Err(e) => return Err((500, e.to_string())),
         };
-        let next = tfile::apply_patch(&current, patch, &now(), keep_updated_at, |st| self.entry_order(slug, st));
+        let patch = make(&current.meta)?;
+        let next = tfile::apply_patch(&current, &patch, &now(), keep_updated_at, |st| self.entry_order(slug, st));
         tfile::write(&file, &next).map_err(|e| (500, e.to_string()))?;
         let last = current.meta.keys().next_back().cloned();
         Ok(self.installed(slug, id, &next, Some(last.as_deref().unwrap_or("updatedAt"))))
     }
 
-    /// `Store.deleteTicket` (the board's lock held).
-    fn store_delete(&self, slug: &str, id: &str) {
+    /// `Store.deleteTicket` (the board's lock held). A folder that can't be removed is an error, as Bun's `rmSync`
+    /// throws: the ticket stays in the listing.
+    fn store_delete(&self, slug: &str, id: &str) -> Result<(), Refusal> {
         if [slug, id].iter().any(|x| x.is_empty() || *x == "." || *x == ".." || x.contains('/')) {
-            return;
+            return Err(bad(format!("ticket {id} not found")));
         }
         let dir = self.ticket_dir(slug, id);
         if let Err(e) = std::fs::remove_dir_all(&dir)
             && e.kind() != std::io::ErrorKind::NotFound
         {
-            eprintln!("[board] can't remove {}: {e}", dir.display());
+            // Some files may be gone already: the listing shows what the folder holds now.
+            self.index.refresh(slug);
+            return Err((500, format!("can't remove {}: {e}", dir.display())));
         }
         self.index.saved(slug, id, None);
+        Ok(())
     }
 
     /// `Store.addComment`: a saved key never lands in the ticket's files. Returns the comment.
@@ -265,6 +282,26 @@ impl Tickets {
         let t = self.store_update(slug, id, &patch, false)?;
         self.emit(slug, &t);
         Ok(t)
+    }
+
+    /// A change worked out from the ticket's file under the board's lock (`make` gets its front matter), then sent.
+    pub fn update_with(&self, slug: &str, id: &str, make: impl FnOnce(&Map<String, Value>) -> Result<Map<String, Value>, Refusal>) -> Result<Arc<Tk>, Refusal> {
+        let lock = self.lock(slug);
+        let _g = lock.lock();
+        let t = self.store_update_with(slug, id, false, make)?;
+        self.emit(slug, &t);
+        Ok(t)
+    }
+
+    /// `field[key] = value` on the ticket (a card's answer), merged under the board's lock and sent.
+    pub fn set_entry(&self, slug: &str, id: &str, field: &str, key: &str, value: Value) -> Result<Arc<Tk>, Refusal> {
+        self.update_with(slug, id, |meta| {
+            let mut map = meta.get(field).and_then(Value::as_object).cloned().unwrap_or_default();
+            map.insert(key.to_string(), value);
+            let mut p = Map::new();
+            p.insert(field.into(), Value::Object(map));
+            Ok(p)
+        })
     }
 
     /// A store write without a `ticket.updated` (the card routes send one themselves, as Bun's `emitTicket`).
@@ -497,32 +534,7 @@ impl Tickets {
 
     /// `cancelSlotWait`: back where it was before it waited for a slot; its queued messages wait for the user.
     pub fn cancel_slot_wait(&self, slug: &str, id: &str) -> Result<Arc<Tk>, Refusal> {
-        let t = self.get(slug, id).ok_or_else(|| bad(format!("ticket {id} not found")))?;
-        let from = t.get("slotWait").and_then(|s| s.get("from")).filter(|f| f.is_object());
-        let (status, outcome) = match from {
-            Some(f) => (f.get("status").cloned().unwrap_or(Value::Null), f.get("outcome").cloned().unwrap_or(Value::Null)),
-            None => (Value::from("review"), t.get("outcome").cloned().unwrap_or(Value::Null)),
-        };
-        let queued: Vec<Value> = match t.get("queued") {
-            Some(Value::Array(a)) => a
-                .iter()
-                .map(|m| {
-                    let mut m = m.clone();
-                    if m.get("state").and_then(Value::as_str) == Some("queued") {
-                        m["state"] = "unsent".into();
-                    }
-                    m
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        let mut p = Map::new();
-        p.insert("status".into(), status);
-        p.insert("outcome".into(), outcome);
-        p.insert("slotWait".into(), Value::Null);
-        p.insert("lastActivity".into(), Value::Null);
-        p.insert("queued".into(), Value::Array(queued));
-        self.patch(slug, id, p)
+        self.update_with(slug, id, |t| Ok(slot_wait_patch(t)))
     }
 
     /// `toolTickets`: a main ticket's own tool tickets (from its feature rows; not a sub-feature's).
@@ -547,7 +559,7 @@ impl Tickets {
                 }
                 for o in self.tool_tickets(slug, id).into_iter().rev() {
                     if self.get(slug, &o.id).is_some() {
-                        self.delete_one(slug, &o.id);
+                        self.delete_one(slug, &o.id)?;
                     }
                 }
             } else if t0.tool {
@@ -558,12 +570,11 @@ impl Tickets {
                 }
             }
         }
-        self.delete_one(slug, id);
-        Ok(())
+        self.delete_one(slug, id)
     }
 
     /// `deleteOne`: its run stopped, its copies and pasted files removed, its folder gone; its family stays, unlinked.
-    pub fn delete_one(&self, slug: &str, id: &str) {
+    pub fn delete_one(&self, slug: &str, id: &str) -> Result<(), Refusal> {
         let hooks = self.hooks();
         if self.runs.is_running(slug, id) {
             block(hooks.stop_run(slug, id, None));
@@ -575,7 +586,7 @@ impl Tickets {
         {
             let lock = self.lock(slug);
             let _g = lock.lock();
-            self.store_delete(slug, id);
+            self.store_delete(slug, id)?;
         }
         self.emit_deleted(slug, id);
         hooks.after_delete(slug, id);
@@ -592,6 +603,7 @@ impl Tickets {
                 let _ = self.patch(slug, &o.id, p);
             }
         }
+        Ok(())
     }
 
     /// `attachmentsOf`: pasted files its description, comments, waiting messages and chat refer to.
@@ -661,10 +673,19 @@ impl Tickets {
         }
         // Create first, delete second: a failure in between leaves the original in place.
         let copy = self.create(target, input)?;
-        {
+        let gone = {
             let lock = self.lock(slug);
             let _g = lock.lock();
-            self.store_delete(slug, id);
+            self.store_delete(slug, id)
+        };
+        if let Err(e) = gone {
+            // The original stays: the copy goes again, so the ticket is on one board only.
+            let lock = self.lock(target);
+            let _g = lock.lock();
+            if self.store_delete(target, &copy.id).is_ok() {
+                self.emit_deleted(target, &copy.id);
+            }
+            return Err(e);
         }
         self.emit_deleted(slug, id);
         self.hooks().after_delete(slug, id);
@@ -849,10 +870,77 @@ mod tests {
     }
 
     #[test]
+    fn card_answers_at_once_all_stay() {
+        let (_d, t) = board();
+        let a = t.create("b", input("A", "backlog")).unwrap();
+        std::thread::scope(|sc| {
+            for w in 0..4 {
+                let (t, id) = (t.clone(), a.id.clone());
+                sc.spawn(move || {
+                    for i in 0..40 {
+                        t.set_entry("b", &id, "squadCards", &format!("c{w}_{i}"), serde_json::json!({ "state": "dismissed" })).unwrap();
+                    }
+                });
+            }
+        });
+        let n = |tk: &Tk| tk.get("squadCards").and_then(Value::as_object).map_or(0, |m| m.len());
+        assert_eq!(n(&t.get("b", &a.id).unwrap()), 160);
+        let file = tfile::read(&t.ticket_file("b", &a.id)).unwrap().unwrap().unwrap();
+        assert_eq!(file.meta["squadCards"].as_object().unwrap().len(), 160);
+    }
+
+    #[test]
+    fn a_folder_that_cant_be_removed_keeps_the_ticket() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, t) = board();
+        let a = t.create("b", input("A", "backlog")).unwrap();
+        let dir = t.ticket_dir("b", &a.id);
+        std::fs::write(dir.join("comments.jsonl"), "").unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let r = t.delete("b", &a.id);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(r.unwrap_err().0, 500);
+        assert!(t.list("b").get(&a.id).is_some());
+        assert!(t.get("b", &a.id).is_some());
+    }
+
+    #[test]
     fn cycles_and_dependencies() {
         let mk = |id: &str, title: &str, deps: &[&str]| Arc::new(Tk::from_json(serde_json::json!({ "id": id, "title": title, "dependsOn": deps }).as_object().unwrap().clone(), false));
         let kids = vec![mk("a", "A", &["b"]), mk("b", "B", &["a"]), mk("c", "C", &["zz"])];
         assert_eq!(find_cycle(&kids), Some(vec!["A".to_string(), "B".to_string(), "A".to_string()]));
         assert_eq!(resolve_deps(&kids[2], &kids).1, vec!["zz".to_string()]);
     }
+}
+
+/// `cancelSlotWait`'s change, from the ticket as it is: back to where it was before it waited for a slot, its queued
+/// messages waiting for the user.
+fn slot_wait_patch(t: &Map<String, Value>) -> Map<String, Value> {
+    let from = t.get("slotWait").and_then(|s| s.get("from")).filter(|f| f.is_object());
+    let (status, outcome) = match from {
+        Some(f) => (f.get("status").cloned().unwrap_or(Value::Null), f.get("outcome").cloned().unwrap_or(Value::Null)),
+        None => (Value::from("review"), t.get("outcome").cloned().unwrap_or(Value::Null)),
+    };
+    let queued: Vec<Value> = match t.get("queued") {
+        Some(Value::Array(a)) => a
+            .iter()
+            .map(|m| {
+                let mut m = m.clone();
+                if m.get("state").and_then(Value::as_str) == Some("queued") {
+                    m["state"] = "unsent".into();
+                }
+                m
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
+    let mut p = Map::new();
+    p.insert("status".into(), status);
+    p.insert("outcome".into(), outcome);
+    p.insert("slotWait".into(), Value::Null);
+    p.insert("lastActivity".into(), Value::Null);
+    p.insert("queued".into(), Value::Array(queued));
+    // As `Board.patch` adds it, last.
+    p.insert("lastActivityAt".into(), Value::Null);
+    p
 }
