@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/huddle-presets.schema.json",
+  "title": "Huddle presets (teammates)",
+  "description": "huddle-presets.json (global, in the data folder root) and profiles/<slug>/huddle-presets.json (one board): a JSON array of huddle role presets, shown as teammates in the UI. Type HuddlePreset in src/huddle/huddle-presets.ts; written by Store.saveHuddlePresets (pretty JSON, 2-space indent, final newline, atomic temp+rename). Merged built-in -> global -> board by name. Read with cleanPresets, which keeps only entries presetFromInput accepts (a name and a prompt are enough; the rest gets defaults), drops repeated names, and rebuilds each entry, so the Bun daemon drops unknown fields on the next save. Every entry it writes has all eight fields. A port may drop unknown fields here too, as the Bun daemon does.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/preset" },
+  "$defs": {
+    "preset": {
+      "title": "HuddlePreset",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "role", "prompt", "model", "mode", "lead", "canEdit", "workspace"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "minLength": 1, "description": "presetName(): lowercase letters, digits and dashes, at most 24 chars; not you, all, system or current. Unique in the file." },
+        "role": { "type": "string", "minLength": 1, "description": "Label shown in the huddle, e.g. \"QA lead\"." },
+        "prompt": { "type": "string", "minLength": 1, "description": "At most 8000 characters." },
+        "model": { "type": ["string", "null"], "description": "Default model; null: the board's." },
+        "mode": { "enum": ["tagged", "monitor"] },
+        "lead": { "type": "boolean" },
+        "canEdit": { "type": "boolean", "description": "May change files; then workspace is own (except the main preset)." },
+        "workspace": { "enum": ["shared", "own"] }
+      }
+    }
+  }
+}

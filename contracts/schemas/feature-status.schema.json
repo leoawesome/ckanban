@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/feature-status.schema.json",
+  "title": "Feature status",
+  "description": "profiles/<slug>/tickets/<id>/outputs/status.json: a feature's status ('Where we are'), kept in its top ticket's outputs folder. Type SavedStatus in src/board/feature.ts; written by writeStatus in src/board/feature.ts (pretty JSON, 2-space indent, no final newline, written to status.json.tmp then renamed) from applyPatch (Claude's update_status), addStatusNote and the note delivery (src/board/board-features.ts) and landMilestone (src/board/board-main.ts). Only updatedAt is always there: a status made by a note or a milestone has no claudeAt or familySig, and sections Claude cleared are removed, not set to null. Board facts (counts, test rounds, pull requests, saved changes) are not saved here; they are worked out from ticket data. readStatus treats a file whose updatedAt isn't a string as no status. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["updatedAt"],
+  "properties": {
+    "goal": { "type": ["string", "null"], "description": "Claude's section, trimmed, at most 2000 chars (longer text ends with '… (cut short)')." },
+    "done": { "type": ["string", "null"] },
+    "broken": { "type": ["string", "null"] },
+    "waiting": { "type": ["string", "null"], "description": "Waiting on you." },
+    "next": { "type": ["string", "null"], "description": "Next step." },
+    "prNotes": {
+      "type": "object",
+      "description": "Map: pull request URL to Claude's note on it (e.g. 'on staging'), at most 200 chars.",
+      "additionalProperties": { "type": "string" }
+    },
+    "notes": {
+      "type": "array",
+      "description": "'Add a note': what the user added from outside the board, oldest first.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["at", "text"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "text": { "type": "string", "description": "At most 2000 chars." },
+          "delivered": { "type": "boolean", "description": "Claude in the main chat got it (at its next turn)." }
+        }
+      }
+    },
+    "updatedAt": { "type": "string", "format": "date-time", "description": "Any change (Claude's or a note)." },
+    "claudeAt": { "type": ["string", "null"], "format": "date-time", "description": "Claude's last update_status." },
+    "familySig": { "type": ["string", "null"], "description": "The family as it was at Claude's last update_status (familySig in feature.ts); '' for an empty family." },
+    "milestones": {
+      "type": "array",
+      "maxItems": 20,
+      "description": "Milestones the main ticket landed (land_milestone), oldest first, the last 20.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["at", "summary", "landed"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "summary": { "type": "string", "description": "At most 500 chars." },
+          "landed": { "type": "string", "description": "How it landed, in plain words (e.g. 'already in the project folder')." }
+        }
+      }
+    }
+  }
+}

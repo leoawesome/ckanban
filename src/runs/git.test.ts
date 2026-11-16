@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { makeRepo } from "../../test/support/helpers";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { addWorktree, detectBaseBranch, enableVersionHistory, gitRuns, isGitRepo, removeWorktree, repoKind, resolveBaseBranch, run, SNAPSHOT_MAX_BYTES, worktreeDir } from "./git";
+import { addWorktree, detectBaseBranch, enableVersionHistory, forgetRepoKind, gitRuns, isGitRepo, removeWorktree, repoKind, resolveBaseBranch, run, SNAPSHOT_MAX_BYTES, worktreeDir } from "./git";
 import { tempDir } from "../../test/support/helpers";
 
 let repo: string;
@@ -127,6 +127,29 @@ test("repoKind and enableVersionHistory: plain folder, repo with no commits, exi
   await run(["git", "remote", "add", "origin", "https://example.com/x.git"], repo);
   expect(await repoKind(repo)).toBe("remote");
   await run(["git", "remote", "remove", "origin"], repo);
+});
+
+test("repoKind reuses a folder's answer until it expires or is forgotten; fresh asks git again", async () => {
+  const dir = tempDir("ck-kind-");
+  expect(await repoKind(dir)).toBe("plain");
+  // Changed outside ckanban: the cached answer stands for a while.
+  await run(["git", "init", "-q"], dir);
+  expect(await repoKind(dir)).toBe("plain");
+  // A step that acts on it asks git, and later calls get the new answer.
+  expect(await repoKind(dir, { fresh: true })).toBe("empty");
+  expect(await repoKind(dir)).toBe("empty");
+  // Forgotten (a run ended): asked again.
+  writeFileSync(join(dir, "a.txt"), "a\n");
+  await run(["git", "add", "."], dir);
+  await run(["git", "commit", "-qm", "a"], dir);
+  expect(await repoKind(dir)).toBe("empty");
+  forgetRepoKind(dir);
+  expect(await repoKind(dir)).toBe("local");
+  // Calls that come together share one check.
+  forgetRepoKind();
+  const [a, b] = [repoKind(dir), repoKind(dir)];
+  expect(a).toBe(b);
+  expect(await a).toBe("local");
 });
 
 test("enableVersionHistory: a folder inside an outer repo with no commits gets its own; home and disk are refused", async () => {

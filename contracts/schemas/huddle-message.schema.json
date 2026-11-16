@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/huddle-message.schema.json",
+  "title": "HuddleMessage (one line of a huddle's messages.jsonl)",
+  "description": "profiles/<slug>/huddles/<h_id>.messages.jsonl: one compact JSON object per line, appended (never rewritten) by Store.appendHuddleMessage from append() in src/huddle/huddle-changing.ts. Type HuddleMessage in src/core/types.ts. Saved keys are masked in the line. Readers read on from the last byte offset and read a shorter file again in full; a missing mentions reads as []. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "seq", "ts", "from", "text", "mentions", "kind"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^m_[0-9a-z]{8}$", "description": "m_ + newId()." },
+    "seq": { "type": "integer", "minimum": 1, "description": "1, 2, 3... per huddle; the huddle file's seq is the highest." },
+    "ts": { "type": "string", "format": "date-time" },
+    "from": { "type": "string", "minLength": 1, "description": "Sender's handle, stamped by the daemon; \"system\" for system messages." },
+    "text": { "type": "string" },
+    "mentions": { "type": "array", "items": { "type": "string" }, "description": "Handles mentioned with @handle; \"all\" for @all. Older lines may lack it." },
+    "kind": { "enum": ["message", "finding", "system", "handin"] },
+    "source": { "enum": ["ui", "mcp", "none"], "description": "Posts only; system messages have none." },
+    "handIn": { "type": "string", "description": "kind handin: the hand-in's id." }
+  }
+}

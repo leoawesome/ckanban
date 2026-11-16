@@ -58,7 +58,7 @@ export async function systemRoutes(ctx: ApiContext, req: Request, url: URL, part
     const path = m === "GET" ? url.searchParams.get("path") ?? "" : String((await body(req))?.path ?? "");
     if (!path.trim() || !isAbsolute(path)) throw new HttpError(400, "an absolute folder path is required");
     const git = await which("git");
-    if (m === "GET") return json({ git, repo: git && existsSync(path) ? await repoKind(path) : null });
+    if (m === "GET") return json({ git, repo: git && existsSync(path) ? await repoKind(path, { fresh: true }) : null });
     if (m === "POST") {
       if (!git) throw new HttpError(400, "git isn't installed on this computer");
       if (!existsSync(path)) throw new HttpError(404, `folder does not exist: ${path}`);
@@ -72,7 +72,7 @@ export async function systemRoutes(ctx: ApiContext, req: Request, url: URL, part
       } catch (e) {
         throw new HttpError(500, `Couldn't turn on version history: ${(e as Error).message}`);
       }
-      const repo = await repoKind(path);
+      const repo = await repoKind(path, { fresh: true });
       // Boards on this folder: their next ticket gets a worktree of its own.
       for (const p of store.listProfiles()) if (p.path === path) board.noteRepo(p.slug, repo);
       return json({ ...r, repo });

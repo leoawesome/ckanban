@@ -15,7 +15,7 @@ the document and the contract tests in the same commit.
 | `api.md` | Every route under `/api/`: method, path, query, body, answer, errors; grouped by feature. Also the Host/Origin rule, special headers, the event stream and the shell WebSocket. |
 | `data-files.md` | Every file and folder under the data folder (`~/.claude-kanban`, or `$CKANBAN_HOME`): path, format, who writes it, an example. Says which files a port must keep byte-compatible and which are caches it may rebuild. |
 | `cli.md` | Every `ckanban` command: arguments, output, exit codes, the routes it calls and the environment variables it reads. Also the `ckanban mcp` tools and the routes behind them. |
-| `schemas/*.schema.json` | JSON Schema (draft 2020-12) for the main saved records: profile, ticket, ticket run log line and schedule. Unknown fields are allowed: a port must keep fields it doesn't know. |
+| `schemas/*.schema.json` | JSON Schema (draft 2020-12) for every saved JSON file and JSONL line in the data folder (`data-files.md`, "Schemas and checks", lists which file uses which). Unknown fields are allowed: a port must keep fields it doesn't know, except where `data-files.md` says the Bun daemon drops them. |
 
 The source of truth is still the code (`src/core/types.ts`, `src/api/server.ts`, `src/core/store.ts`,
 `src/cli/cli.ts`, `src/cli/ticket-cli.ts`, `src/cli/client.ts`, `src/mcp/server.ts`). If a document and the code disagree, the
@@ -36,6 +36,8 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   them, and bad JSON stops the run. The daemon gets the test's time zone (`TZ`), `CKANBAN_NO_KEYCHAIN=1` and a
   `CKANBAN_USAGE_URL` on a closed local port, so it never reaches the keychain or Anthropic.
 - `files.ts` reads the data files (ticket front matter, JSONL) the way `data-files.md` describes them.
+- `schema.ts` checks a value against a schema in `contracts/schemas/` (the keywords those schemas use, no package);
+  `schema.test.ts` checks the checker and that every schema uses only keywords it knows.
 - `tickets.test.ts`: boards (create, list, read, errors, the Origin check, `ckanban profiles`); tickets over HTTP and
   the CLI (create, read, update, move between columns and to another board, list, delete, validation errors); the
   ticket chat (a message starts a run on the fake Claude; the conversation, the run log and `activity.jsonl` read back);
@@ -67,8 +69,26 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   into every tool group, checking the answer and its effect over HTTP. Calls "in a run" set `CKANBAN_TICKET` like the
   board does, to reach the run-only tools and the refusals a run gets. The daemon's `gh` is a stub that is never logged
   in, so `report_bug` never reaches GitHub.
-- `data-files.test.ts`: after a mix of actions, every file in the data folder matches a path listed in
-  `data-files.md`, and the profile, ticket and schedule files hold the fields their schemas require.
+- `mcp-parity.test.ts`: with `CKANBAN_PARITY_MCP` (a JSON array naming a port of the MCP server), Bun's `ckanban mcp`
+  and the port run side by side against one daemon and must give the same answers: `initialize`, `tools/list` byte
+  for byte, and about 100 calls across every group, in and outside a run, refusals and argument errors included (ids and
+  times masked where each call creates its own). Skipped without it.
+- `data-files.test.ts`: after a mix of actions (tickets, chats, side calls, schedules, jobs, automations, quick
+  chats, huddles, settings, plan usage), every file in the data folder matches a path listed in `data-files.md`, and
+  every saved file with a schema matches it and is written in its documented style. User-only actions go through the
+  phone access listener (`remote.json` seeded as on); `FAKE_SIDE_JSON` lets the fake Claude answer side calls.
+- `cli-support.ts`: the CLI sandbox (temp `HOME`, `CKANBAN_HOME`, Claude and Codex config folders; stub `launchctl`,
+  `open`, `claude`, `osascript`, `tailscale` first on a `PATH` of only `/usr/bin:/bin` besides; each stub logs its
+  calls) and a fake board server that records every request (method, path, headers, body) and answers as a test says.
+  `contractBlock()` reads a fenced block from `cli.md`, so tests compare output with the contract's own text.
+- `cli-daemon.test.ts`: usage text, version, `install` (the plist byte for byte, the `launchctl` calls, bootstrap
+  failing), `restart` (each answer, `--now`, not installed, kickstart failing), `uninstall`, `open`, `update` from
+  source, `remote status`, `mcp install|uninstall|status` (the `claude` calls, the Codex `config.toml` block), usage
+  errors of `artifact` and `browser-mcp`, and `start`. Tests that reach `launchctl` first check that `PATH` finds the stub.
+- `cli-board.test.ts`: against the fake board: picking the board, the read-only rule in runs, `ticket chat|comment|stop|
+  delete|setup|take-device|release-device|report-bug`, the routes, query strings and bodies of `list|show|create|update`,
+  argument errors, HTTP errors and identity headers, `call`, and the stdio `ckanban mcp` protocol (the tool list
+  against `cli.md` section 6).
 
 Run them with `bun test test/contract` (each file starts its own daemon, about half a second); `bun run test` runs them
 with everything else.
@@ -80,4 +100,4 @@ program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_
 and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`).
 
 `bun run test:contract:rust` does this for the Rust front server (`rust/`): it builds `ckanban-rs` (release) and runs
-every contract test with it as the daemon. It needs cargo, so `bun run test` leaves it out.
+every contract test with it as the daemon, and `ckanban-rs mcp` as the MCP server (`mcp.test.ts`, `mcp-parity.test.ts`). It needs cargo, so `bun run test` leaves it out.

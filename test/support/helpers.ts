@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../../src/runs/git";
@@ -20,12 +20,24 @@ export function tempDir(prefix = "ck-"): string {
   return dir;
 }
 
+let repoTemplate: Promise<string> | null = null;
+
+/**
+ * A new git repo on `main` with one commit (README.md). The repo is made with git once per test file and copied for
+ * each call: four git processes per test add up to seconds on a busy machine, a file copy doesn't.
+ */
 export async function makeRepo(): Promise<string> {
+  repoTemplate ??= (async () => {
+    const dir = tempDir("ck-repo-template-");
+    await run(["git", "init", "-q", "-b", "main"], dir);
+    writeFileSync(join(dir, "README.md"), "hi\n");
+    await run(["git", "add", "."], dir);
+    await run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"], dir);
+    return dir;
+  })();
+  const template = await repoTemplate;
   const dir = tempDir("ck-repo-");
-  await run(["git", "init", "-q", "-b", "main"], dir);
-  writeFileSync(join(dir, "README.md"), "hi\n");
-  await run(["git", "add", "."], dir);
-  await run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"], dir);
+  cpSync(template, dir, { recursive: true });
   return dir;
 }
 

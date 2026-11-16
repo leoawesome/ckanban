@@ -332,8 +332,9 @@ export class QuickChats {
       // Claude is replying: it reads the message at its next step. Once its input has closed, the next run takes it.
       if (run.stopRequested || !run.handle?.send(localizeAttachments(msg, this.store.attachmentsDir))) run.later.push(msg);
       this.save(slug, c);
-    } else if (this.shuttingDown || this.board.isRestartPending()) {
-      // Held until after the restart (recover() sends it).
+    } else if (this.shuttingDown) {
+      // Held until after the restart (recover() sends it). A pending restart doesn't hold it: the user typed it, and a
+      // reply the restart cuts off continues afterwards.
       c.pending = [...(c.pending ?? []), msg];
       this.save(slug, c);
     } else {

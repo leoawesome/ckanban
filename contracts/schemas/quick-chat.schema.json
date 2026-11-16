@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/quick-chat.schema.json",
+  "title": "Quick chat",
+  "description": "profiles/<slug>/chats/<id>.json: a quick chat, a Claude conversation on a board that is not a ticket. Type QuickChat in src/chat/quickchat.ts; written by QuickChats.save (pretty JSON, 2-space indent, final newline, atomic temp+rename). Created (new chat or fork) with every required field. The conversation text is Claude Code's own session transcript, found by sessionId. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "sessionId", "title", "firstMessage", "createdAt", "updatedAt", "started", "ticketId", "error"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9]+$", "description": "Short base36 id (newId). Equals the file name without .json." },
+    "sessionId": { "type": "string", "description": "Claude Code session id, a random UUID (a new one after a reset or a rewind that left nothing)." },
+    "title": { "type": ["string", "null"], "description": "Set by Rename (or a fork's title); null: the title comes from the first message." },
+    "firstMessage": { "type": ["string", "null"], "description": "The first message the user sent; null until then (and in a fork that kept nothing)." },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time", "description": "When the last message was sent or the last reply ended." },
+    "started": { "type": "boolean", "description": "Claude saved the conversation (Make ticket needs it)." },
+    "ticketId": { "type": ["string", "null"], "description": "Make ticket turned this chat into this ticket: the chat continues there." },
+    "error": { "type": ["string", "null"], "description": "Why the last reply failed (cleared by the next message)." },
+    "pending": { "type": "array", "items": { "type": "string" }, "description": "Messages held while a restart was pending: the next start sends them." },
+    "interrupted": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "A reply a restart cut off: recover() continues it. prompt: Claude never got the message, so it goes again.",
+      "properties": { "prompt": { "type": "string" } }
+    },
+    "frontDesk": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "The Telegram front desk's chat (src/helper/frontdesk.ts); it never becomes a ticket.",
+      "required": ["chatId"],
+      "properties": { "chatId": { "type": "integer", "description": "Telegram chat id." } }
+    },
+    "rewindUndo": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "RewindUndo (src/chat/rewind.ts): what the last Rewind changed, so Undo can put it back.",
+      "required": ["at", "sessionId", "hash"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "sessionId": { "type": "string", "description": "The session the rewind cut; its file has a .before-rewind copy beside it." },
+        "hash": { "type": "string", "description": "sha1 (hex) of the session file right after the cut." },
+        "newSessionId": { "type": ["string", "null"], "description": "The cut left nothing, so the chat went on in this new session." },
+        "messages": { "type": "integer", "minimum": 0 },
+        "dir": { "type": ["string", "null"] },
+        "files": { "type": "integer", "minimum": 0 },
+        "before": { "type": ["string", "null"] },
+        "after": { "type": ["string", "null"] },
+        "kept": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/spend-days.schema.json",
+  "title": "Huddle spend by day",
+  "description": "spend-days.json (data folder root): huddle agents' spend in USD per local day (YYYY-MM-DD, dayKey in src/usage/limit.ts) and board slug, last 60 days. Plain Record<string, Record<string, number>>; written by addHuddleSpend in src/usage/spend.ts (compact JSON, final newline, atomicWrite, read-modify-write; only costs above 0 are added). telegram-spend.json and telegram-desk-spend.json have the flatter { \"YYYY-MM-DD\": usd } shape: see spend-by-day.schema.json. The top level is a map keyed by day, so no other keys; the inner maps are keyed by board slug.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^\\d{4}-\\d{2}-\\d{2}$": {
+      "type": "object",
+      "description": "Board slug -> USD spent by that board's huddle agents that day.",
+      "additionalProperties": { "type": "number", "minimum": 0 }
+    }
+  }
+}

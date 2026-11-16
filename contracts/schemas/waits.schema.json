@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/waits.schema.json",
+  "title": "Wait records",
+  "description": "waits.json (data folder root): the helper's bookkeeping of what each ticket waits on, who was told and which reminders are due. Type WaitsFile in src/helper/waits.ts (WaitRecord, ReminderStep). Written by WaitStore.save on every change (JSON with 1-space indent, final newline, fixed waits.json.tmp then rename); read once at start by WaitStore.load, which drops records without string board and ticketId and fills missing record fields; a file it can't read is renamed waits.json.corrupt-<ms>. firstSummaryPending is written once a file was loaded (as a boolean) or the flag was set; a fresh file lacks it. WaitStore.load rebuilds the top level from these four keys, so other top-level keys are lost on the next write today; unknown record fields survive. Unknown fields inside records must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "records", "notifyUserAt"],
+  "properties": {
+    "version": { "const": 1 },
+    "records": {
+      "type": "object",
+      "description": "WaitRecord by its key: \"<board>/<ticket>|<identity>\", or \"<key>#<since>\" for a closed record that came back. Closed records are kept 7 days.",
+      "additionalProperties": { "$ref": "#/$defs/WaitRecord" }
+    },
+    "notifyUserAt": {
+      "type": "object",
+      "description": "notify_user's per-ticket limit: when each \"<board>/<ticket>\" last reached the user (epoch ms).",
+      "additionalProperties": { "type": "number" }
+    },
+    "firstSummaryPending": { "type": "boolean", "description": "Seeded records not yet named in any message: the helper's first summary takes them." }
+  },
+  "$defs": {
+    "WaitKind": { "enum": ["stalled", "failed", "limit", "blocked", "questions", "proposal", "review", "reply", "huddle", "message"] },
+    "WaitRecord": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["key", "board", "ticketId", "kind", "question", "label", "since", "queuedAt", "toldAt", "toldVia", "fallbackAt", "digestAt", "reminders", "closedAt"],
+      "properties": {
+        "key": { "type": "string", "description": "Equals the record's key in records." },
+        "board": { "type": "string" },
+        "ticketId": { "type": "string" },
+        "kind": { "$ref": "#/$defs/WaitKind" },
+        "question": { "type": "string", "description": "The question text (one per line), Claude's message, or the attention label." },
+        "label": { "type": "string", "description": "The attention label when it started, e.g. \"Answer 2 questions\"." },
+        "since": { "type": "string", "format": "date-time", "description": "When the ticket started waiting." },
+        "queuedAt": { "type": "string", "format": "date-time", "description": "When the board opened this record." },
+        "seeded": { "type": "boolean" },
+        "urgent": { "type": "boolean" },
+        "why": { "type": ["string", "null"] },
+        "toldAt": { "type": ["string", "null"], "format": "date-time" },
+        "toldVia": { "anyOf": [ { "enum": ["helper", "direct", "digest", "seed", "restart"] }, { "type": "null" } ] },
+        "messageId": { "type": ["string", "null"] },
+        "nightHeldAt": { "type": ["string", "null"], "format": "date-time" },
+        "heldUntil": { "type": ["string", "null"], "format": "date-time" },
+        "fallbackAt": { "type": ["string", "null"], "format": "date-time" },
+        "digestAt": { "type": ["string", "null"], "format": "date-time" },
+        "wakeAt": { "type": ["string", "null"], "format": "date-time" },
+        "reminders": { "type": "array", "items": { "$ref": "#/$defs/ReminderStep" } },
+        "remindUntil": { "type": ["string", "null"], "format": "date-time" },
+        "stepsUsed": { "type": "integer", "minimum": 0 },
+        "remindersStopped": { "type": ["string", "null"], "description": "got-it, not-urgent, opened, answered, expired, off, deleted." },
+        "openedAt": { "type": ["string", "null"], "format": "date-time" },
+        "closedAt": { "type": ["string", "null"], "format": "date-time" },
+        "closedWhy": { "anyOf": [ { "enum": ["cleared", "answered", "deleted", "opened", "expired"] }, { "type": "null" } ] },
+        "seenInChatAt": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "ReminderStep": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["channel", "dueAt"],
+      "properties": {
+        "channel": { "type": "string" },
+        "dueAt": { "type": "string", "format": "date-time" },
+        "sentAt": { "type": ["string", "null"], "format": "date-time" },
+        "skipped": { "type": "boolean" },
+        "failed": { "type": "boolean" },
+        "messageId": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

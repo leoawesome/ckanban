@@ -24,7 +24,7 @@ Each folder has a short `README.md`; read it before changing code there. Unit te
 - `web/src/hooks/`: hooks shared by several features, such as `usePhone.ts` ([README](web/src/hooks/README.md)).
 - `web/src/lib/`: plain helpers and the API client `lib/api` ([README](web/src/lib/README.md)).
 - `web/src/features/<feature>/`: one folder per UI feature (board, ticket, chat, huddle, schedules...), each with a README.
-- `rust/`: the Rust front server `ckanban-rs` (trial): sits in front of the Bun daemon, answers `GET /api/usage`, `GET /api/spend`, the passes and keys routes and `GET /api/agents` itself and passes every other request to it ([README](rust/README.md)).
+- `rust/`: the Rust front server `ckanban-rs` (trial): sits in front of the Bun daemon, answers `GET /api/usage`, `GET /api/spend`, the passes and keys routes and `GET /api/agents` itself and passes every other request to it; it is also the `ckanban` CLI, handing `browser-mcp`, `artifact`, `remote` and `update` to Bun for now ([README](rust/README.md)).
 - `contracts/`: the written web API, data file and CLI contract ([README](contracts/README.md)).
 - `rust/core/`: the Rust port trial's library for usage and spend, checked against Bun with shared fixtures ([README](rust/core/README.md)).
 - `test/contract/`: outside-in tests of that contract; they start the daemon and never import from `src/` or `web/`.
@@ -67,7 +67,7 @@ Only Leo uses this repo, so no review step for now. **This overrides the board's
 2. **Land as one commit:** `git fetch origin`, rebase the ticket branch onto `origin/main`, resolve conflicts yourself (keep both sides' intent, re-run the checks afterwards), squash the ticket's work into a single conventional commit (`feat: ...` / `fix: ...`), then `git push origin HEAD:main`. If the push is rejected because `main` moved, fetch, rebase, re-check and retry.
 3. **Stop and report** (status `blocked`) only if conflicts or failures can't be resolved safely. Never force-push `main`.
 4. **Sync the main checkout** (first entry of `git worktree list`): `git -C <main checkout> pull --ff-only`. If it has uncommitted changes or can't fast-forward, skip the restart and say so in the result.
-5. **Restart:** `cd <main checkout> && bun run build:web && bun src/cli.ts restart` (no `nohup`/`sleep` needed). The daemon restarts once every active run, this one included, has finished (at most 10 minutes; runs still going then resume after the restart), and holds new runs until then, so this is safe while other tickets run. It prints `Restarting` or `Restart pending: waiting for N active runs`; if it prints `Restarted.` the daemon couldn't be asked (too old or not answering) and was restarted at once. Never use `restart --now` from a run; it cuts off the current run.
+5. **Restart:** `cd <main checkout> && bun run build:web && bun src/cli.ts restart` (no `nohup`/`sleep` needed). The daemon restarts once every active run, this one included, has finished (at most 2 minutes; runs still going then resume after the restart), and holds new runs (not the user's chat replies) until then, so this is safe while other tickets run. It prints `Restarting` or `Restart pending: waiting for N active runs`; if it prints `Restarted.` the daemon couldn't be asked (too old or not answering) and was restarted at once. Never use `restart --now` from a run; it cuts off the current run.
 6. **Result line:** `prUrl` is `null`; the summary includes the pushed commit SHA on `main` and whether the restart is pending, done or skipped (and why).
 <!-- END TEMPORARY -->
 

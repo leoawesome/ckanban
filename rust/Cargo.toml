@@ -3,7 +3,7 @@ name = "ckanban-rs"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Rust front server for the ckanban daemon: answers usage, spend, passes and agents, passes every other request to the Bun daemon"
+description = "Rust front server for the ckanban daemon (trial): answers usage, spend, passes and agents, passes every other request to the Bun daemon; also the ckanban CLI"
 
 [[bin]]
 name = "ckanban-rs"
@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 ckanban-core = { path = "core" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "signal", "time", "io-util", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "signal", "time", "io-util", "io-std", "sync"] }
 hyper = { version = "1", features = ["http1", "server", "client"] }
 hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
 http-body-util = "0.1"

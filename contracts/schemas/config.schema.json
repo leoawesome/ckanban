@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/config.schema.json",
+  "title": "Config",
+  "description": "config.json (data folder root): daemon settings the user writes by hand. Type Config in src/core/types.ts; never written by the daemon or CLI, only read by Store.config in src/core/store.ts, which merges the file's keys over the defaults { port: 7777, prPollMinutes: 5 } (missing or unparseable file: the defaults). So every key is optional in the file. CKANBAN_PORT wins over port, CKANBAN_REMOTE_PORT over remotePort. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535, "description": "The board's HTTP port. Default 7777." },
+    "prPollMinutes": { "type": "number", "minimum": 0, "description": "Default 5. Kept in the type; no code reads it today." },
+    "remotePort": { "type": "integer", "minimum": 1, "maximum": 65535, "description": "Loopback port `tailscale serve` points at for phone access. Missing: port + 1 (remoteListenPort in src/integrations/remote.ts)." }
+  }
+}

@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/huddle.schema.json",
+  "title": "Huddle",
+  "description": "profiles/<slug>/huddles/<h_id>.json: several Claude sessions working on one ticket in a shared message room. Type Huddle (with HuddleParticipant, HuddleFinding, HandIn, HuddleLearning) in src/core/types.ts; written by Store.saveHuddle (pretty JSON, 2-space indent, final newline, atomic temp+rename) from src/huddle/ (create in huddle-changing.ts, update/updateP for every change). New huddles always also have maxCostUsd, posts, sinceUser, stopReason, template and brief; they are not required here because older files lack them. Participant token values are secrets: never send them to clients. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "hostTicket", "status", "maxParticipants", "participants", "findings", "invited", "seq", "createdAt", "updatedAt"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^h_[a-z0-9_]+$", "description": "h_ + newId() (8 base36 chars). Equals the file name without .json." },
+    "hostTicket": { "type": "string", "minLength": 1, "description": "Ticket whose work the huddle is about; its session is @main, the coordinator." },
+    "status": { "enum": ["live", "stopped", "closed"] },
+    "maxParticipants": { "type": "integer", "minimum": 2, "maximum": 32, "description": "Non-human participants allowed (default 8)." },
+    "participants": { "type": "array", "items": { "$ref": "#/$defs/participant" }, "description": "Always starts with @you (kind human) and @main (kind ticket-main)." },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "invited": { "type": "array", "items": { "type": "string" }, "description": "Other tickets (same board) whose main session was invited." },
+    "seq": { "type": "integer", "minimum": 0, "description": "Highest message seq so far." },
+    "maxCostUsd": { "type": "number", "description": "Spending limit over all participants' costUsd (default 20). Missing: the default." },
+    "maxMessages": { "type": "integer", "description": "Non-system messages before the huddle stops. Missing: 150." },
+    "posts": { "type": "integer", "minimum": 0, "description": "Non-system messages so far." },
+    "sinceUser": { "type": "integer", "minimum": 0, "description": "Non-system messages since the user last posted or resumed." },
+    "budgetWarned": { "type": "boolean", "description": "The 80% budget warning went out." },
+    "held": { "type": ["array", "null"], "items": { "type": "string" }, "description": "Two handles that kept answering each other and no longer wake each other." },
+    "unwoken": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } },
+      "description": "Map: target handle -> sender handles whose tags didn't wake it. Cleared when the target wakes."
+    },
+    "idleNudged": { "type": "integer", "description": "Seq of the last non-system message the idle watchdog already woke @main about." },
+    "stopReason": { "enum": ["budget", "messages", "loop", null], "description": "Why it stopped by itself; null: running, or the user stopped it." },
+    "finishedAtStop": { "type": "boolean" },
+    "closeRequest": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "required": ["by", "at", "reason"],
+      "properties": {
+        "by": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string" }
+      }
+    },
+    "brief": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "required": ["text", "by", "at"],
+      "properties": {
+        "text": { "type": "string" },
+        "by": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      },
+      "description": "Pinned brief (goal, decisions); heads every digest."
+    },
+    "template": { "type": ["string", "null"], "description": "Template (squad) name the huddle was started from." },
+    "topic": { "type": ["string", "null"], "description": "Written only when a topic was given." },
+    "hostRules": { "type": ["string", "null"], "description": "The squad's host rules when it started; written only when non-empty." },
+    "auto": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "required": ["reason"],
+      "properties": { "reason": { "type": "string" } },
+      "description": "Started by the host ticket's unattended run (start_huddle), with its reason."
+    },
+    "host": { "type": ["string", "null"], "description": "Handle of the lead that runs the huddle. Null or missing: @main runs it." },
+    "learnings": { "type": "array", "items": { "$ref": "#/$defs/learning" } },
+    "handIns": { "type": "array", "items": { "$ref": "#/$defs/handIn" }, "description": "Oldest first." },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "closedAt": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "$defs": {
+    "participant": {
+      "title": "HuddleParticipant",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["handle", "role", "preset", "prompt", "model", "mode", "lead", "canEdit", "workspace", "sessionId", "status", "kind", "cursor", "joinedAt"],
+      "properties": {
+        "handle": { "type": "string", "minLength": 1, "description": "Unique in the huddle, used in @mentions: main, you, reviewer, qa-1." },
+        "role": { "type": "string" },
+        "preset": { "type": ["string", "null"] },
+        "prompt": { "type": "string", "description": "Empty for @you and invited ticket mains." },
+        "focus": { "type": "string" },
+        "model": { "type": ["string", "null"] },
+        "mode": { "enum": ["tagged", "monitor"] },
+        "lead": { "type": "boolean" },
+        "canEdit": { "type": "boolean" },
+        "workspace": { "enum": ["shared", "own"] },
+        "worktree": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] },
+        "snapshot": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "required": ["branch", "sha"],
+          "properties": {
+            "branch": { "type": ["string", "null"] },
+            "sha": { "type": "string" }
+          }
+        },
+        "copy": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "required": ["kind", "dir", "at"],
+          "properties": {
+            "kind": { "enum": ["git", "folder"] },
+            "dir": { "type": "string" },
+            "repo": { "type": ["string", "null"] },
+            "branch": { "type": ["string", "null"] },
+            "at": { "type": "string", "format": "date-time" },
+            "fresh": { "type": "boolean" }
+          },
+          "description": "HelperCopy: its own copy of the host's folder, once made."
+        },
+        "sessionId": { "type": ["string", "null"] },
+        "sessionStarted": { "type": "boolean" },
+        "status": { "enum": ["working", "idle", "stopped", "failed", "done", "blocked"] },
+        "statusReason": { "type": ["string", "null"] },
+        "kind": { "enum": ["agent", "ticket-main", "human"] },
+        "ticketId": { "type": ["string", "null"], "description": "ticket-main only: the ticket whose session this is." },
+        "cursor": { "type": "integer", "minimum": 0, "description": "Seq of the last message it was given or posted." },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "lastActivity": { "type": ["string", "null"], "description": "Free text of its latest step, e.g. \"Editing app.ts\" (not a timestamp)." },
+        "costUsd": { "type": "number", "minimum": 0 },
+        "sessionCostUsd": { "type": "number", "minimum": 0 },
+        "contextTokens": { "type": "integer", "minimum": 0 },
+        "error": { "type": ["string", "null"] },
+        "idleAt": { "type": ["string", "null"], "format": "date-time" },
+        "interrupted": { "type": "boolean" },
+        "token": { "type": "string", "description": "SECRET: the agent run's identity proof (CKANBAN_HUDDLE_AGENT), newId()+newId() (16 base36 chars). Agents only; never sent to clients." }
+      }
+    },
+    "finding": {
+      "title": "HuddleFinding",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "text", "by", "status", "resolvedBy", "at"],
+      "properties": {
+        "id": { "type": "string", "description": "f1, f2, ... (f + list length + 1)." },
+        "text": { "type": "string" },
+        "by": { "type": "string" },
+        "status": { "enum": ["open", "resolved"] },
+        "resolvedBy": { "type": ["string", "null"] },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "handIn": {
+      "title": "HandIn",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "from", "summary", "files", "status", "at"],
+      "properties": {
+        "id": { "type": "string" },
+        "from": { "type": "string" },
+        "summary": { "type": "string" },
+        "files": {
+          "type": "array",
+          "items": {
+            "title": "HandInFile",
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["path", "change", "base", "hash"],
+            "properties": {
+              "path": { "type": "string" },
+              "change": { "enum": ["added", "changed", "removed"] },
+              "base": { "type": ["string", "null"], "description": "sha1 of the bytes when the copy was made; null: no such file." },
+              "hash": { "type": ["string", "null"], "description": "sha1 of the bytes as handed in; null: no such file." }
+            }
+          }
+        },
+        "status": { "enum": ["waiting", "accepted", "rejected", "conflict"] },
+        "at": { "type": "string", "format": "date-time" },
+        "by": { "type": ["string", "null"] },
+        "decidedAt": { "type": ["string", "null"], "format": "date-time" },
+        "reason": { "type": ["string", "null"] },
+        "conflicts": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "learning": {
+      "title": "HuddleLearning",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "from", "role", "preset", "text", "evidence", "scope", "status", "target", "at"],
+      "properties": {
+        "id": { "type": "string" },
+        "from": { "type": "string" },
+        "role": { "type": "string" },
+        "preset": { "type": ["string", "null"] },
+        "text": { "type": "string" },
+        "evidence": { "type": "string" },
+        "scope": { "enum": ["general", "repo"] },
+        "status": { "enum": ["pending", "saved", "discarded"] },
+        "target": { "type": "string", "description": "\"_all\", a preset name, or \"new\"; once saved, the preset (or teammate or squad name) it went to." },
+        "at": { "type": "string", "format": "date-time" },
+        "newRole": { "type": "boolean" },
+        "teammate": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["name", "prompt", "why"],
+          "properties": {
+            "name": { "type": "string" },
+            "prompt": { "type": "string" },
+            "why": { "type": "string" }
+          },
+          "description": "TeammateProposal (src/huddle/teammate-proposal.ts): a HuddlePreset's name and prompt, any of its other fields, and why."
+        },
+        "squad": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["squad", "why", "newTeammates"],
+          "properties": {
+            "squad": { "type": "object", "additionalProperties": true, "description": "A HuddleTemplate (see huddle-templates.schema.json)." },
+            "why": { "type": "string" },
+            "newTeammates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["index", "name", "role"],
+                "properties": {
+                  "index": { "type": "integer", "minimum": 0 },
+                  "name": { "type": "string" },
+                  "role": { "type": "string" }
+                }
+              }
+            }
+          },
+          "description": "SquadProposal (src/huddle/squad.ts)."
+        }
+      }
+    }
+  }
+}

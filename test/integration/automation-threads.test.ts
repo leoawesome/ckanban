@@ -413,7 +413,7 @@ test("N1: the user's reply waits for the folder and an item arrives: the reply's
   }
 }, 90_000);
 
-test("N2: the user's message and an item wait for a restart: after it they get a turn each", async () => {
+test("N2: during a pending restart the user's message is answered at once and an item waits: after it the item gets its own turn", async () => {
   try {
     const { check } = await primed({ column: "ready", autoStart: true });
     await check(comment("c1", "HOT-1"));
@@ -422,13 +422,14 @@ test("N2: the user's message and an item wait for a restart: after it they get a
     await board.whenIdle();
     board.requestRestart(() => {}, 60_000);
     await board.chat("p", t.id, "please tidy the readme");
+    await untilSpawned(2);
+    expect(readArgs()[1].prompt).toStartWith("please tidy the readme");
+    await board.whenIdle();
     await check(comment("c1", "HOT-1"), comment("c2", "HOT-1"));
-    expect(readArgs()).toHaveLength(1);
+    expect(readArgs()).toHaveLength(2);
     await board.shutdown();
     process.env.FAKE_STEP_MS = "600";
     restartBoard().recover();
-    await untilSpawned(2);
-    expect(readArgs()[1].prompt).toStartWith("please tidy the readme");
     await itemGetsOwnTurn(t.id);
   } finally {
     delete process.env.FAKE_STEP_MS;

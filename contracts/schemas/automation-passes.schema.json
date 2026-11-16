@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/automation-passes.schema.json",
+  "title": "Automation passes",
+  "description": "automation-passes.json (data folder root): how the board reaches services by itself, shared by every board. File type { version: 1, passes: Pass[] } in src/integrations/passes.ts (interface File; Pass in the same file, Client in src/integrations/oauth.ts, Tokens in src/integrations/types.ts). Written by Passes.write (pretty JSON, 2-space indent, final newline, random automation-passes.json.tmp-<id> then rename, mode 0600 plus chmod). Holds secrets: secret, tokens.access, tokens.refresh, oauth.clientSecret. Passes.read rebuilds the top level as { version: 1, passes }, so other top-level keys are lost on the next write today. Unknown fields inside passes must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "passes"],
+  "properties": {
+    "version": { "const": 1 },
+    "passes": { "type": "array", "items": { "$ref": "#/$defs/Pass" } }
+  },
+  "$defs": {
+    "Pass": {
+      "type": "object",
+      "description": "One pass. TypeScript has one interface with kind-dependent optional fields; the oneOf below states what each kind's writer (Passes.add, saveBoardKeys) always sets.",
+      "additionalProperties": true,
+      "required": ["id", "kind", "name", "claudeName", "status", "error", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9a-z]{8}$", "description": "newId (8 base36 chars)." },
+        "kind": { "enum": ["mcp", "key", "local"] },
+        "name": { "type": "string", "minLength": 1, "description": "Display name; scripts can call the pass by it." },
+        "claudeName": { "type": ["string", "null"], "description": "The Connections (Claude) server it was made from; null: a row of its own." },
+        "url": { "type": "string", "pattern": "^https?://", "description": "The MCP server's address (mcp; key passes that are a bearer token for a server)." },
+        "envName": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]{0,63}$", "description": "Environment variable name scripts get the key as (key passes without url)." },
+        "secret": { "type": "string", "minLength": 1, "description": "The pasted key, one line. Secret." },
+        "board": { "type": "string", "description": "Board slug: a key for that board's runs only. Missing: any board's automations." },
+        "savedAt": { "type": "string", "format": "date-time", "description": "When the key was last saved (replaced keys keep createdAt)." },
+        "oauth": { "$ref": "#/$defs/Client" },
+        "tokens": { "$ref": "#/$defs/Tokens" },
+        "status": { "enum": ["pending", "connected", "needs_reconnect"] },
+        "error": { "type": ["string", "null"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "mcp: an online MCP server the board signs in to (oauth and tokens appear after sign-in).",
+          "required": ["url"],
+          "properties": { "kind": { "const": "mcp" } }
+        },
+        {
+          "type": "object",
+          "description": "key: a pasted key; with url the bearer token for that server, without it an environment variable named envName.",
+          "required": ["secret"],
+          "properties": { "kind": { "const": "key" } },
+          "anyOf": [ { "type": "object", "required": ["url"] }, { "type": "object", "required": ["envName"] } ]
+        },
+        {
+          "type": "object",
+          "description": "local: a program on this computer, started from Claude's own settings for claudeName at each use.",
+          "properties": { "kind": { "const": "local" }, "claudeName": { "type": "string" } }
+        }
+      ]
+    },
+    "Client": {
+      "type": "object",
+      "description": "Client (src/integrations/oauth.ts): the board's registration at the service's sign-in.",
+      "additionalProperties": true,
+      "required": ["clientId", "redirectUri", "authorizationEndpoint", "tokenEndpoint", "resource"],
+      "properties": {
+        "clientId": { "type": "string" },
+        "clientSecret": { "type": "string", "description": "Secret." },
+        "redirectUri": { "type": "string" },
+        "authorizationEndpoint": { "type": "string" },
+        "tokenEndpoint": { "type": "string" },
+        "resource": { "type": "string", "description": "The MCP address the token is for." },
+        "scope": { "type": "string", "description": "The server's read-only scopes, space separated, when it lists any." }
+      }
+    },
+    "Tokens": {
+      "type": "object",
+      "description": "Tokens (src/integrations/types.ts). Secret.",
+      "additionalProperties": true,
+      "required": ["access"],
+      "properties": {
+        "access": { "type": "string" },
+        "refresh": { "type": "string" },
+        "expiresAt": { "type": "string", "format": "date-time", "description": "Missing: the token doesn't expire." }
+      }
+    }
+  }
+}

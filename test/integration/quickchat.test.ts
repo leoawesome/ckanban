@@ -224,15 +224,14 @@ test("chat spend counts in today's spend", async () => {
   expect(today.boards.find((b) => b.slug === "p")!.costUsd).toBeCloseTo(0.25);
 });
 
-test("a restart holds new messages and continues a reply it cut off", async () => {
-  // Held while a restart is pending (a reply in progress keeps it waiting).
+test("a pending restart still answers new messages, and continues a reply it cut off", async () => {
+  // The user's message starts at once while a restart is pending (a reply in progress keeps the restart waiting).
   process.env.FAKE_MODE = "partial";
   const v = chats.send("p", null, "write a lot");
   await until(() => events.some((e) => e.type === "chat.draft" && e.id === v.id && e.text === "Half a repl"));
   board.requestRestart(() => {}, 60_000);
   const w = chats.send("p", null, "while restarting");
-  expect(w.running).toBe(false);
-  expect(w.waiting).toBe(1);
+  expect(w.running).toBe(true);
   await chats.shutdown();
   expect(chats.get("p", v.id)!.interrupted).toEqual({});
   await board.shutdown();

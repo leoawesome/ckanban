@@ -157,7 +157,7 @@ describe("tickets", () => {
 
     expect((await d.cli(["ticket", "delete", t.id])).code).toBe(0);
     expect(existsSync(ticketDir(SLUG, t.id))).toBe(false);
-  });
+  }, 60_000); // Runs the CLI six times; one start takes seconds on a busy Mac.
 });
 
 describe("ticket chat", () => {

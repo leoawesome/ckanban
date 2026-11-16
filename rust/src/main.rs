@@ -1,4 +1,4 @@
-//! `ckanban-rs dev`: the Rust front server of the ckanban trial. It listens on the board's port, starts the Bun
+//! `ckanban-rs`: the `ckanban` commands (cli/) and `ckanban-rs dev`, the Rust front server of the ckanban trial. It listens on the board's port, starts the Bun
 //! daemon (`bun src/cli.ts dev`) as a child on an internal port. `GET /api/usage` and `GET /api/spend` are answered
 //! here (routes.rs, with `ckanban-core`); every other request is passed to the child (proxy.rs).
 //!
@@ -8,9 +8,11 @@
 //! launchd and `ckanban restart` work as with Bun alone. SIGTERM/SIGINT stop the child first.
 
 mod agents;
+mod cli;
 mod guard;
 mod js;
 mod mask;
+mod mcp;
 mod passes;
 mod proxy;
 mod routes;
@@ -37,16 +39,13 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.first().map(String::as_str) {
-        Some("dev") => {}
-        Some("--version") | Some("-V") => {
-            println!("ckanban-rs {}", env!("CARGO_PKG_VERSION"));
-            return ExitCode::SUCCESS;
-        }
-        _ => {
-            eprintln!("usage: ckanban-rs dev    (starts the board's daemon behind this front server; same env as `ckanban dev`)");
-            return ExitCode::from(2);
-        }
+    // `ckanban-rs mcp`: the board's stdio MCP server (src/mcp/, the port of `ckanban mcp`).
+    if args.len() == 1 && args[0] == "mcp" {
+        return mcp::main();
+    }
+    // Every other `ckanban` command but `dev`/`start` (the front server below) lives in cli/.
+    if let Some(code) = cli::run(&args) {
+        return ExitCode::from(code);
     }
     let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(rt) => rt,

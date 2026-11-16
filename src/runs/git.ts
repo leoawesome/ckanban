@@ -202,7 +202,35 @@ export async function which(bin: string): Promise<boolean> {
  */
 export type RepoKind = "plain" | "empty" | "local" | "remote";
 
-export async function repoKind(path: string): Promise<RepoKind> {
+/** How long repoKind() reuses a folder's answer. Like the board's REPO_TTL_MS: a change outside ckanban shows within this. */
+export const REPO_KIND_TTL_MS = 10_000;
+
+// One entry per folder asked about (the boards' folders, a few at most), so it stays small without pruning.
+const repoKinds = new Map<string, { at: number; kind: Promise<RepoKind> }>();
+
+/**
+ * The folder's RepoKind. It costs up to three git processes (slow on a busy Mac) and rarely changes, so the answer is
+ * reused for REPO_KIND_TTL_MS; calls that come while one is being worked out share it. forgetRepoKind() drops it when
+ * ckanban itself may have changed the folder's history (a run ended, version history was turned on). fresh: always
+ * ask git (rare steps that act on the answer, such as pushing a milestone), and keep that answer for the next calls.
+ */
+export function repoKind(path: string, o: { fresh?: boolean } = {}): Promise<RepoKind> {
+  const hit = repoKinds.get(path);
+  if (hit && !o.fresh && Date.now() - hit.at < REPO_KIND_TTL_MS) return hit.kind;
+  const kind = checkRepoKind(path);
+  repoKinds.set(path, { at: Date.now(), kind });
+  // A failed check isn't kept.
+  kind.catch(() => repoKinds.get(path)?.kind === kind && repoKinds.delete(path));
+  return kind;
+}
+
+/** Drop the cached repoKind() answer for one folder, or for all of them. */
+export function forgetRepoKind(path?: string): void {
+  if (path === undefined) repoKinds.clear();
+  else repoKinds.delete(path);
+}
+
+async function checkRepoKind(path: string): Promise<RepoKind> {
   if (!(await isGitRepo(path))) return "plain";
   if (!(await hasCommits(path))) return "empty";
   return (await run(["git", "remote", "get-url", "origin"], path)).code === 0 ? "remote" : "local";
@@ -225,6 +253,14 @@ export const SNAPSHOT_MESSAGE = "Initial snapshot (ckanban)";
  * commits is left alone (changed: false).
  */
 export async function enableVersionHistory(dir: string): Promise<{ changed: boolean; sha: string | null; ignored: string[] }> {
+  try {
+    return await turnOnVersionHistory(dir);
+  } finally {
+    forgetRepoKind(dir);
+  }
+}
+
+async function turnOnVersionHistory(dir: string): Promise<{ changed: boolean; sha: string | null; ignored: string[] }> {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`This folder doesn't exist: ${dir}`);
   const real = realpathSync(dir);
   // A whole home folder or disk would sweep up every private file (keys, mail, other projects) into one snapshot.

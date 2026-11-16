@@ -247,7 +247,7 @@ export function takesSlot(chat?: ActiveRun["chat"], noEdit?: boolean): boolean {
 }
 
 /** What the chat says about a message held back by a pending restart. */
-export const RESTART_HOLD_TEXT = "The board restarts soon; your message is sent right after (at most 10 minutes).";
+export const RESTART_HOLD_TEXT = "The board restarts soon; your message is sent right after (at most 2 minutes).";
 
 export const ACTIVITY_THROTTLE_MS = 1000;
 /** A form answer ("My answers: …") identical to one taken this recently isn't sent again (two tabs, a double tap). */
@@ -273,8 +273,11 @@ export interface Session {
 }
 /** What a stalled run's session is told when the user restarts it. */
 export const STALL_RESTART_TEXT = "Your previous run stopped responding and the user restarted it. Continue where you left off.";
-/** A requested restart waits this long for active runs to finish, then restarts anyway (recover() resumes them). */
-export const RESTART_MAX_WAIT_MS = 10 * 60_000;
+/**
+ * A requested restart waits this long for active runs to finish, then restarts anyway (recover() resumes them). Short,
+ * because nothing new starts while it waits and long runs (an hour of work) never finish in time anyway.
+ */
+export const RESTART_MAX_WAIT_MS = 2 * 60_000;
 export const DRAFT_THROTTLE_MS = 120;
 /** What a run spent: its own messages plus its workflows' helper agents. */
 export type RunSpend = { main: Map<string, number>; workflowDirs: Set<string>; files: Map<string, { key: string; cost: number }> };

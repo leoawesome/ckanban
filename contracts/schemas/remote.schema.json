@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/remote.schema.json",
+  "title": "RemoteConfig",
+  "description": "remote.json (data folder root): phone access over Tailscale. Type RemoteConfig in src/integrations/remote.ts; written by RemoteAccess.write (daemon and CLI; pretty JSON, 2-space indent, final newline, fixed remote.json.tmp then rename). Turning access off keeps the file with enabled false; it is deleted only when off finds no readable file. Read by RemoteAccess.config (cached by mtime), which needs host and allowedLogin to be strings and treats anything but enabled true as off. Every unknown key is dropped on the next write (RemoteAccess.config keeps only the four fields); a port may do the same.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["enabled", "host", "allowedLogin", "updatedAt"],
+  "properties": {
+    "enabled": { "type": "boolean" },
+    "host": { "type": "string", "description": "This Mac's MagicDNS name, e.g. leos-mbp.tail1234.ts.net (no trailing dot)." },
+    "allowedLogin": { "type": "string", "description": "The Tailscale login let in (Tailscale-User-Login header)." },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

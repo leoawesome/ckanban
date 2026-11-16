@@ -7,7 +7,8 @@ headers (Host and Origin as sent; only hop-by-hop headers are dropped), body and
 stream goes out as Bun writes it) and WebSocket upgrades (the terminal). The real board's daemon is never switched to
 it during the trial.
 
-- `src/main.rs`: the `dev` command: settings, starting the child, waiting until it answers (`GET /api/profiles`, 30 s,
+- `src/mcp/`: `ckanban-rs mcp`, the port of the `ckanban mcp` stdio server (below).
+- `src/main.rs`: the `dev` and `mcp` commands; `dev`: settings, starting the child, waiting until it answers (`GET /api/profiles`, 30 s,
   then it exits naming the child's log), serving, signals and the exit code.
 - `src/routes.rs`: which routes Rust answers itself (below) and the checks Bun makes before any route (Host, Origin of
   a change, JSON content type).
@@ -20,6 +21,25 @@ it during the trial.
 - `src/settings.rs`: the board's port (`CKANBAN_PORT`, else `config.json` in the data folder, else 7777), the phone
   access port, finding Bun (`CKANBAN_BUN`, else the Bun that started this process, else `bun` on `PATH`) and the repo
   (`CKANBAN_REPO`, else the nearest folder above the binary with `src/cli.ts`), the free internal port, the secret.
+
+## The `ckanban` commands
+
+`ckanban-rs` is also the `ckanban` CLI (`src/cli/`, step 2 of `docs/rust-port.md`): same arguments, output, exit codes
+and HTTP calls, as `contracts/cli.md` writes them. `bun run test:contract:rust` runs every CLI contract test with it
+(`CKANBAN_CONTRACT_CLI`). Bun's CLI stays the one launchd and the MCP configs run for now.
+
+- `src/cli/mod.rs`: dispatch, the usage text, the version (`CKANBAN_VERSION` at build time, else `dev`), handing a
+  command to Bun.
+- `src/cli/board.rs`: `profiles`, `ticket ...`/`tickets ...`, `call`; picking the board; `src/cli/text.rs`: what they
+  print; `src/cli/http.rs`: the HTTP calls (always to 127.0.0.1, Host as Bun sends it, no Origin).
+- `src/cli/launchd.rs`: `install` (the plist byte for byte; program args are this binary), `restart`, `uninstall`,
+  `open`. `src/cli/agents.rs`: `mcp install|uninstall|status` (Claude Code and Codex; the registered command is this
+  binary plus `mcp`). `src/cli/args.rs`: argument parsing.
+- `dev` and `start` are the front server below; `mcp` alone is the stdio MCP server (`src/mcp/`).
+- Still on Bun, handed to `bun src/cli.ts` with the same arguments (this process becomes Bun, so its output and exit
+  code are Bun's): `browser-mcp` (drives a board browser), `artifact` (a Claude Code session
+  in a pty), `remote` (Tailscale) and `update` (the release binary is still Bun's). `uninstall` turns phone access off
+  through `bun src/cli.ts remote off` too. Bun and the repo are found as for `dev` (below).
 
 ## Routes Rust answers
 
@@ -58,6 +78,22 @@ counted on a blocking-pool thread.
 
 Every JSON answer Rust makes (usage, spend, passes, agents, errors) is masked like Bun's.
 
+### Browsers and devices stay on Bun (step 5b)
+
+Every `src/browser/` route still goes to Bun, on purpose: each one reads or changes state that only Bun's memory holds,
+and every answer includes it, so Rust can't give the same answer from the files.
+
+| Routes | Why Bun keeps them |
+| --- | --- |
+| `/api/devices` (list, add or change, remove, free) and the ticket `POST .../devices` (take, release) | Who holds and who waits live in memory (`devices.ts`), takes wait up to 4 minutes for a release, the board frees a ticket's devices when its run ends, ticket cards show them, and each change sends a UI event |
+| `/api/board-browsers` (list, add, change, remove, open, sign-in, screen, input, close, ensure) | Each answer has the running Chrome, which run holds it, errors and the sign-in check, all in memory (`board-browsers.ts`); most routes start or stop Chrome |
+| `/api/browsers` (list, rename, remove) | Bun keeps `browsers.json` in memory and rewrites it from every run's output (`ChromeWatch`), and the answer includes the board browsers above |
+| `/api/terminal` (WebSocket) | The shells are Bun's child processes |
+
+Moving them now would mean Rust owning device holds and Bun asking it over HTTP on every ticket view and run end, a
+link step 7 would throw away. They move with the board, runs and chat (step 7 of `docs/rust-port.md`).
+`bun run test:contract:rust` runs `test/contract/browsers.test.ts` through `ckanban-rs`, so the pass-through is tested.
+
 ### Files shared with Bun
 
 Both processes use the same data folder (`CKANBAN_HOME`, default `~/.claude-kanban`); the Bun child keeps running its
@@ -82,6 +118,21 @@ check Rust makes reaches the UI the same way; there is no event gap.
 
 Log lines: each call to Anthropic prints Bun's `[usage] asked Anthropic: ...` line on this process's output (the same
 `daemon.log` under launchd).
+
+## The MCP server (`ckanban-rs mcp`)
+
+The port of `ckanban mcp` (`src/mcp/` in Bun): newline-delimited JSON-RPC 2.0 on stdin/stdout, the same protocol
+answers, and the same 69 tools. `src/mcp/tools.json` (what `tools/list` answers) and `tool-flags.json` (which tools a
+board run may call) are generated from Bun's `TOOLS` with `bun scripts/mcp-tools-json.ts`; `src/mcp/tools-json.test.ts`
+in `bun run test` fails while they are stale, so names, descriptions and input schemas can't drift. The tools call the
+daemon over HTTP like Bun's (`client.rs`: same paths, bodies and headers, CKANBAN_PORT or `config.json` for the port)
+and build the same answer texts, one file per tool group (`tickets`, `workflow`, `family`, `forms`, `huddles`,
+`schedules`); `js.rs` has what the texts need from JavaScript (UTF-16 lengths, number printing, URL encoding, local time).
+
+Still on Bun: the 13 tools in `ON_BUN` (`src/mcp/mod.rs`, each with the Bun module it needs). Their calls go to a
+`bun src/cli.ts mcp` child started on first use (`bun.rs`; Bun and the repo found as for `dev`), so they answer exactly
+as before. MCP configs on the user's Mac still point at Bun; `bun run test:contract:rust` runs
+`test/contract/mcp.test.ts` against `ckanban-rs mcp`.
 
 ## Who is calling
 

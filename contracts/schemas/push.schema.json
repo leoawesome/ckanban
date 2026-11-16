@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/push.schema.json",
+  "title": "PushFile",
+  "description": "push.json (data folder root): the board's VAPID keys and the devices that turned phone push on. Type PushFile in src/helper/push.ts (PushDevice extends PushTarget from src/helper/webpush.ts). Written by PushService.write (pretty JSON, 2-space indent, final newline, fixed push.json.tmp then rename, mode 0600 when the tmp is new); a missing or keyless file gets fresh VAPID keys on first read. Holds secrets: vapid.privateKey and each device's push keys. Note: PushService.read rebuilds the object from vapid, devices and dropped, so other top-level keys are lost on the next write today. Unknown fields inside devices must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["vapid", "devices"],
+  "properties": {
+    "vapid": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["publicKey", "privateKey"],
+      "properties": {
+        "publicKey": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$", "description": "Uncompressed P-256 public key, base64url without padding." },
+        "privateKey": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_-]+$", "description": "P-256 private key, base64url without padding. Secret." }
+      }
+    },
+    "devices": { "type": "array", "items": { "$ref": "#/$defs/PushDevice" } },
+    "dropped": { "type": "array", "maxItems": 5, "items": { "$ref": "#/$defs/DroppedDevice" }, "description": "Devices the board removed because their push service said they are gone (404/410), newest last. Missing until the first drop." }
+  },
+  "$defs": {
+    "PushDevice": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "endpoint", "keys", "label", "createdAt"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9a-f]{12}$", "description": "First 12 hex chars of sha256(endpoint) (deviceId)." },
+        "endpoint": { "type": "string", "pattern": "^https://", "description": "The browser's push service URL." },
+        "keys": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["p256dh", "auth"],
+          "properties": {
+            "p256dh": { "type": "string", "pattern": "^[\\w-]+=*$" },
+            "auth": { "type": "string", "pattern": "^[\\w-]+=*$" }
+          }
+        },
+        "label": { "type": "string", "minLength": 1, "description": "e.g. \"iPhone · Safari (Home Screen)\"; at most 80 chars; default \"Browser\"." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "thisMac": { "type": "boolean", "description": "Turned on in a browser on this Mac. Written only as true." }
+      }
+    },
+    "DroppedDevice": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "label", "at"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

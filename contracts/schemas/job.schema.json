@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/job.schema.json",
+  "title": "Job",
+  "description": "profiles/<slug>/jobs/<id>.json: a one-time job that, at its time, creates and starts a ticket or runs a shell command. Type Job in src/core/types.ts; written by Store.saveJob (pretty JSON, 2-space indent, final newline, atomic temp+rename) from src/schedules/jobs.ts. Created with every required field (state scheduled, firedAt null, result null). Files from older versions may have state missed; the Store reads that as skipped with result.message 'was due while the computer was off' and does not rewrite the file. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "name", "at", "action", "state", "sourceTicketId", "createdAt", "updatedAt", "firedAt", "result"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9]+$", "description": "8 base36 chars (newId). Equals the file name without .json." },
+    "name": { "type": "string" },
+    "at": { "type": "string", "format": "date-time", "description": "When it is due." },
+    "action": {
+      "oneOf": [{ "$ref": "#/$defs/ticketAction" }, { "$ref": "#/$defs/commandAction" }]
+    },
+    "state": {
+      "enum": ["scheduled", "running", "done", "failed", "cancelled", "skipped", "missed"],
+      "description": "JobState: scheduled, then running, then done or failed; or cancelled, or skipped (a command job due while the computer was off). missed: older files only (read as skipped)."
+    },
+    "sourceTicketId": { "type": ["string", "null"], "description": "Ticket whose board run scheduled it; null when the user or CLI did." },
+    "changedBy": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The last change, cancel or run now made by a board run; cleared when the user changes it after that.",
+      "required": ["ticketId", "action", "at"],
+      "properties": {
+        "ticketId": { "type": "string" },
+        "action": { "enum": ["changed", "cancelled", "run now"] },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "firedAt": { "type": ["string", "null"], "format": "date-time" },
+    "result": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "JobResult; null until it ran (and again while it runs).",
+      "properties": {
+        "ticketId": { "type": "string", "description": "Ticket the job created (ticket action)." },
+        "exitCode": { "type": ["integer", "null"], "description": "Command action: exit code, null when it was killed." },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "output": { "type": "string", "description": "The last 4 KB of the command's output." },
+        "timedOut": { "type": "boolean" },
+        "message": { "type": "string", "description": "Why it failed or was skipped or cancelled, in plain words." }
+      }
+    }
+  },
+  "$defs": {
+    "ticketAction": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Create a ticket and start it right away (like a schedule's fire).",
+      "required": ["kind", "title", "body", "mode"],
+      "properties": {
+        "kind": { "const": "ticket" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "mode": { "enum": ["interview", "auto"] }
+      }
+    },
+    "commandAction": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Run a shell command in the board folder: no ticket, no Claude.",
+      "required": ["kind", "command"],
+      "properties": {
+        "kind": { "const": "command" },
+        "command": { "type": "string" },
+        "timeoutSec": { "type": "number", "minimum": 0 },
+        "ifLate": { "enum": ["skip", "run"], "description": "When the board sees it more than 10 min late (computer off): skip it (default, also when missing) or run it anyway." }
+      }
+    }
+  }
+}

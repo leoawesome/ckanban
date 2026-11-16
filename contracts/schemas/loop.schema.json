@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/loop.schema.json",
+  "title": "Loop (automation)",
+  "description": "profiles/<slug>/loops/<id>.json: an automation, a check script (loops/<id>.sh, pinned by scriptHash) the board runs on a timer without Claude; each new item it finds becomes a ticket. Type Loop in src/core/types.ts; written by Store.saveLoop (pretty JSON, 2-space indent, final newline, atomic temp+rename) from src/schedules/loops.ts. The current format is version 2: Loops.create writes every field below (partOf too, null for none; allowedTools null). Only the fields every version has are required: a file with an older version (an early test format, which may lack fields such as passes) or a newer one is shown as unsupported and left alone. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "id", "name", "enabled", "createdAt", "updatedAt"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1, "description": "Format of this file (FORMAT in loops.ts, now 2). Another version: unsupported, never run or rewritten (it can only be switched off)." },
+    "id": { "type": "string", "pattern": "^[a-z0-9]+$", "description": "8 base36 chars (newId). Equals the file name without .json." },
+    "name": { "type": "string", "minLength": 1, "description": "Trimmed, at most 80 chars." },
+    "enabled": { "type": "boolean" },
+    "service": { "type": "string", "description": "Display name of what it watches (e.g. Linear), at most 60 chars; 'a script' when nothing better is known." },
+    "passes": { "type": "array", "items": { "type": "string" }, "description": "Ids of board passes (automation-passes.json) its script may use." },
+    "scriptHash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 (hex) of the script when the user saved it: a script changed since then doesn't run." },
+    "everyMinutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
+    "column": { "enum": ["backlog", "planning", "ready"], "description": "LoopColumn: where its tickets go. planning and ready need autoStart." },
+    "autoStart": { "type": "boolean", "description": "The user switched on that its tickets start Claude by themselves." },
+    "askClaude": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Claude looks at each new item first (a side call with no tools) and decides whether it needs a ticket.",
+      "required": ["on", "prompt"],
+      "properties": {
+        "on": { "type": "boolean" },
+        "prompt": { "type": "string", "description": "At most 4000 chars." }
+      }
+    },
+    "instructions": { "type": "string", "description": "Ticket description with {{title}}, {{link}}, {{service}}; at most 8000 chars." },
+    "allowedTools": {
+      "type": ["array", "null"],
+      "items": { "type": "string" },
+      "description": "The tools `ckanban call` may use, learned from the first check after a save that calls tools. Null (or [] from older versions): not learned yet."
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "lastCheckedAt": { "type": ["string", "null"], "format": "date-time" },
+    "lastFiredAt": { "type": ["string", "null"], "format": "date-time" },
+    "lastError": { "type": ["string", "null"], "description": "Why the last check failed (cleared by the next good one)." },
+    "partOf": { "type": ["string", "null"], "description": "A main ticket's id or one of its groups': each new ticket goes there as a task. Null or missing: its own card." }
+  }
+}
