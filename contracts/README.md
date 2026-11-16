@@ -49,6 +49,18 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   refuses requests without the secret; the event stream delivers events while it stays open; the terminal's WebSocket.
 - `data-files.test.ts`: after a mix of actions, every file in the data folder matches a path listed in
   `data-files.md`, and the profile, ticket and schedule files hold the fields their schemas require.
+- `cli-support.ts`: the CLI sandbox (temp `HOME`, `CKANBAN_HOME`, Claude and Codex config folders; stub `launchctl`,
+  `open`, `claude`, `osascript`, `tailscale` first on a `PATH` of only `/usr/bin:/bin` besides; each stub logs its
+  calls) and a fake board server that records every request (method, path, headers, body) and answers as a test says.
+  `contractBlock()` reads a fenced block from `cli.md`, so tests compare output with the contract's own text.
+- `cli-daemon.test.ts`: usage text, version, `install` (the plist byte for byte, the `launchctl` calls, bootstrap
+  failing), `restart` (each answer, `--now`, not installed, kickstart failing), `uninstall`, `open`, `update` from
+  source, `remote status`, `mcp install|uninstall|status` (the `claude` calls, the Codex `config.toml` block), usage
+  errors of `artifact` and `browser-mcp`, and `start`. Tests that reach `launchctl` first check that `PATH` finds the stub.
+- `cli-board.test.ts`: against the fake board: picking the board, the read-only rule in runs, `ticket chat|comment|stop|
+  delete|setup|take-device|release-device|report-bug`, the routes, query strings and bodies of `list|show|create|update`,
+  argument errors, HTTP errors and identity headers, `call`, and the stdio `ckanban mcp` protocol (the tool list
+  against `cli.md` section 6).
 
 Run them with `bun test test/contract` (each file starts its own daemon, about half a second); `bun run test` runs them
 with everything else.
