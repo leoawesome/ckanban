@@ -120,9 +120,11 @@ async fn dev() -> u8 {
         .env("CKANBAN_FRONT_PORT", public_port.to_string());
     if board.is_some() {
         // The satellite's RemoteAccess points `tailscale serve` at this server's phone access listener.
-        cmd.env("CKANBAN_SATELLITE", "1").env("CKANBAN_REMOTE_PORT", remote_port.to_string());
+        // CKANBAN_SATELLITE_EDGE: this front drops callers' copies of the phone and replay marks, so the satellite may
+        // trust them (src/core/satellite-edge.ts).
+        cmd.env("CKANBAN_SATELLITE", "1").env("CKANBAN_SATELLITE_EDGE", "1").env("CKANBAN_REMOTE_PORT", remote_port.to_string());
     } else {
-        cmd.env_remove("CKANBAN_SATELLITE");
+        cmd.env_remove("CKANBAN_SATELLITE").env_remove("CKANBAN_SATELLITE_EDGE");
     }
     let mut child = match cmd
         .stdin(Stdio::piped())

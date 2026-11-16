@@ -53,6 +53,10 @@ export async function startDaemon(): Promise<void> {
   Object.assign(process.env, withUtf8Locale(process.env));
   // Satellite mode (core/satellite.ts): the Rust board owns the board and sends its events on stdin, a line each.
   const satellite = isSatellite(process.env);
+  // A front that drops callers' copies of the phone and replay marks says so (rust/src/main.rs); an older one
+  // doesn't, and then this daemon never trusts the marks (src/core/satellite-edge.ts).
+  const edge = satellite && process.env.CKANBAN_SATELLITE_EDGE === "1";
+  delete process.env.CKANBAN_SATELLITE_EDGE;
   // Runs, scripts and test daemons this one starts are never satellites themselves.
   delete process.env.CKANBAN_SATELLITE;
   if (satellite) setNoticeLimit(256 * 1024 * 1024);
@@ -200,7 +204,8 @@ export async function startDaemon(): Promise<void> {
   // CKANBAN_REMOTE_PORT); turning phone access on points `tailscale serve` there.
   if (satellite) phoneRemote = new RemoteAccess(store.root, () => remotePort);
   const server = createServer({ store, bus, board, port: listenPort, remotePort: satellite ? undefined : remotePort, webDir,
-    ...(satellite && front ? { remote: phoneRemote!, satellite: { replay: rustReplay(front) } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
+    ...(satellite && front ? { remote: phoneRemote! } : {}),
+    ...(edge && front ? { satellite: { replay: rustReplay(front) } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
   console.log(`ckanban v${VERSION} listening on http://localhost:${front ? port : server.port} (data: ${store.root})${front ? ` behind the front server (internal port ${server.port})` : ""}${satellite ? " as the Rust board's satellite" : ""}`);
   // Running from source (developing ckanban): a freeze of seconds raises a Mac banner naming what ran. Installed
   // copies only log it; their users can't act on it.

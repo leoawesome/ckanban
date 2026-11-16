@@ -77,6 +77,9 @@ pub struct BoardMode {
     /// R9: devices, board browsers, named Chromes and the terminal.
     browsers: Arc<Browsers>,
     browser_routes: browsers::routes::RouteCtx,
+    /// The same for a phone request: `userOnly` lets the owner's phone in after the header checks (Bun's
+    /// `listener === "remote"`; the phone listener's gate already checked the login).
+    phone_routes: browsers::routes::RouteCtx,
     sessions: Arc<Sessions>,
     hooks: Arc<EventHooks>,
     git: Arc<GitRoutes>,
@@ -145,6 +148,11 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         mask: mask.clone(),
         user_only: Arc::new(|h, peer| Box::pin(async move { crate::guard::user_only(&h, peer).await })),
     };
+    let phone_routes = browsers::routes::RouteCtx {
+        public_port,
+        mask: mask.clone(),
+        user_only: Arc::new(|h, _peer| Box::pin(async move { crate::guard::headers_allow(&h) })),
+    };
     let git = GitRoutes::new(root, public_port, mask, core.services.runs.clone());
     git::start_jobs(&core);
     Some(Arc::new(BoardMode {
@@ -153,6 +161,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         sessions,
         browsers,
         browser_routes,
+        phone_routes,
         hooks,
         git,
         public_port,
@@ -353,8 +362,9 @@ impl BoardMode {
             method: req.method().as_str().to_string(),
             path: path.to_string(),
             query: req.uri().query().map(str::to_string),
-            run: h.get(RUN_HEADER).map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()),
-            huddle: h.contains_key(HUDDLE_HEADER),
+            // Every line of the header, as Bun's `headers.get` reads it.
+            run: request::header_text(h, RUN_HEADER),
+            huddle: request::has(h, HUDDLE_HEADER),
         };
         let reply = self.sessions.answer(r).await?;
         let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -392,7 +402,7 @@ impl BoardMode {
         if wants_body && crate::js::trim(ctype.split(';').next().unwrap_or("")).to_lowercase() != "application/json" {
             return Ok(self.json(415, &serde_json::json!({ "error": "content-type must be application/json" }), false));
         }
-        let has = |n: &str| h.get(n).is_some_and(|v| !v.as_bytes().is_empty());
+        let has = |n: &str| request::has(h, n);
         let from_run = has(RUN_HEADER) || has(HUDDLE_HEADER);
         let scope = query_param(req.uri().query().unwrap_or(""), "scope");
         let body: Bytes = if wants_body {
@@ -432,9 +442,10 @@ impl BoardMode {
     /// browsers, devices and terminal routes (R9). Err gives the request back: it goes on (Rust's other routes, then
     /// Bun).
     #[allow(clippy::result_large_err)]
-    pub async fn answer_request(&self, req: Request<Incoming>, peer: std::net::SocketAddr) -> Result<Response<Body>, Request<Incoming>> {
+    pub async fn answer_request(&self, req: Request<Incoming>, peer: std::net::SocketAddr, via: Listener) -> Result<Response<Body>, Request<Incoming>> {
         if browsers::routes::owns(req.method(), req.uri().path(), req.headers()) {
-            return Ok(self.browsers.answer(req, peer.port(), &self.browser_routes).await);
+            let ctx = if via == Listener::Remote { &self.phone_routes } else { &self.browser_routes };
+            return Ok(self.browsers.answer(req, peer.port(), ctx).await);
         }
         Err(req)
     }
@@ -482,6 +493,12 @@ impl BoardMode {
         if let Some(why) = request::refusal(&seen, self.public_port, remote.as_ref(), via) {
             return refused(why);
         }
+        // A WebSocket upgrade (a GET, so no Origin check above) also needs the board's own page as its Origin
+        // (`isAllowedSocket`); on this Mac the route checks it, on the phone it must be checked before `as_local`
+        // gives the request this Mac's Origin.
+        if via == Listener::Remote && wants_upgrade(req.headers()) && !request::socket_allowed(&seen, self.public_port, remote.as_ref(), via) {
+            return refused(request::FORBIDDEN);
+        }
         if via == Listener::Remote {
             self.note_visit();
         }
@@ -503,7 +520,7 @@ impl BoardMode {
         if let Some(res) = self.answer_sessions(&req).await {
             return res;
         }
-        let req = match self.answer_request(req, peer).await {
+        let req = match self.answer_request(req, peer, via).await {
             Ok(res) => return res,
             Err(r) => r,
         };
@@ -633,7 +650,11 @@ impl BoardMode {
             }
             None => Bytes::new(),
         };
-        let Ok(req) = rb.body(full(bytes)) else { return self.json_at(StatusCode::OK, &json!({ "status": 404, "body": { "error": "not found" } })) };
+        let Ok(mut req) = rb.body(full(bytes)) else { return self.json_at(StatusCode::OK, &json!({ "status": 404, "body": { "error": "not found" } })) };
+        // The path Bun's `new URL` would route on, as for every other request.
+        crate::proxy::normalize_target(&mut req);
+        let path = req.uri().path().to_string();
+        let path = path.as_str();
         let peer = SocketAddr::from(([127, 0, 0, 1], 0));
         let res = match own_route(&m, path) {
             Some(own) => self.own(own, req, Listener::Local).await,

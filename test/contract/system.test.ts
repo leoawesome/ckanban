@@ -7,7 +7,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Daemon, startDaemon } from "./daemon";
-import { phone, writeRemoteJson } from "./phone";
+import { PHONE_HOST, PHONE_LOGIN, phone, writeRemoteJson } from "./phone";
 
 let d: Daemon;
 let github: ReturnType<typeof Bun.serve>;
@@ -140,6 +140,15 @@ test("from the phone: refused while phone access is off, answered with the liste
     expect(bare.data.error).toMatch(/for the user only/);
     // The same from this Mac with no browser behind it: refused by the user check.
     expect((await d.api("POST", `/api/profiles/${SLUG}/find-links`, {}, { origin: d.url })).status).toBe(403);
+    // The terminal's WebSocket from the phone needs the tailnet page as its Origin (isAllowedSocket).
+    const base = { host: PHONE_HOST, "tailscale-user-login": PHONE_LOGIN };
+    expect(await upgrade(d.remotePort, { ...base, origin: "https://evil.example" })).toContain(" 403 ");
+    expect(await upgrade(d.remotePort, base)).toContain(" 403 ");
+    expect(await upgrade(d.remotePort, { ...base, origin: `https://${PHONE_HOST}` })).toContain(" 101 ");
+    // A user-only change answered by the board itself (board browsers) lets the owner's phone in, as Bun does.
+    const bb = await phone(d, "POST", "/api/board-browsers", { name: "From the phone" });
+    expect(bb.status).toBe(200);
+    expect((await phone(d, "POST", "/api/board-browsers", { name: "Run" }, { "x-ckanban-run": `${SLUG}/t_x` })).status).toBe(403);
     // The debug profile is this Mac's only.
     const prof = await phone(d, "POST", "/api/debug/profile?seconds=1", {});
     expect(prof.status).toBe(403);
@@ -178,9 +187,30 @@ test("dot segments in the path are resolved before routing, as a browser's URL w
     expect(r.body).toContain('"summary":"Every day at 00:00"');
   }
   // The debug profile's run check holds through a dot path too.
-  const run = await raw(d.port, "POST", "/api/x/../debug/profile?seconds=1", { "x-ckanban-run": `${SLUG}/t_x`, "content-type": "application/json", "content-length": "2" });
+  const run = await raw(d.port, "POST", "/api/x/../debug/profile?seconds=1", { "x-ckanban-run": `${SLUG}/t_x`, "content-type": "application/json", "content-length": "0" });
   expect(run.status).toBe(403);
   // Two run header lines, the first empty, are a board run (Fetch joins them): find-links refuses.
   const two = await raw(d.port, "POST", `/api/profiles/${SLUG}/find-links`, { origin: d.url, "content-type": "application/json", "content-length": "0", "x-ckanban-run": ["", `${SLUG}/t_x`] });
   expect(two.status).toBe(403);
 });
+
+/** A WebSocket upgrade to the board folder's terminal, written raw: the status line of the answer. */
+function upgrade(port: number, headers: Record<string, string>): Promise<string> {
+  return new Promise(async (done, fail) => {
+    const { connect } = await import("node:net");
+    const s = connect(port, "127.0.0.1");
+    let buf = "";
+    const fin = () => {
+      s.destroy();
+      done(buf.split("\r\n")[0]);
+    };
+    s.on("data", (c) => {
+      buf += c.toString("latin1");
+      if (buf.includes("\r\n\r\n")) fin();
+    });
+    s.on("error", fail);
+    s.on("end", fin);
+    const h = { connection: "Upgrade", upgrade: "websocket", "sec-websocket-version": "13", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", ...headers };
+    s.write(`GET /api/profiles/${SLUG}/shell?cols=80&rows=24 HTTP/1.1\r\n${Object.entries(h).map(([k, v]) => `${k}: ${v}`).join("\r\n")}\r\n\r\n`);
+  });
+}

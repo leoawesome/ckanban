@@ -170,7 +170,8 @@ export function createServer(deps: ServerDeps) {
 
   async function handle(req: Request, srv: import("bun").Server<ShellSocket>, listener: Listener): Promise<Response | undefined> {
     // Board mode: the Rust board's phone access listener checked this request and passed it on (core/front.ts).
-    if (listener === "local" && viaPhoneFront(req)) listener = "remote";
+    // Only a satellite of a front that drops callers' copies of the mark (deps.satellite) trusts it.
+    if (listener === "local" && deps.satellite && viaPhoneFront(req)) listener = "remote";
     const res = await track(routeLabel(req), () => route(req, srv, listener));
     if (res && listener === "remote") res.headers.set(LISTENER_HEADER, "remote");
     return res;
@@ -185,7 +186,7 @@ export function createServer(deps: ServerDeps) {
       const r = await internalRoute(req, new URL(req.url).pathname, ctx.edge);
       if (r) return r;
     }
-    if (confirmedByFront(req)) ctx.confirmedInTelegram.add(req);
+    if (deps.satellite && confirmedByFront(req)) ctx.confirmedInTelegram.add(req);
     via.set(req, { listener, srv, peer: listener === "local" ? callerPort(req, srv.requestIP(req)?.port) : 0 });
     if (listener === "remote") remote.noteVisit(nowIso());
     const url = new URL(req.url);

@@ -77,7 +77,8 @@ async fn latest_release(http: &reqwest::Client) -> Option<Release> {
         return None;
     }
     let body = r.text().await.ok()?;
-    js::parse(&body).map(|j| release_of(&j))
+    // `j.tag_name` of JSON null throws (no release); any other value reads its fields.
+    js::parse(&body).filter(|j| !j.is_null()).map(|j| release_of(&j))
 }
 
 /// `UpdateChecker`: one per daemon.
