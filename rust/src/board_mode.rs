@@ -13,7 +13,9 @@
 //! `/api/tickets`, `/api/inbox`); the session routes (R5: a ticket's conversation, tool, agent and workflow details,
 //! chat search and read, the board folder's sessions); a ticket's outputs, the files its chat mentions, its Changes
 //! tab, the board's Files panel, `detect-setup` and `/api/version-history` (R6, `ckanban_board::git::routes`); the browsers,
-//! devices and terminal routes (R9, `ckanban_board::browsers::routes`).
+//! devices and terminal routes (R9, `ckanban_board::browsers::routes`); the ticket and board writes (R2a,
+//! `ckanban_board::tickets::routes`: create, change, delete, move, comments, snooze, seen, the chat's cards, boards
+//! POST/PATCH/DELETE, attachments, avatars, snippets).
 //! Everything else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::path::{Path, PathBuf};
@@ -30,6 +32,8 @@ use ckanban_board::mode::{self, Decision};
 use ckanban_board::satellite;
 use ckanban_board::sessions::routes::{self as session_routes, HUDDLE_HEADER, RUN_HEADER};
 use ckanban_board::sessions::service::Sessions;
+use ckanban_board::tickets::routes::{self as write_routes, Reply, Writes};
+use ckanban_board::tickets::wiring::{TicketOps, Wired};
 use ckanban_core::time::now_ms;
 use hyper::body::Incoming;
 use hyper::header::HOST;
@@ -53,6 +57,10 @@ pub struct BoardMode {
     sessions: Arc<Sessions>,
     hooks: Arc<EventHooks>,
     git: Arc<GitRoutes>,
+    /// R2a: the ticket and board writes.
+    writes: Arc<Writes>,
+    /// The pass store, for key cards (set once the satellite answers: it hears of the passes file changing).
+    passes: Arc<std::sync::OnceLock<Arc<passes::Passes>>>,
     public_port: u16,
     root: PathBuf,
     _lock: BoardLock,
@@ -106,7 +114,32 @@ pub async fn prepare(root: &Path, public_port: u16) -> Option<Arc<BoardMode>> {
     };
     let git = GitRoutes::new(root, public_port, mask, core.services.runs.clone());
     git::start_jobs(&core);
-    Some(Arc::new(BoardMode { core, sessions, browsers, browser_routes, hooks, git, public_port, root: root.to_path_buf(), _lock: lock }))
+    // R2a: ticket writes, with comments masked as they are saved and the steps already in Rust plugged in.
+    core.tickets.set_mask(text_masker(root));
+    let s = sessions.clone();
+    core.tickets.on_written(move |slug, id| s.ticket_changed(slug, id));
+    let landing = git::landing::Git::new(root, Arc::new(TicketOps { tickets: core.tickets.clone() }));
+    core.tickets.set_hooks(Arc::new(Wired { git: Some(landing), browsers: Some(browsers.clone()), root: root.to_path_buf() }));
+    let passes: Arc<std::sync::OnceLock<Arc<passes::Passes>>> = Arc::new(std::sync::OnceLock::new());
+    let p = passes.clone();
+    let save_keys: write_routes::SaveKeys = Arc::new(move |slug, keys| match p.get() {
+        Some(p) => p.save_board_keys(slug, keys),
+        None => Err((503, "the board is still starting; try again in a moment".into())),
+    });
+    let writes = Arc::new(Writes::new(core.tickets.clone(), core.reads.clone(), sessions.clone(), save_keys));
+    Some(Arc::new(BoardMode {
+        core,
+        sessions,
+        browsers,
+        browser_routes,
+        hooks,
+        git,
+        writes,
+        passes,
+        public_port,
+        root: root.to_path_buf(),
+        _lock: lock,
+    }))
 }
 
 fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<BoardMode>> {
@@ -217,7 +250,82 @@ impl BoardMode {
         if browsers::routes::owns(req.method(), req.uri().path(), req.headers()) {
             return Ok(self.browsers.answer(req, peer.port(), &self.browser_routes).await);
         }
+        if write_routes::wanted(req.method().as_str(), req.uri().path()) {
+            return self.answer_write(req, peer).await;
+        }
         Err(req)
+    }
+
+    /// The ticket and board writes (R2a). Bun's gate first (Host, the Origin of a change, a JSON body for POST, PATCH
+    /// and PUT except uploads), then the route on the blocking pool; the answer masked like every JSON answer.
+    #[allow(clippy::result_large_err)]
+    async fn answer_write(&self, req: Request<Incoming>, peer: std::net::SocketAddr) -> Result<Response<Body>, Request<Incoming>> {
+        use http_body_util::{BodyExt, Limited};
+        use hyper::header::{CONTENT_TYPE, ORIGIN};
+        let h = req.headers();
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) || [HOST, ORIGIN, CONTENT_TYPE].iter().any(|n| h.get_all(n).iter().count() > 1) {
+            return Err(req);
+        }
+        let mutation = req.method() != Method::GET && req.method() != Method::HEAD;
+        if !local_host(h, self.public_port) || (mutation && !crate::routes::local_origin(h, self.public_port)) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        let path = req.uri().path().to_string();
+        let upload = req.method() == Method::POST && path == "/api/attachments";
+        if matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT) && !upload && !crate::routes::json_type(h) {
+            return Ok(passes::json_answer(StatusCode::UNSUPPORTED_MEDIA_TYPE, &serde_json::json!({ "error": "content-type must be application/json" }), &passes::current_secrets(&self.root)));
+        }
+        let header = |n: &str| h.get(n).map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()).filter(|v| !v.is_empty());
+        let content_type = header("content-type").map(|t| t.split(';').next().unwrap_or("").trim().to_lowercase()).unwrap_or_default();
+        let file_name = header("x-file-name").and_then(|n| ckanban_board::tickets::files::decode_uri_component(&n));
+        let (run, huddle, source) = (header(RUN_HEADER), header(HUDDLE_HEADER).is_some(), header(write_routes::SOURCE_HEADER));
+        let headers = h.clone();
+        let method = req.method().as_str().to_string();
+        let query = req.uri().query().unwrap_or("").to_string();
+        // Uploads may be 25 MB; anything bigger is refused by the route (413) without reading it all.
+        let limit = if upload { ckanban_board::tickets::files::MAX_ATTACHMENT_BYTES + 1 } else { 16 << 20 };
+        let body = match Limited::new(req.into_body(), limit).collect().await {
+            Ok(b) => b.to_bytes().to_vec(),
+            Err(_) if upload => vec![0; limit],
+            Err(_) => return Ok(passes::json_answer(StatusCode::PAYLOAD_TOO_LARGE, &serde_json::json!({ "error": "request body too large" }), &passes::current_secrets(&self.root))),
+        };
+        let port = peer.port();
+        let user: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move || ckanban_board::tickets::writer::block(crate::guard::user_only(&headers, port)));
+        let r = write_routes::Req { method, path, query, run, huddle, source, content_type, file_name, body, user };
+        let writes = self.writes.clone();
+        let reply = match tokio::task::spawn_blocking(move || writes.answer(&r)).await {
+            Ok(Some(reply)) => reply,
+            Ok(None) => return Ok(plain(StatusCode::NOT_FOUND, "not found")),
+            Err(e) => {
+                eprintln!("ckanban-rs: a write route failed: {e}");
+                Reply::Json(500, serde_json::json!({ "error": "internal error" }))
+            }
+        };
+        Ok(match reply {
+            Reply::Json(status, v) => {
+                let text = (self.hooks.mask)(&serde_json::to_string(&v).unwrap_or_else(|_| "null".into()));
+                json_text(status, text)
+            }
+            Reply::Empty(status) => {
+                use http_body_util::Full;
+                let mut r = Response::new(Full::new(bytes::Bytes::new()).map_err(|never| match never {}).boxed());
+                *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::NO_CONTENT);
+                r
+            }
+            Reply::File(file, headers) => match tokio::fs::read(&file).await {
+                Ok(bytes) => {
+                    use http_body_util::Full;
+                    let mut r = Response::new(Full::new(bytes::Bytes::from(bytes)).map_err(|never| match never {}).boxed());
+                    for (k, v) in headers {
+                        if let (Ok(k), Ok(v)) = (hyper::header::HeaderName::from_bytes(k.as_bytes()), hyper::header::HeaderValue::from_str(&v)) {
+                            r.headers_mut().insert(k, v);
+                        }
+                    }
+                    r
+                }
+                Err(_) => json_text(404, r#"{"error":"attachment not found"}"#.into()),
+            },
+        })
     }
 
     /// The routes the Rust board answers that need a request's body or slow work (R6's files, outputs and Changes
@@ -234,6 +342,12 @@ impl BoardMode {
         let s = &self.core.services;
         let snapshot = satellite::runtime_snapshot(&*s.runs, &*s.huddles, &*s.sessions, &boards(&self.root), &[]);
         let _ = tell.send(satellite::runtime_line(&snapshot));
+        // The pass store for key cards: Bun hears of each change to the passes file on its stdin.
+        let notify_tell = tell.clone();
+        let notify: passes::Notify = Arc::new(move |file: &str| {
+            let _ = notify_tell.send(format!("changed {file}\n"));
+        });
+        let _ = self.passes.set(Arc::new(passes::Passes::new(self.root.clone(), notify)));
         let views = s.views.clone();
         self.core.bus.on(move |e| {
             if let Some(line) = satellite::event_line(e, &*views) {

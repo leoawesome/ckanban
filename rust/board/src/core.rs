@@ -73,6 +73,8 @@ pub struct Core {
     pub index: Arc<Index>,
     /// The read routes over the index, with live state from `services` (R1).
     pub reads: Arc<Reads>,
+    /// The board's ticket writes (R2a): the only writer of `ticket.md` in board mode.
+    pub tickets: Arc<crate::tickets::writer::Tickets>,
     stops: Mutex<Vec<Stop>>,
 }
 
@@ -82,7 +84,9 @@ impl Core {
         let index = Index::new(root);
         let reads = Arc::new(Reads::new(index.clone(), Arc::new(ServicesLive::new(root, services.clone()))));
         services.views = Arc::new(IndexViews { reads: reads.clone() });
-        Arc::new(Core { root: root.to_path_buf(), bus: Arc::new(Bus::new()), services, index, reads, stops: Mutex::new(Vec::new()) })
+        let bus = Arc::new(Bus::new());
+        let tickets = crate::tickets::writer::Tickets::new(index.clone(), bus.clone(), services.runs.clone(), Arc::new(|s: &str| s.to_string()));
+        Arc::new(Core { root: root.to_path_buf(), bus, services, index, reads, tickets, stops: Mutex::new(Vec::new()) })
     }
 
     /// Registers something to stop at shutdown (a timer, a watcher); stops run newest first.

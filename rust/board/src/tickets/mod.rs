@@ -11,4 +11,8 @@
 pub mod files;
 pub mod hooks;
 pub mod norm;
+pub mod profiles;
+pub mod rights;
+pub mod routes;
+pub mod wiring;
 pub mod writer;

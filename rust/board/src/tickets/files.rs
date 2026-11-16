@@ -180,6 +180,11 @@ pub fn attachment_header(name: &str) -> String {
     format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{}", encode_uri_component(name))
 }
 
+/// `decodeURIComponent`; None when it doesn't decode.
+pub fn decode_uri_component(s: &str) -> Option<String> {
+    percent_encoding::percent_decode_str(s).decode_utf8().ok().map(|c| c.into_owned())
+}
+
 /// `encodeURIComponent`.
 pub fn encode_uri_component(s: &str) -> String {
     const KEEP: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC

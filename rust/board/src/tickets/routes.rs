@@ -86,7 +86,7 @@ pub fn wanted(method: &str, path: &str) -> bool {
         ("POST", ["attachments"]) | ("GET", ["attachments", _]) | ("GET", ["attachments", _, "info"]) => true,
         ("GET", ["avatars"]) | ("PUT" | "DELETE", ["avatars", _]) | ("PUT", ["avatars", "claude", "name"]) => true,
         ("GET" | "POST", ["snippets"]) | ("PATCH" | "DELETE", ["snippets", _]) => true,
-        ("POST", ["profiles"]) | ("PATCH" | "DELETE", ["profiles", _]) | ("POST", ["profiles", _, "detect-setup"]) => true,
+        ("POST", ["profiles"]) | ("PATCH" | "DELETE", ["profiles", _]) => true,
         ("POST", ["profiles", _, "tickets"]) | ("PATCH" | "DELETE", ["profiles", _, "tickets", _]) => true,
         ("POST", ["profiles", _, "tickets", _, "move" | "seen"]) => true,
         ("GET" | "POST", ["profiles", _, "tickets", _, "comments"]) => true,
@@ -180,8 +180,8 @@ impl Writes {
                 if self.profile(slug).is_none() {
                     return Some(err((404, format!("board {slug} not found"))));
                 }
-                if p.len() == 2 || p[2] == "detect-setup" {
-                    return Some(super::profiles::routes(self, req, slug, &p).unwrap_or_else(err));
+                if p.len() == 2 {
+                    return Some(super::profiles::routes(self, req, slug).unwrap_or_else(err));
                 }
                 if p.len() == 3 {
                     return Some(self.create(req, slug).unwrap_or_else(err));
@@ -251,10 +251,6 @@ impl Writes {
         {
             return Err(bad(format!("ticket {po} not found (partOf)")));
         }
-        let own_run = match &from_run {
-            Some((rs, rid)) if rs == slug && !rid.is_empty() && !req.huddle => self.tickets.get(slug, rid),
-            _ => None,
-        };
         let mut part_of_via = match (&part_of, &from_run) {
             (Some(po), Some((rs, rid))) if rs == slug && rid == po => Some("chat"),
             _ => None,
@@ -901,7 +897,7 @@ impl Writes {
                 if !exists {
                     return Err(bad("that automation doesn't exist"));
                 }
-                put(&current()?, "automationCards", json!({ "loopId": loop_id, "at": now() }))
+                put(current()?.as_ref(), "automationCards", json!({ "loopId": loop_id, "at": now() }))
             }
             "squad-cards" | "teammate-cards" => {
                 if req.run.is_some() || req.huddle {
@@ -929,7 +925,7 @@ impl Writes {
                     }
                 }
                 let field = if card == "squad-cards" { "squadCards" } else { "teammateCards" };
-                put(&current()?, field, Value::Object(c))
+                put(current()?.as_ref(), field, Value::Object(c))
             }
             "closed-forms" => {
                 self.user_only(req, "Closing a question")?;
@@ -972,7 +968,7 @@ impl Writes {
                         c.insert("scheduleId".into(), sid.into());
                     }
                 }
-                put(&current()?, "scheduleDeleteCards", Value::Object(c))
+                put(current()?.as_ref(), "scheduleDeleteCards", Value::Object(c))
             }
             "helper-rule-cards" => {
                 self.user_only(req, "Adding to what the helper knows about you")?;
@@ -1009,7 +1005,7 @@ impl Writes {
                         c["already"] = true.into();
                     }
                 }
-                put(&current()?, "helperRuleCards", c)
+                put(current()?.as_ref(), "helperRuleCards", c)
             }
             "key-cards" => self.key_card(req, slug, id, uuid),
             _ => Err((404, "not found".into())),

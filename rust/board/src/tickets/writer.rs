@@ -45,7 +45,7 @@ pub struct Tickets {
     pub bus: Arc<Bus>,
     pub runs: Arc<dyn RunControl>,
     hooks: RwLock<Arc<dyn BoardHooks>>,
-    pub mask: TextMask,
+    mask: RwLock<TextMask>,
     locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     written: RwLock<Vec<Written>>,
 }
@@ -69,10 +69,15 @@ impl Tickets {
             bus,
             runs,
             hooks: RwLock::new(Arc::new(NoHooks)),
-            mask,
+            mask: RwLock::new(mask),
             locks: Mutex::new(HashMap::new()),
             written: RwLock::new(Vec::new()),
         })
+    }
+
+    /// `maskSaved` for comments (the server's pass store; no masking until set).
+    pub fn set_mask(&self, mask: TextMask) {
+        *self.mask.write() = mask;
     }
 
     /// The later board steps' hooks (R2b, R6, R7a...); stand-ins until set.
@@ -191,7 +196,7 @@ impl Tickets {
 
     /// `Store.addComment`: a saved key never lands in the ticket's files. Returns the comment.
     pub fn store_comment(&self, slug: &str, id: &str, author: &str, text: &str, from: Option<&str>) -> Result<Value, Refusal> {
-        let mut c = json!({ "id": new_id(), "author": author, "text": (self.mask)(text), "at": now() });
+        let mut c = json!({ "id": new_id(), "author": author, "text": (self.mask.read().clone())(text), "at": now() });
         if let Some(f) = from.filter(|f| !f.is_empty()) {
             c["from"] = Value::from(f);
         }
