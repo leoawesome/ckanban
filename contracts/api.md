@@ -107,7 +107,9 @@ Most ticket routes return a `TicketView`: a `Ticket` plus these fields (built by
 `canCopyFile`, `terminalOpen`, `recovery`, `devices`, `chromeAbove`, `browsersAbove`, `folderWait`, `userWait`,
 `attention`, `snoozed`, `huddleBusy`, `huddleLine`, `costUsd`, `runCap`; for a main ticket also `familyWorking`,
 `stepsRunning`, `familyCard`; for a sub-feature `subFeatureOf`; for a tool ticket `mainTicket`. Board listings add
-`feature: true` on open features.
+`feature: true` on open features. `links` is `{url, label, at, source}[]` newest first (`board/links.ts`): claude.ai
+artifact URLs from the ticket's session, its huddle teammates' sessions (`huddle:@<handle>`) and its `ai` comments
+(`result`; label from the Markdown link text, else `claude.ai artifact`), plus its share links (`share`).
 
 ### Event stream
 
@@ -200,7 +202,17 @@ Handled before the JSON content-type rule.
 | GET | `/api/attachments/:name` | query `download` (present), `name` (shown file name) | 200 file bytes with its type, `nosniff`, `content-security-policy: sandbox`, `cache-control: private, max-age=31536000, immutable`; `content-disposition` attachment for downloads and Office files, inline when only `name` is given | 404 not found |
 | GET | `/api/attachments/:name/info` | | 200 `{size}` | 404 |
 
-Any other method or shape under `/api/attachments`: 404.
+Any other method or shape under `/api/attachments`: `404 {"error":"not found"}`; there is no list or delete route. A
+name that isn't a generated one (`<32 hex>.<ext>`, so no `../`) or a missing file: `404 {"error":"attachment not
+found"}`, also for `/info`.
+- Upload errors (`AttachmentError`): `415` for another content type or a file kind that can't be attached (the
+  extension comes from `x-file-name` when it has one, else from the image type), `400 file is empty`,
+  `400 file is not a valid <EXT> file` (first bytes don't match: PNG/JPEG/GIF/WebP/PDF magic, a zip for Office files,
+  no NUL in the first 8 KB of text), `413 file is larger than 25 MB` (exactly 25 MB is accepted).
+- Served types: images with their type, PDF and Office files with theirs, every text or code kind (`.html` too) as
+  `text/plain; charset=utf-8`.
+- Attachments are files of the data folder, not of a ticket: deleting a ticket deletes the ones its description,
+  comments, queued messages and chat transcript refer to; moving a ticket to another board keeps the same names.
 
 ## Remote (phone access)
 
@@ -590,10 +602,11 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 - none: every ticket as a JSON array of `TicketView` (old clients).
 - `scope=count`: `countScope()` counts per column.
 - `scope=list`: query `status?` (one of `STATUSES`), `tool=1`, `q`, `tags` (comma list), `limit`, `after`; 200
-  `listScope()` page with `tickets: TicketView[]`.
+  `listScope()` page with `tickets: TicketView[]`. Without `status` only open tickets; tool tickets (tasks without a
+  card) only with `tool=1`.
 - `scope=board`: query `done` (how many Done), `ids` (comma list), `after`.
 - `scope=done`: query `offset`, `limit` (default `DONE_PAGE`), `after`.
-- `scope=search`: query `q`, `tags`.
+- `scope=search`: query `q`, `tags`; searches Done tickets only.
 - `scope=ids`: query `ids`.
 - board, done, search and ids answer `{tickets: TicketView[], doneTotal, doneHead?}`.
 
@@ -730,6 +743,9 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 - `GET /api/cron/preview` answers 200 with `valid: false` and an `error` field for a bad or empty expression.
 - `POST /api/huddles/:hid/generic-squad` always answers 200, with any failure in its `error` field.
 - `POST /api/bug-report` answers 201 when an issue was filed and 200 otherwise (the result says why).
+- `PATCH /api/profiles/:slug` doesn't check `path` (a missing folder is saved) or `name` (an empty name is saved);
+  only `POST` checks them.
+- `DELETE .../follow-up` answers 200 also when there is no follow-up to stop.
 - Status codes for similar actions differ: `POST .../chat`, `queued` POST, `key-cards`, `follow-up/now`,
   `cap-continue`, `limit` continue, `pr/send-failures` and `pr/resolve-conflicts` answer 202; `pr/merge`, `stall`,
   `limit` auto, `plan` answer 200; `ask` answers 202; `move`, `branch`, `follow-up-work` and `follow-up` (set) answer
