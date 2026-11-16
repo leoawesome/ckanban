@@ -152,6 +152,7 @@ pub async fn prepare(root: &Path, public_port: u16) -> Option<Arc<BoardMode>> {
         None => Err((503, "the board is still starting; try again in a moment".into())),
     });
     let writes = Arc::new(Writes::new(core.tickets.clone(), core.reads.clone(), sessions.clone(), save_keys));
+    team.set_ticket_cards(Arc::new(ckanban_board::tickets::wiring::SquadCards { tickets: core.tickets.clone() }));
     Some(Arc::new(BoardMode {
         core,
         team,

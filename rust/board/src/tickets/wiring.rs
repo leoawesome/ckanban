@@ -154,3 +154,24 @@ impl crate::git::ops::BoardOps for TicketOps {
         Err(super::hooks::NOT_YET.to_string())
     }
 }
+
+/// R11b's squad cards on tickets (`team::store::TicketCards`): a squad saved from a ticket chat's card marks it.
+pub struct SquadCards {
+    pub tickets: Arc<Tickets>,
+}
+
+impl crate::team::store::TicketCards for SquadCards {
+    fn exists(&self, slug: &str, id: &str) -> bool {
+        self.tickets.get(slug, id).is_some()
+    }
+    fn mark_saved(&self, slug: &str, id: &str, uuid: &str, state: Value) -> Result<(), String> {
+        let t = self.tickets.get(slug, id).ok_or_else(|| format!("ticket {id} not found"))?;
+        let mut cards = t.get("squadCards").and_then(Value::as_object).cloned().unwrap_or_default();
+        cards.insert(uuid.to_string(), state);
+        let mut p = Map::new();
+        p.insert("squadCards".into(), Value::Object(cards));
+        let t = self.tickets.update_quiet(slug, id, p).map_err(|(_, e)| e)?;
+        self.tickets.emit(slug, &t);
+        Ok(())
+    }
+}

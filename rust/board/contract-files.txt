@@ -30,9 +30,8 @@ browsers.test.ts | browsers view|named Chromes|changes are the user's only|POST 
 # routes) need ticket writes and runs: they come with R2a and R7a, which call rust/board/src/git (landing, pr).
 board-files.test.ts
 
-# R11b: teammates and role notes. The squads test also saves a squad card on a ticket it creates first, which needs
-# R2a's ticket writes; it joins the list then.
-huddle.test.ts | built-ins, a board teammate
+# R11b: teammates and role notes; squads (their card on a ticket goes through R2a's ticket writes).
+huddle.test.ts | built-ins, a board teammate|save, change and delete a squad
 huddle-team.test.ts | role notes
 
 # R8: quick chats saved before the start (list, pages, one chat, conversation, tool details) and who may change them.
