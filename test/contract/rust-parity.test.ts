@@ -314,7 +314,7 @@ async function asBrowser(d: Daemon, method: string, path: string, body?: unknown
   const raw = body === undefined ? "-" : typeof body === "string" ? body : JSON.stringify(body);
   const p = Bun.spawn([browserBin(), join(browserDir, "req.ts"), d.url + path, method, raw, JSON.stringify(h)], { stdout: "pipe", stderr: "pipe" });
   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-  if (!out.trim()) throw new Error(`browser request failed: ${err}`);
+  if (!out.trim()) throw new Error(`browser request failed (${d === rs ? "rs" : "bun"} ${method} ${path} ${raw}): ${err}\nLOG:${d.log().slice(-3000)}`);
   return JSON.parse(out) as { status: number; type: string | null; text: string };
 }
 
