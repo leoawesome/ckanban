@@ -197,6 +197,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "icu_normalizer",
  "libc",
  "notify",
  "parking_lot",

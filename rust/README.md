@@ -95,7 +95,9 @@ and every answer includes it, so Rust can't give the same answer from the files.
 | `/api/terminal` (WebSocket) | The shells are Bun's child processes |
 
 Moving them now would mean Rust owning device holds and Bun asking it over HTTP on every ticket view and run end, a
-link step 7 would throw away. They move with the board, runs and chat (step 7 of `docs/rust-port.md`).
+link step 7 would throw away. They move with the board, runs and chat (step 7 of `docs/rust-port.md`): in board mode
+Rust answers all of them (R9, `rust/board/src/browsers/`, see `rust/board/README.md`); in front mode they still go to
+Bun.
 `bun run test:contract:rust` runs `test/contract/browsers.test.ts` through `ckanban-rs`, so the pass-through is tested.
 
 ### Files shared with Bun

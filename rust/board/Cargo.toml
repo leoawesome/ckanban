@@ -21,6 +21,8 @@ tokio-tungstenite = "0.30"
 base64 = "0.23"
 sha1 = "0.10"
 percent-encoding = "2"
+# NFKD for board browser ids made from names (`slugFor`), as `String.normalize("NFKD")` (R9).
+icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
 # State: plain structs behind locks, listings swapped whole (plan 2.1).
 parking_lot = "0.12"
 arc-swap = "1"
@@ -28,7 +30,7 @@ arc-swap = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 regex = "1"
-# `new URL(url).host` for "Reading example.com" (R3; already in Cargo.lock through reqwest).
+# `new URL(...)` (WHATWG): "Reading example.com" (R3), board browsers' start pages and sites (R9).
 url = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 flate2 = "1"

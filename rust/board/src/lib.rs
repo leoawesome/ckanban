@@ -36,6 +36,3 @@ pub mod tickets; // R2a
 // Dependencies of later tasks, added once by R0 so parallel tasks don't each change Cargo.toml and Cargo.lock:
 // referenced here so the build doesn't warn until a task uses them (then remove its line).
 use arc_swap as _;
-use portable_pty as _;
-use sha1 as _;
-use tokio_tungstenite as _;

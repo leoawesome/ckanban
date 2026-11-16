@@ -52,7 +52,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
 - One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6, done), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
-  `huddles` (R11a), `team` (R11b), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
+  `huddles` (R11a), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
 ## The run engine (R3, `src/runs/`)
 
@@ -155,6 +155,43 @@ Bun still gives them; `tests/prompts.rs` checks Rust does. After a deliberate pr
 `UPDATE_RUST_FIXTURES=1 bun test test/rust-prompt-fixtures.test.ts`, then change the Rust text until
 `cargo test -p ckanban-board --test prompts` passes (it writes its differing texts to `rust/target/prompt-fixtures/`;
 `DUMP_PROMPTS=<dir>` makes the Bun test write Bun's, numbered the same).
+
+## Team (R11b)
+
+`src/team/`: teammates (huddle role presets), squads (huddle templates), role notes, teammate and squad proposals,
+the squad save plan, the "Save as squad…" prompt and the plan review file (`src/huddle/huddle-presets*.ts`,
+`huddle-templates*.ts`, `huddle-notes.ts`, `huddle-roster.ts` checks, `squad.ts`, `teammate-proposal.ts`,
+`plan-review-file.ts`, `src/core/layers.ts`). `store.rs` (`Team`) reads and writes the files with Bun's checks and
+statuses; `routes.rs` answers `/api/profiles/:p/huddle-presets`, `/huddle-templates`, `POST /squads` and
+`/huddle-notes` in board mode (`rust/src/board_mode.rs` runs Bun's Host, Origin and JSON type checks first).
+`/learned` and `/api/team-usage` are R12's.
+
+- The built-in teammates and squads and the long texts are `src/team/builtins.json`, written by Bun.
+- A squad card on a ticket needs R2a, a huddle's proposed squad R11a: until they call `Team::set_ticket_cards` and
+  `set_learning_cards`, such a save answers 503 before writing anything.
+- `tests/fixtures/team.json` is the parity table (about 400 cases with Bun's answer or error text);
+  `test/rust-team-fixtures.test.ts` checks Bun, `tests/team.rs` Rust, `tests/team_store.rs` the files and routes.
+  After a deliberate change in Bun: `UPDATE_RUST_FIXTURES=1 bun test test/rust-team-fixtures.test.ts`.
+
+## Browsers, devices and the terminal (R9)
+
+`src/browsers/`: `src/browser/` in Rust, answered by Rust in board mode (`routes.rs`): `/api/board-browsers`,
+`/api/browsers`, `/api/devices` (every method and sub-path, Bun's quirks kept), a ticket's `POST .../devices`
+(take_devices / release_devices) and the board's `GET .../shell` WebSocket (the Terminal panel). `Browsers` (`mod.rs`)
+holds them and is the board's `DeviceInfo`; `board_mode.rs` builds it and calls `answer_request` before the other
+routes.
+
+- `devices.rs`: shared devices, takes all-or-nothing and first come first served, `devices.json` like Bun.
+- `chromes.rs`: named Chromes (`browsers.json`), `ChromeWatch` for a run's stream (R7a feeds it), browser picks.
+- `board_browsers.rs`, `cdp.rs`, `sign_in.rs`: board browsers on their own Chrome, the debugging port client, the
+  sign-in check and screen. Chromes are detached (own session), so they outlive any daemon. At start (`init`) Rust
+  adopts every Chrome still running on a board browser's folder, Bun's included: it reads Bun's
+  `board-browsers.json` and each folder's `DevToolsActivePort`, and uses a Chrome only when its port answers as that
+  very Chrome and is bound to this Mac. It writes `running` back in Bun's format, so Bun adopts Rust's after a switch
+  back. Logged-out alerts go to the helper once R13 connects it (logged in `daemon.log` until then).
+- `shell.rs`: one shell per folder on a pty (`portable-pty`), scrollback for a new tab; `terminals.rs`: which linked
+  tickets are open in a terminal (its linked tickets come from the R1 index, `linked_from_index`).
+- What the routes read from the board goes through `BoardLookup` (`FileLookup`: one ticket or board file at a time).
 
 ## R6: git, copies of the folder, landing, files (`src/git/`)
 
