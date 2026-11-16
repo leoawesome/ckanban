@@ -8,12 +8,11 @@
 // simplify) and FAKE_TRANSCRIPT gives the chat an answer to explain.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join } from "node:path";
 import { type Daemon, startDaemon, until } from "./daemon";
-import { parseTicketFile, readJsonl } from "./files";
+import { documentedPaths, filesUnder, parseTicketFile, pathRegex, readJsonl } from "./files";
 import { schemaProblems } from "./schema";
 
-const CONTRACTS = resolve(import.meta.dir, "..", "..", "contracts");
 const SLUG = "files";
 const HOST = "box.tail0000.ts.net";
 const LOGIN = "tester@example.com";
@@ -142,30 +141,6 @@ afterAll(async () => {
   await d?.stop();
   usageFake.stop(true);
 }, 30_000);
-
-/**
- * A data-files.md path pattern as a regex: `<slug>`-style parts match one path segment, `*` part of one, `**` any.
- * `strict`: `<id>` parts take no dots, so `chats/<id>.json` doesn't also match `chats/<id>.state.json`.
- */
-function pathRegex(pattern: string, strict = false): RegExp {
-  const part = strict ? "[^/.]+" : "[^/]+";
-  const re = pattern.split("/").map((seg) => seg === "**" ? "(?:.+)" : seg.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/<[^>]+>/g, part).replace(/\*/g, "[^/]*")).join("/");
-  return new RegExp(`^${re}$`);
-}
-
-/** The path patterns in data-files.md's ```paths block. */
-function documentedPaths(): RegExp[] {
-  const md = readFileSync(join(CONTRACTS, "data-files.md"), "utf8");
-  const block = md.match(/```paths\n([\s\S]*?)\n```/);
-  if (!block) throw new Error("contracts/data-files.md has no ```paths block");
-  return block[1].split("\n").map((l) => l.replace(/#.*/, "").trim()).filter(Boolean).map((l) => pathRegex(l));
-}
-
-function filesUnder(dir: string): string[] {
-  return (readdirSync(dir, { recursive: true, withFileTypes: true }) as any[])
-    .filter((e) => e.isFile())
-    .map((e) => relative(dir, join(e.parentPath ?? e.path, e.name)));
-}
 
 test("every file in the data folder is one data-files.md lists", () => {
   const patterns = documentedPaths();

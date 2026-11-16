@@ -118,6 +118,43 @@ Board: http://localhost:<port>
 Logs: <root>/daemon.log
 ```
 
+The plist (`plistXml` in `src/cli/launchd.ts`), exact. `{ARG}` stands for one line per program argument; `{PATH}`, `{HOME}` and `{LOG}` (used twice) for the values above. Every value is XML-escaped: `&` → `&amp;`, `<` → `&lt;`, `>` → `&gt;` (quotes are left as they are). The file ends with one newline after `</plist>`.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.ckanban.daemon</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{ARG}</string>
+    <string>start</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>{PATH}</string>
+    <key>HOME</key>
+    <string>{HOME}</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>{LOG}</string>
+  <key>StandardErrorPath</key>
+  <string>{LOG}</string>
+</dict>
+</plist>
+```
+
+The plist is written before `launchctl` runs, so it stays in place when bootstrap fails.
+
 ### `ckanban restart [--now]`
 
 `--now` is detected anywhere in argv.
@@ -433,7 +470,7 @@ Comments (the last 50; 3 earlier not shown: ckanban ticket show t_20261115_cot1 
   - `already-done`: `Already done: this ticket's dependencies are installed.`
   - `no-command`: `Nothing to install: this board has no setup command.`
   - `no-worktree`: `Nothing to install: this ticket works in the project folder itself, not a separate copy.`
-  - ran ok: ``Installed the project's dependencies in <secs>s (`<command>`).`` then a line `<ckanban-setup>{SetupResult JSON with "<" escaped as <}</ckanban-setup>`.
+  - ran ok: ``Installed the project's dependencies in <secs>s (`<command>`).`` then a line `<ckanban-setup>{SetupResult JSON with every "<" written as the six characters \u003c}</ckanban-setup>` (the `result` object re-serialized compactly, keys in the order the daemon sent them).
   - ran and failed: ``\`<command>\` failed (exit <code or "signal">) after <secs>s. Last lines of its output:`` (or `timed out after <secs>s.`), then the output, then the `<ckanban-setup>` line.
 - Exit: after printing, a failed run raises `Setup timed out.` or `Setup failed (exit <code|signal>).` on stderr, exit 1.
 
@@ -469,8 +506,8 @@ Open this link to file it in the browser instead (title and body are prefilled):
 
 ### `ckanban call <service> <tool> ['<json arguments>']`
 
+- Checked in this order. Missing service or tool: stderr `usage: ckanban call <service> <tool> ['<json arguments>']`, exit 1.
 - Only inside an automation check script: needs env `CKANBAN_CALL_TOKEN` (the daemon sets it, with `CKANBAN_PORT`, in the script's clean environment). Missing: stderr `ckanban call only works inside an automation's check script`, exit 1.
-- Missing service or tool: stderr `usage: ckanban call <service> <tool> ['<json arguments>']`, exit 1.
 - Third arg defaults to `{}`; bad JSON: stderr `The arguments must be JSON, e.g. '{"limit": 20}'`, exit 1.
 - Route: `POST /api/automation-call` body `{ token, service, tool, args }`, long wait. Answer `{ result }`.
 - stdout: `result` as is when it is a string, else `JSON.stringify(result)` (compact, one line).
@@ -504,11 +541,20 @@ Only <login> can open it, from devices on your tailnet (never public).
 
 No HTTP. Neither flag means both agents. The registered command (`serverArgv`) is `[execPath, "mcp"]` for the binary or `[execPath, <src>/cli.ts, "mcp"]` from source.
 
-- install, Claude Code: if `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) already has `mcpServers.ckanban` with the same argv, nothing; else runs `claude mcp remove ckanban --scope user` (when an entry exists) and `claude mcp add --scope user ckanban -- <serverArgv...>` (binary `CKANBAN_CLAUDE_BIN` or `claude`, cwd home, 60 s timeout). Codex: edits `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`) atomically. stdout per agent: `Claude Code: registered "ckanban" → <serverArgv joined by spaces>` / `Codex: registered "ckanban" → ...` (arrow character in the source).
-- uninstall: stdout `Claude Code: removed "ckanban"` / `Codex: removed "ckanban"`.
+- install, Claude Code: if `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) already has `mcpServers.ckanban` with the same argv, nothing; else runs `claude mcp remove ckanban --scope user` (when an entry exists) and `claude mcp add --scope user ckanban -- <serverArgv...>` (binary `CKANBAN_CLAUDE_BIN` or `claude`, cwd home, 60 s timeout). Codex: edits `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`) atomically, keeping the file's permissions; nothing when the entry already has the same argv. The old `[mcp_servers.ckanban]` table (and its sub-tables) is dropped, trailing whitespace trimmed, and this block appended after one blank line (or written alone when nothing else is left). Values are JSON strings; the args array has `", "` between items:
+
+```toml
+[mcp_servers.ckanban]
+command = "<serverArgv[0]>"
+args = ["<serverArgv[1]>", "mcp"]
+```
+
+  The file ends with one newline after the block. stdout per agent: `Claude Code: registered "ckanban" → <serverArgv joined by spaces>` / `Codex: registered "ckanban" → ...` (arrow character in the source).
+- uninstall: Claude Code: `claude mcp remove ckanban --scope user` only when an entry exists. Codex: when an entry exists, the table is dropped, trailing whitespace trimmed and one newline added. stdout `Claude Code: removed "ckanban"` / `Codex: removed "ckanban"` (printed whether or not there was an entry).
+- An agent counts as available (status) when its CLI is on PATH (`CKANBAN_CLAUDE_BIN` or `claude`; `codex`), and for Codex also when the config folder exists. "Registered" means an entry exists; "current" means its argv equals `serverArgv`.
 - Errors (`AgentError`, stderr, exit 1): `Claude CLI not found (<bin>). Is Claude Code installed and on PATH?`, `claude mcp add failed: <last 3 lines>`.
 - status: one line per agent: `<Claude Code|Codex>: <state><" (CLI not found)" when unavailable>  [<config path>]`, state is `not registered`, `registered`, or `registered with another command (<command>)`.
-- Unknown action: stderr `usage:` followed by the three `ckanban mcp` lines and the `Register...` line of the ticket usage block, exit 1.
+- Unknown or missing action (`ckanban mcp` with any other first argument): stderr `usage:` followed by the four `ckanban mcp` lines and the `Register...` line of the ticket usage block (in that block's order), exit 1.
 
 ### `ckanban browser-mcp --id <id> --dir <data folder> [--name <name>] [--out <folder>]`
 
@@ -648,7 +694,7 @@ Automation check scripts get a clean env: only `HOME, USER, LOGNAME, LANG, LC_AL
 | `read_artifact` | none (local Claude Code helper session) | read a claude.ai artifact's HTML |
 | `publish_artifact` | none (writes the page under `CKANBAN_OUTPUT_DIR`, local helper session) | publish an HTML page as a claude.ai artifact |
 
-69 tools in total. Huddle, huddle preset, schedule run and job calls carry `x-ckanban-source: mcp` plus `x-ckanban-run` / `x-ckanban-huddle-agent` when set; most other changing calls carry `x-ckanban-run` when in a run.
+69 tools in total (the table above lists every one). Huddle, huddle preset, schedule run and job calls carry `x-ckanban-source: mcp` plus `x-ckanban-run` / `x-ckanban-huddle-agent` when set; most other changing calls carry `x-ckanban-run` when in a run.
 
 ### Tool arguments (`tools/list`)
 
@@ -729,5 +775,5 @@ Each tool's `inputSchema` is `{"type": "object", "properties": {...}, "required"
 ## 7. Not covered here
 
 - Request and response body shapes beyond what is quoted (see `src/cli/client.ts` interfaces such as `TicketInfo`, `ScheduleInfo`, `JobInfo`, `HuddleInfo`) and each MCP tool's descriptions, nested argument shapes and text output (see the group files in `src/mcp/`).
-- The launchd plist XML (`plistXml` in `src/cli/launchd.ts`) and the Tailscale command lines (`src/integrations/remote.ts`).
+- The Tailscale command lines (`src/integrations/remote.ts`).
 - Daemon HTTP routes the CLI and MCP don't call.
