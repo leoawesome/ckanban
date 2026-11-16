@@ -3,7 +3,7 @@
 // so the same tests can check another server (a Rust port): set CKANBAN_CONTRACT_DAEMON / CKANBAN_CONTRACT_CLI (below).
 //
 // Each daemon gets its own temp data folder (CKANBAN_HOME), temp HOME, temp Claude config folder, a fake `claude`
-// (test/fixtures/fake-claude.ts), stub osascript/caffeinate/open/tailscale on PATH and a stub Google Chrome
+// (test/fixtures/fake-claude.ts), stub osascript/caffeinate/open/tailscale/gh on PATH and a stub Google Chrome
 // (CKANBAN_CHROME_BIN) for board browsers, so it never touches the real ~/.claude-kanban, the real repo or the user's
 // Chrome, or shows Mac banners. The board's project folder is a plain temp folder (no git).
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -75,6 +75,9 @@ function stubBin(): string {
     writeFileSync(f, "#!/bin/sh\nexit 0\n");
     chmodSync(f, 0o755);
   }
+  // GitHub CLI: always "not logged in", so a bug report (report_bug, POST /api/bug-report) never reaches GitHub.
+  writeFileSync(join(dir, "gh"), "#!/bin/sh\necho 'To get started with GitHub CLI, please run:  gh auth login' >&2\nexit 4\n");
+  chmodSync(join(dir, "gh"), 0o755);
   // Board browsers start Google Chrome; this stub only writes down how it was started (one JSON argv per line, in
   // chrome-starts.jsonl next to it) and exits at once, so a start fails the way a Chrome that closes right away does.
   const chrome = join(dir, "google-chrome");
