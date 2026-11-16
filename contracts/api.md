@@ -93,6 +93,16 @@ and stdin is not read. The remote listener (`CKANBAN_REMOTE_PORT`) is never behi
 notices from the front: `changed automation-passes.json` after the front changed that file itself; the daemon then
 sends the `integration.updated` event, as after its own writes.
 
+**The Rust board (board mode, trial).** With `CKANBAN_RUST_BOARD=1`, or that variable unset and `<data>/rust-board`
+holding `on`, `ckanban-rs dev` owns the board itself and starts the daemon as its satellite with `CKANBAN_SATELLITE=1`
+added (`docs/rust-port-board-plan.md` 3.3). The satellite starts no runs, timers or watchers, refuses every ticket
+write (`ticket.md`, comments, run logs; logged, and the route answers with the error), and takes stdin lines `event
+<json>` (a board event for its own listeners, not for its event stream) and `runtime <json>` (live state: `running`,
+`hostHuddles`, `sessions`). The front answers `GET /api/events` itself and re-emits the satellite's events on it. If
+board mode can't start (the `board.lock` is held, the core fails, or three unclean ends within 10 minutes), the
+daemon runs in full mode as without it; `rust-board-status.json` says which and why (`data-files.md`). Unset, none
+of this applies. Without a front, `CKANBAN_SATELLITE=1` stops the daemon at start.
+
 **Run rights (`runRights`).** Ticket changes sent with `x-ckanban-run` are allowed only for: a Planning chat answering
 the user's typed message (any ticket of its board but its own: "requester"); a main ticket or tool group on its own
 family ("planner"); an active work run or chat reply on other tickets of its board ("runner"); a chat on another board

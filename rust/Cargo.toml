@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 ckanban-core = { path = "core" }
+ckanban-board = { path = "board" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "signal", "time", "io-util", "io-std", "sync"] }
 hyper = { version = "1", features = ["http1", "server", "client"] }
 hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
@@ -23,9 +24,9 @@ libc = "0.2"
 regex = "1"
 
 [workspace]
-# One Cargo.lock, one toolchain pin (rust-toolchain.toml) and one target/ for the server and its library.
-members = [".", "core"]
-default-members = [".", "core"]
+# One Cargo.lock, one toolchain pin (rust-toolchain.toml) and one target/ for the server and its libraries.
+members = [".", "core", "board"]
+default-members = [".", "core", "board"]
 
 [profile.release]
 opt-level = 3

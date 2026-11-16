@@ -18,6 +18,10 @@ it during the trial.
 - `src/proxy.rs`: passing one request and its answer, hop-by-hop headers, upgrades.
 - `core/`: `ckanban-core`, the usage and spend logic ported from `src/usage/` ([README](core/README.md)). One
   workspace: one `Cargo.lock`, one toolchain pin, one `target/`.
+- `board/`: `ckanban-board`, the board, runs and chat in Rust, behind board mode (off by default; [README](board/README.md)).
+  `src/board_mode.rs` decides at start whether it owns the board (`CKANBAN_RUST_BOARD=1` or `<data>/rust-board`),
+  falls back to Bun's full mode when it can't, and answers the routes it owns (`GET /api/events` so far) before the
+  ones below.
 - `src/settings.rs`: the board's port (`CKANBAN_PORT`, else `config.json` in the data folder, else 7777), the phone
   access port, finding Bun (`CKANBAN_BUN`, else the Bun that started this process, else `bun` on `PATH`) and the repo
   (`CKANBAN_REPO`, else the nearest folder above the binary with `src/cli.ts`), the free internal port, the secret.

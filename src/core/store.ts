@@ -241,6 +241,17 @@ export class Store {
   }>();
   private now: () => number;
   private changeFns = new Set<(c: StoreChange) => void>();
+  /**
+   * Satellite mode (core/satellite.ts): the Rust board owns the tickets, so every ticket write here throws (and is
+   * logged) instead of writing ticket.md, comments or run logs behind its back. Reads work as usual.
+   */
+  readOnlyTickets = false;
+  private ticketWrite(what: string, slug: string, id: string): void {
+    if (!this.readOnlyTickets) return;
+    const msg = `satellite mode: ${what} of ticket ${slug}/${id} refused; the Rust board owns the tickets`;
+    console.error(msg);
+    throw new Error(msg);
+  }
   constructor(public readonly root: string, opts: { now?: () => number } = {}) {
     mkdirSync(join(root, "profiles"), { recursive: true });
     this.now = opts.now ?? Date.now;
@@ -604,6 +615,7 @@ export class Store {
       effort?: string | null; main?: boolean; tool?: boolean; startFrom?: string | null; waitsForStart?: boolean;
     },
   ): Ticket {
+    this.ticketWrite("create", slug, "(new)");
     const at = nowIso();
     const t: Ticket = {
       id: newTicketId(), title: input.title, status: input.status, mode: input.mode ?? "auto", order: this.entryOrder(slug, input.status),
@@ -637,6 +649,7 @@ export class Store {
 
   /** keepUpdatedAt: a data migration that changes no content keeps the ticket's updatedAt (its place in sorted lists). */
   updateTicket(slug: string, id: string, patch: Partial<Ticket>, opts: { keepUpdatedAt?: boolean } = {}): Ticket {
+    this.ticketWrite("update", slug, id);
     const current = parseTicket(readFileSync(this.ticketPath(slug, id), "utf8"));
     const next: Ticket = { ...current, ...patch, id, updatedAt: opts.keepUpdatedAt ? current.updatedAt : nowIso() };
     // Changing column without an explicit position (drag drop) places the ticket by entryOrder().
@@ -653,6 +666,7 @@ export class Store {
   }
 
   deleteTicket(slug: string, id: string): void {
+    this.ticketWrite("delete", slug, id);
     rmSync(this.ticketDir(slug, id), { recursive: true, force: true });
     this.saved(slug, id, null);
   }
@@ -804,6 +818,7 @@ export class Store {
   }
 
   addComment(slug: string, id: string, author: Comment["author"], text: string, from?: string): Comment {
+    this.ticketWrite("comment", slug, id);
     // A saved key never lands in the ticket's files, even if a run's summary or a message quotes one.
     const c: Comment = { id: newId(), author, text: maskSaved(this.root, text), at: nowIso(), ...(from ? { from } : {}) };
     const file = join(this.ticketDir(slug, id), "comments.jsonl");
@@ -813,6 +828,7 @@ export class Store {
   }
 
   appendActivity(slug: string, id: string, run: number, event: unknown): void {
+    this.ticketWrite("run log", slug, id);
     const e: ActivityEntry = { run, at: nowIso(), event };
     const file = this.activityPath(slug, id);
     // A log compressed while the ticket sat in Done (run-log-compress.ts) comes back before anything is added to it.

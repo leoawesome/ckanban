@@ -41,12 +41,19 @@ import { keepAwakeOn } from "../core/types";
 import { VERSION } from "../core/version";
 import { WEB_ASSETS } from "../api/web-assets.gen";
 import { detectMissing } from "../runs/worktree-setup";
-import { onFrontNotice, readFront, setFront } from "../core/front";
+import { onFrontNotice, readFront, setFront, setNoticeLimit } from "../core/front";
+import { isSatellite, RuntimeMirror, satelliteNotice } from "../core/satellite";
+import { takeBoardLock } from "../core/board-lock";
 import { sweepTempFiles, trimDaemonLog } from "../core/housekeeping";
 
 export async function startDaemon(): Promise<void> {
   // Board runs and other children inherit this; an older launchd plist starts the daemon with no locale.
   Object.assign(process.env, withUtf8Locale(process.env));
+  // Satellite mode (core/satellite.ts): the Rust board owns the board and sends its events on stdin, a line each.
+  const satellite = isSatellite(process.env);
+  // Runs, scripts and test daemons this one starts are never satellites themselves.
+  delete process.env.CKANBAN_SATELLITE;
+  if (satellite) setNoticeLimit(256 * 1024 * 1024);
   // Behind the Rust front server (core/front.ts): its secret comes on stdin, and end of stdin means it is gone.
   let frontGone: () => void = () => process.exit(0);
   let front: Awaited<ReturnType<typeof readFront>>;
@@ -60,7 +67,23 @@ export async function startDaemon(): Promise<void> {
     process.exit(1);
   }
   setFront(front);
+  if (satellite && !front) {
+    console.error("ckanban: CKANBAN_SATELLITE=1 is only for the Rust board (ckanban-rs dev), which starts this daemon behind it");
+    process.exit(1);
+  }
+  // One owner of the data folder's board (core/board-lock.ts); in satellite mode the Rust board holds it.
+  if (!satellite) {
+    try {
+      await takeBoardLock(defaultRoot());
+    } catch (e) {
+      console.error(`ckanban: ${(e as Error).message}; not starting`);
+      process.exit(1);
+    }
+  }
   const store = new Store(defaultRoot());
+  store.readOnlyTickets = satellite;
+  /** Satellite mode: the Rust board's live state, from its `runtime` lines. */
+  const mirror = new RuntimeMirror();
   const config = store.config();
   /** Where this daemon listens: an internal port behind the front server, else the board's port. */
   const listenPort = Number(process.env.CKANBAN_PORT) || config.port;
@@ -75,12 +98,14 @@ export async function startDaemon(): Promise<void> {
   // The front server changed a file this daemon also uses (rust/src/passes.rs): the UI hears of it as after our own writes.
   onFrontNotice((line) => {
     if (line === `changed ${PASSES_FILE}`) bus.emit({ type: "integration.updated" });
+    else if (satellite) satelliteNotice(line, bus, mirror);
   });
-  const sessions = new SessionCache({}, Date.now, join(store.root, "session-summaries.json"));
+  // Satellite mode: session-summaries.json belongs to the Rust board; this cache only reads transcripts when asked.
+  const sessions = new SessionCache({}, Date.now, satellite ? undefined : join(store.root, "session-summaries.json"));
   // One watch on Claude's projects folder: watchers look only at sessions that changed (they poll if it can't start).
   const feed = new SessionFeed(projectsDir());
-  if (!feed.start()) console.warn("session feed: can't watch Claude's projects folder; watchers poll every ticket");
-  const stopFollow = sessions.follow(feed);
+  if (!satellite && !feed.start()) console.warn("session feed: can't watch Claude's projects folder; watchers poll every ticket");
+  const stopFollow = satellite ? () => {} : sessions.follow(feed);
   const shells = new ShellManager();
   void cleanupTmuxLeftovers();
   const board = new Board(store, bus, {
@@ -95,8 +120,14 @@ export async function startDaemon(): Promise<void> {
   const remoteConfig = new RemoteAccess(store.root, () => 0);
   const push = new PushService(store.root);
   const notifier: Notifier = new Notifier(store, bus, {
-    root: store.root, push, sessionSummary: (id) => sessions.summary(id), sessionsReady: () => sessions.settled(), isRunning: (slug, id) => board.isRunning(slug, id),
-    hostHuddles: (slug) => board.hostHuddles(slug),
+    root: store.root, push,
+    ...(satellite ? {
+      sessionSummary: (id: string) => mirror.sessionSummary(id), sessionsReady: () => mirror.ready,
+      isRunning: (slug: string, id: string) => mirror.isRunning(slug, id), hostHuddles: (slug: string) => mirror.hostHuddles(slug),
+    } : {
+      sessionSummary: (id: string) => sessions.summary(id), sessionsReady: () => sessions.settled(),
+      isRunning: (slug: string, id: string) => board.isRunning(slug, id), hostHuddles: (slug: string) => board.hostHuddles(slug),
+    }),
     baseUrl: () => {
       const r = remoteConfig.active();
       return r ? remoteUrl(r.host) : `http://localhost:${port}`;
@@ -141,9 +172,10 @@ export async function startDaemon(): Promise<void> {
     snoozedUntil: (slug, id) => {
       const t = store.getTicket(slug, id);
       if (!t?.snooze || Date.parse(t.snooze.until) <= Date.now()) return null;
-      const s = t.sessionId ? sessions.summary(t.sessionId) : null;
-      const h = board.hostHuddles(slug).get(id);
-      const a = ticketAttention(store, slug, t, s, board.isRunning(slug, id), h, (x) => board.isRunning(slug, x));
+      const s = t.sessionId ? (satellite ? mirror.sessionSummary(t.sessionId) : sessions.summary(t.sessionId)) : null;
+      const running = (x: string) => (satellite ? mirror.isRunning(slug, x) : board.isRunning(slug, x));
+      const h = (satellite ? mirror.hostHuddles(slug) : board.hostHuddles(slug)).get(id);
+      const a = ticketAttention(store, slug, t, s, running(id), h, running);
       return withSnooze(t, s, a, Date.now(), h).snoozed?.until ?? null;
     },
     onScreen: () => push.anyVisible(), phoneDevices: () => push.phoneDevices(),
@@ -158,7 +190,7 @@ export async function startDaemon(): Promise<void> {
   });
   const remotePort = remoteListenPort(port, config.remotePort);
   const server = createServer({ store, bus, board, port: listenPort, remotePort, webDir, sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
-  console.log(`ckanban v${VERSION} listening on http://localhost:${front ? port : server.port} (data: ${store.root})${front ? ` behind the front server (internal port ${server.port})` : ""}`);
+  console.log(`ckanban v${VERSION} listening on http://localhost:${front ? port : server.port} (data: ${store.root})${front ? ` behind the front server (internal port ${server.port})` : ""}${satellite ? " as the Rust board's satellite" : ""}`);
   // Running from source (developing ckanban): a freeze of seconds raises a Mac banner naming what ran. Installed
   // copies only log it; their users can't act on it.
   const stopLag = startLagMonitor(VERSION === "dev" ? {
@@ -169,29 +201,35 @@ export async function startDaemon(): Promise<void> {
   await track("startup: load tickets", () => store.loadAllTickets());
   // Huddles, jobs, schedules and automations too: a board keeps every finished one, so the first read can be big.
   await track("startup: load lists", () => store.loadAllLists());
-  // Planned tickets are retired: old plans become main tickets with tool tickets (once; a no-op after that).
-  await track("startup: retire old plans", () => retireOldPlans(store)).catch((e) => console.error("retire old plans", e));
-  track("startup: board.recover", () => board.recover());
-  track("startup: huddles.recover", () => huddles.recover());
-  await track("startup: quickChats.recover", () => quickChats.recover());
-  huddles.startWatchdog();
-  // Board browsers: adopt the data folders and the Chromes still running from before a restart, start keep-running ones.
-  void track("startup: board browsers", () => board.boardBrowsers.init().then(() => board.boardBrowsers.start()).catch((e) => console.error("board browsers", e)));
-  void track("startup: sweepWorktrees", () => board.sweepWorktrees());
+  // Satellite mode: the Rust board recovers runs, runs the timers and owns every ticket write; this daemon only
+  // keeps its file caches fresh (reads) for the helper and the routes it still answers.
+  const full = !satellite;
+  const off = () => {};
+  if (full) {
+    // Planned tickets are retired: old plans become main tickets with tool tickets (once; a no-op after that).
+    await track("startup: retire old plans", () => retireOldPlans(store)).catch((e) => console.error("retire old plans", e));
+    track("startup: board.recover", () => board.recover());
+    track("startup: huddles.recover", () => huddles.recover());
+    await track("startup: quickChats.recover", () => quickChats.recover());
+    huddles.startWatchdog();
+    // Board browsers: adopt the data folders and the Chromes still running from before a restart, start keep-running ones.
+    void track("startup: board browsers", () => board.boardBrowsers.init().then(() => board.boardBrowsers.start()).catch((e) => console.error("board browsers", e)));
+    void track("startup: sweepWorktrees", () => board.sweepWorktrees());
+  }
   void track("startup: trim daemon.log", () => trimDaemonLog(join(store.root, "daemon.log"))).catch((e) => console.error("daemon.log trim", e));
   void track("startup: sweep temp files", () => sweepTempFiles(store.root)).catch((e) => console.error("temp file sweep", e));
-  void track("startup: detectMissing", () => detectMissing(store, (profile) => bus.emit({ type: "profile.updated", slug: profile.slug, profile })));
-  const stopPoller = startPoller(board, store, config.prPollMinutes);
+  if (full) void track("startup: detectMissing", () => detectMissing(store, (profile) => bus.emit({ type: "profile.updated", slug: profile.slug, profile })));
+  const stopPoller = full ? startPoller(board, store, config.prPollMinutes) : off;
   // After recover(): a missed run's ticket must not be mistaken for an interrupted one.
-  const stopScheduler = scheduler.start();
-  const stopJobs = jobs.start();
-  const stopLoops = loops.start();
-  const stopLearner = learner.start();
-  const stopLimits = new LimitWatcher(board, store).start();
-  const stopFollowUps = new FollowUpWatcher(board, store).start();
+  const stopScheduler = full ? scheduler.start() : off;
+  const stopJobs = full ? jobs.start() : off;
+  const stopLoops = full ? loops.start() : off;
+  const stopLearner = full ? learner.start() : off;
+  const stopLimits = full ? new LimitWatcher(board, store).start() : off;
+  const stopFollowUps = full ? new FollowUpWatcher(board, store).start() : off;
   // Run logs of tickets Done for over 30 days are compressed, a few at a time, losing nothing (run-log-compress.ts).
-  const stopLogCompress = new RunLogCompressor(store, (slug, id) => board.isRunning(slug, id)).start();
-  const stopWatcher = startSessionWatcher(store, bus, sessions, 2000, { feed });
+  const stopLogCompress = full ? new RunLogCompressor(store, (slug, id) => board.isRunning(slug, id)).start() : off;
+  const stopWatcher = full ? startSessionWatcher(store, bus, sessions, 2000, { feed }) : off;
   // Ticket files edited outside the Store, found in slices in the background instead of inside a listing.
   let rechecking: Promise<void> | null = null;
   const recheck = () => (rechecking ??= store.recheckTickets().catch((e) => console.error("ticket recheck", e)).finally(() => (rechecking = null)));
@@ -202,8 +240,8 @@ export async function startDaemon(): Promise<void> {
   const recheckLists = () => (recheckingLists ??= store.recheckLists().catch((e) => console.error("list recheck", e)).finally(() => (recheckingLists = null)));
   void recheckLists();
   const listRecheckTimer = trackedInterval("list-recheck", recheckLists, JSON_DIR_RECHECK_MS);
-  const stopHuddleWatcher = startHuddleSessionWatcher(store, bus, (id) => sessions.version(id), 2000, { feed });
-  const stopTerminals = terminals.start();
+  const stopHuddleWatcher = full ? startHuddleSessionWatcher(store, bus, (id) => sessions.version(id), 2000, { feed }) : off;
+  const stopTerminals = full ? terminals.start() : off;
   const stopMcp = mcp.start();
   // After recover(): what already waits when the daemon starts doesn't notify again.
   const stopNotifier = notifier.start();
@@ -223,7 +261,7 @@ export async function startDaemon(): Promise<void> {
     stopLogCompress();
     clearInterval(recheckTimer);
     clearInterval(listRecheckTimer);
-    sessions.flushSummariesNow();
+    if (full) sessions.flushSummariesNow();
     stopHuddleWatcher();
     stopFollow();
     feed.stop();
@@ -235,9 +273,9 @@ export async function startDaemon(): Promise<void> {
     stopAwake();
     // Board browsers stay running (detached from the daemon, so nothing can cut a close short and lose logins); the
     // next daemon adopts them again.
-    board.boardBrowsers.shutdown();
+    if (full) board.boardBrowsers.shutdown();
     stopLag();
-    await Promise.all([board.shutdown(), huddles.shutdown(), quickChats.shutdown()]);
+    if (full) await Promise.all([board.shutdown(), huddles.shutdown(), quickChats.shutdown()]);
     server.stop(true);
     server.remoteServer?.stop(true);
     process.exit(0);

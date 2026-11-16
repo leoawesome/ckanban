@@ -78,7 +78,8 @@ test("behind a front server, its internal port refuses requests without the secr
   }
 });
 
-test("the event stream delivers each event while the stream stays open", async () => {
+/** Opens the event stream; `readUntil` reads it until a pattern shows up. */
+async function openEvents() {
   const ctl = new AbortController();
   const res = await fetch(`${d.url}/api/events`, { signal: ctl.signal });
   expect(res.status).toBe(200);
@@ -98,9 +99,21 @@ test("the event stream delivers each event while the stream stays open", async (
     }
   };
   await readUntil(/: connected/, 5_000);
+  return { readUntil, close: () => ctl.abort() };
+}
+
+test("the event stream delivers each event while the stream stays open", async () => {
+  const s = await openEvents();
   const t = (await d.api("POST", `/api/profiles/${SLUG}/tickets`, { title: "Streamed" })).data;
-  await readUntil(new RegExp(`data: \\{[^\\n]*"${t.id}"`), 5_000);
-  ctl.abort();
+  await s.readUntil(new RegExp(`data: \\{[^\\n]*"${t.id}"`), 5_000);
+  s.close();
+});
+
+test("the event stream carries a board's settings change", async () => {
+  const s = await openEvents();
+  expect((await d.api("PATCH", `/api/profiles/${SLUG}`, { name: "Callers renamed" })).status).toBe(200);
+  await s.readUntil(/data: \{"type":"profile\.updated","slug":"callers","profile":\{[^\n]*"name":"Callers renamed"/, 5_000);
+  s.close();
 });
 
 test("the terminal's WebSocket opens a shell and echoes what it runs", async () => {

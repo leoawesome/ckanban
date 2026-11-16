@@ -9,7 +9,15 @@ const SCRIPT = join(import.meta.dir, "rust-trial.sh");
 const root = mkdtempSync(join(tmpdir(), "ck-rust-trial-"));
 const LABEL = "io.ckanban.trialtest";
 let waiting = 0;
-const board = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => Response.json({ pending: false, waiting }) });
+/** POST /api/restart calls the stand-in board got (the `board` action's graceful restart). */
+let restarts = 0;
+const board = Bun.serve({
+  port: 0, hostname: "127.0.0.1",
+  fetch: (req) => {
+    if (req.method === "POST") restarts++;
+    return Response.json({ pending: req.method === "POST", waiting, running: waiting });
+  },
+});
 afterAll(() => {
   board.stop(true);
   rmSync(root, { recursive: true, force: true });
@@ -39,6 +47,7 @@ beforeEach(() => {
   const xml = plistXml({ programArgs: ["/opt/bun", join(p.repo, "src", "cli.ts")], path: "/usr/bin:/a&b", logFile: "/h/daemon.log", home: "/h" });
   writeFileSync(p.plist, xml.replace("<string>io.ckanban.daemon</string>", `<string>${LABEL}</string>`));
   waiting = 0;
+  restarts = 0;
 });
 
 async function run(action: string, env: Record<string, string> = {}): Promise<{ code: number; out: string }> {
@@ -117,4 +126,45 @@ test("off works after an on that launchd wouldn't load, even with the board not 
   expect(off.out).toContain("going back to Bun anyway");
   expect(off.code).toBe(0);
   expect(readFileSync(p.plist, "utf8")).toBe(original);
+});
+
+test("board with the front installed writes the switch file and asks the board to restart when idle; on and off remove it", async () => {
+  const p = paths();
+  const sw = join(dir, ".claude-kanban", "rust-board");
+  expect((await run("on")).code).toBe(0);
+  const calls = readFileSync(p.calls, "utf8");
+  waiting = 1;
+  const b = await run("board");
+  expect(b.code).toBe(0);
+  expect(b.out).toContain("Switching to the Rust board at the board's next idle moment");
+  expect(readFileSync(sw, "utf8")).toBe("on\n");
+  expect(restarts).toBe(1);
+  // No launchd reload: the board's own restart waits for the running task.
+  expect(readFileSync(p.calls, "utf8")).toBe(calls);
+  waiting = 0;
+  expect((await run("on")).code).toBe(0);
+  expect(existsSync(sw)).toBe(false);
+  expect((await run("board")).code).toBe(0);
+  expect((await run("off")).code).toBe(0);
+  expect(existsSync(sw)).toBe(false);
+});
+
+test("board without the front installs it with the switch already on, in one reload", async () => {
+  const p = paths();
+  const sw = join(dir, "data", "rust-board");
+  const b = await run("board", { CKANBAN_HOME: join(dir, "data") });
+  expect(b.code).toBe(0);
+  expect(b.out).toContain("The Rust board is on");
+  expect(readFileSync(sw, "utf8")).toBe("on\n");
+  expect((await plistJson(p.plist)).ProgramArguments).toEqual([p.bin, "dev"]);
+  expect(readFileSync(p.calls, "utf8").match(/bootstrap/g)).toHaveLength(1);
+  expect(restarts).toBe(0);
+});
+
+test("board refuses like on while tasks run when the front isn't installed, and leaves no switch file", async () => {
+  waiting = 1;
+  const r = await run("board");
+  expect(r.code).toBe(1);
+  expect(r.out).toContain("1 board task(s) are running");
+  expect(existsSync(join(dir, ".claude-kanban", "rust-board"))).toBe(false);
 });
