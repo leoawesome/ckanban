@@ -30,6 +30,8 @@ import { IMAGE_TYPES } from "../board/attachments";
 import { ticketFolder, type FileRoot } from "../core/files";
 import { boardToolsSource, McpManager } from "../integrations/mcp";
 import { Notifier } from "../helper/notify";
+import type { Replay } from "../helper/frontdesk";
+import type { EdgeHandlers } from "../core/satellite-edge";
 import { HelperError, type HelperRunner } from "../helper/runner";
 import type { DeviceUser } from "../browser/devices";
 import { legacyChrome, ownPicks, resolveBrowserPicks } from "../browser/chromes";
@@ -130,6 +132,11 @@ export interface ServerDeps {
   push?: PushService;
   /** The helper runner (helper/runner.ts): its status, settings, feedback list and the message buttons. */
   helper?: HelperRunner;
+  /**
+   * Satellite mode (core/satellite.ts): the Rust board owns the board. The front desk's Confirm replays a held request
+   * through it (`replay`), and its edge calls reach `edge` (core/satellite-edge.ts).
+   */
+  satellite?: { replay: Replay };
   /** Parent suggestions and Find links (linker.ts); tests pass one on a fake side call. */
   linker?: Pick<Linker, "suggest" | "find">;
 }
@@ -527,7 +534,7 @@ export function createContext(deps: ServerDeps) {
   // The front desk lives in the quick chats; a tap on its Confirm runs the held request here, as the user.
   notifier.frontDesk.plug({
     chats: quickChats,
-    replay: async (method, path, b) => {
+    replay: deps.satellite?.replay ?? (async (method, path, b) => {
       const u = new URL(`http://127.0.0.1${path}`);
       const replayed = new Request(u.href, { method, ...(b === null || b === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(b) }) });
       confirmedInTelegram.add(replayed);
@@ -542,8 +549,15 @@ export function createContext(deps: ServerDeps) {
         data = text ? JSON.parse(text) : null;
       } catch {}
       return { status: r.status, body: data };
-    },
+    }),
   });
+  /** The Rust board's calls to this daemon in satellite mode (core/satellite-edge.ts). */
+  const edge: EdgeHandlers = {
+    frontdeskGate: (desk, method, path, b) => notifier.frontDesk.gate(desk, method, path, b),
+    passCall: (b) => loops.callForBoard(b),
+    publish: (job) => publishArtifact(job),
+    turnEnded: (slug, id, text) => notifier.turnEnded(slug, id, text),
+  };
   const helperRunner = deps.helper ?? null;
   const helperOr503 = (): HelperRunner => {
     if (!helperRunner) throw new HttpError(503, "the helper isn't running");
@@ -1107,6 +1121,7 @@ export function createContext(deps: ServerDeps) {
     isUserBrowser,
     isOutsideBoard,
     confirmedInTelegram,
+    edge,
     workflowView,
     userOnly,
     scheduleDeleter,

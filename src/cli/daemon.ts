@@ -44,6 +44,7 @@ import { WEB_ASSETS } from "../api/web-assets.gen";
 import { detectMissing } from "../runs/worktree-setup";
 import { onFrontNotice, readFront, setFront, setNoticeLimit } from "../core/front";
 import { isSatellite, RuntimeMirror, satelliteNotice } from "../core/satellite";
+import { rustComment, rustReplay, rustTelegramBoard } from "../core/satellite-edge";
 import { takeBoardLock } from "../core/board-lock";
 import { sweepTempFiles, trimDaemonLog } from "../core/housekeeping";
 
@@ -97,8 +98,11 @@ export async function startDaemon(): Promise<void> {
   }
   const bus = new Bus();
   // The front server changed a file this daemon also uses (rust/src/passes.rs): the UI hears of it as after our own writes.
+  /** Satellite mode: phone access as the Rust board's phone listener sees it (it sends `remote-visit <time>`). */
+  let phoneRemote: RemoteAccess | null = null;
   onFrontNotice((line) => {
     if (line === `changed ${PASSES_FILE}`) bus.emit({ type: "integration.updated" });
+    else if (satellite && line.startsWith("remote-visit ")) phoneRemote?.noteVisit(line.slice("remote-visit ".length));
     else if (satellite) satelliteNotice(line, bus, mirror);
   });
   // Satellite mode: session-summaries.json belongs to the Rust board; this cache only reads transcripts when asked.
@@ -133,8 +137,10 @@ export async function startDaemon(): Promise<void> {
       const r = remoteConfig.active();
       return r ? remoteUrl(r.host) : `http://localhost:${port}`;
     },
+    // Satellite mode: the notifier's comments are written by the Rust board (core/satellite-edge.ts).
+    ...(satellite && front ? { addComment: rustComment(front) } : {}),
   });
-  notifier.plugBoard(board);
+  notifier.plugBoard(satellite && front ? rustTelegramBoard(front) : board);
   // A board browser seen logged out (its sign-in check): tell the user at once, naming the boards that use it.
   board.boardBrowsers.onLoggedOut = (b, site) => {
     const using = store.listProfiles().filter((p) => (ownPicks(p) ?? []).some((x) => x.kind === "board" && x.id === b.id));
@@ -190,7 +196,11 @@ export async function startDaemon(): Promise<void> {
     onChange: (held) => bus.emit({ type: "awake.updated", held }),
   });
   const remotePort = remoteListenPort(port, config.remotePort);
-  const server = createServer({ store, bus, board, port: listenPort, remotePort, webDir, sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
+  // Satellite mode: the Rust board has the phone access listener (on remotePort, which it passes in
+  // CKANBAN_REMOTE_PORT); turning phone access on points `tailscale serve` there.
+  if (satellite) phoneRemote = new RemoteAccess(store.root, () => remotePort);
+  const server = createServer({ store, bus, board, port: listenPort, remotePort: satellite ? undefined : remotePort, webDir,
+    ...(satellite && front ? { remote: phoneRemote!, satellite: { replay: rustReplay(front) } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
   console.log(`ckanban v${VERSION} listening on http://localhost:${front ? port : server.port} (data: ${store.root})${front ? ` behind the front server (internal port ${server.port})` : ""}${satellite ? " as the Rust board's satellite" : ""}`);
   // Running from source (developing ckanban): a freeze of seconds raises a Mac banner naming what ran. Installed
   // copies only log it; their users can't act on it.
@@ -217,8 +227,11 @@ export async function startDaemon(): Promise<void> {
     void track("startup: board browsers", () => board.boardBrowsers.init().then(() => board.boardBrowsers.start()).catch((e) => console.error("board browsers", e)));
     void track("startup: sweepWorktrees", () => board.sweepWorktrees());
   }
-  void track("startup: trim daemon.log", () => trimDaemonLog(join(store.root, "daemon.log"))).catch((e) => console.error("daemon.log trim", e));
-  void track("startup: sweep temp files", () => sweepTempFiles(store.root)).catch((e) => console.error("temp file sweep", e));
+  // Satellite mode: the Rust board runs these clean-ups (report-only at first, rust/board/src/gate/housekeeping.rs).
+  if (!satellite) {
+    void track("startup: trim daemon.log", () => trimDaemonLog(join(store.root, "daemon.log"))).catch((e) => console.error("daemon.log trim", e));
+    void track("startup: sweep temp files", () => sweepTempFiles(store.root)).catch((e) => console.error("temp file sweep", e));
+  }
   if (full) void track("startup: detectMissing", () => detectMissing(store, (profile) => bus.emit({ type: "profile.updated", slug: profile.slug, profile })));
   const stopPoller = full ? startPoller(board, store, config.prPollMinutes) : off;
   // After recover(): a missed run's ticket must not be mistaken for an interrupted one.

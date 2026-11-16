@@ -153,10 +153,10 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
-| GET | `/api/health` | | 200 `{claude, git, gh, pty}`: paths of the binaries or null, `pty` boolean | |
-| POST | `/api/debug/profile` | query `seconds` (default 15) | 200 `profileFor()` result (cpuprof.ts) | 403 with `x-ckanban-run`, Host not localhost/127.0.0.1, or Host on the remote port |
+| GET | `/api/health` | | 200 `{claude, git, gh, pty}`, all booleans (whether each can be found or used) | |
+| POST | `/api/debug/profile` | query `seconds` (default 15, 1 to 120) | 200 `{file, hot: [{fn, where, selfMs, totalMs}]}`: the report in `<data>/debug/` (Bun: a `.cpuprofile`; the Rust board: a macOS `sample` report, `totalMs` = `selfMs`) | 403 with `x-ckanban-run`, Host not localhost/127.0.0.1, Host on the remote port or the phone access listener; 500 a profile is already being taken |
 | GET | `/api/events` | | event stream (above) | |
-| GET | `/api/version` | | 200 `UpdateChecker.status()` (update.ts) | |
+| GET | `/api/version` | | 200 `{version, latest, updateAvailable, url}` (update.ts): GitHub's latest release, asked at most every 6 hours. **Test hook:** `CKANBAN_RELEASES_URL` replaces GitHub's releases address | |
 | GET | `/api/usage` | query `fresh=1` asks Anthropic now (still at most one call a minute) | 200 `UsageView` (usage-cache.ts), see "Plan usage" below | |
 | GET | `/api/spend` | | 200 `SpendIndex.recent()` (spend.ts): `{ day, costUsd, boards }`, see "Today's spend" below | |
 | GET | `/api/team-usage` | | 200 `{teammates: {name: Usage}, templates: {name: Usage}}`, `Usage {huddles, lastUsed, costUsd, recent: [{board, huddle, ticket, title, at, costUsd}]}` (newest first, at most 5), over every board's huddles, closed ones included | |

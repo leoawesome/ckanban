@@ -15,6 +15,7 @@ mod js;
 mod mask;
 mod mcp;
 mod passes;
+mod phone;
 mod proxy;
 mod routes;
 mod settings;
@@ -98,7 +99,18 @@ async fn dev() -> u8 {
         Err(e) => return fail(format!("no free internal port: {e}")),
     };
     // Board mode (board_mode.rs): off unless asked for; then the Rust board owns the board and Bun is its satellite.
-    let board = board_mode::prepare(&root, public_port).await;
+    let board = board_mode::prepare(&root, public_port, remote_port, internal_port, &secret).await;
+    // Board mode: the phone access listener is this server's (phone.rs); a busy port only costs phone access.
+    let phone = match &board {
+        Some(_) => match TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, remote_port)).await {
+            Ok(l) => Some(l),
+            Err(e) => {
+                eprintln!("ckanban-rs: phone access listener on 127.0.0.1:{remote_port} failed: {e}");
+                None
+            }
+        },
+        None => None,
+    };
 
     let mut cmd = Command::new(&bun);
     cmd.arg(repo.join("src/cli.ts"))
@@ -106,7 +118,8 @@ async fn dev() -> u8 {
         .env("CKANBAN_PORT", internal_port.to_string())
         .env("CKANBAN_FRONT_PORT", public_port.to_string());
     if board.is_some() {
-        cmd.env("CKANBAN_SATELLITE", "1");
+        // The satellite's RemoteAccess points `tailscale serve` at this server's phone access listener.
+        cmd.env("CKANBAN_SATELLITE", "1").env("CKANBAN_REMOTE_PORT", remote_port.to_string());
     } else {
         cmd.env_remove("CKANBAN_SATELLITE");
     }
@@ -183,6 +196,10 @@ async fn dev() -> u8 {
     eprintln!("ckanban-rs {} listening on http://localhost:{public_port}, daemon on internal port {internal_port}", env!("CARGO_PKG_VERSION"));
 
     let native = routes::Native::new(root.clone(), public_port, notify, &bun, &repo);
+    let phone_accept = match (phone, &board) {
+        (Some(l), Some(b)) => Some(tokio::spawn(phone::serve(l, proxy.clone(), native.clone(), b.clone()))),
+        _ => None,
+    };
     let accept = tokio::spawn(serve(listener, proxy, native, board.clone()));
     let code = tokio::select! {
         status = child.wait() => match status {
@@ -193,6 +210,9 @@ async fn dev() -> u8 {
         _ = sigint.recv() => stop_child(&mut child).await,
     };
     accept.abort();
+    if let Some(p) = phone_accept {
+        p.abort();
+    }
     teller.abort();
     stop_board(&board, code)
 }
@@ -231,8 +251,8 @@ async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<rout
                 let native = native.clone();
                 let board = board.clone();
                 async move {
-                    if let Some(res) = board.as_ref().and_then(|b| b.answer(&req)) {
-                        return Ok(res);
+                    if let Some(b) = &board {
+                        return Ok(b.handle(req, peer, ckanban_board::gate::request::Listener::Local, &native, &proxy).await);
                     }
                     Ok::<_, std::convert::Infallible>(match native.answer(req, peer).await {
                         Ok(res) => res,

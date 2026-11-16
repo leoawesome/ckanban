@@ -19,6 +19,17 @@ pub const FRONT_PEER_HEADER: &str = "x-ckanban-peer-port";
 
 pub type Body = BoxBody<Bytes, hyper::Error>;
 
+/// Headers Bun trusts from this server only (with the secret): any copy a caller sends is dropped before passing a
+/// request on. The front's secret and the caller's port; board mode's phone listener mark, replay mark and the
+/// satellite edge's own header (`ckanban_board::gate::edge`).
+const TRUSTED_HEADERS: [&str; 5] = [
+    FRONT_SECRET_HEADER,
+    FRONT_PEER_HEADER,
+    ckanban_board::gate::edge::VIA_HEADER,
+    ckanban_board::gate::edge::CONFIRMED_HEADER,
+    ckanban_board::gate::edge::SATELLITE_HEADER,
+];
+
 /// Headers that belong to one connection, not to the message (RFC 9110 7.6.1), plus the ones `Connection` names.
 const HOP_BY_HOP: [&str; 8] =
     ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding"];
@@ -43,7 +54,13 @@ impl Proxy {
     }
 
     /// One request from a caller at `peer` (its body as it streams in, or as a native route already read it).
-    pub async fn forward(&self, mut req: Request<Body>, peer: SocketAddr) -> Response<Body> {
+    pub async fn forward(&self, req: Request<Body>, peer: SocketAddr) -> Response<Body> {
+        self.forward_as(req, peer, &[]).await
+    }
+
+    /// `forward` with headers only this server sets (board mode: the phone listener's `x-ckanban-front-via`, a
+    /// replayed front desk request's `x-ckanban-front-confirmed`).
+    pub async fn forward_as(&self, mut req: Request<Body>, peer: SocketAddr, extra: &[(&'static str, &'static str)]) -> Response<Body> {
         let upgrade = wants_upgrade(req.headers());
         let caller_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
 
@@ -55,8 +72,12 @@ impl Proxy {
         };
         strip_hop_by_hop(&mut parts.headers, upgrade);
         // Only this server says who the caller is: copies from the caller are dropped, never passed on.
-        parts.headers.remove(FRONT_SECRET_HEADER);
-        parts.headers.remove(FRONT_PEER_HEADER);
+        for h in TRUSTED_HEADERS {
+            parts.headers.remove(h);
+        }
+        for (k, v) in extra {
+            parts.headers.insert(HeaderName::from_static(k), HeaderValue::from_static(v));
+        }
         parts.headers.insert(HeaderName::from_static(FRONT_SECRET_HEADER), self.secret.clone());
         parts.headers.insert(HeaderName::from_static(FRONT_PEER_HEADER), HeaderValue::from(peer.port()));
         // HTTP/1.1 to Bun whatever the caller spoke (Bun's server is HTTP/1.1).
@@ -142,6 +163,10 @@ pub fn strip_hop_by_hop(h: &mut HeaderMap, upgrade: bool) {
 
 fn empty() -> Body {
     Full::new(Bytes::new()).map_err(|never| match never {}).boxed()
+}
+
+pub fn full(b: Bytes) -> Body {
+    Full::new(b).map_err(|never| match never {}).boxed()
 }
 
 pub fn plain(status: StatusCode, text: &str) -> Response<Body> {

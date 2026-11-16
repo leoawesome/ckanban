@@ -405,6 +405,8 @@ export interface NotifierOptions {
   telegramPaceMs?: number;
   /** The front desk's "typing" interval (ms; default about 5 s; 0: once per message). */
   typingMs?: number;
+  /** Writes a comment on a ticket (default: the Store; satellite mode: the Rust board, core/satellite-edge.ts). */
+  addComment?: (slug: string, id: string, author: "ai", text: string) => void;
 }
 
 /** A main ticket's step waiting on a question it asked: its wait, recorded under the main ticket. */
@@ -655,6 +657,12 @@ export class Notifier {
   }
 
   /** The board plugs in: replies to alerts go into its tickets' chats. */
+  /** A comment on a ticket from the notifier (the Store, or the Rust board in satellite mode). */
+  private comment(slug: string, id: string, text: string): void {
+    if (this.o.addComment) this.o.addComment(slug, id, "ai", text);
+    else this.store.addComment(slug, id, "ai", text);
+  }
+
   plugBoard(board: TelegramBoard): void {
     this.board = board;
   }
@@ -954,7 +962,7 @@ export class Notifier {
         ...(o.urgent ? { urgent: true } : {}), why,
       });
       this.helper.waits.setNotifyUser(slug, id, now);
-      this.store.addComment(slug, id, "ai", `Passed to the helper: ${text}`);
+      this.comment(slug, id, `Passed to the helper: ${text}`);
       return { ...none, delivered: true, reason: null, helper: true };
     }
     const m: NotifyMessage = { board: slug, boardName: p.name, ticketId: target.id, title: target.title, kind: "message", label, url: this.link(slug, target.id) };
@@ -975,7 +983,7 @@ export class Notifier {
     const delivered = banner || !!hook?.ok || devices > 0 || !!tg?.ok;
     if (delivered) {
       this.helper.waits.setNotifyUser(slug, id, now);
-      this.store.addComment(slug, id, "ai", `Sent you a notification: ${text}`);
+      this.comment(slug, id, `Sent you a notification: ${text}`);
     }
     return {
       delivered, devices, onScreen, webhook: !!hook?.ok, banner, error, ...(tg ? { telegram: tg.ok } : {}),

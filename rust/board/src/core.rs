@@ -12,7 +12,7 @@ use std::time::Instant;
 use futures_util::future::BoxFuture;
 use parking_lot::Mutex;
 
-use crate::api::{ActivityCut, DeviceInfo, HuddleInfo, Landing, RunControl, Satellite, SessionInfo, StandIn, TicketViews};
+use crate::api::{ActivityCut, BoardActions, DeviceInfo, HuddleInfo, Landing, RunControl, Satellite, SessionInfo, StandIn, TicketViews};
 use crate::bus::Bus;
 
 /// The modules other modules call through (plan 2.6).
@@ -24,6 +24,7 @@ pub struct Services {
     pub devices: Arc<dyn DeviceInfo>,
     pub landing: Arc<dyn Landing>,
     pub satellite: Arc<dyn Satellite>,
+    pub actions: Arc<dyn BoardActions>,
     pub views: Arc<dyn TicketViews>,
     pub cut: Arc<dyn ActivityCut>,
 }
@@ -38,6 +39,7 @@ impl Services {
             devices: s.clone(),
             landing: s.clone(),
             satellite: s.clone(),
+            actions: s.clone(),
             views: s,
             // R3: run events go out with their long strings cut.
             cut: Arc::new(crate::runs::live_cut::LiveCut),

@@ -22,6 +22,8 @@ serde_json = "1"
 getrandom = "0.3"
 libc = "0.2"
 regex = "1"
+# Board mode (R13): query strings of the routes it answers.
+url = "2"
 
 [workspace]
 # One Cargo.lock, one toolchain pin (rust-toolchain.toml) and one target/ for the server and its libraries.

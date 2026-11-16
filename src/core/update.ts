@@ -9,7 +9,8 @@ export interface Release {
 /** Latest GitHub release of this repo, or null when offline / rate-limited. */
 export async function latestRelease(fetchFn: typeof fetch = fetch): Promise<Release | null> {
   try {
-    const r = await fetchFn(`https://api.github.com/repos/${REPO}/releases/latest`, {
+    // CKANBAN_RELEASES_URL (tests only): a local stand-in for GitHub's API.
+    const r = await fetchFn(process.env.CKANBAN_RELEASES_URL || `https://api.github.com/repos/${REPO}/releases/latest`, {
       headers: { accept: "application/vnd.github+json", "user-agent": "ckanban" },
       signal: AbortSignal.timeout(8000),
     });

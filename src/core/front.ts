@@ -16,6 +16,13 @@ import { timingSafeEqual } from "node:crypto";
 
 export const FRONT_SECRET_HEADER = "x-ckanban-front";
 export const FRONT_PEER_HEADER = "x-ckanban-peer-port";
+/**
+ * Board mode (the Rust board, core/satellite.ts): set by the front on a request its phone access listener checked and
+ * passed on, so this daemon treats it as a phone request; and on a held front desk request it replays after the
+ * user's Confirm, so this daemon acts on it as the user. Trusted only with the secret; the front drops callers' copies.
+ */
+export const FRONT_VIA_HEADER = "x-ckanban-front-via";
+export const FRONT_CONFIRMED_HEADER = "x-ckanban-front-confirmed";
 
 export interface Front {
   /** The board's port, where the front server listens; what the board hands out (runs, links, Host checks). */
@@ -128,6 +135,16 @@ export function fromFront(req: Request, f: Front | null = front): boolean {
   const a = Buffer.from(got);
   const b = Buffer.from(f.secret);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** A phone request the front's phone access listener passed on (board mode). */
+export function viaPhoneFront(req: Request, f: Front | null = front): boolean {
+  return !!f && req.headers.get(FRONT_VIA_HEADER) === "remote" && fromFront(req, f);
+}
+
+/** A front desk request the front replays after the user's Confirm in Telegram (board mode). */
+export function confirmedByFront(req: Request, f: Front | null = front): boolean {
+  return !!f && req.headers.get(FRONT_CONFIRMED_HEADER) === "1" && fromFront(req, f);
 }
 
 /**

@@ -9,3 +9,13 @@
 # event stream test creates a ticket, which needs R2a.
 rust-board-mode.test.ts
 callers.test.ts | event stream carries
+
+# R13: the request gate, the phone access listener and the system routes in Rust; the satellite's routes behind them.
+# The filtered files' other tests write tickets or start runs (R2a, R7a); data-files.test.ts writes tickets in its
+# set-up, so it waits for R2a whole.
+system.test.ts
+connections.test.ts
+remote.test.ts | never set up|refusals come before|saved but off|user-only action from the phone|quirk|off again
+passes.test.ts | GET /api/passes on a new|adding, replacing and removing|a key for automations|pass validation|replacing a key|an online service|sign-in callback
+helper.test.ts | refusals|settings|the helper|POST /api/notify/test|phone push|a bot token|pair: a code|unpair forgets
+usage.test.ts | GET /api/usage|an empty board spent nothing

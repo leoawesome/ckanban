@@ -30,6 +30,8 @@ serde_json = "1"
 regex = "1"
 # `new URL(url).host` for "Reading example.com" (R3; already in Cargo.lock through reqwest).
 url = "2"
+# The update check (`GET /api/version`, R13; already in Cargo.lock through ckanban-core).
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 flate2 = "1"
 getrandom = "0.3"
