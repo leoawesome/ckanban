@@ -289,9 +289,9 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
   const split = useDetailsSplit(detailsRef, pinnedRef, !phone && !briefFolded);
   // "Model and effort" from the ⋯ menu: its dropdowns open under the header's first row.
   const [runOpen, setRunOpen] = useState(false);
-  // Scrolling the chat (or, on desktop, the huddle feed) down folds the tab row away; scrolling up brings it back.
-  // A new tab or ticket starts with the row shown.
-  const slim = useShrinkHeader(bodyRef, phone ? tab === "chat" : tab === "chat" || tab === "huddle", `${tab}:${ticket.id}`);
+  // Phones: scrolling the chat down folds the status pill row under the title away (the tab row always stays);
+  // scrolling up brings it back. A new tab or ticket starts with the row shown.
+  const slim = useShrinkHeader(bodyRef, phone && tab === "chat", `${tab}:${ticket.id}`);
   // Phones: the details sheet under the header's title ("move": opened by M, the keyboard on the current column).
   const [sheet, setSheet] = useState<null | "open" | "move">(null);
   useEffect(() => setSheet(null), [ticket.id]);
@@ -823,13 +823,13 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
           </div>
           {phone && phonePillRow}
           {runOpen && <RunPopover profile={profile} ticket={ticket} onError={onError} onClose={() => setRunOpen(false)} />}
-          {/* Row 2: the tabs, then the short status (desktop) and the cost. It folds away while the chat scrolls down
-              (useShrinkHeader). */}
-          <div className="head-row2-wrap" aria-hidden={slim || undefined}><div className="head-row2">
+          {/* Row 2: the tabs, then the short status (desktop) and the cost. Always shown, so a tab is one click away
+              however far the chat is scrolled. */}
+          <div className="head-row2">
             <nav ref={tabsRef} className={`tabs${tabsMore ? " more-right" : ""}`} role="tablist" aria-label="Ticket" onScroll={checkTabs}>
               {tabs.map((t) => (
                 <button key={t} id={`ticket-tab-${t}`} role="tab" aria-selected={tab === t} aria-controls="ticket-tabpanel" className={tab === t ? "active" : ""}
-                  tabIndex={slim || tab !== t ? -1 : 0} onClick={() => openTab(t)} onKeyDown={onTabKey}>{tabLabel[t]}</button>
+                  tabIndex={tab !== t ? -1 : 0} onClick={() => openTab(t)} onKeyDown={onTabKey}>{tabLabel[t]}</button>
               ))}
             </nav>
             <span className="head-spacer" />
@@ -848,7 +848,7 @@ export function TicketDrawer({ profile, ticket, tickets, onOpenTicket, onClose: 
               {!finish && !att && !featureBusy(ticket) && (ticket.huddleBusy ? huddleBadge(ticket) : outcomeBadge(ticket))}
             </>}
             {!phone && costChip}
-          </div></div>
+          </div>
         </header>
 
         <div ref={bodyRef} className={`panel-body ${detailsShown ? "" : "details-closed"} ${side.dragging ? "resizing" : ""}`}
