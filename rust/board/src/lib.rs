@@ -38,6 +38,5 @@ use arc_swap as _;
 use getrandom as _;
 use notify as _;
 use portable_pty as _;
-use regex as _;
 use sha1 as _;
 use tokio_tungstenite as _;
