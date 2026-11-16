@@ -624,6 +624,22 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/help` | `{kind}` (one of `HELP_KINDS`) | 200 `Helper.ask()` result | 403 run header, 400 kind or nothing to explain, `HelpError` |
 | GET | `/usage` | | 200 `ticketUsage()` result (runs, windows, teammates, side spend) | |
 
+Run facts the contract tests pin down (`test/contract/runs-*.test.ts`):
+- Moving a ticket to `ready`, `in_progress` or `planning` starts a run (`planning`: an interview that can't edit
+  files); `backlog`, `review` and `done` don't. A run ends in `review` with `outcome` from the CKANBAN_RESULT line:
+  `done`, `blocked`, `questions` saved as `needs_input`; no line is `done`; a failed run `failed` with the error output
+  in `error`; Stop, or a move out of In Progress, `stopped`; the usage limit `limit` (with `limit.resetAt`, `message`).
+- The result's `summary` becomes an `ai` comment for `done` and `blocked`; for `questions` the comment is the final
+  text without the result line. Chat messages are not comments.
+- On a plain folder, runs that edit wait for each other (`folderWait`): one at a time per folder.
+- Messages sent while Claude runs reach it at its next step; those a Stop left unread stay in `queued` as `unsent`.
+- Every run is a new `claude -p` process: the ticket's first run uses `--session-id`, later ones `--resume` the same
+  session (fresh chat and fresh session start a new id).
+- `activity` events on the stream are `{type: "activity", profile, id, run, event}`. `GET /activity` pages are at most
+  512 KB; `before` is null on the page that starts the file.
+- POST `/api/restart` answers `{running, alreadyPending}`; `GET /api/restart` `{pending, waiting}`; a
+  `restart.updated` event carries the same. New runs wait; the daemon exits once no run is active.
+
 ## Ticket cards, family, plans and work
 
 Prefix `/api/profiles/:slug/tickets/:id`.
