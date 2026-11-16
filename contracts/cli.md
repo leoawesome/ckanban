@@ -573,6 +573,7 @@ Automation check scripts get a clean env: only `HOME, USER, LOGNAME, LANG, LC_AL
 - A tool result is `{ content: [{ type: "text", text }] }`, with `isError: true` on failure. Unknown tool: `unknown tool <name>` as an error result.
 - Runs: a tool with `changes: true` and neither `allowInRun` nor `plannerScope` is refused when `CKANBAN_TICKET` is set (same message as the CLI). `allowInRun` tools work in runs; `plannerScope` tools are left for the daemon to decide (only a running plan's planner on its own children).
 - Board: `profile` argument, else the run's profile, else the cwd lookup; this costs one `GET /api/profiles` per call. Paths below start at `/api/profiles/{slug}` as `{p}`; `{t}` = `{p}/tickets`; `{h}` = `{p}/huddles/{hid}` where `hid` is the `huddle` argument or `current` inside a run (outside a run without `huddle`: error `huddle is required outside a board run`). `{own}` is the run's own ticket id from `CKANBAN_TICKET`.
+- Checked from the outside by `test/contract/mcp.test.ts` (it starts `ckanban mcp` as a program; `CKANBAN_CONTRACT_MCP` points it at another MCP server).
 - "Card" tools only validate and return text; the board draws the form or card by reading the tool call from the session transcript, so they make no change over HTTP.
 
 | Tool | HTTP route(s) | Purpose |
@@ -647,10 +648,86 @@ Automation check scripts get a clean env: only `HOME, USER, LOGNAME, LANG, LC_AL
 | `read_artifact` | none (local Claude Code helper session) | read a claude.ai artifact's HTML |
 | `publish_artifact` | none (writes the page under `CKANBAN_OUTPUT_DIR`, local helper session) | publish an HTML page as a claude.ai artifact |
 
-71 tools in total. Huddle, huddle preset, schedule run and job calls carry `x-ckanban-source: mcp` plus `x-ckanban-run` / `x-ckanban-huddle-agent` when set; most other changing calls carry `x-ckanban-run` when in a run.
+69 tools in total. Huddle, huddle preset, schedule run and job calls carry `x-ckanban-source: mcp` plus `x-ckanban-run` / `x-ckanban-huddle-agent` when set; most other changing calls carry `x-ckanban-run` when in a run.
+
+### Tool arguments (`tools/list`)
+
+Each tool's `inputSchema` is `{"type": "object", "properties": {...}, "required": [...]}` (`required` left out when nothing is required). The table gives every property in order: its name, `*` when it is required, its JSON type (`T[]` is an array of `T`, `a\|b` a list of types) and its `enum` values in brackets. "Read-only" tools carry `annotations: {"readOnlyHint": true}`; the others have no `annotations`. Rows are in `tools/list` order. Descriptions are not part of the contract (each is a non-empty string). `test/contract/mcp.test.ts` checks this table against `tools/list`.
+
+| Tool | Arguments | Read-only |
+|---|---|---|
+| `list_profiles` | none | yes |
+| `list_tickets` | `profile` string, `status` string (backlog\|planning\|ready\|in_progress\|review\|done), `query` string, `limit` number, `after` string, `includeTool` boolean | yes |
+| `get_ticket` | `profile` string, `id`* string, `commentsBefore` number | yes |
+| `get_family` | `profile` string, `id`* string | yes |
+| `search_chat` | `profile` string, `query`* string, `ticket` string, `includeTools` boolean | yes |
+| `read_chat` | `profile` string, `ref`* string, `before` number, `after` number | yes |
+| `create_ticket` | `profile` string, `title`* string, `body` string, `status` string (backlog\|planning\|ready\|in_progress\|review\|done), `mode` string (interview\|auto), `key` string, `dependsOn` string[], `needs` string[], `tags` string[], `kind` string (explore\|build\|test\|review\|fix\|group\|round\|with_you), `partOf` string, `model` string, `effort` string (low\|medium\|high\|xhigh\|max), `partOfThisTicket` boolean, `main` boolean, `gather` object[], `newGroup` string |  |
+| `update_ticket` | `profile` string, `id`* string, `title` string, `body` string, `status` string (backlog\|planning\|ready\|in_progress\|review\|done), `mode` string (interview\|auto), `dependsOn` string[], `needs` string[], `tags` string[], `important` boolean, `release` boolean, `showOnBoard` boolean |  |
+| `suggest_tags` | `tags`* string[], `profile` string, `id` string |  |
+| `follow_up` | `after` string, `at` string, `note`* string, `cancelOnReply` boolean, `profile` string |  |
+| `cancel_follow_up` | `reason`* string, `profile` string |  |
+| `notify_user` | `message`* string, `urgent` boolean, `why` string, `profile` string |  |
+| `take_devices` | `names`* string[], `profile` string |  |
+| `release_devices` | `names` string[], `profile` string |  |
+| `move_ticket` | `profile` string, `id`* string, `status`* string (backlog\|planning\|ready\|in_progress\|review\|done) |  |
+| `update_status` | `profile` string, `id` string, `goal` string, `done` string, `broken` string, `waitingOnYou` string, `nextStep` string, `prNotes` object, `prs` string[] |  |
+| `gather_tickets` | `profile` string, `id` string, `tickets`* object[], `newGroup` string, `hide` boolean |  |
+| `plan_control` | `profile` string, `action`* string (start\|resume), `id` string |  |
+| `chat_ticket` | `profile` string, `id`* string, `message`* string |  |
+| `ask_ticket` | `profile` string, `id`* string, `question`* string |  |
+| `merge_into_main` | `profile` string |  |
+| `land_milestone` | `profile` string, `summary`* string |  |
+| `send_file` | `path`* string, `caption` string |  |
+| `stop_ticket` | `profile` string, `id`* string |  |
+| `comment_ticket` | `profile` string, `id`* string, `text`* string |  |
+| `delete_ticket` | `profile` string, `id`* string |  |
+| `report_bug` | `title`* string, `description`* string, `ticketId` string, `includeLogs` boolean, `profile` string |  |
+| `ask_questions` | `questions`* object[], `urgent` boolean, `why` string, `about` string[] | yes |
+| `ask_keys` | `keys`* object[], `reason`* string, `replace` boolean | yes |
+| `backup_file` | `path`* string, `profile` string |  |
+| `propose_ticket` | `title`* string, `description`* string, `important` boolean, `partOf` string | yes |
+| `propose_branch` | `reason` string | yes |
+| `propose_delete` | `ids`* string[], `reason`* string | yes |
+| `propose_teammate` | `name`* string, `prompt`* string, `role` string, `model` string, `mode` string (tagged\|monitor), `lead` boolean, `canEdit` boolean, `workspace` string (shared\|own), `why`* string | yes |
+| `propose_squad` | `name`* string, `label` string, `description` string, `hostRules` string, `roster`* object[], `rounds` integer\|null, `maxCostUsd` number\|null, `report` string, `why`* string | yes |
+| `list_connections` | `profile` string | yes |
+| `connection_tools` | `name`* string, `profile` string | yes |
+| `test_automation_script` | `script`* string, `passes` string[], `profile` string | yes |
+| `propose_automation` | `name`* string, `summary`* string, `service` string, `passes` object[], `script`* string, `everyMinutes` number, `instructions` string, `askClaude` object, `partOf` string, `autoStart` boolean | yes |
+| `huddle_post` | `text`* string, `kind` string (message\|finding), `status` string (done\|blocked), `reason` string, `lessons` object[], `huddle` string, `profile` string |  |
+| `huddle_status` | `status`* string (done\|blocked\|active), `reason` string, `lessons` object[], `huddle` string, `profile` string |  |
+| `huddle_close` | `reason`* string, `huddle` string, `profile` string |  |
+| `huddle_read` | `since` integer, `huddle` string, `profile` string | yes |
+| `huddle_brief` | `text`* string, `huddle` string, `profile` string |  |
+| `huddle_mode` | `mode`* string (tagged\|monitor), `huddle` string, `profile` string |  |
+| `huddle_add_participant` | `preset` string, `role` string, `count` integer, `focus`* string, `model` string, `mode` string (tagged\|monitor), `workspace` string (shared\|own), `lead` boolean, `host` boolean, `canEdit` boolean, `prompt` string, `handle` string, `huddle` string, `profile` string |  |
+| `huddle_findings` | `action`* string (add\|resolve\|list), `text` string, `id` string, `huddle` string, `profile` string |  |
+| `huddle_hand_in` | `summary`* string, `huddle` string, `profile` string |  |
+| `huddle_review_changes` | `id`* string, `accept`* boolean, `reason` string, `huddle` string, `profile` string |  |
+| `huddle_allow_changes` | `handle`* string, `huddle` string, `profile` string |  |
+| `propose_huddle` | `roster` object[], `squad` string, `template` string, `topic` string, `reason` string, `maxCostUsd` number | yes |
+| `start_huddle` | `trigger`* string (security\|data\|payments\|important\|asked\|user), `reason`* string, `squad` string, `template` string, `topic` string, `roster` object[], `maxCostUsd` number, `profile` string |  |
+| `list_huddle_presets` | `profile` string | yes |
+| `save_huddle_preset` | `name`* string, `prompt`* string, `role` string, `model` string, `mode` string (tagged\|monitor), `lead` boolean, `canEdit` boolean, `workspace` string (shared\|own), `scope` string (board\|global), `profile` string |  |
+| `delete_huddle_preset` | `name`* string, `scope` string (board\|global), `profile` string |  |
+| `read_artifact` | `url`* string | yes |
+| `publish_artifact` | `html`* string, `url` string, `title` string | yes |
+| `list_schedules` | `profile` string | yes |
+| `create_schedule` | `profile` string, `name`* string, `title`* string, `body`* string, `cron`* string, `mode` string (auto\|interview), `enabled` boolean, `skipIfRunning` boolean, `tags` string[], `quiet` boolean, `partOf` string, `model` string |  |
+| `update_schedule` | `profile` string, `id`* string, `name` string, `title` string, `body` string, `cron` string, `mode` string (auto\|interview), `enabled` boolean, `skipIfRunning` boolean, `tags` string[], `quiet` boolean, `partOf` string, `model` string |  |
+| `delete_schedule` | `profile` string, `id`* string, `reason` string |  |
+| `propose_helper_rule` | `text`* string, `reason` string | yes |
+| `run_schedule` | `profile` string, `id`* string |  |
+| `schedule_history` | `profile` string, `id`* string, `limit` number | yes |
+| `schedule_job` | `profile` string, `name`* string, `at`* string, `action`* object |  |
+| `list_jobs` | `profile` string, `ticketId` string | yes |
+| `update_job` | `profile` string, `id`* string, `name` string, `at` string, `action` object |  |
+| `cancel_job` | `profile` string, `id`* string |  |
+| `run_job_now` | `profile` string, `id`* string |  |
 
 ## 7. Not covered here
 
-- Request and response body shapes beyond what is quoted (see `src/cli/client.ts` interfaces such as `TicketInfo`, `ScheduleInfo`, `JobInfo`, `HuddleInfo`) and each MCP tool's input schema and text output (see `src/mcp/server.ts`).
+- Request and response body shapes beyond what is quoted (see `src/cli/client.ts` interfaces such as `TicketInfo`, `ScheduleInfo`, `JobInfo`, `HuddleInfo`) and each MCP tool's descriptions, nested argument shapes and text output (see the group files in `src/mcp/`).
 - The launchd plist XML (`plistXml` in `src/cli/launchd.ts`) and the Tailscale command lines (`src/integrations/remote.ts`).
 - Daemon HTTP routes the CLI and MCP don't call.

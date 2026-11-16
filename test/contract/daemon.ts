@@ -3,7 +3,7 @@
 // so the same tests can check another server (a Rust port): set CKANBAN_CONTRACT_DAEMON / CKANBAN_CONTRACT_CLI (below).
 //
 // Each daemon gets its own temp data folder (CKANBAN_HOME), temp HOME, temp Claude config folder, a fake `claude`
-// (test/fixtures/fake-claude.ts) and stub osascript/caffeinate/open/tailscale on PATH, so it never touches the real
+// (test/fixtures/fake-claude.ts) and stub osascript/caffeinate/open/tailscale/gh on PATH, so it never touches the real
 // ~/.claude-kanban, the real repo, or shows Mac banners. The board's project folder is a plain temp folder (no git).
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -75,6 +75,8 @@ function stubBin(extra: Record<string, string> = {}): string {
   const dir = tmp("ck-contract-bin-");
   const scripts: Record<string, string> = {};
   for (const name of ["osascript", "caffeinate", "open", "tailscale", "terminal-notifier"]) scripts[name] = "#!/bin/sh\nexit 0\n";
+  // GitHub CLI: always "not logged in", so a bug report (report_bug, POST /api/bug-report) never reaches GitHub.
+  scripts.gh = "#!/bin/sh\necho 'To get started with GitHub CLI, please run:  gh auth login' >&2\nexit 4\n";
   // The board runs `claude`; this is the fake one.
   scripts.claude = `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE}" "$@"\n`;
   for (const [name, text] of Object.entries({ ...scripts, ...extra })) {
