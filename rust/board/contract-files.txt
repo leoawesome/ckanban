@@ -40,6 +40,16 @@ huddle-team.test.ts | role notes
 # stopping, deleting and restart steps it covers are checked against the fake Claude in rust/board/tests/quickchat_fake.rs.
 quickchat-read.test.ts
 
+# R13: the request gate, the phone access listener and the system routes in Rust; the satellite's routes behind them.
+# The filtered files' other tests write tickets or start runs (R2a, R7a); data-files.test.ts writes tickets in its
+# set-up, so it waits for R2a whole. remote.test.ts's phone user checks follow its ticket-writing "on" test;
+# system.test.ts checks the same from the phone.
+system.test.ts
+connections.test.ts
+remote.test.ts | never set up|refusals come before|saved but off|off again
+helper.test.ts | refusals|settings|the helper|POST /api/notify/test|phone push|a bot token|pair: a code|unpair forgets
+usage.test.ts | GET /api/usage|an empty board spent nothing
+
 # R2a: ticket and board writes without a run (create, change, move, delete, comments, snooze, seen, the chat's
 # cards, boards, attachments, avatars, snippets), the same answers and file bytes as Bun on one script, saved keys
 # masked. Left out until their step: a chat message (R7a), the Inbox wait after a work run (R7a), follow-ups (R7a),

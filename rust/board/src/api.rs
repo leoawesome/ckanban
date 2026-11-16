@@ -11,7 +11,8 @@
 //! | `HuddleInfo` | `Huddles` (`hostStates`, the restart-busy hook) | R11a |
 //! | `DeviceInfo` | `Devices`, `BoardBrowsers` (`deviceState`, `releaseAll`, `browserPicks`) | R9 |
 //! | `Landing` | `board-main.ts`, `board-repo.ts` (`mergeIntoMain`, `land`, `cleanupWorktree`, repo state) | R6 |
-//! | `Satellite` | the Bun satellite's edge (plan 3.3) | R13 |
+//! | `Satellite` | the Bun satellite's edge, board to satellite (plan 3.3) | R13 (`gate::edge`) |
+//! | `BoardActions` | the satellite's edge, satellite to board (`TelegramBoard`, comments) | R2a, R7a |
 //! | `TicketViews` | `view()` in `src/api/context.ts` (what `ticket.updated` events carry) | R1 |
 //! | `ActivityCut` | `liveJson` in `src/runs/live-cut.ts` (run events without their long strings) | R3 |
 
@@ -100,22 +101,39 @@ pub trait Landing: Send + Sync {
     fn repo_state(&self, slug: &str) -> BoxFuture<'_, Result<Value, Failure>>;
 }
 
-/// What the board asks of the Bun satellite (plan 3.3), over its internal port.
+/// What the board asks of the Bun satellite (plan 3.3), over its internal port (`gate::edge::SatelliteClient`; the
+/// Bun side is `src/core/satellite-edge.ts`). Answers that Bun gives as `{status, body}` stay in that shape, so a
+/// route can send them on as they are.
 pub trait Satellite: Send + Sync {
-    /// A message that came from Telegram goes to the ticket's chat (`chatFromTelegram`), from the satellite's side.
-    fn chat_from_telegram(&self, slug: &str, id: &str, text: &str) -> BoxFuture<'_, Result<(), Failure>>;
-    /// A ticket's turn ended: the helper may notify (Mac banner, push, Telegram).
-    fn notify_message(&self, slug: &str, id: &str, text: &str) -> BoxFuture<'_, Result<(), Failure>>;
-    /// An automation's pass tool call (`automation-call`), after the board checked the script's token.
+    /// A ticket's turn ended (`turnEnded`): a ticket that got a message from Telegram sends its reply back there.
+    fn turn_ended(&self, slug: &str, id: &str, text: &str) -> BoxFuture<'_, Result<(), Failure>>;
+    /// An automation's pass tool call (`automation-call`), after the board checked the script's token:
+    /// `{service, tool, args, passes, allowed}` (the token's grant) gives `{status, body: {result} | {error}, rateLimitMs}`.
     fn pass_call(&self, body: Value) -> BoxFuture<'_, Result<Value, Failure>>;
-    /// Whether a Telegram front desk request may go ahead now (Ok(None)) or is held (Ok(Some(answer))).
+    /// The Telegram front desk's gate for one request `{desk, method, path, body}`: Ok(None) goes ahead now,
+    /// Ok(Some({status, body})) is the answer instead (held for a Confirm tap, or refused).
     fn frontdesk_gate(&self, request: Value) -> BoxFuture<'_, Result<Option<Value>, Failure>>;
-    /// Share to claude.ai: publish a file, give its link.
+    /// Share to claude.ai: an `ArtifactJob` (`{kind: "publish", file, url?, title?}`) gives its `ArtifactOutcome`.
     fn publish_artifact(&self, request: Value) -> BoxFuture<'_, Result<Value, Failure>>;
     /// The ticket's publishing jobs now (`shareJobs`), as its view lists them.
     fn share_jobs(&self, _slug: &str, _id: &str) -> Vec<Value> {
         Vec::new()
     }
+}
+
+/// What the Bun satellite asks of the board (plan 3.3), over `/api/internal/...` on the board's port (the
+/// `TelegramBoard` of `src/helper/notify.ts` and the notifier's comments). Filled by R2a (comments, patch) and R7a
+/// (chat, queue); until then the stand-in refuses and the satellite logs it.
+pub trait BoardActions: Send + Sync {
+    /// `chatFromTelegram`: a Telegram message goes to the ticket's chat; `from` is `{updateId, tg, chatId, key?}`.
+    /// Ok(false): the ticket can't take it.
+    fn chat_from_telegram(&self, slug: &str, id: &str, text: &str, from: Value) -> BoxFuture<'_, Result<bool, Failure>>;
+    /// `patchTelegram`: sets the ticket's `telegramIn`/`telegramOut`/`telegramReport`.
+    fn patch_telegram(&self, slug: &str, id: &str, patch: Value) -> Result<(), Failure>;
+    /// `dropTelegramQueued`: drops queued messages from Telegram (Pause, /lock, Unpair); how many.
+    fn drop_telegram_queued(&self) -> Result<usize, Failure>;
+    /// `store.addComment(slug, id, author, text)`.
+    fn add_comment(&self, slug: &str, id: &str, author: &str, text: &str) -> Result<(), Failure>;
 }
 
 /// What `ticket.updated` events and ticket answers carry (`view()` in `src/api/context.ts`).
@@ -215,10 +233,7 @@ impl Landing for StandIn {
 }
 
 impl Satellite for StandIn {
-    fn chat_from_telegram(&self, _: &str, _: &str, _: &str) -> BoxFuture<'_, Result<(), Failure>> {
-        Box::pin(async { Err(NOT_YET.to_string()) })
-    }
-    fn notify_message(&self, _: &str, _: &str, _: &str) -> BoxFuture<'_, Result<(), Failure>> {
+    fn turn_ended(&self, _: &str, _: &str, _: &str) -> BoxFuture<'_, Result<(), Failure>> {
         Box::pin(async { Ok(()) })
     }
     fn pass_call(&self, _: Value) -> BoxFuture<'_, Result<Value, Failure>> {
@@ -229,6 +244,21 @@ impl Satellite for StandIn {
     }
     fn publish_artifact(&self, _: Value) -> BoxFuture<'_, Result<Value, Failure>> {
         Box::pin(async { Err(NOT_YET.to_string()) })
+    }
+}
+
+impl BoardActions for StandIn {
+    fn chat_from_telegram(&self, _: &str, _: &str, _: &str, _: Value) -> BoxFuture<'_, Result<bool, Failure>> {
+        Box::pin(async { Err(NOT_YET.to_string()) })
+    }
+    fn patch_telegram(&self, _: &str, _: &str, _: Value) -> Result<(), Failure> {
+        Err(NOT_YET.to_string())
+    }
+    fn drop_telegram_queued(&self) -> Result<usize, Failure> {
+        Ok(0)
+    }
+    fn add_comment(&self, _: &str, _: &str, _: &str, _: &str) -> Result<(), Failure> {
+        Err(NOT_YET.to_string())
     }
 }
 

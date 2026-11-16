@@ -19,6 +19,17 @@ pub const FRONT_PEER_HEADER: &str = "x-ckanban-peer-port";
 
 pub type Body = BoxBody<Bytes, hyper::Error>;
 
+/// Headers Bun trusts from this server only (with the secret): any copy a caller sends is dropped before passing a
+/// request on. The front's secret and the caller's port; board mode's phone listener mark, replay mark and the
+/// satellite edge's own header (`ckanban_board::gate::edge`).
+const TRUSTED_HEADERS: [&str; 5] = [
+    FRONT_SECRET_HEADER,
+    FRONT_PEER_HEADER,
+    ckanban_board::gate::edge::VIA_HEADER,
+    ckanban_board::gate::edge::CONFIRMED_HEADER,
+    ckanban_board::gate::edge::SATELLITE_HEADER,
+];
+
 /// Headers that belong to one connection, not to the message (RFC 9110 7.6.1), plus the ones `Connection` names.
 const HOP_BY_HOP: [&str; 8] =
     ["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding"];
@@ -43,7 +54,13 @@ impl Proxy {
     }
 
     /// One request from a caller at `peer` (its body as it streams in, or as a native route already read it).
-    pub async fn forward(&self, mut req: Request<Body>, peer: SocketAddr) -> Response<Body> {
+    pub async fn forward(&self, req: Request<Body>, peer: SocketAddr) -> Response<Body> {
+        self.forward_as(req, peer, &[]).await
+    }
+
+    /// `forward` with headers only this server sets (board mode: the phone listener's `x-ckanban-front-via`, a
+    /// replayed front desk request's `x-ckanban-front-confirmed`).
+    pub async fn forward_as(&self, mut req: Request<Body>, peer: SocketAddr, extra: &[(&'static str, &'static str)]) -> Response<Body> {
         let upgrade = wants_upgrade(req.headers());
         let caller_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
 
@@ -55,8 +72,12 @@ impl Proxy {
         };
         strip_hop_by_hop(&mut parts.headers, upgrade);
         // Only this server says who the caller is: copies from the caller are dropped, never passed on.
-        parts.headers.remove(FRONT_SECRET_HEADER);
-        parts.headers.remove(FRONT_PEER_HEADER);
+        for h in TRUSTED_HEADERS {
+            parts.headers.remove(h);
+        }
+        for (k, v) in extra {
+            parts.headers.insert(HeaderName::from_static(k), HeaderValue::from_static(v));
+        }
         parts.headers.insert(HeaderName::from_static(FRONT_SECRET_HEADER), self.secret.clone());
         parts.headers.insert(HeaderName::from_static(FRONT_PEER_HEADER), HeaderValue::from(peer.port()));
         // HTTP/1.1 to Bun whatever the caller spoke (Bun's server is HTTP/1.1).
@@ -103,6 +124,33 @@ impl Proxy {
     }
 }
 
+/// The request target as Bun's `new URL(req.url)` reads it (WHATWG URL parsing: `.`/`..` segments and their `%2e`
+/// forms resolved, `\` as `/`), so this server routes on the same path Bun would, and passes that path on. Without
+/// this a board run could reach a route the Rust board owns through Bun (`/api/x/../profiles/...`), whose copy of the
+/// state is stale in board mode. A target the URL parser refuses stays as it is (Bun refuses it too).
+pub fn normalize_target<B>(req: &mut Request<B>) {
+    let Some(raw) = req.uri().path_and_query().map(|p| p.as_str().to_string()) else { return };
+    if !raw.starts_with('/') {
+        return;
+    }
+    let Ok(u) = url::Url::parse(&format!("http://h{raw}")) else { return };
+    let mut target = u.path().to_string();
+    if let Some(q) = u.query() {
+        target.push('?');
+        target.push_str(q);
+    }
+    if target == raw {
+        return;
+    }
+    if let Ok(pq) = target.parse::<hyper::http::uri::PathAndQuery>() {
+        let mut parts = req.uri().clone().into_parts();
+        parts.path_and_query = Some(pq);
+        if let Ok(uri) = Uri::from_parts(parts) {
+            *req.uri_mut() = uri;
+        }
+    }
+}
+
 /// A WebSocket (or other) upgrade: `Connection: upgrade` with an `Upgrade` header.
 pub fn wants_upgrade(h: &HeaderMap) -> bool {
     h.contains_key(UPGRADE) && connection_tokens(h).iter().any(|t| t == "upgrade")
@@ -142,6 +190,10 @@ pub fn strip_hop_by_hop(h: &mut HeaderMap, upgrade: bool) {
 
 fn empty() -> Body {
     Full::new(Bytes::new()).map_err(|never| match never {}).boxed()
+}
+
+pub fn full(b: Bytes) -> Body {
+    Full::new(b).map_err(|never| match never {}).boxed()
 }
 
 pub fn plain(status: StatusCode, text: &str) -> Response<Body> {
@@ -193,6 +245,22 @@ mod tests {
         assert_eq!(h["upgrade"], "websocket");
         assert_eq!(h["sec-websocket-key"], "k");
         assert!(!h.contains_key("keep-alive"));
+    }
+
+    #[test]
+    fn targets_read_like_new_url() {
+        let norm = |t: &str| {
+            let mut r = Request::get(t).body(()).unwrap();
+            normalize_target(&mut r);
+            r.uri().path_and_query().unwrap().as_str().to_string()
+        };
+        assert_eq!(norm("/api/x/../profiles/b/tickets/t/devices"), "/api/profiles/b/tickets/t/devices");
+        assert_eq!(norm("/api/x/%2e%2E/profiles"), "/api/profiles");
+        assert_eq!(norm("/api/./events?a=1"), "/api/events?a=1");
+        assert_eq!(norm("/api/x/.%2e/y"), "/api/y");
+        assert_eq!(norm("/../../api/health"), "/api/health");
+        assert_eq!(norm("/api/%68ealth?x=a%20b"), "/api/%68ealth?x=a%20b");
+        assert_eq!(norm("/api/events"), "/api/events");
     }
 
     #[test]

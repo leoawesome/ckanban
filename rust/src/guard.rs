@@ -25,9 +25,10 @@ pub fn refusal(what: &str) -> String {
     )
 }
 
-/// `req.headers.get(name)` is a non-empty string (JS truthiness).
+/// `req.headers.get(name)` is a non-empty string (JS truthiness): every line of the header joined with ", ", as
+/// Fetch reads it (two lines, the first empty, are ", x": truthy).
 fn has(headers: &HeaderMap, name: &str) -> bool {
-    headers.get(name).is_some_and(|v| !v.as_bytes().is_empty())
+    ckanban_board::gate::request::has(headers, name)
 }
 
 /// The header checks `userOnly` makes before it looks at the caller: false refuses.
@@ -182,6 +183,11 @@ mod tests {
         assert!(!headers_allow(&h(&[origin, ("x-ckanban-huddle-agent", "1")])));
         // An empty run header is falsy in Bun too.
         assert!(headers_allow(&h(&[origin, ("x-ckanban-run", "")])));
+        // Two lines, the first empty: Bun reads ", abc", a run.
+        let mut two = h(&[origin]);
+        two.append("x-ckanban-run", HeaderValue::from_static(""));
+        two.append("x-ckanban-run", HeaderValue::from_static("abc"));
+        assert!(!headers_allow(&two));
     }
 
     #[test]

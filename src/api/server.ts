@@ -18,7 +18,8 @@ import type { Shell } from "../browser/shell";
 import { QuickChatError } from "../chat/quickchat";
 import { FRONT_DESK_HEADER } from "../helper/frontdesk-id";
 import { nowIso } from "../core/util";
-import { callerPort, fromFront } from "../core/front";
+import { callerPort, confirmedByFront, frontInfo, fromFront, viaPhoneFront } from "../core/front";
+import { fromEdge, internalRoute } from "../core/satellite-edge";
 import { HttpError, type Listener, NEXT, type RouteResult, type ServerDeps, type ShellSocket, body, requestRefusal } from "./context";
 import { attachmentRoutes } from "./attachments";
 import { remoteRoutes } from "./remote";
@@ -168,6 +169,9 @@ export function createServer(deps: ServerDeps) {
   }
 
   async function handle(req: Request, srv: import("bun").Server<ShellSocket>, listener: Listener): Promise<Response | undefined> {
+    // Board mode: the Rust board's phone access listener checked this request and passed it on (core/front.ts).
+    // Only a satellite of a front that drops callers' copies of the mark (deps.satellite) trusts it.
+    if (listener === "local" && deps.satellite && viaPhoneFront(req)) listener = "remote";
     const res = await track(routeLabel(req), () => route(req, srv, listener));
     if (res && listener === "remote") res.headers.set(LISTENER_HEADER, "remote");
     return res;
@@ -177,6 +181,12 @@ export function createServer(deps: ServerDeps) {
     // Behind the Rust front server (core/front.ts) the board's port is the front's; this one only takes its requests.
     const refusal = listener === "local" && !fromFront(req) ? "forbidden" : requestRefusal(req, publicPort(), remote.active(), listener);
     if (refusal) return new Response(refusal, { status: 403, headers: { "content-type": "text/plain; charset=utf-8" } });
+    // Satellite mode: the Rust board's own calls (core/satellite-edge.ts), and the requests it replays as the user.
+    if (deps.satellite && fromEdge(req, frontInfo())) {
+      const r = await internalRoute(req, new URL(req.url).pathname, ctx.edge);
+      if (r) return r;
+    }
+    if (deps.satellite && confirmedByFront(req)) ctx.confirmedInTelegram.add(req);
     via.set(req, { listener, srv, peer: listener === "local" ? callerPort(req, srv.requestIP(req)?.port) : 0 });
     if (listener === "remote") remote.noteVisit(nowIso());
     const url = new URL(req.url);

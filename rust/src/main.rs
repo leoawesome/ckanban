@@ -15,6 +15,7 @@ mod js;
 mod mask;
 mod mcp;
 mod passes;
+mod phone;
 mod proxy;
 mod routes;
 mod settings;
@@ -99,7 +100,18 @@ async fn dev() -> u8 {
         Err(e) => return fail(format!("no free internal port: {e}")),
     };
     // Board mode (board_mode.rs): off unless asked for; then the Rust board owns the board and Bun is its satellite.
-    let board = board_mode::prepare(&root, public_port).await;
+    let board = board_mode::prepare(&root, public_port, remote_port, internal_port, &secret).await;
+    // Board mode: the phone access listener is this server's (phone.rs); a busy port only costs phone access.
+    let phone = match &board {
+        Some(_) => match TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, remote_port)).await {
+            Ok(l) => Some(l),
+            Err(e) => {
+                eprintln!("ckanban-rs: phone access listener on 127.0.0.1:{remote_port} failed: {e}");
+                None
+            }
+        },
+        None => None,
+    };
 
     let mut cmd = Command::new(&bun);
     cmd.arg(repo.join("src/cli.ts"))
@@ -107,9 +119,12 @@ async fn dev() -> u8 {
         .env("CKANBAN_PORT", internal_port.to_string())
         .env("CKANBAN_FRONT_PORT", public_port.to_string());
     if board.is_some() {
-        cmd.env("CKANBAN_SATELLITE", "1");
+        // The satellite's RemoteAccess points `tailscale serve` at this server's phone access listener.
+        // CKANBAN_SATELLITE_EDGE: this front drops callers' copies of the phone and replay marks, so the satellite may
+        // trust them (src/core/satellite-edge.ts).
+        cmd.env("CKANBAN_SATELLITE", "1").env("CKANBAN_SATELLITE_EDGE", "1").env("CKANBAN_REMOTE_PORT", remote_port.to_string());
     } else {
-        cmd.env_remove("CKANBAN_SATELLITE");
+        cmd.env_remove("CKANBAN_SATELLITE").env_remove("CKANBAN_SATELLITE_EDGE");
     }
     let mut child = match cmd
         .stdin(Stdio::piped())
@@ -184,6 +199,10 @@ async fn dev() -> u8 {
     eprintln!("ckanban-rs {} listening on http://localhost:{public_port}, daemon on internal port {internal_port}", env!("CARGO_PKG_VERSION"));
 
     let native = routes::Native::new(root.clone(), public_port, notify, &bun, &repo);
+    let phone_accept = match (phone, &board) {
+        (Some(l), Some(b)) => Some(tokio::spawn(phone::serve(l, proxy.clone(), native.clone(), b.clone()))),
+        _ => None,
+    };
     let shadow = shadow::prepare(&root, board.is_some());
     let accept = tokio::spawn(serve(listener, proxy, native, board.clone(), shadow));
     let code = tokio::select! {
@@ -195,6 +214,9 @@ async fn dev() -> u8 {
         _ = sigint.recv() => stop_child(&mut child).await,
     };
     accept.abort();
+    if let Some(p) = phone_accept {
+        p.abort();
+    }
     teller.abort();
     stop_board(&board, code)
 }
@@ -235,43 +257,18 @@ async fn serve(
         let board = board.clone();
         let shadow = shadow.clone();
         tokio::spawn(async move {
-            let svc = service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+            let svc = service_fn(move |mut req: hyper::Request<hyper::body::Incoming>| {
                 let proxy = proxy.clone();
                 let native = native.clone();
                 let board = board.clone();
                 let shadow = shadow.clone();
+                // Route on the path Bun would see (dot segments resolved), and pass that one on.
+                proxy::normalize_target(&mut req);
                 async move {
+                    // Board mode: the gate, the Rust board's routes, then the native routes and Bun (board_mode.rs).
                     if let Some(b) = &board {
-                        if let Some(res) = b.answer(&req).await {
-                            return Ok(res);
-                        }
+                        return Ok(b.handle(req, peer, ckanban_board::gate::request::Listener::Local, &native, &proxy).await);
                     }
-                    if let Some(b) = &board
-                        && let Some(res) = b.answer_sessions(&req).await
-                    {
-                        return Ok(res);
-                    }
-                    let req = match &board {
-                        Some(b) => match b.answer_chats(req, peer.port()).await {
-                            Ok(res) => return Ok(res),
-                            Err(req) => req,
-                        },
-                        None => req,
-                    };
-                    let req = match &board {
-                        Some(b) => match b.answer_request(req, peer).await {
-                            Ok(res) => return Ok(res),
-                            Err(req) => match b.answer_team(req).await {
-                                Ok(res) => return Ok(res),
-                                Err(req) => match b.answer_async(req).await {
-                                    Ok(res) => return Ok(res),
-                                    Err(board_mode::Next::Untouched(req)) => req,
-                                    Err(board_mode::Next::Bun(req)) => return Ok(proxy.forward(req, peer).await),
-                                },
-                            },
-                        },
-                        None => req,
-                    };
                     let compare = shadow.as_ref().and_then(|_| shadow::wanted(req.method(), req.uri().path(), req.uri().query()));
                     Ok::<_, std::convert::Infallible>(match native.answer(req, peer).await {
                         Ok(res) => res,

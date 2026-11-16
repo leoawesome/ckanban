@@ -28,7 +28,8 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   - `HuddleInfo` (R11a): each board's huddles by host ticket, what a restart waits for.
   - `DeviceInfo` (R9): a ticket's devices, letting go at a run's end, browser picks.
   - `Landing` (R6): merge into main, land, clean up a copy, the folder's repo state.
-  - `Satellite` (R13): Telegram chat, notify, pass calls, the front desk gate, publishing.
+  - `Satellite` (R13, `gate::edge::SatelliteClient`): turn ended, pass calls, the front desk gate, publishing.
+  - `BoardActions` (R2a, R7a): what the satellite asks of the board (Telegram chat and fields, comments).
   - `TicketViews` (R1): a ticket's `TicketView` for events and answers.
   - `ActivityCut` (R3): `liveJson`, run events without their long strings.
 - `src/core.rs`: `Core` (root, bus, services); start steps in Bun's order (load tickets, load lists, recover,
@@ -113,6 +114,37 @@ Parity with Bun: `tests/sessions_markers.rs`, `sessions_agents.rs`, `sessions_pa
 `tests/fixtures/sessions/` (inputs with Bun's answers, filled by `test/rust-board-*-fixtures.test.ts`; after a
 deliberate change to Bun's code: `UPDATE_RUST_FIXTURES=1 bun test test/rust-board-<name>-fixtures.test.ts`). Parse
 speed: `R5_BENCH=<transcript> cargo test --release -p ckanban-board --test sessions_parse -- --ignored --nocapture`.
+
+## Gate, system routes and the satellite edge (R13, `src/gate/`)
+
+In board mode every request goes through `BoardMode::handle` (`rust/src/board_mode.rs`) in Bun's order: the
+satellite's own calls, then the gate (`gate::request::refusal`, Bun's `requestRefusal`: Host, the Origin of a change;
+on the phone access listener phone access on in `remote.json`, the tailnet host, the owner's login), then the system
+routes (`/api/events`, `health`, `version`, `claude/projects`, `claude/defaults`, `pick-folder`, `cron/preview`,
+`debug/profile`), each after the front desk's gate (asked of the satellite) and the JSON-only rule; then the other
+tasks' routes (R1, R5, R8, R6, R9, R11b); then the front's native routes and Bun, which checks the gate again. Before
+any of it the request target is read as Bun's `new URL` reads it (`proxy::normalize_target`: `..`, `.` and their
+`%2e` forms resolved), so a path like `/api/x/../profiles/...` can't reach Bun's stale copy of a Rust-owned route.
+On the phone listener the other tasks' routes see the phone request with this Mac's Host and Origin (their own
+checks); their user-only checks look at the caller (`tailscale serve`) and refuse the phone.
+
+- The phone access listener is Rust's (`rust/src/phone.rs`, on CKANBAN_REMOTE_PORT, which Rust passes to the
+  satellite so `ckanban remote on` points `tailscale serve` at it). A phone request Rust passes on carries
+  `x-ckanban-front-via: remote`; Bun then treats it as a phone request (`listener: "remote"`, user-only routes pass
+  for the owner's phone). Every answer there carries `x-ckanban-listener: remote`. Rust tells the satellite of
+  phone visits to its own routes (`remote-visit <time>` on stdin) for `lastVisit`.
+- The satellite's edge (`gate/edge.rs`, `src/core/satellite-edge.ts`), `POST /api/internal/<name>` with
+  `x-ckanban-satellite: <the front's secret>` (the proxy drops callers' copies of it and of the two marks above):
+  Rust asks Bun `frontdesk-gate`, `pass-call` (R10's automation calls), `publish` (share to claude.ai),
+  `turn-ended` (R7a); Bun asks Rust `chat-from-telegram`, `patch-telegram`, `drop-telegram-queued`, `comment`
+  (`api::BoardActions`, stand-ins refuse with 501 until R2a/R7a) and `replay` (a front desk request confirmed in
+  Telegram, run as the user: Rust's own routes, else Bun with `x-ckanban-front-confirmed: 1`).
+- Housekeeping (`gate/housekeeping.rs`): the temp file sweep and the daemon.log trim run at start, report-only
+  (`rust-board-dryrun.log`) unless `CKANBAN_RUST_DELETE=1`; the satellite skips them.
+- `cron/preview` uses `schedules::cron` (brought in here; R10 builds the scheduler on it).
+- `tests/fixtures/gate.json`: Bun's answers for `requestRefusal`, `isAllowedSocket`, `cronError`, `describeCron`,
+  `nextRuns` (in America/Los_Angeles, DST days included) and `isNewer`, written by
+  `test/rust-board-gate-fixtures.test.ts`; `tests/gate.rs` checks Rust gives the same.
 
 ## Quick chats (R8, `src/quickchat/`)
 

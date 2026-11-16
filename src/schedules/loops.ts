@@ -323,6 +323,28 @@ export class LoopManager {
   async call(token: string, service: string, tool: string, args: unknown): Promise<unknown> {
     const g = this.grants.get(token);
     if (!g || g.expires < Date.now()) throw new LoopError(403, "ckanban call only works inside an automation's check");
+    return this.callWith(g, service, tool, args);
+  }
+
+  /**
+   * Satellite mode (core/satellite-edge.ts): the Rust board checked the check's token and sends its grant
+   * (`{service, tool, args, passes, allowed}`); the answer is `{status, body}` as `automation-call` would send it, and
+   * the rate limit the call ran into, which the board keeps on its grant.
+   */
+  async callForBoard(b: Record<string, unknown>): Promise<{ status: number; body: unknown; rateLimitMs: number }> {
+    const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+    const g: Grant = {
+      passes: strs(b.passes), allowed: Array.isArray(b.allowed) ? new Set(strs(b.allowed)) : null, used: new Set(), expires: Infinity, rateLimitMs: 0,
+    };
+    try {
+      return { status: 200, body: { result: await this.callWith(g, String(b.service ?? ""), String(b.tool ?? ""), b.args) }, rateLimitMs: g.rateLimitMs };
+    } catch (e) {
+      if (e instanceof LoopError) return { status: e.status, body: { error: e.message }, rateLimitMs: g.rateLimitMs };
+      throw e;
+    }
+  }
+
+  private async callWith(g: Grant, service: string, tool: string, args: unknown): Promise<unknown> {
     const p = this.passes.find(service, g.passes);
     if (!p) {
       const names = g.passes.map((id) => this.passes.get(id)?.name).filter(Boolean);
