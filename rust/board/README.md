@@ -147,6 +147,26 @@ statuses; `routes.rs` answers `/api/profiles/:p/huddle-presets`, `/huddle-templa
   `test/rust-team-fixtures.test.ts` checks Bun, `tests/team.rs` Rust, `tests/team_store.rs` the files and routes.
   After a deliberate change in Bun: `UPDATE_RUST_FIXTURES=1 bun test test/rust-team-fixtures.test.ts`.
 
+## Browsers, devices and the terminal (R9)
+
+`src/browsers/`: `src/browser/` in Rust, answered by Rust in board mode (`routes.rs`): `/api/board-browsers`,
+`/api/browsers`, `/api/devices` (every method and sub-path, Bun's quirks kept), a ticket's `POST .../devices`
+(take_devices / release_devices) and the board's `GET .../shell` WebSocket (the Terminal panel). `Browsers` (`mod.rs`)
+holds them and is the board's `DeviceInfo`; `board_mode.rs` builds it and calls `answer_request` before the other
+routes.
+
+- `devices.rs`: shared devices, takes all-or-nothing and first come first served, `devices.json` like Bun.
+- `chromes.rs`: named Chromes (`browsers.json`), `ChromeWatch` for a run's stream (R7a feeds it), browser picks.
+- `board_browsers.rs`, `cdp.rs`, `sign_in.rs`: board browsers on their own Chrome, the debugging port client, the
+  sign-in check and screen. Chromes are detached (own session), so they outlive any daemon. At start (`init`) Rust
+  adopts every Chrome still running on a board browser's folder, Bun's included: it reads Bun's
+  `board-browsers.json` and each folder's `DevToolsActivePort`, and uses a Chrome only when its port answers as that
+  very Chrome and is bound to this Mac. It writes `running` back in Bun's format, so Bun adopts Rust's after a switch
+  back. Logged-out alerts go to the helper once R13 connects it (logged in `daemon.log` until then).
+- `shell.rs`: one shell per folder on a pty (`portable-pty`), scrollback for a new tab; `terminals.rs`: which linked
+  tickets are open in a terminal (its linked tickets come from the R1 index, `linked_from_index`).
+- What the routes read from the board goes through `BoardLookup` (`FileLookup`: one ticket or board file at a time).
+
 ## R6: git, copies of the folder, landing, files (`src/git/`)
 
 - `cmd`, `repo`: git and gh as child processes; repo kind (plain, empty, local, remote) cached 10 s; ticket copies
