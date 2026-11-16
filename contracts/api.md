@@ -100,7 +100,14 @@ write (`ticket.md`, comments, run logs; logged, and the route answers with the e
 <json>` (a board event for its own listeners, not for its event stream) and `runtime <json>` (live state: `running`,
 `hostHuddles`, `sessions`). The front answers `GET /api/events` itself and re-emits the satellite's events on it; it
 also answers the board's reads from its own ticket index: `GET /api/profiles`, `/api/profiles/:p`,
-`/api/profiles/:p/tickets` (every scope), `/api/profiles/:p/tickets/:id`, `/api/tickets` and `/api/inbox`. If
+`/api/profiles/:p/tickets` (every scope), `/api/profiles/:p/tickets/:id`, `/api/tickets` and `/api/inbox`. The
+board's writes that need no run are the front's too, with the same answers and file bytes (`ticket.md`,
+`comments.jsonl`, `profile.json`, `avatars.json`, `snippets.json`): `POST /api/profiles`, `PATCH`/`DELETE
+/api/profiles/:p`, a ticket's create, `PATCH`, `DELETE`, `move`, `comments`, `snooze`, `seen` and the chat's cards,
+`/api/attachments`, `/api/avatars`, `/api/snippets`. Until the Rust run loop lands, nothing runs in board mode: a
+ticket moved to Ready or Planning waits, a message to a ticket is refused, and a key box answered saves the keys but
+answers 409 (Claude couldn't be told). A deleted ticket's copy of the folder, like a Done one's, is only reported in
+`rust-board-dryrun.log` until `CKANBAN_RUST_DELETE=1`. If
 board mode can't start (the `board.lock` is held, the core fails, or three unclean ends within 10 minutes), the
 daemon runs in full mode as without it; `rust-board-status.json` says which and why (`data-files.md`). Unset, none
 of this applies. Without a front, `CKANBAN_SATELLITE=1` stops the daemon at start.

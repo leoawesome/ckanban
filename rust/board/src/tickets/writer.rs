@@ -207,6 +207,9 @@ impl Tickets {
 
     /// `Store.deleteTicket` (the board's lock held).
     fn store_delete(&self, slug: &str, id: &str) {
+        if [slug, id].iter().any(|x| x.is_empty() || *x == "." || *x == ".." || x.contains('/')) {
+            return;
+        }
         let dir = self.ticket_dir(slug, id);
         if let Err(e) = std::fs::remove_dir_all(&dir)
             && e.kind() != std::io::ErrorKind::NotFound

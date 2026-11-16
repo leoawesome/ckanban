@@ -177,7 +177,8 @@ impl Writes {
                     return Some(super::profiles::create(self, req).unwrap_or_else(err));
                 }
                 let slug = p[1];
-                if self.profile(slug).is_none() {
+                // A board is a folder under profiles/: a name that leaves it (`..`, a slash) is never one.
+                if slug.is_empty() || slug == "." || slug == ".." || slug.contains('/') || slug.contains('\0') || self.profile(slug).is_none() {
                     return Some(err((404, format!("board {slug} not found"))));
                 }
                 if p.len() == 2 {
@@ -758,7 +759,7 @@ impl Writes {
         }
         let b = body_obj(req)?;
         let target = js_string(b.get("board"), "");
-        if self.profile(&target).is_none() {
+        if target.is_empty() || target == "." || target == ".." || target.contains('/') || self.profile(&target).is_none() {
             return Err((404, "board not found".into()));
         }
         let t = self.tickets.move_to(slug, id, &target).map_err(|(_, e)| bad(e))?;

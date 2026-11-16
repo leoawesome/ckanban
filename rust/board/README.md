@@ -50,7 +50,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   out (live fields taken from Bun's answer, Inbox sessions from `session-summaries.json`); differences, ids and field
   names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
-- One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
+- One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6, done), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
   `huddles` (R11a), `team` (R11b), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
@@ -150,6 +150,28 @@ routes.
   tickets are open in a terminal (its linked tickets come from the R1 index, `linked_from_index`).
 - What the routes read from the board goes through `BoardLookup` (`FileLookup`: one ticket or board file at a time).
 
+## R2a: ticket and board writes (`src/tickets/`)
+
+The only code that writes `ticket.md` in board mode (plan 2.2). Ported from `src/core/store.ts` (the writing half),
+`src/board/board-tickets.ts`, `board.ts` (`patch`, `addComment`), the routes of `src/api/tickets*.ts`,
+`ticket-cards.ts`, `ticket-info.ts` (snooze, seen), `ticket-actions.ts` (move), `profiles.ts`, `attachments.ts`,
+`avatars.ts`, `snippets.ts`, and `runRights` from `context.ts`.
+- `writer::Tickets` (`Core::tickets`): `create`, `update`, `patch`, `delete`, `move_to`, `add_comment`, `note`,
+  `mark_started_by`. Each write takes the board's write lock, writes the file through `ckanban_core::ticket`, puts the
+  ticket in the index's listing (`Index::saved`, Bun's `placeTicket`) and sends `ticket.updated`/`ticket.deleted`.
+  The cached ticket keeps Bun's in-memory key order. Comments are masked with the pass store's secrets as they are
+  written (`set_mask`). Blocking: call from the blocking pool; async hooks run through `writer::block`.
+- `hooks::BoardHooks`: what later steps plug in (R2b families and plans, R7a runs and run rights, R10 schedules,
+  R11a huddles, R12 the linker, R13 the helper). Stand-ins refuse family links (`partOf`, gather, rounds) rather
+  than write them unchecked. `wiring::Wired` plugs in what is already in Rust: R6's Done cleanup and the copy of a
+  deleted ticket (both report-only until `CKANBAN_RUST_DELETE=1`), R9's browser picks and terminal shells.
+  `wiring::TicketOps` is R6's `BoardOps` over these writes. A step that lands adds its piece to `Wired`.
+- `rights`: `runRights`, `runStart`, `inFamily`. `routes::Writes`: the routes (`wanted` lists them); `profiles`:
+  boards; `files`: attachments, avatars, snippets; `norm`: tags, needs, ⭐ titles, slugs (accents as NFKD for Latin
+  letters only), models and kinds.
+- Checked against Bun by `test/contract/board-writes.test.ts`: one script of writes on both, the same answers (by
+  value) and the same bytes in the data folder.
+
 ## R6: git, copies of the folder, landing, files (`src/git/`)
 
 - `cmd`, `repo`: git and gh as child processes; repo kind (plain, empty, local, remote) cached 10 s; ticket copies
@@ -160,8 +182,8 @@ routes.
   chat mentions, outputs.
 - `landing::Git`: where a ticket's runs work (`ensure_session`, the plain-folder path included), `run_setup`, merge
   into main, `land_milestone`, `branch_folder` (Branch/Fork), the Done cleanup and the worktree sweep; implements
-  `api::Landing`. It reaches the board through `ops::BoardOps`, which R2a/R7a implement (`fileops::FileOps` is a
-  read-only stand-in for the start-up sweep).
+  `api::Landing`. It reaches the board through `ops::BoardOps` (R2a's `tickets::wiring::TicketOps`; `fileops::FileOps`
+  is a read-only stand-in the start-up sweep still uses).
 - `routes`: what board mode answers now (files alone, no ticket writes): a ticket's `outputs`, `find-files`, `file`,
   `diff`; the board's `files`, `file`, `open-file`, `detect-setup`; `/api/version-history`. Anything unusual goes to
   the satellite. The write routes (`merge-into-main`, `land`, `branch`, `setup`, `pr/*`, `check-pr`) come with R7a.
