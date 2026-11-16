@@ -67,7 +67,8 @@ pub async fn from_user_browser(peer_port: u16, own_pid: u32) -> bool {
     })
 }
 
-/// `callerLsofArgs` in guard.ts: lsof's `-i` for both ends of the caller's connection. This server listens on
+/// `callerLsofArgs` in guard.ts: lsof's `-i` for the caller (it matches 127.0.0.1 on one end and the port on either
+/// end, not one exact connection; an extra pid can only refuse). This server listens on
 /// 127.0.0.1 only, so the caller's end is 127.0.0.1:<peer_port>. A bare `-iTCP:<port>` also matched any other socket on
 /// the Mac with that port number (another address, or as its remote port), such as a desktop app's connection to the
 /// internet: that pid isn't a browser, so the user's own browser was refused.

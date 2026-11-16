@@ -69,7 +69,7 @@ export function drivenBrowser(pid: number, parents: Map<number, number>, args: M
   return false;
 }
 
-/** The `lsof` arguments that find the processes on both ends of the caller's connection. */
+/** The `lsof` arguments that find the caller: TCP sockets with 127.0.0.1 on one end and the caller's port on either end. */
 export function callerLsofArgs(peerPort: number): string[] {
   // The board listens on 127.0.0.1 only, so the caller's end is 127.0.0.1:<peerPort>. A bare -iTCP:<port> also
   // matched any other socket on the Mac with that port number (another address, or as its remote port), such as a
@@ -77,7 +77,7 @@ export function callerLsofArgs(peerPort: number): string[] {
   return ["lsof", "-nP", `-iTCP@127.0.0.1:${peerPort}`, "-sTCP:ESTABLISHED", "-Fp"];
 }
 
-/** Pids with a TCP socket on either end of the caller's connection (the daemon's own end included). */
+/** Pids lsof finds for the caller's port on 127.0.0.1 (the daemon's own end included). Another such socket still adds a pid, which only refuses. */
 async function callerPids(peerPort: number): Promise<number[]> {
   return lsofPids(await out(callerLsofArgs(peerPort)));
 }
