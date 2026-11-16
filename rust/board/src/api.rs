@@ -76,7 +76,8 @@ pub trait DeviceInfo: Send + Sync {
 /// Copies of the folder and landing (`board-main.ts`, `board-repo.ts`).
 pub trait Landing: Send + Sync {
     fn merge_into_main(&self, slug: &str, id: &str) -> BoxFuture<'_, Result<Value, Failure>>;
-    fn land(&self, slug: &str, id: &str) -> BoxFuture<'_, Result<Value, Failure>>;
+    /// `land_milestone` with its one-line summary.
+    fn land(&self, slug: &str, id: &str, summary: &str) -> BoxFuture<'_, Result<Value, Failure>>;
     fn cleanup_worktree(&self, slug: &str, id: &str) -> BoxFuture<'_, Result<(), Failure>>;
     /// The board folder's state (git or plain, branch, remote) as the UI gets it.
     fn repo_state(&self, slug: &str) -> BoxFuture<'_, Result<Value, Failure>>;
@@ -180,7 +181,7 @@ impl Landing for StandIn {
     fn merge_into_main(&self, _: &str, _: &str) -> BoxFuture<'_, Result<Value, Failure>> {
         Box::pin(async { Err(NOT_YET.to_string()) })
     }
-    fn land(&self, _: &str, _: &str) -> BoxFuture<'_, Result<Value, Failure>> {
+    fn land(&self, _: &str, _: &str, _: &str) -> BoxFuture<'_, Result<Value, Failure>> {
         Box::pin(async { Err(NOT_YET.to_string()) })
     }
     fn cleanup_worktree(&self, _: &str, _: &str) -> BoxFuture<'_, Result<(), Failure>> {
