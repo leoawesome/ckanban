@@ -15,7 +15,8 @@ test("stop agents and close leave the host's own run and card status alone", asy
   const t = await board.createTicket("p", { title: "Implement", body: "do it", status: "backlog" });
   const h = huddles.create("p", t.id, [{ preset: "reviewer" }]);
   await idle();
-  process.env.FAKE_STEP_MS = "500";
+  // Long enough that the host's run is still going through the synchronous stop, resume and close below.
+  process.env.FAKE_STEP_MS = "200";
   await board.updateTicket("p", t.id, { status: "ready" });
   await until(() => board.isRunning("p", t.id));
   delete process.env.FAKE_STEP_MS;

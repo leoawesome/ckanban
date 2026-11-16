@@ -78,9 +78,9 @@ test("transient API errors are told apart from lasting ones and the usage limit"
 
 test("runner: a silent run stalls, and output clears it", async () => {
   process.env.FAKE_MODE = "silent";
-  process.env.FAKE_SILENT_MS = "2000";
+  process.env.FAKE_SILENT_MS = "1000";
   const seen: boolean[] = [];
-  const r = await startRun({ bin: FAKE, cwd: tempDir(), args: STREAM, input: "go", onEvent: () => {}, stallMs: 1000, onStall: (s) => seen.push(s) }).done;
+  const r = await startRun({ bin: FAKE, cwd: tempDir(), args: STREAM, input: "go", onEvent: () => {}, stallMs: 400, onStall: (s) => seen.push(s) }).done;
   expect(r.code).toBe(0);
   // A slow start under load can add a stall/clear pair before the silence; it always ends cleared.
   expect(seen[0]).toBe(true);
@@ -90,21 +90,21 @@ test("runner: a silent run stalls, and output clears it", async () => {
 
 test("runner: waiting on a declared background task is not a stall", async () => {
   process.env.FAKE_MODE = "bgsilent";
-  process.env.FAKE_BG_MS = "2500";
+  process.env.FAKE_BG_MS = "1200";
   // Only stalls once the task is declared count: a slow start on a busy machine can flag (and then clear) one before.
   let declared = false;
   const seen: boolean[] = [];
   const onEvent = (e: any) => {
     if (e.type === "system" && e.subtype === "background_tasks_changed" && e.tasks?.length) declared = true;
   };
-  const r = await startRun({ bin: FAKE, cwd: tempDir(), args: STREAM, input: "go", onEvent, graceMs: 50, stallMs: 1000, onStall: (s) => declared && seen.push(s) }).done;
+  const r = await startRun({ bin: FAKE, cwd: tempDir(), args: STREAM, input: "go", onEvent, graceMs: 50, stallMs: 400, onStall: (s) => declared && seen.push(s) }).done;
   expect(r.code).toBe(0);
   expect(declared).toBe(true);
   expect(seen).toEqual([]);
 }, 60_000);
 
 test("a silent run becomes stalled, needs the user, and Restart resumes the same session", async () => {
-  await setup({ stallMs: 1000 });
+  await setup({ stallMs: 400 });
   process.env.FAKE_MODE = "silent";
   process.env.FAKE_ONCE_FILE = join(tempDir("ck-once-"), "once");
   const t = await board.createTicket("p", { title: "Hang", body: "", status: "ready" });
@@ -134,9 +134,9 @@ test("a silent run becomes stalled, needs the user, and Restart resumes the same
 }, 60_000);
 
 test("Keep waiting clears the stall; the run then finishes by itself", async () => {
-  await setup({ stallMs: 1000 });
+  await setup({ stallMs: 400 });
   process.env.FAKE_MODE = "silent";
-  process.env.FAKE_SILENT_MS = "2500";
+  process.env.FAKE_SILENT_MS = "1200";
   const t = await board.createTicket("p", { title: "Slow", body: "", status: "ready" });
   await until(() => !!store.getTicket("p", t.id)?.stalled);
   expect(board.stallAction("p", t.id, "wait").stalled).toBeNull();
@@ -148,7 +148,7 @@ test("Keep waiting clears the stall; the run then finishes by itself", async () 
 }, 60_000);
 
 test("Stop on a stalled run stops it", async () => {
-  await setup({ stallMs: 1000 });
+  await setup({ stallMs: 400 });
   process.env.FAKE_MODE = "silent";
   const t = await board.createTicket("p", { title: "Hang", body: "", status: "ready" });
   await until(() => !!store.getTicket("p", t.id)?.stalled);
@@ -208,7 +208,7 @@ test("a stalled running ticket is in the attention kinds; once the run ends it i
 });
 
 test("Restart of a run that hung before its session was saved starts over with the ticket's prompt", async () => {
-  await setup({ stallMs: 1000 });
+  await setup({ stallMs: 400 });
   process.env.FAKE_MODE = "silent";
   process.env.FAKE_NO_SAVE = "1";
   process.env.FAKE_ONCE_FILE = join(tempDir("ck-once-"), "once");
@@ -222,9 +222,9 @@ test("Restart of a run that hung before its session was saved starts over with t
 }, 60_000);
 
 test("Restart and Keep waiting refuse a run that isn't stalled; a second Restart click is refused too", async () => {
-  await setup({ stallMs: 2000 });
+  await setup({ stallMs: 800 });
   process.env.FAKE_MODE = "silent";
-  process.env.FAKE_SILENT_MS = "4000";
+  process.env.FAKE_SILENT_MS = "1600";
   const t = await board.createTicket("p", { title: "Healthy", body: "", status: "ready" });
   // Claude has started talking (a slow start on a busy machine can flag a stall before that, which its first output clears).
   const started = () => store.readActivity("p", t.id).some((a: any) => (a.event ?? a).subtype === "init");
@@ -239,9 +239,9 @@ test("Restart and Keep waiting refuse a run that isn't stalled; a second Restart
 }, 60_000);
 
 test("a stalled flag left by a daemon shutdown is cleared when the run starts again", async () => {
-  await setup({ stallMs: 1000 });
+  await setup({ stallMs: 400 });
   process.env.FAKE_MODE = "silent";
-  process.env.FAKE_SILENT_MS = "4000";
+  process.env.FAKE_SILENT_MS = "1500";
   const t = await board.createTicket("p", { title: "Hang", body: "", status: "ready" });
   await until(() => !!store.getTicket("p", t.id)?.stalled);
   await board.shutdown();
@@ -255,7 +255,7 @@ test("a stalled flag left by a daemon shutdown is cleared when the run starts ag
 }, 60_000);
 
 test("Stop during the retry pause: no second run, outcome stopped", async () => {
-  await setup({ retryDelayMs: 1500 });
+  await setup({ retryDelayMs: 600 });
   process.env.FAKE_MODE = "overloaded";
   process.env.FAKE_ONCE_FILE = join(tempDir("ck-once-"), "once");
   const t = await board.createTicket("p", { title: "Flaky", body: "", status: "ready" });
