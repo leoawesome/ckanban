@@ -9,3 +9,8 @@
 # event stream test creates a ticket, which needs R2a.
 rust-board-mode.test.ts
 callers.test.ts | event stream carries
+
+# R6: a ticket's outputs, the files its chat mentions, its Changes tab, the board's Files panel, detect-setup and
+# version-history, answered by Rust. runs-git.test.ts and runs-life.test.ts (copies, merge into main, land, branch, PR
+# routes) need ticket writes and runs: they come with R2a and R7a, which call rust/board/src/git (landing, pr).
+board-files.test.ts
