@@ -1,16 +1,16 @@
 import { useEffect, useState, type RefObject } from "react";
 import { isUserScroll, NO_INPUT, shrinkStep, type ShrinkState } from "./shrinkStep";
 
-/** The feeds whose scrolling shrinks the ticket header: the chat log and the huddle log. */
-const FEEDS = ".chat-log, .huddle-log";
+/** The feed whose scrolling shrinks the ticket header: the chat log. */
+const FEEDS = ".chat-log";
 /** A scroll counts as the user's when it follows their input by this long (ms). */
 const INPUT_MS = 600;
 /** After a change, scrolls are ignored this long (ms): the feed resizes while the header animates. */
 const SETTLE_MS = 320;
 
 /**
- * The ticket header shrinks to one line while the user scrolls the chat or huddle feed down inside `root`, and
- * comes back when they scroll up or reach the top. Off (full header) when `enabled` is false; a new `view` (another
+ * On phones the ticket header folds its status pill row away while the user scrolls the chat down inside `root`
+ * (the tab row always stays), and the row comes back when they scroll up or reach the top. Off (full header) when `enabled` is false; a new `view` (another
  * tab) starts full again.
  */
 export function useShrinkHeader(root: RefObject<HTMLElement | null>, enabled: boolean, view?: string): boolean {

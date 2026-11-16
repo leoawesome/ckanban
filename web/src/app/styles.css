@@ -1370,12 +1370,7 @@ body > .output-view.reader { position: fixed; }
 .helper-icon.urgent { color: var(--err); }
 .run-popover { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2h) var(--sp-3h); padding: var(--sp-2h) 0 var(--sp-2); }
 .menu-label .menu-sub { display: block; color: var(--muted); font-size: var(--fs-2xs); font-weight: 400; }
-.head-row2-wrap { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr; transition: grid-template-rows var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out); }
 .head-row2 { min-height: 0; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); }
-.panel.head-slim .head-row2-wrap { grid-template-rows: 0fr; opacity: 0; }
-.panel.head-slim .head-row2 { overflow: hidden; }
-.panel.head-slim .panel-head { padding-bottom: var(--sp-2h); }
-.panel-head { transition: padding var(--dur-slow) var(--ease-out); }
 .head-row2 .tabs { padding: 0; box-shadow: none; flex: 0 1 auto; min-width: 0; margin-left: calc(-1 * var(--sp-3h)); }
 .head-row2 .tabs button { padding: var(--sp-2h) var(--sp-3h) var(--sp-3); }
 .head-row2 > :not(.tabs):not(.head-spacer) { flex-shrink: 0; }
@@ -1384,7 +1379,7 @@ body > .output-view.reader { position: fixed; }
 .head-row2 .your-turn.inline.att-review { background: var(--ok-soft); }
 .head-cost { border: 0; background: none; padding: var(--sp-1) var(--sp-2); color: var(--muted); font-size: var(--fs-xs); cursor: pointer; border-radius: var(--r-sm); font-variant-numeric: tabular-nums; }
 .head-cost:hover, .head-cost:focus-visible { color: var(--text); background: var(--surface-2); }
-@media (prefers-reduced-motion: reduce) { .head-row2-wrap, .panel-head { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .head-pill-wrap { transition: none; } }
 /* The sidebar's main-ticket parts: "Where we are" first, the original brief folded, the old-chat note. */
 .where-we-are .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-2); }
 .where-we-are h4 { margin: 0; }
@@ -3726,7 +3721,7 @@ button.hd-mode:disabled { cursor: default; }
   }
   .phone-who:active { background: var(--surface-2); }
   .phone-who:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-  /* The title shows up to two lines while the tab row shows, one line with "…" while the chat is scrolled down (head-slim). */
+  /* The title shows up to two lines while the pill row shows, one line with "…" while the chat is scrolled down (head-slim). */
   .pw-title {
     display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere;
     font-size: var(--fs-lg); font-weight: 700; line-height: 1.25;
@@ -3758,7 +3753,6 @@ button.hd-mode:disabled { cursor: default; }
   .panel.head-slim .head-pill-wrap { grid-template-rows: 0fr; opacity: 0; }
   .panel.head-slim .head-pill-row { overflow: hidden; padding: 0; visibility: hidden; }
   .status-pill.sp-button { min-height: var(--tap); padding: 0 var(--sp-4); font-size: var(--fs-lg); }
-  .panel.head-slim .panel-head { padding-bottom: 0; }
   .head-row2 { gap: var(--sp-2); }
   .head-row2 .tabs { margin-left: 0; flex: 1 1 auto; }
   /* Tabs keep their natural width from the left with even padding; when they don't fit the row scrolls sideways,
