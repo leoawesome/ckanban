@@ -51,10 +51,11 @@ Path segments are percent-decoded before matching (`decodeURIComponent`).
 
 **Secret masking.** Every JSON response (and every event-stream message) passes through `maskSavedJson`: any value of a
 key saved on this Mac (board keys, passes) is replaced before it leaves the daemon.
-The same values never go elsewhere either: a ticket's title and body are saved with this board's keys as `$NAME` (the
+Masked the same way where they are saved or sent: a ticket's title and body are saved with this board's keys as `${NAME}` (the
 variable every run on the board gets the key under) and any other saved value as `***` (text already in `ticket.md`
 is left as it is until it is changed), comments as `***`, and a bug report's title, description and ticket text are
-masked (`***`) before `gh issue create` or the fallback link.
+masked (`***`) before `gh issue create` or the fallback link. Other ticket.md fields (a run's `outcome`, `error`,
+`lastActivity`, `notice`, `tags`) are not masked on disk; their answers are.
 
 ### Special headers
 

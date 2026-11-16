@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { CLI_CMD, type Daemon, startDaemon, until } from "./daemon";
 import { documentedPaths, filesUnder, readJsonl } from "./files";
 import { phone, writeRemoteJson } from "./phone";
+import { asUser } from "./user-browser";
 
 let d: Daemon;
 const SLUG = "keys";
@@ -242,19 +243,25 @@ test("a saved value is masked in every answer, and in comments as they are saved
     expect({ what, board: r.text.includes(BOARD_KEY), automation: r.text.includes(AUTOMATION_KEY_2) }).toEqual({ what, board: false, automation: false });
   }
   // ticket.md never holds a saved value: this board's key becomes the variable runs get it under, any other one ***.
-  expect((await d.api("GET", base)).data.body).toBe("board $SENTRY_AUTH_TOKEN and automation ***");
+  expect((await d.api("GET", base)).data.body).toBe("board ${SENTRY_AUTH_TOKEN} and automation ***");
   const md = readFileSync(join(d.home, "profiles", SLUG, "tickets", made.data.id, "ticket.md"), "utf8");
   expect(md).not.toContain(BOARD_KEY);
   expect(md).not.toContain(AUTOMATION_KEY_2);
-  expect(md).toContain("board $SENTRY_AUTH_TOKEN and automation ***");
+  expect(md).toContain("board ${SENTRY_AUTH_TOKEN} and automation ***");
+  // Another board's key that contains this board's key is replaced whole, not as \${NAME} plus its rest.
+  const wrap = `zz${BOARD_KEY}zz`;
+  expect((await phone(d, "POST", "/api/passes", { kind: "key", name: "Wrapped", secret: wrap, board: OTHER })).status).toBe(201);
+  const wrapped = await d.api("PATCH", base, { body: `w ${wrap} ${BOARD_KEY}x` });
+  expect(wrapped.status).toBe(200);
+  expect(readFileSync(join(d.home, "profiles", SLUG, "tickets", made.data.id, "ticket.md"), "utf8")).toContain("w *** ${SENTRY_AUTH_TOKEN}x");
   // The same when the text is changed later, and in the title.
   const edited = await d.api("PATCH", base, { title: `key ${BOARD_KEY}`, body: `now ${AUTOMATION_KEY_2} and ${BOARD_KEY}` });
   expect(edited.status).toBe(200);
   const md2 = readFileSync(join(d.home, "profiles", SLUG, "tickets", made.data.id, "ticket.md"), "utf8");
   expect(md2).not.toContain(BOARD_KEY);
   expect(md2).not.toContain(AUTOMATION_KEY_2);
-  expect(md2).toContain("title: key $SENTRY_AUTH_TOKEN");
-  expect(md2).toContain("now *** and $SENTRY_AUTH_TOKEN");
+  expect(md2).toContain("title: key ${SENTRY_AUTH_TOKEN}");
+  expect(md2).toContain("now *** and ${SENTRY_AUTH_TOKEN}");
   // comments.jsonl holds the masked text.
   const comments = readFileSync(join(d.home, "profiles", SLUG, "tickets", made.data.id, "comments.jsonl"), "utf8");
   expect(comments).not.toContain(BOARD_KEY);
@@ -295,6 +302,10 @@ test("check scripts (loops/test): keys arrive as environment variables, output i
       expect(no.text).not.toContain([...AUTOMATION_KEY_2].reverse().join(""));
     }
   }
+  // The user's own browser on this Mac (the Automations editor's Test) may.
+  const desk = await asUser(d.url, "POST", `/api/profiles/${SLUG}/loops/test`, { script: rev, passes: ["Linear"] });
+  expect(desk.status).toBe(200);
+  expect(desk.data.found).toBe(1);
   // Without a key it still works for them (the setup chat tests its script).
   const plain = await d.api("POST", `/api/profiles/${SLUG}/loops/test`, { script: 'echo "[{\\"id\\":\\"p\\",\\"title\\":\\"[$LINEAR_KEY]\\"}]"' }, { "x-ckanban-run": `${SLUG}/t_x` });
   expect(plain.status).toBe(200);

@@ -111,14 +111,17 @@ export function maskSavedJson(root: string, json: string): string {
 }
 
 /**
- * For text a ticket keeps (its title and body in ticket.md): a key saved for this board becomes `$NAME`, the variable
+ * For text a ticket keeps (its title and body in ticket.md): a key saved for this board becomes `${NAME}`, the variable
  * every run on the board gets it under (boardKeyEnv), so a run that reads the ticket still uses the real key from its
  * environment. Any other saved secret (another board's key, an automation key, a sign-in token) becomes `***`.
  */
 export function maskTicketText(root: string, slug: string, text: string): string {
   if (!text) return text;
+  const own = new Map<string, string>();
+  for (const k of boardKeys(root, slug)) if (!keyNameError(k.envName) && !own.has(k.secret)) own.set(k.secret, k.envName);
+  // One pass, longest value first, so a value that contains another one is replaced whole. `${NAME}`: the text right
+  // after it can't change which variable it names.
   let out = text;
-  const own = boardKeys(root, slug).filter((k) => !keyNameError(k.envName) && k.secret.length >= 8).sort((a, b) => b.secret.length - a.secret.length);
-  for (const k of own) if (out.includes(k.secret)) out = out.split(k.secret).join(`$${k.envName}`);
-  return maskSaved(root, out);
+  for (const s of savedSecrets(root)) if (out.includes(s)) out = out.split(s).join(own.has(s) ? `\${${own.get(s)}}` : "***");
+  return out;
 }

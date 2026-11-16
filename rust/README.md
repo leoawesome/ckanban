@@ -71,7 +71,7 @@ Rust passes these through with the caller's port (`x-ckanban-peer-port`), so Bun
 front. When one of them moves to Rust it must keep what Bun does now (contracts/api.md, "Secret masking" and the user-only
 rows; the contract tests check it on both servers): every non-GET `/api/mcp/*` and `/api/agents/*` and `GET
 /api/mcp/:name/config` are user only (`guard.rs`), `loops/test` is user only once a pass would hand the script a key, a
-bug report masks every saved value before `gh`, and ticket text is saved with this board's keys as `$NAME` and other
+bug report masks every saved value before `gh`, and ticket text is saved with this board's keys as `${NAME}` and other
 saved values as `***`.
 
 Usage and spend: only these exact paths with GET. Everything else goes to Bun: other methods (Bun's 404), other spellings Bun also
