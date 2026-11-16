@@ -205,6 +205,19 @@ Any other method or shape under `/api/attachments`: 404.
 | GET | `/api/remote` | | 200 `RemoteStatus` (remote.ts) plus `qrSvg` (or null) and `local` (request came in on the local listener) | |
 | POST | `/api/remote` | `{enabled: boolean}` | 200 same shape, `local: true` | 403 remote listener, 403 `x-ckanban-run`, 400 enabled not boolean, `RemoteError` status |
 
+- Checks run in the order listed, before any Tailscale command. `on` runs `tailscale status --json` and
+  `tailscale serve --bg --https=443 http://127.0.0.1:<remote port>`, then writes `remote.json`; `off` writes
+  `enabled: false` first (or deletes the file when it held nothing usable), then runs `tailscale serve --https=443 off`
+  and reports a failure there as `warning` (still 200). `RemoteError` statuses: 424 Tailscale missing, stopped, not
+  signed in or Serve not enabled; 409 the phone access listener isn't answering; 502 Tailscale failed.
+- `GET /api/remote` while phone access is on also runs `tailscale status --json` (at most 3 s) and adds `tailscale`
+  (`running`, `stopped` or `unavailable`) and `backendState`. While off it runs nothing.
+- The `tailscale` command is `/Applications/Tailscale.app/Contents/MacOS/Tailscale` when that exists, else `tailscale`
+  on PATH (run with `TAILSCALE_BE_CLI=1`).
+- Refusal texts on the phone access listener (403 `text/plain`): `forbidden: phone access is off (run \`ckanban remote
+  on\` on the Mac)`; `forbidden` for another Host or a mutation's foreign Origin; `forbidden: open this board signed in
+  to Tailscale as its owner` for a missing or other login. `remote.json` is re-read when its mtime changes.
+
 ## Browsers and devices
 
 Board browsers (board-browsers.ts) and named Chromes (chromes.ts) share one view, here called `BrowsersView`: the
@@ -304,6 +317,20 @@ All `/api/notify`, `/api/messages`, `/api/helper` and `/api/push` routes answer 
 | PATCH | `/api/passes/:id` | `{secret}`; user only | 200 `PassView` | 403, `PassError` |
 | DELETE | `/api/passes/:id` | user only | 204 | 403, `PassError` |
 | POST | `/api/passes/:id/authorize` | user only | 200 `{url}` | 403, `PassError` |
+
+- Server definition (`McpAddInput`): `{name, transport: "stdio"|"http"|"sse", command?, args?, env?: {key, value}[],
+  url?, headers?: {name, value}[], board?}`. Without `board` the daemon runs `claude mcp add --scope user ...` (edit:
+  `claude mcp remove` then `add`; move to all: `claude mcp add-json --scope user`); with `board` (a slug, 404 when
+  unknown) the tool is kept in `profiles/<slug>/board-tools.json` and no `claude` command runs. Errors: 400 bad name,
+  transport, command, URL (http/https only) or a value with a line break; 409 name taken (also `ckanban` on a board);
+  404 unknown server or board; 400 login/logout for a server without OAuth (stdio); 409 a paste while no sign-in runs.
+- `GET /api/mcp/:name/config` returns the saved settings unmasked (env values, headers), for the edit form.
+- None of the `/api/mcp` and `/api/agents` routes has a user-only or run check (see Quirks).
+- Pass creation (`AddPassInput`): `{kind: "key", name, secret, envName?, url?, board?}` (`envName` defaults from the
+  name, e.g. `LINEAR_KEY`; 409 when taken on the same board or for automations), `{kind: "mcp", url, name?}` (https,
+  or http on localhost; starts `pending`), `{kind: "local", claudeName}` (404 when not in Claude's settings).
+  `PassView` never holds the secret. `GET /api/passes/:id/tools`: 404 unknown, 400 a key for scripts, 502 not signed
+  in or the service failed. `POST .../authorize`: 400 no sign-in step, 409 with `code: "no_registration"`, 502.
 
 ## Profiles (boards)
 
@@ -673,3 +700,15 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 - The `x-ckanban-source` header only matters for the 409 "confirm" checks and huddle message source; a run that also
   sends `x-ckanban-run` never gets the confirm 409.
 - A front desk request held for Confirm answers 202 `{confirmation}` instead of the route's own result.
+- `/api/mcp/...` and `/api/agents/...` have no user-only or run check: a board run may add, change, move or remove
+  MCP servers (including a stdio command later runs start) and read a server's unmasked settings with
+  `GET /api/mcp/:name/config` (secret masking covers saved keys and passes only).
+- `POST /api/profiles/:slug/loops/test` is not user only, and the masking of its answer replaces exact saved values
+  only: a script that changes the value (reverses it, say) returns it readable.
+- `POST /api/bug-report` and `/draft` answers are masked, but the issue body and title sent to `gh issue create` are
+  only scrubbed for home and data folder paths and token-like patterns: a saved key's value in the description or the
+  ticket's text goes to GitHub as is.
+- Saved key values are masked in answers, but a ticket's `ticket.md` keeps a pasted value as it was written (comments
+  are masked when saved).
+- On the phone access listener the user-only check passes for any caller with the tailnet Host and the owner's login;
+  both are in `remote.json`, so a local program can pose as the user while phone access is on (t_20261115_v0ip).

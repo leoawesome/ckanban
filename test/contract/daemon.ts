@@ -40,6 +40,8 @@ export const FAKE_CLAUDE = join(REPO, "test", "fixtures", "fake-claude.ts");
 export interface Daemon {
   port: number;
   url: string;
+  /** The phone access listener's port (CKANBAN_REMOTE_PORT); only `tailscale serve` would call it on a real Mac. */
+  remotePort: number;
   /** The data folder (what ~/.claude-kanban is for a real install). */
   home: string;
   /** The board's project folder. */
@@ -64,18 +66,22 @@ function tmp(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-/** A folder of do-nothing commands put first on PATH: no Mac banners, no keep-awake, no browser, no Tailscale. */
-function stubBin(): string {
+/**
+ * A folder of do-nothing commands put first on PATH: no Mac banners, no keep-awake, no browser, no Tailscale on PATH.
+ * (The daemon prefers /Applications/Tailscale.app's own binary when it is installed: tests must not reach the code
+ * that runs Tailscale, see remote.test.ts.)
+ */
+function stubBin(extra: Record<string, string> = {}): string {
   const dir = tmp("ck-contract-bin-");
-  for (const name of ["osascript", "caffeinate", "open", "tailscale", "terminal-notifier"]) {
+  const scripts: Record<string, string> = {};
+  for (const name of ["osascript", "caffeinate", "open", "tailscale", "terminal-notifier"]) scripts[name] = "#!/bin/sh\nexit 0\n";
+  // The board runs `claude`; this is the fake one.
+  scripts.claude = `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE}" "$@"\n`;
+  for (const [name, text] of Object.entries({ ...scripts, ...extra })) {
     const f = join(dir, name);
-    writeFileSync(f, "#!/bin/sh\nexit 0\n");
+    writeFileSync(f, text);
     chmodSync(f, 0o755);
   }
-  // The board runs `claude`; this is the fake one.
-  const claude = join(dir, "claude");
-  writeFileSync(claude, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE}" "$@"\n`);
-  chmodSync(claude, 0o755);
   return dir;
 }
 
@@ -85,6 +91,11 @@ export interface StartOptions {
   fakeMode?: string;
   /** Extra env for the daemon and the CLI (wins over the defaults below). */
   env?: Record<string, string>;
+  /**
+   * More commands for the stub folder first on PATH: name to script text (e.g. a `gh` that records its arguments).
+   * A name given here replaces the default stub of that name.
+   */
+  stubs?: Record<string, string>;
   /** Runs after the temp folders exist and before the daemon starts: seed data files or Claude credentials here. */
   before?: (dirs: { home: string; claudeDir: string; project: string }) => void;
 }
@@ -98,7 +109,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
   // claude-config/projects: where Claude keeps transcripts; the daemon watches it as on a real Mac.
   for (const d of [home, userHome, project, join(claudeDir, "projects")]) mkdirSync(d, { recursive: true });
   writeFileSync(join(project, "README.md"), "# Contract test project\n");
-  const bin = stubBin();
+  const bin = stubBin(opts.stubs);
   const port = await freePort();
   let remotePort = await freePort();
   while (remotePort === port) remotePort = await freePort();
@@ -179,7 +190,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     rmSync(bin, { recursive: true, force: true });
   };
 
-  return { port, url, home, project, env, api, cli, log, stop };
+  return { port, url, remotePort, home, project, env, api, cli, log, stop };
 }
 
 /** Polls `fn` until it returns a truthy value (or throws after `ms`). */
