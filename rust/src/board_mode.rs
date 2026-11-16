@@ -11,8 +11,10 @@
 //! Routes the Rust board answers itself (more with each task): `GET /api/events`; R1's reads from the ticket index
 //! (`GET /api/profiles`, `/api/profiles/:p`, `/api/profiles/:p/tickets`, `/api/profiles/:p/tickets/:id`,
 //! `/api/tickets`, `/api/inbox`); the session routes (R5: a ticket's conversation, tool, agent and workflow details,
-//! chat search and read, the board folder's sessions); the team routes (R11b: `/api/profiles/:p/huddle-presets`,
-//! `/huddle-templates`, `POST /squads`, `/huddle-notes`, after the same Host, Origin and JSON type checks Bun makes).
+//! chat search and read, the board folder's sessions); a ticket's outputs, the files its chat mentions, its Changes
+//! tab, the board's Files panel, `detect-setup` and `/api/version-history` (R6, `ckanban_board::git::routes`); the
+//! team routes (R11b: `/api/profiles/:p/huddle-presets`, `/huddle-templates`, `POST /squads`, `/huddle-notes`, after
+//! the same Host, Origin and JSON type checks Bun makes).
 //! Everything else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::path::{Path, PathBuf};
@@ -21,6 +23,8 @@ use std::time::{Duration, SystemTime};
 
 use ckanban_board::core::{Core, Services};
 use ckanban_board::events::{self, EventHooks};
+use ckanban_board::git::{self, routes::GitRoutes};
+pub use ckanban_board::git::routes::Next;
 use ckanban_board::lock::{self, BoardLock};
 use ckanban_board::mode::{self, Decision};
 use ckanban_board::satellite;
@@ -52,6 +56,7 @@ pub struct BoardMode {
     pub team: Arc<Team>,
     sessions: Arc<Sessions>,
     hooks: Arc<EventHooks>,
+    git: Arc<GitRoutes>,
     public_port: u16,
     root: PathBuf,
     _lock: BoardLock,
@@ -90,9 +95,12 @@ pub async fn prepare(root: &Path, public_port: u16) -> Option<Arc<BoardMode>> {
         eprintln!("ckanban-rs: can't write {}: {e}", mode::status_path(root).display());
     }
     eprintln!("ckanban-rs: board mode: the Rust board owns this data folder; Bun runs as its satellite");
-    let hooks = Arc::new(EventHooks { views: core.services.views.clone(), cut: core.services.cut.clone(), mask: masker(root) });
+    let mask = masker(root);
+    let hooks = Arc::new(EventHooks { views: core.services.views.clone(), cut: core.services.cut.clone(), mask: mask.clone() });
     let team = Arc::new(Team::new(root));
-    Some(Arc::new(BoardMode { core, sessions, team, hooks, public_port, root: root.to_path_buf(), _lock: lock }))
+    let git = GitRoutes::new(root, public_port, mask, core.services.runs.clone());
+    git::start_jobs(&core);
+    Some(Arc::new(BoardMode { core, team, sessions, hooks, git, public_port, root: root.to_path_buf(), _lock: lock }))
 }
 
 fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<BoardMode>> {
@@ -260,6 +268,12 @@ impl BoardMode {
         *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         r.headers_mut().insert(CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json"));
         r
+    }
+
+    /// The routes the Rust board answers that need a request's body or slow work (R6's files, outputs and Changes
+    /// routes): the answer, or the request for the next routes (as it came) or for Bun (its body already read).
+    pub async fn answer_async(&self, req: Request<Incoming>) -> Result<Response<Body>, Next> {
+        self.git.answer(req).await
     }
 
     /// After the satellite answers: follow its event stream, give it the live state, and send it the board's events.

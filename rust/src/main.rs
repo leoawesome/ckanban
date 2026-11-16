@@ -254,7 +254,11 @@ async fn serve(
                     let req = match &board {
                         Some(b) => match b.answer_team(req).await {
                             Ok(res) => return Ok(res),
-                            Err(req) => req,
+                            Err(req) => match b.answer_async(req).await {
+                                Ok(res) => return Ok(res),
+                                Err(board_mode::Next::Untouched(req)) => req,
+                                Err(board_mode::Next::Bun(req)) => return Ok(proxy.forward(req, peer).await),
+                            },
                         },
                         None => req,
                     };

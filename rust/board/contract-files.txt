@@ -24,6 +24,11 @@ board-families.test.ts | create errors
 # quickchat.test.ts's search_chat) need runs (R7a) and quick chats (R8).
 sessions-read.test.ts
 
+# R6: a ticket's outputs, the files its chat mentions, its Changes tab, the board's Files panel, detect-setup and
+# version-history, answered by Rust. runs-git.test.ts and runs-life.test.ts (copies, merge into main, land, branch, PR
+# routes) need ticket writes and runs: they come with R2a and R7a, which call rust/board/src/git (landing, pr).
+board-files.test.ts
+
 # R11b: teammates and role notes. The squads test also saves a squad card on a ticket it creates first, which needs
 # R2a's ticket writes; it joins the list then.
 huddle.test.ts | built-ins, a board teammate

@@ -51,7 +51,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
 - One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
-  `sessions` (R5), `git` (R6), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
+  `sessions` (R5), `git` (R6, done), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
   `huddles` (R11a), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
 ## The run engine (R3, `src/runs/`)
@@ -146,6 +146,27 @@ statuses; `routes.rs` answers `/api/profiles/:p/huddle-presets`, `/huddle-templa
 - `tests/fixtures/team.json` is the parity table (about 400 cases with Bun's answer or error text);
   `test/rust-team-fixtures.test.ts` checks Bun, `tests/team.rs` Rust, `tests/team_store.rs` the files and routes.
   After a deliberate change in Bun: `UPDATE_RUST_FIXTURES=1 bun test test/rust-team-fixtures.test.ts`.
+
+## R6: git, copies of the folder, landing, files (`src/git/`)
+
+- `cmd`, `repo`: git and gh as child processes; repo kind (plain, empty, local, remote) cached 10 s; ticket copies
+  (worktrees), the shared fetch of the latest base, turning version history on.
+- `setup`: setup detection (.env files, lockfiles), copying `copyFiles`, the setup command, `detect_missing`.
+- `diff`: the Changes tab. `pr`: a ticket's PRs, `gh` status, Merge & done, send failures, resolve conflicts, the poller
+  (`start_poller`, started by R7a). `share`: Show in Finder, Copy file, download headers. `files`: Files panel, files a
+  chat mentions, outputs.
+- `landing::Git`: where a ticket's runs work (`ensure_session`, the plain-folder path included), `run_setup`, merge
+  into main, `land_milestone`, `branch_folder` (Branch/Fork), the Done cleanup and the worktree sweep; implements
+  `api::Landing`. It reaches the board through `ops::BoardOps`, which R2a/R7a implement (`fileops::FileOps` is a
+  read-only stand-in for the start-up sweep).
+- `routes`: what board mode answers now (files alone, no ticket writes): a ticket's `outputs`, `find-files`, `file`,
+  `diff`; the board's `files`, `file`, `open-file`, `detect-setup`; `/api/version-history`. Anything unusual goes to
+  the satellite. The write routes (`merge-into-main`, `land`, `branch`, `setup`, `pr/*`, `check-pr`) come with R7a.
+- At start (`start_jobs`): setup detection, and the worktree sweep in report-only mode.
+- Background deletes are report-only (`src/dryrun.rs`): the sweep and the Done cleanup append their decisions to
+  `<data>/rust-board-dryrun.log` and delete nothing until `CKANBAN_RUST_DELETE=1` (plan 5.3).
+- Pure logic is checked against Bun: `tests/fixtures/git.json` (written by `test/rust-git-fixtures.test.ts`,
+  `UPDATE_RUST_FIXTURES=1`).
 
 ## Tests
 
