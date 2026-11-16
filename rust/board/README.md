@@ -39,7 +39,18 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   a slow connection closed).
 - `src/mode.rs`: the switch, the fallbacks and the status file. `src/lock.rs`: `board.lock`.
 - `src/satellite.rs`: `event`/`runtime` lines to the satellite's stdin; its event stream re-emitted on the bus.
-- One empty folder per later task (filled as each lands): `index` (R1), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
+- `src/index/` (R1): every board's ticket files parsed once and kept by mtime and size, each board's listing shared as
+  one `Arc<BoardList>`; the start-up load on a few threads in the background (a board's first listing waits for it);
+  the 30 s re-check; families, scopes and Done paging, a main ticket's card, attention, links, the command bar;
+  `TicketView` with live state through `Live` (the services' stand-ins until their tasks land); the read routes
+  `GET /api/profiles`, `/api/profiles/:p`, `/api/profiles/:p/tickets` (every scope), `/api/profiles/:p/tickets/:id`,
+  `/api/tickets`, `/api/inbox`. `api::TicketViews` is filled from it (`core.rs` `IndexViews`).
+- Shadow mode (`src/index/shadow.rs`, `rust/src/shadow.rs`): with `CKANBAN_RUST_SHADOW=1` and board mode off, Bun's
+  answers to the ticket list reads are served as they are and compared in the background with what the index works
+  out (live fields taken from Bun's answer, Inbox sessions from `session-summaries.json`); differences, ids and field
+  names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
+  board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
+- One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
   `huddles` (R11a), `team` (R11b), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 

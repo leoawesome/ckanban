@@ -9,3 +9,12 @@
 # event stream test creates a ticket, which needs R2a.
 rust-board-mode.test.ts
 callers.test.ts | event stream carries
+
+# R1: the read routes from the Rust index (boards, ticket list scopes, one ticket, /api/tickets, /api/inbox), the same
+# answers as Bun on a board written as files, and shadow mode. Tests of the C1 files that create no ticket; the rest
+# need ticket writes (R2a).
+board-reads.test.ts
+tickets.test.ts | boards \(profiles\)|validation errors
+board-items.test.ts | attachments (POST|GET|other|refused|names)
+board-cards.test.ts | board PATCH and DELETE
+board-families.test.ts | create errors
