@@ -6,9 +6,9 @@
 // records a fingerprint of the code it tested, and a later run on the same code says so and stops. While building,
 // `--related` runs only the test files that import a changed file (bun's own `--changed`), so a small edit doesn't
 // pay for the whole suite; the landing check still runs it in full.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join, relative } from "node:path";
 
 /** Where passed fingerprints are kept: one empty file per fingerprint, shared by every copy of the repo on the machine. */
 export const PASSED_DIR = join(tmpdir(), "ckanban-test-passed");
@@ -20,9 +20,14 @@ const KEEP_DAYS = 7;
  */
 const NOT_CODE = ["*.md", "test/timings.json"];
 
-/** A change to one of these can affect any test (setup, runner, dependencies, the fake claude), so `--related` runs them all. */
+/** A change to one of these can affect any test (setup, runner, dependencies), so `--related` runs them all. */
 const FULL_IF_CHANGED = ["package.json", "bun.lock", "bunfig.toml", "tsconfig.json", "scripts/test.ts", "scripts/test-plan.ts", "test/preload.ts"];
-const FULL_IF_UNDER = ["test/fixtures/"];
+/**
+ * Fixtures (the fake claude, sample files) are started or read by path, so bun's import graph doesn't link them to
+ * their tests. A change here runs the test files that name the fixture, directly or through a helper in test/.
+ */
+const FIXTURES = "test/fixtures/";
+const TEST_FILE = /\.test\.tsx?$/;
 
 /** Test files that start a source file as a program instead of importing it, so bun's import graph doesn't link them. */
 const STARTED_BY_PATH: Record<string, string[]> = {
@@ -99,11 +104,75 @@ export function changedFiles(cwd: string, base: string): string[] {
 export type RelatedPlan = { full: true; reason: string } | { full: false; extra: string[] };
 
 /** For `--related`: run everything (a shared file changed), or bun's affected files plus any started by path. */
-export function relatedPlan(changed: string[]): RelatedPlan {
-  for (const f of changed) {
-    if (FULL_IF_CHANGED.includes(f) || FULL_IF_UNDER.some((d) => f.startsWith(d))) return { full: true, reason: f };
-  }
+export function relatedPlan(changed: string[], cwd = process.cwd()): RelatedPlan {
+  for (const f of changed) if (FULL_IF_CHANGED.includes(f)) return { full: true, reason: f };
   const extra = new Set<string>();
   for (const f of changed) for (const t of STARTED_BY_PATH[f] ?? []) if (!changed.includes(t)) extra.add(t);
+  const fixtures = [...new Set(changed.filter((f) => f.startsWith(FIXTURES)).map((f) => f.slice(FIXTURES.length).split("/")[0]))];
+  for (const t of fixtureUsers(fixtures, sourceFiles(cwd))) if (!changed.includes(t)) extra.add(t);
   return { full: false, extra: [...extra].sort() };
 }
+
+/** Every .ts/.tsx file the suite can reach, with its text (about 900 small files: a fixed-size scan, done once per run). */
+export function sourceFiles(cwd: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (dir: string) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      if (n === "node_modules" || n.startsWith(".")) continue;
+      const path = join(dir, n);
+      let st;
+      try {
+        st = statSync(path);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) walk(path);
+      else if (/\.tsx?$/.test(n)) out.set(relative(cwd, path), readFileSync(path, "utf8"));
+    }
+  };
+  for (const root of ["src", "web/src", "scripts", "test"]) walk(join(cwd, root));
+  return out;
+}
+
+/**
+ * Test files that use one of these fixtures (names right under test/fixtures/, e.g. "fake-claude.ts" or "context"):
+ * they name it in a path or import, or use a helper in test/ (support, contract, other fixtures) that does.
+ */
+export function fixtureUsers(fixtures: string[], files: Map<string, string>): string[] {
+  if (!fixtures.length) return [];
+  const stem = (name: string) => basename(name).replace(/\.tsx?$/, "");
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // A fixture is named by its file name in a path or path part ("fake-claude.ts", "fixtures/context/x").
+  const fixturePattern = (f: string) => ({ re: new RegExp(`["'/]${esc(stem(f))}(\\.tsx?)?["'/]`), dir: null as string | null });
+  const patterns = fixtures.map(fixturePattern);
+  // A helper by an import of it: "./board-env" from its own folder, or ".../support/board-env" from anywhere.
+  const helperPattern = (h: string) => {
+    const dir = h.split("/").slice(-2, -1)[0];
+    return { re: new RegExp(`["'](\\./|.*/${esc(dir)}/)${esc(stem(h))}(\\.tsx?)?["']`), dir: h.slice(0, h.lastIndexOf("/")) };
+  };
+  const uses = (file: string, p: { re: RegExp; dir: string | null }) => {
+    const m = files.get(file)!.match(p.re);
+    return !!m && (p.dir === null || !m[1]!.startsWith("./") || file.startsWith(p.dir + "/"));
+  };
+  // Until nothing new: helpers in test/ (support, contract, other fixtures) that use what changed count as changed too.
+  const helpers = [...files.keys()].filter((f) => f.startsWith("test/") && !TEST_FILE.test(f));
+  const reached = new Set<string>();
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const h of helpers) {
+      if (!reached.has(h) && patterns.some((p) => uses(h, p))) {
+        reached.add(h);
+        patterns.push(h.startsWith(FIXTURES) ? fixturePattern(h) : helperPattern(h));
+        grew = true;
+      }
+    }
+  }
+  return [...files.keys()].filter((f) => TEST_FILE.test(f) && patterns.some((p) => uses(f, p))).sort();
+}
+

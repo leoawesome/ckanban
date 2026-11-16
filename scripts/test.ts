@@ -4,7 +4,8 @@
 // starts one worker per core, and each worker spawns fake claudes and git: five suites meant ~50 workers on 10 cores
 // (load average near 100), tests took minutes instead of seconds and timed out. Past two suites a busy machine gets no
 // more work done, only slower, so at most two suites run at once (CKANBAN_TEST_SLOTS, default 2); a later one waits for
-// a free slot and says so. A suite that shares the machine with another uses half the cores. CKANBAN_TEST_WORKERS=<n>
+// a free slot and says so. A suite that shares the machine with another uses half the cores. Related and single-file
+// runs never wait for a slot; they share the cores with the full suites going on. CKANBAN_TEST_WORKERS=<n>
 // sets the worker count by hand. Extra arguments go to `bun test`.
 //
 // A full run (no extra arguments) on code that already passed stops at once and says so (`--force` runs it anyway);
@@ -108,20 +109,23 @@ function take(): string | null {
   return null;
 }
 
-let mine = take();
-if (!mine) {
+// Only the full suite takes a slot: a related or single-file run is a few files, so it starts at once on a share of
+// the cores instead of waiting minutes behind full runs.
+const needsSlot = runs[0] === TEST_ROOTS && !rest.some((a) => !a.startsWith("-"));
+let mine = needsSlot ? take() : null;
+if (needsSlot && !mine) {
   console.error(`${slots} other test runs are going on: waiting for one to finish…`);
   const t0 = Date.now();
   while (!(mine = take())) await Bun.sleep(1000);
   console.error(`Waited ${Math.round((Date.now() - t0) / 1000)}s; starting.`);
 }
-const release = () => rmSync(mine!, { recursive: true, force: true });
+const release = () => mine && rmSync(mine, { recursive: true, force: true });
 
 let others = 0;
 for (let i = 0; i < slots; i++) if (join(dir, `slot-${i}`) !== mine && holder(i) !== null) others++;
 const fromEnv = Number(process.env.CKANBAN_TEST_WORKERS);
 const workers = fromEnv > 0 ? Math.floor(fromEnv) : Math.max(2, Math.floor(cores / (others + 1)));
-if (workers < cores) console.error(`Another test run is going on: using ${workers} of ${cores} cores.`);
+if (workers < cores) console.error(`${others > 1 ? `${others} other test runs are` : "Another test run is"} going on: using ${workers} of ${cores} cores.`);
 
 let child: ReturnType<typeof Bun.spawn> | null = null;
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => child?.kill(sig));
