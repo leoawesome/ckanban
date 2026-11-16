@@ -98,10 +98,18 @@ holding `on`, `ckanban-rs dev` owns the board itself and starts the daemon as it
 added (`docs/rust-port-board-plan.md` 3.3). The satellite starts no runs, timers or watchers, refuses every ticket
 write (`ticket.md`, comments, run logs; logged, and the route answers with the error), and takes stdin lines `event
 <json>` (a board event for its own listeners, not for its event stream) and `runtime <json>` (live state: `running`,
-`hostHuddles`, `sessions`). The front answers `GET /api/events` itself and re-emits the satellite's events on it. If
+`hostHuddles`, `sessions`). The front answers `GET /api/events` itself and re-emits the satellite's events on it; it
+also answers the board's reads from its own ticket index: `GET /api/profiles`, `/api/profiles/:p`,
+`/api/profiles/:p/tickets` (every scope), `/api/profiles/:p/tickets/:id`, `/api/tickets` and `/api/inbox`. If
 board mode can't start (the `board.lock` is held, the core fails, or three unclean ends within 10 minutes), the
 daemon runs in full mode as without it; `rust-board-status.json` says which and why (`data-files.md`). Unset, none
 of this applies. Without a front, `CKANBAN_SATELLITE=1` stops the daemon at start.
+
+**Shadow mode (Rust trial).** With `CKANBAN_RUST_SHADOW=1` and board mode off, `ckanban-rs dev` still sends Bun's
+answers as they are, and also works out its own answers to the ticket list reads (`/api/profiles/:p/tickets` with
+scope `board`, `done`, `ids`, `search`, `list` or `count`, `/api/tickets`, `/api/inbox`) from the files, in the
+background, at most one per route every 10 s. Differences go to `rust-shadow.log` (ids and field names only), counts
+to `rust-shadow.json` (`data-files.md`). Nothing it works out is served, and it writes no board data.
 
 **Run rights (`runRights`).** Ticket changes sent with `x-ckanban-run` are allowed only for: a Planning chat answering
 the user's typed message (any ticket of its board but its own: "requester"); a main ticket or tool group on its own

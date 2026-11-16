@@ -40,9 +40,20 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   a slow connection closed).
 - `src/mode.rs`: the switch, the fallbacks and the status file. `src/lock.rs`: `board.lock`.
 - `src/satellite.rs`: `event`/`runtime` lines to the satellite's stdin; its event stream re-emitted on the bus.
-- One empty folder per later task (filled as each lands): `index` (R1), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
-  `sessions` (R5), `git` (R6), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
-  `huddles` (R11a), `team` (R11b), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
+- `src/index/` (R1): every board's ticket files parsed once and kept by mtime and size, each board's listing shared as
+  one `Arc<BoardList>`; the start-up load on a few threads in the background (a board's first listing waits for it);
+  the 30 s re-check; families, scopes and Done paging, a main ticket's card, attention, links, the command bar;
+  `TicketView` with live state through `Live` (the services' stand-ins until their tasks land); the read routes
+  `GET /api/profiles`, `/api/profiles/:p`, `/api/profiles/:p/tickets` (every scope), `/api/profiles/:p/tickets/:id`,
+  `/api/tickets`, `/api/inbox`. `api::TicketViews` is filled from it (`core.rs` `IndexViews`).
+- Shadow mode (`src/index/shadow.rs`, `rust/src/shadow.rs`): with `CKANBAN_RUST_SHADOW=1` and board mode off, Bun's
+  answers to the ticket list reads are served as they are and compared in the background with what the index works
+  out (live fields taken from Bun's answer, Inbox sessions from `session-summaries.json`); differences, ids and field
+  names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
+  board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
+- One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
+  `sessions` (R5), `git` (R6, done), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
+  `huddles` (R11a), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
 ## The run engine (R3, `src/runs/`)
 
@@ -79,14 +90,43 @@ Checked against Bun: `tests/fixtures/runs.json` holds 252 inputs with Bun's answ
 Every dependency the tasks are expected to need is already in `Cargo.toml` (referenced in `lib.rs` until used), so
 parallel tasks don't clash on `Cargo.toml` and `Cargo.lock`.
 
+## Sessions and transcripts (R5, `src/sessions/`)
+
+Claude's transcripts as the chat shows them, ported from `src/runs/session-*.ts`, `subagents.ts`, `workflows.ts`,
+`src/chat/chat-cache.ts`, `tooldetail.ts`, `chat-search.ts` and `src/core/changefeed.ts`. Shapes Bun keeps as objects
+are `serde_json` maps with Bun's key order.
+- Parsing: `parser.rs` (`SessionParser`: fed new bytes, cut anywhere), with `markers.rs`, `cards.rs`, `text.rs` (text,
+  forms and cards inside a line), `chat_cache.rs`, `subagents.rs`, `workflows.rs`.
+- `cache.rs`: `SessionCache`. Reads only what a transcript gained (by size, mtime and inode; a shrunk or replaced file
+  is parsed again), keeps 30 parses plus running ones, and keeps summaries in `session-summaries.json` (tag
+  `2:rust:<hash of this code>`; Bun's summaries are shown as stale until made again). Blocking: callers use
+  `spawn_blocking`; no shared lock is held across a read or a parse.
+- `feed.rs`: the projects folder change feed on FSEvents (`notify`); `watcher.rs`: `session.updated` for the tickets
+  written and the sessions the feed reported, a full pass every minute (Done tickets every 10), the first pass only
+  takes stock.
+- `routes.rs`: in board mode Rust answers `GET` conversation, tool, agent, workflow script and helper agent,
+  `chat/search`, `chat/read` and `sessions`. Bun still answers a workflow stop and a chat search or read from another
+  ticket's run (family and "asked by the user" reach need R2b).
+- `ticket_files.rs`: `TicketSource`, read from the ticket files until the ticket store (R1/R2a) replaces it.
+- `service.rs`: `Sessions`, the `SessionInfo` the other modules use (summaries from the watcher, no file read).
+
+Parity with Bun: `tests/sessions_markers.rs`, `sessions_agents.rs`, `sessions_parse.rs` read the fixtures in
+`tests/fixtures/sessions/` (inputs with Bun's answers, filled by `test/rust-board-*-fixtures.test.ts`; after a
+deliberate change to Bun's code: `UPDATE_RUST_FIXTURES=1 bun test test/rust-board-<name>-fixtures.test.ts`). Parse
+speed: `R5_BENCH=<transcript> cargo test --release -p ckanban-board --test sessions_parse -- --ignored --nocapture`.
+
 ## Gate, system routes and the satellite edge (R13, `src/gate/`)
 
 In board mode every request goes through `BoardMode::handle` (`rust/src/board_mode.rs`) in Bun's order: the
 satellite's own calls, then the gate (`gate::request::refusal`, Bun's `requestRefusal`: Host, the Origin of a change;
-on the phone access listener phone access on in `remote.json`, the tailnet host, the owner's login), then the routes
-Rust answers (`/api/events`, `health`, `version`, `claude/projects`, `claude/defaults`, `pick-folder`,
-`cron/preview`, `debug/profile`), each after the front desk's gate (asked of the satellite) and the JSON-only rule;
-everything else goes to the front's native routes and then Bun, which checks the gate again.
+on the phone access listener phone access on in `remote.json`, the tailnet host, the owner's login), then the system
+routes (`/api/events`, `health`, `version`, `claude/projects`, `claude/defaults`, `pick-folder`, `cron/preview`,
+`debug/profile`), each after the front desk's gate (asked of the satellite) and the JSON-only rule; then the other
+tasks' routes (R1, R5, R6, R9, R11b); then the front's native routes and Bun, which checks the gate again. Before
+any of it the request target is read as Bun's `new URL` reads it (`proxy::normalize_target`: `..`, `.` and their
+`%2e` forms resolved), so a path like `/api/x/../profiles/...` can't reach Bun's stale copy of a Rust-owned route.
+On the phone listener the other tasks' routes see the phone request with this Mac's Host and Origin (their own
+checks); their user-only checks look at the caller (`tailscale serve`) and refuse the phone.
 
 - The phone access listener is Rust's (`rust/src/phone.rs`, on CKANBAN_REMOTE_PORT, which Rust passes to the
   satellite so `ckanban remote on` points `tailscale serve` at it). A phone request Rust passes on carries
@@ -121,6 +161,64 @@ Bun still gives them; `tests/prompts.rs` checks Rust does. After a deliberate pr
 `UPDATE_RUST_FIXTURES=1 bun test test/rust-prompt-fixtures.test.ts`, then change the Rust text until
 `cargo test -p ckanban-board --test prompts` passes (it writes its differing texts to `rust/target/prompt-fixtures/`;
 `DUMP_PROMPTS=<dir>` makes the Bun test write Bun's, numbered the same).
+
+## Team (R11b)
+
+`src/team/`: teammates (huddle role presets), squads (huddle templates), role notes, teammate and squad proposals,
+the squad save plan, the "Save as squad…" prompt and the plan review file (`src/huddle/huddle-presets*.ts`,
+`huddle-templates*.ts`, `huddle-notes.ts`, `huddle-roster.ts` checks, `squad.ts`, `teammate-proposal.ts`,
+`plan-review-file.ts`, `src/core/layers.ts`). `store.rs` (`Team`) reads and writes the files with Bun's checks and
+statuses; `routes.rs` answers `/api/profiles/:p/huddle-presets`, `/huddle-templates`, `POST /squads` and
+`/huddle-notes` in board mode (`rust/src/board_mode.rs` runs Bun's Host, Origin and JSON type checks first).
+`/learned` and `/api/team-usage` are R12's.
+
+- The built-in teammates and squads and the long texts are `src/team/builtins.json`, written by Bun.
+- A squad card on a ticket needs R2a, a huddle's proposed squad R11a: until they call `Team::set_ticket_cards` and
+  `set_learning_cards`, such a save answers 503 before writing anything.
+- `tests/fixtures/team.json` is the parity table (about 400 cases with Bun's answer or error text);
+  `test/rust-team-fixtures.test.ts` checks Bun, `tests/team.rs` Rust, `tests/team_store.rs` the files and routes.
+  After a deliberate change in Bun: `UPDATE_RUST_FIXTURES=1 bun test test/rust-team-fixtures.test.ts`.
+
+## Browsers, devices and the terminal (R9)
+
+`src/browsers/`: `src/browser/` in Rust, answered by Rust in board mode (`routes.rs`): `/api/board-browsers`,
+`/api/browsers`, `/api/devices` (every method and sub-path, Bun's quirks kept), a ticket's `POST .../devices`
+(take_devices / release_devices) and the board's `GET .../shell` WebSocket (the Terminal panel). `Browsers` (`mod.rs`)
+holds them and is the board's `DeviceInfo`; `board_mode.rs` builds it and calls `answer_request` before the other
+routes.
+
+- `devices.rs`: shared devices, takes all-or-nothing and first come first served, `devices.json` like Bun.
+- `chromes.rs`: named Chromes (`browsers.json`), `ChromeWatch` for a run's stream (R7a feeds it), browser picks.
+- `board_browsers.rs`, `cdp.rs`, `sign_in.rs`: board browsers on their own Chrome, the debugging port client, the
+  sign-in check and screen. Chromes are detached (own session), so they outlive any daemon. At start (`init`) Rust
+  adopts every Chrome still running on a board browser's folder, Bun's included: it reads Bun's
+  `board-browsers.json` and each folder's `DevToolsActivePort`, and uses a Chrome only when its port answers as that
+  very Chrome and is bound to this Mac. It writes `running` back in Bun's format, so Bun adopts Rust's after a switch
+  back. Logged-out alerts go to the helper once R13 connects it (logged in `daemon.log` until then).
+- `shell.rs`: one shell per folder on a pty (`portable-pty`), scrollback for a new tab; `terminals.rs`: which linked
+  tickets are open in a terminal (its linked tickets come from the R1 index, `linked_from_index`).
+- What the routes read from the board goes through `BoardLookup` (`FileLookup`: one ticket or board file at a time).
+
+## R6: git, copies of the folder, landing, files (`src/git/`)
+
+- `cmd`, `repo`: git and gh as child processes; repo kind (plain, empty, local, remote) cached 10 s; ticket copies
+  (worktrees), the shared fetch of the latest base, turning version history on.
+- `setup`: setup detection (.env files, lockfiles), copying `copyFiles`, the setup command, `detect_missing`.
+- `diff`: the Changes tab. `pr`: a ticket's PRs, `gh` status, Merge & done, send failures, resolve conflicts, the poller
+  (`start_poller`, started by R7a). `share`: Show in Finder, Copy file, download headers. `files`: Files panel, files a
+  chat mentions, outputs.
+- `landing::Git`: where a ticket's runs work (`ensure_session`, the plain-folder path included), `run_setup`, merge
+  into main, `land_milestone`, `branch_folder` (Branch/Fork), the Done cleanup and the worktree sweep; implements
+  `api::Landing`. It reaches the board through `ops::BoardOps`, which R2a/R7a implement (`fileops::FileOps` is a
+  read-only stand-in for the start-up sweep).
+- `routes`: what board mode answers now (files alone, no ticket writes): a ticket's `outputs`, `find-files`, `file`,
+  `diff`; the board's `files`, `file`, `open-file`, `detect-setup`; `/api/version-history`. Anything unusual goes to
+  the satellite. The write routes (`merge-into-main`, `land`, `branch`, `setup`, `pr/*`, `check-pr`) come with R7a.
+- At start (`start_jobs`): setup detection, and the worktree sweep in report-only mode.
+- Background deletes are report-only (`src/dryrun.rs`): the sweep and the Done cleanup append their decisions to
+  `<data>/rust-board-dryrun.log` and delete nothing until `CKANBAN_RUST_DELETE=1` (plan 5.3).
+- Pure logic is checked against Bun: `tests/fixtures/git.json` (written by `test/rust-git-fixtures.test.ts`,
+  `UPDATE_RUST_FIXTURES=1`).
 
 ## Tests
 

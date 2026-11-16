@@ -19,6 +19,7 @@ mod phone;
 mod proxy;
 mod routes;
 mod settings;
+mod shadow;
 
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
@@ -200,7 +201,8 @@ async fn dev() -> u8 {
         (Some(l), Some(b)) => Some(tokio::spawn(phone::serve(l, proxy.clone(), native.clone(), b.clone()))),
         _ => None,
     };
-    let accept = tokio::spawn(serve(listener, proxy, native, board.clone()));
+    let shadow = shadow::prepare(&root, board.is_some());
+    let accept = tokio::spawn(serve(listener, proxy, native, board.clone(), shadow));
     let code = tokio::select! {
         status = child.wait() => match status {
             Ok(s) => exit_code(s),
@@ -231,7 +233,13 @@ fn log_hint(root: &std::path::Path) -> String {
     if log.is_file() { format!(" ({} when started by launchd)", log.display()) } else { String::new() }
 }
 
-async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<routes::Native>, board: Option<Arc<board_mode::BoardMode>>) {
+async fn serve(
+    listener: TcpListener,
+    proxy: Arc<proxy::Proxy>,
+    native: Arc<routes::Native>,
+    board: Option<Arc<board_mode::BoardMode>>,
+    shadow: Option<Arc<ckanban_board::index::shadow::Shadow>>,
+) {
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(x) => x,
@@ -245,20 +253,30 @@ async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<rout
         let proxy = proxy.clone();
         let native = native.clone();
         let board = board.clone();
+        let shadow = shadow.clone();
         tokio::spawn(async move {
             let svc = service_fn(move |mut req: hyper::Request<hyper::body::Incoming>| {
                 let proxy = proxy.clone();
                 let native = native.clone();
                 let board = board.clone();
+                let shadow = shadow.clone();
                 // Route on the path Bun would see (dot segments resolved), and pass that one on.
                 proxy::normalize_target(&mut req);
                 async move {
+                    // Board mode: the gate, the Rust board's routes, then the native routes and Bun (board_mode.rs).
                     if let Some(b) = &board {
                         return Ok(b.handle(req, peer, ckanban_board::gate::request::Listener::Local, &native, &proxy).await);
                     }
+                    let compare = shadow.as_ref().and_then(|_| shadow::wanted(req.method(), req.uri().path(), req.uri().query()));
                     Ok::<_, std::convert::Infallible>(match native.answer(req, peer).await {
                         Ok(res) => res,
-                        Err(req) => proxy.forward(req, peer).await,
+                        Err(req) => {
+                            let res = proxy.forward(req, peer).await;
+                            match (&shadow, compare) {
+                                (Some(s), Some((path, query))) => shadow::tee(s, path, query, res).await,
+                                _ => res,
+                            }
+                        }
                     })
                 }
             });

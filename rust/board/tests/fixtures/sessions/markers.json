@@ -1,0 +1,3829 @@
+{
+  "cases": [
+    {
+      "fn": "commandText",
+      "input": "<command-message>review</command-message>\n<command-name>/review</command-name>\n<command-args>  the  PR </command-args>",
+      "expect": {
+        "value": "/review the  PR"
+      }
+    },
+    {
+      "fn": "commandText",
+      "input": "<command-name>compact</command-name>",
+      "expect": {
+        "value": "/compact"
+      }
+    },
+    {
+      "fn": "commandText",
+      "input": "  <command-name> /model </command-name><command-args>sonnet</command-args>",
+      "expect": {
+        "value": "/model sonnet"
+      }
+    },
+    {
+      "fn": "commandText",
+      "input": "hello <command-name>/x</command-name>",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "commandText",
+      "input": "<command-message>x</command-message>",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "commandText",
+      "input": "<command-name>/a b</command-name>",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "commandText",
+      "input": "<command-name>/émoji😀</command-name><command-args> ü　</command-args>",
+      "expect": {
+        "value": "/émoji😀 ü"
+      }
+    },
+    {
+      "fn": "localCommandOutput",
+      "input": "<local-command-stdout>\u001b[1mContext\u001b[22m 12k</local-command-stdout>",
+      "expect": {
+        "value": "Context 12k"
+      }
+    },
+    {
+      "fn": "localCommandOutput",
+      "input": "  \n<local-command-stderr>oops</local-command-stderr>\n",
+      "expect": {
+        "value": "oops"
+      }
+    },
+    {
+      "fn": "localCommandOutput",
+      "input": "<local-command-stdout>a</local-command-stderr>",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "localCommandOutput",
+      "input": "<local-command-stdout>a</local-command-stdout> trailing",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "localCommandOutput",
+      "input": "<local-command-stdout></local-command-stdout>",
+      "expect": {
+        "value": ""
+      }
+    },
+    {
+      "fn": "localCommandOutput",
+      "input": "<local-command-stdout>a</local-command-stdout><local-command-stdout>b</local-command-stdout>",
+      "expect": {
+        "value": "a</local-command-stdout><local-command-stdout>b"
+      }
+    },
+    {
+      "fn": "withoutAttachmentNote",
+      "input": "look at this\n\nImages in this message are local files; open them with the Read tool to see them.",
+      "expect": {
+        "value": "look at this"
+      }
+    },
+    {
+      "fn": "withoutAttachmentNote",
+      "input": "doc\nFiles attached to this message are local files. Open images, PDFs and text files with the Read tool. For Word, Excel or PowerPoint files, convert them to text yourself with what this computer already has (for example unzip the file and read its XML, textutil on macOS, python or pandoc); don't ask the user to install anything. If you can't read a file, tell the user which one.",
+      "expect": {
+        "value": "doc"
+      }
+    },
+    {
+      "fn": "withoutAttachmentNote",
+      "input": "plain",
+      "expect": {
+        "value": "plain"
+      }
+    },
+    {
+      "fn": "withoutAttachmentNote",
+      "input": "Images in this message are local files; open them with the Read tool to see them.",
+      "expect": {
+        "value": ""
+      }
+    },
+    {
+      "fn": "withoutAttachmentNote",
+      "input": "x Images in this message are local files; open them with the Read tool to see them. y",
+      "expect": {
+        "value": "x Images in this message are local files; open them with the Read tool to see them. y"
+      }
+    },
+    {
+      "fn": "parseSetupBlock",
+      "input": "before <ckanban-setup>{\"copied\":[\".env\",3,null,{\"a\":1},[1,null]],\"missing\":\"x\",\"command\":\"bun install\",\"ok\":true,\"exitCode\":0,\"timedOut\":0,\"output\":\"done\\n\",\"durationMs\":1234.5}</ckanban-setup>",
+      "expect": {
+        "value": {
+          "copied": [
+            ".env",
+            "3",
+            "null",
+            "[object Object]",
+            "1,"
+          ],
+          "missing": [],
+          "command": "bun install",
+          "ok": true,
+          "exitCode": 0,
+          "timedOut": false,
+          "output": "done\n",
+          "durationMs": 1234.5
+        }
+      }
+    },
+    {
+      "fn": "parseSetupBlock",
+      "input": "<ckanban-setup>{\"command\":\"\"}</ckanban-setup>",
+      "expect": {
+        "value": {
+          "copied": [],
+          "missing": [],
+          "command": "",
+          "ok": null,
+          "exitCode": null,
+          "timedOut": false,
+          "output": "",
+          "durationMs": 0
+        }
+      }
+    },
+    {
+      "fn": "parseSetupBlock",
+      "input": "<ckanban-setup>{\"copied\":[]}</ckanban-setup>",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSetupBlock",
+      "input": "<ckanban-setup>not json</ckanban-setup>",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSetupBlock",
+      "input": "<ckanban-setup>[1]</ckanban-setup>",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSetupBlock",
+      "input": "<ckanban-setup>{\"command\":\"x\",\"ok\":\"yes\",\"exitCode\":1e400,\"timedOut\":\"t\",\"output\":5,\"durationMs\":\"9\"}</ckanban-setup>",
+      "expect": {
+        "value": {
+          "copied": [],
+          "missing": [],
+          "command": "x",
+          "ok": null,
+          "exitCode": null,
+          "timedOut": true,
+          "output": "",
+          "durationMs": 0
+        }
+      }
+    },
+    {
+      "fn": "parseSetupBlock",
+      "input": "no block",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseResult",
+      "input": "Done.\nCKANBAN_RESULT: {\"status\":\"done\",\"prUrl\":null,\"summary\":\"ok\",\"quiet\":true}",
+      "expect": {
+        "value": {
+          "status": "done",
+          "prUrl": null,
+          "prUrls": [],
+          "summary": "ok",
+          "quiet": true
+        }
+      }
+    },
+    {
+      "fn": "parseResult",
+      "input": "CKANBAN_RESULT: {\"status\":\"blocked\",\"summary\":\"x\"}\ntext\n`CKANBAN_RESULT: {\"status\":\"done\",\"prUrls\":[\"https://a/1\",\"http://b\",\"https://a/1\",5],\"prUrl\":\"https://c/2\",\"verdict\":\"passed\"}```",
+      "expect": {
+        "value": {
+          "status": "done",
+          "prUrl": "https://c/2",
+          "prUrls": [
+            "https://a/1",
+            "https://c/2"
+          ],
+          "summary": "",
+          "verdict": "passed"
+        }
+      }
+    },
+    {
+      "fn": "parseResult",
+      "input": "CKANBAN_RESULT: {\"status\":\"questions\",\"prUrls\":[\"https://a/1\",\"https://a/2\"],\"quiet\":true,\"verdict\":\"maybe\"}",
+      "expect": {
+        "value": {
+          "status": "questions",
+          "prUrl": "https://a/2",
+          "prUrls": [
+            "https://a/1",
+            "https://a/2"
+          ],
+          "summary": ""
+        }
+      }
+    },
+    {
+      "fn": "parseResult",
+      "input": "CKANBAN_RESULT: {\"status\":\"other\"}",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseResult",
+      "input": "CKANBAN_RESULT: null",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseResult",
+      "input": "CKANBAN_RESULT: {bad json",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseResult",
+      "input": "no result here",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseResult",
+      "input": "x CKANBAN_RESULT:   {\"status\":\"done\",\"summary\":7,\"prUrl\":\"https://x\"}  `` ",
+      "expect": {
+        "value": {
+          "status": "done",
+          "prUrl": "https://x",
+          "prUrls": [
+            "https://x"
+          ],
+          "summary": ""
+        }
+      }
+    },
+    {
+      "fn": "starredTitle",
+      "input": "⭐ Fix login",
+      "expect": {
+        "value": {
+          "title": "Fix login",
+          "important": true
+        }
+      }
+    },
+    {
+      "fn": "starredTitle",
+      "input": "⭐️⭐  ⭐️Big one",
+      "expect": {
+        "value": {
+          "title": "Big one",
+          "important": true
+        }
+      }
+    },
+    {
+      "fn": "starredTitle",
+      "input": "  ⭐",
+      "expect": {
+        "value": {
+          "title": "",
+          "important": true
+        }
+      }
+    },
+    {
+      "fn": "starredTitle",
+      "input": "No star ⭐",
+      "expect": {
+        "value": {
+          "title": "No star ⭐",
+          "important": false
+        }
+      }
+    },
+    {
+      "fn": "starredTitle",
+      "input": "",
+      "expect": {
+        "value": {
+          "title": "",
+          "important": false
+        }
+      }
+    },
+    {
+      "fn": "starredTitle",
+      "input": "﻿⭐x",
+      "expect": {
+        "value": {
+          "title": "x",
+          "important": true
+        }
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": "a-compact.html",
+      "expect": {
+        "value": "a-compact.html"
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": " B.HTM ",
+      "expect": {
+        "value": "B.HTM"
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": "../x.html",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": "a..b.html",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": "-a.html",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": "a.htmlx",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": "ü.html",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": "_x.Html",
+      "expect": {
+        "value": "_x.Html"
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.html",
+      "expect": {
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.html"
+      }
+    },
+    {
+      "fn": "mockupName",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.html",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "stripMockups",
+      "input": "Here <ckanban-mockup name=\"a.html\">\n```html\n<div>A</div>\n```\n</ckanban-mockup> and <ckanban-mockup name=\"bad/x.html\"><p>x</p></ckanban-mockup> end",
+      "expect": {
+        "value": {
+          "text": "Here  and  end",
+          "names": [
+            "a.html"
+          ]
+        }
+      }
+    },
+    {
+      "fn": "stripMockups",
+      "input": "Intro <ckanban-mockup name=\"b.html\">  <div>cut off",
+      "expect": {
+        "value": {
+          "text": "Intro ",
+          "names": []
+        }
+      }
+    },
+    {
+      "fn": "stripMockups",
+      "input": "Intro <ckanban-mockup name=\"b.html\">  <div>cut off <ckanban-ticket>{\"title\":\"t\"}</ckanban-ticket>",
+      "expect": {
+        "value": {
+          "text": "Intro <ckanban-mockup name=\"b.html\">  <div>cut off <ckanban-ticket>{\"title\":\"t\"}</ckanban-ticket>",
+          "names": []
+        }
+      }
+    },
+    {
+      "fn": "stripMockups",
+      "input": "Mentions <ckanban-mockup name=\"x.html\"> in prose",
+      "expect": {
+        "value": {
+          "text": "Mentions <ckanban-mockup name=\"x.html\"> in prose",
+          "names": []
+        }
+      }
+    },
+    {
+      "fn": "stripMockups",
+      "input": "<ckanban-mockup name=\"e.html\">   </ckanban-mockup>after",
+      "expect": {
+        "value": {
+          "text": "after",
+          "names": []
+        }
+      }
+    },
+    {
+      "fn": "terminalOnly",
+      "input": "/exit",
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "terminalOnly",
+      "input": "/resume abc",
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "terminalOnly",
+      "input": "/compact",
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "terminalOnly",
+      "input": "/model sonnet",
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "terminalOnly",
+      "input": "",
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "terminalOnly",
+      "input": null,
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "terminalOnly",
+      "input": "/usage-credits now",
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "terminalOnly",
+      "input": "exit",
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "QA Lead",
+        "prompt": " Test it ",
+        "why": " none fits ",
+        "role": " QA lead ",
+        "model": " sonnet ",
+        "mode": "monitor",
+        "workspace": "own",
+        "canEdit": true,
+        "lead": false
+      },
+      "expect": {
+        "value": {
+          "name": "qa-lead",
+          "prompt": "Test it",
+          "why": "none fits",
+          "role": "QA lead",
+          "model": "sonnet",
+          "mode": "monitor",
+          "workspace": "own",
+          "canEdit": true,
+          "lead": false
+        }
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "x",
+        "prompt": "p",
+        "why": "w",
+        "model": "",
+        "mode": null,
+        "workspace": null
+      },
+      "expect": {
+        "value": {
+          "name": "x",
+          "prompt": "p",
+          "why": "w",
+          "model": null,
+          "mode": null,
+          "workspace": null
+        }
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "x",
+        "prompt": "p",
+        "why": "w",
+        "model": null
+      },
+      "expect": {
+        "value": {
+          "name": "x",
+          "prompt": "p",
+          "why": "w",
+          "model": null
+        }
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "you",
+        "prompt": "p",
+        "why": "w"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "x",
+        "prompt": "  ",
+        "why": "w"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "x",
+        "prompt": "p",
+        "why": ""
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "x",
+        "prompt": "p",
+        "why": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "x",
+        "prompt": "p",
+        "why": "w",
+        "canEdit": null
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "x",
+        "prompt": "p",
+        "why": "w",
+        "mode": "loud"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "x",
+        "prompt": "p",
+        "why": "w",
+        "role": 5
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "x",
+        "prompt": "p",
+        "why": "w",
+        "model": 5
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": {
+        "name": "!!!",
+        "prompt": "p",
+        "why": "w"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": "string input",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseTeammateProposal",
+      "input": null,
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "Plan Critique",
+        "why": " good for plans ",
+        "profile": "x",
+        "scope": "global",
+        "rounds": 2,
+        "maxCostUsd": 12.5,
+        "description": " d ",
+        "report": "r",
+        "hostRules": " 1. a ",
+        "roster": [
+          {
+            "preset": "reviewer",
+            "handle": "rev"
+          },
+          {
+            "role": "User journey walker",
+            "prompt": "walk",
+            "count": 2
+          },
+          {
+            "role": "Main",
+            "handle": null
+          },
+          {
+            "role": "x",
+            "handle": " Current ",
+            "host": true
+          }
+        ]
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w",
+        "roster": [
+          {
+            "role": "a"
+          }
+        ],
+        "label": ""
+      },
+      "expect": {
+        "value": {
+          "squad": {
+            "name": "s",
+            "label": "S",
+            "description": "",
+            "roster": [
+              {
+                "role": "a"
+              }
+            ],
+            "rounds": null,
+            "maxCostUsd": null,
+            "report": "",
+            "hostRules": ""
+          },
+          "why": "w",
+          "newTeammates": [
+            {
+              "index": 0,
+              "name": "a",
+              "role": "a"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w",
+        "roster": [
+          {
+            "role": "a",
+            "handle": "you"
+          }
+        ]
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w",
+        "roster": []
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w",
+        "roster": [
+          {
+            "role": "a"
+          }
+        ],
+        "rounds": 21
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w",
+        "roster": [
+          {
+            "role": "a"
+          }
+        ],
+        "rounds": 1.5
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w",
+        "roster": [
+          {
+            "role": "a"
+          }
+        ],
+        "maxCostUsd": 0
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w",
+        "roster": [
+          {
+            "role": "a"
+          }
+        ],
+        "label": 3
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "",
+        "roster": [
+          {
+            "role": "a"
+          }
+        ]
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w",
+        "roster": [
+          {
+            "role": "a",
+            "count": 8
+          },
+          {
+            "role": "b",
+            "count": 8
+          },
+          {
+            "role": "c",
+            "count": 8
+          },
+          {
+            "role": "d",
+            "count": 7
+          }
+        ]
+      },
+      "expect": {
+        "value": {
+          "squad": {
+            "name": "s",
+            "label": "S",
+            "description": "",
+            "roster": [
+              {
+                "role": "a",
+                "count": 8
+              },
+              {
+                "role": "b",
+                "count": 8
+              },
+              {
+                "role": "c",
+                "count": 8
+              },
+              {
+                "role": "d",
+                "count": 7
+              }
+            ],
+            "rounds": null,
+            "maxCostUsd": null,
+            "report": "",
+            "hostRules": ""
+          },
+          "why": "w",
+          "newTeammates": [
+            {
+              "index": 0,
+              "name": "a",
+              "role": "a"
+            },
+            {
+              "index": 1,
+              "name": "b",
+              "role": "b"
+            },
+            {
+              "index": 2,
+              "name": "c",
+              "role": "c"
+            },
+            {
+              "index": 3,
+              "name": "d",
+              "role": "d"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": {
+        "name": "s",
+        "why": "w",
+        "roster": [
+          {
+            "role": "a",
+            "count": 8
+          },
+          {
+            "role": "b",
+            "count": 8
+          },
+          {
+            "role": "c",
+            "count": 8
+          },
+          {
+            "role": "d",
+            "count": 8
+          }
+        ]
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseSquadProposal",
+      "input": [
+        1,
+        2
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": " Linear: assigned to me ",
+        "script": "echo hi",
+        "everyMinutes": "30",
+        "summary": " Watches Linear ",
+        "passes": [
+          {
+            "name": " Linear ",
+            "from": "linear",
+            "url": "https://mcp.linear.app/sse",
+            "envName": " LINEAR_KEY ",
+            "keyHelp": " Settings "
+          },
+          {
+            "name": "GH",
+            "url": "http://x"
+          }
+        ],
+        "instructions": " do it ",
+        "askClaude": {
+          "on": true,
+          "prompt": " triage "
+        },
+        "partOf": "t_20261116_abcd",
+        "autoStart": true
+      },
+      "expect": {
+        "value": {
+          "name": "Linear: assigned to me",
+          "script": "echo hi",
+          "everyMinutes": 30,
+          "passes": [
+            {
+              "name": "Linear",
+              "from": "linear",
+              "url": "https://mcp.linear.app/sse",
+              "envName": "LINEAR_KEY",
+              "keyHelp": "Settings"
+            },
+            {
+              "name": "GH"
+            }
+          ],
+          "summary": "Watches Linear",
+          "service": "Linear",
+          "instructions": "do it",
+          "askClaude": {
+            "on": true,
+            "prompt": "triage"
+          },
+          "partOf": "t_20261116_abcd",
+          "autoStart": true
+        }
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "service": " Slack "
+      },
+      "expect": {
+        "value": {
+          "name": "n",
+          "script": "s",
+          "everyMinutes": 15,
+          "passes": [],
+          "summary": "s",
+          "service": "Slack"
+        }
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "everyMinutes": true,
+        "askClaude": []
+      },
+      "expect": {
+        "value": {
+          "name": "n",
+          "script": "s",
+          "everyMinutes": 1,
+          "passes": [],
+          "summary": "s",
+          "service": "a script",
+          "askClaude": {
+            "on": false,
+            "prompt": ""
+          }
+        }
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "everyMinutes": "0x10"
+      },
+      "expect": {
+        "value": {
+          "name": "n",
+          "script": "s",
+          "everyMinutes": 16,
+          "passes": [],
+          "summary": "s",
+          "service": "a script"
+        }
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "everyMinutes": 0
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "everyMinutes": 1441
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "everyMinutes": 2.5
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "everyMinutes": null
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "everyMinutes": [
+          60
+        ]
+      },
+      "expect": {
+        "value": {
+          "name": "n",
+          "script": "s",
+          "everyMinutes": 60,
+          "passes": [],
+          "summary": "s",
+          "service": "a script"
+        }
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "passes": {}
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "passes": [
+          {
+            "name": ""
+          }
+        ]
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "partOf": "bad id!"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "   ",
+        "summary": "s"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "",
+        "script": "s",
+        "summary": "s"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": ""
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseAutomationProposal",
+      "input": {
+        "name": "n",
+        "script": "s",
+        "summary": "s",
+        "everyMinutes": " 1e1 "
+      },
+      "expect": {
+        "value": {
+          "name": "n",
+          "script": "s",
+          "everyMinutes": 10,
+          "passes": [],
+          "summary": "s",
+          "service": "a script"
+        }
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": " SENTRY_AUTH_TOKEN ",
+            "label": " Sentry   auth\ntoken ",
+            "help": " Org  settings ",
+            "createUrl": "https://sentry.io/settings/"
+          },
+          {
+            "envName": "_X",
+            "label": "x"
+          }
+        ],
+        "reason": " To  upload ",
+        "replace": true
+      },
+      "expect": {
+        "value": {
+          "keys": [
+            {
+              "envName": "SENTRY_AUTH_TOKEN",
+              "label": "Sentry auth token",
+              "help": "Org settings",
+              "createUrl": "https://sentry.io/settings/"
+            },
+            {
+              "envName": "_X",
+              "label": "x"
+            }
+          ],
+          "reason": "To upload",
+          "replace": true
+        }
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "A",
+            "label": "a"
+          }
+        ],
+        "reason": "r"
+      },
+      "expect": {
+        "value": {
+          "keys": [
+            {
+              "envName": "A",
+              "label": "a"
+            }
+          ],
+          "reason": "r",
+          "replace": false
+        }
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "PATH",
+            "label": "a"
+          }
+        ],
+        "reason": "r"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "CLAUDE_X",
+            "label": "a"
+          }
+        ],
+        "reason": "r"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "HTTPS_PROXY",
+            "label": "a"
+          }
+        ],
+        "reason": "r"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "lower",
+            "label": "a"
+          }
+        ],
+        "reason": "r"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "A",
+            "label": "a"
+          },
+          {
+            "envName": "A",
+            "label": "b"
+          }
+        ],
+        "reason": "r"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "A",
+            "label": ""
+          }
+        ],
+        "reason": "r"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "A",
+            "label": "a",
+            "createUrl": "http://x"
+          }
+        ],
+        "reason": "r"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "A",
+            "label": "a"
+          }
+        ],
+        "reason": ""
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "A",
+            "label": "a"
+          }
+        ],
+        "reason": "r",
+        "replace": "yes"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [],
+        "reason": "r"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseKeysAsk",
+      "input": {
+        "keys": [
+          {
+            "envName": "K0",
+            "label": "k"
+          },
+          {
+            "envName": "K1",
+            "label": "k"
+          },
+          {
+            "envName": "K2",
+            "label": "k"
+          },
+          {
+            "envName": "K3",
+            "label": "k"
+          },
+          {
+            "envName": "K4",
+            "label": "k"
+          },
+          {
+            "envName": "K5",
+            "label": "k"
+          },
+          {
+            "envName": "K6",
+            "label": "k"
+          },
+          {
+            "envName": "K7",
+            "label": "k"
+          },
+          {
+            "envName": "K8",
+            "label": "k"
+          }
+        ],
+        "reason": "r"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "preset": "reviewer"
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [],
+      "expect": {
+        "value": "roster must be a non-empty list"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": "x",
+      "expect": {
+        "value": "roster must be a non-empty list"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        null
+      ],
+      "expect": {
+        "value": "entry 1: each entry must be an object"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "preset": "main"
+        }
+      ],
+      "expect": {
+        "value": "entry 1: \"main\" is the coordinator's preset (the host ticket's session joins as @main by itself)"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "preset": " "
+        }
+      ],
+      "expect": {
+        "value": "entry 1: preset must be a preset name"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {}
+      ],
+      "expect": {
+        "value": "entry 1: give a preset or a role"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": ""
+        }
+      ],
+      "expect": {
+        "value": "entry 1: give a preset or a role"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "count": 0
+        }
+      ],
+      "expect": {
+        "value": "entry 1: count must be a whole number from 1 to 8"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "mode": "x"
+        }
+      ],
+      "expect": {
+        "value": "entry 1: mode must be tagged or monitor"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "workspace": "x"
+        }
+      ],
+      "expect": {
+        "value": "entry 1: workspace must be shared or own"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "focus": 1
+        }
+      ],
+      "expect": {
+        "value": "entry 1: focus must be text"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "lead": "yes"
+        }
+      ],
+      "expect": {
+        "value": "entry 1: lead must be true or false"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "handle": "All!"
+        }
+      ],
+      "expect": {
+        "value": "entry 1: handle \"All!\" is reserved"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "host": true,
+          "count": 2
+        }
+      ],
+      "expect": {
+        "value": "entry 1: the host is one participant: count must be 1"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "host": true
+        },
+        {
+          "role": "b",
+          "host": true
+        }
+      ],
+      "expect": {
+        "value": "a huddle has one host: set host on one entry only"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "count": 8
+        }
+      ],
+      "expect": {
+        "value": "that is 9 participants with @main, over the limit of 8"
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "role": "a",
+          "count": 7
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "rosterError",
+      "input": [
+        {
+          "preset": "qa",
+          "role": 5
+        }
+      ],
+      "expect": {
+        "value": "entry 1: role must be text"
+      }
+    },
+    {
+      "fn": "proposedBudget",
+      "expect": {}
+    },
+    {
+      "fn": "proposedBudget",
+      "input": null,
+      "expect": {}
+    },
+    {
+      "fn": "proposedBudget",
+      "input": 0,
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "proposedBudget",
+      "input": -1,
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "proposedBudget",
+      "input": "5",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "proposedBudget",
+      "input": 12.5,
+      "expect": {
+        "value": 12.5
+      }
+    },
+    {
+      "fn": "proposedBudget",
+      "input": 250,
+      "expect": {
+        "value": 100
+      }
+    },
+    {
+      "fn": "proposedBudget",
+      "input": null,
+      "expect": {}
+    },
+    {
+      "fn": "helperLineText",
+      "input": "  a \n\t b  ",
+      "expect": {
+        "value": "a b"
+      }
+    },
+    {
+      "fn": "helperLineText",
+      "input": 5,
+      "expect": {
+        "value": ""
+      }
+    },
+    {
+      "fn": "helperLineText",
+      "input": null,
+      "expect": {
+        "value": ""
+      }
+    },
+    {
+      "fn": "helperLineText",
+      "input": " x y ",
+      "expect": {
+        "value": "x y"
+      }
+    },
+    {
+      "fn": "suggestedLineError",
+      "input": "",
+      "expect": {
+        "value": "text is required: the exact line to add."
+      }
+    },
+    {
+      "fn": "suggestedLineError",
+      "input": "ok line",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "suggestedLineError",
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expect": {
+        "value": "text is too long (301 characters, max 300)"
+      }
+    },
+    {
+      "fn": "suggestedLineError",
+      "input": "a​b",
+      "expect": {
+        "value": "text has invisible or control characters the user wouldn't see on the card; use plain visible text only"
+      }
+    },
+    {
+      "fn": "suggestedLineError",
+      "input": "ab",
+      "expect": {
+        "value": "text has invisible or control characters the user wouldn't see on the card; use plain visible text only"
+      }
+    },
+    {
+      "fn": "suggestedLineError",
+      "input": "ü😀 fine",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "suggestedLineError",
+      "input": "⠀",
+      "expect": {
+        "value": "text has invisible or control characters the user wouldn't see on the card; use plain visible text only"
+      }
+    },
+    {
+      "fn": "suggestedLineError",
+      "input": "a️b",
+      "expect": {
+        "value": "text has invisible or control characters the user wouldn't see on the card; use plain visible text only"
+      }
+    },
+    {
+      "fn": "parseAskMeta",
+      "input": {
+        "urgent": true,
+        "why": "  costs a day  ",
+        "about": [
+          "t_1",
+          " ",
+          3,
+          "t_2"
+        ]
+      },
+      "expect": {
+        "value": {
+          "urgent": true,
+          "why": "costs a day",
+          "about": [
+            "t_1",
+            "t_2"
+          ]
+        }
+      }
+    },
+    {
+      "fn": "parseAskMeta",
+      "input": {
+        "urgent": "true"
+      },
+      "expect": {}
+    },
+    {
+      "fn": "parseAskMeta",
+      "input": {},
+      "expect": {}
+    },
+    {
+      "fn": "parseAskMeta",
+      "input": null,
+      "expect": {}
+    },
+    {
+      "fn": "parseAskMeta",
+      "input": "str",
+      "expect": {}
+    },
+    {
+      "fn": "parseAskMeta",
+      "input": {
+        "why": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+      },
+      "expect": {
+        "value": {
+          "why": "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww"
+        }
+      }
+    },
+    {
+      "fn": "parseAskMeta",
+      "input": {
+        "about": [
+          "t_0",
+          "t_1",
+          "t_2",
+          "t_3",
+          "t_4",
+          "t_5",
+          "t_6",
+          "t_7",
+          "t_8",
+          "t_9",
+          "t_10",
+          "t_11",
+          "t_12",
+          "t_13",
+          "t_14",
+          "t_15",
+          "t_16",
+          "t_17",
+          "t_18",
+          "t_19",
+          "t_20",
+          "t_21",
+          "t_22",
+          "t_23",
+          "t_24"
+        ]
+      },
+      "expect": {
+        "value": {
+          "about": [
+            "t_0",
+            "t_1",
+            "t_2",
+            "t_3",
+            "t_4",
+            "t_5",
+            "t_6",
+            "t_7",
+            "t_8",
+            "t_9",
+            "t_10",
+            "t_11",
+            "t_12",
+            "t_13",
+            "t_14",
+            "t_15",
+            "t_16",
+            "t_17",
+            "t_18",
+            "t_19"
+          ]
+        }
+      }
+    },
+    {
+      "fn": "parseQuestions",
+      "input": [
+        {
+          "question": " Which? ",
+          "context": " ctx ",
+          "multiSelect": 1,
+          "options": [
+            {
+              "label": " A ",
+              "description": "d",
+              "recommended": true,
+              "mockup": " a.html "
+            },
+            {
+              "label": "",
+              "description": "x"
+            },
+            {
+              "label": "B",
+              "description": "",
+              "mockup": "../b.html"
+            },
+            "str",
+            {
+              "label": 5
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "question": "Which?",
+            "context": "ctx",
+            "multiSelect": true,
+            "options": [
+              {
+                "label": "A",
+                "description": "d",
+                "recommended": true,
+                "mockup": "a.html"
+              },
+              {
+                "label": "B",
+                "recommended": false
+              },
+              {
+                "label": "5",
+                "recommended": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fn": "parseQuestions",
+      "input": [
+        {
+          "question": "q"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "question": "q",
+            "multiSelect": false,
+            "options": []
+          }
+        ]
+      }
+    },
+    {
+      "fn": "parseQuestions",
+      "input": [
+        {
+          "question": "q"
+        },
+        {
+          "question": "  "
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseQuestions",
+      "input": [],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseQuestions",
+      "input": "x",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseQuestions",
+      "input": null,
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseQuestions",
+      "input": [
+        null
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseQuestions",
+      "input": [
+        {
+          "question": {
+            "a": 1
+          },
+          "options": "nope"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "question": "[object Object]",
+            "multiSelect": false,
+            "options": []
+          }
+        ]
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {
+        "title": " ⭐ Fix it ",
+        "description": " body ",
+        "partOf": " None "
+      },
+      "expect": {
+        "value": {
+          "title": "Fix it",
+          "description": "body",
+          "important": true,
+          "partOf": null
+        }
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {
+        "title": "x",
+        "partOf": "t_1"
+      },
+      "expect": {
+        "value": {
+          "title": "x",
+          "description": "",
+          "partOf": "t_1"
+        }
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {
+        "title": "x",
+        "partOf": null
+      },
+      "expect": {
+        "value": {
+          "title": "x",
+          "description": "",
+          "partOf": null
+        }
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {
+        "title": "x",
+        "partOf": "  "
+      },
+      "expect": {
+        "value": {
+          "title": "x",
+          "description": ""
+        }
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {
+        "title": "x",
+        "important": true
+      },
+      "expect": {
+        "value": {
+          "title": "x",
+          "description": "",
+          "important": true
+        }
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {
+        "title": "⭐",
+        "description": ""
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {
+        "description": "only"
+      },
+      "expect": {
+        "value": {
+          "title": "",
+          "description": "only"
+        }
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {},
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": null,
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {
+        "title": 5,
+        "description": [
+          "a"
+        ]
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "parseProposal",
+      "input": {
+        "title": "x",
+        "partOf": "NONE"
+      },
+      "expect": {
+        "value": {
+          "title": "x",
+          "description": "",
+          "partOf": null
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "Here are questions.\n<ckanban-questions>\n```json\n[{\"question\":\"Q?\",\"options\":[{\"label\":\"A\"}]}]\n```\n</ckanban-questions>\nThanks",
+      "expect": {
+        "value": {
+          "text": "Here are questions.\n\nThanks",
+          "questions": [
+            {
+              "question": "Q?",
+              "multiSelect": false,
+              "options": [
+                {
+                  "label": "A",
+                  "recommended": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "Text <ckanban-ticket>{\"title\":\"T\",\"description\":\"has </ckanban-ticket> inside\"}</ckanban-ticket> after",
+      "expect": {
+        "value": {
+          "text": "Text  after",
+          "proposal": {
+            "title": "T",
+            "description": "has </ckanban-ticket> inside"
+          }
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "Mentioning <ckanban-ticket> in prose. Then <ckanban-ticket>{\"title\":\"Real\",\"description\":\"d\"}</ckanban-tickets> done",
+      "expect": {
+        "value": {
+          "text": "Mentioning <ckanban-ticket> in prose. Then  done",
+          "proposal": {
+            "title": "Real",
+            "description": "d"
+          }
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "Broken <ckanban-questions>[{\"question\":\"\"}]</ckanban-questions> end",
+      "expect": {
+        "value": {
+          "text": "Broken <ckanban-questions>[{\"question\":\"\"}]</ckanban-questions> end",
+          "unreadable": "questions"
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "Unclosed <ckanban-ticket>{\"title\":\"x\"",
+      "expect": {
+        "value": {
+          "text": "Unclosed <ckanban-ticket>{\"title\":\"x\"",
+          "unreadable": "proposal"
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "Moving <ckanban-move to=\"planning\"/> now <ckanban-stay/> ok",
+      "expect": {
+        "value": {
+          "text": "Moving  now  ok",
+          "moved": "planning"
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "A <ckanban-move  to=\"planning\" ></ckanban-move> B <ckanban-move to=\"planning\"/>",
+      "expect": {
+        "value": {
+          "text": "A  B <ckanban-move to=\"planning\"/>",
+          "moved": "planning"
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "Old <ckanban-tickets>[{\"title\":\"a\"}]</ckanban-tickets> gone",
+      "expect": {
+        "value": {
+          "text": "Old  gone"
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "Mock <ckanban-mockup name=\"m.html\"><b>x</b></ckanban-mockup> and <ckanban-ticket>{\"title\":\"⭐ Star\",\"partOf\":\"none\"}</ckanban-ticket>",
+      "expect": {
+        "value": {
+          "text": "Mock  and",
+          "proposal": {
+            "title": "Star",
+            "description": "",
+            "important": true,
+            "partOf": null
+          },
+          "mockups": [
+            "m.html"
+          ]
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "Bad json <ckanban-ticket>{\"title\": nope}</ckanban-ticket> and <ckanban-questions>{}</ckanban-questions>",
+      "expect": {
+        "value": {
+          "text": "Bad json <ckanban-ticket>{\"title\": nope}</ckanban-ticket> and <ckanban-questions>{}</ckanban-questions>",
+          "unreadable": "questions"
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "  just text 😀  ",
+      "expect": {
+        "value": {
+          "text": "just text 😀"
+        }
+      }
+    },
+    {
+      "fn": "assistantBlock",
+      "input": "<ckanban-ticket>{\"title\":\"a\\\"}b\",\"x\":[1,{\"y\":\"]\"}]}</ckanban-ticket>",
+      "expect": {
+        "value": {
+          "text": "",
+          "proposal": {
+            "title": "a\"}b",
+            "description": ""
+          }
+        }
+      }
+    },
+    {
+      "fn": "dropBlockedMoves",
+      "input": [
+        {
+          "role": "assistant",
+          "kind": "text",
+          "text": "moving",
+          "moved": "planning"
+        },
+        {
+          "role": "user",
+          "kind": "text",
+          "text": "huddle msg",
+          "huddleId": "h1"
+        },
+        {
+          "role": "assistant",
+          "kind": "text",
+          "text": "CKANBAN_RESULT: {\"status\":\"blocked\",\"summary\":\"x\"}"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "moving"
+          },
+          {
+            "role": "user",
+            "kind": "text",
+            "text": "huddle msg",
+            "huddleId": "h1"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "CKANBAN_RESULT: {\"status\":\"blocked\",\"summary\":\"x\"}"
+          }
+        ]
+      }
+    },
+    {
+      "fn": "dropBlockedMoves",
+      "input": [
+        {
+          "role": "assistant",
+          "kind": "text",
+          "text": "moving",
+          "moved": "planning"
+        },
+        {
+          "role": "user",
+          "kind": "text",
+          "text": "next"
+        },
+        {
+          "role": "assistant",
+          "kind": "text",
+          "text": "CKANBAN_RESULT: {\"status\":\"blocked\",\"summary\":\"x\"}"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "moving",
+            "moved": "planning"
+          },
+          {
+            "role": "user",
+            "kind": "text",
+            "text": "next"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "CKANBAN_RESULT: {\"status\":\"blocked\",\"summary\":\"x\"}"
+          }
+        ]
+      }
+    },
+    {
+      "fn": "dropBlockedMoves",
+      "input": [
+        {
+          "role": "assistant",
+          "kind": "text",
+          "text": "x <ckanban-move/> CKANBAN_RESULT: {\"status\":\"blocked\"}",
+          "moved": "planning"
+        },
+        {
+          "role": "assistant",
+          "kind": "tool",
+          "text": "CKANBAN_RESULT: {\"status\":\"blocked\"}",
+          "moved": "planning"
+        },
+        {
+          "role": "assistant",
+          "kind": "text",
+          "text": "CKANBAN_RESULT: {\"status\":\"done\"}"
+        }
+      ],
+      "expect": {
+        "value": [
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "x <ckanban-move/> CKANBAN_RESULT: {\"status\":\"blocked\"}"
+          },
+          {
+            "role": "assistant",
+            "kind": "tool",
+            "text": "CKANBAN_RESULT: {\"status\":\"blocked\"}",
+            "moved": "planning"
+          },
+          {
+            "role": "assistant",
+            "kind": "text",
+            "text": "CKANBAN_RESULT: {\"status\":\"done\"}"
+          }
+        ]
+      }
+    },
+    {
+      "fn": "published",
+      "input": "Published report.html at https://claude.ai/code/artifact/abc-123\nPublished x at https://claude.ai/artifact/Z9 and Published bad at http://claude.ai/artifact/x",
+      "expect": {
+        "value": [
+          [
+            "report.html",
+            "https://claude.ai/code/artifact/abc-123"
+          ],
+          [
+            "x",
+            "https://claude.ai/artifact/Z9"
+          ]
+        ]
+      }
+    },
+    {
+      "fn": "published",
+      "input": "nothing",
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "fn": "published",
+      "input": "Published  a at https://claude.ai/artifact/q",
+      "expect": {
+        "value": []
+      }
+    },
+    {
+      "fn": "isSetupHelper",
+      "input": "ckanban ticket setup",
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "isSetupHelper",
+      "input": "bun src/cli.ts ticket setup --json",
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "isSetupHelper",
+      "input": "ticket setups",
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "isSetupHelper",
+      "input": "xticket setup",
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "isSetupHelper",
+      "input": "ticket_setup",
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "isSetupHelper",
+      "input": "é ticket setup é",
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "isPublisher",
+      "input": {
+        "name": "Artifact"
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "isPublisher",
+      "input": {
+        "name": "mcp__ckanban__publish_artifact"
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "isPublisher",
+      "input": {
+        "name": "publish_artifact"
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "isPublisher",
+      "input": {
+        "name": "xpublish_artifact"
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "isPublisher",
+      "input": {
+        "name": "Bash",
+        "input": {
+          "command": "ckanban artifact publish out.html"
+        }
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "isPublisher",
+      "input": {
+        "name": "Bash",
+        "input": {
+          "command": "artifact publisher"
+        }
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "isPublisher",
+      "input": {
+        "name": "Bash",
+        "input": {}
+      },
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "isPublisher",
+      "input": {},
+      "expect": {
+        "value": false
+      }
+    },
+    {
+      "fn": "isPublisher",
+      "input": {
+        "name": [
+          "a__publish_artifact"
+        ]
+      },
+      "expect": {
+        "value": true
+      }
+    },
+    {
+      "fn": "fromTicket",
+      "input": "Message from ticket t_20261116_ab-c (\"Fix \\\"it\\\"\"): Hello there  ",
+      "expect": {
+        "value": {
+          "ticketId": "t_20261116_ab-c",
+          "title": "Fix \\\"it\\\"",
+          "text": "Hello there"
+        }
+      }
+    },
+    {
+      "fn": "fromTicket",
+      "input": "Message from ticket t_1 (\"a\"): b\"): c",
+      "expect": {
+        "value": {
+          "ticketId": "t_1",
+          "title": "a",
+          "text": "b\"): c"
+        }
+      }
+    },
+    {
+      "fn": "fromTicket",
+      "input": "Message from ticket x_1 (\"a\"): b",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "fromTicket",
+      "input": "Message from ticket t_1 (\"multi\nline\"): \n body \n",
+      "expect": {
+        "value": {
+          "ticketId": "t_1",
+          "title": "multi\nline",
+          "text": "body"
+        }
+      }
+    },
+    {
+      "fn": "fromTicket",
+      "input": "prefix Message from ticket t_1 (\"a\"): b",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "fromAutomation",
+      "input": "Message from automation (\"Linear\"): new issue ",
+      "expect": {
+        "value": {
+          "name": "Linear",
+          "text": "new issue"
+        }
+      }
+    },
+    {
+      "fn": "fromAutomation",
+      "input": "Message from automation (\"a\"b\"): x",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "fromAutomation",
+      "input": "Message from automation (\"a\nb\"): x",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "fromAutomation",
+      "input": "Message from automation (\"\"): ",
+      "expect": {
+        "value": {
+          "name": "",
+          "text": ""
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "  Just typed  ",
+      "expect": {
+        "value": {
+          "kind": "text",
+          "text": "Just typed"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "Typed first\n\n<ckanban-context note=\"Ticket instructions\">\ndo things\n</ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "text",
+          "text": "Typed first"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<ckanban-context note=\"Status refresh\">x</ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "board",
+          "text": "Status refresh"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<ckanban-context>x</ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "board",
+          "text": "Board sent instructions to Claude"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<ckanban-context note=\"\">x</ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "board",
+          "text": "Board sent instructions to Claude"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "Hi team\n<ckanban-context huddle=\"h_1\">digest</ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "text",
+          "text": "Hi team",
+          "huddle": "h_1"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<ckanban-context huddle=\"h_1\">digest</ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "board",
+          "text": "Board sent instructions to Claude"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "body\n<ckanban-context wake=\"Status check\" note=\"n\">full</ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "board",
+          "text": "body",
+          "wake": "Status check"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<ckanban-context wake=\"\">full</ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "board",
+          "text": "",
+          "wake": "update"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<ckanban-context note=\"Setup\"><ckanban-setup>{\"command\":\"bun i\",\"ok\":true,\"exitCode\":0,\"output\":\"ok\",\"durationMs\":5,\"copied\":[\".env\"],\"missing\":[]}</ckanban-setup></ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "board",
+          "text": "Setup",
+          "setup": {
+            "copied": [
+              ".env"
+            ],
+            "missing": [],
+            "command": "bun i",
+            "ok": true,
+            "exitCode": 0,
+            "timedOut": false,
+            "output": "ok",
+            "durationMs": 5
+          }
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "typed <ckanban-context wake=\"w\"><ckanban-setup>{\"command\":\"c\"}</ckanban-setup></ckanban-context>",
+      "expect": {
+        "value": {
+          "kind": "board",
+          "text": "typed",
+          "wake": "w",
+          "setup": {
+            "copied": [],
+            "missing": [],
+            "command": "c",
+            "ok": null,
+            "exitCode": null,
+            "timedOut": false,
+            "output": "",
+            "durationMs": 0
+          }
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<ckanban-context note=\"x\"",
+      "expect": {
+        "value": {
+          "kind": "board",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<command-message>review</command-message><command-name>/review</command-name><command-args>pr 5</command-args>",
+      "expect": {
+        "value": {
+          "kind": "text",
+          "text": "/review pr 5",
+          "command": "review"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<command-name>/exit</command-name>",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<command-name>/compact</command-name>",
+      "expect": {
+        "value": {
+          "kind": "text",
+          "text": "/compact",
+          "command": "compact"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "<system-reminder>x</system-reminder>",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "Caveat: the messages below",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "Base directory for this skill: /x",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "[Request interrupted by user]",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "   ",
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "Look\n\nImages in this message are local files; open them with the Read tool to see them.",
+      "expect": {
+        "value": {
+          "kind": "text",
+          "text": "Look"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": [
+        {
+          "type": "text",
+          "text": "part one"
+        },
+        {
+          "type": "image"
+        },
+        {
+          "type": "text",
+          "text": "part two"
+        }
+      ],
+      "expect": {
+        "value": {
+          "kind": "text",
+          "text": "part one\n\npart two"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": [
+        {
+          "type": "text",
+          "text": "a"
+        },
+        {
+          "type": "tool_result",
+          "content": "x"
+        }
+      ],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": [
+        {
+          "type": "text"
+        },
+        {
+          "type": "text",
+          "text": 5
+        },
+        null,
+        "s"
+      ],
+      "expect": {
+        "value": {
+          "kind": "text",
+          "text": "5"
+        }
+      }
+    },
+    {
+      "fn": "userText",
+      "input": [],
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": 5,
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": null,
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "userText",
+      "input": "Mixed 😀 émoji ",
+      "expect": {
+        "value": {
+          "kind": "text",
+          "text": "Mixed 😀 émoji"
+        }
+      }
+    },
+    {
+      "fn": "resultText",
+      "input": "plain",
+      "expect": {
+        "value": "plain"
+      }
+    },
+    {
+      "fn": "resultText",
+      "input": [
+        "a",
+        {
+          "text": "b"
+        },
+        {
+          "type": "image"
+        },
+        null,
+        {
+          "text": null
+        },
+        {
+          "text": 3
+        }
+      ],
+      "expect": {
+        "value": "a\nb\n\n\n\n3"
+      }
+    },
+    {
+      "fn": "resultText",
+      "input": 5,
+      "expect": {
+        "value": ""
+      }
+    },
+    {
+      "fn": "resultText",
+      "input": null,
+      "expect": {
+        "value": ""
+      }
+    },
+    {
+      "fn": "resultText",
+      "input": {
+        "text": "x"
+      },
+      "expect": {
+        "value": ""
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_helper_rule",
+        "input": {
+          "text": "  Tell me   about\nbuilds ",
+          "reason": "  asked "
+        }
+      },
+      "expect": {
+        "value": {
+          "helperRule": {
+            "text": "Tell me about builds",
+            "reason": "asked"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "other__propose_helper_rule",
+        "input": {
+          "text": "x",
+          "reason": "y"
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_helper_rule",
+        "input": {
+          "text": "has​zero",
+          "reason": "y"
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_helper_rule",
+        "input": {
+          "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_helper_rule",
+        "input": {
+          "text": "ok",
+          "reason": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+        }
+      },
+      "expect": {
+        "value": {
+          "helperRule": {
+            "text": "ok",
+            "reason": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__delete_schedule",
+        "input": {
+          "id": " s_1 ",
+          "reason": " old "
+        }
+      },
+      "expect": {
+        "value": {
+          "scheduleDeletion": {
+            "id": "s_1",
+            "reason": "old"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "delete_schedule",
+        "input": {
+          "id": "  "
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__ask_keys",
+        "input": {
+          "keys": [
+            {
+              "envName": "A_KEY",
+              "label": "A"
+            }
+          ],
+          "reason": "r"
+        }
+      },
+      "expect": {
+        "value": {
+          "keys": {
+            "keys": [
+              {
+                "envName": "A_KEY",
+                "label": "A"
+              }
+            ],
+            "reason": "r",
+            "replace": false
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__ask_keys",
+        "input": {
+          "keys": []
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__ask_questions",
+        "input": {
+          "questions": [
+            {
+              "question": "Q",
+              "options": [
+                {
+                  "label": "x"
+                }
+              ]
+            }
+          ],
+          "urgent": true,
+          "why": "w",
+          "about": [
+            "t_1"
+          ]
+        }
+      },
+      "expect": {
+        "value": {
+          "questions": [
+            {
+              "question": "Q",
+              "multiSelect": false,
+              "options": [
+                {
+                  "label": "x",
+                  "recommended": false
+                }
+              ]
+            }
+          ],
+          "ask": {
+            "urgent": true,
+            "why": "w",
+            "about": [
+              "t_1"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "ask_questions",
+        "input": {
+          "questions": [
+            {
+              "question": "Q"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "value": {
+          "questions": [
+            {
+              "question": "Q",
+              "multiSelect": false,
+              "options": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "ask_questions",
+        "input": {
+          "questions": []
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "ask_questions"
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_ticket",
+        "input": {
+          "title": "⭐️ New",
+          "description": "d",
+          "partOf": "none",
+          "important": false
+        }
+      },
+      "expect": {
+        "value": {
+          "proposal": {
+            "title": "New",
+            "description": "d",
+            "important": true,
+            "partOf": null
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_ticket",
+        "input": {
+          "title": " ",
+          "description": ""
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_branch",
+        "input": {
+          "reason": " split "
+        }
+      },
+      "expect": {
+        "value": {
+          "branch": {
+            "reason": "split"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_branch"
+      },
+      "expect": {
+        "value": {
+          "branch": {
+            "reason": ""
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_delete",
+        "input": {
+          "ids": [
+            " t_1 ",
+            "t_1",
+            "t_2",
+            "",
+            5
+          ],
+          "reason": "dupes"
+        }
+      },
+      "expect": {
+        "value": {
+          "deletion": {
+            "ids": [
+              "t_1",
+              "t_2"
+            ],
+            "reason": "dupes"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_delete",
+        "input": {
+          "ids": [
+            "  "
+          ]
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_teammate",
+        "input": {
+          "name": "Docs",
+          "prompt": "Write docs",
+          "why": "none"
+        }
+      },
+      "expect": {
+        "value": {
+          "teammate": {
+            "name": "docs",
+            "prompt": "Write docs",
+            "why": "none"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_teammate",
+        "input": {
+          "name": "Docs"
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_squad",
+        "input": {
+          "name": "s",
+          "why": "w",
+          "roster": [
+            {
+              "role": "a"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "value": {
+          "squad": {
+            "squad": {
+              "name": "s",
+              "label": "S",
+              "description": "",
+              "roster": [
+                {
+                  "role": "a"
+                }
+              ],
+              "rounds": null,
+              "maxCostUsd": null,
+              "report": "",
+              "hostRules": ""
+            },
+            "why": "w",
+            "newTeammates": [
+              {
+                "index": 0,
+                "name": "a",
+                "role": "a"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_squad",
+        "input": {
+          "name": "s"
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_automation",
+        "input": {
+          "name": "n",
+          "script": "s",
+          "summary": "x"
+        }
+      },
+      "expect": {
+        "value": {
+          "automation": {
+            "name": "n",
+            "script": "s",
+            "everyMinutes": 15,
+            "passes": [],
+            "summary": "x",
+            "service": "a script"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_automation",
+        "input": {}
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "mcp__ckanban__propose_huddle",
+        "input": {
+          "roster": [
+            {
+              "preset": "reviewer",
+              "count": 2
+            },
+            {
+              "role": "Tester"
+            }
+          ],
+          "reason": " check ",
+          "maxCostUsd": 250,
+          "topic": "  the topic  "
+        }
+      },
+      "expect": {
+        "value": {
+          "huddle": {
+            "roster": [
+              {
+                "preset": "reviewer",
+                "count": 2
+              },
+              {
+                "role": "Tester"
+              }
+            ],
+            "reason": "check",
+            "maxCostUsd": 100,
+            "topic": "the topic"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_huddle",
+        "input": {
+          "squad": " plan-review ",
+          "reason": "r",
+          "maxCostUsd": -5
+        }
+      },
+      "expect": {
+        "value": {
+          "huddle": {
+            "roster": [],
+            "reason": "r",
+            "template": "plan-review"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_huddle",
+        "input": {
+          "template": "design-review",
+          "squad": "  ",
+          "roster": [],
+          "maxCostUsd": 12.5,
+          "topic": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+        }
+      },
+      "expect": {
+        "value": {
+          "huddle": {
+            "roster": [],
+            "reason": "",
+            "template": "design-review",
+            "maxCostUsd": 12.5,
+            "topic": "tttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt"
+          }
+        }
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_huddle",
+        "input": {
+          "squad": "x",
+          "roster": [
+            {}
+          ]
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_huddle",
+        "input": {
+          "squad": "x",
+          "roster": null
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_huddle",
+        "input": {
+          "roster": []
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_huddle",
+        "input": {}
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "propose_huddle",
+        "input": {
+          "roster": [
+            {
+              "role": "r0"
+            },
+            {
+              "role": "r1"
+            },
+            {
+              "role": "r2"
+            },
+            {
+              "role": "r3"
+            },
+            {
+              "role": "r4"
+            },
+            {
+              "role": "r5"
+            },
+            {
+              "role": "r6"
+            },
+            {
+              "role": "r7"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": "Bash",
+        "input": {
+          "command": "ls"
+        }
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "input": {}
+      },
+      "expect": {
+        "value": null
+      }
+    },
+    {
+      "fn": "cardEntry",
+      "input": {
+        "name": 5
+      },
+      "expect": {
+        "value": null
+      }
+    }
+  ]
+}

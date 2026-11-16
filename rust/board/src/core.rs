@@ -14,6 +14,8 @@ use parking_lot::Mutex;
 
 use crate::api::{ActivityCut, BoardActions, DeviceInfo, HuddleInfo, Landing, RunControl, Satellite, SessionInfo, StandIn, TicketViews};
 use crate::bus::Bus;
+use crate::index::store::RECHECK_EVERY;
+use crate::index::{Index, Reads, ServicesLive};
 
 /// The modules other modules call through (plan 2.6).
 #[derive(Clone)]
@@ -69,12 +71,20 @@ pub struct Core {
     pub root: PathBuf,
     pub bus: Arc<Bus>,
     pub services: Services,
+    /// Every board's tickets (R1): listings, families, scopes.
+    pub index: Arc<Index>,
+    /// The read routes over the index, with live state from `services` (R1).
+    pub reads: Arc<Reads>,
     stops: Mutex<Vec<Stop>>,
 }
 
 impl Core {
-    pub fn new(root: &Path, services: Services) -> Arc<Core> {
-        Arc::new(Core { root: root.to_path_buf(), bus: Arc::new(Bus::new()), services, stops: Mutex::new(Vec::new()) })
+    /// `services.views` is replaced by the index's views (R1); the rest is used as given.
+    pub fn new(root: &Path, mut services: Services) -> Arc<Core> {
+        let index = Index::new(root);
+        let reads = Arc::new(Reads::new(index.clone(), Arc::new(ServicesLive::new(root, services.clone()))));
+        services.views = Arc::new(IndexViews { reads: reads.clone() });
+        Arc::new(Core { root: root.to_path_buf(), bus: Arc::new(Bus::new()), services, index, reads, stops: Mutex::new(Vec::new()) })
     }
 
     /// Registers something to stop at shutdown (a timer, a watcher); stops run newest first.
@@ -86,7 +96,19 @@ impl Core {
     pub fn steps() -> Vec<Step> {
         vec![
             // R1: every board's tickets read on a thread pool, so recover() and the first pages list from memory.
-            Step::new("load tickets", |c| async move { check_readable(&c.root.join("profiles")) }),
+            Step::new("load tickets", |c| async move {
+                check_readable(&c.root.join("profiles"))?;
+                // On a few threads in the background: the server answers meanwhile, and a board's first listing
+                // waits for the load instead of reading its files a second time (Index::list).
+                let index = c.index.clone();
+                index.begin_load();
+                let t0 = Instant::now();
+                tokio::task::spawn_blocking(move || {
+                    let n = index.load_all();
+                    eprintln!("[board] loaded {n} tickets in {}ms", t0.elapsed().as_millis());
+                });
+                Ok(())
+            }),
             // R1/R10/R11a: huddles, jobs, schedules and automations.
             Step::new("load lists", |_| async { Ok(()) }),
             // R7a: interrupted runs resumed, follow-ups and limits picked up (`board.recover`).
@@ -97,7 +119,21 @@ impl Core {
             Step::new("quick chats", |_| async { Ok(()) }),
             // R3, R5, R6, R7a, R9, R10, R12: the PR poller, scheduler, jobs, loops, learner, limits, follow-ups, run
             // log compression, the session watcher, the ticket and list re-checks, board browsers, keep-awake.
-            Step::new("timers", |_| async { Ok(()) }),
+            Step::new("timers", |c| async move {
+                // R1: the ticket files re-checked every 30 s (edits made outside the board), off the runtime.
+                let index = c.index.clone();
+                let task = tokio::spawn(async move {
+                    let mut tick = tokio::time::interval(RECHECK_EVERY);
+                    tick.tick().await;
+                    loop {
+                        tick.tick().await;
+                        let ix = index.clone();
+                        let _ = tokio::task::spawn_blocking(move || ix.recheck_all()).await;
+                    }
+                });
+                c.on_stop("ticket re-check", move || task.abort());
+                Ok(())
+            }),
         ]
     }
 
@@ -125,6 +161,25 @@ impl Core {
                 eprintln!("[board] stopping {name} failed");
             }
         }
+    }
+}
+
+/// `TicketViews` from the index (what `ticket.updated` events carry): the ticket's view with the board's live state.
+pub struct IndexViews {
+    pub reads: Arc<Reads>,
+}
+
+impl TicketViews for IndexViews {
+    fn view(&self, profile: &str, ticket: &serde_json::Value) -> Option<serde_json::Value> {
+        let serde_json::Value::Object(m) = ticket else { return None };
+        let p = ckanban_core::home::DataDir::new(self.reads.index.root().to_path_buf()).profile(profile)?;
+        let t = crate::index::ticket::Tk::from_json(m.clone(), false);
+        let list = self.reads.index.peek(profile).unwrap_or_else(|| self.reads.index.list(profile));
+        Some(serde_json::Value::Object(self.reads.viewer.view(profile, &p.record.0, &list, &t, &*self.reads.live)))
+    }
+    fn view_of(&self, profile: &str, id: &str) -> Option<serde_json::Value> {
+        let t = self.reads.index.ticket(profile, id)?;
+        self.view(profile, &serde_json::Value::Object(t.json.clone()))
     }
 }
 

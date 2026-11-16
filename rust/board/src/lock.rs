@@ -59,7 +59,8 @@ mod tests {
         let e = take(d.path(), Duration::from_millis(250)).unwrap_err();
         assert!(e.contains("another ckanban daemon owns this data folder"), "{e}");
         drop(a);
-        let _b = take(d.path(), Duration::ZERO).unwrap();
+        // A moment's wait: a process forked by another test thread holds every descriptor until its exec.
+        let _b = take(d.path(), Duration::from_secs(2)).unwrap();
         assert_eq!(std::fs::read(d.path().join(LOCK_FILE)).unwrap(), b"");
     }
 

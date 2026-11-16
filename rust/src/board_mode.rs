@@ -9,53 +9,77 @@
 //! under launchd) and `<data>/rust-board-status.json`.
 //!
 //! Every request in board mode goes through `handle` (R13), in Bun's order (`route()` and `api()` in
-//! `src/api/server.ts`):
-//! 1. the satellite's own calls (`/api/internal/...` with the edge header, `ckanban_board::gate::edge`);
-//! 2. the request gate (`requestRefusal`: Host, and the Origin of a change; on the phone access listener phone access
-//!    on, the tailnet host and the owner's login), a plain-text 403 as Bun sends it;
-//! 3. the routes the Rust board answers (`GET /api/events`, the system routes), each with the Telegram front desk's
-//!    gate (asked of the satellite) and the JSON-only rule first;
-//! 4. on this Mac's listener the front's native routes (usage, spend, passes, agents), then Bun; on the phone access
-//!    listener Bun, told it is a phone request. Bun checks the gate again on its side.
+//! `src/api/server.ts`): the satellite's own calls (`/api/internal/...` with the edge header,
+//! `ckanban_board::gate::edge`); the request gate (`requestRefusal`: Host, the Origin of a change; on the phone access
+//! listener phone access on, the tailnet host and the owner's login), a plain-text 403 as Bun sends it; the system
+//! routes (R13: `health`, `version`, `claude/*`, `pick-folder`, `cron/preview`, `debug/profile`), each after the
+//! Telegram front desk's gate (asked of the satellite) and the JSON-only rule; then the other tasks' routes below; on
+//! this Mac's listener the front's native routes (usage, spend, passes, agents), then Bun; on the phone access
+//! listener Bun, told it is a phone request. Bun checks the gate again on its side.
+//!
+//! Routes the Rust board answers itself (more with each task): `GET /api/events`; R1's reads from the ticket index
+//! (`GET /api/profiles`, `/api/profiles/:p`, `/api/profiles/:p/tickets`, `/api/profiles/:p/tickets/:id`,
+//! `/api/tickets`, `/api/inbox`); the session routes (R5: a ticket's conversation, tool, agent and workflow details,
+//! chat search and read, the board folder's sessions); a ticket's outputs, the files its chat mentions, its Changes
+//! tab, the board's Files panel, `detect-setup` and `/api/version-history` (R6, `ckanban_board::git::routes`); the browsers,
+//! devices and terminal routes (R9, `ckanban_board::browsers::routes`); the team routes (R11b:
+//! `/api/profiles/:p/huddle-presets`, `/huddle-templates`, `POST /squads`, `/huddle-notes`, after the same Host,
+//! Origin and JSON type checks Bun makes).
+//! Everything else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
-use bytes::Bytes;
+use ckanban_board::browsers::{self, Browsers, FileLookup};
 use ckanban_board::core::{Core, Services};
 use ckanban_board::events::{self, EventHooks};
 use ckanban_board::gate::edge::{self, SATELLITE_HEADER, SatelliteClient};
 use ckanban_board::gate::remote::RemoteFile;
-use ckanban_board::gate::request::{self, FRONT_DESK_HEADER, HUDDLE_HEADER, LISTENER_HEADER, Listener, RUN_HEADER, Seen};
+use ckanban_board::gate::request::{self, LISTENER_HEADER, Listener, Seen};
 use ckanban_board::gate::{housekeeping, system, update::UpdateChecker};
-use ckanban_board::lock::{self, BoardLock};
-use ckanban_board::mode::{self, Decision};
 use ckanban_board::runs::js;
 use ckanban_board::runs::model_versions::ModelVersions;
-use ckanban_board::satellite;
 use ckanban_board::schedules::cron;
+use ckanban_board::git::{self, routes::GitRoutes};
+pub use ckanban_board::git::routes::Next;
+use ckanban_board::lock::{self, BoardLock};
+use ckanban_board::mode::{self, Decision};
+use ckanban_board::satellite;
+use ckanban_board::sessions::routes::{self as session_routes, HUDDLE_HEADER, RUN_HEADER};
+use ckanban_board::sessions::service::Sessions;
+use ckanban_board::team::{self, Team};
 use ckanban_core::time::{iso, now_ms};
-use http_body_util::BodyExt;
-use hyper::body::Incoming;
-use hyper::header::{CONTENT_TYPE, HeaderValue};
-use hyper::{Method, Request, Response, StatusCode};
 use serde_json::{Value, json};
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full, Limited};
+use hyper::body::Incoming;
+use hyper::header::{CONTENT_TYPE, HOST, HeaderMap, HeaderValue, ORIGIN};
+use hyper::{Method, Request, Response, StatusCode};
 
 use crate::mask;
 use crate::passes;
 use crate::proxy::{Body, Proxy, full, plain, wants_upgrade};
-use crate::routes::Native;
+use crate::routes::{Native, local_host, query_param};
 
+/// The Telegram front desk's header: its requests go through Bun's gate (as in routes.rs).
+const FRONT_DESK_HEADER: &str = "x-ckanban-frontdesk";
 /// How long board mode waits for the data lock (an owner that is stopping lets go in a moment).
 const LOCK_WAIT: Duration = Duration::from_secs(5);
-/// The largest body the satellite's calls and the front desk's gate read (a front desk request is a small JSON).
-const MAX_BODY: usize = 8 * 1024 * 1024;
+/// The largest request body the board's own routes read (a squad with every field full is well under 1 MB).
+const MAX_BODY: usize = 8 << 20;
 
 pub struct BoardMode {
     pub core: Arc<Core>,
+    /// Teammates, squads and role notes (R11b).
+    pub team: Arc<Team>,
+    /// R9: devices, board browsers, named Chromes and the terminal.
+    browsers: Arc<Browsers>,
+    browser_routes: browsers::routes::RouteCtx,
+    sessions: Arc<Sessions>,
     hooks: Arc<EventHooks>,
+    git: Arc<GitRoutes>,
     public_port: u16,
     remote_port: u16,
     root: PathBuf,
@@ -88,14 +112,22 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         Ok(l) => l,
         Err(e) => return fall_back(root, &e, crashes),
     };
+    let sessions = Sessions::new(root, text_masker(root));
     let mut services = Services::stand_ins();
+    services.sessions = sessions.clone();
+    let browsers = Browsers::new(root, Arc::new(FileLookup::new(root)), services.sessions.clone());
+    services.devices = browsers.clone();
     services.satellite = Arc::new(SatelliteClient::new(internal_port, public_port, secret));
     let core = Core::new(root, services);
+    browsers.attach(core.bus.clone());
+    browsers.set_linked(browsers::linked_from_index(core.index.clone(), browsers.lookup.clone()));
     if let Err(e) = core.start(Core::steps()).await {
         // Let go first: Bun's full mode takes the lock next.
         drop(lock);
         return fall_back(root, &e, crashes);
     }
+    // The session watcher and the projects folder feed (R5): `session.updated` on the board's event stream.
+    sessions.start(&core);
     if let Err(e) = mode::record_board(root, crashes) {
         eprintln!("ckanban-rs: can't write {}: {e}", mode::status_path(root).display());
     }
@@ -103,10 +135,26 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     // Start-up clean-ups, report-only (plan 5.3); the satellite skips its own.
     let r = root.to_path_buf();
     tokio::spawn(async move { housekeeping::at_start(&r).await });
-    let hooks = Arc::new(EventHooks { views: core.services.views.clone(), cut: core.services.cut.clone(), mask: masker(root) });
+    // Board browsers adopted (Bun's Chromes included), their upkeep and the terminal watcher, in the background.
+    browsers.start(&core);
+    let mask = masker(root);
+    let hooks = Arc::new(EventHooks { views: core.services.views.clone(), cut: core.services.cut.clone(), mask: mask.clone() });
+    let team = Arc::new(Team::new(root));
+    let browser_routes = browsers::routes::RouteCtx {
+        public_port,
+        mask: mask.clone(),
+        user_only: Arc::new(|h, peer| Box::pin(async move { crate::guard::user_only(&h, peer).await })),
+    };
+    let git = GitRoutes::new(root, public_port, mask, core.services.runs.clone());
+    git::start_jobs(&core);
     Some(Arc::new(BoardMode {
         core,
+        team,
+        sessions,
+        browsers,
+        browser_routes,
         hooks,
+        git,
         public_port,
         remote_port,
         root: root.to_path_buf(),
@@ -127,26 +175,43 @@ fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<Boar
     None
 }
 
-/// `maskSavedJson` with the pass store's secrets, read again only when the passes file changes.
-fn masker(root: &Path) -> events::Mask {
+/// The pass store's secrets, read again only when the passes file changes.
+fn secrets_of(root: &Path) -> impl Fn() -> Arc<Vec<String>> + Send + Sync + 'static {
     let file = root.join(passes::PASSES_FILE);
     let root = root.to_path_buf();
     let cache: Mutex<Option<((Option<SystemTime>, u64), Arc<Vec<String>>)>> = Mutex::new(None);
-    Arc::new(move |text: &str| {
+    move || {
         let stamp = std::fs::metadata(&file).map(|m| (m.modified().ok(), m.len())).unwrap_or((None, 0));
-        let secrets = {
-            let mut c = cache.lock().unwrap_or_else(|p| p.into_inner());
-            match &*c {
-                Some((s, v)) if *s == stamp => v.clone(),
-                _ => {
-                    let v = Arc::new(passes::current_secrets(&root));
-                    *c = Some((stamp, v.clone()));
-                    v
-                }
+        let mut c = cache.lock().unwrap_or_else(|p| p.into_inner());
+        match &*c {
+            Some((s, v)) if *s == stamp => v.clone(),
+            _ => {
+                let v = Arc::new(passes::current_secrets(&root));
+                *c = Some((stamp, v.clone()));
+                v
             }
-        };
-        mask::mask_saved_json(&secrets, text)
+        }
+    }
+}
+
+/// `maskSaved` (plain text, a stored chat preview) with the pass store's secrets.
+fn text_masker(root: &Path) -> Arc<dyn Fn(&str) -> String + Send + Sync> {
+    let secrets = secrets_of(root);
+    Arc::new(move |text: &str| {
+        let mut out = text.to_string();
+        for s in secrets().iter() {
+            if out.contains(s.as_str()) {
+                out = out.replace(s.as_str(), "***");
+            }
+        }
+        out
     })
+}
+
+/// `maskSavedJson` with the pass store's secrets, read again only when the passes file changes.
+fn masker(root: &Path) -> events::Mask {
+    let secrets = secrets_of(root);
+    Arc::new(move |text: &str| mask::mask_saved_json(&secrets(), text))
 }
 
 /// A route the Rust board answers itself (Bun's conditions on the decoded path parts, `src/api/system.ts`).
@@ -162,38 +227,10 @@ pub enum Own {
     PickFolder,
 }
 
-/// `url.pathname.split("/").filter(Boolean).slice(1).map(decodeURIComponent)` for an `/api/` path; None when a part
-/// doesn't decode (Bun answers that: 400 "malformed URL").
-pub fn api_parts(path: &str) -> Option<Vec<String>> {
-    let rest = path.strip_prefix("/api/")?;
-    rest.split('/')
-        .filter(|p| !p.is_empty())
-        .map(decode_uri_component)
-        .collect()
-}
-
-/// `decodeURIComponent`: None where JS throws (a `%` without two hex digits, bytes that aren't UTF-8).
-pub fn decode_uri_component(s: &str) -> Option<String> {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' {
-            let hex = |c: u8| (c as char).to_digit(16);
-            let (h, l) = (b.get(i + 1).copied().and_then(hex)?, b.get(i + 2).copied().and_then(hex)?);
-            out.push((h * 16 + l) as u8);
-            i += 3;
-        } else {
-            out.push(b[i]);
-            i += 1;
-        }
-    }
-    String::from_utf8(out).ok()
-}
 
 /// Which own route a request is, if any.
 pub fn own_route(method: &Method, path: &str) -> Option<Own> {
-    let parts = api_parts(path)?;
+    let parts = api_parts(path.strip_prefix("/api/")?)?;
     let p = |i: usize| parts.get(i).map(String::as_str);
     let get = *method == Method::GET;
     let post = *method == Method::POST;
@@ -211,8 +248,59 @@ pub fn own_route(method: &Method, path: &str) -> Option<Own> {
 }
 
 /// `URLSearchParams.get(name)` of a query.
-fn query_param(query: Option<&str>, name: &str) -> Option<String> {
+fn query_value(query: Option<&str>, name: &str) -> Option<String> {
     url::form_urlencoded::parse(query.unwrap_or("").as_bytes()).find(|(k, _)| k == name).map(|(_, v)| v.into_owned())
+}
+
+/// A phone request's own Host and Origin lines, put back before it goes to Bun (`as_local`).
+struct Sent {
+    host: Vec<HeaderValue>,
+    origin: Vec<HeaderValue>,
+}
+
+impl Sent {
+    fn restore(self, h: &mut HeaderMap) {
+        h.remove(HOST);
+        h.remove(ORIGIN);
+        for v in self.host {
+            h.append(HOST, v);
+        }
+        for v in self.origin {
+            h.append(ORIGIN, v);
+        }
+    }
+}
+
+/// Shows a phone request that passed the gate to the routes that check this Mac's Host and Origin: Host
+/// `127.0.0.1:<port>`, and an Origin (when it sent one) of the board's page here.
+fn as_local(h: &mut HeaderMap, port: u16) -> Sent {
+    let sent = Sent { host: h.get_all(HOST).iter().cloned().collect(), origin: h.get_all(ORIGIN).iter().cloned().collect() };
+    let had_origin = sent.origin.iter().any(|o| !o.is_empty());
+    h.remove(HOST);
+    h.remove(ORIGIN);
+    if let Ok(v) = HeaderValue::from_str(&format!("127.0.0.1:{port}")) {
+        h.insert(HOST, v.clone());
+        if had_origin && let Ok(o) = HeaderValue::from_str(&format!("http://127.0.0.1:{port}")) {
+            h.insert(ORIGIN, o);
+        }
+    }
+    sent
+}
+
+/// A request on to Bun; a phone request (its own Host and Origin back) marked as one.
+async fn to_bun(mut req: Request<Body>, peer: SocketAddr, sent: Option<Sent>, proxy: &Proxy) -> Response<Body> {
+    match sent {
+        Some(sent) => {
+            sent.restore(req.headers_mut());
+            proxy.forward_as(req, peer, &[(edge::VIA_HEADER, "remote")]).await
+        }
+        None => proxy.forward(req, peer).await,
+    }
+}
+
+/// A body read whole, up to `MAX_BODY`.
+async fn read_body(body: Body) -> Result<Bytes, String> {
+    Limited::new(body, MAX_BODY).collect().await.map(|c| c.to_bytes()).map_err(|e| format!("can't read the request body: {e}"))
 }
 
 /// The text Bun's gate sends: 403, plain text.
@@ -221,16 +309,152 @@ fn refused(text: &str) -> Response<Body> {
 }
 
 impl BoardMode {
+    /// The answer when the Rust board answers this request itself; None: it goes on (Rust's other routes, then Bun).
+    /// The event stream, and the board's read routes (R1: boards, ticket lists and scopes, one ticket, the command
+    /// bar's rows, the Inbox), worked out on the blocking pool.
+    pub async fn answer(&self, req: &Request<Incoming>) -> Option<Response<Body>> {
+        let h = req.headers();
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) || h.get_all(HOST).iter().count() > 1 {
+            return None;
+        }
+        if req.method() != Method::GET {
+            return None;
+        }
+        let path = req.uri().path().to_string();
+        let query = req.uri().query().unwrap_or("").to_string();
+        let events = path == "/api/events";
+        if !events && !is_read_route(&path) {
+            return None;
+        }
+        if !local_host(h, self.public_port) {
+            return Some(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        if events {
+            return Some(events::stream(&self.core.bus, self.hooks.clone(), events::PING_EVERY));
+        }
+        let reads = self.core.reads.clone();
+        let (status, body) = tokio::task::spawn_blocking(move || reads.answer(&path, &query)).await.ok()??;
+        let text = (self.hooks.mask)(&serde_json::to_string(&body).unwrap_or_else(|_| "null".into()));
+        Some(json_text(status, text))
+    }
+
+    /// The session routes (R5), answered from Claude's transcripts; None: the request goes on (to Bun).
+    pub async fn answer_sessions(&self, req: &Request<Incoming>) -> Option<Response<Body>> {
+        let h = req.headers();
+        let path = req.uri().path();
+        if !session_routes::wanted(req.method().as_str(), path) {
+            return None;
+        }
+        // Anything Bun's gate treats specially (the Telegram front desk, odd Host headers) stays with Bun.
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) || h.get_all(HOST).iter().count() > 1 || !local_host(h, self.public_port) {
+            return None;
+        }
+        let r = session_routes::Req {
+            method: req.method().as_str().to_string(),
+            path: path.to_string(),
+            query: req.uri().query().map(str::to_string),
+            run: h.get(RUN_HEADER).map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()),
+            huddle: h.contains_key(HUDDLE_HEADER),
+        };
+        let reply = self.sessions.answer(r).await?;
+        let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        Some(passes::json_answer(status, &reply.body, &passes::current_secrets(&self.root)))
+    }
+
+    /// The team routes (`ckanban_board::team::routes`), or the request back when they don't take it. Bun's gate
+    /// first, as `src/api/server.ts` runs it: the Host (403), the Origin of a change (403), then a JSON body type for
+    /// POST, PATCH and PUT (415). Headers sent twice are joined, as Bun's `headers.get` does.
+    #[allow(clippy::result_large_err)] // the request goes back whole, as `Native::answer` does
+    pub async fn answer_team(&self, req: Request<Incoming>) -> Result<Response<Body>, Request<Incoming>> {
+        let h = req.headers();
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) {
+            return Err(req);
+        }
+        let path = req.uri().path();
+        // A path Bun can't decode gets its "malformed URL" answer from Bun.
+        let Some(parts) = path.strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
+        let method = req.method().as_str().to_string();
+        if !team::routes::claims(&method, &parts) {
+            return Err(req);
+        }
+        let host_ok = joined(h, HOST.as_str()).is_some_and(|host| ["localhost", "127.0.0.1"].iter().any(|l| host == format!("{l}:{}", self.public_port)));
+        let mutation = req.method() != Method::GET && req.method() != Method::HEAD;
+        let origin_ok = match joined(h, ORIGIN.as_str()) {
+            None => true,
+            Some(o) if o.is_empty() => true,
+            Some(o) => ["localhost", "127.0.0.1"].iter().any(|l| o == format!("http://{l}:{}", self.public_port)),
+        };
+        if !host_ok || (mutation && !origin_ok) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        let wants_body = matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT);
+        let ctype = joined(h, CONTENT_TYPE.as_str()).unwrap_or_default();
+        if wants_body && crate::js::trim(ctype.split(';').next().unwrap_or("")).to_lowercase() != "application/json" {
+            return Ok(self.json(415, &serde_json::json!({ "error": "content-type must be application/json" }), false));
+        }
+        let has = |n: &str| h.get(n).is_some_and(|v| !v.as_bytes().is_empty());
+        let from_run = has(RUN_HEADER) || has(HUDDLE_HEADER);
+        let scope = query_param(req.uri().query().unwrap_or(""), "scope");
+        let body: Bytes = if wants_body {
+            match Limited::new(req.into_body(), MAX_BODY).collect().await {
+                Ok(b) => b.to_bytes(),
+                Err(e) if e.is::<http_body_util::LengthLimitError>() => {
+                    return Ok(self.json(413, &serde_json::json!({ "error": "request body too large" }), false));
+                }
+                Err(_) => return Ok(plain(StatusCode::BAD_REQUEST, "bad request")),
+            }
+        } else {
+            Bytes::new()
+        };
+        let t = self.team.clone();
+        let answer = tokio::task::spawn_blocking(move || {
+            let call = team::routes::Call { method: &method, parts: &parts, scope, from_run, body: &body };
+            team::routes::answer(&t, &call)
+        })
+        .await;
+        Ok(match answer {
+            Ok(a) => self.json(a.status, &a.value, a.success),
+            Err(e) => self.json(500, &serde_json::json!({ "error": e.to_string() }), false),
+        })
+    }
+
+    /// A JSON answer as Bun writes it (`JSON.stringify`); a success is masked with the saved keys (`ctx.json`).
+    fn json(&self, status: u16, v: &serde_json::Value, success: bool) -> Response<Body> {
+        let text = ckanban_core::datafile::to_text(v, ckanban_core::datafile::Layout::Compact);
+        let text = if success { mask::mask_saved_json(&passes::current_secrets(&self.root), &text) } else { text };
+        let mut r = Response::new(Full::new(Bytes::from(text)).map_err(|never| match never {}).boxed());
+        *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        r.headers_mut().insert(CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json"));
+        r
+    }
+
+    /// The routes the Rust board answers that need the request itself (its body, an upgrade, the caller): the
+    /// browsers, devices and terminal routes (R9). Err gives the request back: it goes on (Rust's other routes, then
+    /// Bun).
+    #[allow(clippy::result_large_err)]
+    pub async fn answer_request(&self, req: Request<Incoming>, peer: std::net::SocketAddr) -> Result<Response<Body>, Request<Incoming>> {
+        if browsers::routes::owns(req.method(), req.uri().path(), req.headers()) {
+            return Ok(self.browsers.answer(req, peer.port(), &self.browser_routes).await);
+        }
+        Err(req)
+    }
+
+    /// The routes the Rust board answers that need a request's body or slow work (R6's files, outputs and Changes
+    /// routes): the answer, or the request for the next routes (as it came) or for Bun (its body already read).
+    pub async fn answer_async(&self, req: Request<Incoming>) -> Result<Response<Body>, Next> {
+        self.git.answer(req).await
+    }
+
     fn secrets(&self) -> Vec<String> {
         passes::current_secrets(&self.root)
     }
 
-    fn json(&self, status: StatusCode, v: &Value) -> Response<Body> {
+    fn json_at(&self, status: StatusCode, v: &Value) -> Response<Body> {
         passes::json_answer(status, v, &self.secrets())
     }
 
     fn error(&self, status: StatusCode, msg: &str) -> Response<Body> {
-        self.json(status, &json!({ "error": msg }))
+        self.json_at(status, &json!({ "error": msg }))
     }
 
     /// Every request in board mode, from this Mac's listener (`via` Local) or the phone access listener (Remote).
@@ -258,22 +482,48 @@ impl BoardMode {
         if let Some(why) = request::refusal(&seen, self.public_port, remote.as_ref(), via) {
             return refused(why);
         }
+        if via == Listener::Remote {
+            self.note_visit();
+        }
         // 3. Own routes.
         if !wants_upgrade(req.headers())
             && let Some(own) = own_route(req.method(), req.uri().path())
         {
-            if via == Listener::Remote {
-                self.note_visit();
-            }
             return self.own(own, req.map(|b| b.boxed()), via).await;
         }
-        // 4. Bun (and the front's native routes on this Mac).
-        match via {
-            Listener::Local => match native.answer(req, peer).await {
+        // 4. The other tasks' routes. They check this Mac's Host and Origin themselves; a phone request that passed
+        // the gate above is shown to them with this Mac's Host and Origin, and given back as it came. Their
+        // user-only checks look at the caller, which for the phone is `tailscale serve`: they refuse the phone
+        // (stricter than Bun, which lets the owner's phone in).
+        let mut req = req;
+        let sent = (via == Listener::Remote).then(|| as_local(req.headers_mut(), self.public_port));
+        if let Some(res) = self.answer(&req).await {
+            return res;
+        }
+        if let Some(res) = self.answer_sessions(&req).await {
+            return res;
+        }
+        let req = match self.answer_request(req, peer).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
+        let req = match self.answer_team(req).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
+        let req = match self.answer_async(req).await {
+            Ok(res) => return res,
+            Err(Next::Untouched(r)) => r,
+            // Its body already read: straight to Bun.
+            Err(Next::Bun(r)) => return to_bun(r, peer, sent, proxy).await,
+        };
+        // 5. Bun (and the front's native routes on this Mac).
+        match sent {
+            Some(_) => to_bun(req.map(|b| b.boxed()), peer, sent, proxy).await,
+            None => match native.answer(req, peer).await {
                 Ok(res) => res,
                 Err(req) => proxy.forward(req, peer).await,
             },
-            Listener::Remote => proxy.forward_as(req.map(|b| b.boxed()), peer, &[(edge::VIA_HEADER, "remote")]).await,
         }
     }
 
@@ -304,7 +554,7 @@ impl BoardMode {
             match self.core.services.satellite.frontdesk_gate(ask).await {
                 Ok(Some(held)) => {
                     let status = held.get("status").and_then(Value::as_u64).and_then(|s| StatusCode::from_u16(s as u16).ok()).unwrap_or(StatusCode::OK);
-                    return self.json(status, held.get("body").unwrap_or(&Value::Null));
+                    return self.json_at(status, held.get("body").unwrap_or(&Value::Null));
                 }
                 Ok(None) => {}
                 Err(e) => return self.error(StatusCode::INTERNAL_SERVER_ERROR, &e),
@@ -317,28 +567,28 @@ impl BoardMode {
         let query = parts.uri.query();
         match own {
             Own::Events => events::stream(&self.core.bus, self.hooks.clone(), events::PING_EVERY),
-            Own::Health => self.json(StatusCode::OK, &system::health().await),
-            Own::Version => self.json(StatusCode::OK, &self.updates.status().await),
+            Own::Health => self.json_at(StatusCode::OK, &system::health().await),
+            Own::Version => self.json_at(StatusCode::OK, &self.updates.status().await),
             Own::CronPreview => {
-                let expr = query_param(query, "expr");
+                let expr = query_value(query, "expr");
                 let v = tokio::task::spawn_blocking(move || cron::preview(expr.as_deref())).await.unwrap_or(Value::Null);
-                self.json(StatusCode::OK, &v)
+                self.json_at(StatusCode::OK, &v)
             }
             Own::ClaudeProjects => {
                 let root = self.root.clone();
                 let v = tokio::task::spawn_blocking(move || system::claude_projects(&root)).await.unwrap_or(Value::Array(vec![]));
-                self.json(StatusCode::OK, &v)
+                self.json_at(StatusCode::OK, &v)
             }
-            Own::ClaudeDefaults => self.json(StatusCode::OK, &system::claude_defaults(&self.versions)),
-            Own::PickFolder => self.json(StatusCode::OK, &system::pick_folder().await),
+            Own::ClaudeDefaults => self.json_at(StatusCode::OK, &system::claude_defaults(&self.versions)),
+            Own::PickFolder => self.json_at(StatusCode::OK, &system::pick_folder().await),
             Own::Profile => {
                 let host = request::header_text(h, "host");
                 let port = if via == Listener::Remote { 0 } else { self.remote_port };
                 if via == Listener::Remote || !request::profile_allowed(request::has(h, RUN_HEADER), host.as_deref(), port) {
                     return self.error(StatusCode::FORBIDDEN, "profiles are taken from this Mac only");
                 }
-                match system::profile(query_param(query, "seconds").as_deref(), &self.root).await {
-                    Ok(v) => self.json(StatusCode::OK, &v),
+                match system::profile(query_value(query, "seconds").as_deref(), &self.root).await {
+                    Ok(v) => self.json_at(StatusCode::OK, &v),
                     Err(e) => self.error(StatusCode::INTERNAL_SERVER_ERROR, &e),
                 }
             }
@@ -359,7 +609,7 @@ impl BoardMode {
                 if !status.is_success() {
                     eprintln!("ckanban-rs: the satellite's {name}: {}", v.get("error").and_then(Value::as_str).unwrap_or(""));
                 }
-                self.json(status, &v)
+                self.json_at(status, &v)
             }
             None => self.error(StatusCode::NOT_FOUND, "not found"),
         }
@@ -371,9 +621,9 @@ impl BoardMode {
         let method = b.get("method").and_then(Value::as_str).unwrap_or("GET");
         let path = b.get("path").and_then(Value::as_str).unwrap_or("/");
         let body = b.get("body").filter(|v| !v.is_null());
-        let Ok(m) = Method::from_bytes(method.as_bytes()) else { return self.json(StatusCode::OK, &json!({ "status": 400, "body": { "error": "bad method" } })) };
+        let Ok(m) = Method::from_bytes(method.as_bytes()) else { return self.json_at(StatusCode::OK, &json!({ "status": 400, "body": { "error": "bad method" } })) };
         if !path.starts_with('/') {
-            return self.json(StatusCode::OK, &json!({ "status": 404, "body": { "error": "not found" } }));
+            return self.json_at(StatusCode::OK, &json!({ "status": 404, "body": { "error": "not found" } }));
         }
         let mut rb = Request::builder().method(m.clone()).uri(path).header("host", format!("127.0.0.1:{}", self.public_port));
         let bytes = match body {
@@ -383,7 +633,7 @@ impl BoardMode {
             }
             None => Bytes::new(),
         };
-        let Ok(req) = rb.body(full(bytes)) else { return self.json(StatusCode::OK, &json!({ "status": 404, "body": { "error": "not found" } })) };
+        let Ok(req) = rb.body(full(bytes)) else { return self.json_at(StatusCode::OK, &json!({ "status": 404, "body": { "error": "not found" } })) };
         let peer = SocketAddr::from(([127, 0, 0, 1], 0));
         let res = match own_route(&m, path) {
             Some(own) => self.own(own, req, Listener::Local).await,
@@ -398,7 +648,7 @@ impl BoardMode {
             Err(_) => Bytes::new(),
         };
         let data = serde_json::from_slice::<Value>(&text).unwrap_or(Value::Null);
-        self.json(StatusCode::OK, &json!({ "status": status, "body": data }))
+        self.json_at(StatusCode::OK, &json!({ "status": status, "body": data }))
     }
 
     /// After the satellite answers: follow its event stream, give it the live state, and send it the board's events.
@@ -425,10 +675,23 @@ impl BoardMode {
     }
 }
 
-/// A body read whole, up to `MAX_BODY`.
-async fn read_body(body: Body) -> Result<Bytes, String> {
-    let limited = http_body_util::Limited::new(body, MAX_BODY);
-    limited.collect().await.map(|c| c.to_bytes()).map_err(|e| format!("can't read the request body: {e}"))
+/// Paths the board's read routes may answer (`ckanban_board::index::routes`); the rest of `/api/profiles/...` goes
+/// on to Bun without a trip to the blocking pool.
+fn is_read_route(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+    match parts.as_slice() {
+        ["api", "inbox", ..] | ["api", "tickets"] | ["api", "profiles"] | ["api", "profiles", _] => true,
+        ["api", "profiles", _, "tickets"] | ["api", "profiles", _, "tickets", _] => true,
+        _ => false,
+    }
+}
+
+fn json_text(status: u16, text: String) -> Response<Body> {
+    use http_body_util::{BodyExt, Full};
+    let mut r = Response::new(Full::new(bytes::Bytes::from(text)).map_err(|never| match never {}).boxed());
+    *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    r.headers_mut().insert(hyper::header::CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json"));
+    r
 }
 
 /// The boards (folders under `profiles/`): a few names, read once at start.
@@ -440,32 +703,56 @@ fn boards(root: &Path) -> Vec<String> {
     out
 }
 
+/// A header as Bun's `headers.get` gives it: every value joined with ", "; None when it isn't sent.
+fn joined(h: &HeaderMap, name: &str) -> Option<String> {
+    let vals: Vec<String> = h.get_all(name).iter().map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()).collect();
+    (!vals.is_empty()).then(|| vals.join(", "))
+}
+
+/// The path parts after `/api/` as Bun splits them (`split("/").filter(Boolean)`, then `decodeURIComponent`); None
+/// when one can't be decoded (Bun answers "malformed URL").
+fn api_parts(rest: &str) -> Option<Vec<String>> {
+    rest.split('/').filter(|p| !p.is_empty()).map(decode_component).collect()
+}
+
+/// `decodeURIComponent`: `%XX` bytes must make UTF-8, and a `%` must start one.
+fn decode_component(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = |c: u8| (c as char).to_digit(16);
+            let (h, l) = (hex(*b.get(i + 1)?)?, hex(*b.get(i + 2)?)?);
+            out.push((h * 16 + l) as u8);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn own_routes_match_bun_conditions() {
-        let g = Method::GET;
-        let p = Method::POST;
-        assert_eq!(own_route(&g, "/api/health"), Some(Own::Health));
-        assert_eq!(own_route(&g, "/api//health/x"), Some(Own::Health));
-        assert_eq!(own_route(&p, "/api/health"), None);
-        assert_eq!(own_route(&g, "/api/events"), Some(Own::Events));
-        assert_eq!(own_route(&g, "/api/version"), Some(Own::Version));
-        assert_eq!(own_route(&g, "/api/version-history"), None);
-        assert_eq!(own_route(&g, "/api/cron/preview"), Some(Own::CronPreview));
-        assert_eq!(own_route(&g, "/api/cron/preview/x"), None);
-        assert_eq!(own_route(&g, "/api/claude/projects"), Some(Own::ClaudeProjects));
-        assert_eq!(own_route(&g, "/api/claude/defaults/x"), Some(Own::ClaudeDefaults));
-        assert_eq!(own_route(&p, "/api/pick-folder"), Some(Own::PickFolder));
-        assert_eq!(own_route(&p, "/api/debug/profile"), Some(Own::Profile));
-        assert_eq!(own_route(&g, "/api/%68ealth"), Some(Own::Health));
-        assert_eq!(own_route(&g, "/api/%zz/health"), None);
-        assert_eq!(own_route(&g, "/health"), None);
-        assert_eq!(own_route(&g, "/api/usage"), None);
-        assert_eq!(decode_uri_component("a%2Fb%20").as_deref(), Some("a/b "));
-        assert_eq!(decode_uri_component("%e2%82"), None);
-        assert_eq!(decode_uri_component("%4"), None);
+    fn path_parts_decode_like_bun() {
+        assert_eq!(api_parts("profiles/my%20board//huddle-notes/_all/general"), Some(vec!["profiles".into(), "my board".into(), "huddle-notes".into(), "_all".into(), "general".into()]));
+        assert_eq!(api_parts("profiles/a%2Fb/x"), Some(vec!["profiles".into(), "a/b".into(), "x".into()]));
+        assert_eq!(api_parts("profiles/%zz"), None);
+        assert_eq!(api_parts("profiles/%E2%82"), None);
+        assert_eq!(api_parts("profiles/a+b"), Some(vec!["profiles".into(), "a+b".into()]));
+    }
+
+    #[test]
+    fn repeated_headers_are_joined() {
+        let mut h = HeaderMap::new();
+        h.append(HOST, "localhost:1".parse().unwrap());
+        h.append(HOST, "localhost:1".parse().unwrap());
+        assert_eq!(joined(&h, "host").as_deref(), Some("localhost:1, localhost:1"));
+        assert_eq!(joined(&h, "origin"), None);
     }
 }
