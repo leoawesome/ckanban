@@ -1,0 +1,11 @@
+# The contract test files that pass with the Rust board on (`bun run test:contract:rust-board`, board mode). A listed
+# file that fails, fails the run; each task adds the files (or tests) it makes pass. The flip (F2) needs every file in
+# test/contract listed without a filter.
+#
+# One per line: a file in test/contract, optionally `| <pattern>` to run only the tests whose names match it (bun test
+# -t) while the rest of the file still needs a later task. `#` starts a comment.
+
+# R0: the switch and its fallbacks; the event stream (the satellite's events re-emitted on Rust's stream). The other
+# event stream test creates a ticket, which needs R2a.
+rust-board-mode.test.ts
+callers.test.ts | event stream carries

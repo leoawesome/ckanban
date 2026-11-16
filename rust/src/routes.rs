@@ -130,7 +130,7 @@ fn is_mutation(m: &Method) -> bool {
 }
 
 /// `requestRefusal` on the local listener: the Host must be localhost or 127.0.0.1 on the board's port.
-fn local_host(headers: &HeaderMap, port: u16) -> bool {
+pub(crate) fn local_host(headers: &HeaderMap, port: u16) -> bool {
     let Some(host) = headers.get(HOST).and_then(|h| h.to_str().ok()) else { return false };
     LOCAL_HOSTS.iter().any(|h| host == format!("{h}:{port}"))
 }

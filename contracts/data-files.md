@@ -105,6 +105,7 @@ it listed).
   learned/scanned-at.json                                                                         CACHE
   notify.json  push.json  remote.json  automation-passes.json  helper.json                        CORE (some secrets)
   automation-passes.json.lock                                                                     STATE (empty lock file)
+  board.lock  rust-board  rust-board-status.json                                                  STATE (who owns the board)
   devices.json  browsers.json  board-browsers.json  browsers/<id>/                                CORE
   spend-days.json  telegram-spend.json  telegram-desk-spend.json  helper-spend.jsonl  usage-windows.json   CORE (history)
   messages.json  waits.json  helper-state.json  telegram-*.json                                   STATE
@@ -166,6 +167,9 @@ push.json
 remote.json
 automation-passes.json
 automation-passes.json.lock
+board.lock                        # empty; locked by the daemon that owns the board
+rust-board                        # the user (or scripts/rust-trial.sh board) writes it; the daemon only reads it
+rust-board-status.json            # only `ckanban-rs dev` writes it
 helper.json
 devices.json
 browsers.json
@@ -243,7 +247,7 @@ Saved files with no schema or check yet, and why: `activity.jsonl.gz` (only for 
 `.key-backups/` (raw file copies written by the `ckanban mcp` process's `backup_file` tool, not by the daemon), `outputs/` files other than `status.json` (made by runs or the
 board on events the test doesn't cause), `browsers.json`, `board-browsers.json` and `browsers/` (start Chrome),
 `helper-spend.jsonl`, `messages.json` and `helper-state.json` (the helper's first check waits a minute and needs a
-real Claude answer), and the `telegram-*.json` files (need a Telegram bot). Caches (`simplified.json`,
+real Claude answer), and the `telegram-*.json` files (they need a paired Telegram bot; `helper.test.ts` pairs one against a fake Bot API, but `data-files.test.ts` doesn't). Caches (`simplified.json`,
 `context.json`, `session-summaries.json`, `mcp-seen.json` and the others in "Caches") have no schema: a port may
 rebuild them in its own format; `usage-last.json` is the exception because the Bun daemon and the Rust front share
 it.
@@ -507,7 +511,8 @@ Fix it.
   Always set at creation: `id`, `sessionId` (a random UUID), `title` (or null), `firstMessage`, `createdAt`,
   `updatedAt`, `started: false`, `ticketId: null`, `error: null`. A fork (`QuickChats.fork`) starts with
   `firstMessage: null` and a made-up title, then copies the source's `firstMessage` and sets `started: true` once the
-  copied transcript is there. Schema: `schemas/quick-chat.schema.json`.
+  copied transcript is there. The view's `renamed`, `running`, `activity` and `waiting` are never saved. Delete
+  removes `<id>.json` and `<id>.activity.jsonl`. Schema: `schemas/quick-chat.schema.json`.
 - **Writer:** `QuickChats.save` (atomic). **Outside edits:** `get` reads every call; the list is an mtime/size cache
   over files matching `^[a-z0-9]+\.json$`. **Tier:** CORE.
 
@@ -653,11 +658,11 @@ chat.
 
 | Path | Format | Writer | Outside edits |
 | --- | --- | --- | --- |
-| `huddle-presets.json`, `profiles/<slug>/huddle-presets.json` | JSON array, pretty +nl, of `HuddlePreset` `{ name, role, prompt, model, mode, lead, canEdit, workspace }` (`huddle-presets.ts`). Global then board, merged over built-ins. Schema: `schemas/huddle-presets.schema.json` | `Store.saveHuddlePresets` (atomic) | every read; bad entries and repeated names dropped and each entry rebuilt by `cleanPresets` (unknown fields are lost on the next save) |
+| `huddle-presets.json`, `profiles/<slug>/huddle-presets.json` | JSON array, pretty +nl, of `HuddlePreset` `{ name, role, prompt, model, mode, lead, canEdit, workspace }` (`huddle-presets.ts`). Global then board, merged over built-ins. Saving at `global` also removes the board's own entry of that name (the board file can become `[]`); the same for templates. Schema: `schemas/huddle-presets.schema.json` | `Store.saveHuddlePresets` (atomic) | every read; bad entries and repeated names dropped and each entry rebuilt by `cleanPresets` (unknown fields are lost on the next save) |
 | `huddle-templates.json`, `profiles/<slug>/huddle-templates.json` | JSON array, pretty +nl, of `HuddleTemplate` `{ name, label, description, roster, rounds, maxCostUsd, report, hostRules }` (`huddle-templates.ts`); older files may lack `hostRules` (reads as `""`). Schema: `schemas/huddle-templates.schema.json` | `Store.saveHuddleTemplates` (atomic) | every read; bad entries and repeated names dropped and top-level fields rebuilt by `cleanTemplates` |
 | `huddle-notes/<role>.md` (general), `profiles/<slug>/huddle-notes/<role>.md` (this repo) | Markdown: `# Huddle notes: role <role>, all repos` (or `all roles` / `this repo`), a `<!-- Newest first. ... -->` line, a blank line, then `- <text> <!-- from @qa-1, 2026-11-10, huddle h_abc -->` or `<!-- by you, 2026-11-10 -->` per note; the date and huddle parts are left out when the note has none (`- <text> <!-- by you -->`). The file ends with one newline. `<role>` is `_all` or a preset name | `Store.writeHuddleNotes`, `Learner` (atomic) | every read |
 | `profiles/<slug>/learned-rules.md` | Markdown: `# Lessons learned on this board`, a `<!-- ... -->` line, a blank line, then `- <text> <!-- by you, 2026-11-10 -->` lines. Every run on the board gets them. Deleted when empty | `Learner.put` (atomic) | every read |
-| `learned/pile.json` | JSON object, pretty +nl: `Pile` `{ candidates, scanned, since?, tidyAt?, seen? }` (`learn.ts`) | `Learner` (atomic) | every read |
+| `learned/pile.json` | JSON object, pretty +nl: `Pile` `{ candidates, scanned, since?, tidyAt?, seen? }` (`learn.ts`); a helper's lessons (huddle status done) are added as `watching` candidates even when the side call that sorts them fails | `Learner` (atomic) | every read |
 | `learned/changes.json` | JSON array, pretty +nl, of `LearnChange` (last 500); what Undo uses | `Learner` (atomic) | every read |
 | `avatars.json` | JSON object, pretty +nl: name -> `SavedLook` (`avatars.ts`), cleaned on read and write (unknown fields dropped), at most 500. Schema: `schemas/avatars.schema.json` | `Store.saveAvatars` (atomic) | every read |
 | `snippets.json` | JSON array, pretty +nl, of `Snippet` `{ id, name, text, scope: "global" \| <slug>, createdAt, updatedAt }` | `Snippets` (atomic) | every read |
@@ -708,6 +713,9 @@ Read once and held in memory; the daemon's next save overwrites outside edits.
 | `telegram-updates.json` | compact JSON +nl `{ bot, items, seen }` | same |
 | `telegram-offset.json` | compact JSON +nl `{ bot, offset }` | `helper/telegram.ts`, fixed-tmp |
 | `telegram-frontdesk.json` | compact JSON +nl `DeskState` without `token` | `helper/frontdesk.ts`, atomic |
+| `board.lock` | empty; an exclusive `flock` held for as long as a daemon owns the board (macOS `O_EXLOCK` in Bun) | Bun in full mode (`core/board-lock.ts`) and `ckanban-rs dev` in board mode (`rust/board/src/lock.rs`) take it before loading the board and refuse to start without it (waiting up to 10 s and 5 s); Bun as the Rust board's satellite doesn't |
+| `rust-board` | `on` (whitespace around it ignored) turns the Rust board on when `CKANBAN_RUST_BOARD` is unset; anything else, or no file, is off | the user or `scripts/rust-trial.sh board` (`on`/`off` remove it); read by `ckanban-rs dev` at start; Bun alone ignores it |
+| `rust-board-status.json` | JSON (indent 2) +nl `{ mode: "rust" \| "bun", reason: string \| null, at, pid, running, crashes: iso[] }`: what this start of `ckanban-rs dev` runs and why; `running` stays true until a board-mode start stops cleanly (a crash otherwise, counted at the next start) | `ckanban-rs dev` (`rust/board/src/mode.rs`), atomic; written only when board mode was asked for, or to say it is off when the file already exists |
 
 ## Caches (rebuildable)
 

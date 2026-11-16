@@ -80,6 +80,25 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   into every tool group, checking the answer and its effect over HTTP. Calls "in a run" set `CKANBAN_TICKET` like the
   board does, to reach the run-only tools and the refusals a run gets. The daemon's `gh` is a stub that is never logged
   in, so `report_bug` never reaches GitHub.
+- `runs.ts` helps the run tests: per-ticket fake Claude scripts (`FAKE_SCRIPT_DIR` in `test/fixtures/fake-claude.ts`:
+  a ticket whose text holds `[fake:<name>]` follows `<name>.json`, one step per run: files, shell commands, outputs,
+  board calls with the run header, a wait for a gate file, a mode, a status, a summary, a PR link), the event stream
+  and waits. `daemon.ts` can also `kill` the server and `respawn` it on the same data folder (what launchd does).
+- `runs-life.test.ts`: a plain folder board: which column moves start a run (Ready, In Progress, Planning) and which
+  don't; the CKANBAN_RESULT line (done, blocked, questions as `needs_input`, no line, a failed run, a PR link);
+  `activity.jsonl` and the event stream; resume after a message; Stop and a move back to Backlog; a message while the
+  run works; a usage-limit wait and continue; a follow-up run now; `outputs/`; land on a plain folder.
+- `runs-git.test.ts`: a temp git repo with a temp bare remote, and one without a remote: a ticket's own copy and
+  branch, `diff`; a main ticket's run creates a tool ticket that starts from the main copy, commits and calls
+  `merge-into-main` (and its refusals); `land` pushes and opens one pull request through a stub `gh`, or merges into
+  the project folder without a remote; PR routes (`pr/refresh`, `pr/merge`, `check-pr`); `find-files`, `file`;
+  `version-history`; `branch`.
+- `runs-control.test.ts`: queued messages (send, edit, delete); fresh chat, fresh session, take-over, link-session;
+  the spending cap and `cap-continue`; a stalled run and `stall` restart (about a minute: the stall time is whole
+  minutes); a device let go at a run's end; `activity` paging; the ticket's `/usage`.
+- `runs-restart.test.ts`: `POST /api/restart` holds new runs until the active one ends, then the daemon exits and
+  the held ticket runs after the next start; a daemon stopped mid-run resumes a work run in its session, a follow-up
+  wake as a follow-up, and wakes a main ticket from its saved events.
 - `mcp-parity.test.ts`: with `CKANBAN_PARITY_MCP` (a JSON array naming a port of the MCP server), Bun's `ckanban mcp`
   and the port run side by side against one daemon and must give the same answers: `initialize`, `tools/list` byte
   for byte, and about 100 calls across every group, in and outside a run, refusals and argument errors included (ids and
@@ -100,6 +119,30 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   delete|setup|take-device|release-device|report-bug`, the routes, query strings and bodies of `list|show|create|update`,
   argument errors, HTTP errors and identity headers, `call`, and the stdio `ckanban mcp` protocol (the tool list
   against `cli.md` section 6).
+- `chat.test.ts`: the ticket chat beyond one message: questions forms (the `ask_questions` tool and the older
+  `<ckanban-questions>` block, a broken block), answers (one run for the same answer twice), Close question, proposals
+  (`propose_ticket`) and Apply, follow-up work, mockup blocks saved to `outputs/mockups`, a message that steers a working
+  run, `draft` events, the `/` commands (list, `/model`, `/effort`, refused ones, a project command) and the Planning
+  chat's tool limits. The fake Claude's `FAKE_PLAN_FILE` makes a turn call tools or add text when its message holds a
+  marker.
+- `chat-session.test.ts`: conversation paging, tool, agent and workflow details, simplify and "help me understand"
+  (`FAKE_SIDE_JSON`), context, the usage summary, rewind with its preview and undo, and fork (`FAKE_UUIDS` gives the
+  fake Claude's transcript lines uuids, as the real CLI's).
+- `quickchat.test.ts`: every quick chat route (start, list pages, read, reply, rename, context, stop, make ticket,
+  conversation, simplify, rewind, undo, fork, delete), its user-only checks, `chat.draft`, `chat.updated` and
+  `chat.activity` events and its files; chat search and read and who may reach which chat.
+- `huddle.test.ts`: teammates and squads (files byte for byte, scopes, refusals), a huddle from a roster and from a
+  squad, posts by the user, a helper and @main, findings, hand-ins (reject, accept into the plain folder), close and
+  its summary, the budget stop, resume, and `huddle.*` events (tokens never leave `huddles/<id>.json`).
+- `helper.test.ts`: what waits on the user (inbox, cards, the webhook send), notify settings and `notify.json`, the
+  helper's status, settings and feedback, messages pages and buttons, a ticket's own notify, phone push against a
+  local https fake push service, and Telegram (token, pairing, `/waiting`, an urgent alert and its buttons, a reply
+  into a ticket's chat, the front desk with a held move and its Confirm) against a local fake Bot API
+  (`CKANBAN_TELEGRAM_URL`). Nothing reaches a real service; a `Google Chrome` symlink to bun passes the daemon's
+  browser check for the routes only the Mac's browser may use.
+- `huddle-team.test.ts`: brief, status, adding participants, mode, stop and restart one, invite, seen, close request,
+  learnings, an auto huddle started from a work run (fake Claude in `call` mode), `learned`, role notes and
+  `/api/team-usage`.
 
 Run them with `bun test test/contract` (each file starts its own daemon, about half a second); `bun run test` runs them
 with everything else.
@@ -108,8 +151,9 @@ To test another server: build it and run
 `CKANBAN_CONTRACT_DAEMON='["/path/to/server","dev"]' bun test test/contract` (add `CKANBAN_CONTRACT_CLI` if the CLI
 moves too, and `CKANBAN_CONTRACT_MCP` for the MCP server). The server must take its port from `CKANBAN_PORT`, its data folder from `CKANBAN_HOME`, the Claude
 program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_DIR`, and honour `CKANBAN_USAGE_URL`
-and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`), and `CKANBAN_TICK_MS` (the period of the timers that fire
-schedules, jobs, automations and follow-ups; see "Work the board starts by itself" in `api.md`).
+`CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`), `CKANBAN_TELEGRAM_URL` (see "Notifications" in `api.md`) and
+`CKANBAN_TICK_MS` (the period of the timers that fire schedules, jobs, automations and follow-ups; see "Work the board
+starts by itself" in `api.md`).
 
 `bun run test:contract:rust` does this for the Rust front server (`rust/`): it builds `ckanban-rs` (release) and runs
 every contract test with it as the daemon, and `ckanban-rs mcp` as the MCP server (`mcp.test.ts`, `mcp-parity.test.ts`). It needs cargo, so `bun run test` leaves it out.

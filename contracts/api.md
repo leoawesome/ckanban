@@ -93,6 +93,16 @@ and stdin is not read. The remote listener (`CKANBAN_REMOTE_PORT`) is never behi
 notices from the front: `changed automation-passes.json` after the front changed that file itself; the daemon then
 sends the `integration.updated` event, as after its own writes.
 
+**The Rust board (board mode, trial).** With `CKANBAN_RUST_BOARD=1`, or that variable unset and `<data>/rust-board`
+holding `on`, `ckanban-rs dev` owns the board itself and starts the daemon as its satellite with `CKANBAN_SATELLITE=1`
+added (`docs/rust-port-board-plan.md` 3.3). The satellite starts no runs, timers or watchers, refuses every ticket
+write (`ticket.md`, comments, run logs; logged, and the route answers with the error), and takes stdin lines `event
+<json>` (a board event for its own listeners, not for its event stream) and `runtime <json>` (live state: `running`,
+`hostHuddles`, `sessions`). The front answers `GET /api/events` itself and re-emits the satellite's events on it. If
+board mode can't start (the `board.lock` is held, the core fails, or three unclean ends within 10 minutes), the
+daemon runs in full mode as without it; `rust-board-status.json` says which and why (`data-files.md`). Unset, none
+of this applies. Without a front, `CKANBAN_SATELLITE=1` stops the daemon at start.
+
 **Run rights (`runRights`).** Ticket changes sent with `x-ckanban-run` are allowed only for: a Planning chat answering
 the user's typed message (any ticket of its board but its own: "requester"); a main ticket or tool group on its own
 family ("planner"); an active work run or chat reply on other tickets of its board ("runner"); a chat on another board
@@ -149,14 +159,14 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 | GET | `/api/version` | | 200 `UpdateChecker.status()` (update.ts) | |
 | GET | `/api/usage` | query `fresh=1` asks Anthropic now (still at most one call a minute) | 200 `UsageView` (usage-cache.ts), see "Plan usage" below | |
 | GET | `/api/spend` | | 200 `SpendIndex.recent()` (spend.ts): `{ day, costUsd, boards }`, see "Today's spend" below | |
-| GET | `/api/team-usage` | | 200 `Huddles.usage()`: use of each preset and template | |
+| GET | `/api/team-usage` | | 200 `{teammates: {name: Usage}, templates: {name: Usage}}`, `Usage {huddles, lastUsed, costUsd, recent: [{board, huddle, ticket, title, at, costUsd}]}` (newest first, at most 5), over every board's huddles, closed ones included | |
 | GET | `/api/awake` | | 200 `{held: boolean}` | |
 | GET | `/api/restart` | | 200 `Board.restartState()` | |
 | POST | `/api/restart` | body ignored | 200 `{running, alreadyPending}` | 501 not running as the daemon |
 | GET | `/api/claude/projects` | | 200 list of Claude Code projects (`listClaudeProjects`) each with `hasProfile` | |
 | GET | `/api/claude/defaults` | | 200 `claudeDefaults()` plus `versions` (learned model versions) | |
 | POST | `/api/pick-folder` | body ignored | 200 `{path}` from the native folder picker | |
-| GET | `/api/version-history` | query `path` (absolute) | 200 `{git, repo}`: git binary path or null; `repoKind()` or null | 400 path missing or not absolute |
+| GET | `/api/version-history` | query `path` (absolute) | 200 `{git, repo}`: `git` true when git is installed (else false); `repo` is `repoKind()` (`plain`, `empty`, `local` or `remote`) or null when git is missing or the folder doesn't exist | 400 path missing or not absolute |
 | POST | `/api/version-history` | `{path}` (absolute) | 200 `enableVersionHistory()` result plus `repo` | 400 path, 400 git not installed, 404 folder missing, 409 a run is editing that folder, 500 git failed |
 | GET | `/api/cron/preview` | query `expr` | 200 `{valid, error, summary, next: ISO[3]}`; invalid gives `valid:false` with `error` | |
 | POST | `/api/bug-report/draft` | `{profile?, ticketId?}` | 200 `draftReport()` (bugreport.ts) | `BugReportError` status |
@@ -298,28 +308,34 @@ time of the last grant). A ticket's run takes and lets go with `POST .../tickets
 
 All `/api/notify`, `/api/messages`, `/api/helper` and `/api/push` routes answer 403 to `x-ckanban-run`.
 
+The Telegram Bot API address is `https://api.telegram.org` unless `CKANBAN_TELEGRAM_URL` is set (a trailing `/` is
+dropped): a test hook that points the daemon at a local fake Bot API, never set on a real Mac. The public Telegram state
+in `Notifier.state()` (`telegram`) is `{paired, tokenSet, tokenMasked ("set ...1234"), status ("no-token", "ok"...),
+botName ("@name"), chatName, frontDesk, pairing: {expiresAt} | null, pairError}`, never the token or `chatId`; pairing
+from a board sets `frontDesk` to that board.
+
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/api/notify` | | 200 `Notifier.state()` plus `local` | |
-| POST | `/api/notify` | settings patch (`Notifier.update`); user only | 200 new state plus `local` | 403 user only or Mac-only setting from the phone (`MacOnlyError`), 400 invalid |
-| POST | `/api/notify/test` | `{profile?}` | 200 `Notifier.test()` result plus `state` | |
+| POST | `/api/notify` | settings patch (`Notifier.update`); user only | 200 new state plus `local` | 403 user only or Mac-only setting from the phone (`MacOnlyError`; a `telegram.token` change from the phone answers `Pair Telegram from the Mac.`), 400 invalid (the typed token is never echoed) |
+| POST | `/api/notify/test` | `{profile?}` | 200 `Notifier.test()` result plus `state`; the test is saved in `messages.json` with level `"test"` | |
 | POST | `/api/notify/telegram/pair` | `{board?}`; user only; local only | 200 `telegramPair()` result (pairing code) plus `state` | 403, 400 |
 | POST | `/api/notify/telegram/unpair` | user only | 200 state plus `local` | 403 |
 | POST | `/api/telegram/front-desk/file` | header `x-ckanban-frontdesk`; `{path, caption?}` | status and body from `FrontDesk.sendFile` | 403 without the header or with a run/huddle header |
-| GET | `/api/messages` | query `tab` (`needs`\|`all`\|`summaries`\|`quiet`, default all), `limit` (1..100, default 30), `beforeAt`+`beforeId` or `afterAt`+`afterId` | 200 `{rows, hasMore, needs, unread}` | |
+| GET | `/api/messages` | query `tab` (`needs`\|`all`\|`summaries`\|`quiet`, default all), `limit` (1..100, default 30), `beforeAt`+`beforeId` or `afterAt`+`afterId` | 200 `{rows, hasMore, needs, unread}`; `needs` is a number; rows are `{id, at, level, oneLine, readAt, needsYou?, held?, practice?}` (no ticket id) | |
 | POST | `/api/messages/read-all` | body ignored | 200 `{marked, unread}` | |
 | GET | `/api/messages/:id` | | 200 message with its states | 404 |
 | GET | `/api/messages/:id/near` | query `tab`, `keep` | 200 `nearOf()` result (newer and older message) | 404 |
 | POST | `/api/messages/:id/read` | body ignored | 200 `{message, unread}` | 404 |
 | POST | `/api/messages/:id/got-it` | `{key?}`; user only | 200 helper result plus `message`, `unread` | 404, 403, 503 helper not running, `HelperError` status, else 400 |
 | POST | `/api/messages/:id/not-urgent` | same | same | same |
-| GET | `/api/helper` | | 200 `HelperRunner.status()` | 503 helper not running |
+| GET | `/api/helper` | | 200 `HelperRunner.status()` (the daemon always has a helper, switched on or off) | 503 helper not running (only without one) |
 | POST | `/api/helper/settings` | settings patch; user only | 200 status | 403, 503, 400 |
 | GET | `/api/helper/feedback` | | 200 `{lines}` | 503 |
 | POST | `/api/helper/feedback` | `{text}`; user only | 200 `{line, lines}` | 403, 503, 400 |
 | DELETE | `/api/helper/feedback/:lineId` | user only | 200 `{lines}` | 403, 503, 404 |
 | POST | `/api/helper/should-have-pinged` | `{profile, ticketId}`; user only | 200 helper result plus `lines` | 400 missing fields, 403, 503 |
-| POST | `/api/helper/practice` | user only | 200 practice result | 403, 503, helper error status |
+| POST | `/api/helper/practice` | user only | 200 practice result | 403, 503, 409 `Turn the helper on first` while it is off, helper error status |
 | POST | `/api/helper/notice-seen` | user only | 200 status | 403, 503 |
 | GET | `/api/push` | | 200 `{publicKey, devices, dropped}` | |
 | POST | `/api/push/subscribe` | `{subscription, label?, replaces?}` | 200 `{id, label, createdAt}` | 400 invalid |
@@ -407,34 +423,37 @@ for an unknown board.
 | GET | `/api/profiles/:slug/chat/search` | query `ticket` (default: the caller's own run ticket), `q`, `tools=1` | 200 `{text}` | 400 no ticket or bad query, 404 ticket, 403 out of reach |
 | GET | `/api/profiles/:slug/chat/read` | query `ref` (`<sessionId>:<n>`), `before?`, `after?` | 200 `{text}` | 400 bad ref, 404 no such chat, 403 out of reach |
 
-Reach for chat search/read: huddle agents are refused; the user may read any; a run its own ticket, a main ticket its
-family, a chat answering the user's typed message any ticket on any board.
+Reach for chat search/read: huddle agents are refused; the user (no run header) may read any; a run its own ticket, a
+main ticket its family, a chat answering the user's typed message any ticket on any board. Anything else is 403
+`<id> is out of reach: ...`; a run of another board answering no typed message is 403 too.
 
 ## Quick chats
 
 Prefix `/api/profiles/:slug/chats`. "User only" here is the `userOnly` check. A route with `:cid` answers
-`404 chat not found` first for an unknown chat. `QuickChatView` is in quickchat.ts.
+`404 chat not found` first for an unknown chat. `QuickChatView` is in quickchat.ts. A huddle helper
+(`x-ckanban-huddle-agent`) is refused like a run; the refusal reads `Quick chats is for the user only, from the board in
+a browser: ...`.
 
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/chats` | query `limit?`, `before?` | no `limit`: 200 `QuickChatView[]`; with `limit`: 200 `{chats, next}` | |
-| POST | `/chats` | `{text}`; user only | 201 `QuickChats.send()` result (new chat) | 403, `QuickChatError` |
+| POST | `/chats` | `{text}`; user only | 201 `QuickChats.send()` result (new chat) | 403, 400 empty message, 413 message too long |
 | GET | `/chats/:cid` | | 200 `QuickChatView` | 404 |
 | PATCH | `/chats/:cid` | `{title}`; user only | 200 renamed chat | 403 |
 | DELETE | `/chats/:cid` | user only | 204 | 403 |
 | GET | `/chats/:cid/context` | | 200 cached context usage (`ContextUsage.view`) | |
 | POST | `/chats/:cid/context` | user only | 200 fresh context usage | 403, 409 |
-| POST | `/chats/:cid/messages` | `{text}`; user only | 200 send result | 403, `QuickChatError` |
+| POST | `/chats/:cid/messages` | `{text}`; user only | 200 send result | 403, 400 empty, 413 too long, 409 the chat became a ticket, is being made into one or is being rewound |
 | POST | `/chats/:cid/stop` | user only | 200 `QuickChatView` | 403 |
-| POST | `/chats/:cid/ticket` | `{partOf?}`; user only | 201 `{ticket: TicketView, chat}` | 403, 400 partOf |
+| POST | `/chats/:cid/ticket` | `{partOf?}`; user only | 201 `{ticket: TicketView, chat}` | 403, 400 bad or unknown `partOf`, 409 already a ticket, Claude still replying, no message yet, or the front desk's chat |
 | GET | `/chats/:cid/conversation` | query `limit` (1..500, default 100), `before` (index) | 200 `{entries: SessionEntry[], start, total}` | |
 | GET | `/chats/:cid/simplified` | | 200 saved plain-words versions | |
 | POST | `/chats/:cid/simplify` | `{uuid}`; user only | 200 simplified text | 403, 404 message, `SimplifyError` |
 | GET | `/chats/:cid/rewind` | query `uuid` | 200 `{blocked, files: null, filesReason: "quick-chat"}` | 404 not rewindable |
-| POST | `/chats/:cid/rewind` | `{uuid}`; user only | 200 `QuickChats.rewind()` result | 403, 404 |
+| POST | `/chats/:cid/rewind` | `{uuid}`; user only | 200 `QuickChats.rewind()` result | 403, 404 not a message it can rewind to (or the conversation file is missing), 409 blocked, 400 the cut failed |
 | GET | `/chats/:cid/rewind-undo` | | 200 `{available, blocked, messages, files: 0, filesSaved: false}` | |
 | POST | `/chats/:cid/rewind-undo` | user only | 200 undo result | 403, `QuickChatError` |
-| POST | `/chats/:cid/fork` | `{uuid}`; user only | 201 `{id, text, chat}` | 403, 404 |
+| POST | `/chats/:cid/fork` | `{uuid}`; user only | 201 `{id, text, chat}` | 403, 404 not a message it can fork from, 409 blocked, 400 the copy failed |
 | GET | `/chats/:cid/tool/:toolUseId` | | 200 tool call detail | 404 |
 
 ## Schedules
@@ -527,21 +546,21 @@ Prefix `/api/profiles/:slug`. Writes here refuse `x-ckanban-run` and `x-ckanban-
 | GET | `/huddle-presets` | | 200 `Huddles.presets()` (built-in, global and board teammates) | |
 | POST | `/huddle-presets` | preset fields plus `scope?` | 201 saved preset | 403, `HuddleError` |
 | PUT | `/huddle-presets/:name` | preset fields plus `scope?` (name from the path) | 200 saved preset | 403, `HuddleError` |
-| DELETE | `/huddle-presets/:name` | query `scope?` | 200 `deletePreset()` result | 403, `HuddleError` |
+| DELETE | `/huddle-presets/:name` | query `scope?` | 200 `{reset, presets}` (`reset: true` when a lower level still has it) | 403, 404 not at this level, 409 a built-in |
 | GET | `/huddle-templates` | | 200 `Huddles.templates()` (squads) | |
 | POST | `/huddle-templates` | template fields plus `scope?` | 201 | 403, `HuddleError` |
 | PUT | `/huddle-templates/:name` | same | 200 | 403, `HuddleError` |
-| DELETE | `/huddle-templates/:name` | query `scope?` | 200 | 403, `HuddleError` |
+| DELETE | `/huddle-templates/:name` | query `scope?` | 200 `{reset, templates}` | 403, 404 not at this level, 409 a built-in |
 | POST | `/squads` | `{squad, scope?, replace?, card?: {ticketId, uuid} \| {huddleId, learningId}}` | 201 `{squad, teammates, ...}`; a ticket card is marked saved | 403, 400 bad card, 404 card ticket, 409 name taken without `replace` |
-| GET | `/learned` | query `count=1` | 200 `Learner.view()`, or `{newCount}` with `count=1` | |
-| POST | `/learned/seen` | | 200 view | 403, `LearnError` |
+| GET | `/learned` | query `count=1` | 200 `Learner.view()` `{saved, cleaned, watching, newCount, tidyAt}`, or `{newCount}` with `count=1` | |
+| POST | `/learned/seen` | | 200 view (writes `learned/pile.json` `seen[<slug>]`, `newCount` 0) | 403, `LearnError` |
 | POST | `/learned/changes/:id/undo` | | 200 result | 403, `LearnError` |
 | POST | `/learned/changes/:id/redo` | | 200 result | 403, `LearnError` |
 | POST | `/learned/lessons/:id/save` | | 200 result | 403, `LearnError` |
 | POST | `/learned/lessons/:id/drop` | | 200 result | 403, `LearnError` |
 | POST | `/learned/lessons/:id/keep` | | 200 result | 403, `LearnError` |
 | GET | `/huddle-notes` | | 200 `{notes, cap}` | |
-| PUT | `/huddle-notes/:role/:scope` | `{notes}` | 200 `setNotes()` result | 403, `HuddleError` |
+| PUT | `/huddle-notes/:role/:scope` | `{notes: [{text, by?, date?, huddle?}]}`; `scope` `general` (root `huddle-notes/<role>.md`) or `repo` (`profiles/<slug>/huddle-notes/<role>.md`) | 200 the saved list `{text, by, date, huddle}` (`by` defaults to `you`; a bad date or huddle id becomes null) | 403, 400 bad role, scope, empty note or notes not a list |
 
 ## Huddles
 
@@ -585,6 +604,33 @@ are `HuddleView` (huddle.ts); participant objects never include their `token`.
 | POST | `/huddles/:hid/hand-ins/:handle/reject` | `{reason?}` | 200 review result | `HuddleError` |
 | POST | `/huddles/:hid/findings` | `{action?: "add"\|"resolve"\|"list", text?, id?}` | 200 findings result | `HuddleError` |
 
+Details the contract tests check (`test/contract/huddle.test.ts`, `huddle-team.test.ts`):
+- `:hid` may be `current`: a helper's own huddle, or a run's newest open huddle (preferring one it hosts); the user
+  gets 400 `pass a huddle id`. A wrong helper token, or a helper header naming another huddle, is 403.
+- `POST /huddles`: 400 no ticketId, bad roster or bad `maxCostUsd`; 404 unknown ticket or squad; 409 the ticket already
+  has an open huddle.
+- `POST /huddles/auto`: 403 also for a run that isn't the host ticket's unattended work run, and when auto huddles are
+  off without a `## Review huddle` section; 400 no reason, bad trigger, no roster (except `asked` with a squad); 404
+  unknown squad; 409 an open huddle or a second start in one run; `maxCostUsd` is capped at $100. Success sets the
+  ticket's `autoHuddle {state: "live", reason, trigger, template, at, huddleId}` and adds an `ai` comment.
+- `POST .../status`: 400 for the user, a bad status, blocked without a reason, lessons with a status other than done
+  or from a non-helper; 409 the participant was stopped.
+- `POST .../close-request`: only @main or a lead (403); 409 until `outputs/huddles/<hid>/summary.md` exists in the host
+  ticket's folder; sets `closeRequest {by, at, reason}` (a trailing full stop dropped) and tags @you; an auto
+  huddle's @main closes it at once.
+- Close writes `outputs/huddles/<hid>/summary.md` in the host ticket's folder: the board writes it at once when the
+  host can't run (no session yet, or Done), otherwise @main is asked for it.
+- Participants: POST by the user, @main or a lead (403 otherwise), 400 bad entry, 409 full; PATCH `{mode}` by the user
+  for anyone, a helper only for itself (403), 404 unknown, 400 bad mode; `restart` 409 unless stopped or failed, or
+  when the huddle is closed.
+- `invite`: the user or @main only (403); 404 unknown ticket; 409 already in it or full. The handle is `<planKey or
+  first word of the title>-main`, lower-cased, with `-2`, `-3`... when taken; the invited ticket's run posts as it.
+- `seen`: 400 when `seq` isn't a number; the cursor never moves past the last message.
+- `POST .../teammates`: helpers only (400 otherwise); 400 invalid or no `why`, or 2 already waiting from this helper;
+  201 learning `{id: "l<n>", from, status: "pending", scope: "general", target: "new", teammate}`. Learnings PATCH and
+  save: 400 bad scope or a `target` on a teammate or squad proposal; 404 unknown; 409 already saved or discarded;
+  saving a teammate with scope `repo` writes the board's presets, `general` the global ones.
+
 ## Tickets: list, create, read, change, delete
 
 Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with `:id` answers
@@ -612,7 +658,7 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 
 **POST body.** `title` (required), `body`, `status` (one of `STATUSES`, default `backlog`), `mode` (`auto` or
 `interview`, default interview), `parentId`, `planKey`, `dependsOn: string[]`, `needs: string[]`, `tags: string[]`,
-`partOf`, `important`, `kind` (`TICKET_KINDS`), `model`, `effort`, `main: boolean`, `gather: {id, group}[]` (only with
+`partOf`, `important`, `kind` (`TICKET_KINDS`), `model`, `effort`, `main: boolean` (the user's own new ticket, with no run header, `parentId`, `partOf` or `sessionId`, is a main ticket even with `main: false`), `gather: {id, group}[]` (only with
 `main: true`), `newGroup`, `sessionId` (link an existing Claude session). Rules: `main: true` from a run
 needs a run answering the user's typed message (else 403) and refuses `parentId` and `sessionId` (400). A main
 ticket's (or tool group's) run adds tool tickets to its own family (400 unknown dependency). `parentId` from anyone
@@ -635,7 +681,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
-| POST | `/chat` | `{text, fresh?}` | 202 `TicketView` | 400 no text, 403 run rights, 409 loop or conflict |
+| POST | `/chat` | `{text, fresh?}` | 202 `TicketView` (while a run works, the message is in `queued` and steers it; `/model` and `/effort` only set the ticket and its `notice`) | 400 no text, 403 run rights, 409 loop or conflict, 500 other refusals (see Quirks) |
 | POST | `/queued/:msgId` | body ignored | 202 `TicketView` (sends a queued message now) | 404, 409 |
 | PATCH | `/queued/:msgId` | `{text}` | 200 `TicketView` | 400, 404, 409 |
 | DELETE | `/queued/:msgId` | | 200 `TicketView` | 404, 409 |
@@ -651,7 +697,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/workflow/:toolUseId/stop` | | 200 `stopWorkflow()` result | 403 run header, 400 not started or not running |
 | GET | `/comments` | query `last?`, `before?` | no `last`: 200 `Comment[]`; with `last`: 200 `{comments, earlier, total}` (max 500) | |
 | POST | `/comments` | `{text}` | 201 the new `Comment` | 400, 403 run rights |
-| GET | `/commands` | | 200 the `/` commands available in this ticket's chat | |
+| GET | `/commands` | | 200 the `/` commands available in this ticket's chat: `{name, kind, source, description}` (built-ins, the project's `.claude/commands`, skills); `local` and `hidden` are not sent | |
 | GET | `/rewind` | query `uuid` | 200 `{blocked, ...previewRewind()}` | 403 run header, 404 not rewindable |
 | POST | `/rewind` | `{uuid, files?}` (files default true) | 200 `{text, restored, messages, files, undo: true, filesSaved}` | 403, 404, 409 blocked |
 | GET | `/rewind-undo` | query `files=0` | 200 `{available, blocked, messages, files, filesSaved}` | 403 run header |
@@ -669,6 +715,22 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/help` | `{kind}` (one of `HELP_KINDS`) | 200 `Helper.ask()` result | 403 run header, 400 kind or nothing to explain, `HelpError` |
 | GET | `/usage` | | 200 `ticketUsage()` result (runs, windows, teammates, side spend) | |
 
+Run facts the contract tests pin down (`test/contract/runs-*.test.ts`):
+- Moving a ticket to `ready`, `in_progress` or `planning` starts a run (`planning`: an interview that can't edit
+  files); `backlog`, `review` and `done` don't. A run ends in `review` with `outcome` from the CKANBAN_RESULT line:
+  `done`, `blocked`, `questions` saved as `needs_input`; no line is `done`; a failed run `failed` with the error output
+  in `error`; Stop, or a move out of In Progress, `stopped`; the usage limit `limit` (with `limit.resetAt`, `message`).
+- The result's `summary` becomes an `ai` comment for `done` and `blocked`; for `questions` the comment is the final
+  text without the result line. Chat messages are not comments.
+- On a plain folder, runs that edit wait for each other (`folderWait`): one at a time per folder.
+- Messages sent while Claude runs reach it at its next step; those a Stop left unread stay in `queued` as `unsent`.
+- Every run is a new `claude -p` process: the ticket's first run uses `--session-id`, later ones `--resume` the same
+  session (fresh chat and fresh session start a new id).
+- `activity` events on the stream are `{type: "activity", profile, id, run, event}`. `GET /activity` pages are at most
+  512 KB; `before` is null on the page that starts the file.
+- POST `/api/restart` answers `{running, alreadyPending}`; `GET /api/restart` `{pending, waiting}`; a
+  `restart.updated` event carries the same. New runs wait; the daemon exits once no run is active.
+
 ## Ticket cards, family, plans and work
 
 Prefix `/api/profiles/:slug/tickets/:id`.
@@ -679,7 +741,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/key-cards/:uuid` | `{keys: {NAME: value}}` or `{self: true}`; user only | 202 `TicketView` | 403, 409 in flight or already answered or saved but not delivered, 404 box gone, 400 no key |
 | PUT | `/squad-cards/:uuid` | `{state: "saved"\|"dismissed", name?, scope?}` | 200 `TicketView` | 403 run/huddle header, 400 |
 | PUT | `/teammate-cards/:uuid` | `{state: "saved"\|"dismissed", name?, scope?}` | 200 `TicketView` | 403 run/huddle header, 400 |
-| PUT | `/closed-forms/:uuid` | body ignored; user only | 200 `TicketView` | 403, 400 bad id, 409, 404 |
+| PUT | `/closed-forms/:uuid` | body ignored; user only | 200 `TicketView` with `closedForms[uuid] = {at, by: "user", run}`; closing it again answers 200 unchanged | 403, 400 bad id, 409 a run works or the id isn't the open form, 404 unknown ticket |
 | PUT | `/schedule-delete-cards/:uuid` | `{state: "deleted"\|"kept", scheduleId?}`; user only | 200 `TicketView` | 403, 400, 409 already answered, 404 schedule gone |
 | PUT | `/helper-rule-cards/:uuid` | `{state: "added"\|"dismissed", text?}`; user only | 200 `TicketView` | 403, 400, 404, 409 text changed or already answered or list full, 503 helper |
 | GET | `/family` | | 200 rows `{id, title, status, depth, how, parent, subFeature?/task?/showOnBoard?, sessionId, resumeCommand, prUrl, updatedAt, result}` | |
@@ -695,7 +757,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/land` | `{summary}`; the main ticket's own run or the user | 200 `{message}` | 403, 409 |
 | POST | `/branch` | | 201 `{ticket: TicketView, warning}` | 403 run header, 400, 409 |
 | POST | `/move` | `{board}` | 201 `TicketView` on the target board | 403 run header, 404 board, 400 |
-| POST | `/follow-up-work` | `{title, body, start?, important?}` | 201 `TicketView` | 403 run header, 400 |
+| POST | `/follow-up-work` | `{title, body, start?, important?}` | 201 `TicketView` of the new work | 403 run header, 400 (also on a main ticket: its own plan adds steps) |
 | POST | `/follow-up` | `{after?, at?, note?, cancelOnReply?}` | 201 `TicketView` | 403 run of another ticket, 400 |
 | POST | `/follow-up/now` | body ignored; user only (no run header) | 202 `TicketView` | 403, 400 |
 | DELETE | `/follow-up` | `{reason?}` (optional body) | 200 `TicketView` | 403, 400 |
@@ -779,6 +841,10 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 - `GET /api/profiles/:slug/chats/:cid/context` and `GET /api/profiles/:slug/tickets/:id/context` need no user check,
   while their POSTs do.
 - `GET .../tickets/:id/rewind` and `GET .../rewind-undo` refuse `x-ckanban-run` (403) even though they only read.
+- `POST .../tickets/:id/chat` answers 500 (with the reason in `error`) for refusals the board raises as plain errors: a
+  refused command (`/clear`, `/resume`, `/exit`, `/quit`), a bad `/model` or `/effort` value, a corrupt ticket file.
+- A conversation entry's `uuid` is its transcript line's `uuid`, or its position in the conversation (`"0"`, `"1"`...)
+  when the line has none; rewind and fork need real uuids.
 - `POST .../tickets/:id/queued/:msgId` with an unknown message answers 404 from any other error too (all non-conflict
   errors map to 404).
 - `DELETE .../follow-up` reads an optional JSON body; a bad body is ignored.

@@ -8,6 +8,7 @@
 //! launchd and `ckanban restart` work as with Bun alone. SIGTERM/SIGINT stop the child first.
 
 mod agents;
+mod board_mode;
 mod cli;
 mod guard;
 mod js;
@@ -96,12 +97,20 @@ async fn dev() -> u8 {
         Ok(p) => p,
         Err(e) => return fail(format!("no free internal port: {e}")),
     };
+    // Board mode (board_mode.rs): off unless asked for; then the Rust board owns the board and Bun is its satellite.
+    let board = board_mode::prepare(&root, public_port).await;
 
-    let mut child = match Command::new(&bun)
-        .arg(repo.join("src/cli.ts"))
+    let mut cmd = Command::new(&bun);
+    cmd.arg(repo.join("src/cli.ts"))
         .arg("dev")
         .env("CKANBAN_PORT", internal_port.to_string())
-        .env("CKANBAN_FRONT_PORT", public_port.to_string())
+        .env("CKANBAN_FRONT_PORT", public_port.to_string());
+    if board.is_some() {
+        cmd.env("CKANBAN_SATELLITE", "1");
+    } else {
+        cmd.env_remove("CKANBAN_SATELLITE");
+    }
+    let mut child = match cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -128,6 +137,7 @@ async fn dev() -> u8 {
         }
         stdin
     });
+    let tell_board = tell_tx.clone();
     let notify: passes::Notify = Arc::new(move |file: &str| {
         let _ = tell_tx.send(format!("changed {file}\n"));
     });
@@ -147,7 +157,10 @@ async fn dev() -> u8 {
             break;
         }
         if Instant::now() > deadline {
-            let _ = stop_child(&mut child).await;
+            let code = stop_child(&mut child).await;
+            if let Some(b) = &board {
+                b.stop(code);
+            }
             return fail(format!(
                 "the daemon ({} {} dev) didn't answer on 127.0.0.1:{internal_port} within {}s; see its log: this process's output{}",
                 bun.display(),
@@ -158,14 +171,19 @@ async fn dev() -> u8 {
         }
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(100)) => {}
-            _ = sigterm.recv() => return stop_child(&mut child).await,
-            _ = sigint.recv() => return stop_child(&mut child).await,
+            _ = sigterm.recv() => return stop_board(&board, stop_child(&mut child).await),
+            _ = sigint.recv() => return stop_board(&board, stop_child(&mut child).await),
         }
+    }
+    if let Some(b) = &board {
+        b.connect_satellite(internal_port, &secret, tell_board).await;
+    } else {
+        drop(tell_board);
     }
     eprintln!("ckanban-rs {} listening on http://localhost:{public_port}, daemon on internal port {internal_port}", env!("CARGO_PKG_VERSION"));
 
     let native = routes::Native::new(root.clone(), public_port, notify, &bun, &repo);
-    let accept = tokio::spawn(serve(listener, proxy, native));
+    let accept = tokio::spawn(serve(listener, proxy, native, board.clone()));
     let code = tokio::select! {
         status = child.wait() => match status {
             Ok(s) => exit_code(s),
@@ -176,6 +194,14 @@ async fn dev() -> u8 {
     };
     accept.abort();
     teller.abort();
+    stop_board(&board, code)
+}
+
+/// Board mode ended with `code` (board_mode.rs): the core stops; 0 is a clean stop, anything else counts as a crash.
+fn stop_board(board: &Option<Arc<board_mode::BoardMode>>, code: u8) -> u8 {
+    if let Some(b) = board {
+        b.stop(code);
+    }
     code
 }
 
@@ -185,7 +211,7 @@ fn log_hint(root: &std::path::Path) -> String {
     if log.is_file() { format!(" ({} when started by launchd)", log.display()) } else { String::new() }
 }
 
-async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<routes::Native>) {
+async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<routes::Native>, board: Option<Arc<board_mode::BoardMode>>) {
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(x) => x,
@@ -198,11 +224,16 @@ async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<rout
         let _ = stream.set_nodelay(true);
         let proxy = proxy.clone();
         let native = native.clone();
+        let board = board.clone();
         tokio::spawn(async move {
             let svc = service_fn(move |req| {
                 let proxy = proxy.clone();
                 let native = native.clone();
+                let board = board.clone();
                 async move {
+                    if let Some(res) = board.as_ref().and_then(|b| b.answer(&req)) {
+                        return Ok(res);
+                    }
                     Ok::<_, std::convert::Infallible>(match native.answer(req, peer).await {
                         Ok(res) => res,
                         Err(req) => proxy.forward(req, peer).await,

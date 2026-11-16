@@ -60,6 +60,8 @@ export type BusEvent =
 
 export class Bus {
   private listeners = new Set<(e: BusEvent) => void>();
+  /** Events the Rust board sent a satellite (core/satellite.ts): for this daemon's listeners, not its event stream. */
+  private mirrored = new WeakSet<BusEvent>();
 
   on(fn: (e: BusEvent) => void): () => void {
     this.listeners.add(fn);
@@ -77,5 +79,16 @@ export class Bus {
         }
       }
     });
+  }
+
+  /** Emits an event that came from the Rust board (satellite mode); the event stream skips it (see isMirrored). */
+  emitMirrored(e: BusEvent): void {
+    this.mirrored.add(e);
+    this.emit(e);
+  }
+
+  /** The event came from the Rust board, which already sent it to the pages. */
+  isMirrored(e: BusEvent): boolean {
+    return this.mirrored.has(e);
   }
 }

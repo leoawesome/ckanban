@@ -33,6 +33,14 @@ const SECRET_WAIT_MS = 10_000;
 /** Called with each notice line the front server sends after the secret ("changed automation-passes.json"). */
 let noticeHandler: ((line: string) => void) | null = null;
 
+/** The longest unfinished notice line kept while it arrives (setNoticeLimit). */
+let noticeLimit = 4096;
+
+/** Satellite mode: the Rust board's `event` lines carry whole ticket views, so they may be long. */
+export function setNoticeLimit(n: number): void {
+  noticeLimit = n;
+}
+
 /** Sets what to do with the front server's notices (one handler; lines before it is set are dropped). */
 export function onFrontNotice(fn: ((line: string) => void) | null): void {
   noticeHandler = fn;
@@ -52,8 +60,8 @@ function notices(buf: string): string {
       }
     }
   }
-  // A notice is a short line: anything this long is not one.
-  return buf.length > 4096 ? "" : buf;
+  // A notice is a short line: anything this long is not one. A satellite's board events (ticket views) are longer.
+  return buf.length > noticeLimit ? "" : buf;
 }
 
 /** The front server this daemon runs behind, or null when it runs alone. */
