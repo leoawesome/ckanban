@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/loop-state.schema.json",
+  "title": "Loop state",
+  "description": "profiles/<slug>/loops/<id>.state.json: what an automation remembers between checks. Type LoopState in src/core/types.ts; written by Store.saveLoopState (compact JSON, final newline, atomic temp+rename) from src/schedules/loops.ts. The reader (Store.getLoopState) merges the file over defaults ({seen: [], primed: false, failures: 0, backoffUntil: null, lastFound: 0, lastItems: []}), so the daemon always writes every field but threads, which state saved before threads lacks (read as {}). seen must survive: it stops the same item making a second ticket. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["seen", "primed", "failures", "backoffUntil", "lastFound", "lastItems"],
+  "properties": {
+    "seen": { "type": "array", "items": { "type": "string" }, "description": "Every item id it has found, kept for good." },
+    "primed": { "type": "boolean", "description": "False until the first check after it was switched on (that check only notes what is already there)." },
+    "failures": { "type": "integer", "minimum": 0, "description": "Failed checks in a row." },
+    "backoffUntil": { "type": ["string", "null"], "format": "date-time" },
+    "lastFound": { "type": "integer", "minimum": 0, "description": "How many items the last check found." },
+    "lastItems": { "type": "array", "items": { "$ref": "#/$defs/seenItem" } },
+    "threads": {
+      "type": "object",
+      "description": "Map: thread (Item.thread) to the ticket id its first item made; later items of the thread go into that ticket.",
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "seenItem": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "LoopSeenItem: an item of the last check, for the editor's 'Last check found'.",
+      "required": ["id", "title", "state"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "link": { "type": "string" },
+        "state": {
+          "enum": ["new", "added", "waiting", "skipped", "seen", "first"],
+          "description": "new: became a ticket; added: went into its thread's ticket; waiting: its thread's ticket can't take it now; skipped: Claude said no ticket; seen: found before; first: found by the first check."
+        },
+        "ticketId": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

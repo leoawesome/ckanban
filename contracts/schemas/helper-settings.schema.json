@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/helper-settings.schema.json",
+  "title": "HelperSettings",
+  "description": "helper.json (data folder root): the helper's model, \"My night\", whether it may wake the user at night, and \"What the helper knows about you\". Type HelperSettings in src/helper/settings.ts (with Night and FeedbackLine). Written by HelperSettingsStore.save (pretty JSON, 2-space indent, final newline, atomicWrite); read on every use by HelperSettingsStore.get, which starts from the defaults { model: \"sonnet\", night: { start: \"22:00\", end: \"07:00\" }, nightOptIn: null, feedback: [] }, so every key is written. Every unknown key is dropped on the next write (HelperSettingsStore.get); a port may do the same.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["model", "night", "nightOptIn", "feedback"],
+  "properties": {
+    "model": { "enum": ["sonnet", "haiku"] },
+    "night": { "$ref": "#/$defs/Night" },
+    "nightOptIn": { "type": ["boolean", "null"], "description": "May the helper wake the user at night for urgent things? null: not asked yet (treated as no)." },
+    "feedback": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/FeedbackLine" }, "description": "Oldest first; the newest 100 are kept." }
+  },
+  "$defs": {
+    "Night": {
+      "type": "object",
+      "description": "Night: HH:MM to HH:MM in this Mac's time; may wrap past midnight. The API writes zero-padded times that differ; the reader also takes H:MM.",
+      "additionalProperties": true,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "string", "pattern": "^([01]?\\d|2[0-3]):([0-5]\\d)$" },
+        "end": { "type": "string", "pattern": "^([01]?\\d|2[0-3]):([0-5]\\d)$" }
+      }
+    },
+    "FeedbackLine": {
+      "type": "object",
+      "description": "FeedbackLine: one line of \"What the helper knows about you\". The reader drops lines without string id and text.",
+      "additionalProperties": true,
+      "required": ["id", "text", "at", "source"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^f_[0-9a-z]+$", "description": "f_ + now in base36 + 4 hex chars." },
+        "text": { "type": "string", "minLength": 1, "description": "Whitespace collapsed, at most 300 chars (FEEDBACK_MAX)." },
+        "at": { "type": "string", "format": "date-time" },
+        "source": { "enum": ["user", "should-have-pinged", "suggested"] }
+      }
+    }
+  }
+}

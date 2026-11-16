@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/devices.schema.json",
+  "title": "Devices",
+  "description": "devices.json (data folder root): a JSON array of shared devices (a WhatsApp Web tab, a phone, an emulator) that only a few tickets may use at once, on every board. Type Device in src/browser/devices.ts; written by Devices.save (pretty JSON, 2-space indent, NO final newline, fixed devices.json.tmp then rename). Read once at daemon start (Devices.load): entries without a valid name are dropped, each entry is rebuilt (description defaults to \"\", capacity clamped to 1..50, lastUsedAt to null), so the Bun daemon drops unknown fields on the next save. Who holds or waits for a device lives only in memory. A port may drop unknown fields here too, as the Bun daemon does.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/device" },
+  "$defs": {
+    "device": {
+      "title": "Device",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "description", "capacity"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,47}$", "description": "Lowercase and specific: \"chrome-whatsapp\", not \"chrome\"." },
+        "description": { "type": "string", "description": "One line; at most 300 chars when set through the board." },
+        "capacity": { "type": "integer", "minimum": 1, "maximum": 50, "description": "How many tickets may use it at once." },
+        "addedByClaude": { "type": "boolean", "description": "Written only as true: Claude asked for a name that wasn't on the list, so the board added it." },
+        "lastUsedAt": { "type": ["string", "null"], "format": "date-time", "description": "Always written by the current code (null until first used)." }
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/usage-windows.schema.json",
+  "title": "Usage window snapshots",
+  "description": "usage-windows.json (data folder root): the 5-hour plan usage windows seen, so a run keeps its % after its window reset. Array of WindowSnapshot in src/usage/ticket-usage.ts; written by recordWindow (compact JSON, no final newline, atomicWrite) after each good usage answer that has a five_hour window with a reset time. Sorted by end, at most 500; a new snapshot replaces any whose end is within 15 minutes of it. Unknown fields must be kept.",
+  "type": "array",
+  "maxItems": 500,
+  "items": { "$ref": "#/$defs/WindowSnapshot" },
+  "$defs": {
+    "WindowSnapshot": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["start", "end", "utilization", "seenAt"],
+      "properties": {
+        "start": { "type": "string", "format": "date-time", "description": "end minus 5 hours." },
+        "end": { "type": "string", "format": "date-time", "description": "The window's resets_at." },
+        "utilization": { "type": "number", "minimum": 0, "maximum": 100, "description": "Last seen utilization, 0-100." },
+        "seenAt": { "type": "string", "format": "date-time", "description": "The usage answer's fetchedAt." }
+      }
+    }
+  }
+}

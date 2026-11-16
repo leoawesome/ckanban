@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/avatars.schema.json",
+  "title": "Avatars",
+  "description": "avatars.json (data folder root): the user's avatar choices for every board, a map name -> look, where name is \"claude\", \"you\" or a teammate name in handle form. Types SavedAvatarMap and SavedLook in src/board/avatars.ts; written by Store.saveAvatars (pretty JSON, 2-space indent, final newline, atomic temp+rename). Both reading and writing go through cleanAvatars: names that don't match the pattern (or are over 64 chars) are skipped, at most 500 names are kept, only known part names and #rrggbb colours (lowercased) are kept, and a name with no valid field is dropped. So the Bun daemon drops unknown fields; every field of a look is optional and a missing one means the default. A port may drop unknown fields here too, as the Bun daemon does.",
+  "type": "object",
+  "patternProperties": {
+    "^[a-z0-9]+(-[a-z0-9]+)*$": { "$ref": "#/$defs/look" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "look": {
+      "title": "SavedLook",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "face": { "enum": ["robot", "person", "critter", "cat", "bear", "alien", "ghost"] },
+        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Written lowercase." },
+        "hair": { "enum": ["none", "short", "ponytail", "bun", "spiky", "long", "curly", "mohawk", "pigtails", "fringe"] },
+        "hairColor": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "Written lowercase." },
+        "hat": { "enum": ["none", "crown", "bow", "cap", "beanie", "wizard", "party", "tophat"] },
+        "accessory": { "enum": ["none", "glasses", "headset", "magnifier", "sunglasses", "bowtie", "scarf", "flower", "eyepatch", "crown", "bow"], "description": "crown and bow only in files written before hats had their own slot; they read as that hat with accessory none, and the next save writes that shape." },
+        "eyes": { "enum": ["dots", "round", "big", "sleepy", "lashes"], "description": "Missing: dots." },
+        "detail": { "enum": ["none", "blush", "freckles", "moustache", "beard"], "description": "Missing: none." },
+        "background": { "enum": ["plain", "fade", "stripes", "dots", "stars"], "description": "Missing: plain." },
+        "name": { "type": "string", "minLength": 1, "description": "Only on the \"claude\" entry: the name shown in place of \"Claude\"; one line, at most 24 characters, never \"Claude\" itself." }
+      }
+    }
+  }
+}

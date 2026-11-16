@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/snippets.schema.json",
+  "title": "Snippets",
+  "description": "snippets.json (data folder root): a JSON array of reusable prompt texts, inserted by typing @name in a composer; global ones and every board's own live in this one file. Type Snippet in src/board/snippets.ts; written by Snippets.writeAll (pretty JSON, 2-space indent, final newline, atomic temp+rename) on create, update, remove and when a board is deleted (its snippets go). File order is the order they were made; the list is sorted by name only when read. A file that is not an array reads as empty. Unknown fields must be kept.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/snippet" },
+  "$defs": {
+    "snippet": {
+      "title": "Snippet",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "name", "text", "scope", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[0-9a-z]{8}$", "description": "newId()." },
+        "name": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "description": "Without the @; at most 40 chars. Unique per scope." },
+        "text": { "type": "string", "minLength": 1, "description": "Not only whitespace; at most 20000 chars." },
+        "scope": { "type": "string", "minLength": 1, "description": "\"global\" or a board's slug." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

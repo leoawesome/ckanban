@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/board-tools.schema.json",
+  "title": "Board tools",
+  "description": "profiles/<slug>/board-tools.json: a board's \"only this board\" MCP servers, merged into the --mcp-config every run on that board gets, shaped like Claude Code's {\"mcpServers\": {...}}. Type Record<string, ToolEntry> in src/integrations/board-tools.ts; written by writeBoardTools via Store.saveBoardTools (pretty JSON, 2-space indent, final newline, temp file with a random suffix, mode 0600 plus chmod, then rename). SECRETS: header and env values (API keys, bearer tokens). Entries made in the board's form have the shapes below (entryFromInput); an entry moved from the user's Claude Code config (McpManager.moveToBoard) is copied as it was, so it may have no type (then url means http, else stdio). A reader skips entries that are not objects. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["mcpServers"],
+  "properties": {
+    "mcpServers": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/toolEntry" },
+      "description": "Map: server name -> entry. Names made in the board's form match ^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$."
+    }
+  },
+  "$defs": {
+    "toolEntry": {
+      "title": "ToolEntry",
+      "anyOf": [
+        { "$ref": "#/$defs/stdio" },
+        { "$ref": "#/$defs/remote" }
+      ]
+    },
+    "stdio": {
+      "title": "stdio server",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["command"],
+      "properties": {
+        "type": { "const": "stdio", "description": "Always written by the board's form; may be missing in a moved entry." },
+        "command": { "type": "string", "minLength": 1 },
+        "args": { "type": "array", "items": { "type": "string" }, "description": "Always written by the board's form (maybe [])." },
+        "env": { "type": "object", "additionalProperties": { "type": "string" }, "description": "SECRET values. Written only when not empty." }
+      }
+    },
+    "remote": {
+      "title": "http or sse server",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["url"],
+      "properties": {
+        "type": { "enum": ["http", "sse"], "description": "Always written by the board's form; missing in a moved entry means http." },
+        "url": { "type": "string", "minLength": 1 },
+        "headers": { "type": "object", "additionalProperties": { "type": "string" }, "description": "SECRET values (e.g. Authorization). Written only when not empty." }
+      }
+    }
+  }
+}

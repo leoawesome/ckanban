@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/schedule-history-entry.schema.json",
+  "title": "Schedule history entry (one line of a schedule's history)",
+  "description": "profiles/<slug>/schedules/<id>.history.jsonl: one compact JSON object per line, appended by Store.appendScheduleHistory (src/core/store.ts) from src/schedules/scheduler.ts (fired, skipped, error, edited) and src/board/board-tickets.ts (quiet). Type ScheduleHistoryEntry in src/core/types.ts, a union by kind. The first line of a new schedule is an edited entry with action created and fields []. The file grows for years and is read paged from the end. Unknown fields must be kept.",
+  "oneOf": [
+    { "$ref": "#/$defs/fired" },
+    { "$ref": "#/$defs/skipped" },
+    { "$ref": "#/$defs/error" },
+    { "$ref": "#/$defs/quiet" },
+    { "$ref": "#/$defs/edited" }
+  ],
+  "$defs": {
+    "trigger": { "enum": ["schedule", "missed", "manual"], "description": "ScheduleTrigger: its cron time, a time missed while the computer was off, or Run now." },
+    "byTicket": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["ticketId"],
+      "properties": { "ticketId": { "type": "string", "description": "The ticket whose board run asked for it." } }
+    },
+    "fired": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The schedule created its ticket and started it.",
+      "required": ["at", "kind", "trigger", "ticketId"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "kind": { "const": "fired" },
+        "trigger": { "$ref": "#/$defs/trigger" },
+        "ticketId": { "type": "string" },
+        "note": { "type": "string", "description": "Why the run went somewhere else than the schedule says (e.g. its feature is gone, so it got its own card)." },
+        "by": { "$ref": "#/$defs/byTicket", "description": "A manual run only: the ticket whose board run asked for it; missing when the user did." }
+      }
+    },
+    "skipped": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Not fired: skipIfRunning and its previous ticket (ticketId) was still queued or running.",
+      "required": ["at", "kind", "trigger", "ticketId"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "kind": { "const": "skipped" },
+        "trigger": { "$ref": "#/$defs/trigger" },
+        "ticketId": { "type": ["string", "null"] },
+        "by": { "$ref": "#/$defs/byTicket" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The fire could not create its ticket.",
+      "required": ["at", "kind", "trigger", "message"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "kind": { "const": "error" },
+        "trigger": { "$ref": "#/$defs/trigger" },
+        "message": { "type": "string" },
+        "by": { "$ref": "#/$defs/byTicket" }
+      }
+    },
+    "quiet": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "A quiet schedule's run found nothing for the user: the board removed its ticket (ticketId, now gone).",
+      "required": ["at", "kind", "ticketId", "summary", "costUsd"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "kind": { "const": "quiet" },
+        "ticketId": { "type": "string" },
+        "summary": { "type": "string", "description": "The run's summary, cut to 500 chars." },
+        "costUsd": { "type": "number", "minimum": 0, "description": "Rounded to 4 decimals." }
+      }
+    },
+    "edited": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "The schedule was created, changed, paused or resumed.",
+      "required": ["at", "kind", "action", "fields", "by"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "kind": { "const": "edited" },
+        "action": { "enum": ["created", "updated", "paused", "resumed"] },
+        "fields": { "type": "array", "items": { "type": "string" }, "description": "Names of the Schedule fields that changed; [] for created." },
+        "by": {
+          "description": "ScheduleEditor: the user (board UI, CLI, Claude outside a run) or the board run of a ticket.",
+          "anyOf": [{ "const": "user" }, { "$ref": "#/$defs/byTicket" }]
+        },
+        "previous": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Updated only, and only when one of these changed: their old values, so a bad edit can be undone.",
+          "properties": {
+            "title": { "type": "string" },
+            "body": { "type": "string" },
+            "cron": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

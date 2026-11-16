@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/usage-last.schema.json",
+  "title": "Usage cache",
+  "description": "usage-last.json (data folder root): the plan usage check's saved state, shared by the Bun daemon and the Rust front server. Type Saved in src/usage/usage-cache.ts (UsageAnswer and UsageWindow in src/usage/usage.ts). Written by UsageCache.save after every check (compact JSON, no final newline, atomicWrite); read at start and again when its size or mtime changes. Times attemptAt, blockedUntil and lastError.at are epoch ms (0: never). The reader takes a missing or non-number time as 0, caps attemptAt at now and blockedUntil at now + 30 min. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["last", "lastError", "attemptAt", "blockedUntil", "failures"],
+  "properties": {
+    "last": {
+      "description": "The last good answer, kept through later errors; null when there never was one.",
+      "anyOf": [ { "$ref": "#/$defs/UsageAnswer" }, { "type": "null" } ]
+    },
+    "lastError": {
+      "description": "The latest failed check, cleared by a good one; null when the last check succeeded.",
+      "anyOf": [ { "$ref": "#/$defs/LastError" }, { "type": "null" } ]
+    },
+    "attemptAt": { "type": "number", "minimum": 0, "description": "When the last check started (epoch ms)." },
+    "blockedUntil": { "type": "number", "minimum": 0, "description": "No check before this (epoch ms; backing off after a 429). 0: not blocked." },
+    "failures": { "type": "integer", "minimum": 0, "description": "429 answers in a row; reset by a good answer or another error." }
+  },
+  "$defs": {
+    "UsageAnswer": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["windows", "fetchedAt"],
+      "properties": {
+        "windows": { "type": "array", "items": { "$ref": "#/$defs/UsageWindow" } },
+        "fetchedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "UsageWindow": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["key", "label", "percent", "resetsAt"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^(five_hour|seven_day)", "description": "The endpoint's window key, e.g. five_hour, seven_day, seven_day_opus." },
+        "label": { "type": "string", "description": "e.g. \"Current session (5h)\", \"Week · all models\"." },
+        "percent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "resetsAt": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "LastError": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["error", "at", "limited"],
+      "properties": {
+        "error": { "type": "string", "description": "Plain error text (never the token)." },
+        "at": { "type": "number", "minimum": 0, "description": "When it failed (epoch ms)." },
+        "limited": { "type": "boolean", "description": "The answer was a 429 (Anthropic rate limit)." }
+      }
+    }
+  }
+}

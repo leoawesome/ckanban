@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/huddle-templates.schema.json",
+  "title": "Huddle templates (squads)",
+  "description": "huddle-templates.json (global, in the data folder root) and profiles/<slug>/huddle-templates.json (one board): a JSON array of whole-huddle templates, shown as squads in the UI. Type HuddleTemplate (roster entries: RosterEntry in src/huddle/huddle-roster.ts) in src/huddle/huddle-templates.ts; written by Store.saveHuddleTemplates (pretty JSON, 2-space indent, final newline, atomic temp+rename). Merged built-in -> global -> board by name. Read with cleanTemplates, which keeps only entries templateFromInput accepts, drops repeated names and rebuilds each entry (roster entries are copied as they are), so the Bun daemon drops unknown top-level fields on the next save. New entries always have hostRules; it is not required here because older files lack it (it loads as \"\"). A port may drop unknown fields here too, as the Bun daemon does.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/template" },
+  "$defs": {
+    "template": {
+      "title": "HuddleTemplate",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "label", "description", "roster", "rounds", "maxCostUsd", "report"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "description": "presetName(): lowercase letters, digits and dashes, at most 24 chars. Unique in the file." },
+        "label": { "type": "string", "minLength": 1, "description": "Shown in pickers. At most 4000 characters." },
+        "description": { "type": "string", "description": "\"\" for none. At most 4000 characters." },
+        "roster": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rosterEntry" }, "description": "At most one entry has host true; with @main, at most 32 participants." },
+        "rounds": { "type": ["integer", "null"], "minimum": 1, "maximum": 20, "description": "Rounds before the lead wraps up; null: no limit." },
+        "maxCostUsd": { "type": ["number", "null"], "description": "Budget in USD, greater than 0; null: the board's default." },
+        "report": { "type": "string", "description": "\"\" for none. At most 4000 characters." },
+        "hostRules": { "type": "string", "description": "\"\" for none. At most 4000 characters. Missing in older files." }
+      }
+    },
+    "rosterEntry": {
+      "title": "RosterEntry",
+      "type": "object",
+      "additionalProperties": true,
+      "anyOf": [
+        { "required": ["preset"] },
+        { "required": ["role"] }
+      ],
+      "properties": {
+        "preset": { "type": "string", "minLength": 1, "description": "Preset name; never \"main\"." },
+        "role": { "type": "string", "minLength": 1 },
+        "count": { "type": "integer", "minimum": 1, "maximum": 8 },
+        "focus": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "mode": { "enum": ["tagged", "monitor"] },
+        "workspace": { "enum": ["shared", "own"] },
+        "lead": { "type": "boolean" },
+        "canEdit": { "type": "boolean" },
+        "handle": { "type": ["string", "null"], "description": "Handle, or handle prefix when count > 1; not a reserved handle (main, you, all, system, current)." },
+        "host": { "type": "boolean", "description": "Runs the huddle instead of @main; count must be 1." },
+        "prompt": { "type": ["string", "null"], "description": "Extra instructions on top of the preset's." }
+      }
+    }
+  }
+}

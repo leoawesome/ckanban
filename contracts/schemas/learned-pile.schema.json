@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/learned-pile.schema.json",
+  "title": "Pile",
+  "description": "learned/pile.json: lessons the board is watching before it saves them, and which corrections it already read. Type Pile in src/board/learn.ts (Candidate, Dest, LearnSource in the same file; NoteScope in src/huddle/huddle-notes.ts). Written by Learner.writePile in src/board/learner.ts (pretty JSON, 2-space indent, final newline, atomicWrite), one step at a time through the Learner's queue. The reader needs candidates to be an array, else it starts an empty pile. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["candidates", "scanned"],
+  "properties": {
+    "candidates": { "type": "array", "items": { "$ref": "#/$defs/Candidate" }, "description": "At most 300 per kind after pruning; watching candidates seen once expire after 60 days." },
+    "scanned": {
+      "type": "object",
+      "description": "Correction keys already read (msg:<uuid|at>, reopen, changes, addon:<id>), by \"<slug>/<ticketId>\".",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    },
+    "since": { "type": "string", "format": "date-time", "description": "Tickets updated before this aren't read. Set on the first start." },
+    "tidyAt": { "type": ["string", "null"], "format": "date-time", "description": "Last tidy pass." },
+    "seen": {
+      "type": "object",
+      "description": "When the user last opened the Learned view, by board slug.",
+      "additionalProperties": { "type": "string", "format": "date-time" }
+    }
+  },
+  "$defs": {
+    "Candidate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "kind", "text", "general", "dest", "sources", "firstAt", "lastAt", "state"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["ticket", "huddle"] },
+        "text": { "type": "string", "description": "The lesson as one short general rule." },
+        "general": { "type": "boolean", "description": "False while it couldn't be put in general words." },
+        "dest": { "$ref": "#/$defs/Dest" },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/LearnSource" } },
+        "firstAt": { "type": "string", "format": "date-time" },
+        "lastAt": { "type": "string", "format": "date-time" },
+        "state": { "enum": ["watching", "saved", "undone", "dropped"] },
+        "standing": { "type": "boolean", "description": "The user's words made it a standing rule: saved without a repeat." },
+        "changeId": { "type": "string", "description": "The learned/changes.json entry that saved it." }
+      }
+    },
+    "Dest": {
+      "description": "Where a saved lesson goes: the board's rules, or a role's notes (role \"_all\": every role).",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["kind", "slug"],
+          "properties": { "kind": { "const": "rules" }, "slug": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["kind", "role", "scope", "slug"],
+          "properties": {
+            "kind": { "const": "notes" },
+            "role": { "type": "string" },
+            "scope": { "enum": ["general", "repo"] },
+            "slug": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "LearnSource": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind", "slug", "id", "title", "by", "at", "quote", "key"],
+      "properties": {
+        "kind": { "enum": ["ticket", "huddle"] },
+        "slug": { "type": "string" },
+        "id": { "type": "string", "description": "The ticket or huddle id." },
+        "title": { "type": "string" },
+        "by": { "type": "string", "description": "\"you\" or the agent's handle." },
+        "at": { "type": "string", "format": "date-time" },
+        "quote": { "type": "string" },
+        "key": { "type": "string", "description": "What counts as one source: the first ticket of a follow-up chain, or huddle:<slug>/<id>." },
+        "ticket": { "type": "string", "description": "A huddle's host ticket." }
+      }
+    }
+  }
+}

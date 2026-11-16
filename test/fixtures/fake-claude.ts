@@ -11,6 +11,8 @@
 // FAKE_MODE=workflow|workflow-nostop: starts a workflow (a background task) with FAKE_WF_AGENTS helper agents (default 5),
 // one every FAKE_WF_STEP_MS (default 20), each writing a transcript in FAKE_WF_DIR that costs $0.04. The host can stop
 // it with a stop_task control request (workflow-nostop refuses, like a CLI that can't).
+// FAKE_SIDE_JSON=1: a side call (`-p --output-format json`, e.g. simplify or "help me understand") prints one JSON
+// result like the real CLI (text FAKE_SIDE_TEXT, cost $0.002) and exits; without it side calls get stream lines and fail.
 // FAKE_TRANSCRIPT=1: it also thinks, runs a Bash call and posts to its huddle, and writes what it emits to the transcript.
 // With --input-format stream-json it reads user messages from stdin like the real CLI: messages that
 // arrive mid-run are picked up at the next step (replayed with --replay-user-messages), later ones
@@ -18,6 +20,10 @@
 import { appendFileSync, existsSync } from "node:fs";
 
 const args = process.argv.slice(2);
+if (process.env.FAKE_SIDE_JSON && args.includes("--output-format") && args[args.indexOf("--output-format") + 1] === "json") {
+  process.stdout.write(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: process.env.FAKE_SIDE_TEXT ?? "In plain words: it is done.", total_cost_usd: 0.002, session_id: "side" }) + "\n");
+  process.exit(0);
+}
 const streamIn = args.includes("--input-format");
 const replay = args.includes("--replay-user-messages");
 

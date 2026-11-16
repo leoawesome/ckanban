@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/side-spend-entry.schema.json",
+  "title": "Side spend entry (one line of a side ledger)",
+  "description": "profiles/<slug>/tickets/<id>/side-spend.jsonl, profiles/<slug>/chats/<id>.side-spend.jsonl and the data folder's root helper-spend.jsonl: one compact JSON object per line, appended by addSideSpend (src/runs/side-call.ts) with what a side call (a model call outside the ticket's session) cost. No TypeScript type (the object literal in addSideSpend); read by readSideSpend, which skips lines that don't parse or have no positive costUsd. Only calls that cost something are written. Unknown fields must be kept.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["at", "kind", "costUsd"],
+  "properties": {
+    "at": { "type": "string", "format": "date-time" },
+    "kind": {
+      "enum": ["simplify", "help-recap", "help-changes", "learn", "link", "squad", "helper"],
+      "description": "Who made the call. Ticket ledger: simplify (src/chat/simplify.ts), help-recap and help-changes (src/chat/explain.ts), learn (src/board/learner.ts), link (src/board/linker.ts), squad (src/huddle/huddle-templates-api.ts). Quick chat ledger: simplify. helper-spend.jsonl: helper (src/helper/runner.ts)."
+    },
+    "costUsd": { "type": "number", "minimum": 0, "description": "USD, always above 0 when written." }
+  }
+}

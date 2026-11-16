@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/spend-by-day.schema.json",
+  "title": "Spend by day",
+  "description": "telegram-spend.json and telegram-desk-spend.json (data folder root): USD per local day (YYYY-MM-DD, dayKey in src/usage/limit.ts), last 60 days. Plain Record<string, number>; written by addTelegramSpend in src/usage/spend.ts (addDeskSpend writes both files) as compact JSON with a final newline, atomicWrite, read-modify-write. telegram-spend.json: what turns Telegram started cost (front desk included); telegram-desk-spend.json: the front desk's share, checked against its daily cap. The reader drops keys that are not days and values that are not above 0. A map keyed by day, so no other keys.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^\\d{4}-\\d{2}-\\d{2}$": { "type": "number", "minimum": 0 }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/help-cards.schema.json",
+  "title": "Help cards",
+  "description": "profiles/<slug>/tickets/<id>/help.json: the ticket's 'Help me understand' answers, a JSON array of HelpCard (src/chat/explain.ts), oldest first, the last 50. Written by Helper.ask in src/chat/explain.ts (re-read, append, pretty JSON, 2-space indent, final newline, atomic temp+rename). A file that isn't an array reads as []. Unknown fields must be kept.",
+  "type": "array",
+  "maxItems": 50,
+  "items": { "$ref": "#/$defs/card" },
+  "$defs": {
+    "card": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "kind", "at", "text", "costUsd", "model"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^h_[0-9a-z]+$", "description": "h_ + base36 time + up to 4 random base36 chars." },
+        "kind": { "enum": ["recap", "changes"], "description": "HelpKind: recap ('What happened while I was away?') or changes ('Explain the changes')." },
+        "at": { "type": "string", "format": "date-time" },
+        "text": { "type": "string", "description": "The answer (markdown)." },
+        "costUsd": { "type": "number", "minimum": 0 },
+        "model": { "type": "string", "description": "Model the side call reported (asked for sonnet)." }
+      }
+    }
+  }
+}

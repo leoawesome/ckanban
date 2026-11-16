@@ -29,7 +29,10 @@ Each entry is marked with one of:
 
 - "pretty" means `JSON.stringify(v, null, 2)`; "compact" means `JSON.stringify(v)`; "+nl" means a final `\n` is added.
 - Key order is JavaScript insertion order (the order the code builds the object). A port that rewrites a file must
-  keep the keys it doesn't know, and should keep the order.
+  keep the keys it doesn't know, and should keep the order. Exceptions, where the Bun daemon rebuilds the object on
+  read and so drops unknown keys on its next save: `notify.json`, `remote.json`, `helper.json`, `avatars.json`,
+  `devices.json` and each entry of the huddle preset and template files (all keys), and the top level of
+  `push.json`, `automation-passes.json` and `waits.json`. A port may do the same there.
 - Non-ASCII text is written as raw UTF-8 (no `\u` escapes, except what `JSON.stringify` always escapes).
 
 ### Outside edits
@@ -117,7 +120,7 @@ segment, `*` part of one, `**` any number of segments. `test/contract/data-files
 a file that no line here matches, so a new file needs a line here (and a section below) first.
 
 ```paths
-config.json
+config.json                       # the user writes it; the daemon only reads it
 profiles/<slug>/profile.json
 profiles/<slug>/board-tools.json
 profiles/<slug>/huddle-presets.json
@@ -196,6 +199,53 @@ browsers-removed/**
 browser-files/**
 ```
 
+### Schemas and checks
+
+`contracts/schemas/` has a JSON Schema for each saved JSON file below. `test/contract/data-files.test.ts` makes them
+with a mix of actions (a ticket with a chat, comments, help and simplify answers, a feature status and a huddle; a
+schedule run and paused; two jobs; an automation; a quick chat; presets, templates, notes, snippets, an avatar, an
+attachment, a device, a board tool, a push device, notification, helper and phone access settings, a key; plan
+usage), then checks every one against its schema and its write style (pretty or compact, final newline or not).
+
+| Path | Schema | Made by the contract test |
+| --- | --- | --- |
+| `config.json` | `config.schema.json` | written by the test (the user's file) |
+| `profiles/<slug>/profile.json` | `profile.schema.json` | yes |
+| `profiles/<slug>/board-tools.json` | `board-tools.schema.json` | yes |
+| `tickets/<id>/ticket.md` | `ticket.schema.json` (front matter plus `body`) | yes |
+| `tickets/<id>/comments.jsonl` (per line) | `comment.schema.json` | yes |
+| `tickets/<id>/activity.jsonl`, `chats/<id>.activity.jsonl` (per line) | `activity-entry.schema.json` | yes |
+| `tickets/<id>/side-spend.jsonl`, `chats/<id>.side-spend.jsonl`, `helper-spend.jsonl` (per line) | `side-spend-entry.schema.json` | yes, except `helper-spend.jsonl` |
+| `tickets/<id>/help.json` | `help-cards.schema.json` | yes |
+| `tickets/<id>/outputs/status.json` | `feature-status.schema.json` | yes |
+| `chats/<id>.json` | `quick-chat.schema.json` | yes |
+| `schedules/<id>.json` | `schedule.schema.json` | yes |
+| `schedules/<id>.history.jsonl` (per line) | `schedule-history-entry.schema.json` | yes (created, fired, paused) |
+| `jobs/<id>.json` | `job.schema.json` | yes (a ticket job and a command job that ran) |
+| `loops/<id>.json`, `loops/<id>.state.json` | `loop.schema.json`, `loop-state.schema.json` | yes |
+| `huddles/<h_id>.json`, `huddles/<h_id>.messages.jsonl` (per line) | `huddle.schema.json`, `huddle-message.schema.json` | yes |
+| `huddle-presets.json`, `huddle-templates.json` (root and per board) | `huddle-presets.schema.json`, `huddle-templates.schema.json` | yes |
+| `learned/pile.json` | `learned-pile.schema.json` | yes |
+| `avatars.json`, `snippets.json`, `devices.json` | `avatars.schema.json`, `snippets.schema.json`, `devices.schema.json` | yes |
+| `notify.json`, `push.json`, `remote.json`, `automation-passes.json`, `helper.json` | `notify`, `push`, `remote`, `automation-passes`, `helper-settings` `.schema.json` | yes |
+| `spend-days.json` | `spend-days.schema.json` | yes (a huddle agent's cost) |
+| `telegram-spend.json`, `telegram-desk-spend.json` | `spend-by-day.schema.json` | no: needs a Telegram bot |
+| `usage-windows.json`, `usage-last.json` | `usage-windows.schema.json`, `usage-last.schema.json` | yes (a local fake of Anthropic) |
+| `waits.json` | `waits.schema.json` | yes |
+
+Checked without a JSON Schema: the attachment's bytes and name, the automation's `.sh` script, and both
+`huddle-notes/_all.md` files (exact Markdown layout).
+
+Saved files with no schema or check yet, and why: `activity.jsonl.gz` (only for tickets Done for 30 days),
+`learned/changes.json` and `profiles/<slug>/learned-rules.md` (need the learner to find a lesson in a real run),
+`.key-backups/` (raw file copies written by the `ckanban mcp` process's `backup_file` tool, not by the daemon), `outputs/` files other than `status.json` (made by runs or the
+board on events the test doesn't cause), `browsers.json`, `board-browsers.json` and `browsers/` (start Chrome),
+`helper-spend.jsonl`, `messages.json` and `helper-state.json` (the helper's first check waits a minute and needs a
+real Claude answer), and the `telegram-*.json` files (need a Telegram bot). Caches (`simplified.json`,
+`context.json`, `session-summaries.json`, `mcp-seen.json` and the others in "Caches") have no schema: a port may
+rebuild them in its own format; `usage-last.json` is the exception because the Bun daemon and the Rust front share
+it.
+
 Folders in `profiles/<slug>/` that are not listed (seen on real boards: `whatsapp/`, `rednote/`) are not written by
 the daemon; Claude runs or the user put them there. A port must leave unknown files and folders alone.
 
@@ -204,11 +254,12 @@ the daemon; Claude runs or the user put them there. A port must leave unknown fi
 ### `config.json`
 
 - **Format:** JSON object. **Type:** `Config` (`src/core/types.ts`): `{ port: number, prPollMinutes: number,
-  remotePort?: number }`.
+  remotePort?: number }`. Nothing reads `prPollMinutes` today. Schema: `schemas/config.schema.json` (every key
+  optional).
 - **Writer:** none. The daemon and CLI only read it; the user creates it by hand.
 - **Reader:** `Store.config()`. Missing or unparseable: the defaults `{ "port": 7777, "prPollMinutes": 5 }`. Present:
   the defaults with the file's keys merged over them.
-- **Outside edits:** read at daemon start (`main.ts`) and on every CLI call (`client.ts` port lookup); `CKANBAN_PORT`
+- **Outside edits:** read at daemon start (`src/cli/daemon.ts`) and on every CLI call (`client.ts` port lookup); `CKANBAN_PORT`
   wins over `port`.
 - **Tier:** CORE.
 
@@ -244,7 +295,9 @@ the daemon; Claude runs or the user put them there. A port must leave unknown fi
 ### `profiles/<slug>/board-tools.json`
 
 - **Format:** JSON object, pretty +nl: `{ "mcpServers": Record<name, ToolEntry> }` (`board-tools.ts`). An entry is
-  `{ type: "stdio", command, args, env? }` or `{ type: "http" | "sse", url, headers? }`.
+  `{ type: "stdio", command, args, env? }` or `{ type: "http" | "sse", url, headers? }` as the board's form writes
+  it; an entry moved from the user's Claude Code config (`McpManager.moveToBoard`) is copied as it was, so it may
+  have no `type` (readers take a `url` as http, else stdio) or other fields. Schema: `schemas/board-tools.schema.json`.
 - **Writer:** `writeBoardTools` via `Store.saveBoardTools`: temp file with a random suffix, mode `0600` plus `chmod`,
   then rename.
 - **Outside edits:** every read. **Secrets:** yes (headers, env values). **Tier:** CORE.
@@ -425,8 +478,10 @@ Fix it.
   skipping `node_modules`, `.git`, `.next`, `.nuxt`, `.turbo`, `.cache`, `.venv`, `venv`, `__pycache__`; symlinks
   are not followed.
 - Files the daemon itself writes there:
-  - `status.json` (feature status, `SavedStatus` in `feature.ts`): pretty JSON, fixed-tmp (`status.json.tmp`).
-    Every read. CORE.
+  - `status.json` (feature status, `SavedStatus` in `feature.ts`): pretty JSON, **no** final newline, fixed-tmp
+    (`status.json.tmp`). Written by `update_status` (`POST .../status`), status notes and their delivery
+    (`board-features.ts`) and `landMilestone` (`board-main.ts`). Only `updatedAt` is always there; a section Claude
+    clears is removed, not set to null. Schema: `schemas/feature-status.schema.json`. Every read. CORE.
   - `status.md`: Markdown made from `status.json` (`# Where we are: <title>` + `##` sections), plain write, only when
     the text changed. CACHE.
   - `saved-changes.md`: `# <label>: <title>` + `- <shortsha> <subject>` lines (`board.ts`), plain write. CACHE.
@@ -446,7 +501,9 @@ Fix it.
 - **Format:** JSON object, pretty +nl. **Type:** `QuickChat` (`src/chat/quickchat.ts`): `{ id, sessionId, title,
   firstMessage, createdAt, updatedAt, started, ticketId, error, pending?, interrupted?, frontDesk?, rewindUndo? }`.
   Always set at creation: `id`, `sessionId` (a random UUID), `title` (or null), `firstMessage`, `createdAt`,
-  `updatedAt`, `started: false`, `ticketId: null`, `error: null`.
+  `updatedAt`, `started: false`, `ticketId: null`, `error: null`. A fork (`QuickChats.fork`) starts with
+  `firstMessage: null` and a made-up title, then copies the source's `firstMessage` and sets `started: true` once the
+  copied transcript is there. Schema: `schemas/quick-chat.schema.json`.
 - **Writer:** `QuickChats.save` (atomic). **Outside edits:** `get` reads every call; the list is an mtime/size cache
   over files matching `^[a-z0-9]+\.json$`. **Tier:** CORE.
 
@@ -523,7 +580,8 @@ chat.
   - `{ at, kind: "quiet", ticketId, summary, costUsd }`
   - `{ at, kind: "edited", action: "created" | "updated" | "paused" | "resumed", fields: string[], by: "user" |
     { ticketId }, previous?: { title?, body?, cron? } }`
-- The first line of a new schedule is `{"at":...,"kind":"edited","action":"created","fields":[],"by":"user"}`.
+- The first line of a new schedule is `{"at":...,"kind":"edited","action":"created","fields":[],"by":"user"}`, or
+  `"by":{"ticketId":"..."}` when a board run created it.
 - **Writer:** `Store.appendScheduleHistory` (append). **Reader:** paged from the end; the digest reads only appended
   bytes (memory only). Grows for years. **Tier:** CORE.
 
@@ -564,7 +622,7 @@ chat.
   passes, scriptHash, everyMinutes, column, autoStart, askClaude: { on, prompt }, instructions, allowedTools,
   createdAt, updatedAt, lastCheckedAt, lastFiredAt, lastError, partOf? }`. Atomic (`Store.saveLoop`). `JsonDir`
   reader like schedules. A loop whose `version` is newer than the code knows is shown as unsupported and left alone.
-  CORE.
+  Files of an older version may lack fields (`passes` reads as `[]`). Schema: `schemas/loop.schema.json`. CORE.
 - `loops/<id>.sh`: the check script, text, atomic (`Store.saveLoopScript`). It only runs while its sha256 equals the
   loop's `scriptHash`. CORE.
 - `loops/<id>.state.json`: compact JSON +nl, type `LoopState`: `{ seen: string[], primed, failures, backoffUntil,
@@ -587,13 +645,13 @@ chat.
 
 | Path | Format | Writer | Outside edits |
 | --- | --- | --- | --- |
-| `huddle-presets.json`, `profiles/<slug>/huddle-presets.json` | JSON array, pretty +nl, of `HuddlePreset` `{ name, role, prompt, model, mode, lead, canEdit, workspace }` (`huddle-presets.ts`). Global then board, merged over built-ins | `Store.saveHuddlePresets` (atomic) | every read; bad entries dropped by `cleanPresets` |
-| `huddle-templates.json`, `profiles/<slug>/huddle-templates.json` | JSON array, pretty +nl, of `HuddleTemplate` `{ name, label, description, roster, rounds, maxCostUsd, report, hostRules }` (`huddle-templates.ts`) | `Store.saveHuddleTemplates` (atomic) | every read |
-| `huddle-notes/<role>.md` (general), `profiles/<slug>/huddle-notes/<role>.md` (this repo) | Markdown: `# Huddle notes: role <role>, all repos` (or `all roles` / `this repo`), a `<!-- Newest first. ... -->` line, a blank line, then `- <text> <!-- from @qa-1, 2026-11-10, huddle h_abc -->` or `<!-- by you, 2026-11-10 -->` per note. `<role>` is `_all` or a preset name | `Store.writeHuddleNotes`, `Learner` (atomic) | every read |
+| `huddle-presets.json`, `profiles/<slug>/huddle-presets.json` | JSON array, pretty +nl, of `HuddlePreset` `{ name, role, prompt, model, mode, lead, canEdit, workspace }` (`huddle-presets.ts`). Global then board, merged over built-ins. Schema: `schemas/huddle-presets.schema.json` | `Store.saveHuddlePresets` (atomic) | every read; bad entries and repeated names dropped and each entry rebuilt by `cleanPresets` (unknown fields are lost on the next save) |
+| `huddle-templates.json`, `profiles/<slug>/huddle-templates.json` | JSON array, pretty +nl, of `HuddleTemplate` `{ name, label, description, roster, rounds, maxCostUsd, report, hostRules }` (`huddle-templates.ts`); older files may lack `hostRules` (reads as `""`). Schema: `schemas/huddle-templates.schema.json` | `Store.saveHuddleTemplates` (atomic) | every read; bad entries and repeated names dropped and top-level fields rebuilt by `cleanTemplates` |
+| `huddle-notes/<role>.md` (general), `profiles/<slug>/huddle-notes/<role>.md` (this repo) | Markdown: `# Huddle notes: role <role>, all repos` (or `all roles` / `this repo`), a `<!-- Newest first. ... -->` line, a blank line, then `- <text> <!-- from @qa-1, 2026-11-10, huddle h_abc -->` or `<!-- by you, 2026-11-10 -->` per note; the date and huddle parts are left out when the note has none (`- <text> <!-- by you -->`). The file ends with one newline. `<role>` is `_all` or a preset name | `Store.writeHuddleNotes`, `Learner` (atomic) | every read |
 | `profiles/<slug>/learned-rules.md` | Markdown: `# Lessons learned on this board`, a `<!-- ... -->` line, a blank line, then `- <text> <!-- by you, 2026-11-10 -->` lines. Every run on the board gets them. Deleted when empty | `Learner.put` (atomic) | every read |
-| `learned/pile.json` | JSON object, pretty: `Pile` `{ candidates, scanned, since?, tidyAt?, seen? }` (`learn.ts`) | `Learner` (atomic) | every read |
-| `learned/changes.json` | JSON array, pretty, of `LearnChange` (last 500); what Undo uses | `Learner` (atomic) | every read |
-| `avatars.json` | JSON object, pretty +nl: name -> `SavedLook` (`avatars.ts`), cleaned on read and write, at most 500 | `Store.saveAvatars` (atomic) | every read |
+| `learned/pile.json` | JSON object, pretty +nl: `Pile` `{ candidates, scanned, since?, tidyAt?, seen? }` (`learn.ts`) | `Learner` (atomic) | every read |
+| `learned/changes.json` | JSON array, pretty +nl, of `LearnChange` (last 500); what Undo uses | `Learner` (atomic) | every read |
+| `avatars.json` | JSON object, pretty +nl: name -> `SavedLook` (`avatars.ts`), cleaned on read and write (unknown fields dropped), at most 500. Schema: `schemas/avatars.schema.json` | `Store.saveAvatars` (atomic) | every read |
 | `snippets.json` | JSON array, pretty +nl, of `Snippet` `{ id, name, text, scope: "global" \| <slug>, createdAt, updatedAt }` | `Snippets` (atomic) | every read |
 | `attachments/<32 hex>.<ext>` | The pasted or uploaded file's bytes. Types: png, jpg, gif, webp, pdf, docx, xlsx, pptx and common text/code extensions; at most 25 MB; magic bytes checked. Shared by all boards; tickets link to them in Markdown | `saveAttachment` (`attachments.ts`, plain write) | n/a |
 
@@ -605,10 +663,10 @@ All CORE.
 | --- | --- | --- | --- | --- |
 | `notify.json` | JSON object, pretty +nl, `NotifySettings` (`notify.ts`) incl. `telegram: TelegramSettings` | `writeNotifySettings`, fixed-tmp, `0600` + chmod | every read | yes (bot token, webhook URL) |
 | `push.json` | JSON object, pretty +nl, `PushFile` `{ vapid: { publicKey, privateKey }, devices, dropped? }` (`push.ts`); VAPID keys made on first read | `PushService.write`, fixed-tmp, `0600` on create | every read | yes |
-| `remote.json` | JSON object, pretty +nl, `RemoteConfig` `{ enabled, host, allowedLogin, updatedAt }` (`remote.ts`); may be deleted when phone access is turned off | `RemoteAccess.write` (daemon and CLI), fixed-tmp | mtime | no |
+| `remote.json` | JSON object, pretty +nl, `RemoteConfig` `{ enabled, host, allowedLogin, updatedAt }` (`remote.ts`); turning phone access off writes `enabled: false` and keeps the file (it is removed only when it can't be read). Schema: `schemas/remote.schema.json` | `RemoteAccess.write` (daemon and CLI), fixed-tmp | mtime | no |
 | `automation-passes.json` | JSON object, pretty +nl, `{ version: 1, passes: Pass[] }` (`integrations/passes.ts`) | `Passes.write`, random tmp, `0600` + chmod | every read (`board-keys.ts`: mtime/size/inode cache) | yes (API keys, OAuth tokens) |
 | `helper.json` | JSON object, pretty +nl, `HelperSettings` `{ model, night, nightOptIn, feedback }` (`helper/settings.ts`) | atomic | every read | no |
-| `devices.json` | JSON **array**, pretty, **no** final newline, `Device[]` `{ name, description, capacity, addedByClaude?, lastUsedAt? }` | `Devices.save`, fixed-tmp | once | no |
+| `devices.json` | JSON **array**, pretty, **no** final newline, `Device[]` `{ name, description, capacity, addedByClaude?, lastUsedAt }` (`lastUsedAt` is always written, `null` until first used; each entry is rebuilt on load, so unknown fields are lost). Schema: `schemas/devices.schema.json` | `Devices.save`, fixed-tmp | once | no |
 | `browsers.json` | JSON object, pretty, no final newline, `ChromesState` `{ browsers, listedAt, connected }` (`chromes.ts`) | fixed-tmp | once | no |
 | `board-browsers.json` | JSON object, pretty, no final newline, `{ browsers: BoardBrowser[], running: Record<id, Runtime> }` (`board-browsers.ts`) | fixed-tmp | once | no |
 | `browsers/<id>/` | Chrome's own `--user-data-dir` for a board browser (cookies, logins, `DevToolsActivePort`). Folder `0700` | Chrome | n/a | yes |

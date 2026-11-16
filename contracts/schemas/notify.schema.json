@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ckanban.dev/contracts/schemas/notify.schema.json",
+  "title": "NotifySettings",
+  "description": "notify.json (data folder root): how \"needs you\" notifications reach the user. Type NotifySettings in src/helper/notify.ts, telegram is TelegramSettings in src/helper/telegram.ts. Written by writeNotifySettings (pretty JSON, 2-space indent, final newline, fixed notify.json.tmp then rename, mode 0600 plus chmod); read by readNotifySettings on every use, which fills anything missing or invalid from DEFAULT_NOTIFY, so the daemon always writes every key below. Holds secrets: telegram.token (bot token) and webhookUrl (an ntfy topic URL is a read secret). Every unknown key is dropped on the next write (normalizeSettings); a port may do the same.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["webhookUrl", "format", "mac", "kinds", "helper", "push", "webhookOn", "telegram"],
+  "properties": {
+    "webhookUrl": { "type": "string", "description": "Empty: no webhook. Else an http(s) URL, trimmed. Secret." },
+    "format": { "enum": ["auto", "ntfy", "json"], "description": "auto: ntfy when the URL's host has \"ntfy\" in it, else JSON." },
+    "mac": { "type": "boolean", "description": "macOS banner on this Mac. Default true." },
+    "kinds": {
+      "type": "object",
+      "description": "Per notification kind (NOTIFY_KINDS), on or off. Defaults: all true except reply.",
+      "additionalProperties": { "type": "boolean" },
+      "required": ["stalled", "questions", "proposal", "review", "failed", "limit", "blocked", "huddle", "reply", "message"],
+      "properties": {
+        "stalled": { "type": "boolean" },
+        "questions": { "type": "boolean" },
+        "proposal": { "type": "boolean" },
+        "review": { "type": "boolean" },
+        "failed": { "type": "boolean" },
+        "limit": { "type": "boolean" },
+        "blocked": { "type": "boolean" },
+        "huddle": { "type": "boolean" },
+        "reply": { "type": "boolean" },
+        "message": { "type": "boolean" }
+      }
+    },
+    "helper": { "type": "boolean", "description": "The helper groups routine waits (src/helper/core.ts). Off: one notification per wait." },
+    "push": { "type": "boolean", "description": "Phone push channel on." },
+    "webhookOn": { "type": "boolean", "description": "The webhook channel on; webhookUrl is kept while off." },
+    "telegram": { "$ref": "#/$defs/TelegramSettings" }
+  },
+  "$defs": {
+    "TelegramSettings": {
+      "type": "object",
+      "description": "TelegramSettings (src/helper/telegram.ts). frontDesk, briefedAt and deskCapUsd are optional in the type but written by the current daemon (DEFAULT_TELEGRAM has them).",
+      "additionalProperties": true,
+      "required": ["on", "token", "chatId", "chatName", "pairedAt", "askTyped", "takeMessages", "lockedAt"],
+      "properties": {
+        "on": { "type": "boolean" },
+        "token": { "type": "string", "description": "BotFather's bot token, or empty. Secret. Set through the API it matches TOKEN_RE ^\\d{5,15}:[A-Za-z0-9_-]{30,60}$; from the file it is only trimmed." },
+        "chatId": { "type": ["integer", "null"], "description": "The paired chat (set only by pairing)." },
+        "chatName": { "type": ["string", "null"], "description": "Who paired, e.g. \"Leo (@leo)\"; read back cut to 120 chars." },
+        "pairedAt": { "type": ["string", "null"], "format": "date-time" },
+        "askTyped": { "type": "boolean", "description": "Echo a typed answer with [Send] [Cancel] first. Default true." },
+        "takeMessages": { "type": "boolean", "description": "Take messages from Telegram. Default true." },
+        "lockedAt": { "type": ["string", "null"], "format": "date-time", "description": "When /lock turned takeMessages off." },
+        "frontDesk": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9-]{0,63}$", "description": "Board slug the front desk lives on." },
+        "briefedAt": { "type": ["string", "null"], "format": "date-time", "description": "When the briefing went to the paired chat." },
+        "deskCapUsd": { "type": "number", "minimum": 0, "maximum": 100, "description": "Front desk daily cap in USD, rounded to cents. Default 2." }
+      }
+    }
+  }
+}

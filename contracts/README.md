@@ -15,7 +15,7 @@ the document and the contract tests in the same commit.
 | `api.md` | Every route under `/api/`: method, path, query, body, answer, errors; grouped by feature. Also the Host/Origin rule, special headers, the event stream and the shell WebSocket. |
 | `data-files.md` | Every file and folder under the data folder (`~/.claude-kanban`, or `$CKANBAN_HOME`): path, format, who writes it, an example. Says which files a port must keep byte-compatible and which are caches it may rebuild. |
 | `cli.md` | Every `ckanban` command: arguments, output, exit codes, the routes it calls and the environment variables it reads. Also the `ckanban mcp` tools and the routes behind them. |
-| `schemas/*.schema.json` | JSON Schema (draft 2020-12) for the main saved records: profile, ticket, ticket run log line and schedule. Unknown fields are allowed: a port must keep fields it doesn't know. |
+| `schemas/*.schema.json` | JSON Schema (draft 2020-12) for every saved JSON file and JSONL line in the data folder (`data-files.md`, "Schemas and checks", lists which file uses which). Unknown fields are allowed: a port must keep fields it doesn't know, except where `data-files.md` says the Bun daemon drops them. |
 
 The source of truth is still the code (`src/core/types.ts`, `src/api/server.ts`, `src/core/store.ts`,
 `src/cli/cli.ts`, `src/cli/ticket-cli.ts`, `src/cli/client.ts`, `src/mcp/server.ts`). If a document and the code disagree, the
@@ -35,6 +35,8 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   them, and bad JSON stops the run. The daemon gets the test's time zone (`TZ`), `CKANBAN_NO_KEYCHAIN=1` and a
   `CKANBAN_USAGE_URL` on a closed local port, so it never reaches the keychain or Anthropic.
 - `files.ts` reads the data files (ticket front matter, JSONL) the way `data-files.md` describes them.
+- `schema.ts` checks a value against a schema in `contracts/schemas/` (the keywords those schemas use, no package);
+  `schema.test.ts` checks the checker and that every schema uses only keywords it knows.
 - `tickets.test.ts`: boards (create, list, read, errors, the Origin check, `ckanban profiles`); tickets over HTTP and
   the CLI (create, read, update, move between columns and to another board, list, delete, validation errors); the
   ticket chat (a message starts a run on the fake Claude; the conversation, the run log and `activity.jsonl` read back);
@@ -47,8 +49,10 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
 - `callers.test.ts`: a board run (the fake Claude in `call` mode, calling the API without the run header) gets 403 on
   user-only routes while a program outside the board may delete a schedule; behind a front server its internal port
   refuses requests without the secret; the event stream delivers events while it stays open; the terminal's WebSocket.
-- `data-files.test.ts`: after a mix of actions, every file in the data folder matches a path listed in
-  `data-files.md`, and the profile, ticket and schedule files hold the fields their schemas require.
+- `data-files.test.ts`: after a mix of actions (tickets, chats, side calls, schedules, jobs, automations, quick
+  chats, huddles, settings, plan usage), every file in the data folder matches a path listed in `data-files.md`, and
+  every saved file with a schema matches it and is written in its documented style. User-only actions go through the
+  phone access listener (`remote.json` seeded as on); `FAKE_SIDE_JSON` lets the fake Claude answer side calls.
 
 Run them with `bun test test/contract` (each file starts its own daemon, about half a second); `bun run test` runs them
 with everything else.
