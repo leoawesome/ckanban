@@ -364,23 +364,13 @@ export class LoopManager {
   }
 
   /** A trial run of a script that isn't saved (the setup chat and the editor's Test): makes no tickets. */
-  /**
-   * byUser: whether the caller is the user (the editor's Test). Anyone else (the setup chat, any run) can test with
-   * sign-in and program connections, which the script reaches only through `ckanban call`, but not with a pasted key:
-   * the script would get its value, and could print it changed so no masking catches it.
-   */
-  async test(slug: string, input: { script?: unknown; passes?: unknown }, byUser: () => Promise<boolean> = async () => true): Promise<TestResult> {
+  async test(slug: string, input: { script?: unknown; passes?: unknown }): Promise<TestResult> {
     const profile = this.store.getProfile(slug);
     if (!profile) throw new LoopError(404, `board ${slug} not found`);
     const script = String(input.script ?? "");
     if (!script.trim()) throw new LoopError(400, "There is no script to test");
     if (script.length > SCRIPT_MAX) throw new LoopError(400, "The check script is too long");
     const passIds = input.passes === undefined ? [] : this.passIds(input.passes, slug);
-    const keyed = Object.keys(this.passes.envFor(passIds, slug));
-    if (keyed.length && !(await byUser())) {
-      throw new LoopError(403, `Testing a script with a saved key (${keyed.join(", ")}) is for the user only: a board run or another program can't. ` +
-        "Test it without that connection, then propose the automation; the user can press Test in Automations once it is saved.");
-    }
     const dir = join(this.store.root, "automation-tests");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, `${newId()}.sh`);
