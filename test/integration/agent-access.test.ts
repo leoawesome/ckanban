@@ -378,18 +378,21 @@ test("agents API reports status and registers Codex", async () => {
   const codexConfig = join(home, ".codex/config.toml");
   const s2 = createServer({
     store: new Store(tempDir("ck-home-")), bus: new Bus(), board: new Board(new Store(tempDir()), new Bus(), { claudeBin: "/bin/false" }),
-    port: 0, webDir: tempDir(),
+    port: 0, webDir: tempDir(), isUserBrowser: async () => true,
     agents: new AgentRegistry({ claudeBin: "/bin/false", codexBin: "no-such-codex", claudeConfig: join(home, ".claude.json"), codexConfig, serverArgv: ["/bin/ck", "mcp"] }),
   });
   try {
     const base = `http://127.0.0.1:${s2.port}/api/agents`;
     const before: any = await (await fetch(base)).json();
     expect(before.map((a: any) => [a.id, a.installed])).toEqual([["claude", false], ["codex", false]]);
-    const r = await fetch(`${base}/codex/install`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    // Registering is for the user only (their browser): a board run is refused.
+    const json = { "content-type": "application/json", origin: `http://127.0.0.1:${s2.port}` };
+    expect((await fetch(`${base}/codex/install`, { method: "POST", headers: { ...json, "x-ckanban-run": "repo/t_1" }, body: "{}" })).status).toBe(403);
+    const r = await fetch(`${base}/codex/install`, { method: "POST", headers: json, body: "{}" });
     const after: any = await r.json();
     expect(after[1]).toMatchObject({ installed: true, current: true, command: "/bin/ck mcp" });
     expect(readFileSync(codexConfig, "utf8")).toContain("[mcp_servers.ckanban]");
-    expect((await fetch(`${base}/nope/install`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(404);
+    expect((await fetch(`${base}/nope/install`, { method: "POST", headers: json, body: "{}" })).status).toBe(404);
   } finally {
     s2.stop(true);
   }

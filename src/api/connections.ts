@@ -4,11 +4,15 @@ import { type ApiContext, HttpError, NEXT, type RouteResult, body } from "./cont
 
 /** /api/mcp, /api/agents */
 export async function connectionRoutes(ctx: ApiContext, req: Request, url: URL, parts: string[], m: string): Promise<RouteResult> {
-  const { json, mcp, agents } = ctx;
+  const { json, mcp, agents, userOnly } = ctx;
   // Connections panel: Claude Code MCP servers (always from the home dir, user scope for edits).
   if (parts[0] === "mcp") {
     const name = parts[1];
     if (parts.length === 1 && m === "GET") return json(mcp.state());
+    // Adding or changing a tool decides what later runs start (a stdio command), and a tool's settings hold its keys
+    // (env values, headers): both are for the user only, never a board run. The list above stays open (MCP tools read it).
+    if (m !== "GET") await userOnly(req, "Changing Claude's tools (Connections)");
+    else if (parts.length === 3 && parts[2] === "config") await userOnly(req, "Reading a tool's settings", { read: true });
     if (parts.length === 1 && m === "POST") {
       await mcp.add(await body(req));
       return json(mcp.state(), 201);
@@ -67,6 +71,7 @@ export async function connectionRoutes(ctx: ApiContext, req: Request, url: URL, 
   if (parts[0] === "agents") {
     if (parts.length === 1 && m === "GET") return json(await agents.status());
     const id = parts[1] as AgentId;
+    if (m !== "GET") await userOnly(req, "Connecting the board to Claude Code or Codex");
     if (parts.length === 3 && m === "POST" && AGENT_IDS.includes(id) && (parts[2] === "install" || parts[2] === "uninstall")) {
       await (parts[2] === "install" ? agents.install(id) : agents.uninstall(id));
       if (id === "claude") mcp.refresh();

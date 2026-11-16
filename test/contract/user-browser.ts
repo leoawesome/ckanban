@@ -25,12 +25,12 @@ function chromeLink(): string {
   return link;
 }
 
-/** A request from "the user's browser": the board's Origin plus a JSON body when given. */
-export async function asUser<T = any>(base: string, method: string, path: string, body?: unknown): Promise<UserAnswer<T>> {
+/** A request from "the user's browser": the board's Origin (left out with noOrigin, as a same-origin GET) plus a JSON body when given. */
+export async function asUser<T = any>(base: string, method: string, path: string, body?: unknown, opts: { noOrigin?: boolean } = {}): Promise<UserAnswer<T>> {
   const req = {
     url: base + path,
     method,
-    headers: { origin: base, ...(body === undefined && method === "GET" ? {} : { "content-type": "application/json" }) },
+    headers: { ...(opts.noOrigin ? {} : { origin: base }), ...(body === undefined && method === "GET" ? {} : { "content-type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   };
   const p = Bun.spawn([chromeLink(), import.meta.path, JSON.stringify(req)], { stdout: "pipe", stderr: "pipe" });

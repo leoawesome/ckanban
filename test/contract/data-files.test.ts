@@ -122,7 +122,7 @@ beforeAll(async () => {
   ok({ status: att.status, text: "" }, 201, "attachment");
   attachmentName = ((await att.json()) as any).url.split("/").pop();
   ok(await d.api("POST", "/api/devices", { name: "phone", description: "test phone", capacity: 1 }), 200, "device");
-  ok(await d.api("POST", "/api/mcp", { name: "docs", transport: "http", url: "https://mcp.example.com/mcp", board: SLUG }), 201, "board tool");
+  ok(await asUser("POST", "/api/mcp", { name: "docs", transport: "http", url: "https://mcp.example.com/mcp", board: SLUG }), 201, "board tool");
   ok(await d.api("POST", "/api/push/subscribe", { subscription: { endpoint: "https://push.example.com/x", keys: { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM", auth: "tBHItJI5svbpez7KI4CCXg" } }, label: "Phone" }), 200, "push");
   ok(await asUser("POST", "/api/notify", { mac: false }), 200, "notify");
   ok(await asUser("POST", "/api/helper/settings", { model: "haiku" }), 200, "helper");
