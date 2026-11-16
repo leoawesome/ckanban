@@ -107,8 +107,9 @@ pub trait TicketViews: Send + Sync {
 
 /// `liveJson` (`src/runs/live-cut.ts`): a run's raw event as live events send it, long strings cut.
 pub trait ActivityCut: Send + Sync {
-    /// The JSON text of an `activity` event as the event stream sends it (before masking).
-    fn live_json(&self, event: &Value) -> String;
+    /// The JSON text of an `activity` event as the event stream sends it. `mask` hides saved keys in a long string
+    /// before it is cut (the whole text is masked again afterwards, as in Bun).
+    fn live_json(&self, event: &Value, mask: &dyn Fn(&str) -> String) -> String;
 }
 
 /// The stand-ins: nothing running, no session, no huddle, no devices, no landing, no satellite, tickets as they are.
@@ -220,7 +221,7 @@ impl TicketViews for StandIn {
 }
 
 impl ActivityCut for StandIn {
-    fn live_json(&self, event: &Value) -> String {
+    fn live_json(&self, event: &Value, _mask: &dyn Fn(&str) -> String) -> String {
         serde_json::to_string(event).unwrap_or_else(|_| "null".into())
     }
 }

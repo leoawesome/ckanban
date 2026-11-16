@@ -46,7 +46,7 @@ fn build(e: &BusEvent, hooks: &EventHooks) -> String {
     {
         out["ticket"] = v;
     }
-    let text = if e.ty == "activity" { hooks.cut.live_json(&out) } else { serde_json::to_string(&out).unwrap_or_else(|_| "null".into()) };
+    let text = if e.ty == "activity" { hooks.cut.live_json(&out, &|t: &str| (hooks.mask)(t)) } else { serde_json::to_string(&out).unwrap_or_else(|_| "null".into()) };
     let mut msg = format!("data: {text}\n\n");
     // Session changes and the host's huddle change the ticket's "your turn" state too.
     let changed = match e.ty.as_str() {
