@@ -453,6 +453,13 @@ enabled, skipIfRunning, tags, quiet, model, partOf`. The view is `Schedule` plus
 Who may delete a schedule: a request replayed after a Telegram Confirm; with an `Origin`, the user-only check; without
 one, a program on this Mac the daemon did not start (the user's own terminal or Claude).
 
+Firing by itself: the daemon looks for due schedules once at start, then every 30 s (there is no test clock). A due
+one first gets its next `nextRunAt` saved, then fires: a ticket in `in_progress` (title with `{date}`/`{time}` filled
+in, local time) and a `fired` history line with `trigger: "schedule"`, or `"missed"` when it was due over 90 s ago
+(only one catch-up however many slots were missed). Paused ones never fire. With `skipIfRunning`, a fire while the
+schedule's last ticket is `ready`, `in_progress` or running writes a `skipped` line instead. Fires and "run now" go one
+at a time, so two "run now" calls at once give `fired` then `skipped`.
+
 ## Automations (loops)
 
 Prefix `/api/profiles/:slug/loops`. Input fields (`LoopInput`, loops.ts): `name, enabled, service, passes, script,
@@ -462,11 +469,19 @@ everyMinutes, column, autoStart, askClaude, instructions, partOf`.
 |---|---|---|---|---|
 | GET | `/loops` | | 200 `LoopView[]` | |
 | POST | `/loops/test` | `LoopInput` (script to try); user only when `passes` holds a key the script would get as a variable | 200 `LoopManager.test()` result | 403, `LoopError` |
-| POST | `/loops` | `LoopInput`; user only | 201 `Loop`; a first check starts in the background | 403, `LoopError` |
-| PATCH | `/loops/:lid` | partial `LoopInput`; user only | 200 `Loop` | 403, `LoopError` |
+| POST | `/loops` | `LoopInput`; user only | 201 `LoopView`; a first check starts in the background | 403, `LoopError` |
+| PATCH | `/loops/:lid` | partial `LoopInput`; user only | 200 `LoopView`; a new script or switching it on starts a first check in the background | 403, `LoopError` |
 | DELETE | `/loops/:lid` | user only | 204 | 403, `LoopError` |
-| POST | `/loops/:lid/check` | user only | 200 `checkNow()` result | 403, `LoopError` |
-| POST | `/loops/:lid/copy` | `{to}` (board slug); user only | 201 copied loop | 403, `LoopError` |
+| POST | `/loops/:lid/check` | user only | 200 `LoopView` after the check (a switched-off loop is not checked) | 403, `LoopError` |
+| POST | `/loops/:lid/copy` | `{to}` (board slug); user only | 201 `LoopView` of the copy (switched off, nothing seen yet) | 403, `LoopError` |
+
+`LoopView` is the saved `Loop` plus `state` (`ok`, `unsupported`, `needs_connection`, `script_changed`), `problems`,
+`script` (the file's text now), `passViews`, and what the last check found: `seenCount`, `lastFound`, `lastItems`
+(each `{id, title, link?, state, ticketId?, note?}`; `state` `new`, `added`, `waiting`, `skipped`, `first`, `seen`).
+There is no separate history route: these fields and `lastCheckedAt`, `lastFiredAt`, `lastError` are the history.
+The first check after a save or switching on only notes what is there (`first`, no tickets). A failed check sets
+`lastError` and a wait (`backoffUntil` in the state file, 2 minutes doubling up to 30). The daemon's timer looks every
+60 s and checks each switched-on loop at most every `everyMinutes`; `check` ignores both.
 
 ## Jobs (one-time)
 
@@ -480,7 +495,16 @@ Changes from `x-ckanban-run` are credited to that ticket.
 | POST | `/jobs` | `JobInput` | 201 job view | 403 huddle agent, 403 run from another board, 404 run ticket, `JobError` |
 | PATCH | `/jobs/:jid` | partial `JobInput` | 200 job view | same |
 | POST | `/jobs/:jid/cancel` | body ignored | 200 job view | same |
-| POST | `/jobs/:jid/run` | body ignored | 200 job view | same |
+| POST | `/jobs/:jid/run` | body ignored | 200 job view once it started: a ticket job is `done` with `result.ticketId`; a command job may still be `running` | same |
+
+Only a `scheduled` job can be changed, cancelled or run: otherwise `409 {"error":"job <id> is <state>: only a
+scheduled job can be changed"}`. `at` must be in the future (400). A PATCH `action` replaces the whole action.
+Firing by itself: the daemon looks for due jobs once at start, then every 30 s (there is no test clock). A job seen
+over 10 minutes after its `at` is late: a ticket job still makes its ticket (its body starts with a "This was due ...
+because the computer was off" paragraph); a command job is saved `skipped` (`result.message` "skipped: the computer
+was off at <Tue 20 Oct 22:00>") unless `ifLate` is `"run"`. A command runs with `/bin/sh -c` in the board folder with
+`CKANBAN_BOARD`, `CKANBAN_JOB`, `CKANBAN_SOURCE_TICKET`; its `result` is `{exitCode, durationMs, output, timedOut,
+message?}` (`failed` with `message` "exited with code N" or "stopped after N s (time limit)").
 
 ## Team: presets, templates, squads, learned, notes
 
