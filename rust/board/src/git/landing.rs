@@ -779,7 +779,8 @@ async fn would_remove(dir: &Path) -> (&'static str, Option<String>) {
     if !dir.exists() {
         return ("delete", Some("folder already gone".into()));
     }
-    let st = git(&["status", "--porcelain"], dir).await;
+    // No optional locks: a report must not refresh the copy's index or take its lock.
+    let st = git(&["--no-optional-locks", "status", "--porcelain"], dir).await;
     if !st.ok() {
         return ("keep", Some(st.stderr.trim().to_string()));
     }

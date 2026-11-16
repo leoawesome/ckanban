@@ -211,6 +211,8 @@ describe("the board's Files panel", () => {
     });
     const own = await d.api("GET", `/api/profiles/${B}/files?path=src&ticket=t_copy`);
     expect(own.data.entries.map((e: any) => e.path)).toEqual(["src/app.ts", "src/new.ts"]);
+    // An empty ticket is the board folder.
+    expect((await d.api("GET", `/api/profiles/${B}/files?path=&ticket=`)).data.entries.map((e: any) => e.path)).toEqual(["src", "web", ".gitignore", "README.md"]);
     expect((await d.api("GET", `/api/profiles/${B}/files?ticket=bad%20id`)).data).toEqual({ error: "invalid ticket" });
     expect((await d.api("GET", `/api/profiles/${B}/files?ticket=t_gone`)).data).toEqual({ error: "ticket not found" });
     expect((await d.api("GET", `/api/profiles/${B}/files?path=..`)).data).toEqual({ error: "path must not contain .." });

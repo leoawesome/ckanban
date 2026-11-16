@@ -79,7 +79,8 @@ fn plain_name(x: &str) -> bool {
 pub fn route_of(method: &Method, path: &str) -> Option<Route> {
     let post = method == Method::POST;
     let get = method == Method::GET;
-    if !(post || get) {
+    // Bun's server only routes paths that start with "/api/" (anything else is the UI's files).
+    if !(post || get) || !path.starts_with("/api/") {
         return None;
     }
     let parts: Vec<String> = path.split('/').filter(|p| !p.is_empty()).map(decode).collect::<Option<Vec<_>>>()?;
@@ -132,7 +133,8 @@ fn header_str<'a>(h: &'a HeaderMap, name: impl hyper::header::AsHeaderName) -> O
 /// `requestRefusal` on the local listener passes, and nothing makes Bun's answer special (front desk, repeated
 /// headers). Otherwise the request goes to Bun, which refuses or answers it.
 fn plain_local(h: &HeaderMap, method: &Method, port: u16) -> bool {
-    if h.contains_key(FRONT_DESK_HEADER) || [HOST, ORIGIN, CONTENT_TYPE].iter().any(|n| h.get_all(n).iter().count() > 1) {
+    let repeated = |n: &str| h.get_all(n).iter().count() > 1;
+    if h.contains_key(FRONT_DESK_HEADER) || ["host", "origin", "content-type", RUN_HEADER].into_iter().any(repeated) {
         return false;
     }
     let Some(host) = header_str(h, HOST) else { return false };
@@ -206,12 +208,21 @@ impl GitRoutes {
         if !plain_local(req.headers(), req.method(), self.port) {
             return Err(Next::Untouched(req));
         }
-        let (parts, body) = req.into_parts();
+        // A body bigger than these routes take goes to Bun whole, before any of it is read.
+        let declared = req.headers().get(hyper::header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
+        if declared.is_some_and(|n| n > BODY_LIMIT as u64) {
+            return Err(Next::Untouched(req));
+        }
+        let (mut parts, body) = req.into_parts();
         let bytes = if parts.method == Method::POST {
             match Limited::new(body, BODY_LIMIT).collect().await {
                 Ok(c) => c.to_bytes(),
-                // Too big or cut off: Bun reads what is left of it... nothing; it answers from an empty body.
-                Err(_) => return Err(Next::Bun(Request::from_parts(parts, full(Vec::new())))),
+                // Too big without a length, or cut off: Bun answers from an empty body (and is told so).
+                Err(_) => {
+                    parts.headers.insert(hyper::header::CONTENT_LENGTH, HeaderValue::from(0u64));
+                    parts.headers.remove(hyper::header::TRANSFER_ENCODING);
+                    return Err(Next::Bun(Request::from_parts(parts, full(Vec::new()))));
+                }
             }
         } else {
             Bytes::new()
@@ -426,7 +437,8 @@ impl GitRoutes {
 
     /// `panelFolder`: the ticket's copy (`?ticket=`) while it exists, else the board folder.
     fn panel_folder(&self, slug: &str, board_path: &Path, ticket: Option<&str>) -> Result<PathBuf, Out> {
-        let Some(id) = ticket else { return Ok(board_path.to_path_buf()) };
+        // `if (!ticketId)`: an empty value is the board folder too.
+        let Some(id) = ticket.filter(|t| !t.is_empty()) else { return Ok(board_path.to_path_buf()) };
         static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"^[A-Za-z0-9_-]{1,80}$").unwrap());
         if !RE.is_match(id) {
             return Err(Out::Err(400, "invalid ticket".into()));
@@ -592,6 +604,7 @@ mod tests {
         assert_eq!(route_of(&g, "/api/profiles/a%2Fb/files"), None);
         assert_eq!(route_of(&g, "/api/profiles/b/tickets/t1/file%"), None);
         assert_eq!(route_of(&Method::HEAD, "/api/profiles/b/files"), None);
+        assert_eq!(route_of(&g, "//api/profiles/b/files"), None);
     }
 
     #[test]
@@ -609,6 +622,10 @@ mod tests {
         assert!(!plain_local(&h, &Method::POST, 7777));
         h.insert(ORIGIN, HeaderValue::from_static("http://localhost:7777"));
         assert!(plain_local(&h, &Method::POST, 7777));
+        h.append(RUN_HEADER, HeaderValue::from_static(""));
+        h.append(RUN_HEADER, HeaderValue::from_static("b/t1"));
+        assert!(!plain_local(&h, &Method::POST, 7777), "two run headers: Bun joins them");
+        h.remove(RUN_HEADER);
         h.insert(FRONT_DESK_HEADER, HeaderValue::from_static("x"));
         assert!(!plain_local(&h, &Method::POST, 7777));
     }
