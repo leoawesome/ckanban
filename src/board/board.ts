@@ -4,7 +4,7 @@ import { extractFinalText, summarizeEvent } from "../runs/activity";
 import { localizeAttachments } from "./attachments";
 import type { Bus } from "../core/events";
 import { isSessionLive as psSessionLive, sessionTitle } from "../runs/claude";
-import { FetchError, type RepoKind } from "../runs/git";
+import { FetchError, forgetRepoKind, type RepoKind } from "../runs/git";
 import { MOVE_TO_PLANNING_RE, STAY_RE } from "../runs/session";
 import { saveMockups } from "./mockups";
 import { Devices } from "../browser/devices";
@@ -433,6 +433,9 @@ export class Board {
       })
       .finally(async () => {
         this.runs.delete(this.key(slug, id));
+        // The run may have changed the folder's history (git init, a first commit, a remote): ask git again next time.
+        const path = this.store.getProfile(slug)?.path;
+        if (path) forgetRepoKind(path);
         // Whatever devices the run still holds or waits for go to the next ticket in line.
         this.devices.releaseAll(slug, id);
         this.boardBrowsers.release(this.key(slug, id));

@@ -479,7 +479,8 @@ export async function landMilestone(this: Board, slug: string, id: string, summa
     this.patch(slug, id, { statusAt: nowIso() });
     this.store.addComment(slug, id, "ai", `Milestone landed: ${text} (${landed}).`);
   };
-  const repo = await repoKind(profile.path);
+  // Fresh: a remote the user just added must be pushed to, not missed for a few seconds.
+  const repo = await repoKind(profile.path, { fresh: true });
   if (repo === "plain" || repo === "empty" || !t.branch || !t.worktree || !existsSync(t.worktree)) {
     record("already in the project folder");
     return "Recorded the milestone: the tool tickets already edited the project folder itself, so there is nothing else to land.";
