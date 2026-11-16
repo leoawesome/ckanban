@@ -13,6 +13,9 @@
 // it with a stop_task control request (workflow-nostop refuses, like a CLI that can't).
 // FAKE_SIDE_JSON=1: a side call (`-p --output-format json`, e.g. simplify or "help me understand") prints one JSON
 // result like the real CLI (text FAKE_SIDE_TEXT, cost $0.002) and exits; without it side calls get stream lines and fail.
+// FAKE_PLAN_FILE=<path>: JSON [{match, tools?: [{name, input}], text?, status?}]. A turn whose message contains `match` (the first
+// that does) calls those tools (tool use ids tu_plan_<n>) and adds `text` to its reply (ending with `status` when set); that turn's assistant messages
+// are saved in the transcript, so the chat shows forms, proposals and blocks (contract tests of the chat).
 // FAKE_TRANSCRIPT=1: it also thinks, runs a Bash call and posts to its huddle, and writes what it emits to the transcript.
 // With --input-format stream-json it reads user messages from stdin like the real CLI: messages that
 // arrive mid-run are picked up at the next step (replayed with --replay-user-messages), later ones
@@ -88,6 +91,19 @@ if (process.env.FAKE_ARGS_FILE) {
   }) + "\n");
 }
 // FAKE_BLOCK_MATCH: runs whose first prompt contains this text end "blocked" (per-ticket behaviour in one test).
+type Plan = { match: string; tools?: { name: string; input: unknown }[]; text?: string; status?: string };
+function planFor(msg: string | null): Plan | null {
+  const f = process.env.FAKE_PLAN_FILE;
+  if (!f || msg === null || !existsSync(f)) return null;
+  const list: Plan[] = JSON.parse(require("node:fs").readFileSync(f, "utf8"));
+  return list.find((p) => msg.includes(p.match)) ?? null;
+}
+let plan = planFor(first);
+let planTool = 0;
+/** The plan's tool calls for this turn, saved in the transcript by emit(). */
+function planTools() {
+  for (const t of plan?.tools ?? []) emit({ type: "assistant", message: { content: [{ type: "tool_use", id: `tu_plan_${++planTool}`, name: t.name, input: t.input }] } });
+}
 const mode = process.env.FAKE_BLOCK_MATCH && first?.includes(process.env.FAKE_BLOCK_MATCH) ? "blocked" : process.env.FAKE_MODE ?? "ok";
 const idx = Math.max(args.indexOf("--session-id"), args.indexOf("--resume"));
 const sessionId = idx >= 0 ? args[idx + 1] : "none";
@@ -101,7 +117,7 @@ const transcriptFile = process.env.CLAUDE_CONFIG_DIR && sessionId !== "none" && 
 function emit(obj: any) {
   process.stdout.write(JSON.stringify(obj) + "\n");
   // Like the real CLI's transcript: assistant blocks and tool results, with timestamps.
-  if (process.env.FAKE_TRANSCRIPT && transcriptFile && (obj.type === "assistant" || obj.type === "user") && !obj.isReplay) {
+  if ((process.env.FAKE_TRANSCRIPT || plan) && transcriptFile && (obj.type === "assistant" || obj.type === "user") && !obj.isReplay) {
     appendFileSync(transcriptFile, JSON.stringify({ ...obj, sessionId, timestamp: new Date().toISOString() }) + "\n");
   }
 }
@@ -189,6 +205,8 @@ if (process.env.FAKE_ASK_KEYS) {
   emit(ask);
   if (!process.env.FAKE_TRANSCRIPT && transcriptFile) appendFileSync(transcriptFile, JSON.stringify({ ...ask, sessionId, timestamp: new Date().toISOString() }) + "\n");
 }
+
+planTools();
 
 // Calls the board's API the way a run's shell could: no run header, at CKANBAN_PORT as the run got it. FAKE_CALLS_FILE
 // holds [{method, path, headers?, body?}]; each answer {method, path, status, text} is appended to FAKE_CALL_OUT (JSON lines).
@@ -296,10 +314,10 @@ if (background) emit({ type: "system", subtype: "background_tasks_changed", task
 
 drain();
 const steered = heard.slice(1);
-const status = mode === "blocked" ? "blocked" : mode === "questions" ? "questions" : "done";
+const status = plan?.status ?? (mode === "blocked" ? "blocked" : mode === "questions" ? "questions" : "done");
 const text = mode === "noresult"
   ? "All done, no result line."
-  : `Work complete.${steered.length ? `\nSteered: ${steered.join(" | ")}` : ""}${decisions.length ? `\nAsks: ${decisions.join(" ")}` : ""}${process.env.FAKE_EXTRA ?? ""}\nCKANBAN_RESULT: ${JSON.stringify({ status, prUrl: pr, ...(process.env.FAKE_PRS ? { prUrls: process.env.FAKE_PRS.split(",") } : {}), ...(process.env.FAKE_QUIET ? { quiet: true } : {}), ...(process.env.FAKE_VERDICT ? { verdict: process.env.FAKE_VERDICT } : {}), summary: `fake ${status}` })}`;
+  : `Work complete.${steered.length ? `\nSteered: ${steered.join(" | ")}` : ""}${decisions.length ? `\nAsks: ${decisions.join(" ")}` : ""}${process.env.FAKE_EXTRA ?? ""}${plan?.text ? `\n${plan.text}` : ""}\nCKANBAN_RESULT: ${JSON.stringify({ status, prUrl: pr, ...(process.env.FAKE_PRS ? { prUrls: process.env.FAKE_PRS.split(",") } : {}), ...(process.env.FAKE_QUIET ? { quiet: true } : {}), ...(process.env.FAKE_VERDICT ? { verdict: process.env.FAKE_VERDICT } : {}), summary: `fake ${status}` })}`;
 for (const chunk of ["Work ", "complete."]) {
   if (process.env.FAKE_STREAM_DELAY) await Bun.sleep(Number(process.env.FAKE_STREAM_DELAY));
   emit({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: chunk } } });
@@ -334,7 +352,9 @@ while (streamIn) {
   const next = await nextMessage();
   if (next === null) break;
   take(next);
-  const reply = `Reply: ${next}\nCKANBAN_RESULT: ${JSON.stringify({ status: "done", prUrl: pr, summary: `reply ${next}` })}`;
+  plan = planFor(next);
+  planTools();
+  const reply = `Reply: ${next}${plan?.text ? `\n${plan.text}` : ""}\nCKANBAN_RESULT: ${JSON.stringify({ status: plan?.status ?? "done", prUrl: pr, summary: `reply ${next}` })}`;
   emit({ type: "assistant", message: { content: [{ type: "text", text: reply }] } });
   emit({ type: "result", subtype: "success", is_error: false, result: reply, session_id: sessionId });
 }
