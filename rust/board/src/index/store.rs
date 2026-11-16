@@ -127,6 +127,33 @@ impl BoardList {
     }
 }
 
+/// `placeTicket`: `t` (None: none) where it belongs in a list sorted by order, replacing the entry with its id; kept
+/// in place when its order didn't change, else after every ticket with the same or a lower order.
+pub fn place_ticket(list: &mut Vec<Arc<Tk>>, id: &str, t: Option<Arc<Tk>>) {
+    let i = list.iter().position(|x| x.id == id);
+    if let (Some(i), Some(t)) = (i, &t) {
+        if list[i].order == t.order {
+            list[i] = t.clone();
+            return;
+        }
+    }
+    if let Some(i) = i {
+        list.remove(i);
+    }
+    let Some(t) = t else { return };
+    // `list[mid].order <= t.order` (false with NaN on either side, like JS).
+    let (mut lo, mut hi) = (0, list.len());
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if list[mid].order <= t.order {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    list.insert(lo, t);
+}
+
 struct BoardState {
     list: Arc<BoardList>,
     dir_mtime: Option<SystemTime>,
@@ -384,6 +411,46 @@ impl Index {
             self.install(slug, tickets, *mtime, started);
         }
         total
+    }
+
+    /// After the board's own write of one ticket file (`saved` in store.ts; R2a): the parse is kept under the file's new
+    /// stamp and the listing gets the ticket in its place (`placeTicket`), without reading the other files. `t` None:
+    /// the ticket's folder was removed. Called with the board's write lock held, so listings follow file order.
+    pub fn saved(&self, slug: &str, id: &str, t: Option<Arc<Tk>>) -> Arc<BoardList> {
+        let file = self.ticket_dir(slug, id).join("ticket.md");
+        match &t {
+            Some(t) => match std::fs::metadata(&file) {
+                Ok(m) => {
+                    self.cache.lock().insert(file, (stamp(&m), t.clone()));
+                }
+                Err(_) => {
+                    self.cache.lock().remove(&file);
+                }
+            },
+            None => {
+                self.cache.lock().remove(&file);
+            }
+        }
+        let base = match self.peek(slug) {
+            Some(l) => l,
+            None => return self.refresh(slug),
+        };
+        let mut tickets = base.tickets.clone();
+        place_ticket(&mut tickets, id, t);
+        let made_by = self.seq.fetch_add(1, Ordering::SeqCst);
+        let mtime = std::fs::metadata(self.tickets_dir(slug)).ok().and_then(|m| m.modified().ok());
+        let mut boards = self.boards.write();
+        let version = boards.get(slug).map_or(0, |b| b.list.version + 1);
+        let list = Arc::new(BoardList::new(slug, tickets, version));
+        boards.insert(slug.to_string(), BoardState { list: list.clone(), dir_mtime: mtime, made_by, checked_at: Instant::now() });
+        list
+    }
+
+    /// Forgets a board's listing (its folder was deleted).
+    pub fn forget(&self, slug: &str) {
+        self.boards.write().remove(slug);
+        let dir = self.root.join("profiles").join(slug);
+        self.cache.lock().retain(|p, _| !p.starts_with(&dir));
     }
 
     /// The background re-check (`recheckTickets`): every board's files stat'ed again, changed ones read.
