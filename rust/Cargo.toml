@@ -3,7 +3,7 @@ name = "ckanban-rs"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Rust front server for the ckanban daemon (trial): answers usage and spend, passes every other request to the Bun daemon"
+description = "Rust front server for the ckanban daemon: answers usage, spend, passes and agents, passes every other request to the Bun daemon"
 
 [[bin]]
 name = "ckanban-rs"

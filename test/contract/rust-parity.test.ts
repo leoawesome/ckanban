@@ -483,8 +483,10 @@ describe.skipIf(!enabled)("Rust and Bun give the same passes and keys answers", 
   }, 30_000);
 
   test("GET /api/agents: the same, with nothing registered and with ckanban registered in Claude Code and Codex", async () => {
+    /** Each side's own temp folders, named the same. */
+    const local = (d: Daemon, text: string) => text.replaceAll(d.env.HOME, "HOME").replaceAll(d.env.CLAUDE_CONFIG_DIR, "CFG");
     const [b0, r0] = await rawBoth("GET", "/api/agents");
-    expect(r0).toEqual(b0);
+    expect({ ...r0, text: local(rs, r0.text) }).toEqual({ ...b0, text: local(bun, b0.text) });
     const argv = JSON.parse(b0.text)[0];
     expect(argv.installed).toBe(false);
     for (const [, d] of both()) {
@@ -494,7 +496,7 @@ describe.skipIf(!enabled)("Rust and Bun give the same passes and keys answers", 
       writeFileSync(join(d.env.HOME, ".codex", "config.toml"), `[mcp_servers.ckanban]\ncommand = "/old/ckanban"\nargs = ['mcp']\n`);
     }
     const [b, r] = await rawBoth("GET", "/api/agents");
-    expect(r.text.replaceAll(rs.env.HOME, "HOME").replaceAll(rs.env.CLAUDE_CONFIG_DIR, "CFG")).toBe(b.text.replaceAll(bun.env.HOME, "HOME").replaceAll(bun.env.CLAUDE_CONFIG_DIR, "CFG"));
+    expect(local(rs, r.text)).toBe(local(bun, b.text));
     const [claude, codex] = JSON.parse(b.text);
     expect([claude.installed, claude.current, codex.installed, codex.current, codex.available]).toEqual([true, true, true, false, true]);
   });
