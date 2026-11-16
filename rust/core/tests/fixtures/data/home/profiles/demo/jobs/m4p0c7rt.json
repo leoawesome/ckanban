@@ -1,0 +1,16 @@
+{
+  "id": "m4p0c7rt",
+  "name": "Deploy check",
+  "at": "2026-11-15T18:00:00.000Z",
+  "action": {
+    "kind": "command",
+    "command": "./scripts/check.sh",
+    "timeoutSec": 300
+  },
+  "state": "scheduled",
+  "sourceTicketId": null,
+  "createdAt": "2026-11-15T08:00:00.000Z",
+  "updatedAt": "2026-11-15T08:00:00.000Z",
+  "firedAt": null,
+  "result": null
+}

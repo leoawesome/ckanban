@@ -10,8 +10,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 flate2 = "1"
 libc = "0.2"
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+serde = "1"
 serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
 tokio = { version = "1", features = ["rt", "macros", "time", "process", "sync"] }
+yaml-rust2 = "0.13.0"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "process", "sync", "net", "io-util"] }

@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "id": "l00p0001",
+  "name": "Watch",
+  "enabled": true,
+  "service": "gmail",
+  "passes": [],
+  "scriptHash": "abc",
+  "everyMinutes": 15,
+  "column": "backlog",
+  "autoStart": false,
+  "askClaude": {
+    "on": false,
+    "prompt": ""
+  },
+  "instructions": "",
+  "allowedTools": [],
+  "createdAt": "2026-11-15T08:00:00.000Z",
+  "updatedAt": "2026-11-15T08:00:00.000Z",
+  "lastCheckedAt": null,
+  "lastFiredAt": null,
+  "lastError": null
+}

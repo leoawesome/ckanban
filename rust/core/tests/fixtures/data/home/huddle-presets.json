@@ -1,0 +1,12 @@
+[
+  {
+    "name": "qa",
+    "role": "QA",
+    "prompt": "Check: it.\nAll of it.",
+    "model": null,
+    "mode": "auto",
+    "lead": false,
+    "canEdit": false,
+    "workspace": "shared"
+  }
+]
