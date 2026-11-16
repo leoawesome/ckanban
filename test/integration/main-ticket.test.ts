@@ -279,14 +279,13 @@ test("a main ticket's reply starts while every run slot is busy; a normal ticket
   expect(get(other.id).slotWait).toBeTruthy();
 }, 60_000);
 
-test("a pending restart still holds a main ticket's reply", async () => {
+test("a pending restart answers the user's message to a main ticket at once", async () => {
   await setup();
   quickBoard();
   const main = await mkMain("Main", "review");
   board.requestRestart(() => {}, 60_000);
-  await board.chat("p", main.id, "later please");
-  expect(board.isRunning("p", main.id)).toBe(false);
-  expect(get(main.id).queued?.[0]?.text).toBe("later please");
+  await board.chat("p", main.id, "now please");
+  expect(board.isRunning("p", main.id)).toBe(true);
 }, 60_000);
 
 /** A git board with a main ticket that has its own copy, and tool tickets starting from it. */

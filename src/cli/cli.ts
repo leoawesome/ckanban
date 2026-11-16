@@ -142,7 +142,7 @@ async function restart(now: boolean) {
     console.log(`Restarting. Board: ${boardUrl()}`);
   } else {
     console.log(`Restart pending: waiting for ${waiting} active run${waiting === 1 ? "" : "s"} to finish (at most ${RESTART_MAX_WAIT_MS / 60_000} min).
-New runs, chat replies and Planning interviews start after the restart. Use \`ckanban restart --now\` to restart at once.`);
+New runs, huddle wakes and Planning interviews start after the restart; your chat messages are answered as usual. Use \`ckanban restart --now\` to restart at once.`);
   }
 }
 

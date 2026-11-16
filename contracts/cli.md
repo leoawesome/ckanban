@@ -130,11 +130,11 @@ Logs: <root>/daemon.log
    - `running == N > 0`: stdout (two lines):
 
 ```
-Restart pending: waiting for N active run(s) to finish (at most 10 min).
-New runs, chat replies and Planning interviews start after the restart. Use `ckanban restart --now` to restart at once.
+Restart pending: waiting for N active run(s) to finish (at most 2 min).
+New runs, huddle wakes and Planning interviews start after the restart; your chat messages are answered as usual. Use `ckanban restart --now` to restart at once.
 ```
 
-  ("run" when N is 1, "runs" otherwise; 10 is `RESTART_MAX_WAIT_MS / 60000`.)
+  ("run" when N is 1, "runs" otherwise; 2 is `RESTART_MAX_WAIT_MS / 60000`.)
 
 ### `ckanban uninstall`
 

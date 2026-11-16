@@ -323,8 +323,9 @@ export function busyBoards(this: Board): string[] {
 }
 
 /**
- * Restart once no run is active. Until then nothing new starts: Ready tickets wait, chat messages queue and
- * Planning interviews are held; recover() starts them after the restart. After maxWaitMs it restarts anyway.
+ * Restart once no run is active. Until then nothing new starts except replies to messages the user types: Ready
+ * tickets wait, other chat messages queue and Planning interviews are held; recover() starts them after the restart.
+ * After maxWaitMs (2 minutes) it restarts anyway, and recover() resumes what it cut off.
  */
 export function requestRestart(this: Board, onIdle: () => void, maxWaitMs = RESTART_MAX_WAIT_MS): { running: number; alreadyPending: boolean } {
   const running = this.activeWork();

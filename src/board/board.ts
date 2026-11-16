@@ -304,7 +304,10 @@ export class Board {
       if (!msg.nextRun) this.steer(active, msg);
       return this.store.getTicket(slug, id)!;
     }
-    if (this.restartPending) {
+    // A message the user typed is answered now even while a restart is pending (they'd wait minutes otherwise); if the
+    // restart cuts the reply off, recover() continues it. Messages from sessions, plans and automations wait.
+    const fromUser = !opts.peer && !opts.fromPlanner && !opts.hostWake && !opts.followUp && !opts.automation;
+    if (this.restartPending && !fromUser) {
       // Starts after the restart: recover() answers queued messages.
       const msg: QueuedMessage = { id: crypto.randomUUID(), text, at: nowIso(), state: "queued", ...flags(opts) };
       return this.patch(slug, id, { queued: [...(t.queued ?? []), msg] });

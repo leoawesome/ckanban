@@ -794,7 +794,7 @@ export function Chat({ slug, ticket, tickets, onOpenTicket, onOpenTasks, onOpenO
       </div>
       <div className="me-meta">{q.state === "unsent" ? `not sent · ${claude} was stopped before reading it`
         : running ? (q.slash ? `queued · runs after ${claude}'s current turn` : `sent · ${claude} reads it at its next step`)
-        : ticket.slotWait ? "queued · starts when the other ticket is done with the folder" : "The board restarts soon; your message is sent right after (at most 10 minutes)."}</div>
+        : ticket.slotWait ? "queued · starts when the other ticket is done with the folder" : "The board restarts soon; your message is sent right after (at most 2 minutes)."}</div>
       </div>
     );
   };
