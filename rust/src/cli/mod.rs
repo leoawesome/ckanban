@@ -1,7 +1,7 @@
 //! The `ckanban` commands in Rust (contracts/cli.md), with the same arguments, output, exit codes and HTTP calls as
-//! Bun's `src/cli/cli.ts`. `dev`/`start` are the front server (main.rs). A few commands stay on Bun for now and are
+//! Bun's `src/cli/cli.ts`. `dev`/`start` are the front server and `mcp` alone the stdio MCP server (main.rs, mcp/). A few commands stay on Bun for now and are
 //! handed to `bun src/cli.ts` with the same arguments (the process is replaced, so input, output and exit code are
-//! Bun's own): `mcp` on stdio (step 3 of docs/rust-port.md), `browser-mcp` (drives a board browser), `artifact` (a
+//! Bun's own): `browser-mcp` (drives a board browser), `artifact` (a
 //! Claude Code session in a pty), `remote` (Tailscale) and `update` (the release binary is still Bun's).
 
 mod agents;
@@ -148,7 +148,7 @@ pub fn run(argv: &[String]) -> Option<u8> {
         Some("ticket" | "tickets") => board_cmd(board::ticket(rest, &client())),
         Some("call") => board_cmd(board::call(rest, &client())),
         Some("mcp") if !rest.is_empty() => board_cmd(agents::mcp_command(rest)),
-        Some("mcp" | "browser-mcp" | "artifact" | "remote" | "update") => to_bun(argv),
+        Some("browser-mcp" | "artifact" | "remote" | "update") => to_bun(argv),
         Some("--version" | "-v" | "version") => {
             out(VERSION);
             0

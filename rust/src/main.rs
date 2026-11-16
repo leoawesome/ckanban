@@ -8,6 +8,7 @@
 //! launchd and `ckanban restart` work as with Bun alone. SIGTERM/SIGINT stop the child first.
 
 mod cli;
+mod mcp;
 mod proxy;
 mod routes;
 mod settings;
@@ -33,7 +34,11 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // Every `ckanban` command but `dev`/`start` (the front server below) lives in cli/.
+    // `ckanban-rs mcp`: the board's stdio MCP server (src/mcp/, the port of `ckanban mcp`).
+    if args.len() == 1 && args[0] == "mcp" {
+        return mcp::main();
+    }
+    // Every other `ckanban` command but `dev`/`start` (the front server below) lives in cli/.
     if let Some(code) = cli::run(&args) {
         return ExitCode::from(code);
     }
