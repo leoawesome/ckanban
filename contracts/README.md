@@ -29,7 +29,8 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
 
 - `daemon.ts` starts a daemon: a free port, a temp data folder (`CKANBAN_HOME`), a temp `HOME`, a temp Claude config
   folder, a temp plain project folder (no git), the fake Claude from `test/fixtures/fake-claude.ts`, and stub
-  `osascript`, `caffeinate`, `open` and `tailscale` commands on `PATH` (no Mac banners, no keep-awake). It never touches
+  `osascript`, `caffeinate`, `open` and `tailscale` commands on `PATH` (no Mac banners, no keep-awake); a test can add
+  its own (`stubs`, e.g. a `gh` that records its arguments). It never touches
   the real `~/.claude-kanban` or the real repo. `DAEMON_CMD` and `CLI_CMD` at its top say what program is the server
   and the CLI; env vars `CKANBAN_CONTRACT_DAEMON` and `CKANBAN_CONTRACT_CLI` (each a JSON array of strings) override
   them, and bad JSON stops the run. The daemon gets the test's time zone (`TZ`), `CKANBAN_NO_KEYCHAIN=1` and a
@@ -47,6 +48,19 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
 - `callers.test.ts`: a board run (the fake Claude in `call` mode, calling the API without the run header) gets 403 on
   user-only routes while a program outside the board may delete a schedule; behind a front server its internal port
   refuses requests without the secret; the event stream delivers events while it stays open; the terminal's WebSocket.
+- `connections.test.ts`: MCP servers in the Connections window: add, read settings, edit, recheck, sign-in errors and
+  remove a user-wide server (against `fake-claude-mcp.ts`, a fake of `claude mcp`), a board-only tool and its
+  `board-tools.json` (owner-only), moving it to all projects and back, validation, the missing user check (a quirk);
+  registering `ckanban mcp` with Codex and Claude Code.
+- `remote.test.ts`: phone access: `GET /api/remote` off and saved-but-off, the refusals of `POST /api/remote`, and the
+  phone access listener's checks (off, Host, Tailscale login, Origin, its header, the user check, the known hole as a
+  quirk). It writes `remote.json` itself and never lets the daemon run Tailscale (the daemon prefers the Tailscale
+  app's own binary over the PATH stub). `phone.ts` makes requests as the owner's phone.
+- `passes.test.ts`: passes (user only, so made from the phone listener): keys for automations and for one board,
+  `automation-passes.json` (owner-only), replace, remove, an online service that can't be signed in to, the sign-in
+  callback; the ask_keys box (`key-cards`) and the next run getting the key as an environment variable; saved values
+  masked in every answer and in comments; check scripts (`loops/test`, `automation-call`); `backup_file` through
+  `ckanban mcp` and `.key-backups`; bug reports through a stub `gh`.
 - `mcp.test.ts`: `ckanban mcp` started as its own program (`mcp.ts`; `MCP_CMD` is the contract CLI plus `mcp`, and
   `CKANBAN_CONTRACT_MCP`, a JSON array, overrides it): the handshake and JSON-RPC errors, `tools/list` against the
   "Tool arguments" table in `cli.md` (names, order, argument names, types, required, enums, read-only hints), and calls

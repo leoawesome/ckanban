@@ -2,10 +2,10 @@
 // contracts/data-files.md lists (its "paths" block), and the profile, ticket and schedule files hold the fields their
 // JSON Schemas in contracts/schemas/ require, with the right types.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { type Daemon, startDaemon, until } from "./daemon";
-import { parseTicketFile, readJsonl } from "./files";
+import { documentedPaths, filesUnder, parseTicketFile, readJsonl } from "./files";
 
 const CONTRACTS = resolve(import.meta.dir, "..", "..", "contracts");
 let d: Daemon;
@@ -31,23 +31,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await d?.stop();
 }, 30_000);
-
-/** The path patterns in data-files.md's ```paths block: `<slug>`-style parts match one path segment, `**` any. */
-function documentedPaths(): RegExp[] {
-  const md = readFileSync(join(CONTRACTS, "data-files.md"), "utf8");
-  const block = md.match(/```paths\n([\s\S]*?)\n```/);
-  if (!block) throw new Error("contracts/data-files.md has no ```paths block");
-  return block[1].split("\n").map((l) => l.replace(/#.*/, "").trim()).filter(Boolean).map((p) => {
-    const re = p.split("/").map((seg) => seg === "**" ? "(?:.+)" : seg.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/<[^>]+>/g, "[^/]+").replace(/\*/g, "[^/]*")).join("/");
-    return new RegExp(`^${re}$`);
-  });
-}
-
-function filesUnder(dir: string): string[] {
-  return (readdirSync(dir, { recursive: true, withFileTypes: true }) as any[])
-    .filter((e) => e.isFile())
-    .map((e) => relative(dir, join(e.parentPath ?? e.path, e.name)));
-}
 
 test("every file in the data folder is one data-files.md lists", () => {
   const patterns = documentedPaths();
