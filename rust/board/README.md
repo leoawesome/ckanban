@@ -46,6 +46,31 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
 Every dependency the tasks are expected to need is already in `Cargo.toml` (referenced in `lib.rs` until used), so
 parallel tasks don't clash on `Cargo.toml` and `Cargo.lock`.
 
+## Sessions and transcripts (R5, `src/sessions/`)
+
+Claude's transcripts as the chat shows them, ported from `src/runs/session-*.ts`, `subagents.ts`, `workflows.ts`,
+`src/chat/chat-cache.ts`, `tooldetail.ts`, `chat-search.ts` and `src/core/changefeed.ts`. Shapes Bun keeps as objects
+are `serde_json` maps with Bun's key order.
+- Parsing: `parser.rs` (`SessionParser`: fed new bytes, cut anywhere), with `markers.rs`, `cards.rs`, `text.rs` (text,
+  forms and cards inside a line), `chat_cache.rs`, `subagents.rs`, `workflows.rs`.
+- `cache.rs`: `SessionCache`. Reads only what a transcript gained (by size, mtime and inode; a shrunk or replaced file
+  is parsed again), keeps 30 parses plus running ones, and keeps summaries in `session-summaries.json` (tag
+  `2:rust:<hash of this code>`; Bun's summaries are shown as stale until made again). Blocking: callers use
+  `spawn_blocking`; no shared lock is held across a read or a parse.
+- `feed.rs`: the projects folder change feed on FSEvents (`notify`); `watcher.rs`: `session.updated` for the tickets
+  written and the sessions the feed reported, a full pass every minute (Done tickets every 10), the first pass only
+  takes stock.
+- `routes.rs`: in board mode Rust answers `GET` conversation, tool, agent, workflow script and helper agent,
+  `chat/search`, `chat/read` and `sessions`. Bun still answers a workflow stop and a chat search or read from another
+  ticket's run (family and "asked by the user" reach need R2b).
+- `ticket_files.rs`: `TicketSource`, read from the ticket files until the ticket store (R1/R2a) replaces it.
+- `service.rs`: `Sessions`, the `SessionInfo` the other modules use (summaries from the watcher, no file read).
+
+Parity with Bun: `tests/sessions_markers.rs`, `sessions_agents.rs`, `sessions_parse.rs` read the fixtures in
+`tests/fixtures/sessions/` (inputs with Bun's answers, filled by `test/rust-board-*-fixtures.test.ts`; after a
+deliberate change to Bun's code: `UPDATE_RUST_FIXTURES=1 bun test test/rust-board-<name>-fixtures.test.ts`). Parse
+speed: `R5_BENCH=<transcript> cargo test --release -p ckanban-board --test sessions_parse -- --ignored --nocapture`.
+
 ## Tests
 
 ```sh
