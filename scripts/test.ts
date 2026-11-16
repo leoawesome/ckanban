@@ -8,7 +8,8 @@
 // sets the worker count by hand. Extra arguments go to `bun test`.
 //
 // A full run (no extra arguments) on code that already passed stops at once and says so (`--force` runs it anyway);
-// `--related` runs only the test files a change can affect. See scripts/test-plan.ts.
+// `--related` runs only the test files a change can affect. See scripts/test-plan.ts. `--big-board` also runs the
+// opt-in 10,000-ticket freeze check (test/big-board.test.ts), for changes to daemon jobs that go over every ticket.
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,7 +19,9 @@ const cwd = process.cwd();
 let rest = process.argv.slice(2);
 const force = rest.includes("--force") || process.env.CKANBAN_TEST_FORCE === "1";
 const related = rest.includes("--related");
-rest = rest.filter((a) => a !== "--force" && a !== "--related");
+if (rest.includes("--big-board")) process.env.CKANBAN_BIG_BOARD = "1";
+const bigBoard = process.env.CKANBAN_BIG_BOARD === "1";
+rest = rest.filter((a) => a !== "--force" && a !== "--related" && a !== "--big-board");
 
 // Which runs to make: each is a list of `bun test` arguments (paths or filters).
 // Tests live next to the code they test (src/, web/src/, scripts/) and in test/ (outside-in, integration and
@@ -43,7 +46,9 @@ if (related && rest.length === 0) {
 }
 
 // Skip when this exact code already passed the full suite (a related run is covered by that too).
-const key = rest.length === 0 ? codeKey(cwd) : null;
+// The key notes whether the big-board check ran, so a pass without it doesn't skip a `--big-board` run.
+const code0 = rest.length === 0 ? codeKey(cwd) : null;
+const key = code0 && bigBoard ? `${code0}-big` : code0;
 const passed = key && !force ? passedAt(key) : null;
 if (passed) {
   const ago = Math.round((Date.now() - passed) / 60_000);
@@ -123,11 +128,11 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () =
 let code = 0;
 for (const target of runs) {
   const args = ["test", ...target, `--parallel=${workers}`, "--timeout=60000", "--timings=test/timings.json", ...rest];
-  child = Bun.spawn([process.execPath, ...args], { stdio: ["inherit", "inherit", "inherit"] });
+  child = Bun.spawn([process.execPath, ...args], { env: process.env, stdio: ["inherit", "inherit", "inherit"] });
   code = await child.exited;
   if (code !== 0) break;
 }
 release();
 // Remember the pass only if the code didn't change while the tests ran.
-if (code === 0 && full && key && codeKey(cwd) === key) recordPass(key);
+if (code === 0 && full && key && codeKey(cwd) === code0) recordPass(key);
 process.exit(code);
