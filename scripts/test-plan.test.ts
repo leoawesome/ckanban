@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../src/runs/git";
-import { changedFiles, codeKey, passedAt, recordPass, relatedBase, relatedPlan } from "./test-plan";
+import { changedFiles, codeKey, fixtureUsers, passedAt, recordPass, relatedBase, relatedPlan } from "./test-plan";
 import { makeRepo, tempDir } from "../test/support/helpers";
 
 test("the code fingerprint follows code changes, new files included, and ignores docs and timings", async () => {
@@ -72,8 +72,30 @@ test("changed files count the branch's commits since main plus uncommitted and n
 test("--related runs everything when shared setup changes, and adds tests that start a changed file by path", () => {
   expect(relatedPlan(["src/board/board.ts"])).toEqual({ full: false, extra: [] });
   expect(relatedPlan(["src/board/board.ts", "package.json"])).toEqual({ full: true, reason: "package.json" });
-  expect(relatedPlan(["test/fixtures/fake-claude.ts"])).toEqual({ full: true, reason: "test/fixtures/fake-claude.ts" });
   expect(relatedPlan(["test/preload.ts"]).full).toBe(true);
   expect(relatedPlan(["src/cli/cli.ts"])).toEqual({ full: false, extra: ["test/integration/agent-access.test.ts"] });
   expect(relatedPlan(["src/cli/cli.ts", "test/integration/agent-access.test.ts"])).toEqual({ full: false, extra: [] });
+});
+
+test("--related runs the tests that use a changed fixture, directly or through a helper in test/", () => {
+  const files = new Map([
+    ["test/fixtures/fake-claude.ts", `import { ctx } from "./fake-claude-context";`],
+    ["test/fixtures/fake-claude-context.ts", "export const ctx = 1;"],
+    ["test/support/board-env.ts", `export const FAKE = join(import.meta.dir, "..", "fixtures", "fake-claude.ts");`],
+    ["test/contract/daemon.ts", `const FAKE = join(REPO, "test", "fixtures", "fake-claude.ts");`],
+    ["src/board/a.test.ts", `import { FAKE } from "../../test/support/board-env";`],
+    ["test/contract/b.test.ts", `import { start } from "./daemon";`],
+    ["test/integration/c.test.ts", `import { x } from "../../src/cli/daemon";`],
+    ["src/chat/d.test.ts", `readFileSync(join(dir, "fixtures", "context", "x.txt"))`],
+    ["src/other.test.ts", `const y = 2;`],
+  ]);
+  expect(fixtureUsers(["fake-claude.ts"], files)).toEqual(["src/board/a.test.ts", "test/contract/b.test.ts"]);
+  // A fixture another fixture imports reaches that fixture's users too; a folder fixture is named as a path part.
+  expect(fixtureUsers(["fake-claude-context.ts"], files)).toEqual(["src/board/a.test.ts", "test/contract/b.test.ts"]);
+  expect(fixtureUsers(["context"], files)).toEqual(["src/chat/d.test.ts"]);
+  expect(fixtureUsers([], files)).toEqual([]);
+  // In this repo: a change to the fake claude runs its users, not the whole suite.
+  const plan = relatedPlan(["test/fixtures/fake-claude.ts"]);
+  expect(plan.full).toBe(false);
+  if (!plan.full) expect(plan.extra).toContain("src/board/watchdog.test.ts");
 });
