@@ -16,6 +16,8 @@
 // FAKE_PLAN_FILE=<path>: JSON [{match, tools?: [{name, input}], text?, status?}]. A turn whose message contains `match` (the first
 // that does) calls those tools (tool use ids tu_plan_<n>) and adds `text` to its reply (ending with `status` when set); that turn's assistant messages
 // are saved in the transcript, so the chat shows forms, proposals and blocks (contract tests of the chat).
+// FAKE_UUIDS=1: transcript lines carry a uuid and parentUuid like the real CLI's (rewind and fork need them).
+// FAKE_UUIDS=1: every line it saves in the transcript gets a uuid, like the real CLI's (rewind and fork cut there).
 // FAKE_TRANSCRIPT=1: it also thinks, runs a Bash call and posts to its huddle, and writes what it emits to the transcript.
 // With --input-format stream-json it reads user messages from stdin like the real CLI: messages that
 // arrive mid-run are picked up at the next step (replayed with --replay-user-messages), later ones
@@ -114,11 +116,24 @@ const transcriptFile = process.env.CLAUDE_CONFIG_DIR && sessionId !== "none" && 
   ? `${process.env.CLAUDE_CONFIG_DIR}/projects/${process.cwd().replace(/[^a-zA-Z0-9]/g, "-")}/${sessionId}.jsonl`
   : null;
 
+let lastUuid: string | null = null;
+/** uuid and parentUuid for the next transcript line (FAKE_UUIDS), chained like the real CLI's. */
+function lineIds(): { uuid?: string; parentUuid?: string | null } {
+  if (!process.env.FAKE_UUIDS) return {};
+  const uuid = crypto.randomUUID();
+  const ids = { uuid, parentUuid: lastUuid };
+  lastUuid = uuid;
+  return ids;
+}
+function lineUuid(): { uuid?: string } {
+  return process.env.FAKE_UUIDS ? { uuid: crypto.randomUUID() } : {};
+}
+
 function emit(obj: any) {
   process.stdout.write(JSON.stringify(obj) + "\n");
   // Like the real CLI's transcript: assistant blocks and tool results, with timestamps.
   if ((process.env.FAKE_TRANSCRIPT || plan) && transcriptFile && (obj.type === "assistant" || obj.type === "user") && !obj.isReplay) {
-    appendFileSync(transcriptFile, JSON.stringify({ ...obj, sessionId, timestamp: new Date().toISOString() }) + "\n");
+    appendFileSync(transcriptFile, JSON.stringify({ ...obj, ...lineIds(), sessionId, timestamp: new Date().toISOString() }) + "\n");
   }
 }
 
@@ -139,7 +154,13 @@ if (process.env.CLAUDE_CONFIG_DIR && sessionId !== "none" && !process.env.FAKE_N
   const { mkdirSync } = await import("node:fs");
   const dir = `${process.env.CLAUDE_CONFIG_DIR}/projects/${process.cwd().replace(/[^a-zA-Z0-9]/g, "-")}`;
   mkdirSync(dir, { recursive: true });
-  appendFileSync(`${dir}/${sessionId}.jsonl`, JSON.stringify({ type: "user", sessionId, cwd: process.cwd(), message: { role: "user", content: first ?? "" } }) + "\n");
+  if (process.env.FAKE_UUIDS && existsSync(`${dir}/${sessionId}.jsonl`)) {
+    // A resumed session's lines chain on from the transcript's last one.
+    const { readFileSync } = await import("node:fs");
+    const prev = readFileSync(`${dir}/${sessionId}.jsonl`, "utf8").split("\n").filter(Boolean).at(-1);
+    lastUuid = prev ? JSON.parse(prev).uuid ?? null : null;
+  }
+  appendFileSync(`${dir}/${sessionId}.jsonl`, JSON.stringify({ type: "user", ...lineIds(), sessionId, cwd: process.cwd(), message: { role: "user", content: first ?? "" } }) + "\n");
 }
 if (first !== null) take(first);
 
