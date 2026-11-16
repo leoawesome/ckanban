@@ -471,13 +471,9 @@ export function createContext(deps: ServerDeps) {
     const { script: _script, scriptPath: _path, ...rest } = settleWorkflow(merged, active);
     return rest;
   };
-  /**
-   * read: for a GET that answers something only the user may see (a browser sends no Origin on a same-origin GET),
-   * so the Origin isn't needed; the run headers and the browser check still are.
-   */
-  const userOnly = async (req: Request, what: string, opts: { read?: boolean } = {}) => {
+  const userOnly = async (req: Request, what: string) => {
     const refusal = `${what} is for the user only, from the board in a browser: a board run, a check script or another program can't do it. Ask the user to do it in the board.`;
-    if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER) || (!opts.read && !req.headers.get("origin"))) throw new HttpError(403, refusal);
+    if (req.headers.get(RUN_HEADER) || req.headers.get(HUDDLE_HEADER) || !req.headers.get("origin")) throw new HttpError(403, refusal);
     const v = via.get(req);
     // Phone access: only the tailnet owner's browser gets here (requestRefusal checks the login and the Origin).
     if (v?.listener === "remote") return;
