@@ -444,8 +444,7 @@ enabled, skipIfRunning, tags, quiet, model, partOf`. The view is `Schedule` plus
 Who may delete a schedule: a request replayed after a Telegram Confirm; with an `Origin`, the user-only check; without
 one, a program on this Mac the daemon did not start (the user's own terminal or Claude).
 
-Firing by itself: the daemon looks for due schedules once at start, then every 30 s (there is no test clock). A due
-one first gets its next `nextRunAt` saved, then fires: a ticket in `in_progress` (title with `{date}`/`{time}` filled
+Firing by itself (see "Work the board starts by itself" for when the daemon looks): a due one first gets its next `nextRunAt` saved, then fires: a ticket in `in_progress` (title with `{date}`/`{time}` filled
 in, local time) and a `fired` history line with `trigger: "schedule"`, or `"missed"` when it was due over 90 s ago
 (only one catch-up however many slots were missed). Paused ones never fire. With `skipIfRunning`, a fire while the
 schedule's last ticket is `ready`, `in_progress` or running writes a `skipped` line instead. Fires and "run now" go one
@@ -471,8 +470,8 @@ everyMinutes, column, autoStart, askClaude, instructions, partOf`.
 (each `{id, title, link?, state, ticketId?, note?}`; `state` `new`, `added`, `waiting`, `skipped`, `first`, `seen`).
 There is no separate history route: these fields and `lastCheckedAt`, `lastFiredAt`, `lastError` are the history.
 The first check after a save or switching on only notes what is there (`first`, no tickets). A failed check sets
-`lastError` and a wait (`backoffUntil` in the state file, 2 minutes doubling up to 30). The daemon's timer looks every
-60 s and checks each switched-on loop at most every `everyMinutes`; `check` ignores both.
+`lastError` and a wait (`backoffUntil` in the state file, 2 minutes doubling up to 30). The daemon's timer (see "Work the
+board starts by itself") checks each switched-on loop at most every `everyMinutes` (less 5 s); `check` ignores both.
 
 ## Jobs (one-time)
 
@@ -490,12 +489,21 @@ Changes from `x-ckanban-run` are credited to that ticket.
 
 Only a `scheduled` job can be changed, cancelled or run: otherwise `409 {"error":"job <id> is <state>: only a
 scheduled job can be changed"}`. `at` must be in the future (400). A PATCH `action` replaces the whole action.
-Firing by itself: the daemon looks for due jobs once at start, then every 30 s (there is no test clock). A job seen
-over 10 minutes after its `at` is late: a ticket job still makes its ticket (its body starts with a "This was due ...
+Firing by itself (see "Work the board starts by itself"): a job seen over 10 minutes after its `at` is late: a ticket job still makes its ticket (its body starts with a "This was due ...
 because the computer was off" paragraph); a command job is saved `skipped` (`result.message` "skipped: the computer
 was off at <Tue 20 Oct 22:00>") unless `ifLate` is `"run"`. A command runs with `/bin/sh -c` in the board folder with
 `CKANBAN_BOARD`, `CKANBAN_JOB`, `CKANBAN_SOURCE_TICKET`; its `result` is `{exitCode, durationMs, output, timedOut,
 message?}` (`failed` with `message` "exited with code N" or "stopped after N s (time limit)").
+
+## Work the board starts by itself: timers
+
+Four timers look for due work: schedules (every 30 s), one-time jobs (30 s), automations (60 s) and follow-ups (30 s).
+Each also looks once right at start, so work that came due while the daemon was off fires then (as `missed` for a
+schedule, late for a job, `missedAt` for a follow-up over 12 hours late). There is no test clock: times are the real
+clock. **Test hook:** `CKANBAN_TICK_MS` (a whole number of ms, 50 to 60000) sets all four periods, so tests see jobs
+and schedules fire within a second of their time; unset or out of range, the periods above apply. It doesn't change
+any limit: a job's `at` and a schedule's cron minute still decide when it is due, a follow-up is still at least 1
+minute away, and an automation is still checked at most every `everyMinutes`. The daemon logs the period it uses.
 
 ## Team: presets, templates, squads, learned, notes
 

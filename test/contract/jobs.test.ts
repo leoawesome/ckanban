@@ -1,8 +1,8 @@
 // Outside-in contract: one-time jobs (create, change, cancel, run now, firing at their time, late firing) over HTTP,
 // and profiles/<slug>/jobs/<id>.json. See contracts/api.md (Jobs) and contracts/data-files.md (one-time jobs).
 //
-// Firing at a set time: the daemon has no test clock. It checks for due jobs once at start and then every 30 s, so a
-// job set a few seconds ahead fires within about 30 s. A late job (due over 10 minutes ago) can't be made over HTTP
+// Firing at a set time: the daemon has no test clock, but CKANBAN_TICK_MS (api.md, "Work the board starts by itself")
+// makes it look for due jobs every half second, so a job set 2 s ahead fires about then. A late job (due over 10 minutes ago) can't be made over HTTP
 // (`at` must be in the future), so the test writes its file straight into the jobs folder, as an outside edit; the
 // next check sees it.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -17,7 +17,7 @@ const RUN = "x-ckanban-run";
 const HUDDLE = "x-ckanban-huddle-agent";
 
 beforeAll(async () => {
-  d = await startDaemon();
+  d = await startDaemon({ env: { CKANBAN_TICK_MS: "500" } });
   expect((await d.api("POST", "/api/profiles", { name: "Jobs", path: d.project })).status).toBe(201);
 }, 60_000);
 
@@ -204,15 +204,16 @@ describe("firing at their time", () => {
     seed("late0run", "Late cmd run", { kind: "command", command: "echo ran-late", ifLate: "run" });
 
     const ids = [soon.id, soonCmd.id, "late0tkt", "late0cmd", "late0run"];
-    // The daemon checks every 30 s.
     const jobs = await until(async () => {
       const all = await Promise.all(ids.map(getJob));
       return all.every((j) => j.state === "done" || j.state === "skipped" || j.state === "failed") ? all : null;
-    }, 45_000, "every job to fire");
+    }, 20_000, "every job to fire");
     const [s, sc, lt, lc, lr] = jobs;
 
     expect(s).toMatchObject({ state: "done" });
+    // At its time, not before, and within a few looks of the timer.
     expect(Date.parse(s.firedAt)).toBeGreaterThanOrEqual(Date.parse(at));
+    expect(Date.parse(s.firedAt) - Date.parse(at)).toBeLessThan(5_000);
     const st = await ranOnce(s.result.ticketId);
     expect(st).toMatchObject({ title: "Due soon", body: "Soon body.", jobId: soon.id });
     expect(sc).toMatchObject({ state: "done", result: { exitCode: 0, output: "fired\n" } });
@@ -226,5 +227,5 @@ describe("firing at their time", () => {
     expect(lc.result.message).toMatch(/^skipped: the computer was off at \w{3} \d{1,2} \w{3} \d{2}:\d{2}$/);
     expect(lr).toMatchObject({ state: "done", result: { exitCode: 0, output: "ran-late\n" } });
     expect(JSON.parse(readFileSync(jobFile("late0cmd"), "utf8")).state).toBe("skipped");
-  }, 90_000);
+  }, 60_000);
 });

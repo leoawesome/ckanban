@@ -97,7 +97,8 @@ To test another server: build it and run
 `CKANBAN_CONTRACT_DAEMON='["/path/to/server","dev"]' bun test test/contract` (add `CKANBAN_CONTRACT_CLI` if the CLI
 moves too, and `CKANBAN_CONTRACT_MCP` for the MCP server). The server must take its port from `CKANBAN_PORT`, its data folder from `CKANBAN_HOME`, the Claude
 program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_DIR`, and honour `CKANBAN_USAGE_URL`
-and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`).
+and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`), and `CKANBAN_TICK_MS` (the period of the timers that fire
+schedules, jobs, automations and follow-ups; see "Work the board starts by itself" in `api.md`).
 
 `bun run test:contract:rust` does this for the Rust front server (`rust/`): it builds `ckanban-rs` (release) and runs
 every contract test with it as the daemon, and `ckanban-rs mcp` as the MCP server (`mcp.test.ts`, `mcp-parity.test.ts`). It needs cargo, so `bun run test` leaves it out.

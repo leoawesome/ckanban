@@ -1,11 +1,13 @@
 // Outside-in contract: schedules firing by themselves, on the fake Claude: a due schedule creates a ticket that runs,
 // writes a "fired" line in <id>.history.jsonl and moves nextRunAt on; one due long ago fires once as "missed"; a paused
-// one doesn't fire; "Run now" respects skipIfRunning. See contracts/api.md (Schedules) and data-files.md.
+// one doesn't fire; "Run now" respects skipIfRunning; a follow-up wakes its ticket at its time. See contracts/api.md
+// (Schedules, Follow-ups, "Work the board starts by itself") and data-files.md.
 //
-// How firing is tested without a test clock (the daemon has none): it looks for due schedules once at start and then
-// every 30 s. Schedules already due are written into the data folder before the daemon starts, so its first look fires
+// How firing is tested without a test clock (the daemon has none): CKANBAN_TICK_MS makes its timers look every half
+// second. Schedules already due are written into the data folder before the daemon starts, so its first look fires
 // them at once. One schedule is also made over HTTP with cron "* * * * *" and the test waits for it to fire by itself
-// at the next minute (up to 90 s: the minute, then the next 30 s look).
+// at the next minute (up to 60 s); a follow-up can't be sooner than 1 minute, so it waits about that long too. Both
+// are set up first and checked last, so the waits overlap the other tests.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -17,6 +19,7 @@ const SLUG = "fire";
 const P = `/api/profiles/${SLUG}`;
 const started = new Date();
 let everyMinute: any;
+let followed: any;
 
 /** A schedule file as the daemon writes it (data-files.md), with a chosen nextRunAt. */
 function schedule(id: string, name: string, nextRunAt: string, extra: Record<string, unknown> = {}) {
@@ -30,6 +33,7 @@ function schedule(id: string, name: string, nextRunAt: string, extra: Record<str
 
 beforeAll(async () => {
   d = await startDaemon({
+    env: { CKANBAN_TICK_MS: "500" },
     before: ({ home, project }) => {
       const dir = join(home, "profiles", SLUG);
       mkdirSync(join(dir, "schedules"), { recursive: true });
@@ -44,6 +48,11 @@ beforeAll(async () => {
   });
   // Fires by itself at the next minute; checked in the last test, so the wait overlaps the others.
   everyMinute = (await d.api("POST", `${P}/schedules`, { name: "Every minute", title: "Minute {time}", body: "Tick.", cron: "* * * * *" })).data;
+  // Comes back in 1 minute (the shortest follow-up); checked in the last test too.
+  const t = (await d.api("POST", `${P}/tickets`, { title: "Follow me", body: "f" })).data;
+  const set = await d.api("POST", `${P}/tickets/${t.id}/follow-up`, { after: "1m", note: "check the deploy" });
+  expect(set.status).toBe(201);
+  followed = set.data;
 }, 60_000);
 
 afterAll(async () => {
@@ -139,15 +148,47 @@ describe("run now", () => {
 
 describe("on time", () => {
   test("a schedule made with cron \"* * * * *\" fires by itself at the next minute", async () => {
-    const [entry] = await until(() => (fired(everyMinute.id).length ? fired(everyMinute.id) : null), 100_000, "the every-minute schedule to fire");
+    const [entry] = await until(() => (fired(everyMinute.id).length ? fired(everyMinute.id) : null), 75_000, "the every-minute schedule to fire");
     expect(entry.trigger).toBe("schedule");
     // Not before the minute it was due.
     expect(Date.parse(entry.at)).toBeGreaterThanOrEqual(Date.parse(everyMinute.nextRunAt));
+    expect(Date.parse(entry.at) - Date.parse(everyMinute.nextRunAt)).toBeLessThan(5_000);
     const t = await ranOnce(entry.ticketId);
     expect(t).toMatchObject({ body: "Tick.", scheduleId: everyMinute.id });
     expect(t.title).toMatch(/^Minute \d{2}:\d{2}$/);
     const saved = JSON.parse(readFileSync(join(d.home, "profiles", SLUG, "schedules", `${everyMinute.id}.json`), "utf8"));
     expect(saved.lastFiredAt).toBe(entry.at);
     expect(Date.parse(saved.nextRunAt)).toBeGreaterThan(Date.parse(everyMinute.nextRunAt));
-  }, 130_000);
+  }, 100_000);
+});
+
+describe("follow-ups", () => {
+  test("set, refused when too soon, and woken at its time: the ticket's conversation runs again", async () => {
+    expect(followed.followUp).toMatchObject({ note: "check the deploy", cancelOnReply: true });
+    const due = Date.parse(followed.followUp.dueAt);
+    expect(due - Date.parse(followed.followUp.setAt)).toBe(60_000);
+    expect(followed.followUpLog.at(-1)).toMatchObject({ kind: "set", dueAt: followed.followUp.dueAt, note: "check the deploy" });
+
+    const other = (await d.api("POST", `${P}/tickets`, { title: "Too soon", body: "x" })).data;
+    const soon = await d.api("POST", `${P}/tickets/${other.id}/follow-up`, { after: "30s", note: "n" });
+    expect(soon.status).toBe(400);
+    const tooSoon = await d.api("POST", `${P}/tickets/${other.id}/follow-up`, { at: new Date(Date.now() + 10_000).toISOString(), note: "n" });
+    expect(tooSoon.data.error).toBe("a follow-up must be at least 1 minute away");
+    expect((await d.api("POST", `${P}/tickets/${other.id}/follow-up`, { after: "1h" })).data.error).toBe("note is required: why you come back, and what to check then");
+    // Another ticket's run can't set it.
+    const byOther = await d.api("POST", `${P}/tickets/${other.id}/follow-up`, { after: "1h", note: "n" }, { "x-ckanban-run": `${SLUG}/${followed.id}` });
+    expect(byOther.status).toBe(403);
+
+    const woke = await until(async () => {
+      const t = (await d.api("GET", `${P}/tickets/${followed.id}`)).data;
+      return t.followUpLog?.some((e: any) => e.kind === "woke") ? t : null;
+    }, 90_000, "the follow-up to wake its ticket");
+    const entry = woke.followUpLog.find((e: any) => e.kind === "woke");
+    expect(entry).toMatchObject({ dueAt: followed.followUp.dueAt, note: "check the deploy" });
+    expect(Date.parse(entry.at)).toBeGreaterThanOrEqual(due);
+    expect(Date.parse(entry.at) - due).toBeLessThan(5_000);
+    // Cleared before its run starts, so it can't wake twice.
+    expect(woke.followUp ?? null).toBeNull();
+    await ranOnce(followed.id);
+  }, 120_000);
 });
