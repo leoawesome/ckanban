@@ -2,7 +2,7 @@
 // Fake `claude` CLI for tests. Behaviour controlled by env:
 // FAKE_QUIET=1: the result line says "quiet": true (a quiet schedule's run that found nothing).
 // FAKE_VERDICT=passed|problem: the result line carries a test verdict.
-// FAKE_MODE=call: see "call" below. FAKE_MODE=ok|fail|limit|budget|slow|partial|blocked|noresult|background|bgsilent|asks|nosession|overloaded|badrequest|silent, FAKE_PR=<url>, FAKE_ARGS_FILE=<path to append argv JSON>
+// FAKE_MODE=call: see "call" below (FAKE_CALL_MATCH limits it to some runs). FAKE_MODE=ok|fail|limit|budget|slow|partial|blocked|noresult|background|bgsilent|asks|nosession|overloaded|badrequest|silent, FAKE_PR=<url>, FAKE_ARGS_FILE=<path to append argv JSON>
 // FAKE_ONCE_FILE=<path>: overloaded/silent only misbehave on the first run (the file marks it); later runs are ok.
 // FAKE_SILENT_MS: how long silent mode goes quiet after init before carrying on (default 30s).
 // FAKE_HEARD_FILE=<path>: appends {session, text} for every user message it reads (huddle routing tests).
@@ -92,7 +92,6 @@ if (process.env.FAKE_ARGS_FILE) {
     ...(envKeys.length ? { env: Object.fromEntries(envKeys.map((k) => [k, process.env[k] ?? null])) } : {}),
   }) + "\n");
 }
-// FAKE_BLOCK_MATCH: runs whose first prompt contains this text end "blocked" (per-ticket behaviour in one test).
 type Plan = { match: string; tools?: { name: string; input: unknown }[]; text?: string; status?: string };
 function planFor(msg: string | null): Plan | null {
   const f = process.env.FAKE_PLAN_FILE;
@@ -106,7 +105,12 @@ let planTool = 0;
 function planTools() {
   for (const t of plan?.tools ?? []) emit({ type: "assistant", message: { content: [{ type: "tool_use", id: `tu_plan_${++planTool}`, name: t.name, input: t.input }] } });
 }
-const mode = process.env.FAKE_BLOCK_MATCH && first?.includes(process.env.FAKE_BLOCK_MATCH) ? "blocked" : process.env.FAKE_MODE ?? "ok";
+// FAKE_BLOCK_MATCH: runs whose first prompt contains this text end "blocked" (per-ticket behaviour in one test).
+// FAKE_CALL_MATCH: only runs whose first prompt contains this text are in "call" mode; the others are "ok" (so the
+// tickets a call creates don't replay the calls when the board starts them).
+const mode = process.env.FAKE_BLOCK_MATCH && first?.includes(process.env.FAKE_BLOCK_MATCH) ? "blocked"
+  : process.env.FAKE_CALL_MATCH ? (first?.includes(process.env.FAKE_CALL_MATCH) ? "call" : "ok")
+  : process.env.FAKE_MODE ?? "ok";
 const idx = Math.max(args.indexOf("--session-id"), args.indexOf("--resume"));
 const sessionId = idx >= 0 ? args[idx + 1] : "none";
 
