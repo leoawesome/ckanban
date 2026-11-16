@@ -450,6 +450,6 @@ describe("ckanban mcp (stdio)", () => {
 /** Tool names from the table in contracts/cli.md section 6. */
 function contractTools(): string[] {
   const text = readFileSync(join(REPO, "contracts", "cli.md"), "utf8");
-  const sec = text.slice(text.indexOf("## 6. `ckanban mcp`"), text.indexOf("## 7."));
+  const sec = text.slice(text.indexOf("## 6. `ckanban mcp`"), text.indexOf("### Tool arguments"));
   return [...sec.matchAll(/^\| `([a-z_]+)` \|/gm)].map((m) => m[1]);
 }
