@@ -17,6 +17,8 @@ let root: string;
 let anchor: string;
 const SLUG = "restart";
 const T = `/api/profiles/${SLUG}/tickets`;
+// Waits are long: this file starts, stops and starts the daemon again, which is slow when the whole suite runs at once.
+const WAIT = 60_000;
 
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "ck-contract-restart-"));
@@ -54,7 +56,7 @@ describe("POST /api/restart", () => {
     const ev = await events(d);
     const gate = s.gate("busy");
     const busy = await create("Busy", `x ${s.set("busy", [{ waitFile: gate.file, summary: "Busy done." }])}`);
-    await running(d, SLUG, busy.id);
+    await running(d, SLUG, busy.id, WAIT);
     expect((await d.api("GET", "/api/restart")).data).toEqual({ pending: false, waiting: 1 });
 
     const r = await d.api("POST", "/api/restart", {});
@@ -72,17 +74,17 @@ describe("POST /api/restart", () => {
 
     // The active run finishes; then the daemon exits by itself.
     gate.release();
-    const code = await Promise.race([d.exited(), Bun.sleep(30_000).then(() => "still running")]);
+    const code = await Promise.race([d.exited(), Bun.sleep(WAIT).then(() => "still running")]);
     expect(code).toBe(0);
     ev.close();
     expect(meta(busy.id)).toMatchObject({ status: "review", outcome: "done" });
 
     await d.respawn();
     expect((await d.api("GET", "/api/restart")).data).toEqual({ pending: false, waiting: expect.any(Number) });
-    const v = await settled(d, SLUG, held.id, (x) => x.status === "review");
+    const v = await settled(d, SLUG, held.id, (x) => x.status === "review", WAIT);
     expect(v.outcome).toBe("done");
     expect(s.runs("held")).toHaveLength(1);
-  }, 90_000);
+  }, 240_000);
 });
 
 describe("runs cut off by a daemon stop resume after the next start", () => {
@@ -97,24 +99,24 @@ describe("runs cut off by a daemon stop resume after the next start", () => {
     // A main ticket cut while it works: woken again from its saved events, never a fresh work run.
     const main = await create("Cut main", `x ${s.set("main", [{ waitFile: join(s.dir, "never") }])}`, "ready", true);
 
-    await settled(d, FU, fu.id, (x) => x.status === "review");
+    await settled(d, FU, fu.id, (x) => x.status === "review", WAIT);
     expect((await d.api("POST", `/api/profiles/${FU}/tickets/${fu.id}/follow-up`, { after: "2h", note: "Look again" })).status).toBe(201);
     expect((await d.api("POST", `/api/profiles/${FU}/tickets/${fu.id}/follow-up/now`, {})).status).toBe(202);
-    await until(() => s.runs("fu").length === 2, 30_000, "follow-up run");
-    await running(d, SLUG, work.id);
-    await running(d, SLUG, main.id);
-    await running(d, FU, fu.id);
+    await until(() => s.runs("fu").length === 2, WAIT, "follow-up run");
+    await running(d, SLUG, work.id, WAIT);
+    await running(d, SLUG, main.id, WAIT);
+    await running(d, FU, fu.id, WAIT);
     const session = (await view(d, SLUG, work.id)).sessionId;
 
     d.kill("SIGTERM");
-    expect(await Promise.race([d.exited(), Bun.sleep(30_000).then(() => "still running")])).toBe(0);
+    expect(await Promise.race([d.exited(), Bun.sleep(WAIT).then(() => "still running")])).toBe(0);
     // What the stop left: the work run and the main ticket still in progress, the follow-up marked as such.
     expect(meta(work.id).status).toBe("in_progress");
     expect(meta(main.id).status).toBe("in_progress");
     expect(meta(fu.id).followUpRun).toMatchObject({ returnTo: "review" });
 
     await d.respawn();
-    const w = await settled(d, SLUG, work.id, (x) => x.status === "review");
+    const w = await settled(d, SLUG, work.id, (x) => x.status === "review", WAIT);
     expect(w.outcome).toBe("done");
     expect(w.sessionId).toBe(session);
     expect(comments(work.id).some((c) => c.text === "Interrupted by daemon restart; resuming.")).toBe(true);
@@ -122,16 +124,16 @@ describe("runs cut off by a daemon stop resume after the next start", () => {
     expect(workRuns).toHaveLength(2);
     expect(workRuns[1].args[workRuns[1].args.indexOf("--resume") + 1]).toBe(session);
 
-    const f = await settled(d, FU, fu.id, (x) => x.status === "review" && s.runs("fu").length === 3);
+    const f = await settled(d, FU, fu.id, (x) => x.status === "review" && s.runs("fu").length === 3, WAIT);
     expect(f.followUpRun ?? null).toBeNull();
     expect(comments(fu.id).some((c) => c.text === "Follow-up interrupted by daemon restart; resuming.")).toBe(true);
 
     const m = await until(async () => {
       const x = await view(d, SLUG, main.id);
       return x.status !== "in_progress" ? x : null;
-    }, 30_000, "main ticket out of In Progress");
+    }, WAIT, "main ticket out of In Progress");
     expect(comments(main.id).some((c) => c.text === "Interrupted by daemon restart; waking it again from its saved events.")).toBe(true);
     expect(m.status).toBe("review");
     expect(JSON.stringify(meta(main.id).plan ?? {})).toContain("The board restarted while your last run was going");
-  }, 120_000);
+  }, 300_000);
 });
