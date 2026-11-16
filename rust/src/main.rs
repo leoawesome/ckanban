@@ -7,6 +7,7 @@
 //! hard, the child reads end of input and stops. When the child exits, this process exits with the same code, so
 //! launchd and `ckanban restart` work as with Bun alone. SIGTERM/SIGINT stop the child first.
 
+mod mcp;
 mod proxy;
 mod routes;
 mod settings;
@@ -34,12 +35,15 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("dev") => {}
+        // `ckanban-rs mcp`: the board's stdio MCP server (src/mcp/, the port of `ckanban mcp`).
+        Some("mcp") if args.len() == 1 => return mcp::main(),
         Some("--version") | Some("-V") => {
             println!("ckanban-rs {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
         _ => {
             eprintln!("usage: ckanban-rs dev    (starts the board's daemon behind this front server; same env as `ckanban dev`)");
+            eprintln!("       ckanban-rs mcp    (the board's stdio MCP server; same env as `ckanban mcp`)");
             return ExitCode::from(2);
         }
     }
