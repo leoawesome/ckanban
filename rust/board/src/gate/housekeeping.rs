@@ -114,7 +114,9 @@ mod tests {
     use super::*;
 
     fn temp() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("ck-hk-{}-{}", std::process::id(), now_ms() as u64));
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("ck-hk-{}-{}-{n}", std::process::id(), now_ms() as u64));
         fs::create_dir_all(&d).unwrap();
         d
     }
