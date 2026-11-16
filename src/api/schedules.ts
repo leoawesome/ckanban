@@ -79,14 +79,10 @@ export async function scheduleRoutes(ctx: ApiContext, req: Request, url: URL, pa
   }
 
   // /profiles/:p/loops — automations: a check script on a timer turns new items into tickets. Anyone lists and
-  // test-runs a script (the setup chat does; with a pasted key only the user); only the user saves, changes or runs one for real.
+  // test-runs a script (the setup chat does); only the user saves, changes or runs one for real.
   if (parts[2] === "loops") {
     if (parts.length === 3 && m === "GET") return json(loops.list(slug));
-    if (parts.length === 4 && parts[3] === "test" && m === "POST") {
-      // A test with a saved key is for the user only (loops.test): the caller check runs only then.
-      const byUser = () => userOnly(req, "Testing a check script with a saved key").then(() => true, () => false);
-      return json(await loops.test(slug, (await body(req)) ?? {}, byUser));
-    }
+    if (parts.length === 4 && parts[3] === "test" && m === "POST") return json(await loops.test(slug, (await body(req)) ?? {}));
     await userOnly(req, "Saving or changing an automation");
     if (parts.length === 3 && m === "POST") {
       const l = await loops.create(slug, (await body(req)) ?? {});

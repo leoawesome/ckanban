@@ -51,11 +51,6 @@ Path segments are percent-decoded before matching (`decodeURIComponent`).
 
 **Secret masking.** Every JSON response (and every event-stream message) passes through `maskSavedJson`: any value of a
 key saved on this Mac (board keys, passes) is replaced before it leaves the daemon.
-Masked the same way where they are saved or sent: a ticket's title and body are saved with this board's keys as `${NAME}` (the
-variable every run on the board gets the key under) and any other saved value as `***` (text already in `ticket.md`
-is left as it is until it is changed), comments as `***`, and a bug report's title, description and ticket text are
-masked (`***`) before `gh issue create` or the fallback link. Other ticket.md fields (a run's `outcome`, `error`,
-`lastActivity`, `notice`, `tags`) are not masked on disk; their answers are.
 
 ### Special headers
 
@@ -84,8 +79,7 @@ masked (`***`) before `gh issue create` or the fallback link. Other ticket.md fi
 **User-only check (`userOnly`).** Actions marked "user only" are refused with 403 when the request has
 `x-ckanban-run` or `x-ckanban-huddle-agent`, or has no `Origin` header. On the remote listener it then passes. On the
 local listener the peer TCP port must belong to a web browser the daemon did not start (process lookup in
-`integrations/guard.ts`); otherwise 403. The 403 text explains it is for the user only. A GET marked "user only
-(read)" needs no `Origin` (a browser sends none on a same-origin GET); the other checks are the same.
+`integrations/guard.ts`); otherwise 403. The 403 text explains it is for the user only.
 
 **Behind a front server.** A server in front of the daemon (the Rust `ckanban-rs dev`, `rust/README.md`) starts it
 with `CKANBAN_PORT` set to an internal port, `CKANBAN_FRONT_PORT` set to the board's port, and the line `<secret> <its own pid>` (a fresh random secret)
@@ -347,21 +341,21 @@ All `/api/notify`, `/api/messages`, `/api/helper` and `/api/push` routes answer 
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/api/mcp` | | 200 `McpState` (mcp.ts) | |
-| POST | `/api/mcp` | server definition (`McpManager.add`); user only | 201 `McpState` | 403, `McpError` |
-| POST | `/api/mcp/refresh` | body ignored; user only | 202 `McpState` | 403 |
-| PUT | `/api/mcp/:name` | server definition; user only | 200 `McpState` | 403, `McpError` |
-| DELETE | `/api/mcp/:name` | query `board?`; user only | 200 `McpState` | 403, `McpError` |
-| POST | `/api/mcp/:name/move` | `{to: "board"\|"all", board}`; user only | 200 `McpState` | 403, 400 bad `to`, `McpError` |
-| POST | `/api/mcp/:name/retry-move` | user only | 200 `McpState` | 403, `McpError` |
-| POST | `/api/mcp/:name/login` | user only | 202 `McpState` | 403, `McpError` |
-| POST | `/api/mcp/:name/login-paste` | `{text}`; user only | 200 `McpState` | 403, `McpError` |
-| POST | `/api/mcp/:name/cancel-login` | user only | 200 `McpState` | 403 |
-| POST | `/api/mcp/:name/logout` | user only | 200 `McpState` | 403, `McpError` |
-| POST | `/api/mcp/:name/recheck` | user only | 200 `McpState` | 403, 502 couldn't check |
-| GET | `/api/mcp/:name/config` | query `board?`; user only (read) | 200 `McpManager.config()` | 403, `McpError` |
+| POST | `/api/mcp` | server definition (`McpManager.add`) | 201 `McpState` | `McpError` |
+| POST | `/api/mcp/refresh` | body ignored | 202 `McpState` | |
+| PUT | `/api/mcp/:name` | server definition | 200 `McpState` | `McpError` |
+| DELETE | `/api/mcp/:name` | query `board?` | 200 `McpState` | `McpError` |
+| POST | `/api/mcp/:name/move` | `{to: "board"\|"all", board}` | 200 `McpState` | 400 bad `to`, `McpError` |
+| POST | `/api/mcp/:name/retry-move` | | 200 `McpState` | `McpError` |
+| POST | `/api/mcp/:name/login` | | 202 `McpState` | `McpError` |
+| POST | `/api/mcp/:name/login-paste` | `{text}` | 200 `McpState` | `McpError` |
+| POST | `/api/mcp/:name/cancel-login` | | 200 `McpState` | |
+| POST | `/api/mcp/:name/logout` | | 200 `McpState` | `McpError` |
+| POST | `/api/mcp/:name/recheck` | | 200 `McpState` | 502 couldn't check |
+| GET | `/api/mcp/:name/config` | query `board?` | 200 `McpManager.config()` | `McpError` |
 | GET | `/api/agents` | | 200 `AgentRegistry.status()` (agents.ts) | |
-| POST | `/api/agents/:id/install` | `:id` in `AGENT_IDS`; user only | 200 status | 403, 404 unknown id, `AgentError` |
-| POST | `/api/agents/:id/uninstall` | same; user only | 200 status | same |
+| POST | `/api/agents/:id/install` | `:id` in `AGENT_IDS` | 200 status | 404 unknown id, `AgentError` |
+| POST | `/api/agents/:id/uninstall` | same | 200 status | same |
 | GET | `/api/snippets` | query `profile?` | 200 `Snippet[]` (global plus that board's) | |
 | POST | `/api/snippets` | snippet fields | 201 `Snippet` | `SnippetError` |
 | PATCH | `/api/snippets/:id` | snippet fields | 200 `Snippet` | `SnippetError` |
@@ -380,11 +374,8 @@ All `/api/notify`, `/api/messages`, `/api/helper` and `/api/push` routes answer 
   unknown) the tool is kept in `profiles/<slug>/board-tools.json` and no `claude` command runs. Errors: 400 bad name,
   transport, command, URL (http/https only) or a value with a line break; 409 name taken (also `ckanban` on a board);
   404 unknown server or board; 400 login/logout for a server without OAuth (stdio); 409 a paste while no sign-in runs.
-- `GET /api/mcp/:name/config` returns the saved settings unmasked (env values, headers) to the user only, for the
-  edit form; saved key values in it are still masked like every answer.
-- Every non-GET `/api/mcp/...` and `/api/agents/...` request is user only, checked before the route is matched (a run
-  gets 403 even for a path that doesn't exist). `GET /api/mcp` (no settings, `target` masked) and `GET /api/agents`
-  stay open: the MCP tools read them.
+- `GET /api/mcp/:name/config` returns the saved settings unmasked (env values, headers), for the edit form.
+- None of the `/api/mcp` and `/api/agents` routes has a user-only or run check (see Quirks).
 - Pass creation (`AddPassInput`): `{kind: "key", name, secret, envName?, url?, board?}` (`envName` defaults from the
   name, e.g. `LINEAR_KEY`; 409 when taken on the same board or for automations), `{kind: "mcp", url, name?}` (https,
   or http on localhost; starts `pending`), `{kind: "local", claudeName}` (404 when not in Claude's settings).
@@ -473,7 +464,7 @@ everyMinutes, column, autoStart, askClaude, instructions, partOf`.
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/loops` | | 200 `LoopView[]` | |
-| POST | `/loops/test` | `LoopInput` (script to try); user only when `passes` holds a key the script would get as a variable | 200 `LoopManager.test()` result | 403, `LoopError` |
+| POST | `/loops/test` | `LoopInput` (script to try) | 200 `LoopManager.test()` result | `LoopError` |
 | POST | `/loops` | `LoopInput`; user only | 201 `Loop`; a first check starts in the background | 403, `LoopError` |
 | PATCH | `/loops/:lid` | partial `LoopInput`; user only | 200 `Loop` | 403, `LoopError` |
 | DELETE | `/loops/:lid` | user only | 204 | 403, `LoopError` |
@@ -738,8 +729,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 - `POST /api/bug-report/x` answers 404 only after the draft is built (and a run log may be decompressed).
 - In `/api/board-browsers`, the user-only check runs before the method and shape are matched, so any non-GET or
   non-`ensure` request from a run gets 403 even when the route doesn't exist. The same holds for `/api/passes/:id/...`
-  (user-only before the 404), `/loops/...` (except list and test), non-GET `/api/helper/...`, `/api/mcp/...` and
-  `/api/agents/...`.
+  (user-only before the 404), `/loops/...` (except list and test) and non-GET `/api/helper/...`.
 - A device take's `place` is the request's position in the one waiting line shared by all devices, so requests for
   other devices count too: two tickets each waiting for a different device are told 1 and 2.
 - `/api/notify` POST reads the body before the user-only check: invalid JSON gives 400 even for a refused caller.
@@ -763,5 +753,15 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 - The `x-ckanban-source` header only matters for the 409 "confirm" checks and huddle message source; a run that also
   sends `x-ckanban-run` never gets the confirm 409.
 - A front desk request held for Confirm answers 202 `{confirmation}` instead of the route's own result.
+- `/api/mcp/...` and `/api/agents/...` have no user-only or run check: a board run may add, change, move or remove
+  MCP servers (including a stdio command later runs start) and read a server's unmasked settings with
+  `GET /api/mcp/:name/config` (secret masking covers saved keys and passes only).
+- `POST /api/profiles/:slug/loops/test` is not user only, and the masking of its answer replaces exact saved values
+  only: a script that changes the value (reverses it, say) returns it readable.
+- `POST /api/bug-report` and `/draft` answers are masked, but the issue body and title sent to `gh issue create` are
+  only scrubbed for home and data folder paths and token-like patterns: a saved key's value in the description or the
+  ticket's text goes to GitHub as is.
+- Saved key values are masked in answers, but a ticket's `ticket.md` keeps a pasted value as it was written (comments
+  are masked when saved).
 - On the phone access listener the user-only check passes for any caller with the tailnet Host and the owner's login;
   both are in `remote.json`, so a local program can pose as the user while phone access is on (t_20261115_v0ip).

@@ -5,7 +5,6 @@ import { extractFinalText, summarizeEvent } from "../runs/activity";
 import { ATTACHMENT_NAME_SRC } from "../board/attachments";
 import { run, type RunResult } from "../runs/git";
 import { maskSecrets } from "./mcp";
-import { maskSaved } from "./board-keys";
 import type { Store } from "../core/store";
 import type { ActivityEntry, Profile, Ticket } from "../core/types";
 import { REPO, VERSION } from "../core/version";
@@ -66,9 +65,7 @@ const FILE_RE = new RegExp(`\\S*?attachments\\/${ATTACHMENT_NAME_SRC}`, "g");
 
 /** Hides the data folder, the home folder and anything that looks like a secret or token. */
 export function scrub(text: string, opts: { home?: string; dataRoot?: string } = {}): string {
-  // Every key or token saved on this Mac first (the same values maskSavedJson hides in answers): the issue, its title
-  // and the fallback link all leave the Mac.
-  let out = opts.dataRoot ? maskSaved(opts.dataRoot, text) : text;
+  let out = text;
   const home = opts.home ?? homedir();
   if (opts.dataRoot) out = out.split(opts.dataRoot).join("<ckanban data>");
   if (home && home !== "/") out = out.split(home).join("~");

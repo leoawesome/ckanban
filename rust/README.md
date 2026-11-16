@@ -67,12 +67,6 @@ Still on Bun, and why: `/api/mcp/*` (Bun keeps the servers' state, background ch
 and live checks; the phone port is Bun's), the passes sign-in and `tools` (sign-in states and token renewal in memory),
 `/api/automation-call` and `loops/test` (check tokens and the scheduler), the ask_keys box (`key-cards`, a ticket
 route), `/api/bug-report` (reads tickets). `backup_file` is not a daemon route: the `ckanban mcp` process does it.
-Rust passes these through with the caller's port (`x-ckanban-peer-port`), so Bun's user-only checks hold through the
-front. When one of them moves to Rust it must keep what Bun does now (contracts/api.md, "Secret masking" and the user-only
-rows; the contract tests check it on both servers): every non-GET `/api/mcp/*` and `/api/agents/*` and `GET
-/api/mcp/:name/config` are user only (`guard.rs`), `loops/test` is user only once a pass would hand the script a key, a
-bug report masks every saved value before `gh`, and ticket text is saved with this board's keys as `${NAME}` and other
-saved values as `***`.
 
 Usage and spend: only these exact paths with GET. Everything else goes to Bun: other methods (Bun's 404), other spellings Bun also
 accepts (`/api/usage/`, `/api/usage/x`), WebSocket upgrades and any request from the Telegram front desk

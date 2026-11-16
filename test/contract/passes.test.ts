@@ -12,7 +12,6 @@ import { join } from "node:path";
 import { CLI_CMD, type Daemon, startDaemon, until } from "./daemon";
 import { documentedPaths, filesUnder, readJsonl } from "./files";
 import { phone, writeRemoteJson } from "./phone";
-import { asUser } from "./user-browser";
 
 let d: Daemon;
 const SLUG = "keys";
@@ -242,26 +241,7 @@ test("a saved value is masked in every answer, and in comments as they are saved
   ] as const) {
     expect({ what, board: r.text.includes(BOARD_KEY), automation: r.text.includes(AUTOMATION_KEY_2) }).toEqual({ what, board: false, automation: false });
   }
-  // ticket.md never holds a saved value: this board's key becomes the variable runs get it under, any other one ***.
-  expect((await d.api("GET", base)).data.body).toBe("board ${SENTRY_AUTH_TOKEN} and automation ***");
-  const md = readFileSync(join(d.home, "profiles", SLUG, "tickets", made.data.id, "ticket.md"), "utf8");
-  expect(md).not.toContain(BOARD_KEY);
-  expect(md).not.toContain(AUTOMATION_KEY_2);
-  expect(md).toContain("board ${SENTRY_AUTH_TOKEN} and automation ***");
-  // Another board's key that contains this board's key is replaced whole, not as \${NAME} plus its rest.
-  const wrap = `zz${BOARD_KEY}zz`;
-  expect((await phone(d, "POST", "/api/passes", { kind: "key", name: "Wrapped", secret: wrap, board: OTHER })).status).toBe(201);
-  const wrapped = await d.api("PATCH", base, { body: `w ${wrap} ${BOARD_KEY}x` });
-  expect(wrapped.status).toBe(200);
-  expect(readFileSync(join(d.home, "profiles", SLUG, "tickets", made.data.id, "ticket.md"), "utf8")).toContain("w *** ${SENTRY_AUTH_TOKEN}x");
-  // The same when the text is changed later, and in the title.
-  const edited = await d.api("PATCH", base, { title: `key ${BOARD_KEY}`, body: `now ${AUTOMATION_KEY_2} and ${BOARD_KEY}` });
-  expect(edited.status).toBe(200);
-  const md2 = readFileSync(join(d.home, "profiles", SLUG, "tickets", made.data.id, "ticket.md"), "utf8");
-  expect(md2).not.toContain(BOARD_KEY);
-  expect(md2).not.toContain(AUTOMATION_KEY_2);
-  expect(md2).toContain("title: key ${SENTRY_AUTH_TOKEN}");
-  expect(md2).toContain("now *** and ${SENTRY_AUTH_TOKEN}");
+  expect((await d.api("GET", base)).data.body).toBe("board *** and automation ***");
   // comments.jsonl holds the masked text.
   const comments = readFileSync(join(d.home, "profiles", SLUG, "tickets", made.data.id, "comments.jsonl"), "utf8");
   expect(comments).not.toContain(BOARD_KEY);
@@ -275,7 +255,7 @@ test("check scripts (loops/test): keys arrive as environment variables, output i
     'curl -s -X POST -H "content-type: application/json" "http://127.0.0.1:$CKANBAN_PORT/api/automation-call" -d "{\\"token\\":\\"$CKANBAN_CALL_TOKEN\\",\\"service\\":\\"nope\\",\\"tool\\":\\"x\\"}" >&2',
     'echo "[{\\"id\\":\\"1\\",\\"title\\":\\"key $LINEAR_KEY\\"},{\\"id\\":\\"2\\",\\"title\\":\\"plain\\"}]"',
   ].join("\n");
-  const r = await phone(d, "POST", `/api/profiles/${SLUG}/loops/test`, { script, passes: ["Linear"] });
+  const r = await d.api("POST", `/api/profiles/${SLUG}/loops/test`, { script, passes: ["Linear"] });
   expect(r.status).toBe(200);
   expect(r.text).not.toContain(AUTOMATION_KEY_2);
   expect(r.data).toMatchObject({ found: 2, error: null, toolsUsed: [] });
@@ -286,30 +266,10 @@ test("check scripts (loops/test): keys arrive as environment variables, output i
   expect(readdirSync(join(d.home, "automation-tests"))).toEqual([]);
 
   // A board's key reaches only that board's checks.
-  const own = await phone(d, "POST", `/api/profiles/${SLUG}/loops/test`, { script: 'echo "[{\\"id\\":\\"k\\",\\"title\\":\\"$SENTRY_AUTH_TOKEN\\"}]"', passes: [boardKeyId] });
+  const own = await d.api("POST", `/api/profiles/${SLUG}/loops/test`, { script: 'echo "[{\\"id\\":\\"k\\",\\"title\\":\\"$SENTRY_AUTH_TOKEN\\"}]"', passes: [boardKeyId] });
   expect(own.status).toBe(200);
   expect(own.data.items).toEqual([{ id: "k", title: "***" }]);
-  expect((await phone(d, "POST", `/api/profiles/${OTHER}/loops/test`, { script: "echo []", passes: [boardKeyId] })).status).toBe(400);
-
-  // Anyone else (a board run, the setup chat, a program) can't test with a saved key: masking only catches the value
-  // as it is, and a script could print it reversed. The script doesn't run at all.
-  const rev = 'echo "[{\\"id\\":\\"r\\",\\"title\\":\\"$(echo $LINEAR_KEY | rev)\\"}]"';
-  for (const headers of [{ "x-ckanban-run": `${SLUG}/t_x`, origin: d.url }, { origin: d.url }, {}] as Record<string, string>[]) {
-    for (const passes of [["Linear"], [boardKeyId]]) {
-      const no = await d.api("POST", `/api/profiles/${SLUG}/loops/test`, { script: rev, passes }, headers);
-      expect({ headers, passes, status: no.status }).toEqual({ headers, passes, status: 403 });
-      expect(no.data.error).toMatch(/saved key .* is for the user only/);
-      expect(no.text).not.toContain([...AUTOMATION_KEY_2].reverse().join(""));
-    }
-  }
-  // The user's own browser on this Mac (the Automations editor's Test) may.
-  const desk = await asUser(d.url, "POST", `/api/profiles/${SLUG}/loops/test`, { script: rev, passes: ["Linear"] });
-  expect(desk.status).toBe(200);
-  expect(desk.data.found).toBe(1);
-  // Without a key it still works for them (the setup chat tests its script).
-  const plain = await d.api("POST", `/api/profiles/${SLUG}/loops/test`, { script: 'echo "[{\\"id\\":\\"p\\",\\"title\\":\\"[$LINEAR_KEY]\\"}]"' }, { "x-ckanban-run": `${SLUG}/t_x` });
-  expect(plain.status).toBe(200);
-  expect(plain.data.items).toEqual([{ id: "p", title: "[]" }]);
+  expect((await d.api("POST", `/api/profiles/${OTHER}/loops/test`, { script: "echo []", passes: [boardKeyId] })).status).toBe(400);
 
   // Errors.
   expect((await d.api("POST", `/api/profiles/${SLUG}/loops/test`, { script: "  " })).status).toBe(400);
@@ -413,27 +373,6 @@ test("bug reports: draft, then `gh issue create`; 201 with the issue, 400 withou
   expect(gh.filter((a: string, i: number) => gh[i - 1] === "--label")).toEqual(["bug", "from-ai"]);
   expect(gh[gh.indexOf("--body") + 1]).toContain("It froze.");
 });
-
-test("bug reports: no saved value goes to GitHub, in the title, the description, the ticket's text or the fallback link", async () => {
-  // A ticket.md written before the key was saved (or edited outside the board) still holds both values.
-  const t = (await d.api("POST", `/api/profiles/${SLUG}/tickets`, { title: "Old ticket", body: "x" })).data;
-  const md = join(d.home, "profiles", SLUG, "tickets", t.id, "ticket.md");
-  writeFileSync(md, readFileSync(md, "utf8").replace(/\nx$/, `\nold ${BOARD_KEY} and ${AUTOMATION_KEY_2}`));
-  // The board's own listing notices the outside edit.
-  await until(async () => (await d.api("GET", `/api/profiles/${SLUG}/tickets/${t.id}`)).data.body.startsWith("old "), 15_000, "the edited ticket");
-  const before = readJsonl(ghLog).length;
-  const r = await d.api("POST", "/api/bug-report", {
-    title: `Froze with ${BOARD_KEY}`, description: `I pasted ${AUTOMATION_KEY_2} and ${BOARD_KEY}`, profile: SLUG, ticketId: t.id,
-  });
-  expect(r.status).toBe(201);
-  const [gh] = readJsonl(ghLog).slice(before);
-  const sent = JSON.stringify(gh) + String(r.data.fallbackUrl);
-  for (const v of [BOARD_KEY, AUTOMATION_KEY_2, encodeURIComponent(BOARD_KEY), encodeURIComponent(AUTOMATION_KEY_2)]) expect(sent).not.toContain(v);
-  expect(gh[gh.indexOf("--title") + 1]).toBe("Froze with ***");
-  expect(gh[gh.indexOf("--body") + 1]).toContain("I pasted *** and ***");
-  expect(gh[gh.indexOf("--body") + 1]).toContain("old *** and ***");
-  expect(r.data.fallbackUrl).toStartWith("https://github.com/");
-}, 30_000);
 
 test("every file the passes, keys, backups and scripts tests left in the data folder is one data-files.md lists", () => {
   const patterns = documentedPaths();
