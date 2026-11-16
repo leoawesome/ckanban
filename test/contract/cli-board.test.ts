@@ -3,10 +3,13 @@
 // the read-only rule inside runs, `call`, and the stdio MCP server's protocol. A fake board server (cli-support.ts)
 // stands in for the daemon, so every answer shape (setup failed, device busy, bug report fallback, 202 confirm...)
 // can be tested without a real run, GitHub or devices. See contracts/cli.md sections 1, 3, 4 and 6.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { contractBlock, type FakeBoard, fakeBoard, REPO, type Sandbox, type Seen, sandbox } from "./cli-support";
+
+// Each test runs the CLI several times; one start takes seconds on a busy Mac.
+setDefaultTimeout(60_000);
 
 let sb: Sandbox;
 let fb: FakeBoard;

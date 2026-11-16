@@ -5,12 +5,15 @@
 // Everything runs in a sandbox (cli-support.ts): temp HOME, stub launchctl/open/claude first on PATH. Each test that
 // could reach launchctl first checks that the stub is the one PATH finds, so a broken sandbox fails instead of
 // touching the real LaunchAgents folder.
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLI_CMD, startDaemon } from "./daemon";
 import { CLI_FROM_SOURCE, contractBlock, type FakeBoard, fakeBoard, type Sandbox, sandbox } from "./cli-support";
+
+// Each test runs the CLI several times; one start takes seconds on a busy Mac.
+setDefaultTimeout(60_000);
 
 const UID = process.getuid!();
 const JOB = `gui/${UID}/io.ckanban.daemon`;
