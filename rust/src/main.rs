@@ -251,6 +251,17 @@ async fn serve(
                     {
                         return Ok(res);
                     }
+                    let req = match &board {
+                        Some(b) => match b.answer_request(req, peer).await {
+                            Ok(res) => return Ok(res),
+                            Err(req) => match b.answer_async(req).await {
+                                Ok(res) => return Ok(res),
+                                Err(board_mode::Next::Untouched(req)) => req,
+                                Err(board_mode::Next::Bun(req)) => return Ok(proxy.forward(req, peer).await),
+                            },
+                        },
+                        None => req,
+                    };
                     let compare = shadow.as_ref().and_then(|_| shadow::wanted(req.method(), req.uri().path(), req.uri().query()));
                     Ok::<_, std::convert::Infallible>(match native.answer(req, peer).await {
                         Ok(res) => res,

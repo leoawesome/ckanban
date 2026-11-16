@@ -8,7 +8,7 @@
 # R0: the switch and its fallbacks; the event stream (the satellite's events re-emitted on Rust's stream). The other
 # event stream test creates a ticket, which needs R2a.
 rust-board-mode.test.ts
-callers.test.ts | event stream carries
+callers.test.ts | event stream carries|terminal's WebSocket
 
 # R1: the read routes from the Rust index (boards, ticket list scopes, one ticket, /api/tickets, /api/inbox), the same
 # answers as Bun on a board written as files, and shadow mode. Tests of the C1 files that create no ticket; the rest
@@ -23,3 +23,12 @@ board-families.test.ts | create errors
 # session.updated, over transcripts written before the start. The run-based conversation tests (chat-session.test.ts,
 # quickchat.test.ts's search_chat) need runs (R7a) and quick chats (R8).
 sessions-read.test.ts
+
+# R9: browsers, devices and the terminal, answered by Rust. Left for later: the tests that create a ticket (R2a) or
+# start a run (R7a): a ticket's take and release, a run holding a board browser, the terminal of a ticket.
+browsers.test.ts | browsers view|named Chromes|changes are the user's only|POST adds a browser|names must be given|PATCH renames|ensure is only for|open starts Chrome|the sign-in screen|close on a browser|DELETE removes it and its folder|an empty list at first|POST adds or changes a device|bad names and callers|errors before the upgrade|one shell per folder
+
+# R6: a ticket's outputs, the files its chat mentions, its Changes tab, the board's Files panel, detect-setup and
+# version-history, answered by Rust. runs-git.test.ts and runs-life.test.ts (copies, merge into main, land, branch, PR
+# routes) need ticket writes and runs: they come with R2a and R7a, which call rust/board/src/git (landing, pr).
+board-files.test.ts
