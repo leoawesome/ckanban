@@ -166,7 +166,7 @@ The upgrade needs an `Origin` equal to the board's own origin (local) or the tai
 | GET | `/api/claude/projects` | | 200 list of Claude Code projects (`listClaudeProjects`) each with `hasProfile` | |
 | GET | `/api/claude/defaults` | | 200 `claudeDefaults()` plus `versions` (learned model versions) | |
 | POST | `/api/pick-folder` | body ignored | 200 `{path}` from the native folder picker | |
-| GET | `/api/version-history` | query `path` (absolute) | 200 `{git, repo}`: git binary path or null; `repoKind()` or null | 400 path missing or not absolute |
+| GET | `/api/version-history` | query `path` (absolute) | 200 `{git, repo}`: `git` true when git is installed (else false); `repo` is `repoKind()` (`plain`, `empty`, `local` or `remote`) or null when git is missing or the folder doesn't exist | 400 path missing or not absolute |
 | POST | `/api/version-history` | `{path}` (absolute) | 200 `enableVersionHistory()` result plus `repo` | 400 path, 400 git not installed, 404 folder missing, 409 a run is editing that folder, 500 git failed |
 | GET | `/api/cron/preview` | query `expr` | 200 `{valid, error, summary, next: ISO[3]}`; invalid gives `valid:false` with `error` | |
 | POST | `/api/bug-report/draft` | `{profile?, ticketId?}` | 200 `draftReport()` (bugreport.ts) | `BugReportError` status |
@@ -714,6 +714,22 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | GET | `/help` | | 200 `{cards, busy, recap}` | |
 | POST | `/help` | `{kind}` (one of `HELP_KINDS`) | 200 `Helper.ask()` result | 403 run header, 400 kind or nothing to explain, `HelpError` |
 | GET | `/usage` | | 200 `ticketUsage()` result (runs, windows, teammates, side spend) | |
+
+Run facts the contract tests pin down (`test/contract/runs-*.test.ts`):
+- Moving a ticket to `ready`, `in_progress` or `planning` starts a run (`planning`: an interview that can't edit
+  files); `backlog`, `review` and `done` don't. A run ends in `review` with `outcome` from the CKANBAN_RESULT line:
+  `done`, `blocked`, `questions` saved as `needs_input`; no line is `done`; a failed run `failed` with the error output
+  in `error`; Stop, or a move out of In Progress, `stopped`; the usage limit `limit` (with `limit.resetAt`, `message`).
+- The result's `summary` becomes an `ai` comment for `done` and `blocked`; for `questions` the comment is the final
+  text without the result line. Chat messages are not comments.
+- On a plain folder, runs that edit wait for each other (`folderWait`): one at a time per folder.
+- Messages sent while Claude runs reach it at its next step; those a Stop left unread stay in `queued` as `unsent`.
+- Every run is a new `claude -p` process: the ticket's first run uses `--session-id`, later ones `--resume` the same
+  session (fresh chat and fresh session start a new id).
+- `activity` events on the stream are `{type: "activity", profile, id, run, event}`. `GET /activity` pages are at most
+  512 KB; `before` is null on the page that starts the file.
+- POST `/api/restart` answers `{running, alreadyPending}`; `GET /api/restart` `{pending, waiting}`; a
+  `restart.updated` event carries the same. New runs wait; the daemon exits once no run is active.
 
 ## Ticket cards, family, plans and work
 

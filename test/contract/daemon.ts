@@ -57,6 +57,12 @@ export interface Daemon {
   /** Runs the ckanban CLI against this daemon (cwd defaults to the project folder). */
   cli(args: string[], cwd?: string): Promise<{ code: number; stdout: string; stderr: string }>;
   log(): string;
+  /** Resolves with the exit code once the server process ends on its own (e.g. after POST /api/restart). */
+  exited(): Promise<number>;
+  /** Starts the server again on the same data folder, port and env (what launchd does after a restart). */
+  respawn(): Promise<void>;
+  /** Sends a signal to the running server process (SIGTERM: the shutdown a launchd stop or a crash-free quit does). */
+  kill(signal?: NodeJS.Signals): void;
   stop(): Promise<void>;
 }
 
@@ -148,14 +154,20 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
   };
   opts.before?.({ home, claudeDir, project });
   const logFile = join(root, "daemon.log");
-  const proc = Bun.spawn(opts.cmd ?? DAEMON_CMD, { env, cwd: project, stdout: Bun.file(logFile), stderr: Bun.file(join(root, "daemon.err.log")) });
+  const spawn = (n: number) => Bun.spawn(opts.cmd ?? DAEMON_CMD, {
+    env, cwd: project, stdout: Bun.file(n ? `${logFile}.${n}` : logFile), stderr: Bun.file(join(root, n ? `daemon.err.log.${n}` : "daemon.err.log")),
+  });
+  let starts = 0;
+  let proc = spawn(starts);
   const url = `http://127.0.0.1:${port}`;
   const log = () => {
     let out = "";
-    for (const f of ["daemon.log", "daemon.err.log"]) {
-      try {
-        out += readFileSync(join(root, f), "utf8");
-      } catch {}
+    for (let n = 0; n <= starts; n++) {
+      for (const f of ["daemon.log", "daemon.err.log"]) {
+        try {
+          out += readFileSync(join(root, n ? `${f}.${n}` : f), "utf8");
+        } catch {}
+      }
     }
     return out;
   };
@@ -174,18 +186,28 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     return { status: res.status, data, text };
   };
 
-  const deadline = Date.now() + 30_000;
-  for (;;) {
-    if (proc.exitCode !== null) throw new Error(`daemon exited with ${proc.exitCode}:\n${log()}`);
-    try {
-      if ((await fetch(`${url}/api/profiles`)).ok) break;
-    } catch {}
-    if (Date.now() > deadline) {
-      proc.kill("SIGKILL");
-      throw new Error(`daemon did not answer on ${url} within 30s:\n${log()}`);
+  const ready = async () => {
+    const deadline = Date.now() + 30_000;
+    for (;;) {
+      if (proc.exitCode !== null) throw new Error(`daemon exited with ${proc.exitCode}:\n${log()}`);
+      try {
+        if ((await fetch(`${url}/api/profiles`)).ok) break;
+      } catch {}
+      if (Date.now() > deadline) {
+        proc.kill("SIGKILL");
+        throw new Error(`daemon did not answer on ${url} within 30s:\n${log()}`);
+      }
+      await Bun.sleep(100);
     }
-    await Bun.sleep(100);
-  }
+  };
+  await ready();
+  const exited = () => proc.exited;
+  const kill = (signal: NodeJS.Signals = "SIGTERM") => proc.kill(signal);
+  const respawn = async () => {
+    await proc.exited;
+    proc = spawn(++starts);
+    await ready();
+  };
 
   const cli: Daemon["cli"] = async (args, cwd = project) => {
     const p = Bun.spawn([...CLI_CMD, ...args], { env, cwd, stdout: "pipe", stderr: "pipe" });
@@ -212,7 +234,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     }
   };
 
-  return { pid: proc.pid, port, url, remotePort, home, project, env, chromeStarts, api, cli, log, stop };
+  return { pid: proc.pid, port, url, remotePort, home, project, env, chromeStarts, api, cli, log, exited, respawn, kill, stop };
 }
 
 /** Polls `fn` until it returns a truthy value (or throws after `ms`). */
