@@ -50,6 +50,9 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
 - `board-items.test.ts`: tags (normalized, limits), attachments (upload, serve, info, refusals, size limit, removed
   with the ticket), ticket links from `ai` comments, card order, pin, important and Done, the list scopes,
   `/api/tickets`, `/api/inbox` with snooze, and the event stream's `ticket.updated` / `ticket.deleted`.
+- `board-cards.test.ts`: card routes (user-only refusals, squad and teammate answers saved), `seen`, follow-up set
+  and stop, `own-work` refusals, Done paging (offset, cursor, `doneHead`, `scope=list` with `next`) on a board with 45
+  Done tickets, board PATCH (`profile.json`) and DELETE.
 - `schedules.test.ts`: create, list, pause, resume, history and delete a schedule, its `<id>.json` and
   `<id>.history.jsonl`, validation errors.
 - `usage.test.ts`: `GET /api/usage` against a local fake of Anthropic's endpoint (first call, cache hits counted on

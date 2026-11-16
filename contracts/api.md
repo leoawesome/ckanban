@@ -711,6 +711,9 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 - `GET /api/cron/preview` answers 200 with `valid: false` and an `error` field for a bad or empty expression.
 - `POST /api/huddles/:hid/generic-squad` always answers 200, with any failure in its `error` field.
 - `POST /api/bug-report` answers 201 when an issue was filed and 200 otherwise (the result says why).
+- `PATCH /api/profiles/:slug` doesn't check `path` (a missing folder is saved) or `name` (an empty name is saved);
+  only `POST` checks them.
+- `DELETE .../follow-up` answers 200 also when there is no follow-up to stop.
 - Status codes for similar actions differ: `POST .../chat`, `queued` POST, `key-cards`, `follow-up/now`,
   `cap-continue`, `limit` continue, `pr/send-failures` and `pr/resolve-conflicts` answer 202; `pr/merge`, `stall`,
   `limit` auto, `plan` answer 200; `ask` answers 202; `move`, `branch`, `follow-up-work` and `follow-up` (set) answer
