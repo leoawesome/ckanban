@@ -49,6 +49,12 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
 - `callers.test.ts`: a board run (the fake Claude in `call` mode, calling the API without the run header) gets 403 on
   user-only routes while a program outside the board may delete a schedule; behind a front server its internal port
   refuses requests without the secret; the event stream delivers events while it stays open; the terminal's WebSocket.
+- `mcp.test.ts`: `ckanban mcp` started as its own program (`mcp.ts`; `MCP_CMD` is the contract CLI plus `mcp`, and
+  `CKANBAN_CONTRACT_MCP`, a JSON array, overrides it): the handshake and JSON-RPC errors, `tools/list` against the
+  "Tool arguments" table in `cli.md` (names, order, argument names, types, required, enums, read-only hints), and calls
+  into every tool group, checking the answer and its effect over HTTP. Calls "in a run" set `CKANBAN_TICKET` like the
+  board does, to reach the run-only tools and the refusals a run gets. The daemon's `gh` is a stub that is never logged
+  in, so `report_bug` never reaches GitHub.
 - `data-files.test.ts`: after a mix of actions (tickets, chats, side calls, schedules, jobs, automations, quick
   chats, huddles, settings, plan usage), every file in the data folder matches a path listed in `data-files.md`, and
   every saved file with a schema matches it and is written in its documented style. User-only actions go through the
@@ -59,7 +65,7 @@ with everything else.
 
 To test another server: build it and run
 `CKANBAN_CONTRACT_DAEMON='["/path/to/server","dev"]' bun test test/contract` (add `CKANBAN_CONTRACT_CLI` if the CLI
-moves too). The server must take its port from `CKANBAN_PORT`, its data folder from `CKANBAN_HOME`, the Claude
+moves too, and `CKANBAN_CONTRACT_MCP` for the MCP server). The server must take its port from `CKANBAN_PORT`, its data folder from `CKANBAN_HOME`, the Claude
 program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_DIR`, and honour `CKANBAN_USAGE_URL`
 and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`).
 

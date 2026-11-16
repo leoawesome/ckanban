@@ -3,8 +3,9 @@
 // so the same tests can check another server (a Rust port): set CKANBAN_CONTRACT_DAEMON / CKANBAN_CONTRACT_CLI (below).
 //
 // Each daemon gets its own temp data folder (CKANBAN_HOME), temp HOME, temp Claude config folder, a fake `claude`
-// (test/fixtures/fake-claude.ts) and stub osascript/caffeinate/open/tailscale on PATH, so it never touches the real
-// ~/.claude-kanban, the real repo, or shows Mac banners. The board's project folder is a plain temp folder (no git).
+// (test/fixtures/fake-claude.ts), stub osascript/caffeinate/open/tailscale/gh on PATH and a stub Google Chrome
+// (CKANBAN_CHROME_BIN) for board browsers, so it never touches the real ~/.claude-kanban, the real repo or the user's
+// Chrome, or shows Mac banners. The board's project folder is a plain temp folder (no git).
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -44,6 +45,8 @@ export interface Daemon {
   home: string;
   /** The board's project folder. */
   project: string;
+  /** Every start of the stub Chrome so far, one argv (without the binary) per start. */
+  chromeStarts(): string[][];
   env: Record<string, string>;
   /** fetch against the daemon; JSON bodies are encoded, the answer parsed when it is JSON. */
   api<T = any>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; data: T; text: string }>;
@@ -72,6 +75,14 @@ function stubBin(): string {
     writeFileSync(f, "#!/bin/sh\nexit 0\n");
     chmodSync(f, 0o755);
   }
+  // GitHub CLI: always "not logged in", so a bug report (report_bug, POST /api/bug-report) never reaches GitHub.
+  writeFileSync(join(dir, "gh"), "#!/bin/sh\necho 'To get started with GitHub CLI, please run:  gh auth login' >&2\nexit 4\n");
+  chmodSync(join(dir, "gh"), 0o755);
+  // Board browsers start Google Chrome; this stub only writes down how it was started (one JSON argv per line, in
+  // chrome-starts.jsonl next to it) and exits at once, so a start fails the way a Chrome that closes right away does.
+  const chrome = join(dir, "google-chrome");
+  writeFileSync(chrome, `#!${process.execPath}\nrequire("node:fs").appendFileSync(${JSON.stringify(join(dir, "chrome-starts.jsonl"))}, JSON.stringify(process.argv.slice(2)) + "\\n");\nprocess.exit(1);\n`);
+  chmodSync(chrome, 0o755);
   // The board runs `claude`; this is the fake one.
   const claude = join(dir, "claude");
   writeFileSync(claude, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE}" "$@"\n`);
@@ -109,6 +120,8 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     CKANBAN_PORT: String(port),
     CKANBAN_REMOTE_PORT: String(remotePort),
     CKANBAN_CLAUDE_BIN: join(bin, "claude"),
+    // Never the user's real Chrome (the daemon falls back to /Applications/Google Chrome.app without it).
+    CKANBAN_CHROME_BIN: join(bin, "google-chrome"),
     CLAUDE_CONFIG_DIR: claudeDir,
     FAKE_MODE: opts.fakeMode ?? "ok",
     FAKE_ARGS_FILE: join(root, "claude-args.jsonl"),
@@ -179,7 +192,15 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     rmSync(bin, { recursive: true, force: true });
   };
 
-  return { port, url, home, project, env, api, cli, log, stop };
+  const chromeStarts = () => {
+    try {
+      return readFileSync(join(bin, "chrome-starts.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as string[]);
+    } catch {
+      return [];
+    }
+  };
+
+  return { port, url, home, project, env, chromeStarts, api, cli, log, stop };
 }
 
 /** Polls `fn` until it returns a truthy value (or throws after `ms`). */
