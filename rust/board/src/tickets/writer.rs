@@ -149,8 +149,29 @@ impl Tickets {
         }
     }
 
-    fn installed(&self, slug: &str, id: &str, t: &Ticket) -> Arc<Tk> {
-        let tk = Arc::new(Tk::from_json(obj(t), false));
+    /// Puts the written ticket in the listing. `body_after`: the key `body` follows in Bun's in-memory object (its
+    /// answers keep that order until the file is read again): "updatedAt" for a new ticket (the object literal of
+    /// `createTicket`), else the last key the file had before the change (`{...parsed, ...patch}`).
+    fn installed(&self, slug: &str, id: &str, t: &Ticket, body_after: Option<&str>) -> Arc<Tk> {
+        let json = match body_after {
+            None => obj(t),
+            Some(after) => {
+                let mut m = Map::new();
+                let mut placed = false;
+                for (k, v) in &t.meta {
+                    m.insert(k.clone(), v.clone());
+                    if k == after {
+                        m.insert("body".into(), Value::String(t.body.clone()));
+                        placed = true;
+                    }
+                }
+                if !placed {
+                    m.insert("body".into(), Value::String(t.body.clone()));
+                }
+                m
+            }
+        };
+        let tk = Arc::new(Tk::from_json(json, false));
         self.index.saved(slug, id, Some(tk.clone()));
         tk
     }
@@ -166,7 +187,7 @@ impl Tickets {
             std::fs::create_dir_all(dir).map_err(|e| (500, e.to_string()))?;
         }
         tfile::write(&file, &t).map_err(|e| (500, e.to_string()))?;
-        Ok(self.installed(slug, &id, &t))
+        Ok(self.installed(slug, &id, &t, Some("updatedAt")))
     }
 
     /// `Store.updateTicket` (the board's lock held): the file read now, the patch merged, written back.
@@ -180,7 +201,8 @@ impl Tickets {
         };
         let next = tfile::apply_patch(&current, patch, &now(), keep_updated_at, |st| self.entry_order(slug, st));
         tfile::write(&file, &next).map_err(|e| (500, e.to_string()))?;
-        Ok(self.installed(slug, id, &next))
+        let last = current.meta.keys().next_back().cloned();
+        Ok(self.installed(slug, id, &next, Some(last.as_deref().unwrap_or("updatedAt"))))
     }
 
     /// `Store.deleteTicket` (the board's lock held).
