@@ -725,7 +725,7 @@ Read once and held in memory; the daemon's next save overwrites outside edits.
 
 | Path | Format | Writer | Notes |
 | --- | --- | --- | --- |
-| `session-summaries.json` | compact JSON `{ tag, items, stale? }` (`session.ts`) | atomic, at most every 30 s and at shutdown | read once; entries checked against the transcript's size and mtime |
+| `session-summaries.json` | compact JSON `{ tag, items, stale? }` (`session.ts`) | atomic, at most every 30 s and at shutdown | read once; entries checked against the transcript's size and mtime. `tag` is `2:<version>:<hash>` from Bun, `2:rust:<hash>` from the Rust board (board mode); either side shows the other's summaries as `stale` (still right while the transcript is unchanged) until it has made them again |
 | `usage-last.json` | compact JSON, no final newline, `{ last, lastError, attemptAt, blockedUntil, failures }` (times in epoch ms) | `UsageCache` (`usage-cache.ts`), atomic | read at start, again when its size or mtime changes (shared with the Rust server) |
 | `mcp-seen.json` | compact JSON array of server names | `mcp.ts`, plain write | read once |
 | `claude-ai-connectors.json` | compact JSON array of connector names | `mcp.ts`, plain write | read once |

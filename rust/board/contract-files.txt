@@ -18,3 +18,8 @@ tickets.test.ts | boards \(profiles\)|validation errors
 board-items.test.ts | attachments (POST|GET|other|refused|names)
 board-cards.test.ts | board PATCH and DELETE
 board-families.test.ts | create errors
+
+# R5: a ticket's conversation, tool, agent and workflow details, chat search and read, the board folder's sessions and
+# session.updated, over transcripts written before the start. The run-based conversation tests (chat-session.test.ts,
+# quickchat.test.ts's search_chat) need runs (R7a) and quick chats (R8).
+sessions-read.test.ts

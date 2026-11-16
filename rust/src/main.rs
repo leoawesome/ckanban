@@ -246,6 +246,11 @@ async fn serve(
                             return Ok(res);
                         }
                     }
+                    if let Some(b) = &board
+                        && let Some(res) = b.answer_sessions(&req).await
+                    {
+                        return Ok(res);
+                    }
                     let compare = shadow.as_ref().and_then(|_| shadow::wanted(req.method(), req.uri().path(), req.uri().query()));
                     Ok::<_, std::convert::Infallible>(match native.answer(req, peer).await {
                         Ok(res) => res,
