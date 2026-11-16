@@ -3,7 +3,7 @@
 // so the same tests can check another server (a Rust port): set CKANBAN_CONTRACT_DAEMON / CKANBAN_CONTRACT_CLI (below).
 //
 // Each daemon gets its own temp data folder (CKANBAN_HOME), temp HOME, temp Claude config folder, a fake `claude`
-// (test/fixtures/fake-claude.ts) and stub osascript/caffeinate/open/tailscale on PATH, so it never touches the real
+// (test/fixtures/fake-claude.ts) and stub osascript/caffeinate/open/tailscale/gh on PATH, so it never touches the real
 // ~/.claude-kanban, the real repo, or shows Mac banners. The board's project folder is a plain temp folder (no git).
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -72,6 +72,9 @@ function stubBin(): string {
     writeFileSync(f, "#!/bin/sh\nexit 0\n");
     chmodSync(f, 0o755);
   }
+  // GitHub CLI: always "not logged in", so a bug report (report_bug, POST /api/bug-report) never reaches GitHub.
+  writeFileSync(join(dir, "gh"), "#!/bin/sh\necho 'To get started with GitHub CLI, please run:  gh auth login' >&2\nexit 4\n");
+  chmodSync(join(dir, "gh"), 0o755);
   // The board runs `claude`; this is the fake one.
   const claude = join(dir, "claude");
   writeFileSync(claude, `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE}" "$@"\n`);
