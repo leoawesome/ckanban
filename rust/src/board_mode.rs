@@ -9,8 +9,9 @@
 //! under launchd) and `<data>/rust-board-status.json`.
 //!
 //! Routes the Rust board answers itself (more with each task): `GET /api/events`; the session routes (R5: a ticket's
-//! conversation, tool, agent and workflow details, chat search and read, the board folder's sessions). Everything
-//! else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
+//! conversation, tool, agent and workflow details, chat search and read, the board folder's sessions); the quick chat
+//! routes (R8: `/api/profiles/:p/chats...`; quick chats replying when board mode stops are continued at the next
+//! start). Everything else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -20,6 +21,8 @@ use ckanban_board::core::{Core, Services};
 use ckanban_board::events::{self, EventHooks};
 use ckanban_board::lock::{self, BoardLock};
 use ckanban_board::mode::{self, Decision};
+use ckanban_board::quickchat::routes::{self as chat_routes, ChatReq, UserCheck};
+use ckanban_board::quickchat::{QuickChatOptions, QuickChats};
 use ckanban_board::satellite;
 use ckanban_board::sessions::routes::{self as session_routes, HUDDLE_HEADER, RUN_HEADER};
 use ckanban_board::sessions::service::Sessions;
@@ -28,10 +31,16 @@ use hyper::body::Incoming;
 use hyper::header::HOST;
 use hyper::{Method, Request, Response, StatusCode};
 
+use crate::guard;
 use crate::mask;
 use crate::passes;
 use crate::proxy::{Body, plain, wants_upgrade};
-use crate::routes::local_host;
+use crate::routes::{json_type, local_host, local_origin};
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full, Limited};
+
+/// The largest quick chat request body Rust reads (a message is at most 100,000 characters; Bun takes up to 128 MB).
+const CHAT_BODY_LIMIT: usize = 8 << 20;
 
 /// The Telegram front desk's header: its requests go through Bun's gate (as in routes.rs).
 const FRONT_DESK_HEADER: &str = "x-ckanban-frontdesk";
@@ -41,6 +50,7 @@ const LOCK_WAIT: Duration = Duration::from_secs(5);
 pub struct BoardMode {
     pub core: Arc<Core>,
     sessions: Arc<Sessions>,
+    chats: Arc<QuickChats>,
     hooks: Arc<EventHooks>,
     public_port: u16,
     root: PathBuf,
@@ -76,12 +86,19 @@ pub async fn prepare(root: &Path, public_port: u16) -> Option<Arc<BoardMode>> {
     }
     // The session watcher and the projects folder feed (R5): `session.updated` on the board's event stream.
     sessions.start(&core);
+    // Quick chats (R8): replies a stop cut off are continued and held messages sent (`quickChats.recover`); at the
+    // stop, replies in progress are marked for the next start.
+    let chats = QuickChats::new(root, core.bus.clone(), QuickChatOptions::from_env());
+    let c = chats.clone();
+    let _ = tokio::task::spawn_blocking(move || c.recover()).await;
+    let c = chats.clone();
+    core.on_stop("quick chats", move || c.shutdown());
     if let Err(e) = mode::record_board(root, crashes) {
         eprintln!("ckanban-rs: can't write {}: {e}", mode::status_path(root).display());
     }
     eprintln!("ckanban-rs: board mode: the Rust board owns this data folder; Bun runs as its satellite");
     let hooks = Arc::new(EventHooks { views: core.services.views.clone(), cut: core.services.cut.clone(), mask: masker(root) });
-    Some(Arc::new(BoardMode { core, sessions, hooks, public_port, root: root.to_path_buf(), _lock: lock }))
+    Some(Arc::new(BoardMode { core, sessions, chats, hooks, public_port, root: root.to_path_buf(), _lock: lock }))
 }
 
 fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<BoardMode>> {
@@ -168,6 +185,60 @@ impl BoardMode {
         let reply = self.sessions.answer(r).await?;
         let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         Some(passes::json_answer(status, &reply.body, &passes::current_secrets(&self.root)))
+    }
+
+    /// The quick chat routes (R8); Err hands the request on (to Rust's other routes, then Bun).
+    pub async fn answer_chats(&self, req: Request<Incoming>, peer_port: u16) -> Result<Response<Body>, Request<Incoming>> {
+        let path = req.uri().path().to_string();
+        if !chat_routes::wanted(&path) {
+            return Err(req);
+        }
+        let h = req.headers();
+        // Anything Bun's gate treats specially (the Telegram front desk, odd or doubled headers) stays with Bun, whose
+        // gate answers it before any route.
+        if h.contains_key(FRONT_DESK_HEADER)
+            || wants_upgrade(h)
+            || [HOST, hyper::header::ORIGIN, hyper::header::CONTENT_TYPE].iter().any(|n| h.get_all(n).iter().count() > 1)
+            || !local_host(h, self.public_port)
+        {
+            return Err(req);
+        }
+        let secrets = passes::current_secrets(&self.root);
+        let method = req.method().as_str().to_string();
+        let mutation = method != "GET" && method != "HEAD";
+        if mutation && !local_origin(h, self.public_port) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        if matches!(method.as_str(), "POST" | "PATCH" | "PUT") && !json_type(h) {
+            return Ok(passes::json_answer(StatusCode::UNSUPPORTED_MEDIA_TYPE, &serde_json::json!({ "error": "content-type must be application/json" }), &secrets));
+        }
+        let headers = h.clone();
+        let user: UserCheck = Box::new(move || Box::pin(async move { guard::user_only(&headers, peer_port).await }));
+        let query = req.uri().query().map(str::to_string);
+        let body = if chat_routes::reads_body(&method) {
+            match Limited::new(req.into_body(), CHAT_BODY_LIMIT).collect().await {
+                Ok(b) => {
+                    let bytes: Bytes = b.to_bytes();
+                    match std::str::from_utf8(&bytes).ok().and_then(ckanban_board::runs::js::parse) {
+                        Some(v) => Ok(Some(ckanban_core::jsnum::normalize(v))),
+                        None => Err(()),
+                    }
+                }
+                Err(_) => return Ok(passes::json_answer(StatusCode::PAYLOAD_TOO_LARGE, &serde_json::json!({ "error": "message is too long" }), &secrets)),
+            }
+        } else {
+            Ok(None)
+        };
+        let reply = self.chats.answer(&self.sessions, ChatReq { method, path, query, body }, user).await;
+        let status = StatusCode::from_u16(reply.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        Ok(match reply.body {
+            Some(v) => passes::json_answer(status, &v, &secrets),
+            None => {
+                let mut r = Response::new(Full::new(Bytes::new()).map_err(|never| match never {}).boxed());
+                *r.status_mut() = status;
+                r
+            }
+        })
     }
 
     /// After the satellite answers: follow its event stream, give it the live state, and send it the board's events.

@@ -239,6 +239,13 @@ async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<rout
                     {
                         return Ok(res);
                     }
+                    let req = match &board {
+                        Some(b) => match b.answer_chats(req, peer.port()).await {
+                            Ok(res) => return Ok(res),
+                            Err(req) => req,
+                        },
+                        None => req,
+                    };
                     Ok::<_, std::convert::Infallible>(match native.answer(req, peer).await {
                         Ok(res) => res,
                         Err(req) => proxy.forward(req, peer).await,

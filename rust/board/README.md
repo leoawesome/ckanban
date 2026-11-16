@@ -103,6 +103,32 @@ Parity with Bun: `tests/sessions_markers.rs`, `sessions_agents.rs`, `sessions_pa
 deliberate change to Bun's code: `UPDATE_RUST_FIXTURES=1 bun test test/rust-board-<name>-fixtures.test.ts`). Parse
 speed: `R5_BENCH=<transcript> cargo test --release -p ckanban-board --test sessions_parse -- --ignored --nocapture`.
 
+## Quick chats (R8, `src/quickchat/`)
+
+Chats with Claude in a board's folder that aren't tickets (the Ask tab, the Claude panel), ported from
+`src/chat/quickchat.ts`, `quickchat-index.ts` and `src/api/chats.ts`. Files under `profiles/<slug>/chats/` are written
+in Bun's exact format (key order kept), so Bun and Rust read each other's chats.
+- `text.rs`: titles, the run note, attachment paths, live drafts, "session missing", the error line.
+- `index.rs`: the chat list newest first, kept between lists (a chat file is read again only when it changed; the
+  folder isn't walked while its mtime stays the same); pages for "Load older". The lock is taken per file during a walk.
+- `service.rs`: `QuickChats`: send (new chat, to a reply in progress, or a new reply), runs on the R3 engine (drafts
+  every 120 ms, the activity line every second, result lines in `<id>.activity.jsonl`), stop, rename, delete, a lost
+  conversation carried on in a new one, `shutdown` (replies in progress marked `interrupted`) and `recover`.
+- `routes.rs`: in board mode Rust answers every `/api/profiles/:p/chats...` route. User actions use the same caller check
+  as the passes routes (`guard::user_only`).
+
+Stand-ins, each marked `STAND-IN` in the code: the restart gate (`RestartGate`, R7a: never "pending" until then; R7a
+also counts `restart_busy()` among what a restart waits for), board browsers for the runs (R9), the Telegram front desk
+hooks (R13/P1: a front desk chat refuses to run, as Bun does without them), and the routes Context panel, Say it
+simpler, Rewind, Undo rewind, Fork (R7b) and Make ticket (R2a, R7b), which answer 501 for now (the satellite has no
+quick chats to hand them to). User actions from the phone come through the phone access port, which Bun still holds
+until R13.
+
+Checked: `tests/quickchat_text.rs` against Bun's answers in `tests/fixtures/quickchat.json`
+(`test/rust-board-quickchat-fixtures.test.ts`); `tests/quickchat_fake.rs` runs whole chats against the fake Claude;
+`test/contract/quickchat-read.test.ts` in board mode. A title cut through an emoji keeps half of it in Bun and drops it
+in Rust (the same known gap as R3 and R5).
+
 ## Prompts (R4)
 
 `src/prompts/`: the run prompts of `src/runs/prompts-*.ts` (`rules`, `chat`, `planning`, `huddle`, `main_role`) and
