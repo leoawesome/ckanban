@@ -61,6 +61,8 @@ export interface Daemon {
   exited(): Promise<number>;
   /** Starts the server again on the same data folder, port and env (what launchd does after a restart). */
   respawn(): Promise<void>;
+  /** Sends a signal to the running server process (SIGTERM: the shutdown a launchd stop or a crash-free quit does). */
+  kill(signal?: NodeJS.Signals): void;
   stop(): Promise<void>;
 }
 
@@ -198,6 +200,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
   };
   await ready();
   const exited = () => proc.exited;
+  const kill = (signal: NodeJS.Signals = "SIGTERM") => proc.kill(signal);
   const respawn = async () => {
     await proc.exited;
     proc = spawn(++starts);
@@ -229,7 +232,7 @@ export async function startDaemon(opts: StartOptions = {}): Promise<Daemon> {
     }
   };
 
-  return { pid: proc.pid, port, url, remotePort, home, project, env, chromeStarts, api, cli, log, exited, respawn, stop };
+  return { pid: proc.pid, port, url, remotePort, home, project, env, chromeStarts, api, cli, log, exited, respawn, kill, stop };
 }
 
 /** Polls `fn` until it returns a truthy value (or throws after `ms`). */
