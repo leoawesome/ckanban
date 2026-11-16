@@ -41,7 +41,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
 - `src/satellite.rs`: `event`/`runtime` lines to the satellite's stdin; its event stream re-emitted on the bus.
 - One empty folder per later task (filled as each lands): `index` (R1), `tickets` (R2a), `families` (R2b), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
-  `huddles` (R11a), `team` (R11b), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
+  `huddles` (R11a), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
 
 Every dependency the tasks are expected to need is already in `Cargo.toml` (referenced in `lib.rs` until used), so
 parallel tasks don't clash on `Cargo.toml` and `Cargo.lock`.
@@ -61,6 +61,23 @@ Bun still gives them; `tests/prompts.rs` checks Rust does. After a deliberate pr
 `UPDATE_RUST_FIXTURES=1 bun test test/rust-prompt-fixtures.test.ts`, then change the Rust text until
 `cargo test -p ckanban-board --test prompts` passes (it writes its differing texts to `rust/target/prompt-fixtures/`;
 `DUMP_PROMPTS=<dir>` makes the Bun test write Bun's, numbered the same).
+
+## Team (R11b)
+
+`src/team/`: teammates (huddle role presets), squads (huddle templates), role notes, teammate and squad proposals,
+the squad save plan, the "Save as squad…" prompt and the plan review file (`src/huddle/huddle-presets*.ts`,
+`huddle-templates*.ts`, `huddle-notes.ts`, `huddle-roster.ts` checks, `squad.ts`, `teammate-proposal.ts`,
+`plan-review-file.ts`, `src/core/layers.ts`). `store.rs` (`Team`) reads and writes the files with Bun's checks and
+statuses; `routes.rs` answers `/api/profiles/:p/huddle-presets`, `/huddle-templates`, `POST /squads` and
+`/huddle-notes` in board mode (`rust/src/board_mode.rs` runs Bun's Host, Origin and JSON type checks first).
+`/learned` and `/api/team-usage` are R12's.
+
+- The built-in teammates and squads and the long texts are `src/team/builtins.json`, written by Bun.
+- A squad card on a ticket needs R2a, a huddle's proposed squad R11a: until they call `Team::set_ticket_cards` and
+  `set_learning_cards`, such a save answers 503 before writing anything.
+- `tests/fixtures/team.json` is the parity table (about 400 cases with Bun's answer or error text);
+  `test/rust-team-fixtures.test.ts` checks Bun, `tests/team.rs` Rust, `tests/team_store.rs` the files and routes.
+  After a deliberate change in Bun: `UPDATE_RUST_FIXTURES=1 bun test test/rust-team-fixtures.test.ts`.
 
 ## Tests
 

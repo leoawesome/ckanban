@@ -8,8 +8,10 @@
 //! board instead (full mode, as with board mode off) and the reason goes to this process's output (`daemon.log`
 //! under launchd) and `<data>/rust-board-status.json`.
 //!
-//! Routes the Rust board answers itself (more with each task): `GET /api/events`. Everything else goes on to the
-//! usage, spend, passes and agents routes, then to Bun, as in front mode.
+//! Routes the Rust board answers itself (more with each task): `GET /api/events`; the team routes (R11b:
+//! `/api/profiles/:p/huddle-presets`, `/huddle-templates`, `POST /squads`, `/huddle-notes`, after the same Host,
+//! Origin and JSON type checks Bun makes). Everything else goes on to the usage, spend, passes and agents routes,
+//! then to Bun, as in front mode.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -20,23 +22,33 @@ use ckanban_board::events::{self, EventHooks};
 use ckanban_board::lock::{self, BoardLock};
 use ckanban_board::mode::{self, Decision};
 use ckanban_board::satellite;
+use ckanban_board::team::{self, Team};
 use ckanban_core::time::now_ms;
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::Incoming;
-use hyper::header::HOST;
+use hyper::header::{CONTENT_TYPE, HOST, HeaderMap, ORIGIN};
 use hyper::{Method, Request, Response, StatusCode};
 
 use crate::mask;
 use crate::passes;
 use crate::proxy::{Body, plain, wants_upgrade};
-use crate::routes::local_host;
+use crate::routes::{local_host, query_param};
 
 /// The Telegram front desk's header: its requests go through Bun's gate (as in routes.rs).
 const FRONT_DESK_HEADER: &str = "x-ckanban-frontdesk";
 /// How long board mode waits for the data lock (an owner that is stopping lets go in a moment).
 const LOCK_WAIT: Duration = Duration::from_secs(5);
+/// `RUN_HEADER` and `HUDDLE_HEADER`: sent by board runs and huddle helpers.
+const RUN_HEADER: &str = "x-ckanban-run";
+const HUDDLE_HEADER: &str = "x-ckanban-huddle-agent";
+/// The largest request body the board's own routes read (a squad with every field full is well under 1 MB).
+const MAX_BODY: usize = 8 << 20;
 
 pub struct BoardMode {
     pub core: Arc<Core>,
+    /// Teammates, squads and role notes (R11b).
+    pub team: Arc<Team>,
     hooks: Arc<EventHooks>,
     public_port: u16,
     root: PathBuf,
@@ -72,7 +84,8 @@ pub async fn prepare(root: &Path, public_port: u16) -> Option<Arc<BoardMode>> {
     }
     eprintln!("ckanban-rs: board mode: the Rust board owns this data folder; Bun runs as its satellite");
     let hooks = Arc::new(EventHooks { views: core.services.views.clone(), cut: core.services.cut.clone(), mask: masker(root) });
-    Some(Arc::new(BoardMode { core, hooks, public_port, root: root.to_path_buf(), _lock: lock }))
+    let team = Arc::new(Team::new(root));
+    Some(Arc::new(BoardMode { core, team, hooks, public_port, root: root.to_path_buf(), _lock: lock }))
 }
 
 fn fall_back(root: &Path, reason: &str, crashes: Vec<String>) -> Option<Arc<BoardMode>> {
@@ -121,6 +134,73 @@ impl BoardMode {
         Some(events::stream(&self.core.bus, self.hooks.clone(), events::PING_EVERY))
     }
 
+    /// The team routes (`ckanban_board::team::routes`), or the request back when they don't take it. Bun's gate
+    /// first, as `src/api/server.ts` runs it: the Host (403), the Origin of a change (403), then a JSON body type for
+    /// POST, PATCH and PUT (415). Headers sent twice are joined, as Bun's `headers.get` does.
+    #[allow(clippy::result_large_err)] // the request goes back whole, as `Native::answer` does
+    pub async fn answer_team(&self, req: Request<Incoming>) -> Result<Response<Body>, Request<Incoming>> {
+        let h = req.headers();
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) {
+            return Err(req);
+        }
+        let path = req.uri().path();
+        // A path Bun can't decode gets its "malformed URL" answer from Bun.
+        let Some(parts) = path.strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
+        let method = req.method().as_str().to_string();
+        if !team::routes::claims(&method, &parts) {
+            return Err(req);
+        }
+        let host_ok = joined(h, HOST.as_str()).is_some_and(|host| ["localhost", "127.0.0.1"].iter().any(|l| host == format!("{l}:{}", self.public_port)));
+        let mutation = req.method() != Method::GET && req.method() != Method::HEAD;
+        let origin_ok = match joined(h, ORIGIN.as_str()) {
+            None => true,
+            Some(o) if o.is_empty() => true,
+            Some(o) => ["localhost", "127.0.0.1"].iter().any(|l| o == format!("http://{l}:{}", self.public_port)),
+        };
+        if !host_ok || (mutation && !origin_ok) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        let wants_body = matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT);
+        let ctype = joined(h, CONTENT_TYPE.as_str()).unwrap_or_default();
+        if wants_body && crate::js::trim(ctype.split(';').next().unwrap_or("")).to_lowercase() != "application/json" {
+            return Ok(self.json(415, &serde_json::json!({ "error": "content-type must be application/json" }), false));
+        }
+        let has = |n: &str| h.get(n).is_some_and(|v| !v.as_bytes().is_empty());
+        let from_run = has(RUN_HEADER) || has(HUDDLE_HEADER);
+        let scope = query_param(req.uri().query().unwrap_or(""), "scope");
+        let body: Bytes = if wants_body {
+            match Limited::new(req.into_body(), MAX_BODY).collect().await {
+                Ok(b) => b.to_bytes(),
+                Err(e) if e.is::<http_body_util::LengthLimitError>() => {
+                    return Ok(self.json(413, &serde_json::json!({ "error": "request body too large" }), false));
+                }
+                Err(_) => return Ok(plain(StatusCode::BAD_REQUEST, "bad request")),
+            }
+        } else {
+            Bytes::new()
+        };
+        let t = self.team.clone();
+        let answer = tokio::task::spawn_blocking(move || {
+            let call = team::routes::Call { method: &method, parts: &parts, scope, from_run, body: &body };
+            team::routes::answer(&t, &call)
+        })
+        .await;
+        Ok(match answer {
+            Ok(a) => self.json(a.status, &a.value, a.success),
+            Err(e) => self.json(500, &serde_json::json!({ "error": e.to_string() }), false),
+        })
+    }
+
+    /// A JSON answer as Bun writes it (`JSON.stringify`); a success is masked with the saved keys (`ctx.json`).
+    fn json(&self, status: u16, v: &serde_json::Value, success: bool) -> Response<Body> {
+        let text = ckanban_core::datafile::to_text(v, ckanban_core::datafile::Layout::Compact);
+        let text = if success { mask::mask_saved_json(&passes::current_secrets(&self.root), &text) } else { text };
+        let mut r = Response::new(Full::new(Bytes::from(text)).map_err(|never| match never {}).boxed());
+        *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        r.headers_mut().insert(CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json"));
+        r
+    }
+
     /// After the satellite answers: follow its event stream, give it the live state, and send it the board's events.
     pub async fn connect_satellite(&self, internal_port: u16, secret: &str, tell: tokio::sync::mpsc::UnboundedSender<String>) {
         if let Err(e) = satellite::follow(self.core.bus.clone(), internal_port, self.public_port, secret.to_string()).await {
@@ -151,4 +231,58 @@ fn boards(root: &Path) -> Vec<String> {
         .unwrap_or_default();
     out.sort();
     out
+}
+
+/// A header as Bun's `headers.get` gives it: every value joined with ", "; None when it isn't sent.
+fn joined(h: &HeaderMap, name: &str) -> Option<String> {
+    let vals: Vec<String> = h.get_all(name).iter().map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()).collect();
+    (!vals.is_empty()).then(|| vals.join(", "))
+}
+
+/// The path parts after `/api/` as Bun splits them (`split("/").filter(Boolean)`, then `decodeURIComponent`); None
+/// when one can't be decoded (Bun answers "malformed URL").
+fn api_parts(rest: &str) -> Option<Vec<String>> {
+    rest.split('/').filter(|p| !p.is_empty()).map(decode_component).collect()
+}
+
+/// `decodeURIComponent`: `%XX` bytes must make UTF-8, and a `%` must start one.
+fn decode_component(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = |c: u8| (c as char).to_digit(16);
+            let (h, l) = (hex(*b.get(i + 1)?)?, hex(*b.get(i + 2)?)?);
+            out.push((h * 16 + l) as u8);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_parts_decode_like_bun() {
+        assert_eq!(api_parts("profiles/my%20board//huddle-notes/_all/general"), Some(vec!["profiles".into(), "my board".into(), "huddle-notes".into(), "_all".into(), "general".into()]));
+        assert_eq!(api_parts("profiles/a%2Fb/x"), Some(vec!["profiles".into(), "a/b".into(), "x".into()]));
+        assert_eq!(api_parts("profiles/%zz"), None);
+        assert_eq!(api_parts("profiles/%E2%82"), None);
+        assert_eq!(api_parts("profiles/a+b"), Some(vec!["profiles".into(), "a+b".into()]));
+    }
+
+    #[test]
+    fn repeated_headers_are_joined() {
+        let mut h = HeaderMap::new();
+        h.append(HOST, "localhost:1".parse().unwrap());
+        h.append(HOST, "localhost:1".parse().unwrap());
+        assert_eq!(joined(&h, "host").as_deref(), Some("localhost:1, localhost:1"));
+        assert_eq!(joined(&h, "origin"), None);
+    }
 }
