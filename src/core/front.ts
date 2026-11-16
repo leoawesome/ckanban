@@ -9,7 +9,8 @@
 // port refuses requests without the secret, and the peer header is trusted only with it.
 //
 // The rest of stdin stays open: the front server holds the other end, so end of input means it is gone (even when
-// killed hard) and this daemon stops too. Without CKANBAN_FRONT_PORT (the daemon alone) none of this applies and the
+// killed hard) and this daemon stops too. Later lines are notices from the front server: "changed <file>" after it
+// changed a file in the data folder this daemon also uses (see onFrontNotice). Without CKANBAN_FRONT_PORT (the daemon alone) none of this applies and the
 // daemon behaves exactly as before: the headers are ignored and stdin is not read.
 import { timingSafeEqual } from "node:crypto";
 
@@ -28,6 +29,32 @@ let front: Front | null = null;
 
 /** How long the daemon waits for the secret line before it gives up (the front writes it right after the start). */
 const SECRET_WAIT_MS = 10_000;
+
+/** Called with each notice line the front server sends after the secret ("changed automation-passes.json"). */
+let noticeHandler: ((line: string) => void) | null = null;
+
+/** Sets what to do with the front server's notices (one handler; lines before it is set are dropped). */
+export function onFrontNotice(fn: ((line: string) => void) | null): void {
+  noticeHandler = fn;
+}
+
+/** Hands complete lines to the notice handler; returns what is left of the last, unfinished line. */
+function notices(buf: string): string {
+  let i: number;
+  while ((i = buf.indexOf("\n")) >= 0) {
+    const line = buf.slice(0, i).trim();
+    buf = buf.slice(i + 1);
+    if (line) {
+      try {
+        noticeHandler?.(line);
+      } catch (e) {
+        console.error(`front server notice ${JSON.stringify(line)}: ${(e as Error).message}`);
+      }
+    }
+  }
+  // A notice is a short line: anything this long is not one.
+  return buf.length > 4096 ? "" : buf;
+}
 
 /** The front server this daemon runs behind, or null when it runs alone. */
 export function frontInfo(): Front | null {
@@ -71,9 +98,14 @@ export async function readFront(
   if (!/^[A-Za-z0-9_-]{32,256}$/.test(secret)) throw new Error("the front server's secret is malformed");
   const pid = pidText === undefined ? parentPid : Number(pidText);
   if (!Number.isInteger(pid) || pid <= 1) throw new Error("the front server's pid is malformed");
+  let rest = notices(buf.slice(buf.indexOf("\n") + 1));
   void (async () => {
     try {
-      while (!(await reader.read()).done);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        rest = notices(rest + dec.decode(value, { stream: true }));
+      }
     } catch {}
     onGone();
   })();

@@ -7,6 +7,11 @@
 //! hard, the child reads end of input and stops. When the child exits, this process exits with the same code, so
 //! launchd and `ckanban restart` work as with Bun alone. SIGTERM/SIGINT stop the child first.
 
+mod agents;
+mod guard;
+mod js;
+mod mask;
+mod passes;
 mod proxy;
 mod routes;
 mod settings;
@@ -113,6 +118,20 @@ async fn dev() -> u8 {
         return fail(format!("can't hand the secret to the daemon: {e}"));
     }
     let _ = stdin.flush().await;
+    // Later lines tell the child about files this server changed ("changed <file>"), in order, from one writer task
+    // that owns stdin for the child's lifetime.
+    let (tell_tx, mut tell_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let teller = tokio::spawn(async move {
+        while let Some(line) = tell_rx.recv().await {
+            if stdin.write_all(line.as_bytes()).await.is_err() || stdin.flush().await.is_err() {
+                break;
+            }
+        }
+        stdin
+    });
+    let notify: passes::Notify = Arc::new(move |file: &str| {
+        let _ = tell_tx.send(format!("changed {file}\n"));
+    });
 
     let proxy = proxy::Proxy::new(internal_port, &secret);
     let mut sigterm = signal(SignalKind::terminate()).expect("SIGTERM handler");
@@ -146,7 +165,7 @@ async fn dev() -> u8 {
     }
     eprintln!("ckanban-rs {} listening on http://localhost:{public_port}, daemon on internal port {internal_port}", env!("CARGO_PKG_VERSION"));
 
-    let native = routes::Native::new(root.clone(), public_port);
+    let native = routes::Native::new(root.clone(), public_port, notify, &bun, &repo);
     let accept = tokio::spawn(serve(listener, proxy, native));
     let code = tokio::select! {
         status = child.wait() => match status {
@@ -157,7 +176,7 @@ async fn dev() -> u8 {
         _ = sigint.recv() => stop_child(&mut child).await,
     };
     accept.abort();
-    drop(stdin);
+    teller.abort();
     code
 }
 
@@ -185,10 +204,10 @@ async fn serve(listener: TcpListener, proxy: Arc<proxy::Proxy>, native: Arc<rout
                 let proxy = proxy.clone();
                 let native = native.clone();
                 async move {
-                    if let Some(res) = native.answer(&req).await {
-                        return Ok::<_, std::convert::Infallible>(res);
-                    }
-                    Ok(proxy.forward(req, peer).await)
+                    Ok::<_, std::convert::Infallible>(match native.answer(req, peer).await {
+                        Ok(res) => res,
+                        Err(req) => proxy.forward(req, peer).await,
+                    })
                 }
             });
             let _ = http1::Builder::new().half_close(true).serve_connection(TokioIo::new(stream), svc).with_upgrades().await;

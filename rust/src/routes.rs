@@ -1,20 +1,26 @@
-//! The routes `ckanban-rs` answers itself, with `ckanban-core` (step 3b of the Rust port trial):
-//! `GET /api/usage` (`?fresh=1` is the Refresh button) and `GET /api/spend`. Everything else, these paths with any
-//! other method or spelling, and every request from the Telegram front desk, goes to Bun unchanged (proxy.rs).
+//! The routes `ckanban-rs` answers itself: `GET /api/usage` (`?fresh=1` is the Refresh button) and `GET /api/spend`
+//! with `ckanban-core` (step 3 of the trial), the board's passes and keys (passes.rs) and `GET /api/agents`
+//! (agents.rs). Everything else, these paths with any other method or spelling, and every request from the Telegram
+//! front desk, goes to Bun unchanged (proxy.rs).
 //!
-//! Answers match Bun's `src/api/system.ts`: 200 with `content-type: application/json`, the Host check of
-//! `requestRefusal` in `src/api/context.ts` (403 `forbidden` as plain text), and a 500 `{"error": ...}` when spend
-//! can't be counted.
+//! Before any of them, the checks Bun's server makes first: `requestRefusal` in `src/api/context.ts` (Host, and the
+//! Origin of a change; 403 `forbidden` as plain text), then a JSON content type for POST, PATCH and PUT (415). Usage
+//! and spend answers match `src/api/system.ts`: 200 with `content-type: application/json`, and a 500
+//! `{"error": ...}` when spend can't be counted.
 
-use std::path::PathBuf;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytes::Bytes;
 use ckanban_core::{DataDir, SpendIndex, UsageCache, UsageClient};
 use http_body_util::{BodyExt, Full};
-use hyper::header::{CONTENT_TYPE, HOST, HeaderMap, HeaderValue};
+use hyper::body::Incoming;
+use hyper::header::{CONTENT_TYPE, HOST, HeaderMap, HeaderValue, ORIGIN};
 use hyper::{Method, Request, Response, StatusCode};
 
+use crate::agents::Agents;
+use crate::passes::{self, Outcome, Passes};
 use crate::proxy::{Body, plain, wants_upgrade};
 
 /// The Telegram front desk's header (`FRONT_DESK_HEADER` in `src/core/env.ts`): its requests go through Bun's gate.
@@ -26,33 +32,56 @@ const LOCAL_HOSTS: [&str; 2] = ["localhost", "127.0.0.1"];
 pub enum Route {
     Usage { fresh: bool },
     Spend,
+    Passes(passes::Route),
+    Agents,
 }
 
 pub struct Native {
-    /// The board's port as callers see it (this server's), for the Host check.
+    /// The board's port as callers see it (this server's), for the Host and Origin checks.
     public_port: u16,
+    root: PathBuf,
     usage: UsageCache,
     spend: Arc<SpendIndex>,
+    passes: Arc<Passes>,
+    /// None when Bun's own command line can't be known for sure: Bun answers `GET /api/agents` then.
+    agents: Option<Arc<Agents>>,
 }
 
 impl Native {
-    /// Same data folder as the Bun child; the usage cache reads `usage-last.json` now (a small file).
-    pub fn new(root: PathBuf, public_port: u16) -> Arc<Self> {
-        let dir = DataDir::new(root);
+    /// Same data folder as the Bun child; the usage cache reads `usage-last.json` now (a small file). `notify` tells
+    /// the Bun child about a file Rust changed; `bun` and `repo` are how the child was started.
+    pub fn new(root: PathBuf, public_port: u16, notify: passes::Notify, bun: &Path, repo: &Path) -> Arc<Self> {
+        let dir = DataDir::new(root.clone());
         Arc::new(Native {
             public_port,
             usage: UsageCache::for_daemon(&dir, UsageClient::from_env()),
             spend: Arc::new(SpendIndex::new(dir)),
+            passes: Arc::new(Passes::new(root.clone(), notify)),
+            agents: Agents::new(bun, repo).map(Arc::new),
+            root,
         })
     }
 
-    /// The answer when Rust answers this request itself; None sends it to Bun.
-    pub async fn answer<B>(&self, req: &Request<B>) -> Option<Response<Body>> {
-        let route = route_of(req.method(), req.uri().path(), req.uri().query(), req.headers())?;
-        if !local_host(req.headers(), self.public_port) {
-            return Some(plain(StatusCode::FORBIDDEN, "forbidden"));
+    /// The answer when Rust answers this request itself; otherwise the request (its body read or not) goes to Bun.
+    pub async fn answer(&self, req: Request<Incoming>, peer: SocketAddr) -> Result<Response<Body>, Request<Body>> {
+        let bun = |req: Request<Incoming>| req.map(|b| b.boxed());
+        let Some(route) = route_of(req.method(), req.uri().path(), req.uri().query(), req.headers()) else { return Err(bun(req)) };
+        if route == Route::Agents && self.agents.is_none() {
+            return Err(bun(req));
         }
-        Some(match route {
+        let h = req.headers();
+        // Headers Bun would read joined (two Host lines, say): only Bun knows what it makes of them.
+        if [HOST, ORIGIN, CONTENT_TYPE].iter().any(|n| h.get_all(n).iter().count() > 1) {
+            return Err(bun(req));
+        }
+        if !local_host(h, self.public_port) || (is_mutation(req.method()) && !local_origin(h, self.public_port)) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        if matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT) && !json_type(h) {
+            let msg = serde_json::json!({ "error": "content-type must be application/json" });
+            return Ok(passes::json_answer(StatusCode::UNSUPPORTED_MEDIA_TYPE, &msg, &passes::current_secrets(&self.root)));
+        }
+        Ok(match route {
             // Waits for Anthropic only inside this request's own task: other requests (and the proxy) go on.
             Route::Usage { fresh } => json(StatusCode::OK, &self.usage.get(fresh).await),
             Route::Spend => match self.spend.recent().await {
@@ -62,27 +91,64 @@ impl Native {
                     json(StatusCode::INTERNAL_SERVER_ERROR, &serde_json::json!({ "error": e.to_string() }))
                 }
             },
+            Route::Passes(r) => match self.passes.answer(r, req, peer.port()).await {
+                Outcome::Answer(res) => res,
+                Outcome::Bun(req) => return Err(req),
+            },
+            Route::Agents => {
+                let agents = self.agents.clone().expect("checked above");
+                match tokio::task::spawn_blocking(move || agents.status()).await {
+                    Ok(v) => passes::json_answer(StatusCode::OK, &v, &passes::current_secrets(&self.root)),
+                    Err(_) => return Err(bun(req)),
+                }
+            }
         })
     }
 }
 
 /// Which native route a request is, if any. Only the exact paths: `/api/usage/` and other spellings Bun also
-/// accepts still reach Bun, which answers from the same shared `usage-last.json`.
+/// accepts still reach Bun, which answers from the same files.
 pub fn route_of(method: &Method, path: &str, query: Option<&str>, headers: &HeaderMap) -> Option<Route> {
-    if method != Method::GET || headers.contains_key(FRONT_DESK_HEADER) || wants_upgrade(headers) {
+    if headers.contains_key(FRONT_DESK_HEADER) || wants_upgrade(headers) {
+        return None;
+    }
+    if let Some(r) = passes::route_of(method, path) {
+        return Some(Route::Passes(r));
+    }
+    if method != Method::GET {
         return None;
     }
     match path {
         "/api/usage" => Some(Route::Usage { fresh: query_param(query.unwrap_or(""), "fresh").as_deref() == Some("1") }),
         "/api/spend" => Some(Route::Spend),
+        "/api/agents" => Some(Route::Agents),
         _ => None,
     }
 }
 
-/// `requestRefusal` for a GET on the local listener: the Host must be localhost or 127.0.0.1 on the board's port.
+fn is_mutation(m: &Method) -> bool {
+    m != Method::GET && m != Method::HEAD
+}
+
+/// `requestRefusal` on the local listener: the Host must be localhost or 127.0.0.1 on the board's port.
 fn local_host(headers: &HeaderMap, port: u16) -> bool {
     let Some(host) = headers.get(HOST).and_then(|h| h.to_str().ok()) else { return false };
     LOCAL_HOSTS.iter().any(|h| host == format!("{h}:{port}"))
+}
+
+/// `requestRefusal` for a change: an Origin, when sent (and not empty), must be the board's own page.
+fn local_origin(headers: &HeaderMap, port: u16) -> bool {
+    match headers.get(ORIGIN) {
+        None => true,
+        Some(o) if o.is_empty() => true,
+        Some(o) => o.to_str().is_ok_and(|o| LOCAL_HOSTS.iter().any(|h| o == format!("http://{h}:{port}"))),
+    }
+}
+
+/// Bun's `type === "application/json"`: the content type before any `;`, trimmed, any case.
+fn json_type(headers: &HeaderMap) -> bool {
+    let raw = headers.get(CONTENT_TYPE).map(|v| String::from_utf8_lossy(v.as_bytes()).into_owned()).unwrap_or_default();
+    crate::js::trim(raw.split(';').next().unwrap_or("")).to_lowercase() == "application/json"
 }
 
 /// `URLSearchParams.get(name)`: the first value for `name`, decoded like a form (`+` is a space, `%XX` a byte).
@@ -148,6 +214,28 @@ mod tests {
         assert_eq!(route_of(&Method::GET, "/api/team-usage", None, &none), None);
         assert_eq!(route_of(&Method::GET, "/api/usage", None, &h(&[("x-ckanban-frontdesk", "c1")])), None);
         assert_eq!(route_of(&Method::GET, "/api/usage", None, &h(&[("connection", "upgrade"), ("upgrade", "websocket")])), None);
+        assert_eq!(route_of(&Method::GET, "/api/agents", None, &none), Some(Route::Agents));
+        assert_eq!(route_of(&Method::POST, "/api/agents/claude/install", None, &none), None);
+        assert_eq!(route_of(&Method::GET, "/api/agents/", None, &none), None);
+        assert_eq!(route_of(&Method::PATCH, "/api/passes/x1", None, &none), Some(Route::Passes(passes::Route::Replace("x1".into()))));
+        assert_eq!(route_of(&Method::POST, "/api/passes", None, &h(&[("x-ckanban-frontdesk", "c1")])), None);
+        assert_eq!(route_of(&Method::GET, "/api/mcp", None, &none), None);
+        assert_eq!(route_of(&Method::GET, "/api/remote", None, &none), None);
+    }
+
+    #[test]
+    fn origin_and_content_type_like_bun() {
+        assert!(local_origin(&HeaderMap::new(), 7777));
+        assert!(local_origin(&h(&[("origin", "")]), 7777));
+        assert!(local_origin(&h(&[("origin", "http://localhost:7777")]), 7777));
+        assert!(local_origin(&h(&[("origin", "http://127.0.0.1:7777")]), 7777));
+        assert!(!local_origin(&h(&[("origin", "http://localhost:7778")]), 7777));
+        assert!(!local_origin(&h(&[("origin", "https://localhost:7777")]), 7777));
+        assert!(!local_origin(&h(&[("origin", "null")]), 7777));
+        assert!(json_type(&h(&[("content-type", "application/json")])));
+        assert!(json_type(&h(&[("content-type", " Application/JSON ; charset=utf-8")])));
+        assert!(!json_type(&h(&[("content-type", "text/plain")])));
+        assert!(!json_type(&HeaderMap::new()));
     }
 
     #[test]
