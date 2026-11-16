@@ -69,6 +69,10 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
   into every tool group, checking the answer and its effect over HTTP. Calls "in a run" set `CKANBAN_TICKET` like the
   board does, to reach the run-only tools and the refusals a run gets. The daemon's `gh` is a stub that is never logged
   in, so `report_bug` never reaches GitHub.
+- `mcp-parity.test.ts`: with `CKANBAN_PARITY_MCP` (a JSON array naming a port of the MCP server), Bun's `ckanban mcp`
+  and the port run side by side against one daemon and must give the same answers: `initialize`, `tools/list` byte
+  for byte, and about 100 calls across every group, in and outside a run, refusals and argument errors included (ids and
+  times masked where each call creates its own). Skipped without it.
 - `data-files.test.ts`: after a mix of actions (tickets, chats, side calls, schedules, jobs, automations, quick
   chats, huddles, settings, plan usage), every file in the data folder matches a path listed in `data-files.md`, and
   every saved file with a schema matches it and is written in its documented style. User-only actions go through the
@@ -96,4 +100,4 @@ program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_
 and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`).
 
 `bun run test:contract:rust` does this for the Rust front server (`rust/`): it builds `ckanban-rs` (release) and runs
-every contract test with it as the daemon. It needs cargo, so `bun run test` leaves it out.
+every contract test with it as the daemon, and `ckanban-rs mcp` as the MCP server (`mcp.test.ts`, `mcp-parity.test.ts`). It needs cargo, so `bun run test` leaves it out.

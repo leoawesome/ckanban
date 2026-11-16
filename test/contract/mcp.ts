@@ -31,10 +31,12 @@ export interface McpOptions {
   cwd?: string;
   /** Do the initialize handshake first (default true). */
   init?: boolean;
+  /** Another server command than MCP_CMD (the parity test starts Bun's and a port's side by side). */
+  cmd?: string[];
 }
 
 export async function startMcp(d: Daemon, opts: McpOptions = {}): Promise<Mcp> {
-  const proc = Bun.spawn(MCP_CMD, {
+  const proc = Bun.spawn(opts.cmd ?? MCP_CMD, {
     env: { ...d.env, ...opts.env },
     cwd: opts.cwd ?? d.project,
     stdin: "pipe",

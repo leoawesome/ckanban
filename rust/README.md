@@ -7,7 +7,8 @@ headers (Host and Origin as sent; only hop-by-hop headers are dropped), body and
 stream goes out as Bun writes it) and WebSocket upgrades (the terminal). The real board's daemon is never switched to
 it during the trial.
 
-- `src/main.rs`: the `dev` command: settings, starting the child, waiting until it answers (`GET /api/profiles`, 30 s,
+- `src/mcp/`: `ckanban-rs mcp`, the port of the `ckanban mcp` stdio server (below).
+- `src/main.rs`: the `dev` and `mcp` commands; `dev`: settings, starting the child, waiting until it answers (`GET /api/profiles`, 30 s,
   then it exits naming the child's log), serving, signals and the exit code.
 - `src/routes.rs`: the routes Rust answers itself (below).
 - `src/proxy.rs`: passing one request and its answer, hop-by-hop headers, upgrades.
@@ -69,6 +70,21 @@ check Rust makes reaches the UI the same way; there is no event gap.
 
 Log lines: each call to Anthropic prints Bun's `[usage] asked Anthropic: ...` line on this process's output (the same
 `daemon.log` under launchd).
+
+## The MCP server (`ckanban-rs mcp`)
+
+The port of `ckanban mcp` (`src/mcp/` in Bun): newline-delimited JSON-RPC 2.0 on stdin/stdout, the same protocol
+answers, and the same 69 tools. `src/mcp/tools.json` (what `tools/list` answers) and `tool-flags.json` (which tools a
+board run may call) are generated from Bun's `TOOLS` with `bun scripts/mcp-tools-json.ts`; `src/mcp/tools-json.test.ts`
+in `bun run test` fails while they are stale, so names, descriptions and input schemas can't drift. The tools call the
+daemon over HTTP like Bun's (`client.rs`: same paths, bodies and headers, CKANBAN_PORT or `config.json` for the port)
+and build the same answer texts, one file per tool group (`tickets`, `workflow`, `family`, `forms`, `huddles`,
+`schedules`); `js.rs` has what the texts need from JavaScript (UTF-16 lengths, number printing, URL encoding, local time).
+
+Still on Bun: the 13 tools in `ON_BUN` (`src/mcp/mod.rs`, each with the Bun module it needs). Their calls go to a
+`bun src/cli.ts mcp` child started on first use (`bun.rs`; Bun and the repo found as for `dev`), so they answer exactly
+as before. MCP configs on the user's Mac still point at Bun; `bun run test:contract:rust` runs
+`test/contract/mcp.test.ts` against `ckanban-rs mcp`.
 
 ## Who is calling
 
