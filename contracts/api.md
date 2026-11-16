@@ -286,28 +286,34 @@ time of the last grant). A ticket's run takes and lets go with `POST .../tickets
 
 All `/api/notify`, `/api/messages`, `/api/helper` and `/api/push` routes answer 403 to `x-ckanban-run`.
 
+The Telegram Bot API address is `https://api.telegram.org` unless `CKANBAN_TELEGRAM_URL` is set (a trailing `/` is
+dropped): a test hook that points the daemon at a local fake Bot API, never set on a real Mac. The public Telegram state
+in `Notifier.state()` (`telegram`) is `{paired, tokenSet, tokenMasked ("set ...1234"), status ("no-token", "ok"...),
+botName ("@name"), chatName, frontDesk, pairing: {expiresAt} | null, pairError}`, never the token or `chatId`; pairing
+from a board sets `frontDesk` to that board.
+
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
 | GET | `/api/notify` | | 200 `Notifier.state()` plus `local` | |
-| POST | `/api/notify` | settings patch (`Notifier.update`); user only | 200 new state plus `local` | 403 user only or Mac-only setting from the phone (`MacOnlyError`), 400 invalid |
-| POST | `/api/notify/test` | `{profile?}` | 200 `Notifier.test()` result plus `state` | |
+| POST | `/api/notify` | settings patch (`Notifier.update`); user only | 200 new state plus `local` | 403 user only or Mac-only setting from the phone (`MacOnlyError`; a `telegram.token` change from the phone answers `Pair Telegram from the Mac.`), 400 invalid (the typed token is never echoed) |
+| POST | `/api/notify/test` | `{profile?}` | 200 `Notifier.test()` result plus `state`; the test is saved in `messages.json` with level `"test"` | |
 | POST | `/api/notify/telegram/pair` | `{board?}`; user only; local only | 200 `telegramPair()` result (pairing code) plus `state` | 403, 400 |
 | POST | `/api/notify/telegram/unpair` | user only | 200 state plus `local` | 403 |
 | POST | `/api/telegram/front-desk/file` | header `x-ckanban-frontdesk`; `{path, caption?}` | status and body from `FrontDesk.sendFile` | 403 without the header or with a run/huddle header |
-| GET | `/api/messages` | query `tab` (`needs`\|`all`\|`summaries`\|`quiet`, default all), `limit` (1..100, default 30), `beforeAt`+`beforeId` or `afterAt`+`afterId` | 200 `{rows, hasMore, needs, unread}` | |
+| GET | `/api/messages` | query `tab` (`needs`\|`all`\|`summaries`\|`quiet`, default all), `limit` (1..100, default 30), `beforeAt`+`beforeId` or `afterAt`+`afterId` | 200 `{rows, hasMore, needs, unread}`; `needs` is a number; rows are `{id, at, level, oneLine, readAt, needsYou?, held?, practice?}` (no ticket id) | |
 | POST | `/api/messages/read-all` | body ignored | 200 `{marked, unread}` | |
 | GET | `/api/messages/:id` | | 200 message with its states | 404 |
 | GET | `/api/messages/:id/near` | query `tab`, `keep` | 200 `nearOf()` result (newer and older message) | 404 |
 | POST | `/api/messages/:id/read` | body ignored | 200 `{message, unread}` | 404 |
 | POST | `/api/messages/:id/got-it` | `{key?}`; user only | 200 helper result plus `message`, `unread` | 404, 403, 503 helper not running, `HelperError` status, else 400 |
 | POST | `/api/messages/:id/not-urgent` | same | same | same |
-| GET | `/api/helper` | | 200 `HelperRunner.status()` | 503 helper not running |
+| GET | `/api/helper` | | 200 `HelperRunner.status()` (the daemon always has a helper, switched on or off) | 503 helper not running (only without one) |
 | POST | `/api/helper/settings` | settings patch; user only | 200 status | 403, 503, 400 |
 | GET | `/api/helper/feedback` | | 200 `{lines}` | 503 |
 | POST | `/api/helper/feedback` | `{text}`; user only | 200 `{line, lines}` | 403, 503, 400 |
 | DELETE | `/api/helper/feedback/:lineId` | user only | 200 `{lines}` | 403, 503, 404 |
 | POST | `/api/helper/should-have-pinged` | `{profile, ticketId}`; user only | 200 helper result plus `lines` | 400 missing fields, 403, 503 |
-| POST | `/api/helper/practice` | user only | 200 practice result | 403, 503, helper error status |
+| POST | `/api/helper/practice` | user only | 200 practice result | 403, 503, 409 `Turn the helper on first` while it is off, helper error status |
 | POST | `/api/helper/notice-seen` | user only | 200 status | 403, 503 |
 | GET | `/api/push` | | 200 `{publicKey, devices, dropped}` | |
 | POST | `/api/push/subscribe` | `{subscription, label?, replaces?}` | 200 `{id, label, createdAt}` | 400 invalid |

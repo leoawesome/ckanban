@@ -243,7 +243,7 @@ Saved files with no schema or check yet, and why: `activity.jsonl.gz` (only for 
 `.key-backups/` (raw file copies written by the `ckanban mcp` process's `backup_file` tool, not by the daemon), `outputs/` files other than `status.json` (made by runs or the
 board on events the test doesn't cause), `browsers.json`, `board-browsers.json` and `browsers/` (start Chrome),
 `helper-spend.jsonl`, `messages.json` and `helper-state.json` (the helper's first check waits a minute and needs a
-real Claude answer), and the `telegram-*.json` files (need a Telegram bot). Caches (`simplified.json`,
+real Claude answer), and the `telegram-*.json` files (they need a paired Telegram bot; `helper.test.ts` pairs one against a fake Bot API, but `data-files.test.ts` doesn't). Caches (`simplified.json`,
 `context.json`, `session-summaries.json`, `mcp-seen.json` and the others in "Caches") have no schema: a port may
 rebuild them in its own format; `usage-last.json` is the exception because the Bun daemon and the Rust front share
 it.

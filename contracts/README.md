@@ -104,6 +104,12 @@ HTTP, the CLI and reading the data folder. The tests import nothing from `src/` 
 - `huddle.test.ts`: teammates and squads (files byte for byte, scopes, refusals), a huddle from a roster and from a
   squad, posts by the user, a helper and @main, findings, hand-ins (reject, accept into the plain folder), close and
   its summary, the budget stop, resume, and `huddle.*` events (tokens never leave `huddles/<id>.json`).
+- `helper.test.ts`: what waits on the user (inbox, cards, the webhook send), notify settings and `notify.json`, the
+  helper's status, settings and feedback, messages pages and buttons, a ticket's own notify, phone push against a
+  local https fake push service, and Telegram (token, pairing, `/waiting`, an urgent alert and its buttons, a reply
+  into a ticket's chat, the front desk with a held move and its Confirm) against a local fake Bot API
+  (`CKANBAN_TELEGRAM_URL`). Nothing reaches a real service; a `Google Chrome` symlink to bun passes the daemon's
+  browser check for the routes only the Mac's browser may use.
 - `huddle-team.test.ts`: brief, status, adding participants, mode, stop and restart one, invite, seen, close request,
   learnings, an auto huddle started from a work run (fake Claude in `call` mode), `learned`, role notes and
   `/api/team-usage`.
@@ -115,7 +121,7 @@ To test another server: build it and run
 `CKANBAN_CONTRACT_DAEMON='["/path/to/server","dev"]' bun test test/contract` (add `CKANBAN_CONTRACT_CLI` if the CLI
 moves too, and `CKANBAN_CONTRACT_MCP` for the MCP server). The server must take its port from `CKANBAN_PORT`, its data folder from `CKANBAN_HOME`, the Claude
 program from `CKANBAN_CLAUDE_BIN`, the Claude config folder from `CLAUDE_CONFIG_DIR`, and honour `CKANBAN_USAGE_URL`
-and `CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`).
+`CKANBAN_NO_KEYCHAIN` (see "Plan usage" in `api.md`) and `CKANBAN_TELEGRAM_URL` (see "Notifications" in `api.md`).
 
 `bun run test:contract:rust` does this for the Rust front server (`rust/`): it builds `ckanban-rs` (release) and runs
 every contract test with it as the daemon, and `ckanban-rs mcp` as the MCP server (`mcp.test.ts`, `mcp-parity.test.ts`). It needs cargo, so `bun run test` leaves it out.
