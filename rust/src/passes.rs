@@ -386,6 +386,61 @@ impl Passes {
         }
     }
 
+    /// `saveBoardKeys` (a key box answered in a ticket's chat, board mode): each `(envName, name, secret)` saved as the
+    /// board's key, replacing one with the same name. Returns the names saved. Blocking.
+    pub fn save_board_keys(&self, slug: &str, keys: &[(String, Option<Value>, Value)]) -> Result<Vec<String>, (u16, String)> {
+        if slug.is_empty() {
+            return Err((400, "Which board are the keys for?".into()));
+        }
+        let mut clean = Vec::new();
+        for (env, name, secret) in keys {
+            let env = js::trim(env).to_string();
+            if let Some(bad) = key_name_error(&env) {
+                return Err((400, bad));
+            }
+            let secret = secret.as_str().map(|s| js::trim(s).to_string()).unwrap_or_default();
+            if secret.is_empty() {
+                return Err((400, format!("Paste the key for {env}")));
+            }
+            if !one_line(&secret) {
+                return Err((400, format!("The key for {env} must be on one line")));
+            }
+            let name = name_or(name.as_ref(), &env).ok_or((400, format!("The name for {env} can't be read")))?;
+            clean.push((env, secret, name));
+        }
+        if clean.is_empty() {
+            return Ok(Vec::new());
+        }
+        let _lock = FileLock::take(&self.file).map_err(|e| (500, format!("can't lock {PASSES_FILE}: {e}")))?;
+        let mut passes = read_passes(&self.file).ok_or((500, format!("{PASSES_FILE} can't be read")))?;
+        let now = now_iso();
+        for (env, secret, name) in &clean {
+            let same = |p: &Value| {
+                p.get("kind").and_then(Value::as_str) == Some("key")
+                    && p.get("board").and_then(Value::as_str) == Some(slug)
+                    && p.get("envName").and_then(Value::as_str) == Some(env)
+                    && !ckanban_core::jsnum::truthy(p.get("url"))
+            };
+            match passes.iter().position(same) {
+                Some(i) => {
+                    let p = passes[i].as_object_mut().expect("a pass is an object");
+                    p.insert("secret".into(), json!(secret));
+                    p.insert("name".into(), json!(name));
+                    p.insert("status".into(), json!("connected"));
+                    p.insert("error".into(), Value::Null);
+                    p.insert("savedAt".into(), json!(now));
+                }
+                None => passes.push(json!({
+                    "id": new_id(), "kind": "key", "name": name, "claudeName": null, "envName": env, "board": slug,
+                    "secret": secret, "status": "connected", "error": null, "createdAt": now, "savedAt": now,
+                })),
+            }
+        }
+        write_passes(&self.file, &passes).map_err(|e| (500, e.to_string()))?;
+        (self.notify)(PASSES_FILE);
+        Ok(clean.into_iter().map(|(env, _, _)| env).collect())
+    }
+
     /// `GET /api/passes`. None: Bun answers.
     fn list(&self) -> Option<Value> {
         let passes = read_passes(&self.file)?;

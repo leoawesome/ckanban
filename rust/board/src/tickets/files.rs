@@ -461,7 +461,7 @@ pub fn list_snippets(root: &Path, profile: Option<&str>) -> Vec<Value> {
 }
 
 /// `String(v ?? dflt)`.
-fn js_string(v: Option<&Value>, dflt: &str) -> String {
+pub fn js_string(v: Option<&Value>, dflt: &str) -> String {
     match v {
         None | Some(Value::Null) => dflt.to_string(),
         Some(Value::String(s)) => s.clone(),
