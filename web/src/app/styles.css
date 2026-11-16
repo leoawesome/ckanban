@@ -3751,6 +3751,9 @@ button.hd-mode:disabled { cursor: default; }
   .panel:not(.head-slim) .phone-who .pw-status { display: none; }
   .head-pill-wrap { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr; transition: grid-template-rows var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out); }
   .head-pill-row { min-height: 0; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-1) var(--sp-3) var(--sp-2); }
+  /* The column pill keeps its full width; only the reason after "Your turn" shrinks (ellipsis). The pill had min-width: 0,
+     so on a long reason the row squeezed it to a circle and its text ran under the status words. */
+  .head-pill-row > .status-pill { flex: none; }
   .head-pill-row .pw-status { flex: 1 1 auto; }
   .panel.head-slim .head-pill-wrap { grid-template-rows: 0fr; opacity: 0; }
   .panel.head-slim .head-pill-row { overflow: hidden; padding: 0; visibility: hidden; }
@@ -4563,6 +4566,9 @@ a.auto-li-title:hover { color: var(--accent-text); text-decoration: underline; }
 .ws-note { margin-top: var(--sp-3h); }
 .ws-note .ws-more { margin-top: var(--sp-1); }
 .ws-inline { display: inline; padding: 0; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+/* A ticket link inside Claude's sentence (an <a>, so it wraps word by word like text). No extra hit box: an absolute
+   ::after on a link that wraps over lines lands in the wrong place, and links inside a sentence don't need one. */
+.ws-inline::after { content: none; }
 .ws-note-form { display: flex; flex-direction: column; gap: var(--sp-2h); margin-top: var(--sp-2); }
 .ws-note-form textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: var(--fs-sm); }
 .ws-note-actions { display: flex; align-items: center; gap: var(--sp-2h); }

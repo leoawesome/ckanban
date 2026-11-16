@@ -4,7 +4,7 @@
 // requests and "Add a note" sit behind "More". Counts, test results and pull requests come from the board; goal, done,
 // broken, waiting on you and next step from Claude's update_status. The chat lists what waits on the user in its
 // "N waiting on you" button (TaskSheet.tsx).
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { api, type FeatureStatus, type Ticket } from "../../lib/api";
 import { familyOf, featureRows, isFeature, STATE_WORDS, shownState, workingInFamily, type FamilyState } from "../family/family";
 import { InfoIcon } from "../../components/icons";
@@ -13,6 +13,7 @@ import { namesText, taskProgress } from "./tasksText";
 import { ticketParts } from "../board/ticketLinks";
 import { toast } from "../../components/toast";
 import { timeAgo } from "../../lib/time";
+import { hashFor } from "../../app/hash";
 
 /** Saved changes shown before "and N more" (as CHANGES_SHOWN in src/board/feature.ts). */
 const CHANGES_SHOWN = 30;
@@ -81,10 +82,17 @@ function Clamped({ children, lines, className }: { children: React.ReactNode; li
   );
 }
 
-/** Claude's saved text with each known ticket id shown as that ticket's title, a link that opens it. */
-function Linked({ text, titles, onOpen }: { text: string; titles: ReadonlyMap<string, string>; onOpen: (id: string) => void }) {
+/** Claude's saved text with each known ticket id shown as that ticket's title, a link that opens it. A real link (an
+ *  <a>), not a <button>: a button is always laid out as one unbreakable box, so a long title broke the sentence apart. */
+function Linked({ slug, text, titles, onOpen }: { slug: string; text: string; titles: ReadonlyMap<string, string>; onOpen: (id: string) => void }) {
+  const open = (e: MouseEvent, id: string) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    onOpen(id);
+  };
   return <>{ticketParts(text, titles).map((p, i) => "id" in p
-    ? <button key={i} className="link-btn ws-link ws-inline" title={p.id} onClick={() => onOpen(p.id)}>{p.title}</button>
+    ? <a key={i} className="link-btn ws-link ws-inline" href={hashFor(slug, p.id)} title={p.id}
+        onClick={(e) => open(e, p.id)}>{p.title}</a>
     : <span key={i}>{p.text}</span>)}</>;
 }
 
@@ -150,7 +158,7 @@ export function StatusBlock({ slug, ticket, tickets, status, onChanged, onOpenTi
   const roundOf = (id: string) => f.rounds.find((r) => r.id === id);
   // Ticket ids in Claude's saved text show as the ticket's title (only tickets on this board).
   const titles = useMemo(() => new Map(tickets.map((t) => [t.id, t.title])), [tickets]);
-  const linked = (text: string) => <Linked text={text} titles={titles} onOpen={onOpenTicket} />;
+  const linked = (text: string) => <Linked slug={slug} text={text} titles={titles} onOpen={onOpenTicket} />;
   const link = (id: string, title: string) => <button key={id} className="link-btn ws-link" onClick={() => onOpenTicket(id)}>{title}</button>;
   const after = () => onChanged();
   // Shown: what moves the work on, one line each. The rest sits behind "More".
