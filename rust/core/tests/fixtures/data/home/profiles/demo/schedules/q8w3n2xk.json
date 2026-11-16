@@ -1,0 +1,21 @@
+{
+  "id": "q8w3n2xk",
+  "name": "Morning inbox",
+  "title": "Inbox check {date}",
+  "cron": "0 9 * * 1-5",
+  "mode": "auto",
+  "body": "Check my inbox.",
+  "enabled": true,
+  "skipIfRunning": true,
+  "tags": [
+    "inbox"
+  ],
+  "quiet": false,
+  "model": null,
+  "partOf": null,
+  "createdAt": "2026-11-15T08:00:00.000Z",
+  "updatedAt": "2026-11-15T08:00:00.000Z",
+  "lastFiredAt": null,
+  "lastError": null,
+  "nextRunAt": "2026-11-16T09:00:00.000Z"
+}

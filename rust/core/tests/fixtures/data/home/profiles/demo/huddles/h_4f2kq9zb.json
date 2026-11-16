@@ -1,0 +1,14 @@
+{
+  "id": "h_4f2kq9zb",
+  "ticketId": "t_20261116_mni1",
+  "status": "open",
+  "createdAt": "2026-11-15T08:00:00.000Z",
+  "participants": [
+    {
+      "handle": "qa-1",
+      "role": "qa",
+      "token": "secret"
+    }
+  ],
+  "costUsd": 0.25
+}
