@@ -567,7 +567,7 @@ Prefix `/api/profiles/:slug/tickets`. Ticket ids look like `t_...`. A route with
 
 **POST body.** `title` (required), `body`, `status` (one of `STATUSES`, default `backlog`), `mode` (`auto` or
 `interview`, default interview), `parentId`, `planKey`, `dependsOn: string[]`, `needs: string[]`, `tags: string[]`,
-`partOf`, `important`, `kind` (`TICKET_KINDS`), `model`, `effort`, `main: boolean`, `gather: {id, group}[]` (only with
+`partOf`, `important`, `kind` (`TICKET_KINDS`), `model`, `effort`, `main: boolean` (the user's own new ticket, with no run header, `parentId`, `partOf` or `sessionId`, is a main ticket even with `main: false`), `gather: {id, group}[]` (only with
 `main: true`), `newGroup`, `sessionId` (link an existing Claude session). Rules: `main: true` from a run
 needs a run answering the user's typed message (else 403) and refuses `parentId` and `sessionId` (400). A main
 ticket's (or tool group's) run adds tool tickets to its own family (400 unknown dependency). `parentId` from anyone
@@ -590,7 +590,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 
 | Method | Path | Request | Success | Errors |
 |---|---|---|---|---|
-| POST | `/chat` | `{text, fresh?}` | 202 `TicketView` | 400 no text, 403 run rights, 409 loop or conflict |
+| POST | `/chat` | `{text, fresh?}` | 202 `TicketView` (while a run works, the message is in `queued` and steers it; `/model` and `/effort` only set the ticket and its `notice`) | 400 no text, 403 run rights, 409 loop or conflict, 500 other refusals (see Quirks) |
 | POST | `/queued/:msgId` | body ignored | 202 `TicketView` (sends a queued message now) | 404, 409 |
 | PATCH | `/queued/:msgId` | `{text}` | 200 `TicketView` | 400, 404, 409 |
 | DELETE | `/queued/:msgId` | | 200 `TicketView` | 404, 409 |
@@ -606,7 +606,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/workflow/:toolUseId/stop` | | 200 `stopWorkflow()` result | 403 run header, 400 not started or not running |
 | GET | `/comments` | query `last?`, `before?` | no `last`: 200 `Comment[]`; with `last`: 200 `{comments, earlier, total}` (max 500) | |
 | POST | `/comments` | `{text}` | 201 the new `Comment` | 400, 403 run rights |
-| GET | `/commands` | | 200 the `/` commands available in this ticket's chat | |
+| GET | `/commands` | | 200 the `/` commands available in this ticket's chat: `{name, kind, source, description}` (built-ins, the project's `.claude/commands`, skills); `local` and `hidden` are not sent | |
 | GET | `/rewind` | query `uuid` | 200 `{blocked, ...previewRewind()}` | 403 run header, 404 not rewindable |
 | POST | `/rewind` | `{uuid, files?}` (files default true) | 200 `{text, restored, messages, files, undo: true, filesSaved}` | 403, 404, 409 blocked |
 | GET | `/rewind-undo` | query `files=0` | 200 `{available, blocked, messages, files, filesSaved}` | 403 run header |
@@ -634,7 +634,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/key-cards/:uuid` | `{keys: {NAME: value}}` or `{self: true}`; user only | 202 `TicketView` | 403, 409 in flight or already answered or saved but not delivered, 404 box gone, 400 no key |
 | PUT | `/squad-cards/:uuid` | `{state: "saved"\|"dismissed", name?, scope?}` | 200 `TicketView` | 403 run/huddle header, 400 |
 | PUT | `/teammate-cards/:uuid` | `{state: "saved"\|"dismissed", name?, scope?}` | 200 `TicketView` | 403 run/huddle header, 400 |
-| PUT | `/closed-forms/:uuid` | body ignored; user only | 200 `TicketView` | 403, 400 bad id, 409, 404 |
+| PUT | `/closed-forms/:uuid` | body ignored; user only | 200 `TicketView` with `closedForms[uuid] = {at, by: "user", run}`; closing it again answers 200 unchanged | 403, 400 bad id, 409 a run works or the id isn't the open form, 404 unknown ticket |
 | PUT | `/schedule-delete-cards/:uuid` | `{state: "deleted"\|"kept", scheduleId?}`; user only | 200 `TicketView` | 403, 400, 409 already answered, 404 schedule gone |
 | PUT | `/helper-rule-cards/:uuid` | `{state: "added"\|"dismissed", text?}`; user only | 200 `TicketView` | 403, 400, 404, 409 text changed or already answered or list full, 503 helper |
 | GET | `/family` | | 200 rows `{id, title, status, depth, how, parent, subFeature?/task?/showOnBoard?, sessionId, resumeCommand, prUrl, updatedAt, result}` | |
@@ -650,7 +650,7 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 | POST | `/land` | `{summary}`; the main ticket's own run or the user | 200 `{message}` | 403, 409 |
 | POST | `/branch` | | 201 `{ticket: TicketView, warning}` | 403 run header, 400, 409 |
 | POST | `/move` | `{board}` | 201 `TicketView` on the target board | 403 run header, 404 board, 400 |
-| POST | `/follow-up-work` | `{title, body, start?, important?}` | 201 `TicketView` | 403 run header, 400 |
+| POST | `/follow-up-work` | `{title, body, start?, important?}` | 201 `TicketView` of the new work | 403 run header, 400 (also on a main ticket: its own plan adds steps) |
 | POST | `/follow-up` | `{after?, at?, note?, cancelOnReply?}` | 201 `TicketView` | 403 run of another ticket, 400 |
 | POST | `/follow-up/now` | body ignored; user only (no run header) | 202 `TicketView` | 403, 400 |
 | DELETE | `/follow-up` | `{reason?}` (optional body) | 200 `TicketView` | 403, 400 |
@@ -731,6 +731,10 @@ Prefix `/api/profiles/:slug/tickets/:id`.
 - `GET /api/profiles/:slug/chats/:cid/context` and `GET /api/profiles/:slug/tickets/:id/context` need no user check,
   while their POSTs do.
 - `GET .../tickets/:id/rewind` and `GET .../rewind-undo` refuse `x-ckanban-run` (403) even though they only read.
+- `POST .../tickets/:id/chat` answers 500 (with the reason in `error`) for refusals the board raises as plain errors: a
+  refused command (`/clear`, `/resume`, `/exit`, `/quit`), a bad `/model` or `/effort` value, a corrupt ticket file.
+- A conversation entry's `uuid` is its transcript line's `uuid`, or its position in the conversation (`"0"`, `"1"`...)
+  when the line has none; rewind and fork need real uuids.
 - `POST .../tickets/:id/queued/:msgId` with an unknown message answers 404 from any other error too (all non-conflict
   errors map to 404).
 - `DELETE .../follow-up` reads an optional JSON body; a bad body is ignored.
