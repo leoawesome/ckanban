@@ -290,32 +290,75 @@ describe.skipIf(!enabled)("requests Rust doesn't answer itself", () => {
 
 // ---- Passes and saved keys (rust/src/passes.rs) and GET /api/agents (rust/src/agents.rs) ----
 
+/** Longest wait for one browser request: the guard's lsof and ps take seconds each on a Mac under heavy load. */
+const REQUEST_LIMIT_MS = 45_000;
+type BrowserAnswer = { status: number; type: string | null; text: string };
 /**
- * A request from "the user's browser": the guard (src/integrations/guard.ts, rust/src/guard.rs) lets through only a
+ * Requests from "the user's browser": the guard (src/integrations/guard.ts, rust/src/guard.rs) lets through only a
  * process whose executable path looks like a browser's and that the board didn't start. A Bun started through a link
- * named Firefox, by this test, is that. Prints `{ status, type, text }`.
+ * named Firefox, by this test, is that. One such process, started once, makes every request (one JSON line in on
+ * stdin, one out on stdout), each on a new connection like a fresh browser tab. A new Bun per request took seconds on
+ * a busy Mac, so the 18 steps below went past their time limit, and on a timeout bun test stops every process this
+ * file started, daemons included: the next requests then looked like the Rust front dropping or hanging them.
  */
 let browserDir = "";
-function browserBin(): string {
-  if (!browserDir) {
-    browserDir = mkdtempSync(join(tmpdir(), "ck-parity-browser-"));
-    mkdirSync(join(browserDir, "Firefox.app"));
-    symlinkSync(process.execPath, join(browserDir, "Firefox.app", "Firefox"));
-    writeFileSync(join(browserDir, "req.ts"), `
-const [url, method, body, headers] = process.argv.slice(2);
-const r = await fetch(url, { method, headers: JSON.parse(headers), body: body === "-" ? undefined : body });
-console.log(JSON.stringify({ status: r.status, type: r.headers.get("content-type"), text: await r.text() }));
-`);
-  }
-  return join(browserDir, "Firefox.app", "Firefox");
+let browser: { proc: Bun.Subprocess<"pipe", "pipe", "pipe">; next: number; waiting: Map<number, (a: BrowserAnswer | { error: string }) => void>; err: string } | null = null;
+function browserHelper() {
+  if (browser) return browser;
+  browserDir = mkdtempSync(join(tmpdir(), "ck-parity-browser-"));
+  mkdirSync(join(browserDir, "Firefox.app"));
+  symlinkSync(process.execPath, join(browserDir, "Firefox.app", "Firefox"));
+  writeFileSync(join(browserDir, "browser.ts"), `
+for await (const line of console) {
+  if (!line.trim()) continue;
+  const { id, url, method, body, headers } = JSON.parse(line);
+  fetch(url, { method, headers, body: body ?? undefined, keepalive: false })
+    .then(async (r) => ({ id, status: r.status, type: r.headers.get("content-type"), text: await r.text() }))
+    .catch((e) => ({ id, error: String(e) }))
+    .then((a) => console.log(JSON.stringify(a)));
 }
-async function asBrowser(d: Daemon, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
+`);
+  const proc = Bun.spawn([join(browserDir, "Firefox.app", "Firefox"), join(browserDir, "browser.ts")], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const b = { proc, next: 1, waiting: new Map(), err: "" };
+  browser = b;
+  (async () => {
+    for await (const chunk of proc.stderr) b.err += new TextDecoder().decode(chunk);
+  })();
+  (async () => {
+    let buf = "";
+    for await (const chunk of proc.stdout) {
+      buf += new TextDecoder().decode(chunk);
+      for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+        const line = buf.slice(0, i);
+        buf = buf.slice(i + 1);
+        if (!line.trim()) continue;
+        const { id, ...a } = JSON.parse(line);
+        b.waiting.get(id)?.(a);
+        b.waiting.delete(id);
+      }
+    }
+    // The helper ended: whatever still waits fails with its error output.
+    for (const done of b.waiting.values()) done({ error: `the browser helper exited: ${b.err}` });
+    b.waiting.clear();
+    if (browser === b) browser = null;
+  })();
+  return b;
+}
+async function asBrowser(d: Daemon, method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<BrowserAnswer> {
   const h = { origin: d.url.replace("127.0.0.1", "localhost"), ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers };
-  const raw = body === undefined ? "-" : typeof body === "string" ? body : JSON.stringify(body);
-  const p = Bun.spawn([browserBin(), join(browserDir, "req.ts"), d.url + path, method, raw, JSON.stringify(h)], { stdout: "pipe", stderr: "pipe" });
-  const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-  if (!out.trim()) throw new Error(`browser request failed (${d === rs ? "rs" : "bun"} ${method} ${path} ${raw}): ${err}\nLOG:${d.log().slice(-3000)}`);
-  return JSON.parse(out) as { status: number; type: string | null; text: string };
+  const raw = body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body);
+  const b = browserHelper();
+  const id = b.next++;
+  const answer = new Promise<BrowserAnswer | { error: string }>((resolve) => b.waiting.set(id, resolve));
+  b.proc.stdin.write(JSON.stringify({ id, url: d.url + path, method, body: raw, headers: h }) + "\n");
+  b.proc.stdin.flush();
+  // A request that hangs fails here, naming the side and the request, before the test's own limit stops every process.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const a = await Promise.race([answer, new Promise<{ error: string }>((r) => (timer = setTimeout(() => r({ error: `no answer within ${REQUEST_LIMIT_MS / 1000}s` }), REQUEST_LIMIT_MS)))]);
+  clearTimeout(timer);
+  b.waiting.delete(id);
+  if ("error" in a) throw new Error(`browser request failed (${d === rs ? "rs" : "bun"} ${method} ${path} ${raw ?? "-"}): ${a.error}\nLOG:${d.log().slice(-3000)}`);
+  return a;
 }
 
 /** Raw answers of both sides for the same request. */
@@ -364,6 +407,8 @@ describe.skipIf(!enabled)("Rust and Bun give the same passes and keys answers", 
     }
   });
   afterAll(() => {
+    browser?.proc.kill();
+    browser = null;
     if (browserDir) rmSync(browserDir, { recursive: true, force: true });
   });
 
@@ -442,7 +487,8 @@ describe.skipIf(!enabled)("Rust and Bun give the same passes and keys answers", 
     expect(statSync(join(rs.home, "automation-passes.json")).mode & 0o777).toBe(0o600);
     const [b, r] = await rawBoth("GET", "/api/passes");
     expect({ ...r, text: scrub(r.text) }).toEqual({ ...b, text: scrub(b.text) });
-  }, 60_000);
+    // 18 steps one after the other, each with the guard's lsof and ps on both sides: minutes on a heavily loaded Mac.
+  }, 240_000);
 
   test("Rust answers these itself, and its change reaches the UI's event stream", async () => {
     const child = Number(Bun.spawnSync(["pgrep", "-P", String(rs.pid)]).stdout.toString().trim().split("\n")[0]);
@@ -454,10 +500,10 @@ describe.skipIf(!enabled)("Rust and Bun give the same passes and keys answers", 
     // Bun child paused: only Rust can answer.
     process.kill(child, "SIGSTOP");
     try {
-      const quick = (p: Promise<Response | { status: number }>) => Promise.race([p, Bun.sleep(3_000).then(() => ({ status: -1 }))]);
+      const quick = (p: Promise<Response | { status: number }>) => Promise.race([p, Bun.sleep(10_000).then(() => ({ status: -1 }))]);
       expect((await quick(fetch(`${rs.url}/api/passes`))).status).toBe(200);
       expect((await quick(fetch(`${rs.url}/api/agents`))).status).toBe(200);
-      const patched = await Promise.race([asBrowser(rs, "PATCH", "/api/passes/p2auto", { secret: SECRETS[3] }), Bun.sleep(5_000).then(() => null)]);
+      const patched = await Promise.race([asBrowser(rs, "PATCH", "/api/passes/p2auto", { secret: SECRETS[3] }), Bun.sleep(20_000).then(() => null)]);
       expect(patched?.status).toBe(200);
     } finally {
       process.kill(child, "SIGCONT");
@@ -470,7 +516,7 @@ describe.skipIf(!enabled)("Rust and Bun give the same passes and keys answers", 
     }
     ctl.abort();
     expect(seen).toContain('"integration.updated"');
-  }, 30_000);
+  }, 60_000);
 
   test("Rust waits for the lock Bun takes around its own changes", async () => {
     const lock = openSync(join(rs.home, "automation-passes.json.lock"), constants.O_RDWR | constants.O_CREAT | 0x20, 0o600);

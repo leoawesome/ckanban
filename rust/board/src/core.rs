@@ -38,8 +38,9 @@ impl Services {
             devices: s.clone(),
             landing: s.clone(),
             satellite: s.clone(),
-            views: s.clone(),
-            cut: s,
+            views: s,
+            // R3: run events go out with their long strings cut.
+            cut: Arc::new(crate::runs::live_cut::LiveCut),
         }
     }
 }

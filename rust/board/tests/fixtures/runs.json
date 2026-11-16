@@ -1,0 +1,2026 @@
+{
+  "note": "Inputs for the run engine (src/runs/) with the answer Bun gives in expect (JSON text). Bun: test/rust-board-runs-fixtures.test.ts; Rust: rust/board/tests/runs.rs. Rewrite expect with UPDATE_RUST_FIXTURES=1 bun test test/rust-board-runs-fixtures.test.ts.",
+  "groups": {
+    "parseResult": [
+      {
+        "text": "no result here",
+        "expect": "null"
+      },
+      {
+        "text": "Work done.\nCKANBAN_RESULT: {\"status\":\"done\",\"prUrl\":null,\"summary\":\"fake done\"}",
+        "expect": "{\"status\":\"done\",\"prUrl\":null,\"prUrls\":[],\"summary\":\"fake done\"}"
+      },
+      {
+        "text": "CKANBAN_RESULT: {\"status\":\"blocked\",\"prUrl\":\"https://github.com/a/b/pull/1\",\"summary\":\"x\"}\nCKANBAN_RESULT: {\"status\":\"done\",\"prUrl\":null,\"summary\":\"last wins\"}",
+        "expect": "{\"status\":\"done\",\"prUrl\":null,\"prUrls\":[],\"summary\":\"last wins\"}"
+      },
+      {
+        "text": "text CKANBAN_RESULT: {\"status\":\"questions\",\"prUrls\":[\"https://a/1\",\"http://no\",\"https://a/2\",\"https://a/1\"],\"prUrl\":\"https://a/3\",\"summary\":\"many\"}```",
+        "expect": "{\"status\":\"questions\",\"prUrl\":\"https://a/3\",\"prUrls\":[\"https://a/1\",\"https://a/2\",\"https://a/3\"],\"summary\":\"many\"}"
+      },
+      {
+        "text": "CKANBAN_RESULT: {\"status\":\"done\",\"prUrls\":[\"https://a/1\",\"https://a/2\"],\"summary\":\"list only\",\"quiet\":true,\"verdict\":\"passed\"}",
+        "expect": "{\"status\":\"done\",\"prUrl\":\"https://a/2\",\"prUrls\":[\"https://a/1\",\"https://a/2\"],\"summary\":\"list only\",\"quiet\":true,\"verdict\":\"passed\"}"
+      },
+      {
+        "text": "CKANBAN_RESULT: {\"status\":\"blocked\",\"quiet\":true,\"verdict\":\"maybe\",\"summary\":5}",
+        "expect": "{\"status\":\"blocked\",\"prUrl\":null,\"prUrls\":[],\"summary\":\"\"}"
+      },
+      {
+        "text": "CKANBAN_RESULT: {\"status\":\"nope\"}",
+        "expect": "null"
+      },
+      {
+        "text": "CKANBAN_RESULT: not json",
+        "expect": "null"
+      },
+      {
+        "text": "CKANBAN_RESULT:   {\"status\":\"done\",\"summary\":\"emoji 😀 \\u00e9\"}  ``",
+        "expect": "{\"status\":\"done\",\"prUrl\":null,\"prUrls\":[],\"summary\":\"emoji 😀 é\"}"
+      },
+      {
+        "text": "CKANBAN_RESULT: 5",
+        "expect": "null"
+      },
+      {
+        "text": "CKANBAN_RESULT: null",
+        "expect": "null"
+      },
+      {
+        "text": "CKANBAN_RESULT: {\"status\":\"done\",\"prUrl\":\"https://x\",\"prUrl\":\"https://y\",\"summary\":\"dup\"}",
+        "expect": "{\"status\":\"done\",\"prUrl\":\"https://y\",\"prUrls\":[\"https://y\"],\"summary\":\"dup\"}"
+      }
+    ],
+    "transientError": [
+      {
+        "events": [
+          {
+            "type": "assistant",
+            "message": {
+              "model": "<synthetic>",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}"
+                }
+              ]
+            },
+            "error": "unknown",
+            "is_api_error_message": true
+          },
+          {
+            "type": "result",
+            "subtype": "success",
+            "is_error": true,
+            "api_error_status": 529,
+            "result": "API Error: 529 {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}"
+          }
+        ],
+        "stderr": "",
+        "expect": "{\"transient\":\"API Error: 529 {\\\"type\\\":\\\"error\\\",\\\"error\\\":{\\\"type\\\":\\\"overloaded_error\\\",\\\"message\\\":\\\"Overloaded\\\"}}\",\"limit\":null}"
+      },
+      {
+        "events": [
+          {
+            "type": "assistant",
+            "message": {
+              "model": "<synthetic>",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "API Error: 400 prompt is too long"
+                }
+              ]
+            },
+            "error": "unknown",
+            "is_api_error_message": true
+          },
+          {
+            "type": "result",
+            "subtype": "success",
+            "is_error": true,
+            "api_error_status": 400,
+            "result": "API Error: 400 prompt is too long"
+          }
+        ],
+        "stderr": "",
+        "expect": "{\"transient\":null,\"limit\":null}"
+      },
+      {
+        "events": [
+          {
+            "type": "assistant",
+            "message": {
+              "model": "<synthetic>",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "You've hit your individual spend limit · run /usage-credits to raise it · your session limit resets 4am (Asia/Kuala_Lumpur)"
+                }
+              ]
+            },
+            "error": "unknown",
+            "is_api_error_message": true
+          },
+          {
+            "type": "result",
+            "subtype": "success",
+            "is_error": true,
+            "api_error_status": 429,
+            "result": "You've hit your individual spend limit · run /usage-credits to raise it · your session limit resets 4am (Asia/Kuala_Lumpur)"
+          }
+        ],
+        "stderr": "",
+        "expect": "{\"transient\":null,\"limit\":\"You've hit your individual spend limit · run /usage-credits to raise it · your session limit resets 4am (Asia/Kuala_Lumpur)\"}"
+      },
+      {
+        "events": [
+          {
+            "type": "assistant",
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "I fixed the 503 handler"
+                }
+              ]
+            }
+          }
+        ],
+        "stderr": "Error: socket hang up",
+        "expect": "{\"transient\":\"Error: socket hang up\",\"limit\":null}"
+      },
+      {
+        "events": [
+          {
+            "type": "assistant",
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "ok"
+                }
+              ]
+            }
+          },
+          {
+            "type": "result",
+            "is_error": false,
+            "result": "fine"
+          }
+        ],
+        "stderr": "ECONNRESET",
+        "expect": "{\"transient\":null,\"limit\":null}"
+      },
+      {
+        "events": [],
+        "stderr": "some log 503\nlast line fine",
+        "expect": "{\"transient\":null,\"limit\":null}"
+      },
+      {
+        "events": [],
+        "stderr": "first\nAPI Error: 502 Bad Gateway\n\n",
+        "expect": "{\"transient\":\"API Error: 502 Bad Gateway\",\"limit\":null}"
+      },
+      {
+        "events": [],
+        "stderr": "Claude AI usage limit reached|1760000000",
+        "expect": "{\"transient\":null,\"limit\":\"Claude AI usage limit reached|1760000000\"}"
+      },
+      {
+        "events": [
+          {
+            "type": "result",
+            "is_error": true,
+            "errors": [
+              "fetch failed",
+              "x"
+            ]
+          }
+        ],
+        "stderr": "",
+        "expect": "{\"transient\":\"fetch failed\\nx\",\"limit\":null}"
+      },
+      {
+        "events": [
+          {
+            "type": "result",
+            "is_error": true,
+            "api_error_status": "503"
+          }
+        ],
+        "stderr": "",
+        "expect": "{\"transient\":\"API error 503\",\"limit\":null}"
+      },
+      {
+        "events": [
+          {
+            "type": "result",
+            "is_error": true
+          },
+          {
+            "type": "assistant",
+            "error": "x",
+            "message": {
+              "content": "string content ETIMEDOUT"
+            }
+          }
+        ],
+        "stderr": "",
+        "expect": "{\"transient\":\"string content ETIMEDOUT\",\"limit\":null}"
+      },
+      {
+        "events": [
+          {
+            "type": "assistant",
+            "error": "x",
+            "message": {
+              "content": "request timed out"
+            }
+          },
+          {
+            "type": "result",
+            "is_error": true
+          }
+        ],
+        "stderr": "",
+        "expect": "{\"transient\":\"request timed out\",\"limit\":null}"
+      },
+      {
+        "events": [],
+        "stderr": "rate limit reached: overloaded",
+        "expect": "{\"transient\":\"rate limit reached: overloaded\",\"limit\":null}"
+      }
+    ],
+    "textChecks": [
+      {
+        "text": "Overloaded",
+        "expect": "{\"transient\":true,\"limit\":false}"
+      },
+      {
+        "text": "overloadedX",
+        "expect": "{\"transient\":true,\"limit\":false}"
+      },
+      {
+        "text": "error 503 here",
+        "expect": "{\"transient\":true,\"limit\":false}"
+      },
+      {
+        "text": "5030",
+        "expect": "{\"transient\":false,\"limit\":false}"
+      },
+      {
+        "text": "api_error_x",
+        "expect": "{\"transient\":false,\"limit\":false}"
+      },
+      {
+        "text": "The api_error happened",
+        "expect": "{\"transient\":true,\"limit\":false}"
+      },
+      {
+        "text": "UND_ERR_SOCKET",
+        "expect": "{\"transient\":true,\"limit\":false}"
+      },
+      {
+        "text": "UND_ERR_ connection",
+        "expect": "{\"transient\":false,\"limit\":false}"
+      },
+      {
+        "text": "5-hour limit reached ∙ resets 3pm",
+        "expect": "{\"transient\":false,\"limit\":true}"
+      },
+      {
+        "text": "weekly  limit",
+        "expect": "{\"transient\":false,\"limit\":true}"
+      },
+      {
+        "text": "retry limit reached",
+        "expect": "{\"transient\":false,\"limit\":false}"
+      },
+      {
+        "text": "You hit your weekly limit",
+        "expect": "{\"transient\":false,\"limit\":true}"
+      },
+      {
+        "text": "hit your\nlimit",
+        "expect": "{\"transient\":false,\"limit\":false}"
+      },
+      {
+        "text": "Connection Reset by peer",
+        "expect": "{\"transient\":true,\"limit\":false}"
+      },
+      {
+        "text": "gateway timeout",
+        "expect": "{\"transient\":true,\"limit\":false}"
+      },
+      {
+        "text": "gateway time-out",
+        "expect": "{\"transient\":true,\"limit\":false}"
+      },
+      {
+        "text": "opus limit",
+        "expect": "{\"transient\":false,\"limit\":true}"
+      },
+      {
+        "text": "usage limit",
+        "expect": "{\"transient\":false,\"limit\":true}"
+      },
+      {
+        "text": "spend\tlimit",
+        "expect": "{\"transient\":false,\"limit\":true}"
+      },
+      {
+        "text": "rate_limit_error",
+        "expect": "{\"transient\":false,\"limit\":false}"
+      },
+      {
+        "text": "ÉCONNRESET",
+        "expect": "{\"transient\":false,\"limit\":false}"
+      },
+      {
+        "text": "limit reached.",
+        "expect": "{\"transient\":false,\"limit\":true}"
+      },
+      {
+        "text": "unlimited reached",
+        "expect": "{\"transient\":false,\"limit\":false}"
+      }
+    ],
+    "describeTool": [
+      {
+        "name": "Read",
+        "input": {
+          "file_path": "/a/b/Card.tsx"
+        },
+        "expect": "\"Reading Card.tsx\""
+      },
+      {
+        "name": "Read",
+        "input": {},
+        "expect": "\"Read\""
+      },
+      {
+        "name": "Read",
+        "input": {
+          "file_path": ""
+        },
+        "expect": "\"Read: \""
+      },
+      {
+        "name": "Read",
+        "input": {
+          "path": "/x/y/"
+        },
+        "expect": "\"Reading y\""
+      },
+      {
+        "name": "Edit",
+        "input": {
+          "file_path": "/very/longlonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglonglong.ts"
+        },
+        "expect": "\"Editing longlonglonglonglonglonglonglonglonglonglonglonglonglonglon…\""
+      },
+      {
+        "name": "MultiEdit",
+        "input": {
+          "file_path": "a.ts"
+        },
+        "expect": "\"Editing a.ts\""
+      },
+      {
+        "name": "NotebookEdit",
+        "input": {
+          "notebook_path": "/n/b.ipynb"
+        },
+        "expect": "\"Editing b.ipynb\""
+      },
+      {
+        "name": "Write",
+        "input": {
+          "file_path": "/a/😀😀.md"
+        },
+        "expect": "\"Writing 😀😀.md\""
+      },
+      {
+        "name": "Grep",
+        "input": {
+          "pattern": "foo.*bar"
+        },
+        "expect": "\"Searching for \\\"foo.*bar\\\"\""
+      },
+      {
+        "name": "Grep",
+        "input": {
+          "pattern": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        "expect": "\"Searching for \\\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…\\\"\""
+      },
+      {
+        "name": "Glob",
+        "input": {
+          "pattern": "**/*.ts"
+        },
+        "expect": "\"Finding **/*.ts\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "cd /x && FOO=1 bun run test a"
+        },
+        "expect": "\"Running tests\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "npm test"
+        },
+        "expect": "\"Running tests\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "cargo test -p x"
+        },
+        "expect": "\"Running tests\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "npx vitest run"
+        },
+        "expect": "\"Running tests\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "bunx tsc --noEmit"
+        },
+        "expect": "\"Running tsc\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "git -C /x status"
+        },
+        "expect": "\"Git: status\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "git -c a=b commit -m x"
+        },
+        "expect": "\"Git: commit\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "git --no-pager"
+        },
+        "expect": "\"Running git\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "sed -n 1,20p \"src/app.ts\""
+        },
+        "expect": "\"Reading app.ts\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "sed -i '' s/a/b/ file.txt"
+        },
+        "expect": "\"Editing file.txt\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "cat a.txt b.txt 2>/dev/null"
+        },
+        "expect": "\"Reading b.txt\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "head -n 5 < in.txt"
+        },
+        "expect": "\"Running head\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "grep -rn \"needle\" src | head"
+        },
+        "expect": "\"Searching for \\\"needle\\\"\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "rg"
+        },
+        "expect": "\"Running rg\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "sudo FOO=bar /usr/bin/make all"
+        },
+        "expect": "\"Running make\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "cd /x"
+        },
+        "expect": "\"Bash: cd /x\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "  "
+        },
+        "expect": "\"Bash:   \""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "ls -la\nsecond line"
+        },
+        "expect": "\"Running ls\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "wc -l 123"
+        },
+        "expect": "\"Running wc\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "echo hi > out.txt; python3 x.py"
+        },
+        "expect": "\"Running echo\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "a=1 b=2"
+        },
+        "expect": "\"Bash: a=1 b=2\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "go test ./..."
+        },
+        "expect": "\"Running tests\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "pytest -q"
+        },
+        "expect": "\"Running tests\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "yarn test:unit"
+        },
+        "expect": "\"Running tests\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "jest"
+        },
+        "expect": "\"Running tests\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "jester"
+        },
+        "expect": "\"Running jester\""
+      },
+      {
+        "name": "Bash",
+        "input": {
+          "command": "/vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv/tool --x"
+        },
+        "expect": "\"Running tool\""
+      },
+      {
+        "name": "WebSearch",
+        "input": {
+          "query": "x"
+        },
+        "expect": "\"Searching the web\""
+      },
+      {
+        "name": "WebFetch",
+        "input": {
+          "url": "https://Example.com:8080/x"
+        },
+        "expect": "\"Reading example.com:8080\""
+      },
+      {
+        "name": "WebFetch",
+        "input": {
+          "url": "https://example.com:443/"
+        },
+        "expect": "\"Reading example.com\""
+      },
+      {
+        "name": "WebFetch",
+        "input": {
+          "url": "not a url"
+        },
+        "expect": "\"WebFetch: not a url\""
+      },
+      {
+        "name": "WebFetch",
+        "input": {
+          "url": "mailto:a@b.c"
+        },
+        "expect": "\"Reading \""
+      },
+      {
+        "name": "WebFetch",
+        "input": {
+          "url": "http://[::1]:3000/"
+        },
+        "expect": "\"Reading [::1]:3000\""
+      },
+      {
+        "name": "Task",
+        "input": {
+          "description": "Review the code"
+        },
+        "expect": "\"Delegating: Review the code\""
+      },
+      {
+        "name": "Agent",
+        "input": {
+          "prompt": "x"
+        },
+        "expect": "\"Agent\""
+      },
+      {
+        "name": "TodoWrite",
+        "input": {},
+        "expect": "\"Updating the plan\""
+      },
+      {
+        "name": "mcp__ckanban__move_ticket",
+        "input": {
+          "id": "t"
+        },
+        "expect": "\"ckanban: move ticket\""
+      },
+      {
+        "name": "mcp__claude-in-chrome__navigate",
+        "input": {
+          "url": "https://x"
+        },
+        "expect": "\"claude-in-chrome: navigate\""
+      },
+      {
+        "name": "mcp__a__b__c",
+        "input": {},
+        "expect": "\"a: b  c\""
+      },
+      {
+        "name": "Unknown",
+        "input": {
+          "command": "line1\nline2"
+        },
+        "expect": "\"Unknown: line1\""
+      },
+      {
+        "name": "Unknown",
+        "input": {
+          "file_path": "/a/b/c/d.txt"
+        },
+        "expect": "\"Unknown: c/d.txt\""
+      },
+      {
+        "name": "Unknown",
+        "input": {
+          "path": ""
+        },
+        "expect": "\"Unknown: \""
+      },
+      {
+        "name": "Unknown",
+        "input": {
+          "query": 5
+        },
+        "expect": "\"Unknown\""
+      },
+      {
+        "name": "Unknown",
+        "input": null,
+        "expect": "\"Unknown\""
+      },
+      {
+        "name": "Unknown",
+        "input": "str",
+        "expect": "\"Unknown\""
+      }
+    ],
+    "summarizeEvent": [
+      {
+        "event": {
+          "type": "result"
+        },
+        "expect": "{\"plain\":\"Finished\",\"raw\":\"Finished\"}"
+      },
+      {
+        "event": {
+          "type": "system",
+          "subtype": "api_retry",
+          "attempt": 2,
+          "max_retries": 10
+        },
+        "expect": "{\"plain\":\"Can't reach Claude's API, retrying (2/10)…\",\"raw\":\"Can't reach Claude's API, retrying (2/10)…\"}"
+      },
+      {
+        "event": {
+          "type": "system",
+          "subtype": "api_retry",
+          "attempt": "3"
+        },
+        "expect": "{\"plain\":\"Can't reach Claude's API, retrying (3/?)…\",\"raw\":\"Can't reach Claude's API, retrying (3/?)…\"}"
+      },
+      {
+        "event": {
+          "type": "system",
+          "subtype": "api_retry",
+          "attempt": 1
+        },
+        "expect": "{\"plain\":null,\"raw\":null}"
+      },
+      {
+        "event": {
+          "type": "system",
+          "subtype": "init"
+        },
+        "expect": "{\"plain\":null,\"raw\":null}"
+      },
+      {
+        "event": {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "text",
+                "text": "  Hello   there\n\nfriend  "
+              }
+            ]
+          }
+        },
+        "expect": "{\"plain\":\"Hello there friend\",\"raw\":\"Hello there friend\"}"
+      },
+      {
+        "event": {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "text",
+                "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              }
+            ]
+          }
+        },
+        "expect": "{\"plain\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"raw\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}"
+      },
+      {
+        "event": {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "text",
+                "text": "   "
+              }
+            ]
+          }
+        },
+        "expect": "{\"plain\":null,\"raw\":null}"
+      },
+      {
+        "event": {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "name": "Bash",
+                "input": {
+                  "command": "sed -n 1,5p a.ts"
+                }
+              },
+              {
+                "type": "text",
+                "text": "after"
+              }
+            ]
+          }
+        },
+        "expect": "{\"plain\":\"Reading a.ts\",\"raw\":\"Bash: sed -n 1,5p a.ts\"}"
+      },
+      {
+        "event": {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "name": "Read"
+              }
+            ]
+          }
+        },
+        "expect": "{\"plain\":\"Read\",\"raw\":\"Read\"}"
+      },
+      {
+        "event": {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "tool_use",
+                "input": {
+                  "command": "x"
+                }
+              }
+            ]
+          }
+        },
+        "expect": "{\"plain\":\"undefined: x\",\"raw\":\"undefined: x\"}"
+      },
+      {
+        "event": {
+          "type": "assistant",
+          "message": {
+            "content": []
+          }
+        },
+        "expect": "{\"plain\":null,\"raw\":null}"
+      },
+      {
+        "event": {
+          "type": "assistant",
+          "message": {
+            "content": "string"
+          }
+        },
+        "expect": "{\"plain\":null,\"raw\":null}"
+      },
+      {
+        "event": {
+          "type": "user"
+        },
+        "expect": "{\"plain\":null,\"raw\":null}"
+      },
+      {
+        "event": null,
+        "expect": "{\"plain\":null,\"raw\":null}"
+      },
+      {
+        "event": 5,
+        "expect": "{\"plain\":null,\"raw\":null}"
+      },
+      {
+        "event": {
+          "type": "assistant",
+          "message": {
+            "content": [
+              {
+                "type": "text",
+                "text": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+              }
+            ]
+          }
+        },
+        "expect": "{\"plain\":\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\",\"raw\":\"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀\"}"
+      }
+    ],
+    "extractFinalText": [
+      {
+        "events": [],
+        "expect": "\"\""
+      },
+      {
+        "events": [
+          {
+            "type": "result",
+            "result": "final"
+          }
+        ],
+        "expect": "\"final\""
+      },
+      {
+        "events": [
+          {
+            "type": "assistant",
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "a"
+                }
+              ]
+            }
+          },
+          {
+            "type": "assistant",
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "b"
+                },
+                {
+                  "type": "tool_use"
+                }
+              ]
+            }
+          }
+        ],
+        "expect": "\"b\""
+      },
+      {
+        "events": [
+          {
+            "type": "result",
+            "result": 5
+          },
+          {
+            "type": "assistant",
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "from assistant"
+                }
+              ]
+            }
+          }
+        ],
+        "expect": "\"from assistant\""
+      },
+      {
+        "events": [
+          {
+            "type": "assistant",
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                }
+              ]
+            }
+          }
+        ],
+        "expect": "\"\""
+      },
+      {
+        "events": [
+          {
+            "type": "result",
+            "result": "first"
+          },
+          {
+            "type": "result",
+            "result": "second"
+          }
+        ],
+        "expect": "\"second\""
+      }
+    ],
+    "liveJson": [
+      {
+        "value": {
+          "type": "activity",
+          "event": {
+            "n": 1.5,
+            "s": "short",
+            "long": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
+        },
+        "max": 10,
+        "expect": "\"{\\\"type\\\":\\\"activity\\\",\\\"event\\\":{\\\"n\\\":1.5,\\\"s\\\":\\\"short\\\",\\\"long\\\":\\\"xxxxxxxxxx… (20 more characters, not sent live)\\\"}}\""
+      },
+      {
+        "value": {
+          "k": "SECRET-KEY-123 yyyyyyyyyyyyyyyyyyyy"
+        },
+        "max": 10,
+        "expect": "\"{\\\"k\\\":\\\"*** yyyyyy… (14 more characters, not sent live)\\\"}\""
+      },
+      {
+        "value": {
+          "k": "aaaaaSECRET-KEY-123"
+        },
+        "max": 12,
+        "expect": "\"{\\\"k\\\":\\\"aaaaa***\\\"}\""
+      },
+      {
+        "value": {
+          "1": "a",
+          "2": "b",
+          "z": [
+            "abc😀😀😀def",
+            null,
+            true,
+            0.1,
+            1e+21,
+            0
+          ]
+        },
+        "max": 4,
+        "expect": "\"{\\\"1\\\":\\\"a\\\",\\\"2\\\":\\\"b\\\",\\\"z\\\":[\\\"abc\\\\ud83d… (8 more characters, not sent live)\\\",null,true,0.1,1e+21,0]}\""
+      },
+      {
+        "value": "top level string that is long",
+        "max": 5,
+        "expect": "\"\\\"top l… (24 more characters, not sent live)\\\"\""
+      },
+      {
+        "value": {
+          "ctl": "\u0001\n\t\"\\\u0001\n\t\"\\\u0001\n\t\"\\\u0001\n\t\"\\\u0001\n\t\"\\",
+          "u": " é"
+        },
+        "max": 6,
+        "expect": "\"{\\\"ctl\\\":\\\"\\\\u0001\\\\n\\\\t\\\\\\\"\\\\\\\\\\\\u0001… (19 more characters, not sent live)\\\",\\\"u\\\":\\\" é\\\"}\""
+      },
+      {
+        "value": {
+          "k": "abc😀"
+        },
+        "max": 4,
+        "expect": "\"{\\\"k\\\":\\\"abc\\\\ud83d… (1 more characters, not sent live)\\\"}\""
+      },
+      {
+        "value": {
+          "k": "abc😀z"
+        },
+        "max": 4,
+        "expect": "\"{\\\"k\\\":\\\"abc\\\\ud83d… (2 more characters, not sent live)\\\"}\""
+      }
+    ],
+    "runDisallowed": [
+      {
+        "own": [],
+        "ultracode": false,
+        "expect": "[\"Workflow\",\"ScheduleWakeup\",\"AskUserQuestion\",\"ShareOnboardingGuide\",\"CronCreate\",\"CronDelete\",\"CronList\"]"
+      },
+      {
+        "own": [],
+        "ultracode": true,
+        "expect": "[\"ScheduleWakeup\",\"AskUserQuestion\",\"ShareOnboardingGuide\",\"CronCreate\",\"CronDelete\",\"CronList\"]"
+      },
+      {
+        "own": [
+          "Edit",
+          "Write",
+          "NotebookEdit",
+          "mcp__ckanban__start_huddle"
+        ],
+        "ultracode": false,
+        "expect": "[\"Edit\",\"Write\",\"NotebookEdit\",\"mcp__ckanban__start_huddle\",\"Workflow\",\"ScheduleWakeup\",\"AskUserQuestion\",\"ShareOnboardingGuide\",\"CronCreate\",\"CronDelete\",\"CronList\"]"
+      },
+      {
+        "own": [
+          "Workflow",
+          "Edit",
+          "Edit"
+        ],
+        "ultracode": true,
+        "expect": "[\"Workflow\",\"Edit\",\"ScheduleWakeup\",\"AskUserQuestion\",\"ShareOnboardingGuide\",\"CronCreate\",\"CronDelete\",\"CronList\"]"
+      },
+      {
+        "own": [
+          "CronList"
+        ],
+        "ultracode": false,
+        "expect": "[\"CronList\",\"Workflow\",\"ScheduleWakeup\",\"AskUserQuestion\",\"ShareOnboardingGuide\",\"CronCreate\",\"CronDelete\"]"
+      }
+    ],
+    "connectorSetting": [
+      {
+        "value": "all",
+        "expect": "{\"setting\":\"all\",\"parsed\":\"all\"}"
+      },
+      {
+        "value": "none",
+        "expect": "{\"setting\":\"none\",\"parsed\":\"none\"}"
+      },
+      {
+        "value": null,
+        "expect": "{\"setting\":\"all\",\"parsed\":null}"
+      },
+      {
+        "value": [
+          "Slack",
+          "claude.ai Slack",
+          " Gmail ",
+          "",
+          5
+        ],
+        "expect": "{\"setting\":[\"Slack\",\"Gmail\"],\"parsed\":null}"
+      },
+      {
+        "value": [],
+        "expect": "{\"setting\":[],\"parsed\":[]}"
+      },
+      {
+        "value": "other",
+        "expect": "{\"setting\":\"all\",\"parsed\":null}"
+      },
+      {
+        "value": {
+          "a": 1
+        },
+        "expect": "{\"setting\":\"all\",\"parsed\":null}"
+      },
+      {
+        "value": [
+          1
+        ],
+        "expect": "{\"setting\":[],\"parsed\":null}"
+      }
+    ],
+    "connectorToolPrefix": [
+      {
+        "name": "Slack",
+        "expect": "\"mcp__claude_ai_Slack\""
+      },
+      {
+        "name": "claude.ai Claude Docs",
+        "expect": "\"mcp__claude_ai_Claude_Docs\""
+      },
+      {
+        "name": "Notion (beta)",
+        "expect": "\"mcp__claude_ai_Notion__beta_\""
+      },
+      {
+        "name": "😀 Emoji",
+        "expect": "\"mcp__claude_ai____Emoji\""
+      },
+      {
+        "name": "a-b_c",
+        "expect": "\"mcp__claude_ai_a-b_c\""
+      }
+    ],
+    "connectorRunOptions": [
+      {
+        "setting": "all",
+        "known": [
+          "Slack"
+        ],
+        "expect": "{\"disallowed\":[],\"env\":{}}"
+      },
+      {
+        "setting": "none",
+        "known": [
+          "Slack"
+        ],
+        "expect": "{\"disallowed\":[],\"env\":{\"ENABLE_CLAUDEAI_MCP_SERVERS\":\"false\"}}"
+      },
+      {
+        "setting": [
+          "Slack"
+        ],
+        "known": null,
+        "expect": "{\"disallowed\":[],\"env\":{\"ENABLE_CLAUDEAI_MCP_SERVERS\":\"false\"}}"
+      },
+      {
+        "setting": [],
+        "known": [
+          "Slack"
+        ],
+        "expect": "{\"disallowed\":[],\"env\":{\"ENABLE_CLAUDEAI_MCP_SERVERS\":\"false\"}}"
+      },
+      {
+        "setting": [
+          "Slack"
+        ],
+        "known": [
+          "claude.ai Slack",
+          "Gmail",
+          "claude.ai Gmail",
+          "Drive"
+        ],
+        "expect": "{\"disallowed\":[\"mcp__claude_ai_Gmail\",\"mcp__claude_ai_Drive\"],\"env\":{}}"
+      },
+      {
+        "setting": [
+          "Nope"
+        ],
+        "known": [
+          "Slack"
+        ],
+        "expect": "{\"disallowed\":[],\"env\":{\"ENABLE_CLAUDEAI_MCP_SERVERS\":\"false\"}}"
+      },
+      {
+        "setting": [
+          "claude.ai Slack"
+        ],
+        "known": [
+          "Slack",
+          "Docs (x)"
+        ],
+        "expect": "{\"disallowed\":[\"mcp__claude_ai_Docs__x_\"],\"env\":{}}"
+      }
+    ],
+    "familyVersion": [
+      {
+        "id": "claude-fable-5-2",
+        "expect": "[\"fable\",\"5.2\"]"
+      },
+      {
+        "id": "claude-fable-5-2[1m]",
+        "expect": "[\"fable\",\"5.2\"]"
+      },
+      {
+        "id": "claude-haiku-4-5-20251001",
+        "expect": "[\"haiku\",\"4.5\"]"
+      },
+      {
+        "id": "claude-opus-4",
+        "expect": "[\"opus\",\"4\"]"
+      },
+      {
+        "id": "claude-opus-45x",
+        "expect": "null"
+      },
+      {
+        "id": "claude-fable-5-123",
+        "expect": "[\"fable\",\"5\"]"
+      },
+      {
+        "id": "Claude-SONNET-4-5",
+        "expect": "[\"sonnet\",\"4.5\"]"
+      },
+      {
+        "id": "us.anthropic.claude-opus-5-5-v1",
+        "expect": "[\"opus\",\"5.5\"]"
+      },
+      {
+        "id": "claude-mythos-1",
+        "expect": "[\"mythos\",\"1\"]"
+      },
+      {
+        "id": "claude-opus-",
+        "expect": "null"
+      },
+      {
+        "id": "opus",
+        "expect": "null"
+      },
+      {
+        "id": null,
+        "expect": "null"
+      },
+      {
+        "id": "",
+        "expect": "null"
+      },
+      {
+        "id": " claude-haiku-5-5 ",
+        "expect": "[\"haiku\",\"5.5\"]"
+      },
+      {
+        "id": "claude-opus-4-1x",
+        "expect": "[\"opus\",\"4\"]"
+      },
+      {
+        "id": "xclaude-opus-4-1",
+        "expect": "[\"opus\",\"4.1\"]"
+      }
+    ],
+    "newerVersion": [
+      {
+        "a": "5.10",
+        "b": "5.9",
+        "expect": "true"
+      },
+      {
+        "a": "5.2",
+        "b": "5.2",
+        "expect": "false"
+      },
+      {
+        "a": "5",
+        "b": "5.0",
+        "expect": "false"
+      },
+      {
+        "a": "5.1",
+        "b": "5",
+        "expect": "true"
+      },
+      {
+        "a": "x",
+        "b": "5",
+        "expect": "false"
+      },
+      {
+        "a": "5",
+        "b": "x",
+        "expect": "false"
+      },
+      {
+        "a": "6",
+        "b": "5.9",
+        "expect": "true"
+      },
+      {
+        "a": "",
+        "b": "1",
+        "expect": "false"
+      }
+    ],
+    "learnModel": [
+      {
+        "events": [
+          {
+            "type": "system",
+            "subtype": "init",
+            "model": "claude-fable-5-3"
+          }
+        ],
+        "expect": "{\"learned\":{\"fable\":\"5.3\"},\"file\":\"{\\n  \\\"versions\\\": {\\n    \\\"fable\\\": \\\"5.3\\\"\\n  }\\n}\"}"
+      },
+      {
+        "events": [
+          {
+            "type": "system",
+            "subtype": "init",
+            "model": "claude-haiku-4-5-20251001"
+          }
+        ],
+        "expect": "{\"learned\":{},\"file\":null}"
+      },
+      {
+        "saved": "{\"versions\":{\"opus\":\"5.6\",\"bad\":\"x.y\",\"fable\":5}}",
+        "events": [
+          {
+            "type": "system",
+            "subtype": "init",
+            "model": "claude-opus-5-5"
+          },
+          {
+            "type": "system",
+            "subtype": "init",
+            "model": "claude-sonnet-6"
+          },
+          {
+            "type": "assistant",
+            "model": "claude-opus-9"
+          }
+        ],
+        "expect": "{\"learned\":{\"opus\":\"5.6\",\"sonnet\":\"6\"},\"file\":\"{\\n  \\\"versions\\\": {\\n    \\\"opus\\\": \\\"5.6\\\",\\n    \\\"sonnet\\\": \\\"6\\\"\\n  }\\n}\"}"
+      },
+      {
+        "saved": "not json",
+        "events": [
+          {
+            "type": "system",
+            "subtype": "init",
+            "model": "claude-mythos-1-2"
+          },
+          {
+            "type": "system",
+            "subtype": "init",
+            "model": "claude-mythos-1-3"
+          }
+        ],
+        "expect": "{\"learned\":{\"mythos\":\"1.3\"},\"file\":\"{\\n  \\\"versions\\\": {\\n    \\\"mythos\\\": \\\"1.3\\\"\\n  }\\n}\"}"
+      }
+    ],
+    "buildArgs": [
+      {
+        "sessionId": "u1",
+        "resume": false,
+        "model": "sonnet",
+        "expect": "[\"-p\",\"--input-format\",\"stream-json\",\"--output-format\",\"stream-json\",\"--verbose\",\"--replay-user-messages\",\"--include-partial-messages\",\"--permission-mode\",\"bypassPermissions\",\"--disallowedTools\",\"Workflow,ScheduleWakeup,AskUserQuestion,ShareOnboardingGuide,CronCreate,CronDelete,CronList\",\"--session-id\",\"u1\",\"--model\",\"sonnet\",\"--chrome\",\"--permission-prompt-tool\",\"stdio\"]"
+      },
+      {
+        "sessionId": "u1",
+        "resume": true,
+        "model": null,
+        "expect": "[\"-p\",\"--input-format\",\"stream-json\",\"--output-format\",\"stream-json\",\"--verbose\",\"--replay-user-messages\",\"--include-partial-messages\",\"--permission-mode\",\"bypassPermissions\",\"--disallowedTools\",\"Workflow,ScheduleWakeup,AskUserQuestion,ShareOnboardingGuide,CronCreate,CronDelete,CronList\",\"--resume\",\"u1\",\"--chrome\",\"--permission-prompt-tool\",\"stdio\"]"
+      },
+      {
+        "sessionId": "u2",
+        "resume": false,
+        "model": "",
+        "disallowed": [
+          "Edit",
+          "Write",
+          "NotebookEdit",
+          "mcp__ckanban__start_huddle"
+        ],
+        "mcp": "{\"mcpServers\":{}}",
+        "systemPrompt": "Be brief",
+        "maxBudgetUsd": 2.5,
+        "effort": "high",
+        "ultracode": true,
+        "expect": "[\"-p\",\"--input-format\",\"stream-json\",\"--output-format\",\"stream-json\",\"--verbose\",\"--replay-user-messages\",\"--include-partial-messages\",\"--permission-mode\",\"bypassPermissions\",\"--disallowedTools\",\"Edit,Write,NotebookEdit,mcp__ckanban__start_huddle,ScheduleWakeup,AskUserQuestion,ShareOnboardingGuide,CronCreate,CronDelete,CronList\",\"--session-id\",\"u2\",\"--effort\",\"high\",\"--settings\",\"{\\\"ultracode\\\":true}\",\"--mcp-config\",\"{\\\"mcpServers\\\":{}}\",\"--append-system-prompt\",\"Be brief\",\"--max-budget-usd\",\"2.5\",\"--chrome\",\"--permission-prompt-tool\",\"stdio\"]"
+      },
+      {
+        "sessionId": "u3",
+        "resume": false,
+        "model": "opus",
+        "ultracode": false,
+        "more": {
+          "settings": {
+            "permissions": {
+              "deny": [
+                "Bash"
+              ]
+            },
+            "ultracode": false
+          },
+          "tools": [
+            "Read",
+            "Grep"
+          ],
+          "strictMcp": true,
+          "noChrome": true
+        },
+        "expect": "[\"-p\",\"--input-format\",\"stream-json\",\"--output-format\",\"stream-json\",\"--verbose\",\"--replay-user-messages\",\"--include-partial-messages\",\"--permission-mode\",\"bypassPermissions\",\"--disallowedTools\",\"Workflow,ScheduleWakeup,AskUserQuestion,ShareOnboardingGuide,CronCreate,CronDelete,CronList\",\"--session-id\",\"u3\",\"--model\",\"opus\",\"--settings\",\"{\\\"permissions\\\":{\\\"deny\\\":[\\\"Bash\\\"]},\\\"ultracode\\\":false}\",\"--tools\",\"Read,Grep\",\"--strict-mcp-config\",\"--no-chrome\",\"--permission-prompt-tool\",\"stdio\"]"
+      },
+      {
+        "sessionId": "u4",
+        "resume": false,
+        "model": "opus",
+        "maxBudgetUsd": 0,
+        "ultracode": true,
+        "more": {
+          "settings": {
+            "1": 0,
+            "2": 1,
+            "ultracode": false
+          }
+        },
+        "expect": "[\"-p\",\"--input-format\",\"stream-json\",\"--output-format\",\"stream-json\",\"--verbose\",\"--replay-user-messages\",\"--include-partial-messages\",\"--permission-mode\",\"bypassPermissions\",\"--disallowedTools\",\"ScheduleWakeup,AskUserQuestion,ShareOnboardingGuide,CronCreate,CronDelete,CronList\",\"--session-id\",\"u4\",\"--model\",\"opus\",\"--settings\",\"{\\\"1\\\":0,\\\"2\\\":1,\\\"ultracode\\\":true}\",\"--chrome\",\"--permission-prompt-tool\",\"stdio\"]"
+      },
+      {
+        "sessionId": "u5",
+        "resume": true,
+        "model": "haiku",
+        "effort": "",
+        "more": {
+          "tools": []
+        },
+        "expect": "[\"-p\",\"--input-format\",\"stream-json\",\"--output-format\",\"stream-json\",\"--verbose\",\"--replay-user-messages\",\"--include-partial-messages\",\"--permission-mode\",\"bypassPermissions\",\"--disallowedTools\",\"Workflow,ScheduleWakeup,AskUserQuestion,ShareOnboardingGuide,CronCreate,CronDelete,CronList\",\"--resume\",\"u5\",\"--model\",\"haiku\",\"--tools\",\"\",\"--chrome\",\"--permission-prompt-tool\",\"stdio\"]"
+      }
+    ],
+    "controlResponse": [
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": "r1",
+          "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "mcp__claude-in-chrome__navigate",
+            "input": {
+              "1": 2,
+              "2": 1,
+              "url": "https://x"
+            }
+          }
+        },
+        "planning": false,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"r1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{\"1\":2,\"2\":1,\"url\":\"https://x\"}}}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": "r1",
+          "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "Bash",
+            "input": {}
+          }
+        },
+        "planning": false,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"r1\",\"response\":{\"behavior\":\"deny\",\"message\":\"Permission prompts can't be answered in a board run.\"}}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": "r1",
+          "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "mcp__ckanban__move_ticket",
+            "input": null
+          }
+        },
+        "planning": true,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"r1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{}}}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": "r1",
+          "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "mcp__ckanban__move_ticket"
+          }
+        },
+        "planning": false,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"r1\",\"response\":{\"behavior\":\"deny\",\"message\":\"Permission prompts can't be answered in a board run.\"}}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": "r1",
+          "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "mcp__ckanban__huddle_post"
+          }
+        },
+        "planning": false,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"r1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{}}}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": "r1",
+          "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "mcp__ckanban__cancel_job"
+          }
+        },
+        "planning": true,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"r1\",\"response\":{\"behavior\":\"allow\",\"updatedInput\":{}}}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": "r1",
+          "request": {
+            "subtype": "elicitation"
+          }
+        },
+        "planning": false,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"error\",\"request_id\":\"r1\",\"error\":\"unsupported control request: elicitation\"}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request": {}
+        },
+        "planning": false,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"error\",\"error\":\"unsupported control request: undefined\"}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": null
+        },
+        "planning": false,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"error\",\"request_id\":null,\"error\":\"unsupported control request: undefined\"}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": 7,
+          "request": {
+            "subtype": 5
+          }
+        },
+        "planning": false,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"error\",\"request_id\":7,\"error\":\"unsupported control request: 5\"}}"
+      },
+      {
+        "event": {
+          "type": "control_request",
+          "request_id": "r1",
+          "request": {
+            "subtype": "can_use_tool",
+            "tool_name": 5
+          }
+        },
+        "planning": true,
+        "expect": "{\"type\":\"control_response\",\"response\":{\"subtype\":\"success\",\"request_id\":\"r1\",\"response\":{\"behavior\":\"deny\",\"message\":\"Permission prompts can't be answered in a board run.\"}}}"
+      }
+    ],
+    "sideCallArgs": [
+      {
+        "input": {
+          "prompt": "p",
+          "system": "Answer briefly."
+        },
+        "expect": "[\"-p\",\"--output-format\",\"json\",\"--model\",\"haiku\",\"--no-session-persistence\",\"--tools\",\"\",\"--strict-mcp-config\",\"--disable-slash-commands\",\"--setting-sources\",\"project\",\"--system-prompt\",\"Answer briefly.\"]"
+      },
+      {
+        "input": {
+          "prompt": "p",
+          "system": "s",
+          "model": "sonnet",
+          "tools": [
+            "Read",
+            "Bash",
+            "Grep",
+            "Glob"
+          ]
+        },
+        "expect": "[\"-p\",\"--output-format\",\"json\",\"--model\",\"sonnet\",\"--no-session-persistence\",\"--tools\",\"Read,Grep,Glob\",\"--max-turns\",\"20\",\"--settings\",\"{\\\"disableAllHooks\\\":true}\",\"--strict-mcp-config\",\"--disable-slash-commands\",\"--setting-sources\",\"project\",\"--system-prompt\",\"s\"]"
+      },
+      {
+        "input": {
+          "prompt": "p",
+          "system": "s",
+          "jsonSchema": {
+            "type": "object",
+            "properties": {
+              "b": {
+                "type": "number"
+              },
+              "a": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "a"
+            ]
+          }
+        },
+        "expect": "[\"-p\",\"--output-format\",\"json\",\"--model\",\"haiku\",\"--no-session-persistence\",\"--tools\",\"\",\"--json-schema\",\"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"b\\\":{\\\"type\\\":\\\"number\\\"},\\\"a\\\":{\\\"type\\\":\\\"string\\\"}},\\\"required\\\":[\\\"a\\\"]}\",\"--strict-mcp-config\",\"--disable-slash-commands\",\"--setting-sources\",\"project\",\"--system-prompt\",\"s\"]"
+      },
+      {
+        "input": {
+          "prompt": "p",
+          "system": "s",
+          "tools": [
+            "Bash"
+          ]
+        },
+        "expect": "[\"-p\",\"--output-format\",\"json\",\"--model\",\"haiku\",\"--no-session-persistence\",\"--tools\",\"\",\"--strict-mcp-config\",\"--disable-slash-commands\",\"--setting-sources\",\"project\",\"--system-prompt\",\"s\"]"
+      }
+    ],
+    "parseSideResult": [
+      {
+        "out": "{\"type\":\"result\",\"is_error\":false,\"result\":\" In plain words. \",\"total_cost_usd\":0.002,\"modelUsage\":{\"claude-haiku-5-5\":{}}}",
+        "code": 0,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":true,\"text\":\"In plain words.\",\"costUsd\":0.002,\"model\":\"claude-haiku-5-5\"}"
+      },
+      {
+        "out": "{\"result\":\"\",\"structured_output\":{\"b\":1,\"a\":\"x\",\"2\":true},\"total_cost_usd\":0.01}",
+        "code": 0,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":true,\"text\":\"{\\\"2\\\":true,\\\"b\\\":1,\\\"a\\\":\\\"x\\\"}\",\"costUsd\":0.01,\"model\":\"haiku\"}"
+      },
+      {
+        "out": "{\"is_error\":true,\"result\":\"boom\",\"total_cost_usd\":0.003,\"subtype\":\"error\"}",
+        "code": 1,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":false,\"error\":\"boom\",\"costUsd\":0.003}"
+      },
+      {
+        "out": "{\"is_error\":false,\"result\":\"   \",\"subtype\":\"success\"}",
+        "code": 0,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":false,\"error\":\"claude answered with an error (success)\"}"
+      },
+      {
+        "out": "{\"result\":\"\",\"total_cost_usd\":0}",
+        "code": 0,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":false,\"error\":\"claude answered with an error (unknown)\"}"
+      },
+      {
+        "out": "not json\nline2\nline3",
+        "code": 1,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":false,\"error\":\"line2 line3\"}"
+      },
+      {
+        "out": "",
+        "code": 1,
+        "err": "err1\nerr2\nerr3\n",
+        "model": "haiku",
+        "expect": "{\"ok\":false,\"error\":\"err2 err3\"}"
+      },
+      {
+        "out": "",
+        "code": 137,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":false,\"error\":\"claude exited with code 137\"}"
+      },
+      {
+        "out": "[1,2]",
+        "code": 0,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":false,\"error\":\"claude answered with an error (unknown)\"}"
+      },
+      {
+        "out": "\"just a string\"",
+        "code": 0,
+        "err": "stderr text",
+        "model": "haiku",
+        "expect": "{\"ok\":false,\"error\":\"stderr text\"}"
+      },
+      {
+        "out": "{\"result\":\"ok\",\"total_cost_usd\":-1,\"modelUsage\":[]}",
+        "code": 0,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":true,\"text\":\"ok\",\"costUsd\":0,\"model\":\"haiku\"}"
+      },
+      {
+        "out": "{\"result\":\"ok\",\"modelUsage\":{\"3\":{},\"claude-x\":{}}}",
+        "code": 0,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":true,\"text\":\"ok\",\"costUsd\":0,\"model\":\"3\"}"
+      },
+      {
+        "out": "{\"result\":\"ok\",\"structured_output\":null}",
+        "code": 0,
+        "err": "",
+        "model": "haiku",
+        "expect": "{\"ok\":true,\"text\":\"ok\",\"costUsd\":0,\"model\":\"haiku\"}"
+      }
+    ],
+    "encodeProjectDir": [
+      {
+        "path": "/Users/a/my_app",
+        "expect": "\"-Users-a-my-app\""
+      },
+      {
+        "path": "/x/日本/😀",
+        "expect": "\"-x------\""
+      },
+      {
+        "path": "C:\\a b",
+        "expect": "\"C--a-b\""
+      }
+    ],
+    "isClaudeCommand": [
+      {
+        "cmd": "claude",
+        "expect": "true"
+      },
+      {
+        "cmd": "/opt/homebrew/bin/claude --resume abc",
+        "expect": "true"
+      },
+      {
+        "cmd": "node /x/claude-code/cli.js",
+        "expect": "true"
+      },
+      {
+        "cmd": "node /x/claude/cli.js -p",
+        "expect": "true"
+      },
+      {
+        "cmd": "claudette",
+        "expect": "false"
+      },
+      {
+        "cmd": "my-claude",
+        "expect": "false"
+      },
+      {
+        "cmd": "vim claude.md",
+        "expect": "false"
+      },
+      {
+        "cmd": "sh -c claude\tx",
+        "expect": "true"
+      },
+      {
+        "cmd": "x claude",
+        "expect": "true"
+      }
+    ],
+    "liveSessionMatch": [
+      {
+        "commands": [
+          "claude --resume s1"
+        ],
+        "id": "s1",
+        "title": null,
+        "expect": "true"
+      },
+      {
+        "commands": [
+          "vim s1"
+        ],
+        "id": "s1",
+        "title": null,
+        "expect": "false"
+      },
+      {
+        "commands": [
+          "claude --resume \"My title\""
+        ],
+        "id": "s2",
+        "title": "My title",
+        "expect": "true"
+      },
+      {
+        "commands": [
+          "claude"
+        ],
+        "id": "s3",
+        "title": "",
+        "expect": "false"
+      },
+      {
+        "commands": [],
+        "id": "s1",
+        "title": "t",
+        "expect": "false"
+      }
+    ],
+    "listSessions": [
+      {
+        "project": "/Users/me/proj",
+        "limit": 50,
+        "files": [
+          {
+            "path": "s1.jsonl",
+            "text": "{\"type\": \"user\", \"message\": {\"role\": \"user\", \"content\": \"<command-name>x</command-name>\"}}\n{\"type\": \"user\", \"message\": {\"role\": \"user\", \"content\": [{\"type\": \"text\", \"text\": \"  Fix   the\\nbug  \"}, {\"type\": \"image\"}, {\"type\": \"text\"}]}}\n{\"type\": \"ai-title\", \"aiTitle\": \"AI title\"}\n",
+            "mtime": 1763000000
+          },
+          {
+            "path": "s2.jsonl",
+            "text": "{\"type\": \"custom-title\", \"customTitle\": \"Mine\"}\n{\"type\": \"ai-title\", \"aiTitle\": \"AI\"}\n{\"type\": \"user\", \"message\": {\"role\": \"user\", \"content\": \"Caveat: x\"}}\n{\"type\": \"user\", \"message\": {\"role\": \"user\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}\n",
+            "mtime": 1763000100
+          },
+          {
+            "path": "s3.jsonl",
+            "text": "{\"type\": \"assistant\", \"message\": {\"content\": \"user\"}}\n",
+            "mtime": 1763000050
+          },
+          {
+            "path": "notes.txt",
+            "text": "x",
+            "mtime": 1763000200
+          },
+          {
+            "path": "s4.jsonl",
+            "text": "not json \"user\"\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"[Request interrupted by user]\"}}\n",
+            "mtime": 1762999999
+          }
+        ],
+        "expect": "[{\"id\":\"s2\",\"title\":\"Mine\",\"firstPrompt\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"lastActive\":\"2025-11-13T02:15:00.000Z\"},{\"id\":\"s3\",\"title\":null,\"firstPrompt\":null,\"lastActive\":\"2025-11-13T02:14:10.000Z\"},{\"id\":\"s1\",\"title\":\"AI title\",\"firstPrompt\":\"Fix the bug\",\"lastActive\":\"2025-11-13T02:13:20.000Z\"},{\"id\":\"s4\",\"title\":null,\"firstPrompt\":null,\"lastActive\":\"2025-11-13T02:13:19.000Z\"}]"
+      },
+      {
+        "project": "/Users/me/proj",
+        "limit": 2,
+        "files": [
+          {
+            "path": "s1.jsonl",
+            "text": "{\"type\": \"user\", \"message\": {\"role\": \"user\", \"content\": \"<command-name>x</command-name>\"}}\n{\"type\": \"user\", \"message\": {\"role\": \"user\", \"content\": [{\"type\": \"text\", \"text\": \"  Fix   the\\nbug  \"}, {\"type\": \"image\"}, {\"type\": \"text\"}]}}\n{\"type\": \"ai-title\", \"aiTitle\": \"AI title\"}\n",
+            "mtime": 1763000000
+          },
+          {
+            "path": "s2.jsonl",
+            "text": "{\"type\": \"custom-title\", \"customTitle\": \"Mine\"}\n{\"type\": \"ai-title\", \"aiTitle\": \"AI\"}\n{\"type\": \"user\", \"message\": {\"role\": \"user\", \"content\": \"Caveat: x\"}}\n{\"type\": \"user\", \"message\": {\"role\": \"user\", \"content\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}\n",
+            "mtime": 1763000100
+          },
+          {
+            "path": "s3.jsonl",
+            "text": "{\"type\": \"assistant\", \"message\": {\"content\": \"user\"}}\n",
+            "mtime": 1763000050
+          },
+          {
+            "path": "notes.txt",
+            "text": "x",
+            "mtime": 1763000200
+          },
+          {
+            "path": "s4.jsonl",
+            "text": "not json \"user\"\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"[Request interrupted by user]\"}}\n",
+            "mtime": 1762999999
+          }
+        ],
+        "expect": "[{\"id\":\"s2\",\"title\":\"Mine\",\"firstPrompt\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"lastActive\":\"2025-11-13T02:15:00.000Z\"},{\"id\":\"s3\",\"title\":null,\"firstPrompt\":null,\"lastActive\":\"2025-11-13T02:14:10.000Z\"}]"
+      }
+    ],
+    "listClaudeProjects": [
+      {
+        "exclude": [
+          "$HOME/scratch/"
+        ],
+        "dataDir": "$HOME/data",
+        "files": [
+          {
+            "path": ".claude.json",
+            "text": "{\"projects\": {\"$HOME/b\": {}, \"$HOME/a/\": {}, \"$HOME\": {}, \"$HOME/.claude-kanban\": {}, \"$HOME/data/x\": {}, \"$HOME/data\": {}, \"$HOME/missing\": {}, \"$HOME/scratch/p\": {}, \"$HOME/Zeta\": {}, \"$HOME/alpha\": {}, \"$HOME/beta-2\": {}, \"$HOME/beta_1\": {}, \"$HOME/file.txt\": {}}}"
+          },
+          {
+            "path": "b/"
+          },
+          {
+            "path": "a/"
+          },
+          {
+            "path": "Zeta/"
+          },
+          {
+            "path": "alpha/"
+          },
+          {
+            "path": "beta-2/"
+          },
+          {
+            "path": "beta_1/"
+          },
+          {
+            "path": "scratch/p/"
+          },
+          {
+            "path": "data/x/"
+          },
+          {
+            "path": "file.txt",
+            "text": "x"
+          },
+          {
+            "path": ".claude/projects/",
+            "mtime": 1763000000,
+            "project": "$HOME/b"
+          },
+          {
+            "path": ".claude/projects/",
+            "mtime": 1763000500,
+            "project": "$HOME/a"
+          }
+        ],
+        "expect": "[{\"path\":\"$HOME/b\",\"name\":\"b\",\"lastUsed\":\"2025-11-13T02:13:20.000Z\"},{\"path\":\"$HOME/a/\",\"name\":\"a\",\"lastUsed\":null},{\"path\":\"$HOME/alpha\",\"name\":\"alpha\",\"lastUsed\":null},{\"path\":\"$HOME/beta_1\",\"name\":\"beta_1\",\"lastUsed\":null},{\"path\":\"$HOME/beta-2\",\"name\":\"beta-2\",\"lastUsed\":null},{\"path\":\"$HOME/Zeta\",\"name\":\"Zeta\",\"lastUsed\":null}]"
+      }
+    ],
+    "claudeDefaults": [
+      {
+        "settings": null,
+        "expect": "{\"model\":null,\"effort\":null}"
+      },
+      {
+        "settings": "{\"model\":\"opus\",\"effortLevel\":\"high\"}",
+        "expect": "{\"model\":\"opus\",\"effort\":\"high\"}"
+      },
+      {
+        "settings": "{\"model\":\"\",\"effortLevel\":5}",
+        "expect": "{\"model\":null,\"effort\":null}"
+      },
+      {
+        "settings": "broken",
+        "expect": "{\"model\":null,\"effort\":null}"
+      }
+    ],
+    "activityDigest": [
+      {
+        "log": "{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"ckanban_run\",\"kind\":\"work\"}}\n{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s\",\"permissionMode\":\"bypassPermissions\",\"tools\":[\"x\"]}}\n{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"Edit\",\"input\":{\"file_path\":\"/a.ts\"}},{\"type\":\"tool_use\",\"name\":\"Write\",\"input\":{\"file_path\":\"/b.ts\"}},{\"type\":\"tool_use\",\"name\":\"Edit\",\"input\":{\"file_path\":\"/a.ts\"}}]}}}\n{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"content\":\"\\\"name\\\":\\\"Edit\\\" \\\"tool_use\\\"\"}]}}}\n{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"result\",\"session_id\":\"s\",\"total_cost_usd\":0.5,\"usage\":{\"input_tokens\":1},\"modelUsage\":{\"m\":{}}}}\n{\"run\":2,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"stream_event\"}}\n{\"run\":2,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"result\",\"session_id\":\"s\",\"total_cost_usd\":\"0.75\"}}\n{\"run\":3,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"result\",\"session_id\":null,\"total_cost_usd\":null}}\n{\"run\":3,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"result\",\"session_id\":\"s\",\"total_cost_usd\":1.25}}\n{\"run\":4,\"event\":{\"type\":\"assistant\"",
+        "expect": "{\"offset\":1237,\"edited\":[\"/a.ts\",\"/b.ts\"],\"runEntries\":[{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"ckanban_run\",\"kind\":\"work\"}},{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"system\",\"subtype\":\"init\",\"permissionMode\":\"bypassPermissions\"}},{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"result\",\"session_id\":\"s\",\"total_cost_usd\":0.5,\"modelUsage\":{\"m\":{}},\"usage\":{\"input_tokens\":1}}},{\"run\":2,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"stream_event\"}},{\"run\":2,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"result\",\"session_id\":\"s\",\"total_cost_usd\":\"0.75\"}},{\"run\":3,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"result\",\"session_id\":null,\"total_cost_usd\":null}},{\"run\":3,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"result\",\"session_id\":\"s\",\"total_cost_usd\":1.25}}],\"sessionTotals\":[[\"s\",[0.75,1.25]],[\"\",[0]]],\"lastRun\":3}"
+      },
+      {
+        "log": "{\"at\":\"x\",\"event\":{\"type\":\"assistant\"}}\n{\"run\":null,\"event\":{\"type\":\"x\"}}\n{\"run\":null,\"event\":{\"type\":\"y\"}}\n{\"run\":\"1\",\"event\":{\"type\":\"z\"}}\n{\"run\":1,\"event\":{\"type\":\"z\"}}\n{\"run\":1,\"event\":[1]}\n{\"run\":2,\"event\":\"str\"}\n{\"run\":-1,\"event\":{\"type\":\"w\"}}\n\n\nnot json\n",
+        "expect": "{\"offset\":261,\"edited\":[],\"runEntries\":[{\"at\":\"x\",\"event\":{\"type\":\"assistant\"}},{\"run\":null,\"event\":{\"type\":\"x\"}},{\"run\":\"1\",\"event\":{\"type\":\"z\"}},{\"run\":1,\"event\":{\"type\":\"z\"}},{\"run\":-1,\"event\":{\"type\":\"w\"}}],\"sessionTotals\":[],\"lastRun\":-1}"
+      },
+      {
+        "log": "",
+        "expect": "{\"offset\":0,\"edited\":[],\"runEntries\":[],\"sessionTotals\":[],\"lastRun\":null}"
+      },
+      {
+        "log": "{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"NotebookEdit\",\"input\":{\"file_path\":\"/n.ipynb\"}},{\"type\":\"tool_use\",\"name\":\"Edit\",\"input\":{\"path\":\"/p\"}}]}}}\n{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"name\":\"Edit\",\"input\":{\"file_path\":\"/\\u00e9\\ud83d\\ude00.ts\"}}]}}}\n",
+        "expect": "{\"offset\":402,\"edited\":[\"/n.ipynb\",\"/é😀.ts\"],\"runEntries\":[{\"run\":1,\"at\":\"2026-11-17T00:00:00.000Z\",\"event\":{\"type\":\"assistant\"}}],\"sessionTotals\":[],\"lastRun\":1}"
+      }
+    ],
+    "readSideSpend": [
+      {
+        "ledger": "",
+        "expect": "{\"costUsd\":0,\"days\":{},\"calls\":{}}"
+      },
+      {
+        "ledger": "{\"at\":\"2026-11-17T12:00:00.000Z\",\"kind\":\"simplify\",\"costUsd\":0.002}\n{\"at\":\"2026-11-17T12:30:00.000Z\",\"kind\":\"explain\",\"costUsd\":0.003}\n\n{\"at\":\"2026-11-16T12:00:00.000Z\",\"kind\":\"x\",\"costUsd\":0.1}\nnot json\n{\"at\":\"bad date\",\"costUsd\":0.5}\n{\"costUsd\":1}\n{\"at\":\"2026-11-16T12:00:00.000Z\",\"costUsd\":0}\n{\"at\":\"2026-11-16T12:00:00.000Z\",\"costUsd\":\"0.4\"}\nnull\n",
+        "expect": "{\"costUsd\":1.605,\"days\":{\"2026-11-17\":0.005,\"2026-11-16\":0.1,\"\":1.5},\"calls\":{\"2026-11-17\":2,\"2026-11-16\":1,\"\":2}}"
+      }
+    ]
+  }
+}
