@@ -12,11 +12,10 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use bytes::Bytes;
 use ckanban_core::{DataDir, SpendIndex, UsageCache, UsageClient};
-use http_body_util::{BodyExt, Full};
+use http_body_util::BodyExt;
 use hyper::body::Incoming;
-use hyper::header::{CONTENT_TYPE, HOST, HeaderMap, HeaderValue, ORIGIN};
+use hyper::header::{CONTENT_TYPE, HOST, HeaderMap, ORIGIN};
 use hyper::{Method, Request, Response, StatusCode};
 
 use crate::agents::Agents;
@@ -83,12 +82,12 @@ impl Native {
         }
         Ok(match route {
             // Waits for Anthropic only inside this request's own task: other requests (and the proxy) go on.
-            Route::Usage { fresh } => json(StatusCode::OK, &self.usage.get(fresh).await),
+            Route::Usage { fresh } => passes::json_answer(StatusCode::OK, &self.usage.get(fresh).await, &passes::current_secrets(&self.root)),
             Route::Spend => match self.spend.recent().await {
-                Ok(s) => json(StatusCode::OK, &s.to_json()),
+                Ok(s) => passes::json_answer(StatusCode::OK, &s.to_json(), &passes::current_secrets(&self.root)),
                 Err(e) => {
                     eprintln!("ckanban-rs: GET /api/spend: {e}");
-                    json(StatusCode::INTERNAL_SERVER_ERROR, &serde_json::json!({ "error": e.to_string() }))
+                    passes::json_answer(StatusCode::INTERNAL_SERVER_ERROR, &serde_json::json!({ "error": e.to_string() }), &passes::current_secrets(&self.root))
                 }
             },
             Route::Passes(r) => match self.passes.answer(r, req, peer.port()).await {
@@ -181,17 +180,11 @@ fn form_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn json(status: StatusCode, v: &serde_json::Value) -> Response<Body> {
-    let text = serde_json::to_string(v).unwrap_or_else(|_| "null".into());
-    let mut r = Response::new(Full::new(Bytes::from(text)).map_err(|never| match never {}).boxed());
-    *r.status_mut() = status;
-    r.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    r
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hyper::header::HeaderValue;
 
     fn h(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
         let mut m = HeaderMap::new();

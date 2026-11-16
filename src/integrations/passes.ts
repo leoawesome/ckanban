@@ -166,9 +166,11 @@ export class Passes {
     }
   }
 
-  private save(p: Pass) {
+  /** check: runs on the file as read under the lock, before p is saved (throws to save nothing). */
+  private save(p: Pass, check?: (passes: Pass[]) => void) {
     this.locked(() => {
       const f = this.read();
+      check?.(f.passes);
       const i = f.passes.findIndex((x) => x.id === p.id);
       if (i < 0) f.passes.push(p);
       else f.passes[i] = p;
@@ -252,10 +254,13 @@ export class Passes {
         if (!ENV_NAME.test(envName) || RESERVED_ENV.has(envName)) throw new PassError(400, `"${envName}" can't be used as the key's name for scripts: use capital letters, digits and _`);
         const bad = board ? keyNameError(envName) : null;
         if (bad) throw new PassError(400, bad);
-        if (this.list().some((x) => x.envName === envName && (x.board ?? null) === (board ?? null))) throw new PassError(409, `A key named ${envName} already exists: replace that one instead`);
       }
       const p: Pass = { ...base, kind: "key", name, ...(url ? { url } : {}), ...(envName ? { envName } : {}), ...(board ? { board } : {}), secret, status: "connected" };
-      this.save(p);
+      // The name check reads the file under the save's lock: a key of the same name saved by the Rust front server
+      // in between can't make two rows.
+      this.save(p, (all) => {
+        if (envName && all.some((x) => x.envName === envName && (x.board ?? null) === (board ?? null))) throw new PassError(409, `A key named ${envName} already exists: replace that one instead`);
+      });
       return p;
     }
     throw new PassError(400, 'kind must be "mcp", "key" or "local"');

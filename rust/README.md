@@ -39,8 +39,8 @@ as Bun would: a body or passes file only JavaScript can parse, a field of an une
 would cut in the middle of a character. The user-only check is Bun's (`userOnly` with `fromUserBrowser`): no
 `x-ckanban-run` or `x-ckanban-huddle-agent`, an Origin, and every process on the caller's end of the connection is a
 browser this server didn't start (not a descendant of `ckanban-rs`, so not the Bun child or any board run) and not one
-driven by a program. Every JSON answer of these routes goes through Bun's `maskSavedJson` (`src/mask.rs`). A body over
-1 MB gets 413 (Bun accepts up to 128 MB).
+driven by a program. Every JSON answer of these routes goes through Bun's `maskSavedJson` (`src/mask.rs`). A body declared
+over 1 MB goes to Bun unread; one over 1 MB sent without a length gets 413 (Bun accepts up to 128 MB).
 
 Still on Bun, and why: `/api/mcp/*` (Bun keeps the servers' state, background checks and sign-in terminals in memory),
 `POST /api/agents/*/install|uninstall` (refreshes that in-memory list), `/api/remote` (phone access: Tailscale state
@@ -56,8 +56,7 @@ plain-text 403 `forbidden`). The phone access port stays on Bun, so phone reques
 on Anthropic happens in that request's own task, so other requests through the proxy never wait for it; spend is
 counted on a blocking-pool thread.
 
-Usage and spend answers hold only fixed texts, numbers, board slugs and board names, so Rust doesn't mask them; the
-pass and agent answers are masked like Bun's.
+Every JSON answer Rust makes (usage, spend, passes, agents, errors) is masked like Bun's.
 
 ### Files shared with Bun
 

@@ -131,7 +131,8 @@ pub fn read_codex_server(toml: &str) -> Option<Vec<String>> {
             _ => {}
         }
     }
-    let mut argv = vec![command?];
+    // `command ? [...] : null`: an empty command counts as none.
+    let mut argv = vec![command.filter(|c| !c.is_empty())?];
     argv.extend(args);
     Some(argv)
 }

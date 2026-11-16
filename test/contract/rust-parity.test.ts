@@ -7,7 +7,7 @@
 // Both daemons keep running through the scenarios: each step rewrites usage-last.json (both sides read it again when
 // it changes) and the fake's reply, so the one-minute gap between checks doesn't need a new daemon per step.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { appendFileSync, closeSync, constants, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, constants, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BUN_DAEMON_CMD, commandFromEnv, type Daemon, startDaemon } from "./daemon";
@@ -481,6 +481,19 @@ describe.skipIf(!enabled)("Rust and Bun give the same passes and keys answers", 
     closeSync(lock);
     expect((await pending).status).toBe(200);
   }, 30_000);
+
+  test("Rust and its Bun child add keys to the same file at once: none lost, none half-written", async () => {
+    // POST /api/passes/ (trailing slash) is Bun's: both writers change automation-passes.json under its lock.
+    const N = 15;
+    const add = (i: number, side: "rs" | "bun") =>
+      asBrowser(rs, "POST", side === "rs" ? "/api/passes" : "/api/passes/", { kind: "key", name: `${side} ${i}`, envName: `RACE_${side.toUpperCase()}_${i}`, secret: `race-secret-${side}-${i}` });
+    const answers = await Promise.all(Array.from({ length: N }, (_, i) => [add(i, "rs"), add(i, "bun")]).flat());
+    expect(new Set(answers.map((a) => a.status))).toEqual(new Set([201]));
+    const saved = JSON.parse(readFileSync(join(rs.home, "automation-passes.json"), "utf8")).passes.map((p: any) => p.envName);
+    for (let i = 0; i < N; i++) for (const side of ["RS", "BUN"]) expect(saved).toContain(`RACE_${side}_${i}`);
+    expect(readdirSync(rs.home).filter((n) => n.includes(".tmp-"))).toEqual([]);
+    expect(statSync(join(rs.home, "automation-passes.json")).mode & 0o777).toBe(0o600);
+  }, 120_000);
 
   test("GET /api/agents: the same, with nothing registered and with ckanban registered in Claude Code and Codex", async () => {
     /** Each side's own temp folders, named the same. */

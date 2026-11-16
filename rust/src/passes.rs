@@ -36,7 +36,8 @@ use crate::mask;
 use crate::proxy::Body;
 
 pub const PASSES_FILE: &str = "automation-passes.json";
-/// Bodies larger than this go to Bun as they are (a pass is a few hundred bytes).
+/// Bodies declared larger than this go to Bun unread (a pass is a few hundred bytes); a larger one sent without a
+/// length gets 413.
 const BODY_LIMIT: usize = 1 << 20;
 
 /// Called after Rust changed the passes file: Bun hears of it and tells the UI.
@@ -330,12 +331,26 @@ impl Passes {
             return Outcome::Answer(error(StatusCode::FORBIDDEN, guard::refusal(what), &self.secrets()));
         }
         let wants_body = req.method() != Method::DELETE;
+        // A body declared bigger than Rust reads goes to Bun unread (Bun takes up to 128 MB).
+        let declared = req.headers().get(hyper::header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|s| s.parse::<u64>().ok());
+        if wants_body && declared.is_some_and(|n| n > BODY_LIMIT as u64) {
+            return Outcome::Bun(req);
+        }
         let (parts, body) = req.into_parts();
-        let bytes = match Limited::new(body, BODY_LIMIT).collect().await {
-            Ok(b) => b.to_bytes(),
-            Err(_) => return Outcome::Answer(error(StatusCode::PAYLOAD_TOO_LARGE, "request body too large", &self.secrets())),
+        // DELETE: Bun never reads its body, so neither does Rust; it goes on untouched if Bun must answer.
+        let (bytes, unread) = if wants_body {
+            match Limited::new(body, BODY_LIMIT).collect().await {
+                Ok(b) => (b.to_bytes(), None),
+                // Only a body sent without a length can get here (chunked, over 1 MB): Bun would take it.
+                Err(_) => return Outcome::Answer(error(StatusCode::PAYLOAD_TOO_LARGE, "request body too large", &self.secrets())),
+            }
+        } else {
+            (Bytes::new(), Some(body))
         };
-        let again = |bytes: Bytes| Request::from_parts(parts, Full::new(bytes).map_err(|never| match never {}).boxed());
+        let again = move |bytes: Bytes| match unread {
+            Some(body) => Request::from_parts(parts, body),
+            None => Request::from_parts(parts, Full::new(bytes).map_err(|never| match never {}).boxed()),
+        };
         let parsed = if wants_body {
             match serde_json::from_slice::<Value>(&bytes) {
                 Ok(v) => Some(ckanban_core::jsnum::normalize(v)),
@@ -435,6 +450,8 @@ impl Passes {
         // The route's board check comes first.
         let board = match b.get("board") {
             None | Some(Value::Null) => None,
+            // path.join and PathBuf::join differ on "/x" and "..": Bun decides those.
+            Some(Value::String(s)) if s.starts_with('/') || s.contains("..") => return Change::Bun,
             Some(Value::String(s)) if self.dir.profile(s).is_some() => Some(s.clone()),
             Some(_) => return Change::Refused(Refused(StatusCode::BAD_REQUEST, "That board doesn't exist".into())),
         };
