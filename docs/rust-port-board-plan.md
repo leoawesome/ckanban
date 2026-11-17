@@ -338,7 +338,8 @@ wave 1 landed, shadow mode running on the real board. The flip itself is likely 
   `tools`, bug reports, artifact publishing. Removes the satellite. Done 17 Nov (`rust/src/outside/`, see
   `rust/README.md`): the satellite keeps only the helper's routes, the front desk gate and Telegram's turn end (P1);
   publishing runs `ckanban artifact publish-output` until P3 ports that helper.
-- **P3 the last Bun commands:** `browser-mcp`, `artifact`, `remote`, `update`; the last 13 MCP tools in `ON_BUN`.
+- **P3 the last Bun commands:** `browser-mcp`, `artifact`, `remote`, `update`; the last 13 MCP tools in `ON_BUN`. Done
+  17 Nov: the CLI and `ckanban-rs mcp` never start Bun; `update` answers as from source until P4 ports the release download.
 - **P4 Bun gone:** the release binary built from Rust (with the web UI embedded), the installer and `ckanban update`
   on it, Bun's server code deleted, the contract tests kept as the only tests of the outside behaviour.
 

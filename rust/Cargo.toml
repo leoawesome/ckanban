@@ -31,6 +31,8 @@ parking_lot = "0.12"
 base64 = "0.23"
 percent-encoding = "2"
 futures-util = "0.3"
+# P3, `ckanban artifact publish-output`: a Markdown output made into a page (GitHub-flavoured, as Bun.markdown).
+comrak = { version = "1", default-features = false }
 
 [workspace]
 # One Cargo.lock, one toolchain pin (rust-toolchain.toml) and one target/ for the server and its libraries.

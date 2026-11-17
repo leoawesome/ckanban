@@ -118,7 +118,10 @@ pub struct CdpError(pub String);
 type Socket = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>;
 
 async fn connect(url: &str, timeout: Duration) -> Result<Socket, CdpError> {
-    match tokio::time::timeout(timeout, tokio_tungstenite::connect_async(url)).await {
+    // Chrome sends each answer as one frame: a full-page screenshot or a big evaluate result can pass tungstenite's
+    // 16 MiB frame limit, which would drop the socket (and the run's page). Bun's WebSocket has no such limit.
+    let config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default().max_frame_size(None).max_message_size(Some(512 << 20));
+    match tokio::time::timeout(timeout, tokio_tungstenite::connect_async_with_config(url, Some(config), false)).await {
         Err(_) => Err(CdpError("the browser didn't answer in time".into())),
         Ok(Err(_)) => Err(CdpError("couldn't connect to the browser".into())),
         Ok(Ok((ws, _))) => Ok(ws),
@@ -194,6 +197,105 @@ pub async fn evaluate_in_page(port: u16, target: &str, expression: &str, timeout
         return None;
     }
     r.get("result").and_then(|x| x.get("value")).cloned().filter(|v| !v.is_null())
+}
+
+/// An event from the browser: method, params and the page session it came from.
+pub type CdpEvent = (String, Value, Option<String>);
+
+type Waiters = std::sync::Mutex<std::collections::HashMap<u64, tokio::sync::oneshot::Sender<Result<Value, CdpError>>>>;
+
+/// One WebSocket to the browser kept open (`Cdp` of cdp.ts): page sessions go over it too (`Target.attachToTarget`
+/// with flatten). Calls may overlap; events come out of the receiver `connect` hands back.
+pub struct Cdp {
+    out: tokio::sync::mpsc::UnboundedSender<Message>,
+    pending: std::sync::Arc<Waiters>,
+    next: std::sync::atomic::AtomicU64,
+    closed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Cdp {
+    /// `Cdp.connect(port, path)`: the browser's own WebSocket on 127.0.0.1, within 5 seconds.
+    pub async fn connect(port: u16, path: &str) -> Result<(std::sync::Arc<Cdp>, tokio::sync::mpsc::UnboundedReceiver<CdpEvent>), CdpError> {
+        use std::sync::atomic::Ordering;
+        let ws = connect(&format!("ws://127.0.0.1:{port}{path}"), Duration::from_secs(5)).await?;
+        let (mut sink, mut stream) = ws.split();
+        let (out, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (ev_tx, ev_rx) = tokio::sync::mpsc::unbounded_channel::<CdpEvent>();
+        let pending: std::sync::Arc<Waiters> = Default::default();
+        let closed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        tokio::spawn(async move {
+            while let Some(m) = out_rx.recv().await {
+                let close = matches!(m, Message::Close(_));
+                if sink.send(m).await.is_err() || close {
+                    break;
+                }
+            }
+            let _ = sink.close().await;
+        });
+        let (p, c) = (pending.clone(), closed.clone());
+        tokio::spawn(async move {
+            while let Some(Ok(m)) = stream.next().await {
+                let Message::Text(t) = m else {
+                    if matches!(m, Message::Close(_)) {
+                        break;
+                    }
+                    continue;
+                };
+                let Ok(v) = serde_json::from_str::<Value>(&t) else { continue };
+                if let Some(id) = v.get("id").and_then(Value::as_u64) {
+                    let Some(w) = p.lock().expect("pending").remove(&id) else { continue };
+                    let r = match v.get("error") {
+                        Some(e) => Err(CdpError(e.get("message").map(crate::browsers::js::string).unwrap_or_else(|| "browser error".into()))),
+                        None => Ok(v.get("result").cloned().unwrap_or(json!({}))),
+                    };
+                    let _ = w.send(r);
+                } else if let Some(method) = v.get("method").and_then(Value::as_str) {
+                    let session = v.get("sessionId").and_then(Value::as_str).map(String::from);
+                    let _ = ev_tx.send((method.to_string(), v.get("params").cloned().unwrap_or(Value::Null), session));
+                }
+            }
+            c.store(true, Ordering::SeqCst);
+            for (_, w) in p.lock().expect("pending").drain() {
+                let _ = w.send(Err(CdpError("the browser closed the connection".into())));
+            }
+        });
+        Ok((std::sync::Arc::new(Cdp { out, pending, next: std::sync::atomic::AtomicU64::new(1), closed }), ev_rx))
+    }
+
+    pub fn closed(&self) -> bool {
+        self.closed.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// `send(method, params, sessionId, timeoutMs)`.
+    pub async fn send(&self, method: &str, params: Value, session: Option<&str>, timeout: Duration) -> Result<Value, CdpError> {
+        if self.closed() {
+            return Err(CdpError("the browser connection is closed".into()));
+        }
+        let id = self.next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let mut msg = json!({ "id": id, "method": method, "params": params });
+        if let Some(s) = session {
+            msg["sessionId"] = json!(s);
+        }
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.pending.lock().expect("pending").insert(id, tx);
+        if self.out.send(Message::text(msg.to_string())).is_err() {
+            self.pending.lock().expect("pending").remove(&id);
+            return Err(CdpError("the browser closed the connection".into()));
+        }
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(r)) => r,
+            Ok(Err(_)) => Err(CdpError("the browser closed the connection".into())),
+            Err(_) => {
+                self.pending.lock().expect("pending").remove(&id);
+                Err(CdpError(format!("the browser didn't answer {method} in time")))
+            }
+        }
+    }
+
+    pub fn close(&self) {
+        self.closed.store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = self.out.send(Message::Close(None));
+    }
 }
 
 #[cfg(test)]

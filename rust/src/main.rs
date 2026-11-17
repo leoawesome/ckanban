@@ -8,6 +8,7 @@
 //! launchd and `ckanban restart` work as with Bun alone. SIGTERM/SIGINT stop the child first.
 
 mod agents;
+mod artifact;
 mod board_mode;
 mod cli;
 mod guard;

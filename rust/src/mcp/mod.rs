@@ -3,16 +3,16 @@
 //! (tools.json, generated from Bun's TOOLS by scripts/mcp-tools-json.ts), and the same answers and refusals: the tools
 //! call the daemon over HTTP (client.rs) and build the same texts.
 //!
-//! Most tools are ported (one file per group, as in src/mcp/). The ones in `ON_BUN` still run on Bun: their calls go
-//! to a `bun src/cli.ts mcp` child (bun.rs), because their checks live in Bun modules not ported yet (roster, squad,
-//! teammate and automation checks, key boxes, file backups, the artifact helper, helper lines).
+//! Every tool runs here (one file per group, as in src/mcp/); none starts Bun.
 
-mod bun;
+mod artifact;
 mod client;
 mod family;
 mod forms;
 mod huddles;
 mod js;
+mod keys;
+mod proposals;
 mod schedules;
 mod text;
 mod tickets;
@@ -59,23 +59,6 @@ a quick chat can't delete schedules (the user does it in the Schedules window), 
 ask_questions, propose_ticket, propose_branch, propose_teammate and propose_squad are for the board's ticket chats: they show a form or cards to the user. \
 propose_helper_rule suggests a line for what the helper knows about the user, only when the user asked for that alert rule in a message they typed; the user's Add on its card saves it.";
 
-/// Tools whose calls still go to Bun, and why (the Bun modules they need aren't ported yet).
-pub const ON_BUN: [&str; 13] = [
-    "ask_keys",               // keysAsk (src/integrations/ask-keys.ts)
-    "backup_file",            // backupFile: copies and prunes files in the data folder (src/integrations/file-backup.ts)
-    "propose_teammate",       // teammateProposal (src/huddle/teammate-proposal.ts)
-    "propose_squad",          // squadProposal (src/huddle/squad.ts)
-    "propose_automation",     // automationProposal (src/schedules/automation-proposal.ts)
-    "propose_huddle",         // rosterError, proposedBudget, topicInput (src/huddle/huddle-roster.ts, huddle-templates.ts)
-    "start_huddle",           // rosterError, topicInput
-    "huddle_add_participant", // rosterEntryError
-    "list_huddle_presets",    // presetLine, templateLine
-    "save_huddle_preset",     // presetLine
-    "read_artifact",          // runArtifactJob: drives claude for claude.ai artifacts (src/runs/artifact.ts)
-    "publish_artifact",       // runArtifactJob
-    "propose_helper_rule",    // helperLineText, suggestedLineError (src/helper/line.ts)
-];
-
 /// This process's environment; `get` gives only set, non-empty values (JS truthiness of `env[X]`).
 pub struct Env(HashMap<String, String>);
 
@@ -93,7 +76,6 @@ pub struct Ctx {
     pub client: Client,
     pub cwd: PathBuf,
     pub env: Env,
-    bun: bun::Bun,
 }
 
 #[derive(serde::Deserialize, Clone, Copy)]
@@ -145,7 +127,7 @@ async fn serve() {
     let config = std::fs::read_to_string(root.join("config.json")).ok();
     let port = crate::settings::board_port(env.get("CKANBAN_PORT"), config.as_deref());
     let cwd = std::env::current_dir().unwrap_or_default();
-    let ctx = Arc::new(Ctx { client: Client::new(port, &env), bun: bun::Bun::new(cwd.clone()), cwd, env });
+    let ctx = Arc::new(Ctx { client: Client::new(port, &env), cwd, env });
     let out = Arc::new(Mutex::new(tokio::io::stdout()));
     let mut stdin = tokio::io::stdin();
     let mut buf: Vec<u8> = vec![];
@@ -258,12 +240,6 @@ async fn call_tool(name: &str, args: Option<&Value>, ctx: &Ctx) -> String {
     let Some(f) = flags().get(name).copied() else {
         return result_text(&format!("unknown tool {name}"), true);
     };
-    if ON_BUN.contains(&name) {
-        return match ctx.bun.call(name, args).await {
-            Ok(r) => r.to_string(),
-            Err(e) => result_text(&e, true),
-        };
-    }
     let empty = Value::Object(Default::default());
     let args = match args {
         None | Some(Value::Null) => &empty,
@@ -285,6 +261,9 @@ async fn call_tool(name: &str, args: Option<&Value>, ctx: &Ctx) -> String {
 }
 
 async fn run_tool(name: &str, a: &Value, cx: &Ctx) -> R<String> {
+    if let Some(r) = artifact::run(name, a, cx).await {
+        return r;
+    }
     if let Some(r) = tickets::run(name, a, cx).await {
         return r;
     }
@@ -301,6 +280,12 @@ async fn run_tool(name: &str, a: &Value, cx: &Ctx) -> R<String> {
         return r;
     }
     if let Some(r) = schedules::run(name, a, cx).await {
+        return r;
+    }
+    if let Some(r) = keys::run(name, a, cx).await {
+        return r;
+    }
+    if let Some(r) = proposals::run(name, a, cx).await {
         return r;
     }
     err(format!("unknown tool {name}"))
@@ -522,9 +507,6 @@ mod tests {
         assert_eq!(flags().len(), 69);
         for t in &list {
             assert!(flags().contains_key(t["name"].as_str().unwrap()));
-        }
-        for n in ON_BUN {
-            assert!(flags().contains_key(n), "{n}");
         }
     }
 
