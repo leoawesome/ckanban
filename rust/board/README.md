@@ -518,6 +518,39 @@ and `chats.ts`. Drafts, fresh chat and session, take-over and link-session came 
   10,000-ticket bench in board mode (the satellite runs from the bench's copy of the code).
 - Results and the differences found: `docs/rust-port.md`, "The Rust board: ready to switch?".
 
+## The helper (P1a, `src/helper/`)
+
+What waits on the user and how they hear of it, ported from `src/helper/` (`runner*.ts`, `core.ts`, `decide.ts`,
+`waits.ts`, `messages.ts`, `settings.ts`, `summary.ts`, the watching half of `notify.ts` and its `message`). In board
+mode Rust owns `waits.json`, `messages.json`, `helper-state.json` and `helper.json`, and is the only writer of
+`notify.json`; every file is written in Bun's bytes, so a switch back to Bun reads them as its own.
+- `watch.rs`: the stock-take at start (after the index is loaded, on a blocking thread; no session read for Done or
+  Backlog tickets), then bus events mark tickets and a 1-second tick looks at them (`TransitionTracker`, a main
+  ticket's steps' questions); notify_user (`POST .../tickets/:id/notify`); the logged-out alert of a board browser.
+- `core.rs` (`HelperCore`): routing (helper on: to the runner; off or failing: sent directly), start-up reconcile,
+  closes, opens, the 5-minute fallback, the 4-hour digest, usage limits merged, night holds, `switched`. The stores
+  sit behind one lock taken per step and never across a send, Bun's interleaving.
+- `runner.rs` (`HelperRunner`): wakes (a side call with the decision schema), `decide.rs`'s checks, urgent alerts and
+  their reminder steps along a channel chain, summaries and the 3-hour gap, held items, failures with backoff and the
+  pause message, the hello, the night question and the morning ask, the practice alert, taps, `wantsAwake` (in the
+  board's keep-awake), status.
+- `routes.rs`: `/api/messages...` and `/api/helper...` (answered by Rust), a ticket's `POST .../notify`. The
+  ticket's `seen` route stops its reminders (`Writes::set_opened`).
+- Still in the satellite until P1b and P1c: sending (`channels.rs` asks it `helper-send` with the channels worked out
+  here; it answers each channel's result, which Rust records), `/api/notify...` (settings, test, Telegram pairing),
+  `/api/push...`, Telegram and the front desk. What only it knows comes from `helper-facts` (the board on screen,
+  phone push devices, a connection). It reads the helper's files (again when they change) and sends its writes
+  here: `helper-action` (Telegram's Got it, Not urgent, night answer, /waiting), `notify-write` (notify.json as it
+  worked it out; Rust writes it and switches the helper when its on/off changed), `wait-seen` (the front desk's
+  `seenInChatAt`), `helper-send-message` (the Settings test). Rust tells it of closed waits (`waits-closed <json>` on
+  its stdin) so Telegram alerts say so.
+- Checked against Bun: `tests/fixtures/helper.json` (about 3,400 cases of the pure rules and two store scripts, in
+  America/Los_Angeles; `test/rust-board-helper-fixtures.test.ts`) and `tests/fixtures/helper_runner.json` (six
+  scenarios replayed step by step with a fixed clock, fake channels and fake answers; every step's files must be
+  Bun's bytes; `test/rust-board-helper-runner-fixtures.test.ts`). `UPDATE_RUST_FIXTURES=1` rewrites them. Known gap:
+  a cut through an emoji keeps half of it in Bun and drops it in Rust (as R3 and R5). The helper's input to the model
+  writes local times without the zone's long name ("GMT-0800" only); only the model reads them.
+
 ## P2: the Share menu's Publish (`src/git/publish.rs`)
 
 `startPublish` of `src/api/context.ts`: an output file published as a claude.ai page in the background, its job in

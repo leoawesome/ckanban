@@ -44,7 +44,7 @@ import { WEB_ASSETS } from "../api/web-assets.gen";
 import { detectMissing } from "../runs/worktree-setup";
 import { onFrontNotice, readFront, setFront, setNoticeLimit } from "../core/front";
 import { isSatellite, RuntimeMirror, satelliteNotice } from "../core/satellite";
-import { rustComment, rustReplay, rustTelegramBoard } from "../core/satellite-edge";
+import { rustComment, rustHelperEdge, rustReplay, rustTelegramBoard } from "../core/satellite-edge";
 import { takeBoardLock } from "../core/board-lock";
 import { sweepTempFiles, trimDaemonLog } from "../core/housekeeping";
 
@@ -107,6 +107,14 @@ export async function startDaemon(): Promise<void> {
   onFrontNotice((line) => {
     if (line === `changed ${PASSES_FILE}`) bus.emit({ type: "integration.updated" });
     else if (satellite && line.startsWith("remote-visit ")) phoneRemote?.noteVisit(line.slice("remote-visit ".length));
+    // P1a: waits the Rust helper closed: their Telegram alerts say so and lose their buttons.
+    else if (satellite && line.startsWith("waits-closed ")) {
+      try {
+        void notifier.frontDesk.closed(JSON.parse(line.slice("waits-closed ".length))).catch((e) => console.error("telegram: closed alert", e));
+      } catch (e) {
+        console.error(`satellite: bad waits-closed line: ${(e as Error).message}`);
+      }
+    }
     else if (satellite) satelliteNotice(line, bus, mirror);
   });
   // Satellite mode: session-summaries.json belongs to the Rust board; this cache only reads transcripts when asked.
@@ -128,6 +136,8 @@ export async function startDaemon(): Promise<void> {
   // Links in notifications open the ticket on the phone when phone access is on (remote.json), else on this Mac.
   const remoteConfig = new RemoteAccess(store.root, () => 0);
   const push = new PushService(store.root);
+  // Satellite mode: the Rust board runs the helper and owns its files (P1a); Telegram's taps and settings writes go there.
+  const helperEdge = satellite && front ? rustHelperEdge(front) : undefined;
   const notifier: Notifier = new Notifier(store, bus, {
     root: store.root, push,
     ...(satellite ? {
@@ -143,6 +153,7 @@ export async function startDaemon(): Promise<void> {
     },
     // Satellite mode: the notifier's comments are written by the Rust board (core/satellite-edge.ts).
     ...(satellite && front ? { addComment: rustComment(front) } : {}),
+    ...(helperEdge ? { helperEdge } : {}),
   });
   notifier.plugBoard(satellite && front ? rustTelegramBoard(front) : board);
   // A board browser seen logged out (its sign-in check): tell the user at once, naming the boards that use it.
@@ -177,7 +188,8 @@ export async function startDaemon(): Promise<void> {
   // launchd (KeepAlive) starts the daemon again once it exits.
   const restart = () => board.requestRestart(() => void shutdown());
   // The helper (helper/runner.ts): plugged into the notifier before notifier.start, so start-up waits go to it.
-  const helper = new HelperRunner({
+  // Satellite mode: the helper runs in the Rust board (P1a); this daemon has none (its routes are Rust's).
+  const helper = satellite ? null : new HelperRunner({
     root: store.root, store, core: notifier.helper, notifySettings: () => notifier.settings(), sideCall,
     link: (slug, id) => notifier.link(slug, id), messageLink: (id) => notifier.messageLink(id),
     snoozedUntil: (slug, id) => {
@@ -196,7 +208,7 @@ export async function startDaemon(): Promise<void> {
   });
   // Runs keep the Mac awake on boards with "Keep this Mac awake" on; the helper's urgent items and due times on any board.
   const awake = new StayAwake({
-    wanted: () => board.busyBoards().some((slug) => keepAwakeOn(store.getProfile(slug))) || helper.wantsAwake(),
+    wanted: () => board.busyBoards().some((slug) => keepAwakeOn(store.getProfile(slug))) || !!helper?.wantsAwake(),
     onChange: (held) => bus.emit({ type: "awake.updated", held }),
   });
   const remotePort = remoteListenPort(port, config.remotePort);
@@ -206,7 +218,7 @@ export async function startDaemon(): Promise<void> {
   const phone = (phoneRemote = new RemoteAccess(store.root, () => (satellite ? remotePort : (server.remoteServer?.port ?? 0))));
   const server = createServer({ store, bus, board, port: listenPort, remotePort: satellite ? undefined : remotePort, webDir,
     remote: phone,
-    ...(edge && front ? { satellite: { replay: rustReplay(front) } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, helper });
+    ...(edge && front ? { satellite: { replay: rustReplay(front), mcpConnected: () => mirror.mcpConnected() } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, ...(helper ? { helper } : {}) });
   console.log(`ckanban v${VERSION} listening on http://localhost:${front ? port : server.port} (data: ${store.root})${front ? ` behind the front server (internal port ${server.port})` : ""}${satellite ? " as the Rust board's satellite" : ""}`);
   // Running from source (developing ckanban): a freeze of seconds raises a Mac banner naming what ran. Installed
   // copies only log it; their users can't act on it.
@@ -269,7 +281,7 @@ export async function startDaemon(): Promise<void> {
   const stopMcp = full ? mcp.start() : off;
   // After recover(): what already waits when the daemon starts doesn't notify again.
   const stopNotifier = notifier.start();
-  const stopHelper = helper.start();
+  const stopHelper = helper ? helper.start() : () => {};
   const stopAwake = awake.start();
   // Phone access on: Tailscale's link to the board is checked and put back when something removed it.
   const stopServeWatch = full ? watchServe(phone) : off;

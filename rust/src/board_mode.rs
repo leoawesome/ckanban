@@ -136,7 +136,20 @@ pub struct BoardMode {
     publish_run: Arc<OnceLock<ckanban_board::git::publish::PublishRun>>,
     /// Lines to the satellite's stdin, once it runs (`connect_satellite`).
     tell: OnceLock<tokio::sync::mpsc::UnboundedSender<String>>,
+    /// P1a: the helper (what waits on the user, its messages and decisions); the satellite still sends.
+    pub helper: Arc<ckanban_board::helper::Helper>,
+    /// The satellite's stdin for the helper's notices (waits closed): kept until it runs, then sent.
+    helper_tell: Arc<Mutex<HelperTell>>,
+    /// True once the satellite runs: the helper's sends wait for it.
+    satellite_ready: Arc<tokio::sync::watch::Sender<bool>>,
     _lock: BoardLock,
+}
+
+/// The satellite's stdin as the helper uses it: the lines from before it ran, then the sender.
+#[derive(Default)]
+struct HelperTell {
+    tell: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    early: Vec<String>,
 }
 
 /// Board mode for this start, or None: Bun runs the whole board (off, or a fallback, already logged and recorded).
@@ -278,6 +291,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         port: public_port,
     });
     runs.set_schedules(schedules.clone());
+    let helper_runner: Arc<OnceLock<Arc<ckanban_board::helper::runner::HelperRunner>>> = Arc::new(OnceLock::new());
     core.tickets.set_hooks(Arc::new(Wired {
         git: Some(landing.clone()),
         families: Some(families.clone()),
@@ -286,6 +300,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         root: root.to_path_buf(),
         runs: Some(Arc::new(RunHooks { runs: runs.clone() })),
         schedules: Some(schedules.clone()),
+        helper: helper_runner.clone(),
     }));
     // R11c: what runs for a huddle (helpers' runs, ticket sessions' replies, auto huddles, the session viewer), set
     // before recover() so helpers cut off by the last stop carry on.
@@ -368,7 +383,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     // Then the huddles' (Bun's order): helpers cut off carry on, wakes owed are delivered, the auto-huddle slot.
     let h = huddles.clone();
     let _ = tokio::task::spawn_blocking(move || h.op(|h| h.recover())).await;
-    let awake = start_run_timers(&core, &runs, ops.clone(), root);
+    let awake = start_run_timers(&core, &runs, ops.clone(), root, helper_runner.clone());
     // The worktree sweep, after recover() like Bun's (which starts it once recover has begun).
     git::sweep_after_recover(landing.clone());
     // After recover(): a missed run's ticket must not be mistaken for an interrupted one. Only this owner of the
@@ -401,6 +416,63 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
             });
         }
     }));
+    // P1a: the helper. It owns waits.json, messages.json, helper-state.json and helper.json and is notify.json's only
+    // writer; the satellite still sends (push, ntfy, the Mac banner, Telegram) and runs Telegram and the front desk.
+    let helper_tell: Arc<Mutex<HelperTell>> = Arc::new(Mutex::new(HelperTell::default()));
+    let satellite_ready = Arc::new(tokio::sync::watch::channel(false).0);
+    let ht = helper_tell.clone();
+    let on_closed: ckanban_board::helper::waits::Closed = Arc::new(move |recs| {
+        let list: Vec<Value> = recs.into_iter().map(Value::Object).collect();
+        let line = format!("waits-closed {}\n", serde_json::to_string(&list).unwrap_or_default());
+        let mut t = ht.lock().unwrap_or_else(|e| e.into_inner());
+        match &t.tell {
+            Some(tell) => {
+                let _ = tell.send(line);
+            }
+            // Closed at start-up, before the satellite runs: sent once it does (`connect_satellite`).
+            None => t.early.push(line),
+        }
+    });
+    let helper = ckanban_board::helper::Helper::new(
+        root,
+        Arc::new(ckanban_board::helper::wired::BoardSide { tickets: core.tickets.clone(), reads: core.reads.clone(), sessions: sessions.clone(), root: root.to_path_buf(), port: public_port, remote: RemoteFile::new(root) }),
+        Arc::new(ckanban_board::helper::wired::SatelliteSender(Arc::new(SatelliteClient::new(internal_port, public_port, secret)), satellite_ready.subscribe())),
+        ckanban_board::extras::side_caller(),
+        core.bus.clone(),
+        Some(on_closed),
+    );
+    let _ = helper_runner.set(helper.runner.clone());
+    let (w, broot) = (helper.watch.clone(), root.to_path_buf());
+    browsers.board_browsers.set_on_logged_out(Arc::new(move |bid: &str, name: &str, site: Option<&str>| {
+        let (w, bid, name, site) = (w.clone(), bid.to_string(), name.to_string(), browsers::sign_in::site_name(site));
+        let root = broot.clone();
+        let using: Vec<(String, String)> = {
+            let dd = ckanban_core::DataDir::new(root);
+            let mut slugs = boards(&dd.root);
+            slugs.sort();
+            slugs
+                .into_iter()
+                .filter_map(|slug| dd.profile(&slug).map(|p| (slug, p.record.0)))
+                .filter(|(_, p)| browsers::chromes::own_picks(Some(&Value::Object(p.clone()))).unwrap_or_default().iter().any(|x| x.kind == "board" && x.id.as_deref() == Some(bid.as_str())))
+                .map(|(slug, p)| {
+                    let n = p.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).unwrap_or(&slug).to_string();
+                    (slug, n)
+                })
+                .collect()
+        };
+        tokio::spawn(async move {
+            let names: Vec<String> = using.iter().map(|(_, n)| n.clone()).collect();
+            let err = w.browser_logged_out(&name, &site, using.first().map(|(s, _)| s.as_str()), &names).await;
+            eprintln!("[browsers] {name} ({bid}): logged-out alert sent{}", if err.is_some() { " (one channel failed; see Settings, Notifications)" } else { "" });
+        });
+    }));
+    let index = core.index.clone();
+    let stop = helper.start(core.bus.clone(), ckanban_board::helper::Timing::default(), Arc::new(move || {
+        index.wait_loaded(Duration::from_secs(600));
+    }));
+    core.on_stop("helper", stop);
+    let hc = helper.core.clone();
+    writes.set_opened(Arc::new(move |slug: &str, id: &str| hc.opened(slug, id)));
     let runs_for_actions = runs.clone();
     Some(Arc::new(BoardMode {
         core,
@@ -430,6 +502,9 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         updates: UpdateChecker::new(),
         versions: ModelVersions::new(Some(root.join("model-versions.json"))),
         tell: OnceLock::new(),
+        helper,
+        helper_tell,
+        satellite_ready,
         outside: OnceLock::new(),
         outside_sat,
         publish_run,
@@ -439,7 +514,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
 
 /// The run loop's timers (Bun's `startDaemon` after `recover()`): automatic continues after a usage limit, due
 /// follow-ups (`CKANBAN_TICK_MS` shortens their period for tests), the PR poller, keep-awake. Each stops with the core.
-fn start_run_timers(core: &Arc<Core>, runs: &Arc<RunLoop>, ops: Arc<TicketOps>, root: &Path) -> Arc<ckanban_board::runs::awake::StayAwake> {
+fn start_run_timers(core: &Arc<Core>, runs: &Arc<RunLoop>, ops: Arc<TicketOps>, root: &Path, helper: Arc<OnceLock<Arc<ckanban_board::helper::runner::HelperRunner>>>) -> Arc<ckanban_board::runs::awake::StayAwake> {
     let every = |name: &'static str, ms: u64, f: Arc<dyn Fn() + Send + Sync>| {
         let task = tokio::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_millis(ms.max(10)));
@@ -476,7 +551,7 @@ fn start_run_timers(core: &Arc<Core>, runs: &Arc<RunLoop>, ops: Arc<TicketOps>, 
             r.busy_boards().iter().any(|slug| {
                 let p = ckanban_core::DataDir::new(root2.clone()).profile(slug).map(|p| p.record.0);
                 p.and_then(|p| p.get("keepAwake").cloned()) != Some(Value::Bool(false))
-            })
+            }) || helper.get().is_some_and(|h| h.wants_awake())
         }),
         on_change: Some(Box::new(move |held| bus.emit_json(json!({ "type": "awake.updated", "held": held })))),
         platform: None,
@@ -1001,6 +1076,79 @@ impl BoardMode {
         })
     }
 
+    /// The helper's routes (P1a): `/api/messages...`, `/api/helper...`, a ticket's `POST .../notify`, after Bun's Host,
+    /// Origin, JSON type and front desk checks (as the schedules routes). Err gives the request back.
+    pub async fn answer_helper(&self, req: Request<Incoming>, peer: SocketAddr, via: Listener) -> Result<Response<Body>, Request<Incoming>> {
+        use ckanban_board::helper::routes as hr;
+        let Some(parts) = req.uri().path().strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
+        if !hr::claims(&parts) {
+            return Err(req);
+        }
+        let h = req.headers();
+        if wants_upgrade(h) {
+            return Ok(self.json(400, &json!({ "error": "not a WebSocket route" }), false));
+        }
+        let host_ok = joined(h, HOST.as_str()).is_some_and(|host| ["localhost", "127.0.0.1"].iter().any(|l| host == format!("{l}:{}", self.public_port)));
+        let mutation = req.method() != Method::GET && req.method() != Method::HEAD;
+        let origin_ok = match joined(h, ORIGIN.as_str()) {
+            None => true,
+            Some(o) if o.is_empty() => true,
+            Some(o) => ["localhost", "127.0.0.1"].iter().any(|l| o == format!("http://{l}:{}", self.public_port)),
+        };
+        if !host_ok || (mutation && !origin_ok) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        let method = req.method().as_str().to_string();
+        let desk = request::header_text(h, FRONT_DESK_HEADER);
+        let (run, huddle) = (request::header_text(h, RUN_HEADER).filter(|v| !v.is_empty()), request::has(h, HUDDLE_HEADER));
+        if desk.is_some() && (run.is_some() || huddle) {
+            return Ok(self.error(StatusCode::FORBIDDEN, "a board run can't also be the front desk"));
+        }
+        if matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT) {
+            let ctype = joined(h, CONTENT_TYPE.as_str()).unwrap_or_default();
+            if crate::js::trim(ctype.split(';').next().unwrap_or("")).to_lowercase() != "application/json" {
+                return Ok(self.json(415, &json!({ "error": "content-type must be application/json" }), false));
+            }
+        }
+        let headers = h.clone();
+        let query = req.uri().query().unwrap_or("").to_string();
+        let body: Bytes = if matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT | Method::DELETE) {
+            match Limited::new(req.into_body(), MAX_BODY).collect().await {
+                Ok(b) => b.to_bytes(),
+                Err(e) if e.is::<http_body_util::LengthLimitError>() => return Ok(self.json(413, &json!({ "error": "request body too large" }), false)),
+                Err(_) => return Ok(plain(StatusCode::BAD_REQUEST, "bad request")),
+            }
+        } else {
+            Bytes::new()
+        };
+        if let Some(desk) = desk {
+            let b = js::parse(&String::from_utf8_lossy(&body)).unwrap_or(Value::Null);
+            let ask = json!({ "desk": desk, "method": method, "path": format!("/api/{}", parts.join("/")), "body": b });
+            match self.core.services.satellite.frontdesk_gate(ask).await {
+                Ok(Some(held)) => {
+                    let status = held.get("status").and_then(Value::as_u64).and_then(|s| StatusCode::from_u16(s as u16).ok()).unwrap_or(StatusCode::OK);
+                    return Ok(self.json_at(status, held.get("body").unwrap_or(&Value::Null)));
+                }
+                Ok(None) => {}
+                Err(e) => return Ok(self.error(StatusCode::INTERNAL_SERVER_ERROR, &e)),
+            }
+        }
+        let (port, phone) = (peer.port(), via == Listener::Remote);
+        let user: hr::UserCheck = Arc::new(move |what: String| {
+            let headers = headers.clone();
+            Box::pin(async move {
+                let allowed = if phone { crate::guard::headers_allow(&headers) } else { crate::guard::user_only(&headers, port).await };
+                if allowed { Ok(()) } else { Err((403, crate::guard::refusal(&what))) }
+            })
+        });
+        let r = hr::Req { method, parts, query, run, huddle, body: body.to_vec(), user };
+        Ok(match hr::answer(&self.helper, &r).await {
+            Some(Ok(v)) => self.json(200, &v, true),
+            Some(Err((status, e))) => self.json(status, &json!({ "error": e }), false),
+            None => plain(StatusCode::NOT_FOUND, "not found"),
+        })
+    }
+
     /// A JSON answer as Bun writes it (`JSON.stringify`); a success is masked with the saved keys (`ctx.json`).
     fn json(&self, status: u16, v: &serde_json::Value, success: bool) -> Response<Body> {
         let text = ckanban_core::datafile::to_text(v, ckanban_core::datafile::Layout::Compact);
@@ -1178,6 +1326,10 @@ impl BoardMode {
         if let Some(res) = self.answer_sessions(&req).await {
             return res;
         }
+        let req = match self.answer_helper(req, peer, via).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
         let req = match self.answer_chats(req, peer.port(), via).await {
             Ok(res) => return res,
             Err(r) => r,
@@ -1447,6 +1599,9 @@ impl BoardMode {
         if name == "replay" {
             return self.replay(&b, native, proxy).await;
         }
+        if let Some((status, v)) = self.helper.internal(name, &b).await {
+            return self.json_at(StatusCode::from_u16(status).unwrap_or(StatusCode::OK), &v);
+        }
         match edge::inbound(&*self.actions, name, &b).await {
             Some((status, v)) => {
                 if !status.is_success() {
@@ -1590,6 +1745,14 @@ impl BoardMode {
         eprintln!("[board] the satellite's start snapshot: {} session summaries", snapshot["sessions"].as_object().map_or(0, |m| m.len()));
         let _ = tell.send(satellite::runtime_line(&snapshot));
         let _ = self.tell.set(tell.clone());
+        {
+            let mut t = self.helper_tell.lock().unwrap_or_else(|e| e.into_inner());
+            for line in std::mem::take(&mut t.early) {
+                let _ = tell.send(line);
+            }
+            t.tell = Some(tell.clone());
+        }
+        self.satellite_ready.send_replace(true);
         // The pass store for key cards: Bun hears of each change to the passes file on its stdin.
         let notify_tell = tell.clone();
         let notify: passes::Notify = Arc::new(move |file: &str| {

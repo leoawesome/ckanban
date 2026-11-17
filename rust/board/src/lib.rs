@@ -30,6 +30,7 @@ pub mod runs; // R3
 pub mod schedules; // R10
 pub mod sessions; // R5
 pub mod team; // R11b
+pub mod helper; // P1a
 pub mod tickets; // R2a
 
 // Dependencies of later tasks, added once by R0 so parallel tasks don't each change Cargo.toml and Cargo.lock:

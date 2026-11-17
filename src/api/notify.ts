@@ -17,8 +17,13 @@ export async function notifyRoutes(ctx: ApiContext, req: Request, url: URL, part
       // another program could point every message, full text included, at its own address. Only the user's browser.
       await userOnly(req, "Changing notification settings");
       try {
-        return json(notifyView(req, notifier.update(patch, listenerOf(req))));
+        const st = notifier.update(patch, listenerOf(req));
+        await notifier.settingsSaved().catch((e) => {
+          throw new HttpError(503, `The settings couldn't be saved: ${(e as Error).message}`);
+        });
+        return json(notifyView(req, st));
       } catch (e) {
+        if (e instanceof HttpError) throw e;
         throw new HttpError(e instanceof MacOnlyError ? 403 : 400, (e as Error).message);
       }
     }
@@ -34,14 +39,23 @@ export async function notifyRoutes(ctx: ApiContext, req: Request, url: URL, part
       if (listenerOf(req) !== "local") throw new HttpError(403, TG_PAIR_FROM_MAC);
       try {
         const b = await body(req);
-        return json({ ...notifier.telegramPair(typeof b?.board === "string" ? b.board : null), state: notifyView(req, notifier.state()) });
+        const code = notifier.telegramPair(typeof b?.board === "string" ? b.board : null);
+        await notifier.settingsSaved().catch((e) => {
+          throw new HttpError(503, `The settings couldn't be saved: ${(e as Error).message}`);
+        });
+        return json({ ...code, state: notifyView(req, notifier.state()) });
       } catch (e) {
+        if (e instanceof HttpError) throw e;
         throw new HttpError(400, (e as Error).message);
       }
     }
     if (parts[1] === "telegram" && parts[2] === "unpair" && parts.length === 3 && m === "POST") {
       await userOnly(req, "Unpairing Telegram");
-      return json(notifyView(req, notifier.telegramUnpair()));
+      const st = notifier.telegramUnpair();
+      await notifier.settingsSaved().catch((e) => {
+        throw new HttpError(503, `The settings couldn't be saved: ${(e as Error).message}`);
+      });
+      return json(notifyView(req, st));
     }
   }
 

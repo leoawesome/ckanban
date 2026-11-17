@@ -1,7 +1,7 @@
 // Wait records: one per (ticket, thing it waits on), kept on disk in `<root>/waits.json` so the helper's bookkeeping
 // (who was told, when, which reminders are due) survives restarts. Pure bookkeeping: nothing here sends anything.
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AttentionKind } from "./attention";
 
@@ -151,14 +151,51 @@ export class WaitStore {
   readonly bootAt: number;
   /** Records just closed (Telegram edits their alerts to say so). Set by the notifier. */
   onClosed: ((recs: WaitRecord[]) => void) | null = null;
+  /** The file as last read (satellite mode: read again when it changed). */
+  private stamp = "";
 
-  constructor(root: string, private now: () => number = Date.now) {
+  /**
+   * follow: satellite mode (core/satellite.ts). The Rust board owns waits.json: this store only reads it, again each
+   * time it changed, and a change it makes (the front desk's seenInChatAt) goes to Rust through `follow` instead of
+   * the file. Any other write throws.
+   */
+  constructor(root: string, private now: () => number = Date.now, private follow?: (key: string, patch: Partial<WaitRecord>) => void) {
     this.file = join(root, "waits.json");
     this.bootAt = now();
     this.start = this.load();
   }
 
+  private fileStamp(): string {
+    try {
+      const s = statSync(this.file);
+      return `${s.size}:${s.mtimeMs}:${s.ino}`;
+    } catch {
+      return "";
+    }
+  }
+
+  /** Satellite mode: the records as the Rust board last wrote them. */
+  private fresh(): void {
+    if (!this.follow) return;
+    const stamp = this.fileStamp();
+    if (stamp === this.stamp) return;
+    this.stamp = stamp;
+    try {
+      const v = JSON.parse(readFileSync(this.file, "utf8"));
+      if (!v || typeof v !== "object" || !v.records || typeof v.records !== "object") return;
+      this.data = { version: 1, records: normalizeRecords(v.records), notifyUserAt: v.notifyUserAt && typeof v.notifyUserAt === "object" ? v.notifyUserAt : {}, firstSummaryPending: !!v.firstSummaryPending };
+    } catch {}
+  }
+
+  private refuse(what: string): never {
+    throw new Error(`waits.json belongs to the Rust board: the satellite can't ${what}`);
+  }
+
   private load(): WaitsStart {
+    if (this.follow) {
+      this.fresh();
+      return this.stamp ? "present" : "missing";
+    }
     if (!existsSync(this.file)) return "missing";
     try {
       const v = JSON.parse(readFileSync(this.file, "utf8"));
@@ -177,21 +214,25 @@ export class WaitStore {
   }
 
   save(): void {
+    if (this.follow) this.refuse("save it");
     const tmp = `${this.file}.tmp`;
     writeFileSync(tmp, JSON.stringify(this.data, null, 1) + "\n");
     renameSync(tmp, this.file);
   }
 
   get firstSummaryPending(): boolean {
+    this.fresh();
     return !!this.data.firstSummaryPending;
   }
 
   set firstSummaryPending(v: boolean) {
+    if (this.follow) this.refuse("change the first summary mark");
     this.data.firstSummaryPending = v;
     this.save();
   }
 
   get(key: string): WaitRecord | undefined {
+    this.fresh();
     return this.data.records[key];
   }
 
@@ -206,6 +247,7 @@ export class WaitStore {
 
   /** Every record, open and closed. */
   all(): WaitRecord[] {
+    this.fresh();
     return Object.values(this.data.records);
   }
 
@@ -227,6 +269,7 @@ export class WaitStore {
    * told: already told another way (helper off at restart, upgrade without a helper).
    */
   add(w: NewWait, o: { seeded?: boolean; told?: ToldVia } = {}): WaitRecord {
+    if (this.follow) this.refuse("open a wait");
     const key = recordKey(w.board, w.ticketId, w.identity);
     const have = this.data.records[key];
     if (have && !have.closedAt) {
@@ -265,6 +308,7 @@ export class WaitStore {
    * (no open record under `from`, or one is already open under the new key).
    */
   rekey(from: string, w: NewWait): WaitRecord | undefined {
+    if (this.follow) this.refuse("move a wait");
     const r = this.data.records[from];
     const key = recordKey(w.board, w.ticketId, w.identity);
     if (!r || r.closedAt || key === from || this.data.records[key]?.closedAt === null) return undefined;
@@ -279,15 +323,21 @@ export class WaitStore {
 
   /** Changes a record (by key) and saves; returns it, or undefined when there is none. */
   update(key: string, patch: Partial<WaitRecord>): WaitRecord | undefined {
+    this.fresh();
     const r = this.data.records[key];
     if (!r) return undefined;
     Object.assign(r, patch);
+    if (this.follow) {
+      this.follow(key, patch);
+      return r;
+    }
     this.save();
     return r;
   }
 
   /** Marks records told (nothing sends them again: no fallback, no digest). */
   markTold(keys: string[], via: ToldVia, messageId?: string | null): void {
+    if (this.follow) this.refuse("mark waits told");
     const at = iso(this.now());
     let changed = false;
     for (const k of keys) {
@@ -304,6 +354,7 @@ export class WaitStore {
    * fallback and digest times they had, so a later message or the 4-hour digest still tells them.
    */
   unclaim(prev: Pick<WaitRecord, "key" | "toldAt" | "toldVia" | "fallbackAt" | "digestAt">[]): void {
+    if (this.follow) this.refuse("give back a claim");
     let changed = false;
     for (const p of prev) {
       const r = this.data.records[p.key];
@@ -316,6 +367,7 @@ export class WaitStore {
 
   /** Stops a record's pending reminder steps (why: see WaitRecord.remindersStopped). */
   stopReminders(key: string, why: string): boolean {
+    if (this.follow) this.refuse("stop reminders");
     const r = this.data.records[key];
     if (!r || !pending(r)) return false;
     r.reminders = r.reminders.filter((s) => s.sentAt);
@@ -325,6 +377,7 @@ export class WaitStore {
   }
 
   close(keys: string[], why: CloseWhy): WaitRecord[] {
+    if (this.follow) this.refuse("close waits");
     const at = iso(this.now());
     const out: WaitRecord[] = [];
     for (const k of keys) {
@@ -350,6 +403,7 @@ export class WaitStore {
 
   /** The user opened the ticket: openedAt on its open records, their reminders stop; passed-on messages close. */
   opened(board: string, ticketId: string): WaitRecord[] {
+    if (this.follow) this.refuse("note an open");
     const at = iso(this.now());
     const recs = this.openFor(board, ticketId);
     for (const r of recs) {
@@ -371,10 +425,12 @@ export class WaitStore {
 
   /** notify_user's limit, on disk. */
   lastNotifyUser(board: string, ticketId: string): number | undefined {
+    this.fresh();
     return this.data.notifyUserAt[`${board}/${ticketId}`];
   }
 
   setNotifyUser(board: string, ticketId: string, at: number): void {
+    if (this.follow) this.refuse("note a notify_user");
     this.data.notifyUserAt[`${board}/${ticketId}`] = at;
     this.save();
   }
