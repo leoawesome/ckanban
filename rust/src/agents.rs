@@ -31,6 +31,11 @@ impl Agents {
         Some(Agents { server_argv: vec![bun.to_string_lossy().into_owned(), cli.to_string_lossy().into_owned(), "mcp".into()] })
     }
 
+    /// The command line the agents should run (`serverArgv`): this ckanban's `mcp`.
+    pub fn server_argv(&self) -> &[String] {
+        &self.server_argv
+    }
+
     /// The answer, as Bun's `status()` gives it (blocking: reads two small config files and looks along PATH).
     pub fn status(&self) -> Value {
         let env = |k: &str| std::env::var_os(k);
@@ -70,7 +75,7 @@ fn which(bin: &str) -> bool {
 }
 
 /// `claudeEntry`: `mcpServers.ckanban` of Claude's config as argv.
-fn claude_entry(file: &Path) -> Option<Vec<String>> {
+pub(crate) fn claude_entry(file: &Path) -> Option<Vec<String>> {
     let v: Value = serde_json::from_slice(&std::fs::read(file).ok()?).ok()?;
     let e = v.get("mcpServers")?.get(SERVER_NAME)?;
     let command = e.get("command")?.as_str()?;
@@ -84,7 +89,7 @@ fn claude_entry(file: &Path) -> Option<Vec<String>> {
 /// Any character but the line ends JS's `.` stops at.
 const DOT: &str = r"[^\n\r\u{2028}\u{2029}]";
 const S: &str = r"[\t\n\x0B\x0C\r \u{a0}\u{1680}\u{2000}-\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}\u{feff}]";
-static HEADER: LazyLock<Regex> =
+pub(crate) static HEADER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(&format!(r"^{S}*\[\[?{S}*([^\]]*?){S}*\]\]?{S}*(?:#{DOT}*)?$")).unwrap());
 static ENTRY: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"^{S}*(command|args){S}*={S}*({DOT}+?){S}*$")).unwrap());
 static SINGLE: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"^'({DOT}*)'$")).unwrap());
@@ -100,7 +105,7 @@ fn table_key(header: &str) -> Vec<String> {
         .collect()
 }
 
-fn is_our_table(header: &str) -> bool {
+pub(crate) fn is_our_table(header: &str) -> bool {
     let k = table_key(header);
     k.first().map(String::as_str) == Some("mcp_servers") && k.get(1).map(String::as_str) == Some(SERVER_NAME)
 }
