@@ -131,7 +131,7 @@ impl DeskState {
 
 /// `addTelegramSpend` with a ledger file: what a turn cost, added to that local day's total, 60 days kept.
 fn add_spend(file: &Path, cost: f64, now: f64) {
-    if !(cost > 0.0) || !cost.is_finite() {
+    if cost.is_nan() || cost <= 0.0 || !cost.is_finite() {
         return;
     }
     let mut ledger = read_ledger(file);

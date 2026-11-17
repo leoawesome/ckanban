@@ -121,7 +121,7 @@ In board mode every request goes through `BoardMode::handle` (`rust/src/board_mo
 satellite's own calls, then the gate (`gate::request::refusal`, Bun's `requestRefusal`: Host, the Origin of a change;
 on the phone access listener phone access on in `remote.json`, the tailnet host, the owner's login), then the system
 routes (`/api/events`, `health`, `version`, `claude/projects`, `claude/defaults`, `pick-folder`, `cron/preview`,
-`debug/profile`), each after the front desk's gate (asked of the satellite) and the JSON-only rule; then the other
+`debug/profile`), each after the front desk's gate (P1c: Rust's own, `crate::telegram`) and the JSON-only rule; then the other
 tasks' routes (R1, R5, R8, R6, R9, R11b); then the front's native routes and Bun, which checks the gate again. Before
 any of it the request target is read as Bun's `new URL` reads it (`proxy::normalize_target`: `..`, `.` and their
 `%2e` forms resolved), so a path like `/api/x/../profiles/...` can't reach Bun's stale copy of a Rust-owned route.
@@ -138,10 +138,10 @@ checks); their user-only checks look at the caller (`tailscale serve`) and refus
   phone access is on). The satellite runs no link check in board mode.
 - The satellite's edge (`gate/edge.rs`, `src/core/satellite-edge.ts`), `POST /api/internal/<name>` with
   `x-ckanban-satellite: <the front's secret>` (the proxy drops callers' copies of it and of the two marks above):
-  Rust asks Bun `frontdesk-gate` and `turn-ended` (R7a); `pass-call` and `publish` are the server's own since P2
-  (`rust/src/outside/edge.rs`); Bun asks Rust `chat-from-telegram`, `patch-telegram`, `drop-telegram-queued`, `comment`
-  (`api::BoardActions`, stand-ins refuse with 501 until R2a/R7a) and `replay` (a front desk request confirmed in
-  Telegram, run as the user: Rust's own routes, else Bun with `x-ckanban-front-confirmed: 1`).
+  `pass-call` and `publish` are the server's own since P2 (`rust/src/outside/edge.rs`); `frontdesk-gate`,
+  `turn-ended`, `chat-from-telegram`, `patch-telegram`, `drop-telegram-queued` and `replay` ended with P1c (Telegram
+  runs in Rust); Bun asks Rust `comment` (`api::BoardActions`). A confirmed front desk request still runs as the user:
+  Rust's own routes, else Bun with `x-ckanban-front-confirmed: 1`.
 - Housekeeping (`gate/housekeeping.rs`): the temp file sweep and the daemon.log trim run at start, report-only
   (`rust-board-dryrun.log`) unless `CKANBAN_RUST_DELETE=1`; the satellite skips them.
 - `cron/preview` uses `schedules::cron` (brought in here; R10 builds the scheduler on it).
@@ -164,8 +164,8 @@ in Bun's exact format (key order kept), so Bun and Rust read each other's chats.
   as the passes routes (`guard::user_only`).
 
 Stand-ins, each marked `STAND-IN` in the code: the restart gate (`RestartGate`, R7a: never "pending" until then; R7a
-also counts `restart_busy()` among what a restart waits for), board browsers for the runs (R9), the Telegram front desk
-hooks (R13/P1: a front desk chat refuses to run, as Bun does without them). The Context panel, Say it simpler, Rewind,
+also counts `restart_busy()` among what a restart waits for), board browsers for the runs (R9). The Telegram front
+desk plugs its hooks in (`ChatHooks`, P1c: env, note, narrower rights, result lines, unbilled cost). The Context panel, Say it simpler, Rewind,
 Undo rewind, Fork and Make ticket are R7b's (`src/chat/`). User actions from the phone come through the phone access port, which Bun still holds
 until R13.
 
@@ -536,14 +536,39 @@ mode Rust owns `waits.json`, `messages.json`, `helper-state.json` and `helper.js
   board's keep-awake), status.
 - `routes.rs`: `/api/messages...` and `/api/helper...` (answered by Rust), a ticket's `POST .../notify`. The
   ticket's `seen` route stops its reminders (`Writes::set_opened`).
-- Still in the satellite until P1b and P1c: sending (`channels.rs` asks it `helper-send` with the channels worked out
-  here; it answers each channel's result, which Rust records), `/api/notify...` (settings, test, Telegram pairing),
-  `/api/push...`, Telegram and the front desk. What only it knows comes from `helper-facts` (the board on screen,
-  phone push devices, a connection). It reads the helper's files (again when they change) and sends its writes
-  here: `helper-action` (Telegram's Got it, Not urgent, night answer, /waiting), `notify-write` (notify.json as it
-  worked it out; Rust writes it and switches the helper when its on/off changed), `wait-seen` (the front desk's
-  `seenInChatAt`), `helper-send-message` (the Settings test). Rust tells it of closed waits (`waits-closed <json>` on
-  its stdin) so Telegram alerts say so.
+- Still in the satellite until P1b: sending to push, ntfy and the Mac banner (`wired.rs` `SplitSender`: Telegram is
+  sent here, the rest through `helper-send`; each channel's result comes back in the targets' order and Rust records
+  it), `/api/notify` and `/api/notify/test` (Rust puts Telegram's live state into their answers) and `/api/push...`.
+  What only it knows comes from `helper-facts`. It reads the helper's files (again when they change) and sends its
+  writes here: `notify-write` (notify.json as it worked it out; Rust keeps the paired chat's fields from the file
+  when the bot token is the same, writes it, switches the helper, and tells Telegram, which starts, stops or drops
+  what waits), `helper-send-message` (the Settings test).
+
+## Telegram and the front desk (P1c, `src/telegram/`)
+
+Bun's `telegram.ts`, `tgreply.ts`, `tgforms.ts`, `tgstores.ts`, `frontdesk.ts` and the Telegram half of `notify.ts`.
+One `Telegram` value (made by `BoardMode::connect_telegram` once the server has its routes) holds it all:
+- `stores.rs`: `telegram-links.json`, `telegram-pending.json`, `telegram-updates.json` in Bun's bytes (0600, `.tmp`
+  then rename); `telegram-offset.json` and `telegram-frontdesk.json` (`bot.rs`, `desk.rs`), the desk's spend ledger.
+- `api.rs`: the Bot API (`CKANBAN_TELEGRAM_URL` points it at a local fake), errors in plain words, the token scrubbed;
+  `sendDocument` as multipart.
+- `bot.rs`: one getUpdates long poll while paired and on or while a pairing goes on; updates saved before the read
+  position moves on; messages one at a time in order, taps and `/lock` at once; pairing (6-digit code, 10 tries);
+  `/waiting`; Got it, Not urgent and the night answer (the helper's runner); the helper's `telegram` channel; the
+  briefing once; forms taken off the chat as tickets change.
+- `replies.rs`: a reply to an alert into its ticket's chat (Send echo or Confirm), "Which one?", "Send anyway", a
+  ticket's answer sent back after its turn (`Satellite::turn_ended` now lands here).
+- `forms.rs`: a ticket's question form answered with buttons.
+- `desk.rs`: the front desk (a quick chat a day, its rights and daily cap through `quickchat::ChatHooks`, answers
+  back, waits it named marked seen), the gate, Confirm cards and their taps (the held request replayed as the user
+  through the server's routes), `send_file`, alerts edited when their waits close.
+- `text.rs`: the pure rules, checked against Bun on `tests/fixtures/telegram.json` (`tests/telegram.rs`,
+  `test/rust-board-telegram-fixtures.test.ts`).
+In the server (`rust/src/board_mode/tg.rs`): every request with `x-ckanban-frontdesk` goes through the gate right
+after the request gate; one that may go ahead is sent to this server again without the header, so every route answers
+it as it is. `POST /api/notify/telegram/pair` and `/unpair` are answered here (their `state` is the satellite's view
+with Telegram's live state put in). Left out: a reply cut through an emoji drops the half character (as R3); the
+satellite's `/api/notify` view is patched until P1b answers it in Rust.
 - Checked against Bun: `tests/fixtures/helper.json` (about 3,400 cases of the pure rules and two store scripts, in
   America/Los_Angeles; `test/rust-board-helper-fixtures.test.ts`) and `tests/fixtures/helper_runner.json` (six
   scenarios replayed step by step with a fixed clock, fake channels and fake answers; every step's files must be

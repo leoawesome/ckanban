@@ -130,6 +130,7 @@ impl Links {
     }
 
     /// `add`: `{bot, tg, chatId, messageId, level, items}` plus `at`; older than 30 days dropped, 2000 kept.
+    #[allow(clippy::too_many_arguments)]
     pub fn add(&self, bot: &str, tg: i64, chat_id: i64, message_id: Option<&str>, level: &str, items: &[LinkItem], now: f64) -> Link {
         let mut link = Map::new();
         link.insert("bot".into(), bot.into());
@@ -261,7 +262,8 @@ impl Pending {
     /// `save`: expired ones are kept a day (a late tap says "expired"), then dropped. Err when it can't be written.
     fn save(&self, map: &mut Map<String, Value>, now: f64) -> std::io::Result<()> {
         let cut = now - 24.0 * 3600_000.0;
-        map.retain(|_, a| !(ms(a.get("expiresAt")) < cut));
+        // NaN is kept, as in Bun (`Date.parse(x) < cut` is false).
+        map.retain(|_, a| ms(a.get("expiresAt")).partial_cmp(&cut) != Some(std::cmp::Ordering::Less));
         write_json(&self.file, &json!({ "version": 1, "actions": map }))
     }
 
