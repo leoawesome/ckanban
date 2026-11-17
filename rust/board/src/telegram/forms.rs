@@ -487,7 +487,7 @@ impl Telegram {
             "typed" => "✓ Answered by your message".into(),
             _ => "This question is no longer open.".into(),
         };
-        let qline = |i: usize| format!("({} of {n}) {}", i + 1, js::to_string(qs[i].get("question").unwrap_or(&Value::Null)));
+        let qline = |i: usize| format!("({} of {n}) {}", i + 1, js::to_string(qs.get(i).and_then(|q| q.get("question")).unwrap_or(&Value::Null)));
         self.close_messages(&d, &|i| format!("{}\n\n{line}", qline(i))).await;
     }
 

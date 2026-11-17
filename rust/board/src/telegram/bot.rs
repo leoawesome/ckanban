@@ -150,11 +150,21 @@ impl Telegram {
             self.stop();
             return;
         }
-        if self.bot.lock().polling || !self.auto_poll {
+        if !self.auto_poll {
             return;
         }
+        // Claimed here, before the task starts: two refreshes close together never start two pollers.
+        let generation = {
+            let mut st = self.bot.lock();
+            if st.polling {
+                return;
+            }
+            st.polling = true;
+            st.generation += 1;
+            st.generation
+        };
         let me = self.arc();
-        tokio::spawn(async move { me.poll_loop().await });
+        tokio::spawn(async move { me.poll_loop(generation).await });
     }
 
     /// Stops the poller.
@@ -205,13 +215,7 @@ impl Telegram {
         }
     }
 
-    async fn poll_loop(self: std::sync::Arc<Self>) {
-        let generation = {
-            let mut st = self.bot.lock();
-            st.generation += 1;
-            st.polling = true;
-            st.generation
-        };
+    async fn poll_loop(self: std::sync::Arc<Self>, generation: u64) {
         let mut backoff = 5000u64;
         while self.bot.lock().generation == generation && self.wanted() {
             let ok = self.poll_once(generation).await;
@@ -416,23 +420,26 @@ impl Telegram {
     }
 
     /// `Notifier.telegramPair`: the code, and the front desk on the board paired from unless Settings chose one.
-    pub fn pair(&self, board: Option<&str>) -> Result<(String, String), String> {
-        let r = self.start_pairing()?;
+    /// Err(400, why) without a token; Err(503, why) when the settings couldn't be saved.
+    pub fn pair(&self, board: Option<&str>) -> Result<(String, String), (u16, String)> {
+        let r = self.start_pairing().map_err(|e| (400, e))?;
         if let Some(bd) = board
             && self.helper.core.board.has_profile(bd)
             && !js::truthy(self.tg_settings().get("frontDesk"))
         {
-            self.save(vec![("frontDesk", bd.into())]);
+            let _ = self.save(vec![("frontDesk", bd.into())]).map_err(|e| (503, format!("The settings couldn't be saved: {e}")))?;
         }
         Ok(r)
     }
 
     /// `Notifier.telegramUnpair`: forget the chat, drop its open buttons and everything it left waiting.
-    pub fn unpair(&self) {
+    /// Err when the settings couldn't be saved.
+    pub fn unpair(&self) -> Result<(), String> {
         self.bot.lock().pairing = None;
-        self.save(vec![("chatId", Value::Null), ("chatName", Value::Null), ("pairedAt", Value::Null)]);
+        let saved = self.save(vec![("chatId", Value::Null), ("chatName", Value::Null), ("pairedAt", Value::Null)]);
         self.refresh();
         self.drop_work();
+        saved.map_err(|e| format!("The settings couldn't be saved: {e}"))
     }
 
     /// `dropTelegramWork`: open buttons expire, queued updates are dropped, ticket queues lose Telegram's messages.
@@ -444,7 +451,7 @@ impl Telegram {
 
     /// `telegramLock`: /lock from the paired chat.
     pub fn lock_now(&self) {
-        self.save(vec![("takeMessages", false.into()), ("lockedAt", iso(self.now()).into())]);
+        let _ = self.save(vec![("takeMessages", false.into()), ("lockedAt", iso(self.now()).into())]);
         self.drop_work();
     }
 
@@ -612,7 +619,7 @@ impl Telegram {
                         None => name,
                     };
                     self.bot.lock().pairing = None;
-                    self.save(vec![
+                    let _ = self.save(vec![
                         ("chatId", chat_id.into()),
                         ("chatName", chat_name.into()),
                         ("pairedAt", iso(self.now()).into()),
@@ -621,7 +628,7 @@ impl Telegram {
                         ("lockedAt", Value::Null),
                     ]);
                     self.reply(chat_id, &text::briefing(true)).await;
-                    self.save(vec![("briefedAt", iso(self.now()).into())]);
+                    let _ = self.save(vec![("briefedAt", iso(self.now()).into())]);
                     return;
                 }
                 {
@@ -722,7 +729,7 @@ impl Telegram {
         if !b(&t, "on") || js::truthy(t.get("briefedAt")) || !TOKEN_RE.is_match(s(&t, "token")) {
             return;
         }
-        self.save(vec![("briefedAt", iso(self.now()).into())]);
+        let _ = self.save(vec![("briefedAt", iso(self.now()).into())]);
         self.reply(chat, &text::briefing(false)).await;
     }
 

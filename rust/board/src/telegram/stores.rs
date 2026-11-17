@@ -148,9 +148,8 @@ impl Links {
         list.push(link.clone());
         let over = list.len().saturating_sub(LINKS_MAX);
         list.drain(..over);
-        let snapshot = list.clone();
-        drop(g);
-        self.save(&snapshot);
+        // Written under the lock: two writers never share the `.tmp` file or rename an older list over a newer one.
+        self.save(list);
         link
     }
 
@@ -180,9 +179,7 @@ impl Links {
         let list = self.items(&mut g);
         let Some(x) = list.iter_mut().find(|y| y.get("bot") == l.get("bot") && link_chat(y) == link_chat(l) && link_tg(y) == link_tg(l)) else { return };
         x.insert("closedAt".into(), iso(now).into());
-        let snapshot = list.clone();
-        drop(g);
-        self.save(&snapshot);
+        self.save(list);
     }
 }
 

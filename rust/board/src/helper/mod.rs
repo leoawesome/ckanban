@@ -177,6 +177,7 @@ impl Helper {
             "helper-action" => (200, self.action(b)),
             "notify-write" => {
                 let Some(next) = b.get("settings").filter(|s| s.is_object()) else { return Some((400, json!({ "error": "settings is required" }))) };
+                let guard = notify_settings::WRITE.lock();
                 let was = self.core.settings();
                 let before = notify_settings::helper_on(&was);
                 // The paired chat is Rust's (P1c: pairing, unpair and the briefing run here): the satellite's copy may
@@ -196,6 +197,7 @@ impl Helper {
                 if let Err(e) = notify_settings::write_notify(&self.core.root, next) {
                     return Some((500, json!({ "error": format!("can't write notify.json: {e}") })));
                 }
+                drop(guard);
                 if let Some(f) = self.on_notify.get() {
                     f(&was, next);
                 }

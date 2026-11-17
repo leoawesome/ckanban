@@ -362,7 +362,7 @@ impl Telegram {
             return self.forms_on_tap(id, choice, chat_id, message_id, out, update_id).await;
         }
         if kind.as_deref() == Some("fd") {
-            return if self.desk_ready() { self.desk_on_tap(id, choice, chat_id, message_id, out, update_id).await } else { "That button no longer works.".into() };
+            return self.desk_on_tap(id, choice, chat_id, message_id, out, update_id).await;
         }
         let a = match self.pending.take(id, update_id, now) {
             Take::Gone(g) => {

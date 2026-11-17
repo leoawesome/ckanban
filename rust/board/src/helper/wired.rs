@@ -142,12 +142,19 @@ impl Sender for SplitSender {
         let others: Vec<String> = targets.iter().filter(|t| *t != "telegram").cloned().collect();
         let wants_tg = others.len() != targets.len();
         let sat = if others.is_empty() { None } else { Some(self.sat.send(out.clone(), others.clone())) };
-        let tg = self.telegram.get().cloned();
+        let cell = self.telegram.clone();
         Box::pin(async move {
             let tg_fut = async {
                 if !wants_tg {
                     return None;
                 }
+                // An alert sent while the server is still starting waits for Telegram, up to two minutes.
+                let mut waited = 0;
+                while cell.get().is_none() && waited < 1200 {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    waited += 1;
+                }
+                let tg = cell.get().cloned();
                 Some(match (tg, out.as_object()) {
                     (Some(t), Some(m)) => t.send(m).await,
                     _ => json!({ "channel": "telegram", "ok": false, "error": "telegram failed: Telegram isn't ready yet" }),

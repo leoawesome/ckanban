@@ -233,17 +233,20 @@ impl Telegram {
         b(&t, "on") && b(&t, "takeMessages") && chat_of(&t).is_some()
     }
 
-    /// Saves a change to the telegram settings (`TelegramDeps.save`), merged into notify.json as it is now.
-    pub fn save(&self, patch: Vec<(&str, Value)>) {
+    /// Saves a change to the telegram settings (`TelegramDeps.save`), merged into notify.json as it is now; Err when
+    /// it couldn't be written (logged too).
+    pub fn save(&self, patch: Vec<(&str, Value)>) -> Result<(), String> {
+        let _w = crate::helper::notify_settings::WRITE.lock();
         let mut s = self.settings();
         if let Some(t) = s.get_mut("telegram").and_then(Value::as_object_mut) {
             for (k, v) in patch {
                 t.insert(k.into(), v);
             }
         }
-        if let Err(e) = write_notify(&self.root, &s) {
+        write_notify(&self.root, &s).map_err(|e| {
             eprintln!("telegram: couldn't save the settings: {e}");
-        }
+            e.to_string()
+        })
     }
 
     /// Phone access is on (`phoneAccess`): the board's address isn't this Mac's.

@@ -95,6 +95,10 @@ pub fn normalize_from_file(raw: &Value) -> Result<Value, String> {
     Ok(out)
 }
 
+/// Held around every read-merge-write of notify.json (the satellite's Settings, Telegram's pairing, /lock, briefing),
+/// so one write never undoes another.
+pub static WRITE: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
 /// `readNotifySettings`: defaults for anything missing or invalid.
 pub fn read_notify(root: &Path) -> Value {
     match std::fs::read_to_string(root.join("notify.json")).ok().and_then(|t| crate::runs::js::parse(&t)) {

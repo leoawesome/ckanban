@@ -34,11 +34,16 @@ pub fn strip_bullet(l: &str) -> String {
     crate::runs::js::trim(&BULLET.replace(l, "")).to_string()
 }
 
+/// Held around every change of the Telegram spend ledgers (`telegram-spend.json`, `telegram-desk-spend.json`): a
+/// front desk answer and a Telegram-started run ending together both count.
+pub static TELEGRAM_SPEND: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
 /// `addTelegramSpend`: what turns Telegram started cost today ("Spent from Telegram today"), 60 days kept.
 pub fn add_telegram_spend(root: &Path, cost: f64, now: f64) {
     if cost.is_nan() || cost <= 0.0 || !cost.is_finite() {
         return;
     }
+    let _w = TELEGRAM_SPEND.lock();
     let file = root.join("telegram-spend.json");
     let mut ledger: Map<String, Value> = std::fs::read_to_string(&file)
         .ok()

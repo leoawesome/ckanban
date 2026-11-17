@@ -215,7 +215,8 @@ fn opt_str(v: &Value, k: &str) -> Option<String> {
 
 impl Telegram {
     fn save_desk(&self) {
-        let v = self.desk.lock().to_json();
+        let st = self.desk.lock();
+        let v = st.to_json();
         if let Err(e) = ckanban_core::atomic::atomic_write(&self.root.join("telegram-frontdesk.json"), format!("{}\n", js::stringify(&v)).as_bytes()) {
             eprintln!("telegram: couldn't save the front desk: {e}");
         }
@@ -223,7 +224,8 @@ impl Telegram {
 
     pub fn add_desk_spend(&self, usd: f64) {
         let now = self.now();
-        add_spend(&self.root.join("telegram-spend.json"), usd, now);
+        crate::runloop::text::add_telegram_spend(&self.root, usd, now);
+        let _w = crate::runloop::text::TELEGRAM_SPEND.lock();
         add_spend(&self.root.join("telegram-desk-spend.json"), usd, now);
     }
 
@@ -505,7 +507,7 @@ impl Telegram {
         let cid = c.get("id").and_then(Value::as_str).unwrap_or("");
         let key = format!("{slug}/{cid}");
         self.stop_typing(&key);
-        let sid = ev.get("session_id").map(js::to_string).unwrap_or_else(|| c.get("sessionId").map(js::to_string).unwrap_or_default());
+        let sid = ev.get("session_id").filter(|v| !v.is_null()).map(js::to_string).unwrap_or_else(|| c.get("sessionId").map(js::to_string).unwrap_or_default());
         let total = js::number(ev.get("total_cost_usd"));
         let total = if total.is_finite() { total } else { 0.0 };
         let reply_to = {

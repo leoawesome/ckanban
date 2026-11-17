@@ -25,6 +25,9 @@ use super::{BoardMode, FRONT_DESK_HEADER, MAX_BODY};
 use crate::proxy::{Body, Proxy, full};
 use crate::routes::Native;
 
+/// `MAC_ONLY_LINE` of `src/helper/notify.ts`.
+const MAC_ONLY_LINE: &str = "I can only reach you on this Mac";
+
 /// What Telegram needs from the board (`ckanban_board::telegram::Env`).
 struct TgEnv {
     board: std::sync::Weak<BoardMode>,
@@ -234,8 +237,8 @@ impl BoardMode {
                 if o.contains_key("phoneReady") {
                     o.insert("phoneReady".into(), phone_ready.into());
                 }
-                if phone_ready && o.contains_key("reachLine") {
-                    o.insert("reachLine".into(), Value::Null);
+                if o.contains_key("reachLine") {
+                    o.insert("reachLine".into(), if phone_ready { Value::Null } else { MAC_ONLY_LINE.into() });
                 }
             }
         }
@@ -296,7 +299,9 @@ impl BoardMode {
         }
         let tg = self.tg().expect("checked above");
         if unpair {
-            tg.unpair();
+            if let Err(e) = tg.unpair() {
+                return Ok(self.error(StatusCode::SERVICE_UNAVAILABLE, &e));
+            }
             let v = self.notify_view(proxy, local).await;
             return Ok(self.json_at(StatusCode::OK, &v));
         }
@@ -310,13 +315,21 @@ impl BoardMode {
                 let state = self.notify_view(proxy, true).await;
                 Ok(self.json_at(StatusCode::OK, &json!({ "code": code, "expiresAt": expires, "state": state })))
             }
-            Err(e) => Ok(self.error(StatusCode::BAD_REQUEST, &e)),
+            Err((status, e)) => Ok(self.error(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST), &e)),
         }
     }
 }
 
 /// The routes `notify_route` answers.
 pub(super) fn notify_claims(m: &Method, path: &str) -> bool {
-    (path == "/api/notify" && (m == Method::GET || m == Method::POST))
-        || (m == Method::POST && matches!(path, "/api/notify/test" | "/api/notify/telegram/pair" | "/api/notify/telegram/unpair"))
+    pair_claims(m, path) || view_claims(m, path)
+}
+
+/// Pairing is Rust's alone: before Telegram runs it answers 503 rather than reach the satellite.
+pub(super) fn pair_claims(m: &Method, path: &str) -> bool {
+    m == Method::POST && matches!(path, "/api/notify/telegram/pair" | "/api/notify/telegram/unpair")
+}
+
+fn view_claims(m: &Method, path: &str) -> bool {
+    (path == "/api/notify" && (m == Method::GET || m == Method::POST)) || (m == Method::POST && path == "/api/notify/test")
 }

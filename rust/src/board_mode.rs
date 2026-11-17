@@ -1377,6 +1377,9 @@ impl BoardMode {
             Err(Next::Bun(r)) => return to_bun(r, peer, sent, proxy).await,
         };
         // P1c: Telegram pairing, and the satellite's notification settings with Telegram's live state.
+        if self.tg().is_none() && tg::pair_claims(req.method(), req.uri().path()) {
+            return self.error(StatusCode::SERVICE_UNAVAILABLE, "Telegram is still starting; try again in a moment");
+        }
         if self.tg().is_some() && tg::notify_claims(req.method(), req.uri().path()) {
             return self.notify_route(req.map(|b| b.boxed()), peer, via, sent, proxy).await;
         }
