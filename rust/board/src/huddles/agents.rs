@@ -42,6 +42,8 @@ pub const HUDDLE_AGENT_ENV: &str = "CKANBAN_HUDDLE_AGENT";
 pub const ACTIVITY_THROTTLE_MS: f64 = 1000.0;
 /// Most message text one wake hands a session (`DIGEST_MAX_CHARS`).
 pub const DIGEST_MAX_CHARS: usize = 100_000;
+/// The note when an earlier huddle's copy at a helper's place was moved aside (the path follows).
+const MOVED_NOTE: &str = "An earlier huddle on this ticket left a copy of the folder where this helper's goes; it was moved, untouched, to";
 /// How long a shutdown waits for the helpers' runs to end.
 const SHUTDOWN_WAIT: std::time::Duration = std::time::Duration::from_secs(6);
 
@@ -387,10 +389,22 @@ impl Agents {
             if let Some(k) = made.kept {
                 let _ = h.system(&sl, &hi, &format!("Saved the changes @{ha} never handed in to {} before giving it a fresh copy of the folder, so nothing is lost.", k.display()), &[]);
             }
+            if let Some(m) = made.moved {
+                let _ = h.system(&sl, &hi, &format!("{MOVED_NOTE} {}.", m.display()), &[]);
+            }
             let _ = h.update_p(&sl, &hi, &ha, obj([("copy", made.copy)]));
         })
         .await;
         Ok(dir)
+    }
+
+    /// An earlier huddle's folder at this helper's place goes aside (with a note), so nothing in it is reset.
+    async fn aside(&self, slug: &str, hid: &str, handle: &str, board: &Path, dir: &Path) -> Result<(), String> {
+        let _ = handle;
+        if let Some(m) = ws::move_aside(board, dir, &now_iso().replace([':', '.'], "-")).await? {
+            self.system(slug, hid, format!("{MOVED_NOTE} {}.", m.display())).await;
+        }
+        Ok(())
     }
 
     /// `snapshot`: a read-only helper's detached worktree at the host's committed HEAD, reset at every wake.
@@ -398,7 +412,14 @@ impl Agents {
         let board = self.board_path(slug).ok_or_else(|| format!("board {slug} not found"))?;
         let (sha, branch) = ws::head_of(host_dir).await?;
         let handle = s(p, "handle");
-        let dir = opt_s(p, "worktree").map(PathBuf::from).unwrap_or_else(|| agent_dir(&board, slug, s(h, "hostTicket"), handle));
+        let dir = match opt_s(p, "worktree") {
+            Some(w) => PathBuf::from(w),
+            None => {
+                let dir = agent_dir(&board, slug, s(h, "hostTicket"), handle);
+                self.aside(slug, s(h, "id"), handle, &board, &dir).await?;
+                dir
+            }
+        };
         ws::reset_snapshot(&board, &dir, &sha).await?;
         let patch = obj([("worktree", Value::from(dir.to_string_lossy().to_string())), ("branch", Value::Null), ("snapshot", json!({ "branch": branch, "sha": sha }))]);
         self.update_p(slug, s(h, "id"), handle, patch).await;
@@ -597,7 +618,15 @@ impl Agents {
         o.env = env;
         o.idle_ms = if s(&p, "mode") == "monitor" { self.opts.idle_ms } else { 0 };
         let handle_ = runner::start_run(o);
-        run.st.lock().handle = Some(handle_.clone());
+        // A Stop that came while the run was starting found no process to stop.
+        let stop_now = {
+            let mut st = run.st.lock();
+            st.handle = Some(handle_.clone());
+            st.stop_requested
+        };
+        if stop_now {
+            handle_.stop();
+        }
         let out = handle_.wait().await;
         drop(wtx);
         let _ = writer.await;
@@ -1214,6 +1243,9 @@ impl HuddleRunner for Agents {
         if let Some(k) = made.kept {
             let _ = h.system(slug, hid, &format!("Saved the changes @{handle} never handed in to {} before giving it a fresh copy of the folder, so nothing is lost.", k.display()), &[]);
         }
+        if let Some(m) = made.moved {
+            let _ = h.system(slug, hid, &format!("{MOVED_NOTE} {}.", m.display()), &[]);
+        }
         let _ = h.update_p(slug, hid, handle, obj([("copy", made.copy)]));
         Ok(())
     }
@@ -1277,6 +1309,8 @@ impl HuddleRunner for Agents {
 pub(super) struct Made {
     pub copy: Value,
     pub kept: Option<PathBuf>,
+    /// An earlier huddle's folder at the same place, moved aside.
+    pub moved: Option<PathBuf>,
 }
 
 impl Agents {
@@ -1287,8 +1321,10 @@ impl Agents {
         let handle = s(p, "handle");
         let dir = agent_dir(&board, slug, &host, handle);
         let mut kept = None;
+        let own = p.get("copy").and_then(|c| c.get("dir")).and_then(Value::as_str).map(PathBuf::from).as_deref() == Some(dir.as_path());
+        let moved = if own { None } else { ws::move_aside(&board, &dir, &now_iso().replace([':', '.'], "-")).await? };
         if let Some(c) = p.get("copy").and_then(Value::as_object)
-            && c.get("dir").and_then(Value::as_str).map(PathBuf::from).as_deref() == Some(dir.as_path())
+            && own
             && dir.exists()
         {
             let (d, kind, label) = (dir.to_string_lossy().to_string(), c.get("kind").and_then(Value::as_str).unwrap_or("folder").to_string(), now_iso().replace([':', '.'], "-"));
@@ -1307,6 +1343,6 @@ impl Agents {
             "branch": branch,
             "at": now_iso(),
         });
-        Ok(Made { copy, kept })
+        Ok(Made { copy, kept, moved })
     }
 }

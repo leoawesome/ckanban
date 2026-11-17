@@ -287,6 +287,40 @@ pub async fn reset_snapshot(repo: &Path, dir: &Path, sha: &str) -> Result<(), St
     Ok(())
 }
 
+/// A folder at a helper's path that isn't this participant's (an earlier huddle on the same ticket used the same
+/// handle, and its close kept the folder): moved aside to `<dir>.earlier-<label>` with what the board kept next to it
+/// (its `.copy.json`, `.handins`, `.kept`), a git copy with `git worktree move` and its branch renamed, so nothing in
+/// it is reset or deleted. The new place, or None when there was nothing there.
+pub async fn move_aside(repo: &Path, dir: &Path, label: &str) -> Result<Option<PathBuf>, String> {
+    if fs::symlink_metadata(dir).is_err() {
+        return Ok(None);
+    }
+    let d = dir.to_string_lossy().to_string();
+    let to = PathBuf::from(format!("{d}.earlier-{label}"));
+    let t = to.to_string_lossy().to_string();
+    let worktree = fs::symlink_metadata(dir.join(".git")).is_ok_and(|m| m.is_file());
+    if worktree {
+        let b = git(&["branch", "--show-current"], dir).await;
+        if b.ok() && !b.out().is_empty() {
+            let old = b.out().to_string();
+            git(&["branch", "-m", &old, &format!("{old}-earlier-{label}")], repo).await;
+        }
+        let r = git(&["worktree", "move", &d, &t], repo).await;
+        if !r.ok() {
+            return Err(format!("couldn't move an earlier helper's copy {d} aside: {}", r.stderr.trim()));
+        }
+    } else {
+        fs::rename(dir, &to).map_err(|e| format!("couldn't move an earlier helper's copy {d} aside: {e}"))?;
+    }
+    for ext in ["copy.json", "handins", "kept"] {
+        let from = PathBuf::from(format!("{d}.{ext}"));
+        if fs::symlink_metadata(&from).is_ok() {
+            let _ = fs::rename(&from, format!("{t}.{ext}"));
+        }
+    }
+    Ok(Some(to))
+}
+
 /// `git worktree remove --force <dir>` from `repo`; Err with git's words.
 pub async fn force_remove_worktree(repo: &Path, dir: &Path) -> Result<(), String> {
     let r = git(&["worktree", "remove", "--force", &dir.to_string_lossy()], repo).await;
@@ -346,6 +380,27 @@ mod tests {
         assert!(!dest.join("node_modules").exists());
         assert_eq!(fs::read_link(dest.join("link")).unwrap(), PathBuf::from("src/a.txt"));
         assert!(read_state(&dest.to_string_lossy()).unwrap().base.contains_key("src/a.txt"));
+    }
+
+    #[tokio::test]
+    async fn an_earlier_huddles_copy_is_moved_aside_not_wiped() {
+        let d = tempfile::tempdir().unwrap();
+        let repo = d.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        sh(&repo, &["init", "-q", "-b", "main"]);
+        sh(&repo, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "first"]);
+        let dest = d.path().join("copies/T1.huddle/fixer");
+        make_git_copy(&repo, &repo, &dest, "ck/T1-fixer").await.unwrap();
+        fs::write(dest.join("work.txt"), "unsent").unwrap();
+        let aside = move_aside(&repo, &dest, "x").await.unwrap().unwrap();
+        assert_eq!(fs::read_to_string(aside.join("work.txt")).unwrap(), "unsent");
+        assert!(read_state(&aside.to_string_lossy()).is_some());
+        assert!(branch_exists(&repo, "ck/T1-fixer-earlier-x").await);
+        // The next huddle's copy goes where the old one was; the old one is untouched.
+        make_git_copy(&repo, &repo, &dest, "ck/T1-fixer").await.unwrap();
+        assert!(!dest.join("work.txt").exists());
+        assert_eq!(fs::read_to_string(aside.join("work.txt")).unwrap(), "unsent");
+        assert_eq!(move_aside(&repo, &d.path().join("none"), "x").await.unwrap(), None);
     }
 
     #[test]

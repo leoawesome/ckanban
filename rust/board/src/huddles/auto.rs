@@ -168,7 +168,16 @@ impl Agents {
         let origin = Origin { auto: Some(AutoStart { reason: reason.clone(), asked, trigger: Some(trigger.clone()) }), by_user: None };
         let topic_v = topic.clone().map(Value::from);
         let tpl = (!template.is_empty()).then_some(template.as_str());
-        let huddle = h.create_by(slug, host_id, roster.unwrap_or_default(), None, max_cost, tpl, topic_v.as_ref(), &origin)?;
+        let huddle = match h.create_by(slug, host_id, roster.unwrap_or_default(), None, max_cost, tpl, topic_v.as_ref(), &origin) {
+            Ok(x) => x,
+            Err(e) => {
+                // Nothing started: the run may try again with a corrected roster.
+                if let Some(r) = self.board.run_of(slug, host_id) {
+                    r.st.lock().auto_huddle_started = false;
+                }
+                return Err(e);
+            }
+        };
         {
             let mut w = self.slot_woken.lock();
             if w.get(slug).is_some_and(|x| x == host_id) {
