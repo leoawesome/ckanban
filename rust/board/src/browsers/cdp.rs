@@ -118,7 +118,10 @@ pub struct CdpError(pub String);
 type Socket = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<TcpStream>>;
 
 async fn connect(url: &str, timeout: Duration) -> Result<Socket, CdpError> {
-    match tokio::time::timeout(timeout, tokio_tungstenite::connect_async(url)).await {
+    // Chrome sends each answer as one frame: a full-page screenshot or a big evaluate result can pass tungstenite's
+    // 16 MiB frame limit, which would drop the socket (and the run's page). Bun's WebSocket has no such limit.
+    let config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default().max_frame_size(None).max_message_size(Some(512 << 20));
+    match tokio::time::timeout(timeout, tokio_tungstenite::connect_async_with_config(url, Some(config), false)).await {
         Err(_) => Err(CdpError("the browser didn't answer in time".into())),
         Ok(Err(_)) => Err(CdpError("couldn't connect to the browser".into())),
         Ok(Ok((ws, _))) => Ok(ws),

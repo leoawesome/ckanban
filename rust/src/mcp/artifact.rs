@@ -46,6 +46,8 @@ fn file_name(url: Option<&str>, title: Option<&str>, now: u128) -> String {
 }
 
 async fn run_job(job: Job, cx: &Ctx) -> Outcome {
+    // As Bun's runArtifactJob: a SIGINT or SIGTERM while a helper runs stops its Claude too.
+    artifact::stop_helpers_on_signal();
     let o = Options {
         bin: cx.env.get("CKANBAN_CLAUDE_BIN").map(str::to_string),
         model: cx.env.get("CKANBAN_ARTIFACT_MODEL").map(str::to_string),
