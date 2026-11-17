@@ -214,16 +214,19 @@ pub fn authorize_url(c: &Map<String, Value>, state: &str, challenge: &str) -> Re
 /// `tokenCall`: the token endpoint's answer as the pass's `tokens` (`{access, refresh?, expiresAt?}`).
 async fn token_call(http: &Http, c: &Map<String, Value>, params: &[(&str, &str)], now_ms: f64) -> Result<Map<String, Value>, Fault> {
     let s = |k: &str| c.get(k).map(js::string).unwrap_or_else(|| "undefined".into());
-    let mut form = url::form_urlencoded::Serializer::new(String::new());
-    for (k, v) in params {
-        form.append_pair(k, v);
-    }
-    form.append_pair("client_id", &s("clientId"));
-    form.append_pair("resource", &s("resource"));
-    if js::truthy(c.get("clientSecret")) {
-        form.append_pair("client_secret", &s("clientSecret"));
-    }
-    let body = form.finish();
+    // Built in a block: the serializer isn't Send, so it must not live across the await below.
+    let body = {
+        let mut form = url::form_urlencoded::Serializer::new(String::new());
+        for (k, v) in params {
+            form.append_pair(k, v);
+        }
+        form.append_pair("client_id", &s("clientId"));
+        form.append_pair("resource", &s("resource"));
+        if js::truthy(c.get("clientSecret")) {
+            form.append_pair("client_secret", &s("clientSecret"));
+        }
+        form.finish()
+    };
     let headers = [("content-type", "application/x-www-form-urlencoded"), ("accept", "application/json")];
     let r = http.send("POST", &s("tokenEndpoint"), &headers, Some(body)).await.map_err(Fault::Other)?;
     let b = ckanban_board::runs::js::parse(&r.text).unwrap_or_else(|| json!({}));

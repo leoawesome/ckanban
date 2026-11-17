@@ -1227,7 +1227,6 @@ impl BoardMode {
         let home = ckanban_core::home::home_dir();
         let claude_dir = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home.clone());
         let claude_config = claude_dir.join(".claude.json");
-        let claude_bin = std::env::var("CKANBAN_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
         let mcp = outside::mcp::Mcp::new(outside::mcp::McpOptions::new(&self.root), emit.clone());
         let signin = outside::signin::SignIn::new(
             self.root.clone(),
