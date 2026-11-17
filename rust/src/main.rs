@@ -14,6 +14,7 @@ mod guard;
 mod js;
 mod mask;
 mod mcp;
+mod outside;
 mod passes;
 mod phone;
 mod proxy;
