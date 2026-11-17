@@ -225,10 +225,14 @@ impl Git {
     pub fn repo_state(self: &Arc<Self>, slug: &str) -> Option<RepoKind> {
         let path = self.board_path(slug).unwrap_or_default();
         let hit = self.repos.lock().get(&path).copied();
-        if hit.is_none_or(|(_, at)| at.elapsed() > REPO_TTL) {
+        // Callers may be on a plain thread (a plan's delayed wake): the check needs the runtime, so it waits for the
+        // next caller that has one.
+        if hit.is_none_or(|(_, at)| at.elapsed() > REPO_TTL)
+            && let Ok(rt) = tokio::runtime::Handle::try_current()
+        {
             let me = self.clone();
             let slug = slug.to_string();
-            tokio::spawn(async move { me.check_repo(&slug).await });
+            rt.spawn(async move { me.check_repo(&slug).await });
         }
         hit.map(|(k, _)| k)
     }
