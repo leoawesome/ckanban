@@ -670,7 +670,13 @@ impl Writes {
         let mut t = target.clone();
         let hooks = self.hooks();
         if let Some(po) = b.get("partOf") {
-            block(hooks.set_part_of(slug, id, po.as_str())).map_err(bad)?;
+            // null unlinks; any other value is looked up as a ticket id, as Bun's setPartOf does ("ticket 123 not found").
+            let parent = match po {
+                Value::Null => None,
+                Value::String(s) => Some(s.as_str()),
+                other => return Err(bad(format!("ticket {} not found", crate::runs::js::to_string(other)))),
+            };
+            block(hooks.set_part_of(slug, id, parent)).map_err(bad)?;
             t = self.tickets.get(slug, id).unwrap_or(t);
         } else if b.get("parentSuggestion") == Some(&Value::Null) {
             let mut p = Map::new();

@@ -24,15 +24,17 @@ pub fn old_planners(list: &BoardList) -> Vec<String> {
     out
 }
 
-/// Why board mode can't start on these boards (the first board with an old plan), or None.
-pub fn refusal(boards: &[(String, std::sync::Arc<BoardList>)]) -> Option<String> {
+/// Why board mode can't start on these boards (the first board with an old plan), or None. boards: the real boards
+/// (a readable profile.json, as Bun's migration takes them); file: a ticket's ticket.md, named in the refusal.
+pub fn refusal(boards: &[(String, std::sync::Arc<BoardList>)], file: &dyn Fn(&str, &str) -> std::path::PathBuf) -> Option<String> {
     for (slug, list) in boards {
         let planners = old_planners(list);
         if let Some(first) = planners.first() {
             return Some(format!(
-                "board {slug} has {} old-style plan{} (planned tickets, e.g. {first}) that only Bun's one-time migration turns into main tickets; Bun keeps the board this time",
+                "board {slug} has {} old-style plan{} (planned tickets, e.g. {first} in {}) that only Bun's one-time migration turns into main tickets; Bun keeps the board this time",
                 planners.len(),
-                if planners.len() == 1 { "" } else { "s" }
+                if planners.len() == 1 { "" } else { "s" },
+                file(slug, first).display()
             ));
         }
     }
@@ -59,5 +61,15 @@ mod tests {
             json!({ "id": "t", "title": "T", "status": "backlog", "createdAt": "4", "parentId": "m", "tool": true }),
         ]);
         assert!(old_planners(&b).is_empty());
+    }
+
+    #[test]
+    fn refusal_names_the_ticket_file() {
+        let b = board(vec![
+            json!({ "id": "p", "title": "P", "status": "backlog", "createdAt": "1" }),
+            json!({ "id": "c", "title": "C", "status": "backlog", "createdAt": "2", "parentId": "p" }),
+        ]);
+        let why = refusal(&[("x".into(), std::sync::Arc::new(b))], &|s, id| std::path::PathBuf::from(format!("/d/{s}/{id}/ticket.md"))).unwrap();
+        assert!(why.contains("e.g. p in /d/x/p/ticket.md"), "{why}");
     }
 }

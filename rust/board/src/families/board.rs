@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, ReentrantMutex, RwLock};
 use serde_json::{Map, Value, json};
 
 use super::plan::{children, family_sig, finished_line, or_empty, plan_problem, plan_step, progress_step, wake_table, REPORT_FILE, RESULTS_KEEP};
@@ -35,6 +35,11 @@ use crate::tickets::writer::{Refusal, Tickets, now};
 const PLAN_WAKE_DELAY_MS: u64 = 3000;
 /// How long a feature's saved changes list is reused before it is read again (`CHANGES_TTL_MS`).
 const CHANGES_TTL_MS: f64 = 60_000.0;
+/// The refusal code `change` uses inside `update_with` for "leave the file as it is" (never an answer's status).
+const UNCHANGED: u16 = 0;
+/// Passes in a row on one board before it stops going again (each new change starts another): plans that keep
+/// changing under the pass can't hold the thread.
+const MAX_PASS_ROUNDS: usize = 50;
 
 /// What the plan engine needs of the run loop (R7a). The stand-in starts nothing.
 pub trait PlanRuns: Send + Sync {
@@ -106,6 +111,10 @@ pub struct Families {
     wake_due: Mutex<HashMap<String, f64>>,
     /// One status.json read-change-write at a time.
     status_lock: Mutex<()>,
+    /// Per board: one family link (check and write) at a time, so two opposite links can't both pass the loop and
+    /// level checks. Reentrant: gather links through set_part_of. Taken before the board's write lock, never under
+    /// it or in a plan pass.
+    links: Mutex<HashMap<String, Arc<ReentrantMutex<()>>>>,
     changes: Mutex<HashMap<String, ChangesEntry>>,
     changes_checks: Mutex<HashSet<String>>,
     digests: Arc<ActivityDigests>,
@@ -123,6 +132,27 @@ fn msg((_, e): Refusal) -> String {
     e
 }
 
+/// The plan in a ticket's front matter (`t.plan`, when set).
+fn plan_in(meta: &Map<String, Value>) -> Option<Map<String, Value>> {
+    meta.get("plan").filter(|p| ckanban_core::jsnum::truthy(Some(p))).and_then(Value::as_object).cloned()
+}
+
+/// The same plan, compared as JSON text (a number written and read back may differ in its Rust form only).
+fn same_plan(a: Option<&Map<String, Value>>, b: Option<&Map<String, Value>>) -> bool {
+    let text = |m: Option<&Map<String, Value>>| m.map(|m| crate::runs::js::stringify(&Value::Object(m.clone())));
+    text(a) == text(b)
+}
+
+/// `closePlan`'s fields on a plan.
+fn closed(mut plan: Map<String, Value>) -> Map<String, Value> {
+    plan.insert("state".into(), "done".into());
+    plan.insert("awaiting".into(), Value::Null);
+    plan.insert("reason".into(), Value::Null);
+    plan.insert("inbox".into(), json!([]));
+    plan.insert("finishedAt".into(), now().into());
+    plan
+}
+
 fn now_ms() -> f64 {
     ckanban_core::time::now_ms() as f64
 }
@@ -138,6 +168,7 @@ impl Families {
             again: Mutex::default(),
             wake_due: Mutex::default(),
             status_lock: Mutex::new(()),
+            links: Mutex::default(),
             changes: Mutex::default(),
             changes_checks: Mutex::default(),
             digests: ActivityDigests::new(),
@@ -176,6 +207,10 @@ impl Families {
 
     fn get(&self, slug: &str, id: &str) -> Option<Arc<Tk>> {
         self.tickets.get(slug, id)
+    }
+    /// The board's family link lock (see `links`).
+    fn link_lock(&self, slug: &str) -> Arc<ReentrantMutex<()>> {
+        self.links.lock().entry(slug.to_string()).or_default().clone()
     }
     fn list(&self, slug: &str) -> Arc<BoardList> {
         self.tickets.list(slug)
@@ -220,6 +255,8 @@ impl Families {
     /// `setPartOf`: links id under parent (None unlinks). via "chat": the parent's chat made it. subtree false: only
     /// its own depth is checked (gather moves deeper tickets up itself).
     pub fn set_part_of(&self, slug: &str, id: &str, parent: Option<&str>, via: Option<&str>, subtree: bool) -> Result<Arc<Tk>, String> {
+        let lock = self.link_lock(slug);
+        let _links = lock.lock();
         let mut t = self.get(slug, id).ok_or_else(|| Self::not_found(id))?;
         if let Some(parent) = parent {
             let p = self.get(slug, parent).ok_or_else(|| Self::not_found(parent))?;
@@ -272,6 +309,8 @@ impl Families {
 
     /// `makeOwnWork`: a task becomes a main ticket with its own card and chat (a sub-feature while still linked).
     pub fn make_own_work(&self, slug: &str, id: &str) -> Result<Arc<Tk>, String> {
+        let lock = self.link_lock(slug);
+        let _links = lock.lock();
         let t = self.get(slug, id).ok_or_else(|| Self::not_found(id))?;
         if !t.tool {
             return Err(format!("\"{}\" is already its own work", t.title));
@@ -372,6 +411,8 @@ impl Families {
     /// `gather`: tickets into the feature, under one of its groups (an existing one, "new" for a new group named
     /// new_group) or the feature itself. Their own tickets deeper than MAX_LEVEL move up beside them.
     pub fn gather(&self, slug: &str, feature_id: &str, items: &[(String, Option<String>)], new_group: Option<&str>, by: Option<&str>, hide: bool) -> Result<Gathered, String> {
+        let lock = self.link_lock(slug);
+        let _links = lock.lock();
         let top = {
             let list = self.list(slug);
             feature_root(&list, feature_id).map(|i| list.tickets[i].clone()).ok_or_else(|| Self::not_found(feature_id))?
@@ -473,6 +514,44 @@ impl Families {
         json!({ "state": "running", "wakeups": 0, "startedAt": now(), "originalCount": children, "inbox": [], "seen": {}, "retries": {}, "awaiting": null })
     }
 
+    /// A change worked out from the ticket's file under the board's lock (`Tickets::update_with`); `make` answers
+    /// None to leave the file as it is. Ok(None): nothing written. Bun is single-threaded, so its read-then-write is
+    /// one step; here routes, hooks and the wake timer run at once, so every plan write reads the file it changes.
+    pub(crate) fn change(&self, slug: &str, id: &str, make: impl FnOnce(&Map<String, Value>) -> Result<Option<Map<String, Value>>, String>) -> Result<Option<Arc<Tk>>, String> {
+        match self.tickets.update_with(slug, id, |meta| match make(meta) {
+            Ok(Some(p)) => Ok(p),
+            Ok(None) => Err((UNCHANGED, String::new())),
+            Err(e) => Err((400, e)),
+        }) {
+            Ok(t) => Ok(Some(t)),
+            Err((UNCHANGED, _)) => Ok(None),
+            Err((_, e)) => Err(e),
+        }
+    }
+
+    /// A plan pass's write: the planner's plan becomes `plan` (with `extra` fields) unless the file's plan is no
+    /// longer `from`, the copy the pass started from (a Pause, an event, Mark done came in meanwhile): then nothing
+    /// is written and the pass goes again with the file as it is now. True when written.
+    fn save_plan(&self, slug: &str, id: &str, from: &Map<String, Value>, plan: Map<String, Value>) -> bool {
+        let r = self.change(slug, id, |meta| {
+            if !same_plan(plan_in(meta).as_ref(), Some(from)) {
+                return Ok(None);
+            }
+            Ok(Some(one("plan", Value::Object(plan))))
+        });
+        match r {
+            Ok(Some(_)) => true,
+            Ok(None) => {
+                self.again.lock().insert(slug.to_string());
+                false
+            }
+            Err(e) => {
+                eprintln!("[board] plan of {slug}/{id}: {e}");
+                false
+            }
+        }
+    }
+
     /// `ensurePlan`: a manager gets a running plan once it has tool tickets or events.
     pub fn ensure_plan(&self, slug: &str, id: &str) -> Option<Arc<Tk>> {
         let t = self.get(slug, id)?;
@@ -480,20 +559,28 @@ impl Families {
             return Some(t);
         }
         let kids = children(&self.list(slug), id).len();
-        let plan = match t.get("plan").and_then(Value::as_object).filter(|_| t.is("plan")) {
-            Some(p) => {
-                let mut p = p.clone();
-                p.insert("state".into(), "running".into());
-                p.insert("awaiting".into(), Value::Null);
-                p.insert("reason".into(), Value::Null);
-                p.insert("finishedAt".into(), Value::Null);
-                let orig = p.get("originalCount").and_then(Value::as_f64).unwrap_or(f64::NAN);
-                p.insert("originalCount".into(), ckanban_core::jsnum::num(if orig.is_nan() { f64::NAN } else { orig.max(kids as f64) }));
-                Value::Object(p)
-            }
-            None => Self::new_plan(kids),
-        };
-        self.patch(slug, id, one("plan", plan)).ok()
+        // Only the plan's own fields change, on the plan in the file now.
+        let r = self.change(slug, id, |meta| {
+            let plan = match plan_in(meta) {
+                Some(p) if p.get("state").and_then(Value::as_str) != Some("done") => return Ok(None),
+                Some(mut p) => {
+                    p.insert("state".into(), "running".into());
+                    p.insert("awaiting".into(), Value::Null);
+                    p.insert("reason".into(), Value::Null);
+                    p.insert("finishedAt".into(), Value::Null);
+                    let orig = p.get("originalCount").and_then(Value::as_f64).unwrap_or(f64::NAN);
+                    p.insert("originalCount".into(), ckanban_core::jsnum::num(if orig.is_nan() { f64::NAN } else { orig.max(kids as f64) }));
+                    Value::Object(p)
+                }
+                None => Self::new_plan(kids),
+            };
+            Ok(Some(one("plan", plan)))
+        });
+        match r {
+            Ok(Some(t)) => Some(t),
+            Ok(None) => self.get(slug, id),
+            Err(_) => None,
+        }
     }
 
     /// `pushEvent`: an event for a manager's next wake, and the plans move on.
@@ -524,33 +611,39 @@ impl Families {
         if let Some(p) = plan_problem(&kids) {
             return Err(format!("can't start the plan: {p}"));
         }
-        let prev = t.get("plan").and_then(Value::as_object).filter(|_| t.is("plan")).cloned();
-        let resuming = prev.as_ref().is_some_and(|p| p.get("state").and_then(Value::as_str) != Some("done"));
-        let plan = match prev.filter(|_| resuming) {
-            Some(mut p) => {
-                let finishing = p.get("awaiting").and_then(Value::as_str) == Some("final") || p.get("state").and_then(Value::as_str) == Some("finishing");
-                let stuck = p.get("state").and_then(Value::as_str) == Some("stuck");
-                p.insert("state".into(), if finishing { "finishing" } else { "running" }.into());
-                p.insert("reason".into(), Value::Null);
-                if stuck {
-                    p.insert("wakeups".into(), 0.into());
-                    p.insert("awaiting".into(), Value::Null);
-                    p.insert("seen".into(), json!({}));
-                }
-                Value::Object(p)
-            }
-            None => Self::new_plan(kids.len()),
-        };
         for k in &kids {
             if k.status == "backlog" && k.s("mode") != Some("auto") {
                 self.patch(slug, &k.id, one("mode", "auto".into()))?;
             }
         }
-        let mut p = one("plan", plan);
-        if t.get("outcome").is_some_and(|o| ckanban_core::jsnum::truthy(Some(o))) && !t.outcome_is("done") {
-            p.insert("outcome".into(), Value::Null);
-        }
-        let out = self.patch(slug, id, p)?;
+        // Worked out from the plan in the file now: only the plan's own fields change.
+        let mut resuming = false;
+        let out = self
+            .change(slug, id, |meta| {
+                let prev = plan_in(meta);
+                resuming = prev.as_ref().is_some_and(|p| p.get("state").and_then(Value::as_str) != Some("done"));
+                let plan = match prev.filter(|_| resuming) {
+                    Some(mut p) => {
+                        let finishing = p.get("awaiting").and_then(Value::as_str) == Some("final") || p.get("state").and_then(Value::as_str) == Some("finishing");
+                        let stuck = p.get("state").and_then(Value::as_str) == Some("stuck");
+                        p.insert("state".into(), if finishing { "finishing" } else { "running" }.into());
+                        p.insert("reason".into(), Value::Null);
+                        if stuck {
+                            p.insert("wakeups".into(), 0.into());
+                            p.insert("awaiting".into(), Value::Null);
+                            p.insert("seen".into(), json!({}));
+                        }
+                        Value::Object(p)
+                    }
+                    None => Self::new_plan(kids.len()),
+                };
+                let mut p = one("plan", plan);
+                if meta.get("outcome").is_some_and(|o| ckanban_core::jsnum::truthy(Some(o))) && meta.get("outcome").and_then(Value::as_str) != Some("done") {
+                    p.insert("outcome".into(), Value::Null);
+                }
+                Ok(Some(p))
+            })?
+            .ok_or_else(|| Self::not_found(id))?;
         let by = if by_planner { " by the planner" } else { "" };
         if resuming {
             let why = why.map(|w| format!(": {w}")).unwrap_or_default();
@@ -626,13 +719,21 @@ impl Families {
     /// `pausePlan`.
     pub fn pause_plan(&self, slug: &str, id: &str) -> Result<Arc<Tk>, String> {
         let t = self.get(slug, id).ok_or_else(|| "this ticket has no plan".to_string())?;
-        let mut plan = Self::plan_of(&t).ok_or_else(|| "this ticket has no plan".to_string())?;
+        let plan = Self::plan_of(&t).ok_or_else(|| "this ticket has no plan".to_string())?;
         if plan.get("state").and_then(Value::as_str) == Some("done") {
             return Ok(t);
         }
         self.note(slug, id, "Plan paused.");
-        plan.insert("state".into(), "paused".into());
-        self.patch(slug, id, one("plan", Value::Object(plan)))
+        // Only the state changes, on the plan in the file now (an event a pass just added stays).
+        let r = self.change(slug, id, |meta| {
+            let Some(mut plan) = plan_in(meta) else { return Err("this ticket has no plan".into()) };
+            if plan.get("state").and_then(Value::as_str) == Some("done") {
+                return Ok(None);
+            }
+            plan.insert("state".into(), "paused".into());
+            Ok(Some(one("plan", Value::Object(plan))))
+        })?;
+        Ok(r.or_else(|| self.get(slug, id)).unwrap_or(t))
     }
 
     /// `markPlanDone`.
@@ -642,27 +743,43 @@ impl Families {
         if plan.get("state").and_then(Value::as_str) == Some("done") {
             return Ok(t);
         }
-        self.close_plan(slug, &t, plan, "Plan marked done.")
+        // The plan's closing fields only, on the plan in the file now.
+        let r = self.change(slug, id, |meta| {
+            let Some(plan) = plan_in(meta) else { return Err("this ticket has no plan".into()) };
+            if plan.get("state").and_then(Value::as_str) == Some("done") {
+                return Ok(None);
+            }
+            Ok(Some(one("plan", Value::Object(closed(plan)))))
+        })?;
+        match r {
+            Some(out) => {
+                self.note(slug, id, "Plan marked done.");
+                Ok(out)
+            }
+            None => Ok(self.get(slug, id).unwrap_or(t)),
+        }
     }
 
-    fn close_plan(&self, slug: &str, planner: &Tk, mut plan: Map<String, Value>, comment: &str) -> Result<Arc<Tk>, String> {
-        plan.insert("state".into(), "done".into());
-        plan.insert("awaiting".into(), Value::Null);
-        plan.insert("reason".into(), Value::Null);
-        plan.insert("inbox".into(), json!([]));
-        plan.insert("finishedAt".into(), now().into());
-        let out = self.patch(slug, &planner.id, one("plan", Value::Object(plan)))?;
+    /// A pass closes the plan it read (`closePlan`); false when the file's plan changed meanwhile (the pass goes again).
+    fn close_plan(&self, slug: &str, planner: &Tk, from: &Map<String, Value>, comment: &str) -> bool {
+        if !self.save_plan(slug, &planner.id, from, closed(from.clone())) {
+            return false;
+        }
         self.note(slug, &planner.id, comment);
-        Ok(out)
+        true
     }
 
-    fn stuck(&self, slug: &str, planner: &Tk, mut plan: Map<String, Value>, reason: &str) {
+    /// A pass marks the plan it read stuck; false when the file's plan changed meanwhile (the pass goes again).
+    fn stuck(&self, slug: &str, planner: &Tk, from: &Map<String, Value>, mut plan: Map<String, Value>, reason: &str) -> bool {
         plan.insert("state".into(), "stuck".into());
         plan.insert("awaiting".into(), Value::Null);
         plan.insert("reason".into(), reason.into());
-        let _ = self.patch(slug, &planner.id, one("plan", Value::Object(plan)));
+        if !self.save_plan(slug, &planner.id, from, plan) {
+            return false;
+        }
         let tail = if planner.main { "Write in its chat to carry on." } else { "Its main ticket can resume it once that is fixed." };
         self.note(slug, &planner.id, &format!("Stuck: {reason}. {tail}"));
+        true
     }
 
     /// `userWait`: why a plan child waits on the user.
@@ -818,7 +935,9 @@ impl Families {
         working_in_family(list, &below, id, &|t| self.is_running(slug, &t.id)).len()
     }
 
-    /// `advancePlans`: every running plan on the board moves forward. Cheap and idempotent.
+    /// `advancePlans`: every running plan on the board moves forward. Cheap and idempotent. One pass per board at a
+    /// time; a call during a pass makes it go again. A plan whose step panics is skipped (Bun catches per plan) and
+    /// the board is never left marked as advancing (Bun's finally).
     pub fn advance_plans(&self, slug: &str) {
         if self.stopping() {
             return;
@@ -831,7 +950,19 @@ impl Families {
                 return;
             }
         }
+        // Clears the mark if the pass panics outside a plan step; a normal end clears it under the lock below.
+        struct Mark<'a>(&'a Families, &'a str, bool);
+        impl Drop for Mark<'_> {
+            fn drop(&mut self) {
+                if self.2 {
+                    self.0.advancing.lock().remove(self.1);
+                }
+            }
+        }
+        let mut mark = Mark(self, slug, true);
+        let mut rounds = 0;
         loop {
+            rounds += 1;
             self.again.lock().remove(slug);
             let list = self.list(slug);
             let mut started = false;
@@ -840,21 +971,32 @@ impl Families {
                     continue;
                 }
                 let kids = children(&list, &p.id);
-                started = self.advance_plan(slug, p, &kids) || started;
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.advance_plan(slug, p, &kids))) {
+                    Ok(s) => started = s || started,
+                    Err(e) => {
+                        let why = e.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| e.downcast_ref::<String>().cloned()).unwrap_or_default();
+                        eprintln!("[board] plan of {slug}/{}: {why}", p.id);
+                    }
+                }
             }
             if started {
                 self.runs().dispatch(slug);
             }
-            // Another call came in meanwhile: go again (its changes count).
+            // Another call came in meanwhile, or a write found the plan changed: go again (its changes count).
             let mut adv = self.advancing.lock();
-            if !self.again.lock().contains(slug) {
+            if !self.again.lock().contains(slug) || rounds >= MAX_PASS_ROUNDS {
+                if rounds >= MAX_PASS_ROUNDS {
+                    eprintln!("[board] plans of {slug}: still changing after {rounds} passes; the next change moves them on");
+                }
                 adv.remove(slug);
+                mark.2 = false;
                 break;
             }
         }
     }
 
-    /// `advancePlan`: one plan; true when it moved children to Ready.
+    /// `advancePlan`: one plan; true when it moved children to Ready. Every write checks the file still holds the plan
+    /// this pass read (`orig`); when it doesn't, nothing more is written and the pass goes again.
     fn advance_plan(&self, slug: &str, planner: &Arc<Tk>, kids: &[Arc<Tk>]) -> bool {
         let Some(orig) = Self::plan_of(planner) else { return false };
         let mut plan = orig.clone();
@@ -867,7 +1009,7 @@ impl Families {
                 return false;
             }
             if o == Some("limit") {
-                self.stuck(slug, planner, plan, "the run that plans the steps hit the usage limit");
+                self.stuck(slug, planner, &orig, plan, "the run that plans the steps hit the usage limit");
                 return false;
             }
             if let Some(o @ ("blocked" | "needs_input" | "failed" | "stopped")) = o {
@@ -876,16 +1018,17 @@ impl Families {
                     "blocked" => "the run that plans the steps is blocked".into(),
                     o => format!("the run that plans the steps {o}"),
                 };
-                self.stuck(slug, planner, plan, &reason);
+                self.stuck(slug, planner, &orig, plan, &reason);
                 return false;
             }
             if aw == "final" {
                 plan.insert("state".into(), "done".into());
                 plan.insert("awaiting".into(), Value::Null);
                 plan.insert("finishedAt".into(), now().into());
-                let _ = self.patch(slug, &planner.id, one("plan", Value::Object(plan)));
-                self.note(slug, &planner.id, "Plan done: every ticket in this group finished and the final check ran.");
-                self.runs().notify(&format!("Plan done: {}", planner.title), "Every ticket in this group finished.", slug, &planner.id);
+                if self.save_plan(slug, &planner.id, &orig, plan) {
+                    self.note(slug, &planner.id, "Plan done: every ticket in this group finished and the final check ran.");
+                    self.runs().notify(&format!("Plan done: {}", planner.title), "Every ticket in this group finished.", slug, &planner.id);
+                }
                 return false;
             }
             plan.insert("awaiting".into(), Value::Null);
@@ -893,29 +1036,20 @@ impl Families {
         let state = plan.get("state").and_then(Value::as_str).unwrap_or("").to_string();
         if state == "stuck" && !planner.main {
             if !kids.is_empty() && kids.iter().all(|k| is_complete(k)) {
-                let _ = self.close_plan(
-                    slug,
-                    planner,
-                    plan,
-                    "Plan done: every ticket in this group finished, so the stuck plan was closed without another run.",
-                );
+                self.close_plan(slug, planner, &orig, "Plan done: every ticket in this group finished, so the stuck plan was closed without another run.");
             }
             return false;
         }
-        let save = |plan: &Map<String, Value>| {
-            if *plan != orig {
-                let _ = self.patch(slug, &planner.id, one("plan", Value::Object(plan.clone())));
-            }
-        };
+        // The plan written back when it changed; false when the file's plan changed meanwhile.
+        let save = |plan: Map<String, Value>| plan == orig || self.save_plan(slug, &planner.id, &orig, plan);
         if state == "finishing" {
             if !ckanban_core::jsnum::truthy(plan.get("awaiting")) && !busy {
-                self.wake(slug, planner, plan, "final", Vec::new(), kids);
+                self.wake(slug, planner, &orig, plan, "final", Vec::new(), kids, Vec::new());
             } else {
-                save(&plan);
+                save(plan);
             }
             return false;
         }
-        let list = self.list(slug);
         let step = plan_step(
             &plan,
             kids,
@@ -928,14 +1062,28 @@ impl Families {
         let quiet = state == "stuck";
         if !held {
             for cid in &step.start {
-                let mut p = Map::new();
-                p.insert("status".into(), "ready".into());
-                p.insert("mode".into(), "auto".into());
-                p.insert("outcome".into(), Value::Null);
-                p.insert("error".into(), Value::Null);
-                let _ = self.patch(slug, cid, p);
+                // Only a child still in Backlog, and only while the plan is the one this pass read (no Pause since):
+                // both checked under the board's lock, where every ticket write happens.
+                let r = self.change(slug, cid, |meta| {
+                    let plan_now = self.get(slug, &planner.id).and_then(|t| Self::plan_of(&t));
+                    if meta.get("status").and_then(Value::as_str) != Some("backlog") || !same_plan(plan_now.as_ref(), Some(&orig)) {
+                        return Ok(None);
+                    }
+                    let mut p = Map::new();
+                    p.insert("status".into(), "ready".into());
+                    p.insert("mode".into(), "auto".into());
+                    p.insert("outcome".into(), Value::Null);
+                    p.insert("error".into(), Value::Null);
+                    Ok(Some(p))
+                });
+                if let Ok(None) = r {
+                    self.again.lock().insert(slug.to_string());
+                }
             }
         }
+        // Result cards go to the planner once its plan records the events (seen), so a pass that has to go again
+        // doesn't add them twice.
+        let mut cards: Vec<Value> = Vec::new();
         if !step.events.is_empty() {
             let mut inbox = plan.get("inbox").and_then(Value::as_array).cloned().unwrap_or_default();
             inbox.extend(step.events.iter().map(|e| Value::from(e.line.clone())));
@@ -945,12 +1093,16 @@ impl Families {
                 seen.insert(e.child_id.clone(), e.sig.clone().into());
             }
             plan.insert("seen".into(), Value::Object(seen));
-            let cards: Vec<Value> = step.events.iter().filter(|e| e.result).filter_map(|e| self.result_card(slug, &e.child_id)).collect();
-            self.add_results(slug, &planner.id, cards);
+            cards = step.events.iter().filter(|e| e.result).filter_map(|e| self.result_card(slug, &e.child_id)).collect();
         }
         let starts = !step.start.is_empty();
+        let with_cards = |written: bool, cards: Vec<Value>| {
+            if written {
+                self.add_results(slug, &planner.id, cards);
+            }
+        };
         if held || quiet {
-            save(&plan);
+            with_cards(save(plan), cards);
             return !held && starts;
         }
         let inbox: Vec<String> = plan.get("inbox").and_then(Value::as_array).into_iter().flatten().map(|v| or_empty(Some(v))).collect();
@@ -960,7 +1112,8 @@ impl Families {
                 if stuck {
                     let waiting = slice16(&inbox.join("; "), 600).to_string();
                     let n = ckanban_core::jsnum::js_string(no_progress);
-                    self.stuck(slug, planner, plan, &format!("{n} wakes in a row without any tool ticket changing; waiting events: {waiting}"));
+                    let written = self.stuck(slug, planner, &orig, plan, &format!("{n} wakes in a row without any tool ticket changing; waiting events: {waiting}"));
+                    with_cards(written, cards);
                     return false;
                 }
                 let key = format!("{slug}\u{0}{}", planner.id);
@@ -978,13 +1131,15 @@ impl Families {
                         });
                     }
                     Some(due) if now_ms() >= due => {
-                        self.wake_due.lock().remove(&key);
-                        self.wake(slug, planner, plan, "event", inbox, kids);
+                        // The wait ends only when the wake is written; a pass that has to go again wakes then.
+                        if self.wake(slug, planner, &orig, plan, "event", inbox, kids, cards) {
+                            self.wake_due.lock().remove(&key);
+                        }
                         return starts;
                     }
                     Some(_) => {}
                 }
-                save(&plan);
+                with_cards(save(plan), cards);
                 return starts;
             }
             if step.all_complete || (planner.main && kids.is_empty()) {
@@ -993,20 +1148,19 @@ impl Families {
                     plan.insert("awaiting".into(), Value::Null);
                     plan.insert("reason".into(), Value::Null);
                     plan.insert("finishedAt".into(), now().into());
-                    let _ = self.patch(slug, &planner.id, one("plan", Value::Object(plan)));
+                    with_cards(self.save_plan(slug, &planner.id, &orig, plan), cards);
                     return false;
                 }
                 plan.insert("state".into(), "finishing".into());
-                self.wake(slug, planner, plan, "final", Vec::new(), kids);
+                self.wake(slug, planner, &orig, plan, "final", Vec::new(), kids, cards);
                 return false;
             }
             if let (Some(dead), false) = (&step.dead_end, starts) {
-                self.stuck(slug, planner, plan, dead);
+                with_cards(self.stuck(slug, planner, &orig, plan, dead), cards);
                 return false;
             }
         }
-        let _ = list;
-        save(&plan);
+        with_cards(save(plan), cards);
         starts
     }
 
@@ -1018,8 +1172,10 @@ impl Families {
         self.session(t).and_then(|s| s.get("openForm").cloned()).filter(|f| !f.is_null()).unwrap_or_else(|| json!([]))
     }
 
-    /// `wake`: the planner's session resumes with what happened (several events as one message).
-    fn wake(&self, slug: &str, planner: &Arc<Tk>, mut plan: Map<String, Value>, kind: &str, events: Vec<String>, kids: &[Arc<Tk>]) {
+    /// `wake`: the planner's session resumes with what happened (several events as one message). Nothing happens
+    /// when the file's plan is no longer `from` (the pass goes again); true when the wake was written and sent.
+    #[allow(clippy::too_many_arguments)]
+    fn wake(&self, slug: &str, planner: &Arc<Tk>, from: &Map<String, Value>, mut plan: Map<String, Value>, kind: &str, events: Vec<String>, kids: &[Arc<Tk>], cards: Vec<Value>) -> bool {
         let open: Vec<crate::prompts::types::Question> = serde_json::from_value(self.open_form(planner)).unwrap_or_default();
         let list = self.list(slug);
         let table = wake_table(kids, &list, &|id| self.is_running(slug, id));
@@ -1042,7 +1198,10 @@ impl Families {
         plan.insert("wakeups".into(), ckanban_core::jsnum::num(wakeups));
         plan.insert("progressSig".into(), sig.into());
         plan.insert("noProgress".into(), ckanban_core::jsnum::num(no_progress));
-        let _ = self.patch(slug, &planner.id, one("plan", Value::Object(plan)));
+        if !self.save_plan(slug, &planner.id, from, plan) {
+            return false;
+        }
+        self.add_results(slug, &planner.id, cards);
         let runs = self.runs();
         runs.auto_fresh(slug, &planner.id);
         if planner.main {
@@ -1050,10 +1209,11 @@ impl Families {
                 self.unpark_main(slug, &planner.id, "its steps are still at work", false);
             }
             runs.wake(slug, &planner.id, text, None);
-            return;
+            return true;
         }
         let back = if planner.status == "in_progress" { "review".to_string() } else { planner.status.clone() };
         runs.wake(slug, &planner.id, text, Some(back));
+        true
     }
 
     // ---- Feature status (board-features.ts) ----
@@ -1220,13 +1380,17 @@ impl Families {
         use crate::git::repo::RepoKind;
         if matches!(repo, RepoKind::Local | RepoKind::Remote) {
             let base = profile.get("baseBranch").and_then(Value::as_str).filter(|s| !s.is_empty()).unwrap_or("main").to_string();
-            let mut refs = vec![base.clone()];
+            // A branch name is a ref, never an option: one starting with "-" is left out of the git arguments.
+            let mut refs: Vec<String> = vec![base.clone()].into_iter().filter(|r| !r.starts_with('-')).collect();
             if repo == RepoKind::Remote {
                 refs.push(format!("origin/{base}"));
             }
             let grep = format!("--grep=^{FEATURE_TRAILER}: {top_id}$");
-            // A branch name is a ref, never an option: one starting with "-" is left out of the git arguments.
             let branch = top.s("branch").filter(|s| !s.is_empty() && !s.starts_with('-')).map(str::to_string);
+            if refs.is_empty() && branch.is_none() {
+                // Nothing left to read (git log would read the current branch instead).
+                return None;
+            }
             let mut args = vec!["log".to_string(), "--ignore-missing".into(), "--format=%H%x09%h%x09%s".into(), grep.clone()];
             args.extend(refs.iter().cloned());
             args.extend(branch.iter().cloned());
@@ -1282,12 +1446,21 @@ fn wait<T: Send>(f: impl std::future::Future<Output = T> + Send) -> T {
 
 /// `git <args>` in dir: its output, None when it fails or takes longer than 20 s.
 fn git(dir: &Path, args: &[String]) -> Option<String> {
-    let mut child = std::process::Command::new("git")
-        .args(args)
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(args);
+    limited(cmd, dir)
+}
+
+/// The command's output in dir, None when it fails or takes longer than 20 s (Bun's `runCmd` timeout). It runs in a
+/// process group of its own, so a hung pipeline (sh and the gits under it) is killed whole.
+fn limited(mut cmd: std::process::Command, dir: &Path) -> Option<String> {
+    use std::os::unix::process::CommandExt;
+    let mut child = cmd
         .current_dir(dir)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
+        .process_group(0)
         .spawn()
         .ok()?;
     let mut out = child.stdout.take()?;
@@ -1304,6 +1477,8 @@ fn git(dir: &Path, args: &[String]) -> Option<String> {
                 return st.success().then(|| String::from_utf8_lossy(&bytes).into_owned());
             }
             Ok(None) if start.elapsed() > std::time::Duration::from_secs(20) => {
+                // SAFETY: kill(2) on the group this child leads; no memory is touched.
+                unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
                 let _ = child.kill();
                 let _ = child.wait();
                 return None;
@@ -1344,11 +1519,9 @@ fn copy_duplicates(cwd: &Path, grep: &str, base_refs: &[String], branch: &str, a
     ];
     sh.extend(on_base.iter().map(|c| c.0.clone()));
     sh.extend(rest.iter().cloned());
-    let Ok(o) = std::process::Command::new("sh").args(&sh).current_dir(cwd).stdin(std::process::Stdio::null()).output() else { return dropped };
-    if !o.status.success() {
-        return dropped;
-    }
-    let text = String::from_utf8_lossy(&o.stdout);
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args(&sh);
+    let Some(text) = limited(cmd, cwd) else { return dropped };
     let by_commit: HashMap<String, String> = text
         .split('\n')
         .filter_map(|l| {
