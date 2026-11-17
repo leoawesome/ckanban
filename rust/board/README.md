@@ -495,3 +495,22 @@ and `chats.ts`. Drafts, fresh chat and session, take-over and link-session came 
   `store.createTicket`), so no Planning interview starts before the copied chat is in place.
 - Checked: `chat.test.ts`, `chat-session.test.ts` and `quickchat.test.ts` whole in board mode; unit tests in the
   modules. Not yet: `data-files.test.ts` waits for a huddle helper's spend (R11c).
+
+## F1: the checks before the switch
+
+- `bun run test:contract:rust-board`: every file in `test/contract` is listed in `contract-files.txt`, none filtered;
+  the runner also sets `CKANBAN_PARITY_RS` and `CKANBAN_PARITY_MCP`, so `rust-parity`, `mcp-parity` and
+  `board-parity.test.ts` run against Bun too.
+- `test/contract/board-parity.test.ts`: one script across the areas (a run from Ready, a chat that resumes it, a
+  question, a blocked run, a feature with a task, comments, a schedule, a one-time job, every list scope, each
+  ticket's view, activity, outputs and usage) on Bun's full mode and on the Rust board, each on a fresh data folder;
+  answers and the files under `profiles/` must match with ids, times, session ids and temp paths masked.
+- `scripts/rust-board-dryrun.ts` (`prepare`, `run bun|rust|rust-delete`, `compare`, `run rust --serve`, `clean`): a
+  copy of the real data folder in `/private/tmp/ckanban-f1`, made safe (paths rewritten into the copy, boards' folders
+  as git clones with no remote, phone access, push, webhook and Telegram cut off, saved keys replaced, Chrome, claude,
+  gh and tailscale stubbed, automation checks that find nothing, Desktop folders never read). Each server starts on a
+  fresh clone of it; the script reads every board's pages and every ticket's views and records what was written and
+  removed. `compare` lists the differences by route and file, and the report-only deletes beside Bun's real ones.
+- `CKANBAN_RUST_BOARD=1 bun scripts/rust-trial-bench.ts --server '["rust/target/release/ckanban-rs","dev"]'`: the
+  10,000-ticket bench in board mode (the satellite runs from the bench's copy of the code).
+- Results and the differences found: `docs/rust-port.md`, "The Rust board: ready to switch?".

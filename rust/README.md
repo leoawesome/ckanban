@@ -179,6 +179,9 @@ can't be done the build still succeeds, ad-hoc signed, with a warning; `CKANBAN_
 `codesign -d -r- rust/target/release/ckanban-rs` (it names the certificate, not a hash). The test scripts
 (`test:contract:rust`, `test:contract:rust-board`) and `scripts/rust-trial.sh` build through it too.
 
+Board mode has its own checks (`bun run test:contract:rust-board`, the board parity test and the dry run on a copy of
+the data folder): see `board/README.md`, "F1".
+
 The parity test (`test/contract/rust-parity.test.ts`) starts Bun alone and `ckanban-rs` on the same data, walks
 both through the same usage scenarios (a fake Anthropic) and spend data, and checks the answers and the shared files
 match; `bun run test` skips it. `bun run test` never runs cargo. To try it by hand, use a temp `CKANBAN_HOME` and a project folder outside the real

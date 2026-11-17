@@ -137,6 +137,57 @@ as step 1 of the trial did for usage and spend. Step 7 is where the go pays off 
 second short trial (the board's ticket list in Rust, reading the same files, compared against Bun) before committing
 to it.
 
+## The Rust board: ready to switch? (F1, 17 Nov 2026)
+
+The board, runs and chat now run in Rust behind board mode (`docs/rust-port-board-plan.md`). F1 checked it against Bun
+before the switch on Leo's Mac (F2).
+
+| Check | Result |
+|---|---|
+| Every contract test file in board mode (`bun run test:contract:rust-board`, all 44 files in `rust/board/contract-files.txt`, none filtered) | see the F1 report for the final run |
+| Board parity (`test/contract/board-parity.test.ts`: one script on Bun's full mode and on the Rust board, answers and files compared with ids, times and session ids masked) | the same, after the masks |
+| Dry run on a copy of Leo's data folder (`scripts/rust-board-dryrun.ts`: 8 boards, 1,916 tickets, 14,309 page reads per server) | the same pages and start-up writes, except the differences below; two real differences found and fixed |
+| Report-only deletes against Bun's own deletes on the same copy | the same 8 copy-of-the-folder decisions (6 removed, 2 kept with changes); with deleting on, the same 135 files removed |
+| 10,000-ticket bench | below |
+
+Differences the dry run found, and what became of them:
+- **Fixed:** with deleting on, the worktree sweep removed a Done ticket's copy of the folder but left the ticket pointing
+  at it (R6's start job still used a read-only stand-in from before ticket writes existed). It now runs on the board's
+  own git object after `recover()`, clears `worktree` like Bun, and never treats a ticket file it couldn't load as gone.
+- **Fixed:** at start the Rust board gave Bun's helper no session summaries, so the helper closed every "Claude
+  replied", question and proposal wait it had open. The start snapshot now carries the summaries of every ticket that
+  can wait on the user (read from the saved summaries or the transcript when the watcher hasn't got there yet).
+- Expected: prompts name `ckanban-rs` as the `ckanban` command instead of `bun src/cli.ts` (both are the CLI).
+- Rust is right where Bun shows a number late: a fresh Bun counts big run logs in the background, so its first answers
+  show $0 or a few cents for those tickets and families (and plan usage shares built on them); Rust counts them at once
+  (Leo's running board, after warming up, gives Rust's numbers).
+- Bun's bug, not Rust's: Bun cuts one long tool line in the middle of an emoji (a lone surrogate); Rust cuts before it.
+- Timing only: a feature's saved-changes list fills a moment after its first view (both), an automation check, a run
+  log reaching 30 days Done, and status files rewritten at a different second between the two runs; tickets with the
+  same `order` value in different columns come out in another order in the all-tickets list.
+- Copy only: the copy rewrites paths in the data folder but not in Claude's transcripts, and Rust rebuilds Bun's
+  session summaries (their tag differs), so on the copy one proposal looked changed. On the real Mac both name the
+  same paths.
+
+Bench (`scripts/rust-trial-bench.ts --runs 3`, 10,000 tickets, Mac load 7 to 8; raw: `docs/rust-board-bench-bun.json`,
+`docs/rust-board-bench-rust.json`):
+
+| Measure (median of 3 runs) | Bun alone | Rust board (Bun as satellite) |
+|---|---|---|
+| Longest stall while the big board loads | 213 ms (123 to 218) | 7.6 ms (4.5 to 25) |
+| Start until the first answer | 293 ms | 1022 ms |
+| Start until the board's tickets answer | 2184 ms | 1322 ms |
+| Memory, idle / big board settled / after the route calls | 89 / 373 / 447 MB | 158 / 472 / 514 MB |
+| GET tickets?scope=board, first / repeat | 68.9 / 64.6 ms | 91.5 / 86.5 ms |
+| GET /api/tickets (every ticket), first / repeat | 142 / 111 ms | 62.9 / 46.2 ms |
+| GET /api/spend, first call | 163 ms | 113 ms |
+| GET /api/inbox, first / repeat | 2.6 / 1.0 ms | 1.8 / 0.7 ms |
+
+The freezes are gone: the board answers within 25 ms while 10,000 tickets load (Bun: up to 218 ms), and its tickets
+come 0.9 s sooner. It answers its first request later (it loads the board before it serves) and uses about 100 MB more
+(Rust plus the Bun satellite). The board page's ticket list is about 20 ms slower than Bun's, a follow-up worth a look.
+On the copy of Leo's data the longest wait during start was 51 to 135 ms against Bun's 137 to 237 ms.
+
 ## Trying it on the real board
 
 From Terminal, not from a board chat (the switch restarts the board, and the script refuses while board runs are
