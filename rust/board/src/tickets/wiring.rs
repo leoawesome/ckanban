@@ -53,6 +53,17 @@ impl BoardHooks for Wired {
         Box::pin(async move { r })
     }
 
+    fn link_session(&self, slug: &str, id: &str, session: &str) -> BoxFuture<'_, Result<(), String>> {
+        let runs = self.runs.clone();
+        let (slug, id, session) = (slug.to_string(), id.to_string(), session.to_string());
+        Box::pin(async move {
+            match runs {
+                Some(r) => r.runs.link_session(&slug, &id, Some(&session)).await.map(|_| ()).map_err(|e| e.message),
+                None => Err(format!("linking a session is {}", super::hooks::NOT_YET)),
+            }
+        })
+    }
+
     fn closes_form(&self, slug: &str, id: &str, uuid: &str) -> Result<Map<String, Value>, (u16, String)> {
         match &self.runs {
             Some(r) => r.closes_form(slug, id, uuid),
@@ -196,6 +207,8 @@ pub struct TicketOps {
     pub tickets: Arc<Tickets>,
     /// R2b's families (a milestone is recorded in the feature's status), set once made.
     pub families: std::sync::OnceLock<Arc<crate::families::Families>>,
+    /// The run loop (R7a): chat messages (send CI failures, resolve conflicts).
+    pub runs: std::sync::OnceLock<Arc<crate::runloop::RunLoop>>,
 }
 
 impl crate::git::ops::BoardOps for TicketOps {
@@ -263,8 +276,15 @@ impl crate::git::ops::BoardOps for TicketOps {
     fn holds_review(&self, slug: &str, id: &str) -> bool {
         self.families.get().is_none_or(|f| f.holds_review(slug, id))
     }
-    fn chat(&self, _: &str, _: &str, _: &str) -> BoxFuture<'_, Result<Value, String>> {
-        Box::pin(async { Err(super::hooks::NOT_YET.to_string()) })
+    fn chat(&self, slug: &str, id: &str, text: &str) -> BoxFuture<'_, Result<Value, String>> {
+        let runs = self.runs.get().cloned();
+        let (slug, id, text) = (slug.to_string(), id.to_string(), text.to_string());
+        Box::pin(async move {
+            let Some(r) = runs else { return Err(super::hooks::NOT_YET.to_string()) };
+            tokio::task::spawn_blocking(move || r.chat(&slug, &id, &text, Default::default()).map(|t| Value::Object(t.json.clone())).map_err(|e| e.message))
+                .await
+                .map_err(|e| e.to_string())?
+        })
     }
     fn session_exists(&self, session_id: &str) -> bool {
         crate::sessions::files::find_session_file(&crate::sessions::files::projects_dir(None), session_id).is_some()

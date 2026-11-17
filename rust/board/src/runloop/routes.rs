@@ -18,6 +18,8 @@ pub fn wanted(method: &str, rest: &[&str]) -> bool {
         (method, rest),
         ("POST", ["chat"])
             | ("POST" | "PATCH" | "DELETE", ["queued", _])
+            | ("POST", ["link-session" | "branch" | "check-pr"])
+            | ("POST", ["pr", "refresh" | "send-failures" | "resolve-conflicts" | "merge"])
             | ("POST", ["ask" | "stop" | "cap-continue" | "stall" | "limit" | "fresh-session" | "take-over" | "fresh-chat" | "setup"])
             | ("POST" | "DELETE", ["follow-up"])
             | ("POST", ["follow-up", "now"])
@@ -68,6 +70,44 @@ pub fn answer(runs: &Arc<RunLoop>, w: &Writes, req: &Req, slug: &str, id: &str, 
             };
             t.map_err(or(404))?;
             Ok(Reply::Json(if m == "POST" { 202 } else { 200 }, view(id)))
+        }
+        ["link-session"] => {
+            let b = body_obj(req)?;
+            let sid = b.get("sessionId").filter(|v| crate::runs::js::truthy(Some(v))).map(|v| s(Some(v)));
+            let t = block(runs.link_session(slug, id, sid.as_deref())).map_err(|e| (400, e.message))?;
+            Ok(Reply::Json(200, w.view_pub(slug, &t)))
+        }
+        ["branch"] => {
+            if req.run.is_some() {
+                return Err((403, "branching is disabled inside a board run; use the propose_branch tool so the user can click Branch".into()));
+            }
+            let (t, warning) = block(runs.branch_ticket(slug, id)).map_err(or(400))?;
+            Ok(Reply::Json(201, json!({ "ticket": w.view_pub(slug, &t), "warning": warning })))
+        }
+        ["check-pr"] => {
+            let gh: Arc<dyn crate::git::pr::Gh> = Arc::new(crate::git::pr::GhCli);
+            let state = block(crate::git::pr::check_pr_gh(&*runs.ops(), gh, slug, id));
+            Ok(Reply::Json(200, json!({ "state": state, "ticket": view(id) })))
+        }
+        ["pr", what] => {
+            if *what != "refresh" && req.run.is_some() {
+                return Err((403, "only the user can merge a PR or send its CI failures or conflicts from the board".into()));
+            }
+            let ops = runs.ops();
+            let gh = Arc::new(crate::git::pr::GhCli);
+            if *what == "refresh" {
+                let force = body_obj(req).ok().is_some_and(|b| crate::runs::js::truthy(b.get("force")));
+                let age = if force { std::time::Duration::ZERO } else { std::time::Duration::from_millis(30_000) };
+                let pr = block(crate::git::pr::refresh_pr(&*ops, gh, slug, id, Some(age))).map_err(|e| (502, e))?;
+                return Ok(Reply::Json(200, json!({ "pr": pr, "ticket": view(id) })));
+            }
+            let r = match *what {
+                "merge" => block(crate::git::pr::merge_pr(&*ops, &*gh, slug, id)),
+                "resolve-conflicts" => block(crate::git::pr::resolve_conflicts(&*ops, &*gh, slug, id)),
+                _ => block(crate::git::pr::send_failures(&*ops, &*gh, slug, id)),
+            };
+            r.map_err(|e| (e.status, e.message))?;
+            Ok(Reply::Json(if *what == "merge" { 200 } else { 202 }, view(id)))
         }
         ["ask"] => {
             let asker = run_ticket(req, slug);

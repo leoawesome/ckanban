@@ -230,8 +230,8 @@ pub struct RunLoop {
     /// Runs as each attempt's activity log number (`runCount + 1` at the start of a work run).
     pub(super) versions: crate::runs::model_versions::ModelVersions,
     pub(super) digests: Arc<crate::runs::activity_digest::ActivityDigests>,
-    /// What to do once a pending restart's work is done (set by `request_restart`).
-    pub(super) restart_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    /// R6's view of the board, for the PR routes.
+    pub(super) ops: std::sync::OnceLock<Arc<dyn crate::git::ops::BoardOps>>,
 }
 
 /// A JSON object from `json!({...})`.
@@ -298,12 +298,20 @@ impl RunLoop {
             asks: Mutex::new(Vec::new()),
             versions,
             digests: crate::runs::activity_digest::ActivityDigests::new(),
-            restart_hook: Mutex::new(None),
+            ops: std::sync::OnceLock::new(),
         })
     }
 
     pub(super) fn arc(&self) -> Arc<RunLoop> {
         self.me.upgrade().expect("the run loop is alive")
+    }
+
+    /// R6's view of the board (the ticket writes), for the PR routes; set by board mode.
+    pub fn set_ops(&self, ops: Arc<dyn crate::git::ops::BoardOps>) {
+        let _ = self.ops.set(ops);
+    }
+    pub fn ops(&self) -> Arc<dyn crate::git::ops::BoardOps> {
+        self.ops.get().cloned().expect("board mode sets the run loop's ops")
     }
 
     pub fn key(slug: &str, id: &str) -> String {
@@ -388,7 +396,7 @@ impl RunLoop {
         Value::Array(q)
     }
 
-    fn chat_now(&self, slug: &str, id: &str, text_in: &str, mut opts: ChatOptions) -> Result<Arc<Tk>, RunError> {
+    fn chat_now(&self, slug: &str, id: &str, text_in: &str, opts: ChatOptions) -> Result<Arc<Tk>, RunError> {
         if self.state.lock().rewinding.contains(&Self::key(slug, id)) {
             return Err(RunError::conflict(rules::REWINDING));
         }

@@ -195,7 +195,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     core.tickets.set_mask(text_masker(root));
     let s = sessions.clone();
     core.tickets.on_written(move |slug, id| s.ticket_changed(slug, id));
-    let ops = Arc::new(TicketOps { tickets: core.tickets.clone(), families: Default::default() });
+    let ops = Arc::new(TicketOps { tickets: core.tickets.clone(), families: Default::default(), runs: Default::default() });
     let landing = git::landing::Git::new(root, ops.clone());
     // R2b: families, plans and the feature status; what needs a run waits for the run loop (R7a).
     let families = ckanban_board::families::Families::new(core.tickets.clone(), core.reads.clone());
@@ -225,6 +225,8 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         opts,
     });
     late_runs.set(runs.clone());
+    let _ = ops.runs.set(runs.clone());
+    runs.set_ops(ops.clone());
     families.set_runs(runs.clone());
     core.tickets.set_hooks(Arc::new(Wired {
         git: Some(landing.clone()),

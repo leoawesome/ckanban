@@ -517,7 +517,30 @@ impl RunLoop {
         Ok(self.tickets.add_comment(slug, id, text, from)?)
     }
 
-    pub(super) fn drop_auto_wait_map(&self, slug: &str, id: &str) -> Map<String, Value> {
-        self.drop_auto_wait(slug, id)
+    /// `linkSession`: a Claude session the user already started in the board's folder (None unlinks).
+    pub async fn link_session(self: &Arc<Self>, slug: &str, id: &str, session: Option<&str>) -> Result<Arc<Tk>, RunError> {
+        let (profile, t) = (self.profile(slug), self.get(slug, id));
+        let (Some(profile), Some(t)) = (profile, t) else { return Err(RunError::other("ticket not found")) };
+        if self.is_running(slug, id) {
+            return Err(RunError::other("ticket is running; stop it before linking a session"));
+        }
+        if let Some(s) = session
+            && !(s.len() == 36 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-'))
+        {
+            return Err(RunError::other("invalid session id"));
+        }
+        if let (Some(wt), Some(_)) = (ts(&t, "worktree"), session) {
+            let r = self.git.remove_ticket_worktree(&Value::Object(profile.clone()), std::path::Path::new(wt)).await;
+            if !r.removed {
+                return Err(RunError::other(format!("ticket already has a worktree with changes ({wt}); cannot switch session")));
+            }
+        }
+        let p = match session {
+            None => obj(json!({ "sessionId": null, "workdir": null })),
+            Some(s) => obj(json!({ "sessionId": s, "workdir": profile.get("path").cloned().unwrap_or(Value::Null), "worktree": null, "runCount": 0, "lastRunAt": now_iso(), "status": "review" })),
+        };
+        let me = self.clone();
+        let (s, i) = (slug.to_string(), id.to_string());
+        tokio::task::spawn_blocking(move || me.patch(&s, &i, p)).await.map_err(|e| RunError::other(e.to_string()))?
     }
 }
