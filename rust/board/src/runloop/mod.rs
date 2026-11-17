@@ -21,7 +21,6 @@ mod queue;
 mod recovery;
 mod slots;
 pub mod text;
-pub mod usage;
 pub mod wiring;
 
 pub use board::{ActiveRun, RunError, RunLoop, RunLoopDeps, RunLoopOptions};

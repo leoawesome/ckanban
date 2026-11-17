@@ -158,22 +158,6 @@ static MOCKUP_OPEN: LazyLock<Regex> = LazyLock::new(|| js_re(r#"<ckanban-mockup\
 pub(crate) static FENCE_OPEN: LazyLock<Regex> = LazyLock::new(|| js_re(r"^```(?:html)?\s*\n"));
 pub(crate) static FENCE_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n?```$").expect("valid regex"));
 
-/// `extractMockups`: the mockup blocks in a reply as (name, html), valid names only, a ``` fence dropped.
-pub fn extract_mockups(text: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for c in MOCKUP_BLOCK.captures_iter(text) {
-        let html = js::trim(&c[2]).to_string();
-        let html = FENCE_OPEN.replace(&html, "").into_owned();
-        let html = js::trim(&FENCE_CLOSE.replace(&html, "")).to_string();
-        if let Some(name) = mockup_name(&c[1])
-            && !html.is_empty()
-        {
-            out.push((name.to_string(), html));
-        }
-    }
-    out
-}
-
 /// The names of the mockup blocks in a reply that carry HTML (valid names only).
 fn mockup_names(text: &str) -> Vec<String> {
     let mut out = Vec::new();

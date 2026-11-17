@@ -159,14 +159,14 @@ impl RunLoop {
             if log.is_empty() {
                 return;
             }
-            let runs = super::usage::ticket_runs(&digest);
-            let Some(run) = runs.iter().rev().find(|r| r.kind == "follow-up") else { return };
+            let runs = crate::extras::usage::ticket_runs(&digest.run_entries);
+            let Some(run) = runs.iter().rev().find(|r| r.kind.as_str() == Some("follow-up")) else { return };
             let Some(i) = log.iter().rposition(|e| e.get("kind").and_then(Value::as_str) == Some("woke")) else { return };
             if log[i].get("costUsd").is_some() {
                 return;
             }
             let mut log2 = log.clone();
-            log2[i]["run"] = ckanban_core::jsnum::num(run.run);
+            log2[i]["run"] = run.run.clone();
             log2[i]["costUsd"] = ckanban_core::jsnum::num((run.cost_usd * 10_000.0).round() / 10_000.0);
             let woke_at = log[i].get("at").and_then(Value::as_str).unwrap_or("");
             let said = t.is("followUp") || t.get("followUpStopped").and_then(|s| s.get("at")).and_then(Value::as_str).is_some_and(|a| a >= woke_at);

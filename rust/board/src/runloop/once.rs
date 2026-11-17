@@ -595,19 +595,10 @@ impl RunLoop {
     fn save_mockups(&self, slug: &str, id: &str, ev: &Value) {
         let Some(Value::Array(content)) = ev.get("message").and_then(|m| m.get("content")) else { return };
         let text: Vec<&str> = content.iter().map(|b| if b.get("type").and_then(Value::as_str) == Some("text") { b.get("text").and_then(Value::as_str).unwrap_or("") } else { "" }).collect();
-        let mockups = crate::sessions::text::extract_mockups(&text.join("\n"));
-        if mockups.is_empty() {
+        let saved = crate::extras::mockups::save_mockups(&self.outputs_dir(slug, id), &text.join("\n"));
+        if saved.as_ref().is_ok_and(|n| n.is_empty()) {
             return;
         }
-        let dir = self.outputs_dir(slug, id).join("mockups");
-        let saved = (|| -> std::io::Result<Vec<String>> {
-            std::fs::create_dir_all(&dir)?;
-            for (name, html) in &mockups {
-                let body = if html.ends_with('\n') { html.clone() } else { format!("{html}\n") };
-                std::fs::write(dir.join(name), body)?;
-            }
-            Ok(mockups.iter().map(|(n, _)| n.clone()).collect())
-        })();
         match saved {
             Ok(names) => {
                 self.patch_quiet(slug, id, obj(json!({ "lastActivity": format!("Saved mockup{} {}", if names.len() > 1 { "s" } else { "" }, names.join(", ")) })));
