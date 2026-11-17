@@ -31,13 +31,6 @@ impl Agents {
         Some(Agents { server_argv: vec![bun.to_string_lossy().into_owned(), cli.to_string_lossy().into_owned(), "mcp".into()] })
     }
 
-    /// Board mode (P3): the Rust MCP server, `[this program, "mcp"]`, the same command the board's runs start and
-    /// `ckanban-rs mcp install` registers (it never starts Bun).
-    pub fn this_program() -> Option<Self> {
-        let exe = std::env::current_exe().ok()?;
-        Some(Agents { server_argv: vec![exe.to_string_lossy().into_owned(), "mcp".into()] })
-    }
-
     /// The command line the agents should run (`serverArgv`): this ckanban's `mcp`.
     pub fn server_argv(&self) -> &[String] {
         &self.server_argv

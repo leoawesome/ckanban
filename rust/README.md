@@ -143,8 +143,8 @@ and build the same answer texts, one file per tool group (`tickets`, `workflow`,
 
 Every tool runs in Rust since P3 (`keys.rs`: ask_keys and backup_file, `proposals.rs`: propose_automation and
 propose_helper_rule, `artifact.rs`: read_artifact and publish_artifact, the team tools in `huddles.rs`); `ckanban-rs
-mcp` never starts Bun. `ckanban-rs mcp install` registers `ckanban-rs mcp`, and in board mode so does the Connections
-panel's "Use the board from Claude Code / Codex". `bun run test:contract:rust` runs `test/contract/mcp.test.ts` and
+mcp` never starts Bun. `ckanban-rs mcp install` registers `ckanban-rs mcp`; the Connections panel's "Use the board
+from Claude Code / Codex" still registers Bun's `ckanban mcp`, as Bun does (P4 changes both). `bun run test:contract:rust` runs `test/contract/mcp.test.ts` and
 `mcp-parity.test.ts` against `ckanban-rs mcp`.
 
 ## Who is calling

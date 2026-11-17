@@ -1220,7 +1220,7 @@ impl BoardMode {
 
     /// The outside services (P2), once the server knows how the Bun child runs (`bun`, `repo`): the helper command for
     /// publishing, `ckanban mcp`'s command line for the agents, and `notify` (Bun hears of the passes file changing).
-    pub fn connect_outside(self: &Arc<Self>, bun: &Path, _repo: &Path, notify: passes::Notify) {
+    pub fn connect_outside(self: &Arc<Self>, bun: &Path, repo: &Path, notify: passes::Notify) {
         use crate::outside::{self, routes::Outside};
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ckanban-rs"));
         let _ = self.publish_run.set(outside::edge::publish_run(exe));
@@ -1238,7 +1238,7 @@ impl BoardMode {
             claude_config.clone(),
         );
         let phone = outside::phone::Phone::new(self.root.clone(), self.remote_port);
-        let agents = crate::agents::Agents::this_program().map(|a| outside::agents_admin::AgentsAdmin::new(Arc::new(a)));
+        let agents = crate::agents::Agents::new(bun, repo).map(|a| outside::agents_admin::AgentsAdmin::new(Arc::new(a)));
         let bun_version = std::process::Command::new(bun).arg("--version").output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
         let bugs = outside::bugreport::BugReports::new(self.root.clone(), bun_version);
         let _ = self.outside_sat.signin.set(signin.clone());
