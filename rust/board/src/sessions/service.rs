@@ -100,6 +100,10 @@ impl SessionInfo for Sessions {
         w.known.lock().get(session_id).map(|(_, s)| s.clone())
     }
 
+    fn summary_now(&self, session_id: &str) -> Option<Value> {
+        self.summary(session_id).or_else(|| self.cache.summary(session_id))
+    }
+
     fn version(&self, session_id: &str) -> Option<String> {
         let w = self.watcher.lock().clone()?;
         w.known.lock().get(session_id).map(|(v, _)| v.clone())

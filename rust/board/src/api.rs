@@ -62,6 +62,11 @@ pub trait SessionInfo: Send + Sync {
     /// A ticket's run just ended: read its session now (blocking), so the summary the card and the Inbox show is the
     /// run's last word, not the one from before it (R7a).
     fn refresh(&self, _slug: &str, _id: &str, _session_id: &str) {}
+    /// The summary now, read from the saved summaries or the transcript when the watcher hasn't looked at the session
+    /// yet (Bun's `sessions.summary(id)`). Blocking: call it from a blocking thread.
+    fn summary_now(&self, session_id: &str) -> Option<Value> {
+        self.summary(session_id)
+    }
 }
 
 /// Huddles' live state (`Huddles` in `src/huddle/huddle.ts`).

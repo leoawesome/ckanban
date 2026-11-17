@@ -54,7 +54,8 @@ pub fn waiting_sessions<'a>(tickets: impl IntoIterator<Item = (&'a str, Option<&
         .collect()
 }
 
-/// The start snapshot: what runs, each board's huddles by host ticket, and the summaries of `sessions`.
+/// The start snapshot: what runs, each board's huddles by host ticket, and the summaries of `sessions`. Blocking
+/// (summaries may be read from transcripts): call it from a blocking thread.
 pub fn runtime_snapshot(
     runs: &dyn RunControl,
     huddles: &dyn HuddleInfo,
@@ -72,7 +73,8 @@ pub fn runtime_snapshot(
     }
     let mut sums = Map::new();
     for id in session_ids {
-        if let Some(s) = sessions.summary(id) {
+        // Read now when the session watcher's first pass hasn't reached it (the snapshot is made right at start).
+        if let Some(s) = sessions.summary_now(id) {
             sums.insert(id.clone(), s);
         }
     }

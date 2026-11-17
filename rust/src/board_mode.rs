@@ -1394,6 +1394,7 @@ impl BoardMode {
         })
         .await
         .unwrap_or_else(|_| json!({ "running": [], "hostHuddles": {}, "sessions": {} }));
+        eprintln!("[board] the satellite's start snapshot: {} session summaries", snapshot["sessions"].as_object().map_or(0, |m| m.len()));
         let _ = tell.send(satellite::runtime_line(&snapshot));
         let _ = self.tell.set(tell.clone());
         // The pass store for key cards: Bun hears of each change to the passes file on its stdin.
