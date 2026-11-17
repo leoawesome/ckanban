@@ -64,10 +64,23 @@ impl Http for ReqwestHttp {
     }
 }
 
-/// A request error without the address it went to (a push endpoint is a secret; a webhook may hold a token).
+/// A request error without the address it went to (a push endpoint is a secret; a webhook may hold a token), in
+/// Bun's words for a timeout and a refused connection, else the causes (`rust/src/outside/signin/http.rs`).
 pub fn without_url(e: reqwest::Error) -> String {
     let e = e.without_url();
-    if e.is_timeout() { "The operation timed out.".into() } else { e.to_string() }
+    if e.is_timeout() {
+        return "The operation timed out.".into();
+    }
+    if e.is_connect() {
+        return "Unable to connect. Is the computer able to access the url?".into();
+    }
+    let mut src: Option<&dyn std::error::Error> = std::error::Error::source(&e);
+    let mut parts = Vec::new();
+    while let Some(s) = src {
+        parts.push(s.to_string());
+        src = s.source();
+    }
+    if parts.is_empty() { "fetch failed".into() } else { parts.join(": ") }
 }
 
 /// What a send reached (`PushResult`).

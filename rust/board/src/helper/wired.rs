@@ -121,14 +121,15 @@ impl Sender for SatelliteSender {
 }
 
 /// The satellite's Telegram bot for Settings (`telegram-state`, `telegram-pair`, `telegram-unpair`,
-/// `notify-changed`); waits up to 15 s for the satellite to run.
+/// `notify-changed`). `telegram-state` waits at most 2 s for the satellite to run (Settings then shows Telegram from
+/// the file), the others up to 15 s.
 pub struct SatelliteTelegram(pub Arc<SatelliteClient>, pub tokio::sync::watch::Receiver<bool>);
 
 impl super::notify::TelegramSide for SatelliteTelegram {
     fn call(&self, name: &str, body: Value) -> BoxFuture<'static, Result<(u16, Value), String>> {
         let (c, ready, name) = (self.0.clone(), self.1.clone(), name.to_string());
         Box::pin(async move {
-            wait_ready(ready, 15).await;
+            wait_ready(ready, if name == "telegram-state" { 2 } else { 15 }).await;
             c.call(&name, &body).await
         })
     }

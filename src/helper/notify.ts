@@ -450,6 +450,8 @@ export class Notifier {
   private ntfyTopic = `https://ntfy.sh/ckanban-${randomBytes(12).toString("base64url").replace(/[-_]/g, "x")}`;
   /** Satellite mode: settings sent to Rust and not written yet (read back from here until then). */
   private pendingSettings: NotifySettings | null = null;
+  /** Satellite mode: Telegram's fields sent to Rust and not written yet (sent again with the next save). */
+  private unsavedTelegram: Partial<TelegramSettings> = {};
   /** Satellite mode: settings writes to Rust, one after another (never rejects), and the last one (may reject). */
   private settingsWrite: Promise<void> = Promise.resolve();
   private lastSave: Promise<void> = Promise.resolve();
@@ -587,13 +589,14 @@ export class Notifier {
     const edge = this.o.helperEdge;
     if (!edge) return writeNotifySettings(this.o.root, s);
     // Read back from here until Rust wrote them. A failed write keeps them (a /lock stays in force here) and the
-    // next save sends them again; the settings routes answer the failure. While an earlier save is pending or
-    // failed, a save sends all of Telegram's fields, so that one's go too.
-    const failed = this.pendingSettings;
+    // next save sends its fields again with its own; the settings routes answer the failure. Only the fields
+    // Telegram changed ever go, never a stale copy of the rest (a token the user changed meanwhile stays changed).
     this.pendingSettings = s;
-    const fields = telegram && !failed ? telegram : telegram ? { ...s.telegram } : undefined;
+    const fields = telegram ? { ...this.unsavedTelegram, ...telegram } : undefined;
+    if (fields) this.unsavedTelegram = fields;
     const p = this.settingsWrite.then(() => edge.writeSettings(s, fields)).then(() => {
       if (this.pendingSettings === s) this.pendingSettings = null;
+      if (this.unsavedTelegram === fields) this.unsavedTelegram = {};
     });
     this.lastSave = p;
     this.settingsWrite = p.catch((e) => console.error(`satellite: notify-write: ${(e as Error).message}`));
@@ -610,7 +613,12 @@ export class Notifier {
    * Telegram left waiting.
    */
   settingsChanged(c: { tokenChanged: boolean; stoppedTaking: boolean }): void {
-    this.pendingSettings = null;
+    // Telegram's own fields not written yet (a /lock on its way, or failed) stay in force over the new file.
+    const unsaved = this.unsavedTelegram;
+    if (Object.keys(unsaved).length) {
+      const f = readNotifySettings(this.o.root);
+      this.pendingSettings = { ...f, telegram: { ...f.telegram, ...unsaved } };
+    } else this.pendingSettings = null;
     if (c.tokenChanged) this.telegram.reset();
     if (c.stoppedTaking) this.dropTelegramWork();
     this.telegram.refresh();

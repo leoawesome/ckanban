@@ -194,11 +194,15 @@ impl Notify {
             "tokenChanged": s(&before["telegram"], "token") != s(&next["telegram"], "token"),
             "stoppedTaking": taking(&before["telegram"]) && !taking(&next["telegram"]),
         });
-        match self.telegram.call("notify-changed", changed).await {
-            Ok((200, _)) => {}
-            Ok((status, v)) => eprintln!("notify: the satellite's notify-changed: {status} {}", s(&v, "error")),
-            Err(e) => eprintln!("notify: the satellite's notify-changed: {e}"),
-        }
+        // In the background: Settings answers without waiting for the satellite.
+        let tg = self.telegram.clone();
+        tokio::spawn(async move {
+            match tg.call("notify-changed", changed).await {
+                Ok((200, _)) => {}
+                Ok((status, v)) => eprintln!("notify: the satellite's notify-changed: {status} {}", s(&v, "error")),
+                Err(e) => eprintln!("notify: the satellite's notify-changed: {e}"),
+            }
+        });
         Ok(self.state(local).await)
     }
 
@@ -374,6 +378,7 @@ mod tests {
         let v = n.update(&json!({ "webhookUrl": "https://ntfy.sh/abc", "telegram": { "token": tok, "on": true } }), true).await.unwrap();
         assert_eq!((v["webhookUrl"].as_str(), v["telegram"]["tokenMasked"].as_str(), v["channels"][2]["label"].as_str()), (Some("https://ntfy.sh/abc"), Some("set …1234"), Some("ntfy")));
         assert!(!v.to_string().contains(tok));
+        tokio::task::yield_now().await;
         assert!(told.lock().iter().any(|t| t == r#"notify-changed {"tokenChanged":true,"stoppedTaking":false}"#));
         // Paused from the Mac; the phone can't turn it back on.
         let saved = read_notify(dir.path());

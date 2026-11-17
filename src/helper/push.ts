@@ -170,6 +170,8 @@ export class PushService {
 
   /** Remove devices whose push service said they're gone, and remember them so the user is told. */
   private drop(ids: string[]): void {
+    // Satellite mode: the Rust board drops gone devices (and tells the user) when it sends to them.
+    if (this.readOnly) return;
     const f = this.read();
     const at = nowIso();
     const dropped = f.devices.filter((d) => ids.includes(d.id)).map(({ id, label }) => ({ id, label, at }));

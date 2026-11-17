@@ -190,7 +190,11 @@ impl Helper {
                         Ok(n) => n,
                         Err(e) => return Some((400, json!({ "error": e }))),
                     },
-                    (None, Some(s)) => s.clone(),
+                    // Read like the file (an address that isn't http(s) refused).
+                    (None, Some(s)) => match notify_settings::normalize_from_file(s) {
+                        Ok(n) => n,
+                        Err(e) => return Some((400, json!({ "error": e }))),
+                    },
                     _ => return Some((400, json!({ "error": "telegram or settings is required" }))),
                 };
                 if let Err(e) = notify_settings::write_notify(&self.core.root, &next) {

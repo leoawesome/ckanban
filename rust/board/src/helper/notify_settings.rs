@@ -127,11 +127,12 @@ pub fn normalize(raw: &Value, base: &Value, from_file: bool) -> Result<Value, St
 }
 
 /// The satellite's Telegram save (`notify-write` with `telegram`): these Telegram fields over the file's, as Bun's
-/// `save(patch)` merges them, then read like the file.
+/// `save(patch)` merges them, then read like the file. Never the token: only Settings here sets it, so a late save
+/// from the satellite can't bring back a token the user changed or removed.
 pub fn merge_telegram(cur: &Value, patch: &Map<String, Value>) -> Result<Value, String> {
     let mut raw = cur.clone();
     if let Some(t) = raw.get_mut("telegram").and_then(Value::as_object_mut) {
-        for (k, v) in patch {
+        for (k, v) in patch.iter().filter(|(k, _)| k.as_str() != "token") {
             t.insert(k.clone(), v.clone());
         }
     }
@@ -202,4 +203,18 @@ pub fn enabled(s: &Value) -> Vec<String> {
 /// `telegramTakes`: Telegram gets only urgent sends, the test and the night question.
 pub fn telegram_takes(m: &Map<String, Value>) -> bool {
     crate::runs::js::truthy(m.get("urgent")) || m.get("level").and_then(Value::as_str) == Some("test") || crate::runs::js::truthy(m.get("nightAsk"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_telegram_save_from_the_satellite_never_sets_the_token() {
+        let mut cur = default_notify();
+        cur["telegram"]["token"] = "".into();
+        let patch = json!({ "token": "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234", "chatId": 5, "takeMessages": false, "lockedAt": "l" });
+        let next = merge_telegram(&cur, patch.as_object().unwrap()).unwrap();
+        assert_eq!((next["telegram"]["token"].as_str(), next["telegram"]["chatId"].as_i64(), next["telegram"]["lockedAt"].as_str()), (Some(""), Some(5), Some("l")));
+    }
 }
