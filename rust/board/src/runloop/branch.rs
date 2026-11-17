@@ -1,6 +1,7 @@
 //! Branch (`branchTicket`, `copyTicket` without a cut point, `src/board/board-tickets.ts`) and the PR box's routes
 //! (`pr/refresh`, `pr/merge`, `pr/send-failures`, `pr/resolve-conflicts`, `check-pr` of `src/api/ticket-actions.ts`),
-//! over R6's `landing::Git::branch_folder` and `git::pr`. Fork from a message (a cut point) is R7b's.
+//! over R6's `landing::Git::branch_folder` and `git::pr`. Fork from a message (a cut point, R7b) goes through the same
+//! `copy_ticket_before`.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,13 +15,18 @@ use crate::runs::js;
 /// `rewriteSession` + `writeFork`: the transcript under a new id and folder (with attachment names swapped), and
 /// its side folder (subagents, saved tool output) copied. Returns the new transcript file.
 pub fn fork_session(src: &Path, from: &str, to: &str, from_cwd: &str, to_cwd: &str, rename: &[(String, String)]) -> Result<PathBuf, String> {
+    let raw = std::fs::read_to_string(src).map_err(|e| e.to_string())?;
+    fork_session_text(src, raw, from, to, from_cwd, to_cwd, rename)
+}
+
+/// `writeFork` of a given transcript text (`forkSessionBefore` passes the cut one).
+pub fn fork_session_text(src: &Path, mut raw: String, from: &str, to: &str, from_cwd: &str, to_cwd: &str, rename: &[(String, String)]) -> Result<PathBuf, String> {
     let real = |p: &str| std::fs::canonicalize(p).map(|x| x.to_string_lossy().into_owned()).unwrap_or_else(|_| p.to_string());
     let (from_cwd, to_cwd) = (real(from_cwd), real(to_cwd));
     let dest = crate::sessions::files::projects_dir(None).join(crate::runs::claude::encode_project_dir(&to_cwd)).join(format!("{to}.jsonl"));
     if dest.exists() {
         return Err(format!("a Claude session {to} already exists"));
     }
-    let mut raw = std::fs::read_to_string(src).map_err(|e| e.to_string())?;
     for (a, b) in rename {
         raw = raw.split(a.as_str()).collect::<Vec<_>>().join(b);
     }
@@ -85,10 +91,11 @@ impl RunLoop {
             return Err(RunError::conflict("Claude is working on this ticket; branch it once Claude is done"));
         }
         let title = format!("Branch: {}", src.as_ref().map(|t| t.title.as_str()).unwrap_or(""));
-        self.copy_ticket(slug, id, &title).await
+        self.copy_ticket_before(slug, id, &title, None).await
     }
 
-    async fn copy_ticket(self: &Arc<Self>, slug: &str, id: &str, title: &str) -> Result<(Arc<Tk>, Option<String>), RunError> {
+    /// `copyTicket`: Branch (no cut point) or Fork from here (`before`: the chat ends just before that message).
+    pub async fn copy_ticket_before(self: &Arc<Self>, slug: &str, id: &str, title: &str, before: Option<&str>) -> Result<(Arc<Tk>, Option<String>), RunError> {
         let (profile, src) = (self.profile(slug), self.get(slug, id));
         let (Some(profile), Some(src)) = (profile, src) else { return Err(RunError::other(format!("ticket {id} not found"))) };
         if corrupt(&src) {
@@ -96,11 +103,18 @@ impl RunLoop {
         }
         let sid = ts(&src, "sessionId").map(str::to_string);
         let src_file = sid.as_deref().and_then(|s| crate::sessions::files::find_session_file(&crate::sessions::files::projects_dir(None), s));
-        let (Some(sid), Some(src_file)) = (sid, src_file) else { return Err(RunError::other("this ticket has no Claude conversation to branch yet")) };
+        let what = if before.is_some() { "fork" } else { "branch" };
+        let (Some(sid), Some(src_file)) = (sid, src_file) else { return Err(RunError::other(format!("this ticket has no Claude conversation to {what} yet"))) };
         if let Some(w) = ts(&src, "workdir")
             && !Path::new(w).exists()
         {
             return Err(RunError::other(format!("linked session folder no longer exists: {w}")));
+        }
+        // Checked before anything is made: a message the chat can't be cut at is refused.
+        if let Some(b) = before
+            && crate::chat::rewind::cut_session(&std::fs::read_to_string(&src_file).unwrap_or_default(), b).is_none()
+        {
+            return Err(RunError::other("The chat can't be forked from this message."));
         }
         let me = self.clone();
         let (s, t2, body, mode) = (slug.to_string(), title.to_string(), src.body.clone(), src.get("mode").cloned());
@@ -109,12 +123,12 @@ impl RunLoop {
             if let Some(m) = mode.filter(|m| !m.is_null()) {
                 input.insert("mode".into(), m);
             }
-            me.tickets.create(&s, input)
+            me.tickets.create_quiet(&s, input)
         })
         .await
         .map_err(|e| RunError::other(e.to_string()))??;
         let new_id = created.id.clone();
-        let out = self.fill_copy(slug, &src, &profile, &new_id, title, &sid, &src_file).await;
+        let out = self.fill_copy(slug, &src, &profile, &new_id, title, &sid, &src_file, before).await;
         match out {
             Ok(r) => Ok(r),
             Err((worktree, e)) => {
@@ -131,7 +145,7 @@ impl RunLoop {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn fill_copy(self: &Arc<Self>, slug: &str, src: &Tk, profile: &Map<String, Value>, new_id: &str, title: &str, sid: &str, src_file: &Path) -> Result<(Arc<Tk>, Option<String>), (Option<PathBuf>, RunError)> {
+    async fn fill_copy(self: &Arc<Self>, slug: &str, src: &Tk, profile: &Map<String, Value>, new_id: &str, title: &str, sid: &str, src_file: &Path, before: Option<&str>) -> Result<(Arc<Tk>, Option<String>), (Option<PathBuf>, RunError)> {
         let folder = self.git.branch_folder(slug, &Value::Object(src.json.clone()), new_id, title).await.map_err(|e| (None, RunError::other(e)))?;
         let wt = folder.worktree.clone();
         let fail = |e: String| (wt.clone(), RunError::other(e));
@@ -157,7 +171,7 @@ impl RunLoop {
             .unwrap_or_else(|| path.clone());
         // The branch gets its own copies of pasted images, so deleting either ticket can't break the other.
         let raw = std::fs::read_to_string(src_file).map_err(|e| fail(e.to_string()))?;
-        let names = crate::tickets::files::referenced_attachments(&[src.body.clone(), raw]);
+        let names = crate::tickets::files::referenced_attachments(&[src.body.clone(), raw.clone()]);
         let dir = crate::tickets::files::attachments_dir(&self.root);
         let mut rename: Vec<(String, String)> = Vec::new();
         for n in names {
@@ -178,7 +192,22 @@ impl RunLoop {
             patch.insert("body".into(), Value::String(body));
         }
         let to = patch.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();
-        fork_session(src_file, sid, &to, &from_cwd, &to_cwd, &rename).map_err(fail)?;
+        match before {
+            None => {
+                fork_session(src_file, sid, &to, &from_cwd, &to_cwd, &rename).map_err(fail)?;
+            }
+            Some(b) => match crate::chat::rewind::cut_session(&raw, b) {
+                None => return Err(fail("The chat can't be forked from this message.".into())),
+                // Forked from the first message: nothing to copy, the first message starts a new session.
+                Some((_, cut)) if cut.empty => {
+                    patch.insert("sessionStarted".into(), Value::Bool(false));
+                    patch.insert("freshSession".into(), Value::Bool(true));
+                }
+                Some((text, _)) => {
+                    fork_session_text(src_file, text, sid, &to, &from_cwd, &to_cwd, &rename).map_err(fail)?;
+                }
+            },
+        }
         let outs = self.tickets.ticket_dir(slug, &src.id).join("outputs");
         if outs.is_dir() {
             let _ = copy_dir(&outs, &self.tickets.ticket_dir(slug, new_id).join("outputs"));

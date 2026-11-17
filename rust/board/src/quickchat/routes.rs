@@ -2,10 +2,8 @@
 //! pages, a new chat, one chat, rename, delete, a message, stop, the conversation and one tool call. Same answers,
 //! statuses and order of checks as Bun (an unknown chat is 404 before the user check).
 //!
-//! STAND-IN until later tasks: the Context panel (`context`), "Say it simpler" (`simplified`, `simplify`), Rewind, Undo
-//! rewind and Fork (`rewind`, `rewind-undo`, `fork`) need R7b, and Make ticket (`ticket`) needs R2a and R7b. Those answer
-//! 501 with a plain message (after the user check for the ones that change something); the Bun satellite has no quick
-//! chats to hand them to.
+//! Rewind, Undo rewind, Fork and Make ticket, the Context panel (`context`) and "Say it simpler" (`simplified`,
+//! `simplify`) are R7b's (`crate::chat::quick`, `ChatExtras`).
 
 use std::future::Future;
 use std::pin::Pin;
@@ -112,6 +110,11 @@ fn later_task(what: &str, task: &str) -> Reply {
 }
 
 impl QuickChats {
+    /// Say it simpler and the Context panel (R7b), once board mode has made them.
+    fn chat_extras(&self) -> Option<Arc<crate::chat::extras::ChatExtras>> {
+        self.extras.get().and_then(std::sync::Weak::upgrade)
+    }
+
     /// The answer to a quick chat route (`parts` from `parts_of`).
     pub async fn answer(self: &Arc<Self>, sessions: &Arc<Sessions>, req: ChatReq, user: UserCheck) -> Reply {
         let Some(parts) = parts_of(&req.path) else { return err(400, "bad path") };
@@ -168,12 +171,29 @@ impl QuickChats {
         let sub = parts.get(4).map(String::as_str);
         match (parts.len(), sub, m) {
             (4, _, "GET") => reply(200, self.view(&slug, &chat)),
-            (5, Some("context"), "GET") => later_task("The Context panel", "R7b"),
-            (5, Some("context"), "POST") => {
-                if !user().await {
+            // The Context panel: how much of Claude's memory the chat fills (GET cached, POST checks now).
+            (5, Some("context"), "GET" | "POST") => {
+                let Some(x) = self.chat_extras() else { return later_task("The Context panel", "R7b") };
+                if m == "POST" && !user().await {
                     return err(403, refusal("Checking a chat's context"));
                 }
-                later_task("The Context panel", "R7b")
+                let key = format!("chat/{slug}/{cid}");
+                let me = self.clone();
+                let (s1, c1) = (slug.clone(), cid.clone());
+                let spec = blocking(move || me.context_spec(&s1, &c1)).await.unwrap_or(Ok(None));
+                if m == "POST" {
+                    let s = match spec {
+                        Ok(s) => s,
+                        Err(e) => return err(409, e),
+                    };
+                    let sid = s.as_ref().map(|s| s.session_id.clone());
+                    if let Some(s) = s {
+                        x.contexts.refresh(&key, s).await;
+                    }
+                    return blocking(move || reply(200, x.contexts.view(&key, sid.as_deref()))).await.unwrap_or_else(|| err(500, "context failed"));
+                }
+                let sid = spec.ok().flatten().map(|s| s.session_id);
+                blocking(move || reply(200, x.contexts.view(&key, sid.as_deref()))).await.unwrap_or_else(|| err(500, "context failed"))
             }
             (4, _, "PATCH") => {
                 if !user().await {
@@ -225,7 +245,109 @@ impl QuickChats {
                 if !user().await {
                     return err(403, refusal(WHAT));
                 }
-                later_task("Make ticket from a quick chat", "R2a, R7b")
+                let b = req.body.clone().ok().flatten().unwrap_or(Value::Null);
+                let part_of = match b.get("partOf") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(p)) if !p.is_empty() => Some(p.clone()),
+                    Some(_) => return err(400, "partOf must be a ticket id"),
+                };
+                let me = self.clone();
+                blocking(move || {
+                    if let Some(p) = &part_of
+                        && !me.ticket_on_board(&slug, p)
+                    {
+                        return err(400, format!("ticket {p} not found (partOf)"));
+                    }
+                    match me.make_ticket(&slug, &cid, part_of.as_deref()) {
+                        Ok((ticket, chat)) => reply(201, json!({ "ticket": ticket, "chat": chat })),
+                        Err(e) => from(e),
+                    }
+                })
+                .await
+                .unwrap_or_else(|| err(500, "make ticket failed"))
+            }
+            (5, Some("rewind"), "GET" | "POST") => {
+                // Rewind (chat only: quick chats never change files back), like a ticket's.
+                let b = if m == "POST" {
+                    if !user().await {
+                        return err(403, refusal(WHAT));
+                    }
+                    match body() {
+                        Ok(b) => b.unwrap_or(Value::Null),
+                        Err(r) => return r,
+                    }
+                } else {
+                    Value::Null
+                };
+                let uuid = if m == "POST" {
+                    match b.get("uuid") {
+                        None | Some(Value::Null) => String::new(),
+                        Some(v) => rjs::to_string(v),
+                    }
+                } else {
+                    query_get(q, "uuid").unwrap_or_default()
+                };
+                let me = self.clone();
+                let sessions = sessions.clone();
+                let sid = chat.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();
+                let get = m == "GET";
+                blocking(move || {
+                    let entries = sessions.cache.get(&sid).map(|p| (*p.entries).clone()).unwrap_or_default();
+                    let Some(entry) = entries.iter().find(|e| e.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()) && rjs::truthy(e.get("rewind"))).cloned() else {
+                        return err(404, "This message can't be rewound to.");
+                    };
+                    if get {
+                        return reply(200, json!({ "blocked": me.rewind_blocked(&slug, &cid, false), "files": null, "filesReason": "quick-chat" }));
+                    }
+                    me.rewind_chat(&slug, &cid, &entry, &entries).map_or_else(from, |v| reply(200, v))
+                })
+                .await
+                .unwrap_or_else(|| err(500, "rewind failed"))
+            }
+            (5, Some("rewind-undo"), "GET" | "POST") => {
+                let me = self.clone();
+                if m == "GET" {
+                    let u = chat.get("rewindUndo").filter(|v| !v.is_null()).cloned();
+                    return blocking(move || {
+                        let messages = u.as_ref().and_then(|u| u.get("messages")).cloned().filter(|v| !v.is_null()).unwrap_or(json!(0));
+                        reply(200, json!({ "available": u.is_some(), "blocked": me.undo_rewind_blocked(&slug, &cid, false), "messages": messages, "files": 0, "filesSaved": false }))
+                    })
+                    .await
+                    .unwrap_or_else(|| err(500, "undo failed"));
+                }
+                if !user().await {
+                    return err(403, refusal(WHAT));
+                }
+                blocking(move || me.undo_rewind_chat(&slug, &cid).map_or_else(from, |v| reply(200, v))).await.unwrap_or_else(|| err(500, "undo failed"))
+            }
+            (5, Some("fork"), "POST") => {
+                if !user().await {
+                    return err(403, refusal(WHAT));
+                }
+                let b = match body() {
+                    Ok(b) => b.unwrap_or(Value::Null),
+                    Err(r) => return r,
+                };
+                let uuid = match b.get("uuid") {
+                    None | Some(Value::Null) => String::new(),
+                    Some(v) => rjs::to_string(v),
+                };
+                let me = self.clone();
+                let sessions = sessions.clone();
+                let sid = chat.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();
+                blocking(move || {
+                    let entries = sessions.cache.get(&sid).map(|p| (*p.entries).clone()).unwrap_or_default();
+                    let Some(entry) = entries.iter().find(|e| e.get("uuid").and_then(Value::as_str) == Some(uuid.as_str()) && rjs::truthy(e.get("rewind"))) else {
+                        return err(404, "The chat can't be forked from this message.");
+                    };
+                    let text = entry.get("text").cloned().unwrap_or(Value::Null);
+                    match me.fork_chat(&slug, &cid, &uuid) {
+                        Ok(next) => reply(201, json!({ "id": next.get("id").cloned().unwrap_or(Value::Null), "text": text, "chat": next })),
+                        Err(e) => from(e),
+                    }
+                })
+                .await
+                .unwrap_or_else(|| err(500, "fork failed"))
             }
             (5, Some("conversation"), "GET") => {
                 let me = self.clone();
@@ -233,14 +355,46 @@ impl QuickChats {
                 let q = req.query.clone();
                 blocking(move || me.conversation(&sessions, &slug, &cid, &chat, q.as_deref())).await.unwrap_or_else(|| err(500, "conversation failed"))
             }
-            (5, Some("simplified"), "GET") => later_task("Say it simpler", "R7b"),
-            (5, Some("simplify" | "fork"), "POST") | (5, Some("rewind" | "rewind-undo"), "POST") => {
+            // "Say it simpler" for the chat's replies, like a ticket's.
+            (5, Some("simplified"), "GET") => {
+                let Some(x) = self.chat_extras() else { return later_task("Say it simpler", "R7b") };
+                let sid = chat.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();
+                let file = self.simplified_path(&slug, &cid);
+                blocking(move || {
+                    let entries = x.sessions.cache.get(&sid).map(|p| (*p.entries).clone()).unwrap_or_default();
+                    reply(200, x.simplifier.saved_in(&file, &entries))
+                })
+                .await
+                .unwrap_or_else(|| err(500, "simplified failed"))
+            }
+            (5, Some("simplify"), "POST") => {
                 if !user().await {
                     return err(403, refusal(WHAT));
                 }
-                later_task("Rewind, Undo rewind, Fork and Say it simpler", "R7b")
+                let Some(x) = self.chat_extras() else { return later_task("Say it simpler", "R7b") };
+                let b = match body() {
+                    Ok(b) => b,
+                    Err(r) => return r,
+                };
+                let sid = chat.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();
+                let uuid = b.as_ref().and_then(|b| b.get("uuid")).and_then(Value::as_str).map(str::to_string);
+                let x2 = x.clone();
+                let entry = blocking(move || {
+                    let u = uuid?;
+                    x2.sessions.cache.get(&sid)?.entries.iter().find(|e| e.get("uuid").and_then(Value::as_str) == Some(u.as_str())).cloned()
+                })
+                .await
+                .flatten();
+                let Some(e) = entry else { return err(404, "no such message in this chat") };
+                let title = match self.view(&slug, &chat).get("title") {
+                    None => "undefined".to_string(),
+                    Some(v) => rjs::to_string(v),
+                };
+                match x.simplifier.simplify_in(self.simplified_path(&slug, &cid), self.side_spend_path(&slug, &cid), &title, &e).await {
+                    Ok(v) => reply(200, v),
+                    Err((status, msg)) => err(status, msg),
+                }
             }
-            (5, Some("rewind" | "rewind-undo"), "GET") => later_task("Rewind and Undo rewind", "R7b"),
             (6, Some("tool"), "GET") => {
                 let sessions = sessions.clone();
                 let sid = chat.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();

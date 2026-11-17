@@ -52,6 +52,28 @@ pub struct Caller {
     pub agent: Option<String>,
 }
 
+/// Who started a huddle besides the user (`create`'s `auto` and `byUser`).
+#[derive(Clone, Debug, Default)]
+pub struct Origin {
+    /// The host's own unattended run (start_huddle): its reason, the budget it asked for and its trigger.
+    pub auto: Option<AutoStart>,
+    /// The host's run because the user asked in its chat (trigger "user").
+    pub by_user: Option<UserStart>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AutoStart {
+    pub reason: String,
+    pub asked: Option<f64>,
+    pub trigger: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct UserStart {
+    pub reason: String,
+    pub asked: Option<f64>,
+}
+
 /// What a helper's run is doing (`AgentRun`), for the views and the watchdog.
 #[derive(Clone, Debug, Default)]
 pub struct AgentState {
@@ -102,6 +124,10 @@ pub trait HuddleRunner: Send + Sync {
     fn fresh_copy(&self, _h: &Huddles, _slug: &str, _hid: &str, _handle: &str, _host_dir: &Path) -> Result<(), String> {
         Err("no helper runs in this board yet".into())
     }
+    /// Helpers run on this board (the stand-in runs none, and leaves their state for a board that can).
+    fn runs_agents(&self) -> bool {
+        false
+    }
     /// After a restart, a helper cut off mid-turn or held back by a restart carries on (`recover`). False: left as it
     /// is for a board that can run it.
     fn recover_agent(&self, _h: &Huddles, _slug: &str, _hid: &str, _handle: &str) -> bool {
@@ -111,6 +137,54 @@ pub trait HuddleRunner: Send + Sync {
     fn host_dir(&self, h: &Huddles, slug: &str, ticket: &str) -> Result<PathBuf, String> {
         h.host_dir(slug, ticket)
     }
+    /// `startAuto`: the host ticket's own run starts its review huddle (`POST /huddles/auto`): the huddle (None while
+    /// it waits for the board's auto-huddle slot), whether it waits, and the template.
+    fn start_auto(&self, _h: &Huddles, _slug: &str, _host: &str, _input: &AutoInput) -> R<(Option<Obj>, bool, String)> {
+        fail(503, "auto huddles are not in the Rust board yet")
+    }
+    /// `autoEnded`: an auto huddle ended (how: "closed", "halt" or "user").
+    fn auto_ended(&self, _h: &Huddles, _slug: &str, _hid: &str, _how: &str, _why: &str) {}
+    /// After `recover`: tickets waiting on an auto huddle that is gone, and the board's auto-huddle slot.
+    fn after_recover(&self, _h: &Huddles, _slug: &str) {}
+    /// Whether `ticket_updated` has work for this event (checked on the bus thread: cheap, no file reads).
+    fn wants_ticket(&self, _slug: &str, _t: &Obj) -> bool {
+        false
+    }
+    /// A ticket changed (`ticket.updated`): a Done host's earlier huddles' outputs, the auto-huddle slot.
+    fn ticket_updated(&self, _h: &Huddles, _slug: &str, _t: &Obj) {}
+    /// A ticket run's activity event: a huddle reply's cost and the ticket session's conversation size.
+    fn ticket_activity(&self, _h: &Huddles, _slug: &str, _id: &str, _ev: &Value) {}
+    /// A participant's own session for the viewer (`participantSession`).
+    fn session(&self, _h: &Huddles, _slug: &str, _hid: &str, _handle: &str, _q: &SessionQuery) -> R<Value> {
+        fail(503, "a participant's session is not in the Rust board yet")
+    }
+    /// One full tool call of a participant's session (`participantTool`); None when it isn't there.
+    fn session_tool(&self, _h: &Huddles, _slug: &str, _hid: &str, _handle: &str, _tool: &str) -> R<Option<Value>> {
+        fail(503, "a participant's session is not in the Rust board yet")
+    }
+    /// Shows a participant's transcript file in Finder (`reveal`).
+    fn reveal_session(&self, _h: &Huddles, _slug: &str, _hid: &str, _handle: &str) -> R<Value> {
+        fail(503, "a participant's session is not in the Rust board yet")
+    }
+}
+
+/// What `POST /huddles/auto` was given.
+#[derive(Clone, Debug, Default)]
+pub struct AutoInput {
+    pub reason: String,
+    pub trigger: Option<String>,
+    pub template: Option<String>,
+    pub roster: Option<Vec<Value>>,
+    pub max_cost_usd: Option<f64>,
+    pub topic: Option<String>,
+}
+
+/// The session viewer's paging (`before`, `since`, `limit`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SessionQuery {
+    pub before: Option<f64>,
+    pub since: Option<f64>,
+    pub limit: Option<f64>,
 }
 
 /// The stand-in: nothing runs.
@@ -214,6 +288,10 @@ impl Huddles {
     }
     pub fn is_ticket_running(&self, slug: &str, id: &str) -> bool {
         self.runs.read().as_ref().is_some_and(|r| r.is_running(slug, id))
+    }
+    /// Sends an event on the board's stream.
+    pub fn emit_event(&self, v: Value) {
+        self.emit(v);
     }
     fn emit(&self, v: Value) {
         if let Some(b) = self.bus.read().as_ref() {
@@ -837,6 +915,12 @@ impl Huddles {
     /// `create`: start a huddle on a ticket from a roster or a squad (`template`).
     #[allow(clippy::too_many_arguments)]
     pub fn create(&self, slug: &str, host_id: &str, roster_in: Vec<Value>, max_participants: Option<f64>, max_cost: Option<f64>, template: Option<&str>, topic: Option<&Value>) -> R<Obj> {
+        self.create_by(slug, host_id, roster_in, max_participants, max_cost, template, topic, &Origin::default())
+    }
+
+    /// `create` with who started it: an auto huddle (the host's own run) or the host's run because the user asked.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_by(&self, slug: &str, host_id: &str, roster_in: Vec<Value>, max_participants: Option<f64>, max_cost: Option<f64>, template: Option<&str>, topic: Option<&Value>, origin: &Origin) -> R<Obj> {
         let Some(host) = self.ticket(slug, host_id) else { return fail(404, format!("ticket {host_id} not found")) };
         if host.json.get("error").and_then(Value::as_str).is_some_and(|e| e.starts_with("corrupt")) {
             return fail(409, format!("ticket {host_id} file is corrupt"));
@@ -869,7 +953,18 @@ impl Huddles {
         }
         let tpl_cost = tpl.as_ref().and_then(|t| opt_f(t, "maxCostUsd"));
         let max_cost_usd = max_cost.or(tpl_cost).unwrap_or(DEFAULT_MAX_COST_USD);
-        let budget_note = if max_cost.is_none() { if tpl_cost.is_some() { " (template default)" } else { " (default)" } } else { "" };
+        let asked = origin.auto.as_ref().and_then(|a| a.asked).or(origin.by_user.as_ref().and_then(|u| u.asked));
+        let budget_note = if max_cost.is_none() {
+            (if tpl_cost.is_some() { " (template default)" } else { " (default)" }).to_string()
+        } else if let Some(a) = asked.filter(|a| *a > max_cost_usd) {
+            format!(" (asked {}, capped at {})", money(a), money(max_cost_usd))
+        } else if origin.auto.is_some() {
+            " (asked by the ticket's run)".into()
+        } else if origin.by_user.is_some() {
+            " (asked by the user)".into()
+        } else {
+            String::new()
+        };
         if let Some(open) = self.files.open(slug).iter().find(|h| s(h, "hostTicket") == host_id) {
             return fail(409, format!("ticket {host_id} already has an open huddle ({}); close it first", s(open, "id")));
         }
@@ -911,10 +1006,20 @@ impl Huddles {
         }
         let brief = match (&tpl, &topic) {
             (Some(t), _) => json!({ "text": templates::template_brief(t, max_cost_usd, brief_topic.as_deref()), "by": USER_HANDLE, "at": at }),
+            (None, tp) if origin.auto.is_some() => {
+                let mut text = templates::custom_review_brief(max_cost_usd);
+                if let Some(tp) = tp {
+                    text.push_str(&format!("\nTopic: {tp}"));
+                }
+                json!({ "text": text, "by": USER_HANDLE, "at": at })
+            }
             (None, Some(tp)) => json!({ "text": format!("Topic: {tp}"), "by": USER_HANDLE, "at": at }),
             _ => Value::Null,
         };
         h.insert("brief".into(), brief);
+        if let Some(a) = &origin.auto {
+            h.insert("auto".into(), json!({ "reason": a.reason }));
+        }
         let base = |handle: &str, role: &str| {
             let mut p = Map::new();
             for (k, v) in [
@@ -964,7 +1069,7 @@ impl Huddles {
             list_mut(&mut h, "participants").extend(ps.iter().cloned().map(Value::Object));
             agents.extend(ps);
         }
-        if opt_s(&h, "host").is_none() && tpl.is_some() {
+        if opt_s(&h, "host").is_none() && (tpl.is_some() || origin.auto.is_some() || origin.by_user.is_some()) {
             h.insert("host".into(), agents.iter().find(|p| b(p, "lead")).map(|p| p["handle"].clone()).unwrap_or(Value::Null));
         }
         self.save(slug, &h)?;
@@ -978,10 +1083,20 @@ impl Huddles {
             None => "@main coordinates.".into(),
         };
         let from = tpl.as_ref().map(|t| format!(" from squad {}", jsv::js_string(t.get("label")))).unwrap_or_default();
+        let by = match (&origin.auto, &origin.by_user) {
+            (Some(a), _) => format!(" by its own run ({}{})", a.trigger.as_ref().map(|t| format!("{t}: ")).unwrap_or_default(), a.reason),
+            (None, Some(u)) => format!(" by its own session because the user asked in the chat ({})", u.reason),
+            _ => String::new(),
+        };
         self.system(
             slug,
             &id,
-            &format!("Huddle started on ticket {host_id} \"{}\"{from} with {who}. {hosts} Budget {}{budget_note}.", host.title, money(max_cost_usd)),
+            &format!(
+                "{} started on ticket {host_id} \"{}\"{by}{from} with {who}. {hosts} Budget {}{budget_note}.",
+                if origin.auto.is_some() { "Auto huddle" } else { "Huddle" },
+                host.title,
+                money(max_cost_usd)
+            ),
             &[],
         )?;
         let runner = self.runner();
@@ -1230,6 +1345,14 @@ impl Huddles {
             }
         })?;
         self.system(slug, hid, text, &[USER_HANDLE])?;
+        if is_auto(&h) {
+            let why = match reason {
+                "budget" => "it hit its budget cap",
+                "messages" => "it hit its message limit",
+                _ => "its agents kept answering each other, so routing paused",
+            };
+            self.runner().auto_ended(self, slug, hid, "halt", why);
+        }
         Ok(())
     }
 
@@ -2134,6 +2257,9 @@ impl Huddles {
         })?;
         self.system(slug, hid, "Huddle agents stopped by @you. The tickets' own runs keep going.", &[])?;
         self.user_acted(slug, hid)?;
+        if is_auto(&h) {
+            runner.auto_ended(self, slug, hid, "user", "the user stopped it");
+        }
         self.get(slug, hid)
     }
 
@@ -2207,6 +2333,9 @@ impl Huddles {
             }
         })?;
         runner.after_close(self, slug, hid);
+        if is_auto(&h) {
+            runner.auto_ended(self, slug, hid, if why.is_some() { "closed" } else { "user" }, why.unwrap_or("the user closed it"));
+        }
         if summarize {
             self.ensure_summary(slug, hid);
         }
@@ -2324,15 +2453,27 @@ impl Huddles {
                     continue;
                 }
                 for p in participants(&h).into_iter().filter(|p| s(p, "kind") == "agent") {
-                    let cut = s(p, "status") == "working" || b(p, "interrupted");
-                    if s(&h, "status") == "live" && s(p, "status") != "stopped" && cut {
-                        runner.recover_agent(self, &slug, &hid, s(p, "handle"));
+                    let handle = s(p, "handle");
+                    // working: cut off mid-turn. interrupted while idle: a wake held back by the pending restart.
+                    let working = s(p, "status") == "working";
+                    let cut = working || (b(p, "interrupted") && !b(p, "sessionStarted"));
+                    if s(&h, "status") == "live" && s(p, "status") != "stopped" && (cut || b(p, "interrupted")) {
+                        if cut {
+                            runner.recover_agent(self, &slug, &hid, handle);
+                            continue;
+                        }
+                        if runner.runs_agents() {
+                            let _ = self.update_p(&slug, &hid, handle, obj([("interrupted", false.into())]));
+                        }
+                    } else if (working || b(p, "interrupted")) && runner.runs_agents() {
+                        let _ = self.update_p(&slug, &hid, handle, obj([("status", "idle".into()), ("interrupted", false.into())]));
                     }
                 }
                 for p in participants(&h).into_iter().filter(|p| s(p, "kind") != "human") {
                     self.wake_if_owed(&slug, &hid, s(p, "handle"));
                 }
             }
+            runner.after_recover(self, &slug);
         }
     }
 
@@ -2341,7 +2482,29 @@ impl Huddles {
     /// `ticket.updated`: a host moved to Done closes its huddles; a ticket session's run ended (monitor messages
     /// waiting, a summary owed). Only queues the work: listeners never block.
     fn on_event(self: &Arc<Self>, e: &Arc<crate::bus::BusEvent>) {
-        if e.ty != "ticket.updated" || self.shutting_down.load(Ordering::Relaxed) {
+        if self.shutting_down.load(Ordering::Relaxed) {
+            return;
+        }
+        if e.ty == "activity" {
+            let (Some(slug), Some(id)) = (e.body.get("profile").and_then(Value::as_str), e.body.get("id").and_then(Value::as_str)) else { return };
+            let ev = e.body.get("event").cloned().unwrap_or(Value::Null);
+            // Only a result line, or an assistant message of a ticket in an open huddle, matters: no thread for the rest.
+            match ev.get("type").and_then(Value::as_str) {
+                Some("result") => {}
+                Some("assistant") => {
+                    let open = self.files.open(slug);
+                    let member = open.iter().any(|h| participants(h).iter().any(|p| s(p, "kind") == "ticket-main" && opt_s(p, "ticketId") == Some(id)));
+                    if !member {
+                        return;
+                    }
+                }
+                _ => return,
+            }
+            let (me, slug, id) = (self.clone(), slug.to_string(), id.to_string());
+            spawn_blocking(move || me.op(|me| me.runner().ticket_activity(me, &slug, &id, &ev)));
+            return;
+        }
+        if e.ty != "ticket.updated" {
             return;
         }
         let (Some(slug), Some(t)) = (e.body.get("profile").and_then(Value::as_str), e.body.get("ticket").and_then(Value::as_object)) else { return };
@@ -2350,13 +2513,18 @@ impl Huddles {
         let me = self.clone();
         let slug = slug.to_string();
         let queued = t.get("queued").and_then(Value::as_array).is_some_and(|q| q.iter().any(|m| m.get("state").and_then(Value::as_str) == Some("queued")));
-        let interesting = done || !self.main_pending.lock().is_empty() || !self.summary_owed.lock().is_empty();
+        let runner_wants = self.runner().wants_ticket(&slug, t);
+        let interesting = done || runner_wants || !self.main_pending.lock().is_empty() || !self.summary_owed.lock().is_empty();
         if !interesting {
             return;
         }
         let done_at = opt_s(t, "doneAt").map(str::to_string);
+        let ticket = t.clone();
         spawn_blocking(move || {
             me.op(|me| {
+                if runner_wants {
+                    me.runner().ticket_updated(me, &slug, &ticket);
+                }
                 if done && me.files.open(&slug).iter().any(|h| s(h, "hostTicket") == id && ended_by_done(h, done_at.as_deref())) {
                     me.close_for_ticket(&slug, &id, "the host ticket moved to Done");
                 }

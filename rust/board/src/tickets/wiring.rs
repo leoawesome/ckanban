@@ -89,6 +89,12 @@ impl BoardHooks for Wired {
         let (slug, id, done) = (slug.to_string(), id.to_string(), new_status == Some("done"));
         let status = new_status.map(str::to_string);
         Box::pin(async move {
+            // Done: nothing will be rewound any more, so its saved copies of the folder go (R7b, in the background).
+            if let (true, Some(r)) = (done, &self.runs)
+                && let Some(t) = r.runs.tickets.get(&slug, &id)
+            {
+                r.runs.drop_rewind_copies(&slug, &t.json);
+            }
             if let (true, Some(git)) = (done, &self.git)
                 && let Err(e) = git.cleanup_worktree(&slug, &id).await
             {
@@ -179,6 +185,9 @@ impl BoardHooks for Wired {
         let wt = ticket.get("worktree").and_then(Value::as_str).filter(|s| !s.is_empty()).map(PathBuf::from);
         let id = ticket.get("id").and_then(Value::as_str).unwrap_or("").to_string();
         let slug = slug.to_string();
+        if let Some(r) = &self.runs {
+            r.runs.drop_rewind_copies(&slug, ticket);
+        }
         Box::pin(async move {
             let (Some(wt), Some(git)) = (wt, &self.git) else { return };
             if !dryrun::deletes_on() {

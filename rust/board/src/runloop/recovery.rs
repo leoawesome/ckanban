@@ -378,7 +378,7 @@ impl RunLoop {
     }
 
     /// `recoverable`.
-    fn recoverable(&self, slug: &str, id: &str) -> Result<Arc<Tk>, RunError> {
+    pub(crate) fn recoverable(&self, slug: &str, id: &str) -> Result<Arc<Tk>, RunError> {
         let t = self.get(slug, id).ok_or_else(|| RunError::other(format!("ticket {id} not found")))?;
         if corrupt(&t) {
             return Err(RunError::other("ticket file is corrupt"));

@@ -8,8 +8,7 @@
 //! File work runs on blocking threads; a run's callbacks only queue events and append one log line.
 //!
 //! Not here yet, each marked `STAND-IN` below: board browsers for the runs (R9: none), the Telegram front desk's
-//! hooks (R13/P1: a front desk chat refuses to run, as Bun does when the front desk isn't plugged in), and the Context
-//! panel's refresh after a run (R7b).
+//! hooks (R13/P1: a front desk chat refuses to run, as Bun does when the front desk isn't plugged in).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -121,22 +120,31 @@ struct ActiveChat {
     done: watch::Sender<bool>,
 }
 
+/// Called after each run of a chat ends, with the board and the chat id.
+pub type RunEnded = Arc<dyn Fn(&str, &str) + Send + Sync>;
+
 pub struct QuickChats {
     dir: DataDir,
     bus: Arc<Bus>,
     opts: QuickChatOptions,
     rt: tokio::runtime::Handle,
     runs: Mutex<HashMap<String, Arc<ActiveChat>>>,
-    /// Chats Make ticket is turning into tickets right now (R2a/R7b: Make ticket isn't in Rust yet).
-    making: Mutex<HashSet<String>>,
+    /// Chats Make ticket is turning into tickets right now.
+    pub(crate) making: Mutex<HashSet<String>>,
     /// Chats with a rewind, undo or fork under way (R7b).
-    rewinding: Mutex<HashSet<String>>,
+    pub(crate) rewinding: Mutex<HashSet<String>>,
     shutting_down: AtomicBool,
     index: ChatIndex,
-    writes: Mutex<()>,
+    pub(crate) writes: Mutex<()>,
+    /// Make ticket: makes the ticket for a chat on the board (R7b; set by board mode).
+    pub(crate) make_ticket: Mutex<Option<crate::chat::quick::MakeTicket>>,
     gate: Mutex<RestartGate>,
     me: Weak<QuickChats>,
     draft_seq: AtomicU64,
+    /// Called after each run of a chat ends (R7b: the Context panel refreshes then).
+    run_ended: Mutex<Vec<RunEnded>>,
+    /// Say it simpler and the Context panel (R7b), for the routes.
+    pub extras: std::sync::OnceLock<Weak<crate::chat::extras::ChatExtras>>,
 }
 
 fn key(slug: &str, id: &str) -> String {
@@ -182,11 +190,14 @@ impl QuickChats {
                 runs: Mutex::new(HashMap::new()),
                 making: Mutex::new(HashSet::new()),
                 rewinding: Mutex::new(HashSet::new()),
+                make_ticket: Mutex::new(None),
                 shutting_down: AtomicBool::new(false),
                 writes: Mutex::new(()),
                 gate: Mutex::new(RestartGate::default()),
                 me: me.clone(),
                 draft_seq: AtomicU64::new(0),
+                run_ended: Mutex::new(Vec::new()),
+                extras: std::sync::OnceLock::new(),
             }
         })
     }
@@ -231,7 +242,7 @@ impl QuickChats {
         self.dir.profile(slug).map(|p| p.record.0.clone())
     }
 
-    fn session_exists(&self, id: &str) -> bool {
+    pub(crate) fn session_exists(&self, id: &str) -> bool {
         match &self.opts.session_exists {
             Some(f) => f(id),
             None => files::find_session_file(&files::projects_dir(None), id).is_some(),
@@ -246,7 +257,7 @@ impl QuickChats {
         read_chat(&self.file(slug, id), id)
     }
 
-    fn get_or_404(&self, slug: &str, id: &str) -> Result<Chat, ChatError> {
+    pub(crate) fn get_or_404(&self, slug: &str, id: &str) -> Result<Chat, ChatError> {
         self.get(slug, id).map_or_else(|| fail(404, "chat not found"), Ok)
     }
 
@@ -297,7 +308,7 @@ impl QuickChats {
         self.runs.lock().values().map(|r| r.slug.clone()).collect()
     }
 
-    fn save(&self, slug: &str, c: Map<String, Value>) -> Chat {
+    pub(crate) fn save(&self, slug: &str, c: Map<String, Value>) -> Chat {
         let c = Arc::new(c);
         let file = self.file(slug, s(&c, "id").unwrap_or(""));
         let text = serde_json::to_string_pretty(&*c).unwrap_or_else(|_| "{}".into()) + "\n";
@@ -309,7 +320,7 @@ impl QuickChats {
     }
 
     /// Saves a change to a chat that still exists (a run ending after Delete must not bring it back).
-    fn patch(&self, slug: &str, id: &str, patch: Map<String, Value>) -> Option<Chat> {
+    pub(crate) fn patch(&self, slug: &str, id: &str, patch: Map<String, Value>) -> Option<Chat> {
         let next = {
             let _w = self.writes.lock();
             let mut c = (*self.get(slug, id)?).clone();
@@ -322,7 +333,7 @@ impl QuickChats {
         Some(next)
     }
 
-    fn emit(&self, slug: &str, c: &Map<String, Value>) {
+    pub(crate) fn emit(&self, slug: &str, c: &Map<String, Value>) {
         self.bus.emit_json(json!({ "type": "chat.updated", "profile": slug, "id": s(c, "id"), "chat": self.view(slug, c) }));
     }
 
@@ -589,6 +600,24 @@ impl QuickChats {
     }
 
     /// The environment and flags a run of the chat gets (`runSetup`).
+    /// `onRunEnd`: called after each run of a chat ends (the Context panel refreshes then).
+    pub fn on_run_end(&self, f: RunEnded) {
+        self.run_ended.lock().push(f);
+    }
+
+    /// `contextSpec` (the Context panel): the chat's run flags and environment, or None without a saved session;
+    /// Err when the chat can't run (a front desk chat without the front desk). Blocking.
+    pub fn context_spec(&self, slug: &str, id: &str) -> Result<Option<crate::chat::context::ContextSpec>, String> {
+        let (Some(c), Some(profile)) = (self.get(slug, id), self.profile(slug)) else { return Ok(None) };
+        let sid = s(&c, "sessionId").unwrap_or("").to_string();
+        if !self.session_exists(&sid) {
+            return Ok(None);
+        }
+        let (env, args) = self.run_setup(slug, &profile, &c, true)?;
+        let cwd = profile.get("path").and_then(Value::as_str).unwrap_or("").to_string();
+        Ok(Some(crate::chat::context::ContextSpec { session_id: sid, cwd, args, env }))
+    }
+
     fn run_setup(&self, slug: &str, profile: &Map<String, Value>, c: &Map<String, Value>, resume: bool) -> Result<(BTreeMap<String, String>, Vec<String>), String> {
         let connectors = board_connector_options(profile.get("claudeAiConnectors"));
         // STAND-IN (R13/P1): the front desk's hooks (env, note, limits). A front desk chat never runs with a normal
@@ -653,7 +682,10 @@ impl QuickChats {
         if self.shutting_down.load(Ordering::SeqCst) {
             return;
         }
-        // STAND-IN (R7b): the Context panel refreshes after a run (`onRunEnd`).
+        let hooks: Vec<_> = self.run_ended.lock().clone();
+        for f in hooks {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&run.slug, &run.id)));
+        }
         let Some(c) = self.get(&run.slug, &run.id) else { return };
         let (later, stopped) = {
             let st = run.state.lock();

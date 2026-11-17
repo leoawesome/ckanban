@@ -360,6 +360,43 @@ impl SpendIndex {
     }
 }
 
+/// Days `spend-days.json` keeps (`KEEP_DAYS`).
+pub const KEEP_DAYS: usize = 60;
+
+static LEDGER: Mutex<()> = Mutex::new(());
+
+/// `addHuddleSpend`: what a huddle agent's turn cost, added to its board's total for the local day of `at_ms` in
+/// `spend-days.json` (the last KEEP_DAYS days kept). Nothing for a cost that isn't positive.
+pub fn add_huddle_spend(dir: &DataDir, slug: &str, cost_usd: f64, at_ms: f64) -> io::Result<()> {
+    if !(cost_usd > 0.0) {
+        return Ok(());
+    }
+    let _g = LEDGER.lock().unwrap_or_else(|e| e.into_inner());
+    let file = dir.spend_days();
+    let mut ledger = std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| match v {
+            Value::Object(m) => Some(m),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let day = ledger.entry(day_key(at_ms)).or_insert_with(|| Value::Object(Map::new()));
+    if !day.is_object() {
+        *day = Value::Object(Map::new());
+    }
+    if let Value::Object(d) = day {
+        let was = d.get(slug).and_then(Value::as_f64).unwrap_or(0.0);
+        d.insert(slug.to_string(), num(was + cost_usd));
+    }
+    let mut keys: Vec<String> = ledger.keys().cloned().collect();
+    keys.sort();
+    let keep = &keys[keys.len().saturating_sub(KEEP_DAYS)..];
+    let out: Map<String, Value> = keep.iter().filter_map(|k| ledger.get(k).map(|v| (k.clone(), v.clone()))).collect();
+    let text = serde_json::to_string(&Value::Object(out)).map_err(io::Error::other)? + "\n";
+    crate::atomic::atomic_write(&file, text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

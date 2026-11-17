@@ -55,7 +55,7 @@ use ckanban_board::quickchat::{QuickChatOptions, QuickChats};
 use ckanban_board::satellite;
 use ckanban_board::sessions::routes::{self as session_routes, HUDDLE_HEADER, RUN_HEADER};
 use ckanban_board::sessions::service::Sessions;
-use ckanban_board::huddles::{self as huddle_mod, Huddles};
+use ckanban_board::huddles::{self as huddle_mod, AgentOptions, Agents, Huddles};
 use ckanban_board::team::{self, Team};
 use ckanban_board::tickets::routes::{self as write_routes, Reply, Writes};
 use ckanban_board::tickets::wiring::{TicketOps, Wired};
@@ -91,6 +91,8 @@ pub struct BoardMode {
     pub team: Arc<Team>,
     /// Huddle rooms (R11a).
     pub huddles: Arc<Huddles>,
+    /// What runs for the huddles (R11c).
+    pub agents: Arc<Agents>,
     /// Lessons, links finder, recall, ticket and team usage (R12).
     pub extras: Arc<ckanban_board::extras::Extras>,
     /// Schedules, one-time jobs and automations, and their timers (R10).
@@ -223,6 +225,8 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let json_mask = masker(root);
     opts.mask_json = Arc::new(move |t: &str| json_mask(t));
     opts.tools_version = crate::mcp::tools_version();
+    // R7b: Claude Code's bundled skills (learned from a run's init event) are kept in Bun's file.
+    ckanban_board::chat::commands::use_bundled_file(Some(root.join("claude-commands.json")));
     let runs = RunLoop::new(RunLoopDeps {
         root: root.to_path_buf(),
         tickets: core.tickets.clone(),
@@ -263,12 +267,14 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         runs: Some(Arc::new(RunHooks { runs: runs.clone() })),
         schedules: Some(schedules.clone()),
     }));
+    // R11c: what runs for a huddle (helpers' runs, ticket sessions' replies, auto huddles, the session viewer), set
+    // before recover() so helpers cut off by the last stop carry on.
+    let agents = Agents::new(&huddles, runs.clone(), Some(sessions.clone()), AgentOptions::from_env(&runs.opts.claude_bin));
+    huddles.set_runner(agents.clone());
     // R11a: huddles see ticket changes (a host moved to Done closes its huddles), wakes owed from before the start are
     // delivered, and the idle watchdog looks at the live ones every 30 s, off the runtime.
     huddles.attach(core.tickets.clone(), sessions.clone());
     team.set_learning_cards(huddles.clone());
-    let h = huddles.clone();
-    let _ = tokio::task::spawn_blocking(move || h.op(|h| h.recover())).await;
     let h = huddles.clone();
     let watchdog = tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_millis(ckanban_board::huddles::model::IDLE_SWEEP_MS));
@@ -280,6 +286,25 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         }
     });
     core.on_stop("huddle idle sweep", move || watchdog.abort());
+    // A helper's session changed: `huddle.session` tells an open session viewer to refetch (every 2 s, off the runtime).
+    let (h, s) = (huddles.clone(), sessions.clone());
+    let viewer = tokio::spawn(async move {
+        let state = Arc::new(std::sync::Mutex::new((std::collections::HashMap::new(), true)));
+        let mut tick = tokio::time::interval(ckanban_board::sessions::service::WATCH_EVERY);
+        loop {
+            tick.tick().await;
+            let (h, s, state) = (h.clone(), s.clone(), state.clone());
+            let _ = tokio::task::spawn_blocking(move || {
+                let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+                let first = st.1;
+                let version = |sid: &str| s.cache.version(sid);
+                ckanban_board::huddles::session::poll_sessions(&h, &version, &mut st.0, first, ckanban_core::time::now_ms());
+                st.1 = false;
+            })
+            .await;
+        }
+    });
+    core.on_stop("huddle session watcher", move || viewer.abort());
     let h = huddles.clone();
     core.on_stop("huddles", move || h.shutting_down.store(true, std::sync::atomic::Ordering::Relaxed));
     let passes: Arc<std::sync::OnceLock<Arc<passes::Passes>>> = Arc::new(std::sync::OnceLock::new());
@@ -291,9 +316,23 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let writes = Arc::new(Writes::new(core.tickets.clone(), core.reads.clone(), sessions.clone(), save_keys));
     writes.set_families(families);
     writes.set_runs(runs.clone());
+    // R7b: Say it simpler, Help me understand and the Context panel (tickets and quick chats); a Context check runs
+    // in the background after each run.
+    let chat_extras = ckanban_board::chat::extras::ChatExtras::new(
+        core.tickets.clone(),
+        sessions.clone(),
+        huddles.clone(),
+        chats.clone(),
+        core.bus.clone(),
+        ckanban_board::extras::side_caller(),
+    );
+    chat_extras.set_runs(runs.clone());
+    writes.set_chat_extras(chat_extras.clone());
     // Quick chats hold their messages while a restart waits, and the restart waits for their replies.
     let (r1, r2) = (runs.clone(), runs.clone());
     chats.set_gate(ckanban_board::quickchat::service::RestartGate { pending: Arc::new(move || r1.restart_pending()), work_changed: Arc::new(move || r2.restart_work_changed()) });
+    // R7b: Make ticket from a quick chat goes through the ticket writes and the run loop's link-session.
+    chats.set_make_ticket(ckanban_board::chat::quick::make_ticket_hook(runs.clone(), writes.clone()));
     let c = chats.clone();
     runs.on_restart_busy(Arc::new(move || c.restart_busy()));
     let h = core.services.huddles.clone();
@@ -306,6 +345,9 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         r.recover();
     })
     .await;
+    // Then the huddles' (Bun's order): helpers cut off carry on, wakes owed are delivered, the auto-huddle slot.
+    let h = huddles.clone();
+    let _ = tokio::task::spawn_blocking(move || h.op(|h| h.recover())).await;
     let awake = start_run_timers(&core, &runs, ops.clone(), root);
     // After recover(): a missed run's ticket must not be mistaken for an interrupted one. Only this owner of the
     // board fires schedules, jobs and automations (the satellite starts none of its timers).
@@ -342,6 +384,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         core,
         team,
         huddles,
+        agents,
         extras,
         schedules,
         sessions,
@@ -1422,7 +1465,9 @@ impl BoardMode {
     /// Before the process ends: every run is stopped without an outcome (chat replies cut off are marked) so the next
     /// start resumes them; waits at most 6 s (Bun's `board.shutdown()`).
     pub async fn shutdown(&self) {
-        self.runs.shutdown().await;
+        // Huddle helpers mid-turn are marked for recover() too (Bun's `huddles.shutdown()`), at the same time.
+        self.huddles.shutting_down.store(true, std::sync::atomic::Ordering::Relaxed);
+        tokio::join!(self.runs.shutdown(), self.agents.shutdown());
     }
 
     /// Board mode ended with `code`: stop the core; a clean stop (0) is not counted as a crash.

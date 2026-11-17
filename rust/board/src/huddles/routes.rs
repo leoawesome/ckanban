@@ -3,8 +3,8 @@
 //! that run's participant (its token for agents), anything else is the user (@you). Stop, resume, close and stopping
 //! one participant are the user's alone.
 //!
-//! Not here yet, answered 503 so nothing reaches a satellite that has no huddles: `POST /huddles/auto` (auto
-//! huddles, R11c), a participant's own session (R11c) and "Save as squad…" (`generic-squad`, a side call).
+//! Auto huddles (`POST /huddles/auto`) and a participant's own session go to the `HuddleRunner` (R11c). Not here yet,
+//! answered 503 so nothing reaches a satellite that has no huddles: "Save as squad…" (`generic-squad`, a side call).
 //!
 //! Calls block (file reads and writes): the server runs `answer` on the blocking pool.
 
@@ -116,7 +116,23 @@ fn route(hs: &Huddles, r: &Req) -> Out {
         if who.run.is_none() || who.agent.is_some() || run_slug != slug || ticket.is_empty() {
             return Err(Fail::new(403, "only a board run of the host ticket can start an auto huddle; propose a roster with propose_huddle instead"));
         }
-        return Err(Fail::new(503, format!("auto huddles are {NOT_YET}")));
+        let b = body(r)?;
+        let str_of = |k: &str| get(&b, k).and_then(Value::as_str).map(str::to_string);
+        let template = [str_of("squad"), str_of("template")].into_iter().flatten().find(|v| !crate::prompts::js::trim(v).is_empty()).map(|v| crate::prompts::js::trim(&v).to_string());
+        let input = super::service::AutoInput {
+            reason: str_of("reason").unwrap_or_default(),
+            trigger: str_of("trigger"),
+            template,
+            roster: get(&b, "roster").and_then(Value::as_array).cloned(),
+            max_cost_usd: match get(&b, "maxCostUsd") {
+                None | Some(Value::Null) => None,
+                v => Some(number(v).unwrap_or(f64::NAN)),
+            },
+            topic: str_of("topic"),
+        };
+        let (h, waiting, template) = hs.runner.read().clone().start_auto(hs, slug, ticket, &input)?;
+        let huddle = h.map(|h| hs.view(slug, &h)).unwrap_or(Value::Null);
+        return Ok((if waiting { 202 } else { 201 }, json!({ "waiting": waiting, "template": template, "huddle": huddle })));
     }
     if rest.is_empty() {
         if m == "GET" {
@@ -218,9 +234,19 @@ fn route(hs: &Huddles, r: &Req) -> Out {
             }
             if sub == Some("session") {
                 user_only("read a participant's session")?;
-                let known = (m == "GET" && part.is_none()) || (m == "GET" && part == Some("tool") && part_id.is_some()) || (m == "POST" && part == Some("reveal") && part_id.is_none());
-                if known {
-                    return Err(Fail::new(503, format!("a participant's session is {NOT_YET}")));
+                let runner = hs.runner.read().clone();
+                if m == "GET" && part.is_none() {
+                    let q = super::service::SessionQuery { before: qnum(r.query, "before"), since: qnum(r.query, "since"), limit: qnum(r.query, "limit") };
+                    return Ok((200, runner.session(hs, slug, &hid, handle, &q)?));
+                }
+                if m == "GET" && part == Some("tool") && let Some(tool) = part_id {
+                    return match runner.session_tool(hs, slug, &hid, handle, tool)? {
+                        Some(d) => Ok((200, d)),
+                        None => Err(Fail::new(404, "tool call not found")),
+                    };
+                }
+                if m == "POST" && part == Some("reveal") && part_id.is_none() {
+                    return Ok((200, runner.reveal_session(hs, slug, &hid, handle)?));
                 }
             }
             if m == "POST" && sub == Some("restart") {
