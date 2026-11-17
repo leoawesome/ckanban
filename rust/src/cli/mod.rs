@@ -1,19 +1,19 @@
 //! The `ckanban` commands in Rust (contracts/cli.md), with the same arguments, output, exit codes and HTTP calls as
-//! Bun's `src/cli/cli.ts`. `dev`/`start` are the front server and `mcp` alone the stdio MCP server (main.rs, mcp/). A few commands stay on Bun for now and are
-//! handed to `bun src/cli.ts` with the same arguments (the process is replaced, so input, output and exit code are
-//! Bun's own): `browser-mcp` (drives a board browser), `artifact` (a
-//! Claude Code session in a pty), `remote` (Tailscale) and `update` (the release binary is still Bun's).
+//! Bun's `src/cli/cli.ts`. `dev`/`start` are the front server and `mcp` alone the stdio MCP server (main.rs, mcp/). `browser-mcp` (browser_mcp/), `remote` (remote.rs,
+//! on outside::phone), `artifact` (artifact.rs, on crate::artifact) and `update` (from source until P4) are Rust too:
+//! no command starts Bun.
 
 mod agents;
 mod args;
+mod artifact;
 mod board;
+mod browser_mcp;
 mod http;
 mod launchd;
+mod remote;
 mod text;
 
 use std::io::Write;
-use std::os::unix::process::CommandExt;
-use std::process::Command;
 
 /// `VERSION` in `src/core/version.ts`: set at release build (CKANBAN_VERSION), else "dev".
 const VERSION: &str = match option_env!("CKANBAN_VERSION") {
@@ -99,27 +99,11 @@ pub fn board_port() -> u16 {
     crate::settings::board_port(std::env::var("CKANBAN_PORT").ok().as_deref(), config.as_deref())
 }
 
-/// `bun <repo>/src/cli.ts <args>`, found as `ckanban-rs dev` finds them.
-pub fn bun_command(args: &[String]) -> Result<Command, String> {
-    let exe = std::env::current_exe().unwrap_or_default();
-    let env_repo = std::env::var_os("CKANBAN_REPO").filter(|s| !s.is_empty()).map(std::path::PathBuf::from);
-    let repo = crate::settings::repo_root(env_repo.as_deref(), &exe)?;
-    let bun = crate::settings::bun_path()?;
-    let mut c = Command::new(bun);
-    c.arg(repo.join("src/cli.ts")).args(args);
-    Ok(c)
-}
-
-/// Hands the whole command to Bun: this process becomes it. Returns only when that fails.
-fn to_bun(args: &[String]) -> u8 {
-    match bun_command(args) {
-        Ok(mut c) => {
-            let e = c.exec();
-            eprintln!("ckanban: can't start bun: {e}");
-        }
-        Err(e) => eprintln!("ckanban: {e}"),
-    }
-    1
+/// `ckanban update`. This binary is always built from source until P4 (the release binary is still Bun's), so it
+/// answers as Bun does from source. P4 ports the release download (the SHA256SUMS check, the swap and the restart).
+fn update() -> u8 {
+    out("Running from source: use `git pull && bun install && bun run build:web && ckanban restart`.");
+    0
 }
 
 /// Board commands print the error alone and exit 1.
@@ -148,10 +132,10 @@ pub fn run(argv: &[String]) -> Option<u8> {
         Some("ticket" | "tickets") => board_cmd(board::ticket(rest, &client())),
         Some("call") => board_cmd(board::call(rest, &client())),
         Some("mcp") if !rest.is_empty() => board_cmd(agents::mcp_command(rest)),
-        Some("browser-mcp") => to_bun(argv),
-        Some("artifact") => to_bun(argv),
-        Some("remote") => to_bun(argv),
-        Some("update") => to_bun(argv),
+        Some("browser-mcp") => browser_mcp::run(rest),
+        Some("artifact") => artifact::run(rest),
+        Some("remote") => remote::run(rest.first().map(String::as_str)),
+        Some("update") => update(),
         Some("--version" | "-v" | "version") => {
             out(VERSION);
             0

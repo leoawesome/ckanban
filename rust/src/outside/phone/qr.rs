@@ -3,16 +3,25 @@
 //! `make()` (the smallest type number that fits, the mask pattern with the fewest lost points) and
 //! `createSvgTag({cellSize: 4, margin: 2, scalable: true})`, so the SVG text is the same byte for byte.
 
-/// Error correction level M (the package's `QRErrorCorrectionLevel.M` is 0; its RS table row offset is 1).
-const LEVEL_BITS: u32 = 0;
-const LEVEL_ROW: usize = 1;
+/// An error correction level: its bits in the format info (the package's `QRErrorCorrectionLevel`) and its rows of the
+/// RS block table.
+#[derive(Clone, Copy)]
+struct Level {
+    bits: u32,
+    table: &'static [&'static [usize]; 40],
+}
+
+/// Level M (`QRErrorCorrectionLevel.M` is 0), for the SVG.
+const M: Level = Level { bits: 0, table: &RS_BLOCK_M };
+/// Level L (`QRErrorCorrectionLevel.L` is 1), for the terminal.
+const L: Level = Level { bits: 1, table: &RS_BLOCK_L };
 const MODE_8BIT: u32 = 1 << 2;
 const PAD0: u32 = 0xEC;
 const PAD1: u32 = 0x11;
 
 /// The SVG of `text`, as `qrSvg` makes it.
 pub fn qr_svg(text: &str) -> String {
-    let q = Qr::make(text);
+    let q = Qr::make(text, M);
     let (cell, margin) = (4usize, 2usize);
     let n = q.count;
     let size = n * cell + margin * 2;
@@ -38,7 +47,33 @@ pub fn qr_svg(text: &str) -> String {
     s
 }
 
+/// `qrTerminal` of `src/integrations/remote.ts`: `qrcode(0, "L")`, two module rows per line (▀ ▄ █) with a 2-module
+/// quiet zone, light modules drawn (light-on-dark terminals invert).
+pub fn qr_terminal(text: &str) -> String {
+    let q = Qr::make(text, L);
+    let n = q.count as i64;
+    let dark = |r: i64, c: i64| r >= 0 && c >= 0 && r < n && c < n && q.dark(r as usize, c as usize);
+    let mut lines = Vec::new();
+    let mut r = -2;
+    while r < n + 2 {
+        let mut line = String::new();
+        for c in -2..n + 2 {
+            let (top, bottom) = (!dark(r, c), !dark(r + 1, c));
+            line.push(match (top, bottom) {
+                (true, true) => '█',
+                (true, false) => '▀',
+                (false, true) => '▄',
+                _ => ' ',
+            });
+        }
+        lines.push(line);
+        r += 2;
+    }
+    lines.join("\n")
+}
+
 struct Qr {
+    level: Level,
     type_number: usize,
     count: usize,
     modules: Vec<Vec<Option<bool>>>,
@@ -47,19 +82,19 @@ struct Qr {
 }
 
 impl Qr {
-    fn make(text: &str) -> Qr {
+    fn make(text: &str, level: Level) -> Qr {
         let bytes: Vec<u32> = text.encode_utf16().map(|u| (u & 0xff) as u32).collect();
         let mut type_number = 1;
         while type_number < 40 {
             let mut buf = BitBuffer::default();
             put_data(&mut buf, &bytes, type_number);
-            let total: usize = rs_blocks(type_number).iter().map(|b| b.1).sum();
+            let total: usize = rs_blocks(type_number, level).iter().map(|b| b.1).sum();
             if buf.len <= total * 8 {
                 break;
             }
             type_number += 1;
         }
-        let mut q = Qr { type_number, count: 0, modules: Vec::new(), bytes, data_cache: None };
+        let mut q = Qr { level, type_number, count: 0, modules: Vec::new(), bytes, data_cache: None };
         let best = q.best_mask();
         q.make_impl(false, best);
         q
@@ -96,7 +131,7 @@ impl Qr {
             self.type_bits(test);
         }
         if self.data_cache.is_none() {
-            self.data_cache = Some(create_data(self.type_number, &self.bytes));
+            self.data_cache = Some(create_data(self.type_number, &self.bytes, self.level));
         }
         let data = self.data_cache.clone().unwrap_or_default();
         self.map_data(&data, mask);
@@ -164,7 +199,7 @@ impl Qr {
     }
 
     fn type_info(&mut self, test: bool, mask: u32) {
-        let data = (LEVEL_BITS << 3) | mask;
+        let data = (self.level.bits << 3) | mask;
         let bits = bch_type_info(data);
         let n = self.count;
         for i in 0..15 {
@@ -370,10 +405,9 @@ fn put_data(buf: &mut BitBuffer, bytes: &[u32], type_number: usize) {
     }
 }
 
-/// (totalCount, dataCount) of each block for level M.
-fn rs_blocks(type_number: usize) -> Vec<(usize, usize)> {
-    let row = RS_BLOCK_M[type_number - 1];
-    let _ = LEVEL_ROW;
+/// (totalCount, dataCount) of each block at the level.
+fn rs_blocks(type_number: usize, level: Level) -> Vec<(usize, usize)> {
+    let row = level.table[type_number - 1];
     let mut out = Vec::new();
     for k in 0..row.len() / 3 {
         for _ in 0..row[k * 3] {
@@ -383,8 +417,8 @@ fn rs_blocks(type_number: usize) -> Vec<(usize, usize)> {
     out
 }
 
-fn create_data(type_number: usize, bytes: &[u32]) -> Vec<u32> {
-    let blocks = rs_blocks(type_number);
+fn create_data(type_number: usize, bytes: &[u32], level: Level) -> Vec<u32> {
+    let blocks = rs_blocks(type_number, level);
     let mut buf = BitBuffer::default();
     put_data(&mut buf, bytes, type_number);
     let total: usize = blocks.iter().map(|b| b.1).sum();
@@ -618,6 +652,50 @@ static RS_BLOCK_M: [&[usize]; 40] = [
     &[18, 75, 47, 31, 76, 48],
 ];
 
+/// The package's RS block table, level L rows.
+static RS_BLOCK_L: [&[usize]; 40] = [
+    &[1, 26, 19],
+    &[1, 44, 34],
+    &[1, 70, 55],
+    &[1, 100, 80],
+    &[1, 134, 108],
+    &[2, 86, 68],
+    &[2, 98, 78],
+    &[2, 121, 97],
+    &[2, 146, 116],
+    &[2, 86, 68, 2, 87, 69],
+    &[4, 101, 81],
+    &[2, 116, 92, 2, 117, 93],
+    &[4, 133, 107],
+    &[3, 145, 115, 1, 146, 116],
+    &[5, 109, 87, 1, 110, 88],
+    &[5, 122, 98, 1, 123, 99],
+    &[1, 135, 107, 5, 136, 108],
+    &[5, 150, 120, 1, 151, 121],
+    &[3, 141, 113, 4, 142, 114],
+    &[3, 135, 107, 5, 136, 108],
+    &[4, 144, 116, 4, 145, 117],
+    &[2, 139, 111, 7, 140, 112],
+    &[4, 151, 121, 5, 152, 122],
+    &[6, 147, 117, 4, 148, 118],
+    &[8, 132, 106, 4, 133, 107],
+    &[10, 142, 114, 2, 143, 115],
+    &[8, 152, 122, 4, 153, 123],
+    &[3, 147, 117, 10, 148, 118],
+    &[7, 146, 116, 7, 147, 117],
+    &[5, 145, 115, 10, 146, 116],
+    &[13, 145, 115, 3, 146, 116],
+    &[17, 145, 115],
+    &[17, 145, 115, 1, 146, 116],
+    &[13, 145, 115, 6, 146, 116],
+    &[12, 151, 121, 7, 152, 122],
+    &[6, 151, 121, 14, 152, 122],
+    &[17, 152, 122, 4, 153, 123],
+    &[4, 152, 122, 18, 153, 123],
+    &[20, 147, 117, 4, 148, 118],
+    &[19, 148, 118, 6, 149, 119],
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -629,6 +707,15 @@ mod tests {
         assert!(cases.len() >= 6);
         for (text, svg) in cases {
             assert_eq!(qr_svg(&text), svg, "{text}");
+        }
+    }
+
+    /// Made by Bun with `qrTerminal`: `[text, lines]` pairs.
+    #[test]
+    fn same_terminal_qr_as_bun() {
+        let cases: Vec<(String, String)> = serde_json::from_str(include_str!("qr-terminal-cases.json")).unwrap();
+        for (text, want) in cases {
+            assert_eq!(qr_terminal(&text), want, "{text}");
         }
     }
 }

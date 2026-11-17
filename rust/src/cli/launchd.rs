@@ -214,13 +214,15 @@ fn remote_active() -> bool {
     v.get("enabled") == Some(&Value::Bool(true)) && s("host") && s("allowedLogin")
 }
 
-/// Turning phone access off drives Tailscale, which stays on Bun: `ckanban remote off` through Bun, within the step
-/// limit. The reason when it didn't work.
+/// Turning phone access off: `ckanban remote off` (this binary, remote.rs) in a child, so the step limit can stop
+/// a Tailscale that hangs. The reason when it didn't work.
 fn remote_off() -> Option<String> {
-    let mut cmd = match super::bun_command(&["remote".into(), "off".into()]) {
-        Ok(c) => c,
-        Err(e) => return Some(e),
+    let exe = match std::env::current_exe() {
+        Ok(e) => e,
+        Err(e) => return Some(e.to_string()),
     };
+    let mut cmd = Command::new(exe);
+    cmd.args(["remote", "off"]);
     let child = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped()).spawn();
     let mut child = match child {
         Ok(c) => c,

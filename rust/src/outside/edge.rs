@@ -55,22 +55,23 @@ impl Satellite for OutsideSatellite {
     }
 }
 
-/// The publishing step of the Share menu: `<bun> <repo>/src/cli.ts artifact publish-output <file> --name <name>
-/// [--url <link>]`, whose one line of output is Bun's `ArtifactOutcome`.
-pub fn publish_run(bun: PathBuf, cli: PathBuf) -> ckanban_board::git::publish::PublishRun {
+/// The publishing step of the Share menu: `<this exe> artifact publish-output <file> --name <name> [--url <link>]`
+/// (cli/artifact.rs), whose one line of output is Bun's `ArtifactOutcome`.
+pub fn publish_run(exe: PathBuf) -> ckanban_board::git::publish::PublishRun {
     Arc::new(move |ask: Value| {
-        let (bun, cli) = (bun.clone(), cli.clone());
+        let exe = exe.clone();
         Box::pin(async move {
             let s = |k: &str| ask.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-            let mut cmd = tokio::process::Command::new(&bun);
-            cmd.arg(&cli).arg("artifact").arg("publish-output").arg(s("file")).arg("--name").arg(s("name"));
+            let mut cmd = tokio::process::Command::new(&exe);
+            cmd.arg("artifact").arg("publish-output").arg(s("file")).arg("--name").arg(s("name"));
             if let Some(u) = ask.get("url").and_then(Value::as_str) {
                 cmd.arg("--url").arg(u);
             }
             // Not the board's own child markers: the helper is a top-level Claude (`helperEnv` drops the rest).
             cmd.env_remove("CKANBAN_SATELLITE").env_remove("CKANBAN_SATELLITE_EDGE");
-            // Its own process group, so a timeout also ends the Claude it started.
-            cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true).process_group(0);
+            // Its own process group, so a timeout ends it and what it started. Not killed on drop: the timeout below
+            // sends SIGTERM first, so the helper can stop the Claude it runs on its own terminal.
+            cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).process_group(0);
             let child = match cmd.spawn() {
                 Ok(c) => c,
                 Err(e) => return json!({ "ok": false, "error": format!("couldn't start the publishing helper: {e}") }),
@@ -81,7 +82,14 @@ pub fn publish_run(bun: PathBuf, cli: PathBuf) -> ckanban_board::git::publish::P
                 Ok(Err(e)) => return json!({ "ok": false, "error": format!("the publishing helper failed: {e}") }),
                 Err(_) => {
                     if let Some(pid) = pid {
-                        // SAFETY: a signal to the process group this server started for the helper.
+                        // SIGTERM first: the helper then stops the Claude it started on its own terminal (another
+                        // session, outside this group); SIGKILL the group 2s later.
+                        // SAFETY: signals to the process group this server started for the helper.
+                        unsafe {
+                            libc::kill(-(pid as libc::pid_t), libc::SIGTERM);
+                        }
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        // SAFETY: as above.
                         unsafe {
                             libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
                         }

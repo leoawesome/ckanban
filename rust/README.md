@@ -40,10 +40,12 @@ and HTTP calls, as `contracts/cli.md` writes them. `bun run test:contract:rust` 
   `open`. `src/cli/agents.rs`: `mcp install|uninstall|status` (Claude Code and Codex; the registered command is this
   binary plus `mcp`). `src/cli/args.rs`: argument parsing.
 - `dev` and `start` are the front server below; `mcp` alone is the stdio MCP server (`src/mcp/`).
-- Still on Bun, handed to `bun src/cli.ts` with the same arguments (this process becomes Bun, so its output and exit
-  code are Bun's): `browser-mcp` (drives a board browser), `artifact` (a Claude Code session
-  in a pty), `remote` (Tailscale) and `update` (the release binary is still Bun's). `uninstall` turns phone access off
-  through `bun src/cli.ts remote off` too. Bun and the repo are found as for `dev` (below).
+- `src/cli/browser_mcp/`: `browser-mcp`, one run's stdio MCP server for a board browser (its tool list and page
+  scripts are Bun's own files, on `ckanban_board::browsers::cdp::Cdp`). `src/cli/remote.rs`: `remote on|off|status`
+  on `outside::phone` (the terminal QR code is `qr_terminal`, checked against Bun's). `update` answers as Bun does from
+  source until the release binary is Rust (P4). `uninstall` turns phone access off with this binary's `remote off`.
+- `src/cli/artifact.rs`: `artifact publish|read|publish-output` on `src/artifact.rs` (the port of `runArtifactJob`:
+  Claude Code on a pty, and the Markdown page with `comrak`). No command hands anything to Bun any more (P3).
 
 ## Routes Rust answers
 
@@ -139,10 +141,11 @@ daemon over HTTP like Bun's (`client.rs`: same paths, bodies and headers, CKANBA
 and build the same answer texts, one file per tool group (`tickets`, `workflow`, `family`, `forms`, `huddles`,
 `schedules`); `js.rs` has what the texts need from JavaScript (UTF-16 lengths, number printing, URL encoding, local time).
 
-Still on Bun: the 13 tools in `ON_BUN` (`src/mcp/mod.rs`, each with the Bun module it needs). Their calls go to a
-`bun src/cli.ts mcp` child started on first use (`bun.rs`; Bun and the repo found as for `dev`), so they answer exactly
-as before. MCP configs on the user's Mac still point at Bun; `bun run test:contract:rust` runs
-`test/contract/mcp.test.ts` against `ckanban-rs mcp`.
+Every tool runs in Rust since P3 (`keys.rs`: ask_keys and backup_file, `proposals.rs`: propose_automation and
+propose_helper_rule, `artifact.rs`: read_artifact and publish_artifact, the team tools in `huddles.rs`); `ckanban-rs
+mcp` never starts Bun. `ckanban-rs mcp install` registers `ckanban-rs mcp`, and in board mode so does the Connections
+panel's "Use the board from Claude Code / Codex". `bun run test:contract:rust` runs `test/contract/mcp.test.ts` and
+`mcp-parity.test.ts` against `ckanban-rs mcp`.
 
 ## Who is calling
 
@@ -214,6 +217,6 @@ JSON-only rule, as Bun's `api()`. JSON answers are masked with the saved keys.
 - `bugreport.rs`: `POST /api/bug-report/draft` and `POST /api/bug-report` (`gh issue create`, the prefilled link
   when gh can't).
 - `edge.rs`: the board's `Satellite` with pass calls and the Share menu's publishing done here
-  (`ckanban_board::git::publish`, which runs `bun src/cli.ts artifact publish-output` until P3 ports the helper).
+  (`ckanban_board::git::publish`, which runs this binary's `artifact publish-output`).
   Still asked of the satellite: the front desk gate and Telegram's turn end (the helper, P1).
 

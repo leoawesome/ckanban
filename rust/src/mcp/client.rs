@@ -382,6 +382,29 @@ impl Client {
     pub async fn huddle_brief(&self, slug: &str, hid: &str, text: &str, c: &Caller) -> R<Value> {
         self.req("PUT", &format!("{}/brief", Self::h(slug, hid)), Some(&json!({ "text": text })), Self::as_caller(c)).await
     }
+
+    // Teammates, squads and starting huddles (P3: propose_*, start_huddle, huddle_add_participant, presets).
+    pub async fn list_huddle_presets(&self, slug: &str) -> R<Value> {
+        self.get(&Self::hp(slug, None), vec![]).await
+    }
+    pub async fn save_huddle_preset(&self, slug: &str, preset: &Value, c: &Caller) -> R<Value> {
+        self.req("POST", &Self::hp(slug, None), Some(preset), Self::as_caller(c)).await
+    }
+    pub async fn list_huddle_templates(&self, slug: &str) -> R<Value> {
+        self.get(&format!("{}/huddle-templates", Self::p(slug)), vec![]).await
+    }
+    pub async fn start_auto_huddle(&self, slug: &str, input: &Value, c: &Caller) -> R<Value> {
+        self.req("POST", &format!("{}/huddles/auto", Self::p(slug)), Some(input), Self::as_caller(c)).await
+    }
+    pub async fn huddle_add(&self, slug: &str, hid: &str, entry: &Value, c: &Caller) -> R<Value> {
+        self.req("POST", &format!("{}/participants", Self::h(slug, hid)), Some(entry), Self::as_caller(c)).await
+    }
+    pub async fn huddle_propose_squad(&self, slug: &str, hid: &str, input: &Value, c: &Caller) -> R<Value> {
+        self.req("POST", &format!("{}/squads", Self::h(slug, hid)), Some(input), Self::as_caller(c)).await
+    }
+    pub async fn huddle_propose_teammate(&self, slug: &str, hid: &str, input: &Value, c: &Caller) -> R<Value> {
+        self.req("POST", &format!("{}/teammates", Self::h(slug, hid)), Some(input), Self::as_caller(c)).await
+    }
 }
 
 /// What list_tickets asks the board for (TicketListQuery).

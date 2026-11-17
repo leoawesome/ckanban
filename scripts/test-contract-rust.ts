@@ -16,7 +16,7 @@ const test = Bun.spawnSync([process.execPath, "test", ...(process.argv.length > 
   stdout: "inherit",
   stderr: "inherit",
   // CKANBAN_PARITY_RS turns on test/contract/rust-parity.test.ts (Bun alone next to ckanban-rs, same answers).
-  // CKANBAN_CONTRACT_MCP: the stdio MCP server under test is the Rust one (its tools still on Bun start `bun src/cli.ts mcp`).
+  // CKANBAN_CONTRACT_MCP: the stdio MCP server under test is the Rust one (no tool starts Bun).
   env: {
     ...process.env, CKANBAN_CONTRACT_DAEMON: JSON.stringify([bin, "dev"]), CKANBAN_PARITY_RS: JSON.stringify([bin, "dev"]),
     CKANBAN_CONTRACT_CLI: JSON.stringify([bin]),

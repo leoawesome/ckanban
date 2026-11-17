@@ -522,6 +522,6 @@ and `chats.ts`. Drafts, fresh chat and session, take-over and link-session came 
 
 `startPublish` of `src/api/context.ts`: an output file published as a claude.ai page in the background, its job in
 the ticket's view (`shareJobs`, in memory) until the link is saved in `shareLinks`; publishing again updates the link.
-The publishing step is a hook the server fills (`bun src/cli.ts artifact publish-output`, until P3). Before P2 the
+The publishing step is a hook the server fills (the server's own `artifact publish-output`, since P3). Before P2 the
 request went to the satellite, whose read-only store couldn't save the link.
 
