@@ -96,3 +96,9 @@ chat-session.test.ts | ^(?!.*rewind and fork)
 # (above; its team-usage test counts the huddles of the room tests before it, which need R11a). The usage tests of
 # chat-session.test.ts and runs-control.test.ts need runs (R7a).
 board-extras.test.ts
+
+# R11c: what runs for a huddle: helpers' runs in their own copy or a snapshot, ticket sessions' replies, costs and the
+# budget stop, hand-ins from a helper's copy, auto huddles started by the host's own run (and the board's slot), a
+# participant's session viewer. huddle.test.ts and huddle-team.test.ts pass whole (listed above). Copies and project
+# copies left in outputs are only reported after a close (rust-board-dryrun.log) until CKANBAN_RUST_DELETE=1.
+huddle-agents.test.ts

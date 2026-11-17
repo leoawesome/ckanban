@@ -53,7 +53,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
 - One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b, done), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6, done), `runloop` (R7a, done), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
-  `huddles` (R11a, done), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12, done), `gate` (R13).
+  `huddles` (R11a and R11c, done), `team` (R11b, done), `extras` (R12, done), `gate` (R13).
 
 ## The run engine (R3, `src/runs/`)
 
@@ -217,17 +217,41 @@ huddle JSON pretty with a newline, the message log one masked line each, read on
 - One change at a time, under one lock, like Bun's event loop; what Bun queued for after a change (the host-moved
   note, the note about a file edited outside the board) runs once the change is over. Reads (lists, one huddle) take
   no lock. Calls block: the server runs them on the blocking pool.
-- What runs is not here: helpers' runs and copies of the folder (R11c) and the ticket sessions' huddle replies (R7a)
-  go through `HuddleRunner`, whose stand-in runs nothing. A wake then leaves the messages unread (the cursor stays),
-  so the first board that can run them delivers them (`wake_if_owed` at the next start, as Bun after a restart).
-  Until then a closed huddle gets the board's own summary (`fallbackSummary`) instead of asking @main.
+- What runs goes through `HuddleRunner`. Its stand-in (tests) runs nothing: a wake leaves the messages unread, so the
+  first board that can run them delivers them (`wake_if_owed` at the next start).
 - Hand-ins (`copies.rs`): saving what changed in a helper's copy and bringing it into the host's folder, all or
-  nothing, a file both changed being a conflict. Making the copies is R11c's.
-- Answered 503 until their step: `POST /huddles/auto` (R7a, R11c), a participant's session (R11c), "Save as
-  squad…" (`generic-squad`). Lessons a helper proposes with done go to R12's learner (`Huddles::set_learn`); until
-  then they are dropped, as Bun does without a learner.
+  nothing, a file both changed being a conflict.
+- Answered 503: "Save as squad…" (`generic-squad`, a side call, not ported yet). Lessons a helper proposes with done
+  go to R12's learner (`Huddles::set_learn`).
 - `tests/huddles.rs` drives the routes on a temp data folder; `huddle.test.ts` and `huddle-team.test.ts` check the
   same answers against Bun (the room tests that need no helper run are in `contract-files.txt`).
+
+## Huddle agents (R11c)
+
+In `src/huddles/` too (they need the room's internals). `Agents` (`agents.rs`) is the board's `HuddleRunner`, set in
+`rust/src/board_mode.rs` before the huddles' `recover()` (which now runs after the run loop's, Bun's order):
+- Helpers' runs (`huddle-agents.ts`, the delivering half of `huddle-routing.ts`): `claude -p` on R3's runner with
+  Bun's system prompt, tools, browsers (a lease per helper), saved keys and `CKANBAN_HUDDLE_AGENT`; in their own copy
+  of the host's folder (`workspace.rs`: a worktree at a snapshot commit of the folder as it is, or a plain copy), a
+  read-only snapshot worktree reset at each wake, or the host's folder. Woken by steering, at a monitor's turn
+  boundary, or with a new run; held back while a restart is pending. A run's events write the huddle in order on
+  one task per run, off the runtime.
+- Ticket sessions (@main, invited tickets) get their unread messages as a peer chat message of their ticket (R7a's
+  `chat`; a host's own auto huddle wakes it as unattended work). Their reply runs' cost counts toward the huddle
+  (`mainResult`), their conversation size shows on the roster.
+- Costs: the roster's live turn cost, the session total on each result line, the board's day ledger
+  (`ckanban_core::spend::add_huddle_spend`, `spend-days.json`), then the budget brake.
+- Auto huddles (`auto.rs`): `POST /huddles/auto` (start_huddle) with Bun's checks; one live per board, others wait
+  for the slot and are woken in turn; an ended one wakes its host (a brake) or sends it to Review (the user).
+- The session viewer (`session.rs`): `GET .../participants/:handle/session`, `.../tool/:id`, `POST .../reveal`, and
+  `huddle.session` events every 2 s (`rust/src/board_mode.rs`).
+- After a close: helpers' copies, snapshots (`removeWorktrees`) and project copies left in their outputs
+  (`output_copies.rs`) are only reported to `<data>/rust-board-dryrun.log` (jobs `huddle-copies`,
+  `huddle-output-copies`) until `CKANBAN_RUST_DELETE=1` (plan 5.3). A fresh copy after a conflict is made at once
+  (unsent changes saved first), as in Bun.
+- Shutdown marks helpers mid-turn `interrupted`; `recover()` carries them on.
+- `test/contract/huddle-agents.test.ts` checks the session viewer against Bun and the Rust board; huddle.test.ts and
+  huddle-team.test.ts (helpers' copies, hand-ins, the budget stop, the auto huddle) pass whole in board mode.
 
 ## Browsers, devices and the terminal (R9)
 
