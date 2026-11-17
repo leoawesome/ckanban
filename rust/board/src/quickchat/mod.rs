@@ -12,4 +12,4 @@ pub mod routes;
 pub mod service;
 pub mod text;
 
-pub use service::{QuickChatOptions, QuickChats};
+pub use service::{ChatHooks, QuickChatOptions, QuickChats, RunLimits};

@@ -109,6 +109,7 @@ struct RunState {
     draft_gen: u64,
     draft_timer: bool,
     last_activity: f64,
+    unbilled: Unbilled,
 }
 
 struct ActiveChat {
@@ -122,6 +123,74 @@ struct ActiveChat {
 
 /// Called after each run of a chat ends, with the board and the chat id.
 pub type RunEnded = Arc<dyn Fn(&str, &str) + Send + Sync>;
+
+/// What a hook narrows for one chat's run (`RunLimits`).
+#[derive(Clone, Debug, Default)]
+pub struct RunLimits {
+    /// More tools the run can't use.
+    pub disallowed: Vec<String>,
+    /// More --settings (permission deny rules).
+    pub settings: Option<Map<String, Value>>,
+    /// The only built-in tools the run gets (--tools).
+    pub tools: Option<Vec<String>>,
+    /// Only the board's MCP servers (--strict-mcp-config).
+    pub strict_mcp: bool,
+    /// --max-budget-usd for the run.
+    pub max_budget_usd: Option<f64>,
+}
+
+/// The Telegram front desk's hooks (`QuickChatHooks`, P1c): env, note and narrower rights for a chat's run, every
+/// result line, and what a run that ended without one cost.
+pub trait ChatHooks: Send + Sync {
+    fn env(&self, slug: &str, c: &Map<String, Value>) -> Option<BTreeMap<String, String>>;
+    fn note(&self, slug: &str, c: &Map<String, Value>) -> Option<String>;
+    /// Narrower rights, or None for a normal chat; Err: no run starts (the front desk's cap is spent).
+    fn limits(&self, slug: &str, c: &Map<String, Value>) -> Result<Option<RunLimits>, String>;
+    fn on_result(&self, slug: &str, c: &Map<String, Value>, ev: &Value);
+    fn on_unbilled(&self, slug: &str, c: &Map<String, Value>, cost_usd: f64, started: bool);
+}
+
+/// `UnbilledUsage`: what the model calls since the last result line cost, from their usage records.
+#[derive(Default)]
+struct Unbilled {
+    calls: Vec<(String, f64)>,
+    began: bool,
+}
+
+impl Unbilled {
+    fn feed(&mut self, ev: &Value) {
+        let ty = ev.get("type").and_then(Value::as_str).unwrap_or("");
+        if ty == "result" {
+            self.calls.clear();
+            self.began = false;
+            return;
+        }
+        if ty == "system" && ev.get("subtype").and_then(Value::as_str) == Some("init") {
+            self.began = true;
+        }
+        let m = if ty == "assistant" {
+            ev.get("message")
+        } else if ty == "stream_event" && ev.get("event").and_then(|e| e.get("type")).and_then(Value::as_str) == Some("message_start") {
+            ev.get("event").and_then(|e| e.get("message"))
+        } else {
+            None
+        };
+        let Some(m) = m else { return };
+        let Some(usage) = m.get("usage").filter(|u| js::truthy(Some(*u))) else { return };
+        self.began = true;
+        let id = m.get("id").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| format!("#{}", self.calls.len()));
+        let model = m.get("model").map(rjs::to_string).unwrap_or_default();
+        let cost = crate::sessions::workflows::message_cost(&model, usage);
+        match self.calls.iter_mut().find(|(k, _)| *k == id) {
+            Some((_, c)) => *c = c.max(cost),
+            None => self.calls.push((id, cost)),
+        }
+    }
+
+    fn open(&self) -> (f64, bool) {
+        (self.calls.iter().map(|(_, c)| c).sum(), self.began || !self.calls.is_empty())
+    }
+}
 
 pub struct QuickChats {
     dir: DataDir,
@@ -145,6 +214,8 @@ pub struct QuickChats {
     run_ended: Mutex<Vec<RunEnded>>,
     /// Say it simpler and the Context panel (R7b), for the routes.
     pub extras: std::sync::OnceLock<Weak<crate::chat::extras::ChatExtras>>,
+    /// The Telegram front desk's hooks (P1c).
+    hooks: Mutex<Option<Arc<dyn ChatHooks>>>,
 }
 
 fn key(slug: &str, id: &str) -> String {
@@ -198,12 +269,22 @@ impl QuickChats {
                 draft_seq: AtomicU64::new(0),
                 run_ended: Mutex::new(Vec::new()),
                 extras: std::sync::OnceLock::new(),
+                hooks: Mutex::new(None),
             }
         })
     }
 
     fn arc(&self) -> Arc<Self> {
         self.me.upgrade().expect("quick chats alive")
+    }
+
+    /// The Telegram front desk plugs in (env, prompt, rights and result hooks).
+    pub fn set_hooks(&self, h: Arc<dyn ChatHooks>) {
+        *self.hooks.lock() = Some(h);
+    }
+
+    fn hooks(&self) -> Option<Arc<dyn ChatHooks>> {
+        self.hooks.lock().clone()
     }
 
     /// R7a plugs the restart gate in here.
@@ -352,6 +433,11 @@ impl QuickChats {
     /// `send`: a message in a new chat (id None), to a reply in progress, or as a new reply in the same conversation.
     /// Blocking (file reads and writes).
     pub fn send(&self, slug: &str, id: Option<&str>, text_in: &str) -> Result<Value, ChatError> {
+        self.send_init(slug, id, text_in, None, None)
+    }
+
+    /// `send(slug, id, text, init)`: a new chat gets `init`'s title and front desk mark (the Telegram front desk).
+    pub fn send_init(&self, slug: &str, id: Option<&str>, text_in: &str, init_title: Option<String>, init_desk: Option<Value>) -> Result<Value, ChatError> {
         let Some(profile) = self.profile(slug) else { return fail(404, format!("board {slug} not found")) };
         let msg = js::trim(text_in).to_string();
         if msg.is_empty() {
@@ -365,10 +451,14 @@ impl QuickChats {
         let mut c: Map<String, Value> = match id {
             None => {
                 let v = json!({
-                    "id": new_id(), "sessionId": text::random_uuid(), "title": null, "firstMessage": msg, "createdAt": at,
+                    "id": new_id(), "sessionId": text::random_uuid(), "title": init_title, "firstMessage": msg, "createdAt": at,
                     "updatedAt": at, "started": false, "ticketId": null, "error": null,
                 });
-                v.as_object().cloned().unwrap_or_default()
+                let mut m = v.as_object().cloned().unwrap_or_default();
+                if let Some(d) = init_desk.filter(|d| js::truthy(Some(d))) {
+                    m.insert("frontDesk".into(), d);
+                }
+                m
             }
             Some(id) => {
                 let c = self.get_or_404(slug, id)?;
@@ -436,6 +526,7 @@ impl QuickChats {
                 draft_gen: 0,
                 draft_timer: false,
                 last_activity: 0.0,
+                unbilled: Unbilled::default(),
             }),
             done,
         });
@@ -470,6 +561,7 @@ impl QuickChats {
                 }
             }
             let (env, args) = self.run_setup(&slug, &profile, &c, resume)?;
+            run.state.lock().unbilled = Unbilled::default();
             let me = self.clone();
             let r = run.clone();
             let on_event: runner::OnEvent = Box::new(move |ev: &Value| me.on_event(&r, ev));
@@ -484,6 +576,12 @@ impl QuickChats {
                 h
             };
             let out = handle.wait().await;
+            // Stopped, crashed or cut off before its result line: what it spent is still spent (the front desk's cap).
+            let (cost, began) = run.state.lock().unbilled.open();
+            if began && let Some(h) = self.hooks() {
+                let cur = self.get(&slug, &id).map(|x| (*x).clone()).unwrap_or_else(|| (*c).clone());
+                h.on_unbilled(&slug, &cur, cost, began);
+            }
             let draft = {
                 let mut st = run.state.lock();
                 st.draft_gen += 1;
@@ -540,6 +638,7 @@ impl QuickChats {
         let (slug, id) = (&run.slug, &run.id);
         let ty = ev.get("type").and_then(Value::as_str).unwrap_or("");
         let mut st = run.state.lock();
+        st.unbilled.feed(ev);
         match st.draft.feed(ev) {
             Draft::Cleared => {
                 st.draft_gen += 1;
@@ -583,7 +682,13 @@ impl QuickChats {
                 use std::io::Write;
                 let _ = f.write_all(format!("{}\n", rjs::stringify(&line)).as_bytes());
             }
-            // STAND-IN (R13/P1): the front desk's onResult hook.
+            if let Some(h) = self.hooks() {
+                drop(st);
+                if let Some(c) = self.get(slug, id) {
+                    h.on_result(slug, &c, ev);
+                }
+                st = run.state.lock();
+            }
         }
         if let Some(sum) = summarize_event(ev, false)
             && !st.stop_requested
@@ -620,13 +725,20 @@ impl QuickChats {
 
     fn run_setup(&self, slug: &str, profile: &Map<String, Value>, c: &Map<String, Value>, resume: bool) -> Result<(BTreeMap<String, String>, Vec<String>), String> {
         let connectors = board_connector_options(profile.get("claudeAiConnectors"));
-        // STAND-IN (R13/P1): the front desk's hooks (env, note, limits). A front desk chat never runs with a normal
-        // chat's rights, so without them it doesn't run at all, as in Bun.
-        if js::truthy(c.get("frontDesk")) {
+        let hooks = self.hooks();
+        let extra_env = hooks.as_ref().and_then(|h| h.env(slug, c));
+        let extra_note = hooks.as_ref().and_then(|h| h.note(slug, c)).filter(|n| !n.is_empty());
+        let limits = match &hooks {
+            Some(h) => h.limits(slug, c)?,
+            None => None,
+        };
+        // A front desk chat never runs with a normal chat's rights (shell, file edits), even without the front desk.
+        if js::truthy(c.get("frontDesk")) && limits.is_none() {
             return Err("The Telegram front desk isn't set up on this board right now, so nothing was run.".into());
         }
         let mut env = self.opts.env.clone();
         env.extend(connectors.env);
+        env.extend(extra_env.unwrap_or_default());
         env.insert(QUICK_CHAT_ENV.into(), format!("{slug}/{}", s(c, "id").unwrap_or("")));
         let mcp = match &self.opts.mcp {
             Some(f) => f(slug),
@@ -637,14 +749,26 @@ impl QuickChats {
             Some(e) if !e.is_empty() => Some(e.to_string()),
             _ => None,
         };
+        let note = text::quick_chat_note(profile.get("name").unwrap_or(&Value::Null), slug, profile.get("path").unwrap_or(&Value::Null));
+        let mut disallowed = connectors.disallowed;
+        if let Some(l) = &limits {
+            disallowed.extend(l.disallowed.iter().cloned());
+        }
         let args = runner::build_args(&BuildArgs {
             session_id: s(c, "sessionId").unwrap_or("").to_string(),
             resume,
             model: profile.get("model").and_then(Value::as_str).map(str::to_string),
-            disallowed: connectors.disallowed,
+            disallowed,
             mcp: Some(mcp),
-            system_prompt: Some(text::quick_chat_note(profile.get("name").unwrap_or(&Value::Null), slug, profile.get("path").unwrap_or(&Value::Null))),
+            system_prompt: Some(match extra_note {
+                Some(n) => format!("{note}\n\n{n}"),
+                None => note,
+            }),
+            max_budget_usd: limits.as_ref().and_then(|l| l.max_budget_usd),
             effort,
+            settings: limits.as_ref().and_then(|l| l.settings.clone()),
+            tools: limits.as_ref().and_then(|l| l.tools.clone()),
+            strict_mcp: limits.as_ref().is_some_and(|l| l.strict_mcp),
             ..Default::default()
         });
         Ok((env, args))
