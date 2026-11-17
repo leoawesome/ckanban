@@ -3,7 +3,7 @@ name = "ckanban-rs"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Rust front server for the ckanban daemon (trial): answers usage, spend, passes and agents, passes every other request to the Bun daemon; also the ckanban CLI"
+description = "The ckanban server, CLI and MCP server"
 
 [[bin]]
 name = "ckanban-rs"
@@ -33,6 +33,13 @@ percent-encoding = "2"
 futures-util = "0.3"
 # P3, `ckanban artifact publish-output`: a Markdown output made into a page (GitHub-flavoured, as Bun.markdown).
 comrak = { version = "1", default-features = false }
+# `ckanban update`: the downloaded release binary is checked against the release's SHA256SUMS before it is swapped in.
+sha2 = "0.10"
+
+[features]
+# Release builds (scripts/build-bin.ts): the built web page (web/dist) goes into the binary (build.rs), as an installed
+# binary has no source folder. A build from source leaves it off and serves web/dist from the folder.
+embed-web = []
 
 [workspace]
 # One Cargo.lock, one toolchain pin (rust-toolchain.toml) and one target/ for the server and its libraries.

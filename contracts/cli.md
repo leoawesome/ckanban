@@ -186,13 +186,13 @@ Runs `open http://localhost:<port>`. Exit code: always 0 (the `open` exit code i
 
 ### `ckanban update`
 
-- From source (`IS_BINARY` false): stdout ``Running from source: use `git pull && bun run build:web && scripts/build-rust.sh && ckanban restart`.``, exit 0. The Rust CLI (`ckanban-rs`) is built from source (no Rust release yet), so it answers this way.
+- From source (version `dev`, no `CKANBAN_VERSION` at build time): stdout ``Running from source: use `git pull && bun run build:web && scripts/build-rust.sh && ckanban restart`.``, exit 0. A release binary (`scripts/build-bin.ts`) does the rest below (`rust/src/cli/update.rs`).
 - Gets the latest release from `https://api.github.com/repos/leoawesome/ckanban/releases/latest`. Unreachable: stderr `Could not reach GitHub to check for updates.`, exit 1.
 - Same version: stdout `Already on the latest version (v<VERSION>).`
 - Needs assets `ckanban-darwin-<arch>` and `SHA256SUMS`; missing: stderr `No build for darwin-<arch> in release v<ver>.` or `Release v<ver> has no SHA256SUMS, so the download can't be verified. Not updated.`, exit 1.
 - stdout `Updating v<old> → v<new>…` (arrow and ellipsis characters in the source).
 - Download error: stderr `Download failed: <status> <statusText>`, exit 1. Checksum mismatch: stderr `Checksum mismatch for <asset>: expected <a>, got <b>. The download may be corrupt or tampered with. Not updated.`; no entry: `SHA256SUMS has no entry for <asset>. Not updated.`, exit 1.
-- Writes `<execPath>.new`, chmod 755, renames over `execPath`. If the launchd job exists: graceful restart as in `restart` (falls back to `kickstart -k`).
+- Writes `<execPath>.new`, chmod 755. Before the swap (Rust, new): on macOS `codesign --verify --strict` must accept it (stderr `The downloaded app's signature doesn't check out. Not updated.`), and `<new> --version` must print the release's version (stderr `The downloaded app reports version <v>, not v<new>. Not updated.` or `The downloaded app doesn't start. Not updated.`), exit 1 with `.new` removed. Then renames over `execPath`. If the launchd job exists: graceful restart as in `restart` (falls back to `kickstart -k`).
 - stdout `Updated to v<new>.` plus one of: nothing (daemon not installed), ` Daemon restarts once N active run(s) finish; then refresh the board.`, or ` Daemon restarted; refresh the board.`
 
 ### `ckanban --version` / `-v` / `version`

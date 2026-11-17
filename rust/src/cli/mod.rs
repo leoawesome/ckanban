@@ -1,6 +1,6 @@
 //! The `ckanban` commands in Rust (contracts/cli.md), with the same arguments, output, exit codes and HTTP calls as
 //! Bun's `src/cli/cli.ts`. `dev`/`start` are the front server and `mcp` alone the stdio MCP server (main.rs, mcp/). `browser-mcp` (browser_mcp/), `remote` (remote.rs,
-//! on outside::phone), `artifact` (artifact.rs, on crate::artifact) and `update` (from source until P4) are Rust too:
+//! on outside::phone), `artifact` (artifact.rs, on crate::artifact) and `update` (update.rs) are Rust too:
 //! no command starts Bun.
 
 mod agents;
@@ -12,11 +12,12 @@ mod http;
 mod launchd;
 mod remote;
 mod text;
+mod update;
 
 use std::io::Write;
 
 /// `VERSION` in `src/core/version.ts`: set at release build (CKANBAN_VERSION), else "dev".
-const VERSION: &str = match option_env!("CKANBAN_VERSION") {
+pub const VERSION: &str = match option_env!("CKANBAN_VERSION") {
     Some(v) => v,
     None => "dev",
 };
@@ -99,13 +100,6 @@ pub fn board_port() -> u16 {
     crate::settings::board_port(std::env::var("CKANBAN_PORT").ok().as_deref(), config.as_deref())
 }
 
-/// `ckanban update`. This binary is built from source on Leo's Mac (no Rust release yet), so it says how to update
-/// from source. A Rust release would add the download (the SHA256SUMS check, the swap and the restart).
-fn update() -> u8 {
-    out("Running from source: use `git pull && bun run build:web && scripts/build-rust.sh && ckanban restart`.");
-    0
-}
-
 /// Board commands print the error alone and exit 1.
 fn board_cmd(r: Result<(), String>) -> u8 {
     match r {
@@ -135,7 +129,7 @@ pub fn run(argv: &[String]) -> Option<u8> {
         Some("browser-mcp") => browser_mcp::run(rest),
         Some("artifact") => artifact::run(rest),
         Some("remote") => remote::run(rest.first().map(String::as_str)),
-        Some("update") => update(),
+        Some("update") => update::run(VERSION),
         Some("--version" | "-v" | "version") => {
             out(VERSION);
             0

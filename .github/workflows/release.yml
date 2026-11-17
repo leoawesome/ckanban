@@ -19,6 +19,8 @@ permissions:
 
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
+  # scripts/build-rust.sh (run by `bun run test`) must not make a local signing certificate on the runner.
+  CKANBAN_SIGN: "0"
 
 jobs:
   release:
@@ -29,6 +31,16 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
+      # The Rust server is the app. No build cache here: a release builds from a clean slate.
+      # Older tags (Bun builds) have no rust/rust-toolchain.toml and skip this.
+      - name: Rust toolchain (rust/rust-toolchain.toml, both Mac chips)
+        run: |
+          if [ -f rust/rust-toolchain.toml ]; then
+            cd rust
+            rustup toolchain install --profile minimal
+            rustup target add aarch64-apple-darwin x86_64-apple-darwin
+            rustc --version
+          fi
       - run: bun install --frozen-lockfile
       - run: bun install --frozen-lockfile
         working-directory: web
@@ -40,6 +52,8 @@ jobs:
           cat notes.md
       - run: bun run test
       - name: Build binaries (web UI embedded)
+        # Rust release builds of ckanban-rs for arm64 and x64 with web/dist built in (rust/build.rs, embed-web);
+        # older tags build Bun's binaries with their own script.
         run: bun scripts/build-bin.ts "${TAG}"
       # Developer ID signing + notarization: macOS remembers folder access (Desktop, Documents...) by the
       # signing identity, so users click Allow once instead of after every update. Without the secrets
@@ -69,6 +83,7 @@ jobs:
           security import "$P12" -k "$KC" -P "$APPLE_CERT_PASSWORD" -f pkcs12 -T /usr/bin/codesign -T /usr/bin/security >/dev/null
           rm -f "$P12"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" "$KC" >/dev/null
+          # shellcheck disable=SC2046 # one keychain path per word
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
           # Apple's Developer ID intermediate, in case the runner image lacks it (the .p12 usually holds only the leaf).
           curl -fsSL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" \
@@ -86,14 +101,20 @@ jobs:
           IDENTITY: ${{ steps.cert.outputs.identity }}
           KEYCHAIN: ${{ steps.cert.outputs.keychain }}
         run: |
-          ENT=scripts/macos/entitlements.plist
-          # A re-run for an older tag checks out that tag, which may predate the file: take it from the workflow's commit.
-          if [ ! -f "$ENT" ]; then ENT="$RUNNER_TEMP/entitlements.plist"; git show "$GITHUB_SHA:scripts/macos/entitlements.plist" > "$ENT"; fi
+          # The Rust binary needs no entitlements. A re-run for an older tag (a Bun binary, no rust/build.rs) needs
+          # Bun's JIT entitlements; that tag may predate the file, so it comes from the workflow's commit then.
+          ENT_ARGS=()
+          if [ ! -f rust/build.rs ]; then
+            ENT=scripts/macos/entitlements.plist
+            if [ ! -f "$ENT" ]; then ENT="$RUNNER_TEMP/entitlements.plist"; git show "$GITHUB_SHA:scripts/macos/entitlements.plist" > "$ENT"; fi
+            ENT_ARGS=(--entitlements "$ENT")
+          fi
           for f in dist/ckanban-darwin-*; do
             if [ -n "$IDENTITY" ]; then
-              # Hardened runtime (required for notarization) with Bun's JIT entitlements.
+              # Hardened runtime (required for notarization). The same identifier as every earlier release, so macOS
+              # keeps the folder access users already allowed.
               codesign --force --options runtime --timestamp --identifier io.ckanban.daemon \
-                --entitlements "$ENT" --keychain "$KEYCHAIN" --sign "$IDENTITY" "$f"
+                "${ENT_ARGS[@]}" --keychain "$KEYCHAIN" --sign "$IDENTITY" "$f"
             else
               codesign --force --sign - "$f"
             fi
@@ -117,6 +138,21 @@ jobs:
             test "$(./dist/ckanban-darwin-x64 --version)" = "${TAG#v}"
           else
             echo "Rosetta not installed: x64 build not run"
+          fi
+          # The signed binary, away from the source folder and with an empty data folder, serves the built-in page.
+          if [ -f rust/build.rs ]; then
+            T="$(mktemp -d)"
+            cp dist/ckanban-darwin-arm64 "$T/ckanban"
+            (cd "$T" && HOME="$T" CKANBAN_HOME="$T/data" CKANBAN_PORT=7790 CKANBAN_REMOTE_PORT=7791 exec ./ckanban start > "$T/log" 2>&1) &
+            PID=$!
+            ok=""
+            for _ in $(seq 1 30); do
+              if curl -fsS http://localhost:7790/ 2>/dev/null | grep -q 'id="root"'; then ok=1; break; fi
+              sleep 1
+            done
+            kill "$PID" 2>/dev/null || true
+            cat "$T/log"
+            [ -n "$ok" ] || { echo "::error::the release binary doesn't serve the web page"; exit 1; }
           fi
       - name: Notarize
         if: steps.cert.outputs.identity != ''

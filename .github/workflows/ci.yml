@@ -7,13 +7,29 @@ on:
 jobs:
   test:
     runs-on: macos-15
+    env:
+      # scripts/build-rust.sh must not make a local signing certificate on the runner.
+      CKANBAN_SIGN: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      - name: Rust toolchain (rust/rust-toolchain.toml)
+        working-directory: rust
+        run: |
+          rustup toolchain install --profile minimal
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
       - run: bun install --frozen-lockfile
       - run: bun install --frozen-lockfile
         working-directory: web
       - run: bunx tsc --noEmit
-      - run: bun run test
       - run: bun run build
         working-directory: web
+      - name: Build the Rust server
+        run: scripts/build-rust.sh --locked
+      - name: Rust unit tests
+        working-directory: rust
+        run: cargo test --locked
+      - run: bun run test

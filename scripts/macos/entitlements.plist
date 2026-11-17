@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Hardened-runtime entitlements for the Bun-compiled ckanban binaries (release.yml signs with these).
+<!-- Hardened-runtime entitlements for the Bun-compiled ckanban binaries (v0.18 and older). release.yml signs
+     those with these when it re-runs an old tag; the Rust binary is signed without any.
      Bun's JavaScriptCore JIT needs writable+executable memory; without these two the binary crashes at start.
      ckanban loads no native addons, so library validation stays on (no disable-library-validation). -->
 <plist version="1.0">

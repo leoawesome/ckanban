@@ -162,9 +162,7 @@ Move the `## Unreleased` notes in [CHANGELOG.md](CHANGELOG.md) under `## [X.Y.Z]
 git tag vX.Y.Z && git push origin vX.Y.Z
 ```
 
-GitHub Actions takes the release notes from that CHANGELOG section, runs the tests, builds `ckanban-darwin-arm64` / `ckanban-darwin-x64` with the UI embedded, and publishes a GitHub Release and the `npx ckanban` installer. It stops early if CHANGELOG has no section for the version. Users get it with `ckanban update`.
-
-**Not working since the Rust port's P4:** the release workflow and `scripts/build-bin.ts` still compile Bun's `src/cli.ts`, which is now only a hand-off to the Rust binary. A release needs the Rust binary built and published first (not done yet: the port so far is for Leo's Mac only).
+GitHub Actions takes the release notes from that CHANGELOG section, runs the tests, builds `ckanban-darwin-arm64` / `ckanban-darwin-x64` with `bun scripts/build-bin.ts vX.Y.Z` (the web page, then the Rust server for each Mac chip with the page built into the binary), signs and notarizes them, and publishes a GitHub Release with `SHA256SUMS` and the `npx ckanban` installer. It stops early if CHANGELOG has no section for the version. Users get it with `ckanban update`. To try a release build locally: `bun scripts/build-bin.ts v0.0.0-test --arch arm64` writes `dist/ckanban-darwin-arm64`, which runs from any folder.
 
 Design: `docs/superpowers/specs/2026-09-29-claude-kanban-design.md`.
 

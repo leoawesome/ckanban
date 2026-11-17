@@ -67,9 +67,10 @@ async fn dev() -> u8 {
 
     let exe = std::env::current_exe().unwrap_or_default();
     let env_repo = std::env::var_os("CKANBAN_REPO").filter(|s| !s.is_empty()).map(PathBuf::from);
-    // The web page is served from the source folder's `web/dist`; without one the board still runs (the page says
-    // how to build it).
+    // A release build carries the web page (web.rs); a build from source serves the source folder's `web/dist`, and
+    // without one the board still runs (the page says how to build it).
     let web_dir = match settings::repo_root(env_repo.as_deref(), &exe) {
+        _ if web::embedded() => PathBuf::new(),
         Ok(r) => settings::web_dir(&r),
         Err(e) => {
             eprintln!("ckanban-rs: {e}; the web page can't be served");
@@ -110,7 +111,7 @@ async fn dev() -> u8 {
     board.connect_passes(notify.clone());
     let mut sigterm = signal(SignalKind::terminate()).expect("SIGTERM handler");
     let mut sigint = signal(SignalKind::interrupt()).expect("SIGINT handler");
-    eprintln!("ckanban-rs {} listening on http://localhost:{public_port}", env!("CARGO_PKG_VERSION"));
+    eprintln!("ckanban-rs {} listening on http://localhost:{public_port}", cli::VERSION);
 
     // P2: the outside services (MCP servers, passes and sign-ins, phone access, agents, bug reports).
     board.connect_outside(notify.clone());

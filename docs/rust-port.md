@@ -228,9 +228,11 @@ back.
 - Tests: `bun run test` builds the Rust binary and runs every contract test against it, plus the UI and script tests.
   The five tests that compared Bun's server with Rust side by side check Rust against Bun's answers and files recorded
   before the deletion (`test/contract/golden/`). The Rust unit tests are `cargo test`.
-- Not done (outside this step's limits): the release workflow and `scripts/build-bin.ts` still build Bun's binary
-  from `src/cli.ts`, so a release would ship only the hand-off; CI (`.github/workflows/ci.yml`) has no Rust toolchain
-  step for the contract tests. A Rust release (binary with the web page, installer, `ckanban update`) is its own step.
+- Release step (after P4): `scripts/build-bin.ts` builds the web page, then `ckanban-rs` for arm64 and x64 with
+  `--features embed-web` (rust/build.rs puts `web/dist` into the binary; a build from source still serves the folder)
+  and `CKANBAN_VERSION`; release.yml signs (no Bun JIT entitlements any more), notarizes, smoke-tests the page and
+  publishes the same asset names. `ckanban update` downloads, checks SHA256SUMS, the signature and `--version`, then
+  swaps. CI installs the pinned Rust toolchain and runs `scripts/build-rust.sh`, `cargo test` and `bun run test`.
 - Way back: check out fca356b2 (the last commit before P4), `bun install && bun run build:web && scripts/build-rust.sh`,
   then `scripts/rust-trial.sh board` (Rust board with Bun's satellite, as on Leo's Mac from 17 Nov) or
   `scripts/rust-trial.sh off` (Bun alone). The data files are the same on both sides.

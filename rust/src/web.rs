@@ -2,6 +2,8 @@
 //! (`web/dist`, built by `bun run build:web`) for any path outside `/api/`, Bun's JSON 404 (or 415 for a change that
 //! isn't JSON) for the rest. Bun's `staticFile` in `src/api/server.ts` did this until P4 removed the Bun server: a file
 //! of the build is sent with Bun's content type, any other path gets `index.html` (the UI routes itself).
+//! A release build (`--features embed-web`, see build.rs) carries the page inside the binary and serves that copy, as
+//! the installed binary has no source folder next to it.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -12,20 +14,39 @@ use hyper::{Method, Request, Response, StatusCode, Uri};
 
 pub type Body = BoxBody<Bytes, hyper::Error>;
 
+mod embedded {
+    // `WEB_ASSETS`: (URL path, bytes) of every file of `web/dist`, written by build.rs; empty without `embed-web`.
+    include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
+}
+
+/// The files of the page built into this binary (empty unless it was built with `embed-web`).
+type Assets = &'static [(&'static str, &'static [u8])];
+
+/// Whether this binary carries the web page (a release build): then no source folder is needed.
+pub fn embedded() -> bool {
+    !embedded::WEB_ASSETS.is_empty()
+}
+
 /// The built web page and the answer for a request no route took.
 pub struct Web {
-    /// `web/dist` of the source folder (`settings::web_dir`).
+    /// `web/dist` of the source folder (`settings::web_dir`); unused when `assets` has the page.
     dir: PathBuf,
+    /// The page built into the binary; when it has files they are served instead of `dir`.
+    assets: Assets,
 }
 
 impl Web {
     pub fn new(dir: PathBuf) -> std::sync::Arc<Self> {
-        std::sync::Arc::new(Web { dir })
+        Self::with_assets(dir, embedded::WEB_ASSETS)
     }
 
-    /// Whether the page is built (`index.html` there); the server warns at start when it isn't.
+    fn with_assets(dir: PathBuf, assets: Assets) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Web { dir, assets })
+    }
+
+    /// Whether the page is built (built in, or `index.html` there); the server warns at start when it isn't.
     pub fn built(&self) -> bool {
-        self.dir.join("index.html").is_file()
+        !self.assets.is_empty() || self.dir.join("index.html").is_file()
     }
 
     pub fn dir(&self) -> &Path {
@@ -57,6 +78,9 @@ impl Web {
 
     /// A file of the build, else `index.html`, else Bun's hint to build the page.
     async fn file(&self, path: &str) -> Response<Body> {
+        if !self.assets.is_empty() {
+            return self.built_in(path);
+        }
         if let Some(rel) = relative(path) {
             let f = self.dir.join(&rel);
             if let Ok(bytes) = read_file(&f).await {
@@ -69,6 +93,31 @@ impl Web {
             Err(_) => plain(StatusCode::NOT_FOUND, "UI not built. Run: bun run build:web"),
         }
     }
+}
+
+impl Web {
+    /// `file` for the page built into the binary: the same lookup on the same normalized path. The list is the
+    /// page's few dozen files, fixed at build time, so a plain search is enough.
+    fn built_in(&self, path: &str) -> Response<Body> {
+        let find = |url: &str| self.assets.iter().find(|(p, _)| *p == url).map(|(_, b)| *b);
+        if let Some(rel) = relative(path) {
+            let parts: Vec<String> = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+            let url = format!("/{}", parts.join("/"));
+            if let Some(b) = find(&url) {
+                return with_static(b, content_type(Path::new(&url)));
+            }
+        }
+        match find("/index.html") {
+            Some(b) => with_static(b, content_type(Path::new("index.html"))),
+            None => plain(StatusCode::NOT_FOUND, "UI not built. Run: bun run build:web"),
+        }
+    }
+}
+
+fn with_static(bytes: &'static [u8], ty: &'static str) -> Response<Body> {
+    let mut r = Response::new(full(Bytes::from_static(bytes)));
+    r.headers_mut().insert("content-type", HeaderValue::from_static(ty));
+    r
 }
 
 /// The path inside the build folder, as Bun's `normalize(decodeURIComponent(...))` gives it, or None when it would
@@ -258,5 +307,23 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         let r = web.answer(&get("/")).await;
         assert_eq!(r.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn serves_the_built_in_page_without_a_folder() {
+        static ASSETS: &[(&str, &[u8])] = &[("/index.html", b"<html>"), ("/assets/a b.js", b"x()")];
+        let web = Web::with_assets(PathBuf::from("/nonexistent/web/dist"), ASSETS);
+        assert!(web.built());
+        let get = |p: &str| Request::get(p).body(()).unwrap();
+        let body = |r: Response<Body>| async move { String::from_utf8(r.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap() };
+        let r = web.answer(&get("/assets/a%20b.js")).await;
+        assert_eq!(r.headers()["content-type"], "text/javascript;charset=utf-8");
+        assert_eq!(body(r).await, "x()");
+        for p in ["/", "/board/x", "/assets/../../etc/passwd", "/assets/%2e%2e/index.html"] {
+            let r = web.answer(&get(p)).await;
+            assert_eq!(r.headers()["content-type"], "text/html;charset=utf-8", "{p}");
+            assert_eq!(body(r).await, "<html>", "{p}");
+        }
+        assert_eq!(web.answer(&get("/api/nope")).await.status(), StatusCode::NOT_FOUND);
     }
 }

@@ -178,6 +178,19 @@ fn graceful_restart() -> Option<u32> {
     Some(if n.is_finite() && n > 0.0 { n as u32 } else { 0 })
 }
 
+/// After `ckanban update` swapped the binary: whether the daemon is installed, and how many runs its restart waits for
+/// (None: it couldn't be asked, so launchd restarted it at once).
+pub fn restart_after_update() -> (bool, Option<u32>) {
+    if quiet("launchctl", &["print", &target()]) != 0 {
+        return (false, None);
+    }
+    let waiting = graceful_restart();
+    if waiting.is_none() {
+        quiet("launchctl", &["kickstart", "-k", &target()]);
+    }
+    (true, waiting)
+}
+
 pub fn restart(now: bool) -> u8 {
     if quiet("launchctl", &["print", &target()]) != 0 {
         eprintln!("daemon not installed; run: ckanban install");

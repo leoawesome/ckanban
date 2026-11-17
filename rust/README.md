@@ -47,8 +47,9 @@ and HTTP calls, as `contracts/cli.md` writes them. The CLI contract tests run it
 - `dev` and `start` are the server (above); `mcp` alone is the stdio MCP server (`src/mcp/`).
 - `src/cli/browser_mcp/`: `browser-mcp`, one run's stdio MCP server for a board browser (its tool list and page
   scripts are Bun's own files, on `ckanban_board::browsers::cdp::Cdp`). `src/cli/remote.rs`: `remote on|off|status`
-  on `outside::phone` (the terminal QR code is `qr_terminal`, checked against Bun's). `update` says how to update from
-  source (there is no Rust release yet). `uninstall` turns phone access off with this binary's `remote off`.
+  on `outside::phone` (the terminal QR code is `qr_terminal`, checked against Bun's). `src/cli/update.rs`: `update`; a release binary
+  downloads the latest release, checks SHA256SUMS, the signature and `--version`, swaps itself and restarts the daemon;
+  a build from source says how to update from source. `uninstall` turns phone access off with this binary's `remote off`.
 - `src/cli/artifact.rs`: `artifact publish|read|publish-output` on `src/artifact.rs` (the port of `runArtifactJob`:
   Claude Code on a pty, and the Markdown page with `comrak`). No command hands anything to Bun any more (P3).
 
@@ -68,7 +69,8 @@ register `ckanban-rs mcp` (this binary). `test/contract/mcp.test.ts` and `mcp-pa
 
 ## Life cycle
 
-- launchd runs `rust/target/release/ckanban-rs dev` (`ckanban-rs install` writes the plist). At start it takes
+- launchd runs `rust/target/release/ckanban-rs dev` on Leo's Mac, or the installed release binary with `start`
+  (`ckanban install` writes the plist with this binary's own path and `start`; both are the same server). At start it takes
   `<data>/board.lock` (waiting up to 5 s); if another daemon holds it, it exits 1 with the reason and launchd tries
   again. `rust-board-status.json` records the start and whether the last one stopped cleanly.
 - Any start error (the lock held, a folder it can't read, a board with old-style plans) ends the process with the
@@ -98,6 +100,13 @@ cd rust
 ~/.cargo/bin/cargo test              # unit tests of the server and of core/ (fixtures shared with Bun)
 cd .. && bun run test:contract      # every test/contract test through ckanban-rs (bun run test runs them too)
 ```
+
+Published releases are built differently: `bun scripts/build-bin.ts vX.Y.Z [--arch arm64|x64]` builds the web page,
+then `cargo build --release --locked --features embed-web --target <chip>` with `CKANBAN_VERSION` set and no sccache
+(it doesn't count that variable), and copies the binaries to `dist/ckanban-darwin-<arch>` (release.yml signs them).
+`embed-web` makes `build.rs` put every file of `web/dist` into the binary (`web.rs` serves that copy), since an
+installed binary has no source folder; without the feature the server reads `web/dist` from the folder, so
+`bun run build:web && ckanban restart` keeps working.
 
 Build the release binary with `scripts/build-rust.sh` (extra arguments go to `cargo build --release`), not cargo
 directly. On macOS it signs the binary with a fixed local certificate, "ckanban local signing" (self-signed, made once
