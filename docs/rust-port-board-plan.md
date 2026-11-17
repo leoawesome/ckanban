@@ -328,7 +328,9 @@ wave 1 landed, shadow mode running on the real board. The flip itself is likely 
 - **P1 helper to Rust:** `helper/` (8,600 lines) in two or three tasks (runner and decisions; notifications and push
   with the `web-push` crate; Telegram and the front desk), against C7. Removes most of the satellite.
 - **P2 integrations to Rust:** MCP servers and sign-ins, agents install, phone access on and off, pass sign-in and
-  `tools`, bug reports, artifact publishing. Removes the satellite.
+  `tools`, bug reports, artifact publishing. Removes the satellite. Done 17 Nov (`rust/src/outside/`, see
+  `rust/README.md`): the satellite keeps only the helper's routes, the front desk gate and Telegram's turn end (P1);
+  publishing runs `ckanban artifact publish-output` until P3 ports that helper.
 - **P3 the last Bun commands:** `browser-mcp`, `artifact`, `remote`, `update`; the last 13 MCP tools in `ON_BUN`.
 - **P4 Bun gone:** the release binary built from Rust (with the web UI embedded), the installer and `ckanban update`
   on it, Bun's server code deleted, the contract tests kept as the only tests of the outside behaviour.

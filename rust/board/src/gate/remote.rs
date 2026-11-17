@@ -1,6 +1,6 @@
 //! `remote.json` as `RemoteAccess` in `src/integrations/remote.ts` reads it for the request check: `config()` re-read
-//! when the file changes (a stat per call), `active()` only while phone access is on. Rust only reads it; turning
-//! phone access on and off (Tailscale) stays with the Bun satellite until P2.
+//! when the file changes (a stat per call), `active()` only while phone access is on. This reader serves the request
+//! gate; turning phone access on and off (Tailscale) is the server's `outside::phone` since P2.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;

@@ -132,14 +132,14 @@ checks); their user-only checks look at the caller (`tailscale serve`) and refus
   satellite so `ckanban remote on` points `tailscale serve` at it). A phone request Rust passes on carries
   `x-ckanban-front-via: remote`; Bun then treats it as a phone request (`listener: "remote"`, user-only routes pass
   for the owner's phone). Every answer there carries `x-ckanban-listener: remote`. Rust tells the satellite of
-  phone visits to its own routes (`remote-visit <time>` on stdin) for `lastVisit`.
-- Tailscale itself stays with the satellite until P2: `/api/remote` (on, off, status) and the link check that puts
-  Tailscale's HTTPS 443 link back at this listener when it goes missing (`watchServe` in `src/integrations/remote.ts`,
-  every 3 minutes while phone access is on). The port it uses is CKANBAN_REMOTE_PORT, so it checks Rust's listener.
+  phone visits for `lastVisit` (the server's `outside::phone` since P2).
+- Tailscale itself moved to the server in P2 (`rust/src/outside/phone.rs`): `/api/remote` (on, off, status) and the
+  link check that puts Tailscale's HTTPS 443 link back at this listener when it goes missing (every 3 minutes while
+  phone access is on). The satellite runs no link check in board mode.
 - The satellite's edge (`gate/edge.rs`, `src/core/satellite-edge.ts`), `POST /api/internal/<name>` with
   `x-ckanban-satellite: <the front's secret>` (the proxy drops callers' copies of it and of the two marks above):
-  Rust asks Bun `frontdesk-gate`, `pass-call` (R10's automation calls), `publish` (share to claude.ai),
-  `turn-ended` (R7a); Bun asks Rust `chat-from-telegram`, `patch-telegram`, `drop-telegram-queued`, `comment`
+  Rust asks Bun `frontdesk-gate` and `turn-ended` (R7a); `pass-call` and `publish` are the server's own since P2
+  (`rust/src/outside/edge.rs`); Bun asks Rust `chat-from-telegram`, `patch-telegram`, `drop-telegram-queued`, `comment`
   (`api::BoardActions`, stand-ins refuse with 501 until R2a/R7a) and `replay` (a front desk request confirmed in
   Telegram, run as the user: Rust's own routes, else Bun with `x-ckanban-front-confirmed: 1`).
 - Housekeeping (`gate/housekeeping.rs`): the temp file sweep and the daemon.log trim run at start, report-only
@@ -448,7 +448,7 @@ Only the board's owner fires: the satellite starts none of its timers.
 - `loops.rs`: automations: view, validate, create, change, delete, copy, test, check (first check notes what is there,
   Ask Claude first through the side call, threads into their ticket, at most 20 new tickets a check, backoff), the
   tick. `ckanban call` reaches `/api/automation-call`: Rust checks the check's token and which tools it may use, and
-  the satellite makes the call (`pass-call`, it holds the sign-ins); the rate limit it reports comes back on the grant.
+  the server's `outside::signin` makes the call (`Satellite::pass_call`, P2); the rate limit comes back on the grant.
   `passbook.rs` reads `automation-passes.json` (names, status, keys for scripts); masking uses the server's secrets.
 - `routes.rs`: what board mode answers (`board_mode.rs` `answer_schedules`: Bun's gate, then a front desk request
   through the satellite's front desk gate, then the route on the blocking pool; a confirmed front desk replay runs here
@@ -517,3 +517,11 @@ and `chats.ts`. Drafts, fresh chat and session, take-over and link-session came 
 - `CKANBAN_RUST_BOARD=1 bun scripts/rust-trial-bench.ts --server '["rust/target/release/ckanban-rs","dev"]'`: the
   10,000-ticket bench in board mode (the satellite runs from the bench's copy of the code).
 - Results and the differences found: `docs/rust-port.md`, "The Rust board: ready to switch?".
+
+## P2: the Share menu's Publish (`src/git/publish.rs`)
+
+`startPublish` of `src/api/context.ts`: an output file published as a claude.ai page in the background, its job in
+the ticket's view (`shareJobs`, in memory) until the link is saved in `shareLinks`; publishing again updates the link.
+The publishing step is a hook the server fills (`bun src/cli.ts artifact publish-output`, until P3). Before P2 the
+request went to the satellite, whose read-only store couldn't save the link.
+

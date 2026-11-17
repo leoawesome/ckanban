@@ -29,6 +29,8 @@
 //! `ckanban_board::tickets::routes`: create, change, delete, move, comments, snooze, seen, the chat's cards, boards
 //! POST/PATCH/DELETE, attachments, avatars, snippets); the huddle rooms (R11a, `ckanban_board::huddles::routes`:
 //! `/api/profiles/:p/huddles...`, after the team routes' gate).
+//! The outside services (P2, `crate::outside`): `/api/mcp*`, `/api/agents*`, `/api/remote`, `/api/passes*` and
+//! `/api/bug-report*`, on both listeners, right after the system routes.
 //! Everything else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::net::SocketAddr;
