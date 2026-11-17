@@ -26,6 +26,9 @@ pub struct Wired {
 }
 
 impl BoardHooks for Wired {
+    fn suggest_parent(&self, slug: &str, id: &str) {
+        crate::extras::suggest_parent(slug, id);
+    }
     fn after_update(&self, slug: &str, id: &str, new_status: Option<&str>, _by_user: bool, _was_running: bool) -> BoxFuture<'_, ()> {
         let (slug, id, done) = (slug.to_string(), id.to_string(), new_status == Some("done"));
         Box::pin(async move {

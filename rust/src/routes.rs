@@ -61,6 +61,11 @@ impl Native {
         })
     }
 
+    /// The plan usage answer (`GET /api/usage`), shared with the board's routes (a ticket's Usage tab).
+    pub async fn plan_usage(&self) -> serde_json::Value {
+        self.usage.get(false).await
+    }
+
     /// The answer when Rust answers this request itself; otherwise the request (its body read or not) goes to Bun.
     pub async fn answer(&self, req: Request<Incoming>, peer: SocketAddr) -> Result<Response<Body>, Request<Body>> {
         let bun = |req: Request<Incoming>| req.map(|b| b.boxed());
