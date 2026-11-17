@@ -44,7 +44,7 @@ import { WEB_ASSETS } from "../api/web-assets.gen";
 import { detectMissing } from "../runs/worktree-setup";
 import { onFrontNotice, readFront, setFront, setNoticeLimit } from "../core/front";
 import { isSatellite, RuntimeMirror, satelliteNotice } from "../core/satellite";
-import { rustComment, rustHelperEdge, rustReplay, rustTelegramBoard } from "../core/satellite-edge";
+import { noTelegramBoard, rustComment, rustHelperEdge } from "../core/satellite-edge";
 import { takeBoardLock } from "../core/board-lock";
 import { sweepTempFiles, trimDaemonLog } from "../core/housekeeping";
 
@@ -107,14 +107,6 @@ export async function startDaemon(): Promise<void> {
   onFrontNotice((line) => {
     if (line === `changed ${PASSES_FILE}`) bus.emit({ type: "integration.updated" });
     else if (satellite && line.startsWith("remote-visit ")) phoneRemote?.noteVisit(line.slice("remote-visit ".length));
-    // P1a: waits the Rust helper closed: their Telegram alerts say so and lose their buttons.
-    else if (satellite && line.startsWith("waits-closed ")) {
-      try {
-        void notifier.frontDesk.closed(JSON.parse(line.slice("waits-closed ".length))).catch((e) => console.error("telegram: closed alert", e));
-      } catch (e) {
-        console.error(`satellite: bad waits-closed line: ${(e as Error).message}`);
-      }
-    }
     else if (satellite) satelliteNotice(line, bus, mirror);
   });
   // Satellite mode: session-summaries.json belongs to the Rust board; this cache only reads transcripts when asked.
@@ -153,9 +145,10 @@ export async function startDaemon(): Promise<void> {
     },
     // Satellite mode: the notifier's comments are written by the Rust board (core/satellite-edge.ts).
     ...(satellite && front ? { addComment: rustComment(front) } : {}),
-    ...(helperEdge ? { helperEdge } : {}),
+    ...(helperEdge ? { helperEdge, telegramPoll: false } : {}),
   });
-  notifier.plugBoard(satellite && front ? rustTelegramBoard(front) : board);
+  // Satellite mode: Telegram and the front desk run in the Rust board (P1c); this notifier's never reach a ticket.
+  notifier.plugBoard(satellite ? noTelegramBoard : board);
   // A board browser seen logged out (its sign-in check): tell the user at once, naming the boards that use it.
   board.boardBrowsers.onLoggedOut = (b, site) => {
     const using = store.listProfiles().filter((p) => (ownPicks(p) ?? []).some((x) => x.kind === "board" && x.id === b.id));
@@ -218,7 +211,7 @@ export async function startDaemon(): Promise<void> {
   const phone = (phoneRemote = new RemoteAccess(store.root, () => (satellite ? remotePort : (server.remoteServer?.port ?? 0))));
   const server = createServer({ store, bus, board, port: listenPort, remotePort: satellite ? undefined : remotePort, webDir,
     remote: phone,
-    ...(edge && front ? { satellite: { replay: rustReplay(front), mcpConnected: () => mirror.mcpConnected() } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, ...(helper ? { helper } : {}) });
+    ...(edge && front ? { satellite: { mcpConnected: () => mirror.mcpConnected() } } : {}), sessions, terminals, shells, mcp, scheduler, jobs, huddles, learner, quickChats, loops, sideCall, passes, assets: WEB_ASSETS, restart, awake: () => awake.held(), notifier, push, ...(helper ? { helper } : {}) });
   console.log(`ckanban v${VERSION} listening on http://localhost:${front ? port : server.port} (data: ${store.root})${front ? ` behind the front server (internal port ${server.port})` : ""}${satellite ? " as the Rust board's satellite" : ""}`);
   // Running from source (developing ckanban): a freeze of seconds raises a Mac banner naming what ran. Installed
   // copies only log it; their users can't act on it.

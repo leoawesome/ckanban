@@ -1,7 +1,7 @@
 //! What the Rust board asked of the Bun satellite (`ckanban_board::api::Satellite`) and P2 now does itself: the
 //! automations' pass calls (`signin::SignIn::pass_call`) and the Share menu's publishing (the board's `Publisher`,
-//! which runs `ckanban artifact publish-output` until P3 ports that command). The helper's calls (Telegram's turn
-//! end, the front desk gate) still go to the satellite until P1 moves the helper.
+//! which runs `ckanban artifact publish-output` until P3 ports that command). Telegram's turn end and the front desk
+//! gate are Rust's since P1c (`ckanban_board::telegram`).
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -23,17 +23,26 @@ pub struct OutsideSatellite {
     /// Set once the outside services are up (`BoardMode::connect_outside`); until then the satellite answers.
     pub signin: OnceLock<Arc<SignIn>>,
     pub publisher: OnceLock<Arc<Publisher>>,
+    /// P1c: Telegram and the front desk, once they run (`BoardMode::connect_telegram`).
+    pub telegram: OnceLock<Arc<ckanban_board::telegram::Telegram>>,
 }
 
 impl OutsideSatellite {
     pub fn new(inner: Arc<dyn Satellite>) -> Arc<Self> {
-        Arc::new(OutsideSatellite { inner, signin: OnceLock::new(), publisher: OnceLock::new() })
+        Arc::new(OutsideSatellite { inner, signin: OnceLock::new(), publisher: OnceLock::new(), telegram: OnceLock::new() })
     }
 }
 
 impl Satellite for OutsideSatellite {
     fn turn_ended(&self, slug: &str, id: &str, text: &str) -> BoxFuture<'_, Result<(), Failure>> {
-        self.inner.turn_ended(slug, id, text)
+        let tg = self.telegram.get().cloned();
+        let (slug, id, text) = (slug.to_string(), id.to_string(), text.to_string());
+        Box::pin(async move {
+            if let Some(t) = tg {
+                t.turn_ended(&slug, &id, &text).await;
+            }
+            Ok(())
+        })
     }
     fn pass_call(&self, body: Value) -> BoxFuture<'_, Result<Value, Failure>> {
         match self.signin.get() {
@@ -45,7 +54,13 @@ impl Satellite for OutsideSatellite {
         }
     }
     fn frontdesk_gate(&self, request: Value) -> BoxFuture<'_, Result<Option<Value>, Failure>> {
-        self.inner.frontdesk_gate(request)
+        let tg = self.telegram.get().cloned();
+        Box::pin(async move {
+            let Some(t) = tg else { return Err("the front desk is still starting; ask again in a moment".to_string()) };
+            let s = |k: &str| request.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+            let body = request.get("body").cloned().unwrap_or(Value::Null);
+            Ok(t.desk_gate(&s("desk"), &s("method"), &s("path"), &body).await.map(|(status, body)| json!({ "status": status, "body": body })))
+        })
     }
     fn publish_artifact(&self, request: Value) -> BoxFuture<'_, Result<Value, Failure>> {
         self.inner.publish_artifact(request)

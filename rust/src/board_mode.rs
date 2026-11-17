@@ -71,6 +71,8 @@ use hyper::body::Incoming;
 use hyper::header::{CONTENT_TYPE, HOST, HeaderMap, HeaderValue, ORIGIN};
 use hyper::{Method, Request, Response, StatusCode};
 
+mod tg;
+
 use crate::guard;
 use crate::mask;
 use crate::passes;
@@ -138,6 +140,8 @@ pub struct BoardMode {
     tell: OnceLock<tokio::sync::mpsc::UnboundedSender<String>>,
     /// P1a: the helper (what waits on the user, its messages and decisions); the satellite still sends.
     pub helper: Arc<ckanban_board::helper::Helper>,
+    /// P1c: Telegram and the front desk (`connect_telegram`, once the server has its routes and Bun).
+    telegram: Arc<OnceLock<Arc<ckanban_board::telegram::Telegram>>>,
     /// The satellite's stdin for the helper's notices (waits closed): kept until it runs, then sent.
     helper_tell: Arc<Mutex<HelperTell>>,
     /// True once the satellite runs: the helper's sends wait for it.
@@ -150,6 +154,8 @@ pub struct BoardMode {
 struct HelperTell {
     tell: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     early: Vec<String>,
+    /// Waits closed before Telegram runs (P1c): their alerts are edited once it does.
+    early_closed: Vec<ckanban_board::helper::waits::Rec>,
 }
 
 /// Board mode for this start, or None: Bun runs the whole board (off, or a fallback, already logged and recorded).
@@ -420,23 +426,25 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     // writer; the satellite still sends (push, ntfy, the Mac banner, Telegram) and runs Telegram and the front desk.
     let helper_tell: Arc<Mutex<HelperTell>> = Arc::new(Mutex::new(HelperTell::default()));
     let satellite_ready = Arc::new(tokio::sync::watch::channel(false).0);
-    let ht = helper_tell.clone();
-    let on_closed: ckanban_board::helper::waits::Closed = Arc::new(move |recs| {
-        let list: Vec<Value> = recs.into_iter().map(Value::Object).collect();
-        let line = format!("waits-closed {}\n", serde_json::to_string(&list).unwrap_or_default());
-        let mut t = ht.lock().unwrap_or_else(|e| e.into_inner());
-        match &t.tell {
-            Some(tell) => {
-                let _ = tell.send(line);
-            }
-            // Closed at start-up, before the satellite runs: sent once it does (`connect_satellite`).
-            None => t.early.push(line),
+    // P1c: waits closed: their Telegram alerts say so and lose their buttons (Rust's Telegram, once it runs; closed
+    // before that at start-up are kept for it).
+    let telegram: Arc<OnceLock<Arc<ckanban_board::telegram::Telegram>>> = Arc::new(OnceLock::new());
+    let (tgc, rt) = (telegram.clone(), tokio::runtime::Handle::current());
+    let early_closed = helper_tell.clone();
+    let on_closed: ckanban_board::helper::waits::Closed = Arc::new(move |recs| match tgc.get() {
+        Some(t) => {
+            let t = t.clone();
+            rt.spawn(async move { t.waits_closed(recs).await });
         }
+        None => early_closed.lock().unwrap_or_else(|e| e.into_inner()).early_closed.extend(recs),
     });
     let helper = ckanban_board::helper::Helper::new(
         root,
         Arc::new(ckanban_board::helper::wired::BoardSide { tickets: core.tickets.clone(), reads: core.reads.clone(), sessions: sessions.clone(), root: root.to_path_buf(), port: public_port, remote: RemoteFile::new(root) }),
-        Arc::new(ckanban_board::helper::wired::SatelliteSender(Arc::new(SatelliteClient::new(internal_port, public_port, secret)), satellite_ready.subscribe())),
+        Arc::new(ckanban_board::helper::wired::SplitSender {
+            sat: ckanban_board::helper::wired::SatelliteSender(Arc::new(SatelliteClient::new(internal_port, public_port, secret)), satellite_ready.subscribe()),
+            telegram: telegram.clone(),
+        }),
         ckanban_board::extras::side_caller(),
         core.bus.clone(),
         Some(on_closed),
@@ -503,6 +511,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         versions: ModelVersions::new(Some(root.join("model-versions.json"))),
         tell: OnceLock::new(),
         helper,
+        telegram,
         helper_tell,
         satellite_ready,
         outside: OnceLock::new(),
@@ -1286,7 +1295,7 @@ impl BoardMode {
             && req.headers().get(SATELLITE_HEADER).is_some_and(|v| edge::secret_matches(v.as_bytes(), &self.secret))
         {
             let name = name.to_string();
-            return self.internal(&name, req, native, proxy).await;
+            return self.internal(&name, req).await;
         }
         // 2. The gate.
         let remote = self.remote.active();
@@ -1302,6 +1311,13 @@ impl BoardMode {
         }
         if via == Listener::Remote {
             self.note_visit();
+        }
+        // 2b. The Telegram front desk (P1c): its gate before any route, as in Bun's `api()`.
+        if let Some(desk) = request::header_text(req.headers(), FRONT_DESK_HEADER) {
+            return self.desk_request(desk, req, via).await;
+        }
+        if req.uri().path() == "/api/telegram/front-desk/file" && self.tg().is_some() {
+            return self.error(StatusCode::FORBIDDEN, "send_file only works in the Telegram front desk's chat");
         }
         // 3. Own routes.
         if !wants_upgrade(req.headers())
@@ -1360,6 +1376,10 @@ impl BoardMode {
             // Its body already read: straight to Bun.
             Err(Next::Bun(r)) => return to_bun(r, peer, sent, proxy).await,
         };
+        // P1c: Telegram pairing, and the satellite's notification settings with Telegram's live state.
+        if self.tg().is_some() && tg::notify_claims(req.method(), req.uri().path()) {
+            return self.notify_route(req.map(|b| b.boxed()), peer, via, sent, proxy).await;
+        }
         // 5. Bun (and the front's native routes on this Mac).
         match sent {
             Some(_) => to_bun(req.map(|b| b.boxed()), peer, sent, proxy).await,
@@ -1591,14 +1611,11 @@ impl BoardMode {
     }
 
     /// `/api/internal/<name>` from the satellite (the edge header checked).
-    async fn internal(self: &Arc<Self>, name: &str, req: Request<Incoming>, native: &Native, proxy: &Proxy) -> Response<Body> {
+    async fn internal(self: &Arc<Self>, name: &str, req: Request<Incoming>) -> Response<Body> {
         let b = match read_body(req.into_body().boxed()).await {
             Ok(bytes) => serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null),
             Err(e) => return self.error(StatusCode::BAD_REQUEST, &e),
         };
-        if name == "replay" {
-            return self.replay(&b, native, proxy).await;
-        }
         if let Some((status, v)) = self.helper.internal(name, &b).await {
             return self.json_at(StatusCode::from_u16(status).unwrap_or(StatusCode::OK), &v);
         }

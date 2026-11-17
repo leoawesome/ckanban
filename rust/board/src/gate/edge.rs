@@ -5,9 +5,9 @@
 //! - Board to satellite (`SatelliteClient`, implements `api::Satellite`): `POST /api/internal/<name>` on the
 //!   satellite's internal port, names `frontdesk-gate`, `pass-call`, `publish`, `turn-ended`
 //!   (`src/core/satellite-edge.ts` answers them).
-//! - Satellite to board (`inbound`): `POST /api/internal/<name>` on the board's port, names `chat-from-telegram`,
-//!   `patch-telegram`, `drop-telegram-queued`, `comment` (to `api::BoardActions`), and `replay` (a held front desk
-//!   request after the user's Confirm, run by the server's router as the user).
+//! - Satellite to board (`inbound`): `POST /api/internal/<name>` on the board's port, name `comment` (to
+//!   `api::BoardActions`). Telegram's calls (`chat-from-telegram`, `patch-telegram`, `drop-telegram-queued`, `replay`)
+//!   ended with P1c: Telegram and the front desk run in the board (`crate::telegram`).
 
 use bytes::Bytes;
 use futures_util::future::BoxFuture;
@@ -113,21 +113,6 @@ fn text<'a>(b: &'a Value, k: &str) -> &'a str {
 pub async fn inbound(actions: &dyn BoardActions, name: &str, b: &Value) -> Option<(StatusCode, Value)> {
     let fail = |e: Failure| (StatusCode::NOT_IMPLEMENTED, json!({ "error": e }));
     Some(match name {
-        "chat-from-telegram" => {
-            let from = b.get("from").cloned().unwrap_or(Value::Null);
-            match actions.chat_from_telegram(text(b, "slug"), text(b, "id"), text(b, "text"), from).await {
-                Ok(sent) => (StatusCode::OK, json!({ "sent": sent })),
-                Err(e) => fail(e),
-            }
-        }
-        "patch-telegram" => match actions.patch_telegram(text(b, "slug"), text(b, "id"), b.get("patch").cloned().unwrap_or(Value::Null)) {
-            Ok(()) => (StatusCode::OK, json!({ "ok": true })),
-            Err(e) => fail(e),
-        },
-        "drop-telegram-queued" => match actions.drop_telegram_queued() {
-            Ok(n) => (StatusCode::OK, json!({ "dropped": n })),
-            Err(e) => fail(e),
-        },
         "comment" => match actions.add_comment(text(b, "slug"), text(b, "id"), text(b, "author"), text(b, "text")) {
             Ok(()) => (StatusCode::OK, json!({ "ok": true })),
             Err(e) => fail(e),
@@ -154,7 +139,7 @@ mod tests {
         let (s, v) = inbound(&StandIn, "comment", &json!({"slug": "b", "id": "t", "author": "ai", "text": "x"})).await.unwrap();
         assert_eq!(s, StatusCode::NOT_IMPLEMENTED);
         assert!(v["error"].as_str().unwrap().contains("not in the Rust board yet"));
-        assert_eq!(inbound(&StandIn, "drop-telegram-queued", &Value::Null).await.unwrap().1, json!({"dropped": 0}));
+        assert!(inbound(&StandIn, "drop-telegram-queued", &Value::Null).await.is_none());
         assert!(inbound(&StandIn, "nope", &Value::Null).await.is_none());
     }
 }

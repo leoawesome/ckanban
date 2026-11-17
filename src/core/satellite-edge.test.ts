@@ -4,7 +4,7 @@ import { confirmedByFront, FRONT_CONFIRMED_HEADER, FRONT_SECRET_HEADER, FRONT_VI
 
 const front = { publicPort: 7777, secret: "s".repeat(40), pid: 2 };
 
-const req = (headers: Record<string, string>, body?: unknown, path = "/api/internal/frontdesk-gate") =>
+const req = (headers: Record<string, string>, body?: unknown, path = "/api/internal/pass-call") =>
   new Request(`http://127.0.0.1:1${path}`, { method: "POST", headers, body: body === undefined ? undefined : JSON.stringify(body) });
 
 test("edge calls need this start's secret in their own header", () => {
@@ -24,12 +24,9 @@ test("the phone and confirmed marks count only with the front's secret", () => {
 });
 
 test("internal routes call the handlers and answer JSON", async () => {
-  const seen: unknown[] = [];
   const h: EdgeHandlers = {
-    frontdeskGate: async (desk, method, path, body) => (seen.push([desk, method, path, body]), desk === "held" ? { status: 202, body: { held: true } } : null),
     passCall: async (b) => ({ status: 200, body: { result: b.tool }, rateLimitMs: 0 }),
-    publish: async (job) => ({ url: `u:${job.file}` }),
-    turnEnded: async () => {
+    publish: async () => {
       throw new Error("boom");
     },
   };
@@ -37,12 +34,11 @@ test("internal routes call the handlers and answer JSON", async () => {
     const r = await internalRoute(req({}, body, `/api/internal/${name}`), `/api/internal/${name}`, h);
     return r && { status: r.status, data: await r.json() };
   };
-  expect(await call("frontdesk-gate", { desk: "held", method: "PATCH", path: "/api/x", body: { a: 1 } })).toEqual({ status: 200, data: { held: { status: 202, body: { held: true } } } });
-  expect(await call("frontdesk-gate", { desk: "ok", method: "GET", path: "/api/x" })).toEqual({ status: 200, data: { held: null } });
-  expect(seen[1]).toEqual(["ok", "GET", "/api/x", null]);
   expect((await call("pass-call", { tool: "t" }))?.data).toEqual({ status: 200, body: { result: "t" }, rateLimitMs: 0 });
-  expect((await call("publish", { file: "f" }))?.data).toEqual({ url: "u:f" });
-  expect(await call("turn-ended", {})).toEqual({ status: 500, data: { error: "boom" } });
+  expect(await call("publish", { file: "f" })).toEqual({ status: 500, data: { error: "boom" } });
+  // Telegram's calls are the Rust board's own since P1c.
+  expect((await call("frontdesk-gate", {}))?.status).toBe(404);
+  expect((await call("turn-ended", {}))?.status).toBe(404);
   expect((await call("nope", {}))?.status).toBe(404);
   expect(await internalRoute(req({}), "/api/other", h)).toBeNull();
 });

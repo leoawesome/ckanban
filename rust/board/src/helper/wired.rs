@@ -129,3 +129,60 @@ impl Sender for SatelliteSender {
         })
     }
 }
+
+/// P1c: Telegram is sent here, in Rust; every other channel through the satellite (until P1b). Results keep the
+/// order of `targets`.
+pub struct SplitSender {
+    pub sat: SatelliteSender,
+    pub telegram: Arc<std::sync::OnceLock<Arc<crate::telegram::Telegram>>>,
+}
+
+impl Sender for SplitSender {
+    fn send(&self, out: Value, targets: Vec<String>) -> BoxFuture<'static, Result<Vec<Value>, String>> {
+        let others: Vec<String> = targets.iter().filter(|t| *t != "telegram").cloned().collect();
+        let wants_tg = others.len() != targets.len();
+        let sat = if others.is_empty() { None } else { Some(self.sat.send(out.clone(), others.clone())) };
+        let tg = self.telegram.get().cloned();
+        Box::pin(async move {
+            let tg_fut = async {
+                if !wants_tg {
+                    return None;
+                }
+                Some(match (tg, out.as_object()) {
+                    (Some(t), Some(m)) => t.send(m).await,
+                    _ => json!({ "channel": "telegram", "ok": false, "error": "telegram failed: Telegram isn't ready yet" }),
+                })
+            };
+            let sat_fut = async {
+                match sat {
+                    Some(f) => f.await,
+                    None => Ok(Vec::new()),
+                }
+            };
+            let (tg_r, sat_r) = futures_util::join!(tg_fut, sat_fut);
+            let sat_list = match sat_r {
+                Ok(l) => l,
+                Err(e) => others.iter().map(|c| json!({ "channel": c, "ok": false, "error": format!("{c} failed: {e}") })).collect(),
+            };
+            let mut used = vec![false; sat_list.len()];
+            let mut tg_r = tg_r;
+            let mut out = Vec::new();
+            for t in &targets {
+                if t == "telegram" {
+                    if let Some(r) = tg_r.take() {
+                        out.push(r);
+                    }
+                    continue;
+                }
+                if let Some(i) = (0..sat_list.len()).find(|i| !used[*i] && sat_list[*i].get("channel").and_then(Value::as_str) == Some(t.as_str())) {
+                    used[i] = true;
+                    out.push(sat_list[i].clone());
+                }
+            }
+            Ok(out)
+        })
+    }
+    fn facts(&self) -> BoxFuture<'static, Facts> {
+        self.sat.facts()
+    }
+}

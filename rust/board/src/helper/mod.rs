@@ -46,6 +46,8 @@ pub struct Helper {
     pub runner: Arc<HelperRunner>,
     pub watch: Arc<Watcher>,
     pub emit: Emit,
+    /// notify.json was written from the satellite's Settings (before, after): Telegram reacts (P1c).
+    pub on_notify: std::sync::OnceLock<Arc<dyn Fn(&Value, &Value) + Send + Sync>>,
 }
 
 /// How often things look: the watcher and the core's safety nets, the runner's reminders and wakes.
@@ -90,7 +92,7 @@ impl Helper {
         });
         let runner = HelperRunner::new(core.clone(), side, emit.clone(), snoozed);
         let watch = Watcher::new(core.clone());
-        Arc::new(Helper { core, runner, watch, emit })
+        Arc::new(Helper { core, runner, watch, emit, on_notify: std::sync::OnceLock::new() })
     }
 
     /// Follows the board (bus events), takes stock once the board is loaded (`loaded` blocks until then), then
@@ -175,9 +177,27 @@ impl Helper {
             "helper-action" => (200, self.action(b)),
             "notify-write" => {
                 let Some(next) = b.get("settings").filter(|s| s.is_object()) else { return Some((400, json!({ "error": "settings is required" }))) };
-                let before = notify_settings::helper_on(&self.core.settings());
+                let was = self.core.settings();
+                let before = notify_settings::helper_on(&was);
+                // The paired chat is Rust's (P1c: pairing, unpair and the briefing run here): the satellite's copy may
+                // be older, so with the same bot token those fields come from the file as it is now.
+                let mut next = next.clone();
+                let tok = |v: &Value| v.get("telegram").and_then(|t| t.get("token")).cloned();
+                if tok(&was) == tok(&next)
+                    && let (Some(t), Some(w)) = (next.get_mut("telegram").and_then(Value::as_object_mut), was.get("telegram"))
+                {
+                    for k in ["chatId", "chatName", "pairedAt", "briefedAt"] {
+                        if let Some(v) = w.get(k) {
+                            t.insert(k.into(), v.clone());
+                        }
+                    }
+                }
+                let next = &next;
                 if let Err(e) = notify_settings::write_notify(&self.core.root, next) {
                     return Some((500, json!({ "error": format!("can't write notify.json: {e}") })));
+                }
+                if let Some(f) = self.on_notify.get() {
+                    f(&was, next);
                 }
                 let after = notify_settings::helper_on(next);
                 if before != after {

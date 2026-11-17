@@ -674,8 +674,9 @@ export class Notifier {
       }
     }
     this.saveSettings(next);
-    // Satellite mode: the Rust board switches its helper when it writes the file.
-    if (before.helper !== next.helper && !this.o.helperEdge) void this.helper.switched(next.helper).catch((e) => console.error("helper: switch", e));
+    // Satellite mode: the Rust board switches its helper, and starts or stops Telegram, when it writes the file (P1c).
+    if (this.o.helperEdge) return this.state();
+    if (before.helper !== next.helper) void this.helper.switched(next.helper).catch((e) => console.error("helper: switch", e));
     if (before.telegram.token !== next.telegram.token) this.telegram.reset();
     // Stopped taking messages (Pause, the channel off, a new bot): nothing Telegram left waiting reaches a ticket.
     if (taking(before.telegram) && !taking(next.telegram)) this.dropTelegramWork();
@@ -827,30 +828,11 @@ export class Notifier {
   }
 
   /**
-   * Satellite mode: the Rust board follows what waits and runs the helper. This notifier keeps Telegram going and,
-   * for a changed ticket, takes a form shown on Telegram that the ticket no longer asks off the chat.
+   * Satellite mode: the Rust board follows what waits, runs the helper, Telegram and the front desk (P1a, P1c). This
+   * notifier only sends what Rust asks (sendFromRust) and keeps the settings routes until P1b.
    */
   private startSatellite(): () => void {
-    const off = this.bus.on((e) => {
-      if (e.type === "ticket.updated") this.dirty.add(`${e.profile}/${e.ticket.id}`);
-      else if (e.type === "session.updated") this.dirty.add(`${e.profile}/${e.id}`);
-    });
-    this.telegram.refresh();
-    void this.telegram.briefOnce().catch((e) => console.error("telegram: briefing", e));
-    const timer = trackedInterval("notifier", () => {
-      const keys = [...this.dirty];
-      this.dirty.clear();
-      for (const k of keys) {
-        const [slug, id] = k.split("/");
-        void this.forms.sync(slug, id).catch((e) => console.error("telegram: form", e));
-      }
-    }, this.o.tickMs ?? 1000);
-    return () => {
-      off();
-      clearInterval(timer);
-      this.telegram.stop();
-      this.frontDesk.stop();
-    };
+    return () => {};
   }
 
   /** Look again at changed tickets and those whose change is still settling; route the transitions; run the helper's due times. */

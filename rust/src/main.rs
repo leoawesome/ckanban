@@ -204,6 +204,10 @@ async fn dev() -> u8 {
         b.connect_outside(&bun, &repo, notify.clone());
     }
     let native = routes::Native::new(root.clone(), public_port, notify, &bun, &repo);
+    // P1c: Telegram and the front desk (held requests are replayed through these routes).
+    if let Some(b) = &board {
+        b.connect_telegram(native.clone(), proxy.clone());
+    }
     let phone_accept = match (phone, &board) {
         (Some(l), Some(b)) => Some(tokio::spawn(phone::serve(l, proxy.clone(), native.clone(), b.clone()))),
         _ => None,
