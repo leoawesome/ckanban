@@ -495,7 +495,7 @@ impl RunLoop {
     }
 
     /// One event of the run (`onEvent`): drafts, workflows, the run log, the card's live line. On the run's task.
-    fn on_event(self: &Arc<Self>, run: &Arc<ActiveRun>, live: &Arc<Mutex<Live>>, spend: &Arc<Mutex<RunSpend>>, run_no: f64, _refine: bool, ev: &Value) {
+    fn on_event(self: &Arc<Self>, run: &Arc<ActiveRun>, live: &Arc<Mutex<Live>>, spend: &Arc<Mutex<RunSpend>>, run_no: f64, refine: bool, ev: &Value) {
         let (slug, id) = (&run.slug, &run.id);
         let changed = {
             let mut l = live.lock();
@@ -545,8 +545,10 @@ impl RunLoop {
         if self.versions.learn(ev) {
             // Learned a newer model version: nothing else to do here (the file is saved).
         }
-        // STAND-IN (R7b): rememberInit (the slash command list from the init event). STAND-IN (R12): mockups saved from
-        // a Planning reply.
+        // STAND-IN (R7b): rememberInit (the slash command list from the init event).
+        if refine && ty == Some("assistant") {
+            self.save_mockups(slug, id, ev);
+        }
         let shows = live.lock().shows_interrupted;
         if shows && !self.shutting_down() && rules::has_text(ev) {
             live.lock().shows_interrupted = false;
@@ -575,6 +577,31 @@ impl RunLoop {
         };
         if write {
             self.patch_quiet(slug, id, obj(json!({ "lastActivity": sum })));
+        }
+    }
+
+    /// `saveMockups`: Planning replies carry mockups as blocks (they can't write files); saved for the Outputs tab.
+    fn save_mockups(&self, slug: &str, id: &str, ev: &Value) {
+        let Some(Value::Array(content)) = ev.get("message").and_then(|m| m.get("content")) else { return };
+        let text: Vec<&str> = content.iter().map(|b| if b.get("type").and_then(Value::as_str) == Some("text") { b.get("text").and_then(Value::as_str).unwrap_or("") } else { "" }).collect();
+        let mockups = crate::sessions::text::extract_mockups(&text.join("\n"));
+        if mockups.is_empty() {
+            return;
+        }
+        let dir = self.outputs_dir(slug, id).join("mockups");
+        let saved = (|| -> std::io::Result<Vec<String>> {
+            std::fs::create_dir_all(&dir)?;
+            for (name, html) in &mockups {
+                let body = if html.ends_with('\n') { html.clone() } else { format!("{html}\n") };
+                std::fs::write(dir.join(name), body)?;
+            }
+            Ok(mockups.iter().map(|(n, _)| n.clone()).collect())
+        })();
+        match saved {
+            Ok(names) => {
+                self.patch_quiet(slug, id, obj(json!({ "lastActivity": format!("Saved mockup{} {}", if names.len() > 1 { "s" } else { "" }, names.join(", ")) })));
+            }
+            Err(e) => self.note(slug, id, &format!("Couldn't save mockups: {e}")),
         }
     }
 

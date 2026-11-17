@@ -18,7 +18,7 @@ pub fn wanted(method: &str, rest: &[&str]) -> bool {
         (method, rest),
         ("POST", ["chat"])
             | ("POST" | "PATCH" | "DELETE", ["queued", _])
-            | ("POST", ["link-session" | "branch" | "check-pr"])
+            | ("POST", ["link-session" | "branch" | "check-pr" | "follow-up-work"])
             | ("POST", ["pr", "refresh" | "send-failures" | "resolve-conflicts" | "merge"])
             | ("POST", ["ask" | "stop" | "cap-continue" | "stall" | "limit" | "fresh-session" | "take-over" | "fresh-chat" | "setup"])
             | ("POST" | "DELETE", ["follow-up"])
@@ -76,6 +76,16 @@ pub fn answer(runs: &Arc<RunLoop>, w: &Writes, req: &Req, slug: &str, id: &str, 
             let sid = b.get("sessionId").filter(|v| crate::runs::js::truthy(Some(v))).map(|v| s(Some(v)));
             let t = block(runs.link_session(slug, id, sid.as_deref())).map_err(|e| (400, e.message))?;
             Ok(Reply::Json(200, w.view_pub(slug, &t)))
+        }
+        ["follow-up-work"] => {
+            if req.run.is_some() {
+                return Err((403, "follow-up work starts with the user's click on a proposal card; use the propose_ticket tool".into()));
+            }
+            let b = body_obj(req)?;
+            let t = runs
+                .follow_up_work(slug, id, &s(b.get("title")), &s(b.get("body")), crate::runs::js::truthy(b.get("start")), b.get("important") == Some(&Value::Bool(true)))
+                .map_err(|e| (400, e.message))?;
+            Ok(Reply::Json(201, w.view_pub(slug, &t)))
         }
         ["branch"] => {
             if req.run.is_some() {
