@@ -518,12 +518,12 @@ and `chats.ts`. Drafts, fresh chat and session, take-over and link-session came 
   10,000-ticket bench in board mode (the satellite runs from the bench's copy of the code).
 - Results and the differences found: `docs/rust-port.md`, "The Rust board: ready to switch?".
 
-## The helper (P1a, `src/helper/`)
+## The helper (P1a, P1b, `src/helper/`)
 
 What waits on the user and how they hear of it, ported from `src/helper/` (`runner*.ts`, `core.ts`, `decide.ts`,
-`waits.ts`, `messages.ts`, `settings.ts`, `summary.ts`, the watching half of `notify.ts` and its `message`). In board
-mode Rust owns `waits.json`, `messages.json`, `helper-state.json` and `helper.json`, and is the only writer of
-`notify.json`; every file is written in Bun's bytes, so a switch back to Bun reads them as its own.
+`waits.ts`, `messages.ts`, `settings.ts`, `summary.ts`, `notify.ts`, `channels.ts`, `push.ts`, `webpush.ts`). In board
+mode Rust owns `waits.json`, `messages.json`, `helper-state.json`, `helper.json` and `push.json`, and is the only
+writer of `notify.json`; every file is written in Bun's bytes, so a switch back to Bun reads them as its own.
 - `watch.rs`: the stock-take at start (after the index is loaded, on a blocking thread; no session read for Done or
   Backlog tickets), then bus events mark tickets and a 1-second tick looks at them (`TransitionTracker`, a main
   ticket's steps' questions); notify_user (`POST .../tickets/:id/notify`); the logged-out alert of a board browser.
@@ -534,16 +534,27 @@ mode Rust owns `waits.json`, `messages.json`, `helper-state.json` and `helper.js
   their reminder steps along a channel chain, summaries and the 3-hour gap, held items, failures with backoff and the
   pause message, the hello, the night question and the morning ask, the practice alert, taps, `wantsAwake` (in the
   board's keep-awake), status.
-- `routes.rs`: `/api/messages...` and `/api/helper...` (answered by Rust), a ticket's `POST .../notify`. The
-  ticket's `seen` route stops its reminders (`Writes::set_opened`).
-- Still in the satellite until P1b and P1c: sending (`channels.rs` asks it `helper-send` with the channels worked out
-  here; it answers each channel's result, which Rust records), `/api/notify...` (settings, test, Telegram pairing),
-  `/api/push...`, Telegram and the front desk. What only it knows comes from `helper-facts` (the board on screen,
-  phone push devices, a connection). It reads the helper's files (again when they change) and sends its writes
-  here: `helper-action` (Telegram's Got it, Not urgent, night answer, /waiting), `notify-write` (notify.json as it
-  worked it out; Rust writes it and switches the helper when its on/off changed), `wait-seen` (the front desk's
-  `seenInChatAt`), `helper-send-message` (the Settings test). Rust tells it of closed waits (`waits-closed <json>` on
-  its stdin) so Telegram alerts say so.
+- `channels.rs` (P1b): sending. The Mac banner (`osascript`, found on PATH), or this Mac's browser when it gets
+  notifications; phone push; the web address (ntfy or JSON), each as `channels.ts` builds it; Telegram still through
+  the satellite (`helper-send` with only "telegram"). It keeps Settings' last sent / last error, tells the user on this
+  Mac when a device's push service drops it, and is the Mac-only notice of a plan done (`RunLoop::set_mac_only`).
+- `push.rs`, `webpush.rs` (P1b): `push.json` (the VAPID keys and the devices, owner-only, read whole: a handful of
+  devices) and Web Push on aws-lc-rs (already in the build for rustls): VAPID's ES256 JWT and the RFC 8291 aes128gcm
+  body, checked against the RFC test vector. `NODE_TLS_REJECT_UNAUTHORIZED=0` is honoured as Bun's fetch does (the
+  contract tests' self-signed fake push service).
+- `notify.rs` (P1b): Settings' notifications: the view, a change (Bun's rules: a run can't, only the user; from the
+  phone no new bot key and no turning Telegram back on), the test sends. What only Telegram's bot knows comes from the
+  satellite: `telegram-state`, `telegram-pair`, `telegram-unpair`; a change is told to it (`notify-changed`: a new
+  token, stopped taking messages). Without the satellite the view shows Telegram from the settings, status "error".
+- `routes.rs`: `/api/messages...`, `/api/helper...`, `/api/notify...` and `/api/push...` (answered by Rust), a
+  ticket's `POST .../notify`. The ticket's `seen` route stops its reminders (`Writes::set_opened`). Adding or removing
+  a phone push device is the user's own (`userOnly`, in Bun too since P1b): a program that added its own address
+  would get every message.
+- Still in the satellite until P1c: Telegram and the front desk. It reads the helper's files and push.json (again when
+  they change, never writing them) and sends its writes here: `helper-action` (Telegram's Got it, Not urgent, night
+  answer, /waiting), `notify-write` (only Telegram's own fields, merged into notify.json as it is then; Rust switches
+  the helper when its on/off changed), `wait-seen` (the front desk's `seenInChatAt`). Rust tells it of closed waits
+  (`waits-closed <json>` on its stdin) so Telegram alerts say so.
 - Checked against Bun: `tests/fixtures/helper.json` (about 3,400 cases of the pure rules and two store scripts, in
   America/Los_Angeles; `test/rust-board-helper-fixtures.test.ts`) and `tests/fixtures/helper_runner.json` (six
   scenarios replayed step by step with a fixed clock, fake channels and fake answers; every step's files must be

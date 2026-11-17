@@ -1,6 +1,6 @@
 //! The helper plugged into the Rust board (`rust/src/board_mode.rs` makes these): tickets and boards from the index
 //! and the ticket writes, live state through `Live`, links on the phone address when phone access is on, and the
-//! satellite for sending (`helper-send`) and what only it knows (`helper-facts`).
+//! satellite for Telegram until P1c (`helper-send` with only "telegram", and the bot's state and pairing).
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -94,19 +94,19 @@ impl HelperBoard for BoardSide {
     }
 }
 
-/// Sending through the satellite (until P1b/P1c). `ready` turns true once the satellite runs: a send or a question
-/// before that (the helper starts before the satellite does) waits for it, up to two minutes.
+/// Telegram through the satellite (until P1c). `ready` turns true once the satellite runs: a send before that (the
+/// helper starts before the satellite does) waits for it, up to two minutes.
 pub struct SatelliteSender(pub Arc<SatelliteClient>, pub tokio::sync::watch::Receiver<bool>);
 
-async fn wait_ready(mut ready: tokio::sync::watch::Receiver<bool>) {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(120), ready.wait_for(|r| *r)).await;
+async fn wait_ready(mut ready: tokio::sync::watch::Receiver<bool>, secs: u64) {
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(secs), ready.wait_for(|r| *r)).await;
 }
 
 impl Sender for SatelliteSender {
     fn send(&self, out: Value, targets: Vec<String>) -> BoxFuture<'static, Result<Vec<Value>, String>> {
         let (c, ready) = (self.0.clone(), self.1.clone());
         Box::pin(async move {
-            wait_ready(ready).await;
+            wait_ready(ready, 120).await;
             let (status, v) = c.call("helper-send", &json!({ "message": out, "only": targets })).await?;
             if !(200..300).contains(&status) {
                 return Err(v.get("error").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| format!("the satellite answered {status}")));
@@ -114,18 +114,22 @@ impl Sender for SatelliteSender {
             Ok(v.get("results").and_then(Value::as_array).cloned().unwrap_or_default())
         })
     }
+    /// Not asked: the board's own channels know the devices (`Channels::facts`).
     fn facts(&self) -> BoxFuture<'static, Facts> {
-        let (c, ready) = (self.0.clone(), self.1.clone());
+        Box::pin(async { Facts::default() })
+    }
+}
+
+/// The satellite's Telegram bot for Settings (`telegram-state`, `telegram-pair`, `telegram-unpair`,
+/// `notify-changed`); waits up to 15 s for the satellite to run.
+pub struct SatelliteTelegram(pub Arc<SatelliteClient>, pub tokio::sync::watch::Receiver<bool>);
+
+impl super::notify::TelegramSide for SatelliteTelegram {
+    fn call(&self, name: &str, body: Value) -> BoxFuture<'static, Result<(u16, Value), String>> {
+        let (c, ready, name) = (self.0.clone(), self.1.clone(), name.to_string());
         Box::pin(async move {
-            wait_ready(ready).await;
-            match c.call("helper-facts", &json!({})).await {
-                Ok((200, v)) => Facts {
-                    on_screen: v.get("onScreen").and_then(Value::as_bool).unwrap_or(false),
-                    phone_devices: v.get("phoneDevices").and_then(Value::as_u64).unwrap_or(0),
-                    connected: v.get("connected").and_then(Value::as_bool).unwrap_or(false),
-                },
-                _ => Facts::default(),
-            }
+            wait_ready(ready, 15).await;
+            c.call(&name, &body).await
         })
     }
 }

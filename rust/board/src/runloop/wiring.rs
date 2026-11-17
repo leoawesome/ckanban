@@ -114,8 +114,11 @@ impl PlanRuns for RunLoop {
         RunLoop::auto_refine(self, slug, id);
     }
     fn notify(&self, title: &str, body: &str, slug: &str, id: &str) {
-        // STAND-IN (R13/P1): the notifier's Mac banner lives in the satellite; logged until the edge carries it.
-        eprintln!("[board] notify {slug}/{id}: {title}: {body}");
+        // The helper's Mac-only notice (P1b): the banner, or this Mac's browser; a click opens the ticket.
+        match self.mac_only.get() {
+            Some(f) => f(title, body, slug, id),
+            None => eprintln!("[board] notify {slug}/{id}: {title}: {body}"),
+        }
     }
 }
 

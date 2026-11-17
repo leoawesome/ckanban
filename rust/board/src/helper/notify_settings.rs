@@ -29,7 +29,17 @@ pub fn default_notify() -> Value {
 
 /// `normalizeSettings(raw, DEFAULT_NOTIFY, true)`: Err on a webhook URL that isn't http(s).
 pub fn normalize_from_file(raw: &Value) -> Result<Value, String> {
-    let mut out = default_notify();
+    normalize(raw, &default_notify(), true)
+}
+
+/// The token error (never echoes what was typed: it may be the token).
+pub const BAD_TOKEN: &str = "That doesn't look like a bot token from BotFather (it looks like 123456789:AAH...). Copy it again.";
+
+/// `normalizeSettings(raw, base, fromFile)`: a partial update merged into `base`. Err on a webhook URL that isn't
+/// http(s) or a Telegram token that isn't one. The paired chat is read only from the file (`from_file`): only pairing
+/// sets it, never the settings API.
+pub fn normalize(raw: &Value, base: &Value, from_file: bool) -> Result<Value, String> {
+    let mut out = base.clone();
     let Some(r) = raw.as_object() else { return Ok(out) };
     let o = out.as_object_mut().expect("object");
     if let Some(Value::String(u)) = r.get("webhookUrl") {
@@ -52,7 +62,7 @@ pub fn normalize_from_file(raw: &Value) -> Result<Value, String> {
     }
     if let Some(tg) = r.get("telegram").filter(|t| t.is_object() || t.is_array()) {
         let t = o.get_mut("telegram").and_then(Value::as_object_mut).expect("telegram");
-        for k in ["on", "askTyped", "takeMessages"] {
+        for k in ["on", "askTyped"] {
             if let Some(b) = tg.get(k).and_then(Value::as_bool) {
                 t.insert(k.into(), b.into());
             }
@@ -69,18 +79,39 @@ pub fn normalize_from_file(raw: &Value) -> Result<Value, String> {
             }
             _ => {}
         }
+        if let Some(b) = tg.get("takeMessages").and_then(Value::as_bool) {
+            t.insert("takeMessages".into(), b.into());
+            // Turned back on (only Settings on the Mac can): no longer locked.
+            if b && !from_file {
+                t.insert("lockedAt".into(), Value::Null);
+            }
+        }
         if let Some(Value::String(tok)) = tg.get("token") {
-            t.insert("token".into(), trim(tok).into());
+            let tok = trim(tok).to_string();
+            if from_file {
+                t.insert("token".into(), tok.into());
+            } else if Some(tok.as_str()) != t.get("token").and_then(Value::as_str) {
+                if !tok.is_empty() && !TOKEN_RE.is_match(&tok) {
+                    return Err(BAD_TOKEN.into());
+                }
+                // A new bot (or none) means pairing again.
+                t.insert("token".into(), tok.into());
+                for k in ["chatId", "chatName", "pairedAt"] {
+                    t.insert(k.into(), Value::Null);
+                }
+            }
         }
-        if let Some(id) = tg.get("chatId").and_then(Value::as_f64).filter(|x| x.fract() == 0.0 && x.abs() <= 9_007_199_254_740_991.0) {
-            t.insert("chatId".into(), ckanban_core::jsnum::num(id));
-        }
-        if let Some(Value::String(n)) = tg.get("chatName") {
-            t.insert("chatName".into(), head16(n, 120).into());
-        }
-        for k in ["pairedAt", "lockedAt", "briefedAt"] {
-            if let Some(Value::String(v)) = tg.get(k) {
-                t.insert(k.into(), v.clone().into());
+        if from_file {
+            if let Some(id) = tg.get("chatId").and_then(Value::as_f64).filter(|x| x.fract() == 0.0 && x.abs() <= 9_007_199_254_740_991.0) {
+                t.insert("chatId".into(), ckanban_core::jsnum::num(id));
+            }
+            if let Some(Value::String(n)) = tg.get("chatName") {
+                t.insert("chatName".into(), head16(n, 120).into());
+            }
+            for k in ["pairedAt", "lockedAt", "briefedAt"] {
+                if let Some(Value::String(v)) = tg.get(k) {
+                    t.insert(k.into(), v.clone().into());
+                }
             }
         }
     }
@@ -93,6 +124,31 @@ pub fn normalize_from_file(raw: &Value) -> Result<Value, String> {
         }
     }
     Ok(out)
+}
+
+/// The satellite's Telegram save (`notify-write` with `telegram`): these Telegram fields over the file's, as Bun's
+/// `save(patch)` merges them, then read like the file.
+pub fn merge_telegram(cur: &Value, patch: &Map<String, Value>) -> Result<Value, String> {
+    let mut raw = cur.clone();
+    if let Some(t) = raw.get_mut("telegram").and_then(Value::as_object_mut) {
+        for (k, v) in patch {
+            t.insert(k.clone(), v.clone());
+        }
+    }
+    normalize_from_file(&raw)
+}
+
+/// `maskToken`: "set …AbCd" or "".
+pub fn mask_token(token: &str) -> String {
+    if token.is_empty() { String::new() } else { format!("set …{}", crate::runs::js::tail16(token, 4)) }
+}
+
+/// `isNtfy`: the format says so, or (auto) the address's host has "ntfy" in it.
+pub fn is_ntfy(s: &Value) -> bool {
+    match s.get("format").and_then(Value::as_str) {
+        Some("auto") | None => s.get("webhookUrl").and_then(Value::as_str).and_then(|u| url::Url::parse(u).ok()).is_some_and(|u| u.host_str().is_some_and(|h| h.contains("ntfy"))),
+        Some(f) => f == "ntfy",
+    }
 }
 
 /// `readNotifySettings`: defaults for anything missing or invalid.

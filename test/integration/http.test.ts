@@ -972,10 +972,14 @@ test("phone push: public key, turn a device on, heartbeat, remove; board runs ar
   expect(first.publicKey).toMatch(/^[\w-]{80,}$/);
   expect(first.devices).toEqual([]);
   const sub = { endpoint: "https://fcm.googleapis.com/fcm/send/abc", keys: { p256dh: first.publicKey, auth: "BTBZMqHH6r4Tts7J_aSIgg" } };
+  // Adding or removing a device is the user's own: a program without the board's Origin gets every message otherwise.
+  const user = (body: unknown) => ({ ...json("POST", body), headers: { "content-type": "application/json", origin: base } });
   r = await fetch(`${base}/api/push/subscribe`, json("POST", { subscription: sub, label: "Android · Chrome" }));
+  expect(r.status).toBe(403);
+  r = await fetch(`${base}/api/push/subscribe`, user({ subscription: sub, label: "Android · Chrome" }));
   const d = (await r.json()) as any;
   expect(d.label).toBe("Android · Chrome");
-  r = await fetch(`${base}/api/push/subscribe`, json("POST", { subscription: { endpoint: "nope" } }));
+  r = await fetch(`${base}/api/push/subscribe`, user({ subscription: { endpoint: "nope" } }));
   expect(r.status).toBe(400);
   r = await fetch(`${base}/api/push/visible`, json("POST", { endpoint: sub.endpoint, visible: true }));
   expect(r.status).toBe(200);
@@ -984,6 +988,8 @@ test("phone push: public key, turn a device on, heartbeat, remove; board runs ar
   r = await fetch(`${base}/api/push`, { headers: { "x-ckanban-run": "p/t_1" } });
   expect(r.status).toBe(403);
   r = await fetch(`${base}/api/push/remove`, json("POST", { id: d.id }));
+  expect(r.status).toBe(403);
+  r = await fetch(`${base}/api/push/remove`, user({ id: d.id }));
   expect(((await r.json()) as any).devices).toEqual([]);
   expect(((await (await fetch(`${base}/api/notify`)).json()) as any).macBrowser).toBe(false);
 });

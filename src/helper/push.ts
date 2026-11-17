@@ -63,10 +63,14 @@ export class PushService {
   private retryMs: number;
   private droppedListeners: ((d: DroppedDevice) => void)[] = [];
 
-  constructor(private root: string, o: { fetch?: (url: string, init: RequestInit) => Promise<Response>; now?: () => number; retryMs?: number } = {}) {
+  /** Satellite mode: the Rust board owns push.json (P1b); this one reads it and never writes it. */
+  private readOnly: boolean;
+
+  constructor(private root: string, o: { fetch?: (url: string, init: RequestInit) => Promise<Response>; now?: () => number; retryMs?: number; readOnly?: boolean } = {}) {
     this.fetch = o.fetch ?? ((url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(10_000) }));
     this.now = o.now ?? Date.now;
     this.retryMs = o.retryMs ?? RETRY_MS;
+    this.readOnly = !!o.readOnly;
   }
 
   /** Called for each device removed because its push service said it is gone (Notifier tells the user). */
@@ -92,8 +96,9 @@ export class PushService {
     return fresh;
   }
 
-  /** Private key inside: owner-only. */
+  /** Private key inside: owner-only. Never in satellite mode. */
   private write(f: PushFile) {
+    if (this.readOnly) return;
     writeFileSync(`${this.file}.tmp`, JSON.stringify(f, null, 2) + "\n", { mode: 0o600 });
     renameSync(`${this.file}.tmp`, this.file);
   }

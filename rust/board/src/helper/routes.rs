@@ -1,7 +1,7 @@
 //! The helper's routes in board mode (from `src/api/notify.ts` and `ticket-info.ts`): `/api/messages...` (the
 //! messages the board sent the user), `/api/helper...` (status and helper lines, settings, "What the helper knows
-//! about you", taps) and a ticket's `POST .../notify` (notify_user). `/api/notify...` (settings, test, Telegram
-//! pairing) and `/api/push...` stay with the satellite until P1b and P1c.
+//! about you", taps), `/api/notify...` (notification settings, the test, Telegram pairing asked of the satellite),
+//! `/api/push...` (phone push devices) and a ticket's `POST .../notify` (notify_user).
 
 use std::sync::Arc;
 
@@ -21,6 +21,8 @@ pub struct Req {
     pub run: Option<String>,
     pub huddle: bool,
     pub body: Vec<u8>,
+    /// Came in on this Mac's listener (not phone access).
+    pub local: bool,
     /// `userOnly(what)`: Ok when the caller is the user's own browser.
     pub user: UserCheck,
 }
@@ -33,7 +35,7 @@ pub type Answer = Result<Value, (u16, String)>;
 /// Whether the helper answers this path (`/api/<parts>`).
 pub fn claims(parts: &[String]) -> bool {
     match parts.first().map(String::as_str) {
-        Some("messages" | "helper") => true,
+        Some("messages" | "helper" | "notify" | "push") => true,
         Some("profiles") => parts.len() == 5 && parts[2] == "tickets" && parts[4] == "notify",
         _ => false,
     }
@@ -63,6 +65,8 @@ pub async fn answer(h: &Helper, r: &Req) -> Option<Answer> {
     Some(match r.parts[0].as_str() {
         "messages" => messages(h, r).await,
         "helper" => helper(h, r).await,
+        "notify" => settings(h, r).await,
+        "push" => push(h, r).await,
         _ => notify(h, r).await,
     })
 }
@@ -174,6 +178,112 @@ async fn helper(h: &Helper, r: &Req) -> Answer {
         (Some("notice-seen"), 2, "POST") => {
             runner.notice_seen();
             Ok(runner.status().await)
+        }
+        _ => Err(not_found()),
+    }
+}
+
+fn notifications(h: &Helper) -> Result<&Arc<super::notify::Notify>, (u16, String)> {
+    h.notify.get().ok_or((503, "notifications aren't ready yet".to_string()))
+}
+
+fn str_of<'a>(b: &'a Value, k: &str) -> Option<&'a str> {
+    b.get(k).and_then(Value::as_str)
+}
+
+/// `/api/notify...`: where messages go is the user's channel, so runs can't read or change it.
+async fn settings(h: &Helper, r: &Req) -> Answer {
+    if r.run.is_some() {
+        return Err((403, "board runs can't use notification settings".into()));
+    }
+    let n = notifications(h)?;
+    let (p, m) = (&r.parts, r.method.as_str());
+    if p.len() == 1 && m == "GET" {
+        return Ok(n.state(r.local).await);
+    }
+    if p.len() == 1 && m == "POST" {
+        let patch = body(r)?;
+        // Where messages go (the web address, ntfy, the Telegram bot and its token) is the user's alone: a run's
+        // shell or another program could point every message, full text included, at its own address.
+        (r.user)("Changing notification settings".into()).await?;
+        return n.update(&patch, r.local).await;
+    }
+    if p.get(1).map(String::as_str) == Some("test") && m == "POST" {
+        let b = body(r)?;
+        return Ok(n.test(str_of(&b, "profile"), r.local).await);
+    }
+    if p.len() == 3 && p[1] == "telegram" && p[2] == "pair" && m == "POST" {
+        (r.user)("Pairing Telegram".into()).await?;
+        // Whoever pairs gets to answer tickets from that chat: only this Mac, so a lost phone can't pair a new chat.
+        if !r.local {
+            return Err((403, super::notify::TG_PAIR_FROM_MAC.into()));
+        }
+        let b = body(r)?;
+        return n.pair(str_of(&b, "board"), r.local).await;
+    }
+    if p.len() == 3 && p[1] == "telegram" && p[2] == "unpair" && m == "POST" {
+        (r.user)("Unpairing Telegram".into()).await?;
+        return n.unpair(r.local).await;
+    }
+    Err(not_found())
+}
+
+/// `/api/push...`: this device turns notifications on or off; the page's heartbeat says when its board is on screen.
+/// Adding or removing a device is the user's own (a program that added its own address would get every message).
+async fn push(h: &Helper, r: &Req) -> Answer {
+    if r.run.is_some() {
+        return Err((403, "board runs can't use notification settings".into()));
+    }
+    let n = notifications(h)?;
+    let svc = n.channels.push.clone();
+    let (p, m) = (&r.parts, r.method.as_str());
+    if p.len() == 1 && m == "GET" {
+        return tokio::task::spawn_blocking(move || json!({ "publicKey": svc.public_key(), "devices": svc.devices(), "dropped": svc.dropped() }))
+            .await
+            .map_err(|e| (500, e.to_string()));
+    }
+    let b = if m == "POST" { body(r)? } else { Value::Null };
+    let endpoint = str_of(&b, "endpoint").unwrap_or("").to_string();
+    match (p.get(1).map(String::as_str), m) {
+        (Some("subscribe"), "POST") => {
+            (r.user)("Turning notifications on".into()).await?;
+            // On the board's own port: a browser on this Mac (phone access comes in on the remote listener).
+            let (local, sub, label, replaces) = (r.local, b.get("subscription").cloned().unwrap_or(Value::Null), b.get("label").cloned(), str_of(&b, "replaces").map(str::to_string));
+            let d = tokio::task::spawn_blocking(move || svc.subscribe(&sub, label.as_ref(), local, replaces.as_deref())).await.map_err(|e| (500, e.to_string()))?;
+            let d = d.map_err(|e| (400, e))?;
+            Ok(json!({ "id": d.get("id"), "label": d.get("label"), "createdAt": d.get("createdAt") }))
+        }
+        (Some("remove"), "POST") => {
+            let key = str_of(&b, "id").map(str::to_string).unwrap_or(endpoint);
+            if key.is_empty() {
+                return Err((400, "id or endpoint is required".into()));
+            }
+            (r.user)("Turning notifications off".into()).await?;
+            tokio::task::spawn_blocking(move || -> Answer {
+                let removed = svc.remove(&key).map_err(|e| (500, e))?;
+                Ok(json!({ "removed": removed, "devices": svc.devices() }))
+            })
+            .await
+            .map_err(|e| (500, e.to_string()))?
+        }
+        (Some("visible"), "POST") => {
+            if endpoint.is_empty() {
+                return Err((400, "endpoint is required".into()));
+            }
+            let (visible, local) = (b.get("visible") == Some(&Value::Bool(true)), r.local);
+            tokio::task::spawn_blocking(move || {
+                svc.set_visible(&endpoint, visible);
+                if local {
+                    svc.mark_this_mac(&endpoint);
+                }
+            })
+            .await
+            .map_err(|e| (500, e.to_string()))?;
+            Ok(json!({ "ok": true }))
+        }
+        (Some("test"), "POST") => {
+            let Some(id) = str_of(&b, "id") else { return Err((400, "id is required".into())) };
+            Ok(n.test_device(id, str_of(&b, "profile")).await)
         }
         _ => Err(not_found()),
     }

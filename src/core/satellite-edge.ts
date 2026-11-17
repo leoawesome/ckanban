@@ -4,7 +4,8 @@
 // caller sends, so a request passed through can never be one of these.
 //
 // - Rust to this daemon: `POST /api/internal/<name>` on the internal port (`internalRoute`): frontdesk-gate,
-//   pass-call, publish, turn-ended, and for the Rust helper (P1a) helper-send and helper-facts.
+//   pass-call, publish, turn-ended, and for the Rust helper (P1a, P1b) helper-send (Telegram only since P1b),
+//   helper-facts, and Telegram's part of Settings: telegram-state, telegram-pair, telegram-unpair, notify-changed.
 // - This daemon to Rust: `POST /api/internal/<name>` on the board's port (`rustCall`): chat-from-telegram,
 //   patch-telegram, drop-telegram-queued, comment, replay, and for the Rust helper helper-action, notify-write,
 //   wait-seen, helper-send-message (rustHelperEdge).
@@ -35,6 +36,14 @@ export interface EdgeHandlers {
   helperSend?: (message: OutMessage, only: string[]) => Promise<ChannelResult[]>;
   /** P1a: what only this daemon knows for the helper: the board on screen, phone push devices, a connection. */
   helperFacts?: () => { onScreen: boolean; phoneDevices: number; connected: boolean };
+  /** P1b: Telegram as Settings shows it (the Rust board owns the rest of /api/notify). */
+  telegramState?: () => unknown;
+  /** P1b: Settings' Pair: a fresh code (throws without a token). */
+  telegramPair?: (board: string | null) => Promise<{ code: string; expiresAt: string }>;
+  /** P1b: Settings' Unpair. */
+  telegramUnpair?: () => Promise<void>;
+  /** P1b: the Rust board saved a settings change: the bot starts over on a new token, drops work when it stopped taking messages. */
+  notifyChanged?: (c: { tokenChanged: boolean; stoppedTaking: boolean }) => void;
   passCall: (b: Record<string, unknown>) => Promise<{ status: number; body: unknown; rateLimitMs?: number }>;
   publish: (job: any) => Promise<unknown>;
   turnEnded: (slug: string, id: string, text: string) => Promise<void>;
@@ -65,6 +74,25 @@ export async function internalRoute(req: Request, pathname: string, h: EdgeHandl
       case "helper-facts":
         if (!h.helperFacts) return json({ error: "not found" }, 404);
         return json(h.helperFacts());
+      case "telegram-state":
+        if (!h.telegramState) return json({ error: "not found" }, 404);
+        return json({ telegram: h.telegramState() });
+      case "telegram-pair": {
+        if (!h.telegramPair) return json({ error: "not found" }, 404);
+        try {
+          return json(await h.telegramPair(typeof b.board === "string" ? b.board : null));
+        } catch (e) {
+          return json({ error: (e as Error).message }, (e as { status?: number }).status ?? 400);
+        }
+      }
+      case "telegram-unpair":
+        if (!h.telegramUnpair) return json({ error: "not found" }, 404);
+        await h.telegramUnpair();
+        return json({ ok: true });
+      case "notify-changed":
+        if (!h.notifyChanged) return json({ error: "not found" }, 404);
+        h.notifyChanged({ tokenChanged: b.tokenChanged === true, stoppedTaking: b.stoppedTaking === true });
+        return json({ ok: true });
       case "turn-ended":
         await h.turnEnded(String(b.slug ?? ""), String(b.id ?? ""), String(b.text ?? ""));
         return json({ ok: true });
@@ -72,7 +100,7 @@ export async function internalRoute(req: Request, pathname: string, h: EdgeHandl
         return json({ error: "not found" }, 404);
     }
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    return json({ error: (e as Error).message }, (e as { status?: number }).status ?? 500);
   }
 }
 
@@ -145,8 +173,9 @@ export function rustHelperEdge(front: Front): HelperEdge {
       if (r.status >= 300) throw new Error(r.body?.error ?? `the Rust board answered ${r.status}`);
       return { message: r.body.message, results: r.body.results ?? [] };
     },
-    async writeSettings(s: NotifySettings) {
-      const r = await rustCall(front, "notify-write", { settings: s });
+    async writeSettings(s: NotifySettings, telegram) {
+      // Only Telegram's own fields when known, so a Settings change the Rust board saved meanwhile isn't undone.
+      const r = await rustCall(front, "notify-write", telegram ? { telegram } : { settings: s });
       if (r.status >= 300) throw new Error(r.body?.error ?? `the Rust board answered ${r.status}`);
     },
     async action(name, b) {

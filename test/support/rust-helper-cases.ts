@@ -8,7 +8,17 @@ import { join } from "node:path";
 import { clockTime, cut, directLabel, usageLimitLine } from "../../src/helper/core";
 import { channelFor, checkDecision, DECISION_SCHEMA, HELPER_SYSTEM, lastNightEnd, parseDecision, summaryAllowedAt, urgentRefusal } from "../../src/helper/decide";
 import { MessageStore, nearOf, needsShown, needsYouIds, pageOf, rowLines, toRow, trimMessages } from "../../src/helper/messages";
-import { normalizeSettings } from "../../src/helper/notify";
+import { headerValue, isNtfy, normalizeSettings } from "../../src/helper/notify";
+import { maskToken } from "../../src/helper/telegram";
+import { cutBytes, ntfyRequest, pushChannel, type OutMessage } from "../../src/helper/channels";
+
+/** What the push channel hands the push service for a message (its payload), caught from a fake one. */
+function pushChannelPayload(m: OutMessage): unknown {
+  let got: unknown = null;
+  const fake = { send: (p: unknown) => ((got = p), Promise.resolve({ sent: 1, removed: 0, onScreen: 0, error: null })) };
+  void pushChannel({ fetch: fetch, push: fake as never }).send(m, {} as never);
+  return got;
+}
 import { keptQuietLine, meetingTime, lookBeforeDigest, backoffMs } from "../../src/helper/runner-config";
 import { reminderBody, reminderCount, stepChain, summaryLine } from "../../src/helper/runner-text";
 import { hm, inNight, morningDigestAt, nightEnd } from "../../src/helper/settings";
@@ -108,6 +118,17 @@ export function answer(c: { fn: string; args: any[] }): string {
       case "waitIdentity": return j(waitIdentity(a[0], a[1]));
       case "recordForMessage": return j(recordForMessage(a[0], a[1], a[2]) ?? null);
       case "normalizeSettings": return j(normalizeSettings(a[0], undefined, true));
+      // P1b: a Settings change over the file's settings, and the bits the settings view shows.
+      case "normalizeUpdate": return j(normalizeSettings(a[0], normalizeSettings(a[1], undefined, true), false));
+      case "isNtfy": return j(isNtfy(a[0]));
+      case "maskToken": return j(maskToken(a[0]));
+      case "headerValue": return j(headerValue(a[0]));
+      case "cutBytes": return j(cutBytes(a[0], a[1]));
+      case "ntfyRequest": {
+        const r = ntfyRequest({ webhookUrl: "https://ntfy.sh/t" }, a[0], a[1]);
+        return j({ headers: r.init.headers, body: r.init.body });
+      }
+      case "pushPayloadOf": return j(pushChannelPayload(a[0]));
       case "storeScript": return j(storeScript(a[0], a[1]));
       default: return j({ error: `unknown fn ${c.fn}` });
     }

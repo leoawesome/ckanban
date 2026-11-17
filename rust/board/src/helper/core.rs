@@ -78,6 +78,8 @@ pub struct HelperCore {
     pub sender: Arc<dyn Sender>,
     sink: RwLock<Option<Weak<dyn HelperSink>>>,
     pub now: Arc<dyn Fn() -> f64 + Send + Sync>,
+    /// One read-modify-write of notify.json at a time (Settings here, the satellite's Telegram saves).
+    pub notify_write: Mutex<()>,
 }
 
 /// `tapTicket`: the one ticket an urgent alert or reminder is about.
@@ -107,7 +109,7 @@ impl HelperCore {
         let mut w = WaitStore::new(root, now.clone());
         w.on_closed = on_closed;
         let m = MessageStore::new(root, now.clone(), on_unread);
-        Arc::new(HelperCore { root: root.to_path_buf(), st: Mutex::new(Stores { waits: w, messages: m, limit_window: None }), board, sender, sink: RwLock::new(None), now })
+        Arc::new(HelperCore { root: root.to_path_buf(), st: Mutex::new(Stores { waits: w, messages: m, limit_window: None }), board, sender, sink: RwLock::new(None), now, notify_write: Mutex::new(()) })
     }
 
     pub fn lock(&self) -> MutexGuard<'_, Stores> {

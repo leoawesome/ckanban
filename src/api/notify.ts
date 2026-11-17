@@ -165,6 +165,8 @@ export async function notifyRoutes(ctx: ApiContext, req: Request, url: URL, part
     const b = m === "POST" ? await body(req) : null;
     const endpoint = typeof b?.endpoint === "string" ? b.endpoint : "";
     if (parts[1] === "subscribe" && m === "POST") {
+      // A device added gets every message, full text in the payload: only the user's own browser adds one.
+      await userOnly(req, "Turning notifications on");
       try {
         // On the board's own port: a browser on this Mac (phone access comes in on the remote listener).
         const d = push.subscribe(b?.subscription, b?.label, listenerOf(req) === "local", typeof b?.replaces === "string" ? b.replaces : undefined);
@@ -176,6 +178,7 @@ export async function notifyRoutes(ctx: ApiContext, req: Request, url: URL, part
     if (parts[1] === "remove" && m === "POST") {
       const key = typeof b?.id === "string" ? b.id : endpoint;
       if (!key) throw new HttpError(400, "id or endpoint is required");
+      await userOnly(req, "Turning notifications off");
       return json({ removed: push.remove(key), devices: push.devices() });
     }
     if (parts[1] === "visible" && m === "POST") {

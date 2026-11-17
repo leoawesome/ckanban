@@ -559,6 +559,21 @@ export function createContext(deps: ServerDeps) {
     publish: (job) => publishArtifact(job),
     turnEnded: (slug, id, text) => notifier.turnEnded(slug, id, text),
     helperSend: (m, only) => notifier.sendFromRust(m, only),
+    telegramState: () => notifier.telegramPublic(),
+    telegramPair: async (board) => {
+      const code = notifier.telegramPair(board);
+      await notifier.settingsSaved().catch((e) => {
+        throw Object.assign(new Error(`The settings couldn't be saved: ${(e as Error).message}`), { status: 503 });
+      });
+      return code;
+    },
+    telegramUnpair: async () => {
+      notifier.telegramUnpair();
+      await notifier.settingsSaved().catch((e) => {
+        throw Object.assign(new Error(`The settings couldn't be saved: ${(e as Error).message}`), { status: 503 });
+      });
+    },
+    notifyChanged: (c) => notifier.settingsChanged(c),
     helperFacts: () => ({
       onScreen: push.anyVisible(), phoneDevices: push.phoneDevices(),
       connected: deps.satellite?.mcpConnected?.() ?? mcp.state().servers.some((x) => x.status === "connected"),

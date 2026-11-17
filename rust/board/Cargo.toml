@@ -37,6 +37,8 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 flate2 = "1"
 getrandom = "0.3"
+# Web Push (P1b): ECDH, ES256, AES-GCM and HMAC for VAPID and the aes128gcm payload; already built for rustls.
+aws-lc-rs = { version = "1", default-features = false, features = ["aws-lc-sys"] }
 libc = "0.2"
 # Claude's projects folder change feed on FSEvents (R5), the shell's pty (R9).
 notify = "8"

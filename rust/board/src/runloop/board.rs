@@ -243,7 +243,13 @@ pub struct RunLoop {
     pub(super) recall: std::sync::OnceLock<Recall>,
     /// R10: a schedule's ticket's prompt context and a quiet run's history line.
     pub(super) schedules: std::sync::OnceLock<Arc<dyn ScheduleHooks>>,
+    /// P1b: a Mac-only notice (title, body, the link a click opens), set by board mode once the helper's channels
+    /// exist (a plan done).
+    pub(super) mac_only: std::sync::OnceLock<MacOnly>,
 }
+
+/// A notice only on this Mac: (title, body, board, ticket a click opens).
+pub type MacOnly = Arc<dyn Fn(&str, &str, &str, &str) + Send + Sync>;
 
 /// R12's recall: the block a run's first prompt gets for a ticket of a board ("" for none). Blocking.
 pub type Recall = Arc<dyn Fn(&str, &Map<String, Value>) -> String + Send + Sync>;
@@ -324,6 +330,7 @@ impl RunLoop {
             ops: std::sync::OnceLock::new(),
             recall: std::sync::OnceLock::new(),
             schedules: std::sync::OnceLock::new(),
+            mac_only: std::sync::OnceLock::new(),
         })
     }
 
@@ -343,6 +350,10 @@ impl RunLoop {
     /// R10's scheduler, set by board mode once it exists.
     pub fn set_schedules(&self, h: Arc<dyn ScheduleHooks>) {
         let _ = self.schedules.set(h);
+    }
+    /// P1b: the helper's Mac-only notice.
+    pub fn set_mac_only(&self, f: MacOnly) {
+        let _ = self.mac_only.set(f);
     }
 
     pub fn ops(&self) -> Arc<dyn crate::git::ops::BoardOps> {
