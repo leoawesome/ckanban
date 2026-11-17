@@ -190,8 +190,21 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     core.tickets.set_mask(text_masker(root));
     let s = sessions.clone();
     core.tickets.on_written(move |slug, id| s.ticket_changed(slug, id));
-    let landing = git::landing::Git::new(root, Arc::new(TicketOps { tickets: core.tickets.clone() }));
-    core.tickets.set_hooks(Arc::new(Wired { git: Some(landing), browsers: Some(browsers.clone()), huddles: Some(huddles.clone()), root: root.to_path_buf() }));
+    let ops = Arc::new(TicketOps { tickets: core.tickets.clone(), families: Default::default() });
+    let landing = git::landing::Git::new(root, ops.clone());
+    // R2b: families, plans and the feature status; what needs a run waits for the run loop (R7a).
+    let families = ckanban_board::families::Families::new(core.tickets.clone(), core.reads.clone());
+    let _ = ops.families.set(families.clone());
+    families.set_landing(landing.clone());
+    let f = families.clone();
+    core.on_stop("plans", move || f.shutdown());
+    core.tickets.set_hooks(Arc::new(Wired {
+        git: Some(landing),
+        families: Some(families.clone()),
+        browsers: Some(browsers.clone()),
+        huddles: Some(huddles.clone()),
+        root: root.to_path_buf(),
+    }));
     // R11a: huddles see ticket changes (a host moved to Done closes its huddles), wakes owed from before the start are
     // delivered, and the idle watchdog looks at the live ones every 30 s, off the runtime.
     huddles.attach(core.tickets.clone(), sessions.clone());
@@ -218,6 +231,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         None => Err((503, "the board is still starting; try again in a moment".into())),
     });
     let writes = Arc::new(Writes::new(core.tickets.clone(), core.reads.clone(), sessions.clone(), save_keys));
+    writes.set_families(families);
     team.set_ticket_cards(Arc::new(ckanban_board::tickets::wiring::SquadCards { tickets: core.tickets.clone() }));
     Some(Arc::new(BoardMode {
         core,
