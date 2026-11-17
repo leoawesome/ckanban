@@ -186,7 +186,7 @@ Runs `open http://localhost:<port>`. Exit code: always 0 (the `open` exit code i
 
 ### `ckanban update`
 
-- From source (`IS_BINARY` false): stdout ``Running from source: use `git pull && bun install && bun run build:web && ckanban restart`.``, exit 0.
+- From source (`IS_BINARY` false): stdout ``Running from source: use `git pull && bun install && bun run build:web && ckanban restart`.``, exit 0. The Rust CLI (`ckanban-rs`) is always built from source until the release binary is Rust (P4), so it answers this way.
 - Gets the latest release from `https://api.github.com/repos/leoawesome/ckanban/releases/latest`. Unreachable: stderr `Could not reach GitHub to check for updates.`, exit 1.
 - Same version: stdout `Already on the latest version (v<VERSION>).`
 - Needs assets `ckanban-darwin-<arch>` and `SHA256SUMS`; missing: stderr `No build for darwin-<arch> in release v<ver>.` or `Release v<ver> has no SHA256SUMS, so the download can't be verified. Not updated.`, exit 1.
@@ -518,7 +518,7 @@ No HTTP and no daemon. Runs a Claude Code session in a pseudo-terminal (or tmux 
 
 - publish: file must exist, else stderr `no such file: <abs path>`, exit 1. Failure: stderr `artifact publish failed: <error>`, exit 1. Success stdout: the Artifact tool's own line, matched by `/Published (\S+) at (https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]+)/`, e.g. `Published /tmp/page.html at https://claude.ai/artifact/AbC123` (fallback `Published <file> at <url>`).
 - read: failure stderr `artifact read failed: <error>`, exit 1. Writes the HTML to `--out` or `<tmpdir>/artifact-<last url segment>.html`; stdout `Saved <url> to <path>`.
-- `artifact publish-output <file> [--name <output name>] [--url <artifact url>]` (internal: the Rust board's Share menu runs it until P3 ports the helper): a Markdown file (by `--name`, else the file name) is made into a standalone page first, as the Share menu always did; anything but Markdown and HTML is refused. Prints the outcome as one JSON line and exits 0 either way: `{"ok":true,"kind":"publish","url":...,"text":...}` or `{"ok":false,"error":...}`.
+- `artifact publish-output <file> [--name <output name>] [--url <artifact url>]` (internal: the Rust board's Share menu runs it): a Markdown file (by `--name`, else the file name) is made into a standalone page first, as the Share menu always did; anything but Markdown and HTML is refused. Prints the outcome as one JSON line and exits 0 either way: `{"ok":true,"kind":"publish","url":...,"text":...}` or `{"ok":false,"error":...}`.
 - Anything else: stderr (two lines) `usage: ckanban artifact publish <file> [--url <artifact url>] [--title <title>]` / `       ckanban artifact read <url> [--out <file>]`, exit 1.
 
 ### `ckanban remote on|off|status`
@@ -559,7 +559,7 @@ args = ["<serverArgv[1]>", "mcp"]
 
 ### `ckanban browser-mcp --id <id> --dir <data folder> [--name <name>] [--out <folder>]`
 
-Internal, not in the usage text: the board passes it in a run's `--mcp-config`. Missing `--id`/`--dir`: stderr `usage: ckanban browser-mcp --id <id> --dir <data folder> [--name <name>] [--out <folder>]`, exit 1. Stdio JSON-RPC server (one JSON message per line) with tools `browser_tabs`, `browser_navigate`, `browser_navigate_back`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_press_key`, `browser_select_option`, `browser_evaluate`, `browser_wait_for`, `browser_take_screenshot`, `browser_file_upload`. Before driving the browser it calls `POST http://localhost:<port>/api/board-browsers/<id>/ensure` (45 s timeout). `--out` defaults to `<dir>/../../browser-files/<id>`. Ends on SIGTERM, SIGINT or SIGHUP (closes its tabs, at most 4 s), exit 0.
+Internal, not in the usage text: the board passes it in a run's `--mcp-config`. Missing `--id`/`--dir`: stderr `usage: ckanban browser-mcp --id <id> --dir <data folder> [--name <name>] [--out <folder>]`, exit 1. Stdio JSON-RPC server (one JSON message per line) with tools `browser_tabs`, `browser_navigate`, `browser_navigate_back`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_press_key`, `browser_select_option`, `browser_evaluate`, `browser_wait_for`, `browser_take_screenshot`, `browser_file_upload`. Before driving the browser it calls `POST http://localhost:<port>/api/board-browsers/<id>/ensure` (45 s timeout). `--out` defaults to `<dir>/../../browser-files/<id>`. Ends on SIGTERM, SIGINT or SIGHUP, or when its input closes (closes its tabs, at most 4 s), exit 0. Checked by `test/contract/cli-remote-browser.test.ts` against a fake browser, as is `remote on|off|status` with a stand-in Tailscale.
 
 ## 5. Environment variables
 

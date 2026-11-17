@@ -183,7 +183,8 @@ describe("open and update", () => {
     }
   });
 
-  test.skipIf(!CLI_FROM_SOURCE)("update from source only says how to update", async () => {
+  // The Rust CLI (ckanban-rs) is built from source too until the release binary is Rust (P4).
+  test.skipIf(!CLI_FROM_SOURCE && !CLI_CMD[0].endsWith("ckanban-rs"))("update from source only says how to update", async () => {
     const r = await sb.run(["update"]);
     expect(r).toEqual({ code: 0, stdout: "Running from source: use `git pull && bun install && bun run build:web && ckanban restart`.\n", stderr: "" });
   });

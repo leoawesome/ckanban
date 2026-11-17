@@ -1393,8 +1393,8 @@ impl BoardMode {
     /// publishing, `ckanban mcp`'s command line for the agents, and `notify` (Bun hears of the passes file changing).
     pub fn connect_outside(self: &Arc<Self>, bun: &Path, repo: &Path, notify: passes::Notify) {
         use crate::outside::{self, routes::Outside};
-        let cli = repo.join("src").join("cli.ts");
-        let _ = self.publish_run.set(outside::edge::publish_run(bun.to_path_buf(), cli));
+        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ckanban-rs"));
+        let _ = self.publish_run.set(outside::edge::publish_run(exe));
         let bus = self.core.bus.clone();
         let emit: outside::Emit = Arc::new(move |v: Value| bus.emit_json(v));
         let home = ckanban_core::home::home_dir();

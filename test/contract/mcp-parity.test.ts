@@ -194,11 +194,72 @@ describe.skipIf(!PORT_CMD)("MCP parity with Bun", () => {
     await same("user", "schedule_job", { name: "J", at: "2099-01-01 10:00", action: "x" });
   });
 
-  test("tools still on Bun answer the same through the port", async () => {
+  test("teammates, squads and starting huddles", async () => {
+    await same("user", "propose_teammate", { name: "Inbox Watcher", prompt: "Watch it.", why: "none fits", profile: SLUG });
+    await same("user", "propose_teammate", { name: "x", prompt: "p" });
+    await same("user", "propose_teammate", { name: "", prompt: "p", why: "w" });
+    await same("user", "propose_squad", { name: "pair", roster: [{ preset: "no-such-preset" }], why: "w" });
+    await same("user", "propose_squad", { name: "pair", roster: [{ preset: "reviewer" }] });
+    await same("user", "propose_squad", { name: "Bad Name!", roster: [], why: "w" });
+    await same("user", "propose_huddle", { roster: [] });
+    await same("user", "propose_huddle", { roster: [{ preset: "no-such-preset" }] });
+    await same("user", "propose_huddle", { roster: [{ preset: "reviewer", count: 2 }], maxCostUsd: 500 });
+    await same("user", "propose_huddle", { roster: [{ preset: "reviewer" }], maxCostUsd: -1 });
+    await same("user", "propose_huddle", { squad: 3 });
+    await same("user", "propose_huddle", { squad: null, template: " no-such-squad " });
+    await same("user", "propose_huddle", { squad: "auto-review", topic: 5 });
+    await same("user", "propose_huddle", { squad: "auto-review", roster: null });
+    await same("user", "propose_huddle", {});
+    await same("run", "propose_huddle", { roster: [{ preset: "reviewer" }] });
+    await same("user", "start_huddle", { trigger: "security", reason: "r" });
+    await same("run", "start_huddle", { trigger: "security" });
+    await same("run", "start_huddle", { trigger: "security", reason: "r", roster: null });
+    await same("run", "start_huddle", { trigger: "security", reason: "r", roster: [{ preset: "reviewer" }], topic: 3 });
+    await same("run", "start_huddle", { trigger: "security", reason: "r", roster: [{ preset: "reviewer" }], maxCostUsd: "12" }, true);
+    await same("user", "huddle_add_participant", { preset: "reviewer" });
+    await same("user", "huddle_add_participant", { focus: "f", preset: "reviewer" });
+    await same("user", "huddle_add_participant", { focus: "f", preset: "reviewer", huddle: "h_none" });
+    await same("user", "huddle_add_participant", { focus: "f", preset: 3, huddle: "h_none" });
+    await same("user", "list_huddle_presets", { profile: "missing" });
+    await same("user", "save_huddle_preset", { name: "Parity Role", prompt: "Check parity.", mode: "tagged", profile: SLUG });
+    await same("user", "save_huddle_preset", { name: "reviewer", prompt: "Review it my way.", scope: "board" });
+    await same("user", "list_huddle_presets");
+    await same("user", "save_huddle_preset", { name: "bad", prompt: "" });
+    // Deleting changes what the second server finds: clean up through the API.
+    for (const name of ["reviewer", "parity-role"]) expect((await d.api("DELETE", `${P}/huddle-presets/${name}`)).status).toBeLessThan(300);
+  });
+
+  test("cards and presets answer the same", async () => {
     await same("user", "propose_huddle", { template: "auto-review" });
     await same("user", "list_huddle_presets");
     await same("user", "propose_squad", { name: "pair", roster: [{ preset: "reviewer" }], why: "w" });
     await same("user", "propose_helper_rule", { text: "x" });
     await same("run", "save_huddle_preset", { name: "x", prompt: "p" });
+  });
+
+  test("key boxes, file backups, automation and helper-line cards", async () => {
+    await same("user", "ask_keys", { keys: [{ envName: "SENTRY_TOKEN", label: "Sentry" }], reason: "r" });
+    await same("run", "ask_keys", { keys: [{ envName: "SENTRY_TOKEN", label: "Sentry", createUrl: "https://sentry.io/x" }], reason: "upload maps" });
+    for (const bad of [{}, { keys: [] }, { keys: [{ envName: "path", label: "x" }], reason: "r" }, { keys: [{ envName: "CKANBAN_X", label: "x" }] },
+      { keys: [{ envName: "A", label: "x" }, { envName: "A", label: "y" }] }, { keys: [{ envName: "A", label: " " }] },
+      { keys: [{ envName: "A", label: "x", createUrl: "http://x" }] }, { keys: [{ envName: "A", label: "x" }] },
+      { keys: [{ envName: "A", label: "x" }], reason: "r", replace: 1 }]) await same("run", "ask_keys", bad);
+    // Copies are named by the time they are made: compare with the time masked.
+    const stamp = (x: { text: string; isError: boolean }) => ({ isError: x.isError, text: x.text.replace(/\d{8}T\d{9}Z(-\d+)?/g, "<stamp>") });
+    for (const args of [{ path: "README.md" }, { path: "~/no-such-file" }, { path: "." }, { path: "" }, { path: "~bob/x" }, { path: "x", profile: "nope" }]) {
+      for (const who of ["user", "run"] as const) {
+        const a = await servers[who].bun.call("backup_file", args);
+        const b = await servers[who].port.call("backup_file", args);
+        expect(stamp(b)).toEqual(stamp(a));
+      }
+    }
+    await same("user", "propose_automation", { name: "Inbox", summary: "Checks the inbox", script: "echo", passes: [{ name: "Linear", url: "http://x" }], everyMinutes: "30" });
+    for (const bad of [{}, { name: "n", script: " " }, { name: "n", script: "e", everyMinutes: 0 }, { name: "n", script: "e", everyMinutes: "1.5" },
+      { name: "n", script: "e", passes: {} }, { name: "n", script: "e", passes: [{}] }, { name: "n", script: "e" },
+      { name: "n", script: "e", summary: "s", partOf: "a b" }]) await same("run", "propose_automation", bad);
+    for (const text of ["Website enquiries can wait", "", "x".repeat(301), "a\u200bb", 5]) {
+      await same("user", "propose_helper_rule", { text });
+      await same("run", "propose_helper_rule", { text, reason: "asked" });
+    }
   });
 });

@@ -1,0 +1,254 @@
+[
+ {
+  "name": "browser_tabs",
+  "description": "List, open, select or close tabs. list: all tabs, with yours and the current one marked. new: open a tab of your own (optionally at url) and work there. select: work in tab number index (e.g. a site that is already open). close: close a tab you opened (never someone else's).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "action": {
+     "type": "string",
+     "enum": [
+      "list",
+      "new",
+      "select",
+      "close"
+     ]
+    },
+    "index": {
+     "type": "number",
+     "description": "Tab number from list (select, close)."
+    },
+    "url": {
+     "type": "string",
+     "description": "Address for new."
+    }
+   },
+   "required": [
+    "action"
+   ]
+  }
+ },
+ {
+  "name": "browser_navigate",
+  "description": "Open a web address in the current tab (a new tab of your own if you have none yet) and wait for it to load. Some sites keep loading after this: use browser_wait_for for what you need.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "url": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "url"
+   ]
+  }
+ },
+ {
+  "name": "browser_navigate_back",
+  "description": "Go back to the previous page in the current tab.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {}
+  }
+ },
+ {
+  "name": "browser_snapshot",
+  "description": "Read the current page as text: headings, text, and the elements you can act on, each with a ref (e.g. [ref=e12]) for browser_click, browser_type and others. Take a new one after the page changes.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {}
+  }
+ },
+ {
+  "name": "browser_click",
+  "description": "Click an element (by ref from browser_snapshot, or a CSS selector).",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "element": {
+     "type": "string",
+     "description": "What the element is, in a few words (for the record)."
+    },
+    "ref": {
+     "type": "string",
+     "description": "The element's ref from the last browser_snapshot, e.g. e12."
+    },
+    "selector": {
+     "type": "string",
+     "description": "A CSS selector instead of ref."
+    },
+    "doubleClick": {
+     "type": "boolean"
+    }
+   }
+  }
+ },
+ {
+  "name": "browser_type",
+  "description": "Type text into a field (by ref or selector), replacing what is in it. submit: press Enter after.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "element": {
+     "type": "string",
+     "description": "What the element is, in a few words (for the record)."
+    },
+    "ref": {
+     "type": "string",
+     "description": "The element's ref from the last browser_snapshot, e.g. e12."
+    },
+    "selector": {
+     "type": "string",
+     "description": "A CSS selector instead of ref."
+    },
+    "text": {
+     "type": "string"
+    },
+    "submit": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "text"
+   ]
+  }
+ },
+ {
+  "name": "browser_press_key",
+  "description": "Press a key in the page: Enter, Tab, Escape, ArrowDown, PageDown, a letter, or with modifiers like Meta+A.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "key": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "key"
+   ]
+  }
+ },
+ {
+  "name": "browser_select_option",
+  "description": "Choose option(s) in a dropdown (select element) by their value or visible text.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "element": {
+     "type": "string",
+     "description": "What the element is, in a few words (for the record)."
+    },
+    "ref": {
+     "type": "string",
+     "description": "The element's ref from the last browser_snapshot, e.g. e12."
+    },
+    "selector": {
+     "type": "string",
+     "description": "A CSS selector instead of ref."
+    },
+    "values": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "values"
+   ]
+  }
+ },
+ {
+  "name": "browser_evaluate",
+  "description": "Run a JavaScript function in the page and get its result as JSON, e.g. \"() => document.title\". With ref, the function gets that element: \"(el) => el.innerText\".",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "function": {
+     "type": "string"
+    },
+    "element": {
+     "type": "string",
+     "description": "What the element is, in a few words (for the record)."
+    },
+    "ref": {
+     "type": "string",
+     "description": "The element's ref from the last browser_snapshot, e.g. e12."
+    }
+   },
+   "required": [
+    "function"
+   ]
+  }
+ },
+ {
+  "name": "browser_wait_for",
+  "description": "Wait until text shows on the page, text is gone, or a CSS selector matches (up to timeout seconds, default 30, at most 120); or just wait time seconds. Use this, not a fixed delay, for slow pages like WhatsApp Web.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "text": {
+     "type": "string"
+    },
+    "textGone": {
+     "type": "string"
+    },
+    "selector": {
+     "type": "string"
+    },
+    "time": {
+     "type": "number"
+    },
+    "timeout": {
+     "type": "number"
+    }
+   }
+  }
+ },
+ {
+  "name": "browser_take_screenshot",
+  "description": "Take a picture of the current tab (fullPage: the whole page). It is saved as a file and shown to you.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "fullPage": {
+     "type": "boolean"
+    },
+    "filename": {
+     "type": "string",
+     "description": "File name (saved in the task's output folder)."
+    }
+   }
+  }
+ },
+ {
+  "name": "browser_file_upload",
+  "description": "Put files (absolute paths on this Mac) into a file field (by ref or selector), as if picked in a file dialog.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "element": {
+     "type": "string",
+     "description": "What the element is, in a few words (for the record)."
+    },
+    "ref": {
+     "type": "string",
+     "description": "The element's ref from the last browser_snapshot, e.g. e12."
+    },
+    "selector": {
+     "type": "string",
+     "description": "A CSS selector instead of ref."
+    },
+    "paths": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "paths"
+   ]
+  }
+ }
+]

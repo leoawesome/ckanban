@@ -34,7 +34,7 @@ use serde_json::{Map, Value, json};
 
 use super::{Answer, Call};
 
-pub use qr::qr_svg;
+pub use qr::{qr_svg, qr_terminal};
 
 const APP_CLI: &str = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
 const HINT: &str = "Install Tailscale (https://tailscale.com/download) and sign in, then try again.";
