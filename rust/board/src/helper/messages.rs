@@ -108,7 +108,7 @@ impl MessageStore {
         if self.list.is_none() {
             let mut list = Vec::new();
             if let Ok(t) = std::fs::read_to_string(&self.file) {
-                match datafile::parse_json(&t) {
+                match crate::runs::js::parse(&t) {
                     Some(v) => {
                         if let Some(a) = v.get("messages").and_then(Value::as_array) {
                             list = a.iter().filter_map(|m| m.as_object().filter(|m| m.get("id").is_some_and(Value::is_string)).cloned()).collect();

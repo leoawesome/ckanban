@@ -134,7 +134,7 @@ impl HelperRunner {
         let file = core.root.join("helper-state.json");
         let settings = HelperSettingsStore::new(&core.root, now.clone());
         let mut state = empty_state();
-        if let Ok(Some(Value::Object(m))) = ckanban_core::datafile::read_json(&file) {
+        if let Some(Value::Object(m)) = std::fs::read_to_string(&file).ok().and_then(|t| crate::runs::js::parse(&t)) {
             for (k, v) in m {
                 state.insert(k, v);
             }
@@ -320,7 +320,8 @@ impl HelperRunner {
     pub fn start(self: &Arc<Self>, every: Duration) -> tokio::task::JoinHandle<()> {
         let now = self.now();
         let mut untold = false;
-        for r in self.core.lock().waits.open() {
+        let open = self.core.lock().waits.open();
+        for r in open {
             if ro(&r, "toldAt").is_some() {
                 continue;
             }
@@ -358,7 +359,8 @@ impl HelperRunner {
     /// Snoozed items wait for their snooze before any fallback; the helper looks again when a snooze ends.
     fn maintain(&self) {
         let now = self.now();
-        for r in self.core.lock().waits.open() {
+        let open = self.core.lock().waits.open();
+        for r in open {
             let key = rs(&r, "key").to_string();
             let Some(until) = self.snoozed(rs(&r, "board"), rs(&r, "ticketId")) else {
                 if ro(&r, "toldAt").is_some() {
@@ -406,7 +408,7 @@ impl HelperRunner {
         for (slug, name) in self.core.board.profiles() {
             let board = self.core.board.list(&slug);
             for t in board.tickets.iter() {
-                if t.s("raisedBy").is_none_or(str::is_empty) || t.status == "done" {
+                if !t.is("raisedBy") || t.status == "done" {
                     continue;
                 }
                 let key = format!("checkin:{slug}/{}", t.id);
@@ -968,7 +970,8 @@ impl HelperRunner {
         let quiet = in_night(now, &s.night) && !night_allowed(&s);
         let mut due: Vec<(String, Vec<Rec>, usize)> = Vec::new();
         let mut expired: Vec<(String, Vec<Rec>)> = Vec::new();
-        for r in self.core.lock().waits.open() {
+        let open = self.core.lock().waits.open();
+        for r in open {
             if !pending(&r) {
                 continue;
             }
@@ -1659,7 +1662,8 @@ impl HelperRunner {
         if self.due_at().is_some_and(|d| d <= soon) {
             return true;
         }
-        for r in self.core.lock().waits.open() {
+        let open = self.core.lock().waits.open();
+        for r in open {
             if pending(&r) {
                 return true;
             }

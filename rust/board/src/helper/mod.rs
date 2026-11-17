@@ -110,18 +110,28 @@ impl Helper {
             let mut t = tokio::time::interval(timing.watch);
             t.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             let _keep = Abort(runner);
+            let core_busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
             loop {
                 t.tick().await;
                 let w = me.watch.clone();
                 let fire = tokio::task::spawn_blocking(move || w.look()).await.unwrap_or_default();
-                for wait in fire {
+                // One after another, in the order the tick found them (each claims its record before it sends).
+                if !fire.is_empty() {
                     let core = me.core.clone();
                     tokio::spawn(async move {
-                        core.route(wait).await;
+                        for wait in fire {
+                            core.route(wait).await;
+                        }
                     });
                 }
-                let core = me.core.clone();
-                tokio::spawn(async move { core.tick().await });
+                // One safety-net tick at a time (a slow send must not let the next one send the same digest).
+                if !core_busy.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    let (core, busy) = (me.core.clone(), core_busy.clone());
+                    tokio::spawn(async move {
+                        core.tick().await;
+                        busy.store(false, std::sync::atomic::Ordering::SeqCst);
+                    });
+                }
             }
         });
         move || {

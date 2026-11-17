@@ -450,8 +450,9 @@ export class Notifier {
   private ntfyTopic = `https://ntfy.sh/ckanban-${randomBytes(12).toString("base64url").replace(/[-_]/g, "x")}`;
   /** Satellite mode: settings sent to Rust and not written yet (read back from here until then). */
   private pendingSettings: NotifySettings | null = null;
-  /** Satellite mode: the last settings write sent to Rust (the settings routes answer once it is on disk). */
+  /** Satellite mode: settings writes to Rust, one after another (never rejects), and the last one (may reject). */
   private settingsWrite: Promise<void> = Promise.resolve();
+  private lastSave: Promise<void> = Promise.resolve();
 
   constructor(private store: Store, private bus: Bus, private o: NotifierOptions) {
     this.tracker = new TransitionTracker<string>(o.debounceMs ?? 5000);
@@ -582,19 +583,19 @@ export class Notifier {
   private saveSettings(s: NotifySettings): void {
     const edge = this.o.helperEdge;
     if (!edge) return writeNotifySettings(this.o.root, s);
+    // Read back from here until Rust wrote them. A failed write keeps them (a /lock stays in force here) and the
+    // next save sends them again, whole; the settings routes answer the failure.
     this.pendingSettings = s;
-    const prev = this.settingsWrite;
-    this.settingsWrite = prev.then(() => edge.writeSettings(s)).catch((e) => console.error("satellite: notify-write", e));
+    const p = this.settingsWrite.then(() => edge.writeSettings(s)).then(() => {
+      if (this.pendingSettings === s) this.pendingSettings = null;
+    });
+    this.lastSave = p;
+    this.settingsWrite = p.catch((e) => console.error(`satellite: notify-write: ${(e as Error).message}`));
   }
 
-  /** Settings saved so far are on disk (satellite mode: Rust wrote them); at once otherwise. */
+  /** The last settings save is on disk (satellite mode: Rust wrote it); rejects when it couldn't be. */
   settingsSaved(): Promise<void> {
-    return this.settingsWrite;
-  }
-
-  /** Satellite mode: Rust wrote these settings (or failed to): read the file again. */
-  settingsWritten(s: NotifySettings): void {
-    if (this.pendingSettings === s) this.pendingSettings = null;
+    return this.lastSave;
   }
 
   /** Telegram's taps in satellite mode: the Rust board's helper answers them. */

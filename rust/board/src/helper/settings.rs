@@ -148,7 +148,7 @@ impl HelperSettingsStore {
             Ok(t) => t,
             Err(_) => return out,
         };
-        let Some(v) = datafile::parse_json(&text) else {
+        let Some(v) = crate::runs::js::parse(&text) else {
             eprintln!("helper: helper.json could not be read (not JSON); using defaults");
             return out;
         };

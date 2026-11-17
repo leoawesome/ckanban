@@ -185,6 +185,13 @@ async fn notify(h: &Helper, r: &Req) -> Answer {
         return Err(not_found());
     }
     let (slug, id) = (decode(&r.parts[1]), decode(&r.parts[3]));
+    // `profileOr404`, `ticketOr404` first, as Bun's ticket routes.
+    if !h.core.board.has_profile(&slug) {
+        return Err((404, format!("board {slug} not found")));
+    }
+    if h.core.board.ticket(&slug, &id).is_none() {
+        return Err((404, format!("ticket {id} not found")));
+    }
     if r.run.as_deref() != Some(format!("{slug}/{id}").as_str()) || r.huddle {
         return Err((403, "only the ticket's own Claude sends it a notification, from its run or chat".into()));
     }

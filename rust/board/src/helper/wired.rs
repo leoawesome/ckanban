@@ -36,9 +36,21 @@ impl HelperBoard for BoardSide {
         self.tickets.list(slug)
     }
     fn profiles(&self) -> Vec<(String, String)> {
-        let mut slugs = self.reads.index.board_slugs();
-        slugs.sort();
-        slugs.into_iter().filter(|s| self.has_profile(s)).map(|s| (s.clone(), self.board_name(&s))).collect()
+        // `listProfiles()`: by createdAt (localeCompare; ISO times compare the same as text).
+        let dd = ckanban_core::DataDir::new(self.root.clone());
+        let mut list: Vec<(String, String, String)> = self
+            .reads
+            .index
+            .board_slugs()
+            .into_iter()
+            .filter_map(|s| {
+                let p = dd.profile(&s)?;
+                let created = p.record.0.get("createdAt").and_then(Value::as_str).unwrap_or("").to_string();
+                Some((created, s.clone(), self.board_name(&s)))
+            })
+            .collect();
+        list.sort_by(|a, b| crate::runs::js::locale_compare(&a.0, &b.0));
+        list.into_iter().map(|(_, s, n)| (s, n)).collect()
     }
     fn has_profile(&self, slug: &str) -> bool {
         ckanban_core::DataDir::new(self.root.clone()).profile(slug).is_some()
@@ -82,13 +94,19 @@ impl HelperBoard for BoardSide {
     }
 }
 
-/// Sending through the satellite (until P1b/P1c).
-pub struct SatelliteSender(pub Arc<SatelliteClient>);
+/// Sending through the satellite (until P1b/P1c). `ready` turns true once the satellite runs: a send or a question
+/// before that (the helper starts before the satellite does) waits for it, up to two minutes.
+pub struct SatelliteSender(pub Arc<SatelliteClient>, pub tokio::sync::watch::Receiver<bool>);
+
+async fn wait_ready(mut ready: tokio::sync::watch::Receiver<bool>) {
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(120), ready.wait_for(|r| *r)).await;
+}
 
 impl Sender for SatelliteSender {
     fn send(&self, out: Value, targets: Vec<String>) -> BoxFuture<'static, Result<Vec<Value>, String>> {
-        let c = self.0.clone();
+        let (c, ready) = (self.0.clone(), self.1.clone());
         Box::pin(async move {
+            wait_ready(ready).await;
             let (status, v) = c.call("helper-send", &json!({ "message": out, "only": targets })).await?;
             if !(200..300).contains(&status) {
                 return Err(v.get("error").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| format!("the satellite answered {status}")));
@@ -97,8 +115,9 @@ impl Sender for SatelliteSender {
         })
     }
     fn facts(&self) -> BoxFuture<'static, Facts> {
-        let c = self.0.clone();
+        let (c, ready) = (self.0.clone(), self.1.clone());
         Box::pin(async move {
+            wait_ready(ready).await;
             match c.call("helper-facts", &json!({})).await {
                 Ok((200, v)) => Facts {
                     on_screen: v.get("onScreen").and_then(Value::as_bool).unwrap_or(false),

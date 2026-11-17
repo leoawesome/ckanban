@@ -31,9 +31,34 @@ pub struct Wired {
     pub runs: Option<Arc<crate::runloop::wiring::RunHooks>>,
     /// R10: schedules (a schedule-delete card deletes one).
     pub schedules: Option<Arc<crate::schedules::Schedules>>,
+    /// P1a: the helper (a helper-rule card's Add), set once board mode has made it.
+    pub helper: Arc<std::sync::OnceLock<Arc<crate::helper::runner::HelperRunner>>>,
 }
 
 impl BoardHooks for Wired {
+    /// A helper-rule card's Add (`ticket-cards.ts`): the line goes into "What the helper knows about you" unless it is
+    /// there already (Ok(true)); a full list is refused, the user chooses what goes.
+    fn helper_rule(&self, text: &str) -> futures_util::future::BoxFuture<'_, Result<bool, (u16, String)>> {
+        let text = text.to_string();
+        Box::pin(async move {
+            if let Some(bad) = crate::sessions::cards::suggested_line_error(&text) {
+                return Err((400, format!("This suggestion can't be added: {bad}.")));
+            }
+            let Some(h) = self.helper.get() else { return Err((503, "the helper isn't running".to_string())) };
+            let key = |x: &str| crate::runs::js::trim(&crate::runs::js::squash_ws(x)).to_lowercase();
+            let lines = h.settings.get().feedback;
+            let already = lines.iter().any(|f| key(f.get("text").and_then(Value::as_str).unwrap_or("")) == key(&text));
+            let max = crate::helper::settings::FEEDBACK_LINES_MAX;
+            if !already && lines.len() >= max {
+                return Err((409, format!("What the helper knows about you is full ({max} lines). Remove a line in Notifications, then tap Add again.")));
+            }
+            if !already {
+                h.settings.add_feedback(Some(&Value::String(text)), "suggested").map_err(|e| (400, e))?;
+                h.feedback_added();
+            }
+            Ok(already)
+        })
+    }
     fn remove_schedule(&self, slug: &str, id: &str) -> Result<Option<String>, String> {
         let Some(s) = &self.schedules else { return Err(format!("deleting a schedule is {}", super::hooks::NOT_YET)) };
         if s.files.get_schedule(slug, id).is_none() {

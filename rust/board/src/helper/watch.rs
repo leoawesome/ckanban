@@ -219,7 +219,7 @@ impl Watcher {
     fn step_question(&self, slug: &str, main_id: &str, step: &Tk, label: &str, since: &str) -> NewWait {
         let s = self.session_of(step);
         let form = open_form(s.as_ref());
-        let ask = form.as_ref().and_then(|_| s.as_ref().and_then(|s| s.get("openAsk")).cloned());
+        let ask = form.as_ref().filter(|f| !f.is_empty()).and_then(|_| s.as_ref().and_then(|s| s.get("openAsk")).cloned());
         let identity = wait_identity("questions", Some(&format!("{}\n{}", step.id, form.clone().unwrap_or_default())));
         NewWait {
             board: slug.into(),
@@ -251,7 +251,7 @@ impl Watcher {
             return Some(w);
         }
         let form = if att.kind == "questions" { open_form(s.as_ref()) } else { None };
-        let ask = form.as_ref().and_then(|_| s.as_ref().and_then(|s| s.get("openAsk")).cloned());
+        let ask = form.as_ref().filter(|f| !f.is_empty()).and_then(|_| s.as_ref().and_then(|s| s.get("openAsk")).cloned());
         Some(NewWait {
             board: slug.into(),
             ticket_id: id.into(),
@@ -502,8 +502,8 @@ impl Watcher {
         v.insert("webhook".into(), ok(hook).into());
         v.insert("banner".into(), banner.into());
         v.insert("error".into(), error.clone().map(Value::String).unwrap_or(Value::Null));
-        if let Some(tg) = tg {
-            v.insert("telegram".into(), tg.get("ok").cloned().unwrap_or(Value::Bool(false)));
+        if let Some(ok) = tg.and_then(|t| t.get("ok")) {
+            v.insert("telegram".into(), ok.clone());
         }
         let reason = if delivered {
             Value::Null

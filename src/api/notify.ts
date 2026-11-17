@@ -18,9 +18,12 @@ export async function notifyRoutes(ctx: ApiContext, req: Request, url: URL, part
       await userOnly(req, "Changing notification settings");
       try {
         const st = notifier.update(patch, listenerOf(req));
-        await notifier.settingsSaved();
+        await notifier.settingsSaved().catch((e) => {
+          throw new HttpError(503, `The settings couldn't be saved: ${(e as Error).message}`);
+        });
         return json(notifyView(req, st));
       } catch (e) {
+        if (e instanceof HttpError) throw e;
         throw new HttpError(e instanceof MacOnlyError ? 403 : 400, (e as Error).message);
       }
     }
@@ -37,16 +40,21 @@ export async function notifyRoutes(ctx: ApiContext, req: Request, url: URL, part
       try {
         const b = await body(req);
         const code = notifier.telegramPair(typeof b?.board === "string" ? b.board : null);
-        await notifier.settingsSaved();
+        await notifier.settingsSaved().catch((e) => {
+          throw new HttpError(503, `The settings couldn't be saved: ${(e as Error).message}`);
+        });
         return json({ ...code, state: notifyView(req, notifier.state()) });
       } catch (e) {
+        if (e instanceof HttpError) throw e;
         throw new HttpError(400, (e as Error).message);
       }
     }
     if (parts[1] === "telegram" && parts[2] === "unpair" && parts.length === 3 && m === "POST") {
       await userOnly(req, "Unpairing Telegram");
       const st = notifier.telegramUnpair();
-      await notifier.settingsSaved();
+      await notifier.settingsSaved().catch((e) => {
+        throw new HttpError(503, `The settings couldn't be saved: ${(e as Error).message}`);
+      });
       return json(notifyView(req, st));
     }
   }

@@ -486,17 +486,22 @@ impl HelperCore {
     /// Sends these open, untold records directly, one message per ticket, and marks them told.
     pub async fn send_direct(&self, keys: &[String], level: &str) {
         for key in keys {
-            let Some(rec) = self.lock().waits.get(key).cloned() else { continue };
-            if !is_open(&rec) || ro(&rec, "toldAt").is_some() {
-                continue;
-            }
+            // Checked and told under one lock: a tick or route meanwhile can't send it a second time.
+            let rec = {
+                let mut st = self.lock();
+                let Some(rec) = st.waits.get(key).cloned() else { continue };
+                if !is_open(&rec) || ro(&rec, "toldAt").is_some() {
+                    continue;
+                }
+                st.waits.mark_told(std::slice::from_ref(key), "direct", None);
+                rec
+            };
             let it = self.item(&rec);
             let label = direct_label(rs(&rec, "kind"), rs(&rec, "question"), rs(&rec, "label"));
             let (board, ticket) = (rs(&rec, "board"), rs(&rec, "ticketId"));
             let (title, board_name) = (super::text::s(&it, "title").to_string(), super::text::s(&it, "boardName").to_string());
             let url = self.link(board, Some(ticket));
             let notify = json!({ "board": board, "boardName": board_name, "ticketId": ticket, "title": title, "kind": rs(&rec, "kind"), "label": label, "url": url });
-            self.lock().waits.mark_told(std::slice::from_ref(key), "direct", None);
             let q = if rs(&rec, "question").is_empty() { rs(&rec, "label") } else { rs(&rec, "question") };
             let mut parts = vec![format!("{title} ({board_name})"), q.to_string()];
             if let Some(why) = ro(&rec, "why") {
@@ -506,7 +511,7 @@ impl HelperCore {
             let urgent = rb(&rec, "urgent");
             let lvl = if urgent { "urgent" } else { level };
             let mut m = NewMessage::new(lvl, cut1(&format!("{label}: {title}")), text.clone());
-            m.why = ro(&rec, "why").map(str::to_string);
+            m.why = rec.get("why").and_then(Value::as_str).map(str::to_string);
             m.items = vec![it];
             let out = OutBody::new(lvl, &title, &label, &text, Some(url)).with("notify", notify).with("urgent", urgent).with("everyDevice", urgent);
             let (message, _) = self.send(m, out, None).await;
@@ -610,9 +615,19 @@ impl HelperCore {
         if fresh.is_empty() {
             return None;
         }
+        // Before the told mark: the line names waits held overnight that no message told yet.
         let overnight = self.held_overnight_line(&fresh);
-        let keys: Vec<String> = fresh.iter().map(|r| rs(r, "key").to_string()).collect();
-        self.mark_told(&keys, "digest", None);
+        // Claimed under one lock: only the records still untold now are this digest's.
+        let (fresh, keys) = {
+            let mut st = self.lock();
+            let fresh: Vec<Rec> = fresh.into_iter().filter(|r| st.waits.get(rs(r, "key")).is_none_or(|x| is_open(x) && ro(x, "toldAt").is_none())).collect();
+            let keys: Vec<String> = fresh.iter().map(|r| rs(r, "key").to_string()).collect();
+            st.waits.mark_told(&keys, "digest", None);
+            (fresh, keys)
+        };
+        if fresh.is_empty() {
+            return None;
+        }
         let items: Vec<Value> = fresh.iter().map(|r| self.item(r)).collect();
         let first = &fresh[0];
         let dl = |r: &Rec| direct_label(rs(r, "kind"), rs(r, "question"), rs(r, "label"));

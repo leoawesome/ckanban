@@ -137,8 +137,7 @@ export async function startDaemon(): Promise<void> {
   const remoteConfig = new RemoteAccess(store.root, () => 0);
   const push = new PushService(store.root);
   // Satellite mode: the Rust board runs the helper and owns its files (P1a); Telegram's taps and settings writes go there.
-  let notifierRef: Notifier | null = null;
-  const helperEdge = satellite && front ? rustHelperEdge(front, (s) => notifierRef?.settingsWritten(s)) : undefined;
+  const helperEdge = satellite && front ? rustHelperEdge(front) : undefined;
   const notifier: Notifier = new Notifier(store, bus, {
     root: store.root, push,
     ...(satellite ? {
@@ -156,7 +155,6 @@ export async function startDaemon(): Promise<void> {
     ...(satellite && front ? { addComment: rustComment(front) } : {}),
     ...(helperEdge ? { helperEdge } : {}),
   });
-  notifierRef = notifier;
   notifier.plugBoard(satellite && front ? rustTelegramBoard(front) : board);
   // A board browser seen logged out (its sign-in check): tell the user at once, naming the boards that use it.
   board.boardBrowsers.onLoggedOut = (b, site) => {

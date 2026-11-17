@@ -135,7 +135,7 @@ export function rustReplay(front: Front): Replay {
  * P1a: the Rust board runs the helper and owns its files (waits.json, messages.json, helper-state.json, helper.json,
  * notify.json). What the satellite's Telegram, front desk and Settings change there goes through these calls.
  */
-export function rustHelperEdge(front: Front, written: (s: NotifySettings) => void): HelperEdge {
+export function rustHelperEdge(front: Front): HelperEdge {
   return {
     waitSeen(key, at) {
       void rustCall(front, "wait-seen", { keys: [key], at }).then((r) => logFailed("wait-seen", r), (e) => console.error("satellite: wait-seen", e));
@@ -145,10 +145,9 @@ export function rustHelperEdge(front: Front, written: (s: NotifySettings) => voi
       if (r.status >= 300) throw new Error(r.body?.error ?? `the Rust board answered ${r.status}`);
       return { message: r.body.message, results: r.body.results ?? [] };
     },
-    writeSettings(s) {
-      return rustCall(front, "notify-write", { settings: s })
-        .then((r) => logFailed("notify-write", r), (e) => console.error("satellite: notify-write", e))
-        .finally(() => written(s));
+    async writeSettings(s: NotifySettings) {
+      const r = await rustCall(front, "notify-write", { settings: s });
+      if (r.status >= 300) throw new Error(r.body?.error ?? `the Rust board answered ${r.status}`);
     },
     async action(name, b) {
       const r = await rustCall(front, "helper-action", { action: name, ...b });

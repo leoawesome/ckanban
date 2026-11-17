@@ -97,9 +97,9 @@ pub fn normalize_from_file(raw: &Value) -> Result<Value, String> {
 
 /// `readNotifySettings`: defaults for anything missing or invalid.
 pub fn read_notify(root: &Path) -> Value {
-    match datafile::read_json(&root.join("notify.json")) {
-        Ok(Some(v)) => normalize_from_file(&v).unwrap_or_else(|_| default_notify()),
-        _ => default_notify(),
+    match std::fs::read_to_string(root.join("notify.json")).ok().and_then(|t| crate::runs::js::parse(&t)) {
+        Some(v) => normalize_from_file(&v).unwrap_or_else(|_| default_notify()),
+        None => default_notify(),
     }
 }
 

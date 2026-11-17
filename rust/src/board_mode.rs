@@ -133,6 +133,8 @@ pub struct BoardMode {
     pub helper: Arc<ckanban_board::helper::Helper>,
     /// The satellite's stdin for the helper's notices (waits closed): kept until it runs, then sent.
     helper_tell: Arc<Mutex<HelperTell>>,
+    /// True once the satellite runs: the helper's sends wait for it.
+    satellite_ready: Arc<tokio::sync::watch::Sender<bool>>,
     _lock: BoardLock,
 }
 
@@ -269,6 +271,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         port: public_port,
     });
     runs.set_schedules(schedules.clone());
+    let helper_runner: Arc<OnceLock<Arc<ckanban_board::helper::runner::HelperRunner>>> = Arc::new(OnceLock::new());
     core.tickets.set_hooks(Arc::new(Wired {
         git: Some(landing.clone()),
         families: Some(families.clone()),
@@ -277,6 +280,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         root: root.to_path_buf(),
         runs: Some(Arc::new(RunHooks { runs: runs.clone() })),
         schedules: Some(schedules.clone()),
+        helper: helper_runner.clone(),
     }));
     // R11c: what runs for a huddle (helpers' runs, ticket sessions' replies, auto huddles, the session viewer), set
     // before recover() so helpers cut off by the last stop carry on.
@@ -359,7 +363,6 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     // Then the huddles' (Bun's order): helpers cut off carry on, wakes owed are delivered, the auto-huddle slot.
     let h = huddles.clone();
     let _ = tokio::task::spawn_blocking(move || h.op(|h| h.recover())).await;
-    let helper_runner: Arc<OnceLock<Arc<ckanban_board::helper::runner::HelperRunner>>> = Arc::new(OnceLock::new());
     let awake = start_run_timers(&core, &runs, ops.clone(), root, helper_runner.clone());
     // The worktree sweep, after recover() like Bun's (which starts it once recover has begun).
     git::sweep_after_recover(landing.clone());
@@ -396,6 +399,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     // P1a: the helper. It owns waits.json, messages.json, helper-state.json and helper.json and is notify.json's only
     // writer; the satellite still sends (push, ntfy, the Mac banner, Telegram) and runs Telegram and the front desk.
     let helper_tell: Arc<Mutex<HelperTell>> = Arc::new(Mutex::new(HelperTell::default()));
+    let satellite_ready = Arc::new(tokio::sync::watch::channel(false).0);
     let ht = helper_tell.clone();
     let on_closed: ckanban_board::helper::waits::Closed = Arc::new(move |recs| {
         let list: Vec<Value> = recs.into_iter().map(Value::Object).collect();
@@ -412,7 +416,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let helper = ckanban_board::helper::Helper::new(
         root,
         Arc::new(ckanban_board::helper::wired::BoardSide { tickets: core.tickets.clone(), reads: core.reads.clone(), sessions: sessions.clone(), root: root.to_path_buf(), port: public_port, remote: RemoteFile::new(root) }),
-        Arc::new(ckanban_board::helper::wired::SatelliteSender(Arc::new(SatelliteClient::new(internal_port, public_port, secret)))),
+        Arc::new(ckanban_board::helper::wired::SatelliteSender(Arc::new(SatelliteClient::new(internal_port, public_port, secret)), satellite_ready.subscribe())),
         ckanban_board::extras::side_caller(),
         core.bus.clone(),
         Some(on_closed),
@@ -480,6 +484,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         tell: OnceLock::new(),
         helper,
         helper_tell,
+        satellite_ready,
         _lock: lock,
     }))
 }
@@ -1554,6 +1559,7 @@ impl BoardMode {
             }
             t.tell = Some(tell.clone());
         }
+        self.satellite_ready.send_replace(true);
         // The pass store for key cards: Bun hears of each change to the passes file on its stdin.
         let notify_tell = tell.clone();
         let notify: passes::Notify = Arc::new(move |file: &str| {

@@ -18,7 +18,7 @@ const t = (id: string, title: string, extra: Record<string, unknown> = {}) => ({
 const BOARD = {
   profiles: [{ slug: "p", name: "Product" }, { slug: "q", name: "Quality" }],
   tickets: {
-    p: [t("t1", "Docs copy"), t("t2", "Billing fix"), t("t3", "Pricing page"), t("t4", "Schedule run 2026-11-16 10:00"), t("c1", "Prep: standup at 9:30", { raisedBy: "checkin", status: "planning", createdAt: "2026-11-17T15:00:00.000Z" })],
+    p: [t("t1", "Docs copy"), t("t2", "Billing fix"), t("t3", "Pricing page"), t("t4", "Schedule run 2026-11-16 10:00"), t("c1", "Prep: standup at 9:30", { raisedBy: { scheduleId: "s_1", ticketId: "t_9" }, status: "planning", createdAt: "2026-11-17T15:00:00.000Z" })],
     q: [t("u1", "Flaky test", { limit: { resetAt: "2026-11-17T23:00:00.000Z" } }), t("u2", "Slow build", { limit: { resetAt: "2026-11-17T22:00:00.000Z" } })],
   },
 };
@@ -133,6 +133,23 @@ const SCENARIOS = [
       { op: "route", wait: wait("t3", "review") },
       { op: "notify", settings: { helper: false } },
       { op: "switched", on: false },
+      { op: "status" },
+    ],
+  },
+  {
+    name: "after sleep: several reminder steps overdue, only the latest fires; a check-in alone in a summary", start: DAYTIME, board: BOARD,
+    steps: [
+      { op: "start" },
+      { op: "route", wait: wait("t3", "questions", { identity: "q:sl", urgent: true, why: "deadline" }) },
+      { op: "reply", replies: [decision([send("urgent", ["p/t3|q:sl"], { escalation: [{ channel: "push", afterMin: 0 }, { channel: "mac", afterMin: 5 }, { channel: "push", afterMin: 10 }, { channel: "mac", afterMin: 40 }] })])] },
+      { op: "tick" },
+      { op: "advance", ms: 21 * MIN },
+      { op: "tick" },
+      { op: "status" },
+      { op: "advance", ms: 3 * 60 * MIN },
+      { op: "reply", replies: [decision([send("summary", ["checkin:p/c1"], { oneLine: "your standup prep" })])] },
+      { op: "tick" },
+      { op: "tick" },
       { op: "status" },
     ],
   },

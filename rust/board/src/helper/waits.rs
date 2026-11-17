@@ -204,7 +204,8 @@ impl WaitStore {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return WaitsStart::Missing,
             Err(e) => return self.aside(&e.to_string()),
         };
-        let v = datafile::parse_json(&text);
+        // `js::parse`: a lone surrogate Bun wrote (a cut through an emoji) reads as Bun reads it.
+        let v = crate::runs::js::parse(&text);
         let recs = v.as_ref().and_then(|v| v.get("records")).filter(|r| r.is_object() || r.is_array());
         let Some(recs) = recs else { return self.aside(if v.is_none() { "not JSON" } else { "no records" }) };
         let v = v.as_ref().expect("checked");
