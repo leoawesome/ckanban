@@ -29,9 +29,18 @@ pub struct Wired {
     pub root: PathBuf,
     /// The run loop's side (R7a).
     pub runs: Option<Arc<crate::runloop::wiring::RunHooks>>,
+    /// R10: schedules (a schedule-delete card deletes one).
+    pub schedules: Option<Arc<crate::schedules::Schedules>>,
 }
 
 impl BoardHooks for Wired {
+    fn remove_schedule(&self, slug: &str, id: &str) -> Result<Option<String>, String> {
+        let Some(s) = &self.schedules else { return Err(format!("deleting a schedule is {}", super::hooks::NOT_YET)) };
+        if s.files.get_schedule(slug, id).is_none() {
+            return Ok(None);
+        }
+        s.remove_schedule(slug, id, &serde_json::Value::from("user")).map(Some).map_err(|(_, e)| e)
+    }
     fn run_state(&self, slug: &str, id: &str) -> super::hooks::RunState {
         self.runs.as_ref().map(|r| r.run_state(slug, id)).unwrap_or_default()
     }

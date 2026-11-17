@@ -52,7 +52,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   names only, go to `<data>/rust-shadow.log`, counts to `<data>/rust-shadow.json`. Read only. To run it on the real
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
 - One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b, done), `runs` (R3), `prompts` (R4, done),
-  `sessions` (R5), `git` (R6, done), `runloop` (R7a, done), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
+  `sessions` (R5), `git` (R6, done), `runloop` (R7a, done), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10, done),
   `huddles` (R11a, done), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12, done), `gate` (R13).
 
 ## The run engine (R3, `src/runs/`)
@@ -372,8 +372,7 @@ follow-ups (`CKANBAN_TICK_MS`), the PR poller, keep-awake, run log compression (
 satellite's mirror gets `runtime` lines when the running tickets or a session summary change. A first prompt gets
 R12's "What we did before" block (`RunLoop::set_recall`).
 
-STAND-INs, each marked in the code: slash commands and the rewind snapshot (R7b), a quiet
-schedule's open items and its history line (R10), the Mac banner of a plan event (the satellite), closing a session
+STAND-INs, each marked in the code: slash commands and the rewind snapshot (R7b), the Mac banner of a plan event (the satellite), closing a session
 open in the board's own terminal on Take over (R9/R7b).
 
 ## R12: board extras (`src/extras/`)
@@ -402,6 +401,39 @@ What the board learns on its own, Find links, recall, mockups and usage, ported 
 Huddle agents' lessons come from R11a's `Huddles::set_learn` hook (wired in `board_mode.rs`). Checked: `tests/extras.rs` against Bun's
 answers in `tests/fixtures/extras.json` (`test/rust-extras-fixtures.test.ts`, `UPDATE_RUST_FIXTURES=1`), and
 `test/contract/board-extras.test.ts` in board mode.
+
+## R10: schedules, one-time jobs and automations (`src/schedules/`)
+
+Ported from `src/schedules/scheduler.ts`, `schedule-history.ts`, `quiet.ts`, `jobs.ts`, `loops.ts`,
+`src/integrations/script.ts`, `ask-claude.ts`, `ticket-text.ts`, the routes of `src/api/schedules.ts` and
+`/api/automation-call`, and `taskPlaceFor`, `createFeatureTask`, `automationItem` of `board-main.ts`. `Schedules`
+(`mod.rs`) is built in `rust/src/board_mode.rs`; its timers start after the runs are recovered and stop with the core.
+Only the board's owner fires: the satellite starts none of its timers.
+- `files.rs`: schedules, history lines, jobs, automations, their scripts and state, written like Bun's `Store` (pretty
+  JSON in Bun's key order); lists kept by mtime and size (`JsonDir`). `history.rs`: the digest the list and quiet runs
+  read (only what a history file gained), and its newest entries.
+- `scheduler.rs`: create, change (history of edits), delete, history, run now, the tick (missed after 90 s, one
+  catch-up), skip-if-running, a run as a task of its feature, the list's spend over 7 days, quiet checks per day and
+  who paused it; `ScheduleHooks` for the run loop (a quiet schedule's prompt context, a quiet run's history line and
+  its cost in `spend-days.json`).
+- `jobs.rs`: create, change (the whole action), cancel, run now, the tick (late after 10 minutes, a pending restart
+  holds commands), chains, `recover` before the first tick, a deleted ticket's jobs cancelled. A command runs on a
+  thread of its own in its own process group (`script::run_command`); a restart waits for it.
+- `loops.rs`: automations: view, validate, create, change, delete, copy, test, check (first check notes what is there,
+  Ask Claude first through the side call, threads into their ticket, at most 20 new tickets a check, backoff), the
+  tick. `ckanban call` reaches `/api/automation-call`: Rust checks the check's token and which tools it may use, and
+  the satellite makes the call (`pass-call`, it holds the sign-ins); the rate limit it reports comes back on the grant.
+  `passbook.rs` reads `automation-passes.json` (names, status, keys for scripts); masking uses the server's secrets.
+- `routes.rs`: what board mode answers (`board_mode.rs` `answer_schedules`: Bun's gate, then a front desk request
+  through the satellite's front desk gate, then the route on the blocking pool; a confirmed front desk replay runs here
+  as the user, so a schedule's delete goes ahead). A schedule's delete is the user's (their browser), their own
+  program outside the board (`guard::outside_board`) or a confirmed front desk request; a schedule-delete card goes
+  through `tickets::wiring::Wired::remove_schedule`.
+- `text.rs`: the pure parts, unit tested. The check-in guides are in `prompts::deps`, the automation card in
+  `sessions::cards`.
+
+Checked: `schedules.test.ts`, `jobs.test.ts`, `automations.test.ts`, `schedule-firing.test.ts`, `passes.test.ts`
+(check scripts) and `mcp.test.ts` in board mode (`contract-files.txt`).
 
 ## Tests
 

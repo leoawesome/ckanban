@@ -93,6 +93,8 @@ pub struct BoardMode {
     pub huddles: Arc<Huddles>,
     /// Lessons, links finder, recall, ticket and team usage (R12).
     pub extras: Arc<ckanban_board::extras::Extras>,
+    /// Schedules, one-time jobs and automations, and their timers (R10).
+    pub schedules: Arc<ckanban_board::schedules::Schedules>,
     /// R9: devices, board browsers, named Chromes and the terminal.
     browsers: Arc<Browsers>,
     browser_routes: browsers::routes::RouteCtx,
@@ -238,6 +240,20 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let _ = ops.runs.set(runs.clone());
     runs.set_ops(ops.clone());
     families.set_runs(runs.clone());
+    // R10: schedules, one-time jobs and automations; their timers start once the runs are recovered (below).
+    let pass_secrets = secrets_of(root);
+    let schedules = ckanban_board::schedules::Schedules::new(ckanban_board::schedules::Deps {
+        root: root.to_path_buf(),
+        tickets: core.tickets.clone(),
+        bus: core.bus.clone(),
+        families: families.clone(),
+        runs: runs.clone(),
+        satellite: core.services.satellite.clone(),
+        side: ckanban_board::extras::side_caller(),
+        passes: ckanban_board::schedules::passbook::PassBook::new(root, Arc::new(move |t: &str| mask::mask_text(t, &pass_secrets()[..]))),
+        port: public_port,
+    });
+    runs.set_schedules(schedules.clone());
     core.tickets.set_hooks(Arc::new(Wired {
         git: Some(landing.clone()),
         families: Some(families.clone()),
@@ -245,6 +261,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         huddles: Some(huddles.clone()),
         root: root.to_path_buf(),
         runs: Some(Arc::new(RunHooks { runs: runs.clone() })),
+        schedules: Some(schedules.clone()),
     }));
     // R11a: huddles see ticket changes (a host moved to Done closes its huddles), wakes owed from before the start are
     // delivered, and the idle watchdog looks at the live ones every 30 s, off the runtime.
@@ -290,6 +307,10 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     })
     .await;
     let awake = start_run_timers(&core, &runs, ops.clone(), root);
+    // After recover(): a missed run's ticket must not be mistaken for an interrupted one. Only this owner of the
+    // board fires schedules, jobs and automations (the satellite starts none of its timers).
+    let stop = schedules.start();
+    core.on_stop("schedules", stop);
     team.set_ticket_cards(Arc::new(ckanban_board::tickets::wiring::SquadCards { tickets: core.tickets.clone() }));
     // R12: the learner watches tickets settle; new tickets get a parent suggestion.
     let extras = ckanban_board::extras::Extras::new(&core, ckanban_board::extras::side_caller());
@@ -322,6 +343,7 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         team,
         huddles,
         extras,
+        schedules,
         sessions,
         chats,
         browsers,
@@ -821,6 +843,95 @@ impl BoardMode {
         Ok(self.json(a.status, &a.value, a.status < 400))
     }
 
+    /// The schedules, one-time jobs and automations routes and `POST /api/automation-call` (R10,
+    /// `ckanban_board::schedules::routes`). Bun's gate first, as for the team routes; a Telegram front desk request
+    /// goes through the satellite's front desk gate first (as the own routes do).
+    #[allow(clippy::result_large_err)]
+    pub async fn answer_schedules(&self, req: Request<Incoming>, peer: SocketAddr, via: Listener) -> Result<Response<Body>, Request<Incoming>> {
+        use ckanban_board::schedules::routes as sr;
+        let h = req.headers();
+        if wants_upgrade(h) {
+            return Err(req);
+        }
+        let Some(parts) = req.uri().path().strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
+        if !sr::claims(&parts) {
+            return Err(req);
+        }
+        let host_ok = joined(h, HOST.as_str()).is_some_and(|host| ["localhost", "127.0.0.1"].iter().any(|l| host == format!("{l}:{}", self.public_port)));
+        let mutation = req.method() != Method::GET && req.method() != Method::HEAD;
+        let origin_ok = match joined(h, ORIGIN.as_str()) {
+            None => true,
+            Some(o) if o.is_empty() => true,
+            Some(o) => ["localhost", "127.0.0.1"].iter().any(|l| o == format!("http://{l}:{}", self.public_port)),
+        };
+        if !host_ok || (mutation && !origin_ok) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        let method = req.method().as_str().to_string();
+        let desk = request::header_text(h, FRONT_DESK_HEADER);
+        let (run, huddle) = (request::header_text(h, RUN_HEADER).filter(|v| !v.is_empty()), request::has(h, HUDDLE_HEADER));
+        if desk.is_some() && (run.is_some() || huddle) {
+            return Ok(self.error(StatusCode::FORBIDDEN, "a board run can't also be the front desk"));
+        }
+        if matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT) {
+            let ctype = joined(h, CONTENT_TYPE.as_str()).unwrap_or_default();
+            if crate::js::trim(ctype.split(';').next().unwrap_or("")).to_lowercase() != "application/json" {
+                return Ok(self.json(415, &json!({ "error": "content-type must be application/json" }), false));
+            }
+        }
+        let quick_chat = request::has(h, "x-ckanban-quick-chat");
+        let origin = request::has(h, "origin");
+        let headers = h.clone();
+        let query = req.uri().query().unwrap_or("").to_string();
+        let body: Bytes = if matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT | Method::DELETE) {
+            match Limited::new(req.into_body(), MAX_BODY).collect().await {
+                Ok(b) => b.to_bytes(),
+                Err(e) if e.is::<http_body_util::LengthLimitError>() => return Ok(self.json(413, &json!({ "error": "request body too large" }), false)),
+                Err(_) => return Ok(plain(StatusCode::BAD_REQUEST, "bad request")),
+            }
+        } else {
+            Bytes::new()
+        };
+        if let Some(desk) = desk {
+            let b = js::parse(&String::from_utf8_lossy(&body)).unwrap_or(Value::Null);
+            let path = format!("/api/{}", parts.join("/"));
+            let ask = json!({ "desk": desk, "method": method, "path": path, "body": b });
+            match self.core.services.satellite.frontdesk_gate(ask).await {
+                Ok(Some(held)) => {
+                    let status = held.get("status").and_then(Value::as_u64).and_then(|s| StatusCode::from_u16(s as u16).ok()).unwrap_or(StatusCode::OK);
+                    return Ok(self.json_at(status, held.get("body").unwrap_or(&Value::Null)));
+                }
+                Ok(None) => {}
+                Err(e) => return Ok(self.error(StatusCode::INTERNAL_SERVER_ERROR, &e)),
+            }
+        }
+        // `userOnly` and `isOutsideBoard` look at the caller (the phone that passed its gate is the user).
+        let (port, phone) = (peer.port(), via == Listener::Remote);
+        let (uh, oh) = (headers.clone(), headers);
+        let user = move |what: &str| -> Result<(), (u16, String)> {
+            let allowed = if phone { crate::guard::headers_allow(&uh) } else { ckanban_board::tickets::writer::block(crate::guard::user_only(&uh, port)) };
+            if allowed { Ok(()) } else { Err((403, crate::guard::refusal(what))) }
+        };
+        let outside = move || !phone && !request::has(&oh, "origin") && ckanban_board::tickets::writer::block(crate::guard::outside_board(port, std::process::id()));
+        let (s, writes) = (self.schedules.clone(), self.writes.clone());
+        let answer = tokio::task::spawn_blocking(move || {
+            let view = |slug: &str, id: &str| writes.view_now_pub(slug, id);
+            let r = sr::Req { method: &method, parts: &parts, query: &query, run, huddle, quick_chat, confirmed: false, phone, origin, body: &body, user: &user, outside: &outside, view: &view };
+            sr::answer(&s, &r)
+        })
+        .await;
+        Ok(match answer {
+            Ok(Some((status, Some(v)))) => self.json(status, &v, status < 400),
+            Ok(Some((status, None))) => {
+                let mut r = Response::new(Full::new(Bytes::new()).map_err(|never| match never {}).boxed());
+                *r.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::NO_CONTENT);
+                r
+            }
+            Ok(None) => plain(StatusCode::NOT_FOUND, "not found"),
+            Err(e) => self.json(500, &json!({ "error": e.to_string() }), false),
+        })
+    }
+
     /// A JSON answer as Bun writes it (`JSON.stringify`); a success is masked with the saved keys (`ctx.json`).
     fn json(&self, status: u16, v: &serde_json::Value, success: bool) -> Response<Body> {
         let text = ckanban_core::datafile::to_text(v, ckanban_core::datafile::Layout::Compact);
@@ -1009,6 +1120,10 @@ impl BoardMode {
             Ok(res) => return res,
             Err(r) => r,
         };
+        let req = match self.answer_schedules(req, peer, via).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
         let req = match self.answer_extras(req, peer, via, native).await {
             Ok(res) => return res,
             Err(r) => r,
@@ -1170,6 +1285,32 @@ impl BoardMode {
                 Ok(Some(Reply::Json(status, v))) => (status, v),
                 Ok(Some(Reply::Empty(status))) => (status, Value::Null),
                 Ok(Some(Reply::File(..))) | Ok(None) => (404, json!({ "error": "not found" })),
+                Err(e) => (500, json!({ "error": e.to_string() })),
+            };
+            return self.json_at(StatusCode::OK, &json!({ "status": status, "body": data }));
+        }
+        // Schedules, jobs and automations (R10): as the user who confirmed (a schedule's delete goes ahead; user-only
+        // actions still refuse, as Bun's replay has no Origin).
+        if own_route(&m, path).is_none()
+            && let Some(parts) = path.strip_prefix("/api/").and_then(api_parts)
+            && ckanban_board::schedules::routes::claims(&parts)
+        {
+            use ckanban_board::schedules::routes as sr;
+            let body = body.map(|v| serde_json::to_vec(v).unwrap_or_default()).unwrap_or_default();
+            let query = req.uri().query().unwrap_or("").to_string();
+            let method = m.as_str().to_string();
+            let (s, writes) = (self.schedules.clone(), self.writes.clone());
+            let answer = tokio::task::spawn_blocking(move || {
+                let view = |slug: &str, id: &str| writes.view_now_pub(slug, id);
+                let user = |what: &str| -> Result<(), (u16, String)> { Err((403, crate::guard::refusal(what))) };
+                let outside = || false;
+                let r = sr::Req { method: &method, parts: &parts, query: &query, run: None, huddle: false, quick_chat: false, confirmed: true, phone: false, origin: false, body: &body, user: &user, outside: &outside, view: &view };
+                sr::answer(&s, &r)
+            })
+            .await;
+            let (status, data) = match answer {
+                Ok(Some((status, v))) => (status, v.unwrap_or(Value::Null)),
+                Ok(None) => (404, json!({ "error": "not found" })),
                 Err(e) => (500, json!({ "error": e.to_string() })),
             };
             return self.json_at(StatusCode::OK, &json!({ "status": status, "body": data }));

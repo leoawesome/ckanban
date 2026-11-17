@@ -241,10 +241,21 @@ pub struct RunLoop {
     pub(super) ops: std::sync::OnceLock<Arc<dyn crate::git::ops::BoardOps>>,
     /// R12's "What we did before" block for a ticket's first prompt (recall, learned rules, project lessons).
     pub(super) recall: std::sync::OnceLock<Recall>,
+    /// R10: a schedule's ticket's prompt context and a quiet run's history line.
+    pub(super) schedules: std::sync::OnceLock<Arc<dyn ScheduleHooks>>,
 }
 
 /// R12's recall: the block a run's first prompt gets for a ticket of a board ("" for none). Blocking.
 pub type Recall = Arc<dyn Fn(&str, &Map<String, Value>) -> String + Send + Sync>;
+
+/// What runs need from the scheduler (R10). Blocking.
+pub trait ScheduleHooks: Send + Sync {
+    /// `scheduleContext`: which schedule a schedule's ticket comes from, and for a quiet one what it raised that is
+    /// still open.
+    fn context(&self, slug: &str, t: &Tk) -> Option<crate::prompts::types::ScheduleRef>;
+    /// A quiet run's ticket was removed (`endQuietly`): its history line and its cost in today's spend.
+    fn quiet_ended(&self, slug: &str, schedule_id: &str, ticket_id: &str, summary: &str, cost_usd: f64);
+}
 
 /// A JSON object from `json!({...})`.
 pub fn obj(v: Value) -> Map<String, Value> {
@@ -312,6 +323,7 @@ impl RunLoop {
             digests: crate::runs::activity_digest::ActivityDigests::new(),
             ops: std::sync::OnceLock::new(),
             recall: std::sync::OnceLock::new(),
+            schedules: std::sync::OnceLock::new(),
         })
     }
 
@@ -326,6 +338,11 @@ impl RunLoop {
     /// R12's recall, set by board mode once the extras exist.
     pub fn set_recall(&self, f: Recall) {
         let _ = self.recall.set(f);
+    }
+
+    /// R10's scheduler, set by board mode once it exists.
+    pub fn set_schedules(&self, h: Arc<dyn ScheduleHooks>) {
+        let _ = self.schedules.set(h);
     }
 
     pub fn ops(&self) -> Arc<dyn crate::git::ops::BoardOps> {

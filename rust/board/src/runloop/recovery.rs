@@ -436,18 +436,24 @@ impl RunLoop {
         Ok((t, false))
     }
 
-    /// `endQuietly`: a quiet schedule's ticket whose run found nothing goes, noted in the schedule's history.
-    /// STAND-IN (R10): the history line and its cost in today's spend come with the scheduler.
-    pub(super) async fn end_quietly(self: &Arc<Self>, slug: &str, id: &str, _end: &(String, f64)) -> bool {
+    /// `endQuietly`: a quiet schedule's ticket whose run found nothing goes, noted in the schedule's history with its
+    /// cost (also counted in today's spend, R10).
+    pub(super) async fn end_quietly(self: &Arc<Self>, slug: &str, id: &str, end: &(String, f64)) -> bool {
         let me = self.clone();
-        let (s, i) = (slug.to_string(), id.to_string());
+        let (s, i, end) = (slug.to_string(), id.to_string(), end.clone());
         tokio::task::spawn_blocking(move || {
             let Some(t) = me.get(&s, &i) else { return false };
             if !t.is("scheduleId") || t.status != "done" || me.is_running(&s, &i) || !me.waiting(&s, &i).is_empty() {
                 return false;
             }
+            let sid = t.s("scheduleId").unwrap_or("").to_string();
             match me.tickets.delete(&s, &i) {
-                Ok(()) => true,
+                Ok(()) => {
+                    if let Some(h) = me.schedules.get() {
+                        h.quiet_ended(&s, &sid, &i, &end.0, end.1);
+                    }
+                    true
+                }
                 Err((_, e)) => {
                     eprintln!("ticket {s}/{i}: could not remove the quiet schedule run: {e}");
                     false

@@ -68,6 +68,23 @@ pub async fn from_user_browser(peer_port: u16, own_pid: u32) -> bool {
     })
 }
 
+/// `outsideBoard`: whether every process on the caller's end of `peer_port` is a program this server didn't start (the
+/// user's own Claude or terminal, a browser): not a board run, its shell, a job's command or the satellite. Nothing
+/// found counts as the board's. Like `from_user_browser` it can't see a process a run detached from the server.
+pub async fn outside_board(peer_port: u16, own_pid: u32) -> bool {
+    if peer_port == 0 {
+        return false;
+    }
+    let addr = caller_lsof_addr(peer_port);
+    let lsof = out(&["lsof", "-nP", &addr, "-sTCP:ESTABLISHED", "-Fp"]).await;
+    let pids: Vec<u32> = lsof_pids(&lsof).into_iter().filter(|p| *p != own_pid).collect();
+    if pids.is_empty() {
+        return false;
+    }
+    let parents = parent_map(&out(&["ps", "-A", "-o", "pid=,ppid="]).await);
+    pids.iter().all(|p| !descends_from(*p, own_pid, &parents))
+}
+
 /// `callerLsofArgs` in guard.ts: lsof's `-i` for the caller (it matches 127.0.0.1 on one end and the port on either
 /// end, not one exact connection; an extra pid can only refuse). This server listens on
 /// 127.0.0.1 only, so the caller's end is 127.0.0.1:<peer_port>. A bare `-iTCP:<port>` also matched any other socket on

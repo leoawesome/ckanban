@@ -337,10 +337,13 @@ impl RunLoop {
         crate::git::setup::with_board_text(&prompt, &crate::prompts::chat::setup_note(slug, &t.id), "Setup")
     }
 
-    /// `scheduleContext`: which schedule a schedule's ticket comes from. STAND-IN (R10): a quiet schedule's open
-    /// items aren't listed yet.
+    /// `scheduleContext`: which schedule a schedule's ticket comes from (R10's scheduler: for a quiet one, also what
+    /// it raised that is still open).
     pub(super) fn schedule_context(&self, slug: &str, t: &Tk) -> Option<pt::ScheduleRef> {
         let sid = ts(t, "scheduleId")?.to_string();
+        if let Some(h) = self.schedules.get() {
+            return h.context(slug, t);
+        }
         let file = ckanban_core::DataDir::new(self.root.clone()).profile_dir(slug).join("schedules").join(format!("{sid}.json"));
         let s = std::fs::read_to_string(file).ok().and_then(|t| crate::runs::js::parse(&t));
         Some(pt::ScheduleRef { id: sid, name: s.as_ref().and_then(|s| s.get("name")).and_then(Value::as_str).map(str::to_string), board: slug.into(), quiet: None })

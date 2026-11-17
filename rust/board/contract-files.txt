@@ -60,7 +60,7 @@ usage.test.ts
 # cards, boards, attachments, avatars, snippets), the same answers and file bytes as Bun on one script, saved keys
 # masked. Left out until their step: a chat message (R7a), the Inbox wait after a work run (R7a), follow-ups (R7a),
 # a key box answered after a run asked for it and the masking and bug report tests that build on its ticket (R7a),
-# check scripts (R10).
+# check scripts (R10, now in).
 board-writes.test.ts
 tickets.test.ts
 board-items.test.ts
@@ -80,7 +80,7 @@ board-families.test.ts
 # whole (each line there that had a filter lost it now). rust-board-switch.test.ts: runs cut off by Bun's stop resume
 # in the Rust board, and the reverse. Left for R7b: slash commands (chat.test.ts), rewind and fork
 # (chat-session.test.ts); data-files.test.ts (quick chat "Say it simpler" in its set-up), quickchat.test.ts (context,
-# simplify, rewind, fork, Make ticket). R10: mcp.test.ts's schedules group, jobs, automations, schedule firing. R11a/c:
+# simplify, rewind, fork, Make ticket). R11a/c:
 # huddle.test.ts, huddle-team.test.ts.
 runs-life.test.ts
 runs-control.test.ts
@@ -96,3 +96,13 @@ chat-session.test.ts | ^(?!.*rewind and fork)
 # (above; its team-usage test counts the huddles of the room tests before it, which need R11a). The usage tests of
 # chat-session.test.ts and runs-control.test.ts need runs (R7a).
 board-extras.test.ts
+
+# R10: schedules (create, change, pause, history, run now, firing on time and missed, skip-if-running), one-time jobs
+# (ticket and command jobs, late rules, run now, cancel, chains), automations (check scripts, Ask Claude first,
+# threads, copy, `ckanban call` through the check's token with the tool call made by the satellite), and the MCP
+# tools that reach them.
+schedules.test.ts
+jobs.test.ts
+automations.test.ts
+schedule-firing.test.ts
+mcp.test.ts
