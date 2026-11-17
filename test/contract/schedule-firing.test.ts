@@ -113,11 +113,14 @@ describe("due at start", () => {
 describe("run now", () => {
   test("a manual fire while its ticket is still going is skipped; with skipIfRunning off it fires again", async () => {
     const s = (await d.api("POST", `${P}/schedules`, { name: "Manual", title: "Manual run", body: "Go.", cron: "0 3 1 1 *" })).data;
-    const [a, b] = await Promise.all([
+    const both = await Promise.all([
       d.api("POST", `${P}/schedules/${s.id}/run`, {}),
       d.api("POST", `${P}/schedules/${s.id}/run`, {}),
     ]);
+    // Either request may reach the server first: `a` is the one that fired.
+    const [a, b] = both[1].data?.entry?.kind === "fired" ? [both[1], both[0]] : both;
     expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
     expect(a.data.entry).toMatchObject({ kind: "fired", trigger: "manual" });
     expect(a.data.schedule).toMatchObject({ id: s.id, lastFiredAt: a.data.entry.at, active: true });
     // The second waits for the first and finds its ticket still in progress.
