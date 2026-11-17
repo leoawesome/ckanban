@@ -152,11 +152,11 @@ pub fn mockup_name(name: &str) -> Option<&str> {
     (MOCKUP_NAME.is_match(n) && !n.contains("..")).then_some(n)
 }
 
-static MOCKUP_BLOCK: LazyLock<Regex> =
+pub(crate) static MOCKUP_BLOCK: LazyLock<Regex> =
     LazyLock::new(|| js_re(r#"<ckanban-mockup\s+name="([^"]*)"\s*>((?s:.)*?)</ckanban-mockup>"#));
 static MOCKUP_OPEN: LazyLock<Regex> = LazyLock::new(|| js_re(r#"<ckanban-mockup\s+name="[^"]*"\s*>\s*(?:<|```|$)"#));
-static FENCE_OPEN: LazyLock<Regex> = LazyLock::new(|| js_re(r"^```(?:html)?\s*\n"));
-static FENCE_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n?```$").expect("valid regex"));
+pub(crate) static FENCE_OPEN: LazyLock<Regex> = LazyLock::new(|| js_re(r"^```(?:html)?\s*\n"));
+pub(crate) static FENCE_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n?```$").expect("valid regex"));
 
 /// The names of the mockup blocks in a reply that carry HTML (valid names only).
 fn mockup_names(text: &str) -> Vec<String> {

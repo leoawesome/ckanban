@@ -89,6 +89,8 @@ pub struct BoardMode {
     pub team: Arc<Team>,
     /// Huddle rooms (R11a).
     pub huddles: Arc<Huddles>,
+    /// Lessons, links finder, recall, ticket and team usage (R12).
+    pub extras: Arc<ckanban_board::extras::Extras>,
     /// R9: devices, board browsers, named Chromes and the terminal.
     browsers: Arc<Browsers>,
     browser_routes: browsers::routes::RouteCtx,
@@ -233,10 +235,34 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let writes = Arc::new(Writes::new(core.tickets.clone(), core.reads.clone(), sessions.clone(), save_keys));
     writes.set_families(families);
     team.set_ticket_cards(Arc::new(ckanban_board::tickets::wiring::SquadCards { tickets: core.tickets.clone() }));
+    // R12: the learner watches tickets settle; new tickets get a parent suggestion.
+    let extras = ckanban_board::extras::Extras::new(&core, ckanban_board::extras::side_caller());
+    extras.start();
+    // A huddle agent's lessons go to the learner's pile (Bun's `learn` option of Huddles).
+    let learner = extras.learner.clone();
+    huddles.set_learn(Arc::new(move |slug, h, p, role, lessons| {
+        let text = |v: &serde_json::Value, k: &str| v.get(k).and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let lessons: Vec<ckanban_board::team::notes::Lesson> = lessons
+            .iter()
+            .map(|l| ckanban_board::team::notes::Lesson {
+                text: text(l, "text"),
+                evidence: text(l, "evidence"),
+                scope: if l.get("scope").and_then(serde_json::Value::as_str) == Some("repo") { "repo" } else { "general" },
+            })
+            .collect();
+        let get = |o: &serde_json::Map<String, serde_json::Value>, k: &str| o.get(k).and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let (l, slug, hid, host, handle, role) = (learner.clone(), slug.to_string(), get(h, "id"), get(h, "hostTicket"), get(p, "handle"), role.to_string());
+        if let Ok(rt) = tokio::runtime::Handle::try_current() {
+            rt.spawn(async move {
+                l.add_huddle_lessons(&slug, &hid, &host, &handle, &role, lessons).await;
+            });
+        }
+    }));
     Some(Arc::new(BoardMode {
         core,
         team,
         huddles,
+        extras,
         sessions,
         chats,
         browsers,
@@ -622,6 +648,58 @@ impl BoardMode {
         })
     }
 
+    /// The R12 routes (`ckanban_board::extras::routes`): learned, find-links, a ticket's usage, team usage. Bun's gate
+    /// first, as for the team routes; find-links is the user's only (on the phone listener, the owner's phone that
+    /// passed the gate, as Bun lets it in).
+    #[allow(clippy::result_large_err)]
+    pub async fn answer_extras(&self, req: Request<Incoming>, peer: SocketAddr, via: Listener, native: &Native) -> Result<Response<Body>, Request<Incoming>> {
+        use ckanban_board::extras::routes as xr;
+        let h = req.headers();
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) {
+            return Err(req);
+        }
+        let Some(parts) = req.uri().path().strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
+        let method = req.method().as_str().to_string();
+        if !xr::claims(&method, &parts) {
+            return Err(req);
+        }
+        let host_ok = joined(h, HOST.as_str()).is_some_and(|host| ["localhost", "127.0.0.1"].iter().any(|l| host == format!("{l}:{}", self.public_port)));
+        let mutation = req.method() != Method::GET && req.method() != Method::HEAD;
+        let origin_ok = match joined(h, ORIGIN.as_str()) {
+            None => true,
+            Some(o) if o.is_empty() => true,
+            Some(o) => ["localhost", "127.0.0.1"].iter().any(|l| o == format!("http://{l}:{}", self.public_port)),
+        };
+        if !host_ok || (mutation && !origin_ok) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        if matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT) {
+            let ctype = joined(h, CONTENT_TYPE.as_str()).unwrap_or_default();
+            if crate::js::trim(ctype.split(';').next().unwrap_or("")).to_lowercase() != "application/json" {
+                return Ok(self.json(415, &json!({ "error": "content-type must be application/json" }), false));
+            }
+        }
+        let has = |n: &str| request::has(h, n);
+        let from_run = has(RUN_HEADER) || has(HUDDLE_HEADER);
+        let count_only = query_param(req.uri().query().unwrap_or(""), "count").as_deref() == Some("1");
+        let headers = h.clone();
+        let user = move || -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>> {
+            let headers = headers.clone();
+            Box::pin(async move {
+                if via == Listener::Remote { crate::guard::headers_allow(&headers) } else { crate::guard::user_only(&headers, peer.port()).await }
+            })
+        };
+        // Only a ticket's Usage tab reads the plan's numbers (cached; the first ask may go out to Anthropic).
+        let plan_value = if parts.get(2).map(String::as_str) == Some("tickets") { native.plan_usage().await } else { Value::Null };
+        let plan = move || -> std::pin::Pin<Box<dyn std::future::Future<Output = Value> + Send>> {
+            let v = plan_value.clone();
+            Box::pin(async move { v })
+        };
+        let call = xr::Call { method: &method, parts: &parts, count_only, from_run, user: &user, plan: &plan };
+        let a = xr::answer(&self.extras, &call).await;
+        Ok(self.json(a.status, &a.value, a.status < 400))
+    }
+
     /// A JSON answer as Bun writes it (`JSON.stringify`); a success is masked with the saved keys (`ctx.json`).
     fn json(&self, status: u16, v: &serde_json::Value, success: bool) -> Response<Body> {
         let text = ckanban_core::datafile::to_text(v, ckanban_core::datafile::Layout::Compact);
@@ -802,6 +880,10 @@ impl BoardMode {
             Err(r) => r,
         };
         let req = match self.answer_huddles(req).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
+        let req = match self.answer_extras(req, peer, via, native).await {
             Ok(res) => return res,
             Err(r) => r,
         };

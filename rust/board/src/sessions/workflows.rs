@@ -331,7 +331,7 @@ fn pos(v: Option<&Value>) -> f64 {
 }
 
 /// API-equivalent cost of one assistant message from its `usage` block.
-fn message_cost(model: &str, usage: &Value) -> f64 {
+pub(crate) fn message_cost(model: &str, usage: &Value) -> f64 {
     if !matches!(usage, Value::Object(_) | Value::Array(_)) {
         return 0.0;
     }

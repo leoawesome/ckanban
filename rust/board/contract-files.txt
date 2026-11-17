@@ -31,7 +31,7 @@ board-files.test.ts
 
 # R11b: teammates and role notes; squads (their card on a ticket goes through R2a's ticket writes).
 huddle.test.ts | built-ins, a board teammate|save, change and delete a squad
-huddle-team.test.ts | role notes
+huddle-team.test.ts | role notes|learned: the view
 
 # R11a: huddle rooms (start, posts from the user, a helper and the host's run, findings, the brief, close and the
 # board's own summary, events; a helper's proposed teammate saved or discarded). Left for later: the tests where a
@@ -74,3 +74,9 @@ passes.test.ts | ^(?!.*(ask_keys box|saved value is masked|check scripts|bug rep
 # tests in runs-git.test.ts need runs (R7a).
 board-family-writes.test.ts
 board-families.test.ts | feature status|partOf, sub-features, groups and gather
+
+# R12: what the board learned (view, seen, save, drop, keep, undo, redo), Find links, a ticket's Usage tab and team
+# usage, on files written before the start (board-extras.test.ts), and the learned test of huddle-team.test.ts
+# (above; its team-usage test counts the huddles of the room tests before it, which need R11a). The usage tests of
+# chat-session.test.ts and runs-control.test.ts need runs (R7a).
+board-extras.test.ts

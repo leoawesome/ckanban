@@ -53,7 +53,7 @@ Bun in full mode takes the same `board.lock` (`src/core/board-lock.ts`), so two 
   board: add `CKANBAN_RUST_SHADOW=1` to the front's launchd environment and `ckanban restart`; remove it to stop.
 - One empty folder per later task (filled as each lands): `index` (R1, done), `tickets` (R2a, done), `families` (R2b, done), `runs` (R3), `prompts` (R4, done),
   `sessions` (R5), `git` (R6, done), `runloop` (R7a), `chat` (R7b), `quickchat` (R8), `browsers` (R9), `schedules` (R10),
-  `huddles` (R11a, done), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12), `gate` (R13).
+  `huddles` (R11a, done), `team` (R11b, done), `huddle_agents` (R11c), `extras` (R12, done), `gate` (R13).
 
 ## The run engine (R3, `src/runs/`)
 
@@ -332,6 +332,33 @@ Ported from `src/board/board-families.ts`, `board-plans.ts`, `board-main.ts` (wi
   `<data>/rust-board-dryrun.log` and delete nothing until `CKANBAN_RUST_DELETE=1` (plan 5.3).
 - Pure logic is checked against Bun: `tests/fixtures/git.json` (written by `test/rust-git-fixtures.test.ts`,
   `UPDATE_RUST_FIXTURES=1`).
+
+## R12: board extras (`src/extras/`)
+
+What the board learns on its own, Find links, recall, mockups and usage, ported from `src/board/learner.ts`,
+`learn.ts`, `lessons.ts`, `linker.ts`, `recall.ts`, `mockups.ts`, `src/usage/ticket-usage.ts` and
+`src/huddle/huddle-usage.ts`. `Extras` (`mod.rs`) is built in `board_mode.rs` and started there.
+- `learn.rs`, `lessons.rs`: the pile of lessons (matching, promotion, pruning), the board's rules file, undo note by
+  note, the side calls' answers and prompts, the user's corrections and the learning prompt (with `transcript` of
+  `src/chat/explain.ts`), the CLAUDE.md "## Lessons" bullets. Values kept in Bun's key order: `learned/pile.json` and
+  `changes.json` are written like Bun's.
+- `learner.rs`: `Learner`: tickets that settle in Review or Done are read after 2 minutes (`CKANBAN_LEARN_SETTLE_MS`)
+  with one cheap side call; huddle lessons (`add_huddle_lessons`); the weekly tidy pass; save now,
+  drop, keep, undo, redo, seen and the Learned view. One step at a time (one lock held across the side call).
+- `linker.rs`: parent suggestions for tickets the user creates (R2a's `suggest_parent` hook calls
+  `extras::suggest_parent`) and Find links.
+- `recall.rs`: the "What we did before" index per board, scored exactly as Bun; `Extras::recall` gives the whole block
+  a run's first prompt gets (recall, learned rules, project lessons), for R7a.
+- `mockups.rs`: saving a planning reply's mockup blocks (R7a calls `save_mockups`; stripping is R5's).
+- `usage.rs`: a ticket's runs, cost and share of each 5h window (`RunLogIndex` reads a run log from where it stopped,
+  `ClaudeLogIndex` prices `~/.claude/projects` per minute), huddle teammates' spend and team usage (huddle files kept
+  by mtime and size).
+- `routes.rs`: in board mode Rust answers `/api/profiles/:p/learned...`, `POST .../find-links` (the user only; the
+  owner's phone too), `GET .../tickets/:id/usage` and `GET /api/team-usage`.
+
+Huddle agents' lessons come from R11a's `Huddles::set_learn` hook (wired in `board_mode.rs`). Checked: `tests/extras.rs` against Bun's
+answers in `tests/fixtures/extras.json` (`test/rust-extras-fixtures.test.ts`, `UPDATE_RUST_FIXTURES=1`), and
+`test/contract/board-extras.test.ts` in board mode.
 
 ## Tests
 
