@@ -241,7 +241,8 @@ fn two_opposite_links_at_once_make_no_loop() {
     let a = ticket(&b, "A", json!({ "parentId": p }));
     let c = ticket(&b, "C", json!({}));
     let armed = Arc::new(AtomicBool::new(true));
-    let second: Arc<Mutex<Option<std::thread::JoinHandle<Result<(), String>>>>> = Arc::default();
+    type Link = std::thread::JoinHandle<Result<(), String>>;
+    let second: Arc<Mutex<Option<Link>>> = Arc::default();
     {
         let (f, a, c, armed, second) = (b.f.clone(), a.clone(), c.clone(), armed.clone(), second.clone());
         b.tickets.on_written(move |_, id| {
@@ -267,4 +268,42 @@ fn two_opposite_links_at_once_make_no_loop() {
     let c_in_a = b.tickets.get("b", &c).unwrap().part_of.as_deref() == Some(a.as_str());
     assert!(!(a_in_c && c_in_a), "both links went through: a partOf loop ({first:?}, {second:?})");
     assert!(first.is_ok() != second.is_ok(), "exactly one link wins: {first:?}, {second:?}");
+}
+
+#[test]
+fn an_event_pushed_while_the_plan_is_marked_done_never_sits_in_a_done_plan() {
+    // Right after push_event's first write to the main ticket, a second thread presses Mark done; it is waiting at
+    // the board's lock before push_event goes on. The old push_event wrote twice (reopen the plan, then add the
+    // event), so the close could land between them and leave the event in a done plan that never wakes.
+    let b = board();
+    let (main, _) = family(&b);
+    let armed = Arc::new(AtomicBool::new(false));
+    let closer: Arc<Mutex<Option<std::thread::JoinHandle<()>>>> = Arc::default();
+    {
+        let (f, m, armed, closer) = (b.f.clone(), main.clone(), armed.clone(), closer.clone());
+        b.tickets.on_written(move |_, id| {
+            if id != m || !armed.swap(false, Ordering::SeqCst) {
+                return;
+            }
+            let (f2, m2) = (f.clone(), m.clone());
+            *closer.lock().unwrap() = Some(std::thread::spawn(move || {
+                let _ = f2.mark_plan_done("b", &m2);
+            }));
+            // Let it reach the board's lock (held by this write) first.
+            std::thread::sleep(Duration::from_millis(30));
+        });
+    }
+    for round in 0..20 {
+        let done = json!({ "state": "done", "wakeups": 0, "startedAt": "2026-11-17T00:00:00.000Z", "originalCount": 2, "inbox": [], "seen": {}, "retries": {}, "awaiting": null });
+        b.tickets.patch("b", &main, json!({ "plan": done }).as_object().unwrap().clone()).unwrap();
+        armed.store(true, Ordering::SeqCst);
+        let (f1, m1) = (b.f.clone(), main.clone());
+        std::thread::spawn(move || f1.push_event("b", &m1, "merge failed: t_x \"X\" couldn't merge")).join().unwrap();
+        if let Some(h) = closer.lock().unwrap().take() {
+            h.join().unwrap();
+        }
+        let p = plan(&b, &main);
+        let inbox = p["inbox"].as_array().map(Vec::len).unwrap_or(0);
+        assert!(!(p["state"] == "done" && inbox > 0), "round {round}: an event sits in a done plan: {p:?}");
+    }
 }

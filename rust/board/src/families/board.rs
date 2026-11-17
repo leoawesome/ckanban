@@ -560,22 +560,7 @@ impl Families {
         }
         let kids = children(&self.list(slug), id).len();
         // Only the plan's own fields change, on the plan in the file now.
-        let r = self.change(slug, id, |meta| {
-            let plan = match plan_in(meta) {
-                Some(p) if p.get("state").and_then(Value::as_str) != Some("done") => return Ok(None),
-                Some(mut p) => {
-                    p.insert("state".into(), "running".into());
-                    p.insert("awaiting".into(), Value::Null);
-                    p.insert("reason".into(), Value::Null);
-                    p.insert("finishedAt".into(), Value::Null);
-                    let orig = p.get("originalCount").and_then(Value::as_f64).unwrap_or(f64::NAN);
-                    p.insert("originalCount".into(), ckanban_core::jsnum::num(if orig.is_nan() { f64::NAN } else { orig.max(kids as f64) }));
-                    Value::Object(p)
-                }
-                None => Self::new_plan(kids),
-            };
-            Ok(Some(one("plan", plan)))
-        });
+        let r = self.change(slug, id, |meta| Ok(Self::ensured(plan_in(meta), kids).map(|p| one("plan", Value::Object(p)))));
         match r {
             Ok(Some(t)) => Some(t),
             Ok(None) => self.get(slug, id),
@@ -583,19 +568,41 @@ impl Families {
         }
     }
 
-    /// `pushEvent`: an event for a manager's next wake, and the plans move on.
+    /// `ensurePlan`'s plan from the one in the file: None when it is running already (left as it is), else a done
+    /// plan reopened or a new one.
+    fn ensured(plan: Option<Map<String, Value>>, kids: usize) -> Option<Map<String, Value>> {
+        match plan {
+            Some(p) if p.get("state").and_then(Value::as_str) != Some("done") => None,
+            Some(mut p) => {
+                p.insert("state".into(), "running".into());
+                p.insert("awaiting".into(), Value::Null);
+                p.insert("reason".into(), Value::Null);
+                p.insert("finishedAt".into(), Value::Null);
+                let orig = p.get("originalCount").and_then(Value::as_f64).unwrap_or(f64::NAN);
+                p.insert("originalCount".into(), ckanban_core::jsnum::num(if orig.is_nan() { f64::NAN } else { orig.max(kids as f64) }));
+                Some(p)
+            }
+            None => Self::new_plan(kids).as_object().cloned(),
+        }
+    }
+
+    /// `pushEvent`: an event for a manager's next wake, and the plans move on. The plan is ensured (a done one
+    /// reopened) and the event added in one write, so a close can't come in between and leave the event in a done
+    /// plan that never wakes its main ticket.
     pub fn push_event(&self, slug: &str, planner: &str, line: &str) {
-        if self.ensure_plan(slug, planner).is_none() {
+        if self.get(slug, planner).is_none() {
             return;
         }
-        let r = self.tickets.update_with(slug, planner, |meta| {
-            let mut plan = meta.get("plan").and_then(Value::as_object).cloned().unwrap_or_default();
+        let kids = children(&self.list(slug), planner).len();
+        let r = self.change(slug, planner, |meta| {
+            let now = plan_in(meta);
+            let mut plan = Self::ensured(now.clone(), kids).or(now).unwrap_or_default();
             let mut inbox = plan.get("inbox").and_then(Value::as_array).cloned().unwrap_or_default();
             inbox.push(line.into());
             plan.insert("inbox".into(), Value::Array(inbox));
-            Ok(one("plan", Value::Object(plan)))
+            Ok(Some(one("plan", Value::Object(plan))))
         });
-        if let Err((_, e)) = r {
+        if let Err(e) = r {
             eprintln!("[board] plan event for {slug}/{planner}: {e}");
         }
         self.advance_plans(slug);
@@ -970,6 +977,13 @@ impl Families {
                 if !p.is("plan") || matches!(p.plan_state(), Some("done" | "paused")) || !is_manager(p) {
                     continue;
                 }
+                // The planner as its file is now (the listing is cached by folder, so an outside edit of its
+                // ticket.md would otherwise make every write of this pass find a different plan).
+                let Some(p) = self.get(slug, &p.id) else { continue };
+                if !p.is("plan") || matches!(p.plan_state(), Some("done" | "paused")) || !is_manager(&p) {
+                    continue;
+                }
+                let p = &p;
                 let kids = children(&list, &p.id);
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.advance_plan(slug, p, &kids))) {
                     Ok(s) => started = s || started,
