@@ -256,8 +256,16 @@ impl RunLoop {
         let artifacts = js::truthy(profile.get("artifacts")) || crate::prompts::rules::mentions_artifact(&texts);
         let repo = session.repo.as_str();
         let role: Option<RunRole> = self.role_of(slug, &t, repo, session.in_place);
-        // STAND-IN (R12): "What we did before" (recall, learned rules, lessons) is empty until R12.
-        let recall = String::new();
+        // "What we did before" goes into a chat's first Planning turn, a fresh session's prompt and a first run.
+        let wants_recall = resume.is_none()
+            && match &chat {
+                Some(c) => !c.raw && refine && !session.existed,
+                None => fresh || run_count == 0.0 || !session.existed,
+            };
+        let recall = match (wants_recall, self.recall.get()) {
+            (true, Some(f)) => f(slug, &t.json),
+            _ => String::new(),
+        };
         if !t.is("worktree") && !t.is("branch") && !t.is("workdir") && matches!(session.repo, RepoKind::Plain | RepoKind::Empty) {
             let digests = self.digests.clone();
             let file = self.tickets.ticket_dir(slug, id).join("activity.jsonl");

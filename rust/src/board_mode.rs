@@ -27,7 +27,8 @@
 //! Origin and JSON type checks Bun makes); the quick chat routes (R8: `/api/profiles/:p/chats...`; quick chats
 //! replying when board mode stops are continued at the next start); the ticket and board writes (R2a,
 //! `ckanban_board::tickets::routes`: create, change, delete, move, comments, snooze, seen, the chat's cards, boards
-//! POST/PATCH/DELETE, attachments, avatars, snippets).
+//! POST/PATCH/DELETE, attachments, avatars, snippets); the huddle rooms (R11a, `ckanban_board::huddles::routes`:
+//! `/api/profiles/:p/huddles...`, after the team routes' gate).
 //! Everything else goes on to the usage, spend, passes and agents routes, then to Bun, as in front mode.
 
 use std::net::SocketAddr;
@@ -54,6 +55,7 @@ use ckanban_board::quickchat::{QuickChatOptions, QuickChats};
 use ckanban_board::satellite;
 use ckanban_board::sessions::routes::{self as session_routes, HUDDLE_HEADER, RUN_HEADER};
 use ckanban_board::sessions::service::Sessions;
+use ckanban_board::huddles::{self as huddle_mod, Huddles};
 use ckanban_board::team::{self, Team};
 use ckanban_board::tickets::routes::{self as write_routes, Reply, Writes};
 use ckanban_board::tickets::wiring::{TicketOps, Wired};
@@ -87,6 +89,10 @@ pub struct BoardMode {
     pub core: Arc<Core>,
     /// Teammates, squads and role notes (R11b).
     pub team: Arc<Team>,
+    /// Huddle rooms (R11a).
+    pub huddles: Arc<Huddles>,
+    /// Lessons, links finder, recall, ticket and team usage (R12).
+    pub extras: Arc<ckanban_board::extras::Extras>,
     /// R9: devices, board browsers, named Chromes and the terminal.
     browsers: Arc<Browsers>,
     browser_routes: browsers::routes::RouteCtx,
@@ -150,6 +156,11 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let browsers = Browsers::new(root, Arc::new(FileLookup::new(root)), services.sessions.clone());
     services.devices = browsers.clone();
     services.satellite = Arc::new(SatelliteClient::new(internal_port, public_port, secret));
+    // R11a: huddle rooms (their live state goes into every ticket view).
+    let team = Arc::new(Team::new(root));
+    let huddles = Huddles::new(root, team.clone());
+    huddles.files.set_mask(masker(root));
+    services.huddles = huddles.clone();
     let core = Core::new(root, services);
     browsers.attach(core.bus.clone());
     browsers.set_linked(browsers::linked_from_index(core.index.clone(), browsers.lookup.clone()));
@@ -178,7 +189,6 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     browsers.start(&core);
     let mask = masker(root);
     let hooks = Arc::new(EventHooks { views: core.services.views.clone(), cut: core.services.cut.clone(), mask: mask.clone() });
-    let team = Arc::new(Team::new(root));
     let browser_routes = browsers::routes::RouteCtx {
         public_port,
         mask: mask.clone(),
@@ -232,9 +242,29 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         git: Some(landing.clone()),
         families: Some(families.clone()),
         browsers: Some(browsers.clone()),
+        huddles: Some(huddles.clone()),
         root: root.to_path_buf(),
         runs: Some(Arc::new(RunHooks { runs: runs.clone() })),
     }));
+    // R11a: huddles see ticket changes (a host moved to Done closes its huddles), wakes owed from before the start are
+    // delivered, and the idle watchdog looks at the live ones every 30 s, off the runtime.
+    huddles.attach(core.tickets.clone(), sessions.clone());
+    team.set_learning_cards(huddles.clone());
+    let h = huddles.clone();
+    let _ = tokio::task::spawn_blocking(move || h.op(|h| h.recover())).await;
+    let h = huddles.clone();
+    let watchdog = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_millis(ckanban_board::huddles::model::IDLE_SWEEP_MS));
+        tick.tick().await;
+        loop {
+            tick.tick().await;
+            let h = h.clone();
+            let _ = tokio::task::spawn_blocking(move || h.idle_sweep()).await;
+        }
+    });
+    core.on_stop("huddle idle sweep", move || watchdog.abort());
+    let h = huddles.clone();
+    core.on_stop("huddles", move || h.shutting_down.store(true, std::sync::atomic::Ordering::Relaxed));
     let passes: Arc<std::sync::OnceLock<Arc<passes::Passes>>> = Arc::new(std::sync::OnceLock::new());
     let p = passes.clone();
     let save_keys: write_routes::SaveKeys = Arc::new(move |slug, keys| match p.get() {
@@ -261,10 +291,37 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     .await;
     let awake = start_run_timers(&core, &runs, ops.clone(), root);
     team.set_ticket_cards(Arc::new(ckanban_board::tickets::wiring::SquadCards { tickets: core.tickets.clone() }));
+    // R12: the learner watches tickets settle; new tickets get a parent suggestion.
+    let extras = ckanban_board::extras::Extras::new(&core, ckanban_board::extras::side_caller());
+    extras.start();
+    let x = extras.clone();
+    runs.set_recall(Arc::new(move |slug: &str, t: &serde_json::Map<String, Value>| x.recall(slug, t)));
+    // A huddle agent's lessons go to the learner's pile (Bun's `learn` option of Huddles).
+    let learner = extras.learner.clone();
+    huddles.set_learn(Arc::new(move |slug, h, p, role, lessons| {
+        let text = |v: &serde_json::Value, k: &str| v.get(k).and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let lessons: Vec<ckanban_board::team::notes::Lesson> = lessons
+            .iter()
+            .map(|l| ckanban_board::team::notes::Lesson {
+                text: text(l, "text"),
+                evidence: text(l, "evidence"),
+                scope: if l.get("scope").and_then(serde_json::Value::as_str) == Some("repo") { "repo" } else { "general" },
+            })
+            .collect();
+        let get = |o: &serde_json::Map<String, serde_json::Value>, k: &str| o.get(k).and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+        let (l, slug, hid, host, handle, role) = (learner.clone(), slug.to_string(), get(h, "id"), get(h, "hostTicket"), get(p, "handle"), role.to_string());
+        if let Ok(rt) = tokio::runtime::Handle::try_current() {
+            rt.spawn(async move {
+                l.add_huddle_lessons(&slug, &hid, &host, &handle, &role, lessons).await;
+            });
+        }
+    }));
     let runs_for_actions = runs.clone();
     Some(Arc::new(BoardMode {
         core,
         team,
+        huddles,
+        extras,
         sessions,
         chats,
         browsers,
@@ -658,6 +715,112 @@ impl BoardMode {
         })
     }
 
+    /// The huddle routes (R11a, `ckanban_board::huddles::routes`), after the same gate as the team routes: the Host
+    /// (403), the Origin of a change (403), a JSON body type for POST, PATCH and PUT (415).
+    #[allow(clippy::result_large_err)]
+    pub async fn answer_huddles(&self, req: Request<Incoming>) -> Result<Response<Body>, Request<Incoming>> {
+        let h = req.headers();
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) {
+            return Err(req);
+        }
+        let Some(parts) = req.uri().path().strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
+        if !huddle_mod::routes::claims(&parts) {
+            return Err(req);
+        }
+        let host_ok = joined(h, HOST.as_str()).is_some_and(|host| ["localhost", "127.0.0.1"].iter().any(|l| host == format!("{l}:{}", self.public_port)));
+        let mutation = req.method() != Method::GET && req.method() != Method::HEAD;
+        let origin_ok = match joined(h, ORIGIN.as_str()) {
+            None => true,
+            Some(o) if o.is_empty() => true,
+            Some(o) => ["localhost", "127.0.0.1"].iter().any(|l| o == format!("http://{l}:{}", self.public_port)),
+        };
+        if !host_ok || (mutation && !origin_ok) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        let wants_body = matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT);
+        let ctype = joined(h, CONTENT_TYPE.as_str()).unwrap_or_default();
+        if wants_body && crate::js::trim(ctype.split(';').next().unwrap_or("")).to_lowercase() != "application/json" {
+            return Ok(self.json(415, &serde_json::json!({ "error": "content-type must be application/json" }), false));
+        }
+        let text = |n: &str| request::header_text(h, n).filter(|v| !v.is_empty());
+        let (run, agent, source) = (text(RUN_HEADER), text(HUDDLE_HEADER), text(write_routes::SOURCE_HEADER));
+        let method = req.method().as_str().to_string();
+        let query = req.uri().query().unwrap_or("").to_string();
+        let body: Bytes = if wants_body {
+            match Limited::new(req.into_body(), MAX_BODY).collect().await {
+                Ok(b) => b.to_bytes(),
+                Err(e) if e.is::<http_body_util::LengthLimitError>() => {
+                    return Ok(self.json(413, &serde_json::json!({ "error": "request body too large" }), false));
+                }
+                Err(_) => return Ok(plain(StatusCode::BAD_REQUEST, "bad request")),
+            }
+        } else {
+            Bytes::new()
+        };
+        let hs = self.huddles.clone();
+        let answer = tokio::task::spawn_blocking(move || {
+            let r = huddle_mod::routes::Req { method: &method, parts: &parts, query: &query, run, agent, source, body: &body };
+            huddle_mod::routes::answer(&hs, &r)
+        })
+        .await;
+        Ok(match answer {
+            Ok((status, v)) => self.json(status, &v, status < 400),
+            Err(e) => self.json(500, &serde_json::json!({ "error": e.to_string() }), false),
+        })
+    }
+
+    /// The R12 routes (`ckanban_board::extras::routes`): learned, find-links, a ticket's usage, team usage. Bun's gate
+    /// first, as for the team routes; find-links is the user's only (on the phone listener, the owner's phone that
+    /// passed the gate, as Bun lets it in).
+    #[allow(clippy::result_large_err)]
+    pub async fn answer_extras(&self, req: Request<Incoming>, peer: SocketAddr, via: Listener, native: &Native) -> Result<Response<Body>, Request<Incoming>> {
+        use ckanban_board::extras::routes as xr;
+        let h = req.headers();
+        if h.contains_key(FRONT_DESK_HEADER) || wants_upgrade(h) {
+            return Err(req);
+        }
+        let Some(parts) = req.uri().path().strip_prefix("/api/").and_then(api_parts) else { return Err(req) };
+        let method = req.method().as_str().to_string();
+        if !xr::claims(&method, &parts) {
+            return Err(req);
+        }
+        let host_ok = joined(h, HOST.as_str()).is_some_and(|host| ["localhost", "127.0.0.1"].iter().any(|l| host == format!("{l}:{}", self.public_port)));
+        let mutation = req.method() != Method::GET && req.method() != Method::HEAD;
+        let origin_ok = match joined(h, ORIGIN.as_str()) {
+            None => true,
+            Some(o) if o.is_empty() => true,
+            Some(o) => ["localhost", "127.0.0.1"].iter().any(|l| o == format!("http://{l}:{}", self.public_port)),
+        };
+        if !host_ok || (mutation && !origin_ok) {
+            return Ok(plain(StatusCode::FORBIDDEN, "forbidden"));
+        }
+        if matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT) {
+            let ctype = joined(h, CONTENT_TYPE.as_str()).unwrap_or_default();
+            if crate::js::trim(ctype.split(';').next().unwrap_or("")).to_lowercase() != "application/json" {
+                return Ok(self.json(415, &json!({ "error": "content-type must be application/json" }), false));
+            }
+        }
+        let has = |n: &str| request::has(h, n);
+        let from_run = has(RUN_HEADER) || has(HUDDLE_HEADER);
+        let count_only = query_param(req.uri().query().unwrap_or(""), "count").as_deref() == Some("1");
+        let headers = h.clone();
+        let user = move || -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>> {
+            let headers = headers.clone();
+            Box::pin(async move {
+                if via == Listener::Remote { crate::guard::headers_allow(&headers) } else { crate::guard::user_only(&headers, peer.port()).await }
+            })
+        };
+        // Only a ticket's Usage tab reads the plan's numbers (cached; the first ask may go out to Anthropic).
+        let plan_value = if parts.get(2).map(String::as_str) == Some("tickets") { native.plan_usage().await } else { Value::Null };
+        let plan = move || -> std::pin::Pin<Box<dyn std::future::Future<Output = Value> + Send>> {
+            let v = plan_value.clone();
+            Box::pin(async move { v })
+        };
+        let call = xr::Call { method: &method, parts: &parts, count_only, from_run, user: &user, plan: &plan };
+        let a = xr::answer(&self.extras, &call).await;
+        Ok(self.json(a.status, &a.value, a.status < 400))
+    }
+
     /// A JSON answer as Bun writes it (`JSON.stringify`); a success is masked with the saved keys (`ctx.json`).
     fn json(&self, status: u16, v: &serde_json::Value, success: bool) -> Response<Body> {
         let text = ckanban_core::datafile::to_text(v, ckanban_core::datafile::Layout::Compact);
@@ -839,6 +1002,14 @@ impl BoardMode {
             Err(r) => r,
         };
         let req = match self.answer_team(req).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
+        let req = match self.answer_huddles(req).await {
+            Ok(res) => return res,
+            Err(r) => r,
+        };
+        let req = match self.answer_extras(req, peer, via, native).await {
             Ok(res) => return res,
             Err(r) => r,
         };
@@ -1032,6 +1203,47 @@ impl BoardMode {
             let _ = notify_tell.send(format!("changed {file}\n"));
         });
         let _ = self.passes.set(Arc::new(passes::Passes::new(self.root.clone(), notify)));
+        // A huddle changed: the helper's mirror gets that board's host states again (worked out off the bus, a
+        // board at a time, several changes in a row at once).
+        let (hx, mut hrx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        self.core.bus.on(move |e| {
+            // A ticket's run starting or ending changes who works in its huddle too.
+            if (e.ty == "huddle.updated" || e.ty == "huddle.message" || e.ty == "ticket.updated")
+                && let Some(p) = e.body.get("profile").and_then(Value::as_str)
+            {
+                let _ = hx.send(p.to_string());
+            }
+        });
+        let (huddles, htell) = (self.huddles.clone(), tell.clone());
+        tokio::spawn(async move {
+            // What the satellite has per board: only a board whose states changed is sent again.
+            let sent: Arc<Mutex<std::collections::HashMap<String, Value>>> = Arc::default();
+            while let Some(first) = hrx.recv().await {
+                let mut slugs = vec![first];
+                while let Ok(s) = hrx.try_recv() {
+                    if !slugs.contains(&s) {
+                        slugs.push(s);
+                    }
+                }
+                let (h, sent) = (huddles.clone(), sent.clone());
+                let line = tokio::task::spawn_blocking(move || {
+                    let mut by = serde_json::Map::new();
+                    let mut sent = sent.lock().unwrap_or_else(|e| e.into_inner());
+                    for s in slugs {
+                        let states = Value::Object(h.host_states(&s).iter().map(|(k, v)| (k.clone(), v.clone())).collect());
+                        if sent.get(&s) != Some(&states) {
+                            sent.insert(s.clone(), states.clone());
+                            by.insert(s, states);
+                        }
+                    }
+                    (!by.is_empty()).then(|| satellite::runtime_line(&json!({ "hostHuddles": by })))
+                })
+                .await;
+                if let Ok(Some(line)) = line {
+                    let _ = htell.send(line);
+                }
+            }
+        });
         let views = s.views.clone();
         // The live state the helper reads goes first, so it applies before the event that tells of the change: the
         // tickets running now (when that changed) and a ticket's new session summary.

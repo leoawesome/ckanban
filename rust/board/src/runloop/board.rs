@@ -239,7 +239,12 @@ pub struct RunLoop {
     pub(super) digests: Arc<crate::runs::activity_digest::ActivityDigests>,
     /// R6's view of the board, for the PR routes.
     pub(super) ops: std::sync::OnceLock<Arc<dyn crate::git::ops::BoardOps>>,
+    /// R12's "What we did before" block for a ticket's first prompt (recall, learned rules, project lessons).
+    pub(super) recall: std::sync::OnceLock<Recall>,
 }
+
+/// R12's recall: the block a run's first prompt gets for a ticket of a board ("" for none). Blocking.
+pub type Recall = Arc<dyn Fn(&str, &Map<String, Value>) -> String + Send + Sync>;
 
 /// A JSON object from `json!({...})`.
 pub fn obj(v: Value) -> Map<String, Value> {
@@ -306,6 +311,7 @@ impl RunLoop {
             versions,
             digests: crate::runs::activity_digest::ActivityDigests::new(),
             ops: std::sync::OnceLock::new(),
+            recall: std::sync::OnceLock::new(),
         })
     }
 
@@ -317,6 +323,11 @@ impl RunLoop {
     pub fn set_ops(&self, ops: Arc<dyn crate::git::ops::BoardOps>) {
         let _ = self.ops.set(ops);
     }
+    /// R12's recall, set by board mode once the extras exist.
+    pub fn set_recall(&self, f: Recall) {
+        let _ = self.recall.set(f);
+    }
+
     pub fn ops(&self) -> Arc<dyn crate::git::ops::BoardOps> {
         self.ops.get().cloned().expect("board mode sets the run loop's ops")
     }
