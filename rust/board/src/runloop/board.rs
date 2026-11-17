@@ -645,6 +645,8 @@ impl RunLoop {
         let me = self.clone();
         let r = run.clone();
         let _ = tokio::task::spawn_blocking(move || {
+            // Under decide like Bun's one-step run end; advance_plans may check git here, which briefly holds up
+            // other decisions (chat sends), as chat_now's own advance_plans call does.
             let _g = me.decide.lock();
             if me.restart_pending() {
                 me.emit_restart();
