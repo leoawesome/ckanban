@@ -125,3 +125,4 @@ no-src-imports.test.ts
 schema.test.ts
 rust-parity.test.ts
 mcp-parity.test.ts
+board-parity.test.ts
