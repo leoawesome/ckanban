@@ -356,7 +356,7 @@ impl RunLoop {
         self.state.lock().restart_pending
     }
 
-    pub(super) fn profile(&self, slug: &str) -> Option<Map<String, Value>> {
+    pub(crate) fn profile(&self, slug: &str) -> Option<Map<String, Value>> {
         ckanban_core::DataDir::new(self.root.clone()).profile(slug).map(|p| p.record.0)
     }
 

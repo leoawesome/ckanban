@@ -115,6 +115,11 @@ pub fn active_host(h: &Obj) -> String {
     MAIN_HANDLE.into()
 }
 /// `huddleCost`.
+/// An auto huddle (`h.auto`).
+pub fn is_auto(h: &Obj) -> bool {
+    truthy(h.get("auto"))
+}
+
 pub fn huddle_cost(h: &Obj) -> f64 {
     participants(h).iter().map(|p| f(p, "costUsd")).sum()
 }

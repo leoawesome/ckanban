@@ -23,7 +23,7 @@ pub struct CopyState {
     pub handed: Option<Manifest>,
 }
 
-fn hash_bytes(b: &[u8]) -> String {
+pub(super) fn hash_bytes(b: &[u8]) -> String {
     let mut h = Sha1::new();
     h.update(b);
     h.finalize().iter().map(|x| format!("{x:02x}")).collect()
@@ -139,12 +139,12 @@ pub fn write_state(copy: &str, st: &CopyState) -> std::io::Result<()> {
 }
 
 /// `BAD_NAME`: control characters and line separators.
-fn bad_name(p: &str) -> bool {
+pub(super) fn bad_name(p: &str) -> bool {
     p.chars().any(|c| (c as u32) < 0x20 || c as u32 == 0x7f || c == '\u{2028}' || c == '\u{2029}')
 }
 
 /// `plainPath`: nothing on the way is a symlink or a file, and the file itself is a plain file or nothing.
-fn plain_path(root: &Path, path: &str) -> bool {
+pub(super) fn plain_path(root: &Path, path: &str) -> bool {
     let parts: Vec<&str> = path.split('/').collect();
     let mut cur = root.to_path_buf();
     for (i, part) in parts.iter().enumerate() {
