@@ -2,10 +2,10 @@
 //! pages, a new chat, one chat, rename, delete, a message, stop, the conversation and one tool call. Same answers,
 //! statuses and order of checks as Bun (an unknown chat is 404 before the user check).
 //!
-//! STAND-IN until later tasks: the Context panel (`context`), "Say it simpler" (`simplified`, `simplify`), Rewind, Undo
-//! rewind and Fork (`rewind`, `rewind-undo`, `fork`) need R7b, and Make ticket (`ticket`) needs R2a and R7b. Those answer
-//! 501 with a plain message (after the user check for the ones that change something); the Bun satellite has no quick
-//! chats to hand them to.
+//! The Context panel (`context`) and "Say it simpler" (`simplified`, `simplify`) answer from R7b's `ChatExtras`.
+//! STAND-IN until later tasks: Rewind, Undo rewind and Fork (`rewind`, `rewind-undo`, `fork`) need R7b, and Make
+//! ticket (`ticket`) needs R2a and R7b. Those answer 501 with a plain message (after the user check for the ones that
+//! change something); the Bun satellite has no quick chats to hand them to.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -112,6 +112,11 @@ fn later_task(what: &str, task: &str) -> Reply {
 }
 
 impl QuickChats {
+    /// Say it simpler and the Context panel (R7b), once board mode has made them.
+    fn chat_extras(&self) -> Option<Arc<crate::chat::extras::ChatExtras>> {
+        self.extras.get().and_then(std::sync::Weak::upgrade)
+    }
+
     /// The answer to a quick chat route (`parts` from `parts_of`).
     pub async fn answer(self: &Arc<Self>, sessions: &Arc<Sessions>, req: ChatReq, user: UserCheck) -> Reply {
         let Some(parts) = parts_of(&req.path) else { return err(400, "bad path") };
@@ -168,12 +173,29 @@ impl QuickChats {
         let sub = parts.get(4).map(String::as_str);
         match (parts.len(), sub, m) {
             (4, _, "GET") => reply(200, self.view(&slug, &chat)),
-            (5, Some("context"), "GET") => later_task("The Context panel", "R7b"),
-            (5, Some("context"), "POST") => {
-                if !user().await {
+            // The Context panel: how much of Claude's memory the chat fills (GET cached, POST checks now).
+            (5, Some("context"), "GET" | "POST") => {
+                let Some(x) = self.chat_extras() else { return later_task("The Context panel", "R7b") };
+                if m == "POST" && !user().await {
                     return err(403, refusal("Checking a chat's context"));
                 }
-                later_task("The Context panel", "R7b")
+                let key = format!("chat/{slug}/{cid}");
+                let me = self.clone();
+                let (s1, c1) = (slug.clone(), cid.clone());
+                let spec = blocking(move || me.context_spec(&s1, &c1)).await.unwrap_or(Ok(None));
+                if m == "POST" {
+                    let s = match spec {
+                        Ok(s) => s,
+                        Err(e) => return err(409, e),
+                    };
+                    let sid = s.as_ref().map(|s| s.session_id.clone());
+                    if let Some(s) = s {
+                        x.contexts.refresh(&key, s).await;
+                    }
+                    return blocking(move || reply(200, x.contexts.view(&key, sid.as_deref()))).await.unwrap_or_else(|| err(500, "context failed"));
+                }
+                let sid = spec.ok().flatten().map(|s| s.session_id);
+                blocking(move || reply(200, x.contexts.view(&key, sid.as_deref()))).await.unwrap_or_else(|| err(500, "context failed"))
             }
             (4, _, "PATCH") => {
                 if !user().await {
@@ -233,8 +255,47 @@ impl QuickChats {
                 let q = req.query.clone();
                 blocking(move || me.conversation(&sessions, &slug, &cid, &chat, q.as_deref())).await.unwrap_or_else(|| err(500, "conversation failed"))
             }
-            (5, Some("simplified"), "GET") => later_task("Say it simpler", "R7b"),
-            (5, Some("simplify" | "fork"), "POST") | (5, Some("rewind" | "rewind-undo"), "POST") => {
+            // "Say it simpler" for the chat's replies, like a ticket's.
+            (5, Some("simplified"), "GET") => {
+                let Some(x) = self.chat_extras() else { return later_task("Say it simpler", "R7b") };
+                let sid = chat.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();
+                let file = self.simplified_path(&slug, &cid);
+                blocking(move || {
+                    let entries = x.sessions.cache.get(&sid).map(|p| (*p.entries).clone()).unwrap_or_default();
+                    reply(200, x.simplifier.saved_in(&file, &entries))
+                })
+                .await
+                .unwrap_or_else(|| err(500, "simplified failed"))
+            }
+            (5, Some("simplify"), "POST") => {
+                if !user().await {
+                    return err(403, refusal(WHAT));
+                }
+                let Some(x) = self.chat_extras() else { return later_task("Say it simpler", "R7b") };
+                let b = match body() {
+                    Ok(b) => b,
+                    Err(r) => return r,
+                };
+                let sid = chat.get("sessionId").and_then(Value::as_str).unwrap_or("").to_string();
+                let uuid = b.as_ref().and_then(|b| b.get("uuid")).and_then(Value::as_str).map(str::to_string);
+                let x2 = x.clone();
+                let entry = blocking(move || {
+                    let u = uuid?;
+                    x2.sessions.cache.get(&sid)?.entries.iter().find(|e| e.get("uuid").and_then(Value::as_str) == Some(u.as_str())).cloned()
+                })
+                .await
+                .flatten();
+                let Some(e) = entry else { return err(404, "no such message in this chat") };
+                let title = match self.view(&slug, &chat).get("title") {
+                    None => "undefined".to_string(),
+                    Some(v) => rjs::to_string(v),
+                };
+                match x.simplifier.simplify_in(self.simplified_path(&slug, &cid), self.side_spend_path(&slug, &cid), &title, &e).await {
+                    Ok(v) => reply(200, v),
+                    Err((status, msg)) => err(status, msg),
+                }
+            }
+            (5, Some("fork"), "POST") | (5, Some("rewind" | "rewind-undo"), "POST") => {
                 if !user().await {
                     return err(403, refusal(WHAT));
                 }

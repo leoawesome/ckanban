@@ -274,6 +274,18 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
     let writes = Arc::new(Writes::new(core.tickets.clone(), core.reads.clone(), sessions.clone(), save_keys));
     writes.set_families(families);
     writes.set_runs(runs.clone());
+    // R7b: Say it simpler, Help me understand and the Context panel (tickets and quick chats); a Context check runs
+    // in the background after each run.
+    let chat_extras = ckanban_board::chat::extras::ChatExtras::new(
+        core.tickets.clone(),
+        sessions.clone(),
+        huddles.clone(),
+        chats.clone(),
+        core.bus.clone(),
+        ckanban_board::extras::side_caller(),
+    );
+    chat_extras.set_runs(runs.clone());
+    writes.set_chat_extras(chat_extras.clone());
     // Quick chats hold their messages while a restart waits, and the restart waits for their replies.
     let (r1, r2) = (runs.clone(), runs.clone());
     chats.set_gate(ckanban_board::quickchat::service::RestartGate { pending: Arc::new(move || r1.restart_pending()), work_changed: Arc::new(move || r2.restart_work_changed()) });

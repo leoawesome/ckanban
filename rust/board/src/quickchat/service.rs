@@ -121,6 +121,9 @@ struct ActiveChat {
     done: watch::Sender<bool>,
 }
 
+/// Called after each run of a chat ends, with the board and the chat id.
+pub type RunEnded = Arc<dyn Fn(&str, &str) + Send + Sync>;
+
 pub struct QuickChats {
     dir: DataDir,
     bus: Arc<Bus>,
@@ -137,6 +140,10 @@ pub struct QuickChats {
     gate: Mutex<RestartGate>,
     me: Weak<QuickChats>,
     draft_seq: AtomicU64,
+    /// Called after each run of a chat ends (R7b: the Context panel refreshes then).
+    run_ended: Mutex<Vec<RunEnded>>,
+    /// Say it simpler and the Context panel (R7b), for the routes.
+    pub extras: std::sync::OnceLock<Weak<crate::chat::extras::ChatExtras>>,
 }
 
 fn key(slug: &str, id: &str) -> String {
@@ -187,6 +194,8 @@ impl QuickChats {
                 gate: Mutex::new(RestartGate::default()),
                 me: me.clone(),
                 draft_seq: AtomicU64::new(0),
+                run_ended: Mutex::new(Vec::new()),
+                extras: std::sync::OnceLock::new(),
             }
         })
     }
@@ -589,6 +598,24 @@ impl QuickChats {
     }
 
     /// The environment and flags a run of the chat gets (`runSetup`).
+    /// `onRunEnd`: called after each run of a chat ends (the Context panel refreshes then).
+    pub fn on_run_end(&self, f: RunEnded) {
+        self.run_ended.lock().push(f);
+    }
+
+    /// `contextSpec` (the Context panel): the chat's run flags and environment, or None without a saved session;
+    /// Err when the chat can't run (a front desk chat without the front desk). Blocking.
+    pub fn context_spec(&self, slug: &str, id: &str) -> Result<Option<crate::chat::context::ContextSpec>, String> {
+        let (Some(c), Some(profile)) = (self.get(slug, id), self.profile(slug)) else { return Ok(None) };
+        let sid = s(&c, "sessionId").unwrap_or("").to_string();
+        if !self.session_exists(&sid) {
+            return Ok(None);
+        }
+        let (env, args) = self.run_setup(slug, &profile, &c, true)?;
+        let cwd = profile.get("path").and_then(Value::as_str).unwrap_or("").to_string();
+        Ok(Some(crate::chat::context::ContextSpec { session_id: sid, cwd, args, env }))
+    }
+
     fn run_setup(&self, slug: &str, profile: &Map<String, Value>, c: &Map<String, Value>, resume: bool) -> Result<(BTreeMap<String, String>, Vec<String>), String> {
         let connectors = board_connector_options(profile.get("claudeAiConnectors"));
         // STAND-IN (R13/P1): the front desk's hooks (env, note, limits). A front desk chat never runs with a normal
@@ -653,7 +680,10 @@ impl QuickChats {
         if self.shutting_down.load(Ordering::SeqCst) {
             return;
         }
-        // STAND-IN (R7b): the Context panel refreshes after a run (`onRunEnd`).
+        let hooks: Vec<_> = self.run_ended.lock().clone();
+        for f in hooks {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&run.slug, &run.id)));
+        }
         let Some(c) = self.get(&run.slug, &run.id) else { return };
         let (later, stopped) = {
             let st = run.state.lock();

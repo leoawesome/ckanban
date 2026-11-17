@@ -487,4 +487,31 @@ impl RunLoop {
         let note = crate::prompts::rules::chrome_choice_note(choice.as_ref(), &board);
         RunBrowsers { servers, note, no_chrome: !board.is_empty() && choice.is_none() }
     }
+
+    /// `contextSession` (R7b, the Context panel): the session `context_spec` would check, without building the chat's
+    /// command; None when the ticket has no saved Claude session or its folder is gone. Blocking (looks for the file).
+    pub fn context_session(&self, slug: &str, id: &str) -> Option<String> {
+        let t = self.get(slug, id)?;
+        let profile = self.profile(slug)?;
+        let sid = ts(&t, "sessionId")?.to_string();
+        if !self.session_exists(&sid) {
+            return None;
+        }
+        let cwd = ts(&t, "workdir").or_else(|| ts(&t, "worktree")).or_else(|| profile.get("path").and_then(Value::as_str))?;
+        std::path::Path::new(cwd).exists().then_some(sid)
+    }
+
+    /// `contextSpec`: what the Context panel needs to run `/context` like the ticket's chat runs (same folder, flags
+    /// and environment; the per-run system prompt and cap left out). Blocking.
+    pub fn context_spec(&self, slug: &str, id: &str) -> Option<crate::chat::context::ContextSpec> {
+        let sid = self.context_session(slug, id)?;
+        let t = self.get(slug, id)?;
+        let profile = self.profile(slug)?;
+        let cwd = ts(&t, "workdir").or_else(|| ts(&t, "worktree")).or_else(|| profile.get("path").and_then(Value::as_str)).unwrap_or("").to_string();
+        let refine = super::rules::chat_mode_for(&t.status) == "refine";
+        let args = self.chat_args(slug, &t, &profile, refine, &sid, true, None, None, None);
+        let out = self.outputs_dir(slug, id);
+        let env = self.chat_env(slug, id, &out.to_string_lossy());
+        Some(crate::chat::context::ContextSpec { session_id: sid, cwd, args, env })
+    }
 }

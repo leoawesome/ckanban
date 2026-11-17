@@ -94,6 +94,7 @@ pub fn wanted(method: &str, path: &str) -> bool {
         ("POST", ["profiles", _, "tickets", _, "key-cards", _]) => true,
         (m, ["profiles", _, "tickets", _, rest @ ..]) if crate::families::routes::wanted(m, rest) => true,
         (m, ["profiles", _, "tickets", _, rest @ ..]) if crate::runloop::routes::wanted(m, rest) => true,
+        (m, ["profiles", _, "tickets", _, rest @ ..]) if crate::chat::extras::wanted(m, rest) => true,
         ("PUT", ["profiles", _, "tickets", _, "automation-cards" | "squad-cards" | "teammate-cards" | "closed-forms" | "schedule-delete-cards" | "helper-rule-cards", _]) => {
             true
         }
@@ -112,6 +113,8 @@ pub struct Writes {
     families: std::sync::OnceLock<Arc<crate::families::Families>>,
     /// The run loop (R7a): chat, queue, stop, limits, follow-ups.
     runs: std::sync::OnceLock<Arc<crate::runloop::RunLoop>>,
+    /// Say it simpler, Help me understand and the Context panel (R7b).
+    chat_extras: std::sync::OnceLock<Arc<crate::chat::extras::ChatExtras>>,
 }
 
 /// `body(req)`: the JSON body; 400 when it isn't JSON.
@@ -129,7 +132,12 @@ pub(crate) fn body_obj(req: &Req) -> Result<Map<String, Value>, Refusal> {
 
 impl Writes {
     pub fn new(tickets: Arc<Tickets>, reads: Arc<Reads>, sessions: Arc<dyn SessionInfo>, save_keys: SaveKeys) -> Writes {
-        Writes { tickets, reads, sessions, save_keys, in_flight: Default::default(), families: Default::default(), runs: Default::default() }
+        Writes { tickets, reads, sessions, save_keys, in_flight: Default::default(), families: Default::default(), runs: Default::default(), chat_extras: Default::default() }
+    }
+
+    /// The chat extras (R7b): their routes answer from them.
+    pub fn set_chat_extras(&self, x: Arc<crate::chat::extras::ChatExtras>) {
+        let _ = self.chat_extras.set(x);
     }
 
     /// R2b's families: the family routes answer from them, and a run's ticket is placed in its feature.
@@ -219,6 +227,12 @@ impl Writes {
                 if crate::runloop::routes::wanted(m, &p[4..]) {
                     return Some(match self.runs.get() {
                         Some(r) => crate::runloop::routes::answer(r, self, req, slug, id, &p[4..]).unwrap_or_else(err),
+                        None => err((503, "the board is still starting; try again in a moment".into())),
+                    });
+                }
+                if crate::chat::extras::wanted(m, &p[4..]) {
+                    return Some(match self.chat_extras.get() {
+                        Some(x) => x.answer(req, slug, id, &p[4..]).unwrap_or_else(err),
                         None => err((503, "the board is still starting; try again in a moment".into())),
                     });
                 }
