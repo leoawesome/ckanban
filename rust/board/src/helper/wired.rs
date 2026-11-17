@@ -1,6 +1,6 @@
 //! The helper plugged into the Rust board (`rust/src/board_mode.rs` makes these): tickets and boards from the index
 //! and the ticket writes, live state through `Live`, links on the phone address when phone access is on, and the
-//! satellite for sending (`helper-send`) and what only it knows (`helper-facts`).
+//! satellite for Telegram until P1c (`helper-send` with only "telegram", and the bot's state and pairing).
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -11,7 +11,6 @@ use serde_json::{Value, json};
 
 use super::board::{Facts, HelperBoard};
 use super::channels::Sender;
-use crate::gate::edge::SatelliteClient;
 use crate::gate::remote::RemoteFile;
 use crate::index::routes::Reads;
 use crate::index::store::BoardList;
@@ -94,102 +93,61 @@ impl HelperBoard for BoardSide {
     }
 }
 
-/// Sending through the satellite (until P1b/P1c). `ready` turns true once the satellite runs: a send or a question
-/// before that (the helper starts before the satellite does) waits for it, up to two minutes.
-pub struct SatelliteSender(pub Arc<SatelliteClient>, pub tokio::sync::watch::Receiver<bool>);
-
-async fn wait_ready(mut ready: tokio::sync::watch::Receiver<bool>) {
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(120), ready.wait_for(|r| *r)).await;
+/// Waits up to `secs` for Telegram to run (the helper starts before the server has made it).
+async fn telegram_of(cell: &Arc<std::sync::OnceLock<Arc<crate::telegram::Telegram>>>, secs: u64) -> Option<Arc<crate::telegram::Telegram>> {
+    let mut waited = 0;
+    while cell.get().is_none() && waited < secs * 10 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        waited += 1;
+    }
+    cell.get().cloned()
 }
 
-impl Sender for SatelliteSender {
-    fn send(&self, out: Value, targets: Vec<String>) -> BoxFuture<'static, Result<Vec<Value>, String>> {
-        let (c, ready) = (self.0.clone(), self.1.clone());
+/// P1c: the helper's `telegram` channel, sent by the Rust Telegram. A send while the server is still starting waits
+/// for it, up to two minutes.
+pub struct TelegramSender(pub Arc<std::sync::OnceLock<Arc<crate::telegram::Telegram>>>);
+
+impl Sender for TelegramSender {
+    fn send(&self, out: Value, _targets: Vec<String>) -> BoxFuture<'static, Result<Vec<Value>, String>> {
+        let cell = self.0.clone();
         Box::pin(async move {
-            wait_ready(ready).await;
-            let (status, v) = c.call("helper-send", &json!({ "message": out, "only": targets })).await?;
-            if !(200..300).contains(&status) {
-                return Err(v.get("error").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| format!("the satellite answered {status}")));
-            }
-            Ok(v.get("results").and_then(Value::as_array).cloned().unwrap_or_default())
+            let t = telegram_of(&cell, 120).await.ok_or_else(|| "Telegram isn't ready yet".to_string())?;
+            let m = out.as_object().cloned().unwrap_or_default();
+            Ok(vec![t.send(&m).await])
         })
     }
+    /// Not asked: the board's own channels know the devices (`Channels::facts`).
     fn facts(&self) -> BoxFuture<'static, Facts> {
-        let (c, ready) = (self.0.clone(), self.1.clone());
+        Box::pin(async { Facts::default() })
+    }
+}
+
+/// P1c: Telegram's part of Settings, from the Rust Telegram (`telegram-state`, `telegram-pair`, `telegram-unpair`,
+/// `notify-changed`). `telegram-state` waits at most 2 s for it (Settings then shows Telegram from the file), the
+/// others up to 15 s.
+pub struct RustTelegram(pub Arc<std::sync::OnceLock<Arc<crate::telegram::Telegram>>>);
+
+impl super::notify::TelegramSide for RustTelegram {
+    fn call(&self, name: &str, body: Value) -> BoxFuture<'static, Result<(u16, Value), String>> {
+        let (cell, name) = (self.0.clone(), name.to_string());
         Box::pin(async move {
-            wait_ready(ready).await;
-            match c.call("helper-facts", &json!({})).await {
-                Ok((200, v)) => Facts {
-                    on_screen: v.get("onScreen").and_then(Value::as_bool).unwrap_or(false),
-                    phone_devices: v.get("phoneDevices").and_then(Value::as_u64).unwrap_or(0),
-                    connected: v.get("connected").and_then(Value::as_bool).unwrap_or(false),
+            let t = telegram_of(&cell, if name == "telegram-state" { 2 } else { 15 }).await.ok_or_else(|| "Telegram is still starting; try again in a moment".to_string())?;
+            Ok(match name.as_str() {
+                "telegram-state" => (200, json!({ "telegram": t.public() })),
+                "telegram-pair" => match t.pair(body.get("board").and_then(Value::as_str)) {
+                    Ok((code, expires)) => (200, json!({ "code": code, "expiresAt": expires })),
+                    Err((status, e)) => (status, json!({ "error": e })),
                 },
-                _ => Facts::default(),
-            }
+                "telegram-unpair" => match t.unpair() {
+                    Ok(()) => (200, json!({ "ok": true })),
+                    Err(e) => (503, json!({ "error": e })),
+                },
+                "notify-changed" => {
+                    t.changed(body.get("tokenChanged") == Some(&Value::Bool(true)), body.get("stoppedTaking") == Some(&Value::Bool(true)));
+                    (200, json!({ "ok": true }))
+                }
+                other => (404, json!({ "error": format!("unknown Telegram call {other}") })),
+            })
         })
-    }
-}
-
-/// P1c: Telegram is sent here, in Rust; every other channel through the satellite (until P1b). Results keep the
-/// order of `targets`.
-pub struct SplitSender {
-    pub sat: SatelliteSender,
-    pub telegram: Arc<std::sync::OnceLock<Arc<crate::telegram::Telegram>>>,
-}
-
-impl Sender for SplitSender {
-    fn send(&self, out: Value, targets: Vec<String>) -> BoxFuture<'static, Result<Vec<Value>, String>> {
-        let others: Vec<String> = targets.iter().filter(|t| *t != "telegram").cloned().collect();
-        let wants_tg = others.len() != targets.len();
-        let sat = if others.is_empty() { None } else { Some(self.sat.send(out.clone(), others.clone())) };
-        let cell = self.telegram.clone();
-        Box::pin(async move {
-            let tg_fut = async {
-                if !wants_tg {
-                    return None;
-                }
-                // An alert sent while the server is still starting waits for Telegram, up to two minutes.
-                let mut waited = 0;
-                while cell.get().is_none() && waited < 1200 {
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    waited += 1;
-                }
-                let tg = cell.get().cloned();
-                Some(match (tg, out.as_object()) {
-                    (Some(t), Some(m)) => t.send(m).await,
-                    _ => json!({ "channel": "telegram", "ok": false, "error": "telegram failed: Telegram isn't ready yet" }),
-                })
-            };
-            let sat_fut = async {
-                match sat {
-                    Some(f) => f.await,
-                    None => Ok(Vec::new()),
-                }
-            };
-            let (tg_r, sat_r) = futures_util::join!(tg_fut, sat_fut);
-            let sat_list = match sat_r {
-                Ok(l) => l,
-                Err(e) => others.iter().map(|c| json!({ "channel": c, "ok": false, "error": format!("{c} failed: {e}") })).collect(),
-            };
-            let mut used = vec![false; sat_list.len()];
-            let mut tg_r = tg_r;
-            let mut out = Vec::new();
-            for t in &targets {
-                if t == "telegram" {
-                    if let Some(r) = tg_r.take() {
-                        out.push(r);
-                    }
-                    continue;
-                }
-                if let Some(i) = (0..sat_list.len()).find(|i| !used[*i] && sat_list[*i].get("channel").and_then(Value::as_str) == Some(t.as_str())) {
-                    used[i] = true;
-                    out.push(sat_list[i].clone());
-                }
-            }
-            Ok(out)
-        })
-    }
-    fn facts(&self) -> BoxFuture<'static, Facts> {
-        self.sat.facts()
     }
 }

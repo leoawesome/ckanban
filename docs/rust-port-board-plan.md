@@ -191,7 +191,7 @@ back. The edge, all of it:
 | Satellite to Rust | Board actions: the notifier's `addComment` (Telegram's `chatFromTelegram`, `patchTelegram`, `dropTelegramQueued` and the Confirm replay ended with P1c) | HTTP to Rust's port on `/api/internal/...`, with the front secret the child already has |
 | Rust to satellite | Front desk gate (requests with `x-ckanban-frontdesk`), pass tool calls for automations (`automation-call` after Rust checks the script's token), share-to-claude.ai publishing | HTTP to the child's internal port on `/api/internal/...` with the secret |
 | Rust to satellite | Routes it still owns: `/api/notify*`, `/api/push*`, `/api/telegram/*`, `/api/mcp*`, `POST /api/agents/*`, `POST /api/remote`, pass sign-in, `tools` and OAuth callback, `/api/bug-report*` (`/api/messages*`, `/api/helper*` and a ticket's `notify` are Rust's since P1a) | Passed through as today, with `x-ckanban-peer-port` |
-| Both ways (P1a, P1c) | The helper, Telegram and the front desk run in Rust; the satellite sends push, ntfy and the Mac banner until P1b | Rust asks `helper-send` (never for Telegram), `helper-facts`; the satellite asks `notify-write`, `helper-send-message` |
+| Both ways (P1a to P1c) | The helper, its sending, Telegram and the front desk run in Rust | The satellite asks `helper-send-message`; Rust no longer asks it anything for the helper |
 
 The satellite is about 500 lines of throw-away code on each side. The alternative, porting the helper (8,600 lines)
 before the flip, would delay the step that removes the freezes by that much. Huddles are not on this list: their live
@@ -330,10 +330,12 @@ wave 1 landed, shadow mode running on the real board. The flip itself is likely 
 
 - **P1 helper to Rust:** `helper/` (8,600 lines) in two or three tasks (runner and decisions; notifications and push
   with the `web-push` crate; Telegram and the front desk), against C7. Removes most of the satellite. P1a (runner,
-  decisions, waits, messages, settings files, the Messages and helper routes) is in: `rust/board/src/helper/`. P1c
+  decisions, waits, messages, settings files, the Messages and helper routes) is in: `rust/board/src/helper/`. P1b
+  (sending: the Mac banner, phone push on aws-lc-rs instead of the `web-push` crate, which needs OpenSSL; push.json;
+  `/api/notify...` and `/api/push...`) is in. P1c
   (Telegram: the poller, pairing, alerts, replies, forms, a ticket's answer back; the front desk: its chats' rights
   and cap, the request gate, Confirm cards and their replay, send_file) is in: `rust/board/src/telegram/`, wired in
-  `rust/src/board_mode/tg.rs`.
+  `rust/src/board_mode/tg.rs`; the satellite keeps no Telegram.
 - **P2 integrations to Rust:** MCP servers and sign-ins, agents install, phone access on and off, pass sign-in and
   `tools`, bug reports, artifact publishing. Removes the satellite. Done 17 Nov (`rust/src/outside/`, see
   `rust/README.md`): the satellite keeps only the helper's routes, the front desk gate and Telegram's turn end (P1);

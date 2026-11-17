@@ -331,7 +331,9 @@ time of the last grant). A ticket's run takes and lets go with `POST .../tickets
 
 ## Notifications, messages, helper, push, Telegram
 
-All `/api/notify`, `/api/messages`, `/api/helper` and `/api/push` routes answer 403 to `x-ckanban-run`.
+All `/api/notify`, `/api/messages`, `/api/helper` and `/api/push` routes answer 403 to `x-ckanban-run`. Adding or
+removing a phone push device is the user's own (their browser on this Mac, or the phone through phone access), like
+changing the notification settings: a program that added its own address would get every message.
 
 The Telegram Bot API address is `https://api.telegram.org` unless `CKANBAN_TELEGRAM_URL` is set (a trailing `/` is
 dropped): a test hook that points the daemon at a local fake Bot API, never set on a real Mac. The public Telegram state
@@ -363,8 +365,8 @@ from a board sets `frontDesk` to that board.
 | POST | `/api/helper/practice` | user only | 200 practice result | 403, 503, 409 `Turn the helper on first` while it is off, helper error status |
 | POST | `/api/helper/notice-seen` | user only | 200 status | 403, 503 |
 | GET | `/api/push` | | 200 `{publicKey, devices, dropped}` | |
-| POST | `/api/push/subscribe` | `{subscription, label?, replaces?}` | 200 `{id, label, createdAt}` | 400 invalid |
-| POST | `/api/push/remove` | `{id}` or `{endpoint}` | 200 `{removed, devices}` | 400 neither |
+| POST | `/api/push/subscribe` | `{subscription, label?, replaces?}` | 200 `{id, label, createdAt}` | 400 invalid, 403 not the user |
+| POST | `/api/push/remove` | `{id}` or `{endpoint}` | 200 `{removed, devices}` | 400 neither, 403 not the user |
 | POST | `/api/push/visible` | `{endpoint, visible}` | 200 `{ok: true}` | 400 no endpoint |
 | POST | `/api/push/test` | `{id, profile?}` | 200 `Notifier.testDevice()` result | 400 no id |
 

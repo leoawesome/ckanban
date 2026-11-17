@@ -1,14 +1,16 @@
-//! The helper in Rust (P1a, `src/helper/`): what waits on the user and how they hear of it. Rust owns its files in
-//! board mode: `waits.json`, `messages.json`, `helper-state.json`, `helper.json`, and is the only writer of
-//! `notify.json` (the satellite sends its Telegram and settings changes through `/api/internal/notify-write`).
+//! The helper in Rust (P1a, P1b, `src/helper/`): what waits on the user and how they hear of it. Rust owns its files
+//! in board mode: `waits.json`, `messages.json`, `helper-state.json`, `helper.json`, `push.json`, and is the only
+//! writer of `notify.json` (the satellite sends its Telegram saves through `/api/internal/notify-write`).
 //!
 //! - `watch`: which tickets wait on the user (the Notifier's watching half) and notify_user.
 //! - `core`: wait records, the message store, the routing switch, direct sends, digests and night holds.
 //! - `runner`: the helper's wakes (a side call), its decisions carried out, reminders, summaries, taps, status.
 //! - `decide`, `summary`, `settings`, `text`, `local`: the pure rules, checked against Bun's answers.
-//! - `waits`, `messages`, `notify_settings`: the files.
-//! - `channels`: sending, done by the satellite until P1b (push, ntfy, the Mac banner) and P1c (Telegram).
-//! - `routes`: `/api/messages...`, `/api/helper...`, a ticket's `POST .../notify`.
+//! - `waits`, `messages`, `notify_settings`, `push`: the files.
+//! - `channels`, `webpush`: sending (the Mac banner, phone push, ntfy or a JSON address); Telegram through the
+//!   satellite until P1c.
+//! - `notify`: Settings' notifications (the view, changes, the test sends, Telegram pairing asked of the satellite).
+//! - `routes`: `/api/messages...`, `/api/helper...`, `/api/notify...`, `/api/push...`, a ticket's `POST .../notify`.
 
 pub mod board;
 pub mod channels;
@@ -16,7 +18,9 @@ pub mod core;
 pub mod decide;
 pub mod local;
 pub mod messages;
+pub mod notify;
 pub mod notify_settings;
+pub mod push;
 pub mod routes;
 pub mod runner;
 pub mod settings;
@@ -24,6 +28,7 @@ pub mod summary;
 pub mod text;
 pub mod waits;
 pub mod watch;
+pub mod webpush;
 pub mod wired;
 
 use std::path::Path;
@@ -46,8 +51,8 @@ pub struct Helper {
     pub runner: Arc<HelperRunner>,
     pub watch: Arc<Watcher>,
     pub emit: Emit,
-    /// notify.json was written from the satellite's Settings (before, after): Telegram reacts (P1c).
-    pub on_notify: std::sync::OnceLock<Arc<dyn Fn(&Value, &Value) + Send + Sync>>,
+    /// Settings' notifications and phone push (P1b), plugged in by the board.
+    pub notify: std::sync::OnceLock<Arc<notify::Notify>>,
 }
 
 /// How often things look: the watcher and the core's safety nets, the runner's reminders and wakes.
@@ -92,7 +97,7 @@ impl Helper {
         });
         let runner = HelperRunner::new(core.clone(), side, emit.clone(), snoozed);
         let watch = Watcher::new(core.clone());
-        Arc::new(Helper { core, runner, watch, emit, on_notify: std::sync::OnceLock::new() })
+        Arc::new(Helper { core, runner, watch, emit, notify: std::sync::OnceLock::new() })
     }
 
     /// Follows the board (bus events), takes stock once the board is loaded (`loaded` blocks until then), then
@@ -168,41 +173,35 @@ impl Helper {
 impl Helper {
     /// The satellite's calls about the helper (`/api/internal/<name>`); None when the name isn't one of them.
     /// - `helper-action`: Got it, Not urgent, the night answer, /waiting from Telegram.
-    /// - `notify-write`: notify.json as the satellite worked it out (Settings, Telegram pairing, /lock); Rust writes
-    ///   it, and switching the helper off or on does what Bun's `switched` does.
+    /// - `notify-write`: the satellite's Telegram fields (pairing, /lock, the briefing), merged into notify.json here;
+    ///   switching the helper off or on does what Bun's `switched` does.
     /// - `wait-seen`: the front desk showed these waits in its chat (`seenInChatAt`).
     /// - `helper-send-message`: a message the satellite sends itself (the Settings test), stored here, sent there.
     pub async fn internal(&self, name: &str, b: &Value) -> Option<(u16, Value)> {
         Some(match name {
             "helper-action" => (200, self.action(b)),
             "notify-write" => {
-                let Some(next) = b.get("settings").filter(|s| s.is_object()) else { return Some((400, json!({ "error": "settings is required" }))) };
-                let guard = notify_settings::WRITE.lock();
-                let was = self.core.settings();
-                let before = notify_settings::helper_on(&was);
-                // The paired chat is Rust's (P1c: pairing, unpair and the briefing run here): the satellite's copy may
-                // be older, so with the same bot token those fields come from the file as it is now.
-                let mut next = next.clone();
-                let tok = |v: &Value| v.get("telegram").and_then(|t| t.get("token")).cloned();
-                if tok(&was) == tok(&next)
-                    && let (Some(t), Some(w)) = (next.get_mut("telegram").and_then(Value::as_object_mut), was.get("telegram"))
-                {
-                    for k in ["chatId", "chatName", "pairedAt", "briefedAt"] {
-                        if let Some(v) = w.get(k) {
-                            t.insert(k.into(), v.clone());
-                        }
-                    }
-                }
-                let next = &next;
-                if let Err(e) = notify_settings::write_notify(&self.core.root, next) {
+                // `telegram`: the satellite's Telegram save (pairing, /lock, the briefing) merged into the file as it
+                // is now; `settings`: a whole file (older satellites).
+                let _g = self.core.notify_write.lock();
+                let before = self.core.settings();
+                let next = match (b.get("telegram").and_then(Value::as_object), b.get("settings").filter(|s| s.is_object())) {
+                    (Some(patch), _) => match notify_settings::merge_telegram(&before, patch) {
+                        Ok(n) => n,
+                        Err(e) => return Some((400, json!({ "error": e }))),
+                    },
+                    // Read like the file (an address that isn't http(s) refused).
+                    (None, Some(s)) => match notify_settings::normalize_from_file(s) {
+                        Ok(n) => n,
+                        Err(e) => return Some((400, json!({ "error": e }))),
+                    },
+                    _ => return Some((400, json!({ "error": "telegram or settings is required" }))),
+                };
+                if let Err(e) = notify_settings::write_notify(&self.core.root, &next) {
                     return Some((500, json!({ "error": format!("can't write notify.json: {e}") })));
                 }
-                drop(guard);
-                if let Some(f) = self.on_notify.get() {
-                    f(&was, next);
-                }
-                let after = notify_settings::helper_on(next);
-                if before != after {
+                let after = notify_settings::helper_on(&next);
+                if notify_settings::helper_on(&before) != after {
                     let core = self.core.clone();
                     tokio::spawn(async move { core.switched(after).await });
                 }

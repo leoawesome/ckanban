@@ -149,6 +149,28 @@ function cases(): { fn: string; args: unknown[] }[] {
     { telegram: { on: true, token: " 123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234 ", chatId: 42, chatName: "x".repeat(130), pairedAt: "p", lockedAt: "l", briefedAt: "b", deskCapUsd: 3.456, frontDesk: "my-board", takeMessages: false, askTyped: false } },
     { telegram: { deskCapUsd: 500, frontDesk: "Bad Board", chatId: 1.5 } }, { telegram: { deskCapUsd: -1, frontDesk: null } },
   ]) add("normalizeSettings", raw);
+  // P1b: Settings changes over the file's settings (the token rules, the pairing kept only from the file).
+  const TOK = "123456789:AAHfakeFAKEfakeFAKEfakeFAKEfake_1234";
+  const paired = { telegram: { on: true, token: TOK, chatId: 7, chatName: "me", pairedAt: "p", lockedAt: "l", takeMessages: false } };
+  for (const [patch, base] of [
+    [{ mac: false, kinds: { reply: true } }, {}], [{ webhookUrl: "ftp://x" }, {}], [{ telegram: { token: "not a token" } }, {}],
+    [{ telegram: { token: ` ${TOK} ` } }, paired], [{ telegram: { token: "123456789:AAHotherOTHERotherOTHERotherOTH_9999" } }, paired],
+    [{ telegram: { token: "" } }, paired], [{ telegram: { takeMessages: true, chatId: 99, chatName: "x", pairedAt: "y", lockedAt: "z", briefedAt: "b" } }, paired],
+    [{ telegram: { on: false, askTyped: false, deskCapUsd: 0.125, frontDesk: "b2" } }, paired], [null, paired],
+  ] as const) add("normalizeUpdate", patch, base);
+  for (const s of [{ webhookUrl: "https://ntfy.sh/x", format: "auto" }, { webhookUrl: "https://my.ntfy.example/x", format: "auto" }, { webhookUrl: "https://hooks.example/x", format: "auto" }, { webhookUrl: "https://ntfy.sh/x", format: "json" }, { webhookUrl: "https://x", format: "ntfy" }, { webhookUrl: "", format: "auto" }]) add("isNtfy", s);
+  for (const t of ["", TOK, "abc"]) add("maskToken", t);
+  for (const t of ["plain", "  two\n lines  ", "Café crème", "emoji 👍 here", "tab\there"]) add("headerValue", t);
+  for (const [t, n] of [["abc", 10], ["aéééé", 7], ["aéééé", 6], ["👍👍👍", 9], ["x".repeat(20), 10]] as const) add("cutBytes", t, n);
+  const notify = { board: "b", boardName: "Board", ticketId: "t1", title: "Fix the login", kind: "questions", label: "Answer 2 questions", url: "http://localhost:3000/#/b/t1" };
+  const outs = [
+    { messageId: "m1", level: "direct", title: "Fix the login", body: "Answer 2 questions", text: "Fix the login (Board)\n\nAnswer 2 questions", url: "http://localhost:3000/#/b/t1", ticket: null, notify },
+    { messageId: "m2", level: "urgent", title: "Ü title", body: "b", text: "  ", url: "https://mac.ts.net/#/b", ticket: { board: "b", ticketId: "t 2" }, urgent: true, tag: "browser-x" },
+    { messageId: null, level: "test", title: "Test notification", body: "ckanban", text: "x".repeat(5000), url: "http://localhost:3000/#/b", notify: { ...notify, ticketId: "", kind: "review", label: "ckanban", title: "Test notification" }, everyDevice: true },
+    { messageId: "m3", level: "summary", title: "ckanban", body: "3 wait", text: "line", url: "http://localhost:3000/", ticket: null },
+  ];
+  for (const o of outs) for (const phone of [false, true]) add("ntfyRequest", o, phone);
+  for (const o of outs) add("pushPayloadOf", o);
   // Store scripts: the files' bytes after each step.
   const nw = (ticketId: string, identity: string, extra: Record<string, unknown> = {}) => ({ board: "p", ticketId, kind: "review", identity, question: "Ready?", label: "Ready for review", since: "2026-11-17T09:00:00.000Z", ...extra });
   add("storeScript", "waits", [

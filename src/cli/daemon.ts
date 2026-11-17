@@ -127,7 +127,8 @@ export async function startDaemon(): Promise<void> {
   });
   // Links in notifications open the ticket on the phone when phone access is on (remote.json), else on this Mac.
   const remoteConfig = new RemoteAccess(store.root, () => 0);
-  const push = new PushService(store.root);
+  // Satellite mode: the Rust board owns push.json and sends phone push (P1b); this daemon only reads it.
+  const push = new PushService(store.root, { readOnly: satellite });
   // Satellite mode: the Rust board runs the helper and owns its files (P1a); Telegram's taps and settings writes go there.
   const helperEdge = satellite && front ? rustHelperEdge(front) : undefined;
   const notifier: Notifier = new Notifier(store, bus, {

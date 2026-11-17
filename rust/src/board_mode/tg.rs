@@ -3,11 +3,9 @@
 //! - `desk_request`: every request with `x-ckanban-frontdesk` goes through the front desk's gate first (as Bun's
 //!   `api()` does before any route); one that may go ahead is sent again to this server without the header, so every
 //!   route (Rust's or Bun's) answers it as the request it is. `POST /api/telegram/front-desk/file` (send_file) is here.
-//! - `notify_route`: Telegram pairing (`/api/notify/telegram/pair`, `/unpair`), and the satellite's
-//!   `/api/notify` answers with Telegram's live state put in (the satellite keeps the rest of the notification
-//!   settings until P1b).
+//! Settings' Telegram part (state, pairing, unpairing, a saved change) reaches it through `helper::notify`'s
+//! `TelegramSide` (`helper::wired::RustTelegram`).
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -17,16 +15,13 @@ use ckanban_board::telegram::{self, Telegram};
 use futures_util::future::BoxFuture;
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::Incoming;
-use hyper::header::{CONTENT_TYPE, HOST};
+use hyper::header::HOST;
 use hyper::{Method, Request, Response, StatusCode};
 use serde_json::{Value, json};
 
 use super::{BoardMode, FRONT_DESK_HEADER, MAX_BODY};
 use crate::proxy::{Body, Proxy, full};
 use crate::routes::Native;
-
-/// `MAC_ONLY_LINE` of `src/helper/notify.ts`.
-const MAC_ONLY_LINE: &str = "I can only reach you on this Mac";
 
 /// What Telegram needs from the board (`ckanban_board::telegram::Env`).
 struct TgEnv {
@@ -100,8 +95,6 @@ impl BoardMode {
         }
         let _ = self.outside_sat.telegram.set(tg.clone());
         telegram::desk::plug(&tg);
-        let t = tg.clone();
-        let _ = self.helper.on_notify.set(Arc::new(move |before: &Value, after: &Value| t.settings_changed(before, after)));
         let stop = tg.start(self.core.bus.clone());
         self.core.on_stop("telegram", stop);
         // Waits closed at start-up, before Telegram ran.
@@ -180,156 +173,4 @@ impl BoardMode {
             Err(e) => self.error(StatusCode::BAD_GATEWAY, &format!("the board didn't answer: {e}")),
         }
     }
-
-    /// The satellite's `GET /api/notify` with Telegram's live state (`notifyView`); `local` as the caller is.
-    async fn notify_view(&self, proxy: &Proxy, local: bool) -> Value {
-        let rb = Request::builder().method(Method::GET).uri("/api/notify").header(HOST, format!("127.0.0.1:{}", self.public_port));
-        let Ok(req) = rb.body(full(Bytes::new())) else { return Value::Null };
-        // Asked as this Mac (a phone request's own Host is the tailnet's); `local` is set as the caller is.
-        let peer = SocketAddr::from(([127, 0, 0, 1], 0));
-        let res = proxy.forward(req, peer).await;
-        let bytes = res.into_body().collect().await.map(|c| c.to_bytes()).unwrap_or_default();
-        let mut v: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        if let Some(o) = v.as_object_mut()
-            && o.contains_key("local")
-        {
-            o.insert("local".into(), local.into());
-        }
-        self.patch_view(&mut v);
-        v
-    }
-
-    /// Puts Telegram's live state into a notification settings view (the satellite has no bot).
-    fn patch_view(&self, v: &mut Value) {
-        let Some(tg) = self.tg() else { return };
-        let st = tg.state();
-        let t = tg.tg_settings();
-        let Some(pt) = v.get_mut("telegram").and_then(Value::as_object_mut) else { return };
-        for (k, from) in [("status", "state"), ("error", "error"), ("botName", "botName"), ("pairing", "pairing"), ("pairError", "pairError")] {
-            pt.insert(k.into(), st.get(from).cloned().unwrap_or(Value::Null));
-        }
-        let token_set = !telegram::s(&t, "token").is_empty();
-        let paired = telegram::chat_of(&t).is_some();
-        let state = telegram::s(&st, "state").to_string();
-        let name = t.get("chatName").and_then(Value::as_str).unwrap_or("your chat").to_string();
-        let detail = if !token_set {
-            "Not set up: make a bot with BotFather and paste its token.".to_string()
-        } else if !paired {
-            "Not paired yet: send the pairing code to your bot.".to_string()
-        } else if let Some(e) = st.get("error").and_then(Value::as_str) {
-            e.to_string()
-        } else if telegram::b(&t, "takeMessages") {
-            format!("Paired with {name}.")
-        } else {
-            let how = if ckanban_board::runs::js::truthy(t.get("lockedAt")) { "Locked from Telegram" } else { "Paused" };
-            format!("Paired with {name}. {how}: not taking messages; alerts still arrive.")
-        };
-        let ready = token_set && paired && state != "error";
-        if let Some(list) = v.get_mut("channels").and_then(Value::as_array_mut) {
-            for c in list.iter_mut() {
-                if c.get("name").and_then(Value::as_str) == Some("telegram") {
-                    c["ready"] = ready.into();
-                    c["detail"] = detail.clone().into();
-                }
-            }
-            let phone_ready = list.iter().any(|c| c.get("name").and_then(Value::as_str) != Some("mac") && c.get("on") == Some(&Value::Bool(true)) && c.get("ready") == Some(&Value::Bool(true)));
-            if let Some(o) = v.as_object_mut() {
-                if o.contains_key("phoneReady") {
-                    o.insert("phoneReady".into(), phone_ready.into());
-                }
-                if o.contains_key("reachLine") {
-                    o.insert("reachLine".into(), if phone_ready { Value::Null } else { MAC_ONLY_LINE.into() });
-                }
-            }
-        }
-    }
-
-    /// `/api/notify...` (Bun's order: after the other routes, before Bun), when `notify_claims` says so.
-    pub(super) async fn notify_route(&self, req: Request<Body>, peer: SocketAddr, via: Listener, sent: Option<super::Sent>, proxy: &Proxy) -> Response<Body> {
-        match self.notify_inner(req, peer, via, sent, proxy).await {
-            Ok(r) | Err(r) => r,
-        }
-    }
-
-    async fn notify_inner(&self, req: Request<Body>, peer: SocketAddr, via: Listener, sent: Option<super::Sent>, proxy: &Proxy) -> Result<Response<Body>, Response<Body>> {
-        let path = req.uri().path().to_string();
-        let m = req.method().clone();
-        let pair = path == "/api/notify/telegram/pair" && m == Method::POST;
-        let unpair = path == "/api/notify/telegram/unpair" && m == Method::POST;
-        let view = !pair && !unpair;
-        let h = req.headers().clone();
-        let local = via == Listener::Local;
-        if view {
-            // The satellite answers; Telegram's live state goes in.
-            let res = super::to_bun(req, peer, sent, proxy).await;
-            let status = res.status();
-            let bytes = res.into_body().collect().await.map(|c| c.to_bytes()).unwrap_or_default();
-            let Ok(mut v) = serde_json::from_slice::<Value>(&bytes) else {
-                let mut r = Response::new(full(bytes));
-                *r.status_mut() = status;
-                r.headers_mut().insert(CONTENT_TYPE, hyper::header::HeaderValue::from_static("application/json"));
-                return Ok(r);
-            };
-            if status.is_success() {
-                if path == "/api/notify/test" {
-                    if let Some(st) = v.get_mut("state") {
-                        self.patch_view(st);
-                    }
-                } else {
-                    self.patch_view(&mut v);
-                }
-            }
-            return Ok(self.json_at(status, &v));
-        }
-        if request::has(&h, RUN_HEADER) {
-            return Ok(self.error(StatusCode::FORBIDDEN, "board runs can't use notification settings"));
-        }
-        let ctype = request::header_text(&h, CONTENT_TYPE.as_str());
-        if !request::json_type(ctype.as_deref()) {
-            return Ok(self.error(StatusCode::UNSUPPORTED_MEDIA_TYPE, "content-type must be application/json"));
-        }
-        let bytes = match Limited::new(req.into_body(), MAX_BODY).collect().await {
-            Ok(b) => b.to_bytes(),
-            Err(_) => return Ok(self.error(StatusCode::BAD_REQUEST, "bad request")),
-        };
-        let what = if pair { "Pairing Telegram" } else { "Unpairing Telegram" };
-        let allowed = if local { crate::guard::user_only(&h, peer.port()).await } else { crate::guard::headers_allow(&h) };
-        if !allowed {
-            return Ok(self.error(StatusCode::FORBIDDEN, &crate::guard::refusal(what)));
-        }
-        let tg = self.tg().expect("checked above");
-        if unpair {
-            if let Err(e) = tg.unpair() {
-                return Ok(self.error(StatusCode::SERVICE_UNAVAILABLE, &e));
-            }
-            let v = self.notify_view(proxy, local).await;
-            return Ok(self.json_at(StatusCode::OK, &v));
-        }
-        if !local {
-            return Ok(self.error(StatusCode::FORBIDDEN, "Pair Telegram from the Mac."));
-        }
-        let b: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        let board = b.get("board").and_then(Value::as_str).map(str::to_string);
-        match tg.pair(board.as_deref()) {
-            Ok((code, expires)) => {
-                let state = self.notify_view(proxy, true).await;
-                Ok(self.json_at(StatusCode::OK, &json!({ "code": code, "expiresAt": expires, "state": state })))
-            }
-            Err((status, e)) => Ok(self.error(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST), &e)),
-        }
-    }
-}
-
-/// The routes `notify_route` answers.
-pub(super) fn notify_claims(m: &Method, path: &str) -> bool {
-    pair_claims(m, path) || view_claims(m, path)
-}
-
-/// Pairing is Rust's alone: before Telegram runs it answers 503 rather than reach the satellite.
-pub(super) fn pair_claims(m: &Method, path: &str) -> bool {
-    m == Method::POST && matches!(path, "/api/notify/telegram/pair" | "/api/notify/telegram/unpair")
-}
-
-fn view_claims(m: &Method, path: &str) -> bool {
-    (path == "/api/notify" && (m == Method::GET || m == Method::POST)) || (m == Method::POST && path == "/api/notify/test")
 }

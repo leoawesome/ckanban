@@ -65,7 +65,7 @@ export async function internalRoute(req: Request, pathname: string, h: EdgeHandl
         return json({ error: "not found" }, 404);
     }
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    return json({ error: (e as Error).message }, (e as { status?: number }).status ?? 500);
   }
 }
 
@@ -122,8 +122,9 @@ export function rustHelperEdge(front: Front): HelperEdge {
       if (r.status >= 300) throw new Error(r.body?.error ?? `the Rust board answered ${r.status}`);
       return { message: r.body.message, results: r.body.results ?? [] };
     },
-    async writeSettings(s: NotifySettings) {
-      const r = await rustCall(front, "notify-write", { settings: s });
+    async writeSettings(s: NotifySettings, telegram) {
+      // Only Telegram's own fields when known, so a Settings change the Rust board saved meanwhile isn't undone.
+      const r = await rustCall(front, "notify-write", telegram ? { telegram } : { settings: s });
       if (r.status >= 300) throw new Error(r.body?.error ?? `the Rust board answered ${r.status}`);
     },
     async action(name, b) {

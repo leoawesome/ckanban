@@ -422,8 +422,8 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
             });
         }
     }));
-    // P1a: the helper. It owns waits.json, messages.json, helper-state.json and helper.json and is notify.json's only
-    // writer; the satellite still sends (push, ntfy, the Mac banner, Telegram) and runs Telegram and the front desk.
+    // P1a, P1b, P1c: the helper. It owns waits.json, messages.json, helper-state.json, helper.json and push.json and
+    // is notify.json's only writer; Telegram and the front desk run here too (`connect_telegram`).
     let helper_tell: Arc<Mutex<HelperTell>> = Arc::new(Mutex::new(HelperTell::default()));
     let satellite_ready = Arc::new(tokio::sync::watch::channel(false).0);
     // P1c: waits closed: their Telegram alerts say so and lose their buttons (Rust's Telegram, once it runs; closed
@@ -438,17 +438,32 @@ pub async fn prepare(root: &Path, public_port: u16, remote_port: u16, internal_p
         }
         None => early_closed.lock().unwrap_or_else(|e| e.into_inner()).early_closed.extend(recs),
     });
-    let helper = ckanban_board::helper::Helper::new(
+    // P1b, P1c: the board sends itself (the Mac banner, phone push, ntfy or a JSON address, Telegram) and owns
+    // push.json and Telegram's files.
+    let helper_board = Arc::new(ckanban_board::helper::wired::BoardSide { tickets: core.tickets.clone(), reads: core.reads.clone(), sessions: sessions.clone(), root: root.to_path_buf(), port: public_port, remote: RemoteFile::new(root) });
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(ckanban_core::time::now_ms);
+    let http: Arc<dyn ckanban_board::helper::push::Http> = Arc::new(ckanban_board::helper::push::ReqwestHttp::new());
+    let push = ckanban_board::helper::push::PushService::new(root, http.clone(), clock.clone());
+    let hb = helper_board.clone();
+    let channels = ckanban_board::helper::channels::Channels::new(
         root,
-        Arc::new(ckanban_board::helper::wired::BoardSide { tickets: core.tickets.clone(), reads: core.reads.clone(), sessions: sessions.clone(), root: root.to_path_buf(), port: public_port, remote: RemoteFile::new(root) }),
-        Arc::new(ckanban_board::helper::wired::SplitSender {
-            sat: ckanban_board::helper::wired::SatelliteSender(Arc::new(SatelliteClient::new(internal_port, public_port, secret)), satellite_ready.subscribe()),
-            telegram: telegram.clone(),
-        }),
-        ckanban_board::extras::side_caller(),
-        core.bus.clone(),
-        Some(on_closed),
+        push,
+        http,
+        ckanban_board::helper::channels::mac_banner(),
+        Arc::new(move || ckanban_board::helper::board::HelperBoard::base_url(&*hb)),
+        Arc::new(ckanban_board::helper::wired::TelegramSender(telegram.clone())),
+        clock,
     );
+    let helper = ckanban_board::helper::Helper::new(root, helper_board, Arc::new(channels.clone()), ckanban_board::extras::side_caller(), core.bus.clone(), Some(on_closed));
+    let notify = ckanban_board::helper::notify::Notify::new(
+        helper.core.clone(),
+        channels.clone(),
+        Arc::new(ckanban_board::helper::wired::RustTelegram(telegram.clone())),
+    );
+    let _ = helper.notify.set(notify);
+    // A plan done: only on this Mac.
+    let (mc, hc) = (channels.clone(), helper.core.clone());
+    runs.set_mac_only(Arc::new(move |title: &str, body: &str, slug: &str, id: &str| mc.mac_only(title, body, &hc.link(slug, Some(id)))));
     let _ = helper_runner.set(helper.runner.clone());
     let (w, broot) = (helper.watch.clone(), root.to_path_buf());
     browsers.board_browsers.set_on_logged_out(Arc::new(move |bid: &str, name: &str, site: Option<&str>| {
@@ -1150,7 +1165,7 @@ impl BoardMode {
                 if allowed { Ok(()) } else { Err((403, crate::guard::refusal(&what))) }
             })
         });
-        let r = hr::Req { method, parts, query, run, huddle, body: body.to_vec(), user };
+        let r = hr::Req { method, parts, query, run, huddle, body: body.to_vec(), local: !phone, user };
         Ok(match hr::answer(&self.helper, &r).await {
             Some(Ok(v)) => self.json(200, &v, true),
             Some(Err((status, e))) => self.json(status, &json!({ "error": e }), false),
@@ -1376,13 +1391,6 @@ impl BoardMode {
             // Its body already read: straight to Bun.
             Err(Next::Bun(r)) => return to_bun(r, peer, sent, proxy).await,
         };
-        // P1c: Telegram pairing, and the satellite's notification settings with Telegram's live state.
-        if self.tg().is_none() && tg::pair_claims(req.method(), req.uri().path()) {
-            return self.error(StatusCode::SERVICE_UNAVAILABLE, "Telegram is still starting; try again in a moment");
-        }
-        if self.tg().is_some() && tg::notify_claims(req.method(), req.uri().path()) {
-            return self.notify_route(req.map(|b| b.boxed()), peer, via, sent, proxy).await;
-        }
         // 5. Bun (and the front's native routes on this Mac).
         match sent {
             Some(_) => to_bun(req.map(|b| b.boxed()), peer, sent, proxy).await,
@@ -1430,10 +1438,14 @@ impl BoardMode {
     fn mirror_mcp(&self, mcp: Arc<crate::outside::mcp::Mcp>) {
         let Some(tell) = self.tell.get().cloned() else { return };
         let mut rx = self.core.bus.subscribe();
+        let helper = self.helper.clone();
         tokio::spawn(async move {
             let mut last: Option<bool> = None;
             loop {
                 let now = mcp.any_connected();
+                if let Some(n) = helper.notify.get() {
+                    n.channels.connected.store(now, std::sync::atomic::Ordering::Relaxed);
+                }
                 if last != Some(now) {
                     last = Some(now);
                     if tell.send(satellite::runtime_line(&json!({ "mcpConnected": now }))).is_err() {

@@ -450,6 +450,8 @@ export class Notifier {
   private ntfyTopic = `https://ntfy.sh/ckanban-${randomBytes(12).toString("base64url").replace(/[-_]/g, "x")}`;
   /** Satellite mode: settings sent to Rust and not written yet (read back from here until then). */
   private pendingSettings: NotifySettings | null = null;
+  /** Satellite mode: Telegram's fields sent to Rust and not written yet (sent again with the next save). */
+  private unsavedTelegram: Partial<TelegramSettings> = {};
   /** Satellite mode: settings writes to Rust, one after another (never rejects), and the last one (may reject). */
   private settingsWrite: Promise<void> = Promise.resolve();
   private lastSave: Promise<void> = Promise.resolve();
@@ -469,7 +471,7 @@ export class Notifier {
       settings: () => this.settings().telegram,
       save: (patch) => {
         const s = this.settings();
-        this.saveSettings({ ...s, telegram: { ...s.telegram, ...patch } });
+        this.saveSettings({ ...s, telegram: { ...s.telegram, ...patch } }, patch);
       },
       actions: () => (o.helperEdge ? this.edgeActions(o.helperEdge) : {
         gotIt: (id) => this.helper.gotIt(id, "telegram"),
@@ -579,15 +581,22 @@ export class Notifier {
     return readNotifySettings(this.o.root);
   }
 
-  /** Saves notify.json: here, or in satellite mode through the Rust board (its only writer then). */
-  private saveSettings(s: NotifySettings): void {
+  /**
+   * Saves notify.json: here, or in satellite mode through the Rust board (its only writer then). `telegram`: the
+   * Telegram fields this save changes; the Rust board merges them into the file as it is then.
+   */
+  private saveSettings(s: NotifySettings, telegram?: Partial<TelegramSettings>): void {
     const edge = this.o.helperEdge;
     if (!edge) return writeNotifySettings(this.o.root, s);
     // Read back from here until Rust wrote them. A failed write keeps them (a /lock stays in force here) and the
-    // next save sends them again, whole; the settings routes answer the failure.
+    // next save sends its fields again with its own; the settings routes answer the failure. Only the fields
+    // Telegram changed ever go, never a stale copy of the rest (a token the user changed meanwhile stays changed).
     this.pendingSettings = s;
-    const p = this.settingsWrite.then(() => edge.writeSettings(s)).then(() => {
+    const fields = telegram ? { ...this.unsavedTelegram, ...telegram } : undefined;
+    if (fields) this.unsavedTelegram = fields;
+    const p = this.settingsWrite.then(() => edge.writeSettings(s, fields)).then(() => {
       if (this.pendingSettings === s) this.pendingSettings = null;
+      if (this.unsavedTelegram === fields) this.unsavedTelegram = {};
     });
     this.lastSave = p;
     this.settingsWrite = p.catch((e) => console.error(`satellite: notify-write: ${(e as Error).message}`));
@@ -596,6 +605,23 @@ export class Notifier {
   /** The last settings save is on disk (satellite mode: Rust wrote it); rejects when it couldn't be. */
   settingsSaved(): Promise<void> {
     return this.lastSave;
+  }
+
+  /**
+   * Satellite mode: the Rust board saved a Settings change (it owns /api/notify). What this daemon read back from its
+   * own unsaved copy gives way to the file; the bot starts over on a new token; stopped taking messages drops what
+   * Telegram left waiting.
+   */
+  settingsChanged(c: { tokenChanged: boolean; stoppedTaking: boolean }): void {
+    // Telegram's own fields not written yet (a /lock on its way, or failed) stay in force over the new file.
+    const unsaved = this.unsavedTelegram;
+    if (Object.keys(unsaved).length) {
+      const f = readNotifySettings(this.o.root);
+      this.pendingSettings = { ...f, telegram: { ...f.telegram, ...unsaved } };
+    } else this.pendingSettings = null;
+    if (c.tokenChanged) this.telegram.reset();
+    if (c.stoppedTaking) this.dropTelegramWork();
+    this.telegram.refresh();
   }
 
   /** Telegram's taps in satellite mode: the Rust board's helper answers them. */
@@ -621,17 +647,24 @@ export class Notifier {
     return results;
   }
 
-  /** The settings API's view: the Telegram token masked, each channel's state, and the setup hints. */
-  state(): NotifyState {
-    const { telegram: t, ...s } = this.settings();
+  /** Telegram as the settings API shows it: never the token itself (satellite mode: the Rust board asks for it). */
+  telegramPublic(): TelegramPublic {
+    const t = this.settings().telegram;
     const tg = this.telegram.state();
-    const telegram: TelegramPublic = {
+    return {
       on: t.on, tokenSet: !!t.token, tokenMasked: maskToken(t.token), paired: t.chatId !== null, chatName: t.chatName, pairedAt: t.pairedAt,
       status: tg.state, error: tg.error, botName: tg.botName, pairing: tg.pairing, pairError: tg.pairError, askTyped: t.askTyped,
       takeMessages: t.takeMessages, lockedAt: t.lockedAt, spentToday: Math.round(telegramSpendToday(this.o.root, new Date(this.now())) * 100) / 100,
       deskCapUsd: this.frontDesk.cap(), deskSpentToday: Math.round(this.frontDesk.spentToday() * 100) / 100,
       frontDesk: this.frontDesk.board(), boards: this.store.listProfiles().map((p) => ({ slug: p.slug, name: p.name })),
     };
+  }
+
+  /** The settings API's view: the Telegram token masked, each channel's state, and the setup hints. */
+  state(): NotifyState {
+    const { telegram: t, ...s } = this.settings();
+    const tg = this.telegram.state();
+    const telegram = this.telegramPublic();
     const macBrowser = this.macBrowser();
     const phones = this.o.push?.phoneCount() ?? 0;
     const ntfy = isNtfy(s);
@@ -709,7 +742,8 @@ export class Notifier {
   /** /lock from the paired chat: "Take messages from Telegram" off at once; only Settings on the Mac turns it back on. */
   telegramLock(): void {
     const s = this.settings();
-    this.saveSettings({ ...s, telegram: { ...s.telegram, takeMessages: false, lockedAt: new Date(this.now()).toISOString() } });
+    const patch = { takeMessages: false, lockedAt: new Date(this.now()).toISOString() };
+    this.saveSettings({ ...s, telegram: { ...s.telegram, ...patch } }, patch);
     this.dropTelegramWork();
   }
 
@@ -735,7 +769,7 @@ export class Notifier {
     const r = this.telegram.startPairing();
     // The front desk lives on the board paired from, unless Settings already chose one.
     const s = this.settings();
-    if (board && this.store.getProfile(board) && !s.telegram.frontDesk) this.saveSettings({ ...s, telegram: { ...s.telegram, frontDesk: board } });
+    if (board && this.store.getProfile(board) && !s.telegram.frontDesk) this.saveSettings({ ...s, telegram: { ...s.telegram, frontDesk: board } }, { frontDesk: board });
     return r;
   }
 

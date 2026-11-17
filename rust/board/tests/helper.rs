@@ -10,7 +10,7 @@ use ckanban_board::helper::messages::{self, Cursor, MessageStore, NewMessage};
 use ckanban_board::helper::settings::{Night, hm, in_night, morning_digest_at, night_end};
 use ckanban_board::helper::summary::{self, SummaryBuild, SummaryInput};
 use ckanban_board::helper::waits::{self, Claim, NewWait, WaitStore};
-use ckanban_board::helper::{notify_settings, runner, text};
+use ckanban_board::helper::{channels, notify_settings, runner, text};
 use ckanban_board::runs::js;
 use ckanban_core::jsnum::num;
 use serde_json::{Map, Value, json};
@@ -287,6 +287,23 @@ fn answer(fun: &str, a: &[Value]) -> Value {
             Ok(v) => v,
             Err(e) => json!({ "threw": e }),
         },
+        "normalizeUpdate" => {
+            let base = notify_settings::normalize_from_file(&a[1]).unwrap();
+            match notify_settings::normalize(&a[0], &base, false) {
+                Ok(v) => v,
+                Err(e) => json!({ "threw": e }),
+            }
+        }
+        "isNtfy" => notify_settings::is_ntfy(&a[0]).into(),
+        "maskToken" => notify_settings::mask_token(&s(&a[0])).into(),
+        "headerValue" => channels::header_value(&s(&a[0])).into(),
+        "cutBytes" => channels::cut_bytes(&s(&a[0]), f(&a[1]) as usize).into(),
+        "ntfyRequest" => {
+            let (_, headers, body) = channels::ntfy_request("https://ntfy.sh/t", &obj(&a[0]), a[1].as_bool().unwrap());
+            let h: Map<String, Value> = headers.into_iter().map(|(k, v)| (k, Value::String(v))).collect();
+            json!({ "headers": h, "body": String::from_utf8(body).unwrap() })
+        }
+        "pushPayloadOf" => channels::payload_of(&obj(&a[0])),
         "storeScript" => store_script(&s(&a[0]), a[1].as_array().unwrap()),
         other => panic!("no Rust case for {other}"),
     }

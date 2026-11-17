@@ -236,7 +236,7 @@ impl Telegram {
     /// Saves a change to the telegram settings (`TelegramDeps.save`), merged into notify.json as it is now; Err when
     /// it couldn't be written (logged too).
     pub fn save(&self, patch: Vec<(&str, Value)>) -> Result<(), String> {
-        let _w = crate::helper::notify_settings::WRITE.lock();
+        let _w = self.helper.core.notify_write.lock();
         let mut s = self.settings();
         if let Some(t) = s.get_mut("telegram").and_then(Value::as_object_mut) {
             for (k, v) in patch {

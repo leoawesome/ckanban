@@ -496,13 +496,19 @@ describe("phone push", () => {
   });
 
   test("subscribe, the test send to the local fake push service, visible, remove", async () => {
-    const bad = await d.api("POST", "/api/push/subscribe", { subscription: { endpoint: "http://127.0.0.1/x", keys: { p256dh: "a", auth: "b" } } });
+    const sub = subscription("phone1");
+    // Adding or removing a device is the user's own (the phone here): another program would get every message.
+    const notUser = await d.api("POST", "/api/push/subscribe", { subscription: sub, label: "Not the user" });
+    expect(notUser.status).toBe(403);
+    expect((await d.api("POST", "/api/push/subscribe", { subscription: sub, label: "Run" }, { origin: d.url, [RUN]: `${SLUG}/t_x` })).status).toBe(403);
+    expect((await d.api("GET", "/api/push")).data.devices).toEqual([]);
+
+    const bad = await phone(d, "POST", "/api/push/subscribe", { subscription: { endpoint: "http://127.0.0.1/x", keys: { p256dh: "a", auth: "b" } } });
     expect(bad.status).toBe(400);
     expect(bad.data.error).toBe("endpoint must be https");
-    expect((await d.api("POST", "/api/push/subscribe", { subscription: { endpoint: "https://127.0.0.1/x" } })).status).toBe(400);
+    expect((await phone(d, "POST", "/api/push/subscribe", { subscription: { endpoint: "https://127.0.0.1/x" } })).status).toBe(400);
 
-    const sub = subscription("phone1");
-    const r = await d.api("POST", "/api/push/subscribe", { subscription: sub, label: "Test phone" });
+    const r = await phone(d, "POST", "/api/push/subscribe", { subscription: sub, label: "Test phone" });
     ok(r, 200, "subscribe");
     expect(r.data).toMatchObject({ label: "Test phone" });
     id = r.data.id;
@@ -531,16 +537,17 @@ describe("phone push", () => {
     expect((await d.api("POST", "/api/push/visible", { visible: true })).status).toBe(400);
     expect((await d.api("POST", "/api/push/visible", { endpoint: sub.endpoint, visible: true })).data).toEqual({ ok: true });
 
-    expect((await d.api("POST", "/api/push/remove", {})).status).toBe(400);
-    const removed = await d.api("POST", "/api/push/remove", { id });
+    expect((await phone(d, "POST", "/api/push/remove", {})).status).toBe(400);
+    expect((await d.api("POST", "/api/push/remove", { id })).status).toBe(403);
+    const removed = await phone(d, "POST", "/api/push/remove", { id });
     ok(removed, 200, "remove");
     expect(removed.data).toMatchObject({ removed: true });
     expect(removed.data.devices.find((x: any) => x.id === id)).toBeUndefined();
-    expect((await d.api("POST", "/api/push/remove", { endpoint: sub.endpoint })).data.removed).toBe(false);
+    expect((await phone(d, "POST", "/api/push/remove", { endpoint: sub.endpoint })).data.removed).toBe(false);
   });
 
   test("a device the push service has forgotten (410) is dropped", async () => {
-    const r = await d.api("POST", "/api/push/subscribe", { subscription: subscription("gone"), label: "Old phone" });
+    const r = await phone(d, "POST", "/api/push/subscribe", { subscription: subscription("gone"), label: "Old phone" });
     ok(r, 200, "subscribe");
     const sent = await d.api("POST", "/api/push/test", { id: r.data.id });
     expect(sent.data.ok).toBe(false);

@@ -196,6 +196,7 @@ name = "ckanban-board"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
+ "aws-lc-rs",
  "base64",
  "bytes",
  "chrono",

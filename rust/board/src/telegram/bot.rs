@@ -455,19 +455,35 @@ impl Telegram {
         self.drop_work();
     }
 
-    /// notify.json changed (Settings): a new bot starts over, a stop to taking messages drops what waits, and the
-    /// poller starts or stops (`Notifier.update`).
-    pub fn settings_changed(&self, before: &Value, after: &Value) {
-        let t0 = before.get("telegram").cloned().unwrap_or(Value::Null);
-        let t1 = after.get("telegram").cloned().unwrap_or(Value::Null);
-        let taking = |t: &Value| b(t, "on") && b(t, "takeMessages") && chat_of(t).is_some();
-        if s(&t0, "token") != s(&t1, "token") {
+    /// Settings saved a change (`notify-changed` from `helper::notify`): a new token starts over, a stop to taking
+    /// messages drops what waits, and the poller starts or stops.
+    pub fn changed(&self, token_changed: bool, stopped_taking: bool) {
+        if token_changed {
             self.reset();
         }
-        if taking(&t0) && !taking(&t1) {
+        if stopped_taking {
             self.drop_work();
         }
         self.refresh();
+    }
+
+    /// `TelegramPublic`: Telegram as the settings API shows it, never the token.
+    pub fn public(&self) -> Value {
+        let t = self.tg_settings();
+        let st = self.state();
+        let token = s(&t, "token");
+        let round2 = |x: f64| crate::helper::decide::js_round(x * 100.0) / 100.0;
+        let boards: Vec<Value> = self.helper.core.board.profiles().into_iter().map(|(slug, name)| json!({ "slug": slug, "name": name })).collect();
+        json!({
+            "on": b(&t, "on"), "tokenSet": !token.is_empty(), "tokenMasked": text::mask_token(token), "paired": chat_of(&t).is_some(),
+            "chatName": t.get("chatName").cloned().unwrap_or(Value::Null), "pairedAt": t.get("pairedAt").cloned().unwrap_or(Value::Null),
+            "status": st["state"], "error": st["error"], "botName": st["botName"], "pairing": st["pairing"], "pairError": st["pairError"],
+            "askTyped": t.get("askTyped").cloned().unwrap_or(Value::Null), "takeMessages": t.get("takeMessages").cloned().unwrap_or(Value::Null),
+            "lockedAt": t.get("lockedAt").cloned().unwrap_or(Value::Null),
+            "spentToday": ckanban_core::jsnum::num(round2(super::desk::telegram_spend_today(&self.root, self.now()))),
+            "deskCapUsd": ckanban_core::jsnum::num(self.desk_cap()), "deskSpentToday": ckanban_core::jsnum::num(round2(self.desk_spent_today())),
+            "frontDesk": self.desk_board(), "boards": boards,
+        })
     }
 
     /// The bot's own answers: always silent.
