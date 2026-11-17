@@ -190,7 +190,7 @@ export async function startDaemon(): Promise<void> {
       return withSnooze(t, s, a, Date.now(), h).snoozed?.until ?? null;
     },
     onScreen: () => push.anyVisible(), phoneDevices: () => push.phoneDevices(),
-    checkinOffer: () => mcp.state().servers.some((x) => x.status === "connected")
+    checkinOffer: () => (satellite ? mirror.mcpConnected() : mcp.state().servers.some((x) => x.status === "connected"))
       && !store.listProfiles().some((p) => store.listSchedules(p.slug).some((x) => x.quiet)),
     emit: (e) => bus.emit(e),
   });
@@ -265,13 +265,14 @@ export async function startDaemon(): Promise<void> {
   const listRecheckTimer = trackedInterval("list-recheck", recheckLists, JSON_DIR_RECHECK_MS);
   const stopHuddleWatcher = full ? startHuddleSessionWatcher(store, bus, (id) => sessions.version(id), 2000, { feed }) : off;
   const stopTerminals = full ? terminals.start() : off;
-  const stopMcp = mcp.start();
+  // Satellite mode: the Rust board runs the MCP checks and the phone link check (P2, rust/src/outside).
+  const stopMcp = full ? mcp.start() : off;
   // After recover(): what already waits when the daemon starts doesn't notify again.
   const stopNotifier = notifier.start();
   const stopHelper = helper.start();
   const stopAwake = awake.start();
   // Phone access on: Tailscale's link to the board is checked and put back when something removed it.
-  const stopServeWatch = watchServe(phone);
+  const stopServeWatch = full ? watchServe(phone) : off;
 
   const shutdown = async () => {
     console.log("ckanban shutting down");

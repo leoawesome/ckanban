@@ -9,7 +9,8 @@
 //   sent it to the pages, and Rust re-emits this daemon's stream into its own.
 // - `runtime <json>`: live state the helper asks synchronously. A snapshot at start, then one line per change; each
 //   key present replaces what the mirror had: `running` (["<slug>/<id>"...]), `hostHuddles` ({slug: {ticketId:
-//   HostHuddle}}, per board), `sessions` ({sessionId: SessionSummary | null}, per session).
+//   HostHuddle}}, per board), `sessions` ({sessionId: SessionSummary | null}, per session), `mcpConnected` (whether
+//   any MCP server in Connections works: the Rust board runs them since P2, the helper's check-in offer asks).
 // Unset, none of this applies and the daemon behaves exactly as before.
 import type { HostHuddle } from "../helper/attention";
 import type { SessionSummary } from "../runs/session";
@@ -26,6 +27,7 @@ export class RuntimeMirror {
   private running = new Set<string>();
   private huddles = new Map<string, Map<string, HostHuddle>>();
   private sessions = new Map<string, SessionSummary>();
+  private mcp = false;
   private gotSnapshot!: () => void;
   /** Resolves at the first `runtime` line (the snapshot). */
   readonly ready = new Promise<void>((r) => (this.gotSnapshot = r));
@@ -46,7 +48,13 @@ export class RuntimeMirror {
         else this.sessions.delete(id);
       }
     }
+    if (typeof s.mcpConnected === "boolean") this.mcp = s.mcpConnected;
     this.gotSnapshot();
+  }
+
+  /** Some MCP server in Connections is connected (the Rust board's last word). */
+  mcpConnected(): boolean {
+    return this.mcp;
   }
 
   isRunning(slug: string, id: string): boolean {
