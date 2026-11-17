@@ -52,5 +52,7 @@ export function runMasker(): (text: string) => string {
     .replace(/\d{8}T\d{9}Z(-\d+)?/g, "<stamp>")
     .replace(/\(\d+\.\d s\)|in \d+\.\d s/g, "<secs>")
     .replace(/(localhost|127\.0\.0\.1):\d+/g, "$1:<port>")
+    // The Mac's system version in a bug report (changes with every macOS update).
+    .replace(/OS%3A\+[^%]+(%28[^%]*%29)?/g, "OS%3A+<os>")
     .replace(/\/private\/var\/[^"\n\\ ]*|\/var\/folders\/[^"\n\\ ]*|\/tmp\/[^"\n\\ ]*/g, "<path>");
 }

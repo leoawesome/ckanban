@@ -71,10 +71,15 @@ register `ckanban-rs mcp` (this binary). `test/contract/mcp.test.ts` and `mcp-pa
 - launchd runs `rust/target/release/ckanban-rs dev` (`ckanban-rs install` writes the plist). At start it takes
   `<data>/board.lock` (waiting up to 5 s); if another daemon holds it, it exits 1 with the reason and launchd tries
   again. `rust-board-status.json` records the start and whether the last one stopped cleanly.
+- Any start error (the lock held, a folder it can't read, a board with old-style plans) ends the process with the
+  reason in `daemon.log`; launchd starts it again about every 10 s and no page is served until the cause is gone.
+  With no Bun to fall back to, read `daemon.log` first, then see "Way back" below. (A start that keeps the page up and
+  answers `/api/*` with 503 and the reason would be friendlier: not done yet.)
 - SIGTERM or SIGINT, or a restart the board asked for (`POST /api/restart`, once its runs are done): the runs stop
   (marked so the next start resumes them), the core stops, the process exits 0 and launchd starts it again.
 - An older plist or MCP registration that still runs `bun src/cli.ts ...` reaches this binary through `src/cli.ts`,
-  which hands every command over. `ckanban-rs install` and `ckanban-rs mcp install` point them here directly.
+  which hands every command over. `ckanban-rs install` and `ckanban-rs mcp install` point them here directly (Leo's
+  Claude Code still registers `bun src/cli.ts mcp`: run `rust/target/release/ckanban-rs mcp install` once).
 
 ## Way back to Bun's server
 

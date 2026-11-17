@@ -161,7 +161,7 @@
  },
  {
   "label": "user report_bug",
-  "value": "{\"name\":\"report_bug\",\"isError\":false,\"text\":\"Could not create the issue: GitHub CLI (gh) is not logged in. Run `gh auth login` in a terminal.\\nOpen this link to file it in the browser instead (title and body are prefilled):\\nhttps://github.com/leoawesome/ckanban/issues/new?title=Bug&body=d%0A%0A%23%23%23+Version+and+system%0A%0A-+ckanban%3A+dev%0A-+OS%3A+darwin+24.6.0+%28arm64%29%0A%0A%3Csub%3EReported+from+Claude%2C+on+the+user%27s+request+%28ckanban+dev%29.%3C%2Fsub%3E&labels=bug\"}"
+  "value": "{\"name\":\"report_bug\",\"isError\":false,\"text\":\"Could not create the issue: GitHub CLI (gh) is not logged in. Run `gh auth login` in a terminal.\\nOpen this link to file it in the browser instead (title and body are prefilled):\\nhttps://github.com/leoawesome/ckanban/issues/new?title=Bug&body=d%0A%0A%23%23%23+Version+and+system%0A%0A-+ckanban%3A+dev%0A-+OS%3A+<os>%0A%0A%3Csub%3EReported+from+Claude%2C+on+the+user%27s+request+%28ckanban+dev%29.%3C%2Fsub%3E&labels=bug\"}"
  },
  {
   "label": "user send_file",
