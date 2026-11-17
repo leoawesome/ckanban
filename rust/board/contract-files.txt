@@ -33,6 +33,13 @@ board-files.test.ts
 huddle.test.ts | built-ins, a board teammate|save, change and delete a squad
 huddle-team.test.ts | role notes|learned: the view
 
+# R11a: huddle rooms (start, posts from the user, a helper and the host's run, findings, the brief, close and the
+# board's own summary, events; a helper's proposed teammate saved or discarded). Left for later: the tests where a
+# helper runs (its copy and hand-ins, the budget stop: R11c), the room test's lesson pile (R12's learner), the auto
+# huddle (R7a, R11c), team-usage and learned (R12).
+huddle.test.ts | start from a roster
+huddle-team.test.ts | learnings: a helper's proposed teammate
+
 # R8: quick chats saved before the start (list, pages, one chat, conversation, tool details) and who may change them.
 # quickchat.test.ts needs the phone access port in Rust (R13: its user actions come that way), ticket writes (R2a),
 # ticket runs (R7a, search_chat) and the chat extras (R7b: context, simplify, rewind, fork, Make ticket); the sending,

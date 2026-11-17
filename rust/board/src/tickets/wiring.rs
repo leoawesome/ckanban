@@ -24,6 +24,8 @@ pub struct Wired {
     /// Families, plans and the feature status (R2b).
     pub families: Option<Arc<crate::families::Families>>,
     pub browsers: Option<Arc<Browsers>>,
+    /// R11a: the huddles a ticket hosts.
+    pub huddles: Option<Arc<crate::huddles::Huddles>>,
     pub root: PathBuf,
 }
 
@@ -153,6 +155,19 @@ impl BoardHooks for Wired {
         let chrome = chrome_setting(chrome.unwrap_or(&Value::Null), known_chrome).map_err(|e| (e.status, e.message))?;
         let picks = picks_from_legacy(chrome.as_deref());
         Ok((chrome.map(Value::String).unwrap_or(Value::Null), picks_json(&picks)))
+    }
+
+    fn close_huddles(&self, slug: &str, id: &str) {
+        if let Some(h) = &self.huddles {
+            h.op(|h| h.close_for_ticket(slug, id, crate::huddles::model::DELETED));
+        }
+    }
+
+    fn huddle_live(&self, slug: &str, id: &str) -> bool {
+        use crate::huddles::model::s;
+        self.huddles.as_ref().is_some_and(|h| {
+            h.files.open(slug).iter().any(|x| s(x, "hostTicket") == id && s(x, "status") == "live" && x.get("auto").is_none_or(|a| a.is_null() || a == false))
+        })
     }
 
     fn kill_shells(&self, slug: &str) {
