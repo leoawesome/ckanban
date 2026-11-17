@@ -139,6 +139,21 @@ describe("a ticket's outputs", () => {
     expect((await d.api("POST", `${T(B, "t_copy")}/outputs/report.md?action=print`, {})).data).toEqual({ error: "action must be reveal, copy or publish" });
     expect((await d.api("POST", `${T(B, "t_copy")}/outputs/missing.md?action=reveal`, {})).status).toBe(404);
   });
+
+  test("Publish starts a background job shown on the ticket (shareJobs); a file that isn't Markdown or HTML fails it", async () => {
+    writeFileSync(join(d.home, "profiles", B, "tickets", "t_copy", "outputs", "data.txt"), "numbers\n");
+    const r = await d.api("POST", `${T(B, "t_copy")}/outputs/data.txt?action=publish`, {});
+    expect(r.status).toBe(202);
+    expect(r.data).toMatchObject({ file: "data.txt", state: "publishing" });
+    expect(Date.parse(r.data.at)).not.toBeNaN();
+    const failed = await until(async () => {
+      const jobs = (await d.api("GET", T(B, "t_copy"))).data.shareJobs ?? [];
+      return jobs.find((j: any) => j.file === "data.txt" && j.state === "failed");
+    }, 10_000, "the failed publish job");
+    expect(failed).toMatchObject({ file: "data.txt", state: "failed", error: "only Markdown and HTML files can be published" });
+    // Nothing was saved as a link.
+    expect((await d.api("GET", T(B, "t_copy"))).data.shareLinks ?? []).toEqual([]);
+  });
 });
 
 describe("files a chat mentions", () => {
