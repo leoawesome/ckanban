@@ -1225,7 +1225,8 @@ impl Families {
                 refs.push(format!("origin/{base}"));
             }
             let grep = format!("--grep=^{FEATURE_TRAILER}: {top_id}$");
-            let branch = top.s("branch").filter(|s| !s.is_empty()).map(str::to_string);
+            // A branch name is a ref, never an option: one starting with "-" is left out of the git arguments.
+            let branch = top.s("branch").filter(|s| !s.is_empty() && !s.starts_with('-')).map(str::to_string);
             let mut args = vec!["log".to_string(), "--ignore-missing".into(), "--format=%H%x09%h%x09%s".into(), grep.clone()];
             args.extend(refs.iter().cloned());
             args.extend(branch.iter().cloned());
